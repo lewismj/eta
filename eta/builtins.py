@@ -24,7 +24,7 @@ def builtin_reduce(op, exp):
         return LispError(ex)
 
 
-def bin_function(func, exp):
+def unary_function(func, exp):
     # reduce_unary_ops(exp)
     try:
         return func(exp)
@@ -58,11 +58,11 @@ def error(env, expr):
 
 
 def maximum(env, expr):
-    return bin_function(max, expr)
+    return unary_function(max, expr)
 
 
 def minimum(env, expr):
-    return bin_function(min, expr)
+    return unary_function(min, expr)
 
 
 def add_builtins(env):

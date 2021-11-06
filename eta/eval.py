@@ -3,7 +3,7 @@ eval
 This is the basic Lisp-ish evaluator.
 """
 
-from eta.types import Symbol, Expression, LispError
+from eta.types import Symbol, Expression, Definition, EmptyExpr, IfExpression
 
 
 # n.b. Most of these methods would be improved by use of the
@@ -29,6 +29,13 @@ def evaluate(exp, env):
 
     if isinstance(exp, Symbol):
         return env.lookup_binding(exp)
+
+    if isinstance(exp, Definition):
+        return eval_definition(exp, env)
+
+    if isinstance(exp, IfExpression):
+        return eval_if(exp, env)
+
     if isinstance(exp, Expression) and not exp.is_quoted():
         return eval_s_expr(exp, env)
 
@@ -55,3 +62,7 @@ def eval_s_expr(exp, env):
         return exp
 
 
+def eval_definition(exp, env):
+    value = evaluate(exp.value, env)
+    env.add_binding(exp.symbol, value)
+    return EmptyExpr

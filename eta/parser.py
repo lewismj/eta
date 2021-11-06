@@ -78,7 +78,7 @@ class AstTransformer(Transformer):
     @staticmethod
     def define(xs):
         if len(xs) == 2:
-            definition = Definition(xs[0], xs[1])
+            definition = Definition(Symbol(xs[0]), xs[1])
             return definition
         else:
             VisitError("Definition with {} arguments."

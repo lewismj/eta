@@ -32,13 +32,14 @@ class Symbol(str):
     """
     pass
 
+
 class QuoteType(Enum):
     """
     Quote type is just a flag that can be set on an expression to convert
     it from from a regular S-Expression to some quoted type (and visa versa).
     """
-    NoQuote = 1   # S expression, to be evaluated, applicative order.
-    Quote = 2   # Quoted expression; not eagerly evaluated.
+    NoQuote = 1  # S expression, to be evaluated, applicative order.
+    Quote = 2  # Quoted expression; not eagerly evaluated.
     QuasiQuote = 3  # Quasi-quoted expression.
 
 
@@ -99,6 +100,9 @@ class Expression(deque):
         return self.__str__()
 
 
+EmptyExpr = Expression([])
+
+
 class Lambda:
     """
     Class holds the formals, body and environment of a lambda function.
@@ -113,6 +117,7 @@ class Lambda:
     However, each instance of the lambda will have its own environment
     when 'running' which will be a clone of the definition.
     """
+
     def __init__(self, formals, body, environment):
         """
         Create an Lambda function, that can be used as a template by function invocation.
@@ -167,6 +172,7 @@ class Definition:
     Symbol can be a name (E.g. function name or identifier) and
     Value can be an expression (E.g. lambda or atom etc..)
     """
+
     def __init__(self, symbol, value):
         self.symbol = symbol
         self.value = value
@@ -196,6 +202,7 @@ class IfExpression:
     Objects of this type will be part of the AST interpreted by
     the evaluation, and part of the 'fixed' syntax.
     """
+
     def __init__(self, clause, then_expr, else_expr):
         self.clause = clause
         self.then_expr = then_expr
@@ -236,6 +243,7 @@ class Environment(dict):
     It is important to note that an symbol may be bound to a built-in function, lambda, partially
     applied function in addition to any primitive type.
     """
+
     def __init__(self, outer=None):
         """
         Initialises an empty frame with specified outer frame.
