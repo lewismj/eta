@@ -32,7 +32,6 @@ class Symbol(str):
     """
     pass
 
-
 class QuoteType(Enum):
     """
     Quote type is just a flag that can be set on an expression to convert
@@ -265,7 +264,7 @@ class Environment(dict):
         :return: the corresponding value, or LispError itself, if the value could not be found.
         """
         try:
-            return self[sym]
+            return self[str(sym)]
         except KeyError:
             if self.outer is None:
                 return LispError("Unbound symbol: " + sym)

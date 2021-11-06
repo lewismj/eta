@@ -17,32 +17,59 @@ import operator
 # directly, rather than a sequence of operator.add(a,b)
 
 def builtin_reduce(op, exp):
+    # reduce_unary_ops(exp)
     try:
         return reduce(op, exp)
+    except Exception as ex:
+        return LispError(ex)
+
+
+def bin_function(func, exp):
+    # reduce_unary_ops(exp)
+    try:
+        return func(exp)
     except Exception as ex:
         return LispError(ex)
 
 # All builtin functions should have arguments 'env', 'eval'.
 
 
-def builtin_add(env, expr):
+def add(env, expr):
     return builtin_reduce(operator.add, expr)
 
 
-def builtin_sub(env, expr):
+def sub(env, expr):
     return builtin_reduce(operator.sub, expr)
 
 
-def builtin_mul(env, expr):
+def mul(env, expr):
     return builtin_reduce(operator.mul, expr)
 
 
-def builtin_div(env, expr):
+def div(env, expr):
     return builtin_reduce(operator.truediv, expr)
 
 
+def error(env, expr):
+    """
+    Allow a function to return a LispError. There should never be 'exceptions' in the Lisp code.
+    """
+    return LispError("Error: {}".format(str(expr)))
+
+
+def maximum(env, expr):
+    return bin_function(max, expr)
+
+
+def minimum(env, expr):
+    return bin_function(min, expr)
+
+
 def add_builtins(env):
-    env.add_binding(Symbol('+'), builtin_add)
-    env.add_binding(Symbol('-'), builtin_sub)
-    env.add_binding(Symbol('*'), builtin_mul)
-    env.add_binding(Symbol('/'), builtin_div)
+    env.add_binding(Symbol('+'), add)
+    env.add_binding(Symbol('-'), sub)
+    env.add_binding(Symbol('*'), mul)
+    env.add_binding(Symbol('/'), div)
+    env.add_binding(Symbol("error"), error)
+    env.add_binding(Symbol("max"), maximum)
+    env.add_binding(Symbol("min"), minimum)

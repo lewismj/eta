@@ -30,6 +30,10 @@ class EvaluatorTest(unittest.TestCase):
     def test_quoted_return_self(self):
         pass
 
+    def test_negative_number(self):
+        ast = parser.parse("(+ 1 2)")
+        self.assertEqual(3, evaluate(ast, self.env))
+
 
 def make_suite():
     return unittest.makeSuite(EvaluatorTest, 'testEvaluator')

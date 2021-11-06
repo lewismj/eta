@@ -21,14 +21,20 @@ grammar = r"""
     normal_quote:"'" -> const_quote 
     quasi_quote: "`" -> const_quasi
 
-    ?value: SYMBOL | number | expression | boolean | string
-    SYMBOL : NAME | "+" | "-" | "*" | "/" | "<" | ">" | ">=" | "<=" | "==" | "=" | "/" | "*"
+    ?value: symbol | number | expression | boolean | string 
+    symbol: SYMBOL -> symbol_def
+    
+    // for convenience, we treat "+ " => symbol definition, whereas "-" number is unary operator.
+    // practical optimisation, otherwise we'd require a 'reduce unary operator' function in the 
+    // evaluator, here we can just parse -ve numbers before they reach the eval.
+    // i.e. have token (-x) rather than op(*,-1,x).
+    
+    SYMBOL: NAME | "+" " " | "-" " "  | "*" | "/" | "<" | ">" | ">=" | "<=" | "==" | "="  
+    !number:  ["-"] NUMBER | ["+"] NUMBER
 
-    formals: SYMBOL+ -> formals
+    formals: symbol+ -> formals
     function_name: NAME -> function_name
     variable: NAME -> variable
-   
-    number: NUMBER 
     
     boolean: "#t" -> const_true 
             | "#f" -> const_false
@@ -51,7 +57,6 @@ class AstTransformer(Transformer):
     Transforms the parse tree (defined as token types in structure of 'grammar')
     into an AST that is ready to be evaluated.
     """
-    SYMBOL = Symbol
     ESCAPED_STRING = str
     NAME = str
 
@@ -65,6 +70,10 @@ class AstTransformer(Transformer):
     @staticmethod
     def variable(xs):
         return xs[0]
+
+    @staticmethod
+    def symbol_def(xs):
+        return Symbol(xs[0].strip())
 
     @staticmethod
     def define(xs):
@@ -114,11 +123,11 @@ class AstTransformer(Transformer):
         return False
 
     @staticmethod
-    def const_quote():
+    def const_quote(q):
         return _quote
 
     @staticmethod
-    def const_quasi_quote():
+    def const_quasi_quote(q):
         return _quasi_quote
 
     @staticmethod
@@ -147,17 +156,24 @@ class AstTransformer(Transformer):
         return expression
 
     @staticmethod
-    @v_args(inline=True)
-    def number(s):
+    def to_number(s):
         try:
             return int(s)
         except ValueError:
             return float(s)
 
+    @staticmethod
+    def number(xs):
+        value = AstTransformer.to_number(xs[-1])
+        if xs[0] == "-":
+            return value * -1
+        else:
+            return value
+
 
 parser = Lark(grammar, parser='lalr', transformer=AstTransformer())
 
 if __name__ == '__main__':
-    test = parser.parse("(+ 1 1)")
+    test = parser.parse("(+ 1 2)")
     print(test)
 

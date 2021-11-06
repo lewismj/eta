@@ -3,7 +3,7 @@ eval
 This is the basic Lisp-ish evaluator.
 """
 
-from eta.types import Symbol, Expression
+from eta.types import Symbol, Expression, LispError
 
 
 # n.b. Most of these methods would be improved by use of the
@@ -51,4 +51,7 @@ def eval_s_expr(exp, env):
     if callable(exp[0]):
         function, *arguments = exp
         return function(env, arguments)
+    else:
+        return exp
+
 

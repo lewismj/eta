@@ -28,6 +28,10 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(expression[1], 1)
         self.assertEqual(expression[2], 2)
 
+    def test_parsed_as_number(self):
+        ast = parser.parse("(-1)")
+        self.assertEqual(len(ast), 1)
+
 
 def make_suite():
     return unittest.makeSuite(ParserTest, 'testParser')
