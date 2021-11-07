@@ -88,7 +88,7 @@ class AstTransformer(Transformer):
     @staticmethod
     def defun(xs):
         if len(xs) == 3:
-            definition = Definition(xs[0], Lambda(xs[1], xs[2], EmptyEnvironment))
+            definition = Definition(Symbol(xs[0]), Lambda(xs[1], xs[2], EmptyEnvironment))
             return definition
         else:
             VisitError("Function definition with {} arguments."
