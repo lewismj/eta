@@ -14,7 +14,6 @@ from pygments.lexers.lisp import SchemeLexer
 from pygments.styles.paraiso_dark import ParaisoDarkStyle
 from prompt_toolkit.styles import style_from_pygments_cls
 from prompt_toolkit.completion import WordCompleter
-from lark import LarkError
 
 import eta
 from eta.parser import parser

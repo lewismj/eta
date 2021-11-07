@@ -65,23 +65,28 @@ def eval_s_expr(exp, env):
     if len(exp) == 1:
         return evaluate(exp[0], env)
 
-    # filter out EmptyExpr, which is success of 'define'.
-    exp = list(filter(lambda x: x, map(lambda x: evaluate(x, env), exp)))
+    # Filter out EmptyExpr, which is success of 'define'.
+    exp = list(filter(lambda x: x != EmptyExpr, map(lambda x: evaluate(x, env), exp)))
 
-    if isinstance(exp[0], Lambda):
-        function, *arguments = exp
-        return eval_lambda(function, arguments, env)
+    # Check to see if there is any evaluation to do, as we may have
+    # an s-expression that just contains 'define' statements.
+    if exp:
+        if isinstance(exp[0], Lambda):
+            function, *arguments = exp
+            return eval_lambda(function, arguments, env)
 
-    if callable(exp[0]):
-        function, *arguments = exp
-        if evaluation_context.trace:
-            print("builtin:{} {}".format(function.__name__, arguments))
-        return function(env, arguments)
-    else:
-        if len(exp) == 1:
-            return exp[0]
+        if callable(exp[0]):
+            function, *arguments = exp
+            if evaluation_context.trace:
+                print("builtin:{} {}".format(function.__name__, arguments))
+            return function(env, arguments)
         else:
-            return exp
+            if len(exp) == 1:
+                return exp[0]
+            else:
+                return exp
+    else:
+        return EmptyExpr
 
 
 def eval_definition(exp, env):
