@@ -22,24 +22,34 @@ import operator
 #   make sense to build-in (since they are available) common ones, thus avoid interpreter
 #   cost.
 
+def first(items, pred): return next((i for i in items if pred(i)), None)
 
-def builtin_reduce(op, exp):
+
+def builtin_reduce(op, expr):
     """
     Basic numeric expressions are of the form (+ values... ) so we always reduce.
     Rather than treat, e.g. '+' as a repeated operation of operator.add functions.
     """
+    lisp_error = first(expr, lambda x: isinstance(x, LispError))
+    if lisp_error:
+        return lisp_error
+
     try:
-        return reduce(op, exp)
+        return reduce(op, expr)
     except Exception as ex:
         return LispError(ex)
 
 
-def unary_function(exp, func):
+def unary_function(expr, func):
     """
 
     """
+    lisp_error = first(expr, lambda x: isinstance(x, LispError))
+    if lisp_error:
+        return lisp_error
+
     try:
-        return func(exp)
+        return func(expr)
     except Exception as ex:
         return LispError(ex)
 
@@ -48,6 +58,10 @@ def binary_function(env, expr, function):
     """
 
     """
+    lisp_error = first(expr, lambda x: isinstance(x, LispError))
+    if lisp_error:
+        return lisp_error
+
     if len(expr) == 2:
         return function(expr[0], expr[1])
     else:
@@ -107,31 +121,82 @@ def join(env, expr):
                 expression.append(sub_expr)
         return expression
 
-# why define individual functions, rather than use (lambda ev, ex: builtin_reduce ... ) ?
-# we lose the function name, when tracing the evaluation, which can be useful for debugging,
+# Notes)
+# 1) Why define individual functions, rather than use (lambda ev, ex: builtin_reduce ... ) ?
+#
+# We lose the function name, when tracing the evaluation, which can be useful for debugging,
 # within a repl environment.
+#
+# 2) Why check for LispError in the functions builtin_* , function could reduce LispErrors?
+#
+# The prelude should define map/filter/reduce, that can reduce on LispError values which
+# are valid values. Builtin is for specific builtin operators (e.g. +/- etc.), so if wei
+# encounter a LispError in the input return it as the result.
 
 
-def add(env, ex):
-    return builtin_reduce(operator.add, ex)
+def add(env, expr):
+    return builtin_reduce(operator.add, expr)
+
+
+def minus(env, expr):
+    return builtin_reduce(operator.sub, expr)
+
+
+def multiply(env, expr):
+    return builtin_reduce(operator.mul, expr)
+
+
+def divide(env, expr):
+    return builtin_reduce(operator.mul, expr)
+
+
+def lt(env, expr):
+    return binary_function(env, expr, operator.lt)
+
+
+def gt(env, expr):
+    return binary_function(env, expr, operator.gt)
+
+
+def ge(env, expr):
+    return binary_function(env, expr, operator.ge)
+
+
+def le(env, expr):
+    return binary_function(env, expr, operator.le)
+
+
+def error(env, expr):
+    if len(expr) == 1:
+        return LispError("Runtime error, {}".format(str(expr[0])))
+    else:
+        return LispError("Runtime error, {}".format(str(expr)))
+
+
+def maximum(env, expr):
+    return unary_function(expr, max)
+
+
+def minimum(env, expr):
+    return unary_function(expr, min)
 
 
 def add_builtins(env):
     import math
     env.add_binding(Symbol('+'), add)
-    env.add_binding(Symbol('-'), lambda ev, ex: builtin_reduce(operator.sub, ex))
-    env.add_binding(Symbol('*'), lambda ev, ex: builtin_reduce(operator.mul, ex))
-    env.add_binding(Symbol('/'), lambda ev, ex: builtin_reduce(operator.truediv, ex))
-    env.add_binding(Symbol("error"), lambda ev, ex: LispError("Error: {}".format(str(ex))))
-    env.add_binding(Symbol("max"), lambda ev, ex: unary_function(ex, max))
-    env.add_binding(Symbol("min"), lambda ev, ex: unary_function(ex, min))
+    env.add_binding(Symbol('-'), minus)
+    env.add_binding(Symbol('*'), multiply)
+    env.add_binding(Symbol('/'), divide)
+    env.add_binding(Symbol("error"), error)
+    env.add_binding(Symbol("max"), maximum)
+    env.add_binding(Symbol("min"), minimum)
     env.add_binding(Symbol("_pi"), math.pi)
     env.add_binding(Symbol("_tau"), math.tau)
     env.add_binding(Symbol("_e"), math.e)
-    env.add_binding(Symbol("<"), lambda ev, ex: binary_function(ev, ex, operator.lt))
-    env.add_binding(Symbol(">"), lambda ev, ex: binary_function(ev, ex, operator.gt))
-    env.add_binding(Symbol(">="), lambda ev, ex: binary_function(ev, ex, operator.ge))
-    env.add_binding(Symbol("<="), lambda ev, ex: binary_function(ev, ex, operator.le))
+    env.add_binding(Symbol("<"), lt)
+    env.add_binding(Symbol(">"), gt)
+    env.add_binding(Symbol(">="), ge)
+    env.add_binding(Symbol("<="), le)
     env.add_binding(Symbol("=="), equality)
     env.add_binding(Symbol("head"), head)
     env.add_binding(Symbol("tail"), tail)

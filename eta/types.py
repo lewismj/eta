@@ -264,7 +264,7 @@ class Environment(dict):
             return self[str(sym)]
         except KeyError:
             if self.outer is None:
-                return LispError("Unbound symbol: " + sym)
+                return LispError("Runtime error, unbound symbol: " + sym)
             else:
                 return self.outer.lookup_binding(sym)
 

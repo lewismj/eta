@@ -23,77 +23,77 @@ class EvaluationContext:
 evaluation_context = EvaluationContext()
 
 
-def evaluate(exp, env):
+def evaluate(expr, env):
     """
     The main evaluation loop.
-    :param exp: the expression to evaluate.
+    :param expr: the expression to evaluate.
     :param env: the environment to use for evaluation.
     :return: the result, tail recursive.
     """
-    if isinstance(exp, list):
-        if len(exp) == 0:
+    if isinstance(expr, list):
+        if len(expr) == 0:
             return Expression([])
 
-        xs = [evaluate(x, env) for x in exp]
+        xs = [evaluate(x, env) for x in expr]
 
         if len(xs) == 1:
             return xs[0]
         else:
             return xs
 
-    if isinstance(exp, Symbol):
-        return env.lookup_binding(exp)
+    if isinstance(expr, Symbol):
+        return env.lookup_binding(expr)
 
-    if isinstance(exp, Definition):
-        return eval_definition(exp, env)
+    if isinstance(expr, Definition):
+        return eval_definition(expr, env)
 
-    if isinstance(exp, IfExpression):
-        return eval_if(exp, env)
+    if isinstance(expr, IfExpression):
+        return eval_if(expr, env)
 
-    if isinstance(exp, Expression) and not exp.is_quoted():
-        return eval_s_expr(exp, env)
+    if isinstance(expr, Expression) and not expr.is_quoted():
+        return eval_s_expr(expr, env)
 
-    return exp
+    return expr
 
 
-def eval_s_expr(exp, env):
+def eval_s_expr(expr, env):
     if evaluation_context.trace:
-        print(exp)
+        print(expr)
 
-    if len(exp) == 0:
-        return exp
-    if len(exp) == 1:
-        return evaluate(exp[0], env)
+    if len(expr) == 0:
+        return expr
+    if len(expr) == 1:
+        return evaluate(expr[0], env)
 
     # Filter out EmptyExpr, which is success of 'define'.
-    exp = list(filter(lambda x: x != EmptyExpr, map(lambda x: evaluate(x, env), exp)))
+    expr = list(filter(lambda x: x != EmptyExpr, map(lambda x: evaluate(x, env), expr)))
 
     # Check to see if there is any evaluation to do, as we may have
     # an s-expression that just contains 'define' statements.
-    if exp:
-        if isinstance(exp[0], Lambda):
-            function, *arguments = exp
+    if expr:
+        if isinstance(expr[0], Lambda):
+            function, *arguments = expr
             return eval_lambda(function, arguments, env)
 
-        if callable(exp[0]):
-            function, *arguments = exp
+        if callable(expr[0]):
+            function, *arguments = expr
             if evaluation_context.trace:
                 print("builtin:{} {}".format(function.__name__, arguments))
             return function(env, arguments)
         else:
-            if len(exp) == 1:
-                return exp[0]
+            if len(expr) == 1:
+                return expr[0]
             else:
-                return exp
+                return expr
     else:
         return EmptyExpr
 
 
-def eval_definition(exp, env):
+def eval_definition(expr, env):
     if evaluation_context.trace:
-        print(exp)
-    value = evaluate(exp.value, env)
-    env.add_binding(exp.symbol, value)
+        print(expr)
+    value = evaluate(expr.value, env)
+    env.add_binding(expr.symbol, value)
     return EmptyExpr
 
 
@@ -122,7 +122,6 @@ def eval_lambda(lambda_fn, arguments, outer_env):
     # When a lambda is defined its passed a ref to the empty environment.
     # So each time the lambda is invoked, we copy it, so that each function application
     # has its own environment.
-
     env = deepcopy(lambda_fn.environment)
     env.outer = outer_env
 
@@ -135,19 +134,33 @@ def eval_lambda(lambda_fn, arguments, outer_env):
     # on each invocation, make a copy of the body.
     body = deepcopy(lambda_fn.body)
 
-    # 1. Substitute formals for supplied arguments.
+    # Substitute formals for supplied arguments.
     while len(arguments) > 0:
         argument = arguments.pop(0)
         formal = formals.pop(0)
         env.add_binding(formal, argument)
 
     if len(formals) == 0:
-        # arguments full specified, lambda can be evaluated.
+        # Arguments full specified, lambda can be evaluated.
         return eval_s_expr(body, env)
     else:
-        # function is partially applied, return partially applied function.
+        # Return partially applied function as new Lambda instance.
         return Lambda(formals, body, env)
 
 
-def eval_if(exp, env):
-    pass
+def eval_if(expr, env):
+    if evaluation_context.trace:
+        print(expr)
+
+    condition = evaluate(expr.clause, env)
+
+    if isinstance(condition, LispError):
+        return condition
+
+    if not isinstance(condition, bool):
+        return LispError("'If' expression clause did not evaluate to boolean.",
+                         "{} evaluated to: {}".format(str(expr.clause), str(condition)))
+    if condition:
+        return evaluate(expr.then_expr, env)
+    else:
+        return evaluate(expr.else_expr, env)
