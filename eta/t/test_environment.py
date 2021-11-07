@@ -26,12 +26,12 @@ class EnvironmentTest(unittest.TestCase):
         self.assertEqual(self.local_env.lookup_binding('ex'), Expression(['+', 1, 2]))
 
     def test_lookup_uses_outer_scope(self):
-        self.assertEqual(self.global_env.lookup_binding('x'), True)
-        self.assertEqual(self.global_env.lookup_binding('y'), False)
+        self.assertEqual(True, self.global_env.lookup_binding('x'))
+        self.assertEqual(False, self.global_env.lookup_binding('y'))
 
     def test_lookup_global_scope(self):
-        self.assertEqual(self.global_env.lookup_binding('x'), True)
-        self.assertEqual(self.global_env.lookup_binding('y'), False)
+        self.assertEqual(True, self.global_env.lookup_binding('x'))
+        self.assertEqual(False, self.global_env.lookup_binding('y'))
 
     def test_unbound_symbol(self):
         val = self.local_env.lookup_binding('z')

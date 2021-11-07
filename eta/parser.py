@@ -4,18 +4,19 @@ Uses lark to define a simple Lisp style syntax.
 """
 from lark import Lark, Transformer, v_args
 from lark.visitors import VisitError
-from eta.types import Symbol, Expression, _quote, _quasi_quote, Lambda, Definition, IfExpression
+from eta.types import Symbol, Expression, _quote, _quasi_quote, Lambda, Definition, IfExpression, EmptyEnvironment
 
 grammar = r"""
     start:expression+
     
     ?expression:  "(" "if"  expression  expression expression ")" -> if_expression
-                | "(" "define" variable expression ")" -> define
-                | "(" "define" "(" variable ")" expression ")" -> define
+                | "(" ("define" | "def") variable expression ")" -> define
+                | "(" ("define" | "def") "(" variable ")" expression ")" -> define
                 | "(" "defun" "(" function_name formals ")" expression ")" -> defun
                 | "(" "lambda" "(" formals ")" expression ")" -> lambda_expression
                 | [quote] "(" value+ ")" -> expression
                 | "[" value+ "]" -> quoted_expression 
+                
                 
     ?quote: normal_quote | quasi_quote
     normal_quote:"'" -> const_quote 
@@ -87,7 +88,7 @@ class AstTransformer(Transformer):
     @staticmethod
     def defun(xs):
         if len(xs) == 3:
-            definition = Definition(xs[0], Lambda(xs[1], xs[2], []))
+            definition = Definition(xs[0], Lambda(xs[1], xs[2], EmptyEnvironment))
             return definition
         else:
             VisitError("Function definition with {} arguments."
@@ -133,7 +134,7 @@ class AstTransformer(Transformer):
     @staticmethod
     def lambda_expression(xs):
         if len(xs) == 2:
-            return Lambda(xs[0], xs[1], [])
+            return Lambda(xs[0], xs[1], EmptyEnvironment)
         else:
             raise VisitError("Lambda expression defining {} arguments, should be (formals) (body).".format(len(xs)))
 

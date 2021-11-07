@@ -57,7 +57,7 @@ class Expression(deque):
     Expression is a type of list, each element in the list is essentially a 'cell' in Lisp terms.
     """
 
-    def __init__(self, values):
+    def __init__(self, values=[]):
         super().__init__(values)
         self.kind = QuoteType.NoQuote
 
@@ -123,21 +123,10 @@ class Lambda:
         Create an Lambda function, that can be used as a template by function invocation.
         :param formals: the function arguments.
         :param body: the function body.
-        :param environment: the base environment of the lambda (usually empty, may be
-        partially filled if lambda defined by partial function application).
         """
         self.formals = formals
         self.body = body
         self.environment = environment
-
-    def __call__(self, *args, **kwargs):
-        """
-
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        pass
 
     def __str__(self):
         """
@@ -278,3 +267,6 @@ class Environment(dict):
                 return LispError("Unbound symbol: " + sym)
             else:
                 return self.outer.lookup_binding(sym)
+
+
+EmptyEnvironment = Environment()

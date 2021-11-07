@@ -22,15 +22,15 @@ class ParserTest(unittest.TestCase):
 
     def test_expression_structure_basic(self):
         ast = parser.parse("(+ 1 2)")
-        self.assertEqual(len(ast), 1)
+        self.assertEqual(1, len(ast))
         expression = ast[0]
-        self.assertEqual(expression[0], Symbol("+"))
-        self.assertEqual(expression[1], 1)
-        self.assertEqual(expression[2], 2)
+        self.assertEqual(Symbol("+"), expression[0])
+        self.assertEqual(1, expression[1])
+        self.assertEqual(2, expression[2])
 
     def test_parsed_as_number(self):
         ast = parser.parse("(-1)")
-        self.assertEqual(len(ast), 1)
+        self.assertEqual(1, len(ast))
 
 
 def make_suite():
