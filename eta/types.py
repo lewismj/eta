@@ -18,7 +18,14 @@ class LispError(Exception):
     Since we are using Python to interpret (i.e. evaluator is using Python constructs and not a stack machine
     written in Python) we lift any Python exceptions into instances of LispError.
     """
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
+
+    def __eq__(self, other):
+        """
+        If the Lisp expression is the same, they're equivalent.
+        """
+        return self.__repr__() == super().__repr__()
 
 
 class Symbol(str):

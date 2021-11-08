@@ -8,7 +8,7 @@ lists.
 """
 
 from eta.types import LispError, Symbol, Expression
-from eta.eval import evaluate, first
+from eta.eval import evaluate, find, eval_if
 from functools import reduce
 import operator
 
@@ -31,7 +31,7 @@ def builtin_reduce(op, expr):
     Basic numeric expressions are of the form (+ values... ) so we always reduce.
     Rather than treat, e.g. '+' as a repeated operation of operator.add functions.
     """
-    lisp_error = first(expr, lambda x: isinstance(x, LispError))
+    lisp_error = find(expr, lambda x: isinstance(x, LispError))
     if lisp_error:
         return lisp_error
 
@@ -45,7 +45,7 @@ def unary_function(expr, func):
     """
 
     """
-    lisp_error = first(expr, lambda x: isinstance(x, LispError))
+    lisp_error = find(expr, lambda x: isinstance(x, LispError))
     if lisp_error:
         return lisp_error
 
@@ -59,7 +59,7 @@ def binary_function(env, expr, function):
     """
 
     """
-    lisp_error = first(expr, lambda x: isinstance(x, LispError))
+    lisp_error = find(expr, lambda x: isinstance(x, LispError))
     if lisp_error:
         return lisp_error
 
@@ -70,8 +70,20 @@ def binary_function(env, expr, function):
                          " Expected two arguments".format(len(expr)))
 
 
-def equality(env, expr):
-    pass
+def equals(env, expr):
+    if len(expr) <= 1:
+        return True
+    else:
+        first = expr[0]
+        is_different = find(expr[1:], lambda x: first != x)
+        if is_different is None:
+            return True
+        else:
+            return False
+
+
+def not_equals(env, expr):
+    return not equals(env, expr)
 
 
 def cons(env, expr):
@@ -214,7 +226,8 @@ def add_builtins(env):
     env.add_binding(Symbol(">"), gt)
     env.add_binding(Symbol(">="), ge)
     env.add_binding(Symbol("<="), le)
-    env.add_binding(Symbol("=="), equality)
+    env.add_binding(Symbol("=="), equals)
+    env.add_binding(Symbol("!="), not_equals)
     env.add_binding(Symbol("head"), head)
     env.add_binding(Symbol("tail"), tail)
     env.add_binding(Symbol("join"), join)

@@ -26,16 +26,20 @@ class EvaluationContext:
 evaluation_context = EvaluationContext()
 
 
-def first(items, pred): return next((i for i in items if pred(i)), None)
+def find(items, pred): return next((i for i in items if pred(i)), None)
 
 
 def evaluate(expr, env):
+    if evaluation_context.trace:
+        print(str(expr))
+
     """
     The main evaluation loop.
     :param expr: the expression to evaluate.
     :param env: the environment to use for evaluation.
     :return: the result, tail recursive.
     """
+
     if isinstance(expr, list):
         if len(expr) == 0:
             return Expression([])
@@ -70,10 +74,11 @@ def evaluate(expr, env):
 
 def eval_s_expr(expr, env):
     if evaluation_context.trace:
-        print(expr)
+        print(str(expr))
 
     if len(expr) == 0:
         return expr
+
     if len(expr) == 1:
         return evaluate(expr[0], env)
 
@@ -83,6 +88,7 @@ def eval_s_expr(expr, env):
     # Check to see if there is any evaluation to do, as we may have
     # an s-expression that just contains 'define' statements.
     if expr:
+
         if isinstance(expr[0], Lambda):
             function, *arguments = expr
             return eval_lambda(function, arguments, env)
@@ -92,6 +98,7 @@ def eval_s_expr(expr, env):
             if evaluation_context.trace:
                 print("builtin:{} {}".format(function.__name__, arguments))
             return function(env, arguments)
+
         else:
             if len(expr) == 1:
                 return expr[0]
@@ -154,22 +161,28 @@ def eval_lambda(lambda_fn, arguments, outer_env):
 
     if len(formals) == 0:
         # Arguments full specified, lambda can be evaluated.
-        return eval_s_expr(body, env)
+        return evaluate(body, env)
     else:
         # Return partially applied function as new Lambda instance.
         return Lambda(formals, body, env)
 
 
 def eval_condition(expr, env):
+    if evaluation_context.trace:
+        print(str(expr))
+
     condition = evaluate(expr, env)
 
     if isinstance(condition, LispError):
         return condition
 
     if isinstance(condition, list):
-        lisp_error = first(condition, lambda x: isinstance(x, LispError))
+        lisp_error = find(condition, lambda x: isinstance(x, LispError))
         if lisp_error:
             return lisp_error
+        else:
+            return LispError("Invalid 'if' condition: {}"
+                             " Could not reduce to boolean.".format(str(condition)))
 
     # This could be changed, but in general don't allow 'everything' to be
     # casted to boolean automatically.
@@ -177,8 +190,7 @@ def eval_condition(expr, env):
         condition = bool(condition)
 
     if not isinstance(condition, bool):
-        return LispError("'If' expression clause did not evaluate to boolean.",
-                         "{} evaluated to: {}".format(str(expr.clause), str(condition)))
+        return LispError("'If' expression clause {} did not evaluate to boolean.".format(str(condition)))
 
     return condition
 
@@ -187,7 +199,7 @@ def eval_or_definition(expr, env):
     if evaluation_context.trace:
         print(expr)
 
-    or_expr = first(expr, lambda x: eval_condition(x, env))
+    or_expr = find(expr, lambda x: eval_condition(x, env))
     if or_expr:
         return True
 

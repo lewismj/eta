@@ -7,6 +7,7 @@ from lark.visitors import VisitError
 from eta.types import Symbol, Expression, _quote, _quasi_quote, Lambda, Definition, \
     IfExpression, EmptyEnvironment, AndDefinition, OrDefinition
 
+
 grammar = r"""
     start:expression+
     
