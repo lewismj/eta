@@ -2,7 +2,7 @@
 parser
 Uses lark to define a simple Lisp style syntax.
 """
-from lark import Lark, Transformer, v_args
+from lark import Lark, Transformer
 from lark.visitors import VisitError
 from eta.types import Symbol, Expression, _quote, _quasi_quote, Lambda, Definition, \
     IfExpression, EmptyEnvironment, AndDefinition, OrDefinition
@@ -18,14 +18,19 @@ grammar = r"""
                 | "(" "lambda" "(" formals ")" expression ")" -> lambda_expression
                 | "(" "and" expression+ ")" -> and_expression
                 | "(" "or" expression+ ")" -> or_expression
+                | "(" "let"  let_body+  ")" -> let_expression 
                 | [quote] "(" value* ")" -> expression
                 | "[" value+ "]" -> quoted_expression 
                 
                 
+    let_body: "(" variable let_value ")" | "(" variable expression ")"
+    let_value: number | boolean | string
+    
     ?quote: normal_quote | quasi_quote
     normal_quote:"'" -> const_quote 
     quasi_quote: "`" -> const_quasi
 
+    
     ?value: symbol | number | expression | boolean | string 
     symbol: SYMBOL -> symbol_def
     
@@ -141,6 +146,25 @@ class AstTransformer(Transformer):
             return Lambda(xs[0], xs[1], EmptyEnvironment)
         else:
             raise VisitError("Lambda expression defining {} arguments, should be (formals) (body).".format(len(xs)))
+
+    @staticmethod
+    def let_expression(xs):
+        expression = Expression()
+        [expression.append(x) for x in xs]
+        return expression
+
+    @staticmethod
+    def let_body(xs):
+        if len(xs) == 2:
+            definition = Definition(Symbol(xs[0]), xs[1])
+            return definition
+        else:
+            raise VisitError("Let expression defining {} arguments, "
+                             "should be of the form 'variable value' or 'variable expression'".format(len(xs)))
+
+    @staticmethod
+    def let_value(xs):
+        return xs[0]
 
     @staticmethod
     def and_expression(xs):
