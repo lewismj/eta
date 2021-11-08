@@ -5,7 +5,7 @@ the AST. Rather than have the eval functions as methods on the different node ty
 """
 
 from eta.types import Symbol, Expression, Definition, EmptyExpr, IfExpression, \
-    Lambda, LispError, AndDefinition, OrDefinition
+    Lambda, LispError, AndDefinition, OrDefinition, QuoteType
 from copy import deepcopy
 
 
@@ -18,7 +18,6 @@ class EvaluationContext:
     The evaluation context is an instance that is used to set flags for evaluator.
     For example, trace the evaluation, etc.
     """
-
     def __init__(self):
         self.trace = False
 
@@ -30,9 +29,6 @@ def find(items, pred): return next((i for i in items if pred(i)), None)
 
 
 def evaluate(expr, env):
-    if evaluation_context.trace:
-        print(str(expr))
-
     """
     The main evaluation loop.
     :param expr: the expression to evaluate.
@@ -72,6 +68,12 @@ def evaluate(expr, env):
     return expr
 
 
+def empty_expr(expr):
+    if not isinstance(expr, Expression) or expr.kind != QuoteType.NoQuote:
+        return False
+    return expr == EmptyExpr
+
+
 def eval_s_expr(expr, env):
     if evaluation_context.trace:
         print(str(expr))
@@ -83,7 +85,7 @@ def eval_s_expr(expr, env):
         return evaluate(expr[0], env)
 
     # Filter out EmptyExpr, which is success of 'define'.
-    expr = list(filter(lambda x: x != EmptyExpr, map(lambda x: evaluate(x, env), expr)))
+    expr = list(filter(lambda x: not empty_expr(x), map(lambda x: evaluate(x, env), expr)))
 
     # Check to see if there is any evaluation to do, as we may have
     # an s-expression that just contains 'define' statements.

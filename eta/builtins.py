@@ -70,12 +70,19 @@ def binary_function(env, expr, function):
                          " Expected two arguments".format(len(expr)))
 
 
+def is_equal(e1, e2):
+    if type(e1) == type(e2):
+        return e1 == e2
+    else:
+        return False
+
+
 def equals(env, expr):
     if len(expr) <= 1:
         return True
     else:
         first = expr[0]
-        is_different = find(expr[1:], lambda x: first != x)
+        is_different = find(expr[1:], lambda x: not is_equal(first, x))
         if is_different is None:
             return True
         else:
@@ -140,7 +147,7 @@ def join(env, expr):
 # We lose the function name, when tracing the evaluation, which can be useful for debugging,
 # within a repl environment.
 #
-# 2) Why check for LispError in the functions builtin_* , function could reduce LispErrors?
+# 2 Why check for LispError in the functions builtin_* , function could reduce LispErrors?
 #
 # The prelude should define map/filter/reduce, that can reduce on LispError values which
 # are valid values. Builtin is for specific builtin operators (e.g. +/- etc.), so if wei
