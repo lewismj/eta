@@ -8,6 +8,7 @@ lists.
 """
 
 from eta.types import LispError, Symbol, Expression
+from eta.eval import evaluate, first
 from functools import reduce
 import operator
 
@@ -22,7 +23,7 @@ import operator
 #   make sense to build-in (since they are available) common ones, thus avoid interpreter
 #   cost.
 
-def first(items, pred): return next((i for i in items if pred(i)), None)
+# def first(items, pred): return next((i for i in items if pred(i)), None)
 
 
 def builtin_reduce(op, expr):
@@ -181,6 +182,22 @@ def minimum(env, expr):
     return unary_function(expr, min)
 
 
+def unquote_and_eval(env, expr):
+    if isinstance(expr, Expression):
+        expr.unquote()
+        return evaluate(expr, env)
+    else:
+        return evaluate(expr, env)
+
+
+def eval_quoted(env, expr):
+    xs = list(map(lambda x: unquote_and_eval(env, x), expr))
+    if len(xs) == 1:
+        return xs[0]
+    else:
+        return xs
+
+
 def add_builtins(env):
     import math
     env.add_binding(Symbol('+'), add)
@@ -202,3 +219,4 @@ def add_builtins(env):
     env.add_binding(Symbol("tail"), tail)
     env.add_binding(Symbol("join"), join)
     env.add_binding(Symbol("list"), cons)
+    env.add_binding(Symbol("eval"), eval_quoted)

@@ -20,22 +20,22 @@ class ChurchBooleansTest(unittest.TestCase):
         (defun (toBoolean f) (f T F))
         (defun (true x y) (x))
         (defun (false x y) (y))
-        (defun (and p q) ((p q) p))
-        (defun (or p q) ((p p) q))
+        (defun (and0 p q) ((p q) p))
+        (defun (or0 p q) ((p p) q))
         """
         evaluate(parser.parse(church_booleans), self.env)
 
     def test_church_or(self):
-        self.assertEqual(True, evaluate(parser.parse("(toBoolean (or true true))"), self.env))
-        self.assertEqual(True, evaluate(parser.parse("(toBoolean (or true false))"), self.env))
-        self.assertEqual(True, evaluate(parser.parse("(toBoolean (or false true))"), self.env))
-        self.assertEqual(False, evaluate(parser.parse("(toBoolean (or false false))"), self.env))
+        self.assertEqual(True, evaluate(parser.parse("(toBoolean (or0 true true))"), self.env))
+        self.assertEqual(True, evaluate(parser.parse("(toBoolean (or0 true false))"), self.env))
+        self.assertEqual(True, evaluate(parser.parse("(toBoolean (or0 false true))"), self.env))
+        self.assertEqual(False, evaluate(parser.parse("(toBoolean (or0 false false))"), self.env))
 
     def test_church_and(self):
-        self.assertEqual(True, evaluate(parser.parse("(toBoolean (and true true))"), self.env))
-        self.assertEqual(False, evaluate(parser.parse("(toBoolean (and true false))"), self.env))
-        self.assertEqual(False, evaluate(parser.parse("(toBoolean (and false true))"), self.env))
-        self.assertEqual(False, evaluate(parser.parse("(toBoolean (and false false))"), self.env))
+        self.assertEqual(True, evaluate(parser.parse("(toBoolean (and0 true true))"), self.env))
+        self.assertEqual(False, evaluate(parser.parse("(toBoolean (and0 true false))"), self.env))
+        self.assertEqual(False, evaluate(parser.parse("(toBoolean (and0 false true))"), self.env))
+        self.assertEqual(False, evaluate(parser.parse("(toBoolean (and0 false false))"), self.env))
 
 
 def make_suite():

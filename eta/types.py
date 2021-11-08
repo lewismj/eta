@@ -214,6 +214,69 @@ class IfExpression:
         """
         return self.__str__()
 
+# note, if And/Or, change to 'list' rather than 'deque' the instance
+# type check would need to be re-ordered to test for And/Or first,
+# otherwise it would evaluate all arguments. Alternatively, And/Or could
+# just have a container as a member rather than inheriting.
+
+
+class AndDefinition(deque):
+    """
+    This class represent AST representation of (and expr1 expr2 ... expr n)
+    The 'and' operator could be implemented within the prelude (even implement via church encoding,
+    which is a test) however, for efficiency, it makes sense to define it as a special form.
+
+    Simply a list of expressions. Structural pattern matching in the evaluator is used to process
+    the expression  ( and ... ) to a True/False value.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def __str__(self):
+        buffer = StringIO()
+        buffer.write("(and ")
+        [buffer.write(str(x) + " ") for x in self]
+        buffer.write(")")
+        desc = buffer.getvalue()
+        buffer.close()
+
+        return desc
+
+    def __repr__(self):
+        """
+        Return __str__ (Lisp expression, so 'repr' in this context is correct).
+        """
+        return self.__str__()
+
+
+class OrDefinition(deque):
+    """
+    This class represent AST representation of (or expr1 expr2 ... expr n)
+    The 'or' operator could be implemented within the prelude (even implement via church encoding,
+    which is a test) however, for efficiency, it makes sense to define it as a special form.
+
+    Simply a list of expressions. Structural pattern matching in the evaluator is used to process
+    the expression  ( and ... ) to a True/False value.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def __str__(self):
+        buffer = StringIO()
+        buffer.write("(or ")
+        [buffer.write(str(x) + " ") for x in self]
+        buffer.write(")")
+        desc = buffer.getvalue()
+        buffer.close()
+
+        return desc
+
+    def __repr__(self):
+        """
+        Return __str__ (Lisp expression, so 'repr' in this context is correct).
+        """
+        return self.__str__()
+
 
 class Environment(dict):
     """

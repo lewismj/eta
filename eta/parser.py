@@ -4,7 +4,8 @@ Uses lark to define a simple Lisp style syntax.
 """
 from lark import Lark, Transformer, v_args
 from lark.visitors import VisitError
-from eta.types import Symbol, Expression, _quote, _quasi_quote, Lambda, Definition, IfExpression, EmptyEnvironment
+from eta.types import Symbol, Expression, _quote, _quasi_quote, Lambda, Definition, \
+    IfExpression, EmptyEnvironment, AndDefinition, OrDefinition
 
 grammar = r"""
     start:expression+
@@ -14,7 +15,9 @@ grammar = r"""
                 | "(" ("define" | "def") "(" variable ")" expression ")" -> define
                 | "(" "defun" "(" function_name formals ")" expression ")" -> defun
                 | "(" "lambda" "(" formals ")" expression ")" -> lambda_expression
-                | [quote] "(" value+ ")" -> expression
+                | "(" "and" expression+ ")" -> and_expression
+                | "(" "or" expression+ ")" -> or_expression
+                | [quote] "(" value* ")" -> expression
                 | "[" value+ "]" -> quoted_expression 
                 
                 
@@ -139,6 +142,18 @@ class AstTransformer(Transformer):
             raise VisitError("Lambda expression defining {} arguments, should be (formals) (body).".format(len(xs)))
 
     @staticmethod
+    def and_expression(xs):
+        definition = AndDefinition()
+        definition.extend(xs)
+        return definition
+
+    @staticmethod
+    def or_expression(xs):
+        definition = OrDefinition()
+        definition.extend(xs)
+        return definition
+
+    @staticmethod
     def expression(xs):
         if xs[0] in [_quote, _quasi_quote]:
             expression = Expression(xs[1:])
@@ -173,8 +188,3 @@ class AstTransformer(Transformer):
 
 
 parser = Lark(grammar, parser='lalr', transformer=AstTransformer())
-
-if __name__ == '__main__':
-    test = parser.parse("(+ 1 2)")
-    print(test)
-

@@ -4,8 +4,10 @@ A set of functions for evaluating an AST. By design we separate the evaluator fr
 the AST. Rather than have the eval functions as methods on the different node types.
 """
 
-from eta.types import Symbol, Expression, Definition, EmptyExpr, IfExpression, Lambda, LispError, Environment
+from eta.types import Symbol, Expression, Definition, EmptyExpr, IfExpression, \
+    Lambda, LispError, AndDefinition, OrDefinition
 from copy import deepcopy
+
 
 # n.b. Most of these methods would be improved by use of the
 # structured pattern matching (Python 3.10).
@@ -16,11 +18,15 @@ class EvaluationContext:
     The evaluation context is an instance that is used to set flags for evaluator.
     For example, trace the evaluation, etc.
     """
+
     def __init__(self):
         self.trace = False
 
 
 evaluation_context = EvaluationContext()
+
+
+def first(items, pred): return next((i for i in items if pred(i)), None)
 
 
 def evaluate(expr, env):
@@ -46,6 +52,12 @@ def evaluate(expr, env):
 
     if isinstance(expr, Definition):
         return eval_definition(expr, env)
+
+    if isinstance(expr, AndDefinition):
+        return eval_and_definition(expr, env)
+
+    if isinstance(expr, OrDefinition):
+        return eval_or_definition(expr, env)
 
     if isinstance(expr, IfExpression):
         return eval_if(expr, env)
@@ -148,18 +160,63 @@ def eval_lambda(lambda_fn, arguments, outer_env):
         return Lambda(formals, body, env)
 
 
-def eval_if(expr, env):
-    if evaluation_context.trace:
-        print(expr)
-
-    condition = evaluate(expr.clause, env)
+def eval_condition(expr, env):
+    condition = evaluate(expr, env)
 
     if isinstance(condition, LispError):
         return condition
 
+    if isinstance(condition, list):
+        lisp_error = first(condition, lambda x: isinstance(x, LispError))
+        if lisp_error:
+            return lisp_error
+
+    # This could be changed, but in general don't allow 'everything' to be
+    # casted to boolean automatically.
+    if isinstance(condition, (float, int, complex, str, list)):
+        condition = bool(condition)
+
     if not isinstance(condition, bool):
         return LispError("'If' expression clause did not evaluate to boolean.",
                          "{} evaluated to: {}".format(str(expr.clause), str(condition)))
+
+    return condition
+
+
+def eval_or_definition(expr, env):
+    if evaluation_context.trace:
+        print(expr)
+
+    or_expr = first(expr, lambda x: eval_condition(x, env))
+    if or_expr:
+        return True
+
+    return False
+
+
+def eval_and_definition(expr, env):
+    if evaluation_context.trace:
+        print(expr)
+
+    for sub_expr in expr:
+        condition = eval_condition(sub_expr, env)
+        if isinstance(condition, LispError):
+            return LispError
+        elif not condition:
+            return False
+
+    return True
+
+
+def eval_if(expr, env):
+    if evaluation_context.trace:
+        print(expr)
+
+    condition = eval_condition(expr.clause, env)
+
+    if isinstance(condition, LispError):
+        return condition
+
     if condition:
         return evaluate(expr.then_expr, env)
     else:
