@@ -6,6 +6,7 @@ should mostly be defined by the prelude (i.e. the language itself).
 Note, use term head, tail etc. rather than car, cdr. cons expressions are simply
 lists.
 """
+import math
 
 from eta.types import LispError, Symbol, Expression
 from eta.eval import evaluate, find, eval_if
@@ -158,7 +159,7 @@ def add(env, expr):
     return builtin_reduce(operator.add, expr)
 
 
-def minus(env, expr):
+def subtract(env, expr):
     return builtin_reduce(operator.sub, expr)
 
 
@@ -184,6 +185,25 @@ def ge(env, expr):
 
 def le(env, expr):
     return binary_function(env, expr, operator.le)
+
+
+def mod(env, expr):
+    return binary_function(env, expr, operator.mod)
+
+
+def power(env, expr):
+    return binary_function(env, expr, math.pow)
+
+
+def sqrt(env, expr):
+    if len(expr) == 1:
+        if isinstance(expr[0], (float, int)):
+            return math.sqrt(expr[0])
+        else:
+            return LispError("Runtime error, Function argument {}"
+                             " to 'sqrt' is not numeric type.".format(str(expr[0])))
+    else:
+        return LispError("Runtime error, Builtin function 'sqrt' does not reduce a list.")
 
 
 def error(env, expr):
@@ -220,7 +240,7 @@ def eval_quoted(env, expr):
 def add_builtins(env):
     import math
     env.add_binding(Symbol('+'), add)
-    env.add_binding(Symbol('-'), minus)
+    env.add_binding(Symbol('-'), subtract)
     env.add_binding(Symbol('*'), multiply)
     env.add_binding(Symbol('/'), divide)
     env.add_binding(Symbol("error"), error)
@@ -229,11 +249,14 @@ def add_builtins(env):
     env.add_binding(Symbol("_pi"), math.pi)
     env.add_binding(Symbol("_tau"), math.tau)
     env.add_binding(Symbol("_e"), math.e)
+    env.add_binding(Symbol("^"), power)
+    env.add_binding(Symbol("sqrt"), sqrt)
     env.add_binding(Symbol("<"), lt)
     env.add_binding(Symbol(">"), gt)
     env.add_binding(Symbol(">="), ge)
     env.add_binding(Symbol("<="), le)
     env.add_binding(Symbol("=="), equals)
+    env.add_binding(Symbol("%"), mod)
     env.add_binding(Symbol("!="), not_equals)
     env.add_binding(Symbol("head"), head)
     env.add_binding(Symbol("tail"), tail)

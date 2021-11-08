@@ -39,7 +39,7 @@ grammar = r"""
     // evaluator, here we can just parse -ve numbers before they reach the eval.
     // i.e. have token (-x) rather than op(*,-1,x).
     
-    SYMBOL: NAME | "+" " " | "-" " "  | "*" | "/" | "<" | ">" | ">=" | "<=" | "==" | "="  
+    SYMBOL: NAME | "+" " " | "-" " "  | "*" | "/" | "<" | ">" | ">=" | "<=" | "==" | "="  | "%" | "^" 
     !number:  ["-"] NUMBER | ["+"] NUMBER
 
     formals: symbol+ -> formals
