@@ -260,6 +260,9 @@ def load_file(env, expr):
 
 
 def environment(env, expr):
+    """
+    Display the contents of an environment.
+    """
     if env:
         expression = Expression(env.keys())
         expression.quote()
@@ -267,7 +270,6 @@ def environment(env, expr):
 
 
 def add_builtins(env):
-    import math
     env.add_binding(Symbol('+'), add)
     env.add_binding(Symbol('-'), subtract)
     env.add_binding(Symbol('*'), multiply)
@@ -275,9 +277,6 @@ def add_builtins(env):
     env.add_binding(Symbol("error"), error)
     env.add_binding(Symbol("max"), maximum)
     env.add_binding(Symbol("min"), minimum)
-    env.add_binding(Symbol("_pi"), math.pi)
-    env.add_binding(Symbol("_tau"), math.tau)
-    env.add_binding(Symbol("_e"), math.e)
     env.add_binding(Symbol("^"), power)
     env.add_binding(Symbol("sqrt"), sqrt)
     env.add_binding(Symbol("<"), lt)
@@ -293,5 +292,5 @@ def add_builtins(env):
     env.add_binding(Symbol("list"), cons)
     env.add_binding(Symbol("eval"), eval_quoted)
     env.add_binding(Symbol("load"), load_file)
-    env.add_binding(Symbol("env"), environment)
+    env.add_binding(Symbol("show"), environment)
 

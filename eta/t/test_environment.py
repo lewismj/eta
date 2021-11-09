@@ -39,7 +39,7 @@ class EnvironmentTest(unittest.TestCase):
 
 
 def make_suite():
-    return unittest.makeSuite(EnvironmentTest, 'testEnvironment')
+    return unittest.makeSuite(EnvironmentTest, 'Environment test')
 
 
 if __name__ == '__main__':

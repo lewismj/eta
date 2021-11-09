@@ -43,7 +43,7 @@ class EvaluatorTest(unittest.TestCase):
 
 
 def make_suite():
-    return unittest.makeSuite(EvaluatorTest, 'testEvaluator')
+    return unittest.makeSuite(EvaluatorTest, 'Evaluator test')
 
 
 if __name__ == '__main__':

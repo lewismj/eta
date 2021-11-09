@@ -34,7 +34,7 @@ class ParserTest(unittest.TestCase):
 
 
 def make_suite():
-    return unittest.makeSuite(ParserTest, 'testParser')
+    return unittest.makeSuite(ParserTest, 'Parser test')
 
 
 if __name__ == '__main__':

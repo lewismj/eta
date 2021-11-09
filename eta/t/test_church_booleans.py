@@ -1,9 +1,9 @@
 """
-Test that we can correct encode the Church Booleans.
+Test that we can correctly encode the Church Booleans.
 """
 
 import unittest
-from eta.types import Environment, Symbol, Expression, EtaError
+from eta.types import Environment
 from eta.builtins import add_builtins
 from eta.parser import parser
 from eta.eval import evaluate
@@ -39,7 +39,7 @@ class ChurchBooleansTest(unittest.TestCase):
 
 
 def make_suite():
-    return unittest.makeSuite(ChurchBooleansTest, 'testEnvironment')
+    return unittest.makeSuite(ChurchBooleansTest, 'Church Boolean test')
 
 
 if __name__ == '__main__':

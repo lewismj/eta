@@ -44,7 +44,6 @@ grammar = r"""
     normal_quote:"'" -> const_quote 
     quasi_quote: "`" -> const_quasi
 
-    
     ?value: symbol | number | expression | boolean | string 
     symbol: SYMBOL -> symbol_def
     
