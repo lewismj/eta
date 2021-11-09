@@ -8,8 +8,23 @@ from eta.types import Symbol, Expression, _quote, _quasi_quote, Lambda, Definiti
     IfExpression, EmptyEnvironment, AndDefinition, OrDefinition
 
 
+# Definition of basic grammar.
+# Note:
+# 1. We only -really- need "(" expression* ")" as rule.
+# 2. For example, all the list operators, 'head', 'tail', and utility functions like 'load'
+#    are regular (if builtin) functions and obviously don't have their own grammar rules.
+# 3. The purpose of having 'special forms' , namely , 'if', 'define' etc. under '?expression'
+#    is so that we can perform syntax check during parse and create AST node that would
+#    allow for a faster evaluation. i.e. Simplify and speed up the interpreter.
+# 4. I may experiment and start removing grammar rules and just implement them as regular functions,
+#    if there isn't too much of a performance hit.
+
 grammar = r"""
     start:expression+
+    
+    //  However, trade off - treating these as special forms and parsing them via grammar,
+    //  allows for syntax check during parse and AST nodes to built that allow simplified 
+    //  evaluation.
     
     ?expression:  "(" "if"  expression  expression expression ")" -> if_expression
                 | "(" ("define" | "def") variable expression ")" -> define
@@ -20,7 +35,6 @@ grammar = r"""
                 | "(" "or" expression+ ")" -> or_expression
                 | "(" "let"  let_body+  ")" -> let_expression 
                 | [quote] "(" value* ")" -> expression
-                | "[" value+ "]" -> quoted_expression 
                 
                 
     let_body: "(" variable let_value ")" | "(" variable expression ")"
@@ -39,7 +53,7 @@ grammar = r"""
     // evaluator, here we can just parse -ve numbers before they reach the eval.
     // i.e. have token (-x) rather than op(*,-1,x).
     
-    SYMBOL: NAME | "+" " " | "-" " "  | "*" | "/" | "<" | ">" | ">=" | "<=" | "==" | "="  | "%" | "^" 
+    SYMBOL: NAME | "+" " " | "-" " "  | "*" | "/" | "<" | ">" | ">=" | "<=" | "==" | "="  | "%" | "^" | "!=" 
     !number:  ["-"] NUMBER | ["+"] NUMBER
 
     formals: symbol+ -> formals
@@ -189,12 +203,6 @@ class AstTransformer(Transformer):
             return expression
         else:
             return Expression(xs)
-
-    @staticmethod
-    def quoted_expression(xs):
-        expression = Expression(xs)
-        expression.quote()
-        return expression
 
     @staticmethod
     def to_number(s):

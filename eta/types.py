@@ -11,7 +11,7 @@ _quote = "'"
 _quasi_quote = "`"
 
 
-class LispError(Exception):
+class EtaError(Exception):
     """
     The LispError is a type that represents any error that may be generated when evaluating a Lisp expression.
 
@@ -64,7 +64,9 @@ class Expression(deque):
     Expression is a type of list, each element in the list is essentially a 'cell' in Lisp terms.
     """
 
-    def __init__(self, values=[]):
+    def __init__(self, values=None):
+        if not values:
+            values = []
         super().__init__(values)
         self.kind = QuoteType.NoQuote
 
@@ -321,7 +323,7 @@ class Environment(dict):
             self[sym] = val
         else:
             # Throw this as an exception since it should never happen.
-            raise LispError("Trying to bind value to non Symbol type.")
+            raise EtaError("Trying to bind value to non Symbol type.")
 
     def lookup_binding(self, sym):
         """
@@ -334,7 +336,7 @@ class Environment(dict):
             return self[str(sym)]
         except KeyError:
             if self.outer is None:
-                return LispError("Runtime error, unbound symbol: " + sym)
+                return EtaError("Runtime error, unbound symbol: " + sym)
             else:
                 return self.outer.lookup_binding(sym)
 

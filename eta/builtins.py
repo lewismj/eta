@@ -8,11 +8,12 @@ lists.
 """
 import math
 
-from eta.types import LispError, Symbol, Expression
-from eta.eval import evaluate, find, eval_if
+import eta
+from eta.types import EtaError, Symbol, Expression
+from eta.eval import evaluate, find, empty_expr
+from eta.parser import parser
 from functools import reduce
 import operator
-
 
 # Notes on builtins:
 #   Builtins should generally be as few functions as possible:
@@ -20,7 +21,7 @@ import operator
 #          language defined by a prelude in the language itself.
 #       2. We could just implement SKI :) But the builtins should be a practical minima of
 #          functions to enable a prelude.
-#   As an example, many simple math functions could be defined by a prelude; however it
+#   As an example, many simple math functions could be defined by a prelude; howenver it
 #   make sense to build-in (since they are available) common ones, thus avoid interpreter
 #   cost.
 
@@ -32,43 +33,43 @@ def builtin_reduce(op, expr):
     Basic numeric expressions are of the form (+ values... ) so we always reduce.
     Rather than treat, e.g. '+' as a repeated operation of operator.add functions.
     """
-    lisp_error = find(expr, lambda x: isinstance(x, LispError))
+    lisp_error = find(expr, lambda x: isinstance(x, EtaError))
     if lisp_error:
         return lisp_error
 
     try:
         return reduce(op, expr)
     except Exception as ex:
-        return LispError(ex)
+        return EtaError(ex)
 
 
 def unary_function(expr, func):
     """
 
     """
-    lisp_error = find(expr, lambda x: isinstance(x, LispError))
+    lisp_error = find(expr, lambda x: isinstance(x, EtaError))
     if lisp_error:
         return lisp_error
 
     try:
         return func(expr)
     except Exception as ex:
-        return LispError(ex)
+        return EtaError(ex)
 
 
 def binary_function(env, expr, function):
     """
 
     """
-    lisp_error = find(expr, lambda x: isinstance(x, LispError))
+    lisp_error = find(expr, lambda x: isinstance(x, EtaError))
     if lisp_error:
         return lisp_error
 
     if len(expr) == 2:
         return function(expr[0], expr[1])
     else:
-        return LispError("Comparison defining {} arguments."
-                         " Expected two arguments".format(len(expr)))
+        return EtaError("Comparison defining {} arguments."
+                        " Expected two arguments".format(len(expr)))
 
 
 def is_equal(e1, e2):
@@ -111,8 +112,8 @@ def head(env, expr):
         expression.quote()
         return expression
     else:
-        return LispError("Function passed {} arguments. "
-                         " head function expects a single list as an argument.".format(len(expr)))
+        return EtaError("Function passed {} arguments. "
+                        " head function expects a single list as an argument.".format(len(expr)))
 
 
 def tail(env, expr):
@@ -122,8 +123,8 @@ def tail(env, expr):
         tail_expr.quote()
         return tail_expr
     else:
-        return LispError("Function passed {} arguments. "
-                         " tail function expects a single list as an argument.".format(len(expr)))
+        return EtaError("Function passed {} arguments. "
+                        " tail function expects a single list as an argument.".format(len(expr)))
 
 
 def join(env, expr):
@@ -142,8 +143,9 @@ def join(env, expr):
                 expression.append(sub_expr)
         return expression
 
+
 # Notes)
-# 1) Why define individual functions, rather than use (lambda ev, ex: builtin_reduce ... ) ?
+# 1) Why define individual functions, rather than use (lambda env, ex: builtin_reduce ... ) ?
 #
 # We lose the function name, when tracing the evaluation, which can be useful for debugging,
 # within a repl environment.
@@ -200,17 +202,17 @@ def sqrt(env, expr):
         if isinstance(expr[0], (float, int)):
             return math.sqrt(expr[0])
         else:
-            return LispError("Runtime error, Function argument {}"
-                             " to 'sqrt' is not numeric type.".format(str(expr[0])))
+            return EtaError("Runtime error, Function argument {}"
+                            " to 'sqrt' is not numeric type.".format(str(expr[0])))
     else:
-        return LispError("Runtime error, Builtin function 'sqrt' does not reduce a list.")
+        return EtaError("Runtime error, Builtin function 'sqrt' does not reduce a list.")
 
 
 def error(env, expr):
     if len(expr) == 1:
-        return LispError("Runtime error, {}".format(str(expr[0])))
+        return EtaError("Runtime error, {}".format(str(expr[0])))
     else:
-        return LispError("Runtime error, {}".format(str(expr)))
+        return EtaError("Runtime error, {}".format(str(expr)))
 
 
 def maximum(env, expr):
@@ -235,6 +237,33 @@ def eval_quoted(env, expr):
         return xs[0]
     else:
         return xs
+
+
+def load_file(env, expr):
+    if eta.evaluation_context:
+        print(str(expr))
+
+    if len(expr) > 1:
+        return EtaError("Function supplied {} arguments ,"
+                        "'load' function expects a single filename argument.".format(len(expr)))
+    else:
+        if isinstance(expr[0], str):
+            try:
+                with open(expr[0], 'r') as file:
+                    content = file.read()
+                    ast = parser.parse(content)
+                    return list(filter(lambda x: not empty_expr(x), [evaluate(node, env) for node in ast]))
+            except Exception as ex:
+                return EtaError(ex)
+        else:
+            return EtaError("Load function expects argument \"filename\", received: {}".format(expr[0]))
+
+
+def environment(env, expr):
+    if env:
+        expression = Expression(env.keys())
+        expression.quote()
+        return expression
 
 
 def add_builtins(env):
@@ -263,3 +292,6 @@ def add_builtins(env):
     env.add_binding(Symbol("join"), join)
     env.add_binding(Symbol("list"), cons)
     env.add_binding(Symbol("eval"), eval_quoted)
+    env.add_binding(Symbol("load"), load_file)
+    env.add_binding(Symbol("env"), environment)
+

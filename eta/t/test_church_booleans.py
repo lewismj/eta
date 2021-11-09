@@ -3,7 +3,7 @@ Test that we can correct encode the Church Booleans.
 """
 
 import unittest
-from eta.types import Environment, Symbol, Expression, LispError
+from eta.types import Environment, Symbol, Expression, EtaError
 from eta.builtins import add_builtins
 from eta.parser import parser
 from eta.eval import evaluate

@@ -5,7 +5,7 @@ the AST. Rather than have the eval functions as methods on the different node ty
 """
 
 from eta.types import Symbol, Expression, Definition, EmptyExpr, IfExpression, \
-    Lambda, LispError, AndDefinition, OrDefinition, QuoteType
+    Lambda, EtaError, AndDefinition, OrDefinition, QuoteType
 from copy import deepcopy
 
 
@@ -18,6 +18,7 @@ class EvaluationContext:
     The evaluation context is an instance that is used to set flags for evaluator.
     For example, trace the evaluation, etc.
     """
+
     def __init__(self):
         self.trace = False
 
@@ -82,7 +83,20 @@ def eval_s_expr(expr, env):
         return expr
 
     if len(expr) == 1:
-        return evaluate(expr[0], env)
+        result = evaluate(expr[0], env)
+        # Handle the case where s-expression is of the form (symbol)
+        # And symbol is a built-in function that takes no args.
+        # It should be defined via 'define' rather than a function. However,
+        # support it here, as we may want some of these functions to work without
+        # prelude? (see definition of env in builtin).
+        # User defined functions are just Lambda, that can be partially applied;
+        # no handling required here.
+        if callable(result):
+            if evaluation_context.trace:
+                print("builtin:{}".format(result.__name__))
+            return result(env, Expression([]))
+        else:
+            return result
 
     # Filter out EmptyExpr, which is success of 'define'.
     expr = list(filter(lambda x: not empty_expr(x), map(lambda x: evaluate(x, env), expr)))
@@ -110,14 +124,6 @@ def eval_s_expr(expr, env):
         return EmptyExpr
 
 
-def eval_definition(expr, env):
-    if evaluation_context.trace:
-        print(expr)
-    value = evaluate(expr.value, env)
-    env.add_binding(expr.symbol, value)
-    return EmptyExpr
-
-
 def eval_lambda(lambda_fn, arguments, outer_env):
     """
     Evaluate a lambda expression.
@@ -131,8 +137,10 @@ def eval_lambda(lambda_fn, arguments, outer_env):
     # It is ok to supply too few parameters (i.e. partially apply the function, but
     # return an error if too many arguments are supplied.
     if n_args > n_formals:
-        return LispError("Lambda function supplied too many arguments: {}, ".format(n_args)
-                         + str(lambda_fn) + " Expected {} arguments.".format(n_formals))
+        return EtaError("Lambda function supplied too many arguments: {}, ".format(n_args)
+                        + str(lambda_fn) + " Expected {} arguments.".format(n_formals))
+
+    # todo; could be extended to support a varargs syntax x & xs etc?
 
     # Create an environment to evaluate the lambda.
     # For each formal (Argument) specified, place that argument into the environment.
@@ -161,12 +169,27 @@ def eval_lambda(lambda_fn, arguments, outer_env):
         formal = formals.pop(0)
         env.add_binding(formal, argument)
 
+    # If all the arguments were supplied, return the evaluation of the function.
+    # If not, return a Lambda; that is the partially applied function.
+    # (Essentially a Lambda, with same body but any argument supplied is added
+    #  to the lambda environment and removed from the list of expected arguments).
     if len(formals) == 0:
-        # Arguments full specified, lambda can be evaluated.
         return evaluate(body, env)
     else:
-        # Return partially applied function as new Lambda instance.
         return Lambda(formals, body, env)
+
+#
+# Special forms.
+#  Handle these directly, though they could be implemented as built-in functions,
+#  with their grammar rules removed form the parser.
+
+
+def eval_definition(expr, env):
+    if evaluation_context.trace:
+        print(expr)
+    value = evaluate(expr.value, env)
+    env.add_binding(expr.symbol, value)
+    return EmptyExpr
 
 
 def eval_condition(expr, env):
@@ -175,16 +198,16 @@ def eval_condition(expr, env):
 
     condition = evaluate(expr, env)
 
-    if isinstance(condition, LispError):
+    if isinstance(condition, EtaError):
         return condition
 
     if isinstance(condition, list):
-        lisp_error = find(condition, lambda x: isinstance(x, LispError))
+        lisp_error = find(condition, lambda x: isinstance(x, EtaError))
         if lisp_error:
             return lisp_error
         else:
-            return LispError("Invalid 'if' condition: {}"
-                             " Could not reduce to boolean.".format(str(condition)))
+            return EtaError("Invalid 'if' condition: {}"
+                            " Could not reduce to boolean.".format(str(condition)))
 
     # This could be changed, but in general don't allow 'everything' to be
     # casted to boolean automatically.
@@ -192,7 +215,7 @@ def eval_condition(expr, env):
         condition = bool(condition)
 
     if not isinstance(condition, bool):
-        return LispError("'If' expression clause {} did not evaluate to boolean.".format(str(condition)))
+        return EtaError("'If' expression clause {} did not evaluate to boolean.".format(str(condition)))
 
     return condition
 
@@ -214,8 +237,8 @@ def eval_and_definition(expr, env):
 
     for sub_expr in expr:
         condition = eval_condition(sub_expr, env)
-        if isinstance(condition, LispError):
-            return LispError
+        if isinstance(condition, EtaError):
+            return EtaError
         elif not condition:
             return False
 
@@ -228,7 +251,7 @@ def eval_if(expr, env):
 
     condition = eval_condition(expr.clause, env)
 
-    if isinstance(condition, LispError):
+    if isinstance(condition, EtaError):
         return condition
 
     if condition:

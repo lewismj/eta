@@ -2,7 +2,7 @@
 Basic unit tests for the environment class.
 """
 import unittest
-from eta.types import Environment, Symbol, Expression, LispError
+from eta.types import Environment, Symbol, Expression, EtaError
 
 
 class EnvironmentTest(unittest.TestCase):
@@ -35,7 +35,7 @@ class EnvironmentTest(unittest.TestCase):
 
     def test_unbound_symbol(self):
         val = self.local_env.lookup_binding('z')
-        self.assertIsInstance(val, LispError)
+        self.assertIsInstance(val, EtaError)
 
 
 def make_suite():
