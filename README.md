@@ -23,7 +23,14 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 4. Arguments are evaluated using ‘map’ in the ‘eval’ function, this could be parallelised.
 
 #### REPL
-The toolbar shows which editing mode is preferred (use F1 to toggle). Similarly, the function tracing can be toggled using F2.
+
+- Control-D, to exit the REPL.
+- Esc-Enter, to run command(s).
+- F-1 to toggle edit mode (vi/emacs)
+- F-2 to toggle trace mode.
+- Up/Down arrow keys to search through history.
+- Tab for builtin function name completion.
+- 'show' to disable the content of the environment.
 
 ![](https://github.com/lewismj/eta/blob/main/docs/resources/repl.3.png)
 
