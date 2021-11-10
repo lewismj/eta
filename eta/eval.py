@@ -5,7 +5,7 @@ the AST. Rather than have the eval functions as methods on the different node ty
 """
 
 from eta.types import Symbol, Expression, Definition, EmptyExpr, IfExpression, \
-    Lambda, EtaError, AndDefinition, OrDefinition, QuoteType
+    Lambda, EtaError, AndDefinition, OrDefinition, QuoteType, Environment
 from copy import deepcopy
 
 # n.b. Most of these methods would be improved by use of the

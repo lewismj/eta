@@ -41,14 +41,6 @@ class EvaluatorTest(unittest.TestCase):
         ast = parser.parse("(+ -1 -2)")
         self.assertEqual(-3, evaluate(ast, self.env))
 
-    def test_recur_limit(self):
-        ast = parser.parse("(defun (fact n) (if (== n 1) (1) (* n ( fact (- n 1)))))")
-        evaluate(ast, self.env)
-        ast = parser.parse("(fact 200)")
-        from trampoline import trampoline
-        trampoline(evaluate(ast, self.env))
-        self.assertTrue(True)
-
 
 def make_suite():
     return unittest.makeSuite(EvaluatorTest, 'Evaluator test')
