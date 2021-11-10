@@ -34,6 +34,16 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 
 ![](https://github.com/lewismj/eta/blob/main/docs/resources/repl.3.png)
 
+To start the REPL and load the prelude:
+```lisp
+(eta) lewismj@waiheke eta % python -m eta.repl
+eta> load "./eta/prelude/prelude.lsp"
+.....
+['./eta/prelude/prelude.lsp']
+[]
+eta>
+```
+
 #### Examples
 ```lisp
 eta> defun (add x y) (+ x y)
