@@ -18,6 +18,7 @@ class EtaError(Exception):
     Since we are using Python to interpret (i.e. evaluator is using Python constructs and not a stack machine
     written in Python) we lift any Python exceptions into instances of LispError.
     """
+
     def __init__(self, message=None):
         super().__init__(message)
 
@@ -223,6 +224,7 @@ class IfExpression:
         """
         return self.__str__()
 
+
 # note, if And/Or, change to 'list' rather than 'deque' the instance
 # type check would need to be re-ordered to test for And/Or first,
 # otherwise it would evaluate all arguments. Alternatively, And/Or could
@@ -238,6 +240,7 @@ class AndDefinition(deque):
     Simply a list of expressions. Structural pattern matching in the evaluator is used to process
     the expression  ( and ... ) to a True/False value.
     """
+
     def __init__(self):
         super().__init__()
 
@@ -267,6 +270,7 @@ class OrDefinition(deque):
     Simply a list of expressions. Structural pattern matching in the evaluator is used to process
     the expression  ( and ... ) to a True/False value.
     """
+
     def __init__(self):
         super().__init__()
 
@@ -332,13 +336,15 @@ class Environment(dict):
         :param sym: the symbol to lookup.
         :return: the corresponding value, or LispError itself, if the value could not be found.
         """
-        try:
-            return self[str(sym)]
-        except KeyError:
-            if self.outer is None:
-                return EtaError("Runtime error, unbound symbol: " + sym)
+        current = self
+        key = str(sym)
+        while True:
+            if key in current:
+                return current[key]
+            elif current.outer:
+                current = current.outer
             else:
-                return self.outer.lookup_binding(sym)
+                return EtaError("Runtime error, unbound symbol: " + sym)
 
 
 EmptyEnvironment = Environment()

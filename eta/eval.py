@@ -8,7 +8,6 @@ from eta.types import Symbol, Expression, Definition, EmptyExpr, IfExpression, \
     Lambda, EtaError, AndDefinition, OrDefinition, QuoteType
 from copy import deepcopy
 
-
 # n.b. Most of these methods would be improved by use of the
 # structured pattern matching (Python 3.10).
 

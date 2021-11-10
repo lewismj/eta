@@ -21,7 +21,7 @@ import operator
 #          language defined by a prelude in the language itself.
 #       2. We could just implement SKI :) But the builtins should be a practical minima of
 #          functions to enable a prelude.
-#   As an example, many simple math functions could be defined by a prelude; howenver it
+#   As an example, many simple math functions could be defined by a prelude; however it
 #   make sense to build-in (since they are available) common ones, thus avoid interpreter
 #   cost.
 

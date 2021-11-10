@@ -71,5 +71,3 @@
 
 (defun (odd n) (if (== 0 (% n 2)) (#f) (#t)))
 (defun (even n) (not (odd n)))
-
-
