@@ -19,6 +19,8 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 #### REPL
 The toolbar shows which editing mode is preferred (use F1 to toggle). Similarly, the function tracing can be toggled using F2.
 
+![][image-1]
+
 #### Examples
 ```lisp
 eta> defun (add x y) (+ x y)
@@ -208,7 +210,4 @@ eta> ; Note, and/or are provided as special forms.
 eta>
 ```
 
-
-
-
-
+[image-1]: https://github.com/lewismj/eta/blob/main/docs/resources/repl.3.png
