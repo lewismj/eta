@@ -132,3 +132,4 @@ dmypy.json
 .idea
 # Ulysses
 .Ulysses-Settings.plist
+.Ulysses*

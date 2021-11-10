@@ -6,7 +6,7 @@ setup(name='eta',
       author="Michael Lewis",
       author_email="lewismj@mac.com",
       url="https://github.com/lewismj/eta",
-      package_dir =  {'eta': 'src'},
+      package_dir =  {'eta': 'eta'},
       packages = ['eta'],
       license="BSD License",
       )
