@@ -27,7 +27,7 @@ eta>; to show the definition of the function, enter its name.
 eta> add
 .....
 (λ (x y) (+ x y))
-eta> ; This should that a function defined by 'defun' is just a named Lambda. 
+eta> ; This shows that a function is just a named Lambda. 
 eta> add 2 3
 .....
 5
