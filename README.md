@@ -16,10 +16,16 @@ which the language can be defined via a Lisp like prelude.
 
 In essence, the interpreter should be a λ-calculus engine with the functionality of the language largely implemented by the prelude.
 
+#### Todo
+1. Use some trampoline package (if available) to optimise tail calls in the ‘eval’ functions.
+2. Support variable arguments to functions (should be simple, i.e. allow `x & xs` syntax and bind the `xs` to the list of arguments).
+3. Add support for macro expansion. For some efficiency, the common expansion `defun (fun x y) (body) -> define (fun) (lambda (x y) (body)` and others are supported by a ‘special form’ (via Parser rules).
+4. Arguments are evaluated using ‘map’ in the ‘eval’ function, this could be parallelised.
+
 #### REPL
 The toolbar shows which editing mode is preferred (use F1 to toggle). Similarly, the function tracing can be toggled using F2.
 
-![][image-1]
+![](https://github.com/lewismj/eta/blob/main/docs/resources/repl.3.png)
 
 #### Examples
 ```lisp
@@ -209,5 +215,3 @@ eta> ; Note, and/or are provided as special forms.
 [1, [True, True, True, False], [True, False, False, False]]
 eta>
 ```
-
-[image-1]: https://github.com/lewismj/eta/blob/main/docs/resources/repl.3.png
