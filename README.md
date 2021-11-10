@@ -4,7 +4,7 @@
 This project implements a simple Lisp interpreter using Python.
 A subset of the language is implemented. 
 
-- Higher order, partially applied & Lambda functions are supported and a simple prelude is included.
+- Higher order, partially applied & Lambda functions are supported and a simple prelude (A ‘prelude’ is a very basic ‘standard library’ implemented via the core language builtin functions). 
 - An Interpreter can be used within Python packages.
 - A ‘REPL’ is provided that supports vi or emacs edit mode, multi-line editing, history (tab completion) and tracing function calls. 
 	- The ‘show’ command can be used to display the functions defined in your environment.
@@ -17,10 +17,10 @@ which the language can be defined via a Lisp like prelude.
 In essence, the interpreter should be a λ-calculus engine with the functionality of the language largely implemented by the prelude.
 
 #### Todo
-1. Use some trampoline package (if available) to optimise tail calls in the ‘eval’ functions.
-2. Support variable arguments to functions (should be simple, i.e. allow `x & xs` syntax and bind the `xs` to the list of arguments).
-3. Add support for macro expansion. For some efficiency, the common expansion `defun (fun x y) (body) -> define (fun) (lambda (x y) (body)` and others are supported by a ‘special form’ (via Parser rules).
-4. Arguments are evaluated using ‘map’ in the ‘eval’ function, this could be parallelised.
+1. Use a trampoline package to optimise tail calls in the ‘eval’ functions.
+2. Support variable arguments to functions. The implementation should be simple. Parsing should allow function arguments using `x & xs` syntax. Evaluation should bind `xs` to the list of arguments).
+3. Common expansions, e.g. `defun (fun x y) (body) -> define (fun) (lambda (x y) (body)`  are supported currently as ‘special forms’. That is, we have parse rules that will construct AST nodes that can be easily traversed by the ‘evaluation’. This saves some checking at run-time.  Generic macro expansion is something that could be added.
+4. Arguments are evaluated using ‘map’ in the ‘eval’ function. This could be parallelised.
 
 #### repl
 - Control-D, to exit the REPL.
@@ -45,18 +45,19 @@ eta>
 
 #### Within Python
 ```python
-	from eta.interpreter import Interpreter
-	interpreter = Interpreter()
+from eta.interpreter import Interpreter
+
+if __name__ == '__main__':
+    interpreter = Interpreter()
 
     expression = """
-            (define (xs) '(45 12 99 -45 2 17 1))
-            ; sort will return a Lisp list, i.e. '( n1, n2, ... )
-            ; eval will convert to a Python list. 
-            eval (sort (xs)) 
-        """
-
+    (define (xs) '(45 12 99 -45 2 17 1))
+    ; sort will return a Lisp list, i.e. '( n1, n2, ... )
+    ; eval will convert to a Python list.
+    eval (sort (xs))
+    """
     result = interpreter.execute(expression)
-    expected = [-45, 1, 2, 12, 17, 45, 99]
+    print(result)
 ```
 
 #### Examples
