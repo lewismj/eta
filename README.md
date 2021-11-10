@@ -22,8 +22,7 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 3. Add support for macro expansion. For some efficiency, the common expansion `defun (fun x y) (body) -> define (fun) (lambda (x y) (body)` and others are supported by a ‘special form’ (via Parser rules).
 4. Arguments are evaluated using ‘map’ in the ‘eval’ function, this could be parallelised.
 
-#### REPL
-
+#### repl
 - Control-D, to exit the REPL.
 - Esc-Enter, to run command(s).
 - F-1 to toggle edit mode (vi/emacs)
@@ -42,6 +41,22 @@ eta> load "./eta/prelude/prelude.lsp"
 ['./eta/prelude/prelude.lsp']
 []
 eta>
+```
+
+#### Within Python
+```python
+	from eta.interpreter import Interpreter
+	interpreter = Interpreter()
+
+    expression = """
+            (define (xs) '(45 12 99 -45 2 17 1))
+            ; sort will return a Lisp list, i.e. '( n1, n2, ... )
+            ; eval will convert to a Python list. 
+            eval (sort (xs)) 
+        """
+
+    result = interpreter.execute(expression)
+    expected = [-45, 1, 2, 12, 17, 45, 99]
 ```
 
 #### Examples
