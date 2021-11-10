@@ -5,7 +5,7 @@ A minimal prelude is defined.
 
 from eta.builtins import add_builtins
 from eta.parser import parser
-from eta.types import Environment
+from eta.types import Environment, Symbol
 from eta.eval import evaluate
 
 
@@ -105,4 +105,10 @@ class Interpreter:
                 return result
         except Exception as ex:
             return str(ex)
+
+    # Experiment with function interface, so that wrapped Python function
+    # can be added.
+
+    def add_binding(self, name, function):
+        self.env.add_binding(Symbol(name), function)
 

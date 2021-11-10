@@ -5,7 +5,7 @@ This project implements a simple Lisp interpreter using Python.
 A subset of the language is implemented. 
 
 - Higher order, partially applied & Lambda functions are supported and a simple prelude (A ‘prelude’ is a very basic ‘standard library’ implemented via the core language builtin functions). 
-- An Interpreter can be used within Python packages.
+- An Interpreter can be used within Python packages. See the end of this page for an example on how to make a Python function callable from the ‘Lisp’ interpreter.
 - A ‘REPL’ is provided that supports vi or emacs edit mode, multi-line editing, history (tab completion) and tracing function calls. 
 	- The ‘show’ command can be used to display the functions defined in your environment.
 	- Meta-Enter (vi mode Esc-Enter) is used to evaluate in the REPL, as 
@@ -247,4 +247,25 @@ eta> ; Note, and/or are provided as special forms.
 .....)
 [1, [True, True, True, False], [True, False, False, False]]
 eta>
+```
+
+#### Making existing Python functions callable from the ‘Lisp’
+
+```python
+def my_function(a, b, c):
+    return a*b*c
+
+
+# Some work on the eval/calling mechanism could probably remove
+# the requirement to define a wrapper function.
+def my_wrapper(env, expr):
+    return my_function(expr[0], expr[1], expr[2])
+
+
+if __name__ == '__main__':
+    interpreter = Interpreter()
+    interpreter.add_binding("add3", my_wrapper)
+    result = interpreter.execute("add3 (+ 1 1) (+ 2 2) (+ 3 3)")
+    print(result)
+
 ```
