@@ -237,7 +237,7 @@ def eval_and_definition(expr, env):
     for sub_expr in expr:
         condition = eval_condition(sub_expr, env)
         if isinstance(condition, EtaError):
-            return EtaError
+            return condition
         elif not condition:
             return False
 
