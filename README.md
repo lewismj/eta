@@ -5,7 +5,9 @@ This project implements a simple Lisp interpreter using Python.
 A subset of the language is implemented. 
 
 - Higher order, partially applied & Lambda functions are supported and a simple prelude (A ‘prelude’ is a very basic ‘standard library’ implemented via the core language builtin functions). 
+
 - An Interpreter can be used within Python packages. See the end of this page for an example on how to make a Python function callable from the ‘Lisp’ interpreter.
+
 - A ‘REPL’ is provided that supports vi or emacs edit mode, multi-line editing, history (tab completion) and tracing function calls. 
 	- The ‘show’ command can be used to display the functions defined in your environment.
 	- Meta-Enter (vi mode Esc-Enter) is used to evaluate in the REPL, as 
@@ -249,7 +251,7 @@ eta> ; Note, and/or are provided as special forms.
 eta>
 ```
 
-#### Making existing Python functions callable from the ‘Lisp’
+#### Making existing Python functions callable from the ‘Lisp’ …
 
 ```python
 def my_function(a, b, c):
@@ -264,8 +266,47 @@ def my_wrapper(env, expr):
 
 if __name__ == '__main__':
     interpreter = Interpreter()
-    interpreter.add_binding("add3", my_wrapper)
-    result = interpreter.execute("add3 (+ 1 1) (+ 2 2) (+ 3 3)")
+    interpreter.add_binding("fn3", my_wrapper)
+    result = interpreter.execute("fn3 (+ 1 1) (+ 2 2) (+ 3 3)")
     print(result)
 
+```
+
+In this example, I use [Ray](https://www.ray.io) to define a wrapper function that will remotely execute the Python code when invoked by the Interpreter.
+
+This is something that could be utilised within the project itself, to have remote execution as a switch (via the *execution context*). Allow function to be run remotely or locally.
+
+```python
+import ray
+from eta.interpreter import Interpreter
+from eta.types import Environment
+
+@ray.remote
+def my_function(p, q, r):
+    return p*q*r 
+
+
+# Some work on the eval/calling mechanism could probably remove
+# the requirement to define a wrapper function.
+
+def my_ray_wrapper(env, expr):
+    future = my_function.remote(expr[0], expr[1], expr[2])
+    return ray.get(future)
+
+
+def my_other_wrapper(env, expr):
+    return my_function(expr[0], expr[1], expr[2])
+
+
+
+if __name__ == '__main__':
+    interpreter = Interpreter()
+
+    # Choose at runtime what wrapper to use....
+    interpreter.add_binding("fn3", my_ray_wrapper)
+
+    result = interpreter.execute("fn3 (+ 1 1) (+ 2 2) (+ 3 3)")
+    print(result)
+    result = interpreter.execute("fn3 1 2 3")
+    print(result)
 ```
