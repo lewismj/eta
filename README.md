@@ -289,6 +289,8 @@ def my_function(p, q, r):
 # Some work on the eval/calling mechanism could probably remove
 # the requirement to define a wrapper function.
 
+# Or, switching wrapper should be a Python/AST function that
+# re-writes the wrapper function (or calls the 'Lisp' interpreter to rebind the symbol).
 def my_ray_wrapper(env, expr):
     future = my_function.remote(expr[0], expr[1], expr[2])
     return ray.get(future)
