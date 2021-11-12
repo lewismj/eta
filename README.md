@@ -4,7 +4,7 @@
 This project implements a simple Lisp interpreter using Python.
 A subset of the language is implemented. 
 
-- Higher order, partially applied & Lambda functions are supported and a simple prelude (A ‘prelude’ is a very basic ‘standard library’ implemented via the core language builtin functions). 
+- Higher order, partially applied & Lambda functions are supported and a simple prelude (A ‘prelude’ is a very basic ‘standard library’ implemented via the core language builtin functions).
 
 - An Interpreter can be used within Python packages. See the end of this page for an example on how to make a Python function callable from the ‘Lisp’ interpreter.
 
@@ -20,8 +20,12 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 
 #### Todo
 1. Use a trampoline package to optimise tail calls in the ‘eval’ functions.
+
+
 2. Support variable arguments to functions. The implementation should be simple. Parsing should allow function arguments using `x & xs` syntax. Evaluation should bind `xs` to the list of arguments).
+
 3. Common expansions, e.g. `defun (fun x y) (body) -> define (fun) (lambda (x y) (body)`  are supported currently as ‘special forms’. That is, we have parse rules that will construct AST nodes that can be easily traversed by the ‘evaluation’. This saves some checking at run-time.  Generic macro expansion is something that could be added.
+
 4. Arguments are evaluated using ‘map’ in the ‘eval’ function. This could be parallelised.
 
 #### repl
