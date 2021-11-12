@@ -139,7 +139,7 @@ def join(env, expr):
                 for item in sub_expr:
                     tmp = item
                     if isinstance(item, list):
-                       expression.extend(tmp)
+                        expression.extend(tmp)
                     else:
                         expression.append(tmp)
             else:
