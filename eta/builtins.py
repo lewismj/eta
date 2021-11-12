@@ -15,6 +15,7 @@ from eta.parser import parser
 from functools import reduce
 import operator
 
+
 # Notes on builtins:
 #   Builtins should generally be as few functions as possible:
 #       1. The language itself should be defined by itself (or the core builtins and usable
@@ -136,13 +137,29 @@ def join(env, expr):
         for sub_expr in expr:
             if isinstance(sub_expr, Expression):
                 for item in sub_expr:
-                    # may a copy
                     tmp = item
-                    expression.append(tmp)
+                    if isinstance(item, list):
+                       expression.extend(tmp)
+                    else:
+                        expression.append(tmp)
             else:
                 expression.append(sub_expr)
         return expression
 
+
+def as_range(env, expr):
+    if len(expr) == 1:
+        if isinstance(expr[0], int):
+            xs = list(range(expr[0]))
+            expression = Expression(xs)
+            expression.quote()
+            return expression
+        else:
+            return EtaError("Argument type {} incorrect. "
+                            "range function expects integer argument".format(type(expr[0])))
+    else:
+        return EtaError("Function passed {} arguments. "
+                        " range function expects single integer argument".format(len(expr)))
 
 # Notes)
 # 1) Why define individual functions, rather than use (lambda env, ex: builtin_reduce ... ) ?
@@ -155,7 +172,6 @@ def join(env, expr):
 # The prelude should define map/filter/reduce, that can reduce on LispError values which
 # are valid values. Builtin is for specific builtin operators (e.g. +/- etc.), so if wei
 # encounter a LispError in the input return it as the result.
-
 
 def add(env, expr):
     return builtin_reduce(operator.add, expr)
@@ -290,7 +306,7 @@ def add_builtins(env):
     env.add_binding(Symbol("tail"), tail)
     env.add_binding(Symbol("join"), join)
     env.add_binding(Symbol("list"), cons)
+    env.add_binding(Symbol("range"), as_range)
     env.add_binding(Symbol("eval"), eval_quoted)
     env.add_binding(Symbol("load"), load_file)
     env.add_binding(Symbol("show"), environment)
-
