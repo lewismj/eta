@@ -23,11 +23,9 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 
 ![](https://github.com/lewismj/eta/blob/main/docs/resources/repl.map.png)
 
-2. Support variable arguments to functions. The implementation should be simple. Parsing should allow function arguments using `x & xs` syntax. Evaluation should bind `xs` to the list of arguments).
+2. Common expansions, e.g. `defun (fun x y) (body) -> define (fun) (lambda (x y) (body)`  are supported currently as ‘special forms’. That is, we have parse rules that will construct AST nodes that can be easily traversed by the ‘evaluation’. This saves some checking at run-time.  Generic macro expansion is something that could be added.
 
-3. Common expansions, e.g. `defun (fun x y) (body) -> define (fun) (lambda (x y) (body)`  are supported currently as ‘special forms’. That is, we have parse rules that will construct AST nodes that can be easily traversed by the ‘evaluation’. This saves some checking at run-time.  Generic macro expansion is something that could be added.
-
-4. Arguments are evaluated using ‘map’ in the ‘eval’ function. This could be parallelised.
+3. Arguments are evaluated using ‘map’ in the ‘eval’ function. This could be parallelised.
 
 #### repl
 - Control-D, to exit the REPL.
@@ -109,6 +107,16 @@ builtin:subtract [10, 7]
 builtin:add [3, 6]
 builtin:add [48, 9]
 57
+eta> ; Support for variable number of arguments via '&' syntax.
+eta> defun (foo x & xs) (sort xs)
+.....
+()
+eta> foo 1 3 2
+.....
+'(2 3)
+eta> foo 1 3 2 4 -1 0 10
+.....
+'(-1 0 2 3 4 10)
 eta>
 ```
 

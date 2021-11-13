@@ -133,13 +133,18 @@ def eval_lambda(lambda_fn, arguments, outer_env):
     n_formals = len(lambda_fn.formals)
     n_args = len(arguments)
 
-    # It is ok to supply too few parameters (i.e. partially apply the function, but
-    # return an error if too many arguments are supplied.
-    if n_args > n_formals:
-        return EtaError("Lambda function supplied too many arguments: {}, ".format(n_args)
-                        + str(lambda_fn) + " Expected {} arguments.".format(n_formals))
-
-    # todo; could be extended to support a varargs syntax x & xs etc?
+    if "&" in lambda_fn.formals:
+        # variable number of arguments, we should have at least 'len(n_formals) -1' number
+        # of arguments.
+        if n_args < n_formals - 1:
+            return EtaError("Lambda function with variable arguments, expected at least {} "
+                            " arguments, {} supplied.".format(n_formals-1, n_args))
+    else:
+        # It is ok to supply too few parameters (i.e. partially apply the function, but
+        # return an error if too many arguments are supplied.
+        if n_args > n_formals:
+            return EtaError("Lambda function supplied too many arguments: {}, ".format(n_args)
+                            + str(lambda_fn) + " Expected {} arguments.".format(n_formals))
 
     # Create an environment to evaluate the lambda.
     # For each formal (Argument) specified, place that argument into the environment.
@@ -164,9 +169,16 @@ def eval_lambda(lambda_fn, arguments, outer_env):
 
     # Substitute formals for supplied arguments.
     while len(arguments) > 0:
-        argument = arguments.pop(0)
         formal = formals.pop(0)
-        env.add_binding(formal, argument)
+        if formal == '&':
+            xs = Expression(arguments[0:])
+            xs.quote()
+            arguments = []
+            name = formals.pop(0)
+            env.add_binding(name, xs)
+        else:
+            argument = arguments.pop(0)
+            env.add_binding(formal, argument)
 
     # If all the arguments were supplied, return the evaluation of the function.
     # If not, return a Lambda; that is the partially applied function.
