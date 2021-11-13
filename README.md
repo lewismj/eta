@@ -19,7 +19,7 @@ which the language can be defined via a Lisp like prelude.
 In essence, the interpreter should be a λ-calculus engine with the functionality of the language largely implemented by the prelude.
 
 #### Todo
-1. Use a trampoline package to optimise tail calls in the ‘eval’ functions, e.g. Consider defintion of functions in the Prelude:
+1. Use a trampoline package to optimise tail calls in the ‘eval’ functions, e.g.  Consider standard definitions of functions within the prelude. Many functional algorithms can be tail recursive.
 
 ![](https://github.com/lewismj/eta/blob/main/docs/resources/repl.map.png)
 
