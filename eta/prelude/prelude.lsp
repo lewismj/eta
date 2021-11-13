@@ -43,6 +43,9 @@
         (join (list (f (fst xs))) (map f (tail xs))))
     ))
 
+; apply a function to a variable list of arguments.
+(defun (apply f & xs) (eval (map f xs)))
+
 ; filter elements of list.
 (defun (filter f xs)
         (if (== xs nil)

@@ -117,7 +117,12 @@ eta> foo 1 3 2
 eta> foo 1 3 2 4 -1 0 10
 .....
 '(-1 0 2 3 4 10)
-eta>
+eta> ; Use 'apply' method to apply a function to variable number of arguments. Similar to map, but handles var args.
+eta> apply (lambda (x) (+ x x)) 1 2 
+[2, 4]
+eta> apply (lambda (x) (+ x x)) 1 2 3 4 5
+.....
+[2, 4, 6, 8, 10]
 ```
 
 #### Prelude
