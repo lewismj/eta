@@ -117,12 +117,14 @@ eta> foo 1 3 2
 eta> foo 1 3 2 4 -1 0 10
 .....
 '(-1 0 2 3 4 10)
-eta> ; Use 'apply' method to apply a function to variable number of arguments. Similar to map, but handles var args.
-eta> apply (lambda (x) (+ x x)) 1 2 
-[2, 4]
-eta> apply (lambda (x) (+ x x)) 1 2 3 4 5
-.....
-[2, 4, 6, 8, 10]
+eta> ; Can define local functions.
+eta> defun (foo n) (
+.....   (defun (y x) (+ 1 x))
+.....   y n
+.....   )
+eta> foo 10
+11
+eta>
 ```
 
 #### Prelude
@@ -172,6 +174,9 @@ eta> apply (lambda (x) (+ x x)) 1 2 3 4 5
         (nil)
         (join (list (f (fst xs))) (map f (tail xs))))
     ))
+
+; apply a function to a variable list of arguments.
+(defun (apply f & xs) (eval (map f xs)))
 
 ; filter elements of list.
 (defun (filter f xs)
@@ -230,6 +235,12 @@ eta> ; to Py list.
 .....
 [-4, -2, 0, 1, 2, 12, 98, 99]
 eta>
+eta> ; Use 'apply' method to apply a function to variable number of arguments. Similar to map, but handles var args.
+eta> apply (lambda (x) (+ x x)) 1 2 
+[2, 4]
+eta> apply (lambda (x) (+ x x)) 1 2 3 4 5
+.....
+[2, 4, 6, 8, 10]
 ```
 
 #### Testing
