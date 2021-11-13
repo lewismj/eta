@@ -55,7 +55,7 @@ grammar = r"""
     SYMBOL: NAME | "+" " " | "-" " "  | "*" | "/" | "<" | ">" | ">=" | "<=" | "==" | "="  | "%" | "^" | "!=" 
     !number:  ["-"] NUMBER | ["+"] NUMBER
 
-    formals: symbol+ -> formals
+    formals: variable+ -> formals
     function_name: NAME -> function_name
     variable: NAME -> variable
     
@@ -92,7 +92,7 @@ class AstTransformer(Transformer):
 
     @staticmethod
     def variable(xs):
-        return xs[0]
+        return Symbol(xs[0])
 
     @staticmethod
     def symbol_def(xs):

@@ -16,10 +16,7 @@ from prompt_toolkit.styles import style_from_pygments_cls
 from prompt_toolkit.completion import WordCompleter
 
 import eta
-from eta.parser import parser
-from eta.types import Environment
-from eta.builtins import add_builtins
-from eta.eval import evaluate
+from eta.interpreter import Interpreter
 
 from pathlib import Path
 
@@ -33,7 +30,7 @@ def prompt_continuation(width, line_number, is_soft_wrap):
     return '.' * width
 
 
-def repl(env):
+def repl(interpreter):
     """
     Runs a simple read-eval-print loop. Without defining a custom lexer
     (n.b. Lexer here is used just for highlighting, Lark is used for
@@ -82,17 +79,15 @@ def repl(env):
         else:
             try:
                 if text:
-                    ast = parser.parse("({})".format(text))
-                    result = evaluate(ast[0], env)
+                    result = interpreter.execute(text)
                     print(str(result))
             except Exception as ex:
                 print(ex)
 
 
 if __name__ == '__main__':
-    global_env = Environment()
-    add_builtins(global_env)
+    interpreter = Interpreter()
     # add longer symbols in the global environment to the word completer.
-    additional_words = list(filter(lambda x: len(x) > 2, global_env.keys()))
+    additional_words = list(filter(lambda x: len(x) > 2, interpreter.env.keys()))
     completer_words.words += additional_words
-    repl(global_env)
+    repl(interpreter)
