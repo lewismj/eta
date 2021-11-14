@@ -4,7 +4,7 @@
 This project implements a simple Lisp interpreter using Python.
 A subset of the language is implemented. 
 
-- Higher order, partially applied & Lambda functions are supported and a simple prelude (A ‘prelude’ is a very basic ‘standard library’ implemented via the core language builtin functions).
+- Higher order, partially applied & Lambda functions are supported and a simple prelude implemented in the language itself.
 
 - An Interpreter can be used within Python packages. See the end of this page for an example on how to make a Python function callable from the ‘Lisp’ interpreter.
 
