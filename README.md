@@ -25,7 +25,7 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 
 2. Common expansions, e.g. `defun (fun x y) (body) -> define (fun) (lambda (x y) (body)`  are supported currently as ‘special forms’. That is, we have parse rules that will construct AST nodes that can be easily traversed by the ‘evaluation’. This saves some checking at run-time.  Generic macro expansion is something that could be added.
 
-3. Arguments are evaluated using ‘map’ in the ‘eval’ function. This could be parallelised.
+3. Arguments are evaluated sequentially in the ‘eval’ function. This could be parallelised.
 
 #### repl
 - Control-D, to exit the REPL.
