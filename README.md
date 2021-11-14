@@ -28,17 +28,19 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 3. Arguments are evaluated sequentially in the ‘eval’ function. This could be parallelised.
 
 #### REPL
+
 - Control-D, to exit the REPL.
+- Control-C, abort current line in editor.
 - Esc-Enter, to run command(s).
 - F-1 to toggle edit mode (vi/emacs)
 - F-2 to toggle trace mode.
 - Up/Down arrow keys to search through history.
 - Tab for builtin function name completion.
-- 'show' to disable the content of the environment.
+- 'show' to display the content of the environment.
 
 ![](https://github.com/lewismj/eta/blob/main/docs/resources/repl.3.png)
 
-To start the REPL and load the prelude:
+To start the REPL and load a file:
 ```lisp
 (eta) lewismj@waiheke eta % python -m eta.repl
 eta> load "./eta/prelude/prelude.lsp"
@@ -48,7 +50,7 @@ eta> load "./eta/prelude/prelude.lsp"
 eta>
 ```
 
-#### Within Python
+#### Using the Interpreter from within Python
 ```python
 from eta.interpreter import Interpreter
 
@@ -65,7 +67,7 @@ if __name__ == '__main__':
     print(result)
 ```
 
-#### Examples
+#### Simple Examples
 ```lisp
 eta> defun (add x y) (+ x y)
 ()
