@@ -4,7 +4,7 @@
 This project implements a simple Lisp interpreter using Python.
 A subset of the language is implemented. 
 
-- Higher order, partially applied & Lambda functions are supported and a simple prelude (A ‘prelude’ is a very basic ‘standard library’ implemented via the core language builtin functions).
+- Higher order, partially applied & Lambda functions are supported and a simple prelude implemented in the language itself.
 
 - An Interpreter can be used within Python packages. See the end of this page for an example on how to make a Python function callable from the ‘Lisp’ interpreter.
 
@@ -25,20 +25,22 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 
 2. Common expansions, e.g. `defun (fun x y) (body) -> define (fun) (lambda (x y) (body)`  are supported currently as ‘special forms’. That is, we have parse rules that will construct AST nodes that can be easily traversed by the ‘evaluation’. This saves some checking at run-time.  Generic macro expansion is something that could be added.
 
-3. Arguments are evaluated using ‘map’ in the ‘eval’ function. This could be parallelised.
+3. Arguments are evaluated sequentially in the ‘eval’ function. This could be parallelised.
 
-#### Repl
+#### REPL
+
 - Control-D, to exit the REPL.
+- Control-C, abort current line in editor.
 - Esc-Enter, to run command(s).
 - F-1 to toggle edit mode (vi/emacs)
 - F-2 to toggle trace mode.
 - Up/Down arrow keys to search through history.
 - Tab for builtin function name completion.
-- 'show' to disable the content of the environment.
+- 'show' to display the content of the environment.
 
 ![](https://github.com/lewismj/eta/blob/main/docs/resources/repl.3.png)
 
-To start the REPL and load the prelude:
+To start the REPL and load a file:
 ```lisp
 (eta) lewismj@waiheke eta % python -m eta.repl
 eta> load "./eta/prelude/prelude.lsp"
@@ -48,7 +50,7 @@ eta> load "./eta/prelude/prelude.lsp"
 eta>
 ```
 
-#### Within Python
+#### Using the Interpreter from within Python
 ```python
 from eta.interpreter import Interpreter
 
@@ -65,7 +67,7 @@ if __name__ == '__main__':
     print(result)
 ```
 
-#### Examples
+#### Simple Examples
 ```lisp
 eta> defun (add x y) (+ x y)
 ()
@@ -283,6 +285,8 @@ eta>
 #### Making existing Python functions callable from the ‘Lisp’ …
 
 ```python
+from eta.interpreter import Interpreter
+
 def my_function(a, b, c):
     return a*b*c
 
