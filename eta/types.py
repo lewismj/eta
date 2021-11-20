@@ -175,6 +175,7 @@ class Definition:
     def __init__(self, symbol, value):
         self.symbol = symbol
         self.value = value
+        self.is_macro = False
 
     def __str__(self):
         buffer = StringIO()
@@ -187,6 +188,12 @@ class Definition:
         buffer.close()
 
         return desc
+
+    def macro(self, flag=True):
+        """
+        Set a flag to indicate that this definition is a macro.
+        """
+        self.is_macro = flag
 
     def __repr__(self):
         """

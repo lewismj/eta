@@ -7,7 +7,6 @@ from lark.visitors import VisitError
 from eta.types import Symbol, Expression, _quote, _quasi_quote, Lambda, Definition, \
     IfExpression, EmptyEnvironment, AndDefinition, OrDefinition
 
-
 # Definition of basic grammar.
 # Note:
 # 1. We only -really- need "(" expression* ")" as rule.
@@ -30,6 +29,7 @@ grammar = r"""
                 | "(" ("define" | "def") variable expression ")" -> define
                 | "(" ("define" | "def") "(" variable ")" expression ")" -> define
                 | "(" "defun" "(" function_name formals ")" expression ")" -> defun
+                | "(" "defmacro" "(" function_name formals ")" expression ")" -> defmacro
                 | "(" "lambda" "(" formals ")" expression ")" -> lambda_expression
                 | "(" "and" expression+ ")" -> and_expression
                 | "(" "or" expression+ ")" -> or_expression
@@ -111,8 +111,8 @@ class AstTransformer(Transformer):
             definition = Definition(Symbol(xs[0]), xs[1])
             return definition
         else:
-            VisitError("Definition with {} arguments."
-                       " 'define' should be of the form (value) (expression).".format(len(xs)))
+            raise VisitError("Definition with {} arguments."
+                             " 'define' should be of the form (value) (expression).".format(len(xs)))
 
     @staticmethod
     def defun(xs):
@@ -120,8 +120,17 @@ class AstTransformer(Transformer):
             definition = Definition(Symbol(xs[0]), Lambda(xs[1], xs[2], EmptyEnvironment))
             return definition
         else:
-            VisitError("Function definition with {} arguments."
-                       " 'defun' should be of the form (function_name params) (expression).".format(len(xs)))
+            raise VisitError("Function definition with {} arguments."
+                             " 'defun' should be of the form (function_name params) (expression).".format(len(xs)))
+
+    @staticmethod
+    def defmacro(xs):
+        try:
+            result = AstTransformer.defun(xs)
+            result.macro()
+        except VisitError:
+            raise VisitError("Macro definition with {} arguments."
+                             " 'defmacro' should be of the form (macro_name params) (expression).".format(len(xs)))
 
     @staticmethod
     def if_expression(xs):
@@ -129,8 +138,8 @@ class AstTransformer(Transformer):
             definition = IfExpression(xs[0], xs[1], xs[2])
             return definition
         else:
-            VisitError("If expression with {} arguments."
-                       " 'if' should be of the form (clause) (then) (else).".format(len(xs)))
+            raise VisitError("If expression with {} arguments."
+                             " 'if' should be of the form (clause) (then) (else).".format(len(xs)))
 
     @staticmethod
     def string(xs):
@@ -224,6 +233,10 @@ class AstTransformer(Transformer):
             return value * -1
         else:
             return value
+
+
+class MacroTransformer(Transformer):
+    pass
 
 
 parser = Lark(grammar, parser='lalr', transformer=AstTransformer())

@@ -27,7 +27,7 @@ In essence, the interpreter should be a λ-calculus engine with the functionalit
 
 3. Arguments are evaluated using ‘map’ in the ‘eval’ function. This could be parallelised.
 
-#### repl
+#### Repl
 - Control-D, to exit the REPL.
 - Esc-Enter, to run command(s).
 - F-1 to toggle edit mode (vi/emacs)
