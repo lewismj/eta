@@ -189,12 +189,6 @@ class Definition:
 
         return desc
 
-    def macro(self, flag=True):
-        """
-        Set a flag to indicate that this definition is a macro.
-        """
-        self.is_macro = flag
-
     def __repr__(self):
         """
         Return __str__ (Lisp expression, so 'repr' in this context is correct).
@@ -355,3 +349,4 @@ class Environment(dict):
 
 
 EmptyEnvironment = Environment()
+MacroTable = Environment()

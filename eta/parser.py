@@ -5,7 +5,7 @@ Uses lark to define a simple Lisp style syntax.
 from lark import Lark, Transformer
 from lark.visitors import VisitError
 from eta.types import Symbol, Expression, _quote, _quasi_quote, Lambda, Definition, \
-    IfExpression, EmptyEnvironment, AndDefinition, OrDefinition
+    IfExpression, EmptyEnvironment, AndDefinition, OrDefinition, MacroTable
 
 # Definition of basic grammar.
 # Note:
@@ -126,8 +126,10 @@ class AstTransformer(Transformer):
     @staticmethod
     def defmacro(xs):
         try:
-            result = AstTransformer.defun(xs)
-            result.macro()
+            # Store the macro in the macro table and return the symbol.
+            definition = AstTransformer.defun(xs)
+            MacroTable.add_binding(definition.symbol, definition.value)
+            return definition.symbol
         except VisitError:
             raise VisitError("Macro definition with {} arguments."
                              " 'defmacro' should be of the form (macro_name params) (expression).".format(len(xs)))
@@ -233,10 +235,6 @@ class AstTransformer(Transformer):
             return value * -1
         else:
             return value
-
-
-class MacroTransformer(Transformer):
-    pass
 
 
 parser = Lark(grammar, parser='lalr', transformer=AstTransformer())
