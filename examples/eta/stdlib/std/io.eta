@@ -1,0 +1,81 @@
+(module std.io
+  (export
+    current-input-port current-output-port current-error-port
+    open-input-string open-output-string
+    open-input-file open-output-file open-append-file
+    console-input-port console-output-port console-error-port
+    flush-output-port close-port
+    port? input-port? output-port? text-input-port? text-output-port? string-input-port? string-output-port? port-open?
+    write-string newline print println format printf
+    read-char peek-char read-line
+    set-current-input-port! set-current-output-port! set-current-error-port!
+    with-output-to-port with-input-from-port with-error-to-port)
+  (begin
+    ; std/io.eta — public IO API. Wraps std.ports
+    ; define directly via built-in std.ports bindings (no import)
+
+    ; Re-exports (shims)
+    (define current-input-port  std.ports:current-input-port)
+    (define current-output-port std.ports:current-output-port)
+    (define current-error-port  std.ports:current-error-port)
+
+    (define open-input-string   std.ports:open-input-string)
+    (define open-output-string  std.ports:open-output-string)
+
+    (define open-input-file     std.ports:open-input-file)
+    (define open-output-file    std.ports:open-output-file)
+    (define open-append-file    std.ports:open-append-file)
+
+    (define console-input-port  std.ports:console-input-port)
+    (define console-output-port std.ports:console-output-port)
+    (define console-error-port  std.ports:console-error-port)
+
+    (define flush-output-port std.ports:flush-output-port)
+    (define close-port        std.ports:close-port)
+
+    (define port?               std.ports:port?)
+    (define input-port?         std.ports:input-port?)
+    (define output-port?        std.ports:output-port?)
+    (define text-input-port?    std.ports:text-input-port?)
+    (define text-output-port?   std.ports:text-output-port?)
+    (define string-input-port?  std.ports:string-input-port?)
+    (define string-output-port? std.ports:string-output-port?)
+    (define port-open?          std.ports:port-open?)
+
+    (define write-string std.ports:write-string)
+    (define newline      std.ports:newline)
+    (define print        std.ports:print)
+    (define println      std.ports:println)
+    (define format       std.ports:format)
+    (define printf       std.ports:printf)
+
+    (define read-char  std.ports:read-char)
+    (define peek-char  std.ports:peek-char)
+    (define read-line  std.ports:read-line)
+
+    (define set-current-input-port!  std.ports:set-current-input-port!)
+    (define set-current-output-port! std.ports:set-current-output-port!)
+    (define set-current-error-port!  std.ports:set-current-error-port!)
+
+    ; Higher-level helpers (dynamic redirection)
+    (define with-output-to-port (lambda (port thunk)
+      (let ((old (current-output-port)))
+        (set-current-output-port! port)
+        (let ((res (thunk)))
+          (set-current-output-port! old)
+          res))))
+
+    (define with-input-from-port (lambda (port thunk)
+      (let ((old (current-input-port)))
+        (set-current-input-port! port)
+        (let ((res (thunk)))
+          (set-current-input-port! old)
+          res))))
+
+    (define with-error-to-port (lambda (port thunk)
+      (let ((old (current-error-port)))
+        (set-current-error-port! port)
+        (let ((res (thunk)))
+          (set-current-error-port! old)
+          res))))
+  ))

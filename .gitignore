@@ -1,0 +1,51 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Compiled Python
+*.pyc
+*.pyd
+
+# CMake
+cmake-build-*/
+out
+
+# Visual Studio/Visual Code
+.vs
+.vscode
+__pycahce__
+.venv
+Folder.DotSettings.user
+
+# CLion/
+.idea
+

@@ -1,0 +1,120 @@
+(module std.test
+  (export
+    ;; Constructors and runner
+    make-test make-group tests run summary
+    ;; Assertions
+    fail assert-true assert-false assert-equal assert-not-equal
+    ;; Optional: summary compatibility helpers
+    summary->plist)
+  (begin
+    ;; Data structures ----------------------------------------------------
+    ;; A single test with a name and a thunk (a 0-arg function)
+    (defstruct Test (name thunk))
+    ;; A group/suite of tests (or nested groups)
+    (defstruct Group (name children))
+
+    ;; Execution results
+    ;; For tests: name, status ("pass" | "fail"), error (Nil or message)
+    (defstruct TestResult (name status error))
+    ;; For groups: name, derived status, and children results
+    (defstruct GroupResult (name status children))
+
+    ;; Aggregated counts of results
+    (defstruct Summary (total passed failed))
+
+    ;; Local list utilities (to avoid imports) ----------------------------
+    (defun map (f xs)
+      (if (nil? xs)
+          Nil
+          (cons (f (car xs)) (map f (cdr xs)))))
+
+    (defun foldl (f acc xs)
+      (if (nil? xs)
+          acc
+          (foldl f (f acc (car xs)) (cdr xs))))
+
+    ;; Public constructors ------------------------------------------------
+    (defun tests (xs)
+      ;; Convenience wrapper for readability at call sites
+      xs)
+
+    (defun make-test (name thunk)
+      (make-Test name thunk))
+
+    (defun make-group (name children)
+      (make-Group name children))
+
+    ;; Assertions ---------------------------------------------------------
+    (defun fail (msg)
+      (panic msg))
+
+    (defun assert-true (x msg)
+      (if x 'ok (fail msg)))
+
+    (defun assert-false (x msg)
+      (if x (fail msg) 'ok))
+
+    (defun assert-equal (expected actual msg)
+      (if (= expected actual) 'ok (fail msg)))
+
+    (defun assert-not-equal (a b msg)
+      (if (= a b) (fail msg) 'ok))
+
+    (defun run-test (t)
+      (defun ok (name)
+        (make-TestResult name :pass Nil))
+      (defun do (name thunk)
+        (thunk)
+        (ok name))
+      (do (Test-name t) (Test-thunk t)))
+
+    (defun all-pass? (rs)
+      (if (nil? rs)
+          #t
+          (let ((r (car rs)))
+            (let ((st (if (TestResult? r)
+                           (TestResult-status r)
+                           (GroupResult-status r))))
+              (if (eq? st :pass)
+                  (all-pass? (cdr rs))
+                  #f)))))
+
+    (defun run-group (g)
+      (defun run-child (c)
+        (run c))
+      (let ((kids (map run-child (Group-children g))))
+        (let ((status (if (all-pass? kids) :pass :fail)))
+          (make-GroupResult (Group-name g) status kids))))
+
+    (defun run (node)
+      (if (Test? node)
+          (run-test node)
+          (run-group node)))
+
+
+    (defun make-summary (t p f)
+      (make-Summary t p f))
+
+    (defun add-summary (a b)
+      (make-Summary (+ (Summary-total a)  (Summary-total b))
+                    (+ (Summary-passed a) (Summary-passed b))
+                    (+ (Summary-failed a) (Summary-failed b))))
+
+    (defun count-results (res)
+      (if (TestResult? res)
+          (if (eq? (TestResult-status res) :pass)
+              (make-Summary 1 1 0)
+              (make-Summary 1 0 1))
+          ;; GroupResult: fold children
+          (foldl add-summary (make-Summary 0 0 0)
+                 (map count-results (GroupResult-children res)))))
+
+    (defun summary (res)
+      (count-results res))
+
+    (defun summary->plist (s)
+      (cons :summary
+        (cons :total  (cons (Summary-total s)
+        (cons :passed (cons (Summary-passed s)
+        (cons :failed (cons (Summary-failed s) Nil))))))))
+  ))

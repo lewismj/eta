@@ -1,0 +1,49 @@
+(module std.core
+  (export equal? + - * / numerator denominator)
+  (begin
+
+    ;; Deep structural equality available from core
+    (defun equal? (a b)
+      (cond
+        ;; Nil equality
+        ((and (nil? a) (nil? b)) #t)
+        ;; Pair-wise deep equality for cons cells
+        ((and (cons? a) (cons? b))
+         (and (equal? (car a) (car b))
+              (equal? (cdr a) (cdr b))))
+        ;; Vector element-wise equality
+        ((and (vector? a) (vector? b))
+         (let ((na (vector-length a)) (nb (vector-length b)))
+           (if (not (= na nb))
+               #f
+               (let ((loop (lambda (self i)
+                             (if (= i na)
+                                 #t
+                                 (and (equal? (vector-ref a i) (vector-ref b i))
+                                      (self self (+ i 1)))))))
+                 (loop loop 0)))))
+        ;; Numeric values (fixnum, flonum, bignum, rational): compare via numeric '=' so 10 == 10.0 and 1/2 == 0.5
+        ((and (or (symbol=? (type-of a) 'fixnum)
+                  (symbol=? (type-of a) 'flonum)
+                  (symbol=? (type-of a) 'bignum)
+                  (symbol=? (type-of a) 'rational))
+              (or (symbol=? (type-of b) 'fixnum)
+                  (symbol=? (type-of b) 'flonum)
+                  (symbol=? (type-of b) 'bignum)
+                  (symbol=? (type-of b) 'rational)))
+         (= a b))
+        ;; Fallback to eqv? for atoms and other comparable values
+        (#t (eqv? a b))))
+
+
+    ;; Export arithmetic variadics under core.
+    (define + std.math.builtin:+)
+    (define - std.math.builtin:-)
+    (define * std.math.builtin:*)
+    (define / std.math.builtin:/)
+
+    ;; Re-export commonly used numeric accessors for convenience
+    (define numerator std.math.builtin:numerator)
+    (define denominator std.math.builtin:denominator)
+
+  ))
