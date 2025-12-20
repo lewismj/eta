@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <ostream>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -36,6 +37,33 @@ namespace eta::reader::expander {
         Span span{};
         std::string message;
     };
+
+    // Enum printer and full formatter for ExpandError
+    constexpr const char* to_string(ExpandError::Kind k) noexcept {
+        using enum ExpandError::Kind;
+        switch (k) {
+            case InvalidSyntax:          return "ExpandError::Kind::InvalidSyntax";
+            case DuplicateIdentifier:    return "ExpandError::Kind::DuplicateIdentifier";
+            case InvalidLetBindings:     return "ExpandError::Kind::InvalidLetBindings";
+            case ReservedKeyword:        return "ExpandError::Kind::ReservedKeyword";
+            case ArityError:             return "ExpandError::Kind::ArityError";
+            case ExpansionDepthExceeded: return "ExpandError::Kind::ExpansionDepthExceeded";
+        }
+        return "ExpandError::Kind::Unknown";
+    }
+
+    inline void write_span(std::ostream& os, const Span& sp) {
+        os << "[file " << sp.file_id
+           << ":" << sp.start.line << ":" << sp.start.column
+           << "-" << sp.end.line << ":" << sp.end.column << "]";
+    }
+
+    inline std::ostream& operator<<(std::ostream& os, const ExpandError& e) {
+        os << to_string(e.kind) << " at ";
+        write_span(os, e.span);
+        if (!e.message.empty()) os << ": " << e.message;
+        return os;
+    }
 
     template <typename T>
     using ExpanderResult = std::expected<T, ExpandError>;

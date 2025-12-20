@@ -5,6 +5,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <ostream>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -50,15 +51,15 @@ namespace eta::reader::linker {
         std::unordered_set<std::string> exports;             // names exported (declared)
         std::unordered_set<std::string> visible;             // After link(): defined ∪ imported locals
 
-        // Diagnostics & provenance
+        //! Diagnostics & provenance
         std::unordered_map<std::string, Span> define_spans;  // name -> span of its define
         std::unordered_map<std::string, Span> export_spans;  // name -> span where exported
         std::unordered_map<std::string, ImportOrigin> import_origins; // local -> origin
 
-        // Lifecycle
+        //! Lifecycle
         ModuleState state{ModuleState::Indexed};
 
-        // Invariants:
+        //! Invariants:
         //  - Before link(): visible is empty; state == Indexed
         //  - After  link(): visible = defined ∪ { all imported local names }; state == Linked
     };
@@ -72,9 +73,9 @@ namespace eta::reader::linker {
     };
 
     struct PendingImport {
-        std::string target;   // target module name (receiver)
-        ImportSpec spec;      // import clause
-        Span where;           // site of the (import ...) form or clause
+        std::string target;   //! target module name (receiver)
+        ImportSpec spec;      //! import clause
+        Span where;           //! site of the (import ...) form or clause
     };
 
     class ModuleLinker {
@@ -103,12 +104,41 @@ namespace eta::reader::linker {
         LinkResult<void> scan_module_body(const List& module_form, ModuleTable& mt);
         LinkResult<void> parse_import_form(ModuleTable& mt, const List& import_form);
         LinkResult<ImportSpec> parse_import_clause(const SExprPtr& clause);
-        static std::string to_string(const LinkError::Kind k);
     };
 
 } // namespace eta::reader::linker
 
-// Re-export linker API into eta::reader to match existing includes/usages in tests
+// Enum printer for LinkError::Kind
+namespace eta::reader::linker {
+
+    constexpr const char* to_string(LinkError::Kind k) noexcept {
+        using enum LinkError::Kind;
+        switch (k) {
+            case UnknownModule:         return "LinkError::Kind::UnknownModule";
+            case ExportOfUnknownName:   return "LinkError::Kind::ExportOfUnknownName";
+            case ConflictingImport:     return "LinkError::Kind::ConflictingImport";
+            case NameNotExported:       return "LinkError::Kind::NameNotExported";
+            case DuplicateModule:       return "LinkError::Kind::DuplicateModule";
+        }
+        return "LinkError::Kind::Unknown";
+    }
+
+    inline void write_span(std::ostream& os, const Span& sp) {
+        os << "[file " << sp.file_id
+           << ":" << sp.start.line << ":" << sp.start.column
+           << "-" << sp.end.line << ":" << sp.end.column << "]";
+    }
+
+    inline std::ostream& operator<<(std::ostream& os, const LinkError& e) {
+        os << to_string(e.kind) << " at ";
+        write_span(os, e.span);
+        if (!e.message.empty()) os << ": " << e.message;
+        return os;
+    }
+
+} // namespace eta::reader::linker
+
+//! Re-export linker API into eta::reader to match existing includes/usages in tests
 namespace eta::reader {
     using linker::LinkError;
     template <typename T>

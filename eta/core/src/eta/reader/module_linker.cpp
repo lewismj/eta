@@ -14,17 +14,7 @@ namespace eta::reader::linker {
         return std::cref(it->second);
     }
 
-    std::string ModuleLinker::to_string(const LinkError::Kind k) {
-        using K = LinkError::Kind;
-        switch (k) {
-            case K::UnknownModule: return "UnknownModule";
-            case K::ExportOfUnknownName: return "ExportOfUnknownName";
-            case K::ConflictingImport: return "ConflictingImport";
-            case K::NameNotExported: return "NameNotExported";
-            case K::DuplicateModule: return "DuplicateModule";
-        }
-        return "LinkerError";
-    }
+    // enum printer moved to free constexpr function in header
 
     // --- Indexing ---
 
