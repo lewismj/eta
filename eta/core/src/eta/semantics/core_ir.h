@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include "eta/core/types.h"
 #include "eta/reader/parser.h"
 
 namespace eta::semantics::core {
@@ -34,7 +35,7 @@ struct Node; // fwd
 
 struct Var   { Address addr; Span span; };
 
-struct LiteralNumber { enum { Fixnum, Flonum } kind; std::string text; std::uint8_t radix{10}; };
+struct LiteralNumber { eta::Number value; };
 struct Literal { std::variant<std::monostate, bool, char32_t, std::string, LiteralNumber> payload; };
 struct Const { Literal value; Span span;
     Const(Literal v, Span s) : value(v), span(s) {}

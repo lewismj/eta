@@ -3,9 +3,8 @@
 
 namespace eta::reader::linker {
 
-    bool ModuleLinker::is_symbol_named(const SExprPtr& p, std::string_view name) {
-        auto s = as_symbol(p); return s && s->name == name;
-    }
+    using namespace utils;
+
 
     std::optional<std::reference_wrapper<const ModuleTable>>
     ModuleLinker::get(const std::string& name) const {

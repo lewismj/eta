@@ -12,6 +12,8 @@
 #include <vector>
 
 #include "eta/reader/parser.h"
+#include "eta/reader/sexpr_utils.h"
+#include "eta/reader/error_format.h"
 
 namespace eta::reader::linker {
 
@@ -97,10 +99,6 @@ namespace eta::reader::linker {
         std::unordered_map<std::string, ModuleTable> modules_; // name -> table
         std::unordered_map<std::string, std::vector<PendingImport>> pending_; // target -> imports
 
-        // Helpers
-        static bool is_symbol_named(const SExprPtr& p, std::string_view name);
-        static const List* as_list(const SExprPtr& p) { return (p && p->is<List>()) ? p->as<List>() : nullptr; }
-        static const Symbol* as_symbol(const SExprPtr& p) { return (p && p->is<Symbol>()) ? p->as<Symbol>() : nullptr; }
 
         LinkResult<void> scan_module_body(const List& module_form, ModuleTable& mt);
         LinkResult<void> parse_import_form(ModuleTable& mt, const List& import_form);
@@ -125,11 +123,6 @@ namespace eta::reader::linker {
         return "LinkError::Kind::Unknown";
     }
 
-    inline void write_span(std::ostream& os, const Span& sp) {
-        os << "[file " << sp.file_id
-           << ":" << sp.start.line << ":" << sp.start.column
-           << "-" << sp.end.line << ":" << sp.end.column << "]";
-    }
 
     inline std::ostream& operator<<(std::ostream& os, const LinkError& e) {
         os << to_string(e.kind) << " at ";

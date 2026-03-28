@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "eta/core/types.h"
 #include "eta/reader/lexer.h"
 
 namespace eta::reader::parser {
@@ -96,10 +97,7 @@ namespace eta::reader::parser {
     struct String    : NodeBase { std::string value; };
     struct Symbol    : NodeBase { std::string name; };
 
-    struct Fixnum { std::string text; std::uint8_t radix{10}; };
-    struct Flonum { std::string text; };
-    using NumberRepr = std::variant<Fixnum, Flonum>;
-    struct Number    : NodeBase { NumberRepr repr; };
+    struct Number : NodeBase { eta::Number value; };
 
     // (a b c) or dotted (a b . c)
     struct List : NodeBase {

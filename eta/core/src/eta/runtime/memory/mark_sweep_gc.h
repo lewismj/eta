@@ -109,7 +109,7 @@ namespace eta::runtime::memory::gc {
                     push_if_heap_obj(c.cdr);
                 }
 
-                void visit_lambda(const eta::runtime::types::Lambda& l) override {
+                void visit_interpreted_procedure(const eta::runtime::types::InterpretedProcedure& l) override {
                     push_if_heap_obj(l.body);
                     for (auto v : l.formals) push_if_heap_obj(v);
                     for (auto v : l.up_values) push_if_heap_obj(v);

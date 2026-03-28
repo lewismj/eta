@@ -181,17 +181,17 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 
                 // Get BytecodeFunction from func_val
                 HeapEntry entry;
-                if (heap_.try_get(ops::payload(func_val), entry) && entry.header.kind == ObjectKind::Lambda) {
-                    auto* lambda = static_cast<Lambda*>(entry.ptr);
-                    // Lambda currently has std::vector<LispVal> formals, LispVal body, etc.
+                if (heap_.try_get(ops::payload(func_val), entry) && entry.header.kind == ObjectKind::InterpretedProcedure) {
+                    auto* proc = static_cast<InterpretedProcedure*>(entry.ptr);
+                    // InterpretedProcedure currently has std::vector<LispVal> formals, LispVal body, etc.
                     // This is not exactly BytecodeFunction.
-                    // Let's assume we store BytecodeFunction* in Lambda::body for now.
-                    auto* bfunc = reinterpret_cast<const BytecodeFunction*>(lambda->body);
+                    // Let's assume we store BytecodeFunction* in InterpretedProcedure::body for now.
+                    auto* bfunc = reinterpret_cast<const BytecodeFunction*>(proc->body);
                     auto closure_res = make_closure(heap_, bfunc, std::move(upvals));
                     if (!closure_res) return std::unexpected(closure_res.error());
                     push(*closure_res);
                 } else {
-                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Invalid lambda for closure"}});
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Invalid procedure for closure"}});
                 }
                 break;
             }

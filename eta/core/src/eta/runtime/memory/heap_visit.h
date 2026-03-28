@@ -13,7 +13,7 @@ namespace eta::runtime::memory::heap {
 
         // One method per pointer-containing heap type
         virtual R visit_cons(const eta::runtime::types::Cons& c) = 0;
-        virtual R visit_lambda(const eta::runtime::types::Lambda& l) = 0;
+        virtual R visit_interpreted_procedure(const eta::runtime::types::InterpretedProcedure& l) = 0;
         virtual R visit_closure(const eta::runtime::types::Closure& c) = 0;
         virtual R visit_vector(const eta::runtime::types::Vector& v) = 0;
         virtual R visit_continuation(const eta::runtime::types::Continuation& c) = 0;
@@ -28,7 +28,7 @@ namespace eta::runtime::memory::heap {
         using enum ObjectKind;
         switch (hdr.kind) {
             case Cons:         return v.visit_cons(*static_cast<const eta::runtime::types::Cons*>(payload));
-            case Lambda:       return v.visit_lambda(*static_cast<const eta::runtime::types::Lambda*>(payload));
+            case InterpretedProcedure: return v.visit_interpreted_procedure(*static_cast<const eta::runtime::types::InterpretedProcedure*>(payload));
             case Closure:      return v.visit_closure(*static_cast<const eta::runtime::types::Closure*>(payload));
             case Vector:       return v.visit_vector(*static_cast<const eta::runtime::types::Vector*>(payload));
             case Continuation: return v.visit_continuation(*static_cast<const eta::runtime::types::Continuation*>(payload));

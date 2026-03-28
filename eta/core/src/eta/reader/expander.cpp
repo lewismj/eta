@@ -11,6 +11,8 @@
 
 namespace eta::reader::expander {
 
+    using namespace utils;
+
     // ---------- Reserved keywords ----------
     static const std::unordered_set<std::string>& reserved_keywords() {
         static const std::unordered_set<std::string> K = {
@@ -30,7 +32,11 @@ namespace eta::reader::expander {
         return K;
     }
 
-    bool Expander::is_reserved(std::string_view name) { return reserved_keywords().count(std::string(name)) != 0; }
+    static bool is_reserved(std::string_view name) {
+        return reserved_keywords().contains(std::string(name));
+    }
+
+    bool Expander::is_reserved(std::string_view name) { return expander::is_reserved(name); }
 
     // ---------- Utilities: constructors and cloning ----------
     SExprPtr Expander::make_symbol(std::string name, Span s) {
@@ -100,11 +106,6 @@ namespace eta::reader::expander {
         return nullptr;
     }
 
-    bool Expander::is_symbol_named(const SExprPtr& p, std::string_view name) {
-        if (!p) return false;
-        if (auto s = p->as<Symbol>()) return s->name == name;
-        return false;
-    }
 
     std::string Expander::gensym(const std::string& hint) {
         // Session-based gensym to avoid collisions

@@ -6,7 +6,7 @@
 namespace eta::runtime::types {
     using namespace eta::runtime::nanbox;
 
-    struct Lambda {
+    struct InterpretedProcedure {
         std::vector<LispVal> formals {};
         LispVal body {};
         std::vector<LispVal> up_values {};

@@ -129,12 +129,12 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
-    std::expected<LispVal, RuntimeError> make_lambda(Heap& heap,
+    std::expected<LispVal, RuntimeError> make_interpreted_procedure(Heap& heap,
                                                     std::vector<LispVal> formals,
                                                     const LispVal& body,
                                                     std::vector<LispVal> up_values) {
-        auto allocated = heap.allocate<types::Lambda, ObjectKind::Lambda>(
-            types::Lambda {
+        auto allocated = heap.allocate<types::InterpretedProcedure, ObjectKind::InterpretedProcedure>(
+            types::InterpretedProcedure {
                 .formals = std::move(formals),
                 .body = body,
                 .up_values = std::move(up_values)

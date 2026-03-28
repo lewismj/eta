@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "eta/reader/parser.h"
+#include "eta/reader/sexpr_utils.h"
+#include "eta/reader/error_format.h"
 
 namespace eta::reader::expander {
 
@@ -52,11 +54,6 @@ namespace eta::reader::expander {
         return "ExpandError::Kind::Unknown";
     }
 
-    inline void write_span(std::ostream& os, const Span& sp) {
-        os << "[file " << sp.file_id
-           << ":" << sp.start.line << ":" << sp.start.column
-           << "-" << sp.end.line << ":" << sp.end.column << "]";
-    }
 
     inline std::ostream& operator<<(std::ostream& os, const ExpandError& e) {
         os << to_string(e.kind) << " at ";
@@ -116,6 +113,9 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_letrec_star(const List& lst);
         ExpanderResult<SExprPtr> handle_cond(const List& lst);
 
+        enum class BindingStrategy { Parallel, Sequential, MutableParallel, MutableSequential };
+        ExpanderResult<SExprPtr> expand_binding_form(const List& lst, BindingStrategy strategy);
+
         //! Modules/directives
         ExpanderResult<SExprPtr> handle_module_list(const List& lst);    // (module name ...)
         ExpanderResult<SExprPtr> handle_export(const List& lst);
@@ -126,7 +126,6 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_defun(const List& lst); // (defun name (args) body...)
 
         // -- Helpers --
-        static bool is_symbol_named(const SExprPtr& p, std::string_view name);
         static SExprPtr make_symbol(std::string name, Span s);
         static SExprPtr make_nil(Span s);
         static SExprPtr make_list(std::vector<SExprPtr> elems, Span s);

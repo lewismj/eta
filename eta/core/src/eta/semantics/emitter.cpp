@@ -34,11 +34,14 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
                 } else if constexpr (std::is_same_v<PT, std::string>) {
                     val = make_string(heap_, intern_table_, p).value();
                 } else if constexpr (std::is_same_v<PT, core::LiteralNumber>) {
-                    if (p.kind == core::LiteralNumber::Fixnum) {
-                        val = make_fixnum(heap_, static_cast<int64_t>(std::stoll(p.text, nullptr, p.radix))).value();
-                    } else {
-                        val = make_flonum(std::stod(p.text)).value();
-                    }
+                    std::visit([&](auto&& num_val) {
+                        using NT = std::decay_t<decltype(num_val)>;
+                        if constexpr (std::is_same_v<NT, int64_t>) {
+                            val = make_fixnum(heap_, num_val).value();
+                        } else if constexpr (std::is_same_v<NT, double>) {
+                            val = make_flonum(num_val).value();
+                        }
+                    }, p.value);
                 }
             }, n.value.payload);
             
@@ -87,29 +90,22 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
             emit_lambda(n, nested);
             
             // The last one in 'nested' is the one we just emitted.
-            // But wait, emit_lambda adds to a vector.
-            // Let's change emit_lambda to return the function.
-            // For now, let's assume it's the last one.
             BytecodeFunction& bfunc = nested.back();
             
-            // Store it in heap
-            auto lam_id = heap_.allocate<Lambda, ObjectKind::Lambda>(
-                Lambda{.body = reinterpret_cast<LispVal>(&bfunc)} // Unsafe!
+            // Store it in heap (WIP: this is still unsafe as bfunc is local to this vector)
+            auto proc_id = heap_.allocate<InterpretedProcedure, ObjectKind::InterpretedProcedure>(
+                InterpretedProcedure{.body = reinterpret_cast<LispVal>(&bfunc)} 
             ).value();
-            LispVal func_val = ops::box(Tag::HeapObject, lam_id);
+            LispVal proc_val = ops::box(Tag::HeapObject, proc_id);
             
             uint32_t const_idx = static_cast<uint32_t>(ctx.func.constants.size());
-            ctx.func.constants.push_back(func_val);
+            ctx.func.constants.push_back(proc_val);
             
             uint32_t num_upvals = static_cast<uint32_t>(n.upvals.size());
             // Need to push upvals before MakeClosure
             for (const auto& bid : n.upvals) {
-                // How do we find the local slot for this bid?
-                // The semantic analyzer should have provided addresses.
-                // In Core IR, Lambda has params, rest, locals, upvals.
-                // Addresses in 'Var' point to these.
+                // TODO: emit code to push upval onto stack
             }
-            // This is getting complicated. I'll simplify.
             ctx.func.code.push_back({OpCode::MakeClosure, (const_idx << 16) | num_upvals});
         }
     }, *node);

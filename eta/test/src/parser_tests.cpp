@@ -197,63 +197,62 @@ BOOST_AUTO_TEST_CASE(parse_number_integer) {
     const auto result = parse_one("42");
     BOOST_REQUIRE(result.has_value());
     const auto* n = expect_type<Number>(*result);
-    const auto* fixnum = std::get_if<Fixnum>(&n->repr);
-    BOOST_REQUIRE(fixnum != nullptr);
-    BOOST_CHECK_EQUAL(fixnum->text, "42");
-    BOOST_CHECK_EQUAL(fixnum->radix, 10);
+    const auto* val = std::get_if<int64_t>(&n->value);
+    BOOST_REQUIRE(val != nullptr);
+    BOOST_CHECK_EQUAL(*val, 42);
 }
 
 BOOST_AUTO_TEST_CASE(parse_number_negative) {
     const auto result = parse_one("-42");
     BOOST_REQUIRE(result.has_value());
     const auto* n = expect_type<Number>(*result);
-    const auto* fixnum = std::get_if<Fixnum>(&n->repr);
-    BOOST_REQUIRE(fixnum != nullptr);
-    BOOST_CHECK_EQUAL(fixnum->text, "-42");
+    const auto* val = std::get_if<int64_t>(&n->value);
+    BOOST_REQUIRE(val != nullptr);
+    BOOST_CHECK_EQUAL(*val, -42);
 }
 
 BOOST_AUTO_TEST_CASE(parse_number_float) {
     const auto result = parse_one("3.14");
     BOOST_REQUIRE(result.has_value());
     const auto* n = expect_type<Number>(*result);
-    const auto* flonum = std::get_if<Flonum>(&n->repr);
-    BOOST_REQUIRE(flonum != nullptr);
-    BOOST_CHECK_EQUAL(flonum->text, "3.14");
+    const auto* val = std::get_if<double>(&n->value);
+    BOOST_REQUIRE(val != nullptr);
+    BOOST_CHECK_CLOSE(*val, 3.14, 0.0001);
 }
 
 BOOST_AUTO_TEST_CASE(parse_number_hex) {
     const auto result = parse_one("#xFF");
     BOOST_REQUIRE(result.has_value());
     const auto* n = expect_type<Number>(*result);
-    const auto* fixnum = std::get_if<Fixnum>(&n->repr);
-    BOOST_REQUIRE(fixnum != nullptr);
-    BOOST_CHECK_EQUAL(fixnum->radix, 16);
+    const auto* val = std::get_if<int64_t>(&n->value);
+    BOOST_REQUIRE(val != nullptr);
+    BOOST_CHECK_EQUAL(*val, 255);
 }
 
 BOOST_AUTO_TEST_CASE(parse_number_binary) {
     const auto result = parse_one("#b1010");
     BOOST_REQUIRE(result.has_value());
     const auto* n = expect_type<Number>(*result);
-    const auto* fixnum = std::get_if<Fixnum>(&n->repr);
-    BOOST_REQUIRE(fixnum != nullptr);
-    BOOST_CHECK_EQUAL(fixnum->radix, 2);
+    const auto* val = std::get_if<int64_t>(&n->value);
+    BOOST_REQUIRE(val != nullptr);
+    BOOST_CHECK_EQUAL(*val, 10);
 }
 
 BOOST_AUTO_TEST_CASE(parse_number_octal) {
     const auto result = parse_one("#o777");
     BOOST_REQUIRE(result.has_value());
     const auto* n = expect_type<Number>(*result);
-    const auto* fixnum = std::get_if<Fixnum>(&n->repr);
-    BOOST_REQUIRE(fixnum != nullptr);
-    BOOST_CHECK_EQUAL(fixnum->radix, 8);
+    const auto* val = std::get_if<int64_t>(&n->value);
+    BOOST_REQUIRE(val != nullptr);
+    BOOST_CHECK_EQUAL(*val, 511);
 }
 
 BOOST_AUTO_TEST_CASE(parse_number_scientific) {
     const auto result = parse_one("1e10");
     BOOST_REQUIRE(result.has_value());
     const auto* n = expect_type<Number>(*result);
-    const auto* flonum = std::get_if<Flonum>(&n->repr);
-    BOOST_REQUIRE(flonum != nullptr);
+    const auto* val = std::get_if<double>(&n->value);
+    BOOST_REQUIRE(val != nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(parse_list_simple) {

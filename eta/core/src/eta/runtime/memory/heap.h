@@ -9,6 +9,7 @@
 
 #include <eta/arch.h>
 #include <eta/runtime/nanbox.h>
+#include <eta/core/enum_utils.h>
 
 namespace eta::runtime::memory::heap {
     using namespace eta::runtime::nanbox;
@@ -16,9 +17,9 @@ namespace eta::runtime::memory::heap {
     using ObjectId = std::uint64_t;
 
     enum class ObjectKind : std::uint8_t {
-        Unknown, //!! Unmatched Kind.
+        Unknown,
         Cons,
-        Lambda,
+        InterpretedProcedure,
         Fixnum,
         Vector,
         ByteVector,
@@ -28,22 +29,18 @@ namespace eta::runtime::memory::heap {
         Primitive,
     };
 
-    constexpr const char* to_string(const ObjectKind k) noexcept {
-        using enum ObjectKind;
-        switch (k) {
-            case Unknown: return "ObjectKind::Unknown";
-            case Cons: return "ObjectKind::Cons";
-            case Lambda: return "ObjectKind::Lambda";
-            case Fixnum: return "ObjectKind::Fixnum";
-            case Vector: return "ObjectKind::Vector";
-            case ByteVector: return "ObjectKind::ByteVector";
-            case String: return "ObjectKind::String";
-            case Closure: return "ObjectKind::Closure";
-            case Continuation: return "ObjectKind::Continuation";
-            case Primitive: return "ObjectKind::Primitive";
-            default: return "ObjectKind::Unknown";
-        }
-    }
+    ETA_ENUM_TO_STRING_BEGIN(ObjectKind)
+        ETA_ENUM_CASE(Unknown)
+        ETA_ENUM_CASE(Cons)
+        ETA_ENUM_CASE(InterpretedProcedure)
+        ETA_ENUM_CASE(Fixnum)
+        ETA_ENUM_CASE(Vector)
+        ETA_ENUM_CASE(ByteVector)
+        ETA_ENUM_CASE(String)
+        ETA_ENUM_CASE(Closure)
+        ETA_ENUM_CASE(Continuation)
+        ETA_ENUM_CASE(Primitive)
+    ETA_ENUM_TO_STRING_END("Unknown")
 
     inline std::ostream& operator<<(std::ostream& os, const ObjectKind k) {
         return os << to_string(k);

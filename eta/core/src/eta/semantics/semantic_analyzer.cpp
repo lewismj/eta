@@ -539,16 +539,11 @@ SemResult<core::Node*> analyze(const SExprPtr& expr, Scope& scope, AnalysisConte
         return n;
     }
 
-    if (auto* num = expr->as<Number>()) {
-        core::LiteralNumber ln;
-        if (auto* f = std::get_if<Fixnum>(&num->repr)) {
-            ln.kind = core::LiteralNumber::Fixnum; ln.text = f->text; ln.radix = f->radix;
-        } else if (auto* fl = std::get_if<Flonum>(&num->repr)) {
-            ln.kind = core::LiteralNumber::Flonum; ln.text = fl->text;
-        }
+    if (auto* num = expr->as<eta::reader::parser::Number>()) {
         core::Node* n = ctx.mod.emplace<core::Const>();
         auto* c = std::get_if<core::Const>(static_cast<core::NodeBase*>(n));
-        c->value.payload = ln; c->span = num->span;
+        c->value.payload = core::LiteralNumber{num->value};
+        c->span = num->span;
         return n;
     }
 

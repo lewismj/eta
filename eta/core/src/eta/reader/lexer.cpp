@@ -11,6 +11,7 @@
 #include <utility>
 #include <variant>
 
+#include "eta/unicode/unicode.h"
 
 namespace {
 
@@ -19,27 +20,6 @@ namespace {
     constexpr std::uint32_t kLowSurrogateEnd       = 0xDFFF;
     constexpr int           kShebangAllowedMaxCol  = 3;
 
-    inline_always
-    void append_utf8(std::string& s, std::uint32_t cp) noexcept {
-        char buf[4];
-        int n = 0;
-        if (cp <= 0x7F) {
-            buf[n++] = static_cast<char>(cp);
-        } else if (cp <= 0x7FF) {
-            buf[n++] = static_cast<char>(0xC0 | (cp >> 6));
-            buf[n++] = static_cast<char>(0x80 | (cp & 0x3F));
-        } else if (cp <= 0xFFFF) {
-            buf[n++] = static_cast<char>(0xE0 | (cp >> 12));
-            buf[n++] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            buf[n++] = static_cast<char>(0x80 | (cp & 0x3F));
-        } else {
-            buf[n++] = static_cast<char>(0xF0 | (cp >> 18));
-            buf[n++] = static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-            buf[n++] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            buf[n++] = static_cast<char>(0x80 | (cp & 0x3F));
-        }
-        s.append(buf, n);
-    }
     }
 
     namespace eta::reader::lexer {
@@ -287,7 +267,7 @@ namespace {
                     case 'x': case 'X': {
                         auto ch = consume_hex_until_semicolon();
                         if (!ch) return std::unexpected(ch.error());
-                        append_utf8(result, static_cast<std::uint32_t>(*ch));
+                        unicode::append_utf8(result, static_cast<std::uint32_t>(*ch));
                         break;
                     }
                     default:
@@ -307,7 +287,7 @@ namespace {
                     unsigned char b0 = static_cast<unsigned char>(peek());
                     int adv = (b0 < 0x80) ? 1 : ((b0 & 0xE0) == 0xC0 ? 2 : ( (b0 & 0xF0) == 0xE0 ? 3 : 4));
                     for (int i = 0; i < adv; ++i) advance();
-                    append_utf8(result, static_cast<std::uint32_t>(*cp));
+                    unicode::append_utf8(result, static_cast<std::uint32_t>(*cp));
                 }
             }
         }
@@ -669,7 +649,7 @@ namespace {
                 if (escape == 'x' || escape == 'X') {
                     auto ch = consume_hex_until_semicolon();
                     if (!ch) return std::unexpected(ch.error());
-                    append_utf8(result, static_cast<std::uint32_t>(*ch));
+                    unicode::append_utf8(result, static_cast<std::uint32_t>(*ch));
                 } else {
                     result.push_back(escape);
                 }

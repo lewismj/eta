@@ -1,11 +1,14 @@
 #include "parser.h"
 #include <charconv>
+#include "eta/reader/sexpr_utils.h"
 
 
 using enum eta::reader::lexer::Token::Kind;
 using namespace eta::reader::lexer;
 
 namespace eta::reader::parser {
+
+    using namespace utils;
 
     Parser::Parser(lexer::Lexer& lexer, bool strict_quasiquote)
         : lexer_(lexer), qq_strict_(strict_quasiquote) {}
@@ -241,35 +244,60 @@ namespace eta::reader::parser {
     }
 
     std::expected<SExprPtr, ReaderError> Parser::parse_atom(const Token& tok) {
+        using enum Token::Kind;
         switch (tok.kind) {
             case Boolean: {
                 Bool b; b.span = tok.span; b.value = std::get<bool>(tok.value);
                 return box(SExprValue{std::move(b)});
             }
-            case Token::Kind::Char: {
-                Char c; c.span = tok.span; c.value = std::get<char32_t>(tok.value);
+            case Char: {
+                parser::Char c; c.span = tok.span; c.value = std::get<char32_t>(tok.value);
                 return box(SExprValue{std::move(c)});
             }
-            case Token::Kind::String: {
-                String s; s.span = tok.span; s.value = std::get<std::string>(tok.value);
+            case String: {
+                parser::String s; s.span = tok.span; s.value = std::get<std::string>(tok.value);
                 return box(SExprValue{std::move(s)});
             }
-            case Token::Kind::Symbol: {
+            case Symbol: {
                 std::string sym = std::get<std::string>(tok.value);
                 if (sym == "Nil") { Nil n; n.span = tok.span; return box(SExprValue{std::move(n)}); }
-                Symbol s; s.span = tok.span; s.name = std::move(sym);
+                parser::Symbol s; s.span = tok.span; s.name = std::move(sym);
                 return box(SExprValue{std::move(s)});
             }
-            case Token::Kind::Number: {
-                Number n; n.span = tok.span;
+            case Number: {
                 const auto& num = std::get<NumericToken>(tok.value);
-                if (num.kind == NumericToken::Kind::Fixnum) n.repr = Fixnum{num.text, num.radix};
-                else                                        n.repr = Flonum{num.text};
+                eta::Number val;
+                if (num.kind == NumericToken::Kind::Fixnum) {
+                    try {
+                        val = static_cast<int64_t>(std::stoll(num.text, nullptr, num.radix));
+                    } catch (...) {
+                        // If it fails to parse as stoll (e.g. out of range), fallback to double or error
+                        // For now, let's just use stod as fallback if it's too large for int64
+                        val = std::stod(num.text);
+                    }
+                } else {
+                    val = std::stod(num.text);
+                }
+                parser::Number n; n.span = tok.span; n.value = val;
                 return box(SExprValue{std::move(n)});
             }
-            default:
+            // Not atoms - these are structural tokens handled by parse_datum
+            case LParen:
+            case RParen:
+            case LBracket:
+            case RBracket:
+            case Quote:
+            case Backtick:
+            case Comma:
+            case CommaAt:
+            case Dot:
+            case VectorStart:
+            case ByteVectorStart:
+            case EOF_:
                 return std::unexpected(ParseError{ParseErrorKind::InternalNotAnAtom, tok.span});
         }
+        // Unreachable but satisfies compilers that don't understand exhaustive switches
+        return std::unexpected(ParseError{ParseErrorKind::InternalNotAnAtom, tok.span});
     }
 
     std::expected<SExprPtr, ReaderError> Parser::parse_abbreviation(const Token& tok) {
@@ -286,18 +314,32 @@ namespace eta::reader::parser {
             return box(SExprValue{std::move(rf)});
         };
 
+        using enum Token::Kind;
         switch (tok.kind) {
             case Quote:    return parse_in_ctx(QuoteKind::Quote);
             case Backtick: return parse_in_ctx(QuoteKind::Quasiquote);
             case Comma:    return parse_in_ctx(QuoteKind::Unquote);
             case CommaAt:  return parse_in_ctx(QuoteKind::UnquoteSplicing);
-            default:       return std::unexpected(ParseError{ParseErrorKind::InternalNotAReaderToken, tok.span});
+            // Not abbreviation tokens - these should never reach this function
+            case LParen:
+            case RParen:
+            case LBracket:
+            case RBracket:
+            case Boolean:
+            case Char:
+            case String:
+            case Symbol:
+            case Number:
+            case Dot:
+            case VectorStart:
+            case ByteVectorStart:
+            case EOF_:
+                return std::unexpected(ParseError{ParseErrorKind::InternalNotAReaderToken, tok.span});
         }
+        // Unreachable but satisfies compilers that don't understand exhaustive switches
+        return std::unexpected(ParseError{ParseErrorKind::InternalNotAReaderToken, tok.span});
     }
 
-    static const Symbol* as_symbol(const SExprPtr& p) { return p && p->is<Symbol>() ? p->as<Symbol>() : nullptr; }
-    static const List*   as_list  (const SExprPtr& p) { return p && p->is<List>()   ? p->as<List>()   : nullptr; }
-    static List*         as_list  (SExprPtr& p)       { return p && p->is<List>()   ? p->as<List>()   : nullptr; }
 
     std::optional<ModuleForm> Parser::try_parse_module(List& list) {
         if (list.dotted) return std::nullopt;

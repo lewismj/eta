@@ -56,7 +56,7 @@ BOOST_AUTO_TEST_CASE(retains_reachable_chain) {
     BOOST_TEST(stats.objects_freed == 0);
 }
 
-BOOST_AUTO_TEST_CASE(mixed_lambda_graph) {
+BOOST_AUTO_TEST_CASE(mixed_interpreted_procedure_graph) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
@@ -68,10 +68,10 @@ BOOST_AUTO_TEST_CASE(mixed_lambda_graph) {
 
     std::vector<LispVal> formals{ a, b };
     std::vector<LispVal> upvals{ c };
-    auto lam = expect_ok(make_lambda(heap, formals, b, upvals));
+    auto proc = expect_ok(make_interpreted_procedure(heap, formals, b, upvals));
 
-    // Root only the lambda; all referenced nodes should be retained
-    roots.push_back(lam);
+    // Root only the procedure; all referenced nodes should be retained
+    roots.push_back(proc);
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
