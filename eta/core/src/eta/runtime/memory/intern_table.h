@@ -8,6 +8,7 @@
 #include <random>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 #include <boost/container_hash/hash.hpp>
 #include <boost/unordered/concurrent_flat_map.hpp>
@@ -58,6 +59,35 @@ namespace eta::runtime::memory::intern {
     private:
         using SPtr = std::shared_ptr<std::string>;
 
+#if defined(_MSC_VER)
+        template <typename K, typename V, typename H, typename E>
+        struct MapWrapper {
+            std::unordered_map<K, V, H, E> map;
+            
+            template <typename Key, typename Func>
+            bool visit(const Key& k, Func&& f) const {
+                // This wrapper itself doesn't have the lock, the Shard has it.
+                // But the caller in InternTable needs to know if they need to lock.
+                auto it = map.find(k);
+                if (it != map.end()) {
+                    f(*it);
+                    return true;
+                }
+                return false;
+            }
+
+            template <typename Key, typename... Args>
+            auto try_emplace(Key&& k, Args&&... args) {
+                return map.try_emplace(std::forward<Key>(k), std::forward<Args>(args)...);
+            }
+        };
+        template <typename K, typename V, typename H, typename E>
+        using map_t = MapWrapper<K, V, H, E>;
+#else
+        template <typename K, typename V, typename H, typename E>
+        using map_t = boost::unordered::concurrent_flat_map<K, V, H, E>;
+#endif
+
         //! Hash for string->id.
         struct Hash {
 #ifdef NDEBUG
@@ -101,8 +131,8 @@ namespace eta::runtime::memory::intern {
         static constexpr size_t SHARD_MASK = NUM_SHARDS - 1;
 
         struct Shard {
-            std::mutex mtx;
-            boost::unordered::concurrent_flat_map<SPtr, InternId, Hash, Eq> str_to_id;
+            mutable std::mutex mtx;
+            map_t<SPtr, InternId, Hash, Eq> str_to_id;
         };
 
         //! Select shard for a given string

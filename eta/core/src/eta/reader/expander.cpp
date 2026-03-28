@@ -40,6 +40,13 @@ namespace eta::reader::expander {
         return p;
     }
 
+    SExprPtr Expander::make_nil(Span s) {
+        auto p = std::make_unique<SExpr>();
+        parser::Nil node; node.span = s;
+        p->value = std::move(node);
+        return p;
+    }
+
     SExprPtr Expander::make_list(std::vector<SExprPtr> elems, Span s) {
         auto p = std::make_unique<SExpr>();
         List l; l.span = s; l.dotted = false; l.elems = std::move(elems);
@@ -764,12 +771,12 @@ namespace eta::reader::expander {
         const auto& pairs = *lst.elems[1]->as<List>();
         auto parsed = parse_let_pairs(pairs, /*unique*/true); if (!parsed) return std::unexpected(parsed.error());
 
-        // Strategy: allocate placeholders with (let ((x Nil) ...)) then (set! x e) ... body
+        // Strategy: allocate placeholders with (let ((x '()) ...)) then (set! x e) ... body
         auto zList = make_list({}, pairs.span);
         for (auto& [id, expr] : *parsed) {
             auto pair = make_list({}, id->span());
             pair->as<List>()->elems.push_back(deep_clone(id));
-            pair->as<List>()->elems.push_back(make_symbol("Nil", id->span()));
+            pair->as<List>()->elems.push_back(make_nil(id->span()));
             zList->as<List>()->elems.push_back(std::move(pair));
         }
 

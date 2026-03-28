@@ -8,8 +8,13 @@ namespace eta::runtime::memory::intern {
         auto&[mtx, str_to_id] = shards[shard_idx];
 
         InternId existing = 0;
-        if (str_to_id.visit(s, [&existing](const auto& kv) { existing = kv.second;})) {
-            return existing;
+        {
+#if defined(_MSC_VER)
+            std::lock_guard<std::mutex> lock(mtx);
+#endif
+            if (str_to_id.visit(s, [&existing](const auto& kv) { existing = kv.second;})) {
+                return existing;
+            }
         }
 
         // Slow path: need to insert
@@ -48,10 +53,15 @@ namespace eta::runtime::memory::intern {
         const auto&[mtx, str_to_id] = shards[shard_idx];
 
         InternId result = 0;
-        if (str_to_id.visit(s, [&result](const auto& kv) {
-            result = kv.second;
-        })) {
-            return result;
+        {
+#if defined(_MSC_VER)
+            std::lock_guard<std::mutex> lock(mtx);
+#endif
+            if (str_to_id.visit(s, [&result](const auto& kv) {
+                result = kv.second;
+            })) {
+                return result;
+            }
         }
         return std::unexpected(InternTableError::MissingId);
     }

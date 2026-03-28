@@ -14,6 +14,9 @@ namespace eta::runtime::memory::heap {
         // One method per pointer-containing heap type
         virtual R visit_cons(const eta::runtime::types::Cons& c) = 0;
         virtual R visit_lambda(const eta::runtime::types::Lambda& l) = 0;
+        virtual R visit_closure(const eta::runtime::types::Closure& c) = 0;
+        virtual R visit_vector(const eta::runtime::types::Vector& v) = 0;
+        virtual R visit_continuation(const eta::runtime::types::Continuation& c) = 0;
 
         // Fallback for leaf/unknown kinds (no outward edges)
         virtual R visit_leaf(ObjectKind kind, const void* payload) = 0;
@@ -24,11 +27,17 @@ namespace eta::runtime::memory::heap {
     inline R visit_heap_object(const ObjectHeader& hdr, const void* payload, HeapVisitor<R>& v) {
         using enum ObjectKind;
         switch (hdr.kind) {
-            case Cons:   return v.visit_cons(*static_cast<const eta::runtime::types::Cons*>(payload));
-            case Lambda: return v.visit_lambda(*static_cast<const eta::runtime::types::Lambda*>(payload));
-            case Fixnum: return v.visit_leaf(ObjectKind::Fixnum, payload);
+            case Cons:         return v.visit_cons(*static_cast<const eta::runtime::types::Cons*>(payload));
+            case Lambda:       return v.visit_lambda(*static_cast<const eta::runtime::types::Lambda*>(payload));
+            case Closure:      return v.visit_closure(*static_cast<const eta::runtime::types::Closure*>(payload));
+            case Vector:       return v.visit_vector(*static_cast<const eta::runtime::types::Vector*>(payload));
+            case Continuation: return v.visit_continuation(*static_cast<const eta::runtime::types::Continuation*>(payload));
+            
+            case Fixnum: 
+            case ByteVector:
+            case String:
+            case Primitive:
             case Unknown:
-            default:
                 return v.visit_leaf(hdr.kind, payload);
         }
     }

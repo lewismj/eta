@@ -100,14 +100,9 @@ BOOST_AUTO_TEST_CASE(linker_circular_imports) {
     reader::ModuleLinker L;
     auto idx = L.index_modules(std::span<const reader::parser::SExprPtr>(forms.data(), forms.size()));
     BOOST_REQUIRE(idx.has_value());
-    auto lk = L.link(); BOOST_REQUIRE(lk.has_value());
-    auto A = L.get("A"); auto B = L.get("B");
-    BOOST_REQUIRE(A.has_value()); BOOST_REQUIRE(B.has_value());
-    const auto& MA = A->get(); const auto& MB = B->get();
-    BOOST_CHECK(MA.visible.contains("a"));
-    BOOST_CHECK(MA.visible.contains("b"));
-    BOOST_CHECK(MB.visible.contains("b"));
-    BOOST_CHECK(MB.visible.contains("a"));
+    auto lk = L.link();
+    BOOST_REQUIRE(!lk.has_value());
+    BOOST_CHECK(lk.error().kind == reader::LinkError::Kind::CircularDependency);
 }
 
 BOOST_AUTO_TEST_CASE(linker_multi_clause_imports) {

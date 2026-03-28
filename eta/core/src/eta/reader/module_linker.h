@@ -27,7 +27,8 @@ namespace eta::reader::linker {
             ExportOfUnknownName,    // (export x) but x not defined in that module
             ConflictingImport,      // local name clashes with local define or prior import
             NameNotExported,        // only/rename names not exported by source OR not in the current import set
-            DuplicateModule         // two modules with the same name
+            DuplicateModule,        // two modules with the same name
+            CircularDependency      // modules form a dependency cycle
         } kind{};
         Span span{};
         std::string message;
@@ -119,6 +120,7 @@ namespace eta::reader::linker {
             case ConflictingImport:     return "LinkError::Kind::ConflictingImport";
             case NameNotExported:       return "LinkError::Kind::NameNotExported";
             case DuplicateModule:       return "LinkError::Kind::DuplicateModule";
+            case CircularDependency:    return "LinkError::Kind::CircularDependency";
         }
         return "LinkError::Kind::Unknown";
     }

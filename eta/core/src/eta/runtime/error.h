@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <variant>
 
 #include "nanbox.h"
@@ -12,7 +13,22 @@ namespace eta::runtime::error {
     using namespace eta::runtime::memory::heap;
     using namespace eta::runtime::memory::intern;
 
+    enum class RuntimeErrorCode : std::uint8_t {
+        NotImplemented,
+        StackOverflow,
+        FrameOverflow,
+        InvalidInstruction,
+        InvalidArity,
+        TypeError,
+        UndefinedGlobal,
+    };
+
+    struct VMError {
+        RuntimeErrorCode code;
+        std::string message;
+    };
+
     //! Internal runtime error, the Compiler/VM can add Span information.
-    using RuntimeError = std::variant<NaNBoxError, HeapError, InternTableError>;
+    using RuntimeError = std::variant<NaNBoxError, HeapError, InternTableError, VMError>;
 
 }

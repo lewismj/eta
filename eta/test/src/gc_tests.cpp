@@ -147,4 +147,52 @@ BOOST_AUTO_TEST_CASE(stats_sanity) {
     BOOST_TEST(stats.bytes_after <= before);
 }
 
+BOOST_AUTO_TEST_CASE(retains_reachable_closure_vector_continuation) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    // 1. Vector
+    auto v_el = expect_ok(make_cons(heap, Nil));
+    auto vec = expect_ok(make_vector(heap, {v_el}));
+
+    // 2. Closure
+    auto c_up = expect_ok(make_cons(heap, Nil));
+    auto closure = expect_ok(make_closure(heap, nullptr, {c_up}));
+
+    // 3. Continuation
+    auto cont_stack_el = expect_ok(make_cons(heap, Nil));
+    auto cont_frame_closure = expect_ok(make_closure(heap, nullptr, {}));
+    std::vector<eta::runtime::vm::Frame> frames = {
+        {.func = nullptr, .pc = 0, .fp = 0, .closure = cont_frame_closure}
+    };
+    auto cont = expect_ok(make_continuation(heap, {cont_stack_el}, frames));
+
+    // Root them all
+    roots.push_back(vec);
+    roots.push_back(closure);
+    roots.push_back(cont);
+
+    GCStats stats{};
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+
+    // Everything should be retained.
+    // 6 objects: v_el, vec, c_up, closure, cont_stack_el, cont_frame_closure, cont.
+    // wait, cont_frame_closure is 7th object.
+    // Objects:
+    // 1. v_el (cons)
+    // 2. vec (vector)
+    // 3. c_up (cons)
+    // 4. closure (closure)
+    // 5. cont_stack_el (cons)
+    // 6. cont_frame_closure (closure)
+    // 7. cont (continuation)
+    BOOST_TEST(stats.objects_freed == 0);
+
+    // Now unroot them
+    roots.clear();
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+    BOOST_TEST(stats.objects_freed == 7);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -128,6 +128,7 @@ namespace eta::reader::expander {
         // -- Helpers --
         static bool is_symbol_named(const SExprPtr& p, std::string_view name);
         static SExprPtr make_symbol(std::string name, Span s);
+        static SExprPtr make_nil(Span s);
         static SExprPtr make_list(std::vector<SExprPtr> elems, Span s);
         static SExprPtr make_dotted_list(std::vector<SExprPtr> head, SExprPtr tail, Span s);
 

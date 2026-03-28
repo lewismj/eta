@@ -20,7 +20,34 @@ namespace eta::runtime::memory::heap {
         Cons,
         Lambda,
         Fixnum,
+        Vector,
+        ByteVector,
+        String,
+        Closure,
+        Continuation,
+        Primitive,
     };
+
+    constexpr const char* to_string(const ObjectKind k) noexcept {
+        using enum ObjectKind;
+        switch (k) {
+            case Unknown: return "ObjectKind::Unknown";
+            case Cons: return "ObjectKind::Cons";
+            case Lambda: return "ObjectKind::Lambda";
+            case Fixnum: return "ObjectKind::Fixnum";
+            case Vector: return "ObjectKind::Vector";
+            case ByteVector: return "ObjectKind::ByteVector";
+            case String: return "ObjectKind::String";
+            case Closure: return "ObjectKind::Closure";
+            case Continuation: return "ObjectKind::Continuation";
+            case Primitive: return "ObjectKind::Primitive";
+            default: return "ObjectKind::Unknown";
+        }
+    }
+
+    inline std::ostream& operator<<(std::ostream& os, const ObjectKind k) {
+        return os << to_string(k);
+    }
 
     enum class HeapError : std::uint8_t {
         HeapObjectIdExhausted,

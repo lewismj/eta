@@ -115,6 +115,21 @@ namespace eta::runtime::memory::gc {
                     for (auto v : l.up_values) push_if_heap_obj(v);
                 }
 
+                void visit_closure(const eta::runtime::types::Closure& c) override {
+                    for (auto v : c.upvals) push_if_heap_obj(v);
+                }
+
+                void visit_vector(const eta::runtime::types::Vector& v) override {
+                    for (auto v : v.elements) push_if_heap_obj(v);
+                }
+
+                void visit_continuation(const eta::runtime::types::Continuation& c) override {
+                    for (auto v : c.stack) push_if_heap_obj(v);
+                    for (const auto& frame : c.frames) {
+                        push_if_heap_obj(frame.closure);
+                    }
+                }
+
                 void visit_leaf(heap::ObjectKind, const void*) override { /* no edges */ }
             } marker{work};
 

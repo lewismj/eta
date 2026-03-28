@@ -96,6 +96,7 @@ BOOST_AUTO_TEST_CASE(make_flonum_nan_is_canonical_nan) {
 }
 
 BOOST_AUTO_TEST_CASE(make_symbol_and_make_string_box_payloads_from_intern_table) {
+    Heap heap(1ull << 20);
     InternTable tbl;
 
     // symbol
@@ -108,13 +109,19 @@ BOOST_AUTO_TEST_CASE(make_symbol_and_make_string_box_payloads_from_intern_table)
     BOOST_TEST(tag(sym2) == Tag::Symbol);
     BOOST_TEST(payload(sym1) == payload(sym2)); // same intern id
 
-    // string (currently uses InternTable as well)
-    auto s1 = expect_ok(make_string(tbl, "hello"));
+    // string (short strings use InternTable)
+    auto s1 = expect_ok(make_string(heap, tbl, "hello"));
     BOOST_TEST(is_boxed(s1));
     BOOST_TEST(tag(s1) == Tag::String);
 
-    auto s2 = expect_ok(make_string(tbl, "hello"));
+    auto s2 = expect_ok(make_string(heap, tbl, "hello"));
     BOOST_TEST(payload(s1) == payload(s2));
+
+    // Large string (uses Heap)
+    std::string large(40, 'a');
+    auto s3 = expect_ok(make_string(heap, tbl, large));
+    BOOST_TEST(is_boxed(s3));
+    BOOST_TEST(tag(s3) == Tag::HeapObject);
 }
 
 BOOST_AUTO_TEST_CASE(make_symbol_propagates_intern_errors) {

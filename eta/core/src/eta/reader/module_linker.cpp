@@ -144,8 +144,48 @@ namespace eta::reader::linker {
     }
 
     // --- Linking ---
+    namespace {
+        struct CycleDetector {
+            enum State { Unvisited, Visiting, Visited };
+            const std::unordered_map<std::string, std::vector<PendingImport>>& pending;
+            std::unordered_map<std::string, State> states;
+            std::vector<std::string> path;
+
+            LinkResult<void> visit(const std::string& name) {
+                auto& state = states[name];
+                if (state == Visiting) {
+                    std::string cycle;
+                    bool in_cycle = false;
+                    for (const auto& p : path) {
+                        if (p == name) in_cycle = true;
+                        if (in_cycle) { cycle += p; cycle += " -> "; }
+                    }
+                    cycle += name;
+                    return std::unexpected(LinkError{LinkError::Kind::CircularDependency, {},
+                        "Circular module dependency detected: " + cycle});
+                }
+                if (state == Visited) return {};
+
+                state = Visiting;
+                path.push_back(name);
+                if (auto it = pending.find(name); it != pending.end()) {
+                    for (const auto& pi : it->second) {
+                        if (auto res = visit(pi.spec.module); !res) return res;
+                    }
+                }
+                path.pop_back();
+                state = Visited;
+                return {};
+            }
+        };
+    }
 
     LinkResult<void> ModuleLinker::link() {
+        CycleDetector detector{pending_, {}, {}};
+        for (const auto& [name, _] : modules_) {
+            if (auto res = detector.visit(name); !res) return res;
+        }
+
         for (auto& [target_name, imports] : pending_) {
             auto tIt = modules_.find(target_name); if (tIt == modules_.end()) continue; // defensive
             ModuleTable& tgt = tIt->second;
@@ -237,6 +277,14 @@ namespace eta::reader::linker {
             // Make locals visible too (after imports, to allow conflict checks above)
             for (const auto& d : tgt.defined) tgt.visible.insert(d);
             tgt.state = ModuleState::Linked;
+        }
+
+        // Ensure all modules (even those without imports) get linked
+        for (auto& [name, mt] : modules_) {
+            if (mt.state == ModuleState::Indexed) {
+                for (const auto& d : mt.defined) mt.visible.insert(d);
+                mt.state = ModuleState::Linked;
+            }
         }
         return {};
     }

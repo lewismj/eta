@@ -21,6 +21,9 @@ target_sources(${PROJECT_NAME}
         src/eta/reader/parser.cpp
         src/eta/reader/expander.cpp
         src/eta/reader/module_linker.cpp
+        src/eta/semantics/semantic_analyzer.cpp
+        src/eta/semantics/emitter.cpp
+        src/eta/runtime/vm/vm.cpp
 )
 
 # BMI2/PEXT support check

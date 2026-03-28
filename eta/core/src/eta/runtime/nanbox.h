@@ -268,5 +268,6 @@ namespace eta::runtime::nanbox {
 
    constexpr LispVal Nil   = ops::box(Tag::Nil, 0);
    constexpr LispVal False = Nil;
+   constexpr LispVal True  = ops::box(Tag::Nil, 1);
 
 }

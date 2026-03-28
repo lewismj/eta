@@ -5,9 +5,9 @@ The Module Linker is self‑contained in module_linker.h/.cpp and exposes three 
 
 Files and namespaces
 Add files:
-core\src\eta\linker\module_linker.h
-core\src\eta\linker\module_linker.cpp
-Namespace: eta::linker
+core\src\eta\reader\module_linker.h
+core\src\eta\reader\module_linker.cpp
+Namespace: eta::reader::linker
 Includes needed:
 #include <expected>
 #include <string> / <vector> / <unordered_map> / <unordered_set> / <utility>
@@ -23,7 +23,7 @@ Public API (header)
 
 #include "eta/reader/parser.h"
 
-namespace eta::linker {
+namespace eta::reader::linker {
 
 using eta::reader::parser::SExpr;      
 using eta::reader::parser::SExprPtr;   
@@ -97,7 +97,7 @@ private:
     static std::string to_string(const LinkError::Kind k);
 };
 
-} // namespace eta::linker
+} // namespace eta::reader::linker
 Implementation details (cpp)
 1) Utilities
 is_symbol_named(p, name): identical semantics to the expander’s helper (local small duplicate to avoid coupling).
@@ -105,7 +105,7 @@ as_list/as_symbol: safe casts using SExpr methods already present.
 #include "eta/linker/module_linker.h"
 #include <sstream>
 
-namespace eta::linker {
+namespace eta::reader::linker {
 
 bool ModuleLinker::is_symbol_named(const SExprPtr& p, std::string_view name) {
     auto s = as_symbol(p); return s && s->name == name;
@@ -372,7 +372,7 @@ LinkResult<void> ModuleLinker::link() {
     return {};
 }
 
-} // namespace eta::linker
+} // namespace eta::reader::linker
 Implementation notes:
 
 We track per‑target imported locals to detect import‑vs‑import name clashes.
