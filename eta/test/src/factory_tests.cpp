@@ -117,11 +117,11 @@ BOOST_AUTO_TEST_CASE(make_symbol_and_make_string_box_payloads_from_intern_table)
     auto s2 = expect_ok(make_string(heap, tbl, "hello"));
     BOOST_TEST(payload(s1) == payload(s2));
 
-    // Large string (uses Heap)
+    // Large string (also interned)
     std::string large(40, 'a');
     auto s3 = expect_ok(make_string(heap, tbl, large));
     BOOST_TEST(is_boxed(s3));
-    BOOST_TEST(tag(s3) == Tag::HeapObject);
+    BOOST_TEST(tag(s3) == Tag::String);
 }
 
 BOOST_AUTO_TEST_CASE(make_symbol_propagates_intern_errors) {

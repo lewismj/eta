@@ -1,11 +1,9 @@
 #pragma once
 
-#include <string>
+#include <eta/runtime/nanbox.h>
 
 namespace eta::runtime::types {
 
-    struct String {
-        std::string value {};
-    };
+    using String = nanbox::LispVal;
 
 }

@@ -22,7 +22,6 @@ namespace eta::runtime::memory::heap {
         Fixnum,
         Vector,
         ByteVector,
-        String,
         Closure,
         Continuation,
         Primitive,
@@ -35,7 +34,6 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(Fixnum)
         ETA_ENUM_CASE(Vector)
         ETA_ENUM_CASE(ByteVector)
-        ETA_ENUM_CASE(String)
         ETA_ENUM_CASE(Closure)
         ETA_ENUM_CASE(Continuation)
         ETA_ENUM_CASE(Primitive)

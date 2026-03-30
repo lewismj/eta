@@ -29,10 +29,10 @@ bool VM::values_eqv(LispVal a, LispVal b) {
     
     // For eqv?, strings and large numbers need content comparison
     
-    // 1. Strings (interned or heap)
-    if (auto sv_a = StringView::try_from(a, intern_table_, heap_)) {
-        auto sv_b = StringView::try_from(b, intern_table_, heap_);
-        return sv_b && sv_a->view() == sv_b->view();
+    // 1. Strings (interned)
+    if (ops::is_boxed(a) && ops::tag(a) == Tag::String) {
+        // Since all strings are interned, if a != b, b is either not a string or a different string
+        return false;
     }
     
     // 2. Heap-allocated Fixnums (large integers)

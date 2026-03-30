@@ -39,26 +39,17 @@ public:
      */
     static std::optional<StringView> try_from(
         LispVal v,
-        InternTable& intern_table,
-        Heap& heap
+        InternTable& intern_table
     ) noexcept {
         if (!ops::is_boxed(v)) return std::nullopt;
 
         Tag t = ops::tag(v);
         if (t == Tag::String) {
             auto str_opt = intern_table.get_string(ops::payload(v));
-            if (str_opt) return StringView{*str_opt, StringKind::Interned};
+            if (str_opt) return StringView{*str_opt};
             return std::nullopt;
         }
 
-        if (t == Tag::HeapObject) {
-            HeapEntry entry;
-            if (heap.try_get(ops::payload(v), entry) &&
-                entry.header.kind == ObjectKind::String) {
-                auto* str = static_cast<types::String*>(entry.ptr);
-                return StringView{std::string_view(str->value), StringKind::Heap};
-            }
-        }
         return std::nullopt;
     }
 
@@ -68,26 +59,18 @@ public:
      */
     static std::expected<StringView, RuntimeError> from(
         LispVal v,
-        InternTable& intern_table,
-        Heap& heap
+        InternTable& intern_table
     ) {
-        auto res = try_from(v, intern_table, heap);
+        auto res = try_from(v, intern_table);
         if (res) return *res;
         return std::unexpected(VMError{RuntimeErrorCode::TypeError, "Not a string"});
     }
 
     /**
-     * @brief Check if a LispVal is a string (interned or heap)
+     * @brief Check if a LispVal is a string
      */
-    static bool is_string(LispVal v, Heap& heap) noexcept {
-        if (!ops::is_boxed(v)) return false;
-        Tag t = ops::tag(v);
-        if (t == Tag::String) return true;
-        if (t == Tag::HeapObject) {
-            HeapEntry entry;
-            return heap.try_get(ops::payload(v), entry) && entry.header.kind == ObjectKind::String;
-        }
-        return false;
+    static bool is_string(LispVal v) noexcept {
+        return ops::is_boxed(v) && ops::tag(v) == Tag::String;
     }
 
     /**
@@ -95,16 +78,15 @@ public:
      */
     static std::expected<bool, RuntimeError> equal(
         LispVal a, LispVal b,
-        InternTable& intern_table,
-        Heap& heap
+        InternTable& intern_table
     ) {
         // Fast path: if both are the same value, they're equal
         if (a == b) return true;
 
-        auto sv_a = from(a, intern_table, heap);
+        auto sv_a = from(a, intern_table);
         if (!sv_a) return std::unexpected(sv_a.error());
 
-        auto sv_b = from(b, intern_table, heap);
+        auto sv_b = from(b, intern_table);
         if (!sv_b) return std::unexpected(sv_b.error());
 
         return sv_a->view() == sv_b->view();
@@ -112,8 +94,6 @@ public:
 
     // Accessors
     [[nodiscard]] std::string_view view() const noexcept { return view_; }
-    [[nodiscard]] bool is_interned() const noexcept { return kind_ == StringKind::Interned; }
-    [[nodiscard]] bool is_heap() const noexcept { return kind_ == StringKind::Heap; }
 
     // Implicit conversion to string_view
     operator std::string_view() const noexcept { return view_; }
@@ -124,13 +104,10 @@ public:
     [[nodiscard]] const char* data() const noexcept { return view_.data(); }
 
 private:
-    enum class StringKind : std::uint8_t { Interned, Heap };
-
-    StringView(std::string_view view, StringKind kind)
-        : view_(view), kind_(kind) {}
+    explicit StringView(std::string_view view)
+        : view_(view) {}
 
     std::string_view view_;
-    StringKind kind_;
 };
 
 /**

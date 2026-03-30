@@ -13,10 +13,6 @@ namespace eta::runtime::memory::factory {
     using namespace eta::runtime::nanbox;
     using namespace eta::runtime::error;
 
-    // Maximum string length that will be automatically interned.
-    // Short strings are interned for fast equality comparison.
-    // Longer strings are heap-allocated to avoid bloating the intern table.
-    constexpr std::size_t kMaxInternedStringLength = 32;
 
     // Unified helper for heap allocation + boxing.
     // Reduces repetitive pattern: allocate<T, Kind>(...) -> box(HeapObject, id)
@@ -48,7 +44,7 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
-    std::expected<LispVal, RuntimeError> make_symbol(InternTable& table, const std::string& str) {
+    std::expected<types::Symbol, RuntimeError> make_symbol(InternTable& table, const std::string& str) {
         const auto res = table.intern(str);
         if (!res.has_value()) {
             return res;
@@ -57,11 +53,7 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
-    std::expected<LispVal, RuntimeError> make_string(Heap& heap, InternTable& table, const std::string& str) {
-        // Short strings are interned for fast equality checks; longer strings go to heap
-        if (str.length() > kMaxInternedStringLength) {
-            return make_heap_object<types::String, ObjectKind::String>(heap, types::String{.value = str});
-        }
+    std::expected<types::String, RuntimeError> make_string(Heap&, InternTable& table, const std::string& str) {
         const auto res = table.intern(str);
         if (!res.has_value()) {
             return res;
