@@ -150,6 +150,8 @@ namespace eta::runtime::nanbox {
         }
 
         constexpr bool is_boxed(const uint64_t bits) {
+            // A value is boxed if all QNaN exponent bits, the QNaN bit, and our marker bit are set.
+            // BOXED_PATTERN_MASK is 0x7ffc000000000000ULL
             return (bits & BOXED_PATTERN_MASK) == BOXED_PATTERN_MASK;
         }
 

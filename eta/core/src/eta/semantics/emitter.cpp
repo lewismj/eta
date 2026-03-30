@@ -75,9 +75,14 @@ void Emitter::emit_const(const core::Const& n, Context& ctx) {
     }
 }
 
-uint32_t Emitter::emit_load_const(LispVal val, Context& ctx) {
+uint32_t Emitter::add_const(LispVal val, Context& ctx) {
     uint32_t idx = static_cast<uint32_t>(ctx.func.constants.size());
     ctx.func.constants.push_back(val);
+    return idx;
+}
+
+uint32_t Emitter::emit_load_const(LispVal val, Context& ctx) {
+    uint32_t idx = add_const(val, ctx);
     ctx.func.code.push_back({OpCode::LoadConst, idx});
     return idx;
 }
@@ -152,7 +157,7 @@ void Emitter::emit_lambda_node(const core::Lambda& n, const eta::reader::parser:
     // Uses FUNC_INDEX_TAG from bytecode.h
     LispVal func_idx_val = encode_func_index(func_idx);
 
-    uint32_t const_idx = emit_load_const(func_idx_val, ctx);
+    uint32_t const_idx = add_const(func_idx_val, ctx);
 
     uint32_t num_upvals = static_cast<uint32_t>(n.upval_sources.size());
     // Push upval sources before MakeClosure
@@ -176,10 +181,10 @@ void Emitter::emit_values(const core::Values& n, Context& ctx) {
     ctx.func.code.push_back({OpCode::Values, static_cast<uint32_t>(n.exprs.size())});
 }
 
-void Emitter::emit_call_with_values(const core::CallWithValues& n, bool tail, Context& ctx) {
+void Emitter::emit_call_with_values(const core::CallWithValues& n, bool /*tail*/, Context& ctx) {
     emit_node(n.producer, ctx);
     emit_node(n.consumer, ctx);
-    ctx.func.code.push_back({tail ? OpCode::TailCall : OpCode::CallWithValues, 0});
+    ctx.func.code.push_back({OpCode::CallWithValues, 0});
 }
 
 void Emitter::emit_dynamic_wind(const core::DynamicWind& n, Context& ctx) {
@@ -189,9 +194,9 @@ void Emitter::emit_dynamic_wind(const core::DynamicWind& n, Context& ctx) {
     ctx.func.code.push_back({OpCode::DynamicWind, 0});
 }
 
-void Emitter::emit_call_cc(const core::CallCC& n, bool tail, Context& ctx) {
+void Emitter::emit_call_cc(const core::CallCC& n, bool /*tail*/, Context& ctx) {
     emit_node(n.consumer, ctx);
-    ctx.func.code.push_back({tail ? OpCode::TailCall : OpCode::CallCC, 0});
+    ctx.func.code.push_back({OpCode::CallCC, 0});
 }
 
 void Emitter::emit_quote(const core::Quote& n, Context& ctx) {

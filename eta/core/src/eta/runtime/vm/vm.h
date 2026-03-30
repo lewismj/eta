@@ -125,7 +125,9 @@ private:
         current_closure_ = closure;
         fp_ = static_cast<uint32_t>(stack_.size() - argc);
         pc_ = 0;
-        stack_.resize(fp_ + func->stack_size, Nil);
+        // Ensure we don't chop off arguments if stack_size is small
+        uint32_t needed_size = std::max(func->stack_size, argc);
+        stack_.resize(fp_ + needed_size, Nil);
     }
 
     // Restore execution state from a frame (used after function returns)

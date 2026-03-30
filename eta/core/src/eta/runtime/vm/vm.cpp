@@ -96,15 +96,14 @@ std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
 // Unified helper to dispatch a callee (Closure, Continuation, or Primitive)
 std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, uint32_t argc, bool is_tail) {
     // Use try_get_as for consistent heap access pattern
-    std::cout << "DEBUG: dispatch_callee callee=" << std::hex << callee << " tag=" << to_string(ops::tag(callee)) << std::dec << " is_tail=" << is_tail << " argc=" << argc << std::endl;
+   // std::cout << "
 
     if (!ops::is_boxed(callee)) {
-         std::cout << "DEBUG: Callee not boxed" << std::endl;
-         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not boxed"}});
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not boxed"}});
     }
     
     if (ops::tag(callee) != Tag::HeapObject) {
-         std::cout << "DEBUG: Callee tag NOT HeapObject, it is " << to_string(ops::tag(callee)) << std::endl;
+        // std::cout << "DEBUG: Callee tag NOT HeapObject, it is " << to_string(ops::tag(callee)) << std::endl;
     }
 
     if (auto* closure = try_get_as<ObjectKind::Closure, Closure>(callee)) {
@@ -153,7 +152,7 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
         std::vector<LispVal> args;
         for (uint32_t i = 0; i < argc; ++i) {
             args.push_back(stack_[stack_.size() - argc + i]);
-            std::cout << "DEBUG: prim arg[" << i << "]=" << std::hex << args.back() << std::dec << std::endl;
+          //  std::cout << "DEBUG: prim arg[" << i << "]=" << std::hex << args.back() << std::dec << std::endl;
         }
         stack_.resize(stack_.size() - argc);
 
@@ -220,8 +219,9 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 } else {
                     // Producer was a primitive - result already pushed.
                     // We can call consumer directly now.
+                    uint32_t old_size = static_cast<uint32_t>(stack_.size());
                     unpack_to_stack(pop());
-                    uint32_t argc = static_cast<uint32_t>(stack_.size() - fp_);
+                    uint32_t argc = static_cast<uint32_t>(stack_.size() - old_size);
                     auto cons_dispatch = dispatch_callee(consumer, argc, false);
                     if (!cons_dispatch) return std::unexpected(cons_dispatch.error());
                     if (cons_dispatch->action == DispatchAction::SetupFrame) {
@@ -239,7 +239,9 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 winding_stack_.push_back({before_thunk, body_thunk, after_thunk});
 
                 // Call before() with 0 arguments. Return to body() afterwards.
+                temp_roots_.push_back(before_thunk);
                 auto before_dispatch = dispatch_callee(before_thunk, 0, /*is_tail=*/false);
+                temp_roots_.pop_back();
                 if (!before_dispatch) return std::unexpected(before_dispatch.error());
 
                 if (before_dispatch->action == DispatchAction::SetupFrame) {
@@ -315,16 +317,16 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             case OpCode::JumpIfFalse: {
                 LispVal v = pop();
-                std::cout << "DEBUG: JumpIfFalse v=" << std::hex << v << std::dec << std::endl;
                 if (v == False) pc_ += instr.arg;
                 break;
             }
             case OpCode::Call: {
                 uint32_t argc = instr.arg;
                 LispVal callee = pop();
-                std::cout << "DEBUG: Call callee=" << std::hex << callee << " argc=" << std::dec << argc << std::endl;
 
+                temp_roots_.push_back(callee);
                 auto dispatch_res = dispatch_callee(callee, argc, /*is_tail=*/false);
+                temp_roots_.pop_back();
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
                 if (dispatch_res->action == DispatchAction::SetupFrame) {
@@ -403,7 +405,9 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 uint32_t argc = instr.arg;
                 LispVal callee = pop();
 
+                temp_roots_.push_back(callee);
                 auto dispatch_res = dispatch_callee(callee, argc, /*is_tail=*/true);
+                temp_roots_.pop_back();
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
                 if (dispatch_res->action == DispatchAction::TailReuse) {
@@ -415,9 +419,10 @@ std::expected<void, RuntimeError> VM::run_loop() {
                     for (uint32_t i = 0; i < argc; ++i) {
                         stack_[fp_ + i] = stack_[new_args_start + i];
                     }
-                    stack_.resize(fp_ + current_func_->stack_size, Nil);
+                    // Ensure we don't chop off moved arguments if stack_size is small
+                    uint32_t needed_size = std::max(current_func_->stack_size, argc);
+                    stack_.resize(fp_ + needed_size, Nil);
                     pc_ = 0;
-                    std::cout << "DEBUG: TailReuse argc=" << argc << " fp_=" << fp_ << " stack_size=" << stack_.size() << " arg0=" << std::hex << stack_[fp_] << std::dec << std::endl;
                 } else {
                     // TailCall to primitive or continuation - result already pushed.
                     // Now we MUST return that result from the current frame.

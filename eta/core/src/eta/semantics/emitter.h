@@ -94,6 +94,7 @@ private:
     void emit_address_store(const core::Address& addr, Context& ctx);
 
     // Dedicated emit methods for each IR node type
+    uint32_t add_const(runtime::nanbox::LispVal val, Context& ctx);
     uint32_t emit_load_const(runtime::nanbox::LispVal val, Context& ctx);
     void emit_const(const core::Const& n, Context& ctx);
     void emit_var(const core::Var& n, Context& ctx);

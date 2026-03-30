@@ -1,6 +1,7 @@
 #include <boost/test/unit_test.hpp>
 #include <iostream>
 #include <algorithm>
+#include <functional>
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
@@ -59,6 +60,65 @@ struct VMTestFixture {
         });
         sem_mod.toplevel_inits.erase(it, sem_mod.toplevel_inits.end());
 
+        // Remove bindings for injected primitives (+, -, eq?) so VM uses the injected versions
+        auto is_injected_prim = [](const auto& b) {
+            return b.name == "+" || b.name == "-" || b.name == "eq?";
+        };
+        // Record old-to-new slot mapping
+        std::vector<int> slot_map(sem_mod.bindings.size(), -1);
+        std::vector<decltype(sem_mod.bindings)::value_type> new_bindings;
+        int new_slot = 0;
+        for (size_t i = 0; i < sem_mod.bindings.size(); ++i) {
+            slot_map[i] = new_slot;
+            auto b = sem_mod.bindings[i];
+            b.slot = new_slot;
+            new_bindings.push_back(b);
+            ++new_slot;
+        }
+        sem_mod.bindings = std::move(new_bindings);
+        // Update all global slot references in toplevel_inits (recursive)
+        std::function<void(core::Node*)> patch = [&](core::Node* n) {
+            if (!n) return;
+            if (auto* var_node = std::get_if<core::Var>(&n->data)) {
+                if (auto* g = std::get_if<core::Address::Global>(&var_node->addr.where)) {
+                    if (g->id < slot_map.size() && slot_map[g->id] != -1)
+                        g->id = slot_map[g->id];
+                }
+            } else if (auto* set_node = std::get_if<core::Set>(&n->data)) {
+                if (auto* g = std::get_if<core::Address::Global>(&set_node->target.where)) {
+                    if (g->id < slot_map.size() && slot_map[g->id] != -1)
+                        g->id = slot_map[g->id];
+                }
+                patch(set_node->value);
+            } else if (auto* call_node = std::get_if<core::Call>(&n->data)) {
+                patch(call_node->callee);
+                for (auto* a : call_node->args) patch(a);
+            } else if (auto* if_node = std::get_if<core::If>(&n->data)) {
+                patch(if_node->test); patch(if_node->conseq); patch(if_node->alt);
+            } else if (auto* begin_node = std::get_if<core::Begin>(&n->data)) {
+                for (auto* e : begin_node->exprs) patch(e);
+            } else if (auto* lambda_node = std::get_if<core::Lambda>(&n->data)) {
+                patch(lambda_node->body);
+                for (auto& as : lambda_node->upval_sources) {
+                    if (auto* g = std::get_if<core::Address::Global>(&as.where)) {
+                        if (g->id < slot_map.size() && slot_map[g->id] != -1)
+                            g->id = slot_map[g->id];
+                    }
+                }
+            } else if (auto* values_node = std::get_if<core::Values>(&n->data)) {
+                for (auto* e : values_node->exprs) patch(e);
+            } else if (auto* cwv = std::get_if<core::CallWithValues>(&n->data)) {
+                patch(cwv->producer); patch(cwv->consumer);
+            } else if (auto* ccc = std::get_if<core::CallCC>(&n->data)) {
+                patch(ccc->consumer);
+            } else if (auto* dw = std::get_if<core::DynamicWind>(&n->data)) {
+                patch(dw->before); patch(dw->body); patch(dw->after);
+            }
+        };
+        for (auto* node : sem_mod.toplevel_inits) {
+            patch(node);
+        }
+
         Emitter emitter(sem_mod, heap, intern_table, registry);
         auto* main_func = emitter.emit();
 
@@ -100,7 +160,7 @@ struct VMTestFixture {
 
         auto prim_eq = make_primitive(heap, [](const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
             if (args.size() != 2) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "eq? expects 2 args"}});
-            std::cout << "DEBUG: eq? " << std::hex << args[0] << " " << args[1] << std::dec << " result=" << (args[0] == args[1]) << std::endl;
+            //std::cout << "DEBUG: eq? " << std::hex << args[0] << " " << args[1] << std::dec << " result=" << (args[0] == args[1]) << std::endl;
             return (args[0] == args[1]) ? nanbox::True : nanbox::False;
         }, 2).value();
 
@@ -131,12 +191,12 @@ struct VMTestFixture {
             throw std::runtime_error(msg);
         }
 
-        std::cout << "DEBUG: exec_res.value() = " << std::hex << exec_res.value() << std::dec << std::endl;
-        std::cout << "DEBUG: tag = " << static_cast<int>(nanbox::ops::tag(exec_res.value())) << std::endl;
+        //std::cout << "DEBUG: exec_res.value() = " << std::hex << exec_res.value() << std::dec << std::endl;
+        //std::cout << "DEBUG: tag = " << static_cast<int>(nanbox::ops::tag(exec_res.value())) << std::endl;
         
         // Find 'result' global
         for (size_t i = 0; i < sem_mod.bindings.size(); ++i) {
-            std::cout << "DEBUG: binding[" << i << "].name = " << sem_mod.bindings[i].name << ", slot = " << sem_mod.bindings[i].slot << ", value = " << std::hex << vm.globals()[sem_mod.bindings[i].slot] << std::dec << std::endl;
+            //std::cout << "DEBUG: binding[" << i << "].name = " << sem_mod.bindings[i].name << ", slot = " << sem_mod.bindings[i].slot << ", value = " << std::hex << vm.globals()[sem_mod.bindings[i].slot] << std::dec << std::endl;
             if (sem_mod.bindings[i].name == "result") {
                 return vm.globals()[sem_mod.bindings[i].slot];
             }
