@@ -64,6 +64,10 @@ public:
     }
 
     std::expected<LispVal, RuntimeError> execute(const BytecodeFunction& main);
+    
+    // Test helper to access/modify globals
+    std::vector<LispVal>& globals() { return globals_; }
+    const std::vector<LispVal>& globals() const { return globals_; }
 
 private:
     Heap& heap_;

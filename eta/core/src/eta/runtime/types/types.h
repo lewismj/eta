@@ -8,3 +8,4 @@
 #include "closure.h"
 #include "continuation.h"
 #include "multiple_values.h"
+#include "primitive.h"

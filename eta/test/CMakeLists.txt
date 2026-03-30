@@ -11,6 +11,7 @@ set(SOURCES
         src/nanbox_tests.cpp
         src/module_linker_tests.cpp
         src/semantics_tests.cpp
+        src/vm_tests.cpp
         src/eta_test.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
