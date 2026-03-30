@@ -92,9 +92,9 @@ struct ModuleSemantics {
      * Uses the Arena allocator for better memory locality and cache performance.
      */
     template <class Alt, class... Args>
-    core::Node* emplace(Args&&... args) {
+    core::Node* emplace(const eta::reader::parser::Span& span, Args&&... args) {
         // Allocate in arena for stable pointer and better cache performance
-        auto* node = arena.alloc<core::Node>(Alt{std::forward<Args>(args)...});
+        auto* node = arena.alloc<core::Node>(Alt{std::forward<Args>(args)...}, span);
         return node;
     }
 };

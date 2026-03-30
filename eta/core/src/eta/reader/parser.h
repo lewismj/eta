@@ -147,6 +147,19 @@ namespace eta::reader::parser {
         template <typename T> [[nodiscard]] T*       as()       noexcept { return std::get_if<T>(&value); }
     };
 
+    /**
+     * @brief Perform a deep copy of an S-expression to ensure memory safety.
+     * Centralized utility used by expander and semantic analyzer.
+     */
+    SExprPtr deep_copy(const SExpr& expr);
+
+    /**
+     * @brief Helper for deep copying from a smart pointer.
+     */
+    inline SExprPtr deep_copy(const SExprPtr& expr) {
+        return expr ? deep_copy(*expr) : nullptr;
+    }
+
     class Parser {
     public:
         explicit Parser(lexer::Lexer& lexer, bool strict_quasiquote = false);

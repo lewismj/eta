@@ -54,47 +54,7 @@ struct LookupResult {
     core::BindingId id;
 };
 
-/**
- * Perform a deep copy of an S-expression to ensure memory safety.
- * This is used by handle_quote to avoid dangling pointers into the AST.
- */
-SExprPtr deep_copy(const SExpr* expr) {
-    if (!expr) return nullptr;
-
-    auto copy = std::make_unique<SExpr>();
-    copy->value = std::visit([](auto&& arg) -> SExprValue {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, List>) {
-            List l;
-            l.span = arg.span;
-            l.dotted = arg.dotted;
-            for (const auto& e : arg.elems) l.elems.push_back(deep_copy(e.get()));
-            if (arg.dotted) l.tail = deep_copy(arg.tail.get());
-            return l;
-        } else if constexpr (std::is_same_v<T, Vector>) {
-            Vector v;
-            v.span = arg.span;
-            for (const auto& e : arg.elems) v.elems.push_back(deep_copy(e.get()));
-            return v;
-        } else if constexpr (std::is_same_v<T, ReaderForm>) {
-            ReaderForm r;
-            r.span = arg.span;
-            r.kind = arg.kind;
-            r.expr = deep_copy(arg.expr.get());
-            return r;
-        } else if constexpr (std::is_same_v<T, ModuleForm>) {
-            ModuleForm m;
-            m.span = arg.span;
-            m.name = arg.name;
-            m.exports = arg.exports;
-            for (const auto& e : arg.body) m.body.push_back(deep_copy(e.get()));
-            return m;
-        } else {
-            return arg;
-        }
-    }, expr->value);
-    return std::move(copy);
-}
+using eta::reader::parser::deep_copy;
 
 /**
  * Create a core::Const IR node from an S-expression.
@@ -121,7 +81,7 @@ core::Node* make_const(const SExprPtr& expr, AnalysisContext& ctx) {
     } else {
         return nullptr;
     }
-    return ctx.mod.emplace<core::Const>(lit, expr->span());
+    return ctx.mod.emplace<core::Const>(expr->span(), lit);
 }
 
 /**
@@ -168,11 +128,11 @@ SemResult<void> parse_formals(const SExprPtr& expr, Scope& scope, AnalysisContex
  */
 core::Node* wrap_body(std::vector<core::Node*> body_exprs, Span span, ModuleSemantics& mod) {
     if (body_exprs.empty()) {
-        return mod.emplace<core::Const>(core::Literal{std::monostate{}}, span);
+        return mod.emplace<core::Const>(span, core::Literal{std::monostate{}});
     } else if (body_exprs.size() == 1) {
         return body_exprs[0];
     } else {
-        return mod.emplace<core::Begin>(std::move(body_exprs), false, span);
+        return mod.emplace<core::Begin>(span, std::move(body_exprs));
     }
 }
 
@@ -240,7 +200,7 @@ SemResult<core::Node*> handle_if(const List* lst, Scope& scope, AnalysisContext&
     if (!conseq) return conseq;
     auto alt = analyze(lst->elems[3], scope, ctx);
     if (!alt) return alt;
-    return ctx.mod.emplace<core::If>(*test, *conseq, *alt, false, lst->span);
+    return ctx.mod.emplace<core::If>(lst->span, *test, *conseq, *alt);
 }
 
 SemResult<core::Node*> handle_begin(const List* lst, Scope& scope, AnalysisContext& ctx) {
@@ -250,7 +210,7 @@ SemResult<core::Node*> handle_begin(const List* lst, Scope& scope, AnalysisConte
         if (!res) return res;
         exprs.push_back(*res);
     }
-    return ctx.mod.emplace<core::Begin>(std::move(exprs), false, lst->span);
+    return ctx.mod.emplace<core::Begin>(lst->span, std::move(exprs));
 }
 
 SemResult<core::Node*> handle_set(const List* lst, Scope& scope, AnalysisContext& ctx) {
@@ -275,16 +235,15 @@ SemResult<core::Node*> handle_set(const List* lst, Scope& scope, AnalysisContext
     auto val = analyze(lst->elems[2], scope, ctx);
     if (!val) return val;
 
-    return ctx.mod.emplace<core::Set>(lookup_res->addr, *val, lst->span);
+    return ctx.mod.emplace<core::Set>(lst->span, lookup_res->addr, *val);
 }
 
 SemResult<core::Node*> handle_lambda(const List* lst, Scope& scope, AnalysisContext& ctx) {
     if (lst->elems.size() < 3)
         return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->span, "lambda requires formals and body"});
 
-    auto* lam_node = ctx.mod.emplace<core::Lambda>();
-    auto* lam = std::get_if<core::Lambda>(static_cast<core::NodeBase*>(lam_node));
-    lam->span = lst->span;
+    auto* lam_node = ctx.mod.emplace<core::Lambda>(lst->span);
+    auto* lam = &std::get<core::Lambda>(lam_node->data);
 
     Scope lambda_scope{&scope};
     lambda_scope.is_lambda_boundary = true;
@@ -307,7 +266,7 @@ SemResult<core::Node*> handle_lambda(const List* lst, Scope& scope, AnalysisCont
 SemResult<core::Node*> handle_quote(const List* lst, Scope&, AnalysisContext& ctx) {
     if (lst->elems.size() != 2)
          return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->span, "quote requires 1 arg"});
-    return ctx.mod.emplace<core::Quote>(deep_copy(lst->elems[1].get()), lst->span);
+    return ctx.mod.emplace<core::Quote>(lst->span, deep_copy(lst->elems[1]));
 }
 
 // Helper to analyze a fixed number of arguments from a form.
@@ -331,7 +290,7 @@ SemResult<std::array<core::Node*, N>> analyze_n_args(
 SemResult<core::Node*> handle_dynamic_wind(const List* lst, Scope& scope, AnalysisContext& ctx) {
     auto args = analyze_n_args<3>(lst, scope, ctx, "dynamic-wind");
     if (!args) return std::unexpected(args.error());
-    return ctx.mod.emplace<core::DynamicWind>((*args)[0], (*args)[1], (*args)[2], lst->span);
+    return ctx.mod.emplace<core::DynamicWind>(lst->span, (*args)[0], (*args)[1], (*args)[2]);
 }
 
 SemResult<core::Node*> handle_values(const List* lst, Scope& scope, AnalysisContext& ctx) {
@@ -341,19 +300,19 @@ SemResult<core::Node*> handle_values(const List* lst, Scope& scope, AnalysisCont
         if (!res) return res;
         exprs.push_back(*res);
     }
-    return ctx.mod.emplace<core::Values>(std::move(exprs), lst->span);
+    return ctx.mod.emplace<core::Values>(lst->span, std::move(exprs));
 }
 
 SemResult<core::Node*> handle_call_with_values(const List* lst, Scope& scope, AnalysisContext& ctx) {
     auto args = analyze_n_args<2>(lst, scope, ctx, "call-with-values");
     if (!args) return std::unexpected(args.error());
-    return ctx.mod.emplace<core::CallWithValues>((*args)[0], (*args)[1], false, lst->span);
+    return ctx.mod.emplace<core::CallWithValues>(lst->span, (*args)[0], (*args)[1]);
 }
 
 SemResult<core::Node*> handle_call_cc(const List* lst, Scope& scope, AnalysisContext& ctx) {
     auto args = analyze_n_args<1>(lst, scope, ctx, "call/cc");
     if (!args) return std::unexpected(args.error());
-    return ctx.mod.emplace<core::CallCC>((*args)[0], false, lst->span);
+    return ctx.mod.emplace<core::CallCC>(lst->span, (*args)[0]);
 }
 
 // ============================================================================
@@ -398,7 +357,7 @@ const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handler
  */
 SemResult<core::Node*> analyze_list(const List* lst, Scope& scope, AnalysisContext& ctx) {
     if (lst->elems.empty()) {
-        return ctx.mod.emplace<core::Const>(core::Literal{std::monostate{}}, lst->span);
+        return ctx.mod.emplace<core::Const>(lst->span, core::Literal{std::monostate{}});
     }
 
     // Check for special forms
@@ -419,7 +378,7 @@ SemResult<core::Node*> analyze_list(const List* lst, Scope& scope, AnalysisConte
         if (!arg) return arg;
         args.push_back(*arg);
     }
-    return ctx.mod.emplace<core::Call>(*callee, std::move(args), false, lst->span);
+    return ctx.mod.emplace<core::Call>(lst->span, *callee, std::move(args));
 }
 
 
@@ -427,7 +386,7 @@ SemResult<core::Node*> analyze(const SExprPtr& expr, Scope& scope, AnalysisConte
     if (auto* sym = expr->as<Symbol>()) {
         auto lookup_res = lookup(sym->name, &scope, ctx, sym->span);
         if (!lookup_res) return std::unexpected(lookup_res.error());
-        return ctx.mod.emplace<core::Var>(lookup_res->addr, sym->span);
+        return ctx.mod.emplace<core::Var>(sym->span, lookup_res->addr);
     }
 
     if (auto* n = make_const(expr, ctx)) return n;
@@ -503,7 +462,7 @@ struct IRVisitor {
                 val.consumer = derived->visit(val.consumer, false);
             }
             // core::Const, core::Var, core::Quote have no children
-        }, static_cast<core::NodeBase&>(*node));
+        }, node->data);
 
         return derived->post_visit(node, context);
     }
@@ -515,16 +474,7 @@ struct IRVisitor {
  */
 struct TailMarker : IRVisitor<TailMarker> {
     void pre_visit(core::Node* node, bool in_tail_context) {
-        std::visit([in_tail_context](auto& val) {
-            using T = std::decay_t<decltype(val)>;
-            // Only set tail flag on nodes that have one
-            if constexpr (std::is_same_v<T, core::If> ||
-                          std::is_same_v<T, core::Begin> ||
-                          std::is_same_v<T, core::Call> ||
-                          std::is_same_v<T, core::CallWithValues>) {
-                val.tail = in_tail_context;
-            }
-        }, static_cast<core::NodeBase&>(*node));
+        node->tail = in_tail_context;
     }
 };
 
@@ -571,7 +521,7 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader
                                 if (!val) return std::unexpected(val.error());
                                 auto ar = lookup(vs->name, &toplevel, ctx, vs->span); 
                                 if (!ar) return std::unexpected(ar.error());
-                                mod.toplevel_inits.push_back(ctx.mod.emplace<core::Set>(ar->addr, *val, bf->span()));
+                                mod.toplevel_inits.push_back(ctx.mod.emplace<core::Set>(bf->span(), ar->addr, *val));
                                 continue;
                             }
                         }
@@ -604,8 +554,8 @@ void SemanticAnalyzer::constant_fold(ModuleSemantics& mod) {
 
         core::Node* post_visit(core::Node* n, bool /*context*/) {
             // Check if this is an If node with a constant test
-            if (auto* if_node = std::get_if<core::If>(static_cast<core::NodeBase*>(n))) {
-                if (auto* c = std::get_if<core::Const>(static_cast<core::NodeBase*>(if_node->test))) {
+            if (auto* if_node = std::get_if<core::If>(&n->data)) {
+                if (auto* c = std::get_if<core::Const>(&if_node->test->data)) {
                     if (auto* b = std::get_if<bool>(&c->value.payload)) {
                         return *b ? if_node->conseq : if_node->alt;
                     } else if (!std::holds_alternative<std::monostate>(c->value.payload)) {

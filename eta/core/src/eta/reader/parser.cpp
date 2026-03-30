@@ -42,6 +42,37 @@ namespace eta::reader::parser {
         return n;
     }
 
+    SExprPtr deep_copy(const SExpr& expr) {
+        return std::visit([](auto&& val) -> SExprPtr {
+            using T = std::decay_t<decltype(val)>;
+            auto p = std::make_unique<SExpr>();
+            if constexpr (std::is_same_v<T, List>) {
+                List l; l.span = val.span; l.dotted = val.dotted;
+                l.elems.reserve(val.elems.size());
+                for (const auto& e : val.elems) l.elems.push_back(deep_copy(*e));
+                if (val.dotted && val.tail) l.tail = deep_copy(*val.tail);
+                p->value = std::move(l);
+            } else if constexpr (std::is_same_v<T, Vector>) {
+                Vector v; v.span = val.span;
+                v.elems.reserve(val.elems.size());
+                for (const auto& e : val.elems) v.elems.push_back(deep_copy(*e));
+                p->value = std::move(v);
+            } else if constexpr (std::is_same_v<T, ReaderForm>) {
+                ReaderForm rf; rf.span = val.span; rf.kind = val.kind;
+                rf.expr = deep_copy(*val.expr);
+                p->value = std::move(rf);
+            } else if constexpr (std::is_same_v<T, ModuleForm>) {
+                ModuleForm m; m.span = val.span; m.name = val.name; m.exports = val.exports;
+                m.body.reserve(val.body.size());
+                for (const auto& e : val.body) m.body.push_back(deep_copy(*e));
+                p->value = std::move(m);
+            } else {
+                p->value = val;
+            }
+            return p;
+        }, expr.value);
+    }
+
     // (no local cloning utilities needed)
 
     std::expected<std::vector<SExprPtr>, ReaderError > Parser::parse_toplevel() {

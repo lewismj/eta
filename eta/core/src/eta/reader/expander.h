@@ -262,8 +262,8 @@ namespace eta::reader::expander {
             return make_list(std::move(v), s);
         }
 
-        static SExprPtr deep_clone(const SExpr& n);
-        static SExprPtr deep_clone(const SExprPtr& p) { return p ? deep_clone(*p) : nullptr; }
+        static SExprPtr deep_clone(const SExpr& n) { return parser::deep_copy(n); }
+        static SExprPtr deep_clone(const SExprPtr& p) { return parser::deep_copy(p); }
 
         static bool is_reserved(std::string_view name);
         static std::string gensym(const std::string& hint = "t");

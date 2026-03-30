@@ -51,7 +51,7 @@ BOOST_AUTO_TEST_CASE(test_basic_global_define) {
     
     // Check toplevel inits: (set! x 1)
     BOOST_REQUIRE_EQUAL(mod.toplevel_inits.size(), 1);
-    auto* set_node = std::get_if<core::Set>(mod.toplevel_inits[0]);
+    auto* set_node = std::get_if<core::Set>(&mod.toplevel_inits[0]->data);
     BOOST_REQUIRE(set_node != nullptr);
     auto* g = std::get_if<core::Address::Global>(&set_node->target.where);
     BOOST_REQUIRE(g != nullptr);
@@ -73,23 +73,23 @@ BOOST_AUTO_TEST_CASE(test_local_let_shadowing) {
     
     // Find (define (f x) ...) which is (set! f (lambda (x) ...))
     BOOST_REQUIRE_EQUAL(mod.toplevel_inits.size(), 2);
-    auto* set_f = std::get_if<core::Set>(mod.toplevel_inits[1]);
+    auto* set_f = std::get_if<core::Set>(&mod.toplevel_inits[1]->data);
     BOOST_REQUIRE(set_f != nullptr);
     
-    auto* lam = std::get_if<core::Lambda>(set_f->value);
+    auto* lam = std::get_if<core::Lambda>(&set_f->value->data);
     BOOST_REQUIRE(lam != nullptr);
     
     // After expansion, (let ((x 2)) x) becomes ((lambda (x) x) 2)
     // So lam->body is a Call node
-    auto* call_node = std::get_if<core::Call>(lam->body);
+    auto* call_node = std::get_if<core::Call>(&lam->body->data);
     BOOST_REQUIRE(call_node != nullptr);
 
     // The callee of the call is a lambda
-    auto* inner_lam = std::get_if<core::Lambda>(call_node->callee);
+    auto* inner_lam = std::get_if<core::Lambda>(&call_node->callee->data);
     BOOST_REQUIRE(inner_lam != nullptr);
 
     // The body of the inner lambda is the variable x referring to its param
-    auto* var_node = std::get_if<core::Var>(inner_lam->body);
+    auto* var_node = std::get_if<core::Var>(&inner_lam->body->data);
     BOOST_REQUIRE(var_node != nullptr);
     
     auto* local_addr = std::get_if<core::Address::Local>(&var_node->addr.where);
@@ -128,19 +128,19 @@ BOOST_AUTO_TEST_CASE(test_tail_calls) {
     BOOST_REQUIRE(res.has_value());
     const auto& mod = (*res)[0];
     
-    auto* set_f = std::get_if<core::Set>(mod.toplevel_inits[0]);
-    auto* lam = std::get_if<core::Lambda>(set_f->value);
-    auto* if_node = std::get_if<core::If>(lam->body);
+    auto* set_f = std::get_if<core::Set>(&mod.toplevel_inits[0]->data);
+    auto* lam = std::get_if<core::Lambda>(&set_f->value->data);
+    auto* if_node = std::get_if<core::If>(&lam->body->data);
     BOOST_REQUIRE(if_node != nullptr);
     
-    auto* call_conseq = std::get_if<core::Call>(if_node->conseq);
-    auto* call_alt = std::get_if<core::Call>(if_node->alt);
+    auto* call_conseq = std::get_if<core::Call>(&if_node->conseq->data);
+    auto* call_alt = std::get_if<core::Call>(&if_node->alt->data);
     
     BOOST_REQUIRE(call_conseq != nullptr);
     BOOST_REQUIRE(call_alt != nullptr);
     
-    BOOST_CHECK(call_conseq->tail == true);
-    BOOST_CHECK(call_alt->tail == true);
+    BOOST_CHECK(if_node->conseq->tail == true);
+    BOOST_CHECK(if_node->alt->tail == true);
 }
 
 BOOST_AUTO_TEST_CASE(test_upvals) {
@@ -149,9 +149,9 @@ BOOST_AUTO_TEST_CASE(test_upvals) {
     BOOST_REQUIRE(res.has_value());
     const auto& mod = (*res)[0];
     
-    auto* set_f = std::get_if<core::Set>(mod.toplevel_inits[0]);
-    auto* lam_f = std::get_if<core::Lambda>(set_f->value);
-    auto* lam_inner = std::get_if<core::Lambda>(lam_f->body);
+    auto* set_f = std::get_if<core::Set>(&mod.toplevel_inits[0]->data);
+    auto* lam_f = std::get_if<core::Lambda>(&set_f->value->data);
+    auto* lam_inner = std::get_if<core::Lambda>(&lam_f->body->data);
     BOOST_REQUIRE(lam_inner != nullptr);
     
     // Inner lambda should have 'x' as an upval
@@ -159,7 +159,7 @@ BOOST_AUTO_TEST_CASE(test_upvals) {
     auto upval_bid = lam_inner->upvals[0];
     BOOST_CHECK_EQUAL(mod.bindings[upval_bid.id].name, "x");
     
-    auto* var_x = std::get_if<core::Var>(lam_inner->body);
+    auto* var_x = std::get_if<core::Var>(&lam_inner->body->data);
     BOOST_REQUIRE(var_x != nullptr);
     auto* up_addr = std::get_if<core::Address::Upval>(&var_x->addr.where);
     BOOST_REQUIRE(up_addr != nullptr);
@@ -172,10 +172,10 @@ BOOST_AUTO_TEST_CASE(test_upval_sources_nested) {
     BOOST_REQUIRE(res.has_value());
     const auto& mod = (*res)[0];
     
-    auto* set_f = std::get_if<core::Set>(mod.toplevel_inits[0]);
-    auto* lam_f = std::get_if<core::Lambda>(set_f->value);
-    auto* lam_y = std::get_if<core::Lambda>(lam_f->body);
-    auto* lam_z = std::get_if<core::Lambda>(lam_y->body);
+    auto* set_f = std::get_if<core::Set>(&mod.toplevel_inits[0]->data);
+    auto* lam_f = std::get_if<core::Lambda>(&set_f->value->data);
+    auto* lam_y = std::get_if<core::Lambda>(&lam_f->body->data);
+    auto* lam_z = std::get_if<core::Lambda>(&lam_y->body->data);
     BOOST_REQUIRE(lam_z != nullptr);
     
     // lam_y should have source for x (Local in lam_f)
@@ -205,23 +205,23 @@ BOOST_AUTO_TEST_CASE(test_letrec) {
     BOOST_REQUIRE(res.has_value());
     const auto& mod = (*res)[0];
     
-    auto* set_f = std::get_if<core::Set>(mod.toplevel_inits[0]);
+    auto* set_f = std::get_if<core::Set>(&mod.toplevel_inits[0]->data);
     BOOST_REQUIRE(set_f != nullptr);
-    auto* lam_f = std::get_if<core::Lambda>(set_f->value);
+    auto* lam_f = std::get_if<core::Lambda>(&set_f->value->data);
     BOOST_REQUIRE(lam_f != nullptr);
 
     // After expansion, letrec becomes a lambda call: ((lambda (a b) ...) Nil Nil)
-    auto* call_node = std::get_if<core::Call>(lam_f->body);
+    auto* call_node = std::get_if<core::Call>(&lam_f->body->data);
     BOOST_REQUIRE(call_node != nullptr);
 
-    auto* letrec_lam = std::get_if<core::Lambda>(call_node->callee);
+    auto* letrec_lam = std::get_if<core::Lambda>(&call_node->callee->data);
     BOOST_REQUIRE(letrec_lam != nullptr);
 
     // The lambda should have 2 params (a and b)
     BOOST_CHECK_EQUAL(letrec_lam->params.size(), 2);
 
     // The body is a begin with set! initializers followed by the actual body
-    auto* body_begin = std::get_if<core::Begin>(letrec_lam->body);
+    auto* body_begin = std::get_if<core::Begin>(&letrec_lam->body->data);
     BOOST_REQUIRE(body_begin != nullptr);
     BOOST_REQUIRE_GE(body_begin->exprs.size(), 3); // set! a, set! b, (a)
 }
@@ -259,41 +259,41 @@ BOOST_AUTO_TEST_CASE(test_begin_tail) {
     BOOST_REQUIRE(res.has_value());
     const auto& mod = (*res)[0];
     
-    auto* set_f = std::get_if<core::Set>(mod.toplevel_inits[0]);
-    auto* lam = std::get_if<core::Lambda>(set_f->value);
-    auto* begin_node = std::get_if<core::Begin>(lam->body);
+    auto* set_f = std::get_if<core::Set>(&mod.toplevel_inits[0]->data);
+    auto* lam = std::get_if<core::Lambda>(&set_f->value->data);
+    auto* begin_node = std::get_if<core::Begin>(&lam->body->data);
     BOOST_REQUIRE(begin_node != nullptr);
     BOOST_REQUIRE_EQUAL(begin_node->exprs.size(), 3);
     
-    auto* call0 = std::get_if<core::Call>(begin_node->exprs[0]);
-    auto* call1 = std::get_if<core::Call>(begin_node->exprs[1]);
-    auto* call2 = std::get_if<core::Call>(begin_node->exprs[2]);
+    auto* call0 = std::get_if<core::Call>(&begin_node->exprs[0]->data);
+    auto* call1 = std::get_if<core::Call>(&begin_node->exprs[1]->data);
+    auto* call2 = std::get_if<core::Call>(&begin_node->exprs[2]->data);
     
     BOOST_REQUIRE(call0 != nullptr);
     BOOST_REQUIRE(call1 != nullptr);
     BOOST_REQUIRE(call2 != nullptr);
     
-    BOOST_CHECK_EQUAL(call0->tail, false);
-    BOOST_CHECK_EQUAL(call1->tail, false);
-    BOOST_CHECK_EQUAL(call2->tail, true);
+    BOOST_CHECK_EQUAL(begin_node->exprs[0]->tail, false);
+    BOOST_CHECK_EQUAL(begin_node->exprs[1]->tail, false);
+    BOOST_CHECK_EQUAL(begin_node->exprs[2]->tail, true);
 }
 
 BOOST_AUTO_TEST_CASE(test_lambda_arity) {
     auto res1 = analyze_src("(module m1 (define (f x y) 1))");
     BOOST_REQUIRE(res1.has_value());
-    auto* lam1 = std::get_if<core::Lambda>(std::get_if<core::Set>((*res1)[0].toplevel_inits[0])->value);
+    auto* lam1 = std::get_if<core::Lambda>(&std::get_if<core::Set>(&(*res1)[0].toplevel_inits[0]->data)->value->data);
     BOOST_CHECK_EQUAL(lam1->arity.required, 2);
     BOOST_CHECK_EQUAL(lam1->arity.has_rest, false);
 
     auto res2 = analyze_src("(module m1 (define (f x . y) 1))");
     BOOST_REQUIRE(res2.has_value());
-    auto* lam2 = std::get_if<core::Lambda>(std::get_if<core::Set>((*res2)[0].toplevel_inits[0])->value);
+    auto* lam2 = std::get_if<core::Lambda>(&std::get_if<core::Set>(&(*res2)[0].toplevel_inits[0]->data)->value->data);
     BOOST_CHECK_EQUAL(lam2->arity.required, 1);
     BOOST_CHECK_EQUAL(lam2->arity.has_rest, true);
 
     auto res3 = analyze_src("(module m1 (define (f . x) 1))");
     BOOST_REQUIRE(res3.has_value());
-    auto* lam3 = std::get_if<core::Lambda>(std::get_if<core::Set>((*res3)[0].toplevel_inits[0])->value);
+    auto* lam3 = std::get_if<core::Lambda>(&std::get_if<core::Set>(&(*res3)[0].toplevel_inits[0]->data)->value->data);
     BOOST_CHECK_EQUAL(lam3->arity.required, 0);
     BOOST_CHECK_EQUAL(lam3->arity.has_rest, true);
 }

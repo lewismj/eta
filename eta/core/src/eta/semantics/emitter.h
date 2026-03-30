@@ -87,7 +87,7 @@ private:
     };
 
     void emit_node(const core::Node* node, Context& ctx);
-    uint32_t emit_lambda(const core::Lambda& lambda, const std::string& parent_name);
+    uint32_t emit_lambda(const core::Lambda& lambda, const std::string& parent_name, const eta::reader::parser::Span& span);
 
     // Helper to emit load/store operations for different address types
     void emit_address_load(const core::Address& addr, Context& ctx);
@@ -97,15 +97,15 @@ private:
     uint32_t emit_load_const(runtime::nanbox::LispVal val, Context& ctx);
     void emit_const(const core::Const& n, Context& ctx);
     void emit_var(const core::Var& n, Context& ctx);
-    void emit_call(const core::Call& n, Context& ctx);
+    void emit_call(const core::Call& n, bool tail, Context& ctx);
     void emit_if(const core::If& n, Context& ctx);
     void emit_begin(const core::Begin& n, Context& ctx);
-    void emit_lambda_node(const core::Lambda& n, Context& ctx);
+    void emit_lambda_node(const core::Lambda& n, const eta::reader::parser::Span& span, Context& ctx);
     void emit_set(const core::Set& n, Context& ctx);
     void emit_values(const core::Values& n, Context& ctx);
-    void emit_call_with_values(const core::CallWithValues& n, Context& ctx);
+    void emit_call_with_values(const core::CallWithValues& n, bool tail, Context& ctx);
     void emit_dynamic_wind(const core::DynamicWind& n, Context& ctx);
-    void emit_call_cc(const core::CallCC& n, Context& ctx);
+    void emit_call_cc(const core::CallCC& n, bool tail, Context& ctx);
     void emit_quote(const core::Quote& n, Context& ctx);
 };
 

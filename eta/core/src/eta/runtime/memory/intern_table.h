@@ -60,34 +60,8 @@ namespace eta::runtime::memory::intern {
     private:
         using SPtr = std::shared_ptr<std::string>;
 
-#if defined(_MSC_VER)
-        template <typename K, typename V, typename H, typename E>
-        struct MapWrapper {
-            std::unordered_map<K, V, H, E> map;
-            
-            template <typename Key, typename Func>
-            bool visit(const Key& k, Func&& f) const {
-                // This wrapper itself doesn't have the lock, the Shard has it.
-                // But the caller in InternTable needs to know if they need to lock.
-                auto it = map.find(k);
-                if (it != map.end()) {
-                    f(*it);
-                    return true;
-                }
-                return false;
-            }
-
-            template <typename Key, typename... Args>
-            auto try_emplace(Key&& k, Args&&... args) {
-                return map.try_emplace(std::forward<Key>(k), std::forward<Args>(args)...);
-            }
-        };
-        template <typename K, typename V, typename H, typename E>
-        using map_t = MapWrapper<K, V, H, E>;
-#else
         template <typename K, typename V, typename H, typename E>
         using map_t = boost::unordered::concurrent_flat_map<K, V, H, E>;
-#endif
 
         //! Hash for string->id.
         struct Hash {
@@ -127,31 +101,20 @@ namespace eta::runtime::memory::intern {
             }
         };
 
-        //! These should be configurable, but 128 is a reasonable guess.
-        static constexpr size_t NUM_SHARDS = 128;
-        static constexpr size_t SHARD_MASK = NUM_SHARDS - 1;
-
-        struct Shard {
-            mutable std::mutex mtx;
-            map_t<SPtr, InternId, Hash, Eq> str_to_id;
-        };
-
-        //! Select shard for a given string
         size_t select_shard(std::string_view s) const noexcept {
-            return hasher(s) & SHARD_MASK;
+            std::size_t h = Hash::seed;
+            boost::hash_combine(h, boost::hash_range(s.begin(), s.end()));
+            return h;
         }
 
-        //! Sharded string->id maps with per-shard locks
-        std::array<Shard, NUM_SHARDS> shards;
+        //! Global string->id map
+        map_t<SPtr, InternId, Hash, Eq> str_to_id;
 
         //! Global id->string map (lock-free reads after insertion)
         boost::unordered::concurrent_flat_map<InternId, SPtr> id_to_str;
 
         //! Next id available (monotonic)
         std::atomic<InternId> next_id{0};
-
-        //! Hash function for selecting shard
-        Hash hasher;
     };
 
 }

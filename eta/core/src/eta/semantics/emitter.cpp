@@ -37,17 +37,17 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
         using T = std::decay_t<decltype(n)>;
         if constexpr (std::is_same_v<T, core::Const>) emit_const(n, ctx);
         else if constexpr (std::is_same_v<T, core::Var>) emit_var(n, ctx);
-        else if constexpr (std::is_same_v<T, core::Call>) emit_call(n, ctx);
+        else if constexpr (std::is_same_v<T, core::Call>) emit_call(n, node->tail, ctx);
         else if constexpr (std::is_same_v<T, core::If>) emit_if(n, ctx);
         else if constexpr (std::is_same_v<T, core::Begin>) emit_begin(n, ctx);
-        else if constexpr (std::is_same_v<T, core::Lambda>) emit_lambda_node(n, ctx);
+        else if constexpr (std::is_same_v<T, core::Lambda>) emit_lambda_node(n, node->span, ctx);
         else if constexpr (std::is_same_v<T, core::Set>) emit_set(n, ctx);
         else if constexpr (std::is_same_v<T, core::Values>) emit_values(n, ctx);
-        else if constexpr (std::is_same_v<T, core::CallWithValues>) emit_call_with_values(n, ctx);
+        else if constexpr (std::is_same_v<T, core::CallWithValues>) emit_call_with_values(n, node->tail, ctx);
         else if constexpr (std::is_same_v<T, core::DynamicWind>) emit_dynamic_wind(n, ctx);
-        else if constexpr (std::is_same_v<T, core::CallCC>) emit_call_cc(n, ctx);
+        else if constexpr (std::is_same_v<T, core::CallCC>) emit_call_cc(n, node->tail, ctx);
         else if constexpr (std::is_same_v<T, core::Quote>) emit_quote(n, ctx);
-    }, *node);
+    }, node->data);
 }
 
 void Emitter::emit_const(const core::Const& n, Context& ctx) {
@@ -112,12 +112,12 @@ void Emitter::emit_var(const core::Var& n, Context& ctx) {
     emit_address_load(n.addr, ctx);
 }
 
-void Emitter::emit_call(const core::Call& n, Context& ctx) {
+void Emitter::emit_call(const core::Call& n, bool tail, Context& ctx) {
     for (const auto* arg : n.args) {
         emit_node(arg, ctx);
     }
     emit_node(n.callee, ctx);
-    ctx.func.code.push_back({n.tail ? OpCode::TailCall : OpCode::Call, static_cast<uint32_t>(n.args.size())});
+    ctx.func.code.push_back({tail ? OpCode::TailCall : OpCode::Call, static_cast<uint32_t>(n.args.size())});
 }
 
 void Emitter::emit_if(const core::If& n, Context& ctx) {
@@ -144,9 +144,9 @@ void Emitter::emit_begin(const core::Begin& n, Context& ctx) {
     }
 }
 
-void Emitter::emit_lambda_node(const core::Lambda& n, Context& ctx) {
+void Emitter::emit_lambda_node(const core::Lambda& n, const eta::reader::parser::Span& span, Context& ctx) {
     // Emit the nested lambda to the registry and get its index
-    uint32_t func_idx = emit_lambda(n, ctx.func.name);
+    uint32_t func_idx = emit_lambda(n, ctx.func.name, span);
 
     // Store the function index as a constant (type-safe, not a raw pointer).
     // Uses FUNC_INDEX_TAG from bytecode.h
@@ -176,10 +176,10 @@ void Emitter::emit_values(const core::Values& n, Context& ctx) {
     ctx.func.code.push_back({OpCode::Values, static_cast<uint32_t>(n.exprs.size())});
 }
 
-void Emitter::emit_call_with_values(const core::CallWithValues& n, Context& ctx) {
+void Emitter::emit_call_with_values(const core::CallWithValues& n, bool tail, Context& ctx) {
     emit_node(n.producer, ctx);
     emit_node(n.consumer, ctx);
-    ctx.func.code.push_back({OpCode::CallWithValues, 0});
+    ctx.func.code.push_back({tail ? OpCode::TailCall : OpCode::CallWithValues, 0});
 }
 
 void Emitter::emit_dynamic_wind(const core::DynamicWind& n, Context& ctx) {
@@ -189,9 +189,9 @@ void Emitter::emit_dynamic_wind(const core::DynamicWind& n, Context& ctx) {
     ctx.func.code.push_back({OpCode::DynamicWind, 0});
 }
 
-void Emitter::emit_call_cc(const core::CallCC& n, Context& ctx) {
+void Emitter::emit_call_cc(const core::CallCC& n, bool tail, Context& ctx) {
     emit_node(n.consumer, ctx);
-    ctx.func.code.push_back({OpCode::CallCC, 0});
+    ctx.func.code.push_back({tail ? OpCode::TailCall : OpCode::CallCC, 0});
 }
 
 void Emitter::emit_quote(const core::Quote& n, Context& ctx) {
@@ -201,7 +201,7 @@ void Emitter::emit_quote(const core::Quote& n, Context& ctx) {
 }
 
 
-uint32_t Emitter::emit_lambda(const core::Lambda& lambda, const std::string& parent_name) {
+uint32_t Emitter::emit_lambda(const core::Lambda& lambda, const std::string& parent_name, const eta::reader::parser::Span& span) {
     static uint32_t lambda_count = 0;
     Context ctx;
     ctx.func.name = parent_name + "_lambda" + std::to_string(lambda_count++);

@@ -66,48 +66,7 @@ namespace eta::reader::expander {
         return p;
     }
 
-    SExprPtr Expander::deep_clone(const SExpr& n) {
-        return std::visit([](auto&& val) -> SExprPtr {
-            using T = std::decay_t<decltype(val)>;
-            auto p = std::make_unique<SExpr>();
-
-            // Types that require recursive cloning
-            if constexpr (std::is_same_v<T, parser::List>) {
-                parser::List l;
-                l.span = val.span;
-                l.dotted = val.dotted;
-                l.elems.reserve(val.elems.size());
-                for (const auto& e : val.elems) l.elems.push_back(deep_clone(e));
-                if (val.dotted && val.tail) l.tail = deep_clone(val.tail);
-                p->value = std::move(l);
-            } else if constexpr (std::is_same_v<T, parser::Vector>) {
-                parser::Vector v2;
-                v2.span = val.span;
-                v2.elems.reserve(val.elems.size());
-                for (const auto& e : val.elems) v2.elems.push_back(deep_clone(e));
-                p->value = std::move(v2);
-            } else if constexpr (std::is_same_v<T, parser::ReaderForm>) {
-                parser::ReaderForm rf;
-                rf.span = val.span;
-                rf.kind = val.kind;
-                rf.expr = deep_clone(val.expr);
-                p->value = std::move(rf);
-            } else if constexpr (std::is_same_v<T, parser::ModuleForm>) {
-                parser::ModuleForm m;
-                m.span = val.span;
-                m.name = val.name;
-                m.exports = val.exports;
-                m.body.reserve(val.body.size());
-                for (const auto& e : val.body) m.body.push_back(deep_clone(e));
-                p->value = std::move(m);
-            } else {
-                // Simple types: Nil, Bool, Char, String, Symbol, Number, ByteVector
-                // These can be copied directly
-                p->value = val;
-            }
-            return p;
-        }, n.value);
-    }
+    using parser::deep_copy;
 
 
     std::string Expander::gensym(const std::string& hint) {

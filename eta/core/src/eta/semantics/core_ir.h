@@ -52,7 +52,7 @@ struct Node; // fwd
  * Ownership: Node* pointers are owned by the ModuleSemantics arena.
  * The Ref<Node> wrapper can be used for additional type safety.
  */
-struct Var   { Address addr; Span span; };
+struct Var   { Address addr; };
 
 /**
  * @brief Literal values in the IR
@@ -60,8 +60,8 @@ struct Var   { Address addr; Span span; };
  * Numbers are stored directly without wrapper for efficiency.
  */
 struct Literal { std::variant<std::monostate, bool, char32_t, std::string, int64_t, double> payload; };
-struct Const { Literal value; Span span;
-    Const(Literal v, Span s) : value(v), span(s) {}
+struct Const { Literal value;
+    Const(Literal v) : value(v) {}
     Const() = default;
 };
 
@@ -70,16 +70,16 @@ struct Const { Literal value; Span span;
  *
  * Use shared_ptr so Nodes are copyable (tests/build systems may require copyable containers)
  */
-struct Quote { std::shared_ptr<eta::reader::parser::SExpr> datum; Span span; };
+struct Quote { std::shared_ptr<eta::reader::parser::SExpr> datum; };
 
 // Core IR node types
-struct If    { Node* test; Node* conseq; Node* alt; bool tail{false}; Span span; };
-struct Begin { std::vector<Node*> exprs; bool tail{false}; Span span; };
-struct Set   { Address target; Node* value; Span span; };
-struct DynamicWind { Node* before; Node* body; Node* after; Span span; };
-struct Values { std::vector<Node*> exprs; Span span; };
-struct CallWithValues { Node* producer; Node* consumer; bool tail{false}; Span span; };
-struct CallCC { Node* consumer; bool tail{false}; Span span; };
+struct If    { Node* test; Node* conseq; Node* alt; };
+struct Begin { std::vector<Node*> exprs; };
+struct Set   { Address target; Node* value; };
+struct DynamicWind { Node* before; Node* body; Node* after; };
+struct Values { std::vector<Node*> exprs; };
+struct CallWithValues { Node* producer; Node* consumer; };
+struct CallCC { Node* consumer; };
 
 /**
  * @brief Lambda (function) node
@@ -95,13 +95,12 @@ struct Lambda {
     Arity arity{};
     std::uint32_t stack_size{0};
     Node* body{};
-    Span span{};
 };
 
 /**
  * @brief Function call node
  */
-struct Call { Node* callee; std::vector<Node*> args; bool tail{false}; Span span; };
+struct Call { Node* callee; std::vector<Node*> args; };
 
 /**
  * @brief Discriminated union of all IR node types
@@ -113,8 +112,16 @@ struct Call { Node* callee; std::vector<Node*> args; bool tail{false}; Span span
  * Note: Let, LetRec, and Case are derived forms that are desugared by the
  * Expander before reaching the IR. They are not part of the core IR.
  */
-using NodeBase = std::variant<Var, Const, Quote, If, Begin, Set, Lambda, Call, DynamicWind, Values, CallWithValues, CallCC>;
-struct Node : NodeBase { using NodeBase::NodeBase; };
+using NodeData = std::variant<Var, Const, Quote, If, Begin, Set, Lambda, Call, DynamicWind, Values, CallWithValues, CallCC>;
+struct Node { 
+    NodeData data;
+    Span span;
+    bool tail{false};
+
+    template<typename T>
+    Node(T&& d, Span s) : data(std::forward<T>(d)), span(s) {}
+    Node() = default;
+};
 
 // Re-export Ref for convenience
 using NodeRef = Ref<Node>;

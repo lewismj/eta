@@ -73,22 +73,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t sz) {
     };
 
     auto make_lambda_from_pool = [&](){
-        // Make a tiny lambda with a few captured values
-        std::vector<LispVal> formals;
+        // Make a tiny closure with a few captured values
         std::vector<LispVal> upvals;
 
-        const size_t nf = values.empty() ? 0 : (data[(values.size() * 11 + 3) % sz] % 3);
         const size_t nu = values.empty() ? 0 : (data[(values.size() * 13 + 9) % sz] % 4);
 
-        for (size_t i = 0; i < nf; ++i) {
-            formals.push_back(values[data[(i * 17 + 4) % sz] % values.size()]);
-        }
         for (size_t i = 0; i < nu; ++i) {
             upvals.push_back(values[data[(i * 19 + 6) % sz] % values.size()]);
         }
-        LispVal body = values.empty() ? box(Tag::Nil, 0) : values[data[(values.size() * 7 + 2) % sz] % values.size()];
 
-        auto r = make_lambda(heap, std::move(formals), body, std::move(upvals));
+        // We use a null BytecodeFunction pointer for the fuzzer as we're just testing heap allocation
+        auto r = make_closure(heap, nullptr, std::move(upvals));
         if (r.has_value()) values.push_back(*r);
     };
 
