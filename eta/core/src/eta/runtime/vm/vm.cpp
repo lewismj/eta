@@ -20,6 +20,27 @@ VM::VM(Heap& heap, InternTable& intern_table)
     frames_.reserve(64);
 }
 
+bool VM::values_eqv(LispVal a, LispVal b) {
+    // Fast path: bit-identical values are always equal
+    if (a == b) return true;
+    
+    // If either is not boxed (raw double), they would have matched above if equal
+    if (!ops::is_boxed(a) || !ops::is_boxed(b)) return false;
+    
+    // For eqv?, only strings need content comparison
+    // Symbols with same intern ID would have matched in fast path
+    
+    // Check if both are strings (interned or heap)
+    if (StringView::is_string(a, heap_) && StringView::is_string(b, heap_)) {
+        // Use StringView for unified string comparison
+        auto res = StringView::equal(a, b, intern_table_, heap_);
+        return res.has_value() && *res;
+    }
+    
+    // Different types or non-matching non-string values
+    return false;
+}
+
 std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
     current_func_ = &main;
     pc_ = 0;
@@ -139,33 +160,14 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 if (!prod_dispatch) return std::unexpected(prod_dispatch.error());
 
                 // We need to return to the consumer after producer returns.
-                // We push a special frame that will be handled by OpCode::Return.
                 frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::CallWithValuesConsumer, consumer});
 
                 if (prod_dispatch->action == DispatchAction::SetupFrame) {
-                    current_func_ = prod_dispatch->func;
-                    current_closure_ = prod_dispatch->closure;
-                    fp_ = static_cast<uint32_t>(stack_.size());
-                    pc_ = 0;
+                    setup_frame(prod_dispatch->func, prod_dispatch->closure, 0);
                 } else {
                     // Producer was a primitive - result already pushed.
-                    // We need to immediately transition to the consumer.
-                    // This is handled by pretending we just returned.
-                    LispVal result = pop();
-                    Frame back = frames_.back();
-                    frames_.pop_back();
-
-                    // Restore state (though it hasn't really changed for primitive call)
-                    // and then call consumer with producer's result(s).
-                    unpack_to_stack(result);
-                    uint32_t argc = static_cast<uint32_t>(stack_.size() - back.fp);
-
-                    auto cons_dispatch = dispatch_callee(back.extra, argc, /*is_tail=*/false);
-                    if (!cons_dispatch) return std::unexpected(cons_dispatch.error());
-
-                    if (cons_dispatch->action == DispatchAction::SetupFrame) {
-                        setup_frame(cons_dispatch->func, cons_dispatch->closure, argc, /*is_tail=*/false);
-                    }
+                    auto res = handle_return(pop());
+                    if (!res) return std::unexpected(res.error());
                 }
                 break;
             }
@@ -175,7 +177,6 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 LispVal body_thunk = pop();
                 LispVal before_thunk = pop();
 
-                // Push to winding stack
                 winding_stack_.push_back({before_thunk, body_thunk, after_thunk});
 
                 // Call before() with 0 arguments
@@ -186,47 +187,11 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::DynamicWindBody, body_thunk});
 
                 if (before_dispatch->action == DispatchAction::SetupFrame) {
-                    current_func_ = before_dispatch->func;
-                    current_closure_ = before_dispatch->closure;
-                    fp_ = static_cast<uint32_t>(stack_.size());
-                    pc_ = 0;
+                    setup_frame(before_dispatch->func, before_dispatch->closure, 0);
                 } else {
-                    // before was primitive, already executed
-                    pop(); // discard result
-                    Frame back = frames_.back();
-                    frames_.pop_back();
-
-                    // Call body()
-                    auto body_dispatch = dispatch_callee(back.extra, 0, /*is_tail=*/false);
-                    if (!body_dispatch) return std::unexpected(body_dispatch.error());
-
-                    // Return to after after body()
-                    frames_.push_back({back.func, back.pc, back.fp, back.closure, FrameKind::DynamicWindAfter, after_thunk});
-
-                    if (body_dispatch->action == DispatchAction::SetupFrame) {
-                        setup_frame(body_dispatch->func, body_dispatch->closure, 0, /*is_tail=*/false);
-                    } else {
-                        // body was primitive
-                        LispVal body_result = pop();
-                        Frame back2 = frames_.back();
-                        frames_.pop_back();
-
-                        // Call after()
-                        auto after_dispatch = dispatch_callee(back2.extra, 0, /*is_tail=*/false);
-                        if (!after_dispatch) return std::unexpected(after_dispatch.error());
-
-                        if (after_dispatch->action == DispatchAction::SetupFrame) {
-                            push(body_result); // Save body result to restore later
-                            setup_frame(after_dispatch->func, after_dispatch->closure, 1, /*is_tail=*/false);
-                        } else {
-                            pop(); // discard after result
-                            push(body_result);
-                            // We also need to pop from winding stack if we fully finish here?
-                            // Actually, we only pop from winding stack when body returns or if we jump out.
-                            // If everything was primitive, we are done with this dynamic-wind.
-                            winding_stack_.pop_back();
-                        }
-                    }
+                    // before was primitive
+                    auto res = handle_return(pop());
+                    if (!res) return std::unexpected(res.error());
                 }
                 break;
             }
@@ -242,18 +207,16 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 push(stack_[fp_ + instr.arg]);
                 break;
             case OpCode::LoadUpval: {
-                if (auto* closure = try_get_as<ObjectKind::Closure, Closure>(current_closure_)) {
-                    push(closure->upvals[instr.arg]);
-                    break;
-                }
-                return std::unexpected(make_type_error("LoadUpval outside of a closure"));
+                auto closure = get_as_or_error<ObjectKind::Closure, Closure>(current_closure_, "LoadUpval outside of a closure");
+                if (!closure) return std::unexpected(closure.error());
+                push((*closure)->upvals[instr.arg]);
+                break;
             }
             case OpCode::StoreUpval: {
-                if (auto* closure = try_get_as<ObjectKind::Closure, Closure>(current_closure_)) {
-                    closure->upvals[instr.arg] = pop();
-                    break;
-                }
-                return std::unexpected(make_type_error("StoreUpval outside of a closure"));
+                auto closure = get_as_or_error<ObjectKind::Closure, Closure>(current_closure_, "StoreUpval outside of a closure");
+                if (!closure) return std::unexpected(closure.error());
+                (*closure)->upvals[instr.arg] = pop();
+                break;
             }
             case OpCode::LoadGlobal:
                 if (instr.arg < globals_.size()) {
@@ -290,7 +253,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
                 if (dispatch_res->action == DispatchAction::SetupFrame) {
-                    setup_frame(dispatch_res->func, dispatch_res->closure, argc, /*is_tail=*/false);
+                    setup_frame(dispatch_res->func, dispatch_res->closure, argc);
                 }
                 break;
             }
@@ -301,7 +264,6 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 
                 // The constant encodes a function index (high bit set) or legacy raw pointer
                 LispVal func_val = current_func_->constants[const_idx];
-                constexpr uint64_t FUNC_INDEX_TAG = 1ULL << 63;
 
                 const BytecodeFunction* bfunc = nullptr;
                 if (func_val & FUNC_INDEX_TAG) {
@@ -312,8 +274,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "Invalid function index"}});
                     }
                 } else {
-                    // Legacy: raw pointer (for backwards compatibility)
-                    bfunc = reinterpret_cast<const BytecodeFunction*>(func_val);
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "Expected function index (FUNC_INDEX_TAG missing)"}});
                 }
 
                 std::vector<LispVal> upvals;
@@ -336,12 +297,11 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             }
             case OpCode::Car: {
-                LispVal v = pop();
-                if (auto* cons = try_get_as<ObjectKind::Cons, Cons>(v)) {
-                    push(cons->car);
-                    break;
-                }
-                return std::unexpected(make_type_error("Not a pair"));
+                auto v = pop();
+                auto cons = get_as_or_error<ObjectKind::Cons, Cons>(v, "Not a pair");
+                if (!cons) return std::unexpected(cons.error());
+                push((*cons)->car);
+                break;
             }
             case OpCode::Add:
             case OpCode::Sub:
@@ -354,16 +314,15 @@ std::expected<void, RuntimeError> VM::run_loop() {
             case OpCode::Eq: {
                 LispVal b = pop();
                 LispVal a = pop();
-                push(a == b ? True : False);
+                push(values_eqv(a, b) ? True : False);
                 break;
             }
             case OpCode::Cdr: {
-                LispVal v = pop();
-                if (auto* cons = try_get_as<ObjectKind::Cons, Cons>(v)) {
-                    push(cons->cdr);
-                    break;
-                }
-                return std::unexpected(make_type_error("Not a pair"));
+                auto v = pop();
+                auto cons = get_as_or_error<ObjectKind::Cons, Cons>(v, "Not a pair");
+                if (!cons) return std::unexpected(cons.error());
+                push((*cons)->cdr);
+                break;
             }
             case OpCode::TailCall: {
                 uint32_t argc = instr.arg;
@@ -390,195 +349,22 @@ std::expected<void, RuntimeError> VM::run_loop() {
             case OpCode::CallCC: {
                 LispVal consumer = pop();
                 
-                // Capture current state
                 auto cont_res = make_continuation(heap_, stack_, frames_, winding_stack_);
                 if (!cont_res) return std::unexpected(cont_res.error());
                 
-                // Push the continuation as argument
                 push(*cont_res);
                 
-                // Dispatch consumer with 1 argument
                 auto dispatch_res = dispatch_callee(consumer, 1, /*is_tail=*/false);
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
                 if (dispatch_res->action == DispatchAction::SetupFrame) {
-                    frames_.push_back({current_func_, pc_, fp_, current_closure_});
-                    current_func_ = dispatch_res->func;
-                    current_closure_ = dispatch_res->closure;
-                    fp_ = static_cast<uint32_t>(stack_.size() - 1);
-                    pc_ = 0;
+                    setup_frame(dispatch_res->func, dispatch_res->closure, 1);
                 }
                 break;
             }
             case OpCode::Return: {
-                LispVal result = pop();
-                
-                // Pop current frame
-                if (frames_.empty()) {
-                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "Return from empty frame stack"}});
-                }
-                Frame current_frame = frames_.back();
-                frames_.pop_back();
-                
-                // Cleanup stack: pop locals and arguments of returned function
-                // For DynamicWindAfter, we need body_result which is on stack before resize
-                LispVal body_result_for_after = (current_frame.kind == FrameKind::DynamicWindAfter) ? stack_[fp_] : 0;
-                stack_.resize(fp_);
-
-                // Handle internal return points
-                if (current_frame.kind == FrameKind::CallWithValuesConsumer) {
-                    // result contains the values from the producer.
-                    // We need to unpack them and call the consumer.
-                    unpack_to_stack(result);
-                    uint32_t argc = static_cast<uint32_t>(stack_.size() - fp_);
-
-                    LispVal consumer = current_frame.extra;
-                    auto dispatch_res = dispatch_callee(consumer, argc, /*is_tail=*/false);
-                    if (!dispatch_res) return std::unexpected(dispatch_res.error());
-
-                    // Restore the frame that CALLED call-with-values
-                    if (frames_.empty()) {
-                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "CallWithValues caller frame missing"}});
-                    }
-                    const auto& caller_frame = frames_.back();
-                    current_func_ = caller_frame.func;
-                    pc_ = caller_frame.pc;
-                    fp_ = caller_frame.fp;
-                    current_closure_ = caller_frame.closure;
-
-                    if (dispatch_res->action == DispatchAction::SetupFrame) {
-                        setup_frame(dispatch_res->func, dispatch_res->closure, argc, /*is_tail=*/false);
-                    }
-                    // If primitive, result is already on stack and we continue in caller_frame
-                    break;
-                } else if (current_frame.kind == FrameKind::DynamicWindBody) {
-                    // Returned from 'before' thunk. result is ignored.
-                    // Now call the 'body' thunk.
-                    if (winding_stack_.empty()) {
-                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty in DynamicWindBody return"}});
-                    }
-                    const auto& wind = winding_stack_.back();
-                    
-                    auto body_dispatch = dispatch_callee(wind.body, 0, /*is_tail=*/false);
-                    if (!body_dispatch) return std::unexpected(body_dispatch.error());
-
-                    // Restore the frame that CALLED dynamic-wind
-                    if (frames_.empty()) {
-                         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "DynamicWind caller frame missing"}});
-                    }
-                    const auto& caller_frame = frames_.back();
-                    current_func_ = caller_frame.func;
-                    pc_ = caller_frame.pc;
-                    fp_ = caller_frame.fp;
-                    current_closure_ = caller_frame.closure;
-
-                    // Push a frame to call 'after' when 'body' returns
-                    frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::DynamicWindAfter, wind.after});
-
-                    if (body_dispatch->action == DispatchAction::SetupFrame) {
-                        setup_frame(body_dispatch->func, body_dispatch->closure, 0, /*is_tail=*/false);
-                    } else {
-                        // Body was primitive, execute 'after' immediately
-                        LispVal body_result = pop();
-                        // Pop the DynamicWindAfter frame we just pushed
-                        frames_.pop_back();
-
-                        auto after_dispatch = dispatch_callee(wind.after, 0, /*is_tail=*/false);
-                        if (!after_dispatch) return std::unexpected(after_dispatch.error());
-
-                        if (after_dispatch->action == DispatchAction::SetupFrame) {
-                            push(body_result); // Save body result to restore after 'after' returns
-                            setup_frame(after_dispatch->func, after_dispatch->closure, 1, /*is_tail=*/false);
-                        } else {
-                            // After was also primitive
-                            pop(); // ignore after result
-                            push(body_result);
-                            winding_stack_.pop_back();
-                        }
-                    }
-                    break;
-                } else if (current_frame.kind == FrameKind::DynamicWindAfter) {
-                    // Returned from 'after' thunk (invoked after 'body' finished).
-                    // The result of dynamic-wind is the result of 'body', which we stored as an "argument" to 'after'.
-                    if (winding_stack_.empty()) {
-                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty in DynamicWindAfter return"}});
-                    }
-                    winding_stack_.pop_back();
-
-                    // Restore the frame that CALLED dynamic-wind
-                    if (frames_.empty()) {
-                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "DynamicWind caller frame missing"}});
-                    }
-                    const auto& caller_frame = frames_.back();
-                    current_func_ = caller_frame.func;
-                    pc_ = caller_frame.pc;
-                    fp_ = caller_frame.fp;
-                    current_closure_ = caller_frame.closure;
-
-                    // The body_result was stored on the stack at fp_ when setup_frame was called for 'after'.
-                    // Actually, if 'after' was a SetupFrame, it had body_result as its only "argument".
-                    // But we just resized stack to fp_, so we need to pop it before that or save it.
-                    // Wait, stack_.resize(fp_) already happened. 
-                    // When 'after' was called as SetupFrame, we did push(body_result) then setup_frame(..., 1).
-                    // So fp_ of 'after' frame was at the position of body_result.
-                    // So we can't get it from stack_[fp_] AFTER resize(fp_).
-                    
-                    // I should have saved body_result before resize.
-                    // Let's fix the logic above to save body_result.
-                    // Actually, I can just use 'result' if I changed my mind about what 'after' returns,
-                    // but Scheme says it returns body's result.
-                    
-                    // If 'after' was called with 1 arg (body_result), and it's a Scheme function,
-                    // its arguments are still on the stack at fp_ and above.
-                    // But we want to return body_result.
-                    
-                    // Let's re-read: DynamicWindAfter was pushed with extra = after_thunk.
-                    // When body returned, we called after.
-                    
-                    // Actually, the easiest way to store body_result is in 'extra' or another field of the frame.
-                    // But 'extra' is already used for the thunk to call.
-                    
-                    // Let's use the result from the stack BEFORE resize if kind is After.
-                    // Or better, let's fix the frame kind handling.
-                    
-                    // If kind == DynamicWindAfter, then the top of the stack (before resize) is NOT the result of 'after'
-                    // that we want to return, we want the body_result which was passed as arg to 'after'.
-                    
-                    // Let's use a simpler approach: result of dynamic-wind is indeed what we want.
-                    // If we want to strictly follow Scheme, we must preserve body_result.
-                    
-                    // Let's re-evaluate DynamicWindAfter.
-                    // When Body returns, we push Kind::After, and call After.
-                    // If After is SetupFrame, we push(body_result).
-                    // So when After returns, stack_[fp_] is body_result.
-                    
-                    winding_stack_.pop_back();
-                    
-                    if (frames_.empty()) {
-                        push(body_result_for_after);
-                        return {};
-                    }
-                    const auto& cf = frames_.back();
-                    current_func_ = cf.func;
-                    pc_ = cf.pc;
-                    fp_ = cf.fp;
-                    current_closure_ = cf.closure;
-                    push(body_result_for_after);
-                    break;
-                }
-                
-                if (frames_.empty()) {
-                    push(result);
-                    return {};
-                }
-                
-                const auto& f = frames_.back();
-                current_func_ = f.func;
-                pc_ = f.pc;
-                fp_ = f.fp;
-                current_closure_ = f.closure;
-                
-                push(result);
+                auto res = handle_return(pop());
+                if (!res) return std::unexpected(res.error());
                 break;
             }
             default:
@@ -593,6 +379,104 @@ std::expected<void, RuntimeError> VM::run_loop() {
 // ============================================================================
 
 // Numeric type enumeration for dispatch
+std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
+    // Pop current frame
+    if (frames_.empty()) {
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "Return from empty frame stack"}});
+    }
+    Frame current_frame = frames_.back();
+    frames_.pop_back();
+
+    // Cleanup stack: pop locals and arguments of returned function
+    // For DynamicWindAfter, we need body_result which is on stack before resize
+    LispVal body_result_for_after = (current_frame.kind == FrameKind::DynamicWindAfter) ? stack_[fp_] : 0;
+    stack_.resize(fp_);
+
+    // Handle internal return points
+    if (current_frame.kind == FrameKind::CallWithValuesConsumer) {
+        // result contains the values from the producer.
+        unpack_to_stack(result);
+        uint32_t argc = static_cast<uint32_t>(stack_.size() - fp_);
+
+        LispVal consumer = current_frame.extra;
+        auto dispatch_res = dispatch_callee(consumer, argc, /*is_tail=*/false);
+        if (!dispatch_res) return std::unexpected(dispatch_res.error());
+
+        // Restore the frame that CALLED call-with-values
+        if (frames_.empty()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "CallWithValues caller frame missing"}});
+        }
+        restore_frame(frames_.back());
+
+        if (dispatch_res->action == DispatchAction::SetupFrame) {
+            setup_frame(dispatch_res->func, dispatch_res->closure, argc);
+        }
+        return {};
+    } else if (current_frame.kind == FrameKind::DynamicWindBody) {
+        // Returned from 'before' thunk. result is ignored.
+        if (winding_stack_.empty()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty in DynamicWindBody return"}});
+        }
+        const auto& wind = winding_stack_.back();
+
+        auto body_dispatch = dispatch_callee(wind.body, 0, /*is_tail=*/false);
+        if (!body_dispatch) return std::unexpected(body_dispatch.error());
+
+        // Restore the frame that CALLED dynamic-wind
+        if (frames_.empty()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "DynamicWind caller frame missing"}});
+        }
+        restore_frame(frames_.back());
+
+        // Push a frame to call 'after' when 'body' returns
+        frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::DynamicWindAfter, wind.after});
+
+        if (body_dispatch->action == DispatchAction::SetupFrame) {
+            setup_frame(body_dispatch->func, body_dispatch->closure, 0);
+        } else {
+            // Body was primitive, execute 'after' immediately
+            LispVal body_result = pop();
+            frames_.pop_back(); // Pop the DynamicWindAfter frame
+
+            auto after_dispatch = dispatch_callee(wind.after, 0, /*is_tail=*/false);
+            if (!after_dispatch) return std::unexpected(after_dispatch.error());
+
+            if (after_dispatch->action == DispatchAction::SetupFrame) {
+                push(body_result);
+                setup_frame(after_dispatch->func, after_dispatch->closure, 1);
+            } else {
+                pop(); // ignore after result
+                push(body_result);
+                winding_stack_.pop_back();
+            }
+        }
+        return {};
+    } else if (current_frame.kind == FrameKind::DynamicWindAfter) {
+        // Returned from 'after' thunk. Return body's result.
+        if (winding_stack_.empty()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty in DynamicWindAfter return"}});
+        }
+        winding_stack_.pop_back();
+
+        if (frames_.empty()) {
+            push(body_result_for_after);
+            return {};
+        }
+        restore_frame(frames_.back());
+        push(body_result_for_after);
+        return {};
+    }
+
+    if (frames_.empty()) {
+        push(result);
+        return {};
+    }
+
+    restore_frame(frames_.back());
+    push(result);
+    return {};
+}
+
 enum class NumType { Fixnum, Flonum, Invalid };
 
 // Result type that preserves exact integer values

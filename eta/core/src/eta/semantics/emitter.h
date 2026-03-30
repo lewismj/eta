@@ -91,11 +91,8 @@ private:
         runtime::vm::BytecodeFunction func;
         std::unordered_map<core::BindingId, uint32_t, BindingIdHash> binding_to_slot;
         std::unordered_map<core::BindingId, uint32_t, BindingIdHash> binding_to_upval;
+        std::unordered_map<std::string, uint32_t> string_constant_cache;
     };
-
-    // String constant cache to deduplicate heap-allocated strings across the module.
-    // Maps string content to its constant pool index, preventing duplicate allocations.
-    std::unordered_map<std::string, uint32_t> string_constant_cache_;
 
     void emit_node(const core::Node* node, Context& ctx);
     uint32_t emit_lambda(const core::Lambda& lambda);

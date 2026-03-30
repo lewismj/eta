@@ -7,6 +7,10 @@
 
 namespace eta::runtime::vm {
 
+// Tag used to distinguish function indices from raw pointers in constants.
+// When encoding a function index in MakeClosure, set this bit to mark it as an index.
+constexpr uint64_t FUNC_INDEX_TAG = 1ULL << 63;
+
 enum class OpCode : std::uint8_t {
     // Basic operations
     Nop,

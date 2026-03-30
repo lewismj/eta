@@ -2,7 +2,6 @@
 
 #include "symbol.h"
 #include "cons.h"
-#include "lambda.h"
 #include "string.h"
 #include "vector.h"
 #include "bytevector.h"

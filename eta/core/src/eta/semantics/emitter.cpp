@@ -52,14 +52,14 @@ void Emitter::emit_const(const core::Const& n, Context& ctx) {
         } else if constexpr (std::is_same_v<PT, char32_t>) {
             return ops::encode(p).value();
         } else if constexpr (std::is_same_v<PT, std::string>) {
-            // Deduplicate string constants across the module
-            if (auto cache_it = string_constant_cache_.find(p); cache_it != string_constant_cache_.end()) {
+            // Deduplicate string constants across the current function
+            if (auto cache_it = ctx.string_constant_cache.find(p); cache_it != ctx.string_constant_cache.end()) {
                 ctx.func.code.push_back({OpCode::LoadConst, cache_it->second});
                 return std::nullopt;
             }
             LispVal v = make_string(heap_, intern_table_, p).value();
             uint32_t idx = emit_load_const(v, ctx);
-            string_constant_cache_[p] = idx;
+            ctx.string_constant_cache[p] = idx;
             return std::nullopt;
         } else if constexpr (std::is_same_v<PT, int64_t>) {
             return make_fixnum(heap_, p).value();
@@ -148,7 +148,7 @@ void Emitter::emit_lambda_node(const core::Lambda& n, Context& ctx) {
     uint32_t func_idx = emit_lambda(n);
 
     // Store the function index as a constant (type-safe, not a raw pointer).
-    constexpr uint64_t FUNC_INDEX_TAG = 1ULL << 63;
+    // Uses FUNC_INDEX_TAG from bytecode.h
     LispVal func_idx_val = FUNC_INDEX_TAG | static_cast<uint64_t>(func_idx);
 
     uint32_t const_idx = emit_load_const(func_idx_val, ctx);

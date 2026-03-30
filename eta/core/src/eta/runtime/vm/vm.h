@@ -81,6 +81,7 @@ private:
     LispVal current_closure_{0};
 
     std::expected<void, RuntimeError> run_loop();
+    std::expected<void, RuntimeError> handle_return(LispVal result);
     void push(LispVal val) { stack_.push_back(val); }
     LispVal pop() { LispVal v = stack_.back(); stack_.pop_back(); return v; }
 
@@ -90,29 +91,34 @@ private:
     std::expected<DispatchResult, RuntimeError> dispatch_callee(LispVal callee, uint32_t argc, bool is_tail);
 
     // Type-checked heap object accessor - returns nullptr if not the expected type
+    // Delegates to Heap::try_get_as after extracting the ObjectId from LispVal
     template<ObjectKind Kind, typename T>
     T* try_get_as(LispVal val) {
         if (!ops::is_boxed(val) || ops::tag(val) != Tag::HeapObject) return nullptr;
-        HeapEntry entry;
-        if (!heap_.try_get(ops::payload(val), entry)) return nullptr;
-        if (entry.header.kind != Kind) return nullptr;
-        return static_cast<T*>(entry.ptr);
+        return heap_.try_get_as<Kind, T>(ops::payload(val));
     }
 
-    DispatchResult setup_frame(const BytecodeFunction* func, LispVal closure, uint32_t argc, bool is_tail) {
-        if (is_tail) {
-            // In a real tail call, we'd reuse the current frame.
-            // For now, we return TailReuse to indicate this.
-            return {DispatchAction::TailReuse, func, closure};
-        }
-        
+    // Helper to get typed heap object or return a TypeError
+    template<ObjectKind Kind, typename T>
+    std::expected<T*, RuntimeError> get_as_or_error(LispVal val, const char* msg) {
+        if (auto* ptr = try_get_as<Kind, T>(val)) return ptr;
+        return std::unexpected(make_type_error(msg));
+    }
+
+    void setup_frame(const BytecodeFunction* func, LispVal closure, uint32_t argc) {
         frames_.push_back({current_func_, pc_, fp_, current_closure_});
         current_func_ = func;
         current_closure_ = closure;
         fp_ = static_cast<uint32_t>(stack_.size() - argc);
         pc_ = 0;
-        
-        return {DispatchAction::Continue, nullptr, 0};
+    }
+
+    // Restore execution state from a frame (used after function returns)
+    void restore_frame(const Frame& f) {
+        current_func_ = f.func;
+        pc_ = f.pc;
+        fp_ = f.fp;
+        current_closure_ = f.closure;
     }
 
     // Resolve function index to BytecodeFunction pointer
@@ -126,6 +132,9 @@ private:
         return RuntimeError{VMError{RuntimeErrorCode::TypeError, msg}};
     }
 
+    // String-aware value equality (for eqv?/equal? semantics)
+    // Returns true if values are equal, considering string content for strings
+    bool values_eqv(LispVal a, LispVal b);
 
     // Unified binary arithmetic dispatch helper - eliminates code duplication
     // for Add, Sub, Mul, Div opcodes

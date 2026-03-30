@@ -7,64 +7,61 @@ namespace eta::runtime::memory::intern {
         const size_t shard_idx = select_shard(s);
         auto&[mtx, str_to_id] = shards[shard_idx];
 
-        // Common logic to check if already interned (lock-free read on non-MSVC,
-        // must be called under lock on MSVC)
-        auto try_find_existing = [&]() -> std::optional<InternId> {
-            InternId existing = 0;
-            if (str_to_id.visit(s, [&existing](const auto& kv) { existing = kv.second; })) {
-                return existing;
-            }
-            return std::nullopt;
-        };
+#if !defined(_MSC_VER)
+        // 1. Lock-free fast path for concurrent map
+        InternId existing = 0;
+        if (str_to_id.visit(s, [&existing](const auto& kv) { existing = kv.second; })) {
+            return existing;
+        }
 
-        // Common logic to create new entry (must be called under lock)
-        auto create_new_entry = [&](const auto& sp) -> std::expected<InternId, InternTableError> {
-            InternId id = next_id.fetch_add(1, std::memory_order_relaxed);
-            if (id > nanbox::constants::PAYLOAD_MASK) {
-                return std::unexpected(InternTableError::IdOutOfRange);
-            }
-            // Insert into both maps under lock. Order matters: id_to_str first, then str_to_id.
-            // This ensures readers never see dangling references.
-            id_to_str.emplace(id, sp);
-            str_to_id.try_emplace(sp, id);
-            return id;
-        };
+        // 2. Prepare data outside the lock
+        auto sp = std::make_shared<std::string>(s);
+        
+        // 3. Generate a new ID. We are okay with wasting an ID on rare collisions
+        // to avoid global/shard lock contention.
+        InternId id = next_id.fetch_add(1, std::memory_order_relaxed);
+        if (id > nanbox::constants::PAYLOAD_MASK) {
+            return std::unexpected(InternTableError::IdOutOfRange);
+        }
 
-#if defined(_MSC_VER)
-        // MSVC path: std::unordered_map is not thread-safe, must always take lock
+        // 4. Update the ID -> String map first so it's available if needed.
+        id_to_str.emplace(id, sp);
+        
+        // 5. Try to update the String -> ID map.
+        InternId result_id = id;
+        bool inserted = str_to_id.emplace_or_visit(sp, id, [&](const auto& kv) {
+            result_id = kv.second;
+        });
+
+        if (!inserted) {
+            // Collision: another thread interned the same string.
+            // Clean up the orphaned ID to avoid wasting memory.
+            id_to_str.erase(id);
+            return result_id;
+        }
+        return id;
+#else
+        // On MSC_VER, we use a more traditional double-checked locking approach
+        // because the map is not concurrent.
+        
+        // Prepare data outside the lock to minimize critical section time.
+        auto sp = std::make_shared<std::string>(s);
+        
         std::lock_guard<std::mutex> lock(mtx);
 
-        if (auto existing = try_find_existing()) {
-            return *existing;
+        InternId existing = 0;
+        if (str_to_id.visit(s, [&existing](const auto& kv) { existing = kv.second; })) {
+            return existing;
         }
 
-        auto sp = std::make_shared<std::string>(s);
-        return create_new_entry(sp);
-#else
-        // Non-MSVC path: concurrent_flat_map is thread-safe for reads
-        // Fast path: check if already interned (lock-free)
-        if (auto existing = try_find_existing()) {
-            return *existing;
+        InternId id = next_id.fetch_add(1, std::memory_order_relaxed);
+        if (id > nanbox::constants::PAYLOAD_MASK) {
+            return std::unexpected(InternTableError::IdOutOfRange);
         }
 
-        // Slow path: need to insert - take the lock
-        auto sp = std::make_shared<std::string>(s);
-
-        // Critical section: allocate ID and insert atomically
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-
-            // Double-check: another thread might have inserted while we waited.
-            InternId race_check = 0;
-            if (str_to_id.visit(sp, [&race_check](const auto& kv) {
-                race_check = kv.second;
-            })) {
-                // Lost race - return winner's id (no ID wasted).
-                return race_check;
-            }
-
-            return create_new_entry(sp);
-        }
+        id_to_str.emplace(id, sp);
+        str_to_id.try_emplace(sp, id);
+        return id;
 #endif
     }
 
