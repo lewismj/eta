@@ -129,10 +129,10 @@ void Emitter::emit_if(const core::If& n, Context& ctx) {
     uint32_t jump_idx = static_cast<uint32_t>(ctx.func.code.size());
     ctx.func.code.push_back({OpCode::Jump, 0}); // placeholder
 
-    ctx.func.code[jump_if_false_idx].arg = static_cast<uint32_t>(ctx.func.code.size() - jump_if_false_idx);
+    ctx.func.code[jump_if_false_idx].arg = static_cast<uint32_t>(ctx.func.code.size() - jump_if_false_idx - 1);
 
     emit_node(n.alt, ctx);
-    ctx.func.code[jump_idx].arg = static_cast<uint32_t>(ctx.func.code.size() - jump_idx);
+    ctx.func.code[jump_idx].arg = static_cast<uint32_t>(ctx.func.code.size() - jump_idx - 1);
 }
 
 void Emitter::emit_begin(const core::Begin& n, Context& ctx) {

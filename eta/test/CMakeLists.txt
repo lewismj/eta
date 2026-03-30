@@ -12,7 +12,8 @@ set(SOURCES
         src/module_linker_tests.cpp
         src/semantics_tests.cpp
         src/vm_tests.cpp
-        src/eta_test.cpp)
+        src/eta_test.cpp
+        src/emitter_tests.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 

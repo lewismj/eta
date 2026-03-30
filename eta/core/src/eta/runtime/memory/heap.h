@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <expected>
 #include <ostream>
+#include <functional>
 #include <boost/unordered/concurrent_flat_map.hpp>
 
 #include <eta/arch.h>
@@ -144,8 +145,15 @@ namespace eta::runtime::memory::heap {
 
             // Single atomic load instead of iterating all shards
             const auto current_total = total_heap_bytes.load(std::memory_order_relaxed);
-            [[unlikely]] if (current_total + sizeof(T) > max_heap_soft_limit_) {
-                return std::unexpected(HeapError::SoftHeapLimitExceeded);
+            if (current_total + sizeof(T) > max_heap_soft_limit_) {
+                if (gc_callback_) {
+                    gc_callback_();
+                    if (total_heap_bytes.load(std::memory_order_relaxed) + sizeof(T) > max_heap_soft_limit_) {
+                        return std::unexpected(HeapError::SoftHeapLimitExceeded);
+                    }
+                } else {
+                    return std::unexpected(HeapError::SoftHeapLimitExceeded);
+                }
             }
 
             void* memory = nullptr;
@@ -272,6 +280,8 @@ namespace eta::runtime::memory::heap {
         void resume_after_gc() { gc_in_progress_.store(false, std::memory_order_release); }
         bool is_gc_paused() const { return gc_in_progress_.load(std::memory_order_acquire); }
 
+        void set_gc_callback(std::function<void()> cb) { gc_callback_ = std::move(cb); }
+
     private:
 
         struct ShardStats {
@@ -284,6 +294,8 @@ namespace eta::runtime::memory::heap {
 
         //! GC pause flag - when true, allocations are rejected
         std::atomic<bool> gc_in_progress_{ false };
+
+        std::function<void()> gc_callback_;
 
         struct cache_align Shard {
             boost::unordered::concurrent_flat_map<ObjectId, HeapEntry> heap_objects;

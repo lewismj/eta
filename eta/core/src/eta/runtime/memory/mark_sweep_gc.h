@@ -52,6 +52,12 @@ namespace eta::runtime::memory::gc {
             for (auto v : c.stack) callback(v);
             for (const auto& frame : c.frames) {
                 callback(frame.closure);
+                callback(frame.extra);
+            }
+            for (const auto& wind : c.winding_stack) {
+                callback(wind.before);
+                callback(wind.body);
+                callback(wind.after);
             }
         }
 

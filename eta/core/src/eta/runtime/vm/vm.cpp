@@ -1,10 +1,11 @@
 #include "vm.h"
+#include <iostream>
 #include "eta/runtime/factory.h"
 #include "eta/runtime/types/types.h"
 #include "eta/runtime/types/primitive.h"
 #include "eta/runtime/memory/value_visit.h"
+#include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/string_view.h"
-
 #include <bit>
 
 namespace eta::runtime::vm {
@@ -15,10 +16,13 @@ using namespace eta::runtime::memory::factory;
 using namespace eta::runtime::types;
 
 VM::VM(Heap& heap, InternTable& intern_table)
-    : heap_(heap), intern_table_(intern_table) {
+    : heap_(heap), intern_table_(intern_table), gc_(std::make_unique<memory::gc::MarkSweepGC>()) {
     stack_.reserve(1024);
     frames_.reserve(64);
+    heap_.set_gc_callback([this]() { collect_garbage(); });
 }
+
+VM::~VM() = default;
 
 bool VM::values_eqv(LispVal a, LispVal b) {
     // Fast path: bit-identical values are always equal (handles Nil, True, False, small Fixnums, same heap IDs)
@@ -48,14 +52,40 @@ bool VM::values_eqv(LispVal a, LispVal b) {
     return false;
 }
 
+void VM::collect_garbage() {
+    if (!gc_) return;
+
+    gc_->collect(heap_, [&](auto&& visit) {
+        // Mark stack
+        for (auto v : stack_) visit(v);
+        // Mark globals
+        for (auto v : globals_) visit(v);
+        // Mark current execution state
+        visit(current_closure_);
+        // Mark frames
+        for (const auto& f : frames_) {
+            visit(f.closure);
+            visit(f.extra);
+        }
+        // Mark winding stack
+        for (const auto& w : winding_stack_) {
+            visit(w.before);
+            visit(w.body);
+            visit(w.after);
+        }
+        // Mark temporary roots
+        for (auto v : temp_roots_) visit(v);
+    });
+}
+
 std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
     current_func_ = &main;
     pc_ = 0;
     fp_ = 0;
     current_closure_ = 0; // Top-level
     
-    // Initial frame
-    frames_.push_back({current_func_, pc_, fp_, current_closure_});
+    // Initial stack resize for main
+    stack_.resize(main.stack_size, Nil);
     
     auto res = run_loop();
     if (!res) return std::unexpected(res.error());
@@ -66,6 +96,16 @@ std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
 // Unified helper to dispatch a callee (Closure, Continuation, or Primitive)
 std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, uint32_t argc, bool is_tail) {
     // Use try_get_as for consistent heap access pattern
+    std::cout << "DEBUG: dispatch_callee callee=" << std::hex << callee << " tag=" << to_string(ops::tag(callee)) << std::dec << " is_tail=" << is_tail << " argc=" << argc << std::endl;
+
+    if (!ops::is_boxed(callee)) {
+         std::cout << "DEBUG: Callee not boxed" << std::endl;
+         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not boxed"}});
+    }
+    
+    if (ops::tag(callee) != Tag::HeapObject) {
+         std::cout << "DEBUG: Callee tag NOT HeapObject, it is " << to_string(ops::tag(callee)) << std::endl;
+    }
 
     if (auto* closure = try_get_as<ObjectKind::Closure, Closure>(callee)) {
         // Arity check early (fail fast)
@@ -91,8 +131,13 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
         frames_ = cont->frames;
         winding_stack_ = cont->winding_stack;
 
-        // Restore current frame state
-        const auto& f = frames_.back();
+        // Restore current frame state from the captured top frame
+        if (frames_.empty()) {
+             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Empty continuation"}});
+        }
+        const auto f = frames_.back();
+        frames_.pop_back();
+        
         current_func_ = f.func;
         pc_ = f.pc;
         fp_ = f.fp;
@@ -104,14 +149,18 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
     }
 
     if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(callee)) {
+        std::cout << "DEBUG: primitive branch arity=" << prim->arity << std::endl;
         std::vector<LispVal> args;
         for (uint32_t i = 0; i < argc; ++i) {
             args.push_back(stack_[stack_.size() - argc + i]);
+            std::cout << "DEBUG: prim arg[" << i << "]=" << std::hex << args.back() << std::dec << std::endl;
         }
         stack_.resize(stack_.size() - argc);
 
+        std::cout << "DEBUG: calling prim->func" << std::endl;
         auto res = prim->func(args);
         if (!res) return std::unexpected(res.error());
+        std::cout << "DEBUG: primitive result=" << std::hex << *res << std::dec << std::endl;
         push(*res);
         return DispatchResult{DispatchAction::Continue, nullptr, 0};
     }
@@ -162,19 +211,22 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 LispVal consumer = pop();
                 LispVal producer = pop();
 
-                // Call producer with 0 arguments
+                // Call producer with 0 arguments. Return to consumer afterwards.
                 auto prod_dispatch = dispatch_callee(producer, 0, /*is_tail=*/false);
                 if (!prod_dispatch) return std::unexpected(prod_dispatch.error());
 
-                // We need to return to the consumer after producer returns.
-                frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::CallWithValuesConsumer, consumer});
-
                 if (prod_dispatch->action == DispatchAction::SetupFrame) {
-                    setup_frame(prod_dispatch->func, prod_dispatch->closure, 0);
+                    setup_frame(prod_dispatch->func, prod_dispatch->closure, 0, FrameKind::CallWithValuesConsumer, consumer);
                 } else {
                     // Producer was a primitive - result already pushed.
-                    auto res = handle_return(pop());
-                    if (!res) return std::unexpected(res.error());
+                    // We can call consumer directly now.
+                    unpack_to_stack(pop());
+                    uint32_t argc = static_cast<uint32_t>(stack_.size() - fp_);
+                    auto cons_dispatch = dispatch_callee(consumer, argc, false);
+                    if (!cons_dispatch) return std::unexpected(cons_dispatch.error());
+                    if (cons_dispatch->action == DispatchAction::SetupFrame) {
+                        setup_frame(cons_dispatch->func, cons_dispatch->closure, argc);
+                    }
                 }
                 break;
             }
@@ -186,19 +238,31 @@ std::expected<void, RuntimeError> VM::run_loop() {
 
                 winding_stack_.push_back({before_thunk, body_thunk, after_thunk});
 
-                // Call before() with 0 arguments
+                // Call before() with 0 arguments. Return to body() afterwards.
                 auto before_dispatch = dispatch_callee(before_thunk, 0, /*is_tail=*/false);
                 if (!before_dispatch) return std::unexpected(before_dispatch.error());
 
-                // Return to body after before()
-                frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::DynamicWindBody, body_thunk});
-
                 if (before_dispatch->action == DispatchAction::SetupFrame) {
-                    setup_frame(before_dispatch->func, before_dispatch->closure, 0);
+                    setup_frame(before_dispatch->func, before_dispatch->closure, 0, FrameKind::DynamicWindBody);
                 } else {
-                    // before was primitive
-                    auto res = handle_return(pop());
-                    if (!res) return std::unexpected(res.error());
+                    // before was primitive. Call body() now.
+                    auto body_dispatch = dispatch_callee(body_thunk, 0, false);
+                    if (!body_dispatch) return std::unexpected(body_dispatch.error());
+                    if (body_dispatch->action == DispatchAction::SetupFrame) {
+                        setup_frame(body_dispatch->func, body_dispatch->closure, 0, FrameKind::DynamicWindAfter, after_thunk);
+                    } else {
+                        // body was primitive. Call after() now.
+                        LispVal body_res = pop();
+                        auto after_dispatch = dispatch_callee(after_thunk, 0, false);
+                        if (!after_dispatch) return std::unexpected(after_dispatch.error());
+                        if (after_dispatch->action == DispatchAction::SetupFrame) {
+                            setup_frame(after_dispatch->func, after_dispatch->closure, 0, FrameKind::DynamicWindCleanup, body_res);
+                        } else {
+                            pop(); // ignore after() result
+                            winding_stack_.pop_back();
+                            push(body_res);
+                        }
+                    }
                 }
                 break;
             }
@@ -226,6 +290,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             }
             case OpCode::LoadGlobal:
+                std::cout << "DEBUG: LoadGlobal slot=" << instr.arg << " value=" << std::hex << (instr.arg < globals_.size() ? globals_[instr.arg] : 0xDEADBEEF) << std::dec << std::endl;
                 if (instr.arg < globals_.size()) {
                     push(globals_[instr.arg]);
                 } else {
@@ -233,6 +298,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 }
                 break;
             case OpCode::StoreGlobal:
+                std::cout << "DEBUG: StoreGlobal slot=" << instr.arg << " value=" << std::hex << stack_.back() << std::dec << std::endl;
                 if (instr.arg >= globals_.size()) {
                     globals_.resize(instr.arg + 1, Nil);
                 }
@@ -249,12 +315,14 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             case OpCode::JumpIfFalse: {
                 LispVal v = pop();
+                std::cout << "DEBUG: JumpIfFalse v=" << std::hex << v << std::dec << std::endl;
                 if (v == False) pc_ += instr.arg;
                 break;
             }
             case OpCode::Call: {
                 uint32_t argc = instr.arg;
                 LispVal callee = pop();
+                std::cout << "DEBUG: Call callee=" << std::hex << callee << " argc=" << std::dec << argc << std::endl;
 
                 auto dispatch_res = dispatch_callee(callee, argc, /*is_tail=*/false);
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
@@ -347,21 +415,32 @@ std::expected<void, RuntimeError> VM::run_loop() {
                     for (uint32_t i = 0; i < argc; ++i) {
                         stack_[fp_ + i] = stack_[new_args_start + i];
                     }
-                    stack_.resize(fp_ + argc);
+                    stack_.resize(fp_ + current_func_->stack_size, Nil);
                     pc_ = 0;
+                    std::cout << "DEBUG: TailReuse argc=" << argc << " fp_=" << fp_ << " stack_size=" << stack_.size() << " arg0=" << std::hex << stack_[fp_] << std::dec << std::endl;
+                } else {
+                    // TailCall to primitive or continuation - result already pushed.
+                    // Now we MUST return that result from the current frame.
+                    auto res = handle_return(pop());
+                    if (!res) return std::unexpected(res.error());
                 }
-                // DispatchAction::Continue means result is already pushed (primitive/continuation)
                 break;
             }
             case OpCode::CallCC: {
                 LispVal consumer = pop();
+                temp_roots_.push_back(consumer);
                 
-                auto cont_res = make_continuation(heap_, stack_, frames_, winding_stack_);
+                // Capture the current execution state as a frame in the continuation
+                auto cont_frames = frames_;
+                cont_frames.push_back({current_func_, pc_, fp_, current_closure_});
+                
+                auto cont_res = make_continuation(heap_, stack_, cont_frames, winding_stack_);
                 if (!cont_res) return std::unexpected(cont_res.error());
                 
                 push(*cont_res);
                 
                 auto dispatch_res = dispatch_callee(consumer, 1, /*is_tail=*/false);
+                temp_roots_.pop_back();
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
                 if (dispatch_res->action == DispatchAction::SetupFrame) {
@@ -387,99 +466,93 @@ std::expected<void, RuntimeError> VM::run_loop() {
 
 // Numeric type enumeration for dispatch
 std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
-    // Pop current frame
     if (frames_.empty()) {
-        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "Return from empty frame stack"}});
+        stack_.resize(fp_);
+        push(result);
+        return {};
     }
-    Frame current_frame = frames_.back();
+    
+    // The frame we're returning to
+    Frame return_frame = frames_.back();
     frames_.pop_back();
 
-    // Cleanup stack: pop locals and arguments of returned function
-    // For DynamicWindAfter, we need body_result which is on stack before resize
-    LispVal body_result_for_after = (current_frame.kind == FrameKind::DynamicWindAfter) ? stack_[fp_] : 0;
+    // Pop the current frame's locals/args
     stack_.resize(fp_);
+    
+    // Restore the caller's execution state
+    restore_frame(return_frame);
 
-    // Handle internal return points
-    if (current_frame.kind == FrameKind::CallWithValuesConsumer) {
-        // result contains the values from the producer.
+    // Handle special return kinds
+    if (return_frame.kind == FrameKind::CallWithValuesConsumer) {
+        LispVal consumer = return_frame.extra;
+        uint32_t old_size = static_cast<uint32_t>(stack_.size());
         unpack_to_stack(result);
-        uint32_t argc = static_cast<uint32_t>(stack_.size() - fp_);
-
-        LispVal consumer = current_frame.extra;
-        auto dispatch_res = dispatch_callee(consumer, argc, /*is_tail=*/false);
+        uint32_t argc = static_cast<uint32_t>(stack_.size() - old_size);
+        
+        auto dispatch_res = dispatch_callee(consumer, argc, false);
         if (!dispatch_res) return std::unexpected(dispatch_res.error());
-
-        // Restore the frame that CALLED call-with-values
-        if (frames_.empty()) {
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "CallWithValues caller frame missing"}});
-        }
-        restore_frame(frames_.back());
-
+        
         if (dispatch_res->action == DispatchAction::SetupFrame) {
             setup_frame(dispatch_res->func, dispatch_res->closure, argc);
         }
         return {};
-    } else if (current_frame.kind == FrameKind::DynamicWindBody) {
-        // Returned from 'before' thunk. result is ignored.
+    } else if (return_frame.kind == FrameKind::DynamicWindBody) {
+        // Returned from 'before'. result is ignored.
         if (winding_stack_.empty()) {
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty in DynamicWindBody return"}});
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty"}});
         }
         const auto& wind = winding_stack_.back();
-
-        auto body_dispatch = dispatch_callee(wind.body, 0, /*is_tail=*/false);
+        
+        auto body_dispatch = dispatch_callee(wind.body, 0, false);
         if (!body_dispatch) return std::unexpected(body_dispatch.error());
-
-        // Restore the frame that CALLED dynamic-wind
-        if (frames_.empty()) {
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::StackUnderflow, "DynamicWind caller frame missing"}});
-        }
-        restore_frame(frames_.back());
-
-        // Push a frame to call 'after' when 'body' returns
-        frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::DynamicWindAfter, wind.after});
-
+        
         if (body_dispatch->action == DispatchAction::SetupFrame) {
-            setup_frame(body_dispatch->func, body_dispatch->closure, 0);
+            setup_frame(body_dispatch->func, body_dispatch->closure, 0, FrameKind::DynamicWindAfter, wind.after);
         } else {
-            // Body was primitive, execute 'after' immediately
+            // body was primitive
             LispVal body_result = pop();
-            frames_.pop_back(); // Pop the DynamicWindAfter frame
-
-            auto after_dispatch = dispatch_callee(wind.after, 0, /*is_tail=*/false);
+            auto after_dispatch = dispatch_callee(wind.after, 0, false);
             if (!after_dispatch) return std::unexpected(after_dispatch.error());
-
             if (after_dispatch->action == DispatchAction::SetupFrame) {
-                push(body_result);
-                setup_frame(after_dispatch->func, after_dispatch->closure, 1);
+                setup_frame(after_dispatch->func, after_dispatch->closure, 0, FrameKind::DynamicWindCleanup, body_result);
             } else {
-                pop(); // ignore after result
+                pop(); // ignore after() result
                 push(body_result);
                 winding_stack_.pop_back();
             }
         }
         return {};
-    } else if (current_frame.kind == FrameKind::DynamicWindAfter) {
-        // Returned from 'after' thunk. Return body's result.
+    } else if (return_frame.kind == FrameKind::DynamicWindAfter) {
+        // Returned from 'body'. result is the body result.
         if (winding_stack_.empty()) {
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty in DynamicWindAfter return"}});
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty"}});
+        }
+        const auto& wind = winding_stack_.back();
+        LispVal body_result = result;
+        LispVal after_thunk = return_frame.extra;
+
+        auto after_dispatch = dispatch_callee(after_thunk, 0, false);
+        if (!after_dispatch) return std::unexpected(after_dispatch.error());
+
+        if (after_dispatch->action == DispatchAction::SetupFrame) {
+            setup_frame(after_dispatch->func, after_dispatch->closure, 0, FrameKind::DynamicWindCleanup, body_result);
+        } else {
+            // after thunk was primitive
+            winding_stack_.pop_back();
+            push(body_result);
+        }
+        return {};
+    } else if (return_frame.kind == FrameKind::DynamicWindCleanup) {
+        // Returned from 'after'. return_frame.extra is the body_result.
+        if (winding_stack_.empty()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty"}});
         }
         winding_stack_.pop_back();
-
-        if (frames_.empty()) {
-            push(body_result_for_after);
-            return {};
-        }
-        restore_frame(frames_.back());
-        push(body_result_for_after);
+        push(return_frame.extra);
         return {};
     }
 
-    if (frames_.empty()) {
-        push(result);
-        return {};
-    }
-
-    restore_frame(frames_.back());
+    // Normal case
     push(result);
     return {};
 }

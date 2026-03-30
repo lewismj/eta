@@ -45,7 +45,19 @@ struct VMTestFixture {
         auto sem_mods_vec = std::move(*sem_res);
 
         BOOST_REQUIRE(!sem_mods_vec.empty());
-        const auto& sem_mod = sem_mods_vec[0];
+        auto& sem_mod = sem_mods_vec[0];
+
+        // For tests, skip StoreGlobal for our injected primitives in the module initializer
+        auto it = std::remove_if(sem_mod.toplevel_inits.begin(), sem_mod.toplevel_inits.end(), [&](const core::Node* node) {
+            if (const auto* s = std::get_if<core::Set>(&node->data)) {
+                if (const auto* g = std::get_if<core::Address::Global>(&s->target.where)) {
+                    const auto& b = sem_mod.bindings[g->id];
+                    return b.name == "+" || b.name == "-" || b.name == "eq?";
+                }
+            }
+            return false;
+        });
+        sem_mod.toplevel_inits.erase(it, sem_mod.toplevel_inits.end());
 
         Emitter emitter(sem_mod, heap, intern_table, registry);
         auto* main_func = emitter.emit();
@@ -58,7 +70,10 @@ struct VMTestFixture {
             int64_t res = 0;
             for (auto v : args) {
                 auto val = nanbox::ops::decode<int64_t>(v);
-                if (!val) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Arg not fixnum"}});
+                if (!val) {
+                    std::cout << "DEBUG: + Arg not fixnum: " << std::hex << v << std::dec << " tag=" << static_cast<int>(nanbox::ops::tag(v)) << std::endl;
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Arg not fixnum"}});
+                }
                 res += val.value();
             }
             return nanbox::ops::encode(res).value();
@@ -67,11 +82,17 @@ struct VMTestFixture {
         auto prim_sub = make_primitive(heap, [](const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
             if (args.empty()) return nanbox::ops::encode(0LL).value();
             auto v0 = nanbox::ops::decode<int64_t>(args[0]);
-            if (!v0) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Arg not fixnum"}});
+            if (!v0) {
+                 std::cout << "DEBUG: - Arg0 not fixnum: " << std::hex << args[0] << std::dec << std::endl;
+                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Arg not fixnum"}});
+            }
             int64_t res = v0.value();
             for (size_t i = 1; i < args.size(); ++i) {
                 auto val = nanbox::ops::decode<int64_t>(args[i]);
-                if (!val) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Arg not fixnum"}});
+                if (!val) {
+                    std::cout << "DEBUG: - Arg" << i << " not fixnum: " << std::hex << args[i] << std::dec << std::endl;
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Arg not fixnum"}});
+                }
                 res -= val.value();
             }
             return nanbox::ops::encode(res).value();
@@ -79,6 +100,7 @@ struct VMTestFixture {
 
         auto prim_eq = make_primitive(heap, [](const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
             if (args.size() != 2) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "eq? expects 2 args"}});
+            std::cout << "DEBUG: eq? " << std::hex << args[0] << " " << args[1] << std::dec << " result=" << (args[0] == args[1]) << std::endl;
             return (args[0] == args[1]) ? nanbox::True : nanbox::False;
         }, 2).value();
 
@@ -86,11 +108,9 @@ struct VMTestFixture {
         vm.globals().assign(sem_mod.bindings.size(), nanbox::Nil);
         for (size_t i = 0; i < sem_mod.bindings.size(); ++i) {
             const auto& b = sem_mod.bindings[i];
-            if (b.kind == BindingInfo::Kind::Global || b.kind == BindingInfo::Kind::Import) {
-                if (b.name == "+") vm.globals()[b.slot] = prim_add;
-                else if (b.name == "-") vm.globals()[b.slot] = prim_sub;
-                else if (b.name == "eq?") vm.globals()[b.slot] = prim_eq;
-            }
+            if (b.name == "+") vm.globals()[b.slot] = prim_add;
+            else if (b.name == "-") vm.globals()[b.slot] = prim_sub;
+            else if (b.name == "eq?") vm.globals()[b.slot] = prim_eq;
         }
 
         auto exec_res = vm.execute(*main_func);
@@ -110,9 +130,13 @@ struct VMTestFixture {
             }, exec_res.error());
             throw std::runtime_error(msg);
         }
+
+        std::cout << "DEBUG: exec_res.value() = " << std::hex << exec_res.value() << std::dec << std::endl;
+        std::cout << "DEBUG: tag = " << static_cast<int>(nanbox::ops::tag(exec_res.value())) << std::endl;
         
         // Find 'result' global
         for (size_t i = 0; i < sem_mod.bindings.size(); ++i) {
+            std::cout << "DEBUG: binding[" << i << "].name = " << sem_mod.bindings[i].name << ", slot = " << sem_mod.bindings[i].slot << ", value = " << std::hex << vm.globals()[sem_mod.bindings[i].slot] << std::dec << std::endl;
             if (sem_mod.bindings[i].name == "result") {
                 return vm.globals()[sem_mod.bindings[i].slot];
             }
@@ -133,6 +157,7 @@ BOOST_AUTO_TEST_CASE(test_call_cc_basic) {
 BOOST_AUTO_TEST_CASE(test_call_cc_multiple_invocations) {
     std::string src = 
         "(module m (define result 0) "
+        "  (define (+ a b) #f) (define (eq? a b) #f) "
         "  (define cont #f) "
         "  (define (test) "
         "    (set! result (+ result 1)) "
@@ -146,6 +171,7 @@ BOOST_AUTO_TEST_CASE(test_call_cc_multiple_invocations) {
 BOOST_AUTO_TEST_CASE(test_tail_call_recursion) {
     std::string src = 
         "(module m "
+        "  (define (eq? a b) #f) (define (- a b) #f) "
         "  (define (loop n) "
         "    (if (eq? n 0) "
         "        42 "
@@ -169,6 +195,7 @@ BOOST_AUTO_TEST_CASE(test_dynamic_wind_basic) {
 BOOST_AUTO_TEST_CASE(test_dynamic_wind_with_call_cc) {
     std::string src = 
         "(module m (define result 0) "
+        "  (define (+ a b) #f) (define (eq? a b) #f) "
         "  (define (before) (set! result (+ result 1))) "
         "  (define (after) (set! result (+ result 10))) "
         "  (define cont #f) "

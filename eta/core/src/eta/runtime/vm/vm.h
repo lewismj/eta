@@ -3,11 +3,14 @@
 #include <vector>
 #include <expected>
 #include <functional>
+#include <memory>
 #include "eta/runtime/nanbox.h"
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/error.h"
 #include "bytecode.h"
+
+namespace eta::runtime::memory::gc { class MarkSweepGC; }
 
 namespace eta::runtime::vm {
 
@@ -21,6 +24,7 @@ enum class FrameKind : uint8_t {
     CallWithValuesConsumer,
     DynamicWindBody,
     DynamicWindAfter,
+    DynamicWindCleanup,
 };
 
 struct Frame {
@@ -57,11 +61,14 @@ using FunctionResolver = std::function<const BytecodeFunction*(uint32_t)>;
 class VM {
 public:
     VM(Heap& heap, InternTable& intern_table);
+    ~VM();
 
     // Set the function resolver for index-based function lookup
     void set_function_resolver(FunctionResolver resolver) {
         func_resolver_ = std::move(resolver);
     }
+
+    void collect_garbage();
 
     std::expected<LispVal, RuntimeError> execute(const BytecodeFunction& main);
     
@@ -77,12 +84,15 @@ private:
     std::vector<Frame> frames_;
     std::vector<LispVal> globals_;
     std::vector<WindFrame> winding_stack_;
+    std::vector<LispVal> temp_roots_;
 
     // Current execution state (cached from top frame)
     const BytecodeFunction* current_func_{nullptr};
     uint32_t pc_{0};
     uint32_t fp_{0};
     LispVal current_closure_{0};
+
+    std::unique_ptr<memory::gc::MarkSweepGC> gc_;
 
     std::expected<void, RuntimeError> run_loop();
     std::expected<void, RuntimeError> handle_return(LispVal result);
@@ -109,12 +119,13 @@ private:
         return std::unexpected(make_type_error(msg));
     }
 
-    void setup_frame(const BytecodeFunction* func, LispVal closure, uint32_t argc) {
-        frames_.push_back({current_func_, pc_, fp_, current_closure_});
+    void setup_frame(const BytecodeFunction* func, LispVal closure, uint32_t argc, FrameKind kind = FrameKind::Normal, LispVal extra = 0) {
+        frames_.push_back({current_func_, pc_, fp_, current_closure_, kind, extra});
         current_func_ = func;
         current_closure_ = closure;
         fp_ = static_cast<uint32_t>(stack_.size() - argc);
         pc_ = 0;
+        stack_.resize(fp_ + func->stack_size, Nil);
     }
 
     // Restore execution state from a frame (used after function returns)
