@@ -34,7 +34,7 @@ struct BindingId {
  */
 struct Address {
     struct Local  { std::uint16_t slot{}; };
-    struct Upval  { std::uint16_t depth{}; std::uint16_t slot{}; };
+    struct Upval  { std::uint16_t slot{}; };
     struct Global { std::uint32_t id{}; };
     std::variant<std::monostate, Local, Upval, Global> where;
 };

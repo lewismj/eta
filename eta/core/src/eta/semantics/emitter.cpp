@@ -51,35 +51,27 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
 }
 
 void Emitter::emit_const(const core::Const& n, Context& ctx) {
-    std::optional<LispVal> val = std::visit([&](auto&& p) -> std::optional<LispVal> {
-        using PT = std::decay_t<decltype(p)>;
-
-        if constexpr (std::is_same_v<PT, std::monostate>) {
-            return Nil;
-        } else if constexpr (std::is_same_v<PT, bool>) {
-            return p ? True : False;
-        } else if constexpr (std::is_same_v<PT, char32_t>) {
-            return ops::encode(p).value();
-        } else if constexpr (std::is_same_v<PT, std::string>) {
-            // Deduplicate string constants across the current function
-            if (auto cache_it = ctx.string_constant_cache.find(p); cache_it != ctx.string_constant_cache.end()) {
-                ctx.func.code.push_back({OpCode::LoadConst, cache_it->second});
-                return std::nullopt;
-            }
-            LispVal v = make_string(heap_, intern_table_, p).value();
-            uint32_t idx = emit_load_const(v, ctx);
-            ctx.string_constant_cache[p] = idx;
-            return std::nullopt;
-        } else if constexpr (std::is_same_v<PT, int64_t>) {
-            return make_fixnum(heap_, p).value();
-        } else if constexpr (std::is_same_v<PT, double>) {
-            return make_flonum(p).value();
+    if (const auto* s = std::get_if<std::string>(&n.value.payload)) {
+        if (auto it = ctx.string_constant_cache.find(*s); it != ctx.string_constant_cache.end()) {
+            ctx.func.code.push_back({OpCode::LoadConst, it->second});
+            return;
         }
+    }
+
+    LispVal val = std::visit([&](auto&& p) -> LispVal {
+        using PT = std::decay_t<decltype(p)>;
+        if constexpr (std::is_same_v<PT, std::monostate>) return Nil;
+        else if constexpr (std::is_same_v<PT, bool>) return p ? True : False;
+        else if constexpr (std::is_same_v<PT, char32_t>) return ops::encode(p).value();
+        else if constexpr (std::is_same_v<PT, std::string>) return make_string(heap_, intern_table_, p).value();
+        else if constexpr (std::is_same_v<PT, int64_t>) return make_fixnum(heap_, p).value();
+        else if constexpr (std::is_same_v<PT, double>) return make_flonum(p).value();
         return Nil;
     }, n.value.payload);
 
-    if (val) {
-        emit_load_const(*val, ctx);
+    uint32_t idx = emit_load_const(val, ctx);
+    if (const auto* s = std::get_if<std::string>(&n.value.payload)) {
+        ctx.string_constant_cache[*s] = idx;
     }
 }
 
@@ -154,7 +146,7 @@ void Emitter::emit_begin(const core::Begin& n, Context& ctx) {
 
 void Emitter::emit_lambda_node(const core::Lambda& n, Context& ctx) {
     // Emit the nested lambda to the registry and get its index
-    uint32_t func_idx = emit_lambda(n);
+    uint32_t func_idx = emit_lambda(n, ctx.func.name);
 
     // Store the function index as a constant (type-safe, not a raw pointer).
     // Uses FUNC_INDEX_TAG from bytecode.h
@@ -209,8 +201,10 @@ void Emitter::emit_quote(const core::Quote& n, Context& ctx) {
 }
 
 
-uint32_t Emitter::emit_lambda(const core::Lambda& lambda) {
+uint32_t Emitter::emit_lambda(const core::Lambda& lambda, const std::string& parent_name) {
+    static uint32_t lambda_count = 0;
     Context ctx;
+    ctx.func.name = parent_name + "_lambda" + std::to_string(lambda_count++);
     ctx.func.arity = lambda.arity.required;
     ctx.func.has_rest = lambda.arity.has_rest;
     ctx.func.stack_size = lambda.stack_size;

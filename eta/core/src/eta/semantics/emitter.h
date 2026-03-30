@@ -87,7 +87,7 @@ private:
     };
 
     void emit_node(const core::Node* node, Context& ctx);
-    uint32_t emit_lambda(const core::Lambda& lambda);
+    uint32_t emit_lambda(const core::Lambda& lambda, const std::string& parent_name);
 
     // Helper to emit load/store operations for different address types
     void emit_address_load(const core::Address& addr, Context& ctx);

@@ -15,28 +15,6 @@ using namespace eta::reader::parser;
 
 namespace {
 
-// Forward declarations for handler registry
-struct AnalysisContext;
-SemResult<core::Node*> analyze(const SExprPtr& expr, Scope& scope, AnalysisContext& ctx);
-SemResult<core::Address> lookup(const std::string& name, Scope* scope, AnalysisContext& ctx, Span span);
-
-// Special form handler signature
-using SpecialFormHandler = SemResult<core::Node*>(*)(const List*, Scope&, AnalysisContext&);
-
-// Helper to wrap a list of body expressions into a single node.
-// - Empty: returns Const with monostate (nil/void)
-// - Single: returns that expression directly
-// - Multiple: wraps in Begin
-core::Node* wrap_body(std::vector<core::Node*> body_exprs, Span span, ModuleSemantics& mod) {
-    if (body_exprs.empty()) {
-        return mod.emplace<core::Const>(core::Literal{std::monostate{}}, span);
-    } else if (body_exprs.size() == 1) {
-        return body_exprs[0];
-    } else {
-        return mod.emplace<core::Begin>(std::move(body_exprs), false, span);
-    }
-}
-
 struct AnalysisContext {
     ModuleSemantics& mod;
     uint32_t next_binding_id{0};
@@ -57,7 +35,7 @@ struct AnalysisContext {
             slot = static_cast<std::uint16_t>(id.id);
         }
 
-        mod.bindings.push_back(BindingInfo{kind, name, mutable_flag, slot, span});
+        mod.bindings.push_back(BindingInfo{kind, name, mutable_flag, slot, span, std::nullopt});
         return id;
     }
 
@@ -69,12 +47,139 @@ struct AnalysisContext {
     }
 };
 
-// ============================================================================
-// Scope Lookup
-// ============================================================================
+SemResult<core::Node*> analyze(const SExprPtr& expr, Scope& scope, AnalysisContext& ctx);
 
+struct LookupResult {
+    core::Address addr;
+    core::BindingId id;
+};
 
-SemResult<core::Address> lookup(const std::string& name, Scope* scope, AnalysisContext& ctx, Span span) {
+/**
+ * Perform a deep copy of an S-expression to ensure memory safety.
+ * This is used by handle_quote to avoid dangling pointers into the AST.
+ */
+SExprPtr deep_copy(const SExpr* expr) {
+    if (!expr) return nullptr;
+
+    auto copy = std::make_unique<SExpr>();
+    copy->value = std::visit([](auto&& arg) -> SExprValue {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, List>) {
+            List l;
+            l.span = arg.span;
+            l.dotted = arg.dotted;
+            for (const auto& e : arg.elems) l.elems.push_back(deep_copy(e.get()));
+            if (arg.dotted) l.tail = deep_copy(arg.tail.get());
+            return l;
+        } else if constexpr (std::is_same_v<T, Vector>) {
+            Vector v;
+            v.span = arg.span;
+            for (const auto& e : arg.elems) v.elems.push_back(deep_copy(e.get()));
+            return v;
+        } else if constexpr (std::is_same_v<T, ReaderForm>) {
+            ReaderForm r;
+            r.span = arg.span;
+            r.kind = arg.kind;
+            r.expr = deep_copy(arg.expr.get());
+            return r;
+        } else if constexpr (std::is_same_v<T, ModuleForm>) {
+            ModuleForm m;
+            m.span = arg.span;
+            m.name = arg.name;
+            m.exports = arg.exports;
+            for (const auto& e : arg.body) m.body.push_back(deep_copy(e.get()));
+            return m;
+        } else {
+            return arg;
+        }
+    }, expr->value);
+    return std::move(copy);
+}
+
+/**
+ * Create a core::Const IR node from an S-expression.
+ * Centralizes the creation and initialization of constant values.
+ */
+core::Node* make_const(const SExprPtr& expr, AnalysisContext& ctx) {
+    core::Literal lit;
+    if (expr->is<Nil>()) {
+        lit.payload = std::monostate{};
+    } else if (const auto* b = expr->as<Bool>()) {
+        lit.payload = b->value;
+    } else if (const auto* c = expr->as<Char>()) {
+        lit.payload = c->value;
+    } else if (const auto* s = expr->as<String>()) {
+        lit.payload = s->value;
+    } else if (const auto* n = expr->as<eta::reader::parser::Number>()) {
+        std::visit([&](auto&& v) { lit.payload = v; }, n->value);
+    } else if (const auto* lst = expr->as<List>()) {
+        if (lst->elems.empty()) {
+            lit.payload = std::monostate{};
+        } else {
+            return nullptr;
+        }
+    } else {
+        return nullptr;
+    }
+    return ctx.mod.emplace<core::Const>(lit, expr->span());
+}
+
+/**
+ * Parse lambda formal parameters and populate the lambda node.
+ * Handles symbols, nil, lists, and dotted lists.
+ */
+SemResult<void> parse_formals(const SExprPtr& expr, Scope& scope, AnalysisContext& ctx, core::Lambda* lam) {
+    if (const auto* formal_sym = expr->as<Symbol>()) {
+        auto id = ctx.add_binding(scope, formal_sym->name, BindingInfo::Kind::Param, formal_sym->span, true);
+        lam->rest = id;
+        lam->arity.has_rest = true;
+    } else if (expr->is<Nil>()) {
+        lam->arity.required = 0;
+    } else if (const auto* formals_lst = expr->as<List>()) {
+        for (const auto& arg : formals_lst->elems) {
+            if (const auto* s = arg->as<Symbol>()) {
+                auto id = ctx.add_binding(scope, s->name, BindingInfo::Kind::Param, s->span, true);
+                lam->params.push_back(id);
+                lam->arity.required++;
+            } else {
+                return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, arg->span(), "lambda formal must be symbol"});
+            }
+        }
+        if (formals_lst->dotted) {
+            if (const auto* s = formals_lst->tail->as<Symbol>()) {
+                auto id = ctx.add_binding(scope, s->name, BindingInfo::Kind::Param, s->span, true);
+                lam->rest = id;
+                lam->arity.has_rest = true;
+            } else {
+                 return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, formals_lst->tail->span(), "lambda rest formal must be symbol"});
+            }
+        }
+    } else {
+        return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, expr->span(), "invalid lambda formals"});
+    }
+    return {};
+}
+
+/**
+ * @brief Helper to wrap a list of body expressions into a single node.
+ * - Empty: returns Const with monostate (nil/void)
+ * - Single: returns that expression directly
+ * - Multiple: wraps in Begin
+ */
+core::Node* wrap_body(std::vector<core::Node*> body_exprs, Span span, ModuleSemantics& mod) {
+    if (body_exprs.empty()) {
+        return mod.emplace<core::Const>(core::Literal{std::monostate{}}, span);
+    } else if (body_exprs.size() == 1) {
+        return body_exprs[0];
+    } else {
+        return mod.emplace<core::Begin>(std::move(body_exprs), false, span);
+    }
+}
+
+// Special form handler signature
+using SpecialFormHandler = SemResult<core::Node*>(*)(const List*, Scope&, AnalysisContext&);
+
+SemResult<LookupResult> lookup(const std::string& name, Scope* scope, AnalysisContext& ctx, Span span) {
     int crosses_lambda = 0;
     Scope* current = scope;
     std::vector<core::Lambda*> path;
@@ -85,14 +190,12 @@ SemResult<core::Address> lookup(const std::string& name, Scope* scope, AnalysisC
             const auto& info = ctx.mod.bindings[id.id];
 
             if (info.kind == BindingInfo::Kind::Global || info.kind == BindingInfo::Kind::Import) {
-                return core::Address{core::Address::Global{id.id}};
+                return LookupResult{core::Address{core::Address::Global{id.id}}, id};
             }
 
             if (crosses_lambda > 0) {
-                // Start with the address in the scope where the binding was found
-                core::Address current_addr = (info.kind == BindingInfo::Kind::Global || info.kind == BindingInfo::Kind::Import)
-                    ? core::Address{core::Address::Global{info.slot}}
-                    : core::Address{core::Address::Local{info.slot}};
+                // Lexical local or parameter from outer scope
+                core::Address current_addr = core::Address{core::Address::Local{info.slot}};
 
                 // Trace through each lambda boundary
                 for (auto it_path = path.rbegin(); it_path != path.rend(); ++it_path) {
@@ -107,16 +210,12 @@ SemResult<core::Address> lookup(const std::string& name, Scope* scope, AnalysisC
                         slot = static_cast<uint16_t>(std::distance(lam->upvals.begin(), it_up));
                     }
                     // The address for the next (inner) lambda is this lambda's upval
-                    current_addr = core::Address{core::Address::Upval{0, slot}};
+                    current_addr = core::Address{core::Address::Upval{slot}};
                 }
                 
-                // Final address has correct depth
-                if (auto* u = std::get_if<core::Address::Upval>(&current_addr.where)) {
-                    u->depth = static_cast<uint16_t>(crosses_lambda);
-                }
-                return current_addr;
+                return LookupResult{current_addr, id};
             }
-            return core::Address{core::Address::Local{info.slot}};
+            return LookupResult{core::Address{core::Address::Local{info.slot}}, id};
         }
         
         if (current->is_lambda_boundary) {
@@ -127,8 +226,6 @@ SemResult<core::Address> lookup(const std::string& name, Scope* scope, AnalysisC
     }
     return std::unexpected(SemanticError{SemanticError::Kind::UndefinedName, span, "Undefined symbol: " + name});
 }
-
-SemResult<core::Node*> analyze(const SExprPtr& expr, Scope& scope, AnalysisContext& ctx);
 
 // ============================================================================
 // Special Form Handlers - Each handles a specific core or derived form
@@ -163,43 +260,22 @@ SemResult<core::Node*> handle_set(const List* lst, Scope& scope, AnalysisContext
     if (!target_sym)
         return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->elems[1]->span(), "set! target must be a symbol"});
 
-    auto addr = lookup(target_sym->name, &scope, ctx, target_sym->span);
-    if (!addr) return std::unexpected(addr.error());
+    auto lookup_res = lookup(target_sym->name, &scope, ctx, target_sym->span);
+    if (!lookup_res) return std::unexpected(lookup_res.error());
 
-    // Check mutability and distinguish between set on import vs immutable local
-    auto check_mutable = [&](const core::Address& a) -> std::optional<SemanticError::Kind> {
-        uint32_t binding_id = UINT32_MAX;
-        if (auto* l = std::get_if<core::Address::Local>(&a.where)) {
-            binding_id = l->slot;
-        } else if (auto* g = std::get_if<core::Address::Global>(&a.where)) {
-            binding_id = g->id;
-        } else if (auto* u = std::get_if<core::Address::Upval>(&a.where)) {
-            if (scope.lambda_node && u->slot < scope.lambda_node->upvals.size()) {
-                binding_id = scope.lambda_node->upvals[u->slot].id;
-            }
-        }
-
-        if (binding_id < ctx.mod.bindings.size()) {
-            const auto& info = ctx.mod.bindings[binding_id];
-            if (!info.mutable_flag) {
-                return info.kind == BindingInfo::Kind::Import
-                    ? SemanticError::Kind::SetOnImported
-                    : SemanticError::Kind::ImmutableAssignment;
-            }
-        }
-        return std::nullopt; // mutable, ok
-    };
-
-    if (auto err_kind = check_mutable(*addr)) {
-        std::string msg = (*err_kind == SemanticError::Kind::SetOnImported)
-            ? "Cannot set! imported binding"
-            : "Cannot set! immutable binding";
-        return std::unexpected(SemanticError{*err_kind, target_sym->span, msg});
+    const auto& info = ctx.mod.bindings[lookup_res->id.id];
+    if (!info.mutable_flag) {
+        return std::unexpected(SemanticError{
+            info.kind == BindingInfo::Kind::Import ? SemanticError::Kind::SetOnImported : SemanticError::Kind::ImmutableAssignment,
+            target_sym->span,
+            "Cannot assign to immutable " + (info.kind == BindingInfo::Kind::Import ? std::string("import") : std::string("variable")) + ": " + target_sym->name
+        });
     }
 
     auto val = analyze(lst->elems[2], scope, ctx);
     if (!val) return val;
-    return ctx.mod.emplace<core::Set>(*addr, *val, lst->span);
+
+    return ctx.mod.emplace<core::Set>(lookup_res->addr, *val, lst->span);
 }
 
 SemResult<core::Node*> handle_lambda(const List* lst, Scope& scope, AnalysisContext& ctx) {
@@ -214,38 +290,7 @@ SemResult<core::Node*> handle_lambda(const List* lst, Scope& scope, AnalysisCont
     lambda_scope.is_lambda_boundary = true;
     lambda_scope.lambda_node = lam;
 
-    const auto* formals_lst = lst->elems[1]->as<List>();
-    const auto* formal_sym = lst->elems[1]->as<Symbol>();
-    const auto* formal_nil = lst->elems[1]->as<Nil>();
-
-    if (formal_sym) {
-        auto id = ctx.add_binding(lambda_scope, formal_sym->name, BindingInfo::Kind::Param, formal_sym->span, true);
-        lam->rest = id;
-        lam->arity.has_rest = true;
-    } else if (formal_nil) {
-        lam->arity.required = 0;
-    } else if (formals_lst) {
-        for (const auto& arg : formals_lst->elems) {
-            if (const auto* s = arg->as<Symbol>()) {
-                auto id = ctx.add_binding(lambda_scope, s->name, BindingInfo::Kind::Param, s->span, true);
-                lam->params.push_back(id);
-                lam->arity.required++;
-            } else {
-                return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, arg->span(), "lambda formal must be symbol"});
-            }
-        }
-        if (formals_lst->dotted) {
-            if (const auto* s = formals_lst->tail->as<Symbol>()) {
-                auto id = ctx.add_binding(lambda_scope, s->name, BindingInfo::Kind::Param, s->span, true);
-                lam->rest = id;
-                lam->arity.has_rest = true;
-            } else {
-                 return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, formals_lst->tail->span(), "lambda rest formal must be symbol"});
-            }
-        }
-    } else {
-        return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->elems[1]->span(), "invalid lambda formals"});
-    }
+    if (auto res = parse_formals(lst->elems[1], lambda_scope, ctx, lam); !res) return std::unexpected(res.error());
 
     std::vector<core::Node*> body_exprs;
     for (size_t i = 2; i < lst->elems.size(); ++i) {
@@ -262,7 +307,7 @@ SemResult<core::Node*> handle_lambda(const List* lst, Scope& scope, AnalysisCont
 SemResult<core::Node*> handle_quote(const List* lst, Scope&, AnalysisContext& ctx) {
     if (lst->elems.size() != 2)
          return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->span, "quote requires 1 arg"});
-    return ctx.mod.emplace<core::Quote>(std::shared_ptr<SExpr>(lst->elems[1].get(), [](SExpr*){}), lst->span);
+    return ctx.mod.emplace<core::Quote>(deep_copy(lst->elems[1].get()), lst->span);
 }
 
 // Helper to analyze a fixed number of arguments from a form.
@@ -353,11 +398,7 @@ const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handler
  */
 SemResult<core::Node*> analyze_list(const List* lst, Scope& scope, AnalysisContext& ctx) {
     if (lst->elems.empty()) {
-        core::Node* n = ctx.mod.emplace<core::Const>();
-        auto* c = std::get_if<core::Const>(static_cast<core::NodeBase*>(n));
-        c->value.payload = std::monostate{};
-        c->span = lst->span;
-        return n;
+        return ctx.mod.emplace<core::Const>(core::Literal{std::monostate{}}, lst->span);
     }
 
     // Check for special forms
@@ -384,45 +425,12 @@ SemResult<core::Node*> analyze_list(const List* lst, Scope& scope, AnalysisConte
 
 SemResult<core::Node*> analyze(const SExprPtr& expr, Scope& scope, AnalysisContext& ctx) {
     if (auto* sym = expr->as<Symbol>()) {
-        auto addr = lookup(sym->name, &scope, ctx, sym->span);
-        if (!addr) return std::unexpected(addr.error());
-        return ctx.mod.emplace<core::Var>(*addr, sym->span);
-    }
-    if (auto* b = expr->as<Bool>()) {
-        core::Node* n = ctx.mod.emplace<core::Const>();
-        auto* c = std::get_if<core::Const>(static_cast<core::NodeBase*>(n));
-        c->value.payload = b->value; c->span = b->span;
-        return n;
-    }
-    if (auto* ch = expr->as<Char>()) {
-        core::Node* n = ctx.mod.emplace<core::Const>();
-        auto* c = std::get_if<core::Const>(static_cast<core::NodeBase*>(n));
-        c->value.payload = ch->value; c->span = ch->span;
-        return n;
-    }
-    if (auto* s = expr->as<String>()) {
-        core::Node* n = ctx.mod.emplace<core::Const>();
-        auto* c = std::get_if<core::Const>(static_cast<core::NodeBase*>(n));
-        c->value.payload = s->value; c->span = s->span;
-        return n;
-    }
-    if (auto* nil = expr->as<Nil>()) {
-        core::Node* n = ctx.mod.emplace<core::Const>();
-        auto* c = std::get_if<core::Const>(static_cast<core::NodeBase*>(n));
-        c->value.payload = std::monostate{}; c->span = nil->span;
-        return n;
+        auto lookup_res = lookup(sym->name, &scope, ctx, sym->span);
+        if (!lookup_res) return std::unexpected(lookup_res.error());
+        return ctx.mod.emplace<core::Var>(lookup_res->addr, sym->span);
     }
 
-    if (auto* num = expr->as<eta::reader::parser::Number>()) {
-        core::Node* n = ctx.mod.emplace<core::Const>();
-        auto* c = std::get_if<core::Const>(static_cast<core::NodeBase*>(n));
-        // Store int64_t or double directly in the Literal variant
-        std::visit([&](auto&& v) {
-            c->value.payload = v;
-        }, num->value);
-        c->span = num->span;
-        return n;
-    }
+    if (auto* n = make_const(expr, ctx)) return n;
 
     if (auto* lst = expr->as<List>()) return analyze_list(lst, scope, ctx);
     return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, expr->span(), "Unsupported expression type"});
@@ -563,7 +571,7 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader
                                 if (!val) return std::unexpected(val.error());
                                 auto ar = lookup(vs->name, &toplevel, ctx, vs->span); 
                                 if (!ar) return std::unexpected(ar.error());
-                                mod.toplevel_inits.push_back(ctx.mod.emplace<core::Set>(*ar, *val, bf->span()));
+                                mod.toplevel_inits.push_back(ctx.mod.emplace<core::Set>(ar->addr, *val, bf->span()));
                                 continue;
                             }
                         }
