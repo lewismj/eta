@@ -95,8 +95,12 @@ BOOST_AUTO_TEST_CASE(test_local_let_shadowing) {
     auto* local_addr = std::get_if<core::Address::Local>(&var_node->addr.where);
     BOOST_REQUIRE(local_addr != nullptr);
     
-    // The binding ID for this local x (should be the inner lambda's param)
-    core::BindingId bid{local_addr->slot};
+    // The VM slot for this local x (should be 0 as it's the only param)
+    BOOST_CHECK_EQUAL(local_addr->slot, 0);
+
+    // Verify it refers to the correct binding by name
+    BOOST_REQUIRE_LT(local_addr->slot, inner_lam->params.size());
+    core::BindingId bid = inner_lam->params[local_addr->slot];
     BOOST_REQUIRE_LT(bid.id, mod.bindings.size());
     BOOST_CHECK_EQUAL(mod.bindings[bid.id].name, "x");
     BOOST_CHECK(mod.bindings[bid.id].kind == BindingInfo::Kind::Param);
@@ -160,6 +164,31 @@ BOOST_AUTO_TEST_CASE(test_upvals) {
     auto* up_addr = std::get_if<core::Address::Upval>(&var_x->addr.where);
     BOOST_REQUIRE(up_addr != nullptr);
     BOOST_CHECK_EQUAL(up_addr->slot, 0);
+}
+
+BOOST_AUTO_TEST_CASE(test_upval_sources_nested) {
+    std::string src = "(module m1 (define (f x) (lambda (y) (lambda (z) x))))";
+    auto res = analyze_src(src);
+    BOOST_REQUIRE(res.has_value());
+    const auto& mod = (*res)[0];
+    
+    auto* set_f = std::get_if<core::Set>(mod.toplevel_inits[0]);
+    auto* lam_f = std::get_if<core::Lambda>(set_f->value);
+    auto* lam_y = std::get_if<core::Lambda>(lam_f->body);
+    auto* lam_z = std::get_if<core::Lambda>(lam_y->body);
+    BOOST_REQUIRE(lam_z != nullptr);
+    
+    // lam_y should have source for x (Local in lam_f)
+    BOOST_REQUIRE_EQUAL(lam_y->upval_sources.size(), 1);
+    auto* src_y = std::get_if<core::Address::Local>(&lam_y->upval_sources[0].where);
+    BOOST_REQUIRE(src_y != nullptr);
+    BOOST_CHECK_EQUAL(src_y->slot, 0);
+    
+    // lam_z should have source for x (Upval in lam_y)
+    BOOST_REQUIRE_EQUAL(lam_z->upval_sources.size(), 1);
+    auto* src_z = std::get_if<core::Address::Upval>(&lam_z->upval_sources[0].where);
+    BOOST_REQUIRE(src_z != nullptr);
+    BOOST_CHECK_EQUAL(src_z->slot, 0); // 0th upval of lam_y
 }
 
 BOOST_AUTO_TEST_CASE(test_letrec) {

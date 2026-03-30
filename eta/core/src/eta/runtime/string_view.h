@@ -34,26 +34,21 @@ using namespace eta::runtime::memory::intern;
 class StringView {
 public:
     /**
-     * @brief Create a StringView from a LispVal
-     * @return StringView if the value is a string, error otherwise
+     * @brief Create a StringView from a LispVal (non-throwing)
+     * @return StringView if the value is a string, std::nullopt otherwise
      */
-    static std::expected<StringView, RuntimeError> from(
+    static std::optional<StringView> try_from(
         LispVal v,
         InternTable& intern_table,
         Heap& heap
-    ) {
-        if (!ops::is_boxed(v)) {
-            return std::unexpected(VMError{RuntimeErrorCode::TypeError, "Not a string"});
-        }
+    ) noexcept {
+        if (!ops::is_boxed(v)) return std::nullopt;
 
         Tag t = ops::tag(v);
         if (t == Tag::String) {
-            // Interned string
             auto str_opt = intern_table.get_string(ops::payload(v));
-            if (str_opt) {
-                return StringView{*str_opt, StringKind::Interned};
-            }
-            return std::unexpected(VMError{RuntimeErrorCode::TypeError, "Invalid interned string ID"});
+            if (str_opt) return StringView{*str_opt, StringKind::Interned};
+            return std::nullopt;
         }
 
         if (t == Tag::HeapObject) {
@@ -64,7 +59,20 @@ public:
                 return StringView{std::string_view(str->value), StringKind::Heap};
             }
         }
+        return std::nullopt;
+    }
 
+    /**
+     * @brief Create a StringView from a LispVal
+     * @return StringView if the value is a string, error otherwise
+     */
+    static std::expected<StringView, RuntimeError> from(
+        LispVal v,
+        InternTable& intern_table,
+        Heap& heap
+    ) {
+        auto res = try_from(v, intern_table, heap);
+        if (res) return *res;
         return std::unexpected(VMError{RuntimeErrorCode::TypeError, "Not a string"});
     }
 
@@ -73,15 +81,11 @@ public:
      */
     static bool is_string(LispVal v, Heap& heap) noexcept {
         if (!ops::is_boxed(v)) return false;
-
         Tag t = ops::tag(v);
         if (t == Tag::String) return true;
-
         if (t == Tag::HeapObject) {
             HeapEntry entry;
-            if (heap.try_get(ops::payload(v), entry)) {
-                return entry.header.kind == ObjectKind::String;
-            }
+            return heap.try_get(ops::payload(v), entry) && entry.header.kind == ObjectKind::String;
         }
         return false;
     }

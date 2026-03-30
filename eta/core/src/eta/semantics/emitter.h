@@ -73,7 +73,7 @@ public:
                      BytecodeFunctionRegistry& registry)
         : sem_(sem), heap_(heap), intern_table_(intern_table), registry_(registry) {}
 
-    std::vector<runtime::vm::BytecodeFunction*> emit();
+    runtime::vm::BytecodeFunction* emit();
 
 private:
     const ModuleSemantics& sem_;
@@ -81,16 +81,8 @@ private:
     runtime::memory::intern::InternTable& intern_table_;
     BytecodeFunctionRegistry& registry_;
 
-    struct BindingIdHash {
-        size_t operator()(const core::BindingId& b) const {
-            return std::hash<uint32_t>{}(b.id);
-        }
-    };
-
     struct Context {
         runtime::vm::BytecodeFunction func;
-        std::unordered_map<core::BindingId, uint32_t, BindingIdHash> binding_to_slot;
-        std::unordered_map<core::BindingId, uint32_t, BindingIdHash> binding_to_upval;
         std::unordered_map<std::string, uint32_t> string_constant_cache;
     };
 

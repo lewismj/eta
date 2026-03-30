@@ -21,23 +21,30 @@ VM::VM(Heap& heap, InternTable& intern_table)
 }
 
 bool VM::values_eqv(LispVal a, LispVal b) {
-    // Fast path: bit-identical values are always equal
+    // Fast path: bit-identical values are always equal (handles Nil, True, False, small Fixnums, same heap IDs)
     if (a == b) return true;
     
     // If either is not boxed (raw double), they would have matched above if equal
     if (!ops::is_boxed(a) || !ops::is_boxed(b)) return false;
     
-    // For eqv?, only strings need content comparison
-    // Symbols with same intern ID would have matched in fast path
+    // For eqv?, strings and large numbers need content comparison
     
-    // Check if both are strings (interned or heap)
-    if (StringView::is_string(a, heap_) && StringView::is_string(b, heap_)) {
-        // Use StringView for unified string comparison
-        auto res = StringView::equal(a, b, intern_table_, heap_);
-        return res.has_value() && *res;
+    // 1. Strings (interned or heap)
+    if (auto sv_a = StringView::try_from(a, intern_table_, heap_)) {
+        auto sv_b = StringView::try_from(b, intern_table_, heap_);
+        return sv_b && sv_a->view() == sv_b->view();
     }
     
-    // Different types or non-matching non-string values
+    // 2. Heap-allocated Fixnums (large integers)
+    if (ops::tag(a) == Tag::HeapObject && ops::tag(b) == Tag::HeapObject) {
+        HeapEntry ea, eb;
+        if (heap_.try_get(ops::payload(a), ea) && ea.header.kind == ObjectKind::Fixnum &&
+            heap_.try_get(ops::payload(b), eb) && eb.header.kind == ObjectKind::Fixnum) {
+            return *static_cast<int64_t*>(ea.ptr) == *static_cast<int64_t*>(eb.ptr);
+        }
+    }
+    
+    // Different types or non-matching non-string/non-number values
     return false;
 }
 
@@ -266,9 +273,9 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 LispVal func_val = current_func_->constants[const_idx];
 
                 const BytecodeFunction* bfunc = nullptr;
-                if (func_val & FUNC_INDEX_TAG) {
+                if (is_func_index(func_val)) {
                     // New-style: function index
-                    uint32_t func_idx = static_cast<uint32_t>(func_val & ~FUNC_INDEX_TAG);
+                    uint32_t func_idx = decode_func_index(func_val);
                     bfunc = resolve_function(func_idx);
                     if (!bfunc) {
                         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "Invalid function index"}});

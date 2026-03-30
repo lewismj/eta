@@ -46,14 +46,25 @@ struct AnalysisContext {
     core::BindingId add_binding(Scope& scope, const std::string& name, BindingInfo::Kind kind, Span span, bool mutable_flag = false) {
         core::BindingId id = next_id();
         scope.table[name] = id;
-        mod.bindings.push_back(BindingInfo{kind, name, mutable_flag, span});
+        
+        std::uint16_t slot = 0;
+        if (kind == BindingInfo::Kind::Param || kind == BindingInfo::Kind::Local) {
+            // Find the lambda frame this binding belongs to
+            Scope* s = &scope;
+            while (s && !s->is_lambda_boundary && s->parent) s = s->parent;
+            if (s) slot = s->next_slot++;
+        } else {
+            slot = static_cast<std::uint16_t>(id.id);
+        }
+
+        mod.bindings.push_back(BindingInfo{kind, name, mutable_flag, slot, span});
         return id;
     }
 
     core::BindingId add_import(Scope& scope, const std::string& name, const eta::reader::linker::ImportOrigin& origin, Span span) {
         core::BindingId id = next_id();
         scope.table[name] = id;
-        mod.bindings.push_back(BindingInfo{BindingInfo::Kind::Import, name, false, span, origin});
+        mod.bindings.push_back(BindingInfo{BindingInfo::Kind::Import, name, false, static_cast<std::uint16_t>(id.id), span, origin});
         return id;
     }
 };
@@ -78,21 +89,34 @@ SemResult<core::Address> lookup(const std::string& name, Scope* scope, AnalysisC
             }
 
             if (crosses_lambda > 0) {
-                uint16_t slot = 0;
-                core::BindingId current_id = id;
+                // Start with the address in the scope where the binding was found
+                core::Address current_addr = (info.kind == BindingInfo::Kind::Global || info.kind == BindingInfo::Kind::Import)
+                    ? core::Address{core::Address::Global{info.slot}}
+                    : core::Address{core::Address::Local{info.slot}};
+
+                // Trace through each lambda boundary
                 for (auto it_path = path.rbegin(); it_path != path.rend(); ++it_path) {
                     auto* lam = *it_path;
-                    auto it_up = std::find(lam->upvals.begin(), lam->upvals.end(), current_id);
+                    auto it_up = std::find(lam->upvals.begin(), lam->upvals.end(), id);
+                    uint16_t slot = 0;
                     if (it_up == lam->upvals.end()) {
                         slot = static_cast<uint16_t>(lam->upvals.size());
-                        lam->upvals.push_back(current_id);
+                        lam->upvals.push_back(id);
+                        lam->upval_sources.push_back(current_addr);
                     } else {
                         slot = static_cast<uint16_t>(std::distance(lam->upvals.begin(), it_up));
                     }
+                    // The address for the next (inner) lambda is this lambda's upval
+                    current_addr = core::Address{core::Address::Upval{0, slot}};
                 }
-                return core::Address{core::Address::Upval{static_cast<uint16_t>(crosses_lambda), slot}};
+                
+                // Final address has correct depth
+                if (auto* u = std::get_if<core::Address::Upval>(&current_addr.where)) {
+                    u->depth = static_cast<uint16_t>(crosses_lambda);
+                }
+                return current_addr;
             }
-            return core::Address{core::Address::Local{static_cast<uint16_t>(id.id)}};
+            return core::Address{core::Address::Local{info.slot}};
         }
         
         if (current->is_lambda_boundary) {
@@ -231,6 +255,7 @@ SemResult<core::Node*> handle_lambda(const List* lst, Scope& scope, AnalysisCont
     }
 
     lam->body = wrap_body(std::move(body_exprs), lst->span, ctx.mod);
+    lam->stack_size = lambda_scope.next_slot + 32; // Include some temporary space
     return lam_node;
 }
 
@@ -550,6 +575,7 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader
             mod.toplevel_inits.push_back(*res);
         }
         for (auto* n : mod.toplevel_inits) mark_tail(n, false);
+        mod.stack_size = toplevel.next_slot + 32;
         for (const auto& ex : mtref->get().exports) {
             auto it = toplevel.table.find(ex);
             if (it == toplevel.table.end()) return std::unexpected(SemanticError{SemanticError::Kind::ExportOfUnknownBinding, f->span(), "unknown export"});

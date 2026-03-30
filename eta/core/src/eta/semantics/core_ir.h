@@ -36,7 +36,7 @@ struct Address {
     struct Local  { std::uint16_t slot{}; };
     struct Upval  { std::uint16_t depth{}; std::uint16_t slot{}; };
     struct Global { std::uint32_t id{}; };
-    std::variant<Local, Upval, Global> where;
+    std::variant<std::monostate, Local, Upval, Global> where;
 };
 
 /**
@@ -89,9 +89,11 @@ struct CallCC { Node* consumer; bool tail{false}; Span span; };
 struct Lambda {
     std::vector<BindingId> params;
     std::optional<BindingId> rest;
-    std::vector<BindingId> locals;  // for frame layout
-    std::vector<BindingId> upvals;  // ordered captures
+    std::vector<BindingId> locals;         // for frame layout
+    std::vector<BindingId> upvals;         // ordered captures (internal IDs)
+    std::vector<Address>   upval_sources;  // source addresses in parent scope
     Arity arity{};
+    std::uint32_t stack_size{0};
     Node* body{};
     Span span{};
 };

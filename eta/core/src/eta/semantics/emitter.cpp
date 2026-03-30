@@ -12,15 +12,24 @@ using namespace runtime::memory::factory;
 using namespace runtime::nanbox;
 using namespace runtime::types;
 
-std::vector<BytecodeFunction*> Emitter::emit() {
-    std::vector<BytecodeFunction*> out;
-    for (const auto& node : sem_.toplevel_inits) {
-        if (const auto* lambda = std::get_if<core::Lambda>(static_cast<const core::NodeBase*>(node))) {
-            uint32_t idx = emit_lambda(*lambda);
-            out.push_back(registry_.get_mut(idx));
-        }
+BytecodeFunction* Emitter::emit() {
+    Context ctx;
+    ctx.func.name = sem_.name + "_init";
+    ctx.func.stack_size = sem_.stack_size;
+    
+    for (const auto* node : sem_.toplevel_inits) {
+        emit_node(node, ctx);
+        // Toplevel forms that are expressions will leave values on the stack.
+        // We pop them to keep the stack clean.
+        ctx.func.code.push_back({OpCode::Pop, 0});
     }
-    return out;
+    
+    // Module init returns Nil by default.
+    ctx.func.code.push_back({OpCode::LoadConst, emit_load_const(Nil, ctx)});
+    ctx.func.code.push_back({OpCode::Return, 0});
+
+    uint32_t idx = registry_.add(std::move(ctx.func));
+    return registry_.get_mut(idx);
 }
 
 void Emitter::emit_node(const core::Node* node, Context& ctx) {
@@ -149,20 +158,14 @@ void Emitter::emit_lambda_node(const core::Lambda& n, Context& ctx) {
 
     // Store the function index as a constant (type-safe, not a raw pointer).
     // Uses FUNC_INDEX_TAG from bytecode.h
-    LispVal func_idx_val = FUNC_INDEX_TAG | static_cast<uint64_t>(func_idx);
+    LispVal func_idx_val = encode_func_index(func_idx);
 
     uint32_t const_idx = emit_load_const(func_idx_val, ctx);
 
-    uint32_t num_upvals = static_cast<uint32_t>(n.upvals.size());
-    // Push upvals before MakeClosure - each captured variable must be loaded
-    for (const auto& bid : n.upvals) {
-        if (auto it = ctx.binding_to_slot.find(bid); it != ctx.binding_to_slot.end()) {
-            ctx.func.code.push_back({OpCode::LoadLocal, it->second});
-        } else if (auto it_up = ctx.binding_to_upval.find(bid); it_up != ctx.binding_to_upval.end()) {
-            ctx.func.code.push_back({OpCode::LoadUpval, it_up->second});
-        } else {
-            ctx.func.code.push_back({OpCode::LoadGlobal, bid.id});
-        }
+    uint32_t num_upvals = static_cast<uint32_t>(n.upval_sources.size());
+    // Push upval sources before MakeClosure
+    for (const auto& src : n.upval_sources) {
+        emit_address_load(src, ctx);
     }
     ctx.func.code.push_back({OpCode::MakeClosure, (const_idx << 16) | num_upvals});
 }
@@ -210,20 +213,10 @@ uint32_t Emitter::emit_lambda(const core::Lambda& lambda) {
     Context ctx;
     ctx.func.arity = lambda.arity.required;
     ctx.func.has_rest = lambda.arity.has_rest;
+    ctx.func.stack_size = lambda.stack_size;
     
-    // Map parameters to local slots (they're pushed by the caller)
-    uint32_t slot = 0;
-    for (const auto& param : lambda.params) {
-        ctx.binding_to_slot[param] = slot++;
-    }
-    if (lambda.rest.has_value()) {
-        ctx.binding_to_slot[*lambda.rest] = slot++;
-    }
-
-    // Map upvalues to their indices (for LoadUpval in nested lambdas)
-    for (uint32_t i = 0; i < lambda.upvals.size(); ++i) {
-        ctx.binding_to_upval[lambda.upvals[i]] = i;
-    }
+    // Addresses (including local slots and upval indices) were pre-resolved 
+    // by the semantic analyzer. We can emit the body directly.
 
     emit_node(lambda.body, ctx);
     ctx.func.code.push_back({OpCode::Return, 0});

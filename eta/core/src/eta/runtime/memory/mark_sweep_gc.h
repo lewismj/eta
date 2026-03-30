@@ -39,6 +39,9 @@ namespace eta::runtime::memory::gc {
 
         void visit_closure(const types::Closure& c) override {
             for (auto v : c.upvals) callback(v);
+            if (c.func) {
+                for (auto v : c.func->constants) callback(v);
+            }
         }
 
         void visit_vector(const types::Vector& vec) override {
