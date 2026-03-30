@@ -21,9 +21,6 @@ namespace eta::reader::utils {
         return (p && p->is<List>()) ? p->as<List>() : nullptr;
     }
 
-    inline List* as_list_mut(SExprPtr& p) {
-        return (p && p->is<List>()) ? p->as<List>() : nullptr;
-    }
 
     inline bool is_symbol_named(const SExprPtr& p, std::string_view name) {
         if (const auto* s = as_symbol(p)) {
@@ -33,3 +30,4 @@ namespace eta::reader::utils {
     }
 
 } // namespace eta::reader::utils
+

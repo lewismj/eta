@@ -11,8 +11,8 @@
 #include <vector>
 
 #include "eta/reader/parser.h"
-#include "eta/reader/sexpr_utils.h"
-#include "eta/reader/error_format.h"
+#include "sexpr_utils.h"
+#include "error_format.h"
 
 namespace eta::reader::expander {
 
@@ -26,6 +26,12 @@ namespace eta::reader::expander {
     using parser::ReaderForm;
     using parser::ModuleForm;
 
+    /**
+     * @brief Expansion error
+     *
+     * Note: Consider migrating to eta::diagnostic::Diagnostic for unified
+     * error handling across all compiler phases.
+     */
     struct ExpandError {
         enum class Kind : std::uint8_t {
             InvalidSyntax,
@@ -79,6 +85,50 @@ namespace eta::reader::expander {
         Span span{};
     };
 
+    /**
+     * @brief Macro expander and desugaring pass for the eta language
+     *
+     * The Expander is the CANONICAL place for desugaring derived forms.
+     * After expansion, the output should only contain Core IR forms that
+     * the SemanticAnalyzer expects.
+     *
+     * ## Desugaring Transformations
+     *
+     * The following derived forms are desugared by the Expander:
+     *
+     * ### Binding Forms
+     * - `let`      -> `((lambda (x...) body...) init...)`
+     * - `let*`     -> nested `let`
+     * - `letrec`   -> `(let ((x '()) ...) (set! x e) ... body...)`
+     * - `letrec*`  -> nested `letrec`
+     * - Named `let` (loop) -> `(letrec ((name (lambda (x...) body...))) (name init...))`
+     *
+     * ### Control Flow
+     * - `cond`     -> nested `if`
+     * - `case`     -> `(let ((tmp key)) (if (or (eqv? tmp d1) ...) body ...))`
+     * - `and`      -> nested `if` with short-circuit
+     * - `or`       -> nested `if` with short-circuit + temp binding
+     * - `when`     -> `(if test (begin body...) (begin))`
+     * - `unless`   -> `(if test (begin) (begin body...))`
+     *
+     * ### Iteration
+     * - `do`       -> `(letrec ((loop (lambda (x...) (if test result (begin body (loop step...)))))) (loop init...))`
+     *
+     * ### Other
+     * - `quasiquote` -> combination of `quote`, `cons`, `append`, `list`
+     * - Internal defines -> `letrec` at lambda body start
+     *
+     * ## Output (Core IR)
+     *
+     * After expansion, the output contains only these primitive forms:
+     * - `if`, `begin`, `set!`, `lambda`, `quote`
+     * - `dynamic-wind`, `values`, `call-with-values`, `call/cc`
+     * - Function application
+     * - Module directives: `module`, `export`, `import`, `define`
+     *
+     * The SemanticAnalyzer still has handlers for derived forms (for backwards
+     * compatibility), but they are deprecated and will be removed.
+     */
     class Expander {
     public:
         explicit Expander(ExpanderConfig cfg = {});
@@ -94,6 +144,14 @@ namespace eta::reader::expander {
         static ExpandError syntax_error(Span sp, std::string_view msg, std::string hint = {});
         static ExpandError arity_error(Span sp, std::string_view form, std::size_t expected, std::size_t got);
         static ExpandError invalid_syntax(Span sp, std::string_view form, std::string_view expected);
+
+        // Shared identifier validation helper
+        // Checks for reserved keywords and optional duplicate detection
+        // Returns error if validation fails, otherwise returns void
+        static ExpanderResult<void> validate_identifier(
+            const std::string& name, Span span,
+            std::unordered_set<std::string>* seen = nullptr,
+            std::string_view context = "identifier");
 
         // Shared expansion utilities
         ExpanderResult<std::vector<SExprPtr>> expand_list_elems(const std::vector<SExprPtr>& elems) const;
@@ -112,9 +170,8 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_letrec(const List& lst);
         ExpanderResult<SExprPtr> handle_letrec_star(const List& lst);
         ExpanderResult<SExprPtr> handle_cond(const List& lst);
+        ExpanderResult<SExprPtr> handle_case(const List& lst);
 
-        enum class BindingStrategy { Parallel, Sequential, MutableParallel, MutableSequential };
-        ExpanderResult<SExprPtr> expand_binding_form(const List& lst, BindingStrategy strategy);
 
         //! Modules/directives
         ExpanderResult<SExprPtr> handle_module_list(const List& lst);    // (module name ...)
@@ -130,6 +187,80 @@ namespace eta::reader::expander {
         static SExprPtr make_nil(Span s);
         static SExprPtr make_list(std::vector<SExprPtr> elems, Span s);
         static SExprPtr make_dotted_list(std::vector<SExprPtr> head, SExprPtr tail, Span s);
+
+        // Variadic helper to build lists more concisely
+        template<typename... Args>
+        static SExprPtr build_list(Span s, Args&&... args) {
+            std::vector<SExprPtr> v;
+            v.reserve(sizeof...(args));
+            (v.push_back(std::forward<Args>(args)), ...);
+            return make_list(std::move(v), s);
+        }
+
+        // Convenience: build a form like (keyword arg1 arg2 ...)
+        template<typename... Args>
+        static SExprPtr make_form(Span s, const char* keyword, Args&&... args) {
+            return build_list(s, make_symbol(keyword, s), std::forward<Args>(args)...);
+        }
+
+        // Build (if test conseq alt)
+        static SExprPtr make_if(Span s, SExprPtr test, SExprPtr conseq, SExprPtr alt) {
+            return make_form(s, "if", std::move(test), std::move(conseq), std::move(alt));
+        }
+
+        // Build (begin body...)
+        static SExprPtr make_begin(Span s, std::vector<SExprPtr> body) {
+            std::vector<SExprPtr> v;
+            v.reserve(body.size() + 1);
+            v.push_back(make_symbol("begin", s));
+            for (auto& e : body) v.push_back(std::move(e));
+            return make_list(std::move(v), s);
+        }
+
+        // Build (let ((name init) ...) body...)
+        static SExprPtr make_let(Span s, std::vector<std::pair<SExprPtr, SExprPtr>> bindings, std::vector<SExprPtr> body) {
+            auto bindingList = make_list({}, s);
+            for (auto& [name, init] : bindings) {
+                bindingList->as<List>()->elems.push_back(
+                    build_list(name->span(), std::move(name), std::move(init)));
+            }
+            std::vector<SExprPtr> v;
+            v.reserve(body.size() + 2);
+            v.push_back(make_symbol("let", s));
+            v.push_back(std::move(bindingList));
+            for (auto& e : body) v.push_back(std::move(e));
+            return make_list(std::move(v), s);
+        }
+
+        // Build (lambda formals body...)
+        static SExprPtr make_lambda(Span s, SExprPtr formals, std::vector<SExprPtr> body) {
+            std::vector<SExprPtr> v;
+            v.reserve(body.size() + 2);
+            v.push_back(make_symbol("lambda", s));
+            v.push_back(std::move(formals));
+            for (auto& e : body) v.push_back(std::move(e));
+            return make_list(std::move(v), s);
+        }
+
+        // Build (set! name value)
+        static SExprPtr make_set(Span s, SExprPtr name, SExprPtr value) {
+            return make_form(s, "set!", std::move(name), std::move(value));
+        }
+
+        // Build (letrec ((name init) ...) body...)
+        static SExprPtr make_letrec(Span s, std::vector<std::pair<SExprPtr, SExprPtr>> bindings, std::vector<SExprPtr> body) {
+            auto bindingList = make_list({}, s);
+            for (auto& [name, init] : bindings) {
+                bindingList->as<List>()->elems.push_back(
+                    build_list(name->span(), std::move(name), std::move(init)));
+            }
+            std::vector<SExprPtr> v;
+            v.reserve(body.size() + 2);
+            v.push_back(make_symbol("letrec", s));
+            v.push_back(std::move(bindingList));
+            for (auto& e : body) v.push_back(std::move(e));
+            return make_list(std::move(v), s);
+        }
 
         static SExprPtr deep_clone(const SExpr& n);
         static SExprPtr deep_clone(const SExprPtr& p) { return p ? deep_clone(*p) : nullptr; }
@@ -154,3 +285,4 @@ namespace eta::reader::expander {
     };
 
 }
+

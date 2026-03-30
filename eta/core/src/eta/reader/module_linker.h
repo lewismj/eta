@@ -12,8 +12,8 @@
 #include <vector>
 
 #include "eta/reader/parser.h"
-#include "eta/reader/sexpr_utils.h"
-#include "eta/reader/error_format.h"
+#include "sexpr_utils.h"
+#include "error_format.h"
 
 namespace eta::reader::linker {
 

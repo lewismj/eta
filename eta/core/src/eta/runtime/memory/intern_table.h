@@ -48,7 +48,8 @@ namespace eta::runtime::memory::intern {
         InternTable& operator=(InternTable&&) = delete;
 
         //! Intern a string, returning its InternId.
-        std::expected<InternId, InternTableError> intern(std::string_view s) noexcept;
+        //! Note: Not noexcept because allocations (make_shared, map insertion) can throw.
+        std::expected<InternId, InternTableError> intern(std::string_view s);
 
         //! Look up id by string.
         std::expected<InternId, InternTableError> get_id(std::string_view s) const noexcept;

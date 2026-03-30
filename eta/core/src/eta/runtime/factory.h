@@ -13,30 +13,31 @@ namespace eta::runtime::memory::factory {
     using namespace eta::runtime::nanbox;
     using namespace eta::runtime::error;
 
+    // Maximum string length that will be automatically interned.
+    // Short strings are interned for fast equality comparison.
+    // Longer strings are heap-allocated to avoid bloating the intern table.
+    constexpr std::size_t kMaxInternedStringLength = 32;
 
+    // Unified helper for heap allocation + boxing.
+    // Reduces repetitive pattern: allocate<T, Kind>(...) -> box(HeapObject, id)
+    template<typename T, ObjectKind Kind, typename... Args>
     inline_always
-    std::expected<LispVal, RuntimeError> make_fixnum(Heap& heap, const uint64_t fixnum) {
-        const auto enc = nanbox::ops::encode<uint64_t>(fixnum);
-        if (!enc.has_value()) {
-            //! too big to encode directly, put onto heap.
-            auto allocated = heap.allocate<uint64_t, ObjectKind::Fixnum>(fixnum);
-            if (allocated.has_value()) {
-                return ops::box(Tag::HeapObject, allocated.value());
-            }
-            return allocated;
+    std::expected<LispVal, RuntimeError> make_heap_object(Heap& heap, Args&&... args) {
+        auto allocated = heap.allocate<T, Kind>(T{std::forward<Args>(args)...});
+        if (allocated.has_value()) {
+            return ops::box(Tag::HeapObject, allocated.value());
         }
-        return enc.value();
+        return allocated;
     }
 
+    template<typename T>
+    requires std::is_integral_v<T>
     inline_always
-    std::expected<LispVal, RuntimeError> make_fixnum(Heap& heap, const int64_t fixnum) {
-        const auto enc = nanbox::ops::encode<int64_t>(fixnum);
+    std::expected<LispVal, RuntimeError> make_fixnum(Heap& heap, const T fixnum) {
+        const auto enc = nanbox::ops::encode<T>(fixnum);
         if (!enc.has_value()) {
-            auto allocated = heap.allocate<int64_t, ObjectKind::Fixnum>(fixnum);
-            if (allocated.has_value()) {
-                return ops::box(Tag::HeapObject, allocated.value());
-            }
-            return allocated;
+            //! too big to encode directly, put onto heap.
+            return make_heap_object<T, ObjectKind::Fixnum>(heap, fixnum);
         }
         return enc.value();
     }
@@ -55,17 +56,11 @@ namespace eta::runtime::memory::factory {
         return ops::box(Tag::Symbol, res.value());
     }
 
-    //! Currently, all strings are intern strings - we will want to change this so that only smaller strings
-    //! are automatically interned. Large strings should be heap-allocated.
-
     inline_always
     std::expected<LispVal, RuntimeError> make_string(Heap& heap, InternTable& table, const std::string& str) {
-        if (str.length() > 32) {
-            auto allocated = heap.allocate<types::String, ObjectKind::String>(types::String{.value = str});
-            if (allocated.has_value()) {
-                return ops::box(Tag::HeapObject, allocated.value());
-            }
-            return allocated;
+        // Short strings are interned for fast equality checks; longer strings go to heap
+        if (str.length() > kMaxInternedStringLength) {
+            return make_heap_object<types::String, ObjectKind::String>(heap, types::String{.value = str});
         }
         const auto res = table.intern(str);
         if (!res.has_value()) {
@@ -76,73 +71,39 @@ namespace eta::runtime::memory::factory {
 
     inline_always
     std::expected<LispVal, RuntimeError> make_vector(Heap& heap, std::vector<LispVal> elements) {
-        auto allocated = heap.allocate<types::Vector, ObjectKind::Vector>(types::Vector{.elements = std::move(elements)});
-        if (allocated.has_value()) {
-            return ops::box(Tag::HeapObject, allocated.value());
-        }
-        return allocated;
+        return make_heap_object<types::Vector, ObjectKind::Vector>(heap, types::Vector{.elements = std::move(elements)});
     }
 
     inline_always
     std::expected<LispVal, RuntimeError> make_bytevector(Heap& heap, std::vector<std::uint8_t> data) {
-        auto allocated = heap.allocate<types::ByteVector, ObjectKind::ByteVector>(types::ByteVector{.data = std::move(data)});
-        if (allocated.has_value()) {
-            return ops::box(Tag::HeapObject, allocated.value());
-        }
-        return allocated;
+        return make_heap_object<types::ByteVector, ObjectKind::ByteVector>(heap, types::ByteVector{.data = std::move(data)});
     }
 
     inline_always
     std::expected<LispVal, RuntimeError> make_closure(Heap& heap, const vm::BytecodeFunction* func, std::vector<LispVal> upvals) {
-        auto allocated = heap.allocate<types::Closure, ObjectKind::Closure>(types::Closure{.func = func, .upvals = std::move(upvals)});
-        if (allocated.has_value()) {
-            return ops::box(Tag::HeapObject, allocated.value());
-        }
-        return allocated;
+        return make_heap_object<types::Closure, ObjectKind::Closure>(heap, types::Closure{.func = func, .upvals = std::move(upvals)});
     }
 
     inline_always
-    std::expected<LispVal, RuntimeError> make_continuation(Heap& heap, std::vector<LispVal> stack, std::vector<vm::Frame> frames) {
-        auto allocated = heap.allocate<types::Continuation, ObjectKind::Continuation>(types::Continuation{.stack = std::move(stack), .frames = std::move(frames)});
-        if (allocated.has_value()) {
-            return ops::box(Tag::HeapObject, allocated.value());
-        }
-        return allocated;
+    std::expected<LispVal, RuntimeError> make_continuation(Heap& heap, std::vector<LispVal> stack, std::vector<vm::Frame> frames, std::vector<vm::WindFrame> winding_stack) {
+        return make_heap_object<types::Continuation, ObjectKind::Continuation>(heap, types::Continuation{.stack = std::move(stack), .frames = std::move(frames), .winding_stack = std::move(winding_stack)});
+    }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_multiple_values(Heap& heap, std::vector<LispVal> vals) {
+        return make_heap_object<types::MultipleValues, ObjectKind::MultipleValues>(heap, types::MultipleValues{.vals = std::move(vals)});
     }
 
     inline_always
     std::expected<LispVal, RuntimeError> make_cons(Heap& heap, const LispVal car) {
-        auto allocated = heap.allocate<types::Cons, ObjectKind::Cons>(types::Cons {.car = car, .cdr = nanbox::Nil});
-        if (allocated.has_value()) {
-            return ops::box(Tag::HeapObject, allocated.value());
-        }
-        return allocated;
+        return make_heap_object<types::Cons, ObjectKind::Cons>(heap, types::Cons{.car = car, .cdr = nanbox::Nil});
     }
 
     inline_always
     std::expected<LispVal, RuntimeError> make_cons(Heap& heap, const LispVal car, const LispVal cdr) {
-        auto allocated = heap.allocate<types::Cons, ObjectKind::Cons>(types::Cons {.car = car, .cdr = cdr});
-        if (allocated.has_value()) {
-            return ops::box(Tag::HeapObject, allocated.value());
-        }
-        return allocated;
+        return make_heap_object<types::Cons, ObjectKind::Cons>(heap, types::Cons{.car = car, .cdr = cdr});
     }
 
-    inline_always
-    std::expected<LispVal, RuntimeError> make_interpreted_procedure(Heap& heap,
-                                                    std::vector<LispVal> formals,
-                                                    const LispVal& body,
-                                                    std::vector<LispVal> up_values) {
-        auto allocated = heap.allocate<types::InterpretedProcedure, ObjectKind::InterpretedProcedure>(
-            types::InterpretedProcedure {
-                .formals = std::move(formals),
-                .body = body,
-                .up_values = std::move(up_values)
-            });
-        if (allocated.has_value()) {
-            return ops::box(Tag::HeapObject, allocated.value());
-        }
-        return allocated;
-    }
 
 }
+

@@ -1,6 +1,6 @@
 #include "parser.h"
 #include <charconv>
-#include "eta/reader/sexpr_utils.h"
+#include "sexpr_utils.h"
 
 
 using enum eta::reader::lexer::Token::Kind;

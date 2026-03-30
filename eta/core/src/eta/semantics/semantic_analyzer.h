@@ -2,7 +2,6 @@
 
 #include <compare>
 #include <cstdint>
-#include <deque>
 #include <expected>
 #include <optional>
 #include <span>
@@ -11,21 +10,27 @@
 #include <vector>
 
 #include "eta/semantics/core_ir.h"
+#include "eta/semantics/arena.h"
 #include "eta/reader/module_linker.h"
 
 namespace eta::semantics {
 
+/**
+ * @brief Semantic analysis error
+ *
+ * These errors are convertible to eta::diagnostic::Diagnostic via the
+ * to_diagnostic<SemanticError>() specialization in diagnostic.h.
+ */
 struct SemanticError {
     enum class Kind : std::uint16_t {
         UndefinedName,
         DuplicateDefinition,
-        ArityMismatch,
         NonFunctionCall,
         InvalidFormShape,
         ImmutableAssignment,
         SetOnImported,
         InvalidLetrecInit,
-        ExportOfUnknownBinding
+        ExportOfUnknownBinding,
     } kind{};
     eta::reader::parser::Span span{};
     std::string message;
@@ -34,6 +39,9 @@ struct SemanticError {
 template <typename T>
 using SemResult = std::expected<T, SemanticError>;
 
+/**
+ * @brief Information about a binding (variable, parameter, etc.)
+ */
 struct BindingInfo {
     enum class Kind : std::uint8_t { Param, Local, Global, Import } kind{};
     std::string name;                         // identifier text
@@ -42,6 +50,9 @@ struct BindingInfo {
     std::optional<eta::reader::linker::ImportOrigin> origin; // for imports
 };
 
+/**
+ * @brief Lexical scope during semantic analysis
+ */
 struct Scope {
     Scope* parent{nullptr};
     std::unordered_map<std::string, core::BindingId> table; // string keys by design
@@ -49,28 +60,75 @@ struct Scope {
     core::Lambda* lambda_node{nullptr}; // for upval tracking
 };
 
+/**
+ * @brief Semantic analysis result for a single module
+ *
+ * Ownership model:
+ * - The `arena` provides stable addresses for all IR nodes via block allocation
+ * - All Node* pointers within the IR reference nodes allocated from the arena
+ * - The ModuleSemantics owns all nodes and they are valid for its lifetime
+ *
+ * For optimization passes that need to transform nodes:
+ * - Use the emplace() helper to create new nodes in the arena
+ * - To replace a node, create the new node and update pointers
+ * - The old node remains in memory (arena frees all at destruction)
+ */
 struct ModuleSemantics {
     std::string name;
-    std::deque<core::Node> nodes;                 // stable storage for nodes
-    std::vector<core::Node*> toplevel_inits;      // ordered module initializer forms
+    core::Arena arena;                        // Arena allocator for IR nodes
+    std::vector<core::Node*> toplevel_inits;  // ordered module initializer forms
     std::unordered_map<std::string, core::BindingId> exports; // export name -> binding
-    std::vector<BindingInfo> bindings;            // indexed by BindingId
+    std::vector<BindingInfo> bindings;        // indexed by BindingId
 
-    // Helper to construct nodes in-place and get a stable pointer
+    /**
+     * @brief Construct a node in-place and get a stable pointer
+     *
+     * This is the preferred way to create IR nodes. The returned pointer
+     * is stable for the lifetime of this ModuleSemantics.
+     *
+     * Uses the Arena allocator for better memory locality and cache performance.
+     */
     template <class Alt, class... Args>
     core::Node* emplace(Args&&... args) {
-        nodes.emplace_back(Alt{std::forward<Args>(args)...});
-        return &nodes.back();
+        // Allocate in arena for stable pointer and better cache performance
+        auto* node = arena.alloc<core::Node>(Alt{std::forward<Args>(args)...});
+        return node;
     }
 };
 
+/**
+ * @brief Semantic analyzer for the eta language
+ *
+ * The semantic analyzer operates on expanded S-expressions (from the Expander)
+ * and produces a Core IR suitable for code generation.
+ *
+ * Expected input forms (Core IR - should be fully desugared):
+ * - if, begin, set!, lambda, quote
+ * - dynamic-wind, values, call-with-values, call/cc
+ * - function application
+ *
+ * Note: Derived forms (let, letrec, case, do) are no longer handled by the
+ * SemanticAnalyzer. They MUST be desugared by the Expander before analysis.
+ * The deprecated handlers have been removed.
+ *
+ * After analysis, use constant_fold() to perform basic optimizations.
+ */
 class SemanticAnalyzer {
 public:
     SemResult<std::vector<ModuleSemantics>> analyze_all(
         std::span<const eta::reader::parser::SExprPtr> forms,
         const eta::reader::ModuleLinker& linker);
 
+    /**
+     * @brief Perform constant folding on a module
+     *
+     * Currently folds:
+     * - (if #t conseq alt) -> conseq
+     * - (if #f conseq alt) -> alt
+     * - (if <non-false-const> conseq alt) -> conseq
+     */
     void constant_fold(ModuleSemantics& mod);
 };
 
 } // namespace eta::semantics
+

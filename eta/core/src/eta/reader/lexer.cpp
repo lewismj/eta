@@ -11,7 +11,8 @@
 #include <utility>
 #include <variant>
 
-#include "eta/unicode/unicode.h"
+#include "numeric.h"
+#include "unicode.h"
 
 namespace {
 
@@ -473,14 +474,18 @@ namespace {
             out.push_back(advance());
         }
 
-        // Check for inf.0 or nan.0
+        // Check for inf.0 or nan.0 using unified numeric helper
         if (iequals_prefix("inf.0")) {
             for (int i = 0; i < 5; ++i) out.push_back(advance());
-            return out;
+            if (numeric::is_special_float(out)) {
+                return out;
+            }
         }
         if (iequals_prefix("nan.0")) {
             for (int i = 0; i < 5; ++i) out.push_back(advance());
-            return out;
+            if (numeric::is_special_float(out)) {
+                return out;
+            }
         }
 
         // No match; restore
@@ -599,34 +604,23 @@ namespace {
     }
 
     std::expected<Token, LexError> Lexer::classify_number(const std::string& body, std::uint8_t radix, Position start) {
-        const std::string lower = to_lower(body);
+        // Use unified numeric parser from numeric.h
+        auto result = numeric::parse_number(body, radix);
 
-        // Special IEEE 754 values (only in decimal/flonum context)
-        if (radix == 10) {
-            if (lower == "+inf.0" || lower == "-inf.0" ||
-                lower == "+nan.0" || lower == "-nan.0" ||
-                lower == "inf.0" || lower == "nan.0") {
+        switch (result.kind) {
+            case numeric::NumericParseResult::Kind::SpecialFloat:
+            case numeric::NumericParseResult::Kind::Flonum: {
                 NumericToken num{NumericToken::Kind::Flonum, body, 10};
                 return Token{Token::Kind::Number, std::move(num), make_span(start, current_position())};
             }
-        }
-
-        // Flonum: decimal with '.' or exponent (only radix 10)
-        if (radix == 10 && (lower.find('.') != std::string::npos || lower.find('e') != std::string::npos)) {
-            if (is_valid_decimal(lower)) {
-                NumericToken num{NumericToken::Kind::Flonum, body, 10};
+            case numeric::NumericParseResult::Kind::Fixnum: {
+                NumericToken num{NumericToken::Kind::Fixnum, body, radix};
                 return Token{Token::Kind::Number, std::move(num), make_span(start, current_position())};
             }
-            return std::unexpected(make_error(LexErrorKind::InvalidNumeric, start, "invalid flonum format"));
+            case numeric::NumericParseResult::Kind::Invalid:
+            default:
+                return std::unexpected(make_error(LexErrorKind::InvalidNumeric, start, result.error_message.empty() ? "unrecognized numeric format" : result.error_message));
         }
-
-        // Fixnum: integer in any radix
-        if (is_signed_integer(lower, radix)) {
-            NumericToken num{NumericToken::Kind::Fixnum, body, radix};
-            return Token{Token::Kind::Number, std::move(num), make_span(start, current_position())};
-        }
-
-        return std::unexpected(make_error(LexErrorKind::InvalidNumeric, start, "unrecognized numeric format"));
     }
 
     std::expected<std::string, LexError> Lexer::consume_bar_identifier() {
@@ -736,63 +730,18 @@ namespace {
     }
 
     bool Lexer::is_valid_decimal(const std::string& s) noexcept {
-        if (s.empty()) return false;
-
-        std::size_t i = 0;
-        if (s[i] == '+' || s[i] == '-') i++;
-
-        bool has_digit = false;
-        while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) {
-            has_digit = true;
-            i++;
-        }
-
-        if (i < s.size() && s[i] == '.') {
-            i++;
-            while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) {
-                has_digit = true;
-                i++;
-            }
-        }
-
-        if (!has_digit) return false;
-
-        if (i < s.size() && (s[i] == 'e' || s[i] == 'E')) {
-            i++;
-            if (i < s.size() && (s[i] == '+' || s[i] == '-')) i++;
-            bool has_exp_digit = false;
-            while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) {
-                has_exp_digit = true;
-                i++;
-            }
-            if (!has_exp_digit) return false;
-        }
-
-        return i == s.size();
+        // Delegate to unified numeric helper from numeric.h
+        return numeric::is_valid_decimal(s);
     }
 
     bool Lexer::is_signed_integer(const std::string& s, std::uint8_t radix) noexcept {
-        if (s.empty()) return false;
-
-        std::size_t start = 0;
-        if (s[0] == '+' || s[0] == '-') start = 1;
-        if (start >= s.size()) return false;
-
-        for (std::size_t i = start; i < s.size(); ++i) {
-            if (!is_valid_digit_for_radix(s[i], radix)) return false;
-        }
-        return true;
+        // Delegate to unified numeric helper from numeric.h
+        return numeric::is_valid_integer(s, radix);
     }
 
     bool Lexer::is_valid_digit_for_radix(char c, const std::uint8_t radix) noexcept {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        switch (radix) {
-            case 2: return c == '0' || c == '1';
-            case 8: return c >= '0' && c <= '7';
-            case 10: return c >= '0' && c <= '9';
-            case 16: return static_cast<bool>(std::isxdigit(static_cast<unsigned char>(c)));
-            default: return false;
-        }
+        // Delegate to unified numeric helper from numeric.h
+        return numeric::is_valid_digit(c, radix);
     }
 
     bool Lexer::is_identifier_subsequent(char c) noexcept {

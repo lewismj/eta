@@ -153,15 +153,14 @@ BOOST_AUTO_TEST_CASE(make_cons_pair_returns_boxed_id_currently) {
     BOOST_TEST(is_boxed(c));
 }
 
-BOOST_AUTO_TEST_CASE(make_interpreted_procedure_returns_boxed_id_currently) {
+BOOST_AUTO_TEST_CASE(make_closure_returns_boxed_id) {
     Heap heap(1ull << 20);
 
-    const std::vector<LispVal> formals{ ops::box(Tag::Symbol, 1) };
-    const LispVal body = ops::box(Tag::Nil, 0);
     const std::vector<LispVal> upvals{ ops::box(Tag::Fixnum, 42) };
 
-    auto proc = expect_ok(make_interpreted_procedure(heap, formals, body, upvals));
-    BOOST_TEST(is_boxed(proc));
+    // Create a closure with no function (nullptr) but with upvals
+    auto closure = expect_ok(make_closure(heap, nullptr, upvals));
+    BOOST_TEST(is_boxed(closure));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

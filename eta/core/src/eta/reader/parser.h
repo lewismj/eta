@@ -10,7 +10,7 @@
 #include <variant>
 #include <vector>
 
-#include "eta/core/types.h"
+#include "types.h"
 #include "eta/reader/lexer.h"
 
 namespace eta::reader::parser {

@@ -79,11 +79,11 @@ BOOST_AUTO_TEST_CASE(soft_limit_enforced_strictly_greater_than) {
     Heap heap(limit);
 
     // Exactly fits -> allowed
-    auto id1 = heap.allocate<BigPod, ObjectKind::InterpretedProcedure>(BigPod{});
+    auto id1 = heap.allocate<BigPod, ObjectKind::Vector>(BigPod{});
     BOOST_REQUIRE(id1.has_value());
 
     // Next allocation would exceed limit -> error
-    auto id2 = heap.allocate<BigPod, ObjectKind::InterpretedProcedure>(BigPod{});
+    auto id2 = heap.allocate<BigPod, ObjectKind::Vector>(BigPod{});
     BOOST_REQUIRE(!id2.has_value());
     BOOST_TEST(id2.error() == HeapError::SoftHeapLimitExceeded);
 }
@@ -112,7 +112,7 @@ BOOST_AUTO_TEST_CASE(heap_destruction_calls_destructors) {
     {
         Heap heap(1ull << 20);
         (void) heap.allocate<SmallPod, ObjectKind::Fixnum>(SmallPod{1});
-        (void) heap.allocate<BigPod,   ObjectKind::InterpretedProcedure>(BigPod{});
+        (void) heap.allocate<BigPod,   ObjectKind::Vector>(BigPod{});
         (void) heap.allocate<SmallPod, ObjectKind::Cons>(SmallPod{2});
     }
     BOOST_TEST(true); // reached here without issues

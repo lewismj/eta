@@ -9,7 +9,7 @@
 
 #include <eta/arch.h>
 #include <eta/runtime/nanbox.h>
-#include <eta/core/enum_utils.h>
+#include "enum_utils.h"
 
 namespace eta::runtime::memory::heap {
     using namespace eta::runtime::nanbox;
@@ -19,7 +19,6 @@ namespace eta::runtime::memory::heap {
     enum class ObjectKind : std::uint8_t {
         Unknown,
         Cons,
-        InterpretedProcedure,
         Fixnum,
         Vector,
         ByteVector,
@@ -27,12 +26,12 @@ namespace eta::runtime::memory::heap {
         Closure,
         Continuation,
         Primitive,
+        MultipleValues,  // For (values ...) return
     };
 
     ETA_ENUM_TO_STRING_BEGIN(ObjectKind)
         ETA_ENUM_CASE(Unknown)
         ETA_ENUM_CASE(Cons)
-        ETA_ENUM_CASE(InterpretedProcedure)
         ETA_ENUM_CASE(Fixnum)
         ETA_ENUM_CASE(Vector)
         ETA_ENUM_CASE(ByteVector)
@@ -40,6 +39,7 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(Closure)
         ETA_ENUM_CASE(Continuation)
         ETA_ENUM_CASE(Primitive)
+        ETA_ENUM_CASE(MultipleValues)
     ETA_ENUM_TO_STRING_END("Unknown")
 
     inline std::ostream& operator<<(std::ostream& os, const ObjectKind k) {
@@ -54,6 +54,7 @@ namespace eta::runtime::memory::heap {
         NullPtrReference,
         SoftHeapLimitExceeded,
         UnexpectedObjectKind,
+        GCInProgress,  // Allocation rejected during GC
     };
 
     constexpr const char* to_string(const HeapError e) noexcept {
@@ -66,6 +67,7 @@ namespace eta::runtime::memory::heap {
             case NullPtrReference: return "HeapError::NullPtrReference";
             case SoftHeapLimitExceeded: return "HeapError::SoftHeapLimitExceeded";
             case UnexpectedObjectKind: return "HeapError::UnexpectedObjectKind";
+            case GCInProgress: return "HeapError::GCInProgress";
             default:
                 return "HeapError::Unknown";
         }
@@ -127,6 +129,11 @@ namespace eta::runtime::memory::heap {
 
         template<typename T, ObjectKind Kind, typename ... Args>
         std::expected<ObjectId, HeapError> allocate(Args&&... args) {
+
+            // Reject allocations during GC to prevent unmarked objects being swept
+            [[unlikely]] if (gc_in_progress_.load(std::memory_order_acquire)) {
+                return std::unexpected(HeapError::GCInProgress);
+            }
 
             //! Highlight unlikley we use over PAYLOAD_MASK number of heap objects.
             //! Anticipate that no process would use over PAYLOAD_MASK during its lifetime.
@@ -201,10 +208,16 @@ namespace eta::runtime::memory::heap {
                 return std::unexpected(HeapError::NullPtrReference);
             }
 
+            // Update stats before removal
             stats.num_objects.fetch_sub(1, std::memory_order_relaxed);
             stats.heap_bytes.fetch_sub(entry.size, std::memory_order_relaxed);
             total_heap_bytes.fetch_sub(entry.size, std::memory_order_relaxed);
 
+            // CRITICAL: Erase from map BEFORE calling destructor to prevent
+            // other threads from accessing freed memory via try_get()
+            heap_objects.erase(id);
+
+            // Now safe to destroy - no other thread can find this entry
             try {
                 if (entry.destructor) {
                     entry.destructor(entry.ptr);
@@ -212,12 +225,11 @@ namespace eta::runtime::memory::heap {
                     ::operator delete(entry.ptr);
                 }
             } catch (...) {
-                // Ensure the entry is removed even if destructor throws, then surface an error.
-                heap_objects.erase(id);
+                // Destructor threw, but entry is already removed from map.
+                // Memory may be leaked, but we maintain safety.
                 return std::unexpected(HeapError::FailedToDeallocateMemory);
             }
 
-            heap_objects.erase(id);
             return {};
         }
 
@@ -236,6 +248,32 @@ namespace eta::runtime::memory::heap {
         // only mutate entry.header.flags. Returns false if the id is not found.
         bool with_entry(ObjectId id, const std::function<void(HeapEntry&)>& fn);
 
+        // Type-safe heap object accessor.
+        // Returns pointer to the object if ID exists and kind matches, nullptr otherwise.
+        // This is the canonical way to access typed heap objects - use instead of
+        // manually checking try_get + kind comparison.
+        template<ObjectKind Kind, typename T>
+        T* try_get_as(ObjectId id) {
+            HeapEntry entry;
+            if (!try_get(id, entry)) return nullptr;
+            if (entry.header.kind != Kind) return nullptr;
+            return static_cast<T*>(entry.ptr);
+        }
+
+        template<ObjectKind Kind, typename T>
+        const T* try_get_as(ObjectId id) const {
+            HeapEntry entry;
+            if (!try_get(id, entry)) return nullptr;
+            if (entry.header.kind != Kind) return nullptr;
+            return static_cast<const T*>(entry.ptr);
+        }
+
+        // GC pause mechanism - prevents new allocations during GC sweep
+        // Call pause_for_gc() before sweep, resume_after_gc() after sweep completes
+        void pause_for_gc() { gc_in_progress_.store(true, std::memory_order_release); }
+        void resume_after_gc() { gc_in_progress_.store(false, std::memory_order_release); }
+        bool is_gc_paused() const { return gc_in_progress_.load(std::memory_order_acquire); }
+
     private:
 
         struct ShardStats {
@@ -245,6 +283,9 @@ namespace eta::runtime::memory::heap {
 
         //! 'Global Stat'.
         cache_align std::atomic<std::size_t> total_heap_bytes{ 0 };
+
+        //! GC pause flag - when true, allocations are rejected
+        std::atomic<bool> gc_in_progress_{ false };
 
         struct cache_align Shard {
             boost::unordered::concurrent_flat_map<ObjectId, HeapEntry> heap_objects;

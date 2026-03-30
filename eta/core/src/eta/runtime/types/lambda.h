@@ -1,15 +1,10 @@
 #pragma once
 
-#include <vector>
-#include <eta/runtime/nanbox.h>
+// This file previously contained InterpretedProcedure, which has been removed.
+// The codebase now uses BytecodeFunction and Closure for execution.
+// This header is kept empty for backward compatibility with includes.
 
 namespace eta::runtime::types {
-    using namespace eta::runtime::nanbox;
-
-    struct InterpretedProcedure {
-        std::vector<LispVal> formals {};
-        LispVal body {};
-        std::vector<LispVal> up_values {};
-    };
-
+    // No types defined - InterpretedProcedure has been removed.
+    // See eta/runtime/types/closure.h for the current closure model.
 }

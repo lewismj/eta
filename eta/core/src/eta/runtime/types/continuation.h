@@ -11,6 +11,7 @@ namespace eta::runtime::types {
     struct Continuation {
         std::vector<LispVal> stack {};
         std::vector<Frame> frames {};
+        std::vector<WindFrame> winding_stack {};
     };
 
 }

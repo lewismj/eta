@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <sstream>
 #include <unordered_map>
-#include <functional> // for std::function in cond builder (legacy)
 #include <unordered_set>
 #include <atomic>
 #include <random>
@@ -68,42 +67,46 @@ namespace eta::reader::expander {
     }
 
     SExprPtr Expander::deep_clone(const SExpr& n) {
-        auto p = std::make_unique<SExpr>();
+        return std::visit([](auto&& val) -> SExprPtr {
+            using T = std::decay_t<decltype(val)>;
+            auto p = std::make_unique<SExpr>();
 
-        if (auto a = n.as<parser::Nil>()) { parser::Nil c = *a; p->value = c; return p; }
-        if (auto a = n.as<parser::Bool>()) { parser::Bool c = *a; p->value = c; return p; }
-        if (auto a = n.as<parser::Char>()) { parser::Char c = *a; p->value = c; return p; }
-        if (auto a = n.as<parser::String>()) { p->value = *a; return p; }
-        if (auto a = n.as<parser::Symbol>()) { p->value = *a; return p; }
-        if (auto a = n.as<parser::Number>()) { p->value = *a; return p; }
-        if (auto a = n.as<parser::List>()) {
-            parser::List l; l.span = a->span; l.dotted = a->dotted;
-            l.elems.reserve(a->elems.size());
-            for (const auto& e : a->elems) l.elems.push_back(deep_clone(e));
-            if (a->dotted && a->tail) l.tail = deep_clone(a->tail);
-            p->value = std::move(l);
+            // Types that require recursive cloning
+            if constexpr (std::is_same_v<T, parser::List>) {
+                parser::List l;
+                l.span = val.span;
+                l.dotted = val.dotted;
+                l.elems.reserve(val.elems.size());
+                for (const auto& e : val.elems) l.elems.push_back(deep_clone(e));
+                if (val.dotted && val.tail) l.tail = deep_clone(val.tail);
+                p->value = std::move(l);
+            } else if constexpr (std::is_same_v<T, parser::Vector>) {
+                parser::Vector v2;
+                v2.span = val.span;
+                v2.elems.reserve(val.elems.size());
+                for (const auto& e : val.elems) v2.elems.push_back(deep_clone(e));
+                p->value = std::move(v2);
+            } else if constexpr (std::is_same_v<T, parser::ReaderForm>) {
+                parser::ReaderForm rf;
+                rf.span = val.span;
+                rf.kind = val.kind;
+                rf.expr = deep_clone(val.expr);
+                p->value = std::move(rf);
+            } else if constexpr (std::is_same_v<T, parser::ModuleForm>) {
+                parser::ModuleForm m;
+                m.span = val.span;
+                m.name = val.name;
+                m.exports = val.exports;
+                m.body.reserve(val.body.size());
+                for (const auto& e : val.body) m.body.push_back(deep_clone(e));
+                p->value = std::move(m);
+            } else {
+                // Simple types: Nil, Bool, Char, String, Symbol, Number, ByteVector
+                // These can be copied directly
+                p->value = val;
+            }
             return p;
-        }
-        if (auto a = n.as<parser::Vector>()) {
-            parser::Vector v2; v2.span = a->span; v2.elems.reserve(a->elems.size());
-            for (const auto& e : a->elems) v2.elems.push_back(deep_clone(e));
-            p->value = std::move(v2);
-            return p;
-        }
-        if (auto a = n.as<parser::ByteVector>()) { p->value = *a; return p; }
-        if (auto a = n.as<parser::ReaderForm>()) {
-            parser::ReaderForm rf; rf.span = a->span; rf.kind = a->kind; rf.expr = deep_clone(a->expr);
-            p->value = std::move(rf);
-            return p;
-        }
-        if (auto a = n.as<parser::ModuleForm>()) {
-            parser::ModuleForm m; m.span = a->span; m.name = a->name; m.exports = a->exports; m.body.reserve(a->body.size());
-            for (const auto& e : a->body) m.body.push_back(deep_clone(e));
-            p->value = std::move(m);
-            return p;
-        }
-        assert(false && "Unknown SExpr variant in deep_clone");
-        return nullptr;
+        }, n.value);
     }
 
 
@@ -239,6 +242,23 @@ namespace eta::reader::expander {
         return ExpandError{ExpandError::Kind::InvalidSyntax, sp, oss.str()};
     }
 
+    ExpanderResult<void> Expander::validate_identifier(
+        const std::string& name, Span span,
+        std::unordered_set<std::string>* seen,
+        std::string_view context) {
+        if (is_reserved(name)) {
+            return std::unexpected(ExpandError{
+                ExpandError::Kind::ReservedKeyword, span,
+                std::string("reserved keyword as ") + std::string(context) + ": " + name});
+        }
+        if (seen && !seen->insert(name).second) {
+            return std::unexpected(ExpandError{
+                ExpandError::Kind::DuplicateIdentifier, span,
+                std::string("duplicate ") + std::string(context) + ": " + name});
+        }
+        return {};
+    }
+
     ExpanderResult<std::vector<SExprPtr>> Expander::expand_list_elems(const std::vector<SExprPtr>& elems) const {
         std::vector<SExprPtr> xs; xs.reserve(elems.size());
         for (const auto& a : elems) {
@@ -267,6 +287,7 @@ namespace eta::reader::expander {
             {"letrec", &Expander::handle_letrec},
             {"letrec*", &Expander::handle_letrec_star},
             {"cond", &Expander::handle_cond},
+            {"case", &Expander::handle_case},
             {"module", &Expander::handle_module_list},
             {"export", &Expander::handle_export},
             {"import", &Expander::handle_import},
@@ -470,11 +491,7 @@ namespace eta::reader::expander {
                 return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, lst.elems[1]->span(), "cannot define reserved keyword: "+s->name});
 
             auto rhs = expand_form(lst.elems[2]); if (!rhs) return std::unexpected(rhs.error());
-            std::vector<SExprPtr> v;
-            v.push_back(deep_clone(lst.elems[0]));
-            v.push_back(deep_clone(lst.elems[1]));
-            v.push_back(std::move(*rhs));
-            return make_list(std::move(v), lst.span);
+            return make_form(lst.span, "define", deep_clone(lst.elems[1]), std::move(*rhs));
         }
 
         // (define (f args...) body...)
@@ -505,78 +522,72 @@ namespace eta::reader::expander {
         }
 
         // Build lambda: (lambda formals body...)
-        std::vector<SExprPtr> lam; lam.push_back(make_symbol("lambda", lst.span));
-        lam.push_back(std::move(formalsNode));
-        for (size_t i=2;i<lst.elems.size();++i) lam.push_back(deep_clone(lst.elems[i]));
-        auto lamE = make_list(std::move(lam), lst.span);
+        std::vector<SExprPtr> bodyForms;
+        for (size_t i=2;i<lst.elems.size();++i) bodyForms.push_back(deep_clone(lst.elems[i]));
+        auto lamE = make_lambda(lst.span, std::move(formalsNode), std::move(bodyForms));
 
         // Normalize lambda (validates formals and expands body)
         auto lamX = handle_lambda(*lamE->as<List>());
         if (!lamX) return std::unexpected(lamX.error());
 
-        std::vector<SExprPtr> v;
-        v.push_back(make_symbol("define", lst.span));
-        v.push_back(make_symbol(nameSym->name, nameSym->span));
-        v.push_back(std::move(*lamX));
-        return make_list(std::move(v), lst.span);
+        return make_form(lst.span, "define", make_symbol(nameSym->name, nameSym->span), std::move(*lamX));
     }
 
     ExpanderResult<SExprPtr> Expander::handle_set_bang(const List& lst) {
         if (lst.elems.size() != 3 || !lst.elems[1] || !lst.elems[1]->is<Symbol>())
             return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "set! expects (set! id expr)"});
         auto rhs = expand_form(lst.elems[2]); if (!rhs) return std::unexpected(rhs.error());
-        std::vector<SExprPtr> v;
-        v.push_back(deep_clone(lst.elems[0]));
-        v.push_back(deep_clone(lst.elems[1]));
-        v.push_back(std::move(*rhs));
-        return make_list(std::move(v), lst.span);
+        return make_set(lst.span, deep_clone(lst.elems[1]), std::move(*rhs));
     }
 
     ExpanderResult<Formals> Expander::parse_formals(const SExprPtr& node) const {
         Formals f; f.span = node->span();
         std::unordered_set<std::string> seen;
-        auto dup = [&](const std::string& n, Span sp) -> ExpanderResult<Formals> {
-            return std::unexpected(ExpandError{ExpandError::Kind::DuplicateIdentifier, sp, "duplicate parameter: "+n});
-        };
 
         if (node->is<Symbol>()) {
             const auto* s = node->as<Symbol>();
-            if (is_reserved(s->name)) return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, s->span, "reserved keyword as rest parameter: "+s->name});
-            f.rest = s->name; return f;
+            if (auto err = validate_identifier(s->name, s->span, nullptr, "rest parameter"); !err) {
+                return std::unexpected(err.error());
+            }
+            f.rest = s->name;
+            return f;
         }
         if (!node->is<List>())
             return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, node->span(), "lambda formals must be a symbol or list"});
 
         const auto& lst = *node->as<List>();
-        if (!lst.dotted) {
-            for (size_t i=0; i<lst.elems.size(); ++i) {
-                const auto& p = lst.elems[i];
-                if (!p || !p->is<Symbol>()) {
-                    return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, p ? p->span() : lst.span, "parameter at index "+std::to_string(i)+" must be a symbol"});
-                }
-                const auto* s = p->as<Symbol>();
-                if (is_reserved(s->name)) return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, s->span, "reserved keyword as parameter: "+s->name});
-                if (!seen.insert(s->name).second) return dup(s->name, s->span);
-                f.fixed.push_back(s->name);
+
+        // Helper to validate and add a parameter
+        auto add_param = [&](const SExprPtr& p, size_t i) -> ExpanderResult<void> {
+            if (!p || !p->is<Symbol>()) {
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax,
+                    p ? p->span() : lst.span,
+                    "parameter at index " + std::to_string(i) + " must be a symbol"});
             }
-            return f;
+            const auto* s = p->as<Symbol>();
+            if (auto err = validate_identifier(s->name, s->span, &seen, "parameter"); !err) {
+                return std::unexpected(err.error());
+            }
+            f.fixed.push_back(s->name);
+            return {};
+        };
+
+        for (size_t i = 0; i < lst.elems.size(); ++i) {
+            if (auto err = add_param(lst.elems[i], i); !err) {
+                return std::unexpected(err.error());
+            }
         }
 
-        // Dotted list: head elems are fixed, tail must be a symbol
-        for (size_t i=0; i<lst.elems.size(); ++i) {
-            const auto& p = lst.elems[i];
-            if (!p || !p->is<Symbol>()) return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, p ? p->span() : lst.span, "parameter at index "+std::to_string(i)+" must be a symbol"});
-            const auto* s = p->as<Symbol>();
-            if (is_reserved(s->name)) return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, s->span, "reserved keyword as parameter: "+s->name});
-            if (!seen.insert(s->name).second) return dup(s->name, s->span);
-            f.fixed.push_back(s->name);
+        if (lst.dotted) {
+            if (!lst.tail || !lst.tail->is<Symbol>())
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "dotted formals: rest must be a symbol"});
+            const auto* rest = lst.tail->as<Symbol>();
+            if (auto err = validate_identifier(rest->name, rest->span, &seen, "parameter"); !err) {
+                return std::unexpected(err.error());
+            }
+            f.rest = rest->name;
         }
-        if (!lst.tail || !lst.tail->is<Symbol>())
-            return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "dotted formals: rest must be a symbol"});
-        const auto* rest = lst.tail->as<Symbol>();
-        if (is_reserved(rest->name)) return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, rest->span, "reserved keyword as parameter: "+rest->name});
-        if (!seen.insert(rest->name).second) return dup(rest->name, rest->span);
-        f.rest = rest->name;
+
         return f;
     }
 
@@ -625,6 +636,8 @@ namespace eta::reader::expander {
     Expander::parse_let_pairs(const List& pair_list, bool require_unique_names) const {
         std::vector<std::pair<SExprPtr,SExprPtr>> out;
         std::unordered_set<std::string> names;
+        std::unordered_set<std::string>* seen_ptr = require_unique_names ? &names : nullptr;
+
         for (const auto& p : pair_list.elems) {
             if (!p || !p->is<List>())
                 return std::unexpected(ExpandError{ExpandError::Kind::InvalidLetBindings, pair_list.span, "let binding must be (id expr)"});
@@ -632,10 +645,12 @@ namespace eta::reader::expander {
             if (pr.dotted || pr.elems.size() != 2 || !pr.elems[0] || !pr.elems[0]->is<Symbol>())
                 return std::unexpected(ExpandError{ExpandError::Kind::InvalidLetBindings, pr.span, "let binding must be (id expr)"});
             const auto* id = pr.elems[0]->as<Symbol>();
-            if (is_reserved(id->name))
-                return std::unexpected(ExpandError{ExpandError::Kind::InvalidLetBindings, pr.elems[0]->span(), "cannot bind reserved keyword: "+id->name});
-            if (require_unique_names && !names.insert(id->name).second)
-                return std::unexpected(ExpandError{ExpandError::Kind::InvalidLetBindings, pr.elems[0]->span(), "duplicate binding: "+id->name});
+
+            if (auto err = validate_identifier(id->name, id->span, seen_ptr, "binding"); !err) {
+                // Convert to InvalidLetBindings kind for consistency
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidLetBindings, err.error().span, err.error().message});
+            }
+
             out.emplace_back(make_symbol(id->name, id->span), deep_clone(pr.elems[1]));
         }
         return out;
@@ -729,40 +744,38 @@ namespace eta::reader::expander {
         if (lst.elems.size() < 3 || !lst.elems[1] || !lst.elems[1]->is<List>())
             return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "let* expects bindings and body"});
         const auto& pairs = *lst.elems[1]->as<List>();
+
         if (pairs.elems.empty()) {
             // (let* () body...) == (let () body...)
-            std::vector<SExprPtr> rebuilt;
-            rebuilt.push_back(make_symbol("let", lst.span));
-            rebuilt.push_back(make_list({}, pairs.span));
-            for (size_t i=2;i<lst.elems.size();++i) rebuilt.push_back(deep_clone(lst.elems[i]));
-            auto rebuiltList = make_list(std::move(rebuilt), lst.span);
-            return handle_let(*rebuiltList->as<List>());
+            auto rebuilt = build_list(lst.span, make_symbol("let", lst.span), make_list({}, pairs.span));
+            for (size_t i = 2; i < lst.elems.size(); ++i) {
+                rebuilt->as<List>()->elems.push_back(deep_clone(lst.elems[i]));
+            }
+            return handle_let(*rebuilt->as<List>());
         }
 
-        // Nest lets
+        // Nest lets: (let ((x e)) (let* ((y f) ...) body...))
         const auto& firstPair = *pairs.elems[0]->as<List>();
-        auto outerBindings = make_list({}, pairs.span);
-        outerBindings->as<List>()->elems.push_back([&](){
-            auto bp = make_list({}, firstPair.span);
-            bp->as<List>()->elems.push_back(deep_clone(firstPair.elems[0]));
-            bp->as<List>()->elems.push_back(deep_clone(firstPair.elems[1]));
-            return bp;
-        }());
+        auto outerBinding = build_list(firstPair.span,
+            deep_clone(firstPair.elems[0]),
+            deep_clone(firstPair.elems[1]));
+        auto outerBindings = build_list(pairs.span, std::move(outerBinding));
 
-        std::vector<SExprPtr> restPairs;
-        for (size_t i=1;i<pairs.elems.size();++i) restPairs.push_back(deep_clone(pairs.elems[i]));
+        // Build inner let* with remaining pairs
+        auto restPairsList = make_list({}, pairs.span);
+        for (size_t i = 1; i < pairs.elems.size(); ++i) {
+            restPairsList->as<List>()->elems.push_back(deep_clone(pairs.elems[i]));
+        }
 
-        std::vector<SExprPtr> inner;
-        inner.push_back(make_symbol("let*", lst.span));
-        inner.push_back(make_list(std::move(restPairs), pairs.span));
-        for (size_t i=2;i<lst.elems.size();++i) inner.push_back(deep_clone(lst.elems[i]));
-        auto innerList = make_list(std::move(inner), lst.span);
+        auto innerList = build_list(lst.span, make_symbol("let*", lst.span), std::move(restPairsList));
+        for (size_t i = 2; i < lst.elems.size(); ++i) {
+            innerList->as<List>()->elems.push_back(deep_clone(lst.elems[i]));
+        }
 
-        std::vector<SExprPtr> outer;
-        outer.push_back(make_symbol("let", lst.span));
-        outer.push_back(std::move(outerBindings));
-        outer.push_back(std::move(innerList));
-        auto outerNode = make_list(std::move(outer), lst.span);
+        auto outerNode = build_list(lst.span,
+            make_symbol("let", lst.span),
+            std::move(outerBindings),
+            std::move(innerList));
         return handle_let(*outerNode->as<List>());
     }
 
@@ -770,42 +783,39 @@ namespace eta::reader::expander {
         if (lst.elems.size() < 3 || !lst.elems[1] || !lst.elems[1]->is<List>())
             return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "letrec expects bindings and body"});
         const auto& pairs = *lst.elems[1]->as<List>();
-        auto parsed = parse_let_pairs(pairs, /*unique*/true); if (!parsed) return std::unexpected(parsed.error());
+        auto parsed = parse_let_pairs(pairs, /*unique*/true);
+        if (!parsed) return std::unexpected(parsed.error());
 
         // Strategy: allocate placeholders with (let ((x '()) ...)) then (set! x e) ... body
-        auto zList = make_list({}, pairs.span);
+        std::vector<std::pair<SExprPtr, SExprPtr>> placeholders;
         for (auto& [id, expr] : *parsed) {
-            auto pair = make_list({}, id->span());
-            pair->as<List>()->elems.push_back(deep_clone(id));
-            pair->as<List>()->elems.push_back(make_nil(id->span()));
-            zList->as<List>()->elems.push_back(std::move(pair));
+            placeholders.emplace_back(deep_clone(id), make_nil(id->span()));
         }
 
         std::vector<SExprPtr> body;
         for (auto& [id, expr] : *parsed) {
-            auto ex = expand_form(expr); if (!ex) return std::unexpected(ex.error());
-            auto setp = make_list({}, id->span());
-            setp->as<List>()->elems.push_back(make_symbol("set!", id->span()));
-            setp->as<List>()->elems.push_back(deep_clone(id));
-            setp->as<List>()->elems.push_back(std::move(*ex));
-            body.push_back(std::move(setp));
+            auto ex = expand_form(expr);
+            if (!ex) return std::unexpected(ex.error());
+            body.push_back(make_set(id->span(), deep_clone(id), std::move(*ex)));
         }
-        for (size_t i=2;i<lst.elems.size();++i) { auto r = expand_form(lst.elems[i]); if (!r) return std::unexpected(r.error()); body.push_back(std::move(*r)); }
+        for (size_t i = 2; i < lst.elems.size(); ++i) {
+            auto r = expand_form(lst.elems[i]);
+            if (!r) return std::unexpected(r.error());
+            body.push_back(std::move(*r));
+        }
 
-        auto beginB = make_list({}, lst.span);
-        beginB->as<List>()->elems.push_back(make_symbol("begin", lst.span));
-        for (auto& b : body) beginB->as<List>()->elems.push_back(std::move(b));
-
-        std::vector<SExprPtr> outer;
-        outer.push_back(make_symbol("let", lst.span));
-        outer.push_back(std::move(zList));
-        outer.push_back(std::move(beginB));
-        auto outerList = make_list(std::move(outer), lst.span);
+        auto letBody = make_begin(lst.span, std::move(body));
+        std::vector<SExprPtr> letBodyVec;
+        letBodyVec.push_back(std::move(letBody));
+        auto outerList = make_let(lst.span, std::move(placeholders), std::move(letBodyVec));
         return handle_let(*outerList->as<List>());
     }
 
     ExpanderResult<SExprPtr> Expander::handle_letrec_star(const List& lst) {
         // (letrec* ((x e) (y e) ...) body...)
+        // Desugars to nested letrec forms for sequential initialization semantics:
+        // (letrec ((x ex)) (letrec ((y ey)) ... body...))
+
         if (lst.elems.size() < 3 || !lst.elems[1] || !lst.elems[1]->is<List>())
             return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "letrec* expects bindings and body"});
 
@@ -813,52 +823,44 @@ namespace eta::reader::expander {
 
         // No bindings: same as (let () body...)
         if (pairs.elems.empty()) {
-            std::vector<SExprPtr> rebuilt;
-            rebuilt.push_back(make_symbol("let", lst.span));
-            rebuilt.push_back(make_list({}, pairs.span));
-            for (size_t i = 2; i < lst.elems.size(); ++i) rebuilt.push_back(deep_clone(lst.elems[i]));
-            auto rebuiltList = make_list(std::move(rebuilt), lst.span);
-            return handle_let(*rebuiltList->as<List>());
+            return handle_let(*build_list(lst.span,
+                make_symbol("let", lst.span),
+                make_list({}, pairs.span),
+                [&]{ std::vector<SExprPtr> body; for (size_t i = 2; i < lst.elems.size(); ++i) body.push_back(deep_clone(lst.elems[i])); return body.size() == 1 ? std::move(body[0]) : build_list(lst.span, make_symbol("begin", lst.span)); }()
+            )->as<List>());
         }
 
-        // Validate pairs and obtain ids/exprs
+        // Validate pairs
         auto parsed = parse_let_pairs(pairs, /*require_unique_names*/true);
         if (!parsed) return std::unexpected(parsed.error());
 
-        // Build nested (letrec ((vi ei)) ...) forms to achieve sequential semantics
-        // Base continuation is the body as a single begin expression.
-        std::function<ExpanderResult<SExprPtr>(std::size_t)> build;
-        build = [&](std::size_t idx) -> ExpanderResult<SExprPtr> {
-            if (idx >= parsed->size()) {
-                std::vector<SExprPtr> beginElems;
-                beginElems.push_back(make_symbol("begin", lst.span));
-                for (size_t i = 2; i < lst.elems.size(); ++i) beginElems.push_back(deep_clone(lst.elems[i]));
-                return make_list(std::move(beginElems), lst.span);
-            }
+        // Build iteratively from the innermost (body) outward
+        // Start with the body as a begin expression
+        SExprPtr result = build_list(lst.span, make_symbol("begin", lst.span));
+        for (size_t i = 2; i < lst.elems.size(); ++i) {
+            result->as<List>()->elems.push_back(deep_clone(lst.elems[i]));
+        }
 
-            // Build binding list with a single pair (id expr)
-            const auto& id = (*parsed)[idx].first;
-            const auto& expr = (*parsed)[idx].second;
+        // Wrap with letrec forms from last binding to first
+        for (auto it = parsed->rbegin(); it != parsed->rend(); ++it) {
+            auto& [id, expr] = *it;
 
-            auto pair = make_list({}, id->span());
-            pair->as<List>()->elems.push_back(deep_clone(id));
-            pair->as<List>()->elems.push_back(deep_clone(expr));
+            // Build (letrec ((id expr)) result)
+            auto bindingPair = build_list(id->span(), deep_clone(id), deep_clone(expr));
+            auto bindingList = build_list(pairs.span, std::move(bindingPair));
 
-            auto bindingList = make_list({}, pairs.span);
-            bindingList->as<List>()->elems.push_back(std::move(pair));
+            auto letrecForm = build_list(lst.span,
+                make_symbol("letrec", lst.span),
+                std::move(bindingList),
+                std::move(result));
 
-            auto cont = build(idx + 1);
-            if (!cont) return std::unexpected(cont.error());
+            // Expand this letrec and use result for next iteration
+            auto expanded = handle_letrec(*letrecForm->as<List>());
+            if (!expanded) return std::unexpected(expanded.error());
+            result = std::move(*expanded);
+        }
 
-            std::vector<SExprPtr> letrecElems;
-            letrecElems.push_back(make_symbol("letrec", lst.span));
-            letrecElems.push_back(std::move(bindingList));
-            letrecElems.push_back(std::move(*cont));
-            auto letrecNode = make_list(std::move(letrecElems), lst.span);
-            return handle_letrec(*letrecNode->as<List>());
-        };
-
-        return build(0);
+        return result;
     }
 
     ExpanderResult<SExprPtr> Expander::handle_cond(const List& lst) {
@@ -867,13 +869,7 @@ namespace eta::reader::expander {
 
         // Build from the end forward to avoid recursion depth issues
         // Initial "rest" is an empty (begin)
-        auto make_empty_begin = [&](Span sp){
-            auto v = make_list({}, sp);
-            v->as<List>()->elems.push_back(make_symbol("begin", sp));
-            return v;
-        };
-
-        SExprPtr rest = make_empty_begin(lst.span);
+        SExprPtr rest = build_list(lst.span, make_symbol("begin", lst.span));
         bool seenElse = false;
 
         for (std::ptrdiff_t idx = static_cast<std::ptrdiff_t>(lst.elems.size()) - 1; idx >= 1; --idx) {
@@ -890,67 +886,147 @@ namespace eta::reader::expander {
                     return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, clause.span, "else must be the last clause"});
                 if (clause.elems.size() < 2)
                     return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, clause.span, "else must have at least one body expression"});
-                auto b = make_list({}, clause.span);
-                b->as<List>()->elems.push_back(make_symbol("begin", clause.span));
-                for (size_t k=1;k<clause.elems.size();++k) { auto r = expand_form(clause.elems[k]); if (!r) return std::unexpected(r.error()); b->as<List>()->elems.push_back(std::move(*r)); }
-                rest = std::move(b);
+                std::vector<SExprPtr> bodyExprs;
+                for (size_t k = 1; k < clause.elems.size(); ++k) {
+                    auto r = expand_form(clause.elems[k]);
+                    if (!r) return std::unexpected(r.error());
+                    bodyExprs.push_back(std::move(*r));
+                }
+                rest = make_begin(clause.span, std::move(bodyExprs));
                 seenElse = true;
                 continue;
             }
 
-            auto testX = expand_form(clause.elems[0]); if (!testX) return std::unexpected(testX.error());
+            auto testX = expand_form(clause.elems[0]);
+            if (!testX) return std::unexpected(testX.error());
 
             // Arrow clause: (test => proc)
             if (clause.elems.size() == 3 && is_symbol_named(clause.elems[1], "=>")) {
-                auto procX = expand_form(clause.elems[2]); if (!procX) return std::unexpected(procX.error());
+                auto procX = expand_form(clause.elems[2]);
+                if (!procX) return std::unexpected(procX.error());
                 auto t = gensym("t");
-                auto letBindings = make_list({}, clause.span);
-                {
-                    auto pair = make_list({}, clause.span);
-                    pair->as<List>()->elems.push_back(make_symbol(t, clause.span));
-                    pair->as<List>()->elems.push_back(std::move(*testX));
-                    letBindings->as<List>()->elems.push_back(std::move(pair));
-                }
-                auto call = make_list({}, clause.span);
-                call->as<List>()->elems.push_back(std::move(*procX));
-                call->as<List>()->elems.push_back(make_symbol(t, clause.span));
-                auto ifnode = make_list({}, clause.span);
-                ifnode->as<List>()->elems.push_back(make_symbol("if", clause.span));
-                ifnode->as<List>()->elems.push_back(make_symbol(t, clause.span));
-                ifnode->as<List>()->elems.push_back(std::move(call));
-                ifnode->as<List>()->elems.push_back(deep_clone(rest));
-                auto result = make_list({}, clause.span);
-                result->as<List>()->elems.push_back(make_symbol("let", clause.span));
-                result->as<List>()->elems.push_back(std::move(letBindings));
-                result->as<List>()->elems.push_back(std::move(ifnode));
-                rest = std::move(result);
+
+                auto letBindings = build_list(clause.span,
+                    build_list(clause.span, make_symbol(t, clause.span), std::move(*testX)));
+                auto call = build_list(clause.span, std::move(*procX), make_symbol(t, clause.span));
+                auto ifnode = build_list(clause.span,
+                    make_symbol("if", clause.span),
+                    make_symbol(t, clause.span),
+                    std::move(call),
+                    deep_clone(rest));
+                rest = build_list(clause.span,
+                    make_symbol("let", clause.span),
+                    std::move(letBindings),
+                    std::move(ifnode));
                 continue;
             }
 
             // Standard clause: (test expr...)
             if (clause.elems.size() == 1) {
                 // (if test test rest)
-                auto out = make_list({}, clause.span);
-                out->as<List>()->elems.push_back(make_symbol("if", clause.span));
-                out->as<List>()->elems.push_back(std::move(*testX));
-                out->as<List>()->elems.push_back(deep_clone(clause.elems[0]));
-                out->as<List>()->elems.push_back(std::move(rest));
-                rest = std::move(out);
+                rest = make_if(clause.span, std::move(*testX), deep_clone(clause.elems[0]), std::move(rest));
                 continue;
             }
 
-            auto b = make_list({}, clause.span);
-            b->as<List>()->elems.push_back(make_symbol("begin", clause.span));
-            for (size_t k=1;k<clause.elems.size();++k) { auto r = expand_form(clause.elems[k]); if (!r) return std::unexpected(r.error()); b->as<List>()->elems.push_back(std::move(*r)); }
-            auto out = make_list({}, clause.span);
-            out->as<List>()->elems.push_back(make_symbol("if", clause.span));
-            out->as<List>()->elems.push_back(std::move(*testX));
-            out->as<List>()->elems.push_back(std::move(b));
-            out->as<List>()->elems.push_back(std::move(rest));
-            rest = std::move(out);
+            std::vector<SExprPtr> bodyExprs;
+            for (size_t k = 1; k < clause.elems.size(); ++k) {
+                auto r = expand_form(clause.elems[k]);
+                if (!r) return std::unexpected(r.error());
+                bodyExprs.push_back(std::move(*r));
+            }
+            rest = make_if(clause.span, std::move(*testX), make_begin(clause.span, std::move(bodyExprs)), std::move(rest));
         }
 
         return rest;
+    }
+
+    ExpanderResult<SExprPtr> Expander::handle_case(const List& lst) {
+        // (case key-expr ((datum ...) body...) ... (else body...))
+        // Desugar to: (let ((tmp key-expr))
+        //               (if (or (eqv? tmp 'd1) (eqv? tmp 'd2) ...)
+        //                   (begin body...)
+        //                   (if ... else-body)))
+        if (lst.elems.size() < 2)
+            return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "case requires a key expression"});
+
+        auto keyX = expand_form(lst.elems[1]);
+        if (!keyX) return std::unexpected(keyX.error());
+
+        auto tmpName = gensym("case-key");
+
+        // Build nested if structure from the end backward (like cond)
+        SExprPtr rest = build_list(lst.span, make_symbol("begin", lst.span));
+
+        for (std::ptrdiff_t idx = static_cast<std::ptrdiff_t>(lst.elems.size()) - 1; idx >= 2; --idx) {
+            const auto& clause = lst.elems[static_cast<size_t>(idx)];
+            if (!clause || !clause->is<List>())
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, clause ? clause->span() : lst.span, "case clause must be a list"});
+            const auto& cl = *clause->as<List>();
+            if (cl.elems.empty())
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, cl.span, "empty case clause"});
+
+            // else clause
+            if (is_symbol_named(cl.elems[0], "else")) {
+                if (static_cast<size_t>(idx) + 1 != lst.elems.size())
+                    return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, cl.span, "else must be the last clause"});
+                if (cl.elems.size() < 2)
+                    return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, cl.span, "else must have at least one body expression"});
+                std::vector<SExprPtr> bodyExprs;
+                for (size_t k = 1; k < cl.elems.size(); ++k) {
+                    auto r = expand_form(cl.elems[k]);
+                    if (!r) return std::unexpected(r.error());
+                    bodyExprs.push_back(std::move(*r));
+                }
+                rest = make_begin(cl.span, std::move(bodyExprs));
+                continue;
+            }
+
+            // Normal clause: ((datum ...) body...)
+            if (!cl.elems[0] || !cl.elems[0]->is<List>())
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, cl.elems[0] ? cl.elems[0]->span() : cl.span, "case clause datums must be a list"});
+
+            const auto& datums = *cl.elems[0]->as<List>();
+            if (datums.elems.empty())
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, datums.span, "case clause requires at least one datum"});
+
+            // Build test: (or (eqv? tmp d1) (eqv? tmp d2) ...)
+            // If only one datum, just use (eqv? tmp d)
+            SExprPtr test;
+            if (datums.elems.size() == 1) {
+                test = build_list(datums.span,
+                    make_symbol("eqv?", datums.span),
+                    make_symbol(tmpName, datums.span),
+                    make_quote(deep_clone(datums.elems[0]), datums.elems[0]->span()));
+            } else {
+                auto orExpr = build_list(datums.span, make_symbol("or", datums.span));
+                for (const auto& d : datums.elems) {
+                    orExpr->as<List>()->elems.push_back(make_form(d->span(), "eqv?",
+                        make_symbol(tmpName, d->span()),
+                        make_quote(deep_clone(d), d->span())));
+                }
+                test = std::move(orExpr);
+            }
+
+            // Build body: (begin body...)
+            std::vector<SExprPtr> bodyExprs;
+            for (size_t k = 1; k < cl.elems.size(); ++k) {
+                auto r = expand_form(cl.elems[k]);
+                if (!r) return std::unexpected(r.error());
+                bodyExprs.push_back(std::move(*r));
+            }
+
+            // Build if: (if test body rest)
+            rest = make_if(cl.span, std::move(test), make_begin(cl.span, std::move(bodyExprs)), std::move(rest));
+        }
+
+        // Wrap in let: (let ((tmp key-expr)) rest)
+        std::vector<std::pair<SExprPtr, SExprPtr>> bindings;
+        bindings.emplace_back(make_symbol(tmpName, lst.span), std::move(*keyX));
+        std::vector<SExprPtr> letBodyVec;
+        letBodyVec.push_back(std::move(rest));
+        auto letExpr = make_let(lst.span, std::move(bindings), std::move(letBodyVec));
+
+        return handle_let(*letExpr->as<List>());
     }
 
     ExpanderResult<SExprPtr> Expander::handle_module_list(const List& lst) {

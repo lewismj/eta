@@ -161,6 +161,14 @@ namespace eta::runtime::nanbox {
             return value & PAYLOAD_MASK;
         }
 
+        //! Sign-extend a 47-bit fixnum payload to a full 64-bit signed integer.
+        //! This is the canonical implementation - use this instead of duplicating the logic.
+        constexpr int64_t sign_extend_fixnum(uint64_t raw_payload) {
+            return (raw_payload & FIXNUM_SIGN_BIT)
+                ? static_cast<int64_t>(raw_payload | FIXNUM_SIGN_EXTEND_MASK)
+                : static_cast<int64_t>(raw_payload);
+        }
+
         template<typename T>
         consteval Tag get_type_tag() {
             if constexpr (std::is_same_v<T, char> ||
@@ -253,11 +261,7 @@ namespace eta::runtime::nanbox {
                     return static_cast<char32_t>(payload(value));
                 }
                 else if constexpr (std::is_integral_v<T> && sizeof(T) == 8 && std::is_signed_v<T>) {
-                    const uint64_t raw_payload = payload(value);
-                    const int64_t signed_value = raw_payload & FIXNUM_SIGN_BIT
-                        ? static_cast<int64_t>(raw_payload | FIXNUM_SIGN_EXTEND_MASK)
-                        : static_cast<int64_t>(raw_payload);
-                    return static_cast<T>(signed_value);
+                    return static_cast<T>(sign_extend_fixnum(payload(value)));
                 }
                 else {
                     return static_cast<T>(payload(value));

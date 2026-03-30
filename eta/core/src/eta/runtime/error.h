@@ -15,7 +15,9 @@ namespace eta::runtime::error {
 
     enum class RuntimeErrorCode : std::uint8_t {
         NotImplemented,
+        InternalError,
         StackOverflow,
+        StackUnderflow,
         FrameOverflow,
         InvalidInstruction,
         InvalidArity,

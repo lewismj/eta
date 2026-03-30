@@ -135,11 +135,9 @@ namespace eta::reader::lexer {
         InvalidToken,
         InvalidNumeric,
         InvalidUtf8,
-        IoError,
         MissingDelimiter,
         InvalidCodePoint,
-        InvalidBoolean,
-        InvalidDirective
+        InvalidBoolean
     };
 
     struct LexError {
@@ -161,11 +159,9 @@ namespace eta::reader::lexer {
             case InvalidToken:        return "LexErrorKind::InvalidToken";
             case InvalidNumeric:      return "LexErrorKind::InvalidNumeric";
             case InvalidUtf8:         return "LexErrorKind::InvalidUtf8";
-            case IoError:             return "LexErrorKind::IoError";
             case MissingDelimiter:    return "LexErrorKind::MissingDelimiter";
             case InvalidCodePoint:    return "LexErrorKind::InvalidCodePoint";
             case InvalidBoolean:      return "LexErrorKind::InvalidBoolean";
-            case InvalidDirective:    return "LexErrorKind::InvalidDirective";
         }
         return "LexErrorKind::Unknown";
     }

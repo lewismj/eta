@@ -56,22 +56,22 @@ BOOST_AUTO_TEST_CASE(retains_reachable_chain) {
     BOOST_TEST(stats.objects_freed == 0);
 }
 
-BOOST_AUTO_TEST_CASE(mixed_interpreted_procedure_graph) {
+BOOST_AUTO_TEST_CASE(mixed_closure_graph) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Build some cons values and a lambda referencing them
+    // Build some cons values and a closure referencing them as upvals
     auto a = expect_ok(make_cons(heap, Nil));
     auto b = expect_ok(make_cons(heap, a));
     auto c = expect_ok(make_cons(heap, b));
 
-    std::vector<LispVal> formals{ a, b };
-    std::vector<LispVal> upvals{ c };
-    auto proc = expect_ok(make_interpreted_procedure(heap, formals, b, upvals));
+    std::vector<LispVal> upvals{ a, b, c };
+    // Create a closure with no function (nullptr) but with upvals
+    auto closure = expect_ok(make_closure(heap, nullptr, upvals));
 
-    // Root only the procedure; all referenced nodes should be retained
-    roots.push_back(proc);
+    // Root only the closure; all referenced nodes should be retained
+    roots.push_back(closure);
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
@@ -166,7 +166,8 @@ BOOST_AUTO_TEST_CASE(retains_reachable_closure_vector_continuation) {
     std::vector<eta::runtime::vm::Frame> frames = {
         {.func = nullptr, .pc = 0, .fp = 0, .closure = cont_frame_closure}
     };
-    auto cont = expect_ok(make_continuation(heap, {cont_stack_el}, frames));
+    std::vector<eta::runtime::vm::WindFrame> winding_stack = {};
+    auto cont = expect_ok(make_continuation(heap, {cont_stack_el}, frames, winding_stack));
 
     // Root them all
     roots.push_back(vec);
