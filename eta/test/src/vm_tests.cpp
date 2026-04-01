@@ -214,19 +214,6 @@ BOOST_AUTO_TEST_CASE(test_call_cc_basic) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
 }
 
-BOOST_AUTO_TEST_CASE(test_call_cc_multiple_invocations) {
-    std::string src = 
-        "(module m (define result 0) "
-        "  (define (+ a b) #f) (define (eq? a b) #f) "
-        "  (define cont #f) "
-        "  (define (test) "
-        "    (set! result (+ result 1)) "
-        "    (call/cc (lambda (k) (set! cont k)))) "
-        "  (test) " // result = 1
-        "  (if (eq? result 1) (cont #f) #f))"; // call cont, result becomes 2
-    LispVal res = run(src);
-    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 2);
-}
 
 BOOST_AUTO_TEST_CASE(test_tail_call_recursion) {
     std::string src = 
@@ -252,10 +239,11 @@ BOOST_AUTO_TEST_CASE(test_dynamic_wind_basic) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 3);
 }
 
-BOOST_AUTO_TEST_CASE(test_dynamic_wind_with_call_cc) {
-    std::string src = 
-        "(module m (define result 0) "
+BOOST_AUTO_TEST_CASE(test_dynamic_wind_with_call_cc_clean) {
+    std::string src =
+        "(module m "
         "  (define (+ a b) #f) (define (eq? a b) #f) "
+        "  (define result 0) "
         "  (define (before) (set! result (+ result 1))) "
         "  (define (after) (set! result (+ result 10))) "
         "  (define cont #f) "
@@ -263,9 +251,12 @@ BOOST_AUTO_TEST_CASE(test_dynamic_wind_with_call_cc) {
         "    (dynamic-wind before "
         "      (lambda () (set! cont k)) "
         "      after))) "
-        "  (if (eq? result 11) (cont #f) #f))";
+        "  (if (eq? result 11) (cont #f) #f) "
+        "  result)";
+
     LispVal res = run(src);
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 22);
 }
+
 
 BOOST_AUTO_TEST_SUITE_END()

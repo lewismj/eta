@@ -16,6 +16,8 @@ BytecodeFunction* Emitter::emit() {
     Context ctx;
     ctx.func.name = sem_.name + "_init";
     ctx.func.stack_size = sem_.stack_size;
+    ctx.func.arity = 0;
+    ctx.func.has_rest = false;
     
     for (const auto* node : sem_.toplevel_inits) {
         emit_node(node, ctx);

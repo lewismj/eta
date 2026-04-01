@@ -79,6 +79,10 @@ void VM::collect_garbage() {
 }
 
 std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
+    // Push a sentinel frame to mark the bottom of this execution call.
+    // This prevents CallCC from capturing frames above the point where execute() was called.
+    frames_.push_back({nullptr, 0, 0, Nil, FrameKind::Sentinel});
+
     current_func_ = &main;
     pc_ = 0;
     fp_ = 0;
@@ -96,14 +100,14 @@ std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
 // Unified helper to dispatch a callee (Closure, Continuation, or Primitive)
 std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, uint32_t argc, bool is_tail) {
     // Use try_get_as for consistent heap access pattern
-   // std::cout << "
+   // //std::cout << "
 
     if (!ops::is_boxed(callee)) {
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not boxed"}});
     }
     
     if (ops::tag(callee) != Tag::HeapObject) {
-        // std::cout << "DEBUG: Callee tag NOT HeapObject, it is " << to_string(ops::tag(callee)) << std::endl;
+        // //std::cout << "DEBUG: Callee tag NOT HeapObject, it is " << to_string(ops::tag(callee)) << std::endl;
     }
 
     if (auto* closure = try_get_as<ObjectKind::Closure, Closure>(callee)) {
@@ -124,42 +128,105 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
         }
 
         LispVal v = pop(); // The argument
+        temp_roots_.push_back(v);
+        temp_roots_.push_back(callee);
 
-        // Restore state
-        stack_ = cont->stack;
-        frames_ = cont->frames;
-        winding_stack_ = cont->winding_stack;
-
-        // Restore current frame state from the captured top frame
-        if (frames_.empty()) {
-             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Empty continuation"}});
+        // Calculate the common ancestor of the current and target winding stacks.
+        size_t common = 0;
+        size_t min_len = std::min(winding_stack_.size(), cont->winding_stack.size());
+        while (common < min_len &&
+               winding_stack_[common].before == cont->winding_stack[common].before &&
+               winding_stack_[common].after == cont->winding_stack[common].after) {
+            common++;
         }
-        const auto f = frames_.back();
-        frames_.pop_back();
-        
-        current_func_ = f.func;
-        pc_ = f.pc;
-        fp_ = f.fp;
-        current_closure_ = f.closure;
 
-        // Return v from continuation
-        push(v);
+        if (common == winding_stack_.size() && common == cont->winding_stack.size()) {
+            // Find current sentinel to define the boundary
+            int32_t sentinel_idx = -1;
+            for (int32_t i = static_cast<int32_t>(frames_.size()) - 1; i >= 0; --i) {
+                if (frames_[i].kind == FrameKind::Sentinel) {
+                    sentinel_idx = i;
+                    break;
+                }
+            }
+
+            // Restore state immediately if no winding/unwinding is needed.
+            stack_ = cont->stack;
+            
+            // Reconstruct frames: current sentinel and below, then the captured frames.
+            if (sentinel_idx != -1) {
+                frames_.resize(sentinel_idx + 1);
+                frames_.insert(frames_.end(), cont->frames.begin(), cont->frames.end());
+            } else {
+                frames_ = cont->frames;
+            }
+            
+            winding_stack_ = cont->winding_stack;
+
+            if (frames_.empty()) {
+                push(v);
+                current_func_ = nullptr;
+            } else {
+                const auto f = frames_.back();
+                frames_.pop_back();
+                restore_frame(f);
+                push(v);
+            }
+        } else {
+            // Prepare the list of thunks to be executed.
+            std::vector<LispVal> thunks;
+            for (int32_t i = static_cast<int32_t>(winding_stack_.size()) - 1; i >= static_cast<int32_t>(common); --i) {
+                thunks.push_back(winding_stack_[i].after);
+            }
+            for (size_t i = common; i < cont->winding_stack.size(); ++i) {
+                thunks.push_back(cont->winding_stack[i].before);
+            }
+
+            // Store the jump state in a Vector to be GC-rootable.
+            // Format: [target_continuation, value_to_pass, next_thunk_index, ...thunks]
+            std::vector<LispVal> state_els;
+            state_els.push_back(callee);
+            state_els.push_back(v);
+            state_els.push_back(ops::encode<int64_t>(1).value()); // Index of next thunk (after the first one)
+            for (auto t : thunks) state_els.push_back(t);
+
+            auto state_vec = make_vector(heap_, std::move(state_els));
+            if (!state_vec) return std::unexpected(state_vec.error());
+
+            // Push the ContinuationJump frame to the current stack.
+            frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::ContinuationJump, *state_vec});
+
+            // Start the sequence by calling the first thunk.
+            LispVal first_thunk = thunks[0];
+            auto dispatch = dispatch_callee(first_thunk, 0, false);
+            if (!dispatch) return std::unexpected(dispatch.error());
+            if (dispatch->action == DispatchAction::SetupFrame) {
+                setup_frame(dispatch->func, dispatch->closure, 0);
+            } else {
+                // Primitive thunk: proceed directly to handle its "return" and start next.
+                auto res = handle_return(Nil);
+                if (!res) return std::unexpected(res.error());
+            }
+        }
+
+        temp_roots_.pop_back();
+        temp_roots_.pop_back();
         return DispatchResult{DispatchAction::Continue, nullptr, 0};
     }
 
     if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(callee)) {
-        std::cout << "DEBUG: primitive branch arity=" << prim->arity << std::endl;
+        //std::cout << "DEBUG: primitive branch arity=" << prim->arity << std::endl;
         std::vector<LispVal> args;
         for (uint32_t i = 0; i < argc; ++i) {
             args.push_back(stack_[stack_.size() - argc + i]);
-          //  std::cout << "DEBUG: prim arg[" << i << "]=" << std::hex << args.back() << std::dec << std::endl;
+          //  //std::cout << "DEBUG: prim arg[" << i << "]=" << std::hex << args.back() << std::dec << std::endl;
         }
         stack_.resize(stack_.size() - argc);
 
-        std::cout << "DEBUG: calling prim->func" << std::endl;
+        //std::cout << "DEBUG: calling prim->func" << std::endl;
         auto res = prim->func(args);
         if (!res) return std::unexpected(res.error());
-        std::cout << "DEBUG: primitive result=" << std::hex << *res << std::dec << std::endl;
+        //std::cout << "DEBUG: primitive result=" << std::hex << *res << std::dec << std::endl;
         push(*res);
         return DispatchResult{DispatchAction::Continue, nullptr, 0};
     }
@@ -178,7 +245,7 @@ void VM::unpack_to_stack(LispVal value) {
 }
 
 std::expected<void, RuntimeError> VM::run_loop() {
-    while (pc_ < current_func_->code.size()) {
+    while (current_func_ && pc_ < current_func_->code.size()) {
         const auto& instr = current_func_->code[pc_++];
         switch (instr.opcode) {
             case OpCode::Nop:
@@ -292,7 +359,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             }
             case OpCode::LoadGlobal:
-                std::cout << "DEBUG: LoadGlobal slot=" << instr.arg << " value=" << std::hex << (instr.arg < globals_.size() ? globals_[instr.arg] : 0xDEADBEEF) << std::dec << std::endl;
+                //std::cout << "DEBUG: LoadGlobal slot=" << instr.arg << " value=" << std::hex << (instr.arg < globals_.size() ? globals_[instr.arg] : 0xDEADBEEF) << std::dec << std::endl;
                 if (instr.arg < globals_.size()) {
                     push(globals_[instr.arg]);
                 } else {
@@ -300,7 +367,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 }
                 break;
             case OpCode::StoreGlobal:
-                std::cout << "DEBUG: StoreGlobal slot=" << instr.arg << " value=" << std::hex << stack_.back() << std::dec << std::endl;
+                //std::cout << "DEBUG: StoreGlobal slot=" << instr.arg << " value=" << std::hex << stack_.back() << std::dec << std::endl;
                 if (instr.arg >= globals_.size()) {
                     globals_.resize(instr.arg + 1, Nil);
                 }
@@ -435,7 +502,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 LispVal consumer = pop();
                 temp_roots_.push_back(consumer);
                 
-                // Capture the current execution state as a frame in the continuation
+                // Capture current execution state as top frame
                 auto cont_frames = frames_;
                 cont_frames.push_back({current_func_, pc_, fp_, current_closure_});
                 
@@ -474,6 +541,7 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
     if (frames_.empty()) {
         stack_.resize(fp_);
         push(result);
+        current_func_ = nullptr;
         return {};
     }
     
@@ -481,13 +549,87 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
     Frame return_frame = frames_.back();
     frames_.pop_back();
 
+    // Handle special return kinds
+    if (return_frame.kind == FrameKind::Sentinel) {
+        stack_.resize(fp_);
+        push(result);
+        current_func_ = nullptr;
+        pc_ = 0;
+        return {};
+    }
+
     // Pop the current frame's locals/args
     stack_.resize(fp_);
     
     // Restore the caller's execution state
     restore_frame(return_frame);
 
-    // Handle special return kinds
+    if (return_frame.kind == FrameKind::ContinuationJump) {
+        auto* state_vec = try_get_as<ObjectKind::Vector, types::Vector>(return_frame.extra);
+        if (!state_vec) return std::unexpected(make_type_error("Invalid jump state"));
+
+        int64_t next_idx = ops::decode<int64_t>(state_vec->elements[2]).value();
+        size_t thunk_count = state_vec->elements.size() - 3;
+
+        if (static_cast<size_t>(next_idx) < thunk_count) {
+            LispVal thunk = state_vec->elements[3 + static_cast<size_t>(next_idx)];
+            state_vec->elements[2] = ops::encode<int64_t>(next_idx + 1).value();
+
+            // Re-push the jump frame to continue the chain after this thunk
+            frames_.push_back(return_frame);
+
+            auto dispatch = dispatch_callee(thunk, 0, false);
+            if (!dispatch) return std::unexpected(dispatch.error());
+            if (dispatch->action == DispatchAction::SetupFrame) {
+                setup_frame(dispatch->func, dispatch->closure, 0);
+            } else {
+                // Primitive thunk: recursively call handle_return with unspecified result
+                // (result of thunk is ignored in dynamic-wind jumps)
+                return handle_return(Nil);
+            }
+            return {};
+        } else {
+            // All thunks executed. Now perform the final state restoration.
+            LispVal target_cont_val = state_vec->elements[0];
+            LispVal v = state_vec->elements[1];
+            auto* cont = try_get_as<ObjectKind::Continuation, Continuation>(target_cont_val);
+            if (!cont) return std::unexpected(make_type_error("Invalid target continuation"));
+
+            // Find current sentinel to define the boundary
+            int32_t sentinel_idx = -1;
+            for (int32_t i = static_cast<int32_t>(frames_.size()) - 1; i >= 0; --i) {
+                if (frames_[i].kind == FrameKind::Sentinel) {
+                    sentinel_idx = i;
+                    break;
+                }
+            }
+
+            stack_ = cont->stack;
+
+            // Reconstruct frames: current sentinel and below, then the captured frames.
+            if (sentinel_idx != -1) {
+                frames_.resize(sentinel_idx + 1);
+                frames_.insert(frames_.end(), cont->frames.begin(), cont->frames.end());
+            } else {
+                frames_ = cont->frames;
+            }
+
+            winding_stack_ = cont->winding_stack;
+
+            if (frames_.empty()) {
+                push(v);
+                current_func_ = nullptr;
+                return {};
+            }
+
+            const auto f = frames_.back();
+            frames_.pop_back();
+            restore_frame(f);
+            push(v);
+            return {};
+        }
+    }
+
     if (return_frame.kind == FrameKind::CallWithValuesConsumer) {
         LispVal consumer = return_frame.extra;
         uint32_t old_size = static_cast<uint32_t>(stack_.size());

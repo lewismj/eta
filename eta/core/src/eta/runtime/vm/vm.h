@@ -25,6 +25,8 @@ enum class FrameKind : uint8_t {
     DynamicWindBody,
     DynamicWindAfter,
     DynamicWindCleanup,
+    Sentinel,
+    ContinuationJump,
 };
 
 struct Frame {
