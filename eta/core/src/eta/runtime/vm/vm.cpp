@@ -193,17 +193,17 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
             auto state_vec = make_vector(heap_, std::move(state_els));
             if (!state_vec) return std::unexpected(state_vec.error());
 
-            // Push the ContinuationJump frame to the current stack.
-            frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::ContinuationJump, *state_vec});
-
             // Start the sequence by calling the first thunk.
+            // The thunk's return frame must be ContinuationJump so that
+            // handle_return processes the continuation jump chain when the thunk returns.
             LispVal first_thunk = thunks[0];
             auto dispatch = dispatch_callee(first_thunk, 0, false);
             if (!dispatch) return std::unexpected(dispatch.error());
             if (dispatch->action == DispatchAction::SetupFrame) {
-                setup_frame(dispatch->func, dispatch->closure, 0);
+                setup_frame(dispatch->func, dispatch->closure, 0, FrameKind::ContinuationJump, *state_vec);
             } else {
-                // Primitive thunk: proceed directly to handle its "return" and start next.
+                // Primitive thunk: push ContinuationJump frame for handle_return to process.
+                frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::ContinuationJump, *state_vec});
                 auto res = handle_return(Nil);
                 if (!res) return std::unexpected(res.error());
             }
@@ -575,16 +575,15 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
             LispVal thunk = state_vec->elements[3 + static_cast<size_t>(next_idx)];
             state_vec->elements[2] = ops::encode<int64_t>(next_idx + 1).value();
 
-            // Re-push the jump frame to continue the chain after this thunk
-            frames_.push_back(return_frame);
-
             auto dispatch = dispatch_callee(thunk, 0, false);
             if (!dispatch) return std::unexpected(dispatch.error());
             if (dispatch->action == DispatchAction::SetupFrame) {
-                setup_frame(dispatch->func, dispatch->closure, 0);
+                // Use ContinuationJump as frame kind so the next thunk's return
+                // continues the chain via handle_return's ContinuationJump handler.
+                setup_frame(dispatch->func, dispatch->closure, 0, FrameKind::ContinuationJump, return_frame.extra);
             } else {
-                // Primitive thunk: recursively call handle_return with unspecified result
-                // (result of thunk is ignored in dynamic-wind jumps)
+                // Primitive thunk: re-push ContinuationJump frame and recurse
+                frames_.push_back(return_frame);
                 return handle_return(Nil);
             }
             return {};

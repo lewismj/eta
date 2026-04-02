@@ -247,10 +247,9 @@ BOOST_AUTO_TEST_CASE(test_dynamic_wind_with_call_cc_clean) {
         "  (define (before) (set! result (+ result 1))) "
         "  (define (after) (set! result (+ result 10))) "
         "  (define cont #f) "
-        "  (call/cc (lambda (k) "
-        "    (dynamic-wind before "
-        "      (lambda () (set! cont k)) "
-        "      after))) "
+        "  (dynamic-wind before "
+        "    (lambda () (call/cc (lambda (k) (set! cont k)))) "
+        "    after) "
         "  (if (eq? result 11) (cont #f) #f) "
         "  result)";
 
