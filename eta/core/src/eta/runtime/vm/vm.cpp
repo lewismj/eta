@@ -6,6 +6,7 @@
 #include "eta/runtime/memory/value_visit.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/string_view.h"
+#include "eta/runtime/numeric_value.h"
 #include <bit>
 
 namespace eta::runtime::vm {
@@ -33,18 +34,15 @@ bool VM::values_eqv(LispVal a, LispVal b) {
     
     // For eqv?, strings and large numbers need content comparison
     
-    // 1. Strings (interned)
-    if (ops::is_boxed(a) && ops::tag(a) == Tag::String) {
-        // Since all strings are interned, if a != b, b is either not a string or a different string
-        return false;
-    }
-    
-    // 2. Heap-allocated Fixnums (large integers)
+    // 1. Strings (interned): identical interned IDs match above, so different IDs mean different strings
+    if (ops::tag(a) == Tag::String) return false;
+
+    // 2. Heap-allocated values: use numeric classifier to handle heap-allocated fixnums
     if (ops::tag(a) == Tag::HeapObject && ops::tag(b) == Tag::HeapObject) {
-        HeapEntry ea, eb;
-        if (heap_.try_get(ops::payload(a), ea) && ea.header.kind == ObjectKind::Fixnum &&
-            heap_.try_get(ops::payload(b), eb) && eb.header.kind == ObjectKind::Fixnum) {
-            return *static_cast<int64_t*>(ea.ptr) == *static_cast<int64_t*>(eb.ptr);
+        auto na = classify_numeric(a, heap_);
+        auto nb = classify_numeric(b, heap_);
+        if (na.is_fixnum() && nb.is_fixnum()) {
+            return na.int_val == nb.int_val;
         }
     }
     
@@ -100,16 +98,11 @@ std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
 // Unified helper to dispatch a callee (Closure, Continuation, or Primitive)
 std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, uint32_t argc, bool is_tail) {
     // Use try_get_as for consistent heap access pattern
-   // //std::cout << "
 
     if (!ops::is_boxed(callee)) {
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not boxed"}});
     }
     
-    if (ops::tag(callee) != Tag::HeapObject) {
-        // //std::cout << "DEBUG: Callee tag NOT HeapObject, it is " << to_string(ops::tag(callee)) << std::endl;
-    }
-
     if (auto* closure = try_get_as<ObjectKind::Closure, Closure>(callee)) {
         // Arity check early (fail fast)
         if (argc != closure->func->arity) {
@@ -215,18 +208,14 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
     }
 
     if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(callee)) {
-        //std::cout << "DEBUG: primitive branch arity=" << prim->arity << std::endl;
         std::vector<LispVal> args;
         for (uint32_t i = 0; i < argc; ++i) {
             args.push_back(stack_[stack_.size() - argc + i]);
-          //  //std::cout << "DEBUG: prim arg[" << i << "]=" << std::hex << args.back() << std::dec << std::endl;
         }
         stack_.resize(stack_.size() - argc);
 
-        //std::cout << "DEBUG: calling prim->func" << std::endl;
         auto res = prim->func(args);
         if (!res) return std::unexpected(res.error());
-        //std::cout << "DEBUG: primitive result=" << std::hex << *res << std::dec << std::endl;
         push(*res);
         return DispatchResult{DispatchAction::Continue, nullptr, 0};
     }
@@ -359,7 +348,6 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             }
             case OpCode::LoadGlobal:
-                //std::cout << "DEBUG: LoadGlobal slot=" << instr.arg << " value=" << std::hex << (instr.arg < globals_.size() ? globals_[instr.arg] : 0xDEADBEEF) << std::dec << std::endl;
                 if (instr.arg < globals_.size()) {
                     push(globals_[instr.arg]);
                 } else {
@@ -367,7 +355,6 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 }
                 break;
             case OpCode::StoreGlobal:
-                //std::cout << "DEBUG: StoreGlobal slot=" << instr.arg << " value=" << std::hex << stack_.back() << std::dec << std::endl;
                 if (instr.arg >= globals_.size()) {
                     globals_.resize(instr.arg + 1, Nil);
                 }
@@ -703,54 +690,14 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
     return {};
 }
 
-enum class NumType { Fixnum, Flonum, Invalid };
-
-// Result type that preserves exact integer values
-struct NumericValue {
-    NumType type;
-    int64_t int_val;    // Valid when type == Fixnum
-    double float_val;   // Valid when type == Flonum
-};
-
-// Visitor that classifies a LispVal into numeric types.
-// This uses the centralized ValueVisitor pattern from value_visit.h
-// to avoid duplicating tag dispatch logic.
-struct NumericClassifier : ValueVisitor<NumericValue> {
-    Heap& heap;
-    explicit NumericClassifier(Heap& h) : heap(h) {}
-
-    NumericValue visit_fixnum(std::int64_t v) override {
-        return {NumType::Fixnum, v, 0.0};
-    }
-    NumericValue visit_flonum(double v) override {
-        return {NumType::Flonum, 0, v};
-    }
-    NumericValue visit_heapref(uint64_t obj_id) override {
-        // Check for heap-allocated fixnum (64-bit integers that don't fit in immediate)
-        HeapEntry entry;
-        if (heap.try_get(obj_id, entry) && entry.header.kind == ObjectKind::Fixnum) {
-            return {NumType::Fixnum, *static_cast<int64_t*>(entry.ptr), 0.0};
-        }
-        return {NumType::Invalid, 0, 0.0};
-    }
-    // Non-numeric types return Invalid
-    NumericValue visit_char(char32_t) override { return {NumType::Invalid, 0, 0.0}; }
-    NumericValue visit_string(uint64_t) override { return {NumType::Invalid, 0, 0.0}; }
-    NumericValue visit_symbol(uint64_t) override { return {NumType::Invalid, 0, 0.0}; }
-    NumericValue visit_nan() override { return {NumType::Flonum, 0, std::numeric_limits<double>::quiet_NaN()}; }
-    NumericValue visit_nil() override { return {NumType::Invalid, 0, 0.0}; }
-};
-
 std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
     LispVal b = pop();
     LispVal a = pop();
 
-    // Use ValueVisitor to classify numeric values
-    NumericClassifier classifier(heap_);
-    auto num_a = visit_value(a, classifier);
-    auto num_b = visit_value(b, classifier);
+    auto num_a = classify_numeric(a, heap_);
+    auto num_b = classify_numeric(b, heap_);
 
-    if (num_a.type == NumType::Invalid || num_b.type == NumType::Invalid) {
+    if (!num_a.is_valid() || !num_b.is_valid()) {
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Expected a number"}});
     }
 

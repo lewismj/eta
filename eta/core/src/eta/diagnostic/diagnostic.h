@@ -273,17 +273,7 @@ inline Diagnostic to_diagnostic<eta::reader::lexer::LexError>(const eta::reader:
             break;
     }
 
-    // Convert lexer::Span to parser::Span
-    Span span{};
-    span.file_id = e.span.file_id;
-    span.start.offset = e.span.start.offset;
-    span.start.line = e.span.start.line;
-    span.start.column = e.span.start.column;
-    span.end.offset = e.span.end.offset;
-    span.end.line = e.span.end.line;
-    span.end.column = e.span.end.column;
-
-    return Diagnostic{code, Severity::Error, span, e.message};
+    return Diagnostic{code, Severity::Error, e.span, e.message};
 }
 
 } // namespace eta::diagnostic

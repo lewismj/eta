@@ -4,6 +4,6 @@
 
 namespace eta::runtime::types {
 
-    using String = nanbox::LispVal;
+    using String = LispVal;
 
 }
