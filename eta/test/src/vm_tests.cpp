@@ -1120,4 +1120,131 @@ BOOST_AUTO_TEST_CASE(test_record_type_mixed_readonly_mutable) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1099);
 }
 
+// ============================================================================
+// Apply tests (VM-level)
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_apply_primitive) {
+    // apply with a primitive procedure
+    LispVal res = run(
+        "(module m"
+        "  (define result (apply + '(1 2 3))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 6);
+}
+
+BOOST_AUTO_TEST_CASE(test_apply_closure) {
+    // apply with a closure — this was impossible before VM-level apply
+    LispVal res = run(
+        "(module m"
+        "  (define (add a b) (+ a b))"
+        "  (define result (apply add '(10 20))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 30);
+}
+
+BOOST_AUTO_TEST_CASE(test_apply_with_leading_args) {
+    // (apply proc arg1 arg2 list) — prepend explicit args
+    LispVal res = run(
+        "(module m"
+        "  (define result (apply + 1 2 '(3 4))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 10);
+}
+
+BOOST_AUTO_TEST_CASE(test_apply_empty_list) {
+    // apply with an empty tail list
+    LispVal res = run(
+        "(module m"
+        "  (define (f x) (* x x))"
+        "  (define result (apply f 5 '())))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 25);
+}
+
+BOOST_AUTO_TEST_CASE(test_apply_tail_position) {
+    // apply in tail position — tests TailApply opcode
+    LispVal res = run(
+        "(module m"
+        "  (define (sum-list lst acc)"
+        "    (if (null? lst)"
+        "        acc"
+        "        (sum-list (cdr lst) (+ acc (car lst)))))"
+        "  (define result (apply sum-list '((1 2 3 4 5) 0))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 15);
+}
+
+BOOST_AUTO_TEST_CASE(test_apply_closure_rest_args) {
+    // apply a closure that has rest args
+    LispVal res = run(
+        "(module m"
+        "  (define (f a . rest) (apply + a rest))"
+        "  (define result (apply f '(10 20 30))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 60);
+}
+
+// ============================================================================
+// Lambda rest parameter tests
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_lambda_rest_basic) {
+    // Basic rest parameter — collects all args into a list
+    LispVal res = run(
+        "(module m"
+        "  (define (f . args) (apply + args))"
+        "  (define result (f 1 2 3 4)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 10);
+}
+
+BOOST_AUTO_TEST_CASE(test_lambda_rest_with_required) {
+    // Rest param with required params
+    LispVal res = run(
+        "(module m"
+        "  (define (f a b . rest) (+ a b (apply + rest)))"
+        "  (define result (f 100 200 10 20)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 330);
+}
+
+BOOST_AUTO_TEST_CASE(test_lambda_rest_empty) {
+    // Rest param with no extra args — rest should be empty list
+    LispVal res = run(
+        "(module m"
+        "  (define (f a . rest) (null? rest))"
+        "  (define result (f 42)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+// ============================================================================
+// Error primitive tests
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_error_basic) {
+    // error should throw a runtime error
+    BOOST_CHECK_THROW(
+        run("(module m"
+            "  (define result (error \"something went wrong\")))"),
+        std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_with_irritants) {
+    // error with irritants should include them in the message
+    try {
+        run("(module m"
+            "  (define result (error \"bad value\" 42)))");
+        BOOST_FAIL("Expected runtime_error");
+    } catch (const std::runtime_error& e) {
+        std::string msg = e.what();
+        BOOST_CHECK(msg.find("bad value") != std::string::npos);
+        BOOST_CHECK(msg.find("42") != std::string::npos);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(test_error_conditional) {
+    // error only triggers on the failing path
+    LispVal res = run(
+        "(module m"
+        "  (define (safe-div a b)"
+        "    (if (= b 0)"
+        "        (error \"division by zero\")"
+        "        (/ a b)))"
+        "  (define result (safe-div 10 2)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 5);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

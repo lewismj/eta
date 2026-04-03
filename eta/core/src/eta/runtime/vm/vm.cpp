@@ -125,8 +125,16 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
     
     if (auto* closure = try_get_as<ObjectKind::Closure, Closure>(callee)) {
         // Arity check early (fail fast)
-        if (argc != closure->func->arity) {
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "Wrong number of arguments"}});
+        if (closure->func->has_rest) {
+            if (argc < closure->func->arity) {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "Wrong number of arguments: expected at least " + std::to_string(closure->func->arity) + ", got " + std::to_string(argc)}});
+            }
+        } else {
+            if (argc != closure->func->arity) {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "Wrong number of arguments: expected " + std::to_string(closure->func->arity) + ", got " + std::to_string(argc)}});
+            }
         }
         return DispatchResult{
             is_tail ? DispatchAction::TailReuse : DispatchAction::SetupFrame,
@@ -418,6 +426,10 @@ std::expected<void, RuntimeError> VM::run_loop() {
 
                 if (dispatch_res->action == DispatchAction::SetupFrame) {
                     setup_frame(dispatch_res->func, dispatch_res->closure, argc);
+                    if (dispatch_res->func->has_rest) {
+                        auto r = pack_rest_args(argc, dispatch_res->func->arity);
+                        if (!r) return std::unexpected(r.error());
+                    }
                 }
                 break;
             }
@@ -521,6 +533,11 @@ std::expected<void, RuntimeError> VM::run_loop() {
                     uint32_t needed_size = std::max(current_func_->stack_size, argc);
                     stack_.resize(fp_ + needed_size, Nil);
                     pc_ = 0;
+
+                    if (current_func_->has_rest) {
+                        auto r = pack_rest_args(argc, current_func_->arity);
+                        if (!r) return std::unexpected(r.error());
+                    }
                 } else {
                     // TailCall to primitive or continuation - result already pushed.
                     // Now we MUST return that result from the current frame.
@@ -548,6 +565,76 @@ std::expected<void, RuntimeError> VM::run_loop() {
 
                 if (dispatch_res->action == DispatchAction::SetupFrame) {
                     setup_frame(dispatch_res->func, dispatch_res->closure, 1);
+                }
+                break;
+            }
+            case OpCode::Apply:
+            case OpCode::TailApply: {
+                // Stack: [arg1, ..., argN, proc] where argN (last explicit arg) is a list to unpack
+                uint32_t argc = instr.arg; // number of explicit args on stack (including the list)
+                LispVal proc = pop();
+                temp_roots_.push_back(proc);
+
+                // Pop explicit args
+                std::vector<LispVal> explicit_args;
+                explicit_args.reserve(argc);
+                for (uint32_t i = 0; i < argc; ++i) {
+                    explicit_args.push_back(stack_[stack_.size() - argc + i]);
+                }
+                stack_.resize(stack_.size() - argc);
+
+                // Unpack the last arg (must be a proper list)
+                LispVal tail_list = explicit_args.back();
+                explicit_args.pop_back();
+
+                LispVal cur = tail_list;
+                while (cur != Nil) {
+                    auto* cons = try_get_as<ObjectKind::Cons, Cons>(cur);
+                    if (!cons) {
+                        temp_roots_.pop_back();
+                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "apply: last argument must be a proper list"}});
+                    }
+                    explicit_args.push_back(cons->car);
+                    cur = cons->cdr;
+                }
+
+                // Push combined args back onto stack
+                for (auto v : explicit_args) push(v);
+                uint32_t final_argc = static_cast<uint32_t>(explicit_args.size());
+
+                bool is_tail = (instr.opcode == OpCode::TailApply);
+                auto dispatch_res = dispatch_callee(proc, final_argc, is_tail);
+                temp_roots_.pop_back();
+                if (!dispatch_res) return std::unexpected(dispatch_res.error());
+
+                if (dispatch_res->action == DispatchAction::SetupFrame) {
+                    setup_frame(dispatch_res->func, dispatch_res->closure, final_argc);
+                    if (dispatch_res->func->has_rest) {
+                        auto r = pack_rest_args(final_argc, dispatch_res->func->arity);
+                        if (!r) return std::unexpected(r.error());
+                    }
+                } else if (dispatch_res->action == DispatchAction::TailReuse) {
+                    current_func_ = dispatch_res->func;
+                    current_closure_ = dispatch_res->closure;
+
+                    uint32_t new_args_start = static_cast<uint32_t>(stack_.size() - final_argc);
+                    for (uint32_t i = 0; i < final_argc; ++i) {
+                        stack_[fp_ + i] = stack_[new_args_start + i];
+                    }
+                    uint32_t needed_size = std::max(current_func_->stack_size, final_argc);
+                    stack_.resize(fp_ + needed_size, Nil);
+                    pc_ = 0;
+
+                    if (current_func_->has_rest) {
+                        auto r = pack_rest_args(final_argc, current_func_->arity);
+                        if (!r) return std::unexpected(r.error());
+                    }
+                } else {
+                    // Primitive or continuation — result already pushed
+                    if (is_tail) {
+                        auto res = handle_return(pop());
+                        if (!res) return std::unexpected(res.error());
+                    }
                 }
                 break;
             }
@@ -813,3 +900,21 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
 }
 
 } // namespace eta::runtime::vm
+
+// pack_rest_args: Build a list from args at fp_+required .. fp_+argc-1
+// and store the list at fp_+required (the rest param slot).
+namespace eta::runtime::vm {
+
+std::expected<void, RuntimeError> VM::pack_rest_args(uint32_t argc, uint32_t required) {
+    LispVal rest_list = Nil;
+    for (int32_t i = static_cast<int32_t>(argc) - 1; i >= static_cast<int32_t>(required); --i) {
+        auto cons = make_cons(heap_, stack_[fp_ + i], rest_list);
+        if (!cons) return std::unexpected(cons.error());
+        rest_list = *cons;
+    }
+    stack_[fp_ + required] = rest_list;
+    return {};
+}
+
+} // namespace eta::runtime::vm
+

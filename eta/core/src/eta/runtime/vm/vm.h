@@ -173,6 +173,10 @@ private:
     // Unified binary arithmetic dispatch helper - eliminates code duplication
     // for Add, Sub, Mul, Div opcodes
     std::expected<void, RuntimeError> do_binary_arithmetic(OpCode op);
+
+    // Pack extra arguments (beyond required arity) into a rest-arg list
+    // at stack_[fp_ + required]. Called after setup_frame / tail reuse.
+    std::expected<void, RuntimeError> pack_rest_args(uint32_t argc, uint32_t required);
 };
 
 } // namespace eta::runtime::vm

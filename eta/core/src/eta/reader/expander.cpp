@@ -150,8 +150,13 @@ namespace eta::reader::expander {
         if (in->is<ReaderForm>()) {
             const auto* rf = in->as<ReaderForm>();
             switch (rf->kind) {
-                case parser::QuoteKind::Quote:
-                    return deep_clone(in);
+                case parser::QuoteKind::Quote: {
+                    // Desugar 'x → (quote x) so the SA sees a List, not a ReaderForm
+                    std::vector<SExprPtr> elems;
+                    elems.push_back(make_symbol("quote", rf->span));
+                    elems.push_back(deep_clone(rf->expr));
+                    return make_list(std::move(elems), rf->span);
+                }
                 case parser::QuoteKind::Quasiquote:
                     return expand_quasiquote(rf->expr, /*depth*/1, rf->span);
                 case parser::QuoteKind::Unquote:

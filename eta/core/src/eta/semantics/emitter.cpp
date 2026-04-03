@@ -48,6 +48,7 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
         else if constexpr (std::is_same_v<T, core::CallWithValues>) emit_call_with_values(n, node->tail, ctx);
         else if constexpr (std::is_same_v<T, core::DynamicWind>) emit_dynamic_wind(n, ctx);
         else if constexpr (std::is_same_v<T, core::CallCC>) emit_call_cc(n, node->tail, ctx);
+        else if constexpr (std::is_same_v<T, core::Apply>) emit_apply(n, node->tail, ctx);
         else if constexpr (std::is_same_v<T, core::Quote>) emit_quote(n, ctx);
     }, node->data);
 }
@@ -218,6 +219,16 @@ void Emitter::emit_dynamic_wind(const core::DynamicWind& n, Context& ctx) {
 void Emitter::emit_call_cc(const core::CallCC& n, bool /*tail*/, Context& ctx) {
     emit_node(n.consumer, ctx);
     ctx.func.code.push_back({OpCode::CallCC, 0});
+}
+
+void Emitter::emit_apply(const core::Apply& n, bool tail, Context& ctx) {
+    // Stack: [arg1, arg2, ..., argN, proc] — last arg is a list to unpack at runtime
+    for (const auto* arg : n.args) {
+        emit_node(arg, ctx);
+    }
+    emit_node(n.proc, ctx);
+    ctx.func.code.push_back({tail ? OpCode::TailApply : OpCode::Apply,
+                             static_cast<uint32_t>(n.args.size())});
 }
 
 void Emitter::emit_quote(const core::Quote& n, Context& ctx) {

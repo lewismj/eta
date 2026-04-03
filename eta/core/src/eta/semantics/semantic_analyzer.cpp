@@ -332,6 +332,21 @@ SemResult<core::Node*> handle_call_cc(const List* lst, Scope& scope, AnalysisCon
     return ctx.mod.emplace<core::CallCC>(lst->span, (*args)[0]);
 }
 
+SemResult<core::Node*> handle_apply(const List* lst, Scope& scope, AnalysisContext& ctx) {
+    // (apply proc arg1 ... argN list) — at least 2 args (proc + list)
+    if (lst->elems.size() < 3)
+        return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->span, "apply requires at least 2 arguments"});
+    auto proc = analyze(lst->elems[1], scope, ctx);
+    if (!proc) return proc;
+    std::vector<core::Node*> args;
+    for (size_t i = 2; i < lst->elems.size(); ++i) {
+        auto arg = analyze(lst->elems[i], scope, ctx);
+        if (!arg) return arg;
+        args.push_back(*arg);
+    }
+    return ctx.mod.emplace<core::Apply>(lst->span, *proc, std::move(args));
+}
+
 // ============================================================================
 // NOTE: Derived form handlers (let, letrec, case, do) have been REMOVED.
 // These forms MUST be desugared by the Expander before semantic analysis.
@@ -361,6 +376,7 @@ const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handler
         {"call-with-values",                handle_call_with_values},
         {"call/cc",                         handle_call_cc},
         {"call-with-current-continuation",  handle_call_cc},
+        {"apply",                           handle_apply},
         // NOTE: Derived forms (let, letrec, case, do) are no longer handled here.
         // They MUST be desugared by the Expander. If encountered, they will be
         // treated as function applications, which will produce a meaningful error.
@@ -477,6 +493,11 @@ struct IRVisitor {
                 val.consumer = derived->visit(val.consumer, false);
             } else if constexpr (std::is_same_v<T, core::CallCC>) {
                 val.consumer = derived->visit(val.consumer, false);
+            } else if constexpr (std::is_same_v<T, core::Apply>) {
+                val.proc = derived->visit(val.proc, false);
+                for (auto*& a : val.args) {
+                    a = derived->visit(a, false);
+                }
             }
             // core::Const, core::Var, core::Quote have no children
         }, node->data);

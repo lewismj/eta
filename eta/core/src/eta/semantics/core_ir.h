@@ -80,6 +80,7 @@ struct DynamicWind { Node* before; Node* body; Node* after; };
 struct Values { std::vector<Node*> exprs; };
 struct CallWithValues { Node* producer; Node* consumer; };
 struct CallCC { Node* consumer; };
+struct Apply { Node* proc; std::vector<Node*> args; };
 
 /**
  * @brief Lambda (function) node
@@ -112,8 +113,8 @@ struct Call { Node* callee; std::vector<Node*> args; };
  * Note: Let, LetRec, and Case are derived forms that are desugared by the
  * Expander before reaching the IR. They are not part of the core IR.
  */
-using NodeData = std::variant<Var, Const, Quote, If, Begin, Set, Lambda, Call, DynamicWind, Values, CallWithValues, CallCC>;
-struct Node { 
+using NodeData = std::variant<Var, Const, Quote, If, Begin, Set, Lambda, Call, DynamicWind, Values, CallWithValues, CallCC, Apply>;
+struct Node {
     NodeData data;
     Span span;
     bool tail{false};

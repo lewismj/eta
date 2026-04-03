@@ -11,6 +11,7 @@
 #include "eta/runtime/overflow.h"
 #include "eta/runtime/factory.h"
 #include "eta/runtime/string_view.h"
+#include "eta/runtime/value_formatter.h"
 
 namespace eta::runtime {
 
@@ -751,6 +752,28 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "make-vector: length must be a non-negative integer"}});
         std::vector<LispVal> elems(static_cast<size_t>(len.int_val), args[1]);
         return make_vector(heap, std::move(elems));
+    });
+
+    // ========================================================================
+    // Error signaling: error
+    // ========================================================================
+
+    env.register_builtin("error", 1, true, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        // (error message irritant ...)
+        // First arg should be a string message
+        std::string msg;
+        auto sv = StringView::try_from(args[0], intern_table);
+        if (sv) {
+            msg = std::string(sv->view());
+        } else {
+            msg = format_value(args[0], FormatMode::Write, heap, intern_table);
+        }
+        // Append irritants
+        for (size_t i = 1; i < args.size(); ++i) {
+            msg += " ";
+            msg += format_value(args[i], FormatMode::Write, heap, intern_table);
+        }
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError, msg}});
     });
 }
 

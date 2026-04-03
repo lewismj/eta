@@ -68,6 +68,10 @@ enum class OpCode : std::uint8_t {
 
     // Closure fixup (for letrec self-reference)
     PatchClosureUpval,  // [upval_idx] -> pops value, pops closure, patches closure->upvals[upval_idx] = value
+
+    // Apply: unpack last arg (list) and call procedure
+    Apply,      // [argc] -> apply(pop(), argc) — last arg is unpacked list
+    TailApply,  // [argc] -> tail_apply(pop(), argc) — tail-position apply
 };
 
 struct Instruction {

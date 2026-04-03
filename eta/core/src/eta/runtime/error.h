@@ -23,6 +23,7 @@ namespace eta::runtime::error {
         InvalidArity,
         TypeError,
         UndefinedGlobal,
+        UserError,
     };
 
     struct VMError {

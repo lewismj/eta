@@ -107,6 +107,7 @@ private:
     void emit_call_with_values(const core::CallWithValues& n, bool tail, Context& ctx);
     void emit_dynamic_wind(const core::DynamicWind& n, Context& ctx);
     void emit_call_cc(const core::CallCC& n, bool tail, Context& ctx);
+    void emit_apply(const core::Apply& n, bool tail, Context& ctx);
     void emit_quote(const core::Quote& n, Context& ctx);
 };
 

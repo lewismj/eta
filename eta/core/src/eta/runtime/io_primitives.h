@@ -1,9 +1,7 @@
 #pragma once
 
-#include <bit>
 #include <expected>
 #include <functional>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -12,9 +10,8 @@
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/nanbox.h"
-#include "eta/runtime/numeric_value.h"
-#include "eta/runtime/string_view.h"
 #include "eta/runtime/types/types.h"
+#include "eta/runtime/value_formatter.h"
 #include "eta/runtime/vm/vm.h"
 
 namespace eta::runtime {
@@ -32,6 +29,7 @@ using namespace eta::runtime::error;
  *
  * Primitives registered:
  *   - display (port-aware version)
+ *   - write   (port-aware version, machine-readable)
  *   - newline (port-aware version)
  */
 inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& intern_table, vm::VM& vm) {
@@ -49,68 +47,8 @@ inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTa
         return port_obj;
     };
 
-    // ========================================================================
-    // Port-aware I/O: display newline
-    // ========================================================================
-
-    env.register_builtin("display", 1, true, [&heap, &intern_table, &vm, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
-        if (args.empty()) {
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "display: requires at least 1 argument"}});
-        }
-
-        LispVal v = args[0];
-
-        // Format value to string
-        std::string output;
-        if (v == nanbox::Nil) { output = "()"; }
-        else if (v == nanbox::True) { output = "#t"; }
-        else if (v == nanbox::False) { output = "#f"; }
-        else if (!ops::is_boxed(v)) {
-            // Raw double
-            std::ostringstream oss;
-            oss << std::bit_cast<double>(v);
-            output = oss.str();
-        } else {
-            Tag t = ops::tag(v);
-            if (t == Tag::Fixnum) {
-                auto val = ops::decode<int64_t>(v);
-                if (val) {
-                    output = std::to_string(*val);
-                }
-            } else if (t == Tag::Char) {
-                auto val = ops::decode<char32_t>(v);
-                if (val) {
-                    // Output as UTF-8
-                    char32_t c = *val;
-                    if (c < 0x80) {
-                        output = std::string(1, static_cast<char>(c));
-                    } else {
-                        output = utf8::encode(c);
-                    }
-                }
-            } else if (t == Tag::String) {
-                auto sv = StringView::try_from(v, intern_table);
-                if (sv) output = std::string(sv->view());
-            } else if (t == Tag::Symbol) {
-                auto sv = intern_table.get_string(ops::payload(v));
-                if (sv) output = std::string(*sv);
-            } else if (t == Tag::HeapObject) {
-                auto n = classify_numeric(v, heap);
-                if (n.is_fixnum()) {
-                    output = std::to_string(n.int_val);
-                } else if (n.is_flonum()) {
-                    std::ostringstream oss;
-                    oss << n.float_val;
-                    output = oss.str();
-                } else {
-                    output = "#<object>";
-                }
-            } else {
-                output = "#<unknown>";
-            }
-        }
-
-        // Optional port argument (defaults to current-output-port)
+    // Helper to write a formatted value to a port (or stdout fallback)
+    auto write_to_port = [&vm, get_port](const std::string& output, const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
         LispVal port_val = args.size() > 1 ? args[1] : vm.current_output_port();
 
         auto port_obj = get_port(port_val);
@@ -122,8 +60,27 @@ inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTa
 
         auto result = (*port_obj)->port->write_string(output);
         if (!result) return std::unexpected(result.error());
-
         return nanbox::Nil;
+    };
+
+    // ========================================================================
+    // Port-aware I/O: display write newline
+    // ========================================================================
+
+    env.register_builtin("display", 1, true, [&heap, &intern_table, write_to_port](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (args.empty()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "display: requires at least 1 argument"}});
+        }
+        std::string output = format_value(args[0], FormatMode::Display, heap, intern_table);
+        return write_to_port(output, args);
+    });
+
+    env.register_builtin("write", 1, true, [&heap, &intern_table, write_to_port](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (args.empty()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "write: requires at least 1 argument"}});
+        }
+        std::string output = format_value(args[0], FormatMode::Write, heap, intern_table);
+        return write_to_port(output, args);
     });
 
     env.register_builtin("newline", 0, true, [&vm, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
