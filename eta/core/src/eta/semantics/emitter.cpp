@@ -172,6 +172,25 @@ void Emitter::emit_lambda_node(const core::Lambda& n, const eta::reader::parser:
 void Emitter::emit_set(const core::Set& n, Context& ctx) {
     emit_node(n.value, ctx);
     emit_address_store(n.target, ctx);
+
+    // Fixup for letrec self-reference: if the value is a lambda that captured
+    // the target variable as an upval, the upval was stale (nil) at MakeClosure
+    // time. Patch it now that the local holds the correct closure.
+    if (const auto* lam = std::get_if<core::Lambda>(&n.value->data)) {
+        if (const auto* target_local = std::get_if<core::Address::Local>(&n.target.where)) {
+            for (size_t i = 0; i < lam->upval_sources.size(); ++i) {
+                if (const auto* src_local = std::get_if<core::Address::Local>(&lam->upval_sources[i].where)) {
+                    if (src_local->slot == target_local->slot) {
+                        // Emit: push closure, push value, PatchClosureUpval
+                        ctx.func.code.push_back({OpCode::LoadLocal, target_local->slot}); // closure
+                        ctx.func.code.push_back({OpCode::LoadLocal, target_local->slot}); // value (self)
+                        ctx.func.code.push_back({OpCode::PatchClosureUpval, static_cast<uint32_t>(i)});
+                    }
+                }
+            }
+        }
+    }
+
     // set! returns unspecified value (we push nil)
     emit_load_const(Nil, ctx);
 }
@@ -202,9 +221,98 @@ void Emitter::emit_call_cc(const core::CallCC& n, bool /*tail*/, Context& ctx) {
 }
 
 void Emitter::emit_quote(const core::Quote& n, Context& ctx) {
-    // TODO: Implement proper datum->LispVal conversion
-    // For now, emit nil as placeholder
-    emit_load_const(Nil, ctx);
+    // Namespace aliases to disambiguate parser types from runtime types
+    namespace P = reader::parser;
+
+    // Convert an arbitrary S-expression datum into a runtime LispVal.
+    // For compound data (lists, vectors) this recursively builds cons chains / vectors.
+    auto datum_to_lispval = [&](auto&& self, const P::SExpr& expr) -> std::expected<LispVal, RuntimeError> {
+        return std::visit([&](const auto& node) -> std::expected<LispVal, RuntimeError> {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, P::Nil>) {
+                return Nil;
+            } else if constexpr (std::is_same_v<T, P::Bool>) {
+                return node.value ? True : False;
+            } else if constexpr (std::is_same_v<T, P::Char>) {
+                return ops::encode(node.value).value();
+            } else if constexpr (std::is_same_v<T, P::String>) {
+                return make_string(heap_, intern_table_, node.value);
+            } else if constexpr (std::is_same_v<T, P::Symbol>) {
+                // Quoted symbols become runtime Symbol values
+                auto res = intern_table_.intern(node.name);
+                if (!res) return std::unexpected(res.error());
+                return ops::box(Tag::Symbol, *res);
+            } else if constexpr (std::is_same_v<T, P::Number>) {
+                return std::visit([&](auto&& v) -> std::expected<LispVal, RuntimeError> {
+                    using N = std::decay_t<decltype(v)>;
+                    if constexpr (std::is_same_v<N, int64_t>) return make_fixnum(heap_, v);
+                    else if constexpr (std::is_same_v<N, double>) return make_flonum(v);
+                    return Nil;
+                }, node.value);
+            } else if constexpr (std::is_same_v<T, P::List>) {
+                // Build cons chain from right to left
+                LispVal result;
+                if (node.dotted && node.tail) {
+                    auto tail_res = self(self, *node.tail);
+                    if (!tail_res) return std::unexpected(tail_res.error());
+                    result = *tail_res;
+                } else {
+                    result = Nil;
+                }
+                for (auto it = node.elems.rbegin(); it != node.elems.rend(); ++it) {
+                    if (!*it) continue;
+                    auto elem = self(self, **it);
+                    if (!elem) return std::unexpected(elem.error());
+                    auto cons = make_cons(heap_, *elem, result);
+                    if (!cons) return std::unexpected(cons.error());
+                    result = *cons;
+                }
+                return result;
+            } else if constexpr (std::is_same_v<T, P::Vector>) {
+                std::vector<LispVal> elems;
+                elems.reserve(node.elems.size());
+                for (const auto& e : node.elems) {
+                    if (!e) continue;
+                    auto elem = self(self, *e);
+                    if (!elem) return std::unexpected(elem.error());
+                    elems.push_back(*elem);
+                }
+                return make_vector(heap_, std::move(elems));
+            } else if constexpr (std::is_same_v<T, P::ByteVector>) {
+                return make_bytevector(heap_, node.bytes);
+            } else if constexpr (std::is_same_v<T, P::ReaderForm>) {
+                // (quote datum) inside a quote — treated as quoted data
+                if (node.kind == P::QuoteKind::Quote && node.expr) {
+                    // Build (quote <datum>) as a list: cons(symbol("quote"), cons(datum, nil))
+                    auto sym_res = intern_table_.intern("quote");
+                    if (!sym_res) return std::unexpected(sym_res.error());
+                    auto sym_val = ops::box(Tag::Symbol, *sym_res);
+                    auto datum_val = self(self, *node.expr);
+                    if (!datum_val) return std::unexpected(datum_val.error());
+                    auto inner = make_cons(heap_, *datum_val, Nil);
+                    if (!inner) return std::unexpected(inner.error());
+                    return make_cons(heap_, sym_val, *inner);
+                }
+                return Nil;
+            } else {
+                // ModuleForm or other unsupported types
+                return Nil;
+            }
+        }, expr.value);
+    };
+
+    if (!n.datum) {
+        emit_load_const(Nil, ctx);
+        return;
+    }
+
+    auto result = datum_to_lispval(datum_to_lispval, *n.datum);
+    if (result) {
+        emit_load_const(*result, ctx);
+    } else {
+        // Fallback: emit nil on conversion failure
+        emit_load_const(Nil, ctx);
+    }
 }
 
 

@@ -7,6 +7,7 @@
 #include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/string_view.h"
 #include "eta/runtime/numeric_value.h"
+#include "eta/runtime/overflow.h"
 #include <bit>
 
 namespace eta::runtime::vm {
@@ -208,6 +209,19 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
     }
 
     if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(callee)) {
+        // Arity check for primitives
+        if (prim->has_rest) {
+            if (argc < prim->arity) {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "Primitive expects at least " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+            }
+        } else {
+            if (argc != prim->arity) {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "Primitive expects " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+            }
+        }
+
         std::vector<LispVal> args;
         for (uint32_t i = 0; i < argc; ++i) {
             args.push_back(stack_[stack_.size() - argc + i]);
@@ -417,6 +431,17 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 auto closure_res = make_closure(heap_, bfunc, std::move(upvals));
                 if (!closure_res) return std::unexpected(closure_res.error());
                 push(*closure_res);
+                break;
+            }
+            case OpCode::PatchClosureUpval: {
+                // Fixup for letrec: patch a closure's captured upval after set!
+                // Stack: ... closure value → ...
+                LispVal value = pop();
+                LispVal closure_val = pop();
+                auto* closure = try_get_as<ObjectKind::Closure, Closure>(closure_val);
+                if (closure && instr.arg < closure->upvals.size()) {
+                    closure->upvals[instr.arg] = value;
+                }
                 break;
             }
             case OpCode::Cons: {
@@ -701,71 +726,70 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Expected a number"}});
     }
 
-    // Unified arithmetic operation helper
-    // Note: Only arithmetic opcodes should be passed here
-    auto apply_arith_double = [](OpCode op, double a, double b) -> std::expected<double, RuntimeError> {
+    // Double-precision path (used when either operand is a flonum, or on integer overflow)
+    auto apply_double = [](OpCode op, double a, double b) -> std::expected<double, RuntimeError> {
         if (op == OpCode::Add) return a + b;
         if (op == OpCode::Sub) return a - b;
         if (op == OpCode::Mul) return a * b;
         if (op == OpCode::Div) {
-            if (b == 0) {
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
-            }
+            if (b == 0.0) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
             return a / b;
         }
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::NotImplemented, "Unknown arithmetic op"}});
     };
 
-    // Note: Only arithmetic opcodes should be passed here
-    auto apply_arith_int = [](OpCode op, int64_t a, int64_t b) -> int64_t {
-        if (op == OpCode::Add) return a + b;
-        if (op == OpCode::Sub) return a - b;
-        if (op == OpCode::Mul) return a * b;
-        if (op == OpCode::Div) return a / b;
-        return 0; // Should never reach here
+    auto push_flonum = [&](double val) -> std::expected<void, RuntimeError> {
+        auto res = make_flonum(val);
+        if (!res) return std::unexpected(res.error());
+        push(*res);
+        return {};
     };
 
     // If either operand is a flonum, result is flonum
-    bool result_is_flonum = (num_a.type == NumType::Flonum || num_b.type == NumType::Flonum);
-
-    if (result_is_flonum) {
-        double val_a = (num_a.type == NumType::Flonum) ? num_a.float_val : static_cast<double>(num_a.int_val);
-        double val_b = (num_b.type == NumType::Flonum) ? num_b.float_val : static_cast<double>(num_b.int_val);
-
-        auto result = apply_arith_double(op, val_a, val_b);
+    if (num_a.is_flonum() || num_b.is_flonum()) {
+        auto result = apply_double(op, num_a.as_double(), num_b.as_double());
         if (!result) return std::unexpected(result.error());
-
-        auto res = make_flonum(*result);
-        if (!res) return std::unexpected(res.error());
-        push(*res);
-    } else {
-        // Both are exact integers - perform exact integer arithmetic
-        int64_t int_a = num_a.int_val;
-        int64_t int_b = num_b.int_val;
-
-        // Division special case: may produce flonum if not exact
-        if (op == OpCode::Div) {
-            if (int_b == 0) {
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
-            }
-            if (int_a % int_b != 0) {
-                // Non-exact division produces flonum
-                double result = static_cast<double>(int_a) / static_cast<double>(int_b);
-                auto res = make_flonum(result);
-                if (!res) return std::unexpected(res.error());
-                push(*res);
-                return {};
-            }
-        }
-
-        // All other cases produce exact integer
-        int64_t result = apply_arith_int(op, int_a, int_b);
-
-        auto res = make_fixnum(heap_, result);
-        if (!res) return std::unexpected(res.error());
-        push(*res);
+        return push_flonum(*result);
     }
 
+    // Both are exact integers — use overflow-checked arithmetic
+    int64_t int_a = num_a.int_val;
+    int64_t int_b = num_b.int_val;
+
+    // Division: special cases for zero and non-exact results
+    if (op == OpCode::Div) {
+        if (int_b == 0) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
+        }
+        if (int_a % int_b != 0) {
+            return push_flonum(static_cast<double>(int_a) / static_cast<double>(int_b));
+        }
+        // Exact division — no overflow possible (result magnitude ≤ |int_a|)
+        auto res = make_fixnum(heap_, int_a / int_b);
+        if (!res) return std::unexpected(res.error());
+        push(*res);
+        return {};
+    }
+
+    // Add / Sub / Mul: overflow-checked, promote to double on overflow
+    int64_t int_result;
+    bool overflowed = false;
+
+    if (op == OpCode::Add)       overflowed = detail::add_overflow(int_a, int_b, &int_result);
+    else if (op == OpCode::Sub)  overflowed = detail::sub_overflow(int_a, int_b, &int_result);
+    else if (op == OpCode::Mul)  overflowed = detail::mul_overflow(int_a, int_b, &int_result);
+    else return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::NotImplemented, "Unknown arithmetic op"}});
+
+    if (overflowed) {
+        // Promote to double — use pre-overflow operand values
+        auto result = apply_double(op, static_cast<double>(int_a), static_cast<double>(int_b));
+        if (!result) return std::unexpected(result.error());
+        return push_flonum(*result);
+    }
+
+    auto res = make_fixnum(heap_, int_result);
+    if (!res) return std::unexpected(res.error());
+    push(*res);
     return {};
 }
 

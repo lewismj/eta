@@ -487,6 +487,13 @@ inline void mark_tail(core::Node* node, bool in_tail_context) {
 
 SemResult<std::vector<ModuleSemantics>>
 SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader::ModuleLinker& linker) {
+    eta::runtime::BuiltinEnvironment empty;
+    return analyze_all(forms, linker, empty);
+}
+
+SemResult<std::vector<ModuleSemantics>>
+SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader::ModuleLinker& linker,
+                              const eta::runtime::BuiltinEnvironment& builtins) {
     std::vector<ModuleSemantics> out;
     for (const auto& f : forms) {
         if (!f || !f->is<List>()) continue;
@@ -502,6 +509,13 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader
 
         ModuleSemantics mod; mod.name = ns->name;
         Scope toplevel{}; AnalysisContext ctx{mod, 0};
+
+        // Seed builtins as immutable globals at slots 0..N-1
+        Span builtin_span{}; // synthetic zero span for builtins
+        for (const auto& spec : builtins.specs()) {
+            ctx.add_binding(toplevel, spec.name, BindingInfo::Kind::Global, builtin_span, /*mutable_flag=*/false);
+        }
+
         for (const auto& [ln, orign] : mtref->get().import_origins) ctx.add_import(toplevel, ln, orign, orign.where);
         for (const auto& nm : mtref->get().defined) {
             auto it = mtref->get().define_spans.find(nm);

@@ -247,6 +247,11 @@ namespace eta::reader::expander {
             {"letrec*", &Expander::handle_letrec_star},
             {"cond", &Expander::handle_cond},
             {"case", &Expander::handle_case},
+            {"and", &Expander::handle_and},
+            {"or", &Expander::handle_or},
+            {"when", &Expander::handle_when},
+            {"unless", &Expander::handle_unless},
+            {"do", &Expander::handle_do},
             {"module", &Expander::handle_module_list},
             {"export", &Expander::handle_export},
             {"import", &Expander::handle_import},
@@ -417,10 +422,14 @@ namespace eta::reader::expander {
     ExpanderResult<SExprPtr> Expander::handle_if(const List& lst) {
         if (lst.elems.size() < 3 || lst.elems.size() > 4)
             return std::unexpected(invalid_syntax(lst.span, "if", "expected (if test consequent [alternate])"));
-        std::vector<SExprPtr> xs; xs.reserve(lst.elems.size());
+        std::vector<SExprPtr> xs; xs.reserve(4);
         xs.push_back(deep_clone(lst.elems[0]));
         for (size_t i=1;i<lst.elems.size();++i) {
             auto r = expand_form(lst.elems[i]); if (!r) return std::unexpected(r.error()); xs.push_back(std::move(*r));
+        }
+        // If no alternate branch, fill in (begin) to satisfy semantic analyzer
+        if (xs.size() == 3) {
+            xs.push_back(make_begin(lst.span, {}));
         }
         return make_list(std::move(xs), lst.span);
     }
@@ -988,23 +997,246 @@ namespace eta::reader::expander {
         return handle_let(*letExpr->as<List>());
     }
 
+    // ---------- and / or / when / unless / do ----------
+
+    ExpanderResult<SExprPtr> Expander::handle_and(const List& lst) {
+        // (and) -> #t
+        if (lst.elems.size() == 1) {
+            auto p = std::make_unique<SExpr>();
+            parser::Bool b; b.span = lst.span; b.value = true;
+            p->value = std::move(b);
+            return p;
+        }
+        // (and e) -> e
+        if (lst.elems.size() == 2) {
+            return expand_form(lst.elems[1]);
+        }
+        // (and e1 e2 ...) -> (if e1 (and e2 ...) #f)
+        auto test = expand_form(lst.elems[1]);
+        if (!test) return std::unexpected(test.error());
+
+        // Build (and e2 ...)
+        std::vector<SExprPtr> rest;
+        rest.push_back(make_symbol("and", lst.span));
+        for (size_t i = 2; i < lst.elems.size(); ++i) {
+            rest.push_back(deep_clone(lst.elems[i]));
+        }
+        auto andRest = make_list(std::move(rest), lst.span);
+        auto expandedRest = handle_and(*andRest->as<List>());
+        if (!expandedRest) return std::unexpected(expandedRest.error());
+
+        auto falseLit = std::make_unique<SExpr>();
+        parser::Bool fb; fb.span = lst.span; fb.value = false;
+        falseLit->value = std::move(fb);
+
+        return make_if(lst.span, std::move(*test), std::move(*expandedRest), std::move(falseLit));
+    }
+
+    ExpanderResult<SExprPtr> Expander::handle_or(const List& lst) {
+        // (or) -> #f
+        if (lst.elems.size() == 1) {
+            auto p = std::make_unique<SExpr>();
+            parser::Bool b; b.span = lst.span; b.value = false;
+            p->value = std::move(b);
+            return p;
+        }
+        // (or e) -> e
+        if (lst.elems.size() == 2) {
+            return expand_form(lst.elems[1]);
+        }
+        // (or e1 e2 ...) -> (let ((t e1)) (if t t (or e2 ...)))
+        auto init = expand_form(lst.elems[1]);
+        if (!init) return std::unexpected(init.error());
+
+        auto tmpName = gensym("or");
+
+        // Build (or e2 ...)
+        std::vector<SExprPtr> rest;
+        rest.push_back(make_symbol("or", lst.span));
+        for (size_t i = 2; i < lst.elems.size(); ++i) {
+            rest.push_back(deep_clone(lst.elems[i]));
+        }
+        auto orRest = make_list(std::move(rest), lst.span);
+        auto expandedRest = handle_or(*orRest->as<List>());
+        if (!expandedRest) return std::unexpected(expandedRest.error());
+
+        // (if t t (or e2 ...))
+        auto ifExpr = make_if(lst.span,
+            make_symbol(tmpName, lst.span),
+            make_symbol(tmpName, lst.span),
+            std::move(*expandedRest));
+
+        // (let ((t e1)) ifExpr)
+        std::vector<std::pair<SExprPtr, SExprPtr>> bindings;
+        bindings.emplace_back(make_symbol(tmpName, lst.span), std::move(*init));
+        std::vector<SExprPtr> letBody;
+        letBody.push_back(std::move(ifExpr));
+        auto letExpr = make_let(lst.span, std::move(bindings), std::move(letBody));
+        return handle_let(*letExpr->as<List>());
+    }
+
+    ExpanderResult<SExprPtr> Expander::handle_when(const List& lst) {
+        // (when test body...) -> (if test (begin body...) (begin))
+        if (lst.elems.size() < 2)
+            return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "when expects a test and body"});
+
+        auto test = expand_form(lst.elems[1]);
+        if (!test) return std::unexpected(test.error());
+
+        std::vector<SExprPtr> bodyExprs;
+        for (size_t i = 2; i < lst.elems.size(); ++i) {
+            auto r = expand_form(lst.elems[i]);
+            if (!r) return std::unexpected(r.error());
+            bodyExprs.push_back(std::move(*r));
+        }
+
+        return make_if(lst.span,
+            std::move(*test),
+            make_begin(lst.span, std::move(bodyExprs)),
+            make_begin(lst.span, {}));
+    }
+
+    ExpanderResult<SExprPtr> Expander::handle_unless(const List& lst) {
+        // (unless test body...) -> (if test (begin) (begin body...))
+        if (lst.elems.size() < 2)
+            return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "unless expects a test and body"});
+
+        auto test = expand_form(lst.elems[1]);
+        if (!test) return std::unexpected(test.error());
+
+        std::vector<SExprPtr> bodyExprs;
+        for (size_t i = 2; i < lst.elems.size(); ++i) {
+            auto r = expand_form(lst.elems[i]);
+            if (!r) return std::unexpected(r.error());
+            bodyExprs.push_back(std::move(*r));
+        }
+
+        return make_if(lst.span,
+            std::move(*test),
+            make_begin(lst.span, {}),
+            make_begin(lst.span, std::move(bodyExprs)));
+    }
+
+    ExpanderResult<SExprPtr> Expander::handle_do(const List& lst) {
+        // (do ((var init step) ...) (test expr...) body...)
+        // Desugars to:
+        //   (letrec ((loop (lambda (var ...)
+        //     (if test (begin expr...) (begin body... (loop step...))))))
+        //     (loop init...))
+        if (lst.elems.size() < 3)
+            return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "do expects variable clauses, test clause, and optional body"});
+        if (!lst.elems[1] || !lst.elems[1]->is<List>())
+            return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "do: variable clauses must be a list"});
+        if (!lst.elems[2] || !lst.elems[2]->is<List>())
+            return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "do: test clause must be a list"});
+
+        const auto& varClauses = *lst.elems[1]->as<List>();
+        const auto& testClause = *lst.elems[2]->as<List>();
+
+        if (testClause.elems.empty())
+            return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, testClause.span, "do: test clause must not be empty"});
+
+        // Parse variable clauses: ((var init step) ...) — step is optional (defaults to var)
+        struct DoVar { std::string name; SExprPtr init; SExprPtr step; Span span; };
+        std::vector<DoVar> vars;
+        std::unordered_set<std::string> seen;
+        for (const auto& vc : varClauses.elems) {
+            if (!vc || !vc->is<List>())
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, vc ? vc->span() : varClauses.span, "do: variable clause must be a list"});
+            const auto& vcl = *vc->as<List>();
+            if (vcl.elems.size() < 2 || vcl.elems.size() > 3)
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, vcl.span, "do: variable clause must be (var init) or (var init step)"});
+            if (!vcl.elems[0] || !vcl.elems[0]->is<Symbol>())
+                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, vcl.span, "do: variable name must be a symbol"});
+
+            const auto* varSym = vcl.elems[0]->as<Symbol>();
+            if (auto err = validate_identifier(varSym->name, varSym->span, &seen, "do variable"); !err)
+                return std::unexpected(err.error());
+
+            SExprPtr step = (vcl.elems.size() == 3) ? deep_clone(vcl.elems[2]) : make_symbol(varSym->name, varSym->span);
+            vars.push_back(DoVar{varSym->name, deep_clone(vcl.elems[1]), std::move(step), vcl.span});
+        }
+
+        auto loopName = gensym("do-loop");
+
+        // Build params list
+        std::vector<SExprPtr> params;
+        std::vector<SExprPtr> inits;
+        std::vector<SExprPtr> steps;
+        for (auto& v : vars) {
+            params.push_back(make_symbol(v.name, v.span));
+            inits.push_back(std::move(v.init));
+            steps.push_back(std::move(v.step));
+        }
+
+        // Build test expression
+        // (if test (begin expr...) (begin body... (loop step...)))
+        auto testExpr = deep_clone(testClause.elems[0]);
+
+        // Exit expressions (after test succeeds)
+        std::vector<SExprPtr> exitExprs;
+        for (size_t i = 1; i < testClause.elems.size(); ++i) {
+            exitExprs.push_back(deep_clone(testClause.elems[i]));
+        }
+
+        // Body expressions (commands executed each iteration)
+        std::vector<SExprPtr> bodyExprs;
+        for (size_t i = 3; i < lst.elems.size(); ++i) {
+            bodyExprs.push_back(deep_clone(lst.elems[i]));
+        }
+
+        // Build (loop step...)
+        std::vector<SExprPtr> loopCall;
+        loopCall.push_back(make_symbol(loopName, lst.span));
+        for (auto& s : steps) loopCall.push_back(std::move(s));
+        auto loopCallExpr = make_list(std::move(loopCall), lst.span);
+
+        // Iteration body: (begin body... (loop step...))
+        std::vector<SExprPtr> iterBody;
+        for (auto& b : bodyExprs) iterBody.push_back(std::move(b));
+        iterBody.push_back(std::move(loopCallExpr));
+        auto iterBegin = make_begin(lst.span, std::move(iterBody));
+
+        // Exit body: (begin expr...)  or void if no exit exprs
+        SExprPtr exitBegin;
+        if (exitExprs.empty()) {
+            exitBegin = make_begin(lst.span, {});
+        } else {
+            exitBegin = make_begin(lst.span, std::move(exitExprs));
+        }
+
+        // (if test exit-begin iter-begin)
+        auto ifExpr = make_if(lst.span, std::move(testExpr), std::move(exitBegin), std::move(iterBegin));
+
+        // Build lambda: (lambda (var...) if-expr)
+        auto formalsNode = make_list({}, lst.span);
+        formalsNode->as<List>()->elems = std::move(params);
+        std::vector<SExprPtr> lamBody;
+        lamBody.push_back(std::move(ifExpr));
+        auto lamExpr = make_lambda(lst.span, std::move(formalsNode), std::move(lamBody));
+
+        // Build letrec: (letrec ((loop lambda)) (loop init...))
+        auto bindingPair = build_list(lst.span, make_symbol(loopName, lst.span), std::move(lamExpr));
+        auto bindingList = build_list(lst.span, std::move(bindingPair));
+
+        std::vector<SExprPtr> initCall;
+        initCall.push_back(make_symbol(loopName, lst.span));
+        for (auto& i : inits) initCall.push_back(std::move(i));
+        auto initCallExpr = make_list(std::move(initCall), lst.span);
+
+        auto letrecForm = build_list(lst.span,
+            make_symbol("letrec", lst.span),
+            std::move(bindingList),
+            std::move(initCallExpr));
+
+        return handle_letrec(*letrecForm->as<List>());
+    }
+
     ExpanderResult<SExprPtr> Expander::handle_module_list(const List& lst) {
         // (module name form...)
         if (lst.elems.size() < 2 || !lst.elems[1] || !lst.elems[1]->is<Symbol>())
             return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, lst.span, "module expects (module name forms...)"});
 
-        // Validate body forms: only define, export, import
-        for (size_t i=2;i<lst.elems.size();++i) {
-            const auto& f = lst.elems[i];
-            if (!f || !f->is<List>())
-                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, f ? f->span() : lst.span, "invalid form in module body; allowed: define, export, import"});
-            const auto& l = *f->as<List>();
-            if (l.elems.empty() || !l.elems[0] || !l.elems[0]->is<Symbol>())
-                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, l.span, "invalid form in module body; allowed: define, export, import"});
-            const auto* h = l.elems[0]->as<Symbol>();
-            if (!(h->name == "define" || h->name == "export" || h->name == "import"))
-                return std::unexpected(ExpandError{ExpandError::Kind::InvalidSyntax, l.span, "invalid form in module body; allowed: define, export, import"});
-        }
 
         std::vector<SExprPtr> xs; xs.reserve(lst.elems.size());
         xs.push_back(make_symbol("module", lst.span));

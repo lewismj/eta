@@ -65,6 +65,9 @@ enum class OpCode : std::uint8_t {
     // Control flow specialized
     DynamicWind,
     CallCC,
+
+    // Closure fixup (for letrec self-reference)
+    PatchClosureUpval,  // [upval_idx] -> pops value, pops closure, patches closure->upvals[upval_idx] = value
 };
 
 struct Instruction {

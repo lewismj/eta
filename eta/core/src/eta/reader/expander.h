@@ -171,6 +171,11 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_letrec_star(const List& lst);
         ExpanderResult<SExprPtr> handle_cond(const List& lst);
         ExpanderResult<SExprPtr> handle_case(const List& lst);
+        ExpanderResult<SExprPtr> handle_and(const List& lst);
+        ExpanderResult<SExprPtr> handle_or(const List& lst);
+        ExpanderResult<SExprPtr> handle_when(const List& lst);
+        ExpanderResult<SExprPtr> handle_unless(const List& lst);
+        ExpanderResult<SExprPtr> handle_do(const List& lst);
 
 
         //! Modules/directives

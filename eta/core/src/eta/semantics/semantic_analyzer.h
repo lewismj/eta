@@ -12,6 +12,7 @@
 #include "eta/semantics/core_ir.h"
 #include "eta/semantics/arena.h"
 #include "eta/reader/module_linker.h"
+#include "eta/runtime/builtin_env.h"
 
 namespace eta::semantics {
 
@@ -118,6 +119,12 @@ struct ModuleSemantics {
  */
 class SemanticAnalyzer {
 public:
+    SemResult<std::vector<ModuleSemantics>> analyze_all(
+        std::span<const eta::reader::parser::SExprPtr> forms,
+        const eta::reader::ModuleLinker& linker,
+        const eta::runtime::BuiltinEnvironment& builtins);
+
+    /// Overload without builtins — uses an empty environment (for backward compatibility)
     SemResult<std::vector<ModuleSemantics>> analyze_all(
         std::span<const eta::reader::parser::SExprPtr> forms,
         const eta::reader::ModuleLinker& linker);
