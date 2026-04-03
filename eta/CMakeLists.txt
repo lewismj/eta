@@ -15,5 +15,6 @@ if(NOT Boost_FOUND)
 endif()
 
 add_subdirectory(core) 
+add_subdirectory(interpreter)
 add_subdirectory(test)
 add_subdirectory(fuzz)
