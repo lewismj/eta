@@ -1543,4 +1543,373 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier_de_morgan) {
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
+// ============================================================================
+// Symbolic differentiation integration test
+//
+// A symbolic algebra system that computes derivatives of expression trees
+// and simplifies the result.  Exercises: defun, cond, let, recursion,
+// quoted symbols, eq?, equal?, =, list, car/cdr, pair?, number?, symbol?,
+// and arithmetic on both runtime values and symbolic trees.
+//
+// Expression language (binary operators):
+//   number      — numeric constant
+//   symbol      — variable name
+//   (+ a b)     — addition
+//   (* a b)     — multiplication
+//   (^ u n)     — power (numeric exponent)
+//   (sin u)     — sine
+//   (cos u)     — cosine
+//   (exp u)     — exponential
+//   (log u)     — natural log
+//
+// Differentiation rules:
+//   d(c)/dv = 0                       (constant)
+//   d(v)/dv = 1                       (identity)
+//   d(a+b)/dv = da/dv + db/dv         (sum rule)
+//   d(a*b)/dv = da*b + a*db           (product rule)
+//   d(u^n)/dv = n*u^(n-1)*du/dv       (power rule, numeric n)
+//   d(sin u)/dv = cos(u)*du/dv        (chain rule)
+//   d(cos u)/dv = -sin(u)*du/dv       (chain rule)
+//   d(exp u)/dv = exp(u)*du/dv        (chain rule)
+//   d(log u)/dv = (1/u)*du/dv         (chain rule)
+//
+// Simplification rules:
+//   0+b = b,  a+0 = a                 (additive identity)
+//   0*b = 0,  a*0 = 0                 (multiplicative annihilator)
+//   1*b = b,  a*1 = a                 (multiplicative identity)
+//   constant folding for + and *
+//   x+x = 2*x                         (combine like terms)
+//   fixed-point iteration
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_symbolic_diff_comprehensive) {
+    // Full diff + simplify system with all rules, tested against 4 examples
+    std::string src = R"(
+        (module m
+          ;; ── Prelude helpers ─────────────────────────────────────
+          (defun atom? (x) (not (pair? x)))
+          (defun op (e) (car e))
+          (defun a1 (e) (car (cdr e)))
+          (defun a2 (e) (car (cdr (cdr e))))
+
+          ;; ── Algebraic simplifier ────────────────────────────────
+          (defun simplify (e)
+            (cond
+              ;; atoms simplify to themselves
+              ((atom? e) e)
+
+              ;; (+ a b)
+              ((eq? (op e) '+)
+                (let ((sa (simplify (a1 e)))
+                      (sb (simplify (a2 e))))
+                  (cond
+                    ((and (number? sa) (= sa 0)) sb)
+                    ((and (number? sb) (= sb 0)) sa)
+                    ((and (number? sa) (number? sb)) (+ sa sb))
+                    ;; x + x => 2*x
+                    ((equal? sa sb) (list '* 2 sa))
+                    (#t (list '+ sa sb)))))
+
+              ;; (* a b)
+              ((eq? (op e) '*)
+                (let ((sa (simplify (a1 e)))
+                      (sb (simplify (a2 e))))
+                  (cond
+                    ((and (number? sa) (= sa 0)) 0)
+                    ((and (number? sb) (= sb 0)) 0)
+                    ((and (number? sa) (= sa 1)) sb)
+                    ((and (number? sb) (= sb 1)) sa)
+                    ((and (number? sa) (number? sb)) (* sa sb))
+                    (#t (list '* sa sb)))))
+
+              ;; default: pass through
+              (#t e)))
+
+          ;; Fixed-point simplifier
+          (defun simplify* (e)
+            (let ((s (simplify e)))
+              (if (equal? s e) s (simplify* s))))
+
+          ;; ── Symbolic differentiator ─────────────────────────────
+          (defun diff (e v)
+            (cond
+              ((number? e) 0)
+              ((symbol? e) (if (eq? e v) 1 0))
+              ;; sum rule
+              ((eq? (op e) '+)
+                (list '+ (diff (a1 e) v) (diff (a2 e) v)))
+              ;; product rule
+              ((eq? (op e) '*)
+                (list '+ (list '* (diff (a1 e) v) (a2 e))
+                         (list '* (a1 e) (diff (a2 e) v))))
+              ;; power rule: (^ u n), numeric n
+              ((eq? (op e) '^)
+                (let ((u (a1 e))
+                      (n (a2 e)))
+                  (if (number? n)
+                      (list '* n (list '* (list '^ u (- n 1)) (diff u v)))
+                      0)))
+              ;; chain rule: sin(u)
+              ((eq? (op e) 'sin)
+                (let ((u (a1 e)))
+                  (list '* (list 'cos u) (diff u v))))
+              ;; chain rule: cos(u) => -sin(u)*u'
+              ((eq? (op e) 'cos)
+                (let ((u (a1 e)))
+                  (list '* -1 (list '* (list 'sin u) (diff u v)))))
+              ;; chain rule: exp(u) => exp(u)*u'
+              ((eq? (op e) 'exp)
+                (let ((u (a1 e)))
+                  (list '* (list 'exp u) (diff u v))))
+              ;; chain rule: log(u) => (1/u)*u'
+              ((eq? (op e) 'log)
+                (let ((u (a1 e)))
+                  (list '* (list '/ 1 u) (diff u v))))
+              (#t 0)))
+
+          ;; ── Test cases ──────────────────────────────────────────
+
+          ;; 1) d/dx (x² + 3) = 2x
+          (define t1 (simplify* (diff '(+ (* x x) 3) 'x)))
+
+          ;; 2) d/dx (x(x+3)) = (+ (+ x 3) x)
+          (define t2 (simplify* (diff '(* x (+ x 3)) 'x)))
+
+          ;; 3) d/dx sin(x²) = (* (cos (* x x)) (* 2 x))
+          (define t3 (simplify* (diff '(sin (* x x)) 'x)))
+
+          ;; 4) d/dx (x+1)³ = (* 3 (^ (+ x 1) 2))
+          (define t4 (simplify* (diff '(^ (+ x 1) 3) 'x)))
+
+          ;; Verify each
+          (define r1 (equal? t1 '(* 2 x)))
+          (define r2 (equal? t2 '(+ (+ x 3) x)))
+          (define r3 (equal? t3 '(* (cos (* x x)) (* 2 x))))
+          (define r4 (equal? t4 '(* 3 (^ (+ x 1) 2))))
+
+          (define result (and r1 r2 r3 r4)))
+    )";
+
+    LispVal res = run(src);
+    BOOST_CHECK(res != nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_diff_constant) {
+    // d/dx(5) = 0
+    LispVal res = run(
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun diff (e v)"
+        "    (cond"
+        "      ((number? e) 0)"
+        "      ((symbol? e) (if (eq? e v) 1 0))"
+        "      (#t 0)))"
+        "  (define result (= (diff 5 'x) 0)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_diff_identity_variable) {
+    // d/dx(x) = 1
+    LispVal res = run(
+        "(module m"
+        "  (defun diff (e v)"
+        "    (cond"
+        "      ((number? e) 0)"
+        "      ((symbol? e) (if (eq? e v) 1 0))"
+        "      (#t 0)))"
+        "  (define result (= (diff 'x 'x) 1)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_diff_other_variable) {
+    // d/dx(y) = 0
+    LispVal res = run(
+        "(module m"
+        "  (defun diff (e v)"
+        "    (cond"
+        "      ((number? e) 0)"
+        "      ((symbol? e) (if (eq? e v) 1 0))"
+        "      (#t 0)))"
+        "  (define result (= (diff 'y 'x) 0)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_diff_sum_rule) {
+    // d/dx(x + 3) = (+ 1 0)  (raw, unsimplified)
+    LispVal res = run(
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun a2 (e) (car (cdr (cdr e))))"
+        "  (defun diff (e v)"
+        "    (cond"
+        "      ((number? e) 0)"
+        "      ((symbol? e) (if (eq? e v) 1 0))"
+        "      ((eq? (op e) '+)"
+        "        (list '+ (diff (a1 e) v) (diff (a2 e) v)))"
+        "      (#t 0)))"
+        "  (define result (equal? (diff '(+ x 3) 'x)"
+        "                         '(+ 1 0))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_diff_product_rule) {
+    // d/dx(x*x) = (+ (* 1 x) (* x 1))  (raw)
+    LispVal res = run(
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun a2 (e) (car (cdr (cdr e))))"
+        "  (defun diff (e v)"
+        "    (cond"
+        "      ((number? e) 0)"
+        "      ((symbol? e) (if (eq? e v) 1 0))"
+        "      ((eq? (op e) '+)"
+        "        (list '+ (diff (a1 e) v) (diff (a2 e) v)))"
+        "      ((eq? (op e) '*)"
+        "        (list '+ (list '* (diff (a1 e) v) (a2 e))"
+        "                 (list '* (a1 e) (diff (a2 e) v))))"
+        "      (#t 0)))"
+        "  (define result (equal? (diff '(* x x) 'x)"
+        "                         '(+ (* 1 x) (* x 1)))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_diff_power_rule) {
+    // d/dx(x^3) = (* 3 (* (^ x 2) 1))  (raw, before simplification)
+    LispVal res = run(
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun a2 (e) (car (cdr (cdr e))))"
+        "  (defun diff (e v)"
+        "    (cond"
+        "      ((number? e) 0)"
+        "      ((symbol? e) (if (eq? e v) 1 0))"
+        "      ((eq? (op e) '^)"
+        "        (let ((u (a1 e)) (n (a2 e)))"
+        "          (if (number? n)"
+        "              (list '* n (list '* (list '^ u (- n 1)) (diff u v)))"
+        "              0)))"
+        "      (#t 0)))"
+        "  (define result (equal? (diff '(^ x 3) 'x)"
+        "                         '(* 3 (* (^ x 2) 1)))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_diff_chain_rule_sin) {
+    // d/dx(sin(x)) = (* (cos x) 1)
+    LispVal res = run(
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun diff (e v)"
+        "    (cond"
+        "      ((number? e) 0)"
+        "      ((symbol? e) (if (eq? e v) 1 0))"
+        "      ((eq? (op e) 'sin)"
+        "        (let ((u (a1 e)))"
+        "          (list '* (list 'cos u) (diff u v))))"
+        "      (#t 0)))"
+        "  (define result (equal? (diff '(sin x) 'x)"
+        "                         '(* (cos x) 1))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_simplify_additive_identity) {
+    // 0 + x => x,  x + 0 => x
+    std::string src =
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun a2 (e) (car (cdr (cdr e))))"
+        "  (defun simplify (e)"
+        "    (cond"
+        "      ((atom? e) e)"
+        "      ((eq? (op e) '+)"
+        "        (let ((sa (simplify (a1 e)))"
+        "              (sb (simplify (a2 e))))"
+        "          (cond"
+        "            ((and (number? sa) (= sa 0)) sb)"
+        "            ((and (number? sb) (= sb 0)) sa)"
+        "            (#t (list '+ sa sb)))))"
+        "      (#t e)))"
+        "  (define r1 (eq? (simplify '(+ 0 x)) 'x))"
+        "  (define r2 (eq? (simplify '(+ x 0)) 'x))"
+        "  (define result (and r1 r2)))";
+    LispVal res = run(src);
+    BOOST_CHECK(res != nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_simplify_multiplicative_rules) {
+    // 0*x => 0,  1*x => x,  x*1 => x
+    std::string src =
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun a2 (e) (car (cdr (cdr e))))"
+        "  (defun simplify (e)"
+        "    (cond"
+        "      ((atom? e) e)"
+        "      ((eq? (op e) '*)"
+        "        (let ((sa (simplify (a1 e)))"
+        "              (sb (simplify (a2 e))))"
+        "          (cond"
+        "            ((and (number? sa) (= sa 0)) 0)"
+        "            ((and (number? sb) (= sb 0)) 0)"
+        "            ((and (number? sa) (= sa 1)) sb)"
+        "            ((and (number? sb) (= sb 1)) sa)"
+        "            (#t (list '* sa sb)))))"
+        "      (#t e)))"
+        "  (define r1 (= (simplify '(* 0 x)) 0))"
+        "  (define r2 (eq? (simplify '(* 1 x)) 'x))"
+        "  (define r3 (eq? (simplify '(* x 1)) 'x))"
+        "  (define result (and r1 r2 r3)))";
+    LispVal res = run(src);
+    BOOST_CHECK(res != nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_symbolic_simplify_constant_folding) {
+    // (+ 2 3) => 5,  (* 4 5) => 20
+    std::string src =
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun a2 (e) (car (cdr (cdr e))))"
+        "  (defun simplify (e)"
+        "    (cond"
+        "      ((atom? e) e)"
+        "      ((eq? (op e) '+)"
+        "        (let ((sa (simplify (a1 e)))"
+        "              (sb (simplify (a2 e))))"
+        "          (cond"
+        "            ((and (number? sa) (= sa 0)) sb)"
+        "            ((and (number? sb) (= sb 0)) sa)"
+        "            ((and (number? sa) (number? sb)) (+ sa sb))"
+        "            (#t (list '+ sa sb)))))"
+        "      ((eq? (op e) '*)"
+        "        (let ((sa (simplify (a1 e)))"
+        "              (sb (simplify (a2 e))))"
+        "          (cond"
+        "            ((and (number? sa) (= sa 0)) 0)"
+        "            ((and (number? sb) (= sb 0)) 0)"
+        "            ((and (number? sa) (= sa 1)) sb)"
+        "            ((and (number? sb) (= sb 1)) sa)"
+        "            ((and (number? sa) (number? sb)) (* sa sb))"
+        "            (#t (list '* sa sb)))))"
+        "      (#t e)))"
+        "  (define r1 (= (simplify '(+ 2 3)) 5))"
+        "  (define r2 (= (simplify '(* 4 5)) 20))"
+        "  (define result (and r1 r2)))";
+    LispVal res = run(src);
+    BOOST_CHECK(res != nanbox::False);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
