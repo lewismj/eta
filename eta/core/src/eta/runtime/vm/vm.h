@@ -78,6 +78,16 @@ public:
     std::vector<LispVal>& globals() { return globals_; }
     const std::vector<LispVal>& globals() const { return globals_; }
 
+    // Port accessors
+    LispVal current_input_port() const { return current_input_; }
+    LispVal current_output_port() const { return current_output_; }
+    LispVal current_error_port() const { return current_error_; }
+
+    void set_current_input_port(LispVal port) { current_input_ = port; }
+    void set_current_output_port(LispVal port) { current_output_ = port; }
+    void set_current_error_port(LispVal port) { current_error_ = port; }
+
+
 private:
     Heap& heap_;
     InternTable& intern_table_;
@@ -87,6 +97,11 @@ private:
     std::vector<LispVal> globals_;
     std::vector<WindFrame> winding_stack_;
     std::vector<LispVal> temp_roots_;
+
+    // Current I/O ports
+    LispVal current_input_{nanbox::Nil};
+    LispVal current_output_{nanbox::Nil};
+    LispVal current_error_{nanbox::Nil};
 
     // Current execution state (cached from top frame)
     const BytecodeFunction* current_func_{nullptr};

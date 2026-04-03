@@ -8,6 +8,7 @@
 #include "eta/runtime/string_view.h"
 #include "eta/runtime/numeric_value.h"
 #include "eta/runtime/overflow.h"
+#include "eta/runtime/port.h"
 #include <bit>
 
 namespace eta::runtime::vm {
@@ -22,6 +23,20 @@ VM::VM(Heap& heap, InternTable& intern_table)
     stack_.reserve(1024);
     frames_.reserve(64);
     heap_.set_gc_callback([this]() { collect_garbage(); });
+
+    // Initialize default console ports
+    auto stdin_port = std::make_shared<ConsolePort>(ConsolePort::StreamType::Input);
+    auto stdout_port = std::make_shared<ConsolePort>(ConsolePort::StreamType::Output);
+    auto stderr_port = std::make_shared<ConsolePort>(ConsolePort::StreamType::Error);
+
+    auto input_result = make_port(heap_, stdin_port);
+    auto output_result = make_port(heap_, stdout_port);
+    auto error_result = make_port(heap_, stderr_port);
+
+    // Store default ports; if allocation fails, ports remain as Nil (will be handled by primitives)
+    if (input_result) current_input_ = *input_result;
+    if (output_result) current_output_ = *output_result;
+    if (error_result) current_error_ = *error_result;
 }
 
 VM::~VM() = default;
@@ -74,6 +89,10 @@ void VM::collect_garbage() {
         }
         // Mark temporary roots
         for (auto v : temp_roots_) visit(v);
+        // Mark current ports
+        visit(current_input_);
+        visit(current_output_);
+        visit(current_error_);
     });
 }
 

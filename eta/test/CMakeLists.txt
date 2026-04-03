@@ -13,7 +13,8 @@ set(SOURCES
         src/semantics_tests.cpp
         src/vm_tests.cpp
         src/eta_test.cpp
-        src/emitter_tests.cpp)
+        src/emitter_tests.cpp
+        src/port_tests.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 

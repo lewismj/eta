@@ -101,6 +101,10 @@ namespace eta::runtime::memory::factory {
         return make_heap_object<types::Primitive, ObjectKind::Primitive>(heap, types::Primitive{.func = std::move(func), .arity = arity, .has_rest = has_rest});
     }
 
-
+    inline_always
+    std::expected<LispVal, RuntimeError> make_port(Heap& heap, std::shared_ptr<Port> port) {
+        return make_heap_object<types::PortObject, ObjectKind::Port>(heap, types::PortObject{.port = std::move(port)});
+    }
 }
+
 

@@ -36,6 +36,7 @@ namespace eta::runtime::memory::heap {
             case Fixnum: 
             case ByteVector:
             case Primitive:
+            case Port:
             case Unknown:
                 return v.visit_leaf(hdr.kind, payload);
         }
