@@ -980,4 +980,144 @@ BOOST_AUTO_TEST_CASE(test_error_cons_wrong_arg_count) {
     BOOST_CHECK(vm_err->code == RuntimeErrorCode::InvalidArity);
 }
 
+// ============================================================================
+// make-vector primitive
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_make_vector_basic) {
+    LispVal res = run(
+        "(module m"
+        "  (define v (make-vector 3 0))"
+        "  (define result (vector-length v)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 3);
+}
+
+BOOST_AUTO_TEST_CASE(test_make_vector_fill_value) {
+    LispVal res = run(
+        "(module m"
+        "  (define v (make-vector 2 42))"
+        "  (define result (vector-ref v 1)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+BOOST_AUTO_TEST_CASE(test_make_vector_set_and_ref) {
+    LispVal res = run(
+        "(module m"
+        "  (define v (make-vector 3 0))"
+        "  (vector-set! v 1 99)"
+        "  (define result (vector-ref v 1)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 99);
+}
+
+// ============================================================================
+// define-record-type end-to-end
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_record_type_construct_and_access) {
+    LispVal res = run(
+        "(module m"
+        "  (define-record-type point"
+        "    (make-point x y)"
+        "    point?"
+        "    (x point-x)"
+        "    (y point-y))"
+        "  (define p (make-point 3 4))"
+        "  (define result (+ (point-x p) (point-y p))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 7);
+}
+
+BOOST_AUTO_TEST_CASE(test_record_type_predicate_true) {
+    LispVal res = run(
+        "(module m"
+        "  (define-record-type point"
+        "    (make-point x y)"
+        "    point?"
+        "    (x point-x)"
+        "    (y point-y))"
+        "  (define p (make-point 1 2))"
+        "  (define result (point? p)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_record_type_predicate_false_on_number) {
+    LispVal res = run(
+        "(module m"
+        "  (define-record-type point"
+        "    (make-point x y)"
+        "    point?"
+        "    (x point-x)"
+        "    (y point-y))"
+        "  (define result (point? 42)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_record_type_predicate_false_on_plain_vector) {
+    LispVal res = run(
+        "(module m"
+        "  (define-record-type point"
+        "    (make-point x y)"
+        "    point?"
+        "    (x point-x)"
+        "    (y point-y))"
+        "  (define result (point? (vector 1 2 3))))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_record_type_mutator) {
+    LispVal res = run(
+        "(module m"
+        "  (define-record-type mpoint"
+        "    (make-mpoint x y)"
+        "    mpoint?"
+        "    (x mpoint-x set-mpoint-x!)"
+        "    (y mpoint-y set-mpoint-y!))"
+        "  (define p (make-mpoint 1 2))"
+        "  (set-mpoint-x! p 10)"
+        "  (define result (mpoint-x p)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 10);
+}
+
+BOOST_AUTO_TEST_CASE(test_record_type_generative_identity) {
+    // Two record types with the same name should NOT be interchangeable (gensym tags)
+    LispVal res = run(
+        "(module m"
+        "  (define-record-type point"
+        "    (make-point1 x)"
+        "    point1?"
+        "    (x point1-x))"
+        "  (define-record-type point"
+        "    (make-point2 x)"
+        "    point2?"
+        "    (x point2-x))"
+        "  (define p (make-point1 42))"
+        "  (define result (point2? p)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_record_type_no_fields) {
+    LispVal res = run(
+        "(module m"
+        "  (define-record-type unit"
+        "    (make-unit)"
+        "    unit?)"
+        "  (define u (make-unit))"
+        "  (define result (unit? u)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_record_type_mixed_readonly_mutable) {
+    // x is read-only, y is mutable
+    LispVal res = run(
+        "(module m"
+        "  (define-record-type rec"
+        "    (make-rec x y)"
+        "    rec?"
+        "    (x rec-x)"
+        "    (y rec-y set-rec-y!))"
+        "  (define r (make-rec 100 200))"
+        "  (set-rec-y! r 999)"
+        "  (define result (+ (rec-x r) (rec-y r))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1099);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

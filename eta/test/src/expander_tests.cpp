@@ -869,5 +869,173 @@ BOOST_AUTO_TEST_CASE(letrec_desugars_to_let_set_body) {
     BOOST_CHECK(head_is(body.elems[1], "set!"));
 }
 
+// ============================================================================
+// define-record-type
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(record_type_basic_expand) {
+    // 2 fields, both read-only → begin with 4 defines (ctor, pred, 2 accessors)
+    auto r = expand_one(
+        "(define-record-type point"
+        "  (make-point x y)"
+        "  point?"
+        "  (x point-x)"
+        "  (y point-y))");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_CHECK(head_is(*r, "begin"));
+    // begin + 4 defines = 5 elements
+    auto& lst = *r.value()->as<List>();
+    // Each child after "begin" should be a define
+    std::size_t define_count = 0;
+    for (std::size_t i = 1; i < lst.elems.size(); ++i) {
+        if (head_is(lst.elems[i], "define")) ++define_count;
+    }
+    BOOST_CHECK_EQUAL(define_count, 4u); // ctor + pred + 2 accessors
+}
+
+BOOST_AUTO_TEST_CASE(record_type_with_mutator) {
+    // 2 fields, one mutable → 5 defines (ctor, pred, 2 accessors, 1 mutator)
+    auto r = expand_one(
+        "(define-record-type pair"
+        "  (make-pair a b)"
+        "  pair?"
+        "  (a pair-a)"
+        "  (b pair-b set-pair-b!))");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_CHECK(head_is(*r, "begin"));
+    auto& lst = *r.value()->as<List>();
+    std::size_t define_count = 0;
+    for (std::size_t i = 1; i < lst.elems.size(); ++i) {
+        if (head_is(lst.elems[i], "define")) ++define_count;
+    }
+    BOOST_CHECK_EQUAL(define_count, 5u); // ctor + pred + 2 accessors + 1 mutator
+}
+
+BOOST_AUTO_TEST_CASE(record_type_readonly_no_mutator) {
+    // All read-only: no mutator defines should appear
+    auto r = expand_one(
+        "(define-record-type color"
+        "  (make-color r g b)"
+        "  color?"
+        "  (r color-r)"
+        "  (g color-g)"
+        "  (b color-b))");
+    BOOST_REQUIRE(r.has_value());
+    auto& lst = *r.value()->as<List>();
+    std::size_t define_count = 0;
+    for (std::size_t i = 1; i < lst.elems.size(); ++i) {
+        if (head_is(lst.elems[i], "define")) ++define_count;
+    }
+    BOOST_CHECK_EQUAL(define_count, 5u); // ctor + pred + 3 accessors, 0 mutators
+}
+
+BOOST_AUTO_TEST_CASE(record_type_error_too_few_subforms) {
+    // Missing predicate
+    auto r = expand_one(
+        "(define-record-type point"
+        "  (make-point x y))");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::ArityError);
+}
+
+BOOST_AUTO_TEST_CASE(record_type_error_duplicate_ctor_fields) {
+    auto r = expand_one(
+        "(define-record-type point"
+        "  (make-point x x)"
+        "  point?"
+        "  (x point-x))");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::DuplicateIdentifier);
+}
+
+BOOST_AUTO_TEST_CASE(record_type_error_unknown_field_in_spec) {
+    auto r = expand_one(
+        "(define-record-type point"
+        "  (make-point x y)"
+        "  point?"
+        "  (z point-z))");  // 'z' not in constructor
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
+}
+
+BOOST_AUTO_TEST_CASE(record_type_error_reserved_type_name) {
+    auto r = expand_one(
+        "(define-record-type lambda"
+        "  (make-lambda x)"
+        "  lambda?"
+        "  (x lambda-x))");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::ReservedKeyword);
+}
+
+BOOST_AUTO_TEST_CASE(record_type_error_reserved_constructor) {
+    auto r = expand_one(
+        "(define-record-type point"
+        "  (define x)"
+        "  point?"
+        "  (x point-x))");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::ReservedKeyword);
+}
+
+BOOST_AUTO_TEST_CASE(record_type_error_reserved_field_name) {
+    auto r = expand_one(
+        "(define-record-type point"
+        "  (make-point if)"
+        "  point?"
+        "  (if point-if))");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::ReservedKeyword);
+}
+
+BOOST_AUTO_TEST_CASE(record_type_error_non_symbol_type_name) {
+    auto r = expand_one(
+        "(define-record-type 42"
+        "  (make-point x)"
+        "  point?"
+        "  (x point-x))");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
+}
+
+BOOST_AUTO_TEST_CASE(record_type_error_non_symbol_predicate) {
+    auto r = expand_one(
+        "(define-record-type point"
+        "  (make-point x)"
+        "  42"
+        "  (x point-x))");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
+}
+
+BOOST_AUTO_TEST_CASE(record_type_no_fields) {
+    // Zero fields → just ctor + pred = 2 defines
+    auto r = expand_one(
+        "(define-record-type unit"
+        "  (make-unit)"
+        "  unit?)");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_CHECK(head_is(*r, "begin"));
+    auto& lst = *r.value()->as<List>();
+    std::size_t define_count = 0;
+    for (std::size_t i = 1; i < lst.elems.size(); ++i) {
+        if (head_is(lst.elems[i], "define")) ++define_count;
+    }
+    BOOST_CHECK_EQUAL(define_count, 2u); // ctor + pred
+}
+
+BOOST_AUTO_TEST_CASE(record_type_error_duplicate_field_spec) {
+    auto r = expand_one(
+        "(define-record-type point"
+        "  (make-point x)"
+        "  point?"
+        "  (x point-x)"
+        "  (x point-x2))");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::DuplicateIdentifier);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
+
+
 

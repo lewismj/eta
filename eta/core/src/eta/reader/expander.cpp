@@ -26,7 +26,8 @@ namespace eta::reader::expander {
             "values","call-with-values",
             // Convenience (existing and new)
             "case","do","when","unless",
-            "def","defun","progn","step"
+            "def","defun","progn","step",
+            "define-record-type"
         };
         return K;
     }
@@ -173,11 +174,17 @@ namespace eta::reader::expander {
                 for (const auto& nm : mf->exports) ex.push_back(make_symbol(nm, mf->span));
                 elems.push_back(make_list(std::move(ex), mf->span));
             }
-            // Expand each body form
+            // Expand each body form; splice top-level (begin ...) per R7RS
             for (const auto& form : mf->body) {
                 auto exp = expand_form(form);
                 if (!exp) return std::unexpected(exp.error());
-                elems.push_back(std::move(*exp));
+                if (auto* bl = exp->get()->as<List>();
+                    bl && !bl->elems.empty() && is_symbol_named(bl->elems[0], "begin")) {
+                    for (size_t j = 1; j < bl->elems.size(); ++j)
+                        elems.push_back(deep_clone(bl->elems[j]));
+                } else {
+                    elems.push_back(std::move(*exp));
+                }
             }
             return make_list(std::move(elems), mf->span);
         }
@@ -260,6 +267,8 @@ namespace eta::reader::expander {
             {"step", &Expander::handle_begin},
             {"defun", &Expander::handle_defun},
             {"progn", &Expander::handle_begin},
+            // records
+            {"define-record-type", &Expander::handle_define_record_type},
         };
 
         if (lst.elems.empty()) {
@@ -1241,7 +1250,18 @@ namespace eta::reader::expander {
         std::vector<SExprPtr> xs; xs.reserve(lst.elems.size());
         xs.push_back(make_symbol("module", lst.span));
         xs.push_back(deep_clone(lst.elems[1]));
-        for (size_t i=2;i<lst.elems.size();++i) { auto r = expand_form(lst.elems[i]); if (!r) return std::unexpected(r.error()); xs.push_back(std::move(*r)); }
+        // Expand body forms; splice top-level (begin ...) per R7RS
+        for (size_t i=2;i<lst.elems.size();++i) {
+            auto r = expand_form(lst.elems[i]);
+            if (!r) return std::unexpected(r.error());
+            if (auto* bl = r->get()->as<List>();
+                bl && !bl->elems.empty() && is_symbol_named(bl->elems[0], "begin")) {
+                for (size_t j = 1; j < bl->elems.size(); ++j)
+                    xs.push_back(deep_clone(bl->elems[j]));
+            } else {
+                xs.push_back(std::move(*r));
+            }
+        }
         return make_list(std::move(xs), lst.span);
     }
 
@@ -1345,6 +1365,270 @@ namespace eta::reader::expander {
         for (size_t i = 3; i < lst.elems.size(); ++i) defElems.push_back(deep_clone(lst.elems[i]));
         auto asDefine = make_list(std::move(defElems), lst.span);
         return handle_define(*asDefine->as<List>());
+    }
+
+    // ---------- define-record-type (SRFI-9 style) ----------
+    ExpanderResult<SExprPtr> Expander::handle_define_record_type(const List& lst) {
+        // (define-record-type <type-name>
+        //   (<constructor> <field-name> ...)
+        //   <predicate>
+        //   (<field-name> <accessor>)                ;; read-only
+        //   (<field-name> <accessor> <mutator>))      ;; mutable
+        const auto sp = lst.span;
+
+        // --- Arity: at least 4 elements (keyword type-name ctor-spec predicate) ---
+        if (lst.elems.size() < 4)
+            return std::unexpected(ExpandError{ExpandError::Kind::ArityError, sp,
+                "define-record-type: expected at least type-name, constructor, and predicate"});
+
+        // --- Parse <type-name> ---
+        const auto* typeNameSym = lst.elems[1] && lst.elems[1]->is<Symbol>()
+            ? lst.elems[1]->as<Symbol>() : nullptr;
+        if (!typeNameSym)
+            return std::unexpected(syntax_error(lst.elems[1] ? lst.elems[1]->span() : sp,
+                "define-record-type: type name must be a symbol"));
+        const std::string& typeName = typeNameSym->name;
+        if (is_reserved(typeName))
+            return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, typeNameSym->span,
+                "define-record-type: reserved keyword as type name: " + typeName});
+
+        // --- Parse (<constructor> <field-name> ...) ---
+        if (!lst.elems[2] || !lst.elems[2]->is<List>())
+            return std::unexpected(syntax_error(lst.elems[2] ? lst.elems[2]->span() : sp,
+                "define-record-type: constructor spec must be a list"));
+        const auto& ctorSpec = *lst.elems[2]->as<List>();
+        if (ctorSpec.elems.empty() || !ctorSpec.elems[0] || !ctorSpec.elems[0]->is<Symbol>())
+            return std::unexpected(syntax_error(ctorSpec.span,
+                "define-record-type: constructor name must be a symbol"));
+        const std::string& ctorName = ctorSpec.elems[0]->as<Symbol>()->name;
+        if (is_reserved(ctorName))
+            return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, ctorSpec.elems[0]->span(),
+                "define-record-type: reserved keyword as constructor name: " + ctorName});
+
+        // Collect constructor field names and check for duplicates
+        std::vector<std::string> ctorFields;
+        std::unordered_set<std::string> fieldSeen;
+        for (size_t i = 1; i < ctorSpec.elems.size(); ++i) {
+            if (!ctorSpec.elems[i] || !ctorSpec.elems[i]->is<Symbol>())
+                return std::unexpected(syntax_error(ctorSpec.elems[i] ? ctorSpec.elems[i]->span() : ctorSpec.span,
+                    "define-record-type: constructor field name must be a symbol"));
+            const auto& fname = ctorSpec.elems[i]->as<Symbol>()->name;
+            if (is_reserved(fname))
+                return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, ctorSpec.elems[i]->span(),
+                    "define-record-type: reserved keyword as field name: " + fname});
+            if (!fieldSeen.insert(fname).second)
+                return std::unexpected(ExpandError{ExpandError::Kind::DuplicateIdentifier, ctorSpec.elems[i]->span(),
+                    "define-record-type: duplicate field name in constructor: " + fname});
+            ctorFields.push_back(fname);
+        }
+
+        // --- Parse <predicate> ---
+        const auto* predSym = lst.elems[3] && lst.elems[3]->is<Symbol>()
+            ? lst.elems[3]->as<Symbol>() : nullptr;
+        if (!predSym)
+            return std::unexpected(syntax_error(lst.elems[3] ? lst.elems[3]->span() : sp,
+                "define-record-type: predicate must be a symbol"));
+        const std::string& predName = predSym->name;
+        if (is_reserved(predName))
+            return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, predSym->span,
+                "define-record-type: reserved keyword as predicate name: " + predName});
+
+        // --- Parse field specs ---
+        // Build a map: field-name -> index in ctorFields (1-based, slot 0 is tag)
+        std::unordered_map<std::string, size_t> fieldIndex;
+        for (size_t i = 0; i < ctorFields.size(); ++i)
+            fieldIndex[ctorFields[i]] = i + 1; // slot 0 = type tag
+
+        struct FieldSpec {
+            std::string name;
+            std::string accessor;
+            std::string mutator; // empty if read-only
+            size_t slot;
+        };
+        std::vector<FieldSpec> fieldSpecs;
+        std::unordered_set<std::string> specifiedFields;
+
+        for (size_t i = 4; i < lst.elems.size(); ++i) {
+            if (!lst.elems[i] || !lst.elems[i]->is<List>())
+                return std::unexpected(syntax_error(lst.elems[i] ? lst.elems[i]->span() : sp,
+                    "define-record-type: field spec must be a list"));
+            const auto& fspec = *lst.elems[i]->as<List>();
+            if (fspec.elems.size() < 2 || fspec.elems.size() > 3)
+                return std::unexpected(syntax_error(fspec.span,
+                    "define-record-type: field spec must be (field accessor) or (field accessor mutator)"));
+
+            // field name
+            if (!fspec.elems[0] || !fspec.elems[0]->is<Symbol>())
+                return std::unexpected(syntax_error(fspec.elems[0] ? fspec.elems[0]->span() : fspec.span,
+                    "define-record-type: field name in spec must be a symbol"));
+            const auto& fname = fspec.elems[0]->as<Symbol>()->name;
+            auto idxIt = fieldIndex.find(fname);
+            if (idxIt == fieldIndex.end())
+                return std::unexpected(syntax_error(fspec.elems[0]->span(),
+                    "define-record-type: field spec references unknown field: " + fname));
+            if (!specifiedFields.insert(fname).second)
+                return std::unexpected(ExpandError{ExpandError::Kind::DuplicateIdentifier, fspec.elems[0]->span(),
+                    "define-record-type: duplicate field spec for: " + fname});
+
+            // accessor
+            if (!fspec.elems[1] || !fspec.elems[1]->is<Symbol>())
+                return std::unexpected(syntax_error(fspec.elems[1] ? fspec.elems[1]->span() : fspec.span,
+                    "define-record-type: accessor must be a symbol"));
+            const auto& accName = fspec.elems[1]->as<Symbol>()->name;
+            if (is_reserved(accName))
+                return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, fspec.elems[1]->span(),
+                    "define-record-type: reserved keyword as accessor: " + accName});
+
+            // optional mutator
+            std::string mutName;
+            if (fspec.elems.size() == 3) {
+                if (!fspec.elems[2] || !fspec.elems[2]->is<Symbol>())
+                    return std::unexpected(syntax_error(fspec.elems[2] ? fspec.elems[2]->span() : fspec.span,
+                        "define-record-type: mutator must be a symbol"));
+                mutName = fspec.elems[2]->as<Symbol>()->name;
+                if (is_reserved(mutName))
+                    return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, fspec.elems[2]->span(),
+                        "define-record-type: reserved keyword as mutator: " + mutName});
+            }
+
+            fieldSpecs.push_back(FieldSpec{fname, accName, mutName, idxIt->second});
+        }
+
+        // --- Generate type tag via gensym for generative semantics ---
+        std::string typeTag = gensym(typeName);
+
+        // Total vector size: 1 (tag) + number of fields
+        size_t vecSize = 1 + ctorFields.size();
+
+        // --- Build desugared (begin ...) ---
+        std::vector<SExprPtr> defs;
+
+        // 1) Constructor:
+        //   (define (<ctor> f1 f2 ...)
+        //     (let ((r (make-vector <N> '())))
+        //       (vector-set! r 0 '<tag>)
+        //       (vector-set! r 1 f1)
+        //       ...
+        //       r))
+        {
+            // Number literal for vector size
+            auto makeNum = [&](int64_t n) -> SExprPtr {
+                auto p = std::make_unique<SExpr>();
+                parser::Number num; num.span = sp; num.value = n;
+                p->value = std::move(num);
+                return p;
+            };
+
+            // let-body: vector-set! calls + return r
+            std::string rVar = gensym("r");
+            std::vector<SExprPtr> letBody;
+
+            // (vector-set! r 0 '<tag>)
+            letBody.push_back(make_form(sp, "vector-set!",
+                make_symbol(rVar, sp),
+                makeNum(0),
+                make_quote(make_symbol(typeTag, sp), sp)));
+
+            // (vector-set! r <i> fi) for each field
+            for (size_t i = 0; i < ctorFields.size(); ++i) {
+                letBody.push_back(make_form(sp, "vector-set!",
+                    make_symbol(rVar, sp),
+                    makeNum(static_cast<int64_t>(i + 1)),
+                    make_symbol(ctorFields[i], sp)));
+            }
+
+            // Return r
+            letBody.push_back(make_symbol(rVar, sp));
+
+            // (let ((r (make-vector <N> '()))) ...body)
+            auto makeVecCall = make_form(sp, "make-vector",
+                makeNum(static_cast<int64_t>(vecSize)),
+                make_quote(make_nil(sp), sp));
+
+            std::vector<std::pair<SExprPtr, SExprPtr>> bindings;
+            bindings.emplace_back(make_symbol(rVar, sp), std::move(makeVecCall));
+            auto letExpr = make_let(sp, std::move(bindings), std::move(letBody));
+
+            // (define (<ctor> f1 f2 ...) let-expr)
+            std::vector<SExprPtr> sigElems;
+            sigElems.push_back(make_symbol(ctorName, sp));
+            for (const auto& f : ctorFields) sigElems.push_back(make_symbol(f, sp));
+            auto sig = make_list(std::move(sigElems), sp);
+
+            defs.push_back(make_form(sp, "define", std::move(sig), std::move(letExpr)));
+        }
+
+        // 2) Predicate:
+        //   (define (<pred> obj)
+        //     (and (vector? obj)
+        //          (> (vector-length obj) 0)
+        //          (eq? (vector-ref obj 0) '<tag>)))
+        {
+            std::string objVar = gensym("obj");
+
+            auto makeNum = [&](int64_t n) -> SExprPtr {
+                auto p = std::make_unique<SExpr>();
+                parser::Number num; num.span = sp; num.value = n;
+                p->value = std::move(num);
+                return p;
+            };
+
+            auto testVec = make_form(sp, "vector?", make_symbol(objVar, sp));
+            auto testLen = make_form(sp, ">",
+                make_form(sp, "vector-length", make_symbol(objVar, sp)),
+                makeNum(0));
+            auto testTag = make_form(sp, "eq?",
+                make_form(sp, "vector-ref", make_symbol(objVar, sp), makeNum(0)),
+                make_quote(make_symbol(typeTag, sp), sp));
+
+            auto body = make_form(sp, "and",
+                std::move(testVec), std::move(testLen), std::move(testTag));
+
+            auto sig = build_list(sp, make_symbol(predName, sp), make_symbol(objVar, sp));
+            defs.push_back(make_form(sp, "define", std::move(sig), std::move(body)));
+        }
+
+        // 3) Accessors:
+        //   (define (<accessor> obj) (vector-ref obj <index>))
+        for (const auto& fs : fieldSpecs) {
+            std::string objVar = gensym("obj");
+            auto makeNum = [&](int64_t n) -> SExprPtr {
+                auto p = std::make_unique<SExpr>();
+                parser::Number num; num.span = sp; num.value = n;
+                p->value = std::move(num);
+                return p;
+            };
+
+            auto body = make_form(sp, "vector-ref",
+                make_symbol(objVar, sp), makeNum(static_cast<int64_t>(fs.slot)));
+            auto sig = build_list(sp, make_symbol(fs.accessor, sp), make_symbol(objVar, sp));
+            defs.push_back(make_form(sp, "define", std::move(sig), std::move(body)));
+        }
+
+        // 4) Mutators (only for mutable fields):
+        //   (define (<mutator> obj val) (vector-set! obj <index> val))
+        for (const auto& fs : fieldSpecs) {
+            if (fs.mutator.empty()) continue;
+            std::string objVar = gensym("obj");
+            std::string valVar = gensym("val");
+            auto makeNum = [&](int64_t n) -> SExprPtr {
+                auto p = std::make_unique<SExpr>();
+                parser::Number num; num.span = sp; num.value = n;
+                p->value = std::move(num);
+                return p;
+            };
+
+            auto body = make_form(sp, "vector-set!",
+                make_symbol(objVar, sp), makeNum(static_cast<int64_t>(fs.slot)),
+                make_symbol(valVar, sp));
+            auto sig = build_list(sp, make_symbol(fs.mutator, sp),
+                make_symbol(objVar, sp), make_symbol(valVar, sp));
+            defs.push_back(make_form(sp, "define", std::move(sig), std::move(body)));
+        }
+
+        // Wrap in (begin ...) and re-expand
+        auto beginForm = make_begin(sp, std::move(defs));
+        return expand_form(beginForm);
     }
 
     // ---------- Internal defines → letrec (optional) ----------

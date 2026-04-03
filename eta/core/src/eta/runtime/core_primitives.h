@@ -744,6 +744,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject) return nanbox::False;
         return heap.try_get_as<ObjectKind::Vector, types::Vector>(ops::payload(args[0])) ? nanbox::True : nanbox::False;
     });
+
+    env.register_builtin("make-vector", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto len = classify_numeric(args[0], heap);
+        if (!len.is_valid() || len.is_flonum() || len.int_val < 0)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "make-vector: length must be a non-negative integer"}});
+        std::vector<LispVal> elems(static_cast<size_t>(len.int_val), args[1]);
+        return make_vector(heap, std::move(elems));
+    });
 }
 
 } // namespace eta::runtime

@@ -176,6 +176,7 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_when(const List& lst);
         ExpanderResult<SExprPtr> handle_unless(const List& lst);
         ExpanderResult<SExprPtr> handle_do(const List& lst);
+        ExpanderResult<SExprPtr> handle_define_record_type(const List& lst);
 
 
         //! Modules/directives
