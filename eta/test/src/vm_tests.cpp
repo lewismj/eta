@@ -167,6 +167,49 @@ struct VMTestFixture {
 
         return exec_res.value();
     }
+
+    /**
+     * @brief Compile and execute, expecting a runtime error.
+     * Returns the RuntimeError variant if execution fails.
+     * Throws if compilation fails or execution succeeds unexpectedly.
+     */
+    RuntimeError run_expect_error(std::string_view source) {
+        reader::lexer::Lexer lex(0, source);
+        reader::parser::Parser p(lex);
+        auto parsed_res = p.parse_toplevel();
+        if (!parsed_res) throw std::runtime_error("Parse error");
+        auto parsed = std::move(*parsed_res);
+
+        reader::expander::Expander ex;
+        auto expanded_res = ex.expand_many(parsed);
+        if (!expanded_res) throw std::runtime_error("Expansion error");
+        auto expanded = std::move(*expanded_res);
+
+        reader::ModuleLinker linker;
+        linker.index_modules(expanded);
+        linker.link();
+
+        SemanticAnalyzer sa;
+        auto sem_res = sa.analyze_all(expanded, linker, builtins);
+        if (!sem_res) throw std::runtime_error("Semantic error: " + sem_res.error().message);
+        auto sem_mods_vec = std::move(*sem_res);
+
+        BOOST_REQUIRE(!sem_mods_vec.empty());
+        auto& sem_mod = sem_mods_vec[0];
+
+        Emitter emitter(sem_mod, heap, intern_table, registry);
+        auto* main_func = emitter.emit();
+
+        VM vm(heap, intern_table);
+        vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
+
+        auto install_res = builtins.install(heap, vm.globals(), sem_mod.total_globals);
+        if (!install_res) throw std::runtime_error("Failed to install builtins");
+
+        auto exec_res = vm.execute(*main_func);
+        if (exec_res) throw std::runtime_error("Expected execution to fail, but it succeeded");
+        return exec_res.error();
+    }
 };
 
 BOOST_FIXTURE_TEST_SUITE(vm_tests, VMTestFixture)
@@ -823,6 +866,118 @@ BOOST_AUTO_TEST_CASE(test_multi_module_export_function_closure) {
         "  (define add5 (make-adder 5))\n"
         "  (define result (add5 37)))");
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+// ============================================================================
+// VM Error-Path Tests
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_error_car_on_non_pair) {
+    auto err = run_expect_error("(module m (define result (car 42)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_cdr_on_non_pair) {
+    auto err = run_expect_error("(module m (define result (cdr 42)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_car_on_string) {
+    auto err = run_expect_error("(module m (define result (car \"hello\")))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_add_non_numbers) {
+    auto err = run_expect_error("(module m (define result (+ 1 #t)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_sub_non_numbers) {
+    auto err = run_expect_error("(module m (define result (- \"a\" 1)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_mul_non_numbers) {
+    auto err = run_expect_error("(module m (define result (* #f 2)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_div_non_numbers) {
+    auto err = run_expect_error("(module m (define result (/ \"a\" 2)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_div_by_zero_integers) {
+    auto err = run_expect_error("(module m (define result (/ 10 0)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_div_by_zero_floats) {
+    auto err = run_expect_error("(module m (define result (/ 10.0 0.0)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_call_non_procedure) {
+    auto err = run_expect_error("(module m (define x 42) (define result (x 1)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_call_boolean_as_procedure) {
+    auto err = run_expect_error("(module m (define result (#t 1)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_arity_too_few_args) {
+    auto err = run_expect_error(
+        "(module m (define (f a b) (+ a b)) (define result (f 1)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::InvalidArity);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_arity_too_many_args) {
+    auto err = run_expect_error(
+        "(module m (define (f a) a) (define result (f 1 2 3)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::InvalidArity);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_arity_zero_args_expected_one) {
+    auto err = run_expect_error(
+        "(module m (define (f x) x) (define result (f)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::InvalidArity);
+}
+
+BOOST_AUTO_TEST_CASE(test_error_cons_wrong_arg_count) {
+    auto err = run_expect_error("(module m (define result (cons 1)))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::InvalidArity);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
