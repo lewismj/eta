@@ -297,6 +297,111 @@ BOOST_AUTO_TEST_CASE(test_not_false) {
 }
 
 // ============================================================================
+// eqv? — identity + numeric value equivalence (R7RS §6.1)
+//
+// eqv? differs from eq? in that it unwraps heap-allocated numbers and
+// compares by value.  For inline fixnums, symbols, booleans, and chars
+// the two are identical; for separately-constructed heap-boxed fixnums
+// (values exceeding the 47-bit NaN-box range) eqv? returns #t where
+// eq? returns #f.
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_eqv_same_fixnum) {
+    LispVal res = run("(module m (define result (eqv? 42 42)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_different_fixnum) {
+    LispVal res = run("(module m (define result (eqv? 1 2)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_booleans_same) {
+    LispVal res = run("(module m (define result (eqv? #t #t)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_booleans_different) {
+    LispVal res = run("(module m (define result (eqv? #t #f)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_chars_same) {
+    LispVal res = run("(module m (define result (eqv? #\\a #\\a)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_chars_different) {
+    LispVal res = run("(module m (define result (eqv? #\\a #\\b)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_symbols_same) {
+    // Symbols are interned so eqv? on the same symbol is #t
+    LispVal res = run("(module m (define result (eqv? 'foo 'foo)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_symbols_different) {
+    LispVal res = run("(module m (define result (eqv? 'foo 'bar)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_nil) {
+    // Both are the Nil singleton
+    LispVal res = run("(module m (define result (eqv? '() '())))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_lists_not_structural) {
+    // eqv? is NOT structural — two separately-constructed lists are not eqv?
+    LispVal res = run("(module m (define result (eqv? (list 1 2) (list 1 2))))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_mixed_types) {
+    LispVal res = run("(module m (define result (eqv? 42 #t)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_heap_boxed_fixnums) {
+    // Key divergence from eq?: two separately-computed large fixnums
+    // that exceed the 47-bit inline NaN-box range (>2^46-1 ≈ 7×10¹³)
+    // get heap-allocated at different addresses.
+    // eq? compares addresses → #f;  eqv? unwraps and compares values → #t
+    std::string src =
+        "(module m"
+        "  (define a (* 100000000 100000000))"   // 10^16, heap-boxed
+        "  (define b (* 100000000 100000000))"   // same value, different heap object
+        "  (define result (eqv? a b)))";
+    LispVal res = run(src);
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_eq_heap_boxed_fixnums_false) {
+    // Same scenario as above but with eq? — should be #f because the two
+    // heap-allocated fixnums occupy different addresses.
+    std::string src =
+        "(module m"
+        "  (define a (* 100000000 100000000))"
+        "  (define b (* 100000000 100000000))"
+        "  (define result (eq? a b)))";
+    LispVal res = run(src);
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_eqv_heap_boxed_fixnums_different_values) {
+    // Two large heap-boxed fixnums with different values
+    std::string src =
+        "(module m"
+        "  (define a (* 100000000 100000000))"   // 10^16
+        "  (define b (* 100000000 200000000))"   // 2×10^16
+        "  (define result (eqv? a b)))";
+    LispVal res = run(src);
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+// ============================================================================
 // Pairs / Lists
 // ============================================================================
 
