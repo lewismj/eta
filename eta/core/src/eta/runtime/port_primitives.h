@@ -10,6 +10,7 @@
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/nanbox.h"
+#include "eta/runtime/numeric_value.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/string_view.h"
 #include "eta/runtime/types/types.h"
@@ -229,6 +230,124 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (!result) return std::unexpected(result.error());
 
         return Nil;
+    });
+
+    // ========================================================================
+    // File port operations
+    // ========================================================================
+
+    env.register_builtin("open-input-file", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto sv = StringView::try_from(args[0], intern_table);
+        if (!sv) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "open-input-file: not a string"}});
+        }
+
+        auto port = std::make_shared<FilePort>(std::string(sv->view()), FilePort::Mode::Read);
+        if (!port->is_open()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "open-input-file: could not open file"}});
+        }
+        return make_port(heap, port);
+    });
+
+    env.register_builtin("open-output-file", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto sv = StringView::try_from(args[0], intern_table);
+        if (!sv) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "open-output-file: not a string"}});
+        }
+
+        auto port = std::make_shared<FilePort>(std::string(sv->view()), FilePort::Mode::Write);
+        if (!port->is_open()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "open-output-file: could not open file"}});
+        }
+        return make_port(heap, port);
+    });
+
+    // ========================================================================
+    // Binary port operations
+    // ========================================================================
+
+    env.register_builtin("open-output-bytevector", 0, false, [&heap](Args) -> std::expected<LispVal, RuntimeError> {
+        auto port = std::make_shared<BinaryPort>(BinaryPort::Mode::Output);
+        return make_port(heap, port);
+    });
+
+    env.register_builtin("open-input-bytevector", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "open-input-bytevector: not a bytevector"}});
+        }
+        auto* bv = heap.try_get_as<ObjectKind::ByteVector, types::ByteVector>(ops::payload(args[0]));
+        if (!bv) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "open-input-bytevector: not a bytevector"}});
+        }
+
+        auto port = std::make_shared<BinaryPort>(BinaryPort::Mode::Input, bv->data);
+        return make_port(heap, port);
+    });
+
+    env.register_builtin("get-output-bytevector", 1, false, [&heap, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto port_obj = get_port(args[0]);
+        if (!port_obj) return std::unexpected(port_obj.error());
+
+        // Try to downcast to BinaryPort
+        auto* binary_port = dynamic_cast<BinaryPort*>((*port_obj)->port.get());
+        if (!binary_port) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "get-output-bytevector: not a binary port"}});
+        }
+
+        return make_bytevector(heap, binary_port->get_bytes());
+    });
+
+    env.register_builtin("read-u8", 0, true, [&vm, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
+        // Optional port argument (defaults to current-input-port)
+        LispVal port_val = args.empty() ? vm.current_input_port() : args[0];
+
+        auto port_obj = get_port(port_val);
+        if (!port_obj) return std::unexpected(port_obj.error());
+
+        auto* binary_port = dynamic_cast<BinaryPort*>((*port_obj)->port.get());
+        if (!binary_port) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "read-u8: not a binary port"}});
+        }
+
+        auto byte = binary_port->read_byte();
+        if (!byte) {
+            return False;  // EOF
+        }
+
+        return ops::encode(static_cast<int64_t>(*byte)).value();
+    });
+
+    env.register_builtin("write-u8", 1, true, [&vm, &heap, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (args.empty()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "write-u8: requires at least 1 argument"}});
+        }
+
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid() || n.is_flonum() || n.int_val < 0 || n.int_val > 255) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "write-u8: argument must be a byte (0-255)"}});
+        }
+
+        // Optional port argument (defaults to current-output-port)
+        LispVal port_val = args.size() > 1 ? args[1] : vm.current_output_port();
+
+        auto port_obj = get_port(port_val);
+        if (!port_obj) return std::unexpected(port_obj.error());
+
+        auto* binary_port = dynamic_cast<BinaryPort*>((*port_obj)->port.get());
+        if (!binary_port) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "write-u8: not a binary port"}});
+        }
+
+        auto result = binary_port->write_byte(static_cast<uint8_t>(n.int_val));
+        if (!result) return std::unexpected(result.error());
+
+        return Nil;
+    });
+
+    env.register_builtin("binary-port?", 1, false, [get_port](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto port_obj = get_port(args[0]);
+        if (!port_obj) return False;
+        return (*port_obj)->port->is_binary() ? True : False;
     });
 }
 

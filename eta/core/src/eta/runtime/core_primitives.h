@@ -25,7 +25,9 @@ namespace eta::runtime {
  *  Equivalence:  eq?  eqv?  not
  *  Pairs/Lists:  cons  car  cdr  pair?  null?  list
  *  Type preds:   number?  boolean?  string?  char?  symbol?  procedure?  integer?
- *  I/O:          display  newline
+ *
+ * Note: I/O primitives (display, newline) are now in io_primitives.h
+ * and require VM access for port support.
  *
  * All primitives capture Heap& and/or InternTable& by reference where needed.
  */
@@ -316,74 +318,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     // ========================================================================
-    // Basic I/O: display newline
+    // Note: I/O primitives (display, newline) have been moved to io_primitives.h
+    // They now support port-based output and require VM access.
     // ========================================================================
 
-    env.register_builtin("display", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
-        LispVal v = args[0];
-
-        // Format value to string
-        std::string output;
-        if (v == nanbox::Nil) { output = "()"; }
-        else if (v == nanbox::True) { output = "#t"; }
-        else if (v == nanbox::False) { output = "#f"; }
-        else if (!ops::is_boxed(v)) {
-            // Raw double
-            std::ostringstream oss;
-            oss << std::bit_cast<double>(v);
-            output = oss.str();
-        } else {
-            Tag t = ops::tag(v);
-            if (t == Tag::Fixnum) {
-                auto val = ops::decode<int64_t>(v);
-                if (val) {
-                    output = std::to_string(*val);
-                }
-            } else if (t == Tag::Char) {
-                auto val = ops::decode<char32_t>(v);
-                if (val) {
-                    // Output as UTF-8
-                    char32_t c = *val;
-                    if (c < 0x80) {
-                        output = std::string(1, static_cast<char>(c));
-                    } else {
-                        output = "?"; // Simplified
-                    }
-                }
-            } else if (t == Tag::String) {
-                auto sv = StringView::try_from(v, intern_table);
-                if (sv) output = std::string(sv->view());
-            } else if (t == Tag::Symbol) {
-                auto sv = intern_table.get_string(ops::payload(v));
-                if (sv) output = std::string(*sv);
-            } else if (t == Tag::HeapObject) {
-                auto n = classify_numeric(v, heap);
-                if (n.is_fixnum()) {
-                    output = std::to_string(n.int_val);
-                } else if (n.is_flonum()) {
-                    std::ostringstream oss;
-                    oss << n.float_val;
-                    output = oss.str();
-                } else {
-                    output = "#<object>";
-                }
-            } else {
-                output = "#<unknown>";
-            }
-        }
-
-        // Write to stdout (backward compatible - direct output for now)
-        // This will be enhanced when port primitives are integrated
-        std::cout << output;
-        return nanbox::Nil;
-    });
-
-    env.register_builtin("newline", 0, false, [](Args) -> std::expected<LispVal, RuntimeError> {
-        // Write to stdout (backward compatible - direct output for now)
-        // This will be enhanced when port primitives are integrated
-        std::cout << '\n';
-        return nanbox::Nil;
-    });
 
     // ========================================================================
     // Numeric predicates: zero? positive? negative?
