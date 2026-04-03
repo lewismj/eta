@@ -121,13 +121,10 @@ namespace eta::reader::expander {
      * ## Output (Core IR)
      *
      * After expansion, the output contains only these primitive forms:
-     * - `if`, `begin`, `set!`, `lambda`, `quote`
+     * - `if`, `begin`, `set!`, `lambda`, `quote`, `apply`
      * - `dynamic-wind`, `values`, `call-with-values`, `call/cc`
      * - Function application
      * - Module directives: `module`, `export`, `import`, `define`
-     *
-     * The SemanticAnalyzer still has handlers for derived forms (for backwards
-     * compatibility), but they are deprecated and will be removed.
      */
     class Expander {
     public:

@@ -114,9 +114,6 @@ struct ModuleSemantics {
  *
  * Note: Derived forms (let, letrec, case, do) are no longer handled by the
  * SemanticAnalyzer. They MUST be desugared by the Expander before analysis.
- * The deprecated handlers have been removed.
- *
- * After analysis, use constant_fold() to perform basic optimizations.
  */
 class SemanticAnalyzer {
 public:
@@ -129,16 +126,6 @@ public:
     SemResult<std::vector<ModuleSemantics>> analyze_all(
         std::span<const eta::reader::parser::SExprPtr> forms,
         const eta::reader::ModuleLinker& linker);
-
-    /**
-     * @brief Perform constant folding on a module
-     *
-     * Currently folds:
-     * - (if #t conseq alt) -> conseq
-     * - (if #f conseq alt) -> alt
-     * - (if <non-false-const> conseq alt) -> conseq
-     */
-    void constant_fold(ModuleSemantics& mod);
 };
 
 } // namespace eta::semantics

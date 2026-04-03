@@ -791,7 +791,6 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
         if (winding_stack_.empty()) {
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InternalError, "Winding stack empty"}});
         }
-        const auto& wind = winding_stack_.back();
         LispVal body_result = result;
         LispVal after_thunk = return_frame.extra;
 
@@ -899,13 +898,9 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
     return {};
 }
 
-} // namespace eta::runtime::vm
-
-// pack_rest_args: Build a list from args at fp_+required .. fp_+argc-1
-// and store the list at fp_+required (the rest param slot).
-namespace eta::runtime::vm {
-
 std::expected<void, RuntimeError> VM::pack_rest_args(uint32_t argc, uint32_t required) {
+    // Build a list from args at fp_+required .. fp_+argc-1
+    // and store the list at fp_+required (the rest param slot).
     LispVal rest_list = Nil;
     for (int32_t i = static_cast<int32_t>(argc) - 1; i >= static_cast<int32_t>(required); --i) {
         auto cons = make_cons(heap_, stack_[fp_ + i], rest_list);

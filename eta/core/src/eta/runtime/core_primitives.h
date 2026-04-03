@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <functional>
-#include <iostream>
 #include <sstream>
 #include <string>
 
@@ -17,7 +16,7 @@ namespace eta::runtime {
 
 
 /**
- * @brief Register all Phase 1 core primitives into a BuiltinEnvironment
+ * @brief Register all core primitives into a BuiltinEnvironment
  *
  * Primitives registered (in order — determines global slot indices):
  *
@@ -26,8 +25,15 @@ namespace eta::runtime {
  *  Equivalence:  eq?  eqv?  not
  *  Pairs/Lists:  cons  car  cdr  pair?  null?  list
  *  Type preds:   number?  boolean?  string?  char?  symbol?  procedure?  integer?
+ *  Numeric:      zero?  positive?  negative?  abs  min  max  modulo  remainder
+ *  Lists:        length  append  reverse  list-ref  list-tail  set-car!  set-cdr!
+ *  Higher-order: apply  map  for-each  (apply is VM-level; map/for-each primitives-only)
+ *  Equality:     equal?
+ *  Strings:      string-length  string-append  number->string  string->number
+ *  Vectors:      vector  vector-length  vector-ref  vector-set!  vector?  make-vector
+ *  Error:        error
  *
- * Note: I/O primitives (display, newline) are now in io_primitives.h
+ * Note: I/O primitives (display, write, newline) are in io_primitives.h
  * and require VM access for port support.
  *
  * All primitives capture Heap& and/or InternTable& by reference where needed.
@@ -502,59 +508,30 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     // ========================================================================
     // Higher-order: apply map for-each
+    //
+    // NOTE: (apply proc arg1 ... list) is now a VM-level special form
+    // (OpCode::Apply / TailApply).  The SA intercepts calls to `apply` and
+    // emits the dedicated opcode, so this primitive is only reachable when
+    // `apply` is used as a first-class value (e.g. passed to another function).
+    // That case is not yet supported — it would require a VM trampoline.
+    //
+    // map and for-each only work with primitive procedures.  They should be
+    // replaced with Scheme definitions once the REPL / stdlib loader exists.
     // ========================================================================
 
-    env.register_builtin("apply", 2, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (apply proc arg1 ... argN list)
-        // Last arg must be a list; preceding args are prepended
-        if (args.size() < 2) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "apply: requires at least 2 arguments"}});
-        LispVal proc = args[0];
-
-        // Collect the tail list
-        LispVal tail_list = args.back();
-        std::vector<LispVal> final_args;
-        // Prepend non-proc, non-tail args
-        for (size_t i = 1; i + 1 < args.size(); ++i) {
-            final_args.push_back(args[i]);
-        }
-        // Unpack tail list
-        LispVal cur = tail_list;
-        while (cur != nanbox::Nil) {
-            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "apply: last argument must be a list"}});
-            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
-            if (!cons) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "apply: last argument must be a list"}});
-            final_args.push_back(cons->car);
-            cur = cons->cdr;
-        }
-
-        // Call the procedure
-        if (!ops::is_boxed(proc) || ops::tag(proc) != Tag::HeapObject)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "apply: first argument must be a procedure"}});
-        auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
-        if (prim) {
-            // Arity check
-            if (prim->has_rest) {
-                if (final_args.size() < prim->arity)
-                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "apply: too few arguments for primitive"}});
-            } else {
-                if (final_args.size() != prim->arity)
-                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "apply: wrong number of arguments for primitive"}});
-            }
-            return prim->func(final_args);
-        }
-        // For closures, apply cannot be implemented purely as a primitive — it needs VM support.
-        // For now, only support primitive procedures.
-        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "apply: can only apply primitive procedures (closure apply requires VM support)"}});
+    env.register_builtin("apply", 2, true, [](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+            "apply: cannot be used as a first-class value yet (use direct apply syntax instead)"}});
     });
 
     env.register_builtin("map", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (map proc list) — single-list version
+        // (map proc list) — single-list version, primitives only
+        // TODO: Replace with Scheme definition once stdlib loader exists
         LispVal proc = args[0];
         if (!ops::is_boxed(proc) || ops::tag(proc) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "map: first argument must be a procedure"}});
         auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
-        if (!prim) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "map: can only map primitive procedures (closure map requires VM support)"}});
+        if (!prim) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "map: closures not yet supported (use manual recursion)"}});
 
         std::vector<LispVal> results;
         LispVal cur = args[1];
@@ -580,12 +557,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("for-each", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (for-each proc list) — single-list version
+        // (for-each proc list) — single-list version, primitives only
+        // TODO: Replace with Scheme definition once stdlib loader exists
         LispVal proc = args[0];
         if (!ops::is_boxed(proc) || ops::tag(proc) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "for-each: first argument must be a procedure"}});
         auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
-        if (!prim) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "for-each: can only apply primitive procedures (closure for-each requires VM support)"}});
+        if (!prim) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "for-each: closures not yet supported (use manual recursion)"}});
 
         LispVal cur = args[1];
         while (cur != nanbox::Nil) {

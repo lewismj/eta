@@ -443,13 +443,10 @@ SemResult<core::Node*> analyze(const SExprPtr& expr, Scope& scope, AnalysisConte
 template<typename Derived, typename R = void>
 struct IRVisitor {
     // Called before visiting children - derived class can override
-    // For mark_tail: sets the tail flag
-    // For constant_fold: no-op (folding happens after children)
     void pre_visit(core::Node*, bool) {}
 
     // Called after visiting children - derived class can override
-    // For constant_fold: performs the actual folding
-    // Returns potentially transformed node (for folding) or same node
+    // Returns potentially transformed node or same node
     core::Node* post_visit(core::Node* n, bool) { return n; }
 
     // Main entry point - visits node and all children
@@ -639,34 +636,5 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader
     return out;
 }
 
-void SemanticAnalyzer::constant_fold(ModuleSemantics& mod) {
-    /**
-     * Constant folder using IRVisitor.
-     * Folds constant conditionals in core::If nodes after visiting children.
-     */
-    struct ConstantFolder : IRVisitor<ConstantFolder> {
-        core::Node* result = nullptr;  // Used to propagate folded result
-
-        core::Node* post_visit(core::Node* n, bool /*context*/) {
-            // Check if this is an If node with a constant test
-            if (auto* if_node = std::get_if<core::If>(&n->data)) {
-                if (auto* c = std::get_if<core::Const>(&if_node->test->data)) {
-                    if (auto* b = std::get_if<bool>(&c->value.payload)) {
-                        return *b ? if_node->conseq : if_node->alt;
-                    } else if (!std::holds_alternative<std::monostate>(c->value.payload)) {
-                        // Any non-false constant is true in Scheme
-                        return if_node->conseq;
-                    }
-                }
-            }
-            return n;
-        }
-    };
-
-    ConstantFolder folder;
-    for (auto*& node : mod.toplevel_inits) {
-        node = folder.visit(node, false);
-    }
-}
 
 } // namespace eta::semantics
