@@ -247,7 +247,7 @@ BOOST_AUTO_TEST_CASE(test_module_imports) {
 }
 
 BOOST_AUTO_TEST_CASE(test_if_arity_error) {
-    std::string src = "(module m1 (define x (if 1 2)))"; // requires 3 args
+    std::string src = "(module m1 (define x (if 1 2 3 4)))"; // too many args
     auto res = analyze_src(src);
     BOOST_REQUIRE(!res.has_value());
     BOOST_CHECK(res.error().kind == SemanticError::Kind::InvalidFormShape);
