@@ -1247,4 +1247,195 @@ BOOST_AUTO_TEST_CASE(test_error_conditional) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 5);
 }
 
+// ============================================================================
+// Boolean simplifier integration test
+//
+// A non-trivial symbolic computation: simplify boolean expression trees
+// represented as nested lists.  Exercises: defun, cond, let, and/or,
+// recursion, quoted symbols, eq?, equal?, list, car/cdr, pair?.
+//
+// Expression language:
+//   atom        — a symbol (variable) or boolean constant (#t / #f)
+//   (not e)     — logical negation
+//   (and e1 e2) — logical conjunction (binary)
+//   (or  e1 e2) — logical disjunction (binary)
+//
+// Simplification rules implemented:
+//   identity / annihilator   (and x #t)=x, (and x #f)=#f, etc.
+//   double negation          (not (not y))=y
+//   idempotence              (and x x)=x, (or x x)=x
+//   De Morgan                (not (and a b))=(or (not a) (not b))
+//   fixed-point iteration    keep simplifying until stable
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
+    std::string src = R"(
+        (module m
+          ;; atom? — true for anything that is not a pair (symbols, bools, nil, numbers…)
+          ;; This is a natural prelude candidate.
+          (defun atom? (x) (not (pair? x)))
+
+          ;; Helpers: extract operator and first/second argument
+          (defun op (e) (car e))
+          (defun a1 (e) (car (cdr e)))
+          (defun a2 (e) (car (cdr (cdr e))))
+
+          ;; One-step boolean simplifier on binary expression trees
+          (defun simplify-bool (e)
+            (cond
+              ;; Atoms (variables or constants) return as-is
+              ((atom? e) e)
+
+              ;; ── not ────────────────────────────────────────────
+              ((eq? (op e) 'not)
+                (let ((u (simplify-bool (a1 e))))
+                  (cond
+                    ((and (atom? u) (eq? u #t)) #f)
+                    ((and (atom? u) (eq? u #f)) #t)
+                    ;; double negation: (not (not x)) => x
+                    ((and (pair? u) (eq? (op u) 'not)) (a1 u))
+                    ;; De Morgan: (not (and a b)) => (or (not a) (not b))
+                    ((and (pair? u) (eq? (op u) 'and))
+                      (list 'or  (list 'not (a1 u)) (list 'not (a2 u))))
+                    ;; De Morgan: (not (or a b)) => (and (not a) (not b))
+                    ((and (pair? u) (eq? (op u) 'or))
+                      (list 'and (list 'not (a1 u)) (list 'not (a2 u))))
+                    (#t (list 'not u)))))
+
+              ;; ── and ────────────────────────────────────────────
+              ((eq? (op e) 'and)
+                (let ((sa (simplify-bool (a1 e)))
+                      (sb (simplify-bool (a2 e))))
+                  (cond
+                    ((eq? sa #f) #f)
+                    ((eq? sb #f) #f)
+                    ((eq? sa #t) sb)
+                    ((eq? sb #t) sa)
+                    ((equal? sa sb) sa)
+                    (#t (list 'and sa sb)))))
+
+              ;; ── or ─────────────────────────────────────────────
+              ((eq? (op e) 'or)
+                (let ((sa (simplify-bool (a1 e)))
+                      (sb (simplify-bool (a2 e))))
+                  (cond
+                    ((eq? sa #t) #t)
+                    ((eq? sb #t) #t)
+                    ((eq? sa #f) sb)
+                    ((eq? sb #f) sa)
+                    ((equal? sa sb) sa)
+                    (#t (list 'or sa sb)))))
+
+              ;; Anything else passes through unchanged
+              (#t e)))
+
+          ;; Fixed-point wrapper: keep simplifying until stable
+          (defun simplify-bool* (e)
+            (let ((s (simplify-bool e)))
+              (if (equal? s e) s (simplify-bool* s))))
+
+          ;; ── Test cases ──────────────────────────────────────────
+          ;; x ∧ ⊤ = x
+          (define t1 (simplify-bool* '(and x #t)))
+          ;; x ∧ ⊥ = ⊥
+          (define t2 (simplify-bool* '(and x #f)))
+          ;; (⊤ ∧ x) ∨ ⊥ = x
+          (define t3 (simplify-bool* '(or (and #t x) #f)))
+          ;; ¬(¬y) = y
+          (define t4 (simplify-bool* '(not (not y))))
+          ;; ¬(a ∧ b) = (¬a) ∨ (¬b)   (De Morgan)
+          (define t5 (simplify-bool* '(not (and a b))))
+
+          ;; Verify each result
+          (define r1 (eq? t1 'x))
+          (define r2 (eq? t2 #f))
+          (define r3 (eq? t3 'x))
+          (define r4 (eq? t4 'y))
+          (define r5 (equal? t5 '(or (not a) (not b))))
+
+          ;; All checks must pass
+          (define result (and r1 r2 r3 r4 r5)))
+    )";
+
+    LispVal res = run(src);
+    // (and r1 r2 r3 r4 r5) returns the last truthy value when all pass,
+    // or #f if any check fails.
+    BOOST_CHECK(res != nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_boolean_simplifier_identity_and) {
+    // x ∧ ⊤ = x
+    LispVal res = run(
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun a2 (e) (car (cdr (cdr e))))"
+        "  (defun simplify-bool (e)"
+        "    (cond"
+        "      ((atom? e) e)"
+        "      ((eq? (op e) 'and)"
+        "        (let ((sa (simplify-bool (a1 e)))"
+        "              (sb (simplify-bool (a2 e))))"
+        "          (cond"
+        "            ((eq? sa #f) #f)"
+        "            ((eq? sb #f) #f)"
+        "            ((eq? sa #t) sb)"
+        "            ((eq? sb #t) sa)"
+        "            (#t (list 'and sa sb)))))"
+        "      (#t e)))"
+        "  (define result (eq? (simplify-bool '(and x #t)) 'x)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_boolean_simplifier_double_negation) {
+    // ¬(¬y) = y
+    LispVal res = run(
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun simplify-bool (e)"
+        "    (cond"
+        "      ((atom? e) e)"
+        "      ((eq? (op e) 'not)"
+        "        (let ((u (simplify-bool (a1 e))))"
+        "          (cond"
+        "            ((and (atom? u) (eq? u #t)) #f)"
+        "            ((and (atom? u) (eq? u #f)) #t)"
+        "            ((and (pair? u) (eq? (op u) 'not)) (a1 u))"
+        "            (#t (list 'not u)))))"
+        "      (#t e)))"
+        "  (define result (eq? (simplify-bool '(not (not y))) 'y)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_boolean_simplifier_de_morgan) {
+    // ¬(a ∧ b) = (¬a) ∨ (¬b)
+    LispVal res = run(
+        "(module m"
+        "  (defun atom? (x) (not (pair? x)))"
+        "  (defun op (e) (car e))"
+        "  (defun a1 (e) (car (cdr e)))"
+        "  (defun a2 (e) (car (cdr (cdr e))))"
+        "  (defun simplify-bool (e)"
+        "    (cond"
+        "      ((atom? e) e)"
+        "      ((eq? (op e) 'not)"
+        "        (let ((u (simplify-bool (a1 e))))"
+        "          (cond"
+        "            ((and (atom? u) (eq? u #t)) #f)"
+        "            ((and (atom? u) (eq? u #f)) #t)"
+        "            ((and (pair? u) (eq? (op u) 'not)) (a1 u))"
+        "            ((and (pair? u) (eq? (op u) 'and))"
+        "              (list 'or (list 'not (a1 u)) (list 'not (a2 u))))"
+        "            ((and (pair? u) (eq? (op u) 'or))"
+        "              (list 'and (list 'not (a1 u)) (list 'not (a2 u))))"
+        "            (#t (list 'not u)))))"
+        "      (#t e)))"
+        "  (define result (equal? (simplify-bool '(not (and a b)))"
+        "                         '(or (not a) (not b)))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
