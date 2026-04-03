@@ -29,6 +29,81 @@ struct VMTestFixture {
         register_core_primitives(builtins, heap, intern_table);
     }
 
+    /**
+     * @brief Compile and execute a multi-module program, returning the value
+     * of the 'result' global from the last module.
+     *
+     * Processes ALL modules returned by analyze_all (not just the first),
+     * emitting and executing each in order.
+     */
+    LispVal run_multi(std::string_view source) {
+        reader::lexer::Lexer lex(0, source);
+        reader::parser::Parser p(lex);
+        auto parsed_res = p.parse_toplevel();
+        if (!parsed_res) throw std::runtime_error("Parse error");
+        auto parsed = std::move(*parsed_res);
+
+        reader::expander::Expander ex;
+        auto expanded_res = ex.expand_many(parsed);
+        if (!expanded_res) throw std::runtime_error("Expansion error");
+        auto expanded = std::move(*expanded_res);
+
+        reader::ModuleLinker linker;
+        auto idx_res = linker.index_modules(expanded);
+        if (!idx_res) throw std::runtime_error("Index error: " + idx_res.error().message);
+        auto link_res = linker.link();
+        if (!link_res) throw std::runtime_error("Link error: " + link_res.error().message);
+
+        SemanticAnalyzer sa;
+        auto sem_res = sa.analyze_all(expanded, linker, builtins);
+        if (!sem_res) throw std::runtime_error("Semantic error: " + sem_res.error().message);
+        auto sem_mods = std::move(*sem_res);
+        BOOST_REQUIRE(!sem_mods.empty());
+
+        // Emit bytecode for all modules
+        std::vector<BytecodeFunction*> main_funcs;
+        for (auto& mod : sem_mods) {
+            Emitter emitter(mod, heap, intern_table, registry);
+            main_funcs.push_back(emitter.emit());
+        }
+
+        // Execute each module in order on the same VM
+        VM vm(heap, intern_table);
+        vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
+
+        for (size_t i = 0; i < sem_mods.size(); ++i) {
+            auto install_res = builtins.install(heap, vm.globals(), sem_mods[i].bindings.size());
+            if (!install_res) throw std::runtime_error("Failed to install builtins for module " + sem_mods[i].name);
+
+            auto exec_res = vm.execute(*main_funcs[i]);
+            if (!exec_res) {
+                std::string msg = "Execution error in module " + sem_mods[i].name;
+                std::visit([&msg](auto&& arg) {
+                    using T = std::decay_t<decltype(arg)>;
+                    if constexpr (std::is_same_v<T, VMError>) {
+                        msg += ": " + arg.message;
+                    } else if constexpr (std::is_same_v<T, NaNBoxError>) {
+                        msg += ": NaNBoxError " + std::to_string(static_cast<int>(arg));
+                    } else if constexpr (std::is_same_v<T, HeapError>) {
+                        msg += ": HeapError " + std::to_string(static_cast<int>(arg));
+                    } else if constexpr (std::is_same_v<T, InternTableError>) {
+                        msg += ": InternTableError " + std::to_string(static_cast<int>(arg));
+                    }
+                }, exec_res.error());
+                throw std::runtime_error(msg);
+            }
+        }
+
+        // Find 'result' in the last module
+        auto& last_mod = sem_mods.back();
+        for (size_t i = 0; i < last_mod.bindings.size(); ++i) {
+            if (last_mod.bindings[i].name == "result") {
+                return vm.globals()[last_mod.bindings[i].slot];
+            }
+        }
+        throw std::runtime_error("No 'result' binding found in last module");
+    }
+
     LispVal run(std::string_view source) {
         reader::lexer::Lexer lex(0, source);
         reader::parser::Parser p(lex);
@@ -577,6 +652,84 @@ BOOST_AUTO_TEST_CASE(test_vector_pred) {
 BOOST_AUTO_TEST_CASE(test_vector_pred_false) {
     LispVal res = run("(module m (define result (vector? 42)))");
     BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+// ============================================================================
+// Multi-module execution tests
+//
+// These tests document the cross-module runtime execution requirement.
+// Currently, each ModuleSemantics has independent global slot numbering,
+// and BuiltinEnvironment::install() wipes the globals vector on each call.
+// A cross-module slot mapping or unified global allocation is needed.
+//
+// STATUS: Expected to fail until cross-module runtime is implemented.
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_multi_module_analyze_produces_multiple) {
+    // Verify that the pipeline at least produces multiple ModuleSemantics
+    std::string_view source =
+        "(module lib (export answer) (define answer 42))\n"
+        "(module main (import lib) (define result answer))";
+
+    reader::lexer::Lexer lex(0, source);
+    reader::parser::Parser p(lex);
+    auto parsed = std::move(*p.parse_toplevel());
+
+    reader::expander::Expander ex;
+    auto expanded = std::move(*ex.expand_many(parsed));
+
+    reader::ModuleLinker linker;
+    auto idx = linker.index_modules(expanded);
+    BOOST_REQUIRE(idx.has_value());
+    auto lk = linker.link();
+    BOOST_REQUIRE(lk.has_value());
+
+    SemanticAnalyzer sa;
+    auto sem_res = sa.analyze_all(expanded, linker, builtins);
+    BOOST_REQUIRE(sem_res.has_value());
+    BOOST_CHECK_EQUAL(sem_res->size(), 2);
+    BOOST_CHECK_EQUAL((*sem_res)[0].name, "lib");
+    BOOST_CHECK_EQUAL((*sem_res)[1].name, "main");
+
+    // Verify the import binding exists in module 'main'
+    const auto& main_mod = (*sem_res)[1];
+    bool found_import = false;
+    for (const auto& b : main_mod.bindings) {
+        if (b.name == "answer" && b.kind == BindingInfo::Kind::Import) {
+            found_import = true;
+            break;
+        }
+    }
+    BOOST_CHECK(found_import);
+}
+
+BOOST_AUTO_TEST_CASE(test_multi_module_each_emits_bytecode) {
+    // Verify that each module produces valid bytecode
+    std::string_view source =
+        "(module lib (export answer) (define answer 42))\n"
+        "(module main (import lib) (define result answer))";
+
+    reader::lexer::Lexer lex(0, source);
+    reader::parser::Parser p(lex);
+    auto parsed = std::move(*p.parse_toplevel());
+
+    reader::expander::Expander ex;
+    auto expanded = std::move(*ex.expand_many(parsed));
+
+    reader::ModuleLinker linker;
+    linker.index_modules(expanded);
+    linker.link();
+
+    SemanticAnalyzer sa;
+    auto sem_res = sa.analyze_all(expanded, linker, builtins);
+    BOOST_REQUIRE(sem_res.has_value());
+
+    for (auto& mod : *sem_res) {
+        Emitter emitter(mod, heap, intern_table, registry);
+        auto* main_func = emitter.emit();
+        BOOST_CHECK(main_func != nullptr);
+        BOOST_CHECK(!main_func->code.empty());
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -299,4 +299,42 @@ BOOST_AUTO_TEST_CASE(vector_and_bytevector_starts) {
     BOOST_TEST(e.error().kind == LexErrorKind::InvalidToken);
 }
 
+// ============================================================================
+// FileId tracking tests
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(file_id_propagated_in_tokens) {
+    // Tokens from different "files" should carry distinct FileIds
+    const FileId file_a = 10;
+    const FileId file_b = 20;
+
+    auto toks_a = lex_all("(foo)", file_a);
+    auto toks_b = lex_all("(bar)", file_b);
+
+    // Each token from file_a should have file_id == 10
+    for (const auto& t : toks_a) {
+        BOOST_CHECK_EQUAL(t.span.file_id, file_a);
+    }
+    // Each token from file_b should have file_id == 20
+    for (const auto& t : toks_b) {
+        BOOST_CHECK_EQUAL(t.span.file_id, file_b);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(file_id_propagated_in_errors) {
+    // Lex errors should carry the correct FileId
+    const FileId fid = 99;
+    Lexer lx(fid, "\"unterminated");
+    auto result = lx.next_token();
+    BOOST_REQUIRE(!result.has_value());
+    BOOST_CHECK_EQUAL(result.error().span.file_id, fid);
+}
+
+BOOST_AUTO_TEST_CASE(file_id_zero_is_valid) {
+    // FileId 0 is a valid identifier (used by many tests as default)
+    auto toks = lex_all("42", 0);
+    BOOST_REQUIRE(!toks.empty());
+    BOOST_CHECK_EQUAL(toks[0].span.file_id, 0);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
