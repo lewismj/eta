@@ -233,6 +233,8 @@ namespace eta::reader::lexer {
 
         bool skip_block_comment();
 
+        std::expected<void, LexError> skip_datum(Position start);
+
         void consume_directive_or_shebang();
 
         // Decode a single UTF-8 sequence from input without advancing on failure

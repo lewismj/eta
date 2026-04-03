@@ -154,10 +154,7 @@ namespace {
                     // Datum comment - skip one complete datum
                     Position dc_start = current_position();
                     advance(); advance();
-                    auto tok = next_token();
-                    if (!tok || tok->kind == Token::Kind::EOF_) {
-                        return std::unexpected(make_error(LexErrorKind::UnexpectedEOF, dc_start, "unterminated datum comment"));
-                    }
+                    if (auto r = skip_datum(dc_start); !r) return std::unexpected(r.error());
                     continue;
                 }
                 if (next == '!') {
@@ -188,6 +185,88 @@ namespace {
             }
         }
         return depth == 0;
+    }
+
+    std::expected<void, LexError> Lexer::skip_datum(Position start) {
+        // Get the first token of the datum
+        auto tok = next_token();
+        if (!tok || tok->kind == Token::Kind::EOF_) {
+            return std::unexpected(make_error(LexErrorKind::UnexpectedEOF, start, "unterminated datum comment"));
+        }
+
+        switch (tok->kind) {
+            // Opening delimiters: skip until the matching close
+            case Token::Kind::LParen:
+            case Token::Kind::VectorStart:
+            case Token::Kind::ByteVectorStart: {
+                for (;;) {
+                    auto inner = next_token();
+                    if (!inner) return std::unexpected(inner.error());
+                    if (inner->kind == Token::Kind::EOF_)
+                        return std::unexpected(make_error(LexErrorKind::UnexpectedEOF, start, "unterminated datum comment"));
+                    if (inner->kind == Token::Kind::RParen) break;
+                    // For nested open delimiters, we need to recursively handle them.
+                    // Rewind isn't easy, so we handle nesting with a depth counter.
+                    if (inner->kind == Token::Kind::LParen ||
+                        inner->kind == Token::Kind::VectorStart ||
+                        inner->kind == Token::Kind::ByteVectorStart ||
+                        inner->kind == Token::Kind::LBracket) {
+                        int depth = 1;
+                        while (depth > 0) {
+                            auto nested = next_token();
+                            if (!nested) return std::unexpected(nested.error());
+                            if (nested->kind == Token::Kind::EOF_)
+                                return std::unexpected(make_error(LexErrorKind::UnexpectedEOF, start, "unterminated datum comment"));
+                            if (nested->kind == Token::Kind::LParen ||
+                                nested->kind == Token::Kind::VectorStart ||
+                                nested->kind == Token::Kind::ByteVectorStart ||
+                                nested->kind == Token::Kind::LBracket) depth++;
+                            else if (nested->kind == Token::Kind::RParen ||
+                                     nested->kind == Token::Kind::RBracket) depth--;
+                        }
+                    }
+                }
+                break;
+            }
+            case Token::Kind::LBracket: {
+                for (;;) {
+                    auto inner = next_token();
+                    if (!inner) return std::unexpected(inner.error());
+                    if (inner->kind == Token::Kind::EOF_)
+                        return std::unexpected(make_error(LexErrorKind::UnexpectedEOF, start, "unterminated datum comment"));
+                    if (inner->kind == Token::Kind::RBracket) break;
+                    if (inner->kind == Token::Kind::LParen ||
+                        inner->kind == Token::Kind::VectorStart ||
+                        inner->kind == Token::Kind::ByteVectorStart ||
+                        inner->kind == Token::Kind::LBracket) {
+                        int depth = 1;
+                        while (depth > 0) {
+                            auto nested = next_token();
+                            if (!nested) return std::unexpected(nested.error());
+                            if (nested->kind == Token::Kind::EOF_)
+                                return std::unexpected(make_error(LexErrorKind::UnexpectedEOF, start, "unterminated datum comment"));
+                            if (nested->kind == Token::Kind::LParen ||
+                                nested->kind == Token::Kind::VectorStart ||
+                                nested->kind == Token::Kind::ByteVectorStart ||
+                                nested->kind == Token::Kind::LBracket) depth++;
+                            else if (nested->kind == Token::Kind::RParen ||
+                                     nested->kind == Token::Kind::RBracket) depth--;
+                        }
+                    }
+                }
+                break;
+            }
+            // Prefix tokens: skip the prefix + one more datum
+            case Token::Kind::Quote:
+            case Token::Kind::Backtick:
+            case Token::Kind::Comma:
+            case Token::Kind::CommaAt:
+                return skip_datum(start);
+            // Atoms: already consumed by next_token()
+            default:
+                break;
+        }
+        return {};
     }
 
     void Lexer::consume_directive_or_shebang() {
