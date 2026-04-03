@@ -67,13 +67,15 @@ struct VMTestFixture {
             main_funcs.push_back(emitter.emit());
         }
 
-        // Execute each module in order on the same VM
+        // Execute each module in order on the same VM with unified globals
         VM vm(heap, intern_table);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
 
+        // Install builtins ONCE with the unified total_globals count
+        auto install_res = builtins.install(heap, vm.globals(), sem_mods[0].total_globals);
+        if (!install_res) throw std::runtime_error("Failed to install builtins");
+
         for (size_t i = 0; i < sem_mods.size(); ++i) {
-            auto install_res = builtins.install(heap, vm.globals(), sem_mods[i].bindings.size());
-            if (!install_res) throw std::runtime_error("Failed to install builtins for module " + sem_mods[i].name);
 
             auto exec_res = vm.execute(*main_funcs[i]);
             if (!exec_res) {
@@ -135,7 +137,7 @@ struct VMTestFixture {
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
 
         // Install builtins and size globals to accommodate all module bindings
-        auto install_res = builtins.install(heap, vm.globals(), sem_mod.bindings.size());
+        auto install_res = builtins.install(heap, vm.globals(), sem_mod.total_globals);
         if (!install_res) throw std::runtime_error("Failed to install builtins");
 
         auto exec_res = vm.execute(*main_func);
@@ -655,14 +657,7 @@ BOOST_AUTO_TEST_CASE(test_vector_pred_false) {
 }
 
 // ============================================================================
-// Multi-module execution tests
-//
-// These tests document the cross-module runtime execution requirement.
-// Currently, each ModuleSemantics has independent global slot numbering,
-// and BuiltinEnvironment::install() wipes the globals vector on each call.
-// A cross-module slot mapping or unified global allocation is needed.
-//
-// STATUS: Expected to fail until cross-module runtime is implemented.
+// Multi-module execution tests (unified global allocation)
 // ============================================================================
 
 BOOST_AUTO_TEST_CASE(test_multi_module_analyze_produces_multiple) {
@@ -730,6 +725,104 @@ BOOST_AUTO_TEST_CASE(test_multi_module_each_emits_bytecode) {
         BOOST_CHECK(main_func != nullptr);
         BOOST_CHECK(!main_func->code.empty());
     }
+}
+
+BOOST_AUTO_TEST_CASE(test_multi_module_unified_global_slots) {
+    // Verify that imported bindings share the same global slot as the export
+    std::string_view source =
+        "(module lib (export answer) (define answer 42))\n"
+        "(module main (import lib) (define result answer))";
+
+    reader::lexer::Lexer lex(0, source);
+    reader::parser::Parser p(lex);
+    auto parsed = std::move(*p.parse_toplevel());
+
+    reader::expander::Expander ex;
+    auto expanded = std::move(*ex.expand_many(parsed));
+
+    reader::ModuleLinker linker;
+    linker.index_modules(expanded);
+    linker.link();
+
+    SemanticAnalyzer sa;
+    auto sem_res = sa.analyze_all(expanded, linker, builtins);
+    BOOST_REQUIRE(sem_res.has_value());
+    BOOST_REQUIRE_EQUAL(sem_res->size(), 2);
+
+    const auto& lib_mod = (*sem_res)[0];
+    const auto& main_mod = (*sem_res)[1];
+
+    // Find the slot where lib defines 'answer'
+    uint16_t lib_answer_slot = 0;
+    for (const auto& b : lib_mod.bindings) {
+        if (b.name == "answer" && b.kind == BindingInfo::Kind::Global) {
+            lib_answer_slot = b.slot;
+            break;
+        }
+    }
+
+    // Find the slot where main imports 'answer'
+    uint16_t main_answer_slot = 0;
+    for (const auto& b : main_mod.bindings) {
+        if (b.name == "answer" && b.kind == BindingInfo::Kind::Import) {
+            main_answer_slot = b.slot;
+            break;
+        }
+    }
+
+    // Both must reference the same unified global slot
+    BOOST_CHECK_EQUAL(lib_answer_slot, main_answer_slot);
+
+    // total_globals should be the same on both modules
+    BOOST_CHECK_EQUAL(lib_mod.total_globals, main_mod.total_globals);
+}
+
+BOOST_AUTO_TEST_CASE(test_multi_module_import_constant) {
+    // Module lib exports a constant; module main imports and uses it
+    LispVal res = run_multi(
+        "(module lib (export answer) (define answer 42))\n"
+        "(module main (import lib) (define result answer))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+BOOST_AUTO_TEST_CASE(test_multi_module_import_function) {
+    // Module lib exports a function; module main calls it
+    LispVal res = run_multi(
+        "(module lib (export double) (define (double x) (* x 2)))\n"
+        "(module main (import lib) (define result (double 21)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+BOOST_AUTO_TEST_CASE(test_multi_module_chain) {
+    // Linear chain: A -> B -> C, each adds 1
+    LispVal res = run_multi(
+        "(module A (export x) (define x 1))\n"
+        "(module B (import A) (export y) (define y (+ x 1)))\n"
+        "(module C (import B) (define result (+ y 1)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 3);
+}
+
+BOOST_AUTO_TEST_CASE(test_multi_module_diamond_dependency) {
+    // A exports a; B and C both import from A; D imports from B and C
+    LispVal res = run_multi(
+        "(module A (export a) (define a 10))\n"
+        "(module B (import A) (export b) (define b (+ a 5)))\n"
+        "(module C (import A) (export c) (define c (+ a 20)))\n"
+        "(module D (import B) (import C) (define result (+ b c)))");
+    // b = 15, c = 30, result = 45
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 45);
+}
+
+BOOST_AUTO_TEST_CASE(test_multi_module_export_function_closure) {
+    // Module lib exports a closure (function capturing a local);
+    // module main calls it
+    LispVal res = run_multi(
+        "(module lib (export make-adder)\n"
+        "  (define (make-adder n) (lambda (x) (+ n x))))\n"
+        "(module main (import lib)\n"
+        "  (define add5 (make-adder 5))\n"
+        "  (define result (add5 37)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

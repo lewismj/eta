@@ -337,4 +337,407 @@ BOOST_AUTO_TEST_CASE(file_id_zero_is_valid) {
     BOOST_CHECK_EQUAL(toks[0].span.file_id, 0);
 }
 
+// ============================================================================
+// Special IEEE float literals
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(special_float_literals) {
+    check_tokens("+inf.0 -inf.0 +nan.0 -nan.0", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Flonum, 10, std::string("+inf.0")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Flonum, 10, std::string("-inf.0")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Flonum, 10, std::string("+nan.0")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Flonum, 10, std::string("-nan.0")},
+        {Token::Kind::EOF_},
+    });
+}
+
+// ============================================================================
+// Exactness prefixes (#e, #i) and combined prefixes
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(exactness_prefix_decimal) {
+    // #e and #i should be accepted as exactness prefixes
+    check_tokens("#e42 #i3.14", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 10, std::string("42")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Flonum, 10, std::string("3.14")},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(combined_radix_and_exactness_prefixes) {
+    // Combined: radix + exactness in either order
+    check_tokens("#e#xFF #x#eFF", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 16, std::string("FF")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 16, std::string("FF")},
+        {Token::Kind::EOF_},
+    });
+
+    check_tokens("#i#b1010 #b#i1010", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 2, std::string("1010")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 2, std::string("1010")},
+        {Token::Kind::EOF_},
+    });
+}
+
+// ============================================================================
+// Edge cases in number parsing
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(number_edge_cases) {
+    // Leading-dot decimal
+    check_tokens(".0 .123", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Flonum, 10, std::string(".0")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Flonum, 10, std::string(".123")},
+        {Token::Kind::EOF_},
+    });
+
+    // Trailing-dot decimal
+    check_tokens("0. 100.", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Flonum, 10, std::string("0.")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Flonum, 10, std::string("100.")},
+        {Token::Kind::EOF_},
+    });
+
+    // Signed zero
+    check_tokens("+0 -0", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 10, std::string("+0")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 10, std::string("-0")},
+        {Token::Kind::EOF_},
+    });
+
+    // Hex with upper and lower case
+    check_tokens("#xABcd #xabCD", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 16, std::string("ABcd")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 16, std::string("abCD")},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(number_signed_hex_and_octal) {
+    check_tokens("#x+A #o-77", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 16, std::string("+A")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 8, std::string("-77")},
+        {Token::Kind::EOF_},
+    });
+}
+
+// ============================================================================
+// Empty source and whitespace-only inputs
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(empty_and_whitespace_sources) {
+    // Empty source should produce only EOF
+    check_tokens("", {
+        {Token::Kind::EOF_},
+    });
+
+    // Whitespace-only source
+    check_tokens("   \t\n  \r\n  ", {
+        {Token::Kind::EOF_},
+    });
+
+    // Comment-only source
+    check_tokens("; just a comment\n; and another", {
+        {Token::Kind::EOF_},
+    });
+}
+
+// ============================================================================
+// Span tracking (offsets and line/column)
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(span_offsets_are_correct) {
+    auto toks = lex_all("(abc 42)");
+    // Expected tokens: LParen, Symbol("abc"), Number(42), RParen, EOF
+    BOOST_REQUIRE_EQUAL(toks.size(), 5u);
+
+    // LParen at offset 0
+    BOOST_CHECK_EQUAL(toks[0].span.start.offset, 0u);
+    BOOST_CHECK_EQUAL(toks[0].span.start.line, 1u);
+    BOOST_CHECK_EQUAL(toks[0].span.start.column, 1u);
+
+    // Symbol "abc" starts at offset 1
+    BOOST_CHECK_EQUAL(toks[1].span.start.offset, 1u);
+    BOOST_CHECK_EQUAL(toks[1].span.start.line, 1u);
+    BOOST_CHECK_EQUAL(toks[1].span.start.column, 2u);
+
+    // Number 42 starts at offset 5
+    BOOST_CHECK_EQUAL(toks[2].span.start.offset, 5u);
+    BOOST_CHECK_EQUAL(toks[2].span.start.line, 1u);
+    BOOST_CHECK_EQUAL(toks[2].span.start.column, 6u);
+}
+
+BOOST_AUTO_TEST_CASE(span_multiline_tracking) {
+    auto toks = lex_all("a\nb\nc");
+    // Symbols a, b, c on lines 1, 2, 3
+    BOOST_REQUIRE_EQUAL(toks.size(), 4u); // a, b, c, EOF
+
+    BOOST_CHECK_EQUAL(toks[0].span.start.line, 1u);
+    BOOST_CHECK_EQUAL(toks[0].span.start.column, 1u);
+
+    BOOST_CHECK_EQUAL(toks[1].span.start.line, 2u);
+    BOOST_CHECK_EQUAL(toks[1].span.start.column, 1u);
+
+    BOOST_CHECK_EQUAL(toks[2].span.start.line, 3u);
+    BOOST_CHECK_EQUAL(toks[2].span.start.column, 1u);
+}
+
+// ============================================================================
+// Datum comment edge cases
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(datum_comment_skips_nested_form) {
+    // Datum comment should skip an entire list
+    check_tokens("#;(a b c) 42", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 10, std::string("42")},
+        {Token::Kind::EOF_},
+    });
+
+    // Datum comment skips a string
+    check_tokens("#;\"hello\" world", {
+        {Token::Kind::Symbol, {}, {}, std::string("world")},
+        {Token::Kind::EOF_},
+    });
+
+    // Datum comment skips a vector
+    check_tokens("#;#(1 2 3) done", {
+        {Token::Kind::Symbol, {}, {}, std::string("done")},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(datum_comment_at_eof_is_error) {
+    // #; at EOF with no datum to skip
+    Lexer lx(1, "#; ");
+    auto result = lx.next_token();
+    BOOST_TEST(!result.has_value());
+    BOOST_TEST(result.error().kind == LexErrorKind::UnexpectedEOF);
+}
+
+// ============================================================================
+// Block comment edge cases
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(unterminated_block_comment_error) {
+    Lexer lx(1, "#| unterminated block comment");
+    auto result = lx.next_token();
+    BOOST_TEST(!result.has_value());
+    BOOST_TEST(result.error().kind == LexErrorKind::UnterminatedComment);
+}
+
+BOOST_AUTO_TEST_CASE(deeply_nested_block_comment) {
+    // Multiple levels of nesting
+    check_tokens("#| a #| b #| c |# d |# e |# 99", {
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 10, std::string("99")},
+        {Token::Kind::EOF_},
+    });
+}
+
+// ============================================================================
+// String edge cases
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(empty_string) {
+    check_tokens("\"\"", {
+        {Token::Kind::String, {}, {}, std::string("")},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(string_all_escapes) {
+    // Test all standard escape characters
+    check_tokens("\"\\a\\b\\t\\n\\r\\\\\\\"\"", {
+        {Token::Kind::String, {}, {}, std::string("\a\b\t\n\r\\\"")},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(string_invalid_escape) {
+    Lexer lx(1, "\"\\z\"");
+    auto result = lx.next_token();
+    BOOST_TEST(!result.has_value());
+    BOOST_TEST(result.error().kind == LexErrorKind::InvalidToken);
+}
+
+BOOST_AUTO_TEST_CASE(string_eof_after_backslash) {
+    Lexer lx(1, "\"abc\\");
+    auto result = lx.next_token();
+    BOOST_TEST(!result.has_value());
+    BOOST_TEST(result.error().kind == LexErrorKind::UnterminatedString);
+}
+
+BOOST_AUTO_TEST_CASE(string_hex_escape_multi_char) {
+    // Multiple hex escapes in one string
+    check_tokens("\"\\x48;\\x65;\\x6C;\\x6C;\\x6F;\"", {
+        {Token::Kind::String, {}, {}, std::string("Hello")},
+        {Token::Kind::EOF_},
+    });
+}
+
+// ============================================================================
+// Character edge cases
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(char_single_ascii) {
+    check_tokens("#\\a #\\Z #\\0 #\\~", {
+        {Token::Kind::Char, {}, U'a'},
+        {Token::Kind::Char, {}, U'Z'},
+        {Token::Kind::Char, {}, U'0'},
+        {Token::Kind::Char, {}, U'~'},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(char_hex_unicode) {
+    // Unicode lambda character U+03BB
+    check_tokens("#\\x3BB;", {
+        {Token::Kind::Char, {}, static_cast<char32_t>(0x3BB)},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(char_hex_surrogate_is_error) {
+    // Surrogate code points are invalid
+    Lexer lx(1, "#\\xD800;");
+    auto result = lx.next_token();
+    BOOST_TEST(!result.has_value());
+    BOOST_TEST(result.error().kind == LexErrorKind::InvalidCodePoint);
+}
+
+// ============================================================================
+// Identifier edge cases
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(identifier_special_initial_chars) {
+    check_tokens("!predicate $var %internal &rest *glob /path :keyword <less =eq >more ?query ^power _private ~approx", {
+        {Token::Kind::Symbol, {}, {}, std::string("!predicate")},
+        {Token::Kind::Symbol, {}, {}, std::string("$var")},
+        {Token::Kind::Symbol, {}, {}, std::string("%internal")},
+        {Token::Kind::Symbol, {}, {}, std::string("&rest")},
+        {Token::Kind::Symbol, {}, {}, std::string("*glob")},
+        {Token::Kind::Symbol, {}, {}, std::string("/path")},
+        {Token::Kind::Symbol, {}, {}, std::string(":keyword")},
+        {Token::Kind::Symbol, {}, {}, std::string("<less")},
+        {Token::Kind::Symbol, {}, {}, std::string("=eq")},
+        {Token::Kind::Symbol, {}, {}, std::string(">more")},
+        {Token::Kind::Symbol, {}, {}, std::string("?query")},
+        {Token::Kind::Symbol, {}, {}, std::string("^power")},
+        {Token::Kind::Symbol, {}, {}, std::string("_private")},
+        {Token::Kind::Symbol, {}, {}, std::string("~approx")},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(identifier_with_digits_and_dots) {
+    check_tokens("x1 foo2bar a.b", {
+        {Token::Kind::Symbol, {}, {}, std::string("x1")},
+        {Token::Kind::Symbol, {}, {}, std::string("foo2bar")},
+        {Token::Kind::Symbol, {}, {}, std::string("a.b")},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(bar_identifier_empty) {
+    check_tokens("||", {
+        {Token::Kind::Symbol, {}, {}, std::string("")},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(bar_identifier_with_newlines_and_specials) {
+    // Bar identifiers can contain any characters including newlines
+    check_tokens("|foo bar|", {
+        {Token::Kind::Symbol, {}, {}, std::string("foo bar")},
+        {Token::Kind::EOF_},
+    });
+}
+
+// ============================================================================
+// Comma and CommaAt disambiguation
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(comma_at_vs_comma_followed_by_at) {
+    // ,@ should be a single CommaAt token
+    check_tokens(",@x", {
+        {Token::Kind::CommaAt},
+        {Token::Kind::Symbol, {}, {}, std::string("x")},
+        {Token::Kind::EOF_},
+    });
+
+    // , followed by something not @ should be just Comma
+    check_tokens(",x", {
+        {Token::Kind::Comma},
+        {Token::Kind::Symbol, {}, {}, std::string("x")},
+        {Token::Kind::EOF_},
+    });
+}
+
+// ============================================================================
+// Token adjacency and delimiter behavior
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(tokens_adjacent_to_delimiters) {
+    // Tokens immediately next to parens and brackets
+    check_tokens("(foo)(bar)[baz]", {
+        {Token::Kind::LParen},
+        {Token::Kind::Symbol, {}, {}, std::string("foo")},
+        {Token::Kind::RParen},
+        {Token::Kind::LParen},
+        {Token::Kind::Symbol, {}, {}, std::string("bar")},
+        {Token::Kind::RParen},
+        {Token::Kind::LBracket},
+        {Token::Kind::Symbol, {}, {}, std::string("baz")},
+        {Token::Kind::RBracket},
+        {Token::Kind::EOF_},
+    });
+}
+
+BOOST_AUTO_TEST_CASE(number_before_paren) {
+    // Number immediately before closing paren
+    check_tokens("(42)", {
+        {Token::Kind::LParen},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 10, std::string("42")},
+        {Token::Kind::RParen},
+        {Token::Kind::EOF_},
+    });
+}
+
+// ============================================================================
+// Multiple tokens in sequence
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(complex_expression) {
+    check_tokens("(define (fact n) (if (= n 0) 1 (* n (fact (- n 1)))))", {
+        {Token::Kind::LParen},
+        {Token::Kind::Symbol, {}, {}, std::string("define")},
+        {Token::Kind::LParen},
+        {Token::Kind::Symbol, {}, {}, std::string("fact")},
+        {Token::Kind::Symbol, {}, {}, std::string("n")},
+        {Token::Kind::RParen},
+        {Token::Kind::LParen},
+        {Token::Kind::Symbol, {}, {}, std::string("if")},
+        {Token::Kind::LParen},
+        {Token::Kind::Symbol, {}, {}, std::string("=")},
+        {Token::Kind::Symbol, {}, {}, std::string("n")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 10, std::string("0")},
+        {Token::Kind::RParen},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 10, std::string("1")},
+        {Token::Kind::LParen},
+        {Token::Kind::Symbol, {}, {}, std::string("*")},
+        {Token::Kind::Symbol, {}, {}, std::string("n")},
+        {Token::Kind::LParen},
+        {Token::Kind::Symbol, {}, {}, std::string("fact")},
+        {Token::Kind::LParen},
+        {Token::Kind::Symbol, {}, {}, std::string("-")},
+        {Token::Kind::Symbol, {}, {}, std::string("n")},
+        {Token::Kind::Number, {}, {}, {}, NumericToken::Kind::Fixnum, 10, std::string("1")},
+        {Token::Kind::RParen},
+        {Token::Kind::RParen},
+        {Token::Kind::RParen},
+        {Token::Kind::RParen},
+        {Token::Kind::RParen},
+        {Token::Kind::EOF_},
+    });
+}
+
 BOOST_AUTO_TEST_SUITE_END()

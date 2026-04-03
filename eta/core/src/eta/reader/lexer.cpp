@@ -509,13 +509,25 @@ namespace {
             return false;
         };
 
-        // Consume prefix letters
-        while (!is_eof()) {
+        // Consume first prefix letter (already peeked by consume_sharp)
+        if (!is_eof()) {
             if (char c = peek_lower(); consume_prefix(c)) {
                 advance();
-                continue;
             }
-            break;
+        }
+
+        // Handle optional second prefix: #e#x, #x#e, etc.
+        if (!is_eof() && peek() == '#') {
+            advance(); // skip the second '#'
+            if (!is_eof()) {
+                if (char c = peek_lower(); consume_prefix(c)) {
+                    advance();
+                } else {
+                    return std::unexpected(make_error(LexErrorKind::InvalidNumeric, start, "invalid number prefix"));
+                }
+            } else {
+                return std::unexpected(make_error(LexErrorKind::InvalidNumeric, start, "unexpected EOF after #"));
+            }
         }
 
         // Collect number body based on radix

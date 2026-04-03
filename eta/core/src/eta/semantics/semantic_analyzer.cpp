@@ -18,8 +18,14 @@ namespace {
 struct AnalysisContext {
     ModuleSemantics& mod;
     uint32_t next_binding_id{0};
+    uint32_t* shared_next_global{nullptr};  // Unified global slot counter (shared across modules)
 
     core::BindingId next_id() { return core::BindingId{next_binding_id++}; }
+
+    // Allocate the next unified global slot
+    uint32_t alloc_global_slot() {
+        return (*shared_next_global)++;
+    }
 
     core::BindingId add_binding(Scope& scope, const std::string& name, BindingInfo::Kind kind, Span span, bool mutable_flag = false) {
         core::BindingId id = next_id();
@@ -32,18 +38,29 @@ struct AnalysisContext {
             while (s && !s->is_lambda_boundary && s->parent) s = s->parent;
             if (s) slot = s->next_slot++;
         } else {
-            slot = static_cast<std::uint16_t>(id.id);
+            // Global: allocate from the unified counter
+            slot = static_cast<std::uint16_t>(alloc_global_slot());
         }
 
         mod.bindings.push_back(BindingInfo{kind, name, mutable_flag, slot, span, std::nullopt});
         return id;
     }
 
-    core::BindingId add_import(Scope& scope, const std::string& name, const eta::reader::linker::ImportOrigin& origin, Span span) {
+    // Add an import that reuses an existing global slot (from the exporting module)
+    core::BindingId add_import_at_slot(Scope& scope, const std::string& name,
+                                       const eta::reader::linker::ImportOrigin& origin,
+                                       Span span, uint32_t global_slot) {
         core::BindingId id = next_id();
         scope.table[name] = id;
-        mod.bindings.push_back(BindingInfo{BindingInfo::Kind::Import, name, false, static_cast<std::uint16_t>(id.id), span, origin});
+        mod.bindings.push_back(BindingInfo{BindingInfo::Kind::Import, name, false,
+                                           static_cast<std::uint16_t>(global_slot), span, origin});
         return id;
+    }
+
+    // Legacy: add an import with a fresh global slot (used when no export slot is known)
+    core::BindingId add_import(Scope& scope, const std::string& name,
+                               const eta::reader::linker::ImportOrigin& origin, Span span) {
+        return add_import_at_slot(scope, name, origin, span, alloc_global_slot());
     }
 };
 
@@ -150,7 +167,7 @@ SemResult<LookupResult> lookup(const std::string& name, Scope* scope, AnalysisCo
             const auto& info = ctx.mod.bindings[id.id];
 
             if (info.kind == BindingInfo::Kind::Global || info.kind == BindingInfo::Kind::Import) {
-                return LookupResult{core::Address{core::Address::Global{id.id}}, id};
+                return LookupResult{core::Address{core::Address::Global{info.slot}}, id};
             }
 
             if (crosses_lambda > 0) {
@@ -495,6 +512,15 @@ SemResult<std::vector<ModuleSemantics>>
 SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader::ModuleLinker& linker,
                               const eta::runtime::BuiltinEnvironment& builtins) {
     std::vector<ModuleSemantics> out;
+
+    // Unified global slot counter shared across all modules.
+    // Builtins occupy slots 0..N-1; subsequent modules share the rest.
+    uint32_t next_global = static_cast<uint32_t>(builtins.size());
+
+    // Map (module_name, export_name) -> unified global slot.
+    // Built incrementally as modules are analyzed.
+    std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> export_slots;
+
     for (const auto& f : forms) {
         if (!f || !f->is<List>()) continue;
         const auto* lst = f->as<List>();
@@ -508,15 +534,37 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader
             return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, f->span(), "module not linked"});
 
         ModuleSemantics mod; mod.name = ns->name;
-        Scope toplevel{}; AnalysisContext ctx{mod, 0};
+        Scope toplevel{}; AnalysisContext ctx{mod, 0, &next_global};
 
-        // Seed builtins as immutable globals at slots 0..N-1
+        // Seed builtins as immutable globals at slots 0..N-1.
+        // These use fixed slots (not allocated from the counter, which already starts past them).
         Span builtin_span{}; // synthetic zero span for builtins
-        for (const auto& spec : builtins.specs()) {
-            ctx.add_binding(toplevel, spec.name, BindingInfo::Kind::Global, builtin_span, /*mutable_flag=*/false);
+        {
+            // Temporarily point the counter to a local that tracks builtin slots,
+            // so builtins always get slots 0..N-1 regardless of module order.
+            uint32_t builtin_slot = 0;
+            ctx.shared_next_global = &builtin_slot;
+            for (const auto& spec : builtins.specs()) {
+                ctx.add_binding(toplevel, spec.name, BindingInfo::Kind::Global, builtin_span, /*mutable_flag=*/false);
+            }
+            ctx.shared_next_global = &next_global; // restore shared counter
         }
 
-        for (const auto& [ln, orign] : mtref->get().import_origins) ctx.add_import(toplevel, ln, orign, orign.where);
+        // Wire imports to the exporting module's unified slot
+        for (const auto& [ln, orign] : mtref->get().import_origins) {
+            auto mod_it = export_slots.find(orign.from_module);
+            if (mod_it != export_slots.end()) {
+                auto slot_it = mod_it->second.find(orign.remote_name);
+                if (slot_it != mod_it->second.end()) {
+                    // Reuse the exporting module's slot — this is the key to unified globals
+                    ctx.add_import_at_slot(toplevel, ln, orign, orign.where, slot_it->second);
+                    continue;
+                }
+            }
+            // Fallback: allocate a fresh slot (should not happen if modules are in dependency order)
+            ctx.add_import(toplevel, ln, orign, orign.where);
+        }
+
         for (const auto& nm : mtref->get().defined) {
             auto it = mtref->get().define_spans.find(nm);
             auto sp = (it != mtref->get().define_spans.end()) ? it->second : f->span();
@@ -553,8 +601,20 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader
             if (it == toplevel.table.end()) return std::unexpected(SemanticError{SemanticError::Kind::ExportOfUnknownBinding, f->span(), "unknown export"});
             mod.exports.emplace(ex, it->second);
         }
+
+        // Record this module's export slots for downstream modules
+        for (const auto& [export_name, binding_id] : mod.exports) {
+            export_slots[ns->name][export_name] = mod.bindings[binding_id.id].slot;
+        }
+
         out.push_back(std::move(mod));
     }
+
+    // Stamp every module with the unified global count so callers can size globals once
+    for (auto& m : out) {
+        m.total_globals = next_global;
+    }
+
     return out;
 }
 

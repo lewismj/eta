@@ -83,6 +83,7 @@ struct ModuleSemantics {
     std::unordered_map<std::string, core::BindingId> exports; // export name -> binding
     std::vector<BindingInfo> bindings;        // indexed by BindingId
     std::uint32_t stack_size{0};              // stack size for module init function
+    std::uint32_t total_globals{0};           // unified global count (shared across all modules)
 
     /**
      * @brief Construct a node in-place and get a stable pointer
