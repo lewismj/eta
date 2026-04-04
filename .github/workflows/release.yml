@@ -24,8 +24,13 @@ jobs:
   # ════════════════════════════════════════════════════════════════════
   build-linux:
     runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ github.ref_name || inputs.tag_name || 'dev' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set bundle name
+        run: echo "BUNDLE=eta-${VERSION}-linux-x86_64" >> $GITHUB_ENV
 
       - name: Install system packages
         run: |
@@ -44,7 +49,7 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake \
-            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/dist/eta-linux-x86_64
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/dist/${{ env.BUNDLE }}
 
       - name: Build
         run: cmake --build build
@@ -65,7 +70,7 @@ jobs:
 
       - name: Assemble bundle
         run: |
-          PREFIX=${{ github.workspace }}/dist/eta-linux-x86_64
+          PREFIX=${{ github.workspace }}/dist/${{ env.BUNDLE }}
           VSCODE_DEST="$PREFIX/editors/vscode"
 
           mkdir -p "$VSCODE_DEST/out" "$VSCODE_DEST/syntaxes" "$VSCODE_DEST/bin"
@@ -92,21 +97,27 @@ jobs:
       - name: Create archive
         run: |
           cd ${{ github.workspace }}/dist
-          tar -czf eta-linux-x86_64.tar.gz eta-linux-x86_64
+          tar -czf ${{ env.BUNDLE }}.tar.gz ${{ env.BUNDLE }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eta-linux-x86_64
-          path: dist/eta-linux-x86_64.tar.gz
+          name: ${{ env.BUNDLE }}
+          path: dist/${{ env.BUNDLE }}.tar.gz
 
   # ════════════════════════════════════════════════════════════════════
   # Windows x64
   # ════════════════════════════════════════════════════════════════════
   build-windows:
     runs-on: windows-latest
+    env:
+      VERSION: ${{ github.ref_name || inputs.tag_name || 'dev' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set bundle name
+        shell: pwsh
+        run: echo "BUNDLE=eta-${env:VERSION}-win-x64" >> $env:GITHUB_ENV
 
       - name: Install Boost via vcpkg
         shell: pwsh
@@ -121,7 +132,7 @@ jobs:
         run: >
           cmake -B build
           -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_DIR }}\scripts\buildsystems\vcpkg.cmake
-          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\dist\eta-win-x64
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\dist\${{ env.BUNDLE }}
 
       - name: Build
         run: cmake --build build --config Release
@@ -143,7 +154,7 @@ jobs:
       - name: Assemble bundle
         shell: pwsh
         run: |
-          $prefix   = "${{ github.workspace }}\dist\eta-win-x64"
+          $prefix   = "${{ github.workspace }}\dist\${{ env.BUNDLE }}"
           $vsDest   = "$prefix\editors\vscode"
 
           New-Item -ItemType Directory -Force `
@@ -170,14 +181,14 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive `
-            -Path "${{ github.workspace }}\dist\eta-win-x64" `
-            -DestinationPath "${{ github.workspace }}\dist\eta-win-x64.zip"
+            -Path "${{ github.workspace }}\dist\${{ env.BUNDLE }}" `
+            -DestinationPath "${{ github.workspace }}\dist\${{ env.BUNDLE }}.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eta-win-x64
-          path: dist/eta-win-x64.zip
+          name: ${{ env.BUNDLE }}
+          path: dist/${{ env.BUNDLE }}.zip
 
   # ════════════════════════════════════════════════════════════════════
   # Create GitHub Release (on tag push only)
@@ -186,6 +197,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.ref_name }}
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -197,6 +210,5 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/eta-linux-x86_64/eta-linux-x86_64.tar.gz
-            artifacts/eta-win-x64/eta-win-x64.zip
-
+            artifacts/eta-${{ env.VERSION }}-linux-x86_64/eta-${{ env.VERSION }}-linux-x86_64.tar.gz
+            artifacts/eta-${{ env.VERSION }}-win-x64/eta-${{ env.VERSION }}-win-x64.zip
