@@ -315,6 +315,9 @@ BOOST_AUTO_TEST_CASE(reader_writer_scenario) {
 
     std::vector<std::thread> threads;
 
+    // Boost.Test macros are NOT thread-safe; collect errors for main-thread validation.
+    std::atomic<bool> any_negative_value{false};
+
     // Reader threads
     for (int r = 0; r < num_readers; ++r) {
         threads.emplace_back([&] {
@@ -330,7 +333,9 @@ BOOST_AUTO_TEST_CASE(reader_writer_scenario) {
                 if (current == node) {
                     // Safe to access
                     int value = node->value;
-                    BOOST_TEST(value >= 0);
+                    if (value < 0) {
+                        any_negative_value.store(true, std::memory_order_relaxed);
+                    }
                 }
 
                 handle.release();
@@ -367,6 +372,7 @@ BOOST_AUTO_TEST_CASE(reader_writer_scenario) {
     // Clean up the last node
     delete shared_ptr.load();
 
+    BOOST_TEST(!any_negative_value.load());
     BOOST_TEST(TrackedNode::live_count.load() >= 0);
 }
 

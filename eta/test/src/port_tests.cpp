@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(open_output_string_primitive) {
     BOOST_CHECK(port_val.has_value());
 
     // Write to it
-    port->write_string("Test output");
+    (void)port->write_string("Test output");
     BOOST_CHECK_EQUAL(port->get_string(), "Test output");
 }
 
@@ -205,14 +205,14 @@ BOOST_AUTO_TEST_CASE(set_current_ports) {
     BOOST_CHECK_EQUAL(vm.current_output_port(), *custom_output_val);
 
     // Write something and check
-    custom_output->write_string("Custom output test");
+    (void)custom_output->write_string("Custom output test");
     BOOST_CHECK_EQUAL(custom_output->get_string(), "Custom output test");
 }
 
 BOOST_AUTO_TEST_CASE(get_output_string_test) {
     // Create output string port
     auto port = std::make_shared<StringPort>(StringPort::Mode::Output);
-    port->write_string("Captured output");
+    (void)port->write_string("Captured output");
 
     // Get the string
     auto result = port->get_string();
@@ -282,7 +282,11 @@ BOOST_AUTO_TEST_CASE(string_port_utf8_read) {
 
     auto ch_utf = port->read_char();
     BOOST_CHECK(ch_utf.has_value());
+#ifdef _WIN32
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(*ch_utf), static_cast<uint32_t>(0xE9));
+#else
     BOOST_CHECK_EQUAL(static_cast<uint32_t>(*ch_utf), static_cast<uint32_t>(U'é'));
+#endif
 }
 
 // ============================================================================
@@ -304,7 +308,7 @@ BOOST_AUTO_TEST_CASE(file_port_write_read) {
         result = write_port->write_string("Line 2\n");
         BOOST_CHECK(result.has_value());
 
-        write_port->close();
+        (void)write_port->close();
         BOOST_CHECK(!write_port->is_open());
     }
 
@@ -319,7 +323,7 @@ BOOST_AUTO_TEST_CASE(file_port_write_read) {
         BOOST_CHECK(ch.has_value());
         BOOST_CHECK_EQUAL(static_cast<uint32_t>(*ch), static_cast<uint32_t>(U'H'));
 
-        read_port->close();
+        (void)read_port->close();
     }
 
     // Clean up
@@ -397,7 +401,7 @@ BOOST_AUTO_TEST_CASE(display_to_string_port) {
     // Note: We'd need to actually call the primitive here, but we can test the mechanism
 
     // Manually test the port write
-    port->write_string("Captured output");
+    (void)port->write_string("Captured output");
     BOOST_CHECK_EQUAL(port->get_string(), "Captured output");
 }
 
@@ -408,9 +412,9 @@ BOOST_AUTO_TEST_CASE(newline_to_string_port) {
 
     vm.set_current_output_port(*port_val);
 
-    port->write_string("Line 1");
-    port->write_string("\n");
-    port->write_string("Line 2");
+    (void)port->write_string("Line 1");
+    (void)port->write_string("\n");
+    (void)port->write_string("Line 2");
 
     std::string result = port->get_string();
     BOOST_CHECK(result.find("Line 1\nLine 2") != std::string::npos);

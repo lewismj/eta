@@ -199,20 +199,33 @@ BOOST_AUTO_TEST_CASE(concurrency_same_string_all_get_same_id) {
     std::barrier sync_point(threads);
 
     std::vector<InternId> ids(threads);
+    // Boost.Test macros are NOT thread-safe; collect errors for main-thread validation.
+    std::atomic<bool> any_intern_failed{false};
+    std::atomic<bool> any_id_mismatch{false};
 
     for (int t = 0; t < threads; ++t) {
         ts.emplace_back([&, t] {
             sync_point.arrive_and_wait();
             InternId last = 0;
             for (int i = 0; i < per_thread; ++i) {
-                auto id = expect_ok_id(tbl.intern("concurrent-key"));
+                auto r = tbl.intern("concurrent-key");
+                if (!r.has_value()) {
+                    any_intern_failed.store(true, std::memory_order_relaxed);
+                    return;
+                }
+                auto id = *r;
                 if (i == 0) last = id;
-                else BOOST_TEST(id == last);
+                else if (id != last) {
+                    any_id_mismatch.store(true, std::memory_order_relaxed);
+                }
             }
             ids[t] = last;
         });
     }
     for (auto& th : ts) th.join();
+
+    BOOST_TEST(!any_intern_failed.load());
+    BOOST_TEST(!any_id_mismatch.load());
 
     // All threads must observe the same id
     for (int t = 1; t < threads; ++t) {
@@ -233,9 +246,12 @@ BOOST_AUTO_TEST_CASE(concurrency_many_unique_strings_consistent) {
     ts.reserve(threads);
     std::barrier sync_point(threads);
 
-    // Collect (string -> id) seen by each thread, then validate consistency
+    // Boost.Test macros are NOT thread-safe; collect results for main-thread validation.
     std::mutex mtx;
     std::unordered_map<std::string, InternId> global;
+    std::atomic<bool> any_intern_failed{false};
+    std::atomic<bool> any_roundtrip_failed{false};
+    std::atomic<bool> any_consistency_failed{false};
 
     for (int t = 0; t < threads; ++t) {
         ts.emplace_back([&, t] {
@@ -246,28 +262,41 @@ BOOST_AUTO_TEST_CASE(concurrency_many_unique_strings_consistent) {
 
             for (int i = 0; i < uniques_per_thread; ++i) {
                 std::string s = "k:" + std::to_string(t) + ":" + std::to_string(i);
-                auto id = expect_ok_id(tbl.intern(s));
+                auto r = tbl.intern(s);
+                if (!r.has_value()) {
+                    any_intern_failed.store(true, std::memory_order_relaxed);
+                    return;
+                }
+                auto id = *r;
 
-                // Round-trip checks
-                BOOST_TEST(expect_ok_id(tbl.get_id(s)) == id);
-                BOOST_TEST(expect_ok_sview(tbl.get_string(id)) == std::string_view{s});
+                // Round-trip checks (no Boost macros — not thread-safe)
+                auto r_id = tbl.get_id(s);
+                auto r_sv = tbl.get_string(id);
+                if (!r_id.has_value() || *r_id != id ||
+                    !r_sv.has_value() || *r_sv != std::string_view{s}) {
+                    any_roundtrip_failed.store(true, std::memory_order_relaxed);
+                }
 
                 local.emplace_back(std::move(s), id);
             }
 
-            // Merge into a global map, verifying consistency
+            // Merge into global map, checking consistency without Boost macros
             std::scoped_lock lk(mtx);
             for (auto& [s, id] : local) {
                 if (auto it = global.find(s); it == global.end()) {
                     global.emplace(s, id);
-                } else {
-                    BOOST_TEST(it->second == id); // same key must map to same id
+                } else if (it->second != id) {
+                    any_consistency_failed.store(true, std::memory_order_relaxed);
                 }
             }
         });
     }
 
     for (auto& th : ts) th.join();
+
+    BOOST_TEST(!any_intern_failed.load());
+    BOOST_TEST(!any_roundtrip_failed.load());
+    BOOST_TEST(!any_consistency_failed.load());
 
     // Spot-check a few values exist and roundtrip after all threads complete
     for (int t = 0; t < threads; ++t) {

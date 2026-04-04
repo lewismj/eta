@@ -1,0 +1,166 @@
+{
+    "name": "Eta",
+    "scopeName": "source.eta",
+    "fileTypes": ["eta"],
+    "patterns": [
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#character" },
+        { "include": "#boolean" },
+        { "include": "#number" },
+        { "include": "#quote-abbrev" },
+        { "include": "#vector-literal" },
+        { "include": "#bytevector-literal" },
+        { "include": "#paren-expression" },
+        { "include": "#symbol" }
+    ],
+    "repository": {
+        "comment": {
+            "patterns": [
+                {
+                    "name": "comment.line.semicolon.eta",
+                    "match": ";.*$"
+                },
+                {
+                    "name": "comment.block.eta",
+                    "begin": "#\\|",
+                    "end": "\\|#"
+                }
+            ]
+        },
+        "string": {
+            "name": "string.quoted.double.eta",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.eta",
+                    "match": "\\\\(?:[abtnr\\\\\"0]|x[0-9a-fA-F]+;)"
+                }
+            ]
+        },
+        "character": {
+            "name": "constant.character.eta",
+            "match": "#\\\\(?:space|newline|tab|return|alarm|backspace|delete|escape|null|nul|[a-zA-Z0-9]|x[0-9a-fA-F]+)"
+        },
+        "boolean": {
+            "name": "constant.language.boolean.eta",
+            "match": "#[tf]\\b"
+        },
+        "number": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.hex.eta",
+                    "match": "(?<=[\\s(\\[])#x[0-9a-fA-F]+(?=[\\s)\\]]|$)"
+                },
+                {
+                    "name": "constant.numeric.octal.eta",
+                    "match": "(?<=[\\s(\\[])#o[0-7]+(?=[\\s)\\]]|$)"
+                },
+                {
+                    "name": "constant.numeric.binary.eta",
+                    "match": "(?<=[\\s(\\[])#b[01]+(?=[\\s)\\]]|$)"
+                },
+                {
+                    "name": "constant.numeric.eta",
+                    "match": "(?<=[\\s(\\[])[-+]?(?:\\d+\\.\\d*|\\.\\d+|\\d+)(?:[eE][-+]?\\d+)?(?=[\\s)\\]]|$)"
+                },
+                {
+                    "name": "constant.numeric.eta",
+                    "match": "(?<=[\\s(\\[])[-+]?\\d+(?=[\\s)\\]]|$)"
+                }
+            ]
+        },
+        "quote-abbrev": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.quote.eta",
+                    "match": "(?:'|`|,@|,)"
+                }
+            ]
+        },
+        "vector-literal": {
+            "name": "punctuation.definition.vector.eta",
+            "match": "#\\("
+        },
+        "bytevector-literal": {
+            "name": "punctuation.definition.bytevector.eta",
+            "match": "#u8\\("
+        },
+        "paren-expression": {
+            "begin": "\\(",
+            "end": "\\)",
+            "beginCaptures": { "0": { "name": "punctuation.paren.open.eta" } },
+            "endCaptures":   { "0": { "name": "punctuation.paren.close.eta" } },
+            "patterns": [
+                { "include": "#special-form-head" },
+                { "include": "$self" }
+            ]
+        },
+        "special-form-head": {
+            "patterns": [
+                {
+                    "comment": "Core special forms",
+                    "match": "(?<=\\()\\s*(define|lambda|if|begin|set!|quote|quasiquote|unquote|unquote-splicing)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.core.eta" }
+                    }
+                },
+                {
+                    "comment": "Binding forms",
+                    "match": "(?<=\\()\\s*(let\\*?|letrec\\*?)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.binding.eta" }
+                    }
+                },
+                {
+                    "comment": "Control flow",
+                    "match": "(?<=\\()\\s*(cond|case|and|or|when|unless|do)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.conditional.eta" }
+                    }
+                },
+                {
+                    "comment": "Module system",
+                    "match": "(?<=\\()\\s*(module|import|export)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.module.eta" }
+                    }
+                },
+                {
+                    "comment": "Macro system",
+                    "match": "(?<=\\()\\s*(define-syntax|syntax-rules)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.macro.eta" }
+                    }
+                },
+                {
+                    "comment": "Record types",
+                    "match": "(?<=\\()\\s*(define-record-type)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.record.eta" }
+                    }
+                },
+                {
+                    "comment": "Eta convenience sugars",
+                    "match": "(?<=\\()\\s*(def|defun|progn|step)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.sugar.eta" }
+                    }
+                },
+                {
+                    "comment": "Advanced control",
+                    "match": "(?<=\\()\\s*(call/cc|call-with-current-continuation|dynamic-wind|values|call-with-values|apply)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.advanced.eta" }
+                    }
+                }
+            ]
+        },
+        "symbol": {
+            "name": "variable.other.eta",
+            "match": "[^\\s()\\[\\]{}\",'`;#|\\\\]+"
+        }
+    }
+}
+

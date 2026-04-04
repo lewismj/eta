@@ -1,0 +1,57 @@
+{
+    "name": "eta-lang",
+    "displayName": "Eta Language",
+    "description": "Language support for the Eta programming language",
+    "version": "0.1.0",
+    "publisher": "eta-lang",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": ["Programming Languages"],
+    "activationEvents": [
+        "onLanguage:eta"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "languages": [{
+            "id": "eta",
+            "aliases": ["Eta", "eta"],
+            "extensions": [".eta"],
+            "configuration": "./language-configuration.json"
+        }],
+        "grammars": [{
+            "language": "eta",
+            "scopeName": "source.eta",
+            "path": "./syntaxes/eta.tmLanguage.json"
+        }],
+        "configuration": {
+            "title": "Eta",
+            "properties": {
+                "eta.lsp.serverPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the eta_lsp executable. If empty, searches PATH."
+                },
+                "eta.lsp.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable the Eta Language Server for diagnostics and IDE features."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.1"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.85.0",
+        "@types/node": "^20.0.0",
+        "typescript": "^5.3.0"
+    }
+}
+
