@@ -1,4 +1,4 @@
-#pragma once
+ #pragma once
 
 #include <cmath>
 #include <functional>
@@ -421,6 +421,69 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (a.is_flonum() || b.is_flonum()) return make_flonum(std::remainder(a.as_double(), b.as_double()));
         if (b.int_val == 0) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "remainder: division by zero"}});
         return make_fixnum(heap, a.int_val % b.int_val);
+    });
+
+    // ========================================================================
+    // Transcendental math: sin cos tan asin acos atan atan2 exp log sqrt
+    // ========================================================================
+
+    env.register_builtin("sin", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sin: argument is not a number"}});
+        return make_flonum(std::sin(n.as_double()));
+    });
+
+    env.register_builtin("cos", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "cos: argument is not a number"}});
+        return make_flonum(std::cos(n.as_double()));
+    });
+
+    env.register_builtin("tan", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tan: argument is not a number"}});
+        return make_flonum(std::tan(n.as_double()));
+    });
+
+    env.register_builtin("asin", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "asin: argument is not a number"}});
+        return make_flonum(std::asin(n.as_double()));
+    });
+
+    env.register_builtin("acos", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "acos: argument is not a number"}});
+        return make_flonum(std::acos(n.as_double()));
+    });
+
+    env.register_builtin("atan", 1, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto a = classify_numeric(args[0], heap);
+        if (!a.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "atan: argument is not a number"}});
+        if (args.size() == 2) {
+            auto b = classify_numeric(args[1], heap);
+            if (!b.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "atan: argument is not a number"}});
+            return make_flonum(std::atan2(a.as_double(), b.as_double()));
+        }
+        return make_flonum(std::atan(a.as_double()));
+    });
+
+    env.register_builtin("exp", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "exp: argument is not a number"}});
+        return make_flonum(std::exp(n.as_double()));
+    });
+
+    env.register_builtin("log", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "log: argument is not a number"}});
+        return make_flonum(std::log(n.as_double()));
+    });
+
+    env.register_builtin("sqrt", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sqrt: argument is not a number"}});
+        return make_flonum(std::sqrt(n.as_double()));
     });
 
     // ========================================================================

@@ -14,6 +14,8 @@ system to a platform capable of ahead-of-time compilation, native
 interoperability with external libraries, logic programming, and
 real-world causal-inference applications.
 
+This is in addition to benchmarking, bug-fixing, and general polish across the codebase.
+
 ```mermaid
 flowchart LR
     BC["1 · Bytecode\nSerialization"]
@@ -54,12 +56,12 @@ same structure the emitter already produces in memory
 │  Version        2 B   format version (1)             │
 │  Flags          2 B   endianness, debug-info present │
 ├──────────────────────────────────────────────────────┤
-│  Source Hash    32 B   SHA-256 of the .eta source     │
+│  Source Hash    32 B   SHA-256 of the .eta source    │
 ├──────────────────────────────────────────────────────┤
-│  Constant Pool  var    NaN-boxed literals, interned   │
-│                        strings, function indices      │
+│  Constant Pool  var    NaN-boxed literals, interned  │
+│                        strings, function indices     │
 ├──────────────────────────────────────────────────────┤
-│  Function Table var    one entry per BytecodeFunction │
+│  Function Table var   one entry per BytecodeFunction │
 │    ┌─ arity        4 B                               │
 │    ├─ has_rest     1 B                               │
 │    ├─ stack_size   4 B                               │
@@ -68,10 +70,10 @@ same structure the emitter already produces in memory
 │    ├─ n_consts     4 B   indices into constant pool  │
 │    ├─ const_refs   var                               │
 │    ├─ n_instrs     4 B                               │
-│    └─ instructions var   (opcode:u8 + arg:u32) × n  │
+│    └─ instructions var   (opcode:u8 + arg:u32) × n   │
 ├──────────────────────────────────────────────────────┤
 │  Debug Info     var    (optional) source spans per   │
-│                        instruction for diagnostics    │
+│                        instruction for diagnostics   │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -271,11 +273,11 @@ unify(a, b):
 ### Motivation
 
 The combination of an FFI (for numerical libraries) and native unification
-(for symbolic reasoning) makes Eta a compelling host for **causal
-inference** — a domain that inherently blends symbolic graph manipulation
+(for symbolic reasoning) provides the basis for a **causal
+inference** — engine, a domain that blends symbolic graph manipulation
 with statistical computation.
 
-Two flagship example programs are planned under a new `examples/`
+Two example programs are planned under a new `examples/`
 directory:
 
 ### 4.1 — Do-Calculus Engine
@@ -352,6 +354,9 @@ examples/
 
 ---
 
+<!--
+Timelines are pessemistic here, hopefully can be done sooner.
+
 ## Dependency Graph
 
 The workstreams have natural dependencies — bytecode serialization can
@@ -382,7 +387,7 @@ gantt
     Do-calculus engine                :ex1, after uni2, 2026-09
     Causal factor analysis            :ex2, after ex1, 2026-10
 ```
-
+-->
 ---
 
 ## References

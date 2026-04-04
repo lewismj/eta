@@ -16,7 +16,8 @@ set(SOURCES
         src/emitter_tests.cpp
         src/port_tests.cpp
         src/expander_tests.cpp
-        src/diagnostic_tests.cpp)
+        src/diagnostic_tests.cpp
+        src/functional_tests.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 

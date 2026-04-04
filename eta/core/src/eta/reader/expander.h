@@ -203,6 +203,7 @@ namespace eta::reader::expander {
         //! Macro environment: maps macro name -> transformer (populated by define-syntax)
         std::unordered_map<std::string, SyntaxRulesTransformer> macro_env_;
 
+
         // Error helpers
         static ExpandError syntax_error(Span sp, std::string_view msg, std::string hint = {});
         static ExpandError arity_error(Span sp, std::string_view form, std::size_t expected, std::size_t got);

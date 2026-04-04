@@ -2080,6 +2080,7 @@ namespace eta::reader::expander {
                     "eq?","eqv?","equal?","null?","pair?","number?","boolean?",
                     "string?","char?","symbol?","procedure?","integer?","vector?",
                     "zero?","positive?","negative?","abs","min","max","modulo","remainder",
+                    "sin","cos","tan","asin","acos","atan","exp","log","sqrt",
                     "+","-","*","/","=","<",">","<=",">=",
                     "string-length","string-append","number->string","string->number",
                     "vector","vector-length","vector-ref","vector-set!","make-vector",

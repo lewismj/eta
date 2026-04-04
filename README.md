@@ -84,7 +84,7 @@ flowchart LR
 
 > Every phase reports errors through a unified
 > [`DiagnosticEngine`](eta/core/src/eta/diagnostic/diagnostic.h) with
-> ANSI-coloured output and span information.
+> span information.
 
 ---
 
