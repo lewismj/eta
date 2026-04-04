@@ -63,6 +63,11 @@ if(WIN32)
     if(NOT DEFINED BOOST_ROOT)
         if(DEFINED ENV{BOOST_ROOT})
             set(BOOST_ROOT "$ENV{BOOST_ROOT}")
+        elseif(Boost_INCLUDE_DIRS)
+            # Derive from CMake/vcpkg found include path
+            # e.g. .../installed/x64-windows/include -> .../installed/x64-windows
+            list(GET Boost_INCLUDE_DIRS 0 _boost_inc)
+            get_filename_component(BOOST_ROOT "${_boost_inc}" DIRECTORY)
         else()
             message(FATAL_ERROR "BOOST_ROOT not set. Please specify BOOST_ROOT in CMake or in your environment.")
         endif()

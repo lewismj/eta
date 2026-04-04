@@ -36,7 +36,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg.git /tmp/vcpkg
           /tmp/vcpkg/bootstrap-vcpkg.sh -disableMetrics
-          /tmp/vcpkg/vcpkg install boost-test:x64-linux
+          /tmp/vcpkg/vcpkg install boost-test:x64-linux boost-unordered:x64-linux
           echo "VCPKG_ROOT=/tmp/vcpkg" >> $GITHUB_ENV
 
       - name: Configure
@@ -114,7 +114,7 @@ jobs:
           $vcpkg = "${{ runner.temp }}\vcpkg"
           git clone --depth 1 https://github.com/microsoft/vcpkg.git $vcpkg
           & "$vcpkg\bootstrap-vcpkg.bat" -disableMetrics
-          & "$vcpkg\vcpkg" install boost-test:x64-windows
+          & "$vcpkg\vcpkg" install boost-test:x64-windows boost-unordered:x64-windows
           echo "VCPKG_DIR=$vcpkg" >> $env:GITHUB_ENV
 
       - name: Configure
