@@ -1,6 +1,8 @@
+![eta_logo.svg](docs/img/eta.svg)
+
 <p align="center">
   <strong>η (Eta)</strong><br>
-  A Scheme-inspired language built from scratch in C++23
+  A Scheme-inspired language. 
 </p>
 
 <p align="center">

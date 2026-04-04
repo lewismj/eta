@@ -167,7 +167,7 @@ static std::vector<std::string> split_toplevel_forms(const std::string& input) {
 }
 
 static constexpr const char* BANNER =
-    "eta REPL — type an expression and press Enter.\n"
+    "eta REPL - type an expression and press Enter.\n"
     "Use Ctrl+C or (exit) to quit.\n";
 
 int main(int argc, char* argv[]) {
@@ -222,7 +222,7 @@ int main(int argc, char* argv[]) {
         if (continuation) {
             std::cout << "... ";
         } else {
-            std::cout << "η> ";
+            std::cout << "eta> ";
         }
         std::cout.flush();
 

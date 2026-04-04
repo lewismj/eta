@@ -26,7 +26,7 @@ namespace eta::reader::expander {
             "values","call-with-values",
             // Convenience (existing and new)
             "case","do","when","unless",
-            "def","defun","progn","step",
+            "def","defun","progn",
             "define-record-type"
         };
         return K;
@@ -269,7 +269,6 @@ namespace eta::reader::expander {
             {"import", &Expander::handle_import},
             // convenience
             {"def", &Expander::handle_def},
-            {"step", &Expander::handle_begin},
             {"defun", &Expander::handle_defun},
             {"progn", &Expander::handle_begin},
             // records
@@ -2090,7 +2089,7 @@ namespace eta::reader::expander {
                     "values","call-with-values",
                     "display","write","newline",
                     "#t","#f",
-                    "def","defun","progn","step",
+                    "def","defun","progn",
                 };
                 if (passthrough.contains(t.name) || macro_env_.contains(t.name)) {
                     return make_symbol(t.name, ctx);

@@ -706,12 +706,6 @@ BOOST_AUTO_TEST_CASE(progn_is_begin) {
     BOOST_CHECK_EQUAL(list_size(*r), 4u); // progn + 3 body
 }
 
-BOOST_AUTO_TEST_CASE(step_is_begin) {
-    auto r = expand_one("(step 1 2 3)");
-    BOOST_REQUIRE(r.has_value());
-    BOOST_CHECK(head_is(*r, "step"));
-    BOOST_CHECK_EQUAL(list_size(*r), 4u);
-}
 
 // ---------- module directives ----------
 
