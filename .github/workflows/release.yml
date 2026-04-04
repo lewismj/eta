@@ -109,16 +109,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Boost via vcpkg
+        shell: pwsh
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git C:\vcpkg
-          C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-          C:\vcpkg\vcpkg install boost-test:x64-windows
-        shell: cmd
+          $vcpkg = "${{ runner.temp }}\vcpkg"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git $vcpkg
+          & "$vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          & "$vcpkg\vcpkg" install boost-test:x64-windows
+          echo "VCPKG_DIR=$vcpkg" >> $env:GITHUB_ENV
 
       - name: Configure
         run: >
           cmake -B build
-          -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
+          -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_DIR }}\scripts\buildsystems\vcpkg.cmake
           -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\dist\eta-win-x64
 
       - name: Build
