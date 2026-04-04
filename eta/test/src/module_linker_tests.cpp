@@ -91,8 +91,27 @@ BOOST_AUTO_TEST_CASE(linker_export_of_missing_name) {
     auto forms = parse_and_expand("(module m1 (export x))");
     reader::ModuleLinker L;
     auto idx = L.index_modules(std::span<const reader::parser::SExprPtr>(forms.data(), forms.size()));
-    BOOST_REQUIRE(!idx.has_value());
-    BOOST_CHECK(idx.error().kind == eta::reader::LinkError::Kind::ExportOfUnknownName);
+    BOOST_REQUIRE(idx.has_value());
+    auto lk = L.link();
+    BOOST_REQUIRE(!lk.has_value());
+    BOOST_CHECK(lk.error().kind == eta::reader::LinkError::Kind::ExportOfUnknownName);
+}
+
+BOOST_AUTO_TEST_CASE(linker_reexport_imported_name) {
+    auto forms = parse_and_expand(
+        "(module m1 (define a 1) (define b 2) (export a b))\n"
+        "(module m2 (import m1) (export a b))");
+    reader::ModuleLinker L;
+    auto idx = L.index_modules(std::span<const reader::parser::SExprPtr>(forms.data(), forms.size()));
+    BOOST_REQUIRE(idx.has_value());
+    auto lk = L.link();
+    BOOST_REQUIRE(lk.has_value());
+    auto m2 = L.get("m2"); BOOST_REQUIRE(m2.has_value());
+    const auto& M2 = m2->get();
+    BOOST_CHECK(M2.exports.contains("a"));
+    BOOST_CHECK(M2.exports.contains("b"));
+    BOOST_CHECK(M2.visible.contains("a"));
+    BOOST_CHECK(M2.visible.contains("b"));
 }
 
 BOOST_AUTO_TEST_CASE(linker_circular_imports) {

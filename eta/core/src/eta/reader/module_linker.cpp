@@ -42,15 +42,9 @@ namespace eta::reader::linker {
             modules_.emplace(name, std::move(mt));
         }
 
-        // Validate exports: must refer to local defines
-        for (auto& [name, mt] : modules_) {
-            for (const auto& [ex, sp] : mt.export_spans) {
-                if (!mt.defined.contains(ex)) {
-                    return std::unexpected(LinkError{LinkError::Kind::ExportOfUnknownName, sp,
-                        std::string("export of unknown name '") + ex + "' in module " + name});
-                }
-            }
-        }
+        // NOTE: Export validation is deferred to link() so that re-exports
+        // of imported names (e.g. std.prelude re-exporting std.collections)
+        // are checked against the fully-resolved visible set.
 
         return {};
     }
@@ -285,6 +279,17 @@ namespace eta::reader::linker {
                 mt.state = ModuleState::Linked;
             }
         }
+
+        // Validate exports: every exported name must be visible (locally defined OR imported)
+        for (const auto& [name, mt] : modules_) {
+            for (const auto& [ex, sp] : mt.export_spans) {
+                if (!mt.visible.contains(ex)) {
+                    return std::unexpected(LinkError{LinkError::Kind::ExportOfUnknownName, sp,
+                        std::string("export of unknown name '") + ex + "' in module " + name});
+                }
+            }
+        }
+
         return {};
     }
 

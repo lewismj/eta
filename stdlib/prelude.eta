@@ -85,6 +85,7 @@
     sign clamp
     quotient
     gcd lcm
+    floor ceiling truncate round
     expt
     sum product)
   (begin
@@ -129,6 +130,24 @@
          (let ((half (expt base (/ exp 2))))
            (* half half)))
         (#t (* base (expt base (- exp 1))))))
+
+    (defun floor (x)
+      (if (integer? x) x
+          (let ((t (- x (modulo (* x 1.0) 1.0))))
+            (if (negative? x) (- t 1) t))))
+
+    (defun ceiling (x)
+      (if (integer? x) x
+          (let ((f (floor x)))
+            (+ f 1))))
+
+    (defun truncate (x)
+      (if (integer? x) x
+          (if (negative? x) (ceiling x) (floor x))))
+
+    (defun round (x)
+      (if (integer? x) x
+          (floor (+ x 0.5))))
 
     (defun sum (xs)
       (letrec ((loop (lambda (rest acc)
@@ -513,6 +532,7 @@
     sign clamp
     quotient
     gcd lcm
+    floor ceiling truncate round
     expt
     sum product
     ;; std.io
