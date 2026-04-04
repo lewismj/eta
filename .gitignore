@@ -49,3 +49,11 @@ Folder.DotSettings.user
 # CLion/
 .idea
 
+# Release builds
+dist/
+build-release/
+
+# VS Code extension build artifacts
+editors/vscode/out/
+editors/vscode/node_modules/
+*.vsix

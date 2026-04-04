@@ -1,0 +1,200 @@
+name: Release Bundle
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Version tag (e.g. v0.1.0) — used for archive naming'
+        required: false
+        default: 'dev'
+
+permissions:
+  contents: write
+
+env:
+  VCPKG_DEFAULT_TRIPLET: x64-linux
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+
+jobs:
+  # ════════════════════════════════════════════════════════════════════
+  # Linux x86_64
+  # ════════════════════════════════════════════════════════════════════
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build nodejs npm
+
+      - name: Install Boost via vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git /tmp/vcpkg
+          /tmp/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          /tmp/vcpkg/vcpkg install boost-test:x64-linux
+          echo "VCPKG_ROOT=/tmp/vcpkg" >> $GITHUB_ENV
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/dist/eta-linux-x86_64
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Install
+        run: cmake --install build
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build VS Code extension
+        run: |
+          cd editors/vscode
+          npm ci
+          npm run compile
+
+      - name: Assemble bundle
+        run: |
+          PREFIX=${{ github.workspace }}/dist/eta-linux-x86_64
+          VSCODE_DEST="$PREFIX/editors/vscode"
+
+          mkdir -p "$VSCODE_DEST/out" "$VSCODE_DEST/syntaxes" "$VSCODE_DEST/bin"
+
+          cp -r editors/vscode/out/*                      "$VSCODE_DEST/out/"
+          cp -r editors/vscode/syntaxes/*                 "$VSCODE_DEST/syntaxes/"
+          cp    editors/vscode/package.json               "$VSCODE_DEST/"
+          cp    editors/vscode/tsconfig.json              "$VSCODE_DEST/"
+          cp    editors/vscode/language-configuration.json "$VSCODE_DEST/"
+
+          # Bundle eta_lsp into the extension
+          [ -f "$PREFIX/bin/eta_lsp" ] && cp "$PREFIX/bin/eta_lsp" "$VSCODE_DEST/bin/"
+
+          # Production npm deps for extension
+          (cd "$VSCODE_DEST" && npm install --omit=dev) || true
+
+          # Install script + docs
+          cp scripts/install.sh "$PREFIX/" && chmod +x "$PREFIX/install.sh"
+          cp TESTING.md         "$PREFIX/"
+
+          # Ensure binaries are executable
+          chmod +x "$PREFIX/bin/"*
+
+      - name: Create archive
+        run: |
+          cd ${{ github.workspace }}/dist
+          tar -czf eta-linux-x86_64.tar.gz eta-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eta-linux-x86_64
+          path: dist/eta-linux-x86_64.tar.gz
+
+  # ════════════════════════════════════════════════════════════════════
+  # Windows x64
+  # ════════════════════════════════════════════════════════════════════
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Boost via vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          C:\vcpkg\vcpkg install boost-test:x64-windows
+        shell: cmd
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\dist\eta-win-x64
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Install
+        run: cmake --install build --config Release
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build VS Code extension
+        run: |
+          cd editors\vscode
+          npm ci
+          npm run compile
+
+      - name: Assemble bundle
+        shell: pwsh
+        run: |
+          $prefix   = "${{ github.workspace }}\dist\eta-win-x64"
+          $vsDest   = "$prefix\editors\vscode"
+
+          New-Item -ItemType Directory -Force `
+            "$vsDest\out","$vsDest\syntaxes","$vsDest\bin" | Out-Null
+
+          Copy-Item -Recurse -Force "editors\vscode\out\*"                      "$vsDest\out\"
+          Copy-Item -Recurse -Force "editors\vscode\syntaxes\*"                 "$vsDest\syntaxes\"
+          Copy-Item -Force          "editors\vscode\package.json"               "$vsDest\"
+          Copy-Item -Force          "editors\vscode\tsconfig.json"              "$vsDest\"
+          Copy-Item -Force          "editors\vscode\language-configuration.json" "$vsDest\"
+
+          if (Test-Path "$prefix\bin\eta_lsp.exe") {
+              Copy-Item "$prefix\bin\eta_lsp.exe" "$vsDest\bin\"
+          }
+
+          Push-Location $vsDest
+          npm install --omit=dev 2>$null
+          Pop-Location
+
+          Copy-Item "scripts\install.ps1" "$prefix\" -ErrorAction SilentlyContinue
+          Copy-Item "TESTING.md"          "$prefix\" -ErrorAction SilentlyContinue
+
+      - name: Create archive
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "${{ github.workspace }}\dist\eta-win-x64" `
+            -DestinationPath "${{ github.workspace }}\dist\eta-win-x64.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eta-win-x64
+          path: dist/eta-win-x64.zip
+
+  # ════════════════════════════════════════════════════════════════════
+  # Create GitHub Release (on tag push only)
+  # ════════════════════════════════════════════════════════════════════
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/eta-linux-x86_64/eta-linux-x86_64.tar.gz
+            artifacts/eta-win-x64/eta-win-x64.zip
+
