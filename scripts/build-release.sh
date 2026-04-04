@@ -3,15 +3,13 @@
 # build-release.sh — Build an Eta release bundle on Linux / macOS / WSL
 #
 # Usage:
-#   ./scripts/build-release.sh <install-dir>
-#   ./scripts/build-release.sh /opt/eta
-#   ./scripts/build-release.sh ~/eta-release
+#   ./scripts/build-release.sh                          # auto version + dir
+#   ./scripts/build-release.sh -v v0.3.0                # explicit version
+#   ./scripts/build-release.sh /opt/eta                 # explicit dir
+#   ./scripts/build-release.sh -v v0.3.0 /opt/eta      # both
 #
-# The script will:
-#   1. Configure + build the C++ binaries (Release mode)
-#   2. Install binaries + stdlib to <install-dir>
-#   3. Build the VS Code extension and bundle it
-#   4. Create a .tar.gz archive beside <install-dir>
+# The bundle directory is named  eta-<version>-<platform>  by default
+# so that different releases can live side-by-side.
 #
 # Prerequisites:
 #   - CMake ≥ 3.28
@@ -21,24 +19,28 @@
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-# ── Argument handling ─────────────────────────────────────────────────
-if [ $# -lt 1 ]; then
-    echo "Usage: $0 <install-dir>"
-    echo ""
-    echo "  <install-dir>  Directory to install the release bundle into."
-    echo "                 Will be created if it does not exist."
-    echo ""
-    echo "Examples:"
-    echo "  $0 ./dist/eta-linux-x86_64"
-    echo "  $0 /opt/eta"
-    exit 1
-fi
-
-PREFIX="$(mkdir -p "$1" && cd "$1" && pwd)"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/build-release"
+
+# ── Argument handling ─────────────────────────────────────────────────
+VERSION=""
+INSTALL_DIR=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v|--version) VERSION="$2"; shift 2 ;;
+        -h|--help)
+            echo "Usage: $0 [-v VERSION] [install-dir]"
+            echo ""
+            echo "  -v, --version TAG   Version tag (e.g. v0.3.0)."
+            echo "                      Auto-detected from git / CMakeLists.txt."
+            echo "  install-dir         Directory for the bundle."
+            echo "                      Defaults to dist/eta-<version>-<platform>."
+            exit 0 ;;
+        *) INSTALL_DIR="$1"; shift ;;
+    esac
+done
 
 # ── Detect platform ──────────────────────────────────────────────────
 ARCH="$(uname -m)"
@@ -48,11 +50,29 @@ case "$(uname -s)" in
     *)       PLATFORM="unknown-${ARCH}" ;;
 esac
 
+# ── Resolve version tag ──────────────────────────────────────────────
+if [ -z "$VERSION" ]; then
+    VERSION="$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 2>/dev/null || true)"
+fi
+if [ -z "$VERSION" ]; then
+    VERSION="$(sed -n 's/.*project\s*(\s*eta\s\+VERSION\s\+\([0-9.]*\).*/\1/p' "$PROJECT_ROOT/CMakeLists.txt" 2>/dev/null || true)"
+fi
+if [ -z "$VERSION" ]; then
+    VERSION="unknown"
+fi
+
+# ── Resolve install dir ──────────────────────────────────────────────
+if [ -z "$INSTALL_DIR" ]; then
+    INSTALL_DIR="${PROJECT_ROOT}/dist/eta-${VERSION}-${PLATFORM}"
+fi
+PREFIX="$(mkdir -p "$INSTALL_DIR" && cd "$INSTALL_DIR" && pwd)"
+
 JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║  Eta Release Build                                         ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
+echo "║  Version  : ${VERSION}"
 echo "║  Platform : ${PLATFORM}"
 echo "║  Install  : ${PREFIX}"
 echo "║  Jobs     : ${JOBS}"

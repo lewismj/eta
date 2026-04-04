@@ -10,16 +10,20 @@
     When called with no argument the bundle directory itself is used.
     When called with a -Prefix, files are copied to that location first.
 
+    NOTE: If your execution policy blocks this script, use the bundled
+    install.cmd wrapper instead (it calls this script with
+    -ExecutionPolicy Bypass).
+
 .PARAMETER Prefix
     Optional. Copy bin/, stdlib/, editors/ to this directory and
     configure PATH to point there instead of the bundle location.
 
 .EXAMPLE
     cd eta-win-x64
-    .\install.ps1
+    .\install.cmd
 
 .EXAMPLE
-    .\install.ps1 -Prefix C:\Program Files\Eta
+    .\install.cmd "C:\Program Files\Eta"
 #>
 [CmdletBinding()]
 param(

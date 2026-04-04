@@ -7,19 +7,30 @@
     Configures, builds, and installs Eta binaries + stdlib + VS Code
     extension into a single self-contained directory, then zips it.
 
+    The bundle directory is named  eta-<version>-<platform>  so that
+    different releases can live side-by-side.
+
 .PARAMETER InstallDir
-    Directory to install the release bundle into.
-    Will be created if it does not exist.
+    Optional. Directory to install the release bundle into.
+    Defaults to  dist\eta-<version>-win-<arch>  under the project root.
+
+.PARAMETER Version
+    Optional. Version tag to embed in the bundle name (e.g. "v0.3.0").
+    Auto-detected from  git describe --tags --abbrev=0  when omitted,
+    falling back to the version in CMakeLists.txt.
 
 .EXAMPLE
-    .\scripts\build-release.ps1 .\dist\eta-win-x64
+    .\scripts\build-release.ps1
+    .\scripts\build-release.ps1 -Version v0.3.0
     .\scripts\build-release.ps1 C:\eta-release
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, Position = 0,
-               HelpMessage = "Directory to install the release bundle into.")]
-    [string]$InstallDir
+    [Parameter(Position = 0)]
+    [string]$InstallDir,
+
+    [Parameter()]
+    [string]$Version
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,19 +39,43 @@ $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = (Resolve-Path "$ScriptDir\..").Path
 $BuildDir    = Join-Path $ProjectRoot "build-release"
 
-# Resolve install dir (create if needed)
+# ── Detect platform ──────────────────────────────────────────────────
+$Arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
+$PlatformTag = "win-$Arch"
+
+# ── Resolve version tag ──────────────────────────────────────────────
+if (-not $Version) {
+    # Try git tag first
+    $GitExe = Get-Command git -ErrorAction SilentlyContinue
+    if ($GitExe) {
+        try {
+            $Version = & git -C $ProjectRoot describe --tags --abbrev=0 2>$null
+        } catch {}
+    }
+}
+if (-not $Version) {
+    # Fall back to VERSION in CMakeLists.txt
+    $CML = Get-Content "$ProjectRoot\CMakeLists.txt" -Raw
+    if ($CML -match 'project\s*\(\s*eta\s+VERSION\s+([\d.]+)') {
+        $Version = $Matches[1]
+    } else {
+        $Version = "unknown"
+    }
+}
+
+# ── Resolve install dir ──────────────────────────────────────────────
+if (-not $InstallDir) {
+    $InstallDir = Join-Path $ProjectRoot "dist\eta-$Version-$PlatformTag"
+}
 if (-not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 }
 $Prefix = (Resolve-Path $InstallDir).Path
 
-# ── Detect platform ──────────────────────────────────────────────────
-$Arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
-$PlatformTag = "win-$Arch"
-
 Write-Host "╔══════════════════════════════════════════════════════════════╗"
 Write-Host "║  Eta Release Build (Windows)                               ║"
 Write-Host "╠══════════════════════════════════════════════════════════════╣"
+Write-Host "║  Version  : $Version"
 Write-Host "║  Platform : $PlatformTag"
 Write-Host "║  Install  : $Prefix"
 Write-Host "╚══════════════════════════════════════════════════════════════╝"
@@ -101,6 +136,7 @@ try { & npm install --omit=dev --silent 2>$null } catch {} finally { Pop-Locatio
 Write-Host "▸ [5/6] Copying install script and docs..."
 $helpers = @(
     (Join-Path $ProjectRoot "scripts\install.ps1"),
+    (Join-Path $ProjectRoot "scripts\install.cmd"),
     (Join-Path $ProjectRoot "TESTING.md")
 )
 foreach ($h in $helpers) {
@@ -126,6 +162,7 @@ Write-Host ""
 Write-Host "  To install on a target machine:"
 Write-Host "    Expand-Archive $BundleName.zip -DestinationPath ."
 Write-Host "    cd $BundleName"
-Write-Host "    .\install.ps1"
+Write-Host "    .\install.cmd                        (recommended)"
+Write-Host "    .\install.cmd `"C:\Program Files\Eta`"  (with prefix)"
 Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Green
 
