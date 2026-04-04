@@ -1,0 +1,98 @@
+;;; std/io.eta — I/O utilities.
+;;;
+;;; Builtins already available:
+;;;   display  write  newline  write-string  read-char
+;;;   current-input-port  current-output-port  current-error-port
+;;;   set-current-input-port!  set-current-output-port!  set-current-error-port!
+;;;   open-input-string  open-output-string  get-output-string
+;;;   open-input-file  open-output-file
+;;;   port?  input-port?  output-port?  close-port
+;;;
+;;; This module adds convenience helpers on top of those primitives.
+
+(module std.io
+  (export
+    print println
+    eprintln
+    display-to-string
+    read-line
+    with-output-to-port
+    with-input-from-port
+    with-error-to-port)
+  (begin
+
+    ;; ── Convenience output ──────────────────────────────────────────
+
+    ;; Display a value (human-readable).
+    (defun print (x) (display x))
+
+    ;; Display followed by a newline.
+    (defun println (x)
+      (display x)
+      (newline))
+
+    ;; Print to the current error port.
+    (defun eprintln (x)
+      (display x (current-error-port))
+      (newline (current-error-port)))
+
+    ;; Format a value into a string using write representation.
+    (defun display-to-string (x)
+      (let ((p (open-output-string)))
+        (display x p)
+        (get-output-string p)))
+
+    ;; ── Input helpers ───────────────────────────────────────────────
+
+    ;; Read characters until a newline (or EOF) and return a string.
+    ;; The newline is consumed but not included in the result.
+    (defun read-line args
+      (let ((port (if (null? args) (current-input-port) (car args)))
+            (out  (open-output-string)))
+        (letrec ((loop (lambda ()
+                         (let ((ch (read-char port)))
+                           (cond
+                             ;; EOF → return what we have (#f if nothing)
+                             ((eq? ch #f)
+                              (let ((s (get-output-string out)))
+                                (if (= (string-length s) 0) #f s)))
+                             ;; newline → done
+                             ((eq? ch #\newline)
+                              (get-output-string out))
+                             ;; carriage-return → skip
+                             ((eq? ch #\return)
+                              (loop))
+                             ;; normal char → accumulate via display
+                             (#t
+                              (display ch out)
+                              (loop)))))))
+          (loop))))
+
+    ;; ── Dynamic port redirection ────────────────────────────────────
+
+    ;; Execute thunk with stdout redirected to port.
+    (defun with-output-to-port (port thunk)
+      (let ((old (current-output-port)))
+        (set-current-output-port! port)
+        (let ((res (thunk)))
+          (set-current-output-port! old)
+          res)))
+
+    ;; Execute thunk with stdin redirected to port.
+    (defun with-input-from-port (port thunk)
+      (let ((old (current-input-port)))
+        (set-current-input-port! port)
+        (let ((res (thunk)))
+          (set-current-input-port! old)
+          res)))
+
+    ;; Execute thunk with stderr redirected to port.
+    (defun with-error-to-port (port thunk)
+      (let ((old (current-error-port)))
+        (set-current-error-port! port)
+        (let ((res (thunk)))
+          (set-current-error-port! old)
+          res)))
+
+  ))
+

@@ -14,3 +14,10 @@ elseif(MSVC)
 endif()
 
 add_subdirectory(eta)
+
+# ── Install the standard library alongside binaries ──────────────────
+# Layout: <prefix>/bin/etai, <prefix>/stdlib/prelude.eta, <prefix>/stdlib/std/*.eta
+install(DIRECTORY stdlib/ DESTINATION stdlib
+        FILES_MATCHING PATTERN "*.eta")
+
+

@@ -10,7 +10,7 @@ import {
 
 let client: LanguageClient | undefined;
 
-function findServerBinary(): string | undefined {
+function findServerBinary(context: ExtensionContext): string | undefined {
     // 1. Check user configuration
     const config = workspace.getConfiguration('eta.lsp');
     const configPath = config.get<string>('serverPath', '');
@@ -18,7 +18,19 @@ function findServerBinary(): string | undefined {
         return configPath;
     }
 
-    // 2. Check workspace-relative build output
+    // 2. Check bundled binary inside the extension directory
+    //    (populated when packaging a release .vsix)
+    const bundledCandidates = [
+        path.join(context.extensionPath, 'bin', 'eta_lsp'),
+        path.join(context.extensionPath, 'bin', 'eta_lsp.exe'),
+    ];
+    for (const c of bundledCandidates) {
+        if (fs.existsSync(c)) {
+            return c;
+        }
+    }
+
+    // 3. Check workspace-relative build output
     const workspaceFolders = workspace.workspaceFolders;
     if (workspaceFolders) {
         for (const folder of workspaceFolders) {
@@ -37,7 +49,7 @@ function findServerBinary(): string | undefined {
         }
     }
 
-    // 3. Fall back to PATH (hope it's installed)
+    // 4. Fall back to PATH (hope it's installed)
     return 'eta_lsp';
 }
 
@@ -47,7 +59,7 @@ export function activate(context: ExtensionContext) {
         return;
     }
 
-    const serverPath = findServerBinary();
+    const serverPath = findServerBinary(context);
     if (!serverPath) {
         window.showWarningMessage(
             'Eta LSP server not found. Set eta.lsp.serverPath in settings or build the eta_lsp target.'

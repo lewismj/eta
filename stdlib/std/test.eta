@@ -1,0 +1,158 @@
+;;; std/test.eta — Lightweight test framework.
+;;;
+;;; Usage:
+;;;   (import std.test)
+;;;   (define results
+;;;     (run (make-group "my suite"
+;;;       (list
+;;;         (make-test "addition" (lambda () (assert-equal 4 (+ 2 2))))
+;;;         (make-test "truthy"  (lambda () (assert-true #t)))))))
+;;;   (print-summary (summary results))
+
+(module std.test
+  (export
+    ;; Constructors
+    make-test make-group
+    ;; Runner
+    run summary
+    ;; Assertions
+    assert-true assert-false assert-equal assert-not-equal
+    ;; Output
+    print-summary)
+  (begin
+
+    ;; ── Data (tagged vectors via define-record-type) ────────────────
+
+    (define-record-type test-case
+      (make-test name thunk)
+      test-case?
+      (name test-name)
+      (thunk test-thunk))
+
+    (define-record-type test-group
+      (make-group name children)
+      test-group?
+      (name group-name)
+      (children group-children))
+
+    (define-record-type test-result
+      (__make-result name status error)
+      test-result?
+      (name result-name)
+      (status result-status)
+      (error result-error))
+
+    (define-record-type group-result
+      (__make-group-result name status children)
+      group-result?
+      (name gresult-name)
+      (status gresult-status)
+      (children gresult-children))
+
+    (define-record-type test-summary
+      (__make-summary total passed failed)
+      test-summary?
+      (total summary-total)
+      (passed summary-passed)
+      (failed summary-failed))
+
+    ;; ── Local helpers (no imports needed) ────────────────────────────
+
+    (defun __map (f xs)
+      (if (null? xs)
+          '()
+          (cons (f (car xs)) (__map f (cdr xs)))))
+
+    (defun __foldl (f acc xs)
+      (if (null? xs)
+          acc
+          (__foldl f (f acc (car xs)) (cdr xs))))
+
+    ;; ── Assertions ──────────────────────────────────────────────────
+
+    (defun assert-true (x . rest)
+      (let ((msg (if (null? rest) "expected true" (car rest))))
+        (if x 'ok (error msg))))
+
+    (defun assert-false (x . rest)
+      (let ((msg (if (null? rest) "expected false" (car rest))))
+        (if x (error msg) 'ok)))
+
+    (defun assert-equal (expected actual . rest)
+      (let ((msg (if (null? rest)
+                     (string-append "expected "
+                       (number->string expected)
+                       " but got "
+                       (number->string actual))
+                     (car rest))))
+        (if (equal? expected actual)
+            'ok
+            (error msg))))
+
+    (defun assert-not-equal (a b . rest)
+      (let ((msg (if (null? rest) "expected values to differ" (car rest))))
+        (if (equal? a b) (error msg) 'ok)))
+
+    ;; ── Runner ──────────────────────────────────────────────────────
+
+    (defun __run-test (t)
+      ;; Execute the thunk; on success return pass, on error return fail.
+      ;; NOTE: Until try/catch exists, a failing assertion (error) will
+      ;; propagate up. For now, tests either all pass or abort on first failure.
+      (begin
+        ((test-thunk t))
+        (__make-result (test-name t) 'pass '())))
+
+    (defun __all-pass? (rs)
+      (if (null? rs)
+          #t
+          (let ((st (if (test-result? (car rs))
+                        (result-status (car rs))
+                        (gresult-status (car rs)))))
+            (if (eq? st 'pass)
+                (__all-pass? (cdr rs))
+                #f))))
+
+    (defun __run-group (g)
+      (let ((kids (__map run (group-children g))))
+        (let ((status (if (__all-pass? kids) 'pass 'fail)))
+          (__make-group-result (group-name g) status kids))))
+
+    (defun run (node)
+      (if (test-case? node)
+          (__run-test node)
+          (__run-group node)))
+
+    ;; ── Summary ─────────────────────────────────────────────────────
+
+    (defun __add-summary (a b)
+      (__make-summary
+        (+ (summary-total a)  (summary-total b))
+        (+ (summary-passed a) (summary-passed b))
+        (+ (summary-failed a) (summary-failed b))))
+
+    (defun __count-results (res)
+      (if (test-result? res)
+          (if (eq? (result-status res) 'pass)
+              (__make-summary 1 1 0)
+              (__make-summary 1 0 1))
+          ;; group result — fold children
+          (__foldl __add-summary
+                   (__make-summary 0 0 0)
+                   (__map __count-results (gresult-children res)))))
+
+    (defun summary (res)
+      (__count-results res))
+
+    ;; Print a human-readable summary line.
+    (defun print-summary (s)
+      (display (summary-total s))
+      (display " tests, ")
+      (display (summary-passed s))
+      (display " passed, ")
+      (display (summary-failed s))
+      (display " failed")
+      (newline))
+
+  ))
+

@@ -1,0 +1,540 @@
+;;; prelude.eta — Eta standard library prelude.
+;;;
+;;; This file is auto-loaded by etai, eta_repl, and eta_lsp when found
+;;; in the module search path.  It defines the standard library modules
+;;; so that user code can (import std.core), (import std.io), etc.
+;;;
+;;; The individual modules are inlined here because the Driver loads
+;;; a single prelude file; a future module auto-loader will allow
+;;; splitting them into separate files.
+
+;; ════════════════════════════════════════════════════════════════════
+;; std.core — Core combinators and predicates
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.core
+  (export
+    atom? void
+    identity compose flip constantly negate
+    cadr caddr caar cdar caddar
+    last list? iota
+    assoc-ref)
+  (begin
+
+    (defun atom? (x) (not (pair? x)))
+
+    (defun void () '())
+
+    (defun identity (x) x)
+
+    (defun compose (f g)
+      (lambda (x) (f (g x))))
+
+    (defun flip (f)
+      (lambda (a b) (f b a)))
+
+    (defun constantly (v)
+      (lambda args v))
+
+    (defun negate (pred)
+      (lambda (x) (not (pred x))))
+
+    (defun cadr (xs)  (car (cdr xs)))
+    (defun caddr (xs) (car (cdr (cdr xs))))
+    (defun caar (xs)  (car (car xs)))
+    (defun cdar (xs)  (cdr (car xs)))
+    (defun caddar (xs) (car (cdr (cdr (car xs)))))
+
+    (defun last (xs)
+      (if (null? (cdr xs))
+          (car xs)
+          (last (cdr xs))))
+
+    (defun list? (x)
+      (cond
+        ((null? x) #t)
+        ((pair? x) (list? (cdr x)))
+        (#t #f)))
+
+    (defun iota (count . rest)
+      (let ((start (if (null? rest) 0 (car rest)))
+            (step  (if (or (null? rest) (null? (cdr rest))) 1 (car (cdr rest)))))
+        (letrec ((build (lambda (i acc)
+                          (if (< i 0)
+                              acc
+                              (build (- i 1) (cons (+ start (* i step)) acc))))))
+          (build (- count 1) '()))))
+
+    (defun assoc-ref (key alist)
+      (cond
+        ((null? alist) #f)
+        ((equal? key (car (car alist))) (cdr (car alist)))
+        (#t (assoc-ref key (cdr alist)))))
+
+  ))
+
+;; ════════════════════════════════════════════════════════════════════
+;; std.math — Mathematical constants and helpers
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.math
+  (export
+    pi e
+    square cube
+    even? odd?
+    sign clamp
+    quotient
+    gcd lcm
+    expt
+    sum product)
+  (begin
+
+    (define pi 3.141592653589793)
+    (define e  2.718281828459045)
+
+    (defun square (x) (* x x))
+    (defun cube   (x) (* x x x))
+
+    (defun even? (n) (= (modulo n 2) 0))
+    (defun odd?  (n) (not (= (modulo n 2) 0)))
+
+    (defun sign (x)
+      (cond ((positive? x) 1)
+            ((negative? x) -1)
+            (#t 0)))
+
+    (defun clamp (x lo hi)
+      (min hi (max lo x)))
+
+    (defun quotient (a b)
+      (let ((r (/ a b)))
+        (if (integer? r) r
+            (if (negative? r)
+                (+ (- 0 (/ (- 0 (* a 1)) (* b 1))) 0)
+                (- r (modulo (* r 1.0) 1.0))))))
+
+    (defun gcd (a b)
+      (let ((a (abs a)) (b (abs b)))
+        (if (= b 0) a (gcd b (modulo a b)))))
+
+    (defun lcm (a b)
+      (if (or (= a 0) (= b 0))
+          0
+          (abs (/ (* a b) (gcd a b)))))
+
+    (defun expt (base exp)
+      (cond
+        ((= exp 0) 1)
+        ((= (modulo exp 2) 0)
+         (let ((half (expt base (/ exp 2))))
+           (* half half)))
+        (#t (* base (expt base (- exp 1))))))
+
+    (defun sum (xs)
+      (letrec ((loop (lambda (rest acc)
+                       (if (null? rest) acc
+                           (loop (cdr rest) (+ acc (car rest)))))))
+        (loop xs 0)))
+
+    (defun product (xs)
+      (letrec ((loop (lambda (rest acc)
+                       (if (null? rest) acc
+                           (loop (cdr rest) (* acc (car rest)))))))
+        (loop xs 1)))
+
+  ))
+
+;; ════════════════════════════════════════════════════════════════════
+;; std.io — I/O utilities
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.io
+  (export
+    print println
+    eprintln
+    display-to-string
+    read-line
+    with-output-to-port
+    with-input-from-port
+    with-error-to-port)
+  (begin
+
+    (defun print (x) (display x))
+
+    (defun println (x)
+      (display x)
+      (newline))
+
+    (defun eprintln (x)
+      (display x (current-error-port))
+      (newline (current-error-port)))
+
+    (defun display-to-string (x)
+      (let ((p (open-output-string)))
+        (display x p)
+        (get-output-string p)))
+
+    (defun read-line args
+      (let ((port (if (null? args) (current-input-port) (car args)))
+            (out  (open-output-string)))
+        (letrec ((loop (lambda ()
+                         (let ((ch (read-char port)))
+                           (cond
+                             ((eq? ch #f)
+                              (let ((s (get-output-string out)))
+                                (if (= (string-length s) 0) #f s)))
+                             ((eq? ch #\newline)
+                              (get-output-string out))
+                             ((eq? ch #\return)
+                              (loop))
+                             (#t
+                              (display ch out)
+                              (loop)))))))
+          (loop))))
+
+    (defun with-output-to-port (port thunk)
+      (let ((old (current-output-port)))
+        (set-current-output-port! port)
+        (let ((res (thunk)))
+          (set-current-output-port! old)
+          res)))
+
+    (defun with-input-from-port (port thunk)
+      (let ((old (current-input-port)))
+        (set-current-input-port! port)
+        (let ((res (thunk)))
+          (set-current-input-port! old)
+          res)))
+
+    (defun with-error-to-port (port thunk)
+      (let ((old (current-error-port)))
+        (set-current-error-port! port)
+        (let ((res (thunk)))
+          (set-current-error-port! old)
+          res)))
+
+  ))
+
+;; ════════════════════════════════════════════════════════════════════
+;; std.collections — Higher-order list and vector operations
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.collections
+  (export
+    map* filter foldl foldr reduce
+    any? every? count
+    zip
+    take drop
+    flatten
+    range
+    sort
+    vector-map vector-for-each
+    vector-foldl vector-foldr
+    vector->list list->vector)
+  (begin
+
+    (defun map* (f xs)
+      (if (null? xs) '()
+          (cons (f (car xs)) (map* f (cdr xs)))))
+
+    (defun filter (pred xs)
+      (cond
+        ((null? xs) '())
+        ((pred (car xs))
+         (cons (car xs) (filter pred (cdr xs))))
+        (#t (filter pred (cdr xs)))))
+
+    (defun foldl (f acc xs)
+      (if (null? xs) acc
+          (foldl f (f acc (car xs)) (cdr xs))))
+
+    (defun foldr (f init xs)
+      (if (null? xs) init
+          (f (car xs) (foldr f init (cdr xs)))))
+
+    (defun reduce (f xs)
+      (if (null? xs) (error "reduce: empty list")
+          (foldl f (car xs) (cdr xs))))
+
+    (defun any? (pred xs)
+      (cond
+        ((null? xs) #f)
+        ((pred (car xs)) #t)
+        (#t (any? pred (cdr xs)))))
+
+    (defun every? (pred xs)
+      (cond
+        ((null? xs) #t)
+        ((not (pred (car xs))) #f)
+        (#t (every? pred (cdr xs)))))
+
+    (defun count (pred xs)
+      (foldl (lambda (acc x) (if (pred x) (+ acc 1) acc)) 0 xs))
+
+    (defun zip (xs ys)
+      (if (or (null? xs) (null? ys)) '()
+          (cons (cons (car xs) (car ys))
+                (zip (cdr xs) (cdr ys)))))
+
+    (defun take (n xs)
+      (if (or (= n 0) (null? xs)) '()
+          (cons (car xs) (take (- n 1) (cdr xs)))))
+
+    (defun drop (n xs)
+      (if (or (= n 0) (null? xs)) xs
+          (drop (- n 1) (cdr xs))))
+
+    (defun flatten (xss)
+      (foldr append '() xss))
+
+    (defun range (start end)
+      (if (>= start end) '()
+          (cons start (range (+ start 1) end))))
+
+    (defun sort (less? xs)
+      (letrec
+        ((merge (lambda (a b)
+           (cond
+             ((null? a) b)
+             ((null? b) a)
+             ((less? (car a) (car b))
+              (cons (car a) (merge (cdr a) b)))
+             (#t
+              (cons (car b) (merge a (cdr b)))))))
+         (split (lambda (xs left right toggle)
+           (if (null? xs)
+               (cons left right)
+               (if toggle
+                   (split (cdr xs) (cons (car xs) left) right (not toggle))
+                   (split (cdr xs) left (cons (car xs) right) (not toggle))))))
+         (msort (lambda (xs)
+           (if (or (null? xs) (null? (cdr xs)))
+               xs
+               (let ((halves (split xs '() '() #t)))
+                 (merge (msort (car halves))
+                        (msort (cdr halves))))))))
+        (msort xs)))
+
+    (defun vector-map (f v)
+      (let ((n (vector-length v)))
+        (let ((out (make-vector n '())))
+          (letrec ((loop (lambda (i)
+                           (when (< i n)
+                             (vector-set! out i (f (vector-ref v i)))
+                             (loop (+ i 1))))))
+            (loop 0)
+            out))))
+
+    (defun vector-for-each (f v)
+      (let ((n (vector-length v)))
+        (letrec ((loop (lambda (i)
+                         (when (< i n)
+                           (f (vector-ref v i))
+                           (loop (+ i 1))))))
+          (loop 0))))
+
+    (defun vector-foldl (f acc v)
+      (let ((n (vector-length v)))
+        (letrec ((loop (lambda (i a)
+                         (if (= i n) a
+                             (loop (+ i 1) (f a (vector-ref v i)))))))
+          (loop 0 acc))))
+
+    (defun vector-foldr (f init v)
+      (let ((n (vector-length v)))
+        (letrec ((loop (lambda (i a)
+                         (if (< i 0) a
+                             (loop (- i 1) (f (vector-ref v i) a))))))
+          (loop (- n 1) init))))
+
+    (defun vector->list (v)
+      (vector-foldr cons '() v))
+
+    (defun list->vector (xs)
+      (let ((n (length xs)))
+        (let ((v (make-vector n '())))
+          (letrec ((loop (lambda (i rest)
+                           (when (< i n)
+                             (vector-set! v i (car rest))
+                             (loop (+ i 1) (cdr rest))))))
+            (loop 0 xs)
+            v))))
+
+  ))
+
+;; ════════════════════════════════════════════════════════════════════
+;; std.test — Lightweight test framework
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.test
+  (export
+    make-test make-group
+    run summary
+    assert-true assert-false assert-equal assert-not-equal
+    print-summary)
+  (begin
+
+    (define-record-type test-case
+      (make-test name thunk)
+      test-case?
+      (name test-name)
+      (thunk test-thunk))
+
+    (define-record-type test-group
+      (make-group name children)
+      test-group?
+      (name group-name)
+      (children group-children))
+
+    (define-record-type test-result
+      (__make-result name status error)
+      test-result?
+      (name result-name)
+      (status result-status)
+      (error result-error))
+
+    (define-record-type group-result
+      (__make-group-result name status children)
+      group-result?
+      (name gresult-name)
+      (status gresult-status)
+      (children gresult-children))
+
+    (define-record-type test-summary
+      (__make-summary total passed failed)
+      test-summary?
+      (total summary-total)
+      (passed summary-passed)
+      (failed summary-failed))
+
+    (defun __map (f xs)
+      (if (null? xs) '()
+          (cons (f (car xs)) (__map f (cdr xs)))))
+
+    (defun __foldl (f acc xs)
+      (if (null? xs) acc
+          (__foldl f (f acc (car xs)) (cdr xs))))
+
+    (defun assert-true (x . rest)
+      (let ((msg (if (null? rest) "expected true" (car rest))))
+        (if x 'ok (error msg))))
+
+    (defun assert-false (x . rest)
+      (let ((msg (if (null? rest) "expected false" (car rest))))
+        (if x (error msg) 'ok)))
+
+    (defun assert-equal (expected actual . rest)
+      (let ((msg (if (null? rest)
+                     (string-append "expected "
+                       (number->string expected)
+                       " but got "
+                       (number->string actual))
+                     (car rest))))
+        (if (equal? expected actual) 'ok (error msg))))
+
+    (defun assert-not-equal (a b . rest)
+      (let ((msg (if (null? rest) "expected values to differ" (car rest))))
+        (if (equal? a b) (error msg) 'ok)))
+
+    (defun __run-test (t)
+      (begin
+        ((test-thunk t))
+        (__make-result (test-name t) 'pass '())))
+
+    (defun __all-pass? (rs)
+      (if (null? rs) #t
+          (let ((st (if (test-result? (car rs))
+                        (result-status (car rs))
+                        (gresult-status (car rs)))))
+            (if (eq? st 'pass)
+                (__all-pass? (cdr rs))
+                #f))))
+
+    (defun __run-group (g)
+      (let ((kids (__map run (group-children g))))
+        (let ((status (if (__all-pass? kids) 'pass 'fail)))
+          (__make-group-result (group-name g) status kids))))
+
+    (defun run (node)
+      (if (test-case? node)
+          (__run-test node)
+          (__run-group node)))
+
+    (defun __add-summary (a b)
+      (__make-summary
+        (+ (summary-total a)  (summary-total b))
+        (+ (summary-passed a) (summary-passed b))
+        (+ (summary-failed a) (summary-failed b))))
+
+    (defun __count-results (res)
+      (if (test-result? res)
+          (if (eq? (result-status res) 'pass)
+              (__make-summary 1 1 0)
+              (__make-summary 1 0 1))
+          (__foldl __add-summary
+                   (__make-summary 0 0 0)
+                   (__map __count-results (gresult-children res)))))
+
+    (defun summary (res) (__count-results res))
+
+    (defun print-summary (s)
+      (display (summary-total s))
+      (display " tests, ")
+      (display (summary-passed s))
+      (display " passed, ")
+      (display (summary-failed s))
+      (display " failed")
+      (newline))
+
+  ))
+
+;; ════════════════════════════════════════════════════════════════════
+;; std.prelude — Re-exports from all standard library modules.
+;;
+;; (import std.prelude) gives you everything in one shot.
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.prelude
+  (import std.core)
+  (import std.math)
+  (import std.io)
+  (import std.collections)
+  (export
+    ;; std.core
+    atom? void
+    identity compose flip constantly negate
+    cadr caddr caar cdar caddar
+    last list? iota
+    assoc-ref
+    ;; std.math
+    pi e
+    square cube
+    even? odd?
+    sign clamp
+    quotient
+    gcd lcm
+    expt
+    sum product
+    ;; std.io
+    print println
+    eprintln
+    display-to-string
+    read-line
+    with-output-to-port
+    with-input-from-port
+    with-error-to-port
+    ;; std.collections
+    map* filter foldl foldr reduce
+    any? every? count
+    zip
+    take drop
+    flatten
+    range
+    sort
+    vector-map vector-for-each
+    vector-foldl vector-foldr
+    vector->list list->vector)
+  (begin
+    ;; All names are already imported — nothing else to define.
+  ))
+

@@ -8,6 +8,10 @@
 #include <string_view>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace eta::interpreter {
 
 namespace fs = std::filesystem;
@@ -52,15 +56,49 @@ public:
     }
 
     /// Construct from CLI --path argument, falling back to ETA_MODULE_PATH env var.
+    /// Always appends the bundled stdlib directory (<exe>/../stdlib/) as a
+    /// last-resort search path so the prelude is found automatically.
     static ModulePathResolver from_args_or_env(const std::string& cli_path) {
+        ModulePathResolver resolver{{}};
         if (!cli_path.empty()) {
-            return from_path_string(cli_path);
+            resolver = from_path_string(cli_path);
+        } else {
+            const char* env = std::getenv("ETA_MODULE_PATH");
+            if (env && env[0] != '\0') {
+                resolver = from_path_string(env);
+            }
         }
-        const char* env = std::getenv("ETA_MODULE_PATH");
-        if (env && env[0] != '\0') {
-            return from_path_string(env);
+        // Append the bundled stdlib directory relative to the executable.
+        // Layout: <prefix>/bin/etai  →  <prefix>/stdlib/
+        auto stdlib = bundled_stdlib_dir();
+        if (stdlib) {
+            resolver.add_dir(*stdlib);
         }
-        return ModulePathResolver{{}};
+        return resolver;
+    }
+
+    /// Locate the bundled stdlib directory relative to the running executable.
+    /// Returns nullopt if the directory does not exist on disk.
+    static std::optional<fs::path> bundled_stdlib_dir() {
+        std::error_code ec;
+#ifdef _WIN32
+        // Windows: use GetModuleFileName
+        wchar_t buf[4096];
+        DWORD len = GetModuleFileNameW(nullptr, buf, sizeof(buf) / sizeof(buf[0]));
+        if (len == 0 || len >= sizeof(buf) / sizeof(buf[0])) return std::nullopt;
+        fs::path exe_path(buf);
+#else
+        // POSIX: /proc/self/exe (Linux), or argv[0] fallback
+        fs::path exe_path = fs::read_symlink("/proc/self/exe", ec);
+        if (ec) return std::nullopt;
+#endif
+        // <prefix>/bin/etai  →  <prefix>/stdlib
+        auto prefix = exe_path.parent_path().parent_path();
+        auto stdlib = prefix / "stdlib";
+        if (fs::is_directory(stdlib, ec)) {
+            return stdlib;
+        }
+        return std::nullopt;
     }
 
     /**
