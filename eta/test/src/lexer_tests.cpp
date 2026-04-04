@@ -514,6 +514,30 @@ BOOST_AUTO_TEST_CASE(datum_comment_at_eof_is_error) {
     BOOST_TEST(result.error().kind == LexErrorKind::UnexpectedEOF);
 }
 
+BOOST_AUTO_TEST_CASE(datum_comment_on_rparen_is_error) {
+    // #; followed by ) is not a valid datum
+    Lexer lx(1, "#;)");
+    auto result = lx.next_token();
+    BOOST_TEST(!result.has_value());
+    BOOST_TEST(result.error().kind == LexErrorKind::InvalidDatum);
+}
+
+BOOST_AUTO_TEST_CASE(datum_comment_on_rbracket_is_error) {
+    // #; followed by ] is not a valid datum
+    Lexer lx(1, "#;]");
+    auto result = lx.next_token();
+    BOOST_TEST(!result.has_value());
+    BOOST_TEST(result.error().kind == LexErrorKind::InvalidDatum);
+}
+
+BOOST_AUTO_TEST_CASE(datum_comment_on_dot_is_error) {
+    // #; followed by . is not a valid datum
+    Lexer lx(1, "#;.");
+    auto result = lx.next_token();
+    BOOST_TEST(!result.has_value());
+    BOOST_TEST(result.error().kind == LexErrorKind::InvalidDatum);
+}
+
 // ============================================================================
 // Block comment edge cases
 // ============================================================================

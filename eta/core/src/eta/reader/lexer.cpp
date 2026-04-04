@@ -262,9 +262,26 @@ namespace {
             case Token::Kind::Comma:
             case Token::Kind::CommaAt:
                 return skip_datum(start);
+
             // Atoms: already consumed by next_token()
-            default:
+            case Token::Kind::Boolean:
+            case Token::Kind::Char:
+            case Token::Kind::String:
+            case Token::Kind::Symbol:
+            case Token::Kind::Number:
                 break;
+
+            // Closing delimiters and dot cannot start a datum
+            case Token::Kind::RParen:
+            case Token::Kind::RBracket:
+            case Token::Kind::Dot:
+                return std::unexpected(make_error(LexErrorKind::InvalidDatum, start,
+                    "expected a datum after #; but found a delimiter"));
+
+            // EOF_ is already handled before the switch
+            case Token::Kind::EOF_:
+                return std::unexpected(make_error(LexErrorKind::UnexpectedEOF, start,
+                    "unterminated datum comment"));
         }
         return {};
     }

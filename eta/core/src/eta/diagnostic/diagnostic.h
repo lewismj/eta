@@ -47,6 +47,7 @@ enum class DiagnosticCode : std::uint16_t {
     InvalidCodePoint,
     MissingDelimiter,
     UnexpectedEOF,
+    InvalidDatum,
 
     // Parser errors (100-199)
     UnexpectedToken = 100,
@@ -267,6 +268,12 @@ inline Diagnostic to_diagnostic<eta::reader::lexer::LexError>(const eta::reader:
             break;
         case eta::reader::lexer::LexErrorKind::UnexpectedEOF:
             code = DiagnosticCode::UnexpectedEOF;
+            break;
+        case eta::reader::lexer::LexErrorKind::InvalidUtf8:
+            code = DiagnosticCode::InvalidToken;
+            break;
+        case eta::reader::lexer::LexErrorKind::InvalidDatum:
+            code = DiagnosticCode::InvalidDatum;
             break;
         default:
             code = DiagnosticCode::InvalidToken;

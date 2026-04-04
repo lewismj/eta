@@ -326,6 +326,7 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_lex_error_all_kinds) {
         {LK::InvalidCodePoint, DiagnosticCode::InvalidCodePoint},
         {LK::MissingDelimiter, DiagnosticCode::MissingDelimiter},
         {LK::UnexpectedEOF, DiagnosticCode::UnexpectedEOF},
+        {LK::InvalidDatum, DiagnosticCode::InvalidDatum},
     };
     for (const auto& [lex_kind, diag_code] : mappings) {
         eta::reader::lexer::LexError e(lex_kind, Span{});

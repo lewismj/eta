@@ -137,7 +137,8 @@ namespace eta::reader::lexer {
         InvalidUtf8,
         MissingDelimiter,
         InvalidCodePoint,
-        InvalidBoolean
+        InvalidBoolean,
+        InvalidDatum
     };
 
     struct LexError {
@@ -162,6 +163,7 @@ namespace eta::reader::lexer {
             case MissingDelimiter:    return "LexErrorKind::MissingDelimiter";
             case InvalidCodePoint:    return "LexErrorKind::InvalidCodePoint";
             case InvalidBoolean:      return "LexErrorKind::InvalidBoolean";
+            case InvalidDatum:        return "LexErrorKind::InvalidDatum";
         }
         return "LexErrorKind::Unknown";
     }
