@@ -35,9 +35,9 @@ $ErrorActionPreference = "Stop"
 
 $BundleDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
-# ── Copy to prefix if given ───────────────────────────────────────────
+# -- Copy to prefix if given ---------------------------------------------------
 if ($Prefix) {
-    Write-Host "▸ Copying files to $Prefix..."
+    Write-Host "> Copying files to $Prefix..."
     New-Item -ItemType Directory -Force -Path "$Prefix\bin"    | Out-Null
     New-Item -ItemType Directory -Force -Path "$Prefix\stdlib" | Out-Null
 
@@ -57,41 +57,41 @@ if ($Prefix) {
     $VscodeDir = Join-Path $BundleDir "editors\vscode"
 }
 
-Write-Host "╔══════════════════════════════════════════════════════════════╗"
-Write-Host "║  Eta Installer (Windows)                                   ║"
-Write-Host "╚══════════════════════════════════════════════════════════════╝"
+Write-Host "+==============================================================+"
+Write-Host "|  Eta Installer (Windows)                                     |"
+Write-Host "+==============================================================+"
 Write-Host ""
 Write-Host "  bin     : $BinDir"
 Write-Host "  stdlib  : $StdlibDir"
 Write-Host ""
 
-# ── 1. Add bin/ to user PATH ─────────────────────────────────────────
+# -- 1. Add bin/ to user PATH -------------------------------------------------
 $UserPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 if ($UserPath -notlike "*$BinDir*") {
-    Write-Host "▸ Adding $BinDir to user PATH..."
+    Write-Host "> Adding $BinDir to user PATH..."
     $NewPath = "$BinDir;$UserPath"
     [Environment]::SetEnvironmentVariable("PATH", $NewPath, "User")
     $env:PATH = "$BinDir;$env:PATH"
-    Write-Host "  ✓ Added to user PATH."
+    Write-Host "  [OK] Added to user PATH."
 } else {
-    Write-Host "▸ Eta already on user PATH — skipping."
+    Write-Host "> Eta already on user PATH -- skipping."
 }
 
-# ── 2. Set ETA_MODULE_PATH ───────────────────────────────────────────
+# -- 2. Set ETA_MODULE_PATH ---------------------------------------------------
 $CurrentModPath = [Environment]::GetEnvironmentVariable("ETA_MODULE_PATH", "User")
 if ($CurrentModPath -ne $StdlibDir) {
-    Write-Host "▸ Setting ETA_MODULE_PATH = $StdlibDir..."
+    Write-Host "> Setting ETA_MODULE_PATH = $StdlibDir..."
     [Environment]::SetEnvironmentVariable("ETA_MODULE_PATH", $StdlibDir, "User")
     $env:ETA_MODULE_PATH = $StdlibDir
-    Write-Host "  ✓ Set."
+    Write-Host "  [OK] Set."
 } else {
-    Write-Host "▸ ETA_MODULE_PATH already set — skipping."
+    Write-Host "> ETA_MODULE_PATH already set -- skipping."
 }
 
-# ── 3. Install VS Code extension ─────────────────────────────────────
+# -- 3. Install VS Code extension ---------------------------------------------
 $CodeExe = Get-Command code -ErrorAction SilentlyContinue
 if ($CodeExe -and (Test-Path $VscodeDir)) {
-    Write-Host "▸ Installing VS Code extension..."
+    Write-Host "> Installing VS Code extension..."
 
     $VsixTmp = Join-Path $env:TEMP "eta-lang.vsix"
     $Packed  = $false
@@ -108,32 +108,32 @@ if ($CodeExe -and (Test-Path $VscodeDir)) {
     if ($Packed -and (Test-Path $VsixTmp)) {
         & code --install-extension $VsixTmp --force
         Remove-Item $VsixTmp -ErrorAction SilentlyContinue
-        Write-Host "  ✓ VS Code extension installed."
+        Write-Host "  [OK] VS Code extension installed."
     } else {
-        Write-Host "  ⚠ Could not package .vsix (npx/@vscode/vsce not found)."
+        Write-Host "  [!] Could not package .vsix (npx/@vscode/vsce not found)."
         Write-Host "    Set eta.lsp.serverPath in VS Code settings to:"
         Write-Host "    $BinDir\eta_lsp.exe"
     }
 } elseif (-not (Test-Path $VscodeDir)) {
-    Write-Host "▸ VS Code extension not in bundle — skipping."
+    Write-Host "> VS Code extension not in bundle -- skipping."
 } else {
-    Write-Host "▸ 'code' not on PATH — skipping VS Code extension install."
+    Write-Host "> 'code' not on PATH -- skipping VS Code extension install."
 }
 
-# ── 4. Smoke test ─────────────────────────────────────────────────────
+# -- 4. Smoke test -------------------------------------------------------------
 Write-Host ""
-Write-Host "▸ Verifying..."
+Write-Host "> Verifying..."
 foreach ($bin in @("etai.exe", "eta_repl.exe", "eta_lsp.exe")) {
     $p = Join-Path $BinDir $bin
     if (Test-Path $p) {
-        Write-Host "  ✓ $bin"
+        Write-Host "  [OK] $bin"
     } else {
-        Write-Host "  ✗ $bin — not found"
+        Write-Host "  [FAIL] $bin -- not found"
     }
 }
 
 Write-Host ""
-Write-Host "✓ Done! Open a new terminal and try:" -ForegroundColor Green
+Write-Host "[OK] Done! Open a new terminal and try:" -ForegroundColor Green
 Write-Host ""
 Write-Host "    etai --help"
 Write-Host "    eta_repl"

@@ -72,35 +72,35 @@ if (-not (Test-Path $InstallDir)) {
 }
 $Prefix = (Resolve-Path $InstallDir).Path
 
-Write-Host "╔══════════════════════════════════════════════════════════════╗"
-Write-Host "║  Eta Release Build (Windows)                               ║"
-Write-Host "╠══════════════════════════════════════════════════════════════╣"
-Write-Host "║  Version  : $Version"
-Write-Host "║  Platform : $PlatformTag"
-Write-Host "║  Install  : $Prefix"
-Write-Host "╚══════════════════════════════════════════════════════════════╝"
+Write-Host "+==============================================================+"
+Write-Host "|  Eta Release Build (Windows)                                 |"
+Write-Host "+==============================================================+"
+Write-Host "|  Version  : $Version"
+Write-Host "|  Platform : $PlatformTag"
+Write-Host "|  Install  : $Prefix"
+Write-Host "+==============================================================+"
 Write-Host ""
 
-# ── 1. Configure ─────────────────────────────────────────────────────
-Write-Host "▸ [1/6] Configuring CMake..."
+# -- 1. Configure --------------------------------------------------------------
+Write-Host "> [1/6] Configuring CMake..."
 & cmake -B $BuildDir -DCMAKE_INSTALL_PREFIX="$Prefix" $ProjectRoot
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 
-# ── 2. Build ─────────────────────────────────────────────────────────
-Write-Host "▸ [2/6] Building (Release)..."
+# -- 2. Build ------------------------------------------------------------------
+Write-Host "> [2/6] Building (Release)..."
 & cmake --build $BuildDir --config Release
 if ($LASTEXITCODE -ne 0) { throw "CMake build failed" }
 
-# ── 3. Install binaries + stdlib ─────────────────────────────────────
-Write-Host "▸ [3/6] Installing to $Prefix..."
+# -- 3. Install binaries + stdlib ----------------------------------------------
+Write-Host "> [3/6] Installing to $Prefix..."
 & cmake --install $BuildDir --config Release
 if ($LASTEXITCODE -ne 0) { throw "CMake install failed" }
 
-# ── 4. Build VS Code extension ───────────────────────────────────────
+# -- 4. Build VS Code extension ------------------------------------------------
 $VscodeSrc  = Join-Path $ProjectRoot "editors\vscode"
 $VscodeDest = Join-Path $Prefix "editors\vscode"
 
-Write-Host "▸ [4/6] Building VS Code extension..."
+Write-Host "> [4/6] Building VS Code extension..."
 Push-Location $VscodeSrc
 try {
     & npm ci --silent
@@ -132,8 +132,8 @@ if (Test-Path $LspExe) {
 Push-Location $VscodeDest
 try { & npm install --omit=dev --silent 2>$null } catch {} finally { Pop-Location }
 
-# ── 5. Copy helpers + docs ───────────────────────────────────────────
-Write-Host "▸ [5/6] Copying install script and docs..."
+# -- 5. Copy helpers + docs ----------------------------------------------------
+Write-Host "> [5/6] Copying install script and docs..."
 $helpers = @(
     (Join-Path $ProjectRoot "scripts\install.ps1"),
     (Join-Path $ProjectRoot "scripts\install.cmd"),
@@ -143,18 +143,18 @@ foreach ($h in $helpers) {
     if (Test-Path $h) { Copy-Item -Force $h "$Prefix\" }
 }
 
-# ── 6. Create zip archive ────────────────────────────────────────────
+# -- 6. Create zip archive -----------------------------------------------------
 $BundleName  = Split-Path -Leaf $Prefix
 $ArchivePath = Join-Path (Split-Path -Parent $Prefix) "$BundleName.zip"
 
-Write-Host "▸ [6/6] Creating archive $BundleName.zip..."
+Write-Host "> [6/6] Creating archive $BundleName.zip..."
 if (Test-Path $ArchivePath) { Remove-Item $ArchivePath }
 Compress-Archive -Path $Prefix -DestinationPath $ArchivePath
 
-# ── Done ─────────────────────────────────────────────────────────────
+# -- Done ----------------------------------------------------------------------
 Write-Host ""
-Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Green
-Write-Host "✓ Release bundle ready!" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
+Write-Host "[OK] Release bundle ready!" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Directory : $Prefix"
 Write-Host "  Archive   : $ArchivePath"
@@ -164,5 +164,4 @@ Write-Host "    Expand-Archive $BundleName.zip -DestinationPath ."
 Write-Host "    cd $BundleName"
 Write-Host "    .\install.cmd                        (recommended)"
 Write-Host "    .\install.cmd `"C:\Program Files\Eta`"  (with prefix)"
-Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Green
-
+Write-Host "================================================================" -ForegroundColor Green
