@@ -81,9 +81,12 @@ int main(int argc, char* argv[]) {
     eta::interpreter::Driver driver(std::move(resolver));
 
     // Load prelude (if available in module path)
-    if (!driver.load_prelude()) {
-        driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
-        return 1;
+    {
+        auto pr = driver.load_prelude();
+        if (pr.found && !pr.loaded) {
+            driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+            return 1;
+        }
     }
 
     // Execute the user's file

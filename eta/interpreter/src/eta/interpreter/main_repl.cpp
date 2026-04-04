@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -199,13 +200,48 @@ int main(int argc, char* argv[]) {
     // ── Build module path resolver ───────────────────────────────────
     auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
 
+    // Warn when the module path is empty and no explicit --path was given.
+    if (cli_path.empty()) {
+        const char* env = std::getenv("ETA_MODULE_PATH");
+        if (!env || env[0] == '\0') {
+            auto bundled = eta::interpreter::ModulePathResolver::bundled_stdlib_dir();
+            if (!bundled) {
+                std::cerr << "warning: ETA_MODULE_PATH is not set and no "
+                             "bundled stdlib found next to the executable.\n"
+                             "         Use --path or set ETA_MODULE_PATH to "
+                             "the directory containing prelude.eta.\n";
+            }
+        }
+    }
+
     // ── Create driver ────────────────────────────────────────────────
     eta::interpreter::Driver driver(std::move(resolver));
 
     // Load prelude (if available in module path)
-    if (!driver.load_prelude()) {
-        driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
-        // Non-fatal for REPL — continue without prelude
+    bool prelude_available = false;
+    {
+        auto pr = driver.load_prelude();
+        if (pr.found) {
+            if (pr.loaded) {
+                prelude_available = driver.has_module("std.prelude");
+                std::cerr << "Loaded " << pr.path.string() << "\n";
+            } else {
+                std::cerr << "error: failed to load prelude from "
+                          << pr.path.string() << "\n";
+                driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+            }
+        } else {
+            std::cerr << "warning: prelude.eta not found in module search path.\n";
+            const auto& dirs = driver.resolver().dirs();
+            if (dirs.empty()) {
+                std::cerr << "         (search path is empty)\n";
+            } else {
+                std::cerr << "         searched:\n";
+                for (const auto& d : dirs) {
+                    std::cerr << "           " << d.string() << "\n";
+                }
+            }
+        }
     }
 
     // ── REPL loop ────────────────────────────────────────────────────
@@ -286,8 +322,11 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Build import clauses from all prior REPL modules
+        // Build import clauses: auto-import std.prelude + all prior REPL modules
         std::string imports;
+        if (prelude_available) {
+            imports += "  (import std.prelude)\n";
+        }
         for (const auto& prev : prior_modules) {
             imports += "  (import " + prev + ")\n";
         }

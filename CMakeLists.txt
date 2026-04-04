@@ -20,4 +20,8 @@ add_subdirectory(eta)
 install(DIRECTORY stdlib/ DESTINATION stdlib
         FILES_MATCHING PATTERN "*.eta")
 
+# ── Install example programs ─────────────────────────────────────────
+install(DIRECTORY examples/ DESTINATION examples
+        FILES_MATCHING PATTERN "*.eta")
+
 

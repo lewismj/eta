@@ -72,23 +72,35 @@ public:
     Driver(Driver&&) = delete;
     Driver& operator=(Driver&&) = delete;
 
+    /// Result of a load_prelude() call.
+    struct PreludeResult {
+        bool found{false};    ///< Was prelude.eta found on disk?
+        bool loaded{false};   ///< Did it compile and execute successfully?
+        fs::path path;        ///< Path to the prelude file (if found).
+    };
+
     /**
      * @brief Load and execute the prelude from the module path.
      *
      * Searches for "prelude.eta" in the configured search directories.
      * If found, it is compiled and executed, seeding the global environment
      * with standard library definitions.
-     *
-     * @return true if prelude was loaded (or not found — that's OK),
-     *         false if prelude was found but failed to compile/run.
      */
-    bool load_prelude() {
+    PreludeResult load_prelude() {
+        PreludeResult result;
         auto prelude_path = resolver_.find_file("prelude.eta");
         if (!prelude_path) {
-            // No prelude found — that's fine, not an error
-            return true;
+            return result; // not found
         }
-        return run_file(*prelude_path);
+        result.found = true;
+        result.path = *prelude_path;
+        result.loaded = run_file(*prelude_path);
+        return result;
+    }
+
+    /// Check whether a module with the given name has been executed.
+    [[nodiscard]] bool has_module(const std::string& name) const {
+        return executed_modules_.contains(name);
     }
 
     /**

@@ -1,0 +1,343 @@
+# Eta — Examples
+
+A tour of the example programs in [`examples/`](../examples/).  Each file
+is a self-contained module that can be run directly:
+
+```bash
+etai examples/hello.eta
+```
+
+---
+
+## Quick Reference
+
+| Example | Key Concepts |
+|---------|-------------|
+| [`hello.eta`](#helloeta) | Minimal program, `println`, `defun`, recursion |
+| [`basics.eta`](#basicseta) | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, quoting |
+| [`functions.eta`](#functionseta) | `defun`, `lambda`, closures, tail recursion, variadic args, `letrec` |
+| [`higher-order.eta`](#higher-ordereta) | `map*`, `filter`, `foldl`/`foldr`, `reduce`, `sort`, `zip`, `take`/`drop`, `range` |
+| [`composition.eta`](#compositioneta) | `compose`, `flip`, `constantly`, `negate`, manual currying, pipelines |
+| [`recursion.eta`](#recursioneta) | Fibonacci, list reversal, deep flatten, Ackermann, Towers of Hanoi |
+| [`boolean-simplifier.eta`](#boolean-simplifiereta) | Symbolic tree rewriting, De Morgan's laws, fixed-point simplification |
+| [`symbolic-diff.eta`](#symbolic-diffeta) | Computer algebra: differentiation rules, algebraic simplification |
+
+---
+
+## hello.eta
+
+The canonical first program.
+
+```scheme
+(module hello
+  (import std.io)
+  (begin
+    (println "Hello, world!")
+
+    (defun factorial (n)
+      (if (= n 0) 1
+          (* n (factorial (- n 1)))))
+
+    (println (factorial 20))))
+```
+
+```
+Hello, world!
+2432902008176640000
+```
+
+---
+
+## basics.eta
+
+Core language features: values, expressions, bindings, and data structures.
+
+```scheme
+;; Arithmetic — variadic
+(+ 1 2 3)            ; => 6
+(* 2 3 4)            ; => 24
+
+;; Conditionals
+(if (> 3 2) "yes" "no")   ; => "yes"
+
+(cond
+  ((= 1 2) "nope")
+  ((= 1 1) "match!")
+  (#t      "default"))    ; => "match!"
+
+;; Bindings
+(let ((a 10) (b 20))
+  (+ a b))                ; => 30
+
+(let* ((a 1) (b (+ a 1)) (c (+ a b)))
+  c)                      ; => 4
+
+;; Pairs & lists
+(cons 1 2)                ; => (1 . 2)
+(list 1 2 3 4 5)          ; => (1 2 3 4 5)
+(append '(a b) '(c d))    ; => (a b c d)
+```
+
+---
+
+## functions.eta
+
+Functions, closures, and recursion — the heart of any Lisp.
+
+```scheme
+;; Named function
+(defun square (x) (* x x))
+(square 7)                    ; => 49
+
+;; Tail-recursive factorial
+(defun factorial-tr (n)
+  (letrec ((go (lambda (n acc)
+                 (if (= n 0) acc
+                     (go (- n 1) (* acc n))))))
+    (go n 1)))
+(factorial-tr 20)             ; => 2432902008176640000
+
+;; Closures — make-adder returns a new function
+(defun make-adder (n)
+  (lambda (x) (+ n x)))
+
+(define add5 (make-adder 5))
+(add5 3)                      ; => 8
+
+;; Variadic (rest) args
+(defun sum-all (first . rest)
+  ...)
+(sum-all 1 2 3 4 5)          ; => 15
+
+;; Mutual recursion via letrec
+(letrec
+  ((is-even? (lambda (n)
+     (if (= n 0) #t (is-odd? (- n 1)))))
+   (is-odd? (lambda (n)
+     (if (= n 0) #f (is-even? (- n 1))))))
+  (is-even? 42))             ; => #t
+```
+
+---
+
+## higher-order.eta
+
+Map, filter, fold, and friends from `std.collections`.
+
+```scheme
+(import std.prelude)
+
+(define nums (list 1 2 3 4 5 6 7 8 9 10))
+
+;; Transform
+(map* square nums)               ; => (1 4 9 16 25 36 49 64 81 100)
+(map* (lambda (x) (* x 10)) '(1 2 3))  ; => (10 20 30)
+
+;; Select
+(filter even? nums)              ; => (2 4 6 8 10)
+(filter (lambda (x) (> x 5)) nums)     ; => (6 7 8 9 10)
+
+;; Accumulate
+(foldl + 0 nums)                 ; => 55
+(foldl * 1 '(1 2 3 4 5))        ; => 120
+(foldr cons '() '(a b c))       ; => (a b c)
+(reduce + '(1 2 3 4))           ; => 10
+
+;; Combine: sum of squares of even numbers
+(foldl + 0
+  (map* square
+    (filter even? nums)))        ; => 220
+
+;; Predicates
+(any? negative? '(1 -2 3))      ; => #t
+(every? positive? '(1 2 3))     ; => #t
+
+;; Utilities
+(zip '(a b c) '(1 2 3))         ; => ((a . 1) (b . 2) (c . 3))
+(take 3 nums)                   ; => (1 2 3)
+(drop 7 nums)                   ; => (8 9 10)
+(range 1 6)                     ; => (1 2 3 4 5)
+(flatten '((1 2) (3 4) (5)))    ; => (1 2 3 4 5)
+
+;; Sorting (merge sort)
+(sort < '(5 3 8 1 4 2 7 6))     ; => (1 2 3 4 5 6 7 8)
+```
+
+---
+
+## composition.eta
+
+Currying, composition, and functional pipelines.
+
+```scheme
+(import std.prelude)
+
+;; compose — (f ∘ g)(x) = f(g(x))
+(define inc-then-double
+  (compose (lambda (x) (* 2 x))
+           (lambda (x) (+ x 1))))
+(inc-then-double 5)             ; => 12
+
+;; flip — swap argument order
+(define rcons (flip cons))
+(rcons '(1 2 3) 0)             ; => (0 1 2 3)
+
+;; constantly — ignore all args, return a fixed value
+(define always-42 (constantly 42))
+(always-42 'anything)           ; => 42
+
+;; Manual currying — return closures
+(defun add (a) (lambda (b) (+ a b)))
+(defun mul (a) (lambda (b) (* a b)))
+
+(define double (mul 2))
+(define triple (mul 3))
+(map* double '(1 2 3 4 5))     ; => (2 4 6 8 10)
+(map* triple '(1 2 3 4 5))     ; => (3 6 9 12 15)
+
+;; Compose curried functions into a pipeline
+(define double-then-inc (compose (add 1) (mul 2)))
+(map* double-then-inc '(1 2 3 4 5))  ; => (3 5 7 9 11)
+
+;; negate — flip a predicate
+(filter (negate even?) (range 1 11))  ; => (1 3 5 7 9)
+```
+
+---
+
+## recursion.eta
+
+Classic recursive algorithms.
+
+```scheme
+;; Fibonacci — naive
+(defun fib (n)
+  (cond
+    ((= n 0) 0)
+    ((= n 1) 1)
+    (#t (+ (fib (- n 1)) (fib (- n 2))))))
+(fib 10)                        ; => 55
+
+;; Fibonacci — tail-recursive (linear time)
+(defun fib-fast (n)
+  (letrec ((go (lambda (i a b)
+                 (if (= i 0) a
+                     (go (- i 1) b (+ a b))))))
+    (go n 0 1)))
+(fib-fast 30)                   ; => 832040
+
+;; Deep flatten
+(defun deep-flatten (xs)
+  (cond
+    ((null? xs) '())
+    ((pair? (car xs))
+     (append (deep-flatten (car xs))
+             (deep-flatten (cdr xs))))
+    (#t (cons (car xs) (deep-flatten (cdr xs))))))
+(deep-flatten '((1 (2 3)) (4) 5))  ; => (1 2 3 4 5)
+
+;; Ackermann function
+(defun ackermann (m n)
+  (cond
+    ((= m 0) (+ n 1))
+    ((= n 0) (ackermann (- m 1) 1))
+    (#t (ackermann (- m 1) (ackermann m (- n 1))))))
+(ackermann 3 4)                 ; => 125
+
+;; Tower of Hanoi (prints moves)
+(defun hanoi (n from to via) ...)
+(hanoi 3 'A 'C 'B)
+;; Move disk 1 from A to C
+;; Move disk 2 from A to B
+;; Move disk 3 from A to C
+;; ...
+```
+
+---
+
+## boolean-simplifier.eta
+
+A symbolic boolean simplifier that rewrites expression trees using
+algebraic identities, De Morgan's laws, and double-negation elimination.
+Runs in a fixed-point loop until the expression is fully simplified.
+
+```scheme
+;; One-step simplifier handles: not, and, or
+(defun simplify-bool (e)
+  (cond
+    ((atom? e) e)
+    ;; ¬(¬x) = x
+    ;; ¬(a ∧ b) = (¬a) ∨ (¬b)   — De Morgan
+    ;; x ∧ ⊤ = x,  x ∧ ⊥ = ⊥
+    ;; x ∨ ⊥ = x,  x ∨ ⊤ = ⊤
+    ...))
+
+;; Fixed-point wrapper
+(defun simplify-bool* (e)
+  (let ((s (simplify-bool e)))
+    (if (equal? s e) s (simplify-bool* s))))
+```
+
+```
+x ∧ ⊤         = x
+x ∧ ⊥         = #f
+(⊤ ∧ x) ∨ ⊥   = x
+¬(¬y)         = y
+¬(a ∧ b)      = (or (not a) (not b))
+¬(a ∨ b)      = (and (not a) (not b))
+(x ∨ x)       = x
+¬(¬(p ∧ q))   = (and p q)
+```
+
+---
+
+## symbolic-diff.eta
+
+A small computer algebra system: symbolic differentiation with sum,
+product, power, and chain rules, plus an algebraic simplifier with
+constant folding, identity elimination, and like-term combining.
+
+```scheme
+;; Differentiate symbolically
+(defun diff (e v) ...)          ; sum, product, power, chain rules
+;; Simplify algebraically
+(defun simplify* (e) ...)       ; fixed-point: 0+x→x, 1*x→x, fold constants
+
+;; Convenience: differentiate + simplify
+(defun D (expr var)
+  (simplify* (diff expr var)))
+```
+
+```
+d/dx (x² + 3)      = (* 2 x)
+d/dx (x·(x + 3))   = (+ (+ x 3) x)
+d/dx sin(x²)       = (* (cos (* x x)) (* 2 x))
+d/dx (x + 1)³      = (* 3 (^ (+ x 1) 2))
+d/dx exp(2x)       = (* (exp (* 2 x)) 2)
+d/dx log(x)        = (/ 1 x)
+d/dx 42            = 0
+d/dx y (wrt x)     = 0
+```
+
+---
+
+## Running in the REPL
+
+All the building blocks are available interactively:
+
+```
+$ eta_repl
+Loaded C:\...\stdlib\prelude.eta
+eta REPL - type an expression and press Enter.
+Use Ctrl+C or (exit) to quit.
+eta> (map* square '(1 2 3 4 5))
+=> (1 4 9 16 25)
+eta> (filter even? (range 1 21))
+=> (2 4 6 8 10 12 14 16 18 20)
+eta> (foldl + 0 (range 1 101))
+=> 5050
+eta> (define double (lambda (x) (* 2 x)))
+eta> (map* (compose double square) '(1 2 3))
+=> (2 8 18)
+```
+

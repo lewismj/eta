@@ -11,6 +11,7 @@
   <a href="docs/bytecode-vm.md">Bytecode &amp; VM</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
+  <a href="docs/examples.md">Simple Examples</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
 </p>
 
@@ -131,10 +132,11 @@ bin/eta_repl
 .\scripts\build-release.ps1 .\dist\eta-release
 cd dist\eta-release
 .\install.cmd
-bin\etai.exe examples\hello.eta
+etai examples\hello.eta
 ```
 
 See [TESTING.md](TESTING.md) for full build, test, and release instructions.
+See [Examples](docs/examples.md) for a guided tour of the example programs.
 
 ### Bundle Layout
 
@@ -148,6 +150,15 @@ eta-<platform>/
     prelude.eta         # Auto-loaded standard library
     std/
       core.eta  math.eta  io.eta  collections.eta  test.eta
+  examples/
+    hello.eta           # Hello world & factorial
+    basics.eta          # Arithmetic, let, lists, quoting
+    functions.eta       # defun, lambda, closures, recursion
+    higher-order.eta    # map, filter, fold, sort, zip
+    composition.eta     # compose, flip, currying, pipelines
+    recursion.eta       # Fibonacci, Ackermann, Hanoi
+    boolean-simplifier.eta  # Symbolic boolean rewriting
+    symbolic-diff.eta       # Symbolic differentiation & simplification
   editors/
     vscode/             # VS Code extension (.vsix)
   install.sh / install.cmd
@@ -190,6 +201,7 @@ The prelude auto-loads the following modules:
 | **[Bytecode & VM](docs/bytecode-vm.md)** | Opcode reference, end-to-end compilation trace, call stack model, TCO |
 | **[Runtime & GC](docs/runtime.md)** | Heap architecture, object kinds, mark-sweep GC, intern table, factory |
 | **[Modules & Stdlib](docs/modules.md)** | Module syntax, linker phases, import filters, standard library reference |
+| **[Examples](docs/examples.md)** | Guided tour of the example programs with expected output |
 | **[Next Steps](docs/next-steps.md)** | Roadmap: bytecode serialization & `etac`, FFI, unification instruction, example programs |
 
 ---
@@ -211,6 +223,7 @@ eta/
 │   ├── test/                   # Boost.Test unit tests
 │   └── fuzz/                   # Fuzz testing (heap, intern table, nanbox)
 ├── stdlib/                     # Standard library (.eta files)
+├── examples/                   # Example programs (basics → symbolic algebra)
 ├── editors/vscode/             # VS Code extension (TextMate grammar)
 ├── scripts/                    # Build & install automation
 └── docs/                       # Design documentation (you are here)
