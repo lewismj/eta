@@ -1035,6 +1035,147 @@ BOOST_AUTO_TEST_CASE(record_type_error_duplicate_field_spec) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::DuplicateIdentifier);
 }
 
+// ============================================================================
+// define-syntax / syntax-rules
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(syntax_rules_basic_expansion) {
+    // Define a simple macro that rewrites (my-if t c a) -> (if t c a)
+    auto r = expand_all(
+        "(define-syntax my-if (syntax-rules () ((_ t c a) (if t c a))))"
+        "(my-if #t 1 2)");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r->size(), 2u);
+    // First form is the empty (begin) from define-syntax
+    BOOST_CHECK(head_is((*r)[0], "begin"));
+    // Second form should be expanded to (if #t 1 2)
+    BOOST_CHECK(head_is((*r)[1], "if"));
+    BOOST_CHECK_EQUAL(list_size((*r)[1]), 4u);
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_multiple_clauses) {
+    // Macro with two clauses: unary and binary
+    auto r = expand_all(
+        "(define-syntax my-add (syntax-rules ()"
+        "  ((_ x) x)"
+        "  ((_ x y) (+ x y))))"
+        "(my-add 5)"
+        "(my-add 3 4)");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r->size(), 3u);
+    // (my-add 5) -> 5
+    BOOST_CHECK((*r)[1]->is<parser::Number>());
+    // (my-add 3 4) -> (+ 3 4)
+    BOOST_CHECK(head_is((*r)[2], "+"));
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_ellipsis) {
+    // Macro with ellipsis: (my-list x ...) -> (list x ...)
+    auto r = expand_all(
+        "(define-syntax my-list (syntax-rules () ((_ x ...) (list x ...))))"
+        "(my-list 1 2 3)");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r->size(), 2u);
+    BOOST_CHECK(head_is((*r)[1], "list"));
+    BOOST_CHECK_EQUAL(list_size((*r)[1]), 4u); // list + 3 args
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_ellipsis_empty) {
+    // Ellipsis matching zero elements
+    auto r = expand_all(
+        "(define-syntax my-list (syntax-rules () ((_ x ...) (list x ...))))"
+        "(my-list)");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r->size(), 2u);
+    BOOST_CHECK(head_is((*r)[1], "list"));
+    BOOST_CHECK_EQUAL(list_size((*r)[1]), 1u); // just "list", no args
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_literal_keyword) {
+    // Macro with literal keyword matching
+    auto r = expand_all(
+        "(define-syntax my-cond (syntax-rules (else)"
+        "  ((_ (else e)) e)"
+        "  ((_ (t e)) (if t e))))"
+        "(my-cond (else 42))"
+        "(my-cond (#t 99))");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r->size(), 3u);
+    // (my-cond (else 42)) -> 42
+    BOOST_CHECK((*r)[1]->is<parser::Number>());
+    // (my-cond (#t 99)) -> (if #t 99)
+    BOOST_CHECK(head_is((*r)[2], "if"));
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_nested_output) {
+    // Macro output contains derived forms that get re-expanded
+    auto r = expand_all(
+        "(define-syntax my-let1 (syntax-rules ()"
+        "  ((_ var val body) (let ((var val)) body))))"
+        "(my-let1 x 10 x)");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r->size(), 2u);
+    // let desugars to ((lambda ...) ...) — head should be a lambda application
+    const auto& expanded = (*r)[1];
+    BOOST_CHECK(expanded->is<List>());
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_no_matching_clause) {
+    auto r = expand_all(
+        "(define-syntax my-mac (syntax-rules () ((_ x y) (+ x y))))"
+        "(my-mac 1)");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_malformed_define_syntax) {
+    // Missing transformer
+    auto r = expand_one("(define-syntax foo)");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_malformed_not_syntax_rules) {
+    // Transformer is not syntax-rules
+    auto r = expand_one("(define-syntax foo (lambda (x) x))");
+    BOOST_REQUIRE(!r.has_value());
+    BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_wildcard_pattern) {
+    // _ matches anything but doesn't bind
+    auto r = expand_all(
+        "(define-syntax ignore-first (syntax-rules () ((_ _ x) x)))"
+        "(ignore-first 999 42)");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r->size(), 2u);
+    BOOST_CHECK((*r)[1]->is<parser::Number>());
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_swap_macro) {
+    // Classic swap! macro using begin+let+set!
+    auto r = expand_all(
+        "(define-syntax swap! (syntax-rules ()"
+        "  ((_ a b) (let ((tmp a)) (set! a b) (set! b tmp)))))"
+        "(swap! x y)");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r->size(), 2u);
+    // The output should be expanded (let desugars to lambda application)
+    BOOST_CHECK((*r)[1]->is<List>());
+}
+
+BOOST_AUTO_TEST_CASE(syntax_rules_chained_macros) {
+    // One macro's output invokes another macro
+    auto r = expand_all(
+        "(define-syntax double (syntax-rules () ((_ x) (+ x x))))"
+        "(define-syntax quadruple (syntax-rules () ((_ x) (double (double x)))))"
+        "(quadruple 3)");
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r->size(), 3u);
+    // Should fully expand: (+ (+ 3 3) (+ 3 3))
+    BOOST_CHECK(head_is((*r)[2], "+"));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 

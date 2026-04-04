@@ -20,7 +20,7 @@ namespace eta::reader::expander {
             "let","let*","letrec","cond","and","or",
             "quasiquote","unquote","unquote-splicing",
             // Modules/macros
-            "module","import","export","define-syntax","syntax-rules",
+            "module","import","export","define-syntax",
             // Advanced control / multiple values (future)
             "call-with-current-continuation","call/cc","dynamic-wind",
             "values","call-with-values",
@@ -274,6 +274,8 @@ namespace eta::reader::expander {
             {"progn", &Expander::handle_begin},
             // records
             {"define-record-type", &Expander::handle_define_record_type},
+            // macros
+            {"define-syntax", &Expander::handle_define_syntax},
         };
 
         if (lst.elems.empty()) {
@@ -285,6 +287,11 @@ namespace eta::reader::expander {
             auto it = kSpecials.find(std::string_view(headSym->name));
             if (it != kSpecials.end()) {
                 return (this->*(it->second))(lst);
+            }
+            // Check user-defined macros
+            auto macro_it = macro_env_.find(headSym->name);
+            if (macro_it != macro_env_.end()) {
+                return try_expand_macro(headSym->name, lst);
             }
         }
         // General application: proper list required
@@ -1714,6 +1721,502 @@ namespace eta::reader::expander {
         body.clear();
         body.push_back(make_list(std::move(letrec), firstSpan));
         return true;
+    }
+
+    // ========================================================================
+    // define-syntax / syntax-rules
+    // ========================================================================
+
+    // ---------- handle_define_syntax ----------
+    // (define-syntax <name> (syntax-rules (<literal> ...) <clause> ...))
+    // Each clause is (<pattern> <template>).
+    ExpanderResult<SExprPtr> Expander::handle_define_syntax(const List& lst) {
+        const auto sp = lst.span;
+        if (lst.elems.size() != 3)
+            return std::unexpected(syntax_error(sp, "define-syntax expects (define-syntax name (syntax-rules ...))"));
+
+        // Parse name
+        if (!lst.elems[1] || !lst.elems[1]->is<Symbol>())
+            return std::unexpected(syntax_error(sp, "define-syntax: name must be a symbol"));
+        const auto& macroName = lst.elems[1]->as<Symbol>()->name;
+
+        // Parse (syntax-rules (<literal> ...) <clause> ...)
+        if (!lst.elems[2] || !lst.elems[2]->is<List>())
+            return std::unexpected(syntax_error(sp, "define-syntax: expected (syntax-rules ...)"));
+        const auto& srForm = *lst.elems[2]->as<List>();
+        if (srForm.elems.empty() || !is_symbol_named(srForm.elems[0], "syntax-rules"))
+            return std::unexpected(syntax_error(sp, "define-syntax: transformer must be (syntax-rules ...)"));
+        if (srForm.elems.size() < 2)
+            return std::unexpected(syntax_error(srForm.span, "syntax-rules: expected literal list"));
+
+        // Parse literal list
+        if (!srForm.elems[1] || !srForm.elems[1]->is<List>())
+            return std::unexpected(syntax_error(srForm.span, "syntax-rules: literals must be a list of symbols"));
+        const auto& litList = *srForm.elems[1]->as<List>();
+        std::unordered_set<std::string> literalSet;
+        SyntaxRulesTransformer transformer;
+        for (const auto& elem : litList.elems) {
+            if (!elem || !elem->is<Symbol>())
+                return std::unexpected(syntax_error(litList.span, "syntax-rules: each literal must be a symbol"));
+            const auto& lname = elem->as<Symbol>()->name;
+            literalSet.insert(lname);
+            transformer.literals.push_back(lname);
+        }
+
+        // Parse clauses
+        for (std::size_t i = 2; i < srForm.elems.size(); ++i) {
+            if (!srForm.elems[i] || !srForm.elems[i]->is<List>())
+                return std::unexpected(syntax_error(srForm.span, "syntax-rules: each clause must be a list"));
+            const auto& clause = *srForm.elems[i]->as<List>();
+            if (clause.elems.size() != 2)
+                return std::unexpected(syntax_error(clause.span, "syntax-rules: clause must be (pattern template)"));
+
+            // The pattern must be a list; element 0 is the macro-name placeholder (ignored)
+            if (!clause.elems[0] || !clause.elems[0]->is<List>())
+                return std::unexpected(syntax_error(clause.span, "syntax-rules: pattern must be a list"));
+            const auto& patList = *clause.elems[0]->as<List>();
+            if (patList.elems.empty())
+                return std::unexpected(syntax_error(patList.span, "syntax-rules: pattern must not be empty"));
+
+            // Build a PatList from elements 1..N (skip element 0 = macro name placeholder)
+            std::unordered_set<std::string> boundVars;
+            auto patListNode = std::make_unique<SyntaxPattern>();
+            PatList pl;
+            bool sawEllipsis = false;
+            for (std::size_t j = 1; j < patList.elems.size(); ++j) {
+                // Check if this element is an ellipsis
+                if (patList.elems[j] && patList.elems[j]->is<Symbol>() &&
+                    patList.elems[j]->as<Symbol>()->name == "...") {
+                    if (sawEllipsis)
+                        return std::unexpected(syntax_error(patList.span, "syntax-rules: multiple ellipses in pattern"));
+                    if (pl.elems.empty())
+                        return std::unexpected(syntax_error(patList.span, "syntax-rules: ellipsis without preceding pattern"));
+                    sawEllipsis = true;
+                    pl.ellipsis_pat = std::move(pl.elems.back());
+                    pl.elems.pop_back();
+                    pl.ellipsis_index = pl.elems.size();
+                    continue;
+                }
+                auto sub = parse_syntax_pattern(patList.elems[j], literalSet, boundVars);
+                if (!sub) return std::unexpected(sub.error());
+                pl.elems.push_back(std::move(*sub));
+            }
+            patListNode->data = std::move(pl);
+
+            // Collect pattern variables for template parsing
+            std::unordered_set<std::string> patVars;
+            collect_pattern_vars(*patListNode, patVars);
+
+            // Parse template
+            auto tmpl = parse_syntax_template(clause.elems[1], patVars);
+            if (!tmpl) return std::unexpected(tmpl.error());
+
+            SyntaxClause sc;
+            sc.pattern = std::move(patListNode);
+            sc.tmpl = std::move(*tmpl);
+            sc.span = clause.span;
+            transformer.clauses.push_back(std::move(sc));
+        }
+
+        macro_env_[macroName] = std::move(transformer);
+
+        // define-syntax produces no runtime output
+        return make_begin(sp, {});
+    }
+
+    // ---------- parse_syntax_pattern ----------
+    ExpanderResult<SyntaxPatternPtr> Expander::parse_syntax_pattern(
+        const SExprPtr& node,
+        const std::unordered_set<std::string>& literals,
+        const std::unordered_set<std::string>& /*bound_vars*/) const
+    {
+        auto pat = std::make_unique<SyntaxPattern>();
+
+        if (!node)
+            return std::unexpected(syntax_error(Span{}, "syntax-rules: null element in pattern"));
+
+        // Symbol cases
+        if (node->is<Symbol>()) {
+            const auto& name = node->as<Symbol>()->name;
+            if (name == "_") {
+                pat->data = PatUnderscore{};
+            } else if (literals.contains(name)) {
+                pat->data = PatLiteral{name};
+            } else {
+                pat->data = PatVar{name};
+            }
+            return pat;
+        }
+
+        // List case
+        if (node->is<List>()) {
+            const auto& lst = *node->as<List>();
+            PatList pl;
+            bool sawEllipsis = false;
+            for (std::size_t i = 0; i < lst.elems.size(); ++i) {
+                if (lst.elems[i] && lst.elems[i]->is<Symbol>() &&
+                    lst.elems[i]->as<Symbol>()->name == "...") {
+                    if (sawEllipsis)
+                        return std::unexpected(syntax_error(lst.span, "syntax-rules: multiple ellipses in pattern"));
+                    if (pl.elems.empty())
+                        return std::unexpected(syntax_error(lst.span, "syntax-rules: ellipsis without preceding pattern"));
+                    sawEllipsis = true;
+                    pl.ellipsis_pat = std::move(pl.elems.back());
+                    pl.elems.pop_back();
+                    pl.ellipsis_index = pl.elems.size();
+                    continue;
+                }
+                auto sub = parse_syntax_pattern(lst.elems[i], literals, {});
+                if (!sub) return std::unexpected(sub.error());
+                pl.elems.push_back(std::move(*sub));
+            }
+            pat->data = std::move(pl);
+            return pat;
+        }
+
+        // Datum (number, bool, char, string)
+        pat->data = PatDatum{deep_clone(node)};
+        return pat;
+    }
+
+    // ---------- parse_syntax_template ----------
+    ExpanderResult<SyntaxTemplatePtr> Expander::parse_syntax_template(
+        const SExprPtr& node,
+        const std::unordered_set<std::string>& pattern_vars) const
+    {
+        auto tmpl = std::make_unique<SyntaxTemplate>();
+
+        if (!node)
+            return std::unexpected(syntax_error(Span{}, "syntax-rules: null element in template"));
+
+        // Symbol cases
+        if (node->is<Symbol>()) {
+            const auto& name = node->as<Symbol>()->name;
+            if (pattern_vars.contains(name)) {
+                tmpl->data = TmplVar{name};
+            } else {
+                tmpl->data = TmplSymbol{name};
+            }
+            return tmpl;
+        }
+
+        // List case
+        if (node->is<List>()) {
+            const auto& lst = *node->as<List>();
+            TmplList tl;
+            bool sawEllipsis = false;
+            for (std::size_t i = 0; i < lst.elems.size(); ++i) {
+                if (lst.elems[i] && lst.elems[i]->is<Symbol>() &&
+                    lst.elems[i]->as<Symbol>()->name == "...") {
+                    if (sawEllipsis)
+                        return std::unexpected(syntax_error(lst.span, "syntax-rules: multiple ellipses in template"));
+                    if (tl.elems.empty())
+                        return std::unexpected(syntax_error(lst.span, "syntax-rules: ellipsis without preceding template"));
+                    sawEllipsis = true;
+                    tl.ellipsis_tmpl = std::move(tl.elems.back());
+                    tl.elems.pop_back();
+                    tl.ellipsis_index = tl.elems.size();
+                    continue;
+                }
+                auto sub = parse_syntax_template(lst.elems[i], pattern_vars);
+                if (!sub) return std::unexpected(sub.error());
+                tl.elems.push_back(std::move(*sub));
+            }
+            tmpl->data = std::move(tl);
+            return tmpl;
+        }
+
+        // Datum (number, bool, char, string, etc.)
+        tmpl->data = TmplDatum{deep_clone(node)};
+        return tmpl;
+    }
+
+    // ---------- collect_pattern_vars ----------
+    void Expander::collect_pattern_vars(const SyntaxPattern& pat,
+                                        std::unordered_set<std::string>& out) {
+        std::visit([&](auto&& p) {
+            using T = std::decay_t<decltype(p)>;
+            if constexpr (std::is_same_v<T, PatVar>) {
+                out.insert(p.name);
+            } else if constexpr (std::is_same_v<T, PatList>) {
+                for (const auto& sub : p.elems) collect_pattern_vars(*sub, out);
+                if (p.ellipsis_pat) collect_pattern_vars(**p.ellipsis_pat, out);
+            }
+            // PatUnderscore, PatLiteral, PatDatum: no variables
+        }, pat.data);
+    }
+
+    // ---------- match_pattern ----------
+
+    // Helper: compare two SExpr datums for structural equality (used by PatDatum)
+    static bool datum_equal(const SExprPtr& a, const SExprPtr& b) {
+        if (!a || !b) return false;
+        if (a->is<parser::Bool>() && b->is<parser::Bool>())
+            return a->as<parser::Bool>()->value == b->as<parser::Bool>()->value;
+        if (a->is<parser::Number>() && b->is<parser::Number>())
+            return a->as<parser::Number>()->value == b->as<parser::Number>()->value;
+        if (a->is<parser::Char>() && b->is<parser::Char>())
+            return a->as<parser::Char>()->value == b->as<parser::Char>()->value;
+        if (a->is<parser::String>() && b->is<parser::String>())
+            return a->as<parser::String>()->value == b->as<parser::String>()->value;
+        return false;
+    }
+
+    // Returns true if input matches the pattern, populating env with bindings.
+    bool Expander::match_pattern(const SyntaxPattern& pat,
+                                 const SExprPtr& input,
+                                 MatchEnv& env) {
+        return std::visit([&](auto&& p) -> bool {
+            using T = std::decay_t<decltype(p)>;
+
+            if constexpr (std::is_same_v<T, PatVar>) {
+                env[p.name] = MatchBinding{deep_clone(input), {}, false};
+                return true;
+            }
+            else if constexpr (std::is_same_v<T, PatUnderscore>) {
+                return true; // matches anything
+            }
+            else if constexpr (std::is_same_v<T, PatLiteral>) {
+                return input && input->is<Symbol>() && input->as<Symbol>()->name == p.name;
+            }
+            else if constexpr (std::is_same_v<T, PatDatum>) {
+                return datum_equal(p.datum, input);
+            }
+            else if constexpr (std::is_same_v<T, PatList>) {
+                if (!input || !input->is<List>()) return false;
+                const auto& lst = *input->as<List>();
+                if (lst.dotted) return false; // no dotted list matching yet
+
+                if (!p.ellipsis_pat) {
+                    // No ellipsis: exact length match
+                    if (lst.elems.size() != p.elems.size()) return false;
+                    for (std::size_t i = 0; i < p.elems.size(); ++i) {
+                        if (!match_pattern(*p.elems[i], lst.elems[i], env))
+                            return false;
+                    }
+                    return true;
+                }
+
+                // With ellipsis: fixed_before + repeated + fixed_after
+                std::size_t fixedBefore = p.ellipsis_index;
+                std::size_t fixedAfter = p.elems.size() - p.ellipsis_index;
+                std::size_t totalFixed = fixedBefore + fixedAfter;
+                if (lst.elems.size() < totalFixed) return false;
+                std::size_t repeatCount = lst.elems.size() - totalFixed;
+
+                // Match fixed elements before ellipsis
+                for (std::size_t i = 0; i < fixedBefore; ++i) {
+                    if (!match_pattern(*p.elems[i], lst.elems[i], env))
+                        return false;
+                }
+
+                // Collect pattern vars from the ellipsis sub-pattern
+                std::unordered_set<std::string> ellipsisVars;
+                collect_pattern_vars(**p.ellipsis_pat, ellipsisVars);
+
+                // Initialize repeated bindings
+                for (const auto& vname : ellipsisVars) {
+                    env[vname] = MatchBinding{nullptr, {}, true};
+                }
+
+                // Match each repeated element
+                for (std::size_t r = 0; r < repeatCount; ++r) {
+                    MatchEnv subEnv;
+                    if (!match_pattern(**p.ellipsis_pat, lst.elems[fixedBefore + r], subEnv))
+                        return false;
+                    for (auto& [k, v] : subEnv) {
+                        if (ellipsisVars.contains(k)) {
+                            env[k].repeated.push_back(std::move(v.single));
+                        }
+                    }
+                }
+
+                // Match fixed elements after ellipsis
+                for (std::size_t i = 0; i < fixedAfter; ++i) {
+                    if (!match_pattern(*p.elems[fixedBefore + i],
+                                       lst.elems[fixedBefore + repeatCount + i], env))
+                        return false;
+                }
+
+                return true;
+            }
+            else {
+                return false;
+            }
+        }, pat.data);
+    }
+
+    // ---------- instantiate_template ----------
+    ExpanderResult<SExprPtr> Expander::instantiate_template(
+        const SyntaxTemplate& tmpl,
+        const MatchEnv& env,
+        std::unordered_map<std::string, std::string>& renames,
+        Span ctx) const
+    {
+        return std::visit([&](auto&& t) -> ExpanderResult<SExprPtr> {
+            using T = std::decay_t<decltype(t)>;
+
+            if constexpr (std::is_same_v<T, TmplVar>) {
+                auto it = env.find(t.name);
+                if (it == env.end())
+                    return std::unexpected(syntax_error(ctx, "syntax-rules: unbound pattern variable in template: " + t.name));
+                if (it->second.is_ellipsis)
+                    return std::unexpected(syntax_error(ctx, "syntax-rules: ellipsis variable used outside ellipsis context: " + t.name));
+                return deep_clone(it->second.single);
+            }
+            else if constexpr (std::is_same_v<T, TmplDatum>) {
+                return deep_clone(t.datum);
+            }
+            else if constexpr (std::is_same_v<T, TmplSymbol>) {
+                // Hygienic renaming for introduced identifiers:
+                // If the symbol is not a keyword/special, rename it so it can't
+                // capture or be captured by user-level bindings.
+                // We skip renaming for well-known forms that the expander/SA must see literally.
+                static const std::unordered_set<std::string> passthrough = {
+                    "if","begin","lambda","define","set!","quote","let","let*",
+                    "letrec","letrec*","cond","case","and","or","when","unless",
+                    "do","quasiquote","unquote","unquote-splicing",
+                    "module","import","export","define-syntax","define-record-type",
+                    "cons","car","cdr","list","append","apply","not",
+                    "eq?","eqv?","equal?","null?","pair?","number?","boolean?",
+                    "string?","char?","symbol?","procedure?","integer?","vector?",
+                    "zero?","positive?","negative?","abs","min","max","modulo","remainder",
+                    "+","-","*","/","=","<",">","<=",">=",
+                    "string-length","string-append","number->string","string->number",
+                    "vector","vector-length","vector-ref","vector-set!","make-vector",
+                    "map","for-each","length","reverse","list-ref","list-tail",
+                    "set-car!","set-cdr!","error",
+                    "call/cc","call-with-current-continuation","dynamic-wind",
+                    "values","call-with-values",
+                    "display","write","newline",
+                    "#t","#f",
+                    "def","defun","progn","step",
+                };
+                if (passthrough.contains(t.name) || macro_env_.contains(t.name)) {
+                    return make_symbol(t.name, ctx);
+                }
+                // Apply hygiene: rename introduced identifiers
+                auto rit = renames.find(t.name);
+                if (rit == renames.end()) {
+                    auto fresh = gensym(t.name);
+                    renames[t.name] = fresh;
+                    rit = renames.find(t.name);
+                }
+                return make_symbol(rit->second, ctx);
+            }
+            else if constexpr (std::is_same_v<T, TmplList>) {
+                std::vector<SExprPtr> result;
+
+                if (!t.ellipsis_tmpl) {
+                    // No ellipsis: instantiate each element
+                    result.reserve(t.elems.size());
+                    for (const auto& sub : t.elems) {
+                        auto r = instantiate_template(*sub, env, renames, ctx);
+                        if (!r) return r;
+                        result.push_back(std::move(*r));
+                    }
+                    return make_list(std::move(result), ctx);
+                }
+
+                // With ellipsis: fixed_before + repeated + fixed_after
+                std::size_t fixedBefore = t.ellipsis_index;
+                std::size_t fixedAfter = t.elems.size() - t.ellipsis_index;
+
+                // Instantiate fixed elements before ellipsis
+                for (std::size_t i = 0; i < fixedBefore; ++i) {
+                    auto r = instantiate_template(*t.elems[i], env, renames, ctx);
+                    if (!r) return r;
+                    result.push_back(std::move(*r));
+                }
+
+                // Find the repeat count from any ellipsis-bound variable in the sub-template
+                std::size_t repeatCount = 0;
+                bool foundRepeat = false;
+                for (const auto& [k, v] : env) {
+                    if (v.is_ellipsis) {
+                        repeatCount = v.repeated.size();
+                        foundRepeat = true;
+                        break;
+                    }
+                }
+
+                // Instantiate the ellipsis sub-template once per repetition
+                if (foundRepeat) {
+                    for (std::size_t r = 0; r < repeatCount; ++r) {
+                        // Build a sub-environment: non-ellipsis vars cloned, ellipsis vars resolved to iteration r
+                        MatchEnv subEnv;
+                        for (const auto& [k, v] : env) {
+                            if (v.is_ellipsis) {
+                                if (r < v.repeated.size()) {
+                                    subEnv.emplace(k, MatchBinding{deep_clone(v.repeated[r]), {}, false});
+                                } else {
+                                    subEnv.emplace(k, MatchBinding{make_nil(ctx), {}, false});
+                                }
+                            } else {
+                                subEnv.emplace(k, MatchBinding{deep_clone(v.single), {}, false});
+                            }
+                        }
+                        auto inst = instantiate_template(**t.ellipsis_tmpl, subEnv, renames, ctx);
+                        if (!inst) return inst;
+                        result.push_back(std::move(*inst));
+                    }
+                }
+
+                // Instantiate fixed elements after ellipsis
+                for (std::size_t i = fixedBefore; i < fixedBefore + fixedAfter; ++i) {
+                    auto r = instantiate_template(*t.elems[i], env, renames, ctx);
+                    if (!r) return r;
+                    result.push_back(std::move(*r));
+                }
+
+                return make_list(std::move(result), ctx);
+            }
+            else {
+                return std::unexpected(syntax_error(ctx, "syntax-rules: unknown template kind"));
+            }
+        }, tmpl.data);
+    }
+
+    // ---------- try_expand_macro ----------
+    ExpanderResult<SExprPtr> Expander::try_expand_macro(const std::string& name,
+                                                         const List& lst) {
+        auto it = macro_env_.find(name);
+        if (it == macro_env_.end())
+            return std::unexpected(syntax_error(lst.span, "undefined macro: " + name));
+
+        const auto& transformer = it->second;
+
+        // Build the input list excluding the macro name (elements 1..N)
+        // The pattern was parsed with element 0 stripped, so we match against
+        // the whole form but with element 0 skipped in the pattern.
+        // Actually, our patterns already skip element 0. We need to match
+        // the tail elements against the PatList.
+
+        for (const auto& clause : transformer.clauses) {
+            MatchEnv env;
+            // The clause.pattern is a PatList of the tail (elements after macro name).
+            // Build a temporary list of just the tail elements to match against.
+            const auto* patList = std::get_if<PatList>(&clause.pattern->data);
+            if (!patList) continue;
+
+            // Match the tail elements of the input against the pattern
+            // We need to match element-by-element against the pattern list
+            std::vector<SExprPtr> tailElems;
+            for (std::size_t i = 1; i < lst.elems.size(); ++i) {
+                tailElems.push_back(deep_clone(lst.elems[i]));
+            }
+            auto tailList = make_list(std::move(tailElems), lst.span);
+
+            if (match_pattern(*clause.pattern, tailList, env)) {
+                std::unordered_map<std::string, std::string> renames;
+                auto expanded = instantiate_template(*clause.tmpl, env, renames, lst.span);
+                if (!expanded) return expanded;
+                // Re-expand the output (macros can produce derived forms or other macro calls)
+                return expand_form(*expanded);
+            }
+        }
+
+        return std::unexpected(syntax_error(lst.span, "no matching clause for macro: " + name));
     }
 
 }

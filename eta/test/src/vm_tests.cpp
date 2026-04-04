@@ -1912,4 +1912,113 @@ BOOST_AUTO_TEST_CASE(test_symbolic_simplify_constant_folding) {
     BOOST_CHECK(res != nanbox::False);
 }
 
+// ============================================================================
+// syntax-rules macro tests (end-to-end)
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_syntax_rules_basic) {
+    LispVal res = run(
+        "(module m"
+        "  (define-syntax my-if"
+        "    (syntax-rules ()"
+        "      ((_ t c a) (if t c a))))"
+        "  (define result (my-if #t 42 99)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+BOOST_AUTO_TEST_CASE(test_syntax_rules_ellipsis) {
+    LispVal res = run(
+        "(module m"
+        "  (define-syntax my-list"
+        "    (syntax-rules ()"
+        "      ((_ x ...) (list x ...))))"
+        "  (define result (length (my-list 1 2 3 4 5))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 5);
+}
+
+BOOST_AUTO_TEST_CASE(test_syntax_rules_my_and) {
+    LispVal res = run(
+        "(module m"
+        "  (define-syntax my-and"
+        "    (syntax-rules ()"
+        "      ((_) #t)"
+        "      ((_ e) e)"
+        "      ((_ e1 e2 ...) (if e1 (my-and e2 ...) #f))))"
+        "  (define result (my-and #t #t 42)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+BOOST_AUTO_TEST_CASE(test_syntax_rules_my_and_short_circuit) {
+    LispVal res = run(
+        "(module m"
+        "  (define-syntax my-and"
+        "    (syntax-rules ()"
+        "      ((_) #t)"
+        "      ((_ e) e)"
+        "      ((_ e1 e2 ...) (if e1 (my-and e2 ...) #f))))"
+        "  (define result (my-and #f (error \"should not reach\"))))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(test_syntax_rules_my_or) {
+    LispVal res = run(
+        "(module m"
+        "  (define-syntax my-or"
+        "    (syntax-rules ()"
+        "      ((_) #f)"
+        "      ((_ e) e)"
+        "      ((_ e1 e2 ...) (let ((t e1)) (if t t (my-or e2 ...))))))"
+        "  (define result (my-or #f #f 99)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 99);
+}
+
+BOOST_AUTO_TEST_CASE(test_syntax_rules_when_macro) {
+    LispVal res = run(
+        "(module m"
+        "  (define-syntax my-when"
+        "    (syntax-rules ()"
+        "      ((_ test body ...) (if test (begin body ...) (begin)))))"
+        "  (define x 0)"
+        "  (my-when #t (set! x 42))"
+        "  (define result x))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+BOOST_AUTO_TEST_CASE(test_syntax_rules_chained) {
+    LispVal res = run(
+        "(module m"
+        "  (define-syntax double"
+        "    (syntax-rules ()"
+        "      ((_ x) (+ x x))))"
+        "  (define-syntax quadruple"
+        "    (syntax-rules ()"
+        "      ((_ x) (double (double x)))))"
+        "  (define result (quadruple 3)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 12);
+}
+
+BOOST_AUTO_TEST_CASE(test_syntax_rules_with_literal) {
+    LispVal res = run(
+        "(module m"
+        "  (define-syntax my-case"
+        "    (syntax-rules (else)"
+        "      ((_ (else e)) e)"
+        "      ((_ (t e)) (if t e (begin)))))"
+        "  (define result (my-case (else 77))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 77);
+}
+
+BOOST_AUTO_TEST_CASE(test_syntax_rules_hygiene) {
+    // The macro introduces a 'tmp' binding. The user also has a 'tmp' variable.
+    // Hygiene should prevent the macro's 'tmp' from capturing the user's 'tmp'.
+    LispVal res = run(
+        "(module m"
+        "  (define-syntax my-or2"
+        "    (syntax-rules ()"
+        "      ((_ a b) (let ((tmp a)) (if tmp tmp b)))))"
+        "  (define tmp 42)"
+        "  (define result (my-or2 #f tmp)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

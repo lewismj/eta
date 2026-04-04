@@ -6,8 +6,10 @@
 #include <string>
 #include <string_view>
 #include <ostream>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "eta/reader/parser.h"
@@ -85,6 +87,66 @@ namespace eta::reader::expander {
         Span span{};
     };
 
+    // ========================================================================
+    // syntax-rules data structures
+    // ========================================================================
+
+    /// A single element in a syntax-rules pattern
+    struct SyntaxPattern;
+    using SyntaxPatternPtr = std::unique_ptr<SyntaxPattern>;
+
+    struct PatVar        { std::string name; };                       // pattern variable (binds)
+    struct PatUnderscore {};                                          // _ (matches anything, no binding)
+    struct PatLiteral    { std::string name; };                       // literal keyword (matches by name)
+    struct PatDatum      { SExprPtr datum; };                         // literal constant (number, bool, etc.)
+    struct PatList {
+        std::vector<SyntaxPatternPtr> elems;                         // fixed elements
+        std::optional<SyntaxPatternPtr> ellipsis_pat;                // sub-pattern before ...
+        std::size_t ellipsis_index{0};                               // index where ... appears
+    };
+
+    struct SyntaxPattern {
+        std::variant<PatVar, PatUnderscore, PatLiteral, PatDatum, PatList> data;
+    };
+
+    /// A single element in a syntax-rules template
+    struct SyntaxTemplate;
+    using SyntaxTemplatePtr = std::unique_ptr<SyntaxTemplate>;
+
+    struct TmplVar     { std::string name; };                        // substitute bound pattern variable
+    struct TmplDatum   { SExprPtr datum; };                          // literal constant copied verbatim
+    struct TmplSymbol  { std::string name; };                        // introduced identifier (subject to hygiene)
+    struct TmplList {
+        std::vector<SyntaxTemplatePtr> elems;                        // fixed elements
+        std::optional<SyntaxTemplatePtr> ellipsis_tmpl;              // sub-template before ...
+        std::size_t ellipsis_index{0};                               // index where ... appears
+    };
+
+    struct SyntaxTemplate {
+        std::variant<TmplVar, TmplDatum, TmplSymbol, TmplList> data;
+    };
+
+    /// One clause: (pattern template)
+    struct SyntaxClause {
+        SyntaxPatternPtr pattern;
+        SyntaxTemplatePtr tmpl;
+        Span span{};
+    };
+
+    /// A complete syntax-rules transformer
+    struct SyntaxRulesTransformer {
+        std::vector<std::string> literals;                           // literal keywords
+        std::vector<SyntaxClause> clauses;
+    };
+
+    /// Result of pattern matching: pattern variable -> bound value(s)
+    struct MatchBinding {
+        SExprPtr single;                                             // for non-ellipsis vars
+        std::vector<SExprPtr> repeated;                              // for ellipsis vars
+        bool is_ellipsis{false};
+    };
+    using MatchEnv = std::unordered_map<std::string, MatchBinding>;
+
     /**
      * @brief Macro expander and desugaring pass for the eta language
      *
@@ -117,6 +179,7 @@ namespace eta::reader::expander {
      * ### Other
      * - `quasiquote` -> combination of `quote`, `cons`, `append`, `list`
      * - Internal defines -> `letrec` at lambda body start
+     * - `define-syntax` with `syntax-rules` -> user-defined hygienic macros
      *
      * ## Output (Core IR)
      *
@@ -136,6 +199,9 @@ namespace eta::reader::expander {
     private:
         ExpanderConfig cfg_{};
         std::size_t depth_{0};
+
+        //! Macro environment: maps macro name -> transformer (populated by define-syntax)
+        std::unordered_map<std::string, SyntaxRulesTransformer> macro_env_;
 
         // Error helpers
         static ExpandError syntax_error(Span sp, std::string_view msg, std::string hint = {});
@@ -174,6 +240,7 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_unless(const List& lst);
         ExpanderResult<SExprPtr> handle_do(const List& lst);
         ExpanderResult<SExprPtr> handle_define_record_type(const List& lst);
+        ExpanderResult<SExprPtr> handle_define_syntax(const List& lst);
 
 
         //! Modules/directives
@@ -285,6 +352,32 @@ namespace eta::reader::expander {
         // Quasiquote expansion helpers
         ExpanderResult<SExprPtr> expand_quasiquote(const SExprPtr& x, int depth, Span ctx);
         SExprPtr make_quote(SExprPtr datum, Span s);
+
+        // syntax-rules helpers
+        ExpanderResult<SyntaxPatternPtr> parse_syntax_pattern(
+            const SExprPtr& node,
+            const std::unordered_set<std::string>& literals,
+            const std::unordered_set<std::string>& bound_vars) const;
+
+        ExpanderResult<SyntaxTemplatePtr> parse_syntax_template(
+            const SExprPtr& node,
+            const std::unordered_set<std::string>& pattern_vars) const;
+
+        static void collect_pattern_vars(const SyntaxPattern& pat,
+                                         std::unordered_set<std::string>& out);
+
+        static bool match_pattern(const SyntaxPattern& pat,
+                                  const SExprPtr& input,
+                                  MatchEnv& env);
+
+        ExpanderResult<SExprPtr> instantiate_template(
+            const SyntaxTemplate& tmpl,
+            const MatchEnv& env,
+            std::unordered_map<std::string, std::string>& renames,
+            Span ctx) const;
+
+        ExpanderResult<SExprPtr> try_expand_macro(const std::string& name,
+                                                   const List& lst);
     };
 
 }
