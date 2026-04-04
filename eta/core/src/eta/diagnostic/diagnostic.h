@@ -55,6 +55,7 @@ enum class DiagnosticCode : std::uint16_t {
     InvalidList,
     InvalidVector,
     InvalidDottedList,
+    UnquoteOutsideQuasiquote,
 
     // Expander errors (200-299)
     InvalidSyntax = 200,
@@ -70,6 +71,8 @@ enum class DiagnosticCode : std::uint16_t {
     DuplicateExport,
     ImportNotFound,
     UnresolvedImport,
+    ExportOfUnknownName,
+    DuplicateModule,
 
     // Semantic errors (400-499)
     UndefinedName = 400,
@@ -91,6 +94,9 @@ enum class DiagnosticCode : std::uint16_t {
     UndefinedGlobal,
     HeapAllocationFailed,
     InternTableFull,
+    StackUnderflow,
+    InternalError,
+    UserError,
 };
 
 /**
@@ -226,8 +232,7 @@ using DiagResult = std::expected<T, Diagnostic>;
 } // namespace eta::diagnostic
 
 // ============================================================================
-// Specializations for existing error types
-// These allow gradual migration to the unified diagnostic system.
+// Specializations: convert phase-specific errors into Diagnostic.
 // Include this header and call to_diagnostic() on any supported error type.
 // ============================================================================
 
@@ -285,6 +290,90 @@ inline Diagnostic to_diagnostic<eta::reader::lexer::LexError>(const eta::reader:
 
 } // namespace eta::diagnostic
 
+// parser.h is already included at the top of this header.
+namespace eta::diagnostic {
+
+/**
+ * @brief Convert ParseError to Diagnostic
+ *
+ * ParseError carries no message string, so a human-readable description
+ * is synthesized from the error kind.
+ */
+template<>
+inline Diagnostic to_diagnostic<eta::reader::parser::ParseError>(const eta::reader::parser::ParseError& e) {
+    DiagnosticCode code{};
+    const char* msg = "parse error";
+    using PK = eta::reader::parser::ParseErrorKind;
+    switch (e.kind) {
+        case PK::FromLexer:
+            code = DiagnosticCode::UnexpectedToken;
+            msg = "error propagated from lexer";
+            break;
+        case PK::UnexpectedEOF:
+            code = DiagnosticCode::UnexpectedToken;
+            msg = "unexpected end of input";
+            break;
+        case PK::UnexpectedClosingDelimiter:
+            code = DiagnosticCode::UnmatchedParen;
+            msg = "unexpected closing delimiter";
+            break;
+        case PK::UnsupportedToken:
+            code = DiagnosticCode::UnexpectedToken;
+            msg = "unsupported token";
+            break;
+        case PK::UnclosedList:
+            code = DiagnosticCode::InvalidList;
+            msg = "unclosed list";
+            break;
+        case PK::MisplacedDot:
+            code = DiagnosticCode::InvalidDottedList;
+            msg = "misplaced dot in list";
+            break;
+        case PK::MultipleDotsInDottedList:
+            code = DiagnosticCode::InvalidDottedList;
+            msg = "multiple dots in dotted list";
+            break;
+        case PK::DotAtListStart:
+            code = DiagnosticCode::InvalidDottedList;
+            msg = "dot at start of list";
+            break;
+        case PK::UnclosedVector:
+            code = DiagnosticCode::InvalidVector;
+            msg = "unclosed vector";
+            break;
+        case PK::DotInVector:
+            code = DiagnosticCode::InvalidVector;
+            msg = "dot in vector literal";
+            break;
+        case PK::ByteVectorNonInteger:
+            code = DiagnosticCode::InvalidVector;
+            msg = "non-integer in byte vector";
+            break;
+        case PK::InvalidByteLiteral:
+            code = DiagnosticCode::InvalidVector;
+            msg = "invalid byte literal";
+            break;
+        case PK::UnquoteOutsideQuasiquote:
+            code = DiagnosticCode::UnquoteOutsideQuasiquote;
+            msg = "unquote outside quasiquote";
+            break;
+        case PK::InternalNotAnAtom:
+            code = DiagnosticCode::UnexpectedToken;
+            msg = "internal error: expected atom";
+            break;
+        case PK::InternalNotAReaderToken:
+            code = DiagnosticCode::UnexpectedToken;
+            msg = "internal error: expected reader token";
+            break;
+        default:
+            code = DiagnosticCode::UnexpectedToken;
+            break;
+    }
+    return Diagnostic{code, Severity::Error, e.span, msg};
+}
+
+} // namespace eta::diagnostic
+
 #include "eta/reader/expander.h"
 
 namespace eta::diagnostic {
@@ -319,6 +408,31 @@ inline Diagnostic to_diagnostic<eta::reader::expander::ExpandError>(const eta::r
             break;
     }
 
+    return Diagnostic{code, Severity::Error, e.span, e.message};
+}
+
+} // namespace eta::diagnostic
+
+#include "eta/reader/module_linker.h"
+
+namespace eta::diagnostic {
+
+/**
+ * @brief Convert LinkError to Diagnostic
+ */
+template<>
+inline Diagnostic to_diagnostic<eta::reader::linker::LinkError>(const eta::reader::linker::LinkError& e) {
+    DiagnosticCode code{};
+    using K = eta::reader::linker::LinkError::Kind;
+    switch (e.kind) {
+        case K::UnknownModule:       code = DiagnosticCode::ModuleNotFound; break;
+        case K::ExportOfUnknownName: code = DiagnosticCode::ExportOfUnknownName; break;
+        case K::ConflictingImport:   code = DiagnosticCode::UnresolvedImport; break;
+        case K::NameNotExported:     code = DiagnosticCode::ImportNotFound; break;
+        case K::DuplicateModule:     code = DiagnosticCode::DuplicateModule; break;
+        case K::CircularDependency:  code = DiagnosticCode::CircularDependency; break;
+        default:                     code = DiagnosticCode::ModuleNotFound; break;
+    }
     return Diagnostic{code, Severity::Error, e.span, e.message};
 }
 
@@ -369,3 +483,58 @@ inline Diagnostic to_diagnostic<eta::semantics::SemanticError>(const eta::semant
 
 } // namespace eta::diagnostic
 
+#include "eta/runtime/error.h"
+
+namespace eta::diagnostic {
+
+/**
+ * @brief Convert VMError to Diagnostic
+ */
+template<>
+inline Diagnostic to_diagnostic<eta::runtime::error::VMError>(const eta::runtime::error::VMError& e) {
+    DiagnosticCode code{};
+    using EC = eta::runtime::error::RuntimeErrorCode;
+    switch (e.code) {
+        case EC::NotImplemented:     code = DiagnosticCode::NotImplemented; break;
+        case EC::InternalError:      code = DiagnosticCode::InternalError; break;
+        case EC::StackOverflow:      code = DiagnosticCode::StackOverflow; break;
+        case EC::StackUnderflow:     code = DiagnosticCode::StackUnderflow; break;
+        case EC::FrameOverflow:      code = DiagnosticCode::FrameOverflow; break;
+        case EC::InvalidInstruction: code = DiagnosticCode::InvalidInstruction; break;
+        case EC::InvalidArity:       code = DiagnosticCode::InvalidArity; break;
+        case EC::TypeError:          code = DiagnosticCode::TypeError; break;
+        case EC::UndefinedGlobal:    code = DiagnosticCode::UndefinedGlobal; break;
+        case EC::UserError:          code = DiagnosticCode::UserError; break;
+        default:                     code = DiagnosticCode::NotImplemented; break;
+    }
+    return Diagnostic{code, Severity::Error, {}, e.message};
+}
+
+/**
+ * @brief Convert NaNBoxError to Diagnostic
+ */
+template<>
+inline Diagnostic to_diagnostic<eta::runtime::nanbox::NaNBoxError>(const eta::runtime::nanbox::NaNBoxError& e) {
+    return Diagnostic{DiagnosticCode::TypeError, Severity::Error, {},
+        std::string("NaNBox error: ") + eta::runtime::nanbox::to_string(e)};
+}
+
+/**
+ * @brief Convert HeapError to Diagnostic
+ */
+template<>
+inline Diagnostic to_diagnostic<eta::runtime::memory::heap::HeapError>(const eta::runtime::memory::heap::HeapError& e) {
+    return Diagnostic{DiagnosticCode::HeapAllocationFailed, Severity::Error, {},
+        std::string("heap error: ") + eta::runtime::memory::heap::to_string(e)};
+}
+
+/**
+ * @brief Convert InternTableError to Diagnostic
+ */
+template<>
+inline Diagnostic to_diagnostic<eta::runtime::memory::intern::InternTableError>(const eta::runtime::memory::intern::InternTableError& e) {
+    return Diagnostic{DiagnosticCode::InternTableFull, Severity::Error, {},
+        std::string("intern table error: ") + eta::runtime::memory::intern::to_string(e)};
+}
+
+} // namespace eta::diagnostic

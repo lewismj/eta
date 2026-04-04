@@ -195,16 +195,7 @@ private:
         if (!parsed_res) {
             auto& err = parsed_res.error();
             std::visit([this](auto&& e) {
-                using T = std::decay_t<decltype(e)>;
-                if constexpr (std::is_same_v<T, reader::lexer::LexError>) {
-                    diag_engine_.emit(diagnostic::to_diagnostic(e));
-                } else {
-                    // ParseError — convert manually
-                    diag_engine_.emit_error(
-                        diagnostic::DiagnosticCode::UnexpectedToken,
-                        e.span,
-                        "parse error: " + std::string(reader::parser::to_string(e.kind)));
-                }
+                diag_engine_.emit(diagnostic::to_diagnostic(e));
             }, err);
             return false;
         }
@@ -337,47 +328,13 @@ private:
 
     /// Convert a LinkError into a Diagnostic and emit it.
     void emit_link_error(const reader::LinkError& e) {
-        diagnostic::DiagnosticCode code{};
-        using K = reader::LinkError::Kind;
-        switch (e.kind) {
-            case K::UnknownModule:       code = diagnostic::DiagnosticCode::ModuleNotFound; break;
-            case K::ExportOfUnknownName: code = diagnostic::DiagnosticCode::DuplicateExport; break;
-            case K::ConflictingImport:   code = diagnostic::DiagnosticCode::UnresolvedImport; break;
-            case K::NameNotExported:     code = diagnostic::DiagnosticCode::ImportNotFound; break;
-            case K::DuplicateModule:     code = diagnostic::DiagnosticCode::DuplicateExport; break;
-            case K::CircularDependency:  code = diagnostic::DiagnosticCode::CircularDependency; break;
-        }
-        diag_engine_.emit_error(code, e.span, e.message);
+        diag_engine_.emit(diagnostic::to_diagnostic(e));
     }
 
     /// Convert a RuntimeError variant into a Diagnostic and emit it.
     void emit_runtime_error(const runtime::error::RuntimeError& err) {
         std::visit([this](auto&& e) {
-            using T = std::decay_t<decltype(e)>;
-            if constexpr (std::is_same_v<T, runtime::error::VMError>) {
-                diagnostic::DiagnosticCode code{};
-                using EC = runtime::error::RuntimeErrorCode;
-                switch (e.code) {
-                    case EC::StackOverflow:      code = diagnostic::DiagnosticCode::StackOverflow; break;
-                    case EC::FrameOverflow:       code = diagnostic::DiagnosticCode::FrameOverflow; break;
-                    case EC::InvalidInstruction:  code = diagnostic::DiagnosticCode::InvalidInstruction; break;
-                    case EC::InvalidArity:        code = diagnostic::DiagnosticCode::InvalidArity; break;
-                    case EC::TypeError:           code = diagnostic::DiagnosticCode::TypeError; break;
-                    case EC::UndefinedGlobal:     code = diagnostic::DiagnosticCode::UndefinedGlobal; break;
-                    case EC::UserError:           code = diagnostic::DiagnosticCode::NotImplemented; break;
-                    default:                      code = diagnostic::DiagnosticCode::NotImplemented; break;
-                }
-                diag_engine_.emit_error(code, {}, e.message);
-            } else if constexpr (std::is_same_v<T, runtime::nanbox::NaNBoxError>) {
-                diag_engine_.emit_error(diagnostic::DiagnosticCode::TypeError, {},
-                    "NaNBox error: " + std::to_string(static_cast<int>(e)));
-            } else if constexpr (std::is_same_v<T, runtime::memory::heap::HeapError>) {
-                diag_engine_.emit_error(diagnostic::DiagnosticCode::HeapAllocationFailed, {},
-                    "heap error: " + std::to_string(static_cast<int>(e)));
-            } else if constexpr (std::is_same_v<T, runtime::memory::intern::InternTableError>) {
-                diag_engine_.emit_error(diagnostic::DiagnosticCode::InternTableFull, {},
-                    "intern table error: " + std::to_string(static_cast<int>(e)));
-            }
+            diag_engine_.emit(diagnostic::to_diagnostic(e));
         }, err);
     }
 };

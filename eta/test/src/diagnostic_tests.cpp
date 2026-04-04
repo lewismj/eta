@@ -388,6 +388,126 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_semantic_error) {
 }
 
 // ============================================================================
+// to_diagnostic<ParseError>
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(to_diagnostic_parse_error) {
+    using PK = eta::reader::parser::ParseErrorKind;
+    struct KindMapping { PK parse; DiagnosticCode diag; };
+    std::vector<KindMapping> mappings = {
+        {PK::FromLexer,                  DiagnosticCode::UnexpectedToken},
+        {PK::UnexpectedEOF,              DiagnosticCode::UnexpectedToken},
+        {PK::UnexpectedClosingDelimiter, DiagnosticCode::UnmatchedParen},
+        {PK::UnsupportedToken,           DiagnosticCode::UnexpectedToken},
+        {PK::UnclosedList,               DiagnosticCode::InvalidList},
+        {PK::MisplacedDot,               DiagnosticCode::InvalidDottedList},
+        {PK::MultipleDotsInDottedList,   DiagnosticCode::InvalidDottedList},
+        {PK::DotAtListStart,             DiagnosticCode::InvalidDottedList},
+        {PK::UnclosedVector,             DiagnosticCode::InvalidVector},
+        {PK::DotInVector,                DiagnosticCode::InvalidVector},
+        {PK::ByteVectorNonInteger,       DiagnosticCode::InvalidVector},
+        {PK::InvalidByteLiteral,         DiagnosticCode::InvalidVector},
+        {PK::UnquoteOutsideQuasiquote,   DiagnosticCode::UnquoteOutsideQuasiquote},
+        {PK::InternalNotAnAtom,          DiagnosticCode::UnexpectedToken},
+        {PK::InternalNotAReaderToken,    DiagnosticCode::UnexpectedToken},
+    };
+    for (const auto& [parse_kind, diag_code] : mappings) {
+        eta::reader::parser::ParseError e(parse_kind, Span{});
+        auto d = to_diagnostic(e);
+        BOOST_CHECK(d.code == diag_code);
+        BOOST_CHECK(d.severity == Severity::Error);
+        BOOST_CHECK(!d.message.empty());
+    }
+}
+
+// ============================================================================
+// to_diagnostic<LinkError>
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(to_diagnostic_link_error) {
+    using LK = eta::reader::linker::LinkError::Kind;
+    struct KindMapping { LK link; DiagnosticCode diag; };
+    std::vector<KindMapping> mappings = {
+        {LK::UnknownModule,       DiagnosticCode::ModuleNotFound},
+        {LK::ExportOfUnknownName, DiagnosticCode::ExportOfUnknownName},
+        {LK::ConflictingImport,   DiagnosticCode::UnresolvedImport},
+        {LK::NameNotExported,     DiagnosticCode::ImportNotFound},
+        {LK::DuplicateModule,     DiagnosticCode::DuplicateModule},
+        {LK::CircularDependency,  DiagnosticCode::CircularDependency},
+    };
+    for (const auto& [link_kind, diag_code] : mappings) {
+        eta::reader::linker::LinkError e;
+        e.kind = link_kind;
+        e.message = "test";
+        auto d = to_diagnostic(e);
+        BOOST_CHECK(d.code == diag_code);
+        BOOST_CHECK(d.severity == Severity::Error);
+        BOOST_CHECK_EQUAL(d.message, "test");
+    }
+}
+
+// ============================================================================
+// to_diagnostic<VMError>
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(to_diagnostic_vm_error) {
+    using EC = eta::runtime::error::RuntimeErrorCode;
+    struct KindMapping { EC code; DiagnosticCode diag; };
+    std::vector<KindMapping> mappings = {
+        {EC::NotImplemented,     DiagnosticCode::NotImplemented},
+        {EC::InternalError,      DiagnosticCode::InternalError},
+        {EC::StackOverflow,      DiagnosticCode::StackOverflow},
+        {EC::StackUnderflow,     DiagnosticCode::StackUnderflow},
+        {EC::FrameOverflow,      DiagnosticCode::FrameOverflow},
+        {EC::InvalidInstruction, DiagnosticCode::InvalidInstruction},
+        {EC::InvalidArity,       DiagnosticCode::InvalidArity},
+        {EC::TypeError,          DiagnosticCode::TypeError},
+        {EC::UndefinedGlobal,    DiagnosticCode::UndefinedGlobal},
+        {EC::UserError,          DiagnosticCode::UserError},
+    };
+    for (const auto& [vm_code, diag_code] : mappings) {
+        eta::runtime::error::VMError e{vm_code, "test"};
+        auto d = to_diagnostic(e);
+        BOOST_CHECK(d.code == diag_code);
+        BOOST_CHECK(d.severity == Severity::Error);
+        BOOST_CHECK_EQUAL(d.message, "test");
+    }
+}
+
+// ============================================================================
+// to_diagnostic<NaNBoxError>
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(to_diagnostic_nanbox_error) {
+    auto d = to_diagnostic(eta::runtime::nanbox::NaNBoxError::InvalidTag);
+    BOOST_CHECK(d.code == DiagnosticCode::TypeError);
+    BOOST_CHECK(d.severity == Severity::Error);
+    BOOST_CHECK(d.message.find("NaNBox error") != std::string::npos);
+}
+
+// ============================================================================
+// to_diagnostic<HeapError>
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(to_diagnostic_heap_error) {
+    auto d = to_diagnostic(eta::runtime::memory::heap::HeapError::FailedToAllocateMemory);
+    BOOST_CHECK(d.code == DiagnosticCode::HeapAllocationFailed);
+    BOOST_CHECK(d.severity == Severity::Error);
+    BOOST_CHECK(d.message.find("heap error") != std::string::npos);
+}
+
+// ============================================================================
+// to_diagnostic<InternTableError>
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(to_diagnostic_intern_table_error) {
+    auto d = to_diagnostic(eta::runtime::memory::intern::InternTableError::MissingId);
+    BOOST_CHECK(d.code == DiagnosticCode::InternTableFull);
+    BOOST_CHECK(d.severity == Severity::Error);
+    BOOST_CHECK(d.message.find("intern table error") != std::string::npos);
+}
+
+// ============================================================================
 // write_span
 // ============================================================================
 
