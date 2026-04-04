@@ -10,15 +10,16 @@
   <a href="docs/nanboxing.md">NaN-Boxing</a> ·
   <a href="docs/bytecode-vm.md">Bytecode &amp; VM</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
-  <a href="docs/modules.md">Modules &amp; Stdlib</a>
+  <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
+  <a href="docs/next-steps.md">Next Steps</a>
 </p>
 
 ---
 
 ## What is Eta?
 
-**Eta** is a Scheme-like programming language implemented entirely in modern
-C++23. It features a multi-phase compilation pipeline that transforms
+**Eta** is a Scheme-like programming language implemented in 
+C++. It features a multi-phase compilation pipeline that transforms
 S-expression source code into compact bytecode and executes it on a
 stack-based virtual machine with NaN-boxed values, closures, tail-call
 elimination, first-class continuations (`call/cc`), a hygienic macro
@@ -26,8 +27,7 @@ expander with `syntax-rules`, and a module system.
 
 The implementation ships as three executables — a **file interpreter**
 (`etai`), an **interactive REPL** (`eta_repl`), and a **Language Server**
-(`eta_lsp`) — along with a **VS Code extension** for syntax highlighting
-and live diagnostics.
+(`eta_lsp`) — along with a **VS Code extension**.
 
 ```scheme
 ;; Hello, Eta!
@@ -190,6 +190,7 @@ The prelude auto-loads the following modules:
 | **[Bytecode & VM](docs/bytecode-vm.md)** | Opcode reference, end-to-end compilation trace, call stack model, TCO |
 | **[Runtime & GC](docs/runtime.md)** | Heap architecture, object kinds, mark-sweep GC, intern table, factory |
 | **[Modules & Stdlib](docs/modules.md)** | Module syntax, linker phases, import filters, standard library reference |
+| **[Next Steps](docs/next-steps.md)** | Roadmap: bytecode serialization & `etac`, FFI, unification instruction, example programs |
 
 ---
 
