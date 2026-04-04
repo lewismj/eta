@@ -8,8 +8,8 @@ add_library(${PROJECT_NAME} STATIC)
 target_include_directories(${PROJECT_NAME}
         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
+        PUBLIC ${Boost_INCLUDE_DIRS}
         PRIVATE ${PROJECT_SOURCE_DIR}
-        PRIVATE ${Boost_INCLUDE_DIRS}
 )
 
 target_sources(${PROJECT_NAME}
