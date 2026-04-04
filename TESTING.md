@@ -61,15 +61,20 @@ To install into a custom prefix instead of using the bundle in-place:
 ```powershell
 Expand-Archive eta-win-x64.zip -DestinationPath .
 cd eta-win-x64
-.\install.ps1                 # adds bin\ to user PATH, sets ETA_MODULE_PATH
+.\install.cmd                 # adds bin\ to user PATH, sets ETA_MODULE_PATH
                               # installs VS Code extension if 'code' is on PATH
 ```
 
 To install into a custom prefix:
 
 ```powershell
-.\install.ps1 -Prefix "C:\Program Files\Eta"
+.\install.cmd "C:\Program Files\Eta"
 ```
+
+> **Note:** Always use `install.cmd` rather than calling `install.ps1`
+> directly — the `.cmd` wrapper launches PowerShell with
+> `-ExecutionPolicy Bypass` so it works regardless of the system
+> execution policy.
 
 ---
 
@@ -89,7 +94,7 @@ eta-<platform>/
       core.eta math.eta io.eta collections.eta test.eta
   editors/
     vscode/                   # bundled VS Code extension
-  install.sh / install.ps1    # post-extract installer
+  install.sh / install.cmd     # post-extract installer (install.ps1 is called by install.cmd)
   TESTING.md
 ```
 

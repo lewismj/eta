@@ -175,6 +175,7 @@ jobs:
           Pop-Location
 
           Copy-Item "scripts\install.ps1" "$prefix\" -ErrorAction SilentlyContinue
+          Copy-Item "scripts\install.cmd" "$prefix\" -ErrorAction SilentlyContinue
           Copy-Item "TESTING.md"          "$prefix\" -ErrorAction SilentlyContinue
 
       - name: Create archive
