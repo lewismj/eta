@@ -288,6 +288,19 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
+        // Handle (exit) and (quit) commands
+        {
+            auto trimmed = buffer;
+            auto s = trimmed.find_first_not_of(" \t\n\r");
+            auto e = trimmed.find_last_not_of(" \t\n\r");
+            if (s != std::string::npos) {
+                trimmed = trimmed.substr(s, e - s + 1);
+            }
+            if (trimmed == "(exit)" || trimmed == "(quit)") {
+                break;
+            }
+        }
+
         // Split input into individual top-level forms (supports multiple
         // forms per input, e.g. "(define x 10) x")
         auto forms = split_toplevel_forms(buffer);

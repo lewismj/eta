@@ -24,7 +24,7 @@ etai examples/hello.eta
 
 ---
 
-## hello.eta
+## [hello world](../examples/hello.eta)
 
 The canonical first program.
 
@@ -48,7 +48,7 @@ Hello, world!
 
 ---
 
-## basics.eta
+## [basics](../examples/basics.eta)
 
 Core language features: values, expressions, bindings, and data structures.
 
@@ -80,7 +80,7 @@ Core language features: values, expressions, bindings, and data structures.
 
 ---
 
-## functions.eta
+## [functions](../examples/functions.eta)
 
 Functions, closures, and recursion — the heart of any Lisp.
 
@@ -120,7 +120,7 @@ Functions, closures, and recursion — the heart of any Lisp.
 
 ---
 
-## higher-order.eta
+## [higher order functions](../examples/higher-order.eta)
 
 Map, filter, fold, and friends from `std.collections`.
 
@@ -165,7 +165,7 @@ Map, filter, fold, and friends from `std.collections`.
 
 ---
 
-## composition.eta
+## [currying and composition](../examples/composition.eta)
 
 Currying, composition, and functional pipelines.
 
@@ -205,7 +205,7 @@ Currying, composition, and functional pipelines.
 
 ---
 
-## recursion.eta
+## [recursion](../examples/recursion.eta)
 
 Classic recursive algorithms.
 
@@ -255,7 +255,7 @@ Classic recursive algorithms.
 
 ---
 
-## boolean-simplifier.eta
+## [boolean simplifier](../examples/boolean-simplifier.eta)
 
 A symbolic boolean simplifier that rewrites expression trees using
 algebraic identities, De Morgan's laws, and double-negation elimination.
@@ -291,7 +291,7 @@ x ∧ ⊥         = #f
 
 ---
 
-## symbolic-diff.eta
+## [symbolic differentiation](../examples/symbolic-diff.eta)
 
 A small computer algebra system: symbolic differentiation with sum,
 product, power, and chain rules, plus an algebraic simplifier with
