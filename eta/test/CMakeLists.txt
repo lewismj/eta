@@ -24,6 +24,12 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 target_link_libraries(${PROJECT_NAME} PRIVATE eta_core)
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
 
+# vcpkg x64-windows builds shared Boost; x64-linux builds static.
+# BOOST_TEST_DYN_LINK is required only when linking the shared library.
+if(WIN32)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE BOOST_TEST_DYN_LINK)
+endif()
+
 
 # Platform-specific libraries
 if(NOT MSVC)
