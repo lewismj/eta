@@ -144,10 +144,52 @@ void Emitter::emit_if(const core::If& n, Context& ctx) {
 }
 
 void Emitter::emit_begin(const core::Begin& n, Context& ctx) {
+    // Detect letrec-expanded pattern: a leading run of Set{Local} nodes whose
+    // values are Lambdas.  After all closures are created, earlier closures may
+    // have captured placeholder ('()) values for later-assigned locals.
+    // Emit PatchClosureUpval instructions to fix those cross-references so that
+    // mutually-recursive letrec bindings work correctly.
+    struct LetrecInit { uint32_t slot; const core::Lambda* lam; };
+    std::vector<LetrecInit> letrec_inits;
+    for (const auto* expr : n.exprs) {
+        const auto* set = std::get_if<core::Set>(&expr->data);
+        if (!set) break;
+        const auto* tgt = std::get_if<core::Address::Local>(&set->target.where);
+        if (!tgt) break;
+        const auto* lam = std::get_if<core::Lambda>(&set->value->data);
+        if (!lam) break;
+        letrec_inits.push_back({tgt->slot, lam});
+    }
+    const size_t ninits = letrec_inits.size();
+
     for (size_t i = 0; i < n.exprs.size(); ++i) {
         emit_node(n.exprs[i], ctx);
         if (i < n.exprs.size() - 1) {
             ctx.func.code.push_back({OpCode::Pop, 0});
+        }
+
+        // After the last letrec initializer has been emitted (and its nil
+        // popped if it is not the final expression), patch cross-references:
+        // for each earlier closure that captured a later-assigned local slot,
+        // push (closure, new-value) and emit PatchClosureUpval.
+        // Each patch is stack-neutral (LoadLocal x2 + PatchClosureUpval).
+        if (ninits > 1 && i + 1 == ninits) {
+            for (size_t later = 1; later < ninits; ++later) {
+                uint32_t later_slot = letrec_inits[later].slot;
+                for (size_t earlier = 0; earlier < later; ++earlier) {
+                    const auto& ei = letrec_inits[earlier];
+                    for (size_t uv = 0; uv < ei.lam->upval_sources.size(); ++uv) {
+                        const auto* src = std::get_if<core::Address::Local>(
+                            &ei.lam->upval_sources[uv].where);
+                        if (src && src->slot == later_slot) {
+                            ctx.func.code.push_back({OpCode::LoadLocal, ei.slot});
+                            ctx.func.code.push_back({OpCode::LoadLocal, later_slot});
+                            ctx.func.code.push_back({OpCode::PatchClosureUpval,
+                                                     static_cast<uint32_t>(uv)});
+                        }
+                    }
+                }
+            }
         }
     }
 }
