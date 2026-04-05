@@ -10,6 +10,9 @@
     The bundle directory is named  eta-<version>-<platform>  so that
     different releases can live side-by-side.
 
+    Boost is required. Supply -VcpkgRoot (or set the VCPKG_ROOT
+    environment variable) to let CMake find Boost via vcpkg.
+
 .PARAMETER InstallDir
     Optional. Directory to install the release bundle into.
     Defaults to  dist\eta-<version>-win-<arch>  under the project root.
@@ -19,10 +22,18 @@
     Auto-detected from  git describe --tags --abbrev=0  when omitted,
     falling back to the version in CMakeLists.txt.
 
+.PARAMETER VcpkgRoot
+    Optional. Path to the vcpkg root (the directory containing
+    bootstrap-vcpkg.bat).  Falls back to the VCPKG_ROOT environment
+    variable when omitted.  When set, passes
+    -DCMAKE_TOOLCHAIN_FILE=<VcpkgRoot>\scripts\buildsystems\vcpkg.cmake
+    to CMake so Boost is located automatically.
+
 .EXAMPLE
-    .\scripts\build-release.ps1
-    .\scripts\build-release.ps1 -Version v0.3.0
-    .\scripts\build-release.ps1 C:\eta-release
+    .\scripts\build-release.cmd
+    .\scripts\build-release.cmd -Version v0.3.0
+    .\scripts\build-release.cmd -VcpkgRoot C:\src\vcpkg
+    .\scripts\build-release.cmd "C:\eta-release" -VcpkgRoot C:\src\vcpkg
 #>
 [CmdletBinding()]
 param(
@@ -30,7 +41,10 @@ param(
     [string]$InstallDir,
 
     [Parameter()]
-    [string]$Version
+    [string]$Version,
+
+    [Parameter()]
+    [string]$VcpkgRoot
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,6 +77,19 @@ if (-not $Version) {
     }
 }
 
+# ── Resolve vcpkg root ───────────────────────────────────────────────
+if (-not $VcpkgRoot -and $env:VCPKG_ROOT) {
+    $VcpkgRoot = $env:VCPKG_ROOT
+}
+$ToolchainArg = @()
+if ($VcpkgRoot) {
+    $ToolchainFile = Join-Path $VcpkgRoot "scripts\buildsystems\vcpkg.cmake"
+    if (-not (Test-Path $ToolchainFile)) {
+        throw "vcpkg toolchain not found at: $ToolchainFile"
+    }
+    $ToolchainArg = @("-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile")
+}
+
 # ── Resolve install dir ──────────────────────────────────────────────
 if (-not $InstallDir) {
     $InstallDir = Join-Path $ProjectRoot "dist\eta-$Version-$PlatformTag"
@@ -78,12 +105,15 @@ Write-Host "+==============================================================+"
 Write-Host "|  Version  : $Version"
 Write-Host "|  Platform : $PlatformTag"
 Write-Host "|  Install  : $Prefix"
+if ($VcpkgRoot) {
+Write-Host "|  vcpkg    : $VcpkgRoot"
+}
 Write-Host "+==============================================================+"
 Write-Host ""
 
 # -- 1. Configure --------------------------------------------------------------
 Write-Host "> [1/6] Configuring CMake..."
-& cmake -B $BuildDir -DCMAKE_INSTALL_PREFIX="$Prefix" $ProjectRoot
+& cmake -B $BuildDir -DCMAKE_INSTALL_PREFIX="$Prefix" @ToolchainArg $ProjectRoot
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 
 # -- 2. Build ------------------------------------------------------------------
@@ -97,6 +127,22 @@ Write-Host "> [3/6] Installing to $Prefix..."
 if ($LASTEXITCODE -ne 0) { throw "CMake install failed" }
 
 # -- 4. Build VS Code extension ------------------------------------------------
+# @vscode/vsce requires Node >=20.18.1 (via cheerio/undici transitive deps).
+$NodeExe = Get-Command node -ErrorAction SilentlyContinue
+if (-not $NodeExe) { throw "Node.js not found on PATH -- required to build the VS Code extension." }
+$NodeVersion = & node -e "process.stdout.write(process.version)"
+# Strip leading 'v' and split into parts
+$nvParts = $NodeVersion.TrimStart('v').Split('.')
+[int]$nvMajor = $nvParts[0]; [int]$nvMinor = $nvParts[1]; [int]$nvPatch = $nvParts[2]
+$MinMajor = 20; $MinMinor = 18; $MinPatch = 1
+$tooOld = ($nvMajor -lt $MinMajor) -or
+          ($nvMajor -eq $MinMajor -and $nvMinor -lt $MinMinor) -or
+          ($nvMajor -eq $MinMajor -and $nvMinor -eq $MinMinor -and $nvPatch -lt $MinPatch)
+if ($tooOld) {
+    throw "Node.js $NodeVersion is too old. @vscode/vsce requires >=20.18.1. Please upgrade Node.js."
+}
+Write-Host "  Node.js $NodeVersion -- OK"
+
 $VscodeSrc  = Join-Path $ProjectRoot "editors\vscode"
 $EditorsDir = Join-Path $Prefix "editors"
 $VsixDest   = Join-Path $EditorsDir "eta-lang.vsix"
