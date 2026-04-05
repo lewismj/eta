@@ -20,10 +20,10 @@ etai examples/hello.eta
 | [`composition.eta`](#compositioneta)               | `compose`, `flip`, `constantly`, `negate`, manual currying, pipelines |
 | [`recursion.eta`](#recursioneta)                   | Fibonacci, list reversal, deep flatten, Ackermann, Towers of Hanoi |
 | [`boolean-simplifier.eta`](#boolean-simplifiereta) | Symbolic tree rewriting, De Morgan's laws, fixed-point simplification |
-| [`symbolic-diff.eta`](#symbolic-diffeta)           | Computer algebra: differentiation rules, algebraic simplification |
+| [`symbolic-diff.eta`](#symbolic-differentiation)   | Computer algebra: differentiation rules, algebraic simplification |
 | [`aad.eta`](#aadeta)                               | Reverse-mode AD, closures as backpropagators, `define-syntax`, `grad` |
 | [`xva.eta`](#xvaeta)                               | Quantitative finance: CVA, FVA, xVA sensitivities via AAD |
-| [`modules and imports`](#imports)                 | `import`, `export`, `only`, `except`, `rename`, `prefix` |
+| [`modules and imports`](#imports)                  | `import`, `export`, `only`, `except`, `rename`, `prefix` |
 
 ---
 
@@ -33,7 +33,7 @@ The canonical first program.
 
 ```scheme
 (module hello
-  (import std.io)
+  import std.io)
   (begin
     (println "Hello, world!")
 
