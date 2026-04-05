@@ -44,8 +44,8 @@ struct EmitterFixture {
         auto expanded = std::move(*expanded_res);
 
         reader::ModuleLinker linker;
-        linker.index_modules(expanded);
-        linker.link();
+        (void) linker.index_modules(expanded);
+        (void) linker.link();
 
         SemanticAnalyzer sa;
         auto sem_res = sa.analyze_all(expanded, linker, builtins);

@@ -119,8 +119,8 @@ struct VMTestFixture {
         auto expanded = std::move(*expanded_res);
 
         reader::ModuleLinker linker;
-        linker.index_modules(expanded);
-        linker.link();
+        (void) linker.index_modules(expanded);
+        (void) linker.link();
 
         SemanticAnalyzer sa;
         auto sem_res = sa.analyze_all(expanded, linker, builtins);
@@ -186,8 +186,8 @@ struct VMTestFixture {
         auto expanded = std::move(*expanded_res);
 
         reader::ModuleLinker linker;
-        linker.index_modules(expanded);
-        linker.link();
+        (void) linker.index_modules(expanded);
+        (void) linker.link();
 
         SemanticAnalyzer sa;
         auto sem_res = sa.analyze_all(expanded, linker, builtins);
@@ -860,8 +860,8 @@ BOOST_AUTO_TEST_CASE(test_multi_module_each_emits_bytecode) {
     auto expanded = std::move(*ex.expand_many(parsed));
 
     reader::ModuleLinker linker;
-    linker.index_modules(expanded);
-    linker.link();
+    (void) linker.index_modules(expanded);
+    (void) linker.link();
 
     SemanticAnalyzer sa;
     auto sem_res = sa.analyze_all(expanded, linker, builtins);
@@ -889,8 +889,8 @@ BOOST_AUTO_TEST_CASE(test_multi_module_unified_global_slots) {
     auto expanded = std::move(*ex.expand_many(parsed));
 
     reader::ModuleLinker linker;
-    linker.index_modules(expanded);
-    linker.link();
+    (void) linker.index_modules(expanded);
+    (void) linker.link();
 
     SemanticAnalyzer sa;
     auto sem_res = sa.analyze_all(expanded, linker, builtins);

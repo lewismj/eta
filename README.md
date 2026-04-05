@@ -123,7 +123,7 @@ flowchart LR
 | **[Modules & Stdlib](docs/modules.md)**  | Module syntax, linker phases, import filters, standard library reference                 |
 | **[Language Guide](docs/examples.md)**   | Guided tour of the language using simple example programs with expected output           |
 | **[AAD](docs/aad.md)**                   | Reverse-mode automatic differentiation walkthrough                                       |
-| **[xVA](docs/xva.md)**                   | Quantitative finance: CVA, FVA, and sensitivities via AAD                                |
+| **[xVA](docs/xva.md)**                   | Finance use case: CVA, FVA, and sensitivities via AAD                                   |
 | **[Next Steps](docs/next-steps.md)**     | Roadmap: bytecode serialization & `etac`, FFI, unification instruction, example programs |
 
 ---
