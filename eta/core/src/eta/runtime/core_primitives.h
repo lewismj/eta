@@ -32,6 +32,7 @@ namespace eta::runtime {
  *  Strings:      string-length  string-append  number->string  string->number
  *  Vectors:      vector  vector-length  vector-ref  vector-set!  vector?  make-vector
  *  Error:        error
+ *  Platform:     platform
  *
  * Note: I/O primitives (display, write, newline) are in io_primitives.h
  * and require VM access for port support.
@@ -815,6 +816,26 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             msg += format_value(args[i], FormatMode::Write, heap, intern_table);
         }
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError, msg}});
+    });
+
+    // ========================================================================
+    // Platform detection: platform
+    // Returns a symbol identifying the executing host OS at runtime.
+    // The #if selects which string is compiled into each platform's binary;
+    // the primitive is always invoked at VM execution time, so bytecode built
+    // on one platform and run on another correctly reports the executing host.
+    // ========================================================================
+
+    env.register_builtin("platform", 0, false, [&intern_table](Args) -> std::expected<LispVal, RuntimeError> {
+#if defined(_WIN32)
+        return make_symbol(intern_table, "Win32");
+#elif defined(__APPLE__)
+        return make_symbol(intern_table, "Darwin");
+#elif defined(__linux__)
+        return make_symbol(intern_table, "Linux");
+#else
+        return make_symbol(intern_table, "Unknown");
+#endif
     });
 }
 

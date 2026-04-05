@@ -185,13 +185,15 @@
     ;; 1. f(x,y) = x·y + sin(x)  at (2, 3)
     ;;    ∂f/∂x = y + cos(x) = 3 + cos(2) ≈ 2.5839
     ;;    ∂f/∂y = x = 2
-    (display "f(x,y) = x·y + sin(x)\n")
+    (define win (eq? (platform) 'Win32))
+
+    (display (if win "f(x,y) = x*y + sin(x)\n" "f(x,y) = x·y + sin(x)\n"))
     (display "  grad at (2,3): ")
     (println (grad (lambda (x y) (ad (+ (* x y) (sin x)))) '(2 3)))
 
     ;; 2. g(x) = x² + 3x + 1  at x = 4
     ;;    dg/dx = 2x + 3 = 11
-    (display "g(x) = x² + 3x + 1\n")
+    (display (if win "g(x) = x^2 + 3x + 1\n" "g(x) = x² + 3x + 1\n"))
     (display "  grad at (4): ")
     (println (grad (lambda (x) (ad (+ (+ (* x x) (* 3 x)) 1))) '(4)))
 
@@ -203,7 +205,8 @@
 
     ;; 4. Rosenbrock: f(x,y) = (1-x)² + 100·(y-x²)²
     ;;    At (1,1) the gradient is (0, 0) — the global minimum.
-    (display "Rosenbrock f(x,y) = (1-x)² + 100(y-x²)²\n")
+    (display (if win "Rosenbrock f(x,y) = (1-x)^2 + 100(y-x^2)^2\n"
+                     "Rosenbrock f(x,y) = (1-x)² + 100(y-x²)²\n"))
     (display "  grad at (1,1): ")
     (println (grad (lambda (x y)
                      (ad (+ (* (- 1 x) (- 1 x))

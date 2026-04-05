@@ -13,7 +13,9 @@
     ;; List utilities not covered by builtins
     cadr caddr caar cdar caddar
     last list? iota
-    assoc-ref)
+    assoc-ref
+    ;; Platform
+    windows?)
   (begin
 
     ;; ── Predicates ──────────────────────────────────────────────────
@@ -87,6 +89,12 @@
         ((null? alist) #f)
         ((equal? key (car (car alist))) (cdr (car alist)))
         (#t (assoc-ref key (cdr alist)))))
+
+    ;; ── Platform ────────────────────────────────────────────────────
+
+    ;; True when running on Windows. (platform) is evaluated at VM
+    ;; execution time, so this is safe for cross-platform bytecode.
+    (defun windows? () (eq? (platform) 'Win32))
 
   ))
 

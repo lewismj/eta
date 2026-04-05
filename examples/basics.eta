@@ -6,12 +6,14 @@
   (import std.io)
   (begin
 
-    (println "── Arithmetic ──")
+    (define win (eq? (platform) 'Win32))
+
+    (println (if win "-- Arithmetic --"              "── Arithmetic ──"))
     (println (+ 1 2 3))          ; => 6
     (println (* 2 3 4))          ; => 24
     (println (- 10 3))           ; => 7
 
-    (println "── Booleans & Conditionals ──")
+    (println (if win "-- Booleans & Conditionals --" "── Booleans & Conditionals ──"))
     (println (and #t #f))        ; => #f
     (println (or  #f #t))        ; => #t
     (println (not #f))           ; => #t
@@ -23,7 +25,7 @@
       ((= 1 1) "match!")
       (#t      "default")))     ; => "match!"
 
-    (println "── Variables & Let ──")
+    (println (if win "-- Variables & Let --"         "── Variables & Let ──"))
     (define x 42)
     (println x)                  ; => 42
 
@@ -36,11 +38,11 @@
            (c (+ a b)))
       (println c))               ; => 4
 
-    (println "── Strings ──")
+    (println (if win "-- Strings --"                 "── Strings ──"))
     (println (string-append "hello" ", " "world!"))
     (println (string-length "eta"))   ; => 3
 
-    (println "── Pairs & Lists ──")
+    (println (if win "-- Pairs & Lists --"           "── Pairs & Lists ──"))
     (define pair (cons 1 2))
     (println (car pair))         ; => 1
     (println (cdr pair))         ; => 2
@@ -50,7 +52,7 @@
     (println (length xs))        ; => 5
     (println (append '(a b) '(c d)))  ; => (a b c d)
 
-    (println "── Symbols & Quoting ──")
+    (println (if win "-- Symbols & Quoting --"       "── Symbols & Quoting ──"))
     (println 'hello)             ; => hello
     (println '(one two three))   ; => (one two three)
 

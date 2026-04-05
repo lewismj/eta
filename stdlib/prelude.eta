@@ -18,7 +18,8 @@
     identity compose flip constantly negate
     cadr caddr caar cdar caddar
     last list? iota
-    assoc-ref)
+    assoc-ref
+    windows?)
   (begin
 
     (defun atom? (x) (not (pair? x)))
@@ -70,6 +71,8 @@
         ((null? alist) #f)
         ((equal? key (car (car alist))) (cdr (car alist)))
         (#t (assoc-ref key (cdr alist)))))
+
+    (defun windows? () (eq? (platform) 'Win32))
 
   ))
 

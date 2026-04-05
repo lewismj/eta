@@ -81,35 +81,37 @@
 
     ;; ── Demonstrations ──────────────────────────────────────────────
 
-    (display "x ∧ ⊤         = ")
+    (define win (eq? (platform) 'Win32))
+
+    (display (if win "x AND T           = " "x ∧ ⊤         = "))
     (println (simplify-bool* '(and x #t)))
     ;; => x
 
-    (display "x ∧ ⊥         = ")
+    (display (if win "x AND F           = " "x ∧ ⊥         = "))
     (println (simplify-bool* '(and x #f)))
     ;; => #f
 
-    (display "(⊤ ∧ x) ∨ ⊥   = ")
+    (display (if win "(T AND x) OR F    = " "(⊤ ∧ x) ∨ ⊥   = "))
     (println (simplify-bool* '(or (and #t x) #f)))
     ;; => x
 
-    (display "¬(¬y)         = ")
+    (display (if win "NOT(NOT y)        = " "¬(¬y)         = "))
     (println (simplify-bool* '(not (not y))))
     ;; => y
 
-    (display "¬(a ∧ b)      = ")
+    (display (if win "NOT(a AND b)      = " "¬(a ∧ b)      = "))
     (println (simplify-bool* '(not (and a b))))
     ;; => (or (not a) (not b))
 
-    (display "¬(a ∨ b)      = ")
+    (display (if win "NOT(a OR b)       = " "¬(a ∨ b)      = "))
     (println (simplify-bool* '(not (or a b))))
     ;; => (and (not a) (not b))
 
-    (display "(x ∨ x)       = ")
+    (display (if win "(x OR x)          = " "(x ∨ x)       = "))
     (println (simplify-bool* '(or x x)))
     ;; => x
 
-    (display "¬(¬(p ∧ q))   = ")
+    (display (if win "NOT(NOT(p AND q)) = " "¬(¬(p ∧ q))   = "))
     (println (simplify-bool* '(not (not (and p q)))))
     ;; => (and p q)
 

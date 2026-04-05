@@ -2021,4 +2021,32 @@ BOOST_AUTO_TEST_CASE(test_syntax_rules_hygiene) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
 }
 
+// ============================================================================
+// platform primitive
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_platform_returns_symbol) {
+    // (platform) must return a symbol
+    LispVal res = run("(module m (define result (symbol? (platform))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_platform_is_known_value) {
+    // (platform) must be one of the four known platform symbols
+    LispVal res = run(
+        "(module m"
+        "  (define p (platform))"
+        "  (define result (or (eq? p 'Win32)"
+        "                     (eq? p 'Linux)"
+        "                     (eq? p 'Darwin)"
+        "                     (eq? p 'Unknown))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_platform_consistent) {
+    // Two calls to (platform) return eq? identical symbols (interned)
+    LispVal res = run("(module m (define result (eq? (platform) (platform))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

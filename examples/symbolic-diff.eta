@@ -129,19 +129,21 @@
 
     ;; ── Demonstrations ──────────────────────────────────────────────
 
-    (display "d/dx (x² + 3)      = ")
+    (define win (eq? (platform) 'Win32))
+
+    (display (if win "d/dx (x^2 + 3)     = " "d/dx (x² + 3)      = "))
     (println (D '(+ (* x x) 3) 'x))
     ;; => (* 2 x)
 
-    (display "d/dx (x·(x + 3))   = ")
+    (display (if win "d/dx (x*(x + 3))   = " "d/dx (x·(x + 3))   = "))
     (println (D '(* x (+ x 3)) 'x))
     ;; => (+ (+ x 3) x)
 
-    (display "d/dx sin(x²)       = ")
+    (display (if win "d/dx sin(x^2)      = " "d/dx sin(x²)       = "))
     (println (D '(sin (* x x)) 'x))
     ;; => (* (cos (* x x)) (* 2 x))
 
-    (display "d/dx (x + 1)³      = ")
+    (display (if win "d/dx (x + 1)^3     = " "d/dx (x + 1)³      = "))
     (println (D '(^ (+ x 1) 3) 'x))
     ;; => (* 3 (^ (+ x 1) 2))
 
