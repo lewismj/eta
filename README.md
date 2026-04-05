@@ -51,7 +51,10 @@ The implementation ships as three executables — an **interpreter**
 ```
  
 ---
- TLDR; Download the initial release and run examples in VSCode  [TLDR.md](TLDR.md)
+ ## TLDR;
+
+ Download the initial release and run examples in [VSCode](TLDR.md)
+
 ---
 
 ## Compilation Pipeline
