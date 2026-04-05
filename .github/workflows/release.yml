@@ -17,7 +17,6 @@ permissions:
 env:
   VCPKG_DEFAULT_TRIPLET: x64-linux
   CMAKE_BUILD_PARALLEL_LEVEL: 4
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ════════════════════════════════════════════════════════════════════
@@ -67,26 +66,14 @@ jobs:
         run: |
           cd editors/vscode
           npm ci
-          npm run compile
+          npx vsce package -o eta-lang.vsix --skip-license
 
       - name: Assemble bundle
         run: |
           PREFIX=${{ github.workspace }}/dist/${{ env.BUNDLE }}
-          VSCODE_DEST="$PREFIX/editors/vscode"
 
-          mkdir -p "$VSCODE_DEST/out" "$VSCODE_DEST/syntaxes" "$VSCODE_DEST/bin"
-
-          cp -r editors/vscode/out/*                      "$VSCODE_DEST/out/"
-          cp -r editors/vscode/syntaxes/*                 "$VSCODE_DEST/syntaxes/"
-          cp    editors/vscode/package.json               "$VSCODE_DEST/"
-          cp    editors/vscode/tsconfig.json              "$VSCODE_DEST/"
-          cp    editors/vscode/language-configuration.json "$VSCODE_DEST/"
-
-          # Bundle eta_lsp into the extension
-          [ -f "$PREFIX/bin/eta_lsp" ] && cp "$PREFIX/bin/eta_lsp" "$VSCODE_DEST/bin/"
-
-          # Production npm deps for extension
-          (cd "$VSCODE_DEST" && npm install --omit=dev) || true
+          mkdir -p "$PREFIX/editors"
+          cp editors/vscode/eta-lang.vsix "$PREFIX/editors/"
 
           # Install script + docs
           cp scripts/install.sh "$PREFIX/" && chmod +x "$PREFIX/install.sh"
@@ -150,30 +137,15 @@ jobs:
         run: |
           cd editors\vscode
           npm ci
-          npm run compile
+          npx vsce package -o eta-lang.vsix --skip-license
 
       - name: Assemble bundle
         shell: pwsh
         run: |
-          $prefix   = "${{ github.workspace }}\dist\${{ env.BUNDLE }}"
-          $vsDest   = "$prefix\editors\vscode"
+          $prefix = "${{ github.workspace }}\dist\${{ env.BUNDLE }}"
 
-          New-Item -ItemType Directory -Force `
-            "$vsDest\out","$vsDest\syntaxes","$vsDest\bin" | Out-Null
-
-          Copy-Item -Recurse -Force "editors\vscode\out\*"                      "$vsDest\out\"
-          Copy-Item -Recurse -Force "editors\vscode\syntaxes\*"                 "$vsDest\syntaxes\"
-          Copy-Item -Force          "editors\vscode\package.json"               "$vsDest\"
-          Copy-Item -Force          "editors\vscode\tsconfig.json"              "$vsDest\"
-          Copy-Item -Force          "editors\vscode\language-configuration.json" "$vsDest\"
-
-          if (Test-Path "$prefix\bin\eta_lsp.exe") {
-              Copy-Item "$prefix\bin\eta_lsp.exe" "$vsDest\bin\"
-          }
-
-          Push-Location $vsDest
-          npm install --omit=dev 2>$null
-          Pop-Location
+          New-Item -ItemType Directory -Force "$prefix\editors" | Out-Null
+          Copy-Item "editors\vscode\eta-lang.vsix" "$prefix\editors\"
 
           Copy-Item "scripts\install.ps1" "$prefix\" -ErrorAction SilentlyContinue
           Copy-Item "scripts\install.cmd" "$prefix\" -ErrorAction SilentlyContinue

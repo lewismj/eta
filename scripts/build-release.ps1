@@ -106,9 +106,9 @@ New-Item -ItemType Directory -Force -Path $EditorsDir | Out-Null
 
 Push-Location $VscodeSrc
 try {
-    & npm ci --silent
+    & npm ci
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
-    & npx @vscode/vsce package -o $VsixDest --skip-license
+    & npx vsce package -o $VsixDest --skip-license
     if ($LASTEXITCODE -ne 0) { throw "vsce package failed" }
 } finally {
     Pop-Location
