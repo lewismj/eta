@@ -43,7 +43,7 @@ The example implements **CVA** and **FVA**.
 
 ---
 
-## Model Setup
+## Setup
 
 ### Trade
 
@@ -72,7 +72,7 @@ discounting.
 
 ---
 
-## Financial Building Blocks
+## Building Blocks
 
 ### Discount factor
 
@@ -207,7 +207,7 @@ contributes exposure × discount × spread × time.
 
 ---
 
-## Total xVA
+## Total xVA (_Ignoring KVA etc._)
 
 $$\text{xVA} = \text{CVA} + \text{FVA}$$
 
@@ -235,12 +235,12 @@ adjoint = 1 and collects contributions for every input variable:
 ;; => (xva-value  #(∂/∂N  ∂/∂σ  ∂/∂r  ∂/∂λ  ∂/∂LGD  ∂/∂s_f))
 ```
 
-| Greek | Parameter | Risk Interpretation |
-|-------|-----------|---------------------|
-| ∂xVA/∂*N* | Notional | xVA per unit notional (linearity check) |
-| ∂xVA/∂*σ* | Volatility | **Vega** — exposure to vol moves |
-| ∂xVA/∂*r* | Risk-free rate | **Rho** — rate sensitivity of discounting & exposure |
-| ∂xVA/∂*λ* | Hazard rate | **CS01** — credit-spread sensitivity |
+|  Greek     | Parameter | Risk Interpretation |
+|------------|-----------|---------------------|
+| ∂xVA/∂*N*  | Notional | xVA per unit notional (linearity check) |
+| ∂xVA/∂*σ*  | Volatility | **Vega** — exposure to vol moves |
+| ∂xVA/∂*r*  | Risk-free rate | **Rho** — rate sensitivity of discounting & exposure |
+| ∂xVA/∂*λ*  | Hazard rate | **CS01** — credit-spread sensitivity |
 | ∂xVA/∂*LGD* | Loss given default | Recovery-rate sensitivity |
 | ∂xVA/∂*s_f* | Funding spread | Funding-spread sensitivity |
 
