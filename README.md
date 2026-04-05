@@ -51,6 +51,8 @@ The implementation ships as three executables — an **interpreter**
 ```
  
 ---
+ TLDR; Download the initial release and run examples in VSCode  [TLDR.md](TLDR.md)
+---
 
 ## Compilation Pipeline
 
@@ -130,7 +132,61 @@ flowchart LR
 
 ## Quick Start
 
-### Prerequisites
+### Option 1 — Pre-built Release (recommended)
+
+Download the latest release for your platform, unpack it, and run the installer:
+
+| Platform | Archive |
+|----------|---------|
+| Windows x64 | `eta-v0.0.1-win-x64.zip` |
+| Linux x86_64 | `eta-v0.0.1-linux-x86_64.tar.gz` |
+
+**Windows (PowerShell / Command Prompt):**
+```console
+cd eta-v0.0.1-win-x64
+.\install.cmd
+```
+
+**Linux / macOS:**
+```console
+cd eta-v0.0.1-linux-x86_64
+chmod +x install.sh && ./install.sh
+```
+
+The installer:
+- Adds `bin/` to your `PATH`
+- Sets `ETA_MODULE_PATH` so the runtime can locate the standard library
+- Installs the VS Code extension automatically if VS Code is detected
+
+> Open a **new** terminal after running the installer for the environment changes to take effect.
+
+**Try it out:**
+```console
+etai --help
+eta_repl
+etai examples/hello.eta
+```
+
+#### VS Code Setup
+
+The VS Code extension is installed automatically by the installer. You only need to point it at the executables inside the release bundle. Open VS Code settings (`Ctrl+,`) and search for **Eta**, or add the following to your `settings.json`:
+
+```json
+{
+  "eta.executablePath": "/path/to/eta-release/bin/etai",
+  "eta.lspPath":        "/path/to/eta-release/bin/eta_lsp"
+}
+```
+
+Then open the `examples/` folder (**File → Open Folder**), open any `.eta` file, and run it from the integrated terminal with `etai <file>.eta`.
+
+See [TLDR.md](TLDR.md) for a step-by-step walkthrough with screenshots.
+
+---
+
+### Option 2 — Build from Source
+
+#### Prerequisites
 
 | Tool | Version |
 |------|---------|
@@ -139,7 +195,6 @@ flowchart LR
 | Boost | ≥ 1.88 (`unit_test_framework`, `concurrent_flat_map`) |
 | Node.js / npm | ≥ 18 *(for VS Code extension)* |
 
-### Build & Run
 
 **Linux / macOS**
 ```bash
