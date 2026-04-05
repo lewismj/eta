@@ -143,7 +143,8 @@ private:
         fp_ = static_cast<uint32_t>(stack_.size() - argc);
         pc_ = 0;
         // Ensure we don't chop off arguments if stack_size is small
-        uint32_t needed_size = std::max(func->stack_size, argc);
+        // Use (std::max) to avoid collision with the max() macro on Windows
+        uint32_t needed_size = (std::max)(func->stack_size, argc);
         stack_.resize(fp_ + needed_size, Nil);
     }
 

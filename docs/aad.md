@@ -518,7 +518,7 @@ function.
 
 ---
 
-## Next: Quantitative Finance with AAD
+## Next: xVA Calculations with AAD
 
 The [xVA example](xva.md) builds on this AD library to compute
 **Credit Valuation Adjustment (CVA)** and **Funding Valuation

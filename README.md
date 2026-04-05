@@ -18,7 +18,6 @@
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
   <a href="docs/examples.md">Language Examples</a> ·
   <a href="docs/aad.md">Reverse Mode Adjoint Automatic Differentiation Example</a> ·
-  <a href="docs/xva.md">xVA Calculation Example with AAD</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
 </p>
 
@@ -112,6 +111,23 @@ flowchart LR
 
 ---
 
+
+## Documentation
+
+| Page                                     | Contents                                                                                 |
+|------------------------------------------|------------------------------------------------------------------------------------------|
+| **[Architecture](docs/architecture.md)** | Full system diagram, phase-by-phase walkthrough, Core IR node types                      |
+| **[NaN-Boxing](docs/nanboxing.md)**      | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                    |
+| **[Bytecode & VM](docs/bytecode-vm.md)** | Opcode reference, end-to-end compilation trace, call stack model, TCO                    |
+| **[Runtime & GC](docs/runtime.md)**      | Heap architecture, object kinds, mark-sweep GC, intern table, factory                    |
+| **[Modules & Stdlib](docs/modules.md)**  | Module syntax, linker phases, import filters, standard library reference                 |
+| **[Language Guide](docs/examples.md)**   | Guided tour of the language using simple example programs with expected output           |
+| **[AAD](docs/aad.md)**                   | Reverse-mode automatic differentiation walkthrough                                       |
+| **[xVA](docs/xva.md)**                   | Quantitative finance: CVA, FVA, and sensitivities via AAD                                |
+| **[Next Steps](docs/next-steps.md)**     | Roadmap: bytecode serialization & `etac`, FFI, unification instruction, example programs |
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -198,22 +214,6 @@ The prelude auto-loads the following modules:
     (println (foldl + 0 (filter even? xs)))  ;; 20
   ))
 ```
-
----
-
-## Documentation
-
-| Page                                     | Contents                                                                                 |
-|------------------------------------------|------------------------------------------------------------------------------------------|
-| **[Architecture](docs/architecture.md)** | Full system diagram, phase-by-phase walkthrough, Core IR node types                      |
-| **[NaN-Boxing](docs/nanboxing.md)**      | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                    |
-| **[Bytecode & VM](docs/bytecode-vm.md)** | Opcode reference, end-to-end compilation trace, call stack model, TCO                    |
-| **[Runtime & GC](docs/runtime.md)**      | Heap architecture, object kinds, mark-sweep GC, intern table, factory                    |
-| **[Modules & Stdlib](docs/modules.md)**  | Module syntax, linker phases, import filters, standard library reference                 |
-| **[Language Guide](docs/examples.md)**   | Guided tour of the language using simple example programs with expected output           |
-| **[AAD](docs/aad.md)**                   | Reverse-mode automatic differentiation walkthrough                                       |
-| **[xVA](docs/xva.md)**                   | Quantitative finance: CVA, FVA, and sensitivities via AAD                                |
-| **[Next Steps](docs/next-steps.md)**     | Roadmap: bytecode serialization & `etac`, FFI, unification instruction, example programs |
 
 ---
 

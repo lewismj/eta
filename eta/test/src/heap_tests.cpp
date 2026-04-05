@@ -15,10 +15,17 @@ namespace {
     struct BigPod { char data[4096]; }; // for soft-limit testing
 
     // Type with destructor that throws to exercise deallocation error path
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4722) // destructor never returns: intentional for this test fixture
+#endif
     struct ThrowOnDtor {
         int x;
         ~ThrowOnDtor() noexcept(false) { throw std::runtime_error("boom"); }
     };
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
     // Helper to unwrap expected OK
     template <typename T, typename E>
