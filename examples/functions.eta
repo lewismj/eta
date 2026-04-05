@@ -8,8 +8,8 @@
   (begin
 
     ;; ── Named functions with defun ──────────────────────────────────
-    (defun square (x) (* x x))
-    (println (square 7))         ; => 49
+    (defun sq (x) (* x x))
+    (println (sq 7))         ; => 49
 
     ;; ── Recursive functions ─────────────────────────────────────────
     (defun factorial (n)

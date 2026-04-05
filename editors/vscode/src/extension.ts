@@ -24,12 +24,31 @@ import {
 
 let client: LanguageClient | undefined;
 
+function isFile(p: string): boolean {
+    try { return fs.statSync(p).isFile(); } catch { return false; }
+}
+
 function findServerBinary(context: ExtensionContext): string | undefined {
     // 1. Check user configuration
     const config = workspace.getConfiguration('eta.lsp');
-    const configPath = config.get<string>('serverPath', '');
-    if (configPath && fs.existsSync(configPath)) {
-        return configPath;
+    const configPath = config.get<string>('serverPath', '').trim();
+    if (configPath) {
+        // Exact path to a file
+        if (isFile(configPath)) {
+            return configPath;
+        }
+        // User may have pointed to the bin/ directory — try common names inside it
+        for (const name of ['eta_lsp.exe', 'eta_lsp']) {
+            const candidate = path.join(configPath, name);
+            if (isFile(candidate)) {
+                return candidate;
+            }
+        }
+        // Path was explicitly set but nothing was found — warn rather than silently falling through
+        window.showWarningMessage(
+            `Eta LSP: configured serverPath "${configPath}" does not point to a valid executable.`
+        );
+        return undefined;
     }
 
     // 2. Check bundled binary inside the extension directory
@@ -39,7 +58,7 @@ function findServerBinary(context: ExtensionContext): string | undefined {
         path.join(context.extensionPath, 'bin', 'eta_lsp.exe'),
     ];
     for (const c of bundledCandidates) {
-        if (fs.existsSync(c)) {
+        if (isFile(c)) {
             return c;
         }
     }
@@ -56,7 +75,7 @@ function findServerBinary(context: ExtensionContext): string | undefined {
                 path.join(folder.uri.fsPath, 'build', 'eta', 'lsp', 'eta_lsp.exe'),
             ];
             for (const c of candidates) {
-                if (fs.existsSync(c)) {
+                if (isFile(c)) {
                     return c;
                 }
             }
@@ -181,7 +200,7 @@ class EtaDebugSession {
         let etai = process.platform === 'win32' ? 'etai.exe' : 'etai';
         const serverDir = path.dirname(this.lspServerPath);
         const candidate = path.join(serverDir, etai);
-        if (fs.existsSync(candidate)) {
+        if (isFile(candidate)) {
             etai = candidate;
         }
 
