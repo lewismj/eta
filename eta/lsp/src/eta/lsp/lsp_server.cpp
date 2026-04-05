@@ -24,6 +24,7 @@
 #include "eta/reader/sexpr_utils.h"
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/runtime/builtin_env.h"
+#include "eta/runtime/builtin_names.h"
 
 namespace eta::lsp {
 
@@ -511,7 +512,9 @@ void LspServer::validate_document(const std::string& uri) {
 
     // ── Phase 4: Semantic Analysis ────────────────────────────────────
     semantics::SemanticAnalyzer sa;
-    auto sem_res = sa.analyze_all(all_forms, linker);
+    runtime::BuiltinEnvironment builtins;
+    runtime::register_builtin_names(builtins);
+    auto sem_res = sa.analyze_all(all_forms, linker, builtins);
     if (!sem_res) {
         const auto& err = sem_res.error();
         LspDiagnostic d;

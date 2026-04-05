@@ -86,13 +86,65 @@ function findServerBinary(context: ExtensionContext): string | undefined {
     return 'eta_lsp';
 }
 
+function findInterpreterBinary(lspPath: string | undefined, context: ExtensionContext): string {
+    const exe = process.platform === 'win32' ? 'etai.exe' : 'etai';
+
+    // 1. Next to the LSP binary (most common case after an install)
+    if (lspPath) {
+        const candidate = path.join(path.dirname(lspPath), exe);
+        if (isFile(candidate)) { return candidate; }
+    }
+
+    // 2. Bundled alongside the extension
+    const bundled = path.join(context.extensionPath, 'bin', exe);
+    if (isFile(bundled)) { return bundled; }
+
+    // 3. Workspace build output
+    const workspaceFolders = workspace.workspaceFolders;
+    if (workspaceFolders) {
+        for (const folder of workspaceFolders) {
+            for (const rel of [
+                path.join('out', 'wsl-clang-release', 'eta', 'interpreter', exe),
+                path.join('out', 'build', 'eta', 'interpreter', exe),
+                path.join('build', 'eta', 'interpreter', exe),
+                path.join('build-release', 'eta', 'interpreter', exe),
+            ]) {
+                const c = path.join(folder.uri.fsPath, rel);
+                if (isFile(c)) { return c; }
+            }
+        }
+    }
+
+    // 4. Check user-configured serverPath directory (may contain etai too)
+    const configDir = workspace.getConfiguration('eta.lsp').get<string>('serverPath', '').trim();
+    if (configDir) {
+        const c = path.join(configDir, exe);
+        if (isFile(c)) { return c; }
+    }
+
+    // 5. Fall back to PATH
+    return exe;
+}
+
 export function activate(context: ExtensionContext) {
+    // ── Always register the debug adapter ──────────────────────────
+    // The debug adapter finds and runs etai independently of the LSP.
+    // It must be registered before any early returns so "Run and Debug"
+    // works even when the LSP binary isn't present.
+    const serverPath = findServerBinary(context);
+    const etaiPath   = findInterpreterBinary(serverPath, context);
+
+    const factory = new EtaDebugAdapterFactory(etaiPath);
+    context.subscriptions.push(
+        debug.registerDebugAdapterDescriptorFactory('eta', factory)
+    );
+
+    // ── LSP setup — can be disabled or unavailable independently ───
     const enabled = workspace.getConfiguration('eta.lsp').get<boolean>('enabled', true);
     if (!enabled) {
         return;
     }
 
-    const serverPath = findServerBinary(context);
     if (!serverPath) {
         window.showWarningMessage(
             'Eta LSP server not found. Set eta.lsp.serverPath in settings or build the eta_lsp target.'
@@ -128,12 +180,6 @@ export function activate(context: ExtensionContext) {
     );
 
     client.start();
-
-    // Register the Eta debug adapter
-    const factory = new EtaDebugAdapterFactory(serverPath);
-    context.subscriptions.push(
-        debug.registerDebugAdapterDescriptorFactory('eta', factory)
-    );
 }
 
 export function deactivate(): Thenable<void> | undefined {
@@ -146,11 +192,11 @@ export function deactivate(): Thenable<void> | undefined {
 // ── Debug adapter ─────────────────────────────────────────────────────────
 
 class EtaDebugAdapterFactory implements DebugAdapterDescriptorFactory {
-    constructor(private readonly lspServerPath: string) {}
+    constructor(private readonly etaiPath: string) {}
 
     createDebugAdapterDescriptor(_session: DebugSession): DebugAdapterDescriptor {
         return new DebugAdapterInlineImplementation(
-            new EtaDebugSession(this.lspServerPath)
+            new EtaDebugSession(this.etaiPath)
         );
     }
 }
@@ -162,7 +208,7 @@ class EtaDebugSession {
     private _proc: cp.ChildProcess | undefined;
     private _seq = 1;
 
-    constructor(private readonly lspServerPath: string) {}
+    constructor(private readonly etaiPath: string) {}
 
     handleMessage(msg: DebugProtocolMessage): void {
         const m = msg as any;
@@ -196,14 +242,6 @@ class EtaDebugSession {
             return;
         }
 
-        // Locate etai next to the LSP binary, or fall back to PATH
-        let etai = process.platform === 'win32' ? 'etai.exe' : 'etai';
-        const serverDir = path.dirname(this.lspServerPath);
-        const candidate = path.join(serverDir, etai);
-        if (isFile(candidate)) {
-            etai = candidate;
-        }
-
         // Build environment
         const config = workspace.getConfiguration('eta.lsp');
         const modulePath = config.get<string>('modulePath', '') || process.env['ETA_MODULE_PATH'] || '';
@@ -213,7 +251,7 @@ class EtaDebugSession {
         const extraArgs: string[] = m.arguments?.args ?? [];
         this._respond(m, {});
 
-        this._proc = cp.spawn(etai, [program, ...extraArgs], { env });
+        this._proc = cp.spawn(this.etaiPath, [program, ...extraArgs], { env });
 
         this._proc.stdout?.on('data', (chunk: Buffer) => {
             this._event('output', { category: 'stdout', output: chunk.toString() });
@@ -224,8 +262,8 @@ class EtaDebugSession {
         this._proc.on('error', (err) => {
             this._event('output', {
                 category: 'stderr',
-                output: `Failed to launch etai: ${err.message}\n` +
-                        `Make sure etai is built and on PATH, or set eta.lsp.serverPath.\n`,
+                output: `Failed to launch etai (${this.etaiPath}): ${err.message}\n` +
+                        `Make sure etai is built and on PATH, or set eta.lsp.serverPath to your bin/ directory.\n`,
             });
             this._event('exited', { exitCode: 1 });
             this._event('terminated', {});
