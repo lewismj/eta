@@ -17,6 +17,7 @@
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
   <a href="docs/examples.md">Language Examples</a> ·
+  <a href="docs/aad.md">Reverse Mode Adjoint Automatic Differentiation Example</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
 </p>
 

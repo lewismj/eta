@@ -11,16 +11,18 @@ etai examples/hello.eta
 
 ## Quick Reference
 
-| Example | Key Concepts |
-|---------|-------------|
-| [`hello.eta`](#helloeta) | Minimal program, `println`, `defun`, recursion |
-| [`basics.eta`](#basicseta) | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, quoting |
-| [`functions.eta`](#functionseta) | `defun`, `lambda`, closures, tail recursion, variadic args, `letrec` |
-| [`higher-order.eta`](#higher-ordereta) | `map*`, `filter`, `foldl`/`foldr`, `reduce`, `sort`, `zip`, `take`/`drop`, `range` |
-| [`composition.eta`](#compositioneta) | `compose`, `flip`, `constantly`, `negate`, manual currying, pipelines |
-| [`recursion.eta`](#recursioneta) | Fibonacci, list reversal, deep flatten, Ackermann, Towers of Hanoi |
+| Example                                            | Key Concepts |
+|----------------------------------------------------|-------------|
+| [`hello.eta`](#helloeta)                           | Minimal program, `println`, `defun`, recursion |
+| [`basics.eta`](#basicseta)                         | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, quoting |
+| [`functions.eta`](#functionseta)                   | `defun`, `lambda`, closures, tail recursion, variadic args, `letrec` |
+| [`higher-order.eta`](#higher-ordereta)             | `map*`, `filter`, `foldl`/`foldr`, `reduce`, `sort`, `zip`, `take`/`drop`, `range` |
+| [`composition.eta`](#compositioneta)               | `compose`, `flip`, `constantly`, `negate`, manual currying, pipelines |
+| [`recursion.eta`](#recursioneta)                   | Fibonacci, list reversal, deep flatten, Ackermann, Towers of Hanoi |
 | [`boolean-simplifier.eta`](#boolean-simplifiereta) | Symbolic tree rewriting, De Morgan's laws, fixed-point simplification |
-| [`symbolic-diff.eta`](#symbolic-diffeta) | Computer algebra: differentiation rules, algebraic simplification |
+| [`symbolic-diff.eta`](#symbolic-diffeta)           | Computer algebra: differentiation rules, algebraic simplification |
+| [`aad.eta`](#aadeta)                               | Reverse-mode AD, closures as backpropagators, `define-syntax`, `grad` |
+| [`modules and imports`](#imports)                 | `import`, `export`, `only`, `except`, `rename`, `prefix` |
 
 ---
 
@@ -321,9 +323,113 @@ d/dx y (wrt x)     = 0
 
 ---
 
+## [aad — adjoint algorithmic differentiation](../examples/aad.eta)
+
+A closure-based reverse-mode AD library that computes exact gradients.
+See the full [AAD walkthrough](aad.md) for detailed commentary and
+worked examples.
+
+```scheme
+;; Dual = (primal . backprop-fn)
+;; backprop-fn : adjoint → list of (index . adjoint-contribution)
+
+;; Lifted operations propagate adjoints through the computation graph
+(defun d+ (a b) ...)    ;; ∂z/∂a = 1,  ∂z/∂b = 1
+(defun d* (a b) ...)    ;; ∂z/∂a = b,  ∂z/∂b = a
+(defun dsin (a) ...)    ;; ∂z/∂a = cos(a)
+
+;; The `ad` macro rewrites natural syntax into lifted calls
+(define-syntax ad
+  (syntax-rules (+ * - / sin cos exp log)
+    ((_ (+ a b))  (d+ (ad a) (ad b)))
+    ((_ (* a b))  (d* (ad a) (ad b)))
+    ...
+    ((_ x)        x)))
+
+;; grad: compute gradient of f at a given point
+(grad (lambda (x y) (ad (+ (* x y) (sin x)))) '(2 3))
+;; => (8.909.. #(2.583.. 2))
+;;    primal = 2*3 + sin(2)
+;;    ∂f/∂x = y + cos(x) = 3 + cos(2) ≈ 2.584
+;;    ∂f/∂y = x = 2
+```
+
+---
+
+## Imports
+
+Eta's module system controls which names are visible across files.
+Every source file contains one or more `(module …)` forms with
+explicit `import` and `export` declarations.
+
+### Defining a reusable module
+
+Save as **`greeting.eta`**:
+
+```scheme
+(module greeting
+  (import std.io)
+  (export say-hello)
+  (begin
+    (defun say-hello (name)
+      (println (string-append "Hello, " name "!")))))
+```
+
+### Importing from another file
+
+Save as **`app.eta`** in the same directory:
+
+```scheme
+(module app
+  (import greeting)
+  (begin
+    (say-hello "world")))
+```
+
+```bash
+etai app.eta          # prints: Hello, world!
+```
+
+`etai` auto-adds the input file's directory to the module search path.
+For modules in other directories use `--path` or `ETA_MODULE_PATH`.
+
+### Import clause variants
+
+```scheme
+;; All exports
+(import greeting)
+
+;; Only specific names
+(import (only std.math pi e))
+
+;; Everything except certain names
+(import (except std.collections sort))
+
+;; Rename on import
+(import (rename std.math (pi PI) (e E)))
+
+;; Prefix — namespace-style qualified access
+(import (prefix std.math math:))
+;; use math:pi, math:even?, math:gcd, etc.
+```
+
+Prefix is especially useful when two modules export the same name:
+
+```scheme
+(module app
+  (import (prefix mod-a a:))
+  (import (prefix mod-b b:))
+  (begin
+    (a:process data)
+    (b:process data)))
+```
+
+---
+
 ## Running in the REPL
 
-All the building blocks are available interactively:
+The prelude is auto-loaded so all standard library functions are
+available immediately:
 
 ```
 $ eta_repl
@@ -339,5 +445,15 @@ eta> (foldl + 0 (range 1 101))
 eta> (define double (lambda (x) (* 2 x)))
 eta> (map* (compose double square) '(1 2 3))
 => (2 8 18)
+```
+
+You can also import user-defined modules in the REPL.  Point the REPL
+at the directory containing your `.eta` files with `--path`:
+
+```
+$ eta_repl --path ./mylibs
+eta> (import greeting)
+eta> (say-hello "REPL")
+Hello, REPL!
 ```
 

@@ -106,28 +106,151 @@ using the installed layout.
 
 ## Run from the Command Line
 
-```bash
-# Run a script
-etai examples/eta/hello.eta
+### Running a script
 
-# Interactive REPL
+```bash
+etai examples/hello.eta
+```
+
+### Interactive REPL
+
+```bash
 eta_repl
 ```
 
-In the REPL, the prelude is loaded automatically so all standard library
-functions are available immediately (no explicit `import` needed):
+The REPL auto-loads `std.prelude`, which re-exports every name from
+`std.core`, `std.math`, `std.io`, and `std.collections`.  All standard
+library functions are available immediately — no explicit `import`
+needed:
 
 ```
 η> (atom? 42)
+#t
+η> (even? 6)
 #t
 η> (filter (lambda (x) (> x 3)) (range 1 7))
 (4 5 6)
 ```
 
-You can still `import` additional user-defined modules if needed:
+You can define and use your own functions interactively:
 
 ```
-η> (import my-lib)
+η> (defun square (x) (* x x))
+η> (square 7)
+=> 49
+```
+
+You can import user-defined modules too.  Use `--path` to tell the REPL
+where to find your `.eta` files:
+
+```bash
+eta_repl --path ./mylibs
+```
+
+```
+η> (import greeting)
+η> (say-hello "REPL")
+Hello, REPL!
+```
+
+---
+
+## Modules & Imports
+
+### Standard Library Modules
+
+| Module               | Description                              |
+|----------------------|------------------------------------------|
+| `std.core`           | `atom?`, `compose`, `flip`, `iota`, …    |
+| `std.math`           | `pi`, `e`, `even?`, `gcd`, `expt`, …     |
+| `std.io`             | `println`, `read-line`, port helpers      |
+| `std.collections`    | `filter`, `foldl`, `sort`, `range`, …     |
+| `std.test`           | `make-test`, `assert-equal`, `run`, …     |
+| `std.prelude`        | Re-exports everything from the above      |
+
+### Writing a module
+
+A module groups definitions behind an explicit `import`/`export`
+interface.  Save this as **`greeting.eta`**:
+
+```scheme
+(module greeting
+  (import std.io)
+  (export say-hello)
+  (begin
+    (defun say-hello (name)
+      (println (string-append "Hello, " name "!")))))
+```
+
+Run it directly:
+
+```bash
+etai greeting.eta
+```
+
+### Importing your module from another file
+
+Create **`app.eta`** in the same directory:
+
+```scheme
+(module app
+  (import greeting)
+  (begin
+    (say-hello "world")))
+```
+
+`etai` auto-adds the input file's directory to the module search path,
+so sibling modules are found automatically:
+
+```bash
+etai app.eta          # prints: Hello, world!
+```
+
+For modules in different directories, use `--path` or `ETA_MODULE_PATH`
+(`;`-separated on Windows, `:`-separated on Linux):
+
+```bash
+etai --path ./libs app.eta
+
+# or
+export ETA_MODULE_PATH=./libs        # Linux
+set ETA_MODULE_PATH=.\libs           # Windows
+etai app.eta
+```
+
+### Import clause variants
+
+Eta supports several ways to control which names are imported:
+
+```scheme
+;; Import all exported names
+(import greeting)
+
+;; Import only specific names
+(import (only std.math pi e))
+
+;; Import everything except certain names
+(import (except std.collections sort))
+
+;; Rename on import
+(import (rename std.math (pi PI) (e E)))
+
+;; Prefix — all imported names gain a prefix (namespace-style)
+(import (prefix std.math math:))
+;; now use math:pi, math:even?, math:gcd, etc.
+```
+
+The `prefix` clause is particularly useful when two modules export the
+same name:
+
+```scheme
+(module app
+  (import (prefix mod-a a:))
+  (import (prefix mod-b b:))
+  (begin
+    ;; No conflict — each name is qualified
+    (a:process data)
+    (b:process data)))
 ```
 
 ---
@@ -149,27 +272,6 @@ You can still `import` additional user-defined modules if needed:
 
 ---
 
-## Standard Library Modules
-
-| Module               | Description                              |
-|----------------------|------------------------------------------|
-| `std.core`           | `atom?`, `compose`, `flip`, `iota`, …    |
-| `std.math`           | `pi`, `e`, `even?`, `gcd`, `expt`, …     |
-| `std.io`             | `println`, `read-line`, port helpers      |
-| `std.collections`    | `filter`, `foldl`, `sort`, `range`, …     |
-| `std.test`           | `make-test`, `assert-equal`, `run`, …     |
-| `std.prelude`        | Re-exports everything from the above      |
-
-Example user program:
-
-```scheme
-(module hello
-  (import std.io)
-  (begin
-    (println "Hello, world!")))
-```
-
----
 
 ## GitHub Actions CI
 
