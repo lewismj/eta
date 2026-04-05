@@ -292,14 +292,15 @@ will:
 
 ```scheme
 ;; Define a causal DAG
-(define smoking-dag
-  '((smoking -> tar)
-    (tar     -> cancer)
-    (smoking -> cancer)))
+(define weather-dag
+  '((rain       -> wet-grass)
+    (sprinkler  -> wet-grass)
+    (season     -> rain)
+    (season     -> sprinkler)))
 
-;; Query: is P(cancer | do(smoking)) identifiable?
-(do-identify smoking-dag 'cancer 'smoking)
-;; → (adjust (tar) P(cancer | tar, smoking) P(tar | smoking))
+;; Query: is P(wet-grass | do(sprinkler)) identifiable?
+(do-identify weather-dag 'wet-grass 'sprinkler)
+;; → (adjust (rain) P(wet-grass | rain, sprinkler) P(rain | season) P(season))
 ```
 
 ### 4.2 — Causal Factor Analysis
