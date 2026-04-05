@@ -72,6 +72,12 @@ by index rather than raw pointer.
 | `Call` | `argc` | args… callee → result | Call function with `argc` arguments |
 | `TailCall` | `argc` | args… callee → *(reuses frame)* | Tail call — no new frame |
 | `Return` | — | val → *(to caller)* | Return top of stack to caller |
+| `Values` | `n` | v₁…vₙ → multiple-values | Package n values |
+| `CallWithValues` | — | producer consumer → result | `(call-with-values producer consumer)` |
+| `DynamicWind` | — | before body after → result | `(dynamic-wind before body after)` |
+| `CallCC` | — | consumer → result | `(call/cc consumer)` |
+| `Apply` | `argc` | args… proc → result | Apply; last arg is list to unpack |
+| `TailApply` | `argc` | args… proc → *(reuses frame)* | Tail-position apply |
 
 ### Closures
 
@@ -92,17 +98,6 @@ by index rather than raw pointer.
 | `Cons` | — | car cdr → pair | Allocate cons cell |
 | `Car` | — | pair → car | First element |
 | `Cdr` | — | pair → cdr | Rest element |
-
-### Advanced Control Flow
-
-| Opcode | Arg | Stack Effect | Description |
-|--------|-----|-------------|-------------|
-| `Values` | `n` | v₁…vₙ → multiple-values | Package n values |
-| `CallWithValues` | — | producer consumer → result | `(call-with-values producer consumer)` |
-| `DynamicWind` | — | before body after → result | `(dynamic-wind before body after)` |
-| `CallCC` | — | consumer → result | `(call/cc consumer)` |
-| `Apply` | `argc` | args… proc → result | Apply; last arg is list to unpack |
-| `TailApply` | `argc` | args… proc → *(reuses frame)* | Tail-position apply |
 
 ---
 
