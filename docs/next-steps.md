@@ -9,12 +9,11 @@
 ## Overview
 
 This document outlines the four major workstreams planned for Eta's next
-development phase. Together they move the language from an interpreted-only
-system to a platform capable of ahead-of-time compilation, native
-interoperability with external libraries, logic programming, and
-real-world causal-inference applications.
+development phase. 
 
 This is in addition to benchmarking, bug-fixing, and general polish across the codebase.
+The general BAU work will also include networking extensions to the ports. 
+
 
 ```mermaid
 flowchart LR
