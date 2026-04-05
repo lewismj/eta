@@ -1,4 +1,4 @@
-# Eta — Examples
+# Eta — Language Examples 
 
 A tour of the example programs in [`examples/`](../examples/).  Each file
 is a self-contained module that can be run directly:

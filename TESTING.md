@@ -114,15 +114,20 @@ etai examples/eta/hello.eta
 eta_repl
 ```
 
-In the REPL, the prelude is loaded automatically:
+In the REPL, the prelude is loaded automatically so all standard library
+functions are available immediately (no explicit `import` needed):
 
 ```
-η> (import std.core)
 η> (atom? 42)
 #t
-η> (import std.collections)
 η> (filter (lambda (x) (> x 3)) (range 1 7))
 (4 5 6)
+```
+
+You can still `import` additional user-defined modules if needed:
+
+```
+η> (import my-lib)
 ```
 
 ---

@@ -64,8 +64,24 @@ static bool is_definition(const std::string& input) {
     // Check if it starts with a definition keyword
     for (const char* kw : {"define ", "define\t", "define\n",
                             "defun ", "defun\t", "defun\n",
-                            "def ", "def\t", "def\n"}) {
+                            "def ", "def\t", "def\n",
+                            "define-syntax ", "define-syntax\t", "define-syntax\n"}) {
         std::string_view rest(input.data() + pos, input.size() - pos);
+        if (rest.starts_with(kw)) return true;
+    }
+    return false;
+}
+
+/// Detect whether a form is an (import ...) directive.
+static bool is_import(const std::string& input) {
+    auto pos = input.find_first_not_of(" \t\n\r");
+    if (pos == std::string::npos || input[pos] != '(') return false;
+    pos++; // skip '('
+    pos = input.find_first_not_of(" \t\n\r", pos);
+    if (pos == std::string::npos) return false;
+
+    std::string_view rest(input.data() + pos, input.size() - pos);
+    for (const char* kw : {"import ", "import\t", "import\n", "import)"}) {
         if (rest.starts_with(kw)) return true;
     }
     return false;
@@ -317,11 +333,15 @@ int main(int argc, char* argv[]) {
         // Collect user-defined names for auto-export (NOT the result binding)
         std::vector<std::string> user_defines;
         std::string body;
+        std::string user_imports;   // explicit (import ...) forms from user input
         bool last_is_expr = false;
 
         for (std::size_t i = 0; i < forms.size(); ++i) {
             bool is_last = (i == forms.size() - 1);
-            if (is_definition(forms[i])) {
+            if (is_import(forms[i])) {
+                // Place import directives at the module level, not in (begin ...)
+                user_imports += "  " + forms[i] + "\n";
+            } else if (is_definition(forms[i])) {
                 auto name = extract_define_name(forms[i]);
                 if (!name.empty()) user_defines.push_back(name);
                 body += "    " + forms[i] + "\n";
@@ -355,6 +375,7 @@ int main(int argc, char* argv[]) {
         std::string wrapped = "(module " + module_name + "\n"
                               + exports
                               + imports
+                              + user_imports
                               + "  (begin\n"
                               + body
                               + "  ))";

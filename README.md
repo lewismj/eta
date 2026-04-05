@@ -1,4 +1,9 @@
-![eta_logo.svg](docs/img/eta.svg)
+<!--[eta_logo.svg](docs/img/eta.svg) -->
+
+<p align="center">
+  <img src="docs/img/eta.svg" alt="eta logo">
+</p>
+
 
 <p align="center">
   <strong>η (Eta)</strong><br>
@@ -11,7 +16,7 @@
   <a href="docs/bytecode-vm.md">Bytecode &amp; VM</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
-  <a href="docs/examples.md">Simple Examples</a> ·
+  <a href="docs/examples.md">Language Examples</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
 </p>
 
@@ -43,6 +48,25 @@ The implementation ships as three executables — a **file interpreter**
 
     (println (factorial 20))))
 ```
+ 
+[Next Steps](docs/next-steps.md):
+
+
+ Technical improvements:
+
+ - bytecode serialization format.
+ - a foreign function interface (FFI) for calling C/C++ code.
+ - a better garbage collector.
+ - general bug fixing and performance improvements (standard VM optimisations).
+ - extend ports to support networking.
+
+Functional changes are centred around three core goals:
+
+ - Additional opcodes in the VM to support Prolog-style unification and backtracking.
+ - PyTorch bindings.
+ - Implementation of Do-Calculus.
+
+ The above three with the socket IO are the most pressing for ML uses cases planned.
 
 ---
 
