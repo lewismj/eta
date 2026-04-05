@@ -360,8 +360,7 @@ worked examples.
 ## [xva — valuation adjustments with AAD](../examples/xva.eta)
 
 Builds on the AD library to compute **CVA** (Credit Valuation
-Adjustment) and **FVA** (Funding Valuation Adjustment) — the same
-workload that made AAD famous in quantitative finance.  See the full
+Adjustment) and **FVA** (Funding Valuation Adjustment . See the full
 [xVA walkthrough](xva.md) for detailed commentary.
 
 ```scheme

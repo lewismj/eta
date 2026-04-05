@@ -374,6 +374,140 @@ static std::string aad_module(const std::string& body) {
     return std::string("(module m\n") + AAD_LIB + "\n" + body + "\n)";
 }
 
+// ============================================================================
+// The xVA library: financial building blocks for CVA/FVA built on top of
+// the AAD library.  Inlined so each test is a self-contained single module.
+// ============================================================================
+
+static const char* XVA_LIB = R"(
+    ;; ── Additional AD primitives ─────────────────────────────────────
+
+    (defun dsqrt (a)
+      (dexp (d* 0.5 (dlog a))))
+
+    (defun dpow (a b)
+      (dexp (d* b (dlog a))))
+
+    ;; ── Financial building blocks ────────────────────────────────────
+
+    (defun discount-factor (r t)
+      (dexp (d* (d* -1 r) t)))
+
+    (defun survival-prob (hazard-rate t)
+      (dexp (d* (d* -1 hazard-rate) t)))
+
+    (defun default-prob (hazard-rate t)
+      (d- 1 (survival-prob hazard-rate t)))
+
+    (defun marginal-pd (hazard-rate t1 t2)
+      (d- (default-prob hazard-rate t2)
+          (default-prob hazard-rate t1)))
+
+    (defun expected-exposure (notional sigma t)
+      (d* notional (d* sigma (dsqrt t))))
+
+    ;; ── CVA ──────────────────────────────────────────────────────────
+
+    (defun cva-bucket (notional sigma r hazard-rate lgd t-prev t-curr)
+      (let ((t-mid (* 0.5 (+ t-prev t-curr))))
+        (d* lgd
+          (d* (expected-exposure notional sigma t-mid)
+            (d* (discount-factor r t-mid)
+                (marginal-pd hazard-rate t-prev t-curr))))))
+
+    (defun cva-loop (notional sigma r hazard-rate lgd times prev-t acc)
+      (if (null? times)
+          acc
+          (cva-loop notional sigma r hazard-rate lgd
+            (cdr times)
+            (car times)
+            (d+ acc
+                (cva-bucket notional sigma r hazard-rate lgd
+                            prev-t (car times))))))
+
+    (defun compute-cva (notional sigma r hazard-rate lgd)
+      (cva-loop notional sigma r hazard-rate lgd
+        '(0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0)
+        0.0
+        (make-const 0)))
+
+    ;; ── FVA ──────────────────────────────────────────────────────────
+
+    (defun fva-bucket (notional sigma r funding-spread t-prev t-curr)
+      (let ((t-mid (* 0.5 (+ t-prev t-curr)))
+            (dt    (- t-curr t-prev)))
+        (d* (expected-exposure notional sigma t-mid)
+          (d* (discount-factor r t-mid)
+            (d* funding-spread dt)))))
+
+    (defun fva-loop (notional sigma r funding-spread times prev-t acc)
+      (if (null? times)
+          acc
+          (fva-loop notional sigma r funding-spread
+            (cdr times)
+            (car times)
+            (d+ acc
+                (fva-bucket notional sigma r funding-spread
+                            prev-t (car times))))))
+
+    (defun compute-fva (notional sigma r funding-spread)
+      (fva-loop notional sigma r funding-spread
+        '(0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0)
+        0.0
+        (make-const 0)))
+
+    ;; ── Total xVA ────────────────────────────────────────────────────
+
+    (defun total-xva (notional sigma r hazard-rate lgd funding-spread)
+      (d+ (compute-cva notional sigma r hazard-rate lgd)
+          (compute-fva notional sigma r funding-spread)))
+)";
+
+// Helper: wrap AAD_LIB + XVA_LIB + test body in a single module
+static std::string xva_module(const std::string& body) {
+    return std::string("(module m\n") + AAD_LIB + "\n" + XVA_LIB + "\n" + body + "\n)";
+}
+
+// ── C++ reference implementations for expected values ────────────────────────
+
+static double cpp_expected_cva(double N, double sigma, double r, double lam, double lgd) {
+    double times[] = {0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0};
+    double cva = 0, prev_t = 0;
+    for (double t : times) {
+        double t_mid = 0.5 * (prev_t + t);
+        double ee  = N * sigma * std::sqrt(t_mid);
+        double df  = std::exp(-r * t_mid);
+        double dpd = (1.0 - std::exp(-lam * t)) - (1.0 - std::exp(-lam * prev_t));
+        cva += lgd * ee * df * dpd;
+        prev_t = t;
+    }
+    return cva;
+}
+
+static double cpp_expected_fva(double N, double sigma, double r, double sf) {
+    double times[] = {0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0};
+    double fva = 0, prev_t = 0;
+    for (double t : times) {
+        double t_mid = 0.5 * (prev_t + t);
+        double dt  = t - prev_t;
+        double ee  = N * sigma * std::sqrt(t_mid);
+        double df  = std::exp(-r * t_mid);
+        fva += ee * df * sf * dt;
+        prev_t = t;
+    }
+    return fva;
+}
+
+// First-bucket CVA: bucket [0, 0.5]
+static double cpp_expected_cva_first_bucket(double N, double sigma, double r, double lam, double lgd) {
+    double t_prev = 0.0, t_curr = 0.5;
+    double t_mid = 0.5 * (t_prev + t_curr);
+    double ee  = N * sigma * std::sqrt(t_mid);
+    double df  = std::exp(-r * t_mid);
+    double dpd = (1.0 - std::exp(-lam * t_curr)) - (1.0 - std::exp(-lam * t_prev));
+    return lgd * ee * df * dpd;
+}
+
 BOOST_FIXTURE_TEST_SUITE(functional_tests, FunctionalTestFixture)
 
 // ============================================================================
@@ -681,6 +815,466 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_rosenbrock) {
         (define result (car g))
     )"));
     BOOST_CHECK_CLOSE(to_double(res) + 1.0, 1.0, 1e-10);
+}
+
+// ============================================================================
+// xVA — dsqrt / dpow primitives
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_xva_dsqrt_primal_4) {
+    // dsqrt(4) = exp(0.5 * log(4)) = 2.0
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (dsqrt 4.0)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 2.0, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_dsqrt_primal_9) {
+    // dsqrt(9) = 3.0
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (dsqrt 9.0)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 3.0, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_dsqrt_gradient) {
+    // f(x) = sqrt(x) at x=4
+    // df/dx = 1 / (2*sqrt(4)) = 0.25
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (x) (dsqrt x)) '(4.0)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 0.25, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_dpow_primal) {
+    // dpow(2, 3) = exp(3 * log(2)) = 8.0
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (dpow 2.0 3.0)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 8.0, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_dpow_gradient_base) {
+    // f(x) = x^3 at x=2.0  (b=3 is constant)
+    // df/dx = 3 * x^2 = 12.0
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (x) (dpow x 3.0)) '(2.0)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 12.0, 1e-4);
+}
+
+// ============================================================================
+// xVA — Financial building block primal values
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal) {
+    // DF(r=0.05, t=1.0) = exp(-0.05)
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (discount-factor 0.05 1.0)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), std::exp(-0.05), 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal_2y) {
+    // DF(r=0.05, t=2.0) = exp(-0.10)
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (discount-factor 0.05 2.0)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), std::exp(-0.10), 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_survival_prob_primal) {
+    // Q(lambda=0.02, t=1.0) = exp(-0.02)
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (survival-prob 0.02 1.0)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), std::exp(-0.02), 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_default_prob_primal) {
+    // PD(lambda=0.02, t=1.0) = 1 - exp(-0.02)
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (default-prob 0.02 1.0)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 1.0 - std::exp(-0.02), 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_marginal_pd_primal) {
+    // ΔPD(lambda=0.02, 0, 0.5) = PD(0.5) - PD(0) = (1-exp(-0.01)) - 0
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (marginal-pd 0.02 0.0 0.5)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 1.0 - std::exp(-0.01), 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_marginal_pd_mid_bucket) {
+    // ΔPD(lambda=0.02, 0.5, 1.0) = PD(1.0) - PD(0.5)
+    //   = (1-exp(-0.02)) - (1-exp(-0.01)) = exp(-0.01) - exp(-0.02)
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (marginal-pd 0.02 0.5 1.0)))
+    )"));
+    double expected = std::exp(-0.01) - std::exp(-0.02);
+    BOOST_CHECK_CLOSE(to_double(res), expected, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_primal) {
+    // EE(N=1e6, sigma=0.20, t=0.25) = 1e6 * 0.20 * sqrt(0.25) = 100000
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (expected-exposure 1000000 0.20 0.25)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 100000.0, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_primal_1y) {
+    // EE(N=1e6, sigma=0.20, t=1.0) = 1e6 * 0.20 * sqrt(1.0) = 200000
+    LispVal res = run(xva_module(R"(
+        (define result (dual-val (expected-exposure 1000000 0.20 1.0)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 200000.0, 1e-6);
+}
+
+// ============================================================================
+// xVA — Financial building block gradients
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_xva_discount_factor_gradient) {
+    // ∂/∂r [exp(-r*t)] = -t * exp(-r*t)
+    // At r=0.05, t=1.0:  -1.0 * exp(-0.05)
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (r) (discount-factor r 1.0)) '(0.05)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), -1.0 * std::exp(-0.05), 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_survival_prob_gradient) {
+    // ∂/∂λ [exp(-λ*t)] = -t * exp(-λ*t)
+    // At λ=0.02, t=1.0:  -exp(-0.02)
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (h) (survival-prob h 1.0)) '(0.02)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), -1.0 * std::exp(-0.02), 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_default_prob_gradient) {
+    // ∂/∂λ [1 - exp(-λ*t)] = t * exp(-λ*t)
+    // At λ=0.02, t=1.0:  exp(-0.02)
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (h) (default-prob h 1.0)) '(0.02)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), std::exp(-0.02), 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_grad_sigma) {
+    // ∂EE/∂σ = N * sqrt(t) = 1e6 * sqrt(0.25) = 500000
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma)
+                          (expected-exposure notional sigma 0.25))
+                        '(1000000 0.20)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 1))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 500000.0, 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_grad_notional) {
+    // ∂EE/∂N = σ * sqrt(t) = 0.20 * sqrt(0.25) = 0.10
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma)
+                          (expected-exposure notional sigma 0.25))
+                        '(1000000 0.20)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 0.10, 1e-6);
+}
+
+// ============================================================================
+// xVA — CVA single bucket
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_xva_cva_single_bucket) {
+    // First bucket [0, 0.5] with standard parameters
+    double expected = cpp_expected_cva_first_bucket(1e6, 0.20, 0.05, 0.02, 0.60);
+    LispVal res = run(xva_module(R"(
+        (define result
+          (dual-val (cva-bucket
+            (make-const 1000000) (make-const 0.20) (make-const 0.05)
+            (make-const 0.02) (make-const 0.60) 0.0 0.5)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
+}
+
+// ============================================================================
+// xVA — Full CVA computation
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_xva_cva_full_primal) {
+    // Full CVA across 10 semi-annual buckets, verified against C++ reference
+    double expected = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd)
+                          (compute-cva notional sigma r hazard-rate lgd))
+                        '(1000000 0.20 0.05 0.02 0.60)))
+        (define result (car g))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_cva_notional_linearity) {
+    // CVA is linear in notional: ∂CVA/∂N = CVA / N
+    double cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
+    double expected_dN = cva / 1e6;
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd)
+                          (compute-cva notional sigma r hazard-rate lgd))
+                        '(1000000 0.20 0.05 0.02 0.60)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected_dN, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_cva_lgd_linearity) {
+    // CVA is linear in LGD: ∂CVA/∂LGD = CVA / LGD
+    double cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
+    double expected_dLGD = cva / 0.60;
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd)
+                          (compute-cva notional sigma r hazard-rate lgd))
+                        '(1000000 0.20 0.05 0.02 0.60)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 4))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected_dLGD, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_cva_sigma_linearity) {
+    // CVA is linear in sigma: ∂CVA/∂σ = CVA / σ
+    double cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
+    double expected_dSigma = cva / 0.20;
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd)
+                          (compute-cva notional sigma r hazard-rate lgd))
+                        '(1000000 0.20 0.05 0.02 0.60)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 1))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected_dSigma, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_cva_rate_sensitivity) {
+    // ∂CVA/∂r — non-trivial (non-linear), verify with finite difference
+    double r0 = 0.05, dr = 1e-7;
+    double cva_up   = cpp_expected_cva(1e6, 0.20, r0 + dr, 0.02, 0.60);
+    double cva_down = cpp_expected_cva(1e6, 0.20, r0 - dr, 0.02, 0.60);
+    double fd_dCVA_dr = (cva_up - cva_down) / (2.0 * dr);
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd)
+                          (compute-cva notional sigma r hazard-rate lgd))
+                        '(1000000 0.20 0.05 0.02 0.60)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 2))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), fd_dCVA_dr, 0.01);  // 0.01% tolerance for FD
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_cva_hazard_sensitivity) {
+    // ∂CVA/∂λ — non-trivial, verify with finite difference
+    double lam = 0.02, dl = 1e-7;
+    double cva_up   = cpp_expected_cva(1e6, 0.20, 0.05, lam + dl, 0.60);
+    double cva_down = cpp_expected_cva(1e6, 0.20, 0.05, lam - dl, 0.60);
+    double fd_dCVA_dlam = (cva_up - cva_down) / (2.0 * dl);
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd)
+                          (compute-cva notional sigma r hazard-rate lgd))
+                        '(1000000 0.20 0.05 0.02 0.60)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 3))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), fd_dCVA_dlam, 0.01);
+}
+
+// ============================================================================
+// xVA — Full FVA computation
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_xva_fva_full_primal) {
+    // Full FVA across 10 semi-annual buckets, verified against C++ reference
+    double expected = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r funding-spread)
+                          (compute-fva notional sigma r funding-spread))
+                        '(1000000 0.20 0.05 0.012)))
+        (define result (car g))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_fva_notional_linearity) {
+    // FVA is linear in notional: ∂FVA/∂N = FVA / N
+    double fva = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
+    double expected_dN = fva / 1e6;
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r funding-spread)
+                          (compute-fva notional sigma r funding-spread))
+                        '(1000000 0.20 0.05 0.012)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected_dN, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_fva_spread_linearity) {
+    // FVA is linear in funding spread: ∂FVA/∂s_f = FVA / s_f
+    double fva = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
+    double expected_dSf = fva / 0.012;
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r funding-spread)
+                          (compute-fva notional sigma r funding-spread))
+                        '(1000000 0.20 0.05 0.012)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 3))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected_dSf, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_fva_rate_sensitivity) {
+    // ∂FVA/∂r — non-linear, verify with finite difference
+    double r0 = 0.05, dr = 1e-7;
+    double fva_up   = cpp_expected_fva(1e6, 0.20, r0 + dr, 0.012);
+    double fva_down = cpp_expected_fva(1e6, 0.20, r0 - dr, 0.012);
+    double fd_dFVA_dr = (fva_up - fva_down) / (2.0 * dr);
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r funding-spread)
+                          (compute-fva notional sigma r funding-spread))
+                        '(1000000 0.20 0.05 0.012)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 2))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), fd_dFVA_dr, 0.01);
+}
+
+// ============================================================================
+// xVA — Total xVA = CVA + FVA
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_xva_total_primal) {
+    // Total xVA should equal CVA + FVA
+    double expected_cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
+    double expected_fva = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
+    double expected_total = expected_cva + expected_fva;
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd funding-spread)
+                          (total-xva notional sigma r hazard-rate lgd funding-spread))
+                        '(1000000 0.20 0.05 0.02 0.60 0.012)))
+        (define result (car g))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected_total, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_total_notional_linearity) {
+    // Both CVA and FVA are linear in N, so total xVA is too:
+    // ∂xVA/∂N = xVA / N
+    double xva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60)
+               + cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
+    double expected_dN = xva / 1e6;
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd funding-spread)
+                          (total-xva notional sigma r hazard-rate lgd funding-spread))
+                        '(1000000 0.20 0.05 0.02 0.60 0.012)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected_dN, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_total_gradient_six_params) {
+    // Verify all 6 sensitivities are computed and the gradient vector has
+    // length 6.  We check that vector-ref gv 5 (the last element) is the
+    // funding-spread sensitivity: ∂xVA/∂s_f = ∂FVA/∂s_f = FVA / s_f
+    // (CVA does not depend on funding-spread, so only FVA contributes.)
+    double fva = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
+    double expected_dSf = fva / 0.012;
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd funding-spread)
+                          (total-xva notional sigma r hazard-rate lgd funding-spread))
+                        '(1000000 0.20 0.05 0.02 0.60 0.012)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 5))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected_dSf, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_total_lgd_sensitivity) {
+    // ∂xVA/∂LGD = ∂CVA/∂LGD  (FVA does not depend on LGD)
+    //            = CVA / LGD
+    double cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
+    double expected_dLGD = cva / 0.60;
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd funding-spread)
+                          (total-xva notional sigma r hazard-rate lgd funding-spread))
+                        '(1000000 0.20 0.05 0.02 0.60 0.012)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 4))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected_dLGD, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_total_hazard_sensitivity) {
+    // ∂xVA/∂λ = ∂CVA/∂λ  (FVA does not depend on hazard rate)
+    // Verify with finite difference
+    double lam = 0.02, dl = 1e-7;
+    double cva_up   = cpp_expected_cva(1e6, 0.20, 0.05, lam + dl, 0.60);
+    double cva_down = cpp_expected_cva(1e6, 0.20, 0.05, lam - dl, 0.60);
+    double fd = (cva_up - cva_down) / (2.0 * dl);
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd funding-spread)
+                          (total-xva notional sigma r hazard-rate lgd funding-spread))
+                        '(1000000 0.20 0.05 0.02 0.60 0.012)))
+        (define gv (car (cdr g)))
+        (define result (vector-ref gv 3))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), fd, 0.01);
+}
+
+// ============================================================================
+// xVA — Different market scenarios
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(test_xva_cva_high_hazard) {
+    // Higher hazard rate (5%) should give a larger CVA
+    double cva_high = cpp_expected_cva(1e6, 0.20, 0.05, 0.05, 0.60);
+    double cva_low  = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
+    BOOST_CHECK_GT(cva_high, cva_low);  // sanity: higher default intensity → larger CVA
+
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd)
+                          (compute-cva notional sigma r hazard-rate lgd))
+                        '(1000000 0.20 0.05 0.05 0.60)))
+        (define result (car g))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), cva_high, 1e-4);
+}
+
+BOOST_AUTO_TEST_CASE(test_xva_cva_zero_lgd) {
+    // LGD = 0 implies CVA = 0 (full recovery, no credit loss)
+    LispVal res = run(xva_module(R"(
+        (define g (grad (lambda (notional sigma r hazard-rate lgd)
+                          (compute-cva notional sigma r hazard-rate lgd))
+                        '(1000000 0.20 0.05 0.02 0.0)))
+        (define result (car g))
+    )"));
+    BOOST_CHECK_SMALL(to_double(res), 1e-10);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

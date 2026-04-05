@@ -167,7 +167,7 @@ eta-<platform>/
     boolean-simplifier.eta  # Symbolic boolean rewriting
     symbolic-diff.eta       # Symbolic differentiation & simplification
     aad.eta                 # Reverse-mode automatic differentiation
-    xva.eta                 # Quantitative finance: CVA, FVA with AAD
+    xva.eta                 # Finance example: CVA, FVA calculations with AAD
   editors/
     vscode/             # VS Code extension (.vsix)
   install.sh / install.cmd
@@ -203,17 +203,17 @@ The prelude auto-loads the following modules:
 
 ## Documentation
 
-| Page | Contents |
-|------|----------|
-| **[Architecture](docs/architecture.md)** | Full system diagram, phase-by-phase walkthrough, Core IR node types |
-| **[NaN-Boxing](docs/nanboxing.md)** | 64-bit memory layout, bit-field breakdown, encoding/decoding examples |
-| **[Bytecode & VM](docs/bytecode-vm.md)** | Opcode reference, end-to-end compilation trace, call stack model, TCO |
-| **[Runtime & GC](docs/runtime.md)** | Heap architecture, object kinds, mark-sweep GC, intern table, factory |
-| **[Modules & Stdlib](docs/modules.md)** | Module syntax, linker phases, import filters, standard library reference |
-| **[Examples](docs/examples.md)** | Guided tour of the example programs with expected output |
-| **[AAD](docs/aad.md)** | Reverse-mode automatic differentiation walkthrough |
-| **[xVA](docs/xva.md)** | Quantitative finance: CVA, FVA, and sensitivities via AAD |
-| **[Next Steps](docs/next-steps.md)** | Roadmap: bytecode serialization & `etac`, FFI, unification instruction, example programs |
+| Page                                     | Contents                                                                                 |
+|------------------------------------------|------------------------------------------------------------------------------------------|
+| **[Architecture](docs/architecture.md)** | Full system diagram, phase-by-phase walkthrough, Core IR node types                      |
+| **[NaN-Boxing](docs/nanboxing.md)**      | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                    |
+| **[Bytecode & VM](docs/bytecode-vm.md)** | Opcode reference, end-to-end compilation trace, call stack model, TCO                    |
+| **[Runtime & GC](docs/runtime.md)**      | Heap architecture, object kinds, mark-sweep GC, intern table, factory                    |
+| **[Modules & Stdlib](docs/modules.md)**  | Module syntax, linker phases, import filters, standard library reference                 |
+| **[Language Guide](docs/examples.md)**   | Guided tour of the language using simple example programs with expected output           |
+| **[AAD](docs/aad.md)**                   | Reverse-mode automatic differentiation walkthrough                                       |
+| **[xVA](docs/xva.md)**                   | Quantitative finance: CVA, FVA, and sensitivities via AAD                                |
+| **[Next Steps](docs/next-steps.md)**     | Roadmap: bytecode serialization & `etac`, FFI, unification instruction, example programs |
 
 ---
 
