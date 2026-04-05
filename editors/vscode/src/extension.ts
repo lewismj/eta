@@ -1,6 +1,20 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { workspace, ExtensionContext, window } from 'vscode';
+import * as cp from 'child_process';
+import {
+    workspace,
+    ExtensionContext,
+    window,
+    debug,
+    EventEmitter,
+    DebugAdapterInlineImplementation,
+} from 'vscode';
+import type {
+    DebugAdapterDescriptor,
+    DebugAdapterDescriptorFactory,
+    DebugProtocolMessage,
+    DebugSession,
+} from 'vscode';
 import {
     LanguageClient,
     LanguageClientOptions,
@@ -67,10 +81,18 @@ export function activate(context: ExtensionContext) {
         return;
     }
 
-    const run: Executable = { command: serverPath };
-    const debug: Executable = { command: serverPath };
+    // Build environment: inherit process env and inject ETA_MODULE_PATH if configured
+    const config = workspace.getConfiguration('eta.lsp');
+    const modulePath = config.get<string>('modulePath', '') || process.env['ETA_MODULE_PATH'] || '';
+    const serverEnv: NodeJS.ProcessEnv = { ...process.env };
+    if (modulePath) {
+        serverEnv['ETA_MODULE_PATH'] = modulePath;
+    }
 
-    const serverOptions: ServerOptions = { run, debug };
+    const run: Executable = { command: serverPath, options: { env: serverEnv } };
+    const debug_exec: Executable = { command: serverPath, options: { env: serverEnv } };
+
+    const serverOptions: ServerOptions = { run, debug: debug_exec };
 
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'eta' }],
@@ -87,6 +109,12 @@ export function activate(context: ExtensionContext) {
     );
 
     client.start();
+
+    // Register the Eta debug adapter
+    const factory = new EtaDebugAdapterFactory(serverPath);
+    context.subscriptions.push(
+        debug.registerDebugAdapterDescriptorFactory('eta', factory)
+    );
 }
 
 export function deactivate(): Thenable<void> | undefined {
@@ -96,3 +124,123 @@ export function deactivate(): Thenable<void> | undefined {
     return client.stop();
 }
 
+// ── Debug adapter ─────────────────────────────────────────────────────────
+
+class EtaDebugAdapterFactory implements DebugAdapterDescriptorFactory {
+    constructor(private readonly lspServerPath: string) {}
+
+    createDebugAdapterDescriptor(_session: DebugSession): DebugAdapterDescriptor {
+        return new DebugAdapterInlineImplementation(
+            new EtaDebugSession(this.lspServerPath)
+        );
+    }
+}
+
+class EtaDebugSession {
+    private readonly _sendMessage = new EventEmitter<DebugProtocolMessage>();
+    readonly onDidSendMessage = this._sendMessage.event;
+
+    private _proc: cp.ChildProcess | undefined;
+    private _seq = 1;
+
+    constructor(private readonly lspServerPath: string) {}
+
+    handleMessage(msg: DebugProtocolMessage): void {
+        const m = msg as any;
+        if (m.type !== 'request') { return; }
+
+        switch (m.command) {
+            case 'initialize':
+                this._respond(m, { supportsConfigurationDoneRequest: true, supportsTerminateRequest: true });
+                this._event('initialized', {});
+                break;
+            case 'configurationDone':
+                this._respond(m, {});
+                break;
+            case 'launch':
+                this._launch(m);
+                break;
+            case 'terminate':
+            case 'disconnect':
+                this._proc?.kill();
+                this._respond(m, {});
+                break;
+            default:
+                this._respond(m, {});
+        }
+    }
+
+    private _launch(m: any): void {
+        const program = m.arguments?.program as string | undefined;
+        if (!program) {
+            this._respond(m, undefined, 'No program specified in launch configuration.');
+            return;
+        }
+
+        // Locate etai next to the LSP binary, or fall back to PATH
+        let etai = process.platform === 'win32' ? 'etai.exe' : 'etai';
+        const serverDir = path.dirname(this.lspServerPath);
+        const candidate = path.join(serverDir, etai);
+        if (fs.existsSync(candidate)) {
+            etai = candidate;
+        }
+
+        // Build environment
+        const config = workspace.getConfiguration('eta.lsp');
+        const modulePath = config.get<string>('modulePath', '') || process.env['ETA_MODULE_PATH'] || '';
+        const env: NodeJS.ProcessEnv = { ...process.env };
+        if (modulePath) { env['ETA_MODULE_PATH'] = modulePath; }
+
+        const extraArgs: string[] = m.arguments?.args ?? [];
+        this._respond(m, {});
+
+        this._proc = cp.spawn(etai, [program, ...extraArgs], { env });
+
+        this._proc.stdout?.on('data', (chunk: Buffer) => {
+            this._event('output', { category: 'stdout', output: chunk.toString() });
+        });
+        this._proc.stderr?.on('data', (chunk: Buffer) => {
+            this._event('output', { category: 'stderr', output: chunk.toString() });
+        });
+        this._proc.on('error', (err) => {
+            this._event('output', {
+                category: 'stderr',
+                output: `Failed to launch etai: ${err.message}\n` +
+                        `Make sure etai is built and on PATH, or set eta.lsp.serverPath.\n`,
+            });
+            this._event('exited', { exitCode: 1 });
+            this._event('terminated', {});
+        });
+        this._proc.on('close', (code) => {
+            this._event('output', { category: 'console', output: `\nProcess exited with code ${code ?? 0}\n` });
+            this._event('exited', { exitCode: code ?? 0 });
+            this._event('terminated', {});
+        });
+    }
+
+    private _respond(req: any, body: any, errorMsg?: string): void {
+        this._sendMessage.fire({
+            type: 'response',
+            seq: this._seq++,
+            request_seq: req.seq,
+            success: !errorMsg,
+            command: req.command,
+            body: body ?? {},
+            ...(errorMsg ? { message: errorMsg } : {}),
+        } as any);
+    }
+
+    private _event(event: string, body: any): void {
+        this._sendMessage.fire({
+            type: 'event',
+            seq: this._seq++,
+            event,
+            body,
+        } as any);
+    }
+
+    dispose(): void {
+        this._proc?.kill();
+        this._sendMessage.dispose();
+    }
+}

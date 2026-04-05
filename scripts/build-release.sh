@@ -96,29 +96,16 @@ cmake --install "$BUILD_DIR"
 
 # ── 4. Build VS Code extension ───────────────────────────────────────
 VSCODE_SRC="${PROJECT_ROOT}/editors/vscode"
-VSCODE_DEST="${PREFIX}/editors/vscode"
+EDITORS_DIR="${PREFIX}/editors"
+VSIX_DEST="${EDITORS_DIR}/eta-lang.vsix"
 
 echo "▸ [4/6] Building VS Code extension..."
+mkdir -p "$EDITORS_DIR"
 (
     cd "$VSCODE_SRC"
     npm ci --silent
-    npm run compile
+    npx @vscode/vsce package -o "$VSIX_DEST" --skip-license
 )
-
-mkdir -p "$VSCODE_DEST/out" "$VSCODE_DEST/syntaxes" "$VSCODE_DEST/bin"
-cp -r "$VSCODE_SRC/out/"*                      "$VSCODE_DEST/out/"
-cp -r "$VSCODE_SRC/syntaxes/"*                 "$VSCODE_DEST/syntaxes/"
-cp    "$VSCODE_SRC/package.json"               "$VSCODE_DEST/"
-cp    "$VSCODE_SRC/tsconfig.json"              "$VSCODE_DEST/"
-cp    "$VSCODE_SRC/language-configuration.json" "$VSCODE_DEST/"
-
-# Bundle eta_lsp binary into the extension
-for f in "$PREFIX/bin/eta_lsp" "$PREFIX/bin/eta_lsp.exe"; do
-    [ -f "$f" ] && cp "$f" "$VSCODE_DEST/bin/"
-done
-
-# Production npm deps for the extension
-(cd "$VSCODE_DEST" && npm install --omit=dev --silent 2>/dev/null || true)
 
 # ── 5. Copy helpers + docs ───────────────────────────────────────────
 echo "▸ [5/6] Copying install script and docs..."

@@ -38,11 +38,11 @@ if [ -n "$TARGET" ]; then
     chmod +x "$TARGET/bin/"* 2>/dev/null || true
     BIN_DIR="$(cd "$TARGET/bin" && pwd)"
     STDLIB_DIR="$(cd "$TARGET/stdlib" && pwd)"
-    VSCODE_DIR="$TARGET/editors/vscode"
+    VSIX_PATH="$TARGET/editors/eta-lang.vsix"
 else
     BIN_DIR="${BUNDLE_DIR}/bin"
     STDLIB_DIR="${BUNDLE_DIR}/stdlib"
-    VSCODE_DIR="${BUNDLE_DIR}/editors/vscode"
+    VSIX_PATH="${BUNDLE_DIR}/editors/eta-lang.vsix"
 fi
 
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -78,31 +78,17 @@ else
 fi
 
 # ── 3. Install VS Code extension ─────────────────────────────────────
-if command -v code &>/dev/null && [ -d "$VSCODE_DIR" ]; then
+if command -v code &>/dev/null && [ -f "$VSIX_PATH" ]; then
     echo "▸ Installing VS Code extension..."
-
-    VSIX_TMP="$(mktemp -d)/eta-lang.vsix"
-    PACKED=false
-
-    if command -v npx &>/dev/null; then
-        (cd "$VSCODE_DIR" && npx @vscode/vsce package -o "$VSIX_TMP" --skip-license 2>/dev/null) && PACKED=true
-    fi
-
-    if [ "$PACKED" = true ] && [ -f "$VSIX_TMP" ]; then
-        code --install-extension "$VSIX_TMP" --force
-        rm -f "$VSIX_TMP"
-        echo "  ✓ VS Code extension installed."
-    else
-        echo "  ⚠ Could not package .vsix (npx/@vscode/vsce not found)."
-        echo "    Set eta.lsp.serverPath in VS Code settings to:"
-        echo "    ${BIN_DIR}/eta_lsp"
-    fi
-elif [ ! -d "$VSCODE_DIR" ]; then
+    code --install-extension "$VSIX_PATH" --force
+    echo "  ✓ VS Code extension installed."
+elif [ ! -f "$VSIX_PATH" ]; then
     echo "▸ VS Code extension not in bundle — skipping."
+    echo "    Set eta.lsp.serverPath in VS Code settings to:"
+    echo "    ${BIN_DIR}/eta_lsp"
 else
     echo "▸ 'code' not on PATH — skipping VS Code extension install."
-    echo "  Install later with:"
-    echo "    cd ${VSCODE_DIR} && npx @vscode/vsce package && code --install-extension eta-lang-*.vsix"
+    echo "    To install manually: code --install-extension \"${VSIX_PATH}\" --force"
 fi
 
 # ── 4. Smoke test ─────────────────────────────────────────────────────

@@ -1,13 +1,16 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "json.h"
+#include "eta/reader/parser.h"
 
 namespace eta::lsp {
 
@@ -66,6 +69,9 @@ private:
     // Document store: uri -> document
     std::unordered_map<std::string, TextDocument> documents_;
 
+    // Module search path (populated from ETA_MODULE_PATH + bundled stdlib)
+    std::vector<std::filesystem::path> module_search_dirs_;
+
     // ── Transport ─────────────────────────────────────────────────────
     std::optional<std::string> read_message();
     void send_message(const Value& msg);
@@ -117,6 +123,20 @@ private:
         int64_t character{0};
     };
     static std::vector<SymbolInfo> collect_symbols(const std::string& source);
+
+    /// Initialise module_search_dirs_ from ETA_MODULE_PATH env var + bundled stdlib
+    void init_module_path();
+
+    /// Read the source of a module (e.g. "std.core") from the search path.
+    /// Returns nullopt if the module file cannot be found.
+    std::optional<std::string> resolve_module_source(const std::string& module_name);
+
+    /// Recursively load all imported module files into all_forms so the linker
+    /// can resolve cross-module references.  seen_modules must already contain
+    /// the names of every module already present in all_forms.
+    void preload_module_deps(
+        std::vector<eta::reader::parser::SExprPtr>& all_forms,
+        std::unordered_set<std::string>& seen_modules);
 };
 
 } // namespace eta::lsp

@@ -2,18 +2,26 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <unordered_set>
 #include <variant>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 // Eta compiler includes
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
 #include "eta/reader/module_linker.h"
+#include "eta/reader/sexpr_utils.h"
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/runtime/builtin_env.h"
 
@@ -25,7 +33,142 @@ using namespace json;
 // Construction
 // ============================================================================
 
-LspServer::LspServer() = default;
+LspServer::LspServer() {
+    init_module_path();
+}
+
+// ============================================================================
+// Module path resolution
+// ============================================================================
+
+void LspServer::init_module_path() {
+    namespace fs = std::filesystem;
+
+    // 1. Parse ETA_MODULE_PATH env var (colon/semicolon-delimited)
+#ifdef _WIN32
+#pragma warning(suppress: 4996)  // getenv is safe here; we copy immediately
+#endif
+    const char* env = std::getenv("ETA_MODULE_PATH");
+    if (env && env[0] != '\0') {
+        std::string_view path_str(env);
+#ifdef _WIN32
+        constexpr char sep = ';';
+#else
+        constexpr char sep = ':';
+#endif
+        std::size_t start = 0;
+        while (start < path_str.size()) {
+            auto pos = path_str.find(sep, start);
+            if (pos == std::string_view::npos) pos = path_str.size();
+            auto part = std::string(path_str.substr(start, pos - start));
+            if (!part.empty()) module_search_dirs_.emplace_back(part);
+            start = pos + 1;
+        }
+    }
+
+    // 2. Append stdlib bundled alongside the executable (<prefix>/bin/ → <prefix>/stdlib/)
+    std::error_code ec;
+#ifdef _WIN32
+    wchar_t buf[4096];
+    DWORD len = GetModuleFileNameW(nullptr, buf, static_cast<DWORD>(std::size(buf)));
+    if (len > 0 && len < static_cast<DWORD>(std::size(buf))) {
+        auto stdlib = fs::path(buf).parent_path().parent_path() / "stdlib";
+        if (fs::is_directory(stdlib, ec)) module_search_dirs_.push_back(std::move(stdlib));
+    }
+#else
+    fs::path exe = fs::read_symlink("/proc/self/exe", ec);
+    if (!ec) {
+        auto stdlib = exe.parent_path().parent_path() / "stdlib";
+        if (fs::is_directory(stdlib, ec)) module_search_dirs_.push_back(std::move(stdlib));
+    }
+#endif
+}
+
+std::optional<std::string> LspServer::resolve_module_source(const std::string& module_name) {
+    namespace fs = std::filesystem;
+    // "std.core" → "std/core.eta"
+    std::string rel = module_name;
+    for (auto& c : rel) { if (c == '.') c = '/'; }
+    rel += ".eta";
+
+    for (const auto& dir : module_search_dirs_) {
+        auto candidate = dir / rel;
+        std::error_code ec;
+        if (fs::is_regular_file(candidate, ec)) {
+            std::ifstream f(candidate);
+            if (!f.is_open()) continue;
+            return std::string(std::istreambuf_iterator<char>(f),
+                               std::istreambuf_iterator<char>());
+        }
+    }
+    return std::nullopt;
+}
+
+void LspServer::preload_module_deps(
+        std::vector<eta::reader::parser::SExprPtr>& all_forms,
+        std::unordered_set<std::string>& seen_modules) {
+    using namespace reader::utils;
+
+    // Collect imported module names from a form list
+    auto collect_imports = [&](const std::vector<eta::reader::parser::SExprPtr>& forms,
+                                std::vector<std::string>& out) {
+        for (const auto& f : forms) {
+            const auto* mod = as_list(f);
+            if (!mod || mod->elems.size() < 2) continue;
+            if (!is_symbol_named(mod->elems[0], "module")) continue;
+
+            for (std::size_t i = 2; i < mod->elems.size(); ++i) {
+                const auto* inner = as_list(mod->elems[i]);
+                if (!inner || inner->elems.empty()) continue;
+                if (!is_symbol_named(inner->elems[0], "import")) continue;
+
+                for (std::size_t j = 1; j < inner->elems.size(); ++j) {
+                    const auto& clause = inner->elems[j];
+                    std::string mod_name;
+                    if (const auto* s = as_symbol(clause)) {
+                        mod_name = s->name;
+                    } else if (const auto* lst = as_list(clause)) {
+                        // (only mod ...) / (except mod ...) / (rename mod ...) / (prefix mod pfx)
+                        if (lst->elems.size() >= 2) {
+                            if (const auto* mod_sym = as_symbol(lst->elems[1])) mod_name = mod_sym->name;
+                        }
+                    }
+                    if (!mod_name.empty() && !seen_modules.count(mod_name))
+                        out.push_back(mod_name);
+                }
+            }
+        }
+    };
+
+    std::vector<std::string> to_load;
+    collect_imports(all_forms, to_load);
+
+    while (!to_load.empty()) {
+        std::vector<std::string> next_load;
+        for (const auto& mod_name : to_load) {
+            if (seen_modules.count(mod_name)) continue;
+            seen_modules.insert(mod_name);
+
+            auto src = resolve_module_source(mod_name);
+            if (!src) continue; // not on disk — let linker emit the diagnostic
+
+            reader::lexer::Lexer lex(0, *src);
+            reader::parser::Parser parser(lex);
+            auto parsed = parser.parse_toplevel();
+            if (!parsed) continue;
+
+            reader::expander::Expander expander;
+            auto expanded = expander.expand_many(*parsed);
+            if (!expanded) continue;
+
+            // Collect transitive imports before moving forms
+            collect_imports(*expanded, next_load);
+
+            for (auto& f : *expanded) all_forms.push_back(std::move(f));
+        }
+        to_load = std::move(next_load);
+    }
+}
 
 // ============================================================================
 // Transport: Header-Content framing over stdio
@@ -322,8 +465,25 @@ void LspServer::validate_document(const std::string& uri) {
     }
 
     // ── Phase 3: Link ─────────────────────────────────────────────────
+    // Move expanded forms out (SExprPtr = unique_ptr, not copyable).
+    // Load any external modules required by (import ...) forms so the
+    // linker can resolve cross-module references without false diagnostics.
+    auto all_forms = std::move(*expanded_res);
+    {
+        using namespace reader::utils;
+        std::unordered_set<std::string> seen_modules;
+        for (const auto& f : all_forms) {
+            const auto* mod = as_list(f);
+            if (!mod || mod->elems.size() < 2) continue;
+            if (!is_symbol_named(mod->elems[0], "module")) continue;
+            if (const auto* name_sym = as_symbol(mod->elems[1]))
+                seen_modules.insert(name_sym->name);
+        }
+        preload_module_deps(all_forms, seen_modules);
+    }
+
     reader::ModuleLinker linker;
-    auto idx_res = linker.index_modules(*expanded_res);
+    auto idx_res = linker.index_modules(all_forms);
     if (!idx_res) {
         const auto& err = idx_res.error();
         LspDiagnostic d;
@@ -351,7 +511,7 @@ void LspServer::validate_document(const std::string& uri) {
 
     // ── Phase 4: Semantic Analysis ────────────────────────────────────
     semantics::SemanticAnalyzer sa;
-    auto sem_res = sa.analyze_all(*expanded_res, linker);
+    auto sem_res = sa.analyze_all(all_forms, linker);
     if (!sem_res) {
         const auto& err = sem_res.error();
         LspDiagnostic d;

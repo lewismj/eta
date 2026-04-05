@@ -4,6 +4,10 @@
     "description": "Language support for the Eta programming language",
     "version": "0.1.0",
     "publisher": "eta-lang",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/eta-lang/eta"
+    },
     "engines": {
         "vscode": "^1.85.0"
     },
@@ -36,9 +40,59 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Enable the Eta Language Server for diagnostics and IDE features."
+                },
+                "eta.lsp.modulePath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Colon/semicolon-separated list of directories to search for Eta modules (ETA_MODULE_PATH). If empty, falls back to the ETA_MODULE_PATH environment variable."
                 }
             }
-        }
+        },
+        "debuggers": [
+            {
+                "type": "eta",
+                "label": "Eta",
+                "languages": ["eta"],
+                "configurationAttributes": {
+                    "launch": {
+                        "required": ["program"],
+                        "properties": {
+                            "program": {
+                                "type": "string",
+                                "description": "Absolute path to the .eta file to run.",
+                                "default": "${file}"
+                            },
+                            "args": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "Additional arguments passed to etai.",
+                                "default": []
+                            }
+                        }
+                    }
+                },
+                "initialConfigurations": [
+                    {
+                        "type": "eta",
+                        "request": "launch",
+                        "name": "Run Eta file",
+                        "program": "${file}"
+                    }
+                ],
+                "configurationSnippets": [
+                    {
+                        "label": "Eta: Launch",
+                        "description": "Run an Eta source file with etai.",
+                        "body": {
+                            "type": "eta",
+                            "request": "launch",
+                            "name": "Run Eta file",
+                            "program": "^\"\\${file}\""
+                        }
+                    }
+                ]
+            }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",

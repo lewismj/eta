@@ -50,11 +50,11 @@ if ($Prefix) {
 
     $BinDir    = (Resolve-Path "$Prefix\bin").Path
     $StdlibDir = (Resolve-Path "$Prefix\stdlib").Path
-    $VscodeDir = "$Prefix\editors\vscode"
+    $VsixPath  = "$Prefix\editors\eta-lang.vsix"
 } else {
     $BinDir    = Join-Path $BundleDir "bin"
     $StdlibDir = Join-Path $BundleDir "stdlib"
-    $VscodeDir = Join-Path $BundleDir "editors\vscode"
+    $VsixPath  = Join-Path $BundleDir "editors\eta-lang.vsix"
 }
 
 Write-Host "+==============================================================+"
@@ -90,34 +90,18 @@ if ($CurrentModPath -ne $StdlibDir) {
 
 # -- 3. Install VS Code extension ---------------------------------------------
 $CodeExe = Get-Command code -ErrorAction SilentlyContinue
-if ($CodeExe -and (Test-Path $VscodeDir)) {
+
+if ($CodeExe -and (Test-Path $VsixPath)) {
     Write-Host "> Installing VS Code extension..."
-
-    $VsixTmp = Join-Path $env:TEMP "eta-lang.vsix"
-    $Packed  = $false
-    $NpxExe  = Get-Command npx -ErrorAction SilentlyContinue
-
-    if ($NpxExe) {
-        Push-Location $VscodeDir
-        try {
-            & npx @vscode/vsce package -o $VsixTmp --skip-license 2>$null
-            if ($LASTEXITCODE -eq 0) { $Packed = $true }
-        } catch {} finally { Pop-Location }
-    }
-
-    if ($Packed -and (Test-Path $VsixTmp)) {
-        & code --install-extension $VsixTmp --force
-        Remove-Item $VsixTmp -ErrorAction SilentlyContinue
-        Write-Host "  [OK] VS Code extension installed."
-    } else {
-        Write-Host "  [!] Could not package .vsix (npx/@vscode/vsce not found)."
-        Write-Host "    Set eta.lsp.serverPath in VS Code settings to:"
-        Write-Host "    $BinDir\eta_lsp.exe"
-    }
-} elseif (-not (Test-Path $VscodeDir)) {
+    & code --install-extension $VsixPath --force
+    Write-Host "  [OK] VS Code extension installed."
+} elseif (-not (Test-Path $VsixPath)) {
     Write-Host "> VS Code extension not in bundle -- skipping."
+    Write-Host "    Set eta.lsp.serverPath in VS Code settings to:"
+    Write-Host "    $BinDir\eta_lsp.exe"
 } else {
     Write-Host "> 'code' not on PATH -- skipping VS Code extension install."
+    Write-Host "    To install manually: code --install-extension `"$VsixPath`" --force"
 }
 
 # -- 4. Smoke test -------------------------------------------------------------

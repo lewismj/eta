@@ -98,39 +98,22 @@ if ($LASTEXITCODE -ne 0) { throw "CMake install failed" }
 
 # -- 4. Build VS Code extension ------------------------------------------------
 $VscodeSrc  = Join-Path $ProjectRoot "editors\vscode"
-$VscodeDest = Join-Path $Prefix "editors\vscode"
+$EditorsDir = Join-Path $Prefix "editors"
+$VsixDest   = Join-Path $EditorsDir "eta-lang.vsix"
 
 Write-Host "> [4/6] Building VS Code extension..."
+New-Item -ItemType Directory -Force -Path $EditorsDir | Out-Null
+
 Push-Location $VscodeSrc
 try {
     & npm ci --silent
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
-    & npm run compile
-    if ($LASTEXITCODE -ne 0) { throw "npm compile failed" }
+    & npx @vscode/vsce package -o $VsixDest --skip-license
+    if ($LASTEXITCODE -ne 0) { throw "vsce package failed" }
 } finally {
     Pop-Location
 }
 
-# Copy extension into the bundle
-New-Item -ItemType Directory -Force -Path "$VscodeDest\out"      | Out-Null
-New-Item -ItemType Directory -Force -Path "$VscodeDest\syntaxes" | Out-Null
-New-Item -ItemType Directory -Force -Path "$VscodeDest\bin"      | Out-Null
-
-Copy-Item -Recurse -Force "$VscodeSrc\out\*"                      "$VscodeDest\out\"
-Copy-Item -Recurse -Force "$VscodeSrc\syntaxes\*"                 "$VscodeDest\syntaxes\"
-Copy-Item -Force          "$VscodeSrc\package.json"                "$VscodeDest\"
-Copy-Item -Force          "$VscodeSrc\tsconfig.json"               "$VscodeDest\"
-Copy-Item -Force          "$VscodeSrc\language-configuration.json"  "$VscodeDest\"
-
-# Bundle eta_lsp binary into extension
-$LspExe = Join-Path $Prefix "bin\eta_lsp.exe"
-if (Test-Path $LspExe) {
-    Copy-Item -Force $LspExe "$VscodeDest\bin\"
-}
-
-# Production npm deps
-Push-Location $VscodeDest
-try { & npm install --omit=dev --silent 2>$null } catch {} finally { Pop-Location }
 
 # -- 5. Copy helpers + docs ----------------------------------------------------
 Write-Host "> [5/6] Copying install script and docs..."
