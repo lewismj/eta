@@ -14,7 +14,8 @@
     "categories": ["Programming Languages"],
     "activationEvents": [
         "onLanguage:eta",
-        "onDebugResolve:eta"
+        "onDebugResolve:eta",
+        "onCommand:eta.runFile"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -48,6 +49,29 @@
                     "description": "Colon/semicolon-separated list of directories to search for Eta modules (ETA_MODULE_PATH). If empty, falls back to the ETA_MODULE_PATH environment variable."
                 }
             }
+        },
+        "commands": [
+            {
+                "command": "eta.runFile",
+                "title": "Run Eta File",
+                "icon": "$(play)",
+                "category": "Eta"
+            }
+        ],
+        "menus": {
+            "editor/title/run": [
+                {
+                    "command": "eta.runFile",
+                    "when": "resourceLangId == eta",
+                    "group": "navigation"
+                }
+            ],
+            "commandPalette": [
+                {
+                    "command": "eta.runFile",
+                    "when": "resourceLangId == eta"
+                }
+            ]
         },
         "debuggers": [
             {
