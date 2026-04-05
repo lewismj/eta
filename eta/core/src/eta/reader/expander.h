@@ -137,6 +137,7 @@ namespace eta::reader::expander {
     struct SyntaxRulesTransformer {
         std::vector<std::string> literals;                           // literal keywords
         std::vector<SyntaxClause> clauses;
+        std::unordered_set<std::string> definition_scope;           // names visible at define-syntax time (for hygiene)
     };
 
     /// Result of pattern matching: pattern variable -> bound value(s)
@@ -202,6 +203,10 @@ namespace eta::reader::expander {
 
         //! Macro environment: maps macro name -> transformer (populated by define-syntax)
         std::unordered_map<std::string, SyntaxRulesTransformer> macro_env_;
+
+        //! Top-level defined names — captured into each transformer's definition_scope
+        //! so that free references in macro templates are not hygienically renamed.
+        std::unordered_set<std::string> defined_names_;
 
 
         // Error helpers
@@ -375,7 +380,8 @@ namespace eta::reader::expander {
             const SyntaxTemplate& tmpl,
             const MatchEnv& env,
             std::unordered_map<std::string, std::string>& renames,
-            Span ctx) const;
+            Span ctx,
+            const std::unordered_set<std::string>& definition_scope) const;
 
         ExpanderResult<SExprPtr> try_expand_macro(const std::string& name,
                                                    const List& lst);

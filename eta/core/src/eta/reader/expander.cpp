@@ -479,6 +479,7 @@ namespace eta::reader::expander {
                 return std::unexpected(ExpandError{ExpandError::Kind::ReservedKeyword, lst.elems[1]->span(), "cannot define reserved keyword: "+s->name});
 
             auto rhs = expand_form(lst.elems[2]); if (!rhs) return std::unexpected(rhs.error());
+            defined_names_.insert(s->name);
             return make_form(lst.span, "define", deep_clone(lst.elems[1]), std::move(*rhs));
         }
 
@@ -518,6 +519,7 @@ namespace eta::reader::expander {
         auto lamX = handle_lambda(*lamE->as<List>());
         if (!lamX) return std::unexpected(lamX.error());
 
+        defined_names_.insert(nameSym->name);
         return make_form(lst.span, "define", make_symbol(nameSym->name, nameSym->span), std::move(*lamX));
     }
 
@@ -1817,6 +1819,13 @@ namespace eta::reader::expander {
             transformer.clauses.push_back(std::move(sc));
         }
 
+        // Capture definition-time scope: all top-level names defined so far plus existing
+        // macro names.  Free references in the template are resolved against this scope
+        // and must NOT be hygienically renamed — they refer to the defining environment.
+        transformer.definition_scope = defined_names_;
+        for (const auto& [mname, _] : macro_env_)
+            transformer.definition_scope.insert(mname);
+
         macro_env_[macroName] = std::move(transformer);
 
         // define-syntax produces no runtime output
@@ -2050,7 +2059,8 @@ namespace eta::reader::expander {
         const SyntaxTemplate& tmpl,
         const MatchEnv& env,
         std::unordered_map<std::string, std::string>& renames,
-        Span ctx) const
+        Span ctx,
+        const std::unordered_set<std::string>& definition_scope) const
     {
         return std::visit([&](auto&& t) -> ExpanderResult<SExprPtr> {
             using T = std::decay_t<decltype(t)>;
@@ -2092,10 +2102,17 @@ namespace eta::reader::expander {
                     "#t","#f",
                     "def","defun","progn",
                 };
-                if (passthrough.contains(t.name) || macro_env_.contains(t.name)) {
+                // Pass through: core keywords, known macros, and any name that was
+                // already defined in the macro's definition-time scope.  These are
+                // free references into the defining environment and must not be renamed.
+                if (passthrough.contains(t.name) ||
+                    macro_env_.contains(t.name) ||
+                    definition_scope.contains(t.name)) {
                     return make_symbol(t.name, ctx);
                 }
-                // Apply hygiene: rename introduced identifiers
+                // Apply hygiene: rename introduced identifiers (truly fresh names that
+                // the macro introduces as new bindings, e.g. loop variables in do-loop
+                // transformers).
                 auto rit = renames.find(t.name);
                 if (rit == renames.end()) {
                     auto fresh = gensym(t.name);
@@ -2111,7 +2128,7 @@ namespace eta::reader::expander {
                     // No ellipsis: instantiate each element
                     result.reserve(t.elems.size());
                     for (const auto& sub : t.elems) {
-                        auto r = instantiate_template(*sub, env, renames, ctx);
+                        auto r = instantiate_template(*sub, env, renames, ctx, definition_scope);
                         if (!r) return r;
                         result.push_back(std::move(*r));
                     }
@@ -2124,7 +2141,7 @@ namespace eta::reader::expander {
 
                 // Instantiate fixed elements before ellipsis
                 for (std::size_t i = 0; i < fixedBefore; ++i) {
-                    auto r = instantiate_template(*t.elems[i], env, renames, ctx);
+                    auto r = instantiate_template(*t.elems[i], env, renames, ctx, definition_scope);
                     if (!r) return r;
                     result.push_back(std::move(*r));
                 }
@@ -2156,7 +2173,7 @@ namespace eta::reader::expander {
                                 subEnv.emplace(k, MatchBinding{deep_clone(v.single), {}, false});
                             }
                         }
-                        auto inst = instantiate_template(**t.ellipsis_tmpl, subEnv, renames, ctx);
+                        auto inst = instantiate_template(**t.ellipsis_tmpl, subEnv, renames, ctx, definition_scope);
                         if (!inst) return inst;
                         result.push_back(std::move(*inst));
                     }
@@ -2164,7 +2181,7 @@ namespace eta::reader::expander {
 
                 // Instantiate fixed elements after ellipsis
                 for (std::size_t i = fixedBefore; i < fixedBefore + fixedAfter; ++i) {
-                    auto r = instantiate_template(*t.elems[i], env, renames, ctx);
+                    auto r = instantiate_template(*t.elems[i], env, renames, ctx, definition_scope);
                     if (!r) return r;
                     result.push_back(std::move(*r));
                 }
@@ -2209,7 +2226,8 @@ namespace eta::reader::expander {
 
             if (match_pattern(*clause.pattern, tailList, env)) {
                 std::unordered_map<std::string, std::string> renames;
-                auto expanded = instantiate_template(*clause.tmpl, env, renames, lst.span);
+                auto expanded = instantiate_template(*clause.tmpl, env, renames, lst.span,
+                                                     transformer.definition_scope);
                 if (!expanded) return expanded;
                 // Re-expand the output (macros can produce derived forms or other macro calls)
                 return expand_form(*expanded);
