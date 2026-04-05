@@ -33,7 +33,7 @@ stack-based virtual machine with NaN-boxed values, closures, tail-call
 elimination, first-class continuations (`call/cc`), a hygienic macro
 expander with `syntax-rules`, and a module system.
 
-The implementation ships as three executables — a **file interpreter**
+The implementation ships as three executables — an **interpreter**
 (`etai`), an **interactive REPL** (`eta_repl`), and a **Language Server**
 (`eta_lsp`) — along with a **VS Code extension**.
 
