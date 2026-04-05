@@ -68,10 +68,11 @@ namespace eta::reader::linker {
     };
 
     struct ImportSpec {
-        enum class Kind { Plain, Only, Except, Rename } kind{Kind::Plain};
+        enum class Kind { Plain, Only, Except, Rename, Prefix } kind{Kind::Plain};
         std::string module;
         std::vector<std::string> ids; // for Only/Except
         std::vector<std::pair<std::string,std::string>> renames; // (old,new) for Rename
+        std::string prefix;              // for Prefix: e.g. "math:" in (prefix std.math math:)
         Span span{};                     // span of the clause (or symbol for Plain)
     };
 

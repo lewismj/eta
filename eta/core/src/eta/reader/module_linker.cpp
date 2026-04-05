@@ -128,6 +128,14 @@ namespace eta::reader::linker {
             }
             return sp;
         }
+        if (head->name == "prefix") {
+            // (prefix mod pfx) — import all exports with a name prefix
+            if (l->elems.size() != 3) return bad("(prefix mod prefix-string) requires exactly 2 arguments");
+            const auto* m = req_mod(1); if (!m) return bad("(prefix mod pfx) requires module symbol");
+            const auto* pfx = as_symbol(l->elems[2]); if (!pfx) return bad("(prefix mod pfx) requires prefix symbol");
+            ImportSpec sp; sp.kind = ImportSpec::Kind::Prefix; sp.module = m->name; sp.prefix = pfx->name; sp.span = l->span;
+            return sp;
+        }
 
         // Fallback: treat as plain module symbol embedded in list (not typical)
         if (l->elems.size() == 1 && as_symbol(l->elems[0])) {
@@ -241,6 +249,16 @@ namespace eta::reader::linker {
                             }
                             map.emplace(newn, remote);
                         }
+                        break;
+                    }
+                    case ImportSpec::Kind::Prefix: {
+                        // Prepend prefix to every local name; remote stays the same
+                        std::unordered_map<std::string, std::string> prefixed;
+                        prefixed.reserve(map.size());
+                        for (const auto& [local, remote] : map) {
+                            prefixed.emplace(pi.spec.prefix + local, remote);
+                        }
+                        map.swap(prefixed);
                         break;
                     }
                 }

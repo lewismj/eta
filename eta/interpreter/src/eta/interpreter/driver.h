@@ -181,10 +181,102 @@ private:
     // Whether builtins have been installed into VM globals yet
     bool builtins_installed_{false};
 
+    // Guard against recursive auto-loading cycles
+    std::unordered_set<std::string> loading_modules_;
+
     uint32_t allocate_file_id(const std::string& path) {
         // TODO: maintain file_id -> path map for diagnostic rendering
         (void)path;
         return next_file_id_++;
+    }
+
+    /// Collect all module names referenced in (import ...) clauses within
+    /// a set of expanded forms.  Scans the top-level module lists for
+    /// (import <sym>) / (import (only <sym> ...) ...) etc.
+    static std::vector<std::string> collect_imported_modules(
+            std::span<const reader::parser::SExprPtr> forms) {
+        std::vector<std::string> result;
+        std::unordered_set<std::string> seen;
+
+        auto extract_module_name = [](const reader::parser::SExprPtr& clause) -> std::string {
+            namespace utils = reader::utils;
+            // Plain symbol:  std.core
+            if (auto s = utils::as_symbol(clause)) return s->name;
+            // List form:  (only std.core ...) / (except ...) / (rename ...) / (prefix ...)
+            if (auto l = utils::as_list(clause)) {
+                if (l->elems.size() >= 2) {
+                    if (auto m = utils::as_symbol(l->elems[1])) return m->name;
+                }
+            }
+            return {};
+        };
+
+        for (const auto& form : forms) {
+            auto* lst = form ? form->template as<reader::parser::List>() : nullptr;
+            if (!lst || lst->elems.size() < 2) continue;
+            if (!reader::utils::is_symbol_named(lst->elems[0], "module")) continue;
+            // Walk body for (import ...) forms
+            for (std::size_t i = 2; i < lst->elems.size(); ++i) {
+                auto* inner = lst->elems[i] ? lst->elems[i]->template as<reader::parser::List>() : nullptr;
+                if (!inner || inner->elems.empty()) continue;
+                if (!reader::utils::is_symbol_named(inner->elems[0], "import")) continue;
+                for (std::size_t j = 1; j < inner->elems.size(); ++j) {
+                    auto name = extract_module_name(inner->elems[j]);
+                    if (!name.empty() && seen.insert(name).second) {
+                        result.push_back(name);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /// Auto-load module files from the module path for any import that
+    /// references a module not yet in the accumulated set.
+    /// Returns false on failure; diagnostics are emitted.
+    bool auto_load_imports(std::span<const reader::parser::SExprPtr> new_forms) {
+        auto needed = collect_imported_modules(new_forms);
+        for (const auto& mod_name : needed) {
+            // Skip modules already loaded or being loaded (cycle guard)
+            if (executed_modules_.contains(mod_name)) continue;
+            if (loading_modules_.contains(mod_name)) continue;
+
+            // Check if it's already in the accumulated forms (defined but not yet executed)
+            bool already_accumulated = false;
+            for (const auto& f : accumulated_forms_) {
+                auto* lst = f ? f->template as<reader::parser::List>() : nullptr;
+                if (!lst || lst->elems.size() < 2) continue;
+                if (!reader::utils::is_symbol_named(lst->elems[0], "module")) continue;
+                auto* nsym = lst->elems[1]->template as<reader::parser::Symbol>();
+                if (nsym && nsym->name == mod_name) { already_accumulated = true; break; }
+            }
+            // Also check in the new forms themselves (peer modules in same source)
+            if (!already_accumulated) {
+                for (const auto& f : new_forms) {
+                    auto* lst = f ? f->template as<reader::parser::List>() : nullptr;
+                    if (!lst || lst->elems.size() < 2) continue;
+                    if (!reader::utils::is_symbol_named(lst->elems[0], "module")) continue;
+                    auto* nsym = lst->elems[1]->template as<reader::parser::Symbol>();
+                    if (nsym && nsym->name == mod_name) { already_accumulated = true; break; }
+                }
+            }
+            if (already_accumulated) continue;
+
+            // Try to resolve and load the module file
+            auto path = resolver_.resolve(mod_name);
+            if (!path) continue; // Will fail later at link time with a clear error
+
+            auto canonical = path->string();
+            if (loaded_files_.contains(canonical)) continue;
+
+            loading_modules_.insert(mod_name);
+            loaded_files_.insert(canonical);
+            bool ok = run_file(*path);
+            loading_modules_.erase(mod_name);
+
+            if (!ok) return false;
+        }
+        return true;
     }
 
     /**
@@ -242,6 +334,13 @@ private:
                     }
                 }
             }
+        }
+
+        // ── Auto-load imported modules from the module path ──────────
+        std::span<const reader::parser::SExprPtr> new_span(
+            new_expanded.data(), new_expanded.size());
+        if (!auto_load_imports(new_span)) {
+            return false;
         }
 
         // Append new forms to the accumulated set

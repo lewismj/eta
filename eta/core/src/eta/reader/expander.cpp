@@ -20,7 +20,7 @@ namespace eta::reader::expander {
             "let","let*","letrec","cond","and","or",
             "quasiquote","unquote","unquote-splicing",
             // Modules/macros
-            "module","import","export","define-syntax",
+            "module","import","export","define-syntax","prefix",
             // Advanced control / multiple values (future)
             "call-with-current-continuation","call/cc","dynamic-wind",
             "values","call-with-values",

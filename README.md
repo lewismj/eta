@@ -49,25 +49,6 @@ The implementation ships as three executables — a **file interpreter**
     (println (factorial 20))))
 ```
  
-[Next Steps](docs/next-steps.md):
-
-
- Technical improvements:
-
- - bytecode serialization format.
- - a foreign function interface (FFI) for calling C/C++ code.
- - a better garbage collector.
- - general bug fixing and performance improvements (standard VM optimisations).
- - extend ports to support networking.
-
-Functional changes are centred around three core goals:
-
- - Additional opcodes in the VM to support Prolog-style unification and backtracking.
- - PyTorch bindings.
- - Implementation of Do-Calculus.
-
- The above three with the socket IO are the most pressing for ML uses cases planned.
-
 ---
 
 ## Compilation Pipeline
