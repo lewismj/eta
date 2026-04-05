@@ -18,6 +18,7 @@
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
   <a href="docs/examples.md">Language Examples</a> ·
   <a href="docs/aad.md">Reverse Mode Adjoint Automatic Differentiation Example</a> ·
+  <a href="docs/xva.md">xVA Calculation Example with AAD</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
 </p>
 
@@ -96,18 +97,18 @@ flowchart LR
 
 ## Key Design Highlights
 
-| Feature | Detail |
-|---------|--------|
+| Feature | Detail                                                                                                                                                                            |
+|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **NaN-Boxing** | All values are 64-bit; doubles pass through unboxed while tagged types (fixnums, chars, symbols, heap pointers) are encoded in the NaN mantissa. [→ Deep-dive](docs/nanboxing.md) |
-| **47-bit Fixnums** | Integers up to ±70 trillion are stored inline — no heap allocation. |
-| **Mark-Sweep GC** | Stop-the-world collector with sharded heap, hazard pointers, and a GC callback for auto-triggering on soft-limit. [→ Deep-dive](docs/runtime.md) |
-| **Tail-Call Elimination** | `TailCall` and `TailApply` opcodes reuse the current stack frame. |
-| **First-Class Continuations** | `call/cc` captures the full stack + winding stack; `dynamic-wind` is supported. |
-| **Hygienic Macros** | `syntax-rules` with ellipsis patterns, plus `defmacro` for procedural macros. |
-| **Module System** | `(module …)` forms with `import`/`export`, `only`, `except`, `rename` filters. [→ Deep-dive](docs/modules.md) |
-| **Arena Allocator** | IR nodes are block-allocated in a 16 KB arena for cache locality. |
-| **Concurrent Heap** | `boost::unordered::concurrent_flat_map` with 16 shards for lock-free reads. |
-| **LSP Integration** | JSON-RPC language server for real-time diagnostics in any editor. |
+| **47-bit Fixnums** | Integers up to ±70 trillion are stored inline — no heap allocation.                                                                                                               |
+| **Mark-Sweep GC** | Stop-the-world collector with sharded heap, hazard pointers, and a GC callback for auto-triggering on soft-limit. [→ Deep-dive](docs/runtime.md)                                  |
+| **Tail-Call Elimination** | `TailCall` and `TailApply` opcodes reuse the current stack frame.                                                                                                                 |
+| **First-Class Continuations** | `call/cc` captures the full stack + winding stack; `dynamic-wind` is supported.                                                                                                   |
+| **Hygienic Macros** | `syntax-rules` with ellipsis patterns.                                                                                                                                            |
+| **Module System** | `(module …)` forms with `import`/`export`, `only`, `except`, `rename` filters. [→ Deep-dive](docs/modules.md)                                                                     |
+| **Arena Allocator** | IR nodes are block-allocated in a 16 KB arena for cache locality.                                                                                                                 |
+| **Concurrent Heap** | `boost::unordered::concurrent_flat_map` with 16 shards for lock-free reads.                                                                                                       |
+| **LSP Integration** | JSON-RPC language server for real-time diagnostics in any editor.                                                                                                                 |
 
 ---
 
@@ -165,6 +166,8 @@ eta-<platform>/
     recursion.eta       # Fibonacci, Ackermann, Hanoi
     boolean-simplifier.eta  # Symbolic boolean rewriting
     symbolic-diff.eta       # Symbolic differentiation & simplification
+    aad.eta                 # Reverse-mode automatic differentiation
+    xva.eta                 # Quantitative finance: CVA, FVA with AAD
   editors/
     vscode/             # VS Code extension (.vsix)
   install.sh / install.cmd
@@ -208,6 +211,8 @@ The prelude auto-loads the following modules:
 | **[Runtime & GC](docs/runtime.md)** | Heap architecture, object kinds, mark-sweep GC, intern table, factory |
 | **[Modules & Stdlib](docs/modules.md)** | Module syntax, linker phases, import filters, standard library reference |
 | **[Examples](docs/examples.md)** | Guided tour of the example programs with expected output |
+| **[AAD](docs/aad.md)** | Reverse-mode automatic differentiation walkthrough |
+| **[xVA](docs/xva.md)** | Quantitative finance: CVA, FVA, and sensitivities via AAD |
 | **[Next Steps](docs/next-steps.md)** | Roadmap: bytecode serialization & `etac`, FFI, unification instruction, example programs |
 
 ---

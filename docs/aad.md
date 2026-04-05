@@ -516,3 +516,17 @@ function.
 | `collect-adjoints` | Sum per-variable adjoint contributions into a gradient vector |
 | `grad` | Top-level driver: lift inputs → forward → backward → collect |
 
+---
+
+## Next: Quantitative Finance with AAD
+
+The [xVA example](xva.md) builds on this AD library to compute
+**Credit Valuation Adjustment (CVA)** and **Funding Valuation
+Adjustment (FVA)** — the same workload that made AAD famous in the
+financial industry.  It demonstrates computing all six market-risk
+sensitivities in a single backward pass.
+
+```bash
+etai examples/xva.eta
+```
+

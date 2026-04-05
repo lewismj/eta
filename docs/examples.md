@@ -22,6 +22,7 @@ etai examples/hello.eta
 | [`boolean-simplifier.eta`](#boolean-simplifiereta) | Symbolic tree rewriting, De Morgan's laws, fixed-point simplification |
 | [`symbolic-diff.eta`](#symbolic-diffeta)           | Computer algebra: differentiation rules, algebraic simplification |
 | [`aad.eta`](#aadeta)                               | Reverse-mode AD, closures as backpropagators, `define-syntax`, `grad` |
+| [`xva.eta`](#xvaeta)                               | Quantitative finance: CVA, FVA, xVA sensitivities via AAD |
 | [`modules and imports`](#imports)                 | `import`, `export`, `only`, `except`, `rename`, `prefix` |
 
 ---
@@ -352,6 +353,35 @@ worked examples.
 ;;    primal = 2*3 + sin(2)
 ;;    ∂f/∂x = y + cos(x) = 3 + cos(2) ≈ 2.584
 ;;    ∂f/∂y = x = 2
+```
+
+---
+
+## [xva — valuation adjustments with AAD](../examples/xva.eta)
+
+Builds on the AD library to compute **CVA** (Credit Valuation
+Adjustment) and **FVA** (Funding Valuation Adjustment) — the same
+workload that made AAD famous in quantitative finance.  See the full
+[xVA walkthrough](xva.md) for detailed commentary.
+
+```scheme
+;; Financial building blocks — all AD-aware
+(defun discount-factor (r t)        ;; DF = e^{-rt}
+  (dexp (d* (d* -1 r) t)))
+(defun survival-prob (hazard-rate t) ;; Q = e^{-λt}
+  (dexp (d* (d* -1 hazard-rate) t)))
+(defun expected-exposure (notional sigma t)  ;; EE ≈ Nσ√t
+  (d* notional (d* sigma (dsqrt t))))
+
+;; CVA = LGD × Σ EE(t) × DF(t) × ΔPD(t)
+;; FVA = Σ EE(t) × DF(t) × s_f × Δt
+;; Total xVA = CVA + FVA
+
+;; One backward pass → all 6 sensitivities
+(grad (lambda (notional sigma r hazard-rate lgd funding-spread)
+        (total-xva notional sigma r hazard-rate lgd funding-spread))
+      '(1000000 0.20 0.05 0.02 0.60 0.012))
+;; => (xva-value  #(∂/∂N  ∂/∂σ  ∂/∂r  ∂/∂λ  ∂/∂LGD  ∂/∂s_f))
 ```
 
 ---
