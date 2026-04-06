@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "json.h"
+#include "eta/interpreter/module_path.h"
 #include "eta/reader/parser.h"
 
 namespace eta::lsp {
@@ -69,8 +70,8 @@ private:
     // Document store: uri -> document
     std::unordered_map<std::string, TextDocument> documents_;
 
-    // Module search path (populated from ETA_MODULE_PATH + bundled stdlib)
-    std::vector<std::filesystem::path> module_search_dirs_;
+    // Module resolver — populated from ETA_MODULE_PATH + bundled stdlib
+    interpreter::ModulePathResolver resolver_;
 
     // ── Transport ─────────────────────────────────────────────────────
     std::optional<std::string> read_message();
@@ -124,11 +125,11 @@ private:
     };
     static std::vector<SymbolInfo> collect_symbols(const std::string& source);
 
-    /// Initialise module_search_dirs_ from ETA_MODULE_PATH env var + bundled stdlib
+    /// Initialise resolver_ from ETA_MODULE_PATH env var + bundled stdlib.
     void init_module_path();
 
     /// Read the source of a module (e.g. "std.core") from the search path.
-    /// Returns nullopt if the module file cannot be found.
+    /// Returns nullopt if the module file cannot be found or opened.
     std::optional<std::string> resolve_module_source(const std::string& module_name);
 
     /// Load prelude.eta from the module search path and add all its module

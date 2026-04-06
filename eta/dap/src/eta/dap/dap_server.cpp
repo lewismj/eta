@@ -6,7 +6,6 @@
 #include <sstream>
 #include <string>
 #include <thread>
-#include <unordered_set>
 
 // Eta interpreter
 #include "eta/interpreter/driver.h"
@@ -294,8 +293,20 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
 // setExceptionBreakpoints
 // ============================================================================
 
-void DapServer::handle_set_exception_breakpoints(const Value& id, const Value& /*args*/) {
-    // We don't (yet) support exception breakpoints – just acknowledge.
+void DapServer::handle_set_exception_breakpoints(const Value& id, const Value& args) {
+    // Parse the filters array to determine whether exception breakpoints are enabled.
+    exception_breakpoints_enabled_ = false;
+    if (args.is_object()) {
+        const auto& filters_val = args["filters"];
+        if (filters_val.is_array()) {
+            for (const auto& f : filters_val.as_array()) {
+                if (f.is_string() && !f.as_string().empty()) {
+                    exception_breakpoints_enabled_ = true;
+                    break;
+                }
+            }
+        }
+    }
     send_response(id, json::object({}));
 }
 
@@ -308,77 +319,24 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
 
     if (!launched_) return; // no launch request yet (shouldn't happen)
 
-    // Determine the stdlib/module path (same logic as etai and eta_lsp)
-    std::vector<fs::path> search_dirs;
-    {
-        const char* env = std::getenv("ETA_MODULE_PATH");
-        if (env && env[0] != '\0') {
-            std::string_view sv(env);
-#ifdef _WIN32
-            constexpr char sep = ';';
-#else
-            constexpr char sep = ':';
-#endif
-            std::size_t start = 0;
-            while (start < sv.size()) {
-                auto pos = sv.find(sep, start);
-                if (pos == std::string_view::npos) pos = sv.size();
-                auto p = std::string(sv.substr(start, pos - start));
-                if (!p.empty()) search_dirs.emplace_back(p);
-                start = pos + 1;
-            }
-        }
-
-        // Bundled stdlib: <exe_dir>/../stdlib
-        std::error_code ec;
-#ifdef _WIN32
-        wchar_t buf[4096];
-        DWORD len = GetModuleFileNameW(nullptr, buf, static_cast<DWORD>(std::size(buf)));
-        if (len > 0 && len < static_cast<DWORD>(std::size(buf))) {
-            auto stdlib = fs::path(buf).parent_path().parent_path() / "stdlib";
-            if (fs::is_directory(stdlib, ec)) search_dirs.push_back(stdlib);
-        }
-#else
-        auto exe = fs::read_symlink("/proc/self/exe", ec);
-        if (!ec) {
-            auto stdlib = exe.parent_path().parent_path() / "stdlib";
-            if (fs::is_directory(stdlib, ec)) search_dirs.push_back(stdlib);
-        }
-#endif
-        // Also try sibling of the script file
-        auto script_dir = script_path_.parent_path();
-        if (!script_dir.empty()) search_dirs.push_back(script_dir);
-    }
-
-    // Deduplicate: both ETA_MODULE_PATH and the <exe>/../stdlib detection can
-    // find the same directory; keep the first occurrence of each canonical path.
-    {
-        std::vector<fs::path> unique_dirs;
-        std::unordered_set<std::string> seen;
-        for (auto& d : search_dirs) {
-            std::error_code ec2;
-            std::string key = fs::weakly_canonical(d, ec2).string();
-#ifdef _WIN32
-            for (char& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-#endif
-            if (seen.insert(key).second) unique_dirs.push_back(std::move(d));
-        }
-        search_dirs = std::move(unique_dirs);
-    }
+    // Build the module search path using ModulePathResolver (same logic as etai / eta_lsp)
+    auto resolver = interpreter::ModulePathResolver::from_args_or_env("");
+    // Also search the directory containing the script being debugged.
+    auto script_dir = script_path_.parent_path();
+    if (!script_dir.empty()) resolver.add_dir(script_dir);
 
     // Log the module search path so the user can diagnose "module not found"
     {
         std::ostringstream msg;
         msg << "[eta_dap] Module search dirs:\n";
-        if (search_dirs.empty()) {
+        if (resolver.empty()) {
             msg << "  (none — prelude will not load; set eta.lsp.modulePath in VS Code settings)\n";
         } else {
-            for (const auto& d : search_dirs) msg << "  " << d.string() << "\n";
+            for (const auto& d : resolver.dirs()) msg << "  " << d.string() << "\n";
         }
         send_event("output", json::object({{"category", "console"}, {"output", msg.str()}}));
     }
 
-    auto resolver = interpreter::ModulePathResolver(search_dirs);
 
     // Build the driver on the DAP thread (it will be moved-to below)
     auto drv = std::make_unique<interpreter::Driver>(std::move(resolver));

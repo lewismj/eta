@@ -57,6 +57,9 @@ private:
     // Whether to stop on first instruction (stopOnEntry)
     bool stop_on_entry_{false};
 
+    // Whether exception breakpoints are enabled (set via setExceptionBreakpoints)
+    bool exception_breakpoints_enabled_{false};
+
     // Whether "launch" has been requested (i.e., VM thread is running/should start)
     bool launched_{false};
 

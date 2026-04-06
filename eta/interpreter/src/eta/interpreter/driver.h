@@ -55,8 +55,8 @@ public:
           diag_engine_(),
           next_file_id_(1) // 0 is reserved for REPL / anonymous input
     {
-        // Phase 1: core primitives (no VM dependency)
-        runtime::register_core_primitives(builtins_, heap_, intern_table_);
+        // Phase 1: core primitives — pass vm_ so map/for-each support closures
+        runtime::register_core_primitives(builtins_, heap_, intern_table_, &vm_);
         // Phase 2: port primitives (require VM reference)
         runtime::register_port_primitives(builtins_, heap_, intern_table_, vm_);
         // Phase 3: I/O primitives (require VM for port-aware display/newline)

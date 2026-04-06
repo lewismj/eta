@@ -144,7 +144,23 @@ public:
     void collect_garbage();
 
     std::expected<LispVal, RuntimeError> execute(const BytecodeFunction& main);
-    
+
+    /**
+     * @brief Re-entrant call into the VM — safe to call from within a running primitive.
+     *
+     * Invokes `proc` with the given `args`.  For primitive procedures the call
+     * is direct (no VM re-entry).  For closures the VM runs a nested execution
+     * loop, then restores the caller's execution state before returning.
+     *
+     * Typical use: implementing higher-order primitives such as map / for-each
+     * that need to invoke user-supplied closures.
+     *
+     * @param proc  A LispVal that is either a Primitive or a Closure.
+     * @param args  Arguments to pass to the procedure.
+     * @return The procedure's return value, or a RuntimeError on failure.
+     */
+    std::expected<LispVal, RuntimeError> call_value(LispVal proc, std::vector<LispVal> args);
+
     // Test helper to access/modify globals
     std::vector<LispVal>& globals() { return globals_; }
     const std::vector<LispVal>& globals() const { return globals_; }

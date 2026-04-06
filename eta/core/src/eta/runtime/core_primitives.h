@@ -11,6 +11,7 @@
 #include "eta/runtime/factory.h"
 #include "eta/runtime/string_view.h"
 #include "eta/runtime/value_formatter.h"
+#include "eta/runtime/vm/vm.h"
 
 namespace eta::runtime {
 
@@ -27,7 +28,7 @@ namespace eta::runtime {
  *  Type preds:   number?  boolean?  string?  char?  symbol?  procedure?  integer?
  *  Numeric:      zero?  positive?  negative?  abs  min  max  modulo  remainder
  *  Lists:        length  append  reverse  list-ref  list-tail  set-car!  set-cdr!
- *  Higher-order: apply  map  for-each  (apply is VM-level; map/for-each primitives-only)
+ *  Higher-order: apply  map  for-each
  *  Equality:     equal?
  *  Strings:      string-length  string-append  number->string  string->number
  *  Vectors:      vector  vector-length  vector-ref  vector-set!  vector?  make-vector
@@ -37,9 +38,15 @@ namespace eta::runtime {
  * Note: I/O primitives (display, write, newline) are in io_primitives.h
  * and require VM access for port support.
  *
+ * @param vm  Optional pointer to the running VM.  When provided, map and
+ *            for-each use a VM trampoline so they work correctly with user
+ *            closures.  When nullptr they fall back to primitive-only mode
+ *            (closures will return an error — suitable for analysis-only usage).
+ *
  * All primitives capture Heap& and/or InternTable& by reference where needed.
  */
-inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& intern_table) {
+inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& intern_table,
+                                     vm::VM* vm = nullptr) {
     using Args = const std::vector<LispVal>&;
 
     // ========================================================================
@@ -579,8 +586,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     // `apply` is used as a first-class value (e.g. passed to another function).
     // That case is not yet supported — it would require a VM trampoline.
     //
-    // map and for-each only work with primitive procedures.  They should be
-    // replaced with Scheme definitions once the REPL / stdlib loader exists.
+    // When a VM pointer is provided both map and for-each use call_value() to
+    // invoke any callable (primitive or closure).  Without a VM pointer they
+    // fall back to primitive-only mode.
     // ========================================================================
 
     env.register_builtin("apply", 2, true, [](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
@@ -588,14 +596,11 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             "apply: cannot be used as a first-class value yet (use direct apply syntax instead)"}});
     });
 
-    env.register_builtin("map", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (map proc list) — single-list version, primitives only
-        // TODO: Replace with Scheme definition once stdlib loader exists
+    env.register_builtin("map", 2, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        // (map proc list) — single-list version; works with any callable when vm != nullptr
         LispVal proc = args[0];
         if (!ops::is_boxed(proc) || ops::tag(proc) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "map: first argument must be a procedure"}});
-        auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
-        if (!prim) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "map: closures not yet supported (use manual recursion)"}});
 
         std::vector<LispVal> results;
         LispVal cur = args[1];
@@ -604,30 +609,37 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "map: not a proper list"}});
             auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
             if (!cons) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "map: not a proper list"}});
-            std::vector<LispVal> call_args = {cons->car};
-            auto res = prim->func(call_args);
+
+            std::expected<LispVal, RuntimeError> res;
+            if (vm) {
+                res = vm->call_value(proc, {cons->car});
+            } else {
+                auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
+                if (!prim)
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "map: closures require a VM context (internal error — VM not provided)"}});
+                std::vector<LispVal> call_args = {cons->car};
+                res = prim->func(call_args);
+            }
             if (!res) return res;
             results.push_back(*res);
             cur = cons->cdr;
         }
-        // Build result list
+        // Build result list in order
         LispVal result = nanbox::Nil;
         for (auto it = results.rbegin(); it != results.rend(); ++it) {
-            auto cons = make_cons(heap, *it, result);
-            if (!cons) return cons;
-            result = *cons;
+            auto cons_val = make_cons(heap, *it, result);
+            if (!cons_val) return cons_val;
+            result = *cons_val;
         }
         return result;
     });
 
-    env.register_builtin("for-each", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (for-each proc list) — single-list version, primitives only
-        // TODO: Replace with Scheme definition once stdlib loader exists
+    env.register_builtin("for-each", 2, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        // (for-each proc list) — single-list version; works with any callable when vm != nullptr
         LispVal proc = args[0];
         if (!ops::is_boxed(proc) || ops::tag(proc) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "for-each: first argument must be a procedure"}});
-        auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
-        if (!prim) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "for-each: closures not yet supported (use manual recursion)"}});
 
         LispVal cur = args[1];
         while (cur != nanbox::Nil) {
@@ -635,8 +647,18 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "for-each: not a proper list"}});
             auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
             if (!cons) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "for-each: not a proper list"}});
-            std::vector<LispVal> call_args = {cons->car};
-            auto res = prim->func(call_args);
+
+            std::expected<LispVal, RuntimeError> res;
+            if (vm) {
+                res = vm->call_value(proc, {cons->car});
+            } else {
+                auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
+                if (!prim)
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "for-each: closures require a VM context (internal error — VM not provided)"}});
+                std::vector<LispVal> call_args = {cons->car};
+                res = prim->func(call_args);
+            }
             if (!res) return res;
             cur = cons->cdr;
         }

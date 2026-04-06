@@ -116,6 +116,104 @@ std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
     return pop();
 }
 
+std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<LispVal> args) {
+    // ── Fast path: primitive procedures — direct call, no VM re-entry ──────────
+    if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(proc)) {
+        uint32_t argc = static_cast<uint32_t>(args.size());
+        if (prim->has_rest) {
+            if (argc < prim->arity)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "call_value: expected at least " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+        } else {
+            if (argc != prim->arity)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "call_value: expected " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+        }
+        return prim->func(args);
+    }
+
+    // ── Closure path — save outer state, run nested loop, restore ──────────────
+    auto* cl = try_get_as<ObjectKind::Closure, Closure>(proc);
+    if (!cl) {
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+            "call_value: argument is not a procedure"}});
+    }
+
+    uint32_t argc = static_cast<uint32_t>(args.size());
+    if (cl->func->has_rest) {
+        if (argc < cl->func->arity)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                "call_value: expected at least " + std::to_string(cl->func->arity) + " argument(s), got " + std::to_string(argc)}});
+    } else {
+        if (argc != cl->func->arity)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                "call_value: expected " + std::to_string(cl->func->arity) + " argument(s), got " + std::to_string(argc)}});
+    }
+
+    // Save full outer execution context
+    const BytecodeFunction* saved_func    = current_func_;
+    const uint32_t          saved_pc      = pc_;
+    const uint32_t          saved_fp      = fp_;
+    const LispVal           saved_closure = current_closure_;
+    const auto              saved_frames  = frames_.size();
+    const uint32_t          nested_sp     = static_cast<uint32_t>(stack_.size());
+
+    // Helper: restore outer state and truncate any accumulated frames
+    auto restore = [&]() {
+        stack_.resize(nested_sp);
+        frames_.resize(saved_frames);
+        current_func_    = saved_func;
+        pc_              = saved_pc;
+        fp_              = saved_fp;
+        current_closure_ = saved_closure;
+    };
+
+    // Temporarily null out execution state so that setup_frame saves a
+    // "return-to-null" frame.  When the closure eventually returns to this
+    // frame, handle_return sets current_func_ = nullptr and run_loop() exits.
+    current_func_    = nullptr;
+    pc_              = 0;
+    fp_              = nested_sp;
+    current_closure_ = Nil;
+
+    // Push arguments then let setup_frame initialise the closure's frame.
+    for (const auto& a : args) push(a);
+
+    // setup_frame saves {nullptr, 0, nested_sp, Nil, Normal} as the return
+    // frame and sets current_func_ = cl->func, fp_ = nested_sp, pc_ = 0.
+    setup_frame(cl->func, proc, argc);
+
+    // Pack variadic rest args into a list if the closure uses &rest.
+    if (cl->func->has_rest) {
+        auto pr = pack_rest_args(argc, cl->func->arity);
+        if (!pr) {
+            restore();
+            return std::unexpected(pr.error());
+        }
+    }
+
+    // Run until current_func_ becomes null (our return-to-null frame popped).
+    auto run_res = run_loop();
+
+    if (!run_res) {
+        restore();
+        return std::unexpected(run_res.error());
+    }
+
+    // On success: stack has nested_sp items + 1 result on top.
+    LispVal result = pop();
+    stack_.resize(nested_sp); // safety: ensure no stray stack entries
+
+    // Restore the outer execution context.
+    current_func_    = saved_func;
+    pc_              = saved_pc;
+    fp_              = saved_fp;
+    current_closure_ = saved_closure;
+
+    return result;
+}
+
+
 // Unified helper to dispatch a callee (Closure, Continuation, or Primitive)
 std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, uint32_t argc, bool is_tail) {
     // Use try_get_as for consistent heap access pattern

@@ -1,5 +1,3 @@
-// Forwarding header — the canonical definition lives in eta_core's public includes.
-// This file is kept for backward compatibility with any direct includes.
 #pragma once
 
 #include <algorithm>
@@ -25,12 +23,6 @@ namespace fs = std::filesystem;
  * to directory-separated file paths (e.g. "std/core.eta").
  *
  * Search order: each directory in the path list is tried in order.
- *
- * The canonical definition is in eta_core's public include path
- * (eta/core/include/eta/interpreter/module_path.h) so that DAP, LSP, and
- * any other consumers of eta_core can include it without a dependency on the
- * interpreter source tree.  This copy is kept in sync for consumers that
- * still include it from the interpreter source tree.
  */
 class ModulePathResolver {
 public:
@@ -159,3 +151,4 @@ private:
 };
 
 } // namespace eta::interpreter
+
