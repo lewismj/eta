@@ -563,8 +563,7 @@ void DapServer::handle_stack_trace(const Value& id, const Value& /*args*/) {
 // ============================================================================
 
 void DapServer::handle_scopes(const Value& id, const Value& args) {
-    // Lock so frame_id is read consistently with the paused VM state.
-    std::lock_guard<std::mutex> lk(vm_mutex_);
+    // frame_id comes from the request args, not from VM state — no lock needed.
     auto frame_id_opt = args.get_int("frameId");
     int frame_id = frame_id_opt ? static_cast<int>(*frame_id_opt) : 0;
 
