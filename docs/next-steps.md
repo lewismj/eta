@@ -9,7 +9,8 @@
 ## Overview
 
 This document outlines the four major workstreams planned for Eta's next
-development phase. 
+development phase. Although the immediate focus is on improving the DAP server,
+so that it can be used to fully support development in VS Code.
 
 This is in addition to benchmarking, bug-fixing, and general polish across the codebase.
 The general BAU work will also include networking extensions to the ports. 

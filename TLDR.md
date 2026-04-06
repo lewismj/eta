@@ -2,16 +2,19 @@
 
 The fastest way to get started is to download a pre-built release, run the installer, and try the examples.
 
+Note: the DAP server is still early in development, will add features and fixes soon, but you can 
+still run set breakpoints and run through the examples, as shown below.
+
 ---
 
 ## 1. Download & Unpack
 
 Download the latest [release](https://github.com/lewismj/eta/releases/tag/v0.0.1) for your platform:
 
-| Platform | Archive |
-|----------|---------|
-| Windows x64 | `eta-v0.0.1-win-x64.zip` |
-| Linux x86_64 | `eta-v0.0.1-linux-x86_64.tar.gz` |
+| Platform | Archive                          |
+|----------|----------------------------------|
+| Windows x64 | `eta-v0.0.2-win-x64.zip`         |
+| Linux x86_64 | `eta-v0.0.2-linux-x86_64.tar.gz` |
 
 Unzip the archive into a directory of your choice.
 
@@ -23,25 +26,25 @@ The installer adds the `bin/` directory to your `PATH`, sets the `ETA_MODULE_PAT
 
 **Windows (PowerShell / Command Prompt):**
 ```console
-cd eta-v0.0.1-win-x64
+cd eta-v0.0.2-win-x64
 .\install.cmd
 ```
 
 **Linux / macOS:**
 ```console
-cd eta-v0.0.1-linux-x86_64
+cd eta-v0.0.2-linux-x86_64
 chmod +x install.sh && ./install.sh
 ```
 
 Example output (Windows):
 ```console
-C:\tmp\eta-v0.0.1-win-x64> install.cmd
+C:\tmp\eta-v0.0.2-win-x64>.\install.cmd
 +==============================================================+
 |  Eta Installer (Windows)                                     |
 +==============================================================+
 
-  bin     : C:\tmp\eta-v0.0.1-win-x64\bin
-  stdlib  : C:\tmp\eta-v0.0.1-win-x64\stdlib
+  bin     : C:\tmp\eta-v0.0.2-win-x64\bin
+  stdlib  : C:\tmp\eta-v0.0.2-win-x64\stdlib
 
 > Eta already on user PATH -- skipping.
 > ETA_MODULE_PATH already set -- skipping.
@@ -54,11 +57,14 @@ Extension 'eta-lang.vsix' was successfully installed.
   [OK] etai.exe
   [OK] eta_repl.exe
   [OK] eta_lsp.exe
+  [OK] eta_dap.exe
 
 [OK] Done! Open a new terminal and try:
 
     etai --help
     eta_repl
+
+C:\tmp\eta-v0.0.2-win-x64>
 ```
 
 > **Note:** Open a **new** terminal after installation so the updated `PATH` and `ETA_MODULE_PATH` take effect.
@@ -71,12 +77,22 @@ The `examples/` directory inside the release bundle contains several `.eta` prog
 
 **Interpreter** — run a file directly:
 ```console
-cd eta-v0.0.1-win-x64\examples
-etai hello.eta
+C:\>cd tmp
+
+C:\tmp>cd eta-v0.0.2-win-x64
+
+C:\tmp\eta-v0.0.2-win-x64>cd examples
+
+C:\tmp\eta-v0.0.2-win-x64\examples>etai hello.eta
+Hello, world!
+2432902008176640000
+
+C:\tmp\eta-v0.0.2-win-x64\examples>
+
 ```
 
 ```console
-C:\tmp\eta-v0.0.1-win-x64\examples> etai aad.eta
+C:\tmp\eta-v0.0.2-win-x64\examples> etai aad.eta
 f(x,y) = x*y + sin(x)
   grad at (2,3): (6.9093 #(2.58385 2))
 g(x) = x^2 + 3x + 1
@@ -91,8 +107,8 @@ dot(v, [1,2,3])
 
 **REPL** — interactive session:
 ```console
-C:\tmp\eta-v0.0.1-win-x64> eta_repl
-Loaded C:\tmp\eta-v0.0.1-win-x64\stdlib\prelude.eta
+C:\tmp\eta-v0.0.2-win-x64> eta_repl
+Loaded C:\tmp\eta-v0.0.2-win-x64\stdlib\prelude.eta
 eta REPL - type an expression and press Enter.
 Use Ctrl+C or (exit) to quit.
 eta> (+ 1 2 3 4 5)
@@ -110,10 +126,11 @@ The installer automatically installs the VS Code extension when VS Code is prese
 
 Open VS Code settings (`Ctrl+,` or `Cmd+,`) and search for **Eta**. Set the following two values to point at the executables inside the release bundle:
 
-| Setting | Value (Windows example) |
-|---------|------------------------|
-| `eta.executablePath` | `C:\tmp\eta-v0.0.1-win-x64\bin\etai.exe` |
-| `eta.lspPath` | `C:\tmp\eta-v0.0.1-win-x64\bin\eta_lsp.exe` |
+| Setting | Value (Windows example)                     |
+|---------|---------------------------------------------|
+| `eta.executablePath` | `C:\tmp\eta-v0.0.2-win-x64\bin\etai.exe`    |
+| `eta.lspPath` | `C:\tmp\eta-v0.0.2-win-x64\bin\eta_lsp.exe` |
+| `eta.lspPath` | `C:\tmp\eta-v0.0.2-win-x64\bin\eta_lsp.exe` |
 
 Or add them directly to your `settings.json`:
 
