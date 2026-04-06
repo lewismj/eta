@@ -32,9 +32,10 @@ stack-based virtual machine with NaN-boxed values, closures, tail-call
 elimination, first-class continuations (`call/cc`), a hygienic macro
 expander with `syntax-rules`, and a module system.
 
-The implementation ships as three executables — an **interpreter**
-(`etai`), an **interactive REPL** (`eta_repl`), and a **Language Server**
-(`eta_lsp`) — along with a **VS Code extension**.
+The implementation ships as four executables — an **interpreter**
+(`etai`), an **interactive REPL** (`eta_repl`), a **Language Server**
+(`eta_lsp`), and a **Debug Adapter** (`eta_dap`) — along with a
+**VS Code extension** that wires them all together.
 
 ```scheme
 ;; Hello, Eta!
@@ -113,6 +114,7 @@ flowchart LR
 | **Arena Allocator** | IR nodes are block-allocated in a 16 KB arena for cache locality.                                                                                                                 |
 | **Concurrent Heap** | `boost::unordered::concurrent_flat_map` with 16 shards for lock-free reads.                                                                                                       |
 | **LSP Integration** | JSON-RPC language server for real-time diagnostics in any editor.                                                                                                                 |
+| **DAP Integration** | Debug Adapter Protocol server (`eta_dap`) enables breakpoints, step-through debugging, call-stack inspection, and REPL-style expression evaluation directly in VS Code.           |
 
 ---
 
@@ -177,11 +179,12 @@ The VS Code extension is installed automatically by the installer. You only need
 ```json
 {
   "eta.executablePath": "/path/to/eta-release/bin/etai",
-  "eta.lspPath":        "/path/to/eta-release/bin/eta_lsp"
+  "eta.lspPath":        "/path/to/eta-release/bin/eta_lsp",
+  "eta.dapPath":        "/path/to/eta-release/bin/eta_dap"
 }
 ```
 
-Then open the `examples/` folder (**File → Open Folder**), open any `.eta` file, and run it from the integrated terminal with `etai <file>.eta`.
+Then open the `examples/` folder (**File → Open Folder**), open any `.eta` file, and run it from the integrated terminal with `etai <file>.eta`.  To start a debug session press **F5** — the extension launches `eta_dap` automatically and connects VS Code's debugger, giving you breakpoints, step-through execution, call-stack inspection, and an inline expression evaluator.
 
 See [TLDR.md](TLDR.md) for a step-by-step walkthrough with screenshots.
 
@@ -227,6 +230,7 @@ eta-<platform>/
     etai(.exe)          # File interpreter
     eta_repl(.exe)      # Interactive REPL
     eta_lsp(.exe)       # Language Server (JSON-RPC over stdio)
+    eta_dap(.exe)       # Debug Adapter (DAP over stdio, used by VS Code)
   stdlib/
     prelude.eta         # Auto-loaded standard library
     std/
@@ -288,7 +292,8 @@ eta/
 │   │       ├── runtime/        # NaN-box, VM, Heap, GC, Types, Primitives
 │   │       └── diagnostic/     # Unified error reporting
 │   ├── interpreter/            # etai + eta_repl (Driver orchestration)
-│   ├── lsp/                    # eta_lsp (Language Server Protocol)
+│   ├── lsp/                    # eta_lsp (Language Server Protocol, JSON-RPC over stdio)
+│   ├── dap/                    # eta_dap (Debug Adapter Protocol, DAP over stdio)
 │   ├── test/                   # Boost.Test unit tests
 │   └── fuzz/                   # Fuzz testing (heap, intern table, nanbox)
 ├── stdlib/                     # Standard library (.eta files)
