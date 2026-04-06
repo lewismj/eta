@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -148,6 +150,56 @@ public:
     /// Access the module path resolver.
     [[nodiscard]] ModulePathResolver& resolver() noexcept { return resolver_; }
 
+    /// Direct access to the VM — required for DAP debug hooks.
+    runtime::vm::VM& vm() noexcept { return vm_; }
+    const runtime::vm::VM& vm() const noexcept { return vm_; }
+
+    /// Direct access to the bytecode registry — required for breakpoint line resolution.
+    semantics::BytecodeFunctionRegistry& registry() noexcept { return registry_; }
+    const semantics::BytecodeFunctionRegistry& registry() const noexcept { return registry_; }
+
+    /// Reverse-lookup: file_id → absolute path. Returns nullptr if not found.
+    [[nodiscard]] const fs::path* path_for_file_id(uint32_t id) const noexcept {
+        auto it = file_id_to_path_.find(id);
+        return it != file_id_to_path_.end() ? &it->second : nullptr;
+    }
+
+    /// Install a custom output port so that display/write/newline go through
+    /// the given port rather than falling back to std::cout.
+    /// Typical use in the DAP: pass a CallbackPort that fires send_event().
+    void set_output_port(std::shared_ptr<runtime::Port> port) {
+        auto val = runtime::memory::factory::make_port(heap_, std::move(port));
+        if (val) vm_.set_current_output_port(*val);
+    }
+
+    /// Install a custom error port (used by eprintln / error output).
+    void set_error_port(std::shared_ptr<runtime::Port> port) {
+        auto val = runtime::memory::factory::make_port(heap_, std::move(port));
+        if (val) vm_.set_current_error_port(*val);
+    }
+
+    /// Pre-register a file path so that its file_id is known before the file
+    /// is actually loaded.  The DAP uses this to install breakpoints BEFORE
+    /// the VM thread starts running.  If the path is already registered the
+    /// existing id is returned unchanged.
+    uint32_t ensure_file_id(const fs::path& path) {
+        auto canon = canon_path_key(path);
+        auto it = path_to_file_id_.find(canon);
+        if (it != path_to_file_id_.end()) return it->second;
+        uint32_t id = next_file_id_++;
+        file_id_to_path_[id] = path;
+        path_to_file_id_[canon] = id;
+        return id;
+    }
+
+    /// Forward-lookup: canonical path string → file_id. Returns 0 if not found.
+    /// Input is normalised before lookup so case differences on Windows are handled.
+    [[nodiscard]] uint32_t file_id_for_path(const std::string& path) const {
+        auto canon = canon_path_key(fs::path(path));
+        auto it = path_to_file_id_.find(canon);
+        return it != path_to_file_id_.end() ? it->second : 0u;
+    }
+
     /// Format a runtime value for display.
     [[nodiscard]] std::string format_value(runtime::nanbox::LispVal v,
                                            runtime::FormatMode mode = runtime::FormatMode::Write) {
@@ -178,16 +230,35 @@ private:
     // File ID allocator for diagnostic spans
     uint32_t next_file_id_;
 
+    // Bidirectional file-id ↔ path maps (for diagnostics and DAP span resolution)
+    std::unordered_map<uint32_t, fs::path>    file_id_to_path_;
+    std::unordered_map<std::string, uint32_t> path_to_file_id_;
+
     // Whether builtins have been installed into VM globals yet
     bool builtins_installed_{false};
 
     // Guard against recursive auto-loading cycles
     std::unordered_set<std::string> loading_modules_;
 
-    uint32_t allocate_file_id(const std::string& path) {
-        // TODO: maintain file_id -> path map for diagnostic rendering
-        (void)path;
-        return next_file_id_++;
+    /// Normalise a path to a stable lowercase key used in path_to_file_id_.
+    /// On Windows this lowercases and ensures backslashes; on POSIX it is
+    /// just fs::absolute + lexically_normal.
+    static std::string canon_path_key(const fs::path& p) {
+        std::error_code ec;
+        fs::path abs = fs::absolute(p, ec);
+        if (ec) abs = p;
+        std::string s = abs.lexically_normal().string();
+#ifdef _WIN32
+        for (char& c : s) {
+            if (c == '/') c = '\\';
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+#endif
+        return s;
+    }
+
+    uint32_t allocate_file_id(const std::string& raw_path) {
+        return ensure_file_id(fs::path(raw_path));
     }
 
     /// Collect all module names referenced in (import ...) clauses within

@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include "eta/runtime/nanbox.h"
+#include "eta/reader/lexer.h"
 
 namespace eta::runtime::vm {
 
@@ -80,12 +81,21 @@ struct Instruction {
 };
 
 struct BytecodeFunction {
-    std::vector<Instruction> code;
-    std::vector<nanbox::LispVal> constants;
-    std::uint32_t arity;
-    bool has_rest;
-    std::uint32_t stack_size;
+    std::vector<Instruction>          code;
+    std::vector<reader::lexer::Span>  source_map;  // parallel to code; same length
+    std::vector<nanbox::LispVal>      constants;
+    std::uint32_t arity{0};
+    bool has_rest{false};
+    std::uint32_t stack_size{0};
     std::string name;
+
+    /// Return the source span for the instruction at index @p pc.
+    /// Returns a zeroed Span if @p pc is out of range or the source_map
+    /// was not populated (synthetic instructions have file_id == 0).
+    [[nodiscard]] reader::lexer::Span span_at(std::uint32_t pc) const noexcept {
+        if (pc < source_map.size()) return source_map[pc];
+        return {};
+    }
 };
 
 } // namespace eta::runtime::vm

@@ -99,6 +99,8 @@ if ($CodeExe -and (Test-Path $VsixPath)) {
     Write-Host "> VS Code extension not in bundle -- skipping."
     Write-Host "    Set eta.lsp.serverPath in VS Code settings to:"
     Write-Host "    $BinDir\eta_lsp.exe"
+    Write-Host "    Set eta.dap.executablePath in VS Code settings to:"
+    Write-Host "    $BinDir\eta_dap.exe"
 } else {
     Write-Host "> 'code' not on PATH -- skipping VS Code extension install."
     Write-Host "    To install manually: code --install-extension `"$VsixPath`" --force"
@@ -107,7 +109,7 @@ if ($CodeExe -and (Test-Path $VsixPath)) {
 # -- 4. Smoke test -------------------------------------------------------------
 Write-Host ""
 Write-Host "> Verifying..."
-foreach ($bin in @("etai.exe", "eta_repl.exe", "eta_lsp.exe")) {
+foreach ($bin in @("etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe")) {
     $p = Join-Path $BinDir $bin
     if (Test-Path $p) {
         Write-Host "  [OK] $bin"

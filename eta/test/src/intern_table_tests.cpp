@@ -48,7 +48,7 @@ BOOST_AUTO_TEST_CASE(test_fuzzer_crash_case_newlines) {
 
     // Test 1: Intern the whole string
     BOOST_CHECK_NO_THROW({
-        tbl.intern(input);
+        (void) tbl.intern(input);
         BOOST_TEST_MESSAGE("Full string interned successfully");
     });
 
@@ -69,7 +69,7 @@ BOOST_AUTO_TEST_CASE(test_fuzzer_crash_case_newlines) {
     // Test each part.
     for (const auto& part : parts) {
         BOOST_CHECK_NO_THROW({
-            tbl.intern(part);
+            (void) tbl.intern(part);
             BOOST_TEST_MESSAGE("Part interned: length=" << part.size());
         });
     }
@@ -80,10 +80,10 @@ BOOST_AUTO_TEST_CASE(test_fuzzer_crash_case_single_char_with_newlines) {
 
     // Test a single character followed by newlines
     BOOST_CHECK_NO_THROW({
-        tbl.intern("u");
-        tbl.intern("u\n");
-        tbl.intern("u\n\n");
-        tbl.intern("u\n\n\n");
+        (void) tbl.intern("u");
+        (void) tbl.intern("u\n");
+        (void) tbl.intern("u\n\n");
+        (void) tbl.intern("u\n\n\n");
     });
 }
 
@@ -91,9 +91,9 @@ BOOST_AUTO_TEST_CASE(test_fuzzer_crash_case_empty_strings) {
     InternTable tbl;
 
     BOOST_CHECK_NO_THROW({
-        tbl.intern("");
-        tbl.intern("");
-        tbl.intern("");
+        (void) tbl.intern("");
+        (void) tbl.intern("");
+        (void) tbl.intern("");
     });
 }
 

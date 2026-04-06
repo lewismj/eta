@@ -105,6 +105,51 @@ std::optional<std::string> LspServer::resolve_module_source(const std::string& m
     return std::nullopt;
 }
 
+void LspServer::preload_prelude(
+        std::vector<eta::reader::parser::SExprPtr>& all_forms,
+        std::unordered_set<std::string>& seen_modules) {
+    using namespace reader::utils;
+    namespace fs = std::filesystem;
+
+    // Search for "prelude.eta" directly — this single file defines all the
+    // std.* modules inline (std.core, std.math, std.io, std.collections,
+    // std.test, std.prelude).  We must load it before preload_module_deps so
+    // that (import std.prelude) in user code resolves to a known module.
+    for (const auto& dir : module_search_dirs_) {
+        auto candidate = dir / "prelude.eta";
+        std::error_code ec;
+        if (!fs::is_regular_file(candidate, ec)) continue;
+
+        std::ifstream f(candidate);
+        if (!f.is_open()) continue;
+        std::string src(std::istreambuf_iterator<char>(f),
+                        std::istreambuf_iterator<char>{});
+
+        reader::lexer::Lexer lex(0, src);
+        reader::parser::Parser parser(lex);
+        auto parsed = parser.parse_toplevel();
+        if (!parsed) return; // parse error in prelude — skip silently
+
+        reader::expander::Expander expander;
+        auto expanded = expander.expand_many(*parsed);
+        if (!expanded) return; // expansion error — skip silently
+
+        for (auto& form : *expanded) {
+            // Track module names so preload_module_deps won't try to re-load them
+            const auto* mod = as_list(form);
+            if (mod && mod->elems.size() >= 2 &&
+                is_symbol_named(mod->elems[0], "module")) {
+                if (const auto* name_sym = as_symbol(mod->elems[1])) {
+                    if (seen_modules.count(name_sym->name)) continue; // already present
+                    seen_modules.insert(name_sym->name);
+                }
+            }
+            all_forms.push_back(std::move(form));
+        }
+        return; // Only load the first prelude.eta found
+    }
+}
+
 void LspServer::preload_module_deps(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
         std::unordered_set<std::string>& seen_modules) {
@@ -480,6 +525,7 @@ void LspServer::validate_document(const std::string& uri) {
             if (const auto* name_sym = as_symbol(mod->elems[1]))
                 seen_modules.insert(name_sym->name);
         }
+        preload_prelude(all_forms, seen_modules);
         preload_module_deps(all_forms, seen_modules);
     }
 
