@@ -1,14 +1,12 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import * as cp from 'child_process';
 import {
     workspace,
     ExtensionContext,
     window,
     debug,
     commands,
-    EventEmitter,
-    DebugAdapterInlineImplementation,
+    DebugAdapterExecutable,
     OutputChannel,
     WorkspaceFolder,
     CancellationToken,
@@ -18,7 +16,6 @@ import type {
     DebugAdapterDescriptorFactory,
     DebugConfiguration,
     DebugConfigurationProvider,
-    DebugProtocolMessage,
     DebugSession,
 } from 'vscode';
 import {
@@ -144,6 +141,57 @@ function findInterpreterBinary(lspPath: string | undefined, context: ExtensionCo
     return exe;
 }
 
+function findDapBinary(etaiPath: string | undefined, lspPath: string | undefined, context: ExtensionContext): string {
+    const exe = process.platform === 'win32' ? 'eta_dap.exe' : 'eta_dap';
+    log('[Checking DAP Binary]');
+    log(`  Platform: ${process.platform}, looking for: ${exe}`);
+
+    // 1. User configuration
+    const configPath = workspace.getConfiguration('eta.dap').get<string>('executablePath', '').trim();
+    if (configPath) {
+        if (checkPath('config path (direct)', configPath)) { return configPath; }
+        const candidate = path.join(configPath, exe);
+        if (checkPath(`config path (${exe})`, candidate)) { return candidate; }
+    }
+
+    // 2. Next to etai (most common after an install)
+    if (etaiPath && etaiPath !== 'etai' && etaiPath !== 'etai.exe') {
+        const candidate = path.join(path.dirname(etaiPath), exe);
+        if (checkPath('next to etai', candidate)) { return candidate; }
+    }
+
+    // 3. Next to the LSP binary
+    if (lspPath && lspPath !== 'eta_lsp' && lspPath !== 'eta_lsp.exe') {
+        const candidate = path.join(path.dirname(lspPath), exe);
+        if (checkPath('next to LSP binary', candidate)) { return candidate; }
+    }
+
+    // 4. Bundled alongside the extension
+    const bundled = path.join(context.extensionPath, 'bin', exe);
+    if (checkPath('bundled', bundled)) { return bundled; }
+
+    // 5. Workspace build output
+    const workspaceFolders = workspace.workspaceFolders;
+    if (workspaceFolders) {
+        for (const folder of workspaceFolders) {
+            for (const rel of [
+                path.join('out', 'wsl-clang-release', 'eta', 'dap', exe),
+                path.join('out', 'build', 'eta', 'dap', exe),
+                path.join('build', 'eta', 'dap', exe),
+                path.join('build-release', 'eta', 'dap', exe),
+                path.join('out', 'msvc-release', 'eta', 'dap', exe),
+            ]) {
+                const c = path.join(folder.uri.fsPath, rel);
+                if (checkPath('workspace', c)) { return c; }
+            }
+        }
+    }
+
+    // 6. Fall back to PATH
+    log(`  - Falling back to PATH: ${exe}`);
+    return exe;
+}
+
 function validateAndLogServerPath(configPath: string): void {
     log('[Validating eta.lsp.serverPath]');
     if (!configPath) {
@@ -180,12 +228,14 @@ export function activate(context: ExtensionContext) {
     // ── Always register the debug adapter ──────────────────────────
     const serverPath = findServerBinary(context);
     const etaiPath   = findInterpreterBinary(serverPath, context);
+    const dapPath    = findDapBinary(etaiPath, serverPath, context);
 
     log(`[Summary]`);
     log(`  LSP binary  : ${serverPath ?? '(none)'}`);
     log(`  etai binary : ${etaiPath}`);
+    log(`  DAP binary  : ${dapPath}`);
 
-    const factory = new EtaDebugAdapterFactory(etaiPath, outputChannel);
+    const factory = new EtaDebugAdapterFactory(dapPath, etaiPath, outputChannel);
     context.subscriptions.push(
         debug.registerDebugAdapterDescriptorFactory('eta', factory),
         debug.registerDebugConfigurationProvider('eta', new EtaDebugConfigurationProvider()),
@@ -310,137 +360,26 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
 
 class EtaDebugAdapterFactory implements DebugAdapterDescriptorFactory {
     constructor(
+        private readonly dapPath: string,
         private readonly etaiPath: string,
         private readonly channel: OutputChannel,
     ) {}
 
     createDebugAdapterDescriptor(_session: DebugSession): DebugAdapterDescriptor {
-        return new DebugAdapterInlineImplementation(
-            new EtaDebugSession(this.etaiPath, this.channel)
-        );
-    }
-}
-
-class EtaDebugSession {
-    private readonly _sendMessage = new EventEmitter<DebugProtocolMessage>();
-    readonly onDidSendMessage = this._sendMessage.event;
-
-    private _proc: cp.ChildProcess | undefined;
-    private _seq = 1;
-
-    constructor(
-        private readonly etaiPath: string,
-        private readonly channel: OutputChannel,
-    ) {}
-
-    private _log(msg: string): void {
-        this.channel.appendLine(msg);
-    }
-
-    handleMessage(msg: DebugProtocolMessage): void {
-        const m = msg as any;
-        if (m.type !== 'request') { return; }
-
-        switch (m.command) {
-            case 'initialize':
-                this._respond(m, { supportsConfigurationDoneRequest: true, supportsTerminateRequest: true });
-                this._event('initialized', {});
-                break;
-            case 'configurationDone':
-                this._respond(m, {});
-                break;
-            case 'launch':
-                this._launch(m);
-                break;
-            case 'terminate':
-            case 'disconnect':
-                this._proc?.kill();
-                this._respond(m, {});
-                break;
-            default:
-                this._respond(m, {});
-        }
-    }
-
-    private _launch(m: any): void {
-        const program = m.arguments?.program as string | undefined;
-        if (!program) {
-            this._respond(m, undefined, 'No program specified in launch configuration.');
-            return;
-        }
-
-        // Build environment
+        // Build environment for the DAP process (ETA_MODULE_PATH etc.)
         const config = workspace.getConfiguration('eta.lsp');
         const modulePath = config.get<string>('modulePath', '') || process.env['ETA_MODULE_PATH'] || '';
-        const env: NodeJS.ProcessEnv = { ...process.env };
-        if (modulePath) { env['ETA_MODULE_PATH'] = modulePath; }
+        const env: { [key: string]: string } = {};
+        for (const [k, v] of Object.entries(process.env)) {
+            if (v !== undefined) { env[k] = v; }
+        }
+        if (modulePath) {
+            env['ETA_MODULE_PATH'] = modulePath;
+        }
 
-        const extraArgs: string[] = m.arguments?.args ?? [];
-        const allArgs = [program, ...extraArgs];
+        this.channel.appendLine(`[DAP] Launching: ${this.dapPath}`);
+        this.channel.appendLine(`[DAP] ETA_MODULE_PATH: ${modulePath || '(not set)'}`);
 
-        this._log('[Launching Debug Session]');
-        this._log(`  Command : ${this.etaiPath}`);
-        this._log(`  Args    : ${JSON.stringify(allArgs)}`);
-        this._log(`  Env ETA_MODULE_PATH: ${modulePath || '(not set)'}`);
-
-        this._respond(m, {});
-
-        this._proc = cp.spawn(this.etaiPath, allArgs, { env });
-
-        this._proc.stdout?.on('data', (chunk: Buffer) => {
-            this._event('output', { category: 'stdout', output: chunk.toString() });
-        });
-        this._proc.stderr?.on('data', (chunk: Buffer) => {
-            this._event('output', { category: 'stderr', output: chunk.toString() });
-        });
-        this._proc.on('error', (err: NodeJS.ErrnoException) => {
-            const code = err.code ?? 'UNKNOWN';
-            const detail = code === 'ENOENT'
-                ? `Executable not found at: ${this.etaiPath}`
-                : code === 'EACCES'
-                    ? `Permission denied executing: ${this.etaiPath}`
-                    : err.message;
-            const fullMsg =
-                `Failed to launch etai: [${code}] ${detail}\n` +
-                `  Path used: ${this.etaiPath}\n` +
-                `  Make sure etai is built and on PATH, or set eta.lsp.serverPath to your bin/ directory.\n`;
-            this._log(`ERROR: ${fullMsg}`);
-            this._event('output', { category: 'stderr', output: fullMsg });
-            this._event('exited', { exitCode: 1 });
-            this._event('terminated', {});
-        });
-        this._proc.on('close', (code) => {
-            const exitCode = code ?? 0;
-            this._log(`  Process exited with code ${exitCode}`);
-            this._event('output', { category: 'console', output: `\nProcess exited with code ${exitCode}\n` });
-            this._event('exited', { exitCode });
-            this._event('terminated', {});
-        });
-    }
-
-    private _respond(req: any, body: any, errorMsg?: string): void {
-        this._sendMessage.fire({
-            type: 'response',
-            seq: this._seq++,
-            request_seq: req.seq,
-            success: !errorMsg,
-            command: req.command,
-            body: body ?? {},
-            ...(errorMsg ? { message: errorMsg } : {}),
-        } as any);
-    }
-
-    private _event(event: string, body: any): void {
-        this._sendMessage.fire({
-            type: 'event',
-            seq: this._seq++,
-            event,
-            body,
-        } as any);
-    }
-
-    dispose(): void {
-        this._proc?.kill();
-        this._sendMessage.dispose();
+        return new DebugAdapterExecutable(this.dapPath, [], { env });
     }
 }

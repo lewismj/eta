@@ -11,7 +11,7 @@
 # bin/ is added to PATH and ETA_MODULE_PATH is set in your shell rc.
 #
 # When called with a <prefix>, files are copied:
-#   <prefix>/bin/         ← etai, eta_repl, eta_lsp
+#   <prefix>/bin/         ← etai, eta_repl, eta_lsp, eta_dap
 #   <prefix>/stdlib/      ← prelude.eta, std/*.eta
 #   <prefix>/editors/     ← VS Code extension (optional)
 # ──────────────────────────────────────────────────────────────────────
@@ -86,6 +86,8 @@ elif [ ! -f "$VSIX_PATH" ]; then
     echo "▸ VS Code extension not in bundle — skipping."
     echo "    Set eta.lsp.serverPath in VS Code settings to:"
     echo "    ${BIN_DIR}/eta_lsp"
+    echo "    Set eta.dap.executablePath in VS Code settings to:"
+    echo "    ${BIN_DIR}/eta_dap"
 else
     echo "▸ 'code' not on PATH — skipping VS Code extension install."
     echo "    To install manually: code --install-extension \"${VSIX_PATH}\" --force"
@@ -94,7 +96,7 @@ fi
 # ── 4. Smoke test ─────────────────────────────────────────────────────
 echo
 echo "▸ Verifying..."
-for bin in etai eta_repl eta_lsp; do
+for bin in etai eta_repl eta_lsp eta_dap; do
     p="${BIN_DIR}/${bin}"
     if [ -x "$p" ]; then
         echo "  ✓ ${bin}"

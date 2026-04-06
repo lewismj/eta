@@ -47,6 +47,11 @@
                     "type": "string",
                     "default": "",
                     "description": "Colon/semicolon-separated list of directories to search for Eta modules (ETA_MODULE_PATH). If empty, falls back to the ETA_MODULE_PATH environment variable."
+                },
+                "eta.dap.executablePath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the eta_dap debug-adapter executable. If empty, searches next to etai/eta_lsp, then PATH."
                 }
             }
         },
@@ -90,8 +95,13 @@
                             "args": {
                                 "type": "array",
                                 "items": { "type": "string" },
-                                "description": "Additional arguments passed to etai.",
+                                "description": "Additional arguments passed to the DAP server.",
                                 "default": []
+                            },
+                            "stopOnEntry": {
+                                "type": "boolean",
+                                "description": "Pause on the first instruction when launching.",
+                                "default": false
                             }
                         }
                     }
@@ -101,18 +111,20 @@
                         "type": "eta",
                         "request": "launch",
                         "name": "Run Eta file",
-                        "program": "${file}"
+                        "program": "${file}",
+                        "stopOnEntry": false
                     }
                 ],
                 "configurationSnippets": [
                     {
                         "label": "Eta: Launch",
-                        "description": "Run an Eta source file with etai.",
+                        "description": "Run an Eta source file with the Eta debug adapter.",
                         "body": {
                             "type": "eta",
                             "request": "launch",
                             "name": "Run Eta file",
-                            "program": "^\"\\${file}\""
+                            "program": "^\"\\${file}\"",
+                            "stopOnEntry": false
                         }
                     }
                 ]
