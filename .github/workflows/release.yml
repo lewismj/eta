@@ -38,6 +38,13 @@ jobs:
           sudo apt-get install -y build-essential cmake ninja-build nodejs npm
 
       - name: Install Boost via vcpkg
+        env:
+          # Authenticate GitHub downloads → 5000 req/hr instead of 60 req/hr (anonymous).
+          # This is the primary fix for "vcpkg_download_distfile failed".
+          X_VCPKG_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Cache built binaries in the GitHub Actions cache so subsequent runs
+          # skip the download+build entirely.
+          VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg.git /tmp/vcpkg
           /tmp/vcpkg/bootstrap-vcpkg.sh -disableMetrics
@@ -109,6 +116,11 @@ jobs:
 
       - name: Install Boost via vcpkg
         shell: pwsh
+        env:
+          # Authenticate GitHub downloads → avoids anonymous rate-limit failures.
+          X_VCPKG_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Cache built binaries; subsequent runs skip download+build.
+          VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
         run: |
           $vcpkg = "${{ runner.temp }}\vcpkg"
           git clone --depth 1 https://github.com/microsoft/vcpkg.git $vcpkg
