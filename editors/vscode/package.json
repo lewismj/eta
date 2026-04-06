@@ -51,7 +51,7 @@
                 "eta.dap.executablePath": {
                     "type": "string",
                     "default": "",
-                    "description": "Path to the eta_dap debug-adapter executable. If empty, searches next to etai/eta_lsp, then PATH."
+                    "description": "Full path to the eta_dap executable OR the directory containing it (e.g. C:\\Eta\\bin or C:\\Eta\\bin\\eta_dap.exe). If empty, searches next to eta_lsp, then workspace build output, then PATH."
                 }
             }
         },

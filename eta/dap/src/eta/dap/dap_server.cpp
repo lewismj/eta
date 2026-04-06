@@ -2,6 +2,7 @@
 #include "dap_io.h"
 
 #include <cassert>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -14,11 +15,32 @@
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/value_formatter.h"
+#include "eta/diagnostic/diagnostic.h"
 
 namespace eta::dap {
 
 namespace fs = std::filesystem;
 using namespace json;
+
+// ---------------------------------------------------------------------------
+// Local helpers
+// ---------------------------------------------------------------------------
+
+/// Normalise a source-file path to a stable key that matches the normalisation
+/// used by Driver::file_id_for_path / Driver::ensure_file_id.
+static std::string normalize_path(const std::string& raw) {
+    std::error_code ec;
+    fs::path abs = fs::absolute(fs::path(raw), ec);
+    if (ec) abs = fs::path(raw);
+    std::string s = abs.lexically_normal().string();
+#ifdef _WIN32
+    for (char& c : s) {
+        if (c == '/') c = '\\';
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+#endif
+    return s;
+}
 
 // ============================================================================
 // Construction / Destruction
@@ -41,6 +63,7 @@ DapServer::~DapServer() {
 // ============================================================================
 
 void DapServer::send(const Value& msg) {
+    std::lock_guard<std::mutex> lk(output_mutex_);
     write_message(json::to_string(msg));
 }
 
@@ -192,7 +215,8 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
         return;
     }
 
-    std::string canon_path = *path_val;
+    // Normalise so it matches the driver's canon_path_key lookup
+    std::string canon_path = normalize_path(*path_val);
     pending_bps_.erase(canon_path);
 
     if (args.has("breakpoints") && args["breakpoints"].is_array()) {
@@ -266,7 +290,7 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
 #ifdef _WIN32
         wchar_t buf[4096];
         DWORD len = GetModuleFileNameW(nullptr, buf, static_cast<DWORD>(std::size(buf)));
-        if (len > 0) {
+        if (len > 0 && len < static_cast<DWORD>(std::size(buf))) {
             auto stdlib = fs::path(buf).parent_path().parent_path() / "stdlib";
             if (fs::is_directory(stdlib, ec)) search_dirs.push_back(stdlib);
         }
@@ -280,6 +304,18 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
         // Also try sibling of the script file
         auto script_dir = script_path_.parent_path();
         if (!script_dir.empty()) search_dirs.push_back(script_dir);
+    }
+
+    // Log the module search path so the user can diagnose "module not found"
+    {
+        std::ostringstream msg;
+        msg << "[eta_dap] Module search dirs:\n";
+        if (search_dirs.empty()) {
+            msg << "  (none — prelude will not load; set eta.lsp.modulePath in VS Code settings)\n";
+        } else {
+            for (const auto& d : search_dirs) msg << "  " << d.string() << "\n";
+        }
+        send_event("output", json::object({{"category", "console"}, {"output", msg.str()}}));
     }
 
     auto resolver = interpreter::ModulePathResolver(search_dirs);
@@ -312,8 +348,25 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
         driver_ = std::move(drv);
     }
 
-    // Install any breakpoints that arrived before the VM was started
+    // ── Pre-register the script file ID so breakpoints fire on first run ──────
+    // We allocate the file_id NOW (before the VM thread starts loading any file).
+    // When run_file() is later called with the same (normalised) path, Driver
+    // reuses this id — so the breakpoints we install below will be active
+    // inside vm_.execute().
+    driver_->ensure_file_id(script_path_);
+
+    // Install any breakpoints that arrived before configurationDone.
+    // With the script file_id pre-registered above these will now be effective.
     install_pending_breakpoints();
+
+    {
+        std::size_t bp_count = 0;
+        for (const auto& [p, bps] : pending_bps_) bp_count += bps.size();
+        std::ostringstream msg;
+        msg << "[eta_dap] " << bp_count << " breakpoint(s) installed; "
+            << "script file_id = " << driver_->file_id_for_path(script_path_.string()) << "\n";
+        send_event("output", json::object({{"category", "console"}, {"output", msg.str()}}));
+    }
 
     // If stopOnEntry, request a pause immediately (before any code runs)
     if (stop_on_entry_) {
@@ -324,23 +377,58 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
     vm_thread_ = std::thread([this]() {
         auto* drv = driver_.get();
 
-        // Load prelude
-        drv->load_prelude();
+        // ── Load prelude ─────────────────────────────────────────────────────
+        auto pr = drv->load_prelude();
+        if (!pr.found) {
+            send_event("output", json::object({
+                {"category", "important"},
+                {"output",
+                    "[eta_dap] Warning: prelude.eta not found — std.core, std.io, std.prelude etc. unavailable.\n"
+                    "[eta_dap] Set 'eta.lsp.modulePath' in VS Code settings, or set ETA_MODULE_PATH.\n"},
+            }));
+        } else if (!pr.loaded) {
+            const auto& diags = drv->diagnostics().diagnostics();
+            for (const auto& d : diags) {
+                std::ostringstream msg;
+                diagnostic::format_diagnostic(msg, d, /*use_color=*/false);
+                send_event("output", json::object({{"category", "stderr"}, {"output", msg.str() + "\n"}}));
+            }
+        } else {
+            send_event("output", json::object({
+                {"category", "console"},
+                {"output", "[eta_dap] Prelude loaded: " + pr.path.string() + "\n"},
+            }));
+        }
 
-        // Execute the script
+        // ── Execute the script ────────────────────────────────────────────────
         bool ok = drv->run_file(script_path_);
 
-        // Signal termination to the IDE
+        // Re-install breakpoints now that prelude/import file IDs are also known.
+        // Useful for breakpoints in library files during interactive/long-lived sessions.
+        {
+            std::lock_guard<std::mutex> lk(vm_mutex_);
+            install_pending_breakpoints();
+        }
+
+        // ── Signal IDE ───────────────────────────────────────────────────────
         if (ok) {
             send_event("terminated", json::object({}));
         } else {
-            // Collect and forward diagnostics as an output event
-            std::ostringstream err_msg;
-            err_msg << "Script failed: " << script_path_.filename().string();
-            send_event("output", json::object({
-                {"category", "stderr"},
-                {"output",   err_msg.str() + "\n"},
-            }));
+            // Forward the real compiler/linker/runtime diagnostics — not just
+            // a generic "Script failed" message.
+            const auto& diags = drv->diagnostics().diagnostics();
+            if (diags.empty()) {
+                send_event("output", json::object({
+                    {"category", "stderr"},
+                    {"output", "[eta_dap] Script failed: " + script_path_.filename().string() + "\n"},
+                }));
+            } else {
+                for (const auto& d : diags) {
+                    std::ostringstream msg;
+                    diagnostic::format_diagnostic(msg, d, /*use_color=*/false);
+                    send_event("output", json::object({{"category", "stderr"}, {"output", msg.str() + "\n"}}));
+                }
+            }
             send_event("terminated", json::object({}));
         }
     });

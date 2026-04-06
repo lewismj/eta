@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -162,9 +164,25 @@ public:
         return it != file_id_to_path_.end() ? &it->second : nullptr;
     }
 
+    /// Pre-register a file path so that its file_id is known before the file
+    /// is actually loaded.  The DAP uses this to install breakpoints BEFORE
+    /// the VM thread starts running.  If the path is already registered the
+    /// existing id is returned unchanged.
+    uint32_t ensure_file_id(const fs::path& path) {
+        auto canon = canon_path_key(path);
+        auto it = path_to_file_id_.find(canon);
+        if (it != path_to_file_id_.end()) return it->second;
+        uint32_t id = next_file_id_++;
+        file_id_to_path_[id] = path;
+        path_to_file_id_[canon] = id;
+        return id;
+    }
+
     /// Forward-lookup: canonical path string → file_id. Returns 0 if not found.
-    [[nodiscard]] uint32_t file_id_for_path(const std::string& path) const noexcept {
-        auto it = path_to_file_id_.find(path);
+    /// Input is normalised before lookup so case differences on Windows are handled.
+    [[nodiscard]] uint32_t file_id_for_path(const std::string& path) const {
+        auto canon = canon_path_key(fs::path(path));
+        auto it = path_to_file_id_.find(canon);
         return it != path_to_file_id_.end() ? it->second : 0u;
     }
 
@@ -208,11 +226,25 @@ private:
     // Guard against recursive auto-loading cycles
     std::unordered_set<std::string> loading_modules_;
 
-    uint32_t allocate_file_id(const std::string& path) {
-        uint32_t id = next_file_id_++;
-        file_id_to_path_[id] = fs::path(path);
-        path_to_file_id_[path] = id;
-        return id;
+    /// Normalise a path to a stable lowercase key used in path_to_file_id_.
+    /// On Windows this lowercases and ensures backslashes; on POSIX it is
+    /// just fs::absolute + lexically_normal.
+    static std::string canon_path_key(const fs::path& p) {
+        std::error_code ec;
+        fs::path abs = fs::absolute(p, ec);
+        if (ec) abs = p;
+        std::string s = abs.lexically_normal().string();
+#ifdef _WIN32
+        for (char& c : s) {
+            if (c == '/') c = '\\';
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+#endif
+        return s;
+    }
+
+    uint32_t allocate_file_id(const std::string& raw_path) {
+        return ensure_file_id(fs::path(raw_path));
     }
 
     /// Collect all module names referenced in (import ...) clauses within

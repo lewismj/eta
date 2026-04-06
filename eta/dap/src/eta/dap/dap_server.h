@@ -56,8 +56,9 @@ private:
     std::thread vm_thread_;
     std::mutex  vm_mutex_;   // guards driver_ access from DAP thread
 
-    // Sequence number for stop events sent from VM thread
-    std::atomic<int> event_seq_{1};
+    // Mutex protecting stdout writes (send() is called from both the DAP main
+    // thread and the VM thread, so we must serialise all output).
+    std::mutex output_mutex_;
 
     // ── Transport ─────────────────────────────────────────────────────────────
     void send(const Value& msg);

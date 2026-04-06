@@ -14,6 +14,7 @@ import {
 import type {
     DebugAdapterDescriptor,
     DebugAdapterDescriptorFactory,
+    DebugAdapterTracker,
     DebugConfiguration,
     DebugConfigurationProvider,
     DebugSession,
@@ -188,7 +189,8 @@ function findDapBinary(etaiPath: string | undefined, lspPath: string | undefined
     }
 
     // 6. Fall back to PATH
-    log(`  - Falling back to PATH: ${exe}`);
+    log(`  WARNING: eta_dap not found in any known location; falling back to PATH lookup.`);
+    log(`  To fix: set "eta.dap.executablePath" in VS Code settings to the full path of ${exe}.`);
     return exe;
 }
 
@@ -238,6 +240,11 @@ export function activate(context: ExtensionContext) {
     const factory = new EtaDebugAdapterFactory(dapPath, etaiPath, outputChannel);
     context.subscriptions.push(
         debug.registerDebugAdapterDescriptorFactory('eta', factory),
+        debug.registerDebugAdapterTrackerFactory('eta', {
+            createDebugAdapterTracker(_session: DebugSession): DebugAdapterTracker {
+                return new EtaDebugAdapterTracker(outputChannel);
+            },
+        }),
         debug.registerDebugConfigurationProvider('eta', new EtaDebugConfigurationProvider()),
         commands.registerCommand('eta.runFile', () => {
             const editor = window.activeTextEditor;
@@ -356,7 +363,44 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
     }
 }
 
-// ── Debug adapter ─────────────────────────────────────────────────────────
+// ── Debug adapter tracker ─────────────────────────────────────────────────────
+// Intercepts DAP messages between VS Code and eta_dap.  We forward every
+// 'output' event body to the "Eta Language" output channel so the user can
+// see module-path warnings, breakpoint counts, and real error messages without
+// having to enable the VS Code DAP trace log.
+
+class EtaDebugAdapterTracker implements DebugAdapterTracker {
+    constructor(private readonly channel: OutputChannel) {}
+
+    onWillStartSession(): void {
+        this.channel.appendLine('[DAP] Debug session starting…');
+    }
+
+    onWillStopSession(): void {
+        this.channel.appendLine('[DAP] Debug session stopping…');
+    }
+
+    // Called for every message sent FROM the adapter TO VS Code.
+    onDidSendMessage(message: any): void {
+        if (message?.type === 'event' && message?.event === 'output') {
+            const output: string = message?.body?.output ?? '';
+            if (output) {
+                // The text already ends with \n in most cases; use append not appendLine.
+                this.channel.append(output);
+            }
+        }
+    }
+
+    onError(error: Error): void {
+        this.channel.appendLine(`[DAP] Adapter error: ${error.message}`);
+    }
+
+    onExit(code: number | undefined, signal: string | undefined): void {
+        this.channel.appendLine(
+            `[DAP] Adapter exited (code=${code ?? 'null'}, signal=${signal ?? 'null'}).`
+        );
+    }
+}
 
 class EtaDebugAdapterFactory implements DebugAdapterDescriptorFactory {
     constructor(

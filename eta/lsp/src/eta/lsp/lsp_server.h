@@ -131,6 +131,14 @@ private:
     /// Returns nullopt if the module file cannot be found.
     std::optional<std::string> resolve_module_source(const std::string& module_name);
 
+    /// Load prelude.eta from the module search path and add all its module
+    /// forms to all_forms, registering their names in seen_modules.
+    /// This provides std.core, std.math, std.io, std.prelude etc. to the
+    /// linker so that (import std.prelude) in user code resolves correctly.
+    void preload_prelude(
+        std::vector<eta::reader::parser::SExprPtr>& all_forms,
+        std::unordered_set<std::string>& seen_modules);
+
     /// Recursively load all imported module files into all_forms so the linker
     /// can resolve cross-module references.  seen_modules must already contain
     /// the names of every module already present in all_forms.
