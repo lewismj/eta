@@ -1,0 +1,107 @@
+#pragma once
+// DAP (Debug Adapter Protocol) server for eta scripts.
+// Runs as a separate process launched by the VS Code extension via DebugAdapterExecutable.
+// Communicates over stdin/stdout using Content-Length framed JSON-RPC (same as LSP).
+
+#include <atomic>
+#include <filesystem>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
+#include "json.h"
+
+namespace eta::interpreter { class Driver; }
+
+namespace eta::dap {
+
+using json::Value;
+using json::Object;
+using json::Array;
+
+class DapServer {
+public:
+    DapServer();
+    ~DapServer();
+
+    /// Main loop: reads DAP requests from stdin, writes responses/events to stdout.
+    /// Blocks until the "disconnect" request is received or stdin closes.
+    void run();
+
+private:
+    // ── State ─────────────────────────────────────────────────────────────────
+    bool running_{true};
+    int  next_seq_{1};
+
+    // Script to debug (set by "launch" request)
+    std::filesystem::path script_path_;
+
+    // Breakpoints pending before VM is running: path → [(line, verified)]
+    struct PendingBp { int line; };
+    std::unordered_map<std::string, std::vector<PendingBp>> pending_bps_;
+
+    // Whether to stop on first instruction (stopOnEntry)
+    bool stop_on_entry_{false};
+
+    // Whether "launch" has been requested (i.e., VM thread is running/should start)
+    bool launched_{false};
+
+    // The driver and its execution thread
+    std::unique_ptr<interpreter::Driver> driver_;
+    std::thread vm_thread_;
+    std::mutex  vm_mutex_;   // guards driver_ access from DAP thread
+
+    // Sequence number for stop events sent from VM thread
+    std::atomic<int> event_seq_{1};
+
+    // ── Transport ─────────────────────────────────────────────────────────────
+    void send(const Value& msg);
+    void send_response(const Value& id, const Value& body);
+    void send_error_response(const Value& id, int code, const std::string& msg);
+    void send_event(const std::string& event_name, const Value& body);
+
+    // ── Dispatch ──────────────────────────────────────────────────────────────
+    void dispatch(const Value& msg);
+
+    // ── DAP request handlers ──────────────────────────────────────────────────
+    void handle_initialize(const Value& id, const Value& args);
+    void handle_launch(const Value& id, const Value& args);
+    void handle_set_breakpoints(const Value& id, const Value& args);
+    void handle_set_exception_breakpoints(const Value& id, const Value& args);
+    void handle_configuration_done(const Value& id, const Value& args);
+    void handle_threads(const Value& id, const Value& args);
+    void handle_stack_trace(const Value& id, const Value& args);
+    void handle_scopes(const Value& id, const Value& args);
+    void handle_variables(const Value& id, const Value& args);
+    void handle_continue(const Value& id, const Value& args);
+    void handle_next(const Value& id, const Value& args);
+    void handle_step_in(const Value& id, const Value& args);
+    void handle_step_out(const Value& id, const Value& args);
+    void handle_pause(const Value& id, const Value& args);
+    void handle_evaluate(const Value& id, const Value& args);
+    void handle_disconnect(const Value& id, const Value& args);
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    /// Apply pending_bps_ to the running VM after launch.
+    void install_pending_breakpoints();
+
+    /// Convert a file:// URI to a canonical path string.
+    static std::string uri_to_path(const std::string& uri);
+
+    /// Convert a canonical path string to a file:// URI.
+    static std::string path_to_uri(const std::string& path);
+
+    // Variable reference packing: encode (frame_index, scope) into a single int.
+    // scope 0 = locals, scope 1 = upvalues
+    static int encode_var_ref(int frame, int scope) { return (frame << 8) | (scope & 0xFF); }
+    static int decode_var_ref_frame(int ref) { return ref >> 8; }
+    static int decode_var_ref_scope(int ref) { return ref & 0xFF; }
+};
+
+} // namespace eta::dap
+

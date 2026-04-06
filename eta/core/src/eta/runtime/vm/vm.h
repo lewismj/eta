@@ -4,10 +4,15 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include "eta/runtime/nanbox.h"
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/error.h"
+#include "eta/reader/lexer.h"
 #include "bytecode.h"
 
 namespace eta::runtime::memory::gc { class MarkSweepGC; }
@@ -18,6 +23,46 @@ using namespace eta::runtime::nanbox;
 using namespace eta::runtime::memory::heap;
 using namespace eta::runtime::memory::intern;
 using namespace eta::runtime::error;
+
+// ── Debug types ──────────────────────────────────────────────────────────────
+
+/// A (file_id, 1-based line) pair identifying a source breakpoint.
+struct BreakLocation {
+    uint32_t file_id{0};
+    uint32_t line{0};
+    bool operator<(const BreakLocation& o) const noexcept {
+        return file_id != o.file_id ? file_id < o.file_id : line < o.line;
+    }
+    bool operator==(const BreakLocation& o) const noexcept {
+        return file_id == o.file_id && line == o.line;
+    }
+};
+
+enum class StopReason { Breakpoint, Step, Pause, Exception };
+
+struct StopEvent {
+    StopReason           reason{StopReason::Pause};
+    reader::lexer::Span  span{};         ///< source location of stopped instruction
+    std::string          exception_text; ///< non-empty when reason == Exception
+};
+
+/// Callback invoked (on the VM thread, with debug_mutex_ held) when the VM stops.
+/// The callback MUST NOT call resume()/step_*() directly — post to a queue instead.
+using StopCallback = std::function<void(const StopEvent&)>;
+
+/// (name, raw value) pair returned by get_locals / get_upvalues.
+struct VarEntry {
+    std::string         name;
+    nanbox::LispVal     value{nanbox::Nil};
+    bool                is_param{false};
+};
+
+/// Shallow frame description for stack-trace display.
+struct FrameInfo {
+    std::string          func_name;
+    reader::lexer::Span  span{};
+    std::size_t          frame_index{0};
+};
 
 enum class FrameKind : uint8_t {
     Normal,
@@ -70,6 +115,32 @@ public:
         func_resolver_ = std::move(resolver);
     }
 
+    // ── Debug API ────────────────────────────────────────────────────────────
+
+    /// Install a stop callback (called on VM thread when stopped).
+    /// The callback must not call resume()/step_*() — it should post to a queue.
+    void set_stop_callback(StopCallback cb) { stop_callback_ = std::move(cb); }
+
+    /// Replace the current breakpoint set (thread-safe).
+    void set_breakpoints(std::vector<BreakLocation> locs);
+
+    void resume();        ///< Continue free-running.
+    void step_over();     ///< Run until frame depth ≤ entry AND source line changes.
+    void step_in();       ///< Run until any new source line.
+    void step_out();      ///< Run until frame depth < entry depth.
+    void request_pause(); ///< Async: stop at next instruction boundary.
+
+    /// Inspect call stack — only valid while stopped.
+    [[nodiscard]] std::vector<FrameInfo> get_frames()                        const;
+    [[nodiscard]] std::vector<VarEntry>  get_locals(std::size_t frame_index) const;
+    [[nodiscard]] std::vector<VarEntry>  get_upvalues(std::size_t frame_index) const;
+
+    /// True when the VM is currently paused.
+    [[nodiscard]] bool is_paused() const noexcept {
+        std::lock_guard<std::mutex> lk(debug_mutex_);
+        return is_paused_;
+    }
+
     void collect_garbage();
 
     std::expected<LispVal, RuntimeError> execute(const BytecodeFunction& main);
@@ -111,6 +182,26 @@ private:
 
     std::unique_ptr<memory::gc::MarkSweepGC> gc_;
 
+    // ── Debug state ──────────────────────────────────────────────────────────
+    StopCallback                stop_callback_;         ///< set once before VM starts
+
+    mutable std::mutex          debug_mutex_;
+    std::condition_variable     debug_cv_;
+    bool                        is_paused_{false};      ///< guarded by debug_mutex_
+
+    std::mutex                  bp_mutex_;
+    std::vector<BreakLocation>  breakpoints_;           ///< sorted; guarded by bp_mutex_
+
+    enum class StepMode { None, Continue, Over, In, Out };
+    StepMode    step_mode_{StepMode::None};             ///< guarded by debug_mutex_
+    std::size_t step_target_depth_{0};                  ///< guarded by debug_mutex_
+    uint32_t    step_origin_file_{0};                   ///< guarded by debug_mutex_
+    uint32_t    step_origin_line_{0};                   ///< guarded by debug_mutex_
+    uint32_t    step_epoch_{0};                         ///< armed epoch
+    uint32_t    step_current_epoch_{0};                 ///< current epoch (incremented on call/cc)
+
+    std::atomic<bool> should_pause_{false};
+
     std::expected<void, RuntimeError> run_loop();
     std::expected<void, RuntimeError> handle_return(LispVal result);
     void push(LispVal val) { stack_.push_back(val); }
@@ -125,6 +216,12 @@ private:
     // Delegates to Heap::try_get_as after extracting the ObjectId from LispVal
     template<ObjectKind Kind, typename T>
     T* try_get_as(LispVal val) {
+        if (!ops::is_boxed(val) || ops::tag(val) != Tag::HeapObject) return nullptr;
+        return heap_.try_get_as<Kind, T>(ops::payload(val));
+    }
+
+    template<ObjectKind Kind, typename T>
+    const T* try_get_as(LispVal val) const {
         if (!ops::is_boxed(val) || ops::tag(val) != Tag::HeapObject) return nullptr;
         return heap_.try_get_as<Kind, T>(ops::payload(val));
     }
@@ -178,6 +275,11 @@ private:
     // Pack extra arguments (beyond required arity) into a rest-arg list
     // at stack_[fp_ + required]. Called after setup_frame / tail reuse.
     std::expected<void, RuntimeError> pack_rest_args(uint32_t argc, uint32_t required);
+
+    // Debug helpers ──────────────────────────────────────────────────────────
+    /// Called at the top of every instruction iteration when stop_callback_ is set.
+    /// Returns a StopEvent if execution should pause, nullopt otherwise.
+    std::optional<StopEvent> check_debug_stop();
 };
 
 } // namespace eta::runtime::vm

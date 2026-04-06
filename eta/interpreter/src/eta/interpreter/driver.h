@@ -148,6 +148,26 @@ public:
     /// Access the module path resolver.
     [[nodiscard]] ModulePathResolver& resolver() noexcept { return resolver_; }
 
+    /// Direct access to the VM — required for DAP debug hooks.
+    runtime::vm::VM& vm() noexcept { return vm_; }
+    const runtime::vm::VM& vm() const noexcept { return vm_; }
+
+    /// Direct access to the bytecode registry — required for breakpoint line resolution.
+    semantics::BytecodeFunctionRegistry& registry() noexcept { return registry_; }
+    const semantics::BytecodeFunctionRegistry& registry() const noexcept { return registry_; }
+
+    /// Reverse-lookup: file_id → absolute path. Returns nullptr if not found.
+    [[nodiscard]] const fs::path* path_for_file_id(uint32_t id) const noexcept {
+        auto it = file_id_to_path_.find(id);
+        return it != file_id_to_path_.end() ? &it->second : nullptr;
+    }
+
+    /// Forward-lookup: canonical path string → file_id. Returns 0 if not found.
+    [[nodiscard]] uint32_t file_id_for_path(const std::string& path) const noexcept {
+        auto it = path_to_file_id_.find(path);
+        return it != path_to_file_id_.end() ? it->second : 0u;
+    }
+
     /// Format a runtime value for display.
     [[nodiscard]] std::string format_value(runtime::nanbox::LispVal v,
                                            runtime::FormatMode mode = runtime::FormatMode::Write) {
@@ -178,6 +198,10 @@ private:
     // File ID allocator for diagnostic spans
     uint32_t next_file_id_;
 
+    // Bidirectional file-id ↔ path maps (for diagnostics and DAP span resolution)
+    std::unordered_map<uint32_t, fs::path>    file_id_to_path_;
+    std::unordered_map<std::string, uint32_t> path_to_file_id_;
+
     // Whether builtins have been installed into VM globals yet
     bool builtins_installed_{false};
 
@@ -185,9 +209,10 @@ private:
     std::unordered_set<std::string> loading_modules_;
 
     uint32_t allocate_file_id(const std::string& path) {
-        // TODO: maintain file_id -> path map for diagnostic rendering
-        (void)path;
-        return next_file_id_++;
+        uint32_t id = next_file_id_++;
+        file_id_to_path_[id] = fs::path(path);
+        path_to_file_id_[path] = id;
+        return id;
     }
 
     /// Collect all module names referenced in (import ...) clauses within
