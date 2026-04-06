@@ -3,12 +3,10 @@
 // Runs as a separate process launched by the VS Code extension via DebugAdapterExecutable.
 // Communicates over stdin/stdout using Content-Length framed JSON-RPC (same as LSP).
 
-#include <atomic>
 #include <filesystem>
-#include <functional>
+#include <iostream>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -26,7 +24,13 @@ using json::Array;
 
 class DapServer {
 public:
+    /// Production constructor: communicates over the process stdin/stdout.
     DapServer();
+
+    /// Testable constructor: communicates over the supplied streams.
+    /// Useful for unit tests that inject std::istringstream / std::ostringstream.
+    explicit DapServer(std::istream& in, std::ostream& out);
+
     ~DapServer();
 
     /// Main loop: reads DAP requests from stdin, writes responses/events to stdout.
@@ -34,6 +38,10 @@ public:
     void run();
 
 private:
+    // ── Injected I/O ──────────────────────────────────────────────────────────
+    std::istream& in_;
+    std::ostream& out_;
+
     // ── State ─────────────────────────────────────────────────────────────────
     bool running_{true};
     int  next_seq_{1};
@@ -51,14 +59,14 @@ private:
     // Whether "launch" has been requested (i.e., VM thread is running/should start)
     bool launched_{false};
 
+    // Command name of the request currently being dispatched (used by send_response).
+    std::string current_command_;
+
     // The driver and its execution thread
     std::unique_ptr<interpreter::Driver> driver_;
     std::thread vm_thread_;
-    std::mutex  vm_mutex_;   // guards driver_ access from DAP thread
-
-    // Mutex protecting stdout writes (send() is called from both the DAP main
-    // thread and the VM thread, so we must serialise all output).
-    std::mutex output_mutex_;
+    std::mutex  vm_mutex_;    // guards driver_ / VM state access from DAP thread
+    std::mutex  output_mutex_; // serialises send() calls from DAP + VM threads
 
     // ── Transport ─────────────────────────────────────────────────────────────
     void send(const Value& msg);
@@ -88,14 +96,8 @@ private:
     void handle_disconnect(const Value& id, const Value& args);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-    /// Apply pending_bps_ to the running VM after launch.
+    /// Apply pending_bps_ to the running VM. Caller must hold vm_mutex_.
     void install_pending_breakpoints();
-
-    /// Convert a file:// URI to a canonical path string.
-    static std::string uri_to_path(const std::string& uri);
-
-    /// Convert a canonical path string to a file:// URI.
-    static std::string path_to_uri(const std::string& path);
 
     // Variable reference packing: encode (frame_index, scope) into a single int.
     // scope 0 = locals, scope 1 = upvalues

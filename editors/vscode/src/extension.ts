@@ -98,51 +98,7 @@ function findServerBinary(context: ExtensionContext): string | undefined {
     return 'eta_lsp';
 }
 
-function findInterpreterBinary(lspPath: string | undefined, context: ExtensionContext): string {
-    const exe = process.platform === 'win32' ? 'etai.exe' : 'etai';
-    log('[Checking Interpreter Binary]');
-    log(`  Platform: ${process.platform}, looking for: ${exe}`);
-
-    // 1. Next to the LSP binary (most common case after an install)
-    if (lspPath && lspPath !== 'eta_lsp' && lspPath !== 'eta_lsp.exe') {
-        const candidate = path.join(path.dirname(lspPath), exe);
-        if (checkPath('next to LSP binary', candidate)) { return candidate; }
-    }
-
-    // 2. Bundled alongside the extension
-    const bundled = path.join(context.extensionPath, 'bin', exe);
-    if (checkPath('bundled', bundled)) { return bundled; }
-
-    // 3. Workspace build output
-    const workspaceFolders = workspace.workspaceFolders;
-    if (workspaceFolders) {
-        for (const folder of workspaceFolders) {
-            for (const rel of [
-                path.join('out', 'wsl-clang-release', 'eta', 'interpreter', exe),
-                path.join('out', 'build', 'eta', 'interpreter', exe),
-                path.join('build', 'eta', 'interpreter', exe),
-                path.join('build-release', 'eta', 'interpreter', exe),
-                path.join('out', 'msvc-release', 'eta', 'interpreter', exe),
-            ]) {
-                const c = path.join(folder.uri.fsPath, rel);
-                if (checkPath('workspace', c)) { return c; }
-            }
-        }
-    }
-
-    // 4. Check user-configured serverPath directory (may contain etai too)
-    const configDir = workspace.getConfiguration('eta.lsp').get<string>('serverPath', '').trim();
-    if (configDir) {
-        const c = path.join(configDir, exe);
-        if (checkPath('config dir', c)) { return c; }
-    }
-
-    // 5. Fall back to PATH
-    log(`  - Falling back to PATH: ${exe}`);
-    return exe;
-}
-
-function findDapBinary(etaiPath: string | undefined, lspPath: string | undefined, context: ExtensionContext): string {
+function findDapBinary(lspPath: string | undefined, context: ExtensionContext): string {
     const exe = process.platform === 'win32' ? 'eta_dap.exe' : 'eta_dap';
     log('[Checking DAP Binary]');
     log(`  Platform: ${process.platform}, looking for: ${exe}`);
@@ -155,23 +111,17 @@ function findDapBinary(etaiPath: string | undefined, lspPath: string | undefined
         if (checkPath(`config path (${exe})`, candidate)) { return candidate; }
     }
 
-    // 2. Next to etai (most common after an install)
-    if (etaiPath && etaiPath !== 'etai' && etaiPath !== 'etai.exe') {
-        const candidate = path.join(path.dirname(etaiPath), exe);
-        if (checkPath('next to etai', candidate)) { return candidate; }
-    }
-
-    // 3. Next to the LSP binary
+    // 2. Next to the LSP binary (most common after an install)
     if (lspPath && lspPath !== 'eta_lsp' && lspPath !== 'eta_lsp.exe') {
         const candidate = path.join(path.dirname(lspPath), exe);
         if (checkPath('next to LSP binary', candidate)) { return candidate; }
     }
 
-    // 4. Bundled alongside the extension
+    // 3. Bundled alongside the extension
     const bundled = path.join(context.extensionPath, 'bin', exe);
     if (checkPath('bundled', bundled)) { return bundled; }
 
-    // 5. Workspace build output
+    // 4. Workspace build output
     const workspaceFolders = workspace.workspaceFolders;
     if (workspaceFolders) {
         for (const folder of workspaceFolders) {
@@ -188,7 +138,7 @@ function findDapBinary(etaiPath: string | undefined, lspPath: string | undefined
         }
     }
 
-    // 6. Fall back to PATH
+    // 5. Fall back to PATH
     log(`  WARNING: eta_dap not found in any known location; falling back to PATH lookup.`);
     log(`  To fix: set "eta.dap.executablePath" in VS Code settings to the full path of ${exe}.`);
     return exe;
@@ -224,20 +174,19 @@ function validateAndLogServerPath(configPath: string): void {
 export function activate(context: ExtensionContext) {
     outputChannel = window.createOutputChannel('Eta Language');
     context.subscriptions.push(outputChannel);
-    outputChannel.show(true);   // reveal, but don't steal focus
+    // outputChannel.show() is intentionally omitted — the panel opens on demand
+    // rather than stealing focus on every activation / extension-host restart.
     log('Eta extension activating...');
 
     // ── Always register the debug adapter ──────────────────────────
     const serverPath = findServerBinary(context);
-    const etaiPath   = findInterpreterBinary(serverPath, context);
-    const dapPath    = findDapBinary(etaiPath, serverPath, context);
+    const dapPath    = findDapBinary(serverPath, context);
 
     log(`[Summary]`);
     log(`  LSP binary  : ${serverPath ?? '(none)'}`);
-    log(`  etai binary : ${etaiPath}`);
     log(`  DAP binary  : ${dapPath}`);
 
-    const factory = new EtaDebugAdapterFactory(dapPath, etaiPath, outputChannel);
+    const factory = new EtaDebugAdapterFactory(dapPath, outputChannel);
     context.subscriptions.push(
         debug.registerDebugAdapterDescriptorFactory('eta', factory),
         debug.registerDebugAdapterTrackerFactory('eta', {
@@ -405,7 +354,6 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
 class EtaDebugAdapterFactory implements DebugAdapterDescriptorFactory {
     constructor(
         private readonly dapPath: string,
-        private readonly etaiPath: string,
         private readonly channel: OutputChannel,
     ) {}
 

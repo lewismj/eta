@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -572,6 +573,32 @@ private:
     Mode mode_;
     std::vector<uint8_t> data_;
     size_t read_pos_;
+};
+
+/**
+ * @brief Output port that invokes a callback instead of writing to a stream.
+ *
+ * Used by the DAP server to redirect script output into DAP "output" events
+ * instead of letting it corrupt the stdin/stdout protocol pipe.
+ * Also useful in tests to capture VM output into a std::string.
+ */
+class CallbackPort : public Port {
+public:
+    using Callback = std::function<void(const std::string&)>;
+
+    explicit CallbackPort(Callback cb) : cb_(std::move(cb)) {}
+
+    std::expected<void, error::RuntimeError> write_string(const std::string& str) override {
+        if (cb_) cb_(str);
+        return {};
+    }
+
+    bool is_output() const override { return true; }
+
+    BufferMode buffer_mode() const override { return BufferMode::Line; }
+
+private:
+    Callback cb_;
 };
 
 }  // namespace eta::runtime

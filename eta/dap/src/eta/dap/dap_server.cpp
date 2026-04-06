@@ -1,18 +1,17 @@
 #include "dap_server.h"
 #include "dap_io.h"
 
-#include <cassert>
 #include <cctype>
 #include <filesystem>
-#include <fstream>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_set>
 
 // Eta interpreter
 #include "eta/interpreter/driver.h"
 #include "eta/interpreter/module_path.h"
+#include "eta/runtime/port.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/diagnostic/diagnostic.h"
@@ -43,10 +42,16 @@ static std::string normalize_path(const std::string& raw) {
 }
 
 // ============================================================================
-// Construction / Destruction
+// Construction
 // ============================================================================
 
-DapServer::DapServer() = default;
+DapServer::DapServer() : in_(std::cin), out_(std::cout) {}
+
+DapServer::DapServer(std::istream& in, std::ostream& out) : in_(in), out_(out) {}
+
+// ============================================================================
+// Destruction
+// ============================================================================
 
 DapServer::~DapServer() {
     // If the VM thread is still running, ask it to stop and join.
@@ -64,13 +69,14 @@ DapServer::~DapServer() {
 
 void DapServer::send(const Value& msg) {
     std::lock_guard<std::mutex> lk(output_mutex_);
-    write_message(json::to_string(msg));
+    write_message(out_, json::to_string(msg));
 }
 
 void DapServer::send_response(const Value& id, const Value& body) {
     send(json::object({
         {"seq",         Value(next_seq_++)},
         {"type",        "response"},
+        {"command",     Value(current_command_)},
         {"request_seq", id},
         {"success",     true},
         {"body",        body},
@@ -81,6 +87,7 @@ void DapServer::send_error_response(const Value& id, int code, const std::string
     send(json::object({
         {"seq",         Value(next_seq_++)},
         {"type",        "response"},
+        {"command",     Value(current_command_)},
         {"request_seq", id},
         {"success",     false},
         {"body",        json::object({
@@ -107,7 +114,7 @@ void DapServer::send_event(const std::string& event_name, const Value& body) {
 
 void DapServer::run() {
     while (running_) {
-        auto msg_str = read_message();
+        auto msg_str = read_message(in_);
         if (!msg_str) break;
 
         try {
@@ -137,6 +144,7 @@ void DapServer::dispatch(const Value& msg) {
 
     const Value& id   = msg["seq"];
     const Value& args = msg.has("arguments") ? msg["arguments"] : Value{};
+    current_command_  = *cmd;
 
     if (*cmd == "initialize")               handle_initialize(id, args);
     else if (*cmd == "launch")              handle_launch(id, args);
@@ -236,6 +244,7 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
 
     // If the VM is already running, push immediately
     if (driver_) {
+        std::lock_guard<std::mutex> lk(vm_mutex_);
         install_pending_breakpoints();
         // Mark all returned breakpoints as verified now
         for (auto& bp_val : result_bps) {
@@ -306,6 +315,22 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
         if (!script_dir.empty()) search_dirs.push_back(script_dir);
     }
 
+    // Deduplicate: both ETA_MODULE_PATH and the <exe>/../stdlib detection can
+    // find the same directory; keep the first occurrence of each canonical path.
+    {
+        std::vector<fs::path> unique_dirs;
+        std::unordered_set<std::string> seen;
+        for (auto& d : search_dirs) {
+            std::error_code ec2;
+            std::string key = fs::weakly_canonical(d, ec2).string();
+#ifdef _WIN32
+            for (char& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+#endif
+            if (seen.insert(key).second) unique_dirs.push_back(std::move(d));
+        }
+        search_dirs = std::move(unique_dirs);
+    }
+
     // Log the module search path so the user can diagnose "module not found"
     {
         std::ostringstream msg;
@@ -347,6 +372,20 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
         std::lock_guard<std::mutex> lk(vm_mutex_);
         driver_ = std::move(drv);
     }
+
+    // ── Redirect script stdout/stderr away from the protocol pipe ─────────────
+    // Without this, any script that calls (display ...) or (newline) would write
+    // to std::cout, corrupting the Content-Length framed DAP stream and causing
+    // VS Code to report a "read error".  We install CallbackPorts that forward
+    // the text as DAP "output" events instead.
+    driver_->set_output_port(std::make_shared<runtime::CallbackPort>(
+        [this](const std::string& text) {
+            send_event("output", json::object({{"category", "stdout"}, {"output", text}}));
+        }));
+    driver_->set_error_port(std::make_shared<runtime::CallbackPort>(
+        [this](const std::string& text) {
+            send_event("output", json::object({{"category", "stderr"}, {"output", text}}));
+        }));
 
     // ── Pre-register the script file ID so breakpoints fire on first run ──────
     // We allocate the file_id NOW (before the VM thread starts loading any file).
@@ -400,15 +439,15 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
             }));
         }
 
-        // ── Execute the script ────────────────────────────────────────────────
-        bool ok = drv->run_file(script_path_);
-
-        // Re-install breakpoints now that prelude/import file IDs are also known.
-        // Useful for breakpoints in library files during interactive/long-lived sessions.
+        // Re-install now that prelude file IDs are known, so breakpoints in
+        // library files are active before the script starts executing.
         {
             std::lock_guard<std::mutex> lk(vm_mutex_);
             install_pending_breakpoints();
         }
+
+        // ── Execute the script ────────────────────────────────────────────────
+        bool ok = drv->run_file(script_path_);
 
         // ── Signal IDE ───────────────────────────────────────────────────────
         if (ok) {
@@ -451,6 +490,7 @@ void DapServer::handle_threads(const Value& id, const Value& /*args*/) {
 // ============================================================================
 
 void DapServer::handle_stack_trace(const Value& id, const Value& /*args*/) {
+    std::lock_guard<std::mutex> lk(vm_mutex_);
     if (!driver_ || !driver_->vm().is_paused()) {
         send_response(id, json::object({{"stackFrames", json::array({})}, {"totalFrames", 0}}));
         return;
@@ -517,6 +557,7 @@ void DapServer::handle_scopes(const Value& id, const Value& args) {
 // ============================================================================
 
 void DapServer::handle_variables(const Value& id, const Value& args) {
+    std::lock_guard<std::mutex> lk(vm_mutex_);
     if (!driver_ || !driver_->vm().is_paused()) {
         send_response(id, json::object({{"variables", json::array({})}}));
         return;
@@ -637,44 +678,6 @@ void DapServer::install_pending_breakpoints() {
     driver_->vm().set_breakpoints(std::move(all_locs));
 }
 
-std::string DapServer::uri_to_path(const std::string& uri) {
-    // Strip file:// prefix and percent-decode
-    std::string path = uri;
-    if (path.substr(0, 7) == "file://") {
-        path = path.substr(7);
-#ifdef _WIN32
-        // Remove leading slash before drive letter: /C:/... -> C:/...
-        if (path.size() >= 3 && path[0] == '/' && path[2] == ':')
-            path = path.substr(1);
-#endif
-    }
-    // Basic percent-decoding
-    std::string result;
-    for (std::size_t i = 0; i < path.size(); ++i) {
-        if (path[i] == '%' && i + 2 < path.size()) {
-            std::string hex = path.substr(i + 1, 2);
-            result += static_cast<char>(std::stoul(hex, nullptr, 16));
-            i += 2;
-        } else {
-            result += path[i];
-        }
-    }
-    return result;
-}
-
-std::string DapServer::path_to_uri(const std::string& path) {
-    std::string uri = "file://";
-#ifdef _WIN32
-    uri += "/";
-    for (char c : path) {
-        if (c == '\\') uri += '/';
-        else uri += c;
-    }
-#else
-    uri += path;
-#endif
-    return uri;
-}
 
 } // namespace eta::dap
 

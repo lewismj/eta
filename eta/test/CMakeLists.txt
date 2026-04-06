@@ -18,17 +18,26 @@ set(SOURCES
         src/expander_tests.cpp
         src/diagnostic_tests.cpp
         src/functional_tests.cpp
-        src/debug_tests.cpp)
+        src/debug_tests.cpp
+        src/dap_tests.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+# Pull in the DAP server implementation (not main_dap.cpp) so dap_tests.cpp
+# can link against DapServer with injected streams.
+target_sources(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_server.cpp
+)
 
 # Base linking - only eta_core unconditionally
 target_link_libraries(${PROJECT_NAME} PRIVATE eta_core)
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
 
-# Expose interpreter (driver.h) headers for debug_tests
+# Expose interpreter (driver.h) and DAP headers
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src
 )
 
 # vcpkg x64-windows builds shared Boost; x64-linux builds static.

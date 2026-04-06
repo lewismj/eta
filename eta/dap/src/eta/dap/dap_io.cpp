@@ -5,34 +5,57 @@
 
 namespace eta::dap {
 
-std::optional<std::string> read_message() {
-    std::size_t content_length = 0;
-    std::string header_line;
+std::optional<std::string> read_message(std::istream& in) {
+    // Loop so that malformed (zero-length) messages are skipped rather than
+    // terminating the connection.
+    while (true) {
+        std::size_t content_length = 0;
+        bool got_content_length = false;
+        std::string header_line;
 
-    while (std::getline(std::cin, header_line)) {
-        if (!header_line.empty() && header_line.back() == '\r')
-            header_line.pop_back();
-        if (header_line.empty()) break; // end of headers
+        while (std::getline(in, header_line)) {
+            if (!header_line.empty() && header_line.back() == '\r')
+                header_line.pop_back();
+            if (header_line.empty()) break; // blank line = end of headers
 
-        const std::string prefix = "Content-Length: ";
-        if (header_line.substr(0, prefix.size()) == prefix)
-            content_length = std::stoull(header_line.substr(prefix.size()));
-        // Ignore other headers (Content-Type, etc.)
+            const std::string prefix = "Content-Length: ";
+            if (header_line.substr(0, prefix.size()) == prefix) {
+                content_length = std::stoull(header_line.substr(prefix.size()));
+                got_content_length = true;
+            }
+            // Ignore other headers (Content-Type, etc.)
+        }
+
+        if (in.eof() || in.fail()) return std::nullopt;
+
+        if (!got_content_length || content_length == 0) {
+            // Malformed message — log a warning and try the next one.
+            std::cerr << "[eta_dap] warning: received message with missing or zero "
+                         "Content-Length; skipping\n";
+            continue;
+        }
+
+        std::string body(content_length, '\0');
+        in.read(body.data(), static_cast<std::streamsize>(content_length));
+        if (in.fail()) return std::nullopt;
+
+        return body;
     }
+}
 
-    if (std::cin.eof() || std::cin.fail()) return std::nullopt;
-    if (content_length == 0) return std::nullopt;
+void write_message(std::ostream& out, const std::string& body) {
+    out << "Content-Length: " << body.size() << "\r\n\r\n" << body;
+    out.flush();
+}
 
-    std::string body(content_length, '\0');
-    std::cin.read(body.data(), static_cast<std::streamsize>(content_length));
-    if (std::cin.fail()) return std::nullopt;
+// ── Convenience wrappers using the process stdin/stdout ──────────────────────
 
-    return body;
+std::optional<std::string> read_message() {
+    return read_message(std::cin);
 }
 
 void write_message(const std::string& body) {
-    std::cout << "Content-Length: " << body.size() << "\r\n\r\n" << body;
-    std::cout.flush();
+    write_message(std::cout, body);
 }
 
 } // namespace eta::dap

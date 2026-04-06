@@ -164,6 +164,20 @@ public:
         return it != file_id_to_path_.end() ? &it->second : nullptr;
     }
 
+    /// Install a custom output port so that display/write/newline go through
+    /// the given port rather than falling back to std::cout.
+    /// Typical use in the DAP: pass a CallbackPort that fires send_event().
+    void set_output_port(std::shared_ptr<runtime::Port> port) {
+        auto val = runtime::memory::factory::make_port(heap_, std::move(port));
+        if (val) vm_.set_current_output_port(*val);
+    }
+
+    /// Install a custom error port (used by eprintln / error output).
+    void set_error_port(std::shared_ptr<runtime::Port> port) {
+        auto val = runtime::memory::factory::make_port(heap_, std::move(port));
+        if (val) vm_.set_current_error_port(*val);
+    }
+
     /// Pre-register a file path so that its file_id is known before the file
     /// is actually loaded.  The DAP uses this to install breakpoints BEFORE
     /// the VM thread starts running.  If the path is already registered the

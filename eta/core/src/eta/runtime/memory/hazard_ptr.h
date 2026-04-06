@@ -74,8 +74,9 @@ namespace eta::runtime::memory::hazard {
             }
 
             std::ranges::sort(hazard_pointers);
-            auto [unique_begin, unique_end] = std::ranges::unique(hazard_pointers);
-            hazard_pointers.erase(unique_begin, unique_end);
+            hazard_pointers.erase(
+                std::unique(hazard_pointers.begin(), hazard_pointers.end()),
+                hazard_pointers.end());
 
             auto& retire_list = retire_lists[this];
 

@@ -92,12 +92,6 @@
                                 "description": "Absolute path to the .eta file to run.",
                                 "default": "${file}"
                             },
-                            "args": {
-                                "type": "array",
-                                "items": { "type": "string" },
-                                "description": "Additional arguments passed to the DAP server.",
-                                "default": []
-                            },
                             "stopOnEntry": {
                                 "type": "boolean",
                                 "description": "Pause on the first instruction when launching.",
@@ -149,4 +143,3 @@
         "esbuild": "^0.25.0"
     }
 }
-
