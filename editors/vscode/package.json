@@ -83,6 +83,9 @@
                 "type": "eta",
                 "label": "Eta",
                 "languages": ["eta"],
+                "breakpoints": [
+                    { "language": "eta" }
+                ],
                 "configurationAttributes": {
                     "launch": {
                         "required": ["program"],

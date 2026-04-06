@@ -20,8 +20,13 @@ std::optional<std::string> read_message(std::istream& in) {
 
             const std::string prefix = "Content-Length: ";
             if (header_line.substr(0, prefix.size()) == prefix) {
-                content_length = std::stoull(header_line.substr(prefix.size()));
-                got_content_length = true;
+                try {
+                    content_length = std::stoull(header_line.substr(prefix.size()));
+                    got_content_length = true;
+                } catch (const std::exception&) {
+                    std::cerr << "[eta_dap] warning: malformed Content-Length header: "
+                              << header_line << "\n";
+                }
             }
             // Ignore other headers (Content-Type, etc.)
         }

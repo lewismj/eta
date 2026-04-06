@@ -185,8 +185,10 @@ void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
         {"supportsGotoTargetsRequest",          false},
         {"supportsBreakpointLocationsRequest",  false},
     }));
-
-    send_event("initialized", json::object({}));
+    // "initialized" is sent from handle_launch (see below), per the DAP spec:
+    //   the adapter should send "initialized" AFTER processing "launch"/"attach"
+    //   so VS Code fires setBreakpoints/configurationDone only after script_path_
+    //   is known.  Sending it here caused 0 breakpoints every time.
 }
 
 // ============================================================================
@@ -206,6 +208,15 @@ void DapServer::handle_launch(const Value& id, const Value& args) {
     launched_       = true;
 
     send_response(id, json::object({}));
+
+    // Per DAP spec: send "initialized" AFTER the launch response so VS Code
+    // sends setBreakpoints and configurationDone AFTER script_path_ is set.
+    send_event("initialized", json::object({}));
+
+    send_event("output", json::object({
+        {"category", "console"},
+        {"output", "[eta_dap] Launch: " + script_path_.string() + "\n"},
+    }));
     // The VM is actually started on configurationDone.
 }
 
@@ -231,22 +242,35 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
         for (const auto& bp : args["breakpoints"].as_array()) {
             auto line_opt = bp.get_int("line");
             if (!line_opt) continue;
-            int line = static_cast<int>(*line_opt);
+            int line  = static_cast<int>(*line_opt);
+            int bp_id = next_bp_id_++;
 
-            pending_bps_[canon_path].push_back({line});
+            pending_bps_[canon_path].push_back({line, bp_id});
 
             result_bps.push_back(json::object({
-                {"verified", false},   // verified=true once we confirm the location exists
+                {"verified", false},   // updated via "breakpoint" event once installed
+                {"id",       Value(static_cast<int64_t>(bp_id))},
                 {"line",     Value(static_cast<int64_t>(line))},
             }));
         }
     }
 
-    // If the VM is already running, push immediately
+    // Diagnostic: always log what was received so path mismatches are visible
+    {
+        std::ostringstream msg;
+        msg << "[eta_dap] setBreakpoints: " << result_bps.size()
+            << " bp(s) for \"" << canon_path << "\"\n";
+        send_event("output", json::object({{"category", "console"}, {"output", msg.str()}}));
+    }
+
+    // If the VM is already running, push immediately and notify VS Code
     if (driver_) {
-        std::lock_guard<std::mutex> lk(vm_mutex_);
-        install_pending_breakpoints();
-        // Mark all returned breakpoints as verified now
+        {
+            std::lock_guard<std::mutex> lk(vm_mutex_);
+            install_pending_breakpoints();
+        }
+        notify_breakpoints_verified();
+        // Mark returned breakpoints as verified in the response too
         for (auto& bp_val : result_bps) {
             if (bp_val.is_object()) bp_val.as_object()["verified"] = Value(true);
         }
@@ -368,21 +392,17 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
         }));
     });
 
-    {
-        std::lock_guard<std::mutex> lk(vm_mutex_);
-        driver_ = std::move(drv);
-    }
-
     // ── Redirect script stdout/stderr away from the protocol pipe ─────────────
+    // Do this on the LOCAL drv BEFORE making it visible via driver_.
     // Without this, any script that calls (display ...) or (newline) would write
     // to std::cout, corrupting the Content-Length framed DAP stream and causing
     // VS Code to report a "read error".  We install CallbackPorts that forward
     // the text as DAP "output" events instead.
-    driver_->set_output_port(std::make_shared<runtime::CallbackPort>(
+    drv->set_output_port(std::make_shared<runtime::CallbackPort>(
         [this](const std::string& text) {
             send_event("output", json::object({{"category", "stdout"}, {"output", text}}));
         }));
-    driver_->set_error_port(std::make_shared<runtime::CallbackPort>(
+    drv->set_error_port(std::make_shared<runtime::CallbackPort>(
         [this](const std::string& text) {
             send_event("output", json::object({{"category", "stderr"}, {"output", text}}));
         }));
@@ -392,11 +412,19 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
     // When run_file() is later called with the same (normalised) path, Driver
     // reuses this id — so the breakpoints we install below will be active
     // inside vm_.execute().
-    driver_->ensure_file_id(script_path_);
+    drv->ensure_file_id(script_path_);
 
-    // Install any breakpoints that arrived before configurationDone.
-    // With the script file_id pre-registered above these will now be effective.
-    install_pending_breakpoints();
+    // ── Atomically publish driver_ and install breakpoints under the lock ─────
+    // All setup is done on the local drv above; only now do we make it visible
+    // to other DAP-thread handlers (evaluate, setBreakpoints, etc.).
+    {
+        std::lock_guard<std::mutex> lk(vm_mutex_);
+        driver_ = std::move(drv);
+        install_pending_breakpoints();
+    }
+    // Send "breakpoint" changed events for all newly-verified breakpoints.
+    // Must be called WITHOUT vm_mutex_ held (uses output_mutex_ internally).
+    notify_breakpoints_verified();
 
     {
         std::size_t bp_count = 0;
@@ -445,6 +473,8 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
             std::lock_guard<std::mutex> lk(vm_mutex_);
             install_pending_breakpoints();
         }
+        // Notify VS Code about any breakpoints that became verified after prelude load
+        notify_breakpoints_verified();
 
         // ── Execute the script ────────────────────────────────────────────────
         bool ok = drv->run_file(script_path_);
@@ -533,6 +563,8 @@ void DapServer::handle_stack_trace(const Value& id, const Value& /*args*/) {
 // ============================================================================
 
 void DapServer::handle_scopes(const Value& id, const Value& args) {
+    // Lock so frame_id is read consistently with the paused VM state.
+    std::lock_guard<std::mutex> lk(vm_mutex_);
     auto frame_id_opt = args.get_int("frameId");
     int frame_id = frame_id_opt ? static_cast<int>(*frame_id_opt) : 0;
 
@@ -595,26 +627,31 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
 
 void DapServer::handle_continue(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({{"allThreadsContinued", true}}));
+    std::lock_guard<std::mutex> lk(vm_mutex_);
     if (driver_) driver_->vm().resume();
 }
 
 void DapServer::handle_next(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({}));
+    std::lock_guard<std::mutex> lk(vm_mutex_);
     if (driver_) driver_->vm().step_over();
 }
 
 void DapServer::handle_step_in(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({}));
+    std::lock_guard<std::mutex> lk(vm_mutex_);
     if (driver_) driver_->vm().step_in();
 }
 
 void DapServer::handle_step_out(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({}));
+    std::lock_guard<std::mutex> lk(vm_mutex_);
     if (driver_) driver_->vm().step_out();
 }
 
 void DapServer::handle_pause(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({}));
+    std::lock_guard<std::mutex> lk(vm_mutex_);
     if (driver_) driver_->vm().request_pause();
 }
 
@@ -624,14 +661,17 @@ void DapServer::handle_pause(const Value& id, const Value& /*args*/) {
 
 void DapServer::handle_evaluate(const Value& id, const Value& args) {
     auto expr_opt = args.get_string("expression");
-    if (!expr_opt || !driver_) {
+    if (!expr_opt) {
         send_response(id, json::object({{"result", "<not available>"}, {"variablesReference", 0}}));
         return;
     }
 
-    // Expression evaluation while paused: run in the driver on the DAP thread.
-    // We lock vm_mutex_ to prevent the VM thread from resuming concurrently.
+    // Lock vm_mutex_ for the entire evaluation to prevent concurrent VM access.
     std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (!driver_) {
+        send_response(id, json::object({{"result", "<not available>"}, {"variablesReference", 0}}));
+        return;
+    }
 
     runtime::nanbox::LispVal result{};
     bool ok = driver_->run_source(*expr_opt, &result);
@@ -651,7 +691,9 @@ void DapServer::handle_disconnect(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({}));
     running_ = false;
 
-    // Wake up the VM if it's paused so the vm_thread can exit
+    // Wake up the VM if it's paused so the vm_thread can exit.
+    // Lock vm_mutex_ so driver_ isn't torn out mid-access.
+    std::lock_guard<std::mutex> lk(vm_mutex_);
     if (driver_) {
         driver_->vm().resume();
     }
@@ -668,7 +710,7 @@ void DapServer::install_pending_breakpoints() {
 
     for (const auto& [path, bps] : pending_bps_) {
         uint32_t file_id = driver_->file_id_for_path(path);
-        if (file_id == 0) continue; // file not loaded yet — breakpoints will be re-applied after load
+        if (file_id == 0) continue; // file not loaded yet — will be re-applied after load
 
         for (const auto& bp : bps) {
             all_locs.push_back({file_id, static_cast<uint32_t>(bp.line)});
@@ -678,6 +720,41 @@ void DapServer::install_pending_breakpoints() {
     driver_->vm().set_breakpoints(std::move(all_locs));
 }
 
+void DapServer::notify_breakpoints_verified() {
+    // Collect verified breakpoint data under the lock, then send events after.
+    // This avoids calling send_event (→ output_mutex_) while holding vm_mutex_.
+    struct VerifiedBp { int id; int line; };
+    std::vector<VerifiedBp> verified;
+
+    {
+        std::lock_guard<std::mutex> lk(vm_mutex_);
+        if (!driver_) return;
+
+        for (const auto& [path, bps] : pending_bps_) {
+            uint32_t file_id = driver_->file_id_for_path(path);
+            if (file_id == 0) continue;
+
+            for (const auto& bp : bps) {
+                verified.push_back({bp.id, bp.line});
+            }
+        }
+    }
+
+    // Send "breakpoint" changed events so VS Code shows solid red dots.
+    for (const auto& v : verified) {
+        send_event("breakpoint", json::object({
+            {"reason", "changed"},
+            {"breakpoint", json::object({
+                {"id",       Value(static_cast<int64_t>(v.id))},
+                {"verified", true},
+                {"line",     Value(static_cast<int64_t>(v.line))},
+            })},
+        }));
+    }
+}
+
 
 } // namespace eta::dap
+
+
 

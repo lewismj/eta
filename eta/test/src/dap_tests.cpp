@@ -122,7 +122,8 @@ static std::vector<json::Value> run_server(const std::string& input) {
 BOOST_AUTO_TEST_SUITE(dap_protocol)
 
 // ---------------------------------------------------------------------------
-// 1. initialize → capabilities response + initialized event
+// 1. initialize → capabilities response (no "initialized" event yet per DAP spec;
+//    "initialized" is sent after launch so VS Code knows script_path_ is set)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(initialize_returns_capabilities) {
     std::string input =
@@ -138,6 +139,25 @@ BOOST_AUTO_TEST_CASE(initialize_returns_capabilities) {
     BOOST_TEST(resp["body"]["supportsConfigurationDoneRequest"].as_bool() == true);
     BOOST_TEST(resp["body"]["supportsTerminateRequest"].as_bool() == true);
 
+    // "initialized" must NOT be present without a prior "launch" (we moved the
+    // event to handle_launch to match the DAP spec and fix the 0-breakpoints bug)
+    auto evt = find_msg(msgs, "event", "initialized");
+    BOOST_TEST(evt.is_null());
+}
+
+// ---------------------------------------------------------------------------
+// 1b. launch → capabilities response + initialized event (correct DAP order)
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(launch_sends_initialized_event) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "launch",
+            R"({"program":"/tmp/nonexistent.eta","stopOnEntry":false})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    // "initialized" must be present and come AFTER the "launch" response
     auto evt = find_msg(msgs, "event", "initialized");
     BOOST_TEST(!evt.is_null());
 }
@@ -161,6 +181,7 @@ BOOST_AUTO_TEST_CASE(launch_responds_success) {
 
 // ---------------------------------------------------------------------------
 // 3. setBreakpoints before launch → unverified breakpoints stored/returned
+//    with IDs assigned by the adapter
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(set_breakpoints_before_launch) {
     std::string input =
@@ -182,6 +203,11 @@ BOOST_AUTO_TEST_CASE(set_breakpoints_before_launch) {
     BOOST_TEST(bps[0]["verified"].as_bool() == false);
     BOOST_TEST(bps[0]["line"].as_int() == 5);
     BOOST_TEST(bps[1]["line"].as_int() == 10);
+    // Each breakpoint must have an integer ID assigned by the adapter
+    BOOST_TEST(bps[0]["id"].is_int() == true);
+    BOOST_TEST(bps[1]["id"].is_int() == true);
+    // IDs must be distinct
+    BOOST_TEST(bps[0]["id"].as_int() != bps[1]["id"].as_int());
 }
 
 // ---------------------------------------------------------------------------

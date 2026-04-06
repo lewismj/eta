@@ -49,9 +49,10 @@ private:
     // Script to debug (set by "launch" request)
     std::filesystem::path script_path_;
 
-    // Breakpoints pending before VM is running: path → [(line, verified)]
-    struct PendingBp { int line; };
+    // Breakpoints pending before VM is running: path → [(line, id)]
+    struct PendingBp { int line; int id; };
     std::unordered_map<std::string, std::vector<PendingBp>> pending_bps_;
+    int next_bp_id_{1};  ///< monotonically increasing breakpoint ID assigned by adapter
 
     // Whether to stop on first instruction (stopOnEntry)
     bool stop_on_entry_{false};
@@ -98,6 +99,10 @@ private:
     // ── Helpers ───────────────────────────────────────────────────────────────
     /// Apply pending_bps_ to the running VM. Caller must hold vm_mutex_.
     void install_pending_breakpoints();
+
+    /// Send DAP "breakpoint" changed events for every pending breakpoint whose
+    /// file_id can now be resolved.  Must be called WITHOUT vm_mutex_ held.
+    void notify_breakpoints_verified();
 
     // Variable reference packing: encode (frame_index, scope) into a single int.
     // scope 0 = locals, scope 1 = upvalues
