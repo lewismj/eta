@@ -175,6 +175,10 @@ void DapServer::dispatch(const Value& msg) {
 void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({
         {"supportsConfigurationDoneRequest",    true},
+        // supportsSetBreakpoints is not an official DAP capability field (all
+        // adapters support setBreakpoints by default), but some host versions
+        // check for it so we advertise it explicitly for maximum compatibility.
+        {"supportsSetBreakpoints",              true},
         {"supportsFunctionBreakpoints",         false},
         {"supportsConditionalBreakpoints",      false},
         {"supportsSetVariable",                 false},
@@ -185,10 +189,17 @@ void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
         {"supportsGotoTargetsRequest",          false},
         {"supportsBreakpointLocationsRequest",  false},
     }));
-    // "initialized" is sent from handle_launch (see below), per the DAP spec:
-    //   the adapter should send "initialized" AFTER processing "launch"/"attach"
-    //   so VS Code fires setBreakpoints/configurationDone only after script_path_
-    //   is known.  Sending it here caused 0 breakpoints every time.
+    // IMPORTANT: "initialized" is intentionally NOT sent here.
+    // This adapter uses the "deferred-initialization" DAP flow:
+    //   1. IDE → initialize  → adapter responds (no initialized yet)
+    //   2. IDE → launch      → adapter responds + sends "initialized"
+    //   3. IDE → setBreakpoints  (triggered by "initialized" event)
+    //   4. IDE → configurationDone  → adapter starts the VM
+    // If we sent "initialized" here instead, VS Code would fire setBreakpoints
+    // and configurationDone BEFORE "launch" arrives.  handle_configuration_done
+    // guards on (launched_ == true), so it would return immediately, the VM
+    // would never start, and every breakpoint would be silently lost.
+    // See handle_launch() for where "initialized" is actually sent.
 }
 
 // ============================================================================

@@ -313,10 +313,9 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
 }
 
 // ── Debug adapter tracker ─────────────────────────────────────────────────────
-// Intercepts DAP messages between VS Code and eta_dap.  We forward every
-// 'output' event body to the "Eta Language" output channel so the user can
-// see module-path warnings, breakpoint counts, and real error messages without
-// having to enable the VS Code DAP trace log.
+// Intercepts ALL DAP messages between VS Code and eta_dap and logs them to the
+// "Eta Language" output channel, giving full visibility into the protocol
+// exchange without needing to enable VS Code's verbose DAP trace log.
 
 class EtaDebugAdapterTracker implements DebugAdapterTracker {
     constructor(private readonly channel: OutputChannel) {}
@@ -329,13 +328,88 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         this.channel.appendLine('[DAP] Debug session stopping…');
     }
 
-    // Called for every message sent FROM the adapter TO VS Code.
+    // ── Messages VS Code sends TO the adapter ─────────────────────────────────
+    onWillReceiveMessage(message: any): void {
+        const cmd: string = message?.command ?? '';
+        const args = message?.arguments;
+        switch (cmd) {
+            case 'initialize':
+                this.channel.appendLine('[DAP→] initialize');
+                break;
+            case 'launch':
+                this.channel.appendLine(`[DAP→] launch: program="${args?.program ?? '?'}"`);
+                break;
+            case 'setBreakpoints': {
+                const srcPath: string = args?.source?.path ?? '?';
+                const lines: number[] = (args?.breakpoints ?? []).map((b: any) => b.line as number);
+                this.channel.appendLine(
+                    `[DAP→] setBreakpoints: ${lines.length} bp(s) in "${srcPath}" lines=[${lines.join(',')}]`
+                );
+                break;
+            }
+            case 'configurationDone':
+                this.channel.appendLine('[DAP→] configurationDone');
+                break;
+            case 'continue':
+            case 'next':
+            case 'stepIn':
+            case 'stepOut':
+            case 'pause':
+            case 'disconnect':
+                this.channel.appendLine(`[DAP→] ${cmd}`);
+                break;
+            default:
+                if (cmd) {
+                    this.channel.appendLine(`[DAP→] ${cmd}`);
+                }
+        }
+    }
+
+    // ── Messages the adapter sends TO VS Code ─────────────────────────────────
     onDidSendMessage(message: any): void {
-        if (message?.type === 'event' && message?.event === 'output') {
-            const output: string = message?.body?.output ?? '';
-            if (output) {
-                // The text already ends with \n in most cases; use append not appendLine.
-                this.channel.append(output);
+        const type: string  = message?.type  ?? '';
+        const event: string = message?.event ?? '';
+
+        if (type === 'event') {
+            if (event === 'output') {
+                const output: string = message?.body?.output ?? '';
+                if (output) {
+                    // Text already ends with \n in most cases; use append, not appendLine.
+                    this.channel.append(output);
+                }
+            } else if (event === 'initialized') {
+                this.channel.appendLine('[DAP←] initialized (adapter ready; VS Code will now send setBreakpoints)');
+            } else if (event === 'stopped') {
+                const reason: string = message?.body?.reason ?? '?';
+                const tid: number    = message?.body?.threadId ?? 0;
+                this.channel.appendLine(`[DAP←] stopped: reason="${reason}" threadId=${tid}`);
+            } else if (event === 'continued') {
+                this.channel.appendLine('[DAP←] continued');
+            } else if (event === 'breakpoint') {
+                const bp   = message?.body?.breakpoint ?? {};
+                const why  = message?.body?.reason ?? '?';
+                this.channel.appendLine(
+                    `[DAP←] breakpoint ${why}: id=${bp.id} verified=${bp.verified} line=${bp.line}`
+                );
+            } else if (event === 'terminated') {
+                this.channel.appendLine('[DAP←] terminated');
+            } else if (event === 'exited') {
+                this.channel.appendLine(`[DAP←] exited: code=${message?.body?.exitCode ?? '?'}`);
+            }
+            // (other events intentionally not logged to keep the channel readable)
+        } else if (type === 'response') {
+            const cmd     = message?.command ?? '';
+            const success = message?.success ?? false;
+            // Only log failures and a few critical successes
+            if (!success) {
+                this.channel.appendLine(
+                    `[DAP←] ERROR response to "${cmd}": ${JSON.stringify(message?.body ?? {})}`
+                );
+            } else if (cmd === 'initialize') {
+                const caps = message?.body ?? {};
+                this.channel.appendLine(
+                    `[DAP←] initialize OK — supportsConfigurationDone=${caps.supportsConfigurationDoneRequest}`
+                );
             }
         }
     }

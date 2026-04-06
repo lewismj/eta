@@ -2,7 +2,7 @@
     "name": "eta-lang",
     "displayName": "Eta Language",
     "description": "Language support for the Eta programming language",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "publisher": "eta-lang",
     "repository": {
         "type": "git",
@@ -78,6 +78,9 @@
                 }
             ]
         },
+        "breakpoints": [
+            { "language": "eta" }
+        ],
         "debuggers": [
             {
                 "type": "eta",
