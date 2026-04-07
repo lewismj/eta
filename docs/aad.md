@@ -518,7 +518,7 @@ function.
 
 ---
 
-## Next: xVA Calculations with AAD
+## Next: xVA and European Option Greeks
 
 The [xVA example](xva.md) builds on this AD library to compute
 **Credit Valuation Adjustment (CVA)** and **Funding Valuation
@@ -527,5 +527,14 @@ sensitivities in a single backward pass.
 
 ```bash
 etai examples/xva.eta
+```
+
+The [European option Greeks example](european.md) goes further,
+adding **custom AD primitives** (`dnorm-cdf`, `dnorm-pdf`) and
+computing **second-order Greeks** (Gamma, Vanna, Volga) by applying
+`grad` to the closed-form Delta and Vega expressions.
+
+```bash
+etai examples/european.eta
 ```
 

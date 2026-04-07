@@ -24,6 +24,7 @@ etai examples/hello.eta
 | [`symbolic-diff.eta`](#symbolic-differentiation)   | Computer algebra: differentiation rules, algebraic simplification |
 | [`aad.eta`](#aadeta)                               | Reverse-mode AD, closures as backpropagators, `define-syntax`, `grad` |
 | [`xva.eta`](#xvaeta)                               | Quantitative finance: CVA, FVA, xVA sensitivities via AAD |
+| [`european.eta`](#europeaneta)                     | BS option Greeks: first & second order via AAD, custom VJP, Schwarz check |
 | [`logic.eta`](#logiceta)                           | Relational logic programming: `parento`, `grandparento`, `membero`, bidirectional queries |
 | [`modules and imports`](#imports)                  | `import`, `export`, `only`, `except`, `rename`, `prefix` |
 
@@ -563,6 +564,44 @@ Adjustment) and **FVA** (Funding Valuation Adjustment . See the full
         (total-xva notional sigma r hazard-rate lgd funding-spread))
       '(1000000 0.20 0.05 0.02 0.60 0.012))
 ;; => (xva-value  #(∂/∂N  ∂/∂σ  ∂/∂r  ∂/∂λ  ∂/∂LGD  ∂/∂s_f))
+```
+
+---
+
+## [european — Black-Scholes Greeks with AAD](../examples/european.eta)
+
+Computes first- and second-order option Greeks using the AD library
+with custom AD primitives for the normal distribution.  See the full
+[European Greeks walkthrough](european.md) for detailed commentary.
+
+```scheme
+;; Custom AD primitive — normal CDF with exact backward derivative
+(defun dnorm-cdf (a)
+  (let ((a (ensure-dual a)))
+    (let ((va (dual-val a))
+          (ba (dual-bp a)))
+      (cons (norm-cdf-approx va)         ;; forward: polynomial approx
+            (lambda (adj)
+              (ba (* adj (norm-pdf va)))) ;; backward: exact φ(x)
+            ))))
+
+;; Black-Scholes: C = S·Φ(d₁) − K·e⁻ʳᵀ·Φ(d₂)
+(defun bs-call-price (S K r sigma T) ...)
+
+;; First-order Greeks — one backward pass
+(grad (lambda (S K r sigma T)
+        (bs-call-price S K r sigma T))
+      '(100.0 90.0 0.03 0.30 0.5))
+;; => (14.88  #(Delta  ∂C/∂K  Rho  Vega  −Theta))
+
+;; Second-order Greeks — grad applied to Delta expression
+(defun bs-delta-fn (S K r sigma T)
+  (dnorm-cdf (bs-d1 S K r sigma T)))
+
+(grad (lambda (S K r sigma T)
+        (bs-delta-fn S K r sigma T))
+      '(100.0 90.0 0.03 0.30 0.5))
+;; => (0.75  #(Gamma  ...  ...  Vanna  ...))
 ```
 
 ---

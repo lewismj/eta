@@ -20,10 +20,11 @@
 </p>
 <p></p>
 <p align="center">
-Language Guide and Examplesp></p>
+Language Guide and Examples</p>
 <p align="center">
   <a href="docs/examples.md">Basics</a> ·
-  <a href="docs/aad.md">Reverse Mode AAD Example</a> ·
+  <a href="docs/aad.md">Reverse Mode AAD Example w/XVA</a> ·
+  <a href="docs/european.md">European Greeks with AAD</a> ·
   <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
   <a href="docs/clp.md">Constraint Logic Programming</a> ·
   <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a>
@@ -145,6 +146,7 @@ flowchart LR
 | **[Language Guide](docs/examples.md)**   | Guided tour of the language using simple example programs with expected output           |
 | **[AAD](docs/aad.md)**                   | Reverse-mode automatic differentiation walkthrough                                       |
 | **[xVA](docs/xva.md)**                   | Finance use case: CVA, FVA, and sensitivities via AAD                                   |
+| **[European Greeks](docs/european.md)**  | BS option Greeks (first & second order) with custom VJP and Schwarz check                |
 | **[CLP](docs/clp.md)**                   | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`     |
 | **[Causal Inference](docs/causal.md)**   | Do-calculus engine, back-door adjustment, finance factor analysis                        |
 | **[Next Steps](docs/next-steps.md)**     | Roadmap: bytecode serialization & `etac`, FFI, CLP arc consistency, example programs |
@@ -263,6 +265,7 @@ eta-<platform>/
     symbolic-diff.eta       # Symbolic differentiation & simplification
     aad.eta                 # Reverse-mode automatic differentiation
     xva.eta                 # Finance example: CVA, FVA calculations with AAD
+    european.eta            # European option Greeks (1st & 2nd order) with AAD
   editors/
     vscode/             # VS Code extension (.vsix)
   install.sh / install.cmd
