@@ -21,7 +21,7 @@
 
 <p align="center">
   <a href="docs/examples.md">Language Basics</a> ·
-  <a href="docs/modules.md">Reverse Mode AAD Example</a> ·
+  <a href="docs/aad.md">Reverse Mode AAD Example</a> ·
   <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a>
 </p>
 
