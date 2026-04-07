@@ -19,14 +19,13 @@
   <a href="docs/next-steps.md">Next Steps</a>
 </p>
 
-<div style="text-align: center;">
-  Language Guide
-  <ul style="list-style: none; padding: 0;">
-    <li><a href="docs/examples.md">Language Basics</a></li>
-    <li><a href="docs/aad.md">Reverse Mode AAD</a></li>
-    <li><a href="docs/logic.md">Logic Programming – Unification and Backtracking</a></li>
-  </ul>
-</div>
+<p align="center">
+  <a href="docs/examples.md">Language Basics</a> ·
+  <a href="docs/modules.md">Reverse Mode AAD Example</a> ·
+  <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a>
+</p>
+
+
 
 ---
 
