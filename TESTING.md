@@ -71,7 +71,8 @@ To install into a custom prefix:
 .\install.cmd "C:\Program Files\Eta"
 ```
 
-> **Note:** Always use `install.cmd` rather than calling `install.ps1`
+> [!NOTE]
+> Always use `install.cmd` rather than calling `install.ps1`
 > directly — the `.cmd` wrapper launches PowerShell with
 > `-ExecutionPolicy Bypass` so it works regardless of the system
 > execution policy.

@@ -51,11 +51,11 @@
     (defun clp:domain (var lo hi)
       (%clp-domain-z! var lo hi))
 
-    ;; (clp:in-fd var . values)
+    ;; (clp:in-fd var . vals)
     ;; Attach a clp(FD) finite domain to `var`.
     ;; Example: (clp:in-fd x 1 2 3 5 8 13)
-    (defun clp:in-fd (var . values)
-      (%clp-domain-fd! var values))
+    (defun clp:in-fd (var . vals)
+      (%clp-domain-fd! var vals))
 
     ;; ── Domain accessors ───────────────────────────────────────────────────
 

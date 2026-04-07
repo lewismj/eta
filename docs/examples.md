@@ -575,6 +575,7 @@ pattern shown in [`unification.eta` §8](../examples/unification.eta) — wrappi
 fact database as a **named relation function** that returns goal branches, so the
 same function works in all query directions without any changes to the search engine.
 
+> [!TIP]
 > **See also:** [Logic Programming — `std.logic` reference](logic.md) for the
 > full documentation of `findall`, `run1`, `succeeds?`, `membero`, and the
 > underlying trail/unification primitives.
@@ -816,4 +817,3 @@ eta> (import greeting)
 eta> (say-hello "REPL")
 Hello, REPL!
 ```
-

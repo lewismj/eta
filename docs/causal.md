@@ -277,6 +277,7 @@ analysis:
 
 ## Limitations
 
+> [!IMPORTANT]
 > **Numerical estimation** currently uses a *plug-in estimator*:
 > sample means and proportions, giving an unbiased point estimate
 > but **no confidence intervals or hypothesis tests**.

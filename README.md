@@ -20,8 +20,7 @@
 </p>
 <p></p>
 <p align="center">
-Language Guide and Examples
-<p></p>
+Language Guide and Examplesp></p>
 <p align="center">
   <a href="docs/examples.md">Basics</a> ·
   <a href="docs/aad.md">Reverse Mode AAD Example</a> ·
@@ -108,6 +107,7 @@ flowchart LR
 | **Emitter** | Core IR | `BytecodeFunction`s | [`emitter.h`](eta/core/src/eta/semantics/emitter.h) |
 | **VM** | Bytecode | Runtime values (`LispVal`) | [`vm.h`](eta/core/src/eta/runtime/vm/vm.h) |
 
+> [!NOTE]
 > Every phase reports errors through a unified
 > [`DiagnosticEngine`](eta/core/src/eta/diagnostic/diagnostic.h) with
 > span information.
@@ -179,6 +179,7 @@ The installer:
 - Sets `ETA_MODULE_PATH` so the runtime can locate the standard library
 - Installs the VS Code extension automatically if VS Code is detected
 
+> [!NOTE]
 > Open a **new** terminal after running the installer for the environment changes to take effect.
 
 **Try it out:**
@@ -327,4 +328,3 @@ eta/
 ## License
 
 See [LICENSE](LICENSE) for details.
-

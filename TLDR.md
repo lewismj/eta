@@ -67,7 +67,8 @@ Extension 'eta-lang.vsix' was successfully installed.
 C:\tmp\eta-v0.0.2-win-x64>
 ```
 
-> **Note:** Open a **new** terminal after installation so the updated `PATH` and `ETA_MODULE_PATH` take effect.
+> [!NOTE]
+> Open a **new** terminal after installation so the updated `PATH` and `ETA_MODULE_PATH` take effect.
 
 ---
 

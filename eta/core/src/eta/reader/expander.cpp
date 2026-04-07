@@ -21,7 +21,7 @@ namespace eta::reader::expander {
             "quasiquote","unquote","unquote-splicing",
             // Modules/macros
             "module","import","export","define-syntax","prefix",
-            // Advanced control / multiple values (future)
+            // Advanced control / multiple values
             "call-with-current-continuation","call/cc","dynamic-wind",
             "values","call-with-values",
             // Convenience (existing and new)

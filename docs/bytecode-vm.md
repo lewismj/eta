@@ -224,7 +224,8 @@ Lambda "add1":
   3: Return                ;; return result
 ```
 
-> Note: `(+ x 1)` is in tail position but uses the specialized `Add` opcode
+> [!NOTE]
+> `(+ x 1)` is in tail position but uses the specialized `Add` opcode
 > rather than a `TailCall` to the `+` builtin — the emitter optimizes known
 > arithmetic into dedicated opcodes.
 

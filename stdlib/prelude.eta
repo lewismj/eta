@@ -662,8 +662,8 @@
     (defun clp:domain (var lo hi)
       (%clp-domain-z! var lo hi))
 
-    (defun clp:in-fd (var . values)
-      (%clp-domain-fd! var values))
+    (defun clp:in-fd (var . vals)
+      (%clp-domain-fd! var vals))
 
     (defun clp:domain-z? (dom)
       (and (pair? dom) (eq? (car dom) 'z)))

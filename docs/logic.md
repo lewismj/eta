@@ -470,6 +470,7 @@ Returns the collected values in order.  This is the Prolog `findall/3` analogue.
 ; => (bob liz)
 ```
 
+> [!TIP]
 > **Relational style:** the inline traversal above is correct but embeds the
 > traversal logic at every call site.  [`examples/logic.eta`](../examples/logic.eta)
 > shows how to lift this into a **named relation** (`parento`) that returns
@@ -659,7 +660,7 @@ closure), `copy-term` lets you instantiate it freshly for each invocation:
 | `ObjectKind::LogicVar` | [`heap.h`](../eta/core/src/eta/runtime/memory/heap.h) |
 | `MakeLogicVar` … `UnwindTrail` opcodes | [`bytecode.h`](../eta/core/src/eta/runtime/vm/bytecode.h) |
 | `VM::unify`, `deref`, `occurs_check` | [`vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) |
-| `trail_stack_` GC rooting | [`vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) — `collect_garbage()` |
+| `trail_stack` GC rooting | [`vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) — `collect_garbage()` |
 | `logic-var?`, `ground?` builtins | [`core_primitives.h`](../eta/core/src/eta/runtime/core_primitives.h) |
 | Expander handlers | [`expander.cpp`](../eta/core/src/eta/reader/expander.cpp) |
 | Core IR nodes | [`core_ir.h`](../eta/core/src/eta/semantics/core_ir.h) |
