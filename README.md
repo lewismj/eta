@@ -25,6 +25,7 @@
 <p align="center">
  <a href="docs/examples.md">Language Basics</a> .
  <a href="docs/aad.md">Reverse Mode Adjoint Automatic Differentiation Example</a>
+ <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a>
 </p>
 
 ---
@@ -39,7 +40,7 @@ elimination, first-class continuations (`call/cc`), a hygienic macro
 expander with `syntax-rules`, and a module system.
 
 Eta also provides native structural unification as a first-class VM feature,
-allowing Prolog-style pattern matching and type inference. See [unification](docs/logic.md).
+allowing Prolog-style pattern matching and type inference. See [Logic Programming](docs/logic.md).
 
 The implementation ships as four executables — an **interpreter**
 (`etai`), an **interactive REPL** (`eta_repl`), a **Language Server**
