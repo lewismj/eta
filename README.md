@@ -27,6 +27,7 @@
     <li><a href="docs/logic.md">Logic Programming – Unification and Backtracking</a></li>
   </ul>
 </div>
+
 ---
 
 ## What is Eta?
