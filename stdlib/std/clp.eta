@@ -1,0 +1,250 @@
+;;; std/clp.eta — Constraint Logic Programming over Eta's native unification.
+;;;
+;;; Two domains are supported:
+;;;
+;;;   clp(Z)  — integer arithmetic with interval bounds  [lo, hi]
+;;;   clp(FD) — finite domains: explicit sets of integer values
+;;;
+;;; Built-in C++ primitives (registered by core_primitives.h):
+;;;   (%clp-domain-z! var lo hi)    — attach Z domain [lo,hi] to var
+;;;   (%clp-domain-fd! var vals)    — attach FD domain (list) to var
+;;;   (%clp-get-domain var)         — retrieve domain as Eta value or #f
+;;;
+;;; The VM's Unify opcode performs forward-checking at bind time:
+;;; if a variable with a domain is unified with a ground integer value that
+;;; falls outside that domain, unification fails immediately.
+;;;
+;;; clp:solve uses DFS labelling (trail-mark / unwind-trail) to enumerate
+;;; consistent assignments for a list of variables.
+;;;
+;;; NOTE: This implementation provides *forward checking*, not full arc
+;;; consistency.  Constraint propagation fires only when a variable is
+;;; unified with a ground value, not when two constrained variables are
+;;; linked.  Full arc consistency (AC-3 / wakeup on unification) is planned
+;;; as a VM extension — see docs/next-steps.md §3.
+
+(module std.clp
+  (import std.collections)
+  (import std.logic)
+  (export
+    ;; Domain constructors
+    clp:domain clp:in-fd
+    ;; Domain accessors / predicates
+    clp:domain-z? clp:domain-fd?
+    clp:domain-lo clp:domain-hi
+    clp:domain-values clp:domain-empty?
+    ;; Constraint propagators
+    clp:= clp:+
+    clp:<= clp:>= clp:<>
+    ;; Global constraint
+    clp:all-different
+    ;; Solver (labelling)
+    clp:solve)
+  (begin
+
+    ;; ── Domain constructors ────────────────────────────────────────────────
+
+    ;; (clp:domain var lo hi)
+    ;; Attach a clp(Z) interval domain [lo, hi] to `var`.
+    ;; `var` must be an unbound logic variable.
+    ;; unify will reject any ground value outside [lo, hi].
+    (defun clp:domain (var lo hi)
+      (%clp-domain-z! var lo hi))
+
+    ;; (clp:in-fd var . values)
+    ;; Attach a clp(FD) finite domain to `var`.
+    ;; Example: (clp:in-fd x 1 2 3 5 8 13)
+    (defun clp:in-fd (var . values)
+      (%clp-domain-fd! var values))
+
+    ;; ── Domain accessors ───────────────────────────────────────────────────
+
+    (defun clp:domain-z? (dom)
+      (and (pair? dom) (eq? (car dom) 'z)))
+
+    (defun clp:domain-fd? (dom)
+      (and (pair? dom) (eq? (car dom) 'fd)))
+
+    (defun clp:domain-lo (dom)
+      (cond
+        ((clp:domain-z? dom)  (car (cdr dom)))
+        ((clp:domain-fd? dom)
+         (let ((vs (cdr dom)))
+           (if (null? vs) #f (car vs))))
+        (#t #f)))
+
+    (defun clp:domain-hi (dom)
+      (cond
+        ((clp:domain-z? dom)  (car (cdr (cdr dom))))
+        ((clp:domain-fd? dom)
+         (let ((vs (cdr dom)))
+           (if (null? vs) #f
+               (let loop ((xs vs))
+                 (if (null? (cdr xs)) (car xs)
+                     (loop (cdr xs)))))))
+        (#t #f)))
+
+    ;; Return a flat list of all integers in the domain (used by clp:solve).
+    (defun clp:domain-values (dom)
+      (cond
+        ((clp:domain-z? dom)
+         (range (clp:domain-lo dom) (+ (clp:domain-hi dom) 1)))
+        ((clp:domain-fd? dom)
+         (cdr dom))
+        (#t '())))
+
+    (defun clp:domain-empty? (dom)
+      (or (not dom) (null? (clp:domain-values dom))))
+
+    ;; ── Internal helpers ───────────────────────────────────────────────────
+
+    ;; Membership test for flat integer lists (no std.collections dep needed).
+    (defun %clp-member? (x xs)
+      (cond ((null? xs) #f)
+            ((= x (car xs)) #t)
+            (#t (%clp-member? x (cdr xs)))))
+
+    ;; Return the domain values of `var`, or '() if unconstrained.
+    (defun %clp-domain-values-for-var (var)
+      (let ((dom (%clp-get-domain var)))
+        (if dom (clp:domain-values dom) '())))
+
+    ;; ── Constraint propagators ─────────────────────────────────────────────
+
+    ;; (clp:= x y)
+    ;; Assert X = Y.  If both are constrained, narrows each to the
+    ;; intersection of their domains, then unifies them.
+    (defun clp:= (x y)
+      (let ((dx (%clp-get-domain x))
+            (dy (%clp-get-domain y)))
+        (if (and dx dy)
+            ;; Intersect: keep only values common to both domains
+            (let* ((vx (clp:domain-values dx))
+                   (vy (clp:domain-values dy))
+                   (common (filter (lambda (v) (%clp-member? v vy)) vx)))
+              (if (null? common)
+                  #f
+                  (begin
+                    (%clp-domain-fd! x common)
+                    (%clp-domain-fd! y common)
+                    (== x y))))
+            (== x y))))
+
+    ;; (clp:+ x y z)  —  assert z = x + y  via interval arithmetic.
+    ;; Narrows all three Z domains using the standard bounds propagation:
+    ;;   z ∈ [x.lo + y.lo,  x.hi + y.hi]
+    ;;   x ∈ [z.lo - y.hi,  z.hi - y.lo]
+    ;;   y ∈ [z.lo - x.hi,  z.hi - x.lo]
+    (defun clp:+ (x y z)
+      (let ((dx (%clp-get-domain x))
+            (dy (%clp-get-domain y))
+            (dz (%clp-get-domain z)))
+        (if (and dx dy dz
+                 (clp:domain-z? dx)
+                 (clp:domain-z? dy)
+                 (clp:domain-z? dz))
+            (let* ((xlo (clp:domain-lo dx)) (xhi (clp:domain-hi dx))
+                   (ylo (clp:domain-lo dy)) (yhi (clp:domain-hi dy))
+                   (zlo (clp:domain-lo dz)) (zhi (clp:domain-hi dz))
+                   (nzlo (max zlo (+ xlo ylo))) (nzhi (min zhi (+ xhi yhi)))
+                   (nxlo (max xlo (- zlo yhi))) (nxhi (min xhi (- zhi ylo)))
+                   (nylo (max ylo (- zlo xhi))) (nyhi (min yhi (- zhi xlo))))
+              (if (or (> nzlo nzhi) (> nxlo nxhi) (> nylo nyhi))
+                  #f
+                  (begin
+                    (%clp-domain-z! z nzlo nzhi)
+                    (%clp-domain-z! x nxlo nxhi)
+                    (%clp-domain-z! y nylo nyhi)
+                    #t)))
+            #t)))
+
+    ;; (clp:<= x y)  —  assert x ≤ y.
+    ;; For Z domains: x.hi ← min(x.hi, y.hi) and y.lo ← max(y.lo, x.lo).
+    (defun clp:<= (x y)
+      (let ((dx (%clp-get-domain x))
+            (dy (%clp-get-domain y)))
+        (if (and dx dy (clp:domain-z? dx) (clp:domain-z? dy))
+            (let* ((nxhi (min (clp:domain-hi dx) (clp:domain-hi dy)))
+                   (nylo (max (clp:domain-lo dy) (clp:domain-lo dx))))
+              (if (or (> (clp:domain-lo dx) nxhi)
+                      (> nylo (clp:domain-hi dy)))
+                  #f
+                  (begin
+                    (%clp-domain-z! x (clp:domain-lo dx) nxhi)
+                    (%clp-domain-z! y nylo (clp:domain-hi dy))
+                    #t)))
+            #t)))
+
+    (defun clp:>= (x y) (clp:<= y x))
+
+    ;; (clp:<> x y)  —  assert x ≠ y.
+    ;; Registered as a two-element all-different group.
+    (defun clp:<> (x y)
+      (clp:all-different (list x y)))
+
+    ;; ── All-different global constraint ────────────────────────────────────
+
+    ;; Global registry: list of variable-groups that must be pairwise distinct.
+    ;; Set up before clp:solve; not trailed (structural, not search-dependent).
+    (define *clp-adiff-groups* '())
+
+    (defun clp:all-different (vars)
+      (set! *clp-adiff-groups* (cons vars *clp-adiff-groups*))
+      #t)
+
+    ;; Check all registered all-different groups at a given point.
+    ;; Returns #t iff every group's ground values are pairwise distinct.
+    (defun %clp-check-all-different ()
+      (every? (lambda (group)
+                (let ((ground-vals
+                        (filter (lambda (v) (not (logic-var? v)))
+                                (map* deref-lvar group))))
+                  (%clp-all-distinct? ground-vals)))
+              *clp-adiff-groups*))
+
+    (defun %clp-all-distinct? (xs)
+      (if (null? xs) #t
+          (and (every? (lambda (y) (not (= (car xs) y))) (cdr xs))
+               (%clp-all-distinct? (cdr xs)))))
+
+    ;; ── Solver: DFS labelling with forward checking ────────────────────────
+
+    ;; (clp:solve vars)
+    ;; Attempt to ground every variable in `vars` to a value within its domain
+    ;; such that all registered constraints are satisfied.
+    ;;
+    ;; Uses trail-mark / unwind-trail for backtracking.  Domain violations are
+    ;; caught by the VM's forward-checker inside unify.  All-different groups
+    ;; are checked at each successful grounding step.
+    ;;
+    ;; Returns #t with bindings live on the trail if a solution is found.
+    ;; Returns #f if no consistent assignment exists.
+    (defun clp:solve (vars)
+      (if (null? vars)
+          (%clp-check-all-different)
+          (let* ((v  (car vars))
+                 (vd (deref-lvar v)))
+            (if (not (logic-var? vd))
+                ;; Already ground — just continue to next variable
+                (clp:solve (cdr vars))
+                ;; Enumerate domain values and try each in turn
+                (let ((vals (%clp-domain-values-for-var v)))
+                  (if (null? vals)
+                      #f   ; empty domain — fail immediately
+                      (%clp-label v vals (cdr vars))))))))
+
+    ;; Internal: try each value in `vals` for `var`, recursing into `remaining`.
+    (defun %clp-label (var vals remaining)
+      (if (null? vals)
+          #f     ; domain exhausted — signal backtrack
+          (let* ((m  (trail-mark))
+                 (ok (and (unify var (car vals))
+                          (clp:solve remaining))))
+            (if ok
+                #t
+                (begin
+                  (unwind-trail m)
+                  (%clp-label var (cdr vals) remaining))))))
+
+  ))
+

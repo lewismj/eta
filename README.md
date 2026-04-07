@@ -18,11 +18,16 @@
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
 </p>
-
+<p></p>
 <p align="center">
-  <a href="docs/examples.md">Language Basics</a> ·
+Language Guide and Examples
+<p></p>
+<p align="center">
+  <a href="docs/examples.md">Basics</a> ·
   <a href="docs/aad.md">Reverse Mode AAD Example</a> ·
-  <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a>
+  <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
+  <a href="docs/clp.md">Constraint Logic Programming</a> ·
+  <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a>
 </p>
 
 
@@ -140,7 +145,9 @@ flowchart LR
 | **[Language Guide](docs/examples.md)**   | Guided tour of the language using simple example programs with expected output           |
 | **[AAD](docs/aad.md)**                   | Reverse-mode automatic differentiation walkthrough                                       |
 | **[xVA](docs/xva.md)**                   | Finance use case: CVA, FVA, and sensitivities via AAD                                   |
-| **[Next Steps](docs/next-steps.md)**     | Roadmap: bytecode serialization & `etac`, FFI, unification instruction, example programs |
+| **[CLP](docs/clp.md)**                   | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`     |
+| **[Causal Inference](docs/causal.md)**   | Do-calculus engine, back-door adjustment, finance factor analysis                        |
+| **[Next Steps](docs/next-steps.md)**     | Roadmap: bytecode serialization & `etac`, FFI, CLP arc consistency, example programs |
 
 ---
 
@@ -272,6 +279,9 @@ The prelude auto-loads the following modules:
 | **`std.math`** | `pi`, `e`, `square`, `gcd`, `lcm`, `expt`, `sum`, `product` |
 | **`std.io`** | `println`, `eprintln`, `read-line`, port redirection helpers |
 | **`std.collections`** | `map*`, `filter`, `foldl`, `foldr`, `sort`, `zip`, `range`, vector ops |
+| **`std.logic`** | `==`, `copy-term`, `naf`, `findall`, `run1` — Prolog-style combinators |
+| **`std.clp`** | `clp:domain`, `clp:in-fd`, `clp:solve`, `clp:all-different` — constraint solving |
+| **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` — causal inference engine |
 | **`std.test`** | `assert-equal`, `assert-true`, `run-tests` — lightweight test framework |
 
 ```scheme

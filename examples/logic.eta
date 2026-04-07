@@ -1,0 +1,234 @@
+;;; logic.eta — Relational logic programming with named relations
+;;;
+;;; Builds on the raw unification primitives shown in unification.eta and
+;;; introduces the key abstraction jump: wrapping a fact database as a
+;;; reusable *relation function* that returns a list of goal branches,
+;;; which can then be passed directly to findall / run1.
+;;;
+;;; The pattern mirrors miniKanren / Prolog closely:
+;;;
+;;;   parento     ≅  parent(P, C) :- member((P,C), parent-db).
+;;;   grandparento ≅  grandparent(GP, GC) :- parent(GP, Mid), parent(Mid, GC).
+;;;
+;;; Run:  etai examples/logic.eta
+
+(module logic
+  (import std.io)
+  (import std.collections)
+  (import std.logic)
+  (begin
+
+    ;; ── Database ─────────────────────────────────────────────────────────────
+    ;;
+    ;; Facts are plain quoted lists — no special syntax required.
+    ;; Any Eta value can appear as a field: symbols, numbers, strings, …
+    ;;
+    ;;   parent(tom, bob)   parent(tom, liz)
+    ;;   parent(bob, ann)   parent(bob, pat)
+    ;;   parent(pat, jim)
+
+    (define parent-db
+      '((tom bob) (tom liz) (bob ann) (bob pat) (pat jim)))
+
+    ;; ── parento — the core relation ───────────────────────────────────────────
+    ;;
+    ;; (parento p c) returns a *list of goal branches*.
+    ;; Each branch is a zero-argument thunk; when called it attempts to unify
+    ;; the caller-supplied logic variables p and c with one fact's fields.
+    ;;
+    ;; Because findall unwinds the trail between branches, p and c are
+    ;; automatically reset after each attempt — exactly like Prolog choice points.
+    ;;
+    ;; Either or both arguments may be:
+    ;;   • a fresh logic variable  → acts as a wildcard / output
+    ;;   • a concrete value        → acts as a filter (unification fails if ≠)
+    ;;
+    ;; This is the key insight: the *same relation* works in all directions.
+
+    (defun parento (p c)
+      (map* (lambda (fact)
+               (lambda ()
+                 (and (== p (car fact))
+                      (== c (cadr fact)))))
+             parent-db))
+
+    ;; ── 1. Directional queries ────────────────────────────────────────────────
+
+    (println "-- 1. Directional queries --")
+
+    ;; Forward: who are tom's children?
+    ;; p = 'tom (concrete filter), c = free output variable
+    (let* ((cv (logic-var))
+           (sols (findall (lambda () (deref-lvar cv))
+                          (parento 'tom cv))))
+      (print "Children of tom:      ")
+      (println sols))
+    ; => (bob liz)
+
+    ;; Backward: who are ann's parents?
+    ;; p = free output variable, c = 'ann (concrete filter)
+    (let* ((pv (logic-var))
+           (sols (findall (lambda () (deref-lvar pv))
+                          (parento pv 'ann))))
+      (print "Parents  of ann:      ")
+      (println sols))
+    ; => (bob)
+
+    ;; Unconstrained: enumerate all parent→child pairs
+    ;; Both p and c are free — full relation scan
+    (let* ((pv (logic-var))
+           (cv (logic-var))
+           (sols (findall (lambda () (cons (deref-lvar pv) (deref-lvar cv)))
+                          (parento pv cv))))
+      (println "All parent->child pairs:")
+      (println sols))
+    ; => ((tom . bob) (tom . liz) (bob . ann) (bob . pat) (pat . jim))
+
+    ;; Membership test: does the parent(tom, liz) fact exist?
+    ;; succeeds? runs the first branch that matches and immediately backtracks.
+    (print "Is (tom, liz) in parento?  ")
+    (println (succeeds? (lambda () (run1 (lambda () #t) (parento 'tom 'liz)))))
+    ; => #t
+
+    (print "Is (tom, jim) in parento?  ")
+    (println (succeeds? (lambda () (run1 (lambda () #t) (parento 'tom 'jim)))))
+    ; => #f
+
+    ;; ── 2. membero — nondeterministic list membership ─────────────────────────
+    ;;
+    ;; (membero x lst) returns one branch per element; each branch unifies x
+    ;; with that element.  Imported from std.logic.
+
+    (println "")
+    (println "-- 2. membero --")
+
+    (let* ((x    (logic-var))
+           (sols (findall (lambda () (deref-lvar x))
+                          (membero x '(a b c d)))))
+      (print "Members of (a b c d): ")
+      (println sols))
+    ; => (a b c d)
+
+    ;; Filter via unification: only branches where x unifies with an even number
+    (let* ((x    (logic-var))
+           (sols (findall (lambda () (deref-lvar x))
+                          (map* (lambda (branch)
+                                   (lambda ()
+                                     (and (branch)
+                                          (= (mod (deref-lvar x) 2) 0))))
+                                (membero x '(1 2 3 4 5 6))))))
+      (print "Even members: ")
+      (println sols))
+    ; => (2 4 6)
+
+    ;; ── 3. grandparento — composing two relations ────────────────────────────
+    ;;
+    ;; Prolog rule:  grandparent(GP, GC) :- parent(GP, Mid), parent(Mid, GC).
+    ;;
+    ;; Strategy:
+    ;;   1. Use findall to materialise all intermediate nodes (mid values) for
+    ;;      a given GP.  After findall the trail is clean — no dangling bindings.
+    ;;   2. For each concrete mid-val, call parento again with mid-val as the
+    ;;      parent filter; collect the resulting grandchild branches.
+    ;;   3. Flatten the per-mid branch lists into one combined branch list.
+    ;;
+    ;; The same two-step pattern scales to chains of any depth (great-grandparent,
+    ;; ancestor, …) and composes with any relation that returns branches.
+
+    (defun grandparento (gp gc)
+      (let* ((mid  (logic-var))
+             (mids (findall (lambda () (deref-lvar mid))
+                            (parento gp mid))))    ; step 1 — get intermediates
+        (flatten                                   ; step 3 — merge branch lists
+          (map* (lambda (mid-val)
+                   (parento mid-val gc))           ; step 2 — per-mid branches
+                mids))))
+
+    (println "")
+    (println "-- 3. grandparento --")
+
+    ;; All grandparent→grandchild pairs
+    (let* ((gp (logic-var))
+           (gc (logic-var))
+           (sols (findall (lambda () (cons (deref-lvar gp) (deref-lvar gc)))
+                          (grandparento gp gc))))
+      (println "All grandparent->grandchild pairs:")
+      (println sols))
+    ; => ((tom . ann) (tom . pat) (bob . jim))
+
+    ;; Forward: grandchildren of tom
+    (let* ((gc (logic-var))
+           (sols (findall (lambda () (deref-lvar gc))
+                          (grandparento 'tom gc))))
+      (print "Grandchildren of tom: ")
+      (println sols))
+    ; => (ann pat)
+
+    ;; Backward: grandparents of jim
+    (let* ((gp (logic-var))
+           (sols (findall (lambda () (deref-lvar gp))
+                          (grandparento gp 'jim))))
+      (print "Grandparents of jim:  ")
+      (println sols))
+    ; => (bob)
+
+    ;; Membership test: is tom a grandparent of ann?
+    (print "Is tom grandparent of ann?  ")
+    (println (succeeds? (lambda () (run1 (lambda () #t) (grandparento 'tom 'ann)))))
+    ; => #t
+
+    ;; ── 4. Contrast: raw findall vs named relation ────────────────────────────
+    ;;
+    ;; The raw approach from unification.eta (section 8) works correctly but
+    ;; embeds the traversal logic at the call site every time:
+    ;;
+    ;;   (findall (lambda () (deref-lvar cv))
+    ;;            (map* (lambda (fact)
+    ;;                     (lambda ()
+    ;;                       (and (== pv (car fact))
+    ;;                            (== cv (cadr fact)))))
+    ;;                  parent-db))
+    ;;
+    ;; The relational approach names that pattern once as `parento` and reuses
+    ;; it everywhere — including inside derived relations like `grandparento`.
+    ;; The search engine (findall + trail) is unchanged; only the abstraction
+    ;; boundary moves.
+    ;;
+    ;; Prolog equivalent for comparison:
+    ;;
+    ;;   parent(tom, bob). parent(tom, liz). parent(bob, ann).
+    ;;   parent(bob, pat). parent(pat, jim).
+    ;;
+    ;;   grandparent(GP, GC) :- parent(GP, Mid), parent(Mid, GC).
+    ;;
+    ;;   ?- findall(C, parent(tom, C), Cs).   %% Cs = [bob, liz]
+    ;;   ?- findall(GC, grandparent(tom, GC), GCs). %% GCs = [ann, pat]
+
+    (println "")
+    (println "-- 4. Side-by-side: raw vs relational --")
+
+    ;; Raw (inline) — equivalent to unification.eta section 8
+    (let* ((pv (logic-var))
+           (cv (logic-var))
+           (_ (== pv 'tom))
+           (raw-sols
+             (findall (lambda () (deref-lvar cv))
+                      (map* (lambda (fact)
+                               (lambda ()
+                                 (and (== pv (car fact))
+                                      (== cv (cadr fact)))))
+                            parent-db))))
+      (print "Raw:       children of tom = ")
+      (println raw-sols))
+    ; => (bob liz)
+
+    ;; Relational — same result, parento abstracts the traversal
+    (let* ((cv (logic-var))
+           (rel-sols (findall (lambda () (deref-lvar cv))
+                              (parento 'tom cv))))
+      (print "Relational: children of tom = ")
+      (println rel-sols))
+    ; => (bob liz)
+
+  ))
+

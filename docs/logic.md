@@ -452,7 +452,7 @@ alternative.  For each branch that succeeds, `findall`:
 
 Returns the collected values in order.  This is the Prolog `findall/3` analogue.
 
-**Pattern — database query:**
+**Pattern — inline database query:**
 
 ```scheme
 (define parent-db '((tom bob) (tom liz) (bob ann)))
@@ -463,12 +463,18 @@ Returns the collected values in order.  This is the Prolog `findall/3` analogue.
        (branches (map* (lambda (fact)
                          (lambda ()
                            (and (== pv (car fact))
-                                (== cv (car (cdr fact))))))
+                                (== cv (cadr fact)))))
                        parent-db))
        (sols (findall (lambda () (deref-lvar cv)) branches)))
   (println sols))
 ; => (bob liz)
 ```
+
+> **Relational style:** the inline traversal above is correct but embeds the
+> traversal logic at every call site.  [`examples/logic.eta`](../examples/logic.eta)
+> shows how to lift this into a **named relation** (`parento`) that returns
+> branches and works in all query directions — children-of, parents-of, all
+> pairs, membership — without any changes to the search engine.
 
 **How backtracking works inside `findall`:**
 
@@ -493,6 +499,24 @@ for each branch:
 Returns the value of `(template-thunk)` for the first succeeding branch,
 or `#f` if no branch succeeds.
 
+### `membero` — Nondeterministic List Membership
+
+```scheme
+(membero x lst)
+```
+
+Returns one goal branch per element of `lst`; each branch unifies `x` with that
+element.  Pass the result directly to `findall` or `run1`:
+
+```scheme
+(let* ((x (logic-var)))
+  (findall (lambda () (deref-lvar x)) (membero x '(a b c))))
+; => (a b c)
+```
+
+When `x` is already bound, failing branches are silently skipped, leaving only
+the matching element(s).  Analogue of Prolog's `member/2`.
+
 ---
 
 ## Usage Patterns
@@ -500,14 +524,17 @@ or `#f` if no branch succeeds.
 ### Pattern 1 — Fact Database with `findall`
 
 Build one branch thunk per fact.  The thunk attempts to unify query variables
-against the fact's fields:
+against the fact's fields.  This inline form is the foundation; for a reusable,
+bidirectional version see [**`examples/logic.eta`**](../examples/logic.eta) — the
+*relational* approach wraps this into a named `parento` function that works as a
+forward lookup, backward lookup, or full enumeration without modification.
 
 ```scheme
 (defun db-branches (pv cv db)
   (map* (lambda (fact)
            (lambda ()
              (and (== pv (car fact))
-                  (== cv (car (cdr fact))))))
+                  (== cv (cadr fact)))))
          db))
 
 ;; All parent→child pairs
@@ -519,6 +546,11 @@ against the fact's fields:
 ```
 
 ### Pattern 2 — Derived Relations (Manual Join)
+
+Compose two `findall` calls to implement a join.  The inner `findall` materialises
+intermediate values with a clean trail; the outer loop builds per-intermediate
+branches.  See [`examples/logic.eta`](../examples/logic.eta) for the full
+`grandparento` derivation with annotated output.
 
 ```scheme
 ;; grandparent(GP, GC) :- parent(GP, Mid), parent(Mid, GC)
@@ -632,6 +664,7 @@ closure), `copy-term` lets you instantiate it freshly for each invocation:
 | Expander handlers | [`expander.cpp`](../eta/core/src/eta/reader/expander.cpp) |
 | Core IR nodes | [`core_ir.h`](../eta/core/src/eta/semantics/core_ir.h) |
 | Emitter | [`emitter.cpp`](../eta/core/src/eta/semantics/emitter.cpp) |
-| `std.logic` library | [`stdlib/std/logic.eta`](../stdlib/std/logic.eta) |
-| Example program | [`examples/unification.eta`](../examples/unification.eta) |
+| `std.logic` library (`==`, `findall`, `membero`, …) | [`stdlib/std/logic.eta`](../stdlib/std/logic.eta) |
+| Low-level example (unification, backtracking, `db-branches`) | [`examples/unification.eta`](../examples/unification.eta) |
+| Relational example (`parento`, `grandparento`, `membero`) | [`examples/logic.eta`](../examples/logic.eta) |
 

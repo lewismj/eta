@@ -13,6 +13,8 @@
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/types/logic_var.h"
+#include "eta/runtime/clp/domain.h"
+#include "eta/runtime/clp/constraint_store.h"
 
 namespace eta::runtime {
 
@@ -902,6 +904,147 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         };
         return is_ground(args[0]) ? True : False;
     });
+
+    // ========================================================================
+    // CLP domain primitives: %clp-domain-z!  %clp-domain-fd!  %clp-get-domain
+    //
+    // These are internal builtins consumed by std.clp.  They are prefixed with
+    // % to signal that user code should call the std.clp wrapper instead.
+    //
+    // Domain check at unification time is handled inside VM::unify() using
+    // the constraint_store_ field; these builtins only manage the store.
+    // ========================================================================
+
+    // (%clp-domain-z! var lo hi)
+    // Constrain `var` (unbound logic variable) to the integer interval [lo, hi].
+    // Adds the domain to the constraint store (trailed for backtracking).
+    env.register_builtin("%clp-domain-z!", 3, false,
+        [&heap, &intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "%clp-domain-z!: requires a running VM"}});
+            // Resolve the variable through any binding chain
+            LispVal var = args[0];
+            for (;;) {
+                if (!ops::is_boxed(var) || ops::tag(var) != Tag::HeapObject) break;
+                auto id2 = ops::payload(var);
+                auto* lv2 = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id2);
+                if (!lv2 || !lv2->binding.has_value()) break;
+                var = *lv2->binding;
+            }
+            if (!ops::is_boxed(var) || ops::tag(var) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%clp-domain-z!: first argument must be a logic variable"}});
+            auto id = ops::payload(var);
+            if (!heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id))
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%clp-domain-z!: first argument must be an unbound logic variable"}});
+            auto nlo = classify_numeric(args[1], heap);
+            auto nhi = classify_numeric(args[2], heap);
+            if (!nlo.is_valid() || nlo.is_flonum() || !nhi.is_valid() || nhi.is_flonum())
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%clp-domain-z!: lo and hi must be integers"}});
+            clp::ZDomain dom{ nlo.int_val, nhi.int_val };
+            if (dom.empty())
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
+                    "%clp-domain-z!: empty domain (lo > hi)"}});
+            vm->constraint_store().set_domain(id, std::move(dom));
+            return True;
+        });
+
+    // (%clp-domain-fd! var values-list)
+    // Constrain `var` to the finite set of integers given as an Eta proper list.
+    env.register_builtin("%clp-domain-fd!", 2, false,
+        [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "%clp-domain-fd!: requires a running VM"}});
+            LispVal var = args[0];
+            for (;;) {
+                if (!ops::is_boxed(var) || ops::tag(var) != Tag::HeapObject) break;
+                auto id2 = ops::payload(var);
+                auto* lv2 = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id2);
+                if (!lv2 || !lv2->binding.has_value()) break;
+                var = *lv2->binding;
+            }
+            if (!ops::is_boxed(var) || ops::tag(var) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%clp-domain-fd!: first argument must be a logic variable"}});
+            auto id = ops::payload(var);
+            if (!heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id))
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%clp-domain-fd!: first argument must be an unbound logic variable"}});
+            clp::FDDomain dom;
+            LispVal lst = args[1];
+            while (ops::is_boxed(lst) && ops::tag(lst) == Tag::HeapObject) {
+                auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(lst);
+                if (!c) break;
+                auto n = classify_numeric(c->car, heap);
+                if (!n.is_valid() || n.is_flonum())
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-domain-fd!: domain values must be integers"}});
+                dom.values.push_back(n.int_val);
+                lst = c->cdr;
+            }
+            std::sort(dom.values.begin(), dom.values.end());
+            dom.values.erase(std::unique(dom.values.begin(), dom.values.end()), dom.values.end());
+            if (dom.empty())
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
+                    "%clp-domain-fd!: domain list is empty"}});
+            vm->constraint_store().set_domain(id, std::move(dom));
+            return True;
+        });
+
+    // (%clp-get-domain var)
+    // Returns the domain of `var` as an Eta value:
+    //   #f                    — no domain / var is already ground
+    //   (z lo hi)             — clp(Z) interval [lo, hi]
+    //   (fd v1 v2 ...)        — clp(FD) explicit value list
+    env.register_builtin("%clp-get-domain", 1, false,
+        [&heap, &intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) return False;
+            // Deref the variable
+            LispVal var = args[0];
+            for (;;) {
+                if (!ops::is_boxed(var) || ops::tag(var) != Tag::HeapObject) return False;
+                auto id2 = ops::payload(var);
+                auto* lv2 = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id2);
+                if (!lv2) return False;           // not a logic variable
+                if (!lv2->binding.has_value()) break; // found unbound variable
+                var = *lv2->binding;
+            }
+            auto id = ops::payload(var);
+            const clp::Domain* dom = vm->constraint_store().get_domain(id);
+            if (!dom) return False;
+
+            using namespace memory::factory;
+            if (const auto* z = std::get_if<clp::ZDomain>(dom)) {
+                // Build (z lo hi)
+                auto sym = make_symbol(intern_table, "z");
+                auto lo  = make_fixnum(heap, z->lo);
+                auto hi  = make_fixnum(heap, z->hi);
+                if (!sym || !lo || !hi) return False;
+                auto hi_c  = make_cons(heap, *hi,  Nil);
+                auto lo_c  = make_cons(heap, *lo,  hi_c ? *hi_c  : Nil);
+                auto result= make_cons(heap, *sym, lo_c ? *lo_c  : Nil);
+                if (!hi_c || !lo_c || !result) return False;
+                return *result;
+            } else {
+                // FD: build (fd v1 v2 ...)
+                const auto& fd = std::get<clp::FDDomain>(*dom);
+                auto sym = make_symbol(intern_table, "fd");
+                if (!sym) return False;
+                LispVal lst = Nil;
+                for (int i = static_cast<int>(fd.values.size()) - 1; i >= 0; --i) {
+                    auto v = make_fixnum(heap, fd.values[static_cast<std::size_t>(i)]);
+                    if (!v) return False;
+                    auto c = make_cons(heap, *v, lst);
+                    if (!c) return False;
+                    lst = *c;
+                }
+                auto result = make_cons(heap, *sym, lst);
+                if (!result) return False;
+                return *result;
+            }
+        });
 }
 
 } // namespace eta::runtime
