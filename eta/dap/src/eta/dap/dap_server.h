@@ -109,9 +109,12 @@ private:
 
     // Variable reference packing: encode (frame_index, scope) into a single int.
     // scope 0 = locals, scope 1 = upvalues
-    static int encode_var_ref(int frame, int scope) { return (frame << 8) | (scope & 0xFF); }
-    static int decode_var_ref_frame(int ref) { return ref >> 8; }
-    static int decode_var_ref_scope(int ref) { return ref & 0xFF; }
+    // +1 offset ensures the result is always >= 1: DAP treats variablesReference == 0
+    // as "not expandable", so frame 0 / scope 0 (top-frame locals) would silently
+    // suppress the variables request without this offset.
+    static int encode_var_ref(int frame, int scope) { return ((frame << 8) | (scope & 0xFF)) + 1; }
+    static int decode_var_ref_frame(int ref) { return (ref - 1) >> 8; }
+    static int decode_var_ref_scope(int ref) { return (ref - 1) & 0xFF; }
 };
 
 } // namespace eta::dap

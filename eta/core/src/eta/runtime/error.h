@@ -24,6 +24,7 @@ namespace eta::runtime::error {
         TypeError,
         UndefinedGlobal,
         UserError,
+        UserThrow,   ///< unhandled (raise tag value) with no matching catch frame
     };
 
     struct VMError {

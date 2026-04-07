@@ -634,13 +634,43 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
         return;
     }
 
-    // Lock vm_mutex_ for the entire evaluation to prevent concurrent VM access.
     std::lock_guard<std::mutex> lk(vm_mutex_);
     if (!driver_) {
         send_response(id, json::object({{"result", "<not available>"}, {"variablesReference", 0}}));
         return;
     }
 
+    // When the VM is paused mid-execution, calling run_source() would invoke
+    // vm_.execute() on the live stack/frame state, corrupting it and breaking
+    // subsequent stepping.  Instead, do a safe name lookup in the current frames.
+    if (driver_->vm().is_paused()) {
+        const std::string& expr = *expr_opt;
+        auto frames = driver_->vm().get_frames();
+        for (std::size_t fi = 0; fi < frames.size(); ++fi) {
+            for (const auto& e : driver_->vm().get_locals(fi)) {
+                if (e.name == expr) {
+                    send_response(id, json::object({
+                        {"result",             Value(driver_->format_value(e.value))},
+                        {"variablesReference", 0},
+                    }));
+                    return;
+                }
+            }
+            for (const auto& e : driver_->vm().get_upvalues(fi)) {
+                if (e.name == expr) {
+                    send_response(id, json::object({
+                        {"result",             Value(driver_->format_value(e.value))},
+                        {"variablesReference", 0},
+                    }));
+                    return;
+                }
+            }
+        }
+        send_response(id, json::object({{"result", "<not available>"}, {"variablesReference", 0}}));
+        return;
+    }
+
+    // VM is running (REPL context) — compile and execute the expression normally.
     runtime::nanbox::LispVal result{};
     bool ok = driver_->run_source(*expr_opt, &result);
     std::string val_str = ok ? driver_->format_value(result) : "<eval error>";

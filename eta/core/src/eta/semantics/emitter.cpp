@@ -73,6 +73,10 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
             emit_apply(n, node->tail, ctx, span);
         else if constexpr (std::is_same_v<T, core::Quote>)
             emit_quote(n, ctx, span);
+        else if constexpr (std::is_same_v<T, core::Raise>)
+            emit_raise(n, ctx, span);
+        else if constexpr (std::is_same_v<T, core::Guard>)
+            emit_guard(n, ctx, span);
     }, node->data);
 }
 
@@ -380,10 +384,80 @@ uint32_t Emitter::emit_lambda(const core::Lambda& lambda,
     ctx.func.has_rest   = lambda.arity.has_rest;
     ctx.func.stack_size = lambda.stack_size;
 
+    // ── Populate local_names from params, rest param, and locals ─────────────
+    auto record_local = [&](const core::BindingId& id) {
+        if (id.id >= sem_.bindings.size()) return;
+        const auto& info = sem_.bindings[id.id];
+        if (info.kind != BindingInfo::Kind::Param && info.kind != BindingInfo::Kind::Local)
+            return;
+        uint32_t slot = info.slot;
+        if (slot >= ctx.func.local_names.size())
+            ctx.func.local_names.resize(slot + 1);
+        if (ctx.func.local_names[slot].empty())
+            ctx.func.local_names[slot] = info.name;
+    };
+    for (const auto& pid : lambda.params) record_local(pid);
+    if (lambda.rest) record_local(*lambda.rest);
+    for (const auto& lid : lambda.locals) record_local(lid);
+
+    // ── Populate upval_names from captured bindings ───────────────────────────
+    ctx.func.upval_names.resize(lambda.upvals.size());
+    for (std::size_t i = 0; i < lambda.upvals.size(); ++i) {
+        const auto& uid = lambda.upvals[i];
+        if (uid.id < sem_.bindings.size())
+            ctx.func.upval_names[i] = sem_.bindings[uid.id].name;
+    }
+
     emit_node(lambda.body, ctx);
     ctx.emit_instr(OpCode::Return, 0, span);
 
     return registry_.add(std::move(ctx.func));
+}
+
+// ============================================================================
+// Exception emit helpers
+// ============================================================================
+
+void Emitter::emit_raise(const core::Raise& n, Context& ctx, const Span& span) {
+    // Stack layout before Throw: tag (bottom), value (top).
+    LispVal tag_val = Nil;
+    if (!n.tag_name.empty()) {
+        auto res = intern_table_.intern(n.tag_name);
+        if (res) tag_val = ops::box(Tag::Symbol, *res);
+    }
+    emit_load_const(tag_val, ctx, span);  // push tag
+    emit_node(n.value, ctx);              // push value
+    ctx.emit_instr(OpCode::Throw, 0, span);
+}
+
+void Emitter::emit_guard(const core::Guard& n, Context& ctx, const Span& span) {
+    // Intern the tag symbol (Nil = catch-all).
+    LispVal tag_val = Nil;
+    if (!n.tag_name.empty()) {
+        auto res = intern_table_.intern(n.tag_name);
+        if (res) tag_val = ops::box(Tag::Symbol, *res);
+    }
+    uint32_t tag_const_idx = add_const(tag_val, ctx);
+
+    // SetupCatch with placeholder arg; patched below.
+    uint32_t setup_idx = static_cast<uint32_t>(ctx.func.code.size());
+    ctx.emit_instr(OpCode::SetupCatch, 0, span);
+
+    // Protected body.
+    emit_node(n.body, ctx);
+
+    // PopCatch on the normal (no-exception) path.
+    ctx.emit_instr(OpCode::PopCatch, 0, span);
+
+    // handler_pc = instruction after PopCatch.
+    // Both paths converge here:
+    //   Normal:    body result on stack; catch frame removed by PopCatch.
+    //   Exception: do_throw restores stack to stack_top and pushes caught value.
+    uint32_t handler_pc = static_cast<uint32_t>(ctx.func.code.size());
+
+    // Patch SetupCatch: arg = (tag_const_idx << 16) | offset_to_handler
+    uint32_t offset = handler_pc - (setup_idx + 1);
+    ctx.func.code[setup_idx].arg = (tag_const_idx << 16) | (offset & 0xFFFFu);
 }
 
 } // namespace eta::semantics

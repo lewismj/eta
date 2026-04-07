@@ -347,6 +347,72 @@ SemResult<core::Node*> handle_apply(const List* lst, Scope& scope, AnalysisConte
     return ctx.mod.emplace<core::Apply>(lst->span, *proc, std::move(args));
 }
 
+// ── Exception handlers ──────────────────────────────────────────────────────
+
+// Helper: extract symbol name from a quoted symbol form '(quote tag).
+// Returns empty string if not a valid quoted symbol.
+static std::string extract_quoted_symbol(const SExprPtr& e) {
+    if (!e) return {};
+    if (const auto* lst = e->as<List>()) {
+        if (lst->elems.size() == 2
+            && lst->elems[0] && lst->elems[0]->is<Symbol>()
+            && lst->elems[0]->as<Symbol>()->name == "quote"
+            && lst->elems[1] && lst->elems[1]->is<Symbol>()) {
+            return lst->elems[1]->as<Symbol>()->name;
+        }
+    }
+    return {};
+}
+
+// (raise 'tag value)  or  (raise value)
+SemResult<core::Node*> handle_raise(const List* lst, Scope& scope, AnalysisContext& ctx) {
+    // lst->elems: [raise, ('tag | value), (value)?]
+    if (lst->elems.size() < 2 || lst->elems.size() > 3)
+        return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape,
+            lst->span, "raise requires 1 or 2 arguments"});
+
+    std::string tag_name;
+    const SExprPtr* value_expr = nullptr;
+
+    if (lst->elems.size() == 3) {
+        tag_name   = extract_quoted_symbol(lst->elems[1]);
+        if (tag_name.empty())
+            return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape,
+                lst->elems[1]->span(), "raise: first arg must be a quoted symbol 'tag"});
+        value_expr = &lst->elems[2];
+    } else {
+        value_expr = &lst->elems[1];
+    }
+
+    auto val = analyze(*value_expr, scope, ctx);
+    if (!val) return val;
+    return ctx.mod.emplace<core::Raise>(lst->span, tag_name, *val);
+}
+
+// (catch 'tag body)  or  (catch body)
+SemResult<core::Node*> handle_guard(const List* lst, Scope& scope, AnalysisContext& ctx) {
+    if (lst->elems.size() < 2 || lst->elems.size() > 3)
+        return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape,
+            lst->span, "catch requires 1 or 2 arguments"});
+
+    std::string tag_name;
+    const SExprPtr* body_expr = nullptr;
+
+    if (lst->elems.size() == 3) {
+        tag_name  = extract_quoted_symbol(lst->elems[1]);
+        if (tag_name.empty())
+            return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape,
+                lst->elems[1]->span(), "catch: first arg must be a quoted symbol 'tag"});
+        body_expr = &lst->elems[2];
+    } else {
+        body_expr = &lst->elems[1];
+    }
+
+    auto body = analyze(*body_expr, scope, ctx);
+    if (!body) return body;
+    return ctx.mod.emplace<core::Guard>(lst->span, tag_name, *body);
+}
+
 // ============================================================================
 // NOTE: Derived form handlers (let, letrec, case, do) have been REMOVED.
 // These forms MUST be desugared by the Expander before semantic analysis.
@@ -377,6 +443,9 @@ const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handler
         {"call/cc",                         handle_call_cc},
         {"call-with-current-continuation",  handle_call_cc},
         {"apply",                           handle_apply},
+        // Exception handling
+        {"raise",                           handle_raise},
+        {"catch",                           handle_guard},
         // NOTE: Derived forms (let, letrec, case, do) are no longer handled here.
         // They MUST be desugared by the Expander. If encountered, they will be
         // treated as function applications, which will produce a meaningful error.
@@ -495,6 +564,10 @@ struct IRVisitor {
                 for (auto*& a : val.args) {
                     a = derived->visit(a, false);
                 }
+            } else if constexpr (std::is_same_v<T, core::Raise>) {
+                val.value = derived->visit(val.value, false);
+            } else if constexpr (std::is_same_v<T, core::Guard>) {
+                val.body = derived->visit(val.body, context);
             }
             // core::Const, core::Var, core::Quote have no children
         }, node->data);

@@ -73,6 +73,14 @@ enum class OpCode : std::uint8_t {
     // Apply: unpack last arg (list) and call procedure
     Apply,      // [argc] -> apply(pop(), argc) — last arg is unpacked list
     TailApply,  // [argc] -> tail_apply(pop(), argc) — tail-position apply
+
+    // Exception handling
+    // SetupCatch: arg = (tag_const_idx << 16) | pc_offset_to_handler
+    //   Pushes a CatchFrame; handler_pc = pc_after_this_instr + (arg & 0xFFFF)
+    //   constants[arg >> 16] is the tag symbol (Nil = catch-all)
+    SetupCatch,  // [tag_const_idx:16 | offset:16]
+    PopCatch,    // [] -> pop top catch frame (normal exit from protected body)
+    Throw,       // [] -> pop value, pop tag; find matching catch frame or RuntimeError
 };
 
 struct Instruction {
@@ -88,6 +96,14 @@ struct BytecodeFunction {
     bool has_rest{false};
     std::uint32_t stack_size{0};
     std::string name;
+
+    /// Slot-indexed parameter/local names (populated by Emitter).
+    /// local_names[slot] is the Scheme identifier for that stack slot.
+    /// Slots without a name are empty strings (fall back to "%N" in debugger).
+    std::vector<std::string> local_names;
+
+    /// Upvalue names parallel to closure->upvals (populated by Emitter).
+    std::vector<std::string> upval_names;
 
     /// Return the source span for the instruction at index @p pc.
     /// Returns a zeroed Span if @p pc is out of range or the source_map
