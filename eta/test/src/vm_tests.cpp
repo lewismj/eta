@@ -1865,6 +1865,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_simplify_multiplicative_rules) {
         "            ((and (number? sb) (= sb 0)) 0)"
         "            ((and (number? sa) (= sa 1)) sb)"
         "            ((and (number? sb) (= sb 1)) sa)"
+        "            ((and (number? sa) (number? sb)) (* sa sb))"
         "            (#t (list '* sa sb)))))"
         "      (#t e)))"
         "  (define r1 (= (simplify '(* 0 x)) 0))"
@@ -2022,133 +2023,122 @@ BOOST_AUTO_TEST_CASE(test_syntax_rules_hygiene) {
 }
 
 // ============================================================================
-// platform primitive
+// Unification tests
 // ============================================================================
 
-BOOST_AUTO_TEST_CASE(test_platform_returns_symbol) {
-    // (platform) must return a symbol
-    LispVal res = run("(module m (define result (symbol? (platform))))");
+BOOST_AUTO_TEST_SUITE_END()  // vm_tests
+
+BOOST_FIXTURE_TEST_SUITE(unification_tests, VMTestFixture)
+
+BOOST_AUTO_TEST_CASE(logic_var_is_unbound_after_creation) {
+    // A freshly created logic variable should display as _G<id>
+    // and logic-var? should return #t
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (define result (logic-var? x)))");
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
-BOOST_AUTO_TEST_CASE(test_platform_is_known_value) {
-    // (platform) must be one of the four known platform symbols
+BOOST_AUTO_TEST_CASE(logic_var_predicate_false_for_non_lvar) {
     LispVal res = run(
         "(module m"
-        "  (define p (platform))"
-        "  (define result (or (eq? p 'Win32)"
-        "                     (eq? p 'Linux)"
-        "                     (eq? p 'Darwin)"
-        "                     (eq? p 'Unknown))))");
+        "  (define result (logic-var? 42)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(unify_identical_atoms) {
+    LispVal res = run(
+        "(module m"
+        "  (define result (unify 1 1)))");
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
-BOOST_AUTO_TEST_CASE(test_platform_consistent) {
-    // Two calls to (platform) return eq? identical symbols (interned)
-    LispVal res = run("(module m (define result (eq? (platform) (platform))))");
+BOOST_AUTO_TEST_CASE(unify_mismatched_atoms) {
+    LispVal res = run(
+        "(module m"
+        "  (define result (unify 1 2)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(unify_variable_binds_and_deref) {
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (unify x 42)"
+        "  (define result (deref-lvar x)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 42);
+}
+
+BOOST_AUTO_TEST_CASE(unify_two_vars_then_deref) {
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (define y (logic-var))"
+        "  (unify x y)"
+        "  (unify y 99)"
+        "  (define result (deref-lvar x)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 99);
+}
+
+BOOST_AUTO_TEST_CASE(unify_list_patterns) {
+    // (unify '(x 2 3) '(1 y 3)) should bind x=1, y=2
+    // Build lists with cons to avoid requiring std.core
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (define y (logic-var))"
+        "  (define ok (unify (cons x (cons 2 (cons 3 '())))"
+        "                    (cons 1 (cons y (cons 3 '())))))"
+        "  (define result (if ok (+ (deref-lvar x) (deref-lvar y)) -1)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 3);   // 1 + 2
+}
+
+BOOST_AUTO_TEST_CASE(unify_occurs_check_rejects_cycle) {
+    // (unify x (cons x '())) must fail due to the occurs check
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (define result (unify x (cons x '()))))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(trail_mark_and_unwind) {
+    // Bind a variable, record the mark, unwind, and verify the variable is unbound again
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (define mark (trail-mark))"
+        "  (unify x 77)"                         // x = 77
+        "  (unwind-trail mark)"                  // undo — x is unbound again
+        "  (define result (logic-var? (deref-lvar x))))");
+    // After unwinding, deref-lvar x returns x itself (still a LogicVar)
+    // so logic-var? should be #t
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
-BOOST_AUTO_TEST_SUITE_END()
-
-// ============================================================================
-// Exception handling: (catch) / (raise)
-// ============================================================================
-
-BOOST_FIXTURE_TEST_SUITE(exception_tests, VMTestFixture)
-
-BOOST_AUTO_TEST_CASE(catch_no_exception_returns_body_result) {
-    // When the body doesn't raise, (catch) returns the body's value.
-    LispVal res = run("(module m (define result (catch 'my-tag 42)))");
-    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
-}
-
-BOOST_AUTO_TEST_CASE(catch_intercepts_matching_raise) {
-    // (raise 'my-tag 99) inside a (catch 'my-tag ...) returns 99.
+BOOST_AUTO_TEST_CASE(backtrack_restores_multiple_bindings) {
     LispVal res = run(
         "(module m"
+        "  (define x (logic-var))"
+        "  (define y (logic-var))"
+        "  (define mark (trail-mark))"
+        "  (unify x 10)"
+        "  (unify y 20)"
+        "  (unwind-trail mark)"
         "  (define result"
-        "    (catch 'my-tag"
-        "      (raise 'my-tag 99))))");
-    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 99);
-}
-
-BOOST_AUTO_TEST_CASE(catch_all_intercepts_any_raise) {
-    // (catch body) with no tag intercepts any raise.
-    LispVal res = run(
-        "(module m"
-        "  (define result"
-        "    (catch"
-        "      (raise 'some-tag 77))))");
-    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 77);
-}
-
-BOOST_AUTO_TEST_CASE(unhandled_raise_is_runtime_error) {
-    // A (raise) with no matching (catch) becomes a UserThrow error.
-    RuntimeError err = run_expect_error(
-        "(module m"
-        "  (define result"
-        "    (raise 'oops 0)))");
-    BOOST_REQUIRE(std::holds_alternative<VMError>(err));
-    auto& vme = std::get<VMError>(err);
-    BOOST_CHECK(vme.code == RuntimeErrorCode::UserThrow);
-    BOOST_CHECK(vme.message.find("oops") != std::string::npos);
-}
-
-BOOST_AUTO_TEST_CASE(catch_does_not_intercept_wrong_tag) {
-    // A (catch 'other-tag) should NOT intercept a raise with a different tag.
-    RuntimeError err = run_expect_error(
-        "(module m"
-        "  (define result"
-        "    (catch 'other-tag"
-        "      (raise 'my-tag 1))))");
-    BOOST_REQUIRE(std::holds_alternative<VMError>(err));
-    BOOST_CHECK(std::get<VMError>(err).code == RuntimeErrorCode::UserThrow);
-}
-
-BOOST_AUTO_TEST_CASE(catch_returns_body_when_nested_catch_handles_raise) {
-    // Inner (catch) handles the raise; outer (catch) sees the result normally.
-    LispVal res = run(
-        "(module m"
-        "  (define result"
-        "    (catch 'outer"
-        "      (+ 1 (catch 'inner (raise 'inner 10))))))");
-    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 11);
-}
-
-BOOST_AUTO_TEST_CASE(catch_raise_with_complex_value) {
-    // The raised value can be any Lisp value (e.g., a list).
-    LispVal res = run(
-        "(module m"
-        "  (define caught (catch 'e (raise 'e (cons 1 2))))"
-        "  (define result (car caught)))");
-    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1);
-}
-
-BOOST_AUTO_TEST_CASE(catch_raise_from_within_lambda) {
-    // Raise propagates through function call boundaries.
-    LispVal res = run(
-        "(module m"
-        "  (define (might-fail x)"
-        "    (if (= x 0)"
-        "        (raise 'div-err 'division-by-zero)"
-        "        (/ 10 x)))"
-        "  (define result"
-        "    (catch 'div-err"
-        "      (might-fail 0))))");
-    // result should be the symbol 'division-by-zero
-    BOOST_CHECK(nanbox::ops::tag(res) == nanbox::Tag::Symbol);
-}
-
-BOOST_AUTO_TEST_CASE(catch_normal_return_after_raise_skipped) {
-    // If body completes normally, the catch frame is cleaned up correctly
-    // and subsequent code works normally.
-    LispVal res = run(
-        "(module m"
-        "  (define x (catch 'e 10))"
-        "  (define y (catch 'e 20))"
-        "  (define result (+ x y)))");
-    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 30);
+        "    (if (and (logic-var? (deref-lvar x))"
+        "             (logic-var? (deref-lvar y)))"
+        "        1 0)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 1);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

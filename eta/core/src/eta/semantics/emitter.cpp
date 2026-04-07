@@ -77,6 +77,16 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
             emit_raise(n, ctx, span);
         else if constexpr (std::is_same_v<T, core::Guard>)
             emit_guard(n, ctx, span);
+        else if constexpr (std::is_same_v<T, core::MakeLogicVar>)
+            emit_make_logic_var(n, ctx, span);
+        else if constexpr (std::is_same_v<T, core::Unify>)
+            emit_unify(n, ctx, span);
+        else if constexpr (std::is_same_v<T, core::DerefLogicVar>)
+            emit_deref_lvar(n, ctx, span);
+        else if constexpr (std::is_same_v<T, core::TrailMark>)
+            emit_trail_mark(n, ctx, span);
+        else if constexpr (std::is_same_v<T, core::UnwindTrail>)
+            emit_unwind_trail(n, ctx, span);
     }, node->data);
 }
 
@@ -458,6 +468,34 @@ void Emitter::emit_guard(const core::Guard& n, Context& ctx, const Span& span) {
     // Patch SetupCatch: arg = (tag_const_idx << 16) | offset_to_handler
     uint32_t offset = handler_pc - (setup_idx + 1);
     ctx.func.code[setup_idx].arg = (tag_const_idx << 16) | (offset & 0xFFFFu);
+}
+
+// ============================================================================
+// Logic variable / unification emit helpers
+// ============================================================================
+
+void Emitter::emit_make_logic_var(const core::MakeLogicVar&, Context& ctx, const Span& span) {
+    ctx.emit_instr(OpCode::MakeLogicVar, 0, span);
+}
+
+void Emitter::emit_unify(const core::Unify& n, Context& ctx, const Span& span) {
+    emit_node(n.a, ctx);   // push a
+    emit_node(n.b, ctx);   // push b
+    ctx.emit_instr(OpCode::Unify, 0, span);
+}
+
+void Emitter::emit_deref_lvar(const core::DerefLogicVar& n, Context& ctx, const Span& span) {
+    emit_node(n.lvar, ctx);
+    ctx.emit_instr(OpCode::DerefLogicVar, 0, span);
+}
+
+void Emitter::emit_trail_mark(const core::TrailMark&, Context& ctx, const Span& span) {
+    ctx.emit_instr(OpCode::TrailMark, 0, span);
+}
+
+void Emitter::emit_unwind_trail(const core::UnwindTrail& n, Context& ctx, const Span& span) {
+    emit_node(n.mark, ctx);
+    ctx.emit_instr(OpCode::UnwindTrail, 0, span);
 }
 
 } // namespace eta::semantics

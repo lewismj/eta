@@ -29,7 +29,9 @@ namespace eta::reader::expander {
             "def","defun","progn",
             "define-record-type",
             // Exception handling
-            "catch","raise"
+            "catch","raise",
+            // Logic variables / unification
+            "logic-var","unify","deref-lvar","trail-mark","unwind-trail"
         };
         return K;
     }
@@ -280,6 +282,12 @@ namespace eta::reader::expander {
             // exception handling
             {"catch",  &Expander::handle_catch},
             {"raise",  &Expander::handle_raise},
+            // logic variables / unification
+            {"logic-var",    &Expander::handle_logic_var},
+            {"unify",        &Expander::handle_unify},
+            {"deref-lvar",   &Expander::handle_deref_lvar},
+            {"trail-mark",   &Expander::handle_trail_mark},
+            {"unwind-trail", &Expander::handle_unwind_trail},
         };
 
         if (lst.elems.empty()) {
@@ -2269,6 +2277,49 @@ namespace eta::reader::expander {
         auto expanded = expand_list_elems(lst.elems);
         if (!expanded) return std::unexpected(expanded.error());
         return make_list(std::move(*expanded), lst.span);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Logic variable / unification special forms
+    // ────────────────────────────────────────────────────────────────────────
+
+    // (logic-var)
+    ExpanderResult<SExprPtr> Expander::handle_logic_var(const List& lst) {
+        if (lst.elems.size() != 1)
+            return std::unexpected(invalid_syntax(lst.span, "logic-var", "expected (logic-var)"));
+        return make_form(lst.span, "logic-var");
+    }
+
+    // (unify a b)
+    ExpanderResult<SExprPtr> Expander::handle_unify(const List& lst) {
+        if (lst.elems.size() != 3)
+            return std::unexpected(invalid_syntax(lst.span, "unify", "expected (unify a b)"));
+        auto a = expand_form(lst.elems[1]); if (!a) return std::unexpected(a.error());
+        auto b = expand_form(lst.elems[2]); if (!b) return std::unexpected(b.error());
+        return make_form(lst.span, "unify", std::move(*a), std::move(*b));
+    }
+
+    // (deref-lvar x)
+    ExpanderResult<SExprPtr> Expander::handle_deref_lvar(const List& lst) {
+        if (lst.elems.size() != 2)
+            return std::unexpected(invalid_syntax(lst.span, "deref-lvar", "expected (deref-lvar x)"));
+        auto x = expand_form(lst.elems[1]); if (!x) return std::unexpected(x.error());
+        return make_form(lst.span, "deref-lvar", std::move(*x));
+    }
+
+    // (trail-mark)
+    ExpanderResult<SExprPtr> Expander::handle_trail_mark(const List& lst) {
+        if (lst.elems.size() != 1)
+            return std::unexpected(invalid_syntax(lst.span, "trail-mark", "expected (trail-mark)"));
+        return make_form(lst.span, "trail-mark");
+    }
+
+    // (unwind-trail mark)
+    ExpanderResult<SExprPtr> Expander::handle_unwind_trail(const List& lst) {
+        if (lst.elems.size() != 2)
+            return std::unexpected(invalid_syntax(lst.span, "unwind-trail", "expected (unwind-trail mark)"));
+        auto m = expand_form(lst.elems[1]); if (!m) return std::unexpected(m.error());
+        return make_form(lst.span, "unwind-trail", std::move(*m));
     }
 
 }

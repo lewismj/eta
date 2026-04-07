@@ -65,6 +65,10 @@ namespace eta::runtime::memory::gc {
             for (auto v : mv.vals) callback(v);
         }
 
+        void visit_logic_var(const types::LogicVar& lv) override {
+            if (lv.binding.has_value()) callback(*lv.binding);
+        }
+
         void visit_leaf(heap::ObjectKind, const void*) override { /* no edges */ }
     };
 

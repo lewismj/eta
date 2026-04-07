@@ -250,6 +250,13 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_catch(const List& lst);   // (catch ['tag] body)
         ExpanderResult<SExprPtr> handle_raise(const List& lst);   // (raise ['tag] value)
 
+        // Logic variable / unification forms
+        ExpanderResult<SExprPtr> handle_logic_var(const List& lst);     // (logic-var)
+        ExpanderResult<SExprPtr> handle_unify(const List& lst);         // (unify a b)
+        ExpanderResult<SExprPtr> handle_deref_lvar(const List& lst);    // (deref-lvar x)
+        ExpanderResult<SExprPtr> handle_trail_mark(const List& lst);    // (trail-mark)
+        ExpanderResult<SExprPtr> handle_unwind_trail(const List& lst);  // (unwind-trail mark)
+
 
         //! Modules/directives
         ExpanderResult<SExprPtr> handle_module_list(const List& lst);    // (module name ...)

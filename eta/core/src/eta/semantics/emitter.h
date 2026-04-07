@@ -121,6 +121,11 @@ private:
     void emit_quote(const core::Quote& n, Context& ctx, const Span& span);
     void emit_raise(const core::Raise& n, Context& ctx, const Span& span);
     void emit_guard(const core::Guard& n, Context& ctx, const Span& span);
+    void emit_make_logic_var(const core::MakeLogicVar& n, Context& ctx, const Span& span);
+    void emit_unify(const core::Unify& n, Context& ctx, const Span& span);
+    void emit_deref_lvar(const core::DerefLogicVar& n, Context& ctx, const Span& span);
+    void emit_trail_mark(const core::TrailMark& n, Context& ctx, const Span& span);
+    void emit_unwind_trail(const core::UnwindTrail& n, Context& ctx, const Span& span);
 };
 
 } // namespace eta::semantics

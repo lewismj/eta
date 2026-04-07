@@ -7,7 +7,7 @@
 
 <p align="center">
   <strong>η (Eta)</strong><br>
-  A Scheme-inspired language. 
+  A Lisp/Scheme-inspired language. 
 </p>
 
 <p align="center">
@@ -16,9 +16,15 @@
   <a href="docs/bytecode-vm.md">Bytecode &amp; VM</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
-  <a href="docs/examples.md">Language Examples</a> ·
-  <a href="docs/aad.md">Reverse Mode Adjoint Automatic Differentiation Example</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
+</p>
+
+
+<p align="center">Language Guide</p>
+
+<p align="center">
+ <a href="docs/examples.md">Language Basics</a> .
+ <a href="docs/aad.md">Reverse Mode Adjoint Automatic Differentiation Example</a>
 </p>
 
 ---

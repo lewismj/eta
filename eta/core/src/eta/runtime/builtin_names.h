@@ -118,6 +118,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     // Misc
     r("error",    1, true);
     r("platform", 0, false);
+    r("logic-var?", 1, false);
 
     // ====================================================================
     // port_primitives.h  (must match registration order exactly)

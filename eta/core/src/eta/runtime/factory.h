@@ -105,6 +105,11 @@ namespace eta::runtime::memory::factory {
     std::expected<LispVal, RuntimeError> make_port(Heap& heap, std::shared_ptr<Port> port) {
         return make_heap_object<types::PortObject, ObjectKind::Port>(heap, types::PortObject{.port = std::move(port)});
     }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_logic_var(Heap& heap) {
+        return make_heap_object<types::LogicVar, ObjectKind::LogicVar>(heap, types::LogicVar{});
+    }
 }
 
 

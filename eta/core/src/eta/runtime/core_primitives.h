@@ -12,6 +12,7 @@
 #include "eta/runtime/string_view.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/vm/vm.h"
+#include "eta/runtime/types/logic_var.h"
 
 namespace eta::runtime {
 
@@ -858,6 +859,17 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 #else
         return make_symbol(intern_table, "Unknown");
 #endif
+    });
+
+    // ========================================================================
+    // Logic variable type predicate: logic-var?
+    // ========================================================================
+
+    env.register_builtin("logic-var?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        const LispVal v = args[0];
+        if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
+        auto id = ops::payload(v);
+        return heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id) ? True : False;
     });
 }
 

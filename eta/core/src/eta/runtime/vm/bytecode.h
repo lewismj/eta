@@ -81,6 +81,13 @@ enum class OpCode : std::uint8_t {
     SetupCatch,  // [tag_const_idx:16 | offset:16]
     PopCatch,    // [] -> pop top catch frame (normal exit from protected body)
     Throw,       // [] -> pop value, pop tag; find matching catch frame or RuntimeError
+
+    // Unification / logic variables
+    MakeLogicVar,   // [] -> push fresh unbound LogicVar
+    Unify,          // [a b ->] pop b, pop a; unify(a,b); push #t or #f
+    DerefLogicVar,  // [lvar ->] pop lvar; push fully dereferenced value
+    TrailMark,      // [] -> push current trail size as fixnum (backtrack point)
+    UnwindTrail,    // [mark ->] pop mark fixnum; undo all bindings since mark
 };
 
 struct Instruction {
