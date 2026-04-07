@@ -66,6 +66,15 @@ else()
     message(STATUS "Unknown C++ compiler is being used: ${CMAKE_CXX_COMPILER_ID}")
 endif()
 
+# Prevent <windows.h> from injecting min/max macros that break std::min/std::max.
+# PUBLIC so every target that links eta_core inherits these definitions.
+if(MSVC)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+    )
+endif()
+
 if(CMAKE_BUILD_TYPE MATCHES "^[Rr]elease")
     if(MSVC)
         message(STATUS "MSVC Release build: using /O2")
