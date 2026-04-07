@@ -24,7 +24,9 @@
     naf
     succeeds?
     findall
-    run1)
+    run1
+    ;; Relational building blocks
+    membero)
   (begin
 
     ;; ── == ────────────────────────────────────────────────────────────────
@@ -127,6 +129,22 @@
     (defun run1 (template-thunk branches)
       (let ((sols (findall template-thunk branches)))
         (if (null? sols) #f (car sols))))
+
+    ;; ── membero ───────────────────────────────────────────────────────────
+    ;; (membero x lst)
+    ;;
+    ;; Returns one goal branch per element of lst; each branch unifies x with
+    ;; that element.  Pass the result directly to findall or run1:
+    ;;
+    ;;   (findall (lambda () (deref-lvar x)) (membero x '(a b c)))
+    ;;   ; => (a b c)
+    ;;
+    ;; When x is already bound the failing branches are silently skipped by
+    ;; findall, leaving only the matching element(s) in the result.
+    ;;
+    ;; Analogue of Prolog's member/2 (but deterministic enumeration order).
+    (defun membero (x lst)
+      (map* (lambda (elem) (lambda () (== x elem))) lst))
 
   ))
 

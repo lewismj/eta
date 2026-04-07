@@ -231,6 +231,10 @@
     (dispatch '(unknown))          ; => unknown message
 
     ;; ── 8. std.logic — higher-level query API ────────────────────────────────
+    ;;
+    ;; The db-branches pattern below is the idiomatic raw form.  For the next
+    ;; step — wrapping that pattern as a reusable *relation* (parento) that
+    ;; works in all query directions — see examples/logic.eta.
 
     (println "")
     (println "-- 8. std.logic higher-level API --")
