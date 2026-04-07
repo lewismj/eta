@@ -19,15 +19,14 @@
   <a href="docs/next-steps.md">Next Steps</a>
 </p>
 
-
-<p align="center">Language Guide</p>
-<ul style="text-align: center; list-style: none; padding: 0;">
-   <li><a href="docs/examples.md">Language Basics</a></li>
-   <li><a href="docs/aad.md">Reverse Mode AAD</a></li>
-   <li><a href="docs/logic.md">Logic Programming – Unification and Backtracking</a></li>
-</ul>
-</p>
-
+<div style="text-align: center;">
+  Language Guide
+  <ul style="list-style: none; padding: 0;">
+    <li><a href="docs/examples.md">Language Basics</a></li>
+    <li><a href="docs/aad.md">Reverse Mode AAD</a></li>
+    <li><a href="docs/logic.md">Logic Programming – Unification and Backtracking</a></li>
+  </ul>
+</div>
 ---
 
 ## What is Eta?
