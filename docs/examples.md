@@ -14,7 +14,7 @@ etai examples/hello.eta
 | Example                                            | Key Concepts |
 |----------------------------------------------------|-------------|
 | [`hello.eta`](#helloeta)                           | Minimal program, `println`, `defun`, recursion |
-| [`basics.eta`](#basicseta)                         | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, quoting |
+| [`basics.eta`](#basicseta)                         | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, records, quoting |
 | [`functions.eta`](#functionseta)                   | `defun`, `lambda`, closures, tail recursion, variadic args, `letrec` |
 | [`higher-order.eta`](#higher-ordereta)             | `map*`, `filter`, `foldl`/`foldr`, `reduce`, `sort`, `zip`, `take`/`drop`, `range` |
 | [`composition.eta`](#compositioneta)               | `compose`, `flip`, `constantly`, `negate`, manual currying, pipelines |
@@ -79,6 +79,30 @@ Core language features: values, expressions, bindings, and data structures.
 (cons 1 2)                ; => (1 . 2)
 (list 1 2 3 4 5)          ; => (1 2 3 4 5)
 (append '(a b) '(c d))    ; => (a b c d)
+
+;; Records — define-record-type
+;; Syntax: name, constructor call, predicate, (field accessor) …
+(define-record-type <point>
+  (make-point x y)
+  point?
+  (x point-x)
+  (y point-y))
+
+(define p (make-point 3 4))
+(point? p)                ; => #t
+(point-x p)               ; => 3
+(point-y p)               ; => 4
+(pair? p)                 ; => #f   (records are not pairs)
+
+;; Mutable fields — add a setter name after the accessor
+(define-record-type <counter>
+  (make-counter value)
+  counter?
+  (value counter-value set-counter-value!))
+
+(define c (make-counter 0))
+(set-counter-value! c (+ (counter-value c) 1))
+(counter-value c)         ; => 1
 ```
 
 ---

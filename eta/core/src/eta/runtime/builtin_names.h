@@ -116,8 +116,10 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("make-vector",   2, false);
 
     // Misc
-    r("error",    1, true);
-    r("platform", 0, false);
+    r("error",      1, true);
+    r("platform",   0, false);
+    r("logic-var?", 1, false);
+    r("ground?",    1, false);
 
     // ====================================================================
     // port_primitives.h  (must match registration order exactly)

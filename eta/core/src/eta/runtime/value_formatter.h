@@ -210,6 +210,14 @@ inline std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTa
             return "#<port>";
         }
 
+        // Logic variable
+        if (auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id)) {
+            if (lv->binding.has_value()) {
+                return format_value(*lv->binding, mode, heap, intern_table);
+            }
+            return "_G" + std::to_string(id);
+        }
+
         return "#<object>";
     }
 

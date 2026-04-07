@@ -98,6 +98,23 @@ struct Raise { std::string tag_name; Node* value; };
  */
 struct Guard { std::string tag_name; Node* body; };
 
+// ── Unification / logic variable IR nodes ────────────────────────────────────
+
+/// (logic-var) — allocate a fresh unbound logic variable
+struct MakeLogicVar {};
+
+/// (unify a b) — structural unification; evaluates to #t or #f
+struct Unify { Node* a; Node* b; };
+
+/// (deref-lvar x) — walk the substitution chain; returns the ground term
+struct DerefLogicVar { Node* lvar; };
+
+/// (trail-mark) — push current trail depth as a backtrack point
+struct TrailMark {};
+
+/// (unwind-trail mark) — undo all bindings made since mark
+struct UnwindTrail { Node* mark; };
+
 /**
  * @brief Lambda (function) node
  *
@@ -143,7 +160,12 @@ using NodeData = std::variant<  Var,
                                 CallCC,
                                 Apply,
                                 Raise,
-                                Guard>;
+                                Guard,
+                                MakeLogicVar,
+                                Unify,
+                                DerefLogicVar,
+                                TrailMark,
+                                UnwindTrail>;
 
 struct Node {
     NodeData data;

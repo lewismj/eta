@@ -10,3 +10,4 @@
 #include "multiple_values.h"
 #include "primitive.h"
 #include "port.h"
+#include "logic_var.h"

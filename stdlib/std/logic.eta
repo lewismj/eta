@@ -1,0 +1,132 @@
+;;; std/logic.eta — Prolog-style logic programming over Eta's native
+;;;                 unification primitives.
+;;;
+;;; Built-in primitives (always available, no import needed):
+;;;
+;;;   (logic-var)          – allocate a fresh, unbound logic variable
+;;;   (unify a b)          – structural unification; returns #t or #f
+;;;   (deref-lvar x)       – walk a logic variable chain to its value
+;;;   (logic-var? x)       – #t if x is still unbound
+;;;   (trail-mark)         – snapshot the binding stack for backtracking
+;;;   (unwind-trail mark)  – undo every binding made since the snapshot
+;;;   (ground? t)          – #t if t contains no unbound logic variables
+;;;
+;;; This module adds higher-level combinators on top of those primitives.
+;;; It has no external dependencies — all helpers are self-contained.
+
+(module std.logic
+  (export
+    ;; Unification as a callable goal function
+    ==
+    ;; Term utilities
+    copy-term
+    ;; Goal combinators
+    naf
+    succeeds?
+    findall
+    run1)
+  (begin
+
+    ;; ── == ────────────────────────────────────────────────────────────────
+    ;; Wrap the (unify a b) special form as an ordinary callable goal.
+    ;; Returns #t on success (bindings placed on the trail) or #f on failure.
+    (defun == (a b) (unify a b))
+
+    ;; ── copy-term ─────────────────────────────────────────────────────────
+    ;; Return a deep copy of term t where every unbound logic variable has
+    ;; been replaced by a fresh one.  Sharing is preserved: if the same
+    ;; unbound variable appears more than once in the input it maps to the
+    ;; same fresh variable in the output.
+    ;;
+    ;; Implementation: thread a functional association list (memo) through
+    ;; the recursion.  Each call returns (new-value . updated-memo) so no
+    ;; mutation is required.
+
+    ;; eq?-based alist lookup (identity comparison, not structural equality)
+    (defun %ct-assq (k xs)
+      (if (null? xs) #f
+          (if (eq? k (car (car xs))) (cdr (car xs))
+              (%ct-assq k (cdr xs)))))
+
+    ;; Recursive copy worker; returns (new-value . memo)
+    (defun %ct-walk (x memo)
+      (let ((xd (deref-lvar x)))
+        (cond
+          ;; Unbound logic variable — return the cached fresh copy or make one
+          ((logic-var? xd)
+           (let ((cached (%ct-assq xd memo)))
+             (if cached
+                 (cons cached memo)
+                 (let ((nv (logic-var)))
+                   (cons nv (cons (cons xd nv) memo))))))
+          ;; Cons pair — copy car then cdr, threading memo through both
+          ((pair? xd)
+           (let* ((r1 (%ct-walk (car xd) memo))
+                  (r2 (%ct-walk (cdr xd) (cdr r1))))
+             (cons (cons (car r1) (car r2)) (cdr r2))))
+          ;; Atom / ground heap object — return unchanged
+          (#t (cons xd memo)))))
+
+    (defun copy-term (t)
+      (car (%ct-walk t '())))
+
+    ;; ── naf ───────────────────────────────────────────────────────────────
+    ;; Negation as failure.
+    ;; Probes goal-thunk in isolation; ALWAYS unwinds any bindings it made.
+    ;; Returns #t if the goal failed; #f if it succeeded.
+    (defun naf (goal-thunk)
+      (let* ((m  (trail-mark))
+             (ok (goal-thunk)))
+        (unwind-trail m)
+        (not ok)))
+
+    ;; ── succeeds? ─────────────────────────────────────────────────────────
+    ;; Run goal-thunk in isolation; ALWAYS unwinds any bindings it made.
+    ;; Returns #t if the goal succeeded; #f if it failed.
+    ;; Useful for pure membership or satisfiability tests without side effects.
+    (defun succeeds? (goal-thunk)
+      (let* ((m  (trail-mark))
+             (ok (goal-thunk)))
+        (unwind-trail m)
+        (if ok #t #f)))
+
+    ;; ── findall ───────────────────────────────────────────────────────────
+    ;; (findall template-thunk branches)
+    ;;
+    ;;   template-thunk : zero-arg thunk evaluated after each successful branch
+    ;;   branches       : list of zero-arg goal thunks (one per alternative)
+    ;;
+    ;; For each branch that succeeds the procedure:
+    ;;   1. Evaluates (template-thunk) while the trail bindings are still live
+    ;;   2. Records the resulting value
+    ;;   3. Unwinds the trail (backtracks)
+    ;; then continues with the remaining branches.
+    ;;
+    ;; Returns a list of all collected template values, in the order the
+    ;; branches appear.  Failed branches contribute nothing.
+    ;;
+    ;; Analogue of Prolog's findall/3.
+    ;; Build branches with:  (list (lambda () goal-conj) ...)
+    (defun findall (template-thunk branches)
+      (if (null? branches)
+          '()
+          (let* ((m  (trail-mark))
+                 (ok ((car branches))))
+            (if ok
+                (let ((val (template-thunk)))
+                  (unwind-trail m)
+                  (cons val (findall template-thunk (cdr branches))))
+                (begin
+                  (unwind-trail m)
+                  (findall template-thunk (cdr branches)))))))
+
+    ;; ── run1 ──────────────────────────────────────────────────────────────
+    ;; Return the first solution from branches where the goal succeeds, or
+    ;; #f if no branch succeeds.  Cheaper than findall when only one answer
+    ;; is needed.
+    (defun run1 (template-thunk branches)
+      (let ((sols (findall template-thunk branches)))
+        (if (null? sols) #f (car sols))))
+
+  ))
+

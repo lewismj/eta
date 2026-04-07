@@ -183,6 +183,7 @@ private:
     std::vector<WindFrame> winding_stack_;
     std::vector<LispVal> temp_roots_;
     std::vector<CatchFrame> catch_stack_;  ///< live exception handlers
+    std::vector<LispVal> trail_stack_;     ///< logic-var trail for backtracking
 
     // Current I/O ports
     LispVal current_input_{nanbox::Nil};
@@ -264,6 +265,17 @@ private:
     /// Returns error if unhandled.
     std::expected<void, RuntimeError> do_throw(LispVal tag, LispVal value,
                                                 reader::lexer::Span span);
+
+    // ── Unification helpers ───────────────────────────────────────────────────
+    /// Walk the logic-variable binding chain; return the first unbound var or non-var value.
+    LispVal deref(LispVal v);
+
+    /// Occurs check: return true if logic-var lvar appears anywhere inside term.
+    bool occurs_check(LispVal lvar, LispVal term);
+
+    /// Robinson unification with occurs check on both binding branches.
+    /// Binds variables and trails them; returns true on success.
+    bool unify(LispVal a, LispVal b);
 };
 
 } // namespace eta::runtime::vm

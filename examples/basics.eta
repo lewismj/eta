@@ -52,6 +52,30 @@
     (println (length xs))        ; => 5
     (println (append '(a b) '(c d)))  ; => (a b c d)
 
+    (println (if win "-- Records --"                 "── Records ──"))
+    ;; define-record-type: name, constructor, predicate, (field accessor) …
+    (define-record-type <point>
+      (make-point x y)
+      point?
+      (x point-x)
+      (y point-y))
+
+    (define p (make-point 3 4))
+    (println (point? p))         ; => #t
+    (println (point-x p))        ; => 3
+    (println (point-y p))        ; => 4
+    (println (pair? p))          ; => #f  (records are not pairs)
+
+    ;; Records with a mutable field
+    (define-record-type <counter>
+      (make-counter value)
+      counter?
+      (value counter-value set-counter-value!))
+
+    (define c (make-counter 0))
+    (set-counter-value! c (+ (counter-value c) 1))
+    (println (counter-value c))  ; => 1
+
     (println (if win "-- Symbols & Quoting --"       "── Symbols & Quoting ──"))
     (println 'hello)             ; => hello
     (println '(one two three))   ; => (one two three)

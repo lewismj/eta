@@ -522,8 +522,7 @@ function.
 
 The [xVA example](xva.md) builds on this AD library to compute
 **Credit Valuation Adjustment (CVA)** and **Funding Valuation
-Adjustment (FVA)** — the same workload that made AAD famous in the
-financial industry.  It demonstrates computing all six market-risk
+Adjustment (FVA)**.  It demonstrates computing market-risk
 sensitivities in a single backward pass.
 
 ```bash

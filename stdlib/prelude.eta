@@ -511,6 +511,130 @@
   ))
 
 ;; ════════════════════════════════════════════════════════════════════
+;; std.logic — Prolog-style logic programming over Eta's native
+;;             unification primitives.
+;;
+;; Built-in primitives (always available, no import needed):
+;;   (logic-var)          – fresh unbound variable
+;;   (unify a b)          – structural unification → #t | #f
+;;   (deref-lvar x)       – walk variable chain to its value
+;;   (logic-var? x)       – #t if x is still unbound
+;;   (trail-mark)         – snapshot the binding stack
+;;   (unwind-trail mark)  – undo all bindings since mark
+;;   (ground? t)          – #t if t contains no unbound variables
+;;
+;; This module adds higher-level combinators on top of those primitives.
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.logic
+  (export
+    ;; Unification goal
+    ==
+    ;; Term utilities
+    copy-term
+    ;; Goal combinators
+    naf
+    succeeds?
+    findall
+    run1)
+  (begin
+
+    ;; ── == ────────────────────────────────────────────────────────────
+    ;; Unification as a goal function.  Returns #t on success (with
+    ;; bindings on the trail) or #f on failure.
+    (defun == (a b) (unify a b))
+
+    ;; ── copy-term ─────────────────────────────────────────────────────
+    ;; Deep-copy a term, replacing every unbound logic variable with a
+    ;; fresh one.  Sharing is preserved: the same unbound variable always
+    ;; maps to the same fresh variable throughout the copy.
+    ;;
+    ;; Uses a functional memo-table threaded through the recursion
+    ;; (no mutation required).  Each recursive call returns
+    ;; (new-value . updated-memo).
+
+    (defun %ct-assq (k xs)
+      (if (null? xs) #f
+          (if (eq? k (car (car xs))) (cdr (car xs))
+              (%ct-assq k (cdr xs)))))
+
+    (defun %ct-walk (x memo)
+      (let ((xd (deref-lvar x)))
+        (cond
+          ((logic-var? xd)
+           ;; Unbound — return cached fresh var or allocate a new one
+           (let ((cached (%ct-assq xd memo)))
+             (if cached
+                 (cons cached memo)
+                 (let ((nv (logic-var)))
+                   (cons nv (cons (cons xd nv) memo))))))
+          ((pair? xd)
+           ;; Recurse into car then cdr, threading the memo through
+           (let* ((r1 (%ct-walk (car xd) memo))
+                  (r2 (%ct-walk (cdr xd) (cdr r1))))
+             (cons (cons (car r1) (car r2)) (cdr r2))))
+          ;; Atom / ground heap object — return unchanged
+          (#t (cons xd memo)))))
+
+    (defun copy-term (t)
+      (car (%ct-walk t '())))
+
+    ;; ── naf ───────────────────────────────────────────────────────────
+    ;; Negation as failure.
+    ;; Probes goal-thunk in isolation; ALWAYS unwinds any bindings it made.
+    ;; Returns #t if the goal failed, #f if it succeeded.
+    (defun naf (goal-thunk)
+      (let* ((m  (trail-mark))
+             (ok (goal-thunk)))
+        (unwind-trail m)
+        (not ok)))
+
+    ;; ── succeeds? ─────────────────────────────────────────────────────
+    ;; Run goal-thunk in isolation; ALWAYS unwinds any bindings it made.
+    ;; Returns #t if the goal succeeded, #f if it failed.
+    (defun succeeds? (goal-thunk)
+      (let* ((m  (trail-mark))
+             (ok (goal-thunk)))
+        (unwind-trail m)
+        (if ok #t #f)))
+
+    ;; ── findall ───────────────────────────────────────────────────────
+    ;; (findall template-thunk branches)
+    ;;
+    ;; branches : a list of zero-argument goal thunks.
+    ;;
+    ;; For each branch that succeeds:
+    ;;   1. Evaluate (template-thunk) while the trail bindings are live
+    ;;   2. Record the resulting value
+    ;;   3. Unwind the trail (backtrack)
+    ;; Continue with the remaining branches.
+    ;;
+    ;; Returns a list of all collected template values in order.
+    ;;
+    ;; This is the Prolog findall/3 analogue.  To mimic Prolog query
+    ;; syntax, build branches with (list (lambda () goal) ...).
+    (defun findall (template-thunk branches)
+      (if (null? branches)
+          '()
+          (let* ((m  (trail-mark))
+                 (ok ((car branches))))
+            (if ok
+                (let ((val (template-thunk)))
+                  (unwind-trail m)
+                  (cons val (findall template-thunk (cdr branches))))
+                (begin
+                  (unwind-trail m)
+                  (findall template-thunk (cdr branches)))))))
+
+    ;; ── run1 ──────────────────────────────────────────────────────────
+    ;; Return the first solution, or #f if none exist.
+    (defun run1 (template-thunk branches)
+      (let ((sols (findall template-thunk branches)))
+        (if (null? sols) #f (car sols))))
+
+  ))
+
+;; ════════════════════════════════════════════════════════════════════
 ;; std.prelude — Re-exports from all standard library modules.
 ;;
 ;; (import std.prelude) gives you everything in one shot.
@@ -521,6 +645,7 @@
   (import std.math)
   (import std.io)
   (import std.collections)
+  (import std.logic)
   (export
     ;; std.core
     atom? void
@@ -556,7 +681,12 @@
     sort
     vector-map vector-for-each
     vector-foldl vector-foldr
-    vector->list list->vector)
+    vector->list list->vector
+    ;; std.logic
+    ==
+    copy-term
+    naf succeeds?
+    findall run1)
   (begin
     ;; All names are already imported — nothing else to define.
   ))

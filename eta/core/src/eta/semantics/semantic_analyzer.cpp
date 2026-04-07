@@ -446,6 +446,32 @@ const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handler
         // Exception handling
         {"raise",                           handle_raise},
         {"catch",                           handle_guard},
+        // Logic variables / unification
+        {"logic-var",    [](const List* lst, Scope&, AnalysisContext& ctx) -> SemResult<core::Node*> {
+            return ctx.mod.emplace<core::MakeLogicVar>(lst->span);
+        }},
+        {"unify",        [](const List* lst, Scope& scope, AnalysisContext& ctx) -> SemResult<core::Node*> {
+            if (lst->elems.size() != 3)
+                return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->span, "unify requires 2 arguments"});
+            auto a = analyze(lst->elems[1], scope, ctx); if (!a) return a;
+            auto b = analyze(lst->elems[2], scope, ctx); if (!b) return b;
+            return ctx.mod.emplace<core::Unify>(lst->span, *a, *b);
+        }},
+        {"deref-lvar",   [](const List* lst, Scope& scope, AnalysisContext& ctx) -> SemResult<core::Node*> {
+            if (lst->elems.size() != 2)
+                return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->span, "deref-lvar requires 1 argument"});
+            auto x = analyze(lst->elems[1], scope, ctx); if (!x) return x;
+            return ctx.mod.emplace<core::DerefLogicVar>(lst->span, *x);
+        }},
+        {"trail-mark",   [](const List* lst, Scope&, AnalysisContext& ctx) -> SemResult<core::Node*> {
+            return ctx.mod.emplace<core::TrailMark>(lst->span);
+        }},
+        {"unwind-trail", [](const List* lst, Scope& scope, AnalysisContext& ctx) -> SemResult<core::Node*> {
+            if (lst->elems.size() != 2)
+                return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->span, "unwind-trail requires 1 argument"});
+            auto m = analyze(lst->elems[1], scope, ctx); if (!m) return m;
+            return ctx.mod.emplace<core::UnwindTrail>(lst->span, *m);
+        }},
         // NOTE: Derived forms (let, letrec, case, do) are no longer handled here.
         // They MUST be desugared by the Expander. If encountered, they will be
         // treated as function applications, which will produce a meaningful error.
@@ -568,8 +594,15 @@ struct IRVisitor {
                 val.value = derived->visit(val.value, false);
             } else if constexpr (std::is_same_v<T, core::Guard>) {
                 val.body = derived->visit(val.body, context);
+            } else if constexpr (std::is_same_v<T, core::Unify>) {
+                val.a = derived->visit(val.a, false);
+                val.b = derived->visit(val.b, false);
+            } else if constexpr (std::is_same_v<T, core::DerefLogicVar>) {
+                val.lvar = derived->visit(val.lvar, false);
+            } else if constexpr (std::is_same_v<T, core::UnwindTrail>) {
+                val.mark = derived->visit(val.mark, false);
             }
-            // core::Const, core::Var, core::Quote have no children
+            // core::Const, core::Var, core::Quote, core::MakeLogicVar, core::TrailMark have no children
         }, node->data);
 
         return derived->post_visit(node, context);

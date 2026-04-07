@@ -3,6 +3,7 @@
 #include <iostream>
 #include "eta/runtime/factory.h"
 #include "eta/runtime/types/types.h"
+#include "eta/runtime/types/logic_var.h"
 #include "eta/runtime/types/primitive.h"
 #include "eta/runtime/memory/value_visit.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
@@ -99,6 +100,9 @@ void VM::collect_garbage() {
             visit(cf.tag);
             visit(cf.closure);
         }
+        // Mark logic-variable trail (prevents live unbound vars from being swept
+        // during an active unification / backtracking context)
+        for (auto v : trail_stack_) visit(v);
     });
 }
 
@@ -790,6 +794,48 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 if (!res) return std::unexpected(res.error());
                 break;
             }
+
+            // ── Unification opcodes ───────────────────────────────────────
+            case OpCode::MakeLogicVar: {
+                auto lv = make_logic_var(heap_);
+                if (!lv) return std::unexpected(lv.error());
+                push(*lv);
+                break;
+            }
+            case OpCode::Unify: {
+                LispVal b = pop();
+                LispVal a = pop();
+                push(unify(a, b) ? True : False);
+                break;
+            }
+            case OpCode::DerefLogicVar: {
+                push(deref(pop()));
+                break;
+            }
+            case OpCode::TrailMark: {
+                auto enc = ops::encode<int64_t>(static_cast<int64_t>(trail_stack_.size()));
+                if (!enc) return std::unexpected(make_type_error("trail-mark: trail too deep"));
+                push(*enc);
+                break;
+            }
+            case OpCode::UnwindTrail: {
+                LispVal mark_val = pop();
+                if (!ops::is_boxed(mark_val) || ops::tag(mark_val) != Tag::Fixnum)
+                    return std::unexpected(make_type_error("unwind-trail: mark must be a fixnum"));
+                auto mark_opt = ops::decode<int64_t>(mark_val);
+                if (!mark_opt)
+                    return std::unexpected(make_type_error("unwind-trail: invalid mark"));
+                auto mark = static_cast<std::size_t>(*mark_opt);
+                while (trail_stack_.size() > mark) {
+                    LispVal lvar_val = trail_stack_.back();
+                    trail_stack_.pop_back();
+                    if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(lvar_val))
+                        lv->binding = std::nullopt;
+                }
+                push(Nil);
+                break;
+            }
+
             default:
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::NotImplemented, "OpCode not implemented"}});
         }
@@ -1225,6 +1271,83 @@ std::expected<void, RuntimeError> VM::do_throw(LispVal tag, LispVal value,
     if (debug_) debug_->notify_exception(msg, span);
 
     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserThrow, msg}});
+}
+
+// ============================================================================
+// Unification helpers
+// ============================================================================
+
+LispVal VM::deref(LispVal v) {
+    // Follow the binding chain until we hit an unbound variable or a non-LogicVar.
+    for (;;) {
+        auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(v);
+        if (!lv || !lv->binding.has_value()) return v;
+        v = *lv->binding;
+    }
+}
+
+bool VM::occurs_check(LispVal lvar, LispVal term) {
+    // Returns true if lvar appears anywhere inside term (cycle would be created).
+    term = deref(term);
+    if (term == lvar) return true;
+    if (auto* cons = try_get_as<ObjectKind::Cons, types::Cons>(term)) {
+        return occurs_check(lvar, cons->car) || occurs_check(lvar, cons->cdr);
+    }
+    if (auto* vec = try_get_as<ObjectKind::Vector, types::Vector>(term)) {
+        for (auto elem : vec->elements)
+            if (occurs_check(lvar, elem)) return true;
+    }
+    return false;
+}
+
+bool VM::unify(LispVal a, LispVal b) {
+    a = deref(a);
+    b = deref(b);
+
+    // Identical values (includes two unbound vars that are the same object)
+    if (a == b) return true;
+
+    // a is an unbound logic variable
+    if (auto* lva = try_get_as<ObjectKind::LogicVar, types::LogicVar>(a)) {
+        if (!lva->binding.has_value()) {
+            if (occurs_check(a, b)) return false;   // would create cycle
+            lva->binding = b;
+            trail_stack_.push_back(a);
+            return true;
+        }
+    }
+
+    // b is an unbound logic variable
+    if (auto* lvb = try_get_as<ObjectKind::LogicVar, types::LogicVar>(b)) {
+        if (!lvb->binding.has_value()) {
+            if (occurs_check(b, a)) return false;   // would create cycle
+            lvb->binding = a;
+            trail_stack_.push_back(b);
+            return true;
+        }
+    }
+
+    // Both are Cons — unify car and cdr
+    if (auto* ca = try_get_as<ObjectKind::Cons, types::Cons>(a)) {
+        if (auto* cb = try_get_as<ObjectKind::Cons, types::Cons>(b)) {
+            return unify(ca->car, cb->car) && unify(ca->cdr, cb->cdr);
+        }
+        return false;
+    }
+
+    // Both are Vectors of the same length — unify element-wise
+    if (auto* va = try_get_as<ObjectKind::Vector, types::Vector>(a)) {
+        if (auto* vb = try_get_as<ObjectKind::Vector, types::Vector>(b)) {
+            if (va->elements.size() != vb->elements.size()) return false;
+            for (std::size_t i = 0; i < va->elements.size(); ++i)
+                if (!unify(va->elements[i], vb->elements[i])) return false;
+            return true;
+        }
+        return false;
+    }
+
+    // Structural mismatch
+    return false;
 }
 
 } // namespace eta::runtime::vm

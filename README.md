@@ -7,7 +7,7 @@
 
 <p align="center">
   <strong>η (Eta)</strong><br>
-  A Scheme-inspired language. 
+  A Lisp/Scheme-inspired language. 
 </p>
 
 <p align="center">
@@ -16,9 +16,15 @@
   <a href="docs/bytecode-vm.md">Bytecode &amp; VM</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
-  <a href="docs/examples.md">Language Examples</a> ·
-  <a href="docs/aad.md">Reverse Mode Adjoint Automatic Differentiation Example</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
+</p>
+
+
+<p align="center">Language Guide</p>
+
+<p align="center">
+ <a href="docs/examples.md">Language Basics</a> .
+ <a href="docs/aad.md">Reverse Mode Adjoint Automatic Differentiation Example</a>
 </p>
 
 ---
@@ -31,6 +37,9 @@ S-expression source code into compact bytecode and executes it on a
 stack-based virtual machine with NaN-boxed values, closures, tail-call
 elimination, first-class continuations (`call/cc`), a hygienic macro
 expander with `syntax-rules`, and a module system.
+
+Eta also provides native structural unification as a first-class VM feature,
+allowing Prolog-style pattern matching and type inference. See [unification](docs/logic.md).
 
 The implementation ships as four executables — an **interpreter**
 (`etai`), an **interactive REPL** (`eta_repl`), a **Language Server**
