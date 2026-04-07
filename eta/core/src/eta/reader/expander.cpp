@@ -27,7 +27,9 @@ namespace eta::reader::expander {
             // Convenience (existing and new)
             "case","do","when","unless",
             "def","defun","progn",
-            "define-record-type"
+            "define-record-type",
+            // Exception handling
+            "catch","raise"
         };
         return K;
     }
@@ -275,6 +277,9 @@ namespace eta::reader::expander {
             {"define-record-type", &Expander::handle_define_record_type},
             // macros
             {"define-syntax", &Expander::handle_define_syntax},
+            // exception handling
+            {"catch",  &Expander::handle_catch},
+            {"raise",  &Expander::handle_raise},
         };
 
         if (lst.elems.empty()) {
@@ -2235,6 +2240,35 @@ namespace eta::reader::expander {
         }
 
         return std::unexpected(syntax_error(lst.span, "no matching clause for macro: " + name));
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Exception handling special forms
+    // ────────────────────────────────────────────────────────────────────────
+
+    // (catch body)         — catch-all
+    // (catch 'tag body)    — catch specific tag
+    ExpanderResult<SExprPtr> Expander::handle_catch(const List& lst) {
+        if (lst.elems.size() < 2 || lst.elems.size() > 3)
+            return std::unexpected(invalid_syntax(lst.span, "catch",
+                "expected (catch body) or (catch 'tag body)"));
+
+        // Expand all sub-expressions, then pass through the form unchanged.
+        auto expanded = expand_list_elems(lst.elems);
+        if (!expanded) return std::unexpected(expanded.error());
+        return make_list(std::move(*expanded), lst.span);
+    }
+
+    // (raise value)        — raise without a tag (tag = nil)
+    // (raise 'tag value)   — raise with a specific tag
+    ExpanderResult<SExprPtr> Expander::handle_raise(const List& lst) {
+        if (lst.elems.size() < 2 || lst.elems.size() > 3)
+            return std::unexpected(invalid_syntax(lst.span, "raise",
+                "expected (raise value) or (raise 'tag value)"));
+
+        auto expanded = expand_list_elems(lst.elems);
+        if (!expanded) return std::unexpected(expanded.error());
+        return make_list(std::move(*expanded), lst.span);
     }
 
 }

@@ -19,7 +19,9 @@ set(SOURCES
         src/diagnostic_tests.cpp
         src/functional_tests.cpp
         src/debug_tests.cpp
-        src/dap_tests.cpp)
+        src/dap_tests.cpp
+        src/module_path_tests.cpp
+        src/higher_order_tests.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 

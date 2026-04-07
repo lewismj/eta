@@ -2050,3 +2050,106 @@ BOOST_AUTO_TEST_CASE(test_platform_consistent) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
+// ============================================================================
+// Exception handling: (catch) / (raise)
+// ============================================================================
+
+BOOST_FIXTURE_TEST_SUITE(exception_tests, VMTestFixture)
+
+BOOST_AUTO_TEST_CASE(catch_no_exception_returns_body_result) {
+    // When the body doesn't raise, (catch) returns the body's value.
+    LispVal res = run("(module m (define result (catch 'my-tag 42)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+BOOST_AUTO_TEST_CASE(catch_intercepts_matching_raise) {
+    // (raise 'my-tag 99) inside a (catch 'my-tag ...) returns 99.
+    LispVal res = run(
+        "(module m"
+        "  (define result"
+        "    (catch 'my-tag"
+        "      (raise 'my-tag 99))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 99);
+}
+
+BOOST_AUTO_TEST_CASE(catch_all_intercepts_any_raise) {
+    // (catch body) with no tag intercepts any raise.
+    LispVal res = run(
+        "(module m"
+        "  (define result"
+        "    (catch"
+        "      (raise 'some-tag 77))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 77);
+}
+
+BOOST_AUTO_TEST_CASE(unhandled_raise_is_runtime_error) {
+    // A (raise) with no matching (catch) becomes a UserThrow error.
+    RuntimeError err = run_expect_error(
+        "(module m"
+        "  (define result"
+        "    (raise 'oops 0)))");
+    BOOST_REQUIRE(std::holds_alternative<VMError>(err));
+    auto& vme = std::get<VMError>(err);
+    BOOST_CHECK(vme.code == RuntimeErrorCode::UserThrow);
+    BOOST_CHECK(vme.message.find("oops") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(catch_does_not_intercept_wrong_tag) {
+    // A (catch 'other-tag) should NOT intercept a raise with a different tag.
+    RuntimeError err = run_expect_error(
+        "(module m"
+        "  (define result"
+        "    (catch 'other-tag"
+        "      (raise 'my-tag 1))))");
+    BOOST_REQUIRE(std::holds_alternative<VMError>(err));
+    BOOST_CHECK(std::get<VMError>(err).code == RuntimeErrorCode::UserThrow);
+}
+
+BOOST_AUTO_TEST_CASE(catch_returns_body_when_nested_catch_handles_raise) {
+    // Inner (catch) handles the raise; outer (catch) sees the result normally.
+    LispVal res = run(
+        "(module m"
+        "  (define result"
+        "    (catch 'outer"
+        "      (+ 1 (catch 'inner (raise 'inner 10))))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 11);
+}
+
+BOOST_AUTO_TEST_CASE(catch_raise_with_complex_value) {
+    // The raised value can be any Lisp value (e.g., a list).
+    LispVal res = run(
+        "(module m"
+        "  (define caught (catch 'e (raise 'e (cons 1 2))))"
+        "  (define result (car caught)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1);
+}
+
+BOOST_AUTO_TEST_CASE(catch_raise_from_within_lambda) {
+    // Raise propagates through function call boundaries.
+    LispVal res = run(
+        "(module m"
+        "  (define (might-fail x)"
+        "    (if (= x 0)"
+        "        (raise 'div-err 'division-by-zero)"
+        "        (/ 10 x)))"
+        "  (define result"
+        "    (catch 'div-err"
+        "      (might-fail 0))))");
+    // result should be the symbol 'division-by-zero
+    BOOST_CHECK(nanbox::ops::tag(res) == nanbox::Tag::Symbol);
+}
+
+BOOST_AUTO_TEST_CASE(catch_normal_return_after_raise_skipped) {
+    // If body completes normally, the catch frame is cleaned up correctly
+    // and subsequent code works normally.
+    LispVal res = run(
+        "(module m"
+        "  (define x (catch 'e 10))"
+        "  (define y (catch 'e 20))"
+        "  (define result (+ x y)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 30);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+

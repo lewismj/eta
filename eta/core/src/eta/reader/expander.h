@@ -247,6 +247,8 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_do(const List& lst);
         ExpanderResult<SExprPtr> handle_define_record_type(const List& lst);
         ExpanderResult<SExprPtr> handle_define_syntax(const List& lst);
+        ExpanderResult<SExprPtr> handle_catch(const List& lst);   // (catch ['tag] body)
+        ExpanderResult<SExprPtr> handle_raise(const List& lst);   // (raise ['tag] value)
 
 
         //! Modules/directives

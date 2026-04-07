@@ -119,6 +119,8 @@ private:
     void emit_call_cc(const core::CallCC& n, bool tail, Context& ctx, const Span& span);
     void emit_apply(const core::Apply& n, bool tail, Context& ctx, const Span& span);
     void emit_quote(const core::Quote& n, Context& ctx, const Span& span);
+    void emit_raise(const core::Raise& n, Context& ctx, const Span& span);
+    void emit_guard(const core::Guard& n, Context& ctx, const Span& span);
 };
 
 } // namespace eta::semantics

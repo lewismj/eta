@@ -94,6 +94,11 @@ void VM::collect_garbage() {
         visit(current_input_);
         visit(current_output_);
         visit(current_error_);
+        // Mark catch frame tags and closures
+        for (const auto& cf : catch_stack_) {
+            visit(cf.tag);
+            visit(cf.closure);
+        }
     });
 }
 
@@ -115,6 +120,104 @@ std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
     
     return pop();
 }
+
+std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<LispVal> args) {
+    // ── Fast path: primitive procedures — direct call, no VM re-entry ──────────
+    if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(proc)) {
+        uint32_t argc = static_cast<uint32_t>(args.size());
+        if (prim->has_rest) {
+            if (argc < prim->arity)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "call_value: expected at least " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+        } else {
+            if (argc != prim->arity)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "call_value: expected " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+        }
+        return prim->func(args);
+    }
+
+    // ── Closure path — save outer state, run nested loop, restore ──────────────
+    auto* cl = try_get_as<ObjectKind::Closure, Closure>(proc);
+    if (!cl) {
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+            "call_value: argument is not a procedure"}});
+    }
+
+    uint32_t argc = static_cast<uint32_t>(args.size());
+    if (cl->func->has_rest) {
+        if (argc < cl->func->arity)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                "call_value: expected at least " + std::to_string(cl->func->arity) + " argument(s), got " + std::to_string(argc)}});
+    } else {
+        if (argc != cl->func->arity)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                "call_value: expected " + std::to_string(cl->func->arity) + " argument(s), got " + std::to_string(argc)}});
+    }
+
+    // Save full outer execution context
+    const BytecodeFunction* saved_func    = current_func_;
+    const uint32_t          saved_pc      = pc_;
+    const uint32_t          saved_fp      = fp_;
+    const LispVal           saved_closure = current_closure_;
+    const auto              saved_frames  = frames_.size();
+    const uint32_t          nested_sp     = static_cast<uint32_t>(stack_.size());
+
+    // Helper: restore outer state and truncate any accumulated frames
+    auto restore = [&]() {
+        stack_.resize(nested_sp);
+        frames_.resize(saved_frames);
+        current_func_    = saved_func;
+        pc_              = saved_pc;
+        fp_              = saved_fp;
+        current_closure_ = saved_closure;
+    };
+
+    // Temporarily null out execution state so that setup_frame saves a
+    // "return-to-null" frame.  When the closure eventually returns to this
+    // frame, handle_return sets current_func_ = nullptr and run_loop() exits.
+    current_func_    = nullptr;
+    pc_              = 0;
+    fp_              = nested_sp;
+    current_closure_ = Nil;
+
+    // Push arguments then let setup_frame initialise the closure's frame.
+    for (const auto& a : args) push(a);
+
+    // setup_frame saves {nullptr, 0, nested_sp, Nil, Normal} as the return
+    // frame and sets current_func_ = cl->func, fp_ = nested_sp, pc_ = 0.
+    setup_frame(cl->func, proc, argc);
+
+    // Pack variadic rest args into a list if the closure uses &rest.
+    if (cl->func->has_rest) {
+        auto pr = pack_rest_args(argc, cl->func->arity);
+        if (!pr) {
+            restore();
+            return std::unexpected(pr.error());
+        }
+    }
+
+    // Run until current_func_ becomes null (our return-to-null frame popped).
+    auto run_res = run_loop();
+
+    if (!run_res) {
+        restore();
+        return std::unexpected(run_res.error());
+    }
+
+    // On success: stack has nested_sp items + 1 result on top.
+    LispVal result = pop();
+    stack_.resize(nested_sp); // safety: ensure no stray stack entries
+
+    // Restore the outer execution context.
+    current_func_    = saved_func;
+    pc_              = saved_pc;
+    fp_              = saved_fp;
+    current_closure_ = saved_closure;
+
+    return result;
+}
+
 
 // Unified helper to dispatch a callee (Closure, Continuation, or Primitive)
 std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, uint32_t argc, bool is_tail) {
@@ -186,7 +289,7 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
             winding_stack_ = cont->winding_stack;
 
             // Invalidate any in-flight step command – the stack has changed.
-            step_current_epoch_++;
+            if (debug_) debug_->notify_continuation_jump();
 
             if (frames_.empty()) {
                 push(v);
@@ -280,25 +383,13 @@ void VM::unpack_to_stack(LispVal value) {
 
 std::expected<void, RuntimeError> VM::run_loop() {
     while (current_func_ && pc_ < current_func_->code.size()) {
-        // ── Debug hook ───────────────────────────────────────────────────────
-        // Only pay the cost when a debug session is active (stop_callback_ != nullptr).
-        if (stop_callback_) {
-            if (auto ev = check_debug_stop()) {
-                // Set is_paused_ under lock, then RELEASE the lock before calling the
-                // callback (avoids potential inversion with locks the callback may take).
-                {
-                    std::lock_guard<std::mutex> lk(debug_mutex_);
-                    is_paused_ = true;
-                }
-                stop_callback_(*ev);   // called WITHOUT debug_mutex_ held
-                // Now wait (re-acquire debug_mutex_) until is_paused_ is cleared.
-                {
-                    std::unique_lock<std::mutex> lk(debug_mutex_);
-                    debug_cv_.wait(lk, [this] { return !is_paused_; });
-                }
-            }
+        // ── Debug hook ─────────────────────────────────────────────────────
+        // Zero-cost when debug_ is null (non-debug runs).
+        if (debug_) {
+            const auto sp = current_func_->span_at(pc_);
+            debug_->check_and_wait(sp, frames_.size());
         }
-        // ────────────────────────────────────────────────────────────────────
+        // ──────────────────────────────────────────────────────────────────
         const auto& instr = current_func_->code[pc_++];
         switch (instr.opcode) {
             case OpCode::Nop:
@@ -666,6 +757,39 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 if (!res) return std::unexpected(res.error());
                 break;
             }
+            case OpCode::SetupCatch: {
+                // arg = (tag_const_idx << 16) | pc_offset_to_handler
+                uint32_t const_idx  = instr.arg >> 16;
+                uint32_t pc_offset  = instr.arg & 0xFFFF;
+                LispVal  tag        = (const_idx < current_func_->constants.size())
+                                      ? current_func_->constants[const_idx]
+                                      : Nil;
+                // pc_ already past SetupCatch; handler_pc = pc_ + pc_offset
+                CatchFrame cf;
+                cf.tag         = tag;
+                cf.func        = current_func_;
+                cf.handler_pc  = pc_ + pc_offset;
+                cf.fp          = fp_;
+                cf.closure     = current_closure_;
+                cf.frame_count = frames_.size();
+                cf.stack_top   = static_cast<uint32_t>(stack_.size());
+                cf.wind_count  = winding_stack_.size();
+                catch_stack_.push_back(cf);
+                break;
+            }
+            case OpCode::PopCatch: {
+                if (!catch_stack_.empty()) catch_stack_.pop_back();
+                break;
+            }
+            case OpCode::Throw: {
+                LispVal value = pop();
+                LispVal tag   = pop();
+                auto sp = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0)
+                                        : reader::lexer::Span{};
+                auto res = do_throw(tag, value, sp);
+                if (!res) return std::unexpected(res.error());
+                break;
+            }
             default:
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::NotImplemented, "OpCode not implemented"}});
         }
@@ -757,7 +881,7 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
             winding_stack_ = cont->winding_stack;
 
             // Invalidate any in-flight step command – the stack has changed.
-            step_current_epoch_++;
+            if (debug_) debug_->notify_continuation_jump();
 
             if (frames_.empty()) {
                 push(v);
@@ -938,61 +1062,9 @@ std::expected<void, RuntimeError> VM::pack_rest_args(uint32_t argc, uint32_t req
 }
 
 // ============================================================================
-// Debug API implementations
+// Debug / inspect API
 // ============================================================================
 
-void VM::set_breakpoints(std::vector<BreakLocation> locs) {
-    std::sort(locs.begin(), locs.end());
-    std::lock_guard<std::mutex> lk(bp_mutex_);
-    breakpoints_ = std::move(locs);
-}
-
-void VM::resume() {
-    std::lock_guard<std::mutex> lk(debug_mutex_);
-    step_mode_   = StepMode::None;
-    is_paused_   = false;
-    debug_cv_.notify_one();
-}
-
-void VM::step_over() {
-    std::lock_guard<std::mutex> lk(debug_mutex_);
-    step_mode_         = StepMode::Over;
-    step_target_depth_ = frames_.size();
-    auto sp            = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0)
-                                       : reader::lexer::Span{};
-    step_origin_file_  = sp.file_id;
-    step_origin_line_  = sp.start.line;
-    step_epoch_        = step_current_epoch_;
-    is_paused_         = false;
-    debug_cv_.notify_one();
-}
-
-void VM::step_in() {
-    std::lock_guard<std::mutex> lk(debug_mutex_);
-    step_mode_         = StepMode::In;
-    step_target_depth_ = frames_.size();
-    auto sp            = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0)
-                                       : reader::lexer::Span{};
-    step_origin_file_  = sp.file_id;
-    step_origin_line_  = sp.start.line;
-    step_epoch_        = step_current_epoch_;
-    is_paused_         = false;
-    debug_cv_.notify_one();
-}
-
-void VM::step_out() {
-    std::lock_guard<std::mutex> lk(debug_mutex_);
-    step_mode_         = StepMode::Out;
-    // Target: less frames than now (at least one frame shallower)
-    step_target_depth_ = frames_.size();
-    step_epoch_        = step_current_epoch_;
-    is_paused_         = false;
-    debug_cv_.notify_one();
-}
-
-void VM::request_pause() {
-    should_pause_.store(true, std::memory_order_relaxed);
-}
 
 std::vector<FrameInfo> VM::get_frames() const {
     std::vector<FrameInfo> result;
@@ -1050,12 +1122,23 @@ std::vector<VarEntry> VM::get_locals(std::size_t frame_index) const {
     if (!func) return result;
 
     uint32_t num_params = func->arity + (func->has_rest ? 1 : 0);
-    uint32_t num_slots  = func->stack_size;
+    // Only expose the slots that the emitter gave real names to.
+    // stack_size includes +32 temporary headroom that we must not expose as
+    // variables — they are uninitialized scratch space.  If local_names was not
+    // populated (e.g. module-init functions) fall back to just the parameters.
+    uint32_t num_slots = func->local_names.empty()
+                         ? num_params
+                         : static_cast<uint32_t>(func->local_names.size());
     for (uint32_t slot = 0; slot < num_slots; ++slot) {
         std::size_t stack_idx = static_cast<std::size_t>(frame_fp) + slot;
         if (stack_idx >= stack_.size()) break;
         VarEntry e;
-        e.name     = "%" + std::to_string(slot);   // placeholder name
+        // Use the real name from local_names if available; fall back to %N placeholder.
+        if (slot < func->local_names.size() && !func->local_names[slot].empty()) {
+            e.name = func->local_names[slot];
+        } else {
+            e.name = "%" + std::to_string(slot);
+        }
         e.value    = stack_[stack_idx];
         e.is_param = (slot < num_params);
         result.push_back(e);
@@ -1085,7 +1168,12 @@ std::vector<VarEntry> VM::get_upvalues(std::size_t frame_index) const {
     if (auto* cl = try_get_as<ObjectKind::Closure, types::Closure>(closure_val)) {
         for (std::size_t i = 0; i < cl->upvals.size(); ++i) {
             VarEntry e;
-            e.name  = "&" + std::to_string(i);   // placeholder name
+            // Use the real name from upval_names if available; fall back to &N placeholder.
+            if (cl->func && i < cl->func->upval_names.size() && !cl->func->upval_names[i].empty()) {
+                e.name = cl->func->upval_names[i];
+            } else {
+                e.name = "&" + std::to_string(i);
+            }
             e.value = cl->upvals[i];
             result.push_back(e);
         }
@@ -1093,70 +1181,50 @@ std::vector<VarEntry> VM::get_upvalues(std::size_t frame_index) const {
     return result;
 }
 
-std::optional<StopEvent> VM::check_debug_stop() {
-    // 1. Async pause request (from another thread via request_pause())
-    if (should_pause_.load(std::memory_order_relaxed)) {
-        should_pause_.store(false, std::memory_order_relaxed);
-        auto sp = current_func_ ? current_func_->span_at(pc_) : reader::lexer::Span{};
-        return StopEvent{StopReason::Pause, sp, {}};
-    }
+// ============================================================================
+// Exception Throw
+// ============================================================================
 
-    if (!current_func_) return std::nullopt;
-    const auto sp = current_func_->span_at(pc_);
+std::expected<void, RuntimeError> VM::do_throw(LispVal tag, LispVal value,
+                                                reader::lexer::Span span) {
+    // Search the catch stack from top (most recent) to bottom for a matching tag.
+    for (int i = static_cast<int>(catch_stack_.size()) - 1; i >= 0; --i) {
+        const CatchFrame& cf = catch_stack_[static_cast<std::size_t>(i)];
+        // Match if tags are equal (same symbol) OR the catch frame is a catch-all (Nil tag).
+        bool matches = (cf.tag == Nil) || values_eqv(cf.tag, tag);
+        if (matches) {
+            // Pop all catch frames from this one upward.
+            catch_stack_.resize(static_cast<std::size_t>(i));
 
-    // 2. Breakpoint check (only for instructions with valid source locations)
-    if (sp.file_id != 0) {
-        BreakLocation loc{sp.file_id, sp.start.line};
-        std::lock_guard<std::mutex> lk(bp_mutex_);
-        if (std::binary_search(breakpoints_.begin(), breakpoints_.end(), loc)) {
-            // Reset any pending step so we don't immediately step-stop again
-            std::lock_guard<std::mutex> dlk(debug_mutex_);
-            step_mode_ = StepMode::None;
-            return StopEvent{StopReason::Breakpoint, sp, {}};
+            // Restore VM frame state.
+            frames_.resize(cf.frame_count);
+            winding_stack_.resize(cf.wind_count);
+
+            // Restore stack to the saved top, then push the caught value.
+            stack_.resize(cf.stack_top);
+            push(value);
+
+            // Restore execution context to the function containing SetupCatch.
+            current_func_    = cf.func;
+            fp_              = cf.fp;
+            current_closure_ = cf.closure;
+            pc_              = cf.handler_pc;
+
+            return {};
         }
     }
 
-    // 3. Step mode check
-    {
-        std::lock_guard<std::mutex> lk(debug_mutex_);
-        if (step_mode_ == StepMode::None) return std::nullopt;
-
-        // Invalidate stale step from before a call/cc context switch
-        if (step_epoch_ != step_current_epoch_) {
-            step_mode_ = StepMode::None;
-            return std::nullopt;
-        }
-
-        const std::size_t depth = frames_.size();
-        bool should_stop = false;
-
-        switch (step_mode_) {
-            case StepMode::In:
-                // Stop at any instruction on a different source line
-                should_stop = (sp.file_id != step_origin_file_ || sp.start.line != step_origin_line_);
-                break;
-            case StepMode::Over:
-                // Stop when we're back in (or above) the origin frame AND on a new line
-                should_stop = (depth <= step_target_depth_) &&
-                              (sp.file_id != step_origin_file_ || sp.start.line != step_origin_line_);
-                break;
-            case StepMode::Out:
-                // Stop once we've returned past the origin frame
-                should_stop = (depth < step_target_depth_);
-                break;
-            case StepMode::None:
-            case StepMode::Continue:
-            default:
-                break;
-        }
-
-        if (should_stop) {
-            step_mode_ = StepMode::None;
-            return StopEvent{StopReason::Step, sp, {}};
-        }
+    // No matching handler — notify debugger then propagate as UserThrow.
+    std::string tag_str = "unknown-tag";
+    if (ops::is_boxed(tag) && ops::tag(tag) == Tag::Symbol) {
+        auto name = intern_table_.get_string(ops::payload(tag));
+        if (name) tag_str = std::string(*name);
     }
+    std::string msg = "Unhandled raise: " + tag_str;
 
-    return std::nullopt;
+    if (debug_) debug_->notify_exception(msg, span);
+
+    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserThrow, msg}});
 }
 
 } // namespace eta::runtime::vm

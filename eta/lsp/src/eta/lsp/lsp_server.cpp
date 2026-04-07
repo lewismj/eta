@@ -12,9 +12,6 @@
 #include <unordered_set>
 #include <variant>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 // Eta compiler includes
 #include "eta/reader/lexer.h"
@@ -43,110 +40,93 @@ LspServer::LspServer() {
 // ============================================================================
 
 void LspServer::init_module_path() {
-    namespace fs = std::filesystem;
-
-    // 1. Parse ETA_MODULE_PATH env var (colon/semicolon-delimited)
-#ifdef _WIN32
-#pragma warning(suppress: 4996)  // getenv is safe here; we copy immediately
-#endif
-    const char* env = std::getenv("ETA_MODULE_PATH");
-    if (env && env[0] != '\0') {
-        std::string_view path_str(env);
-#ifdef _WIN32
-        constexpr char sep = ';';
-#else
-        constexpr char sep = ':';
-#endif
-        std::size_t start = 0;
-        while (start < path_str.size()) {
-            auto pos = path_str.find(sep, start);
-            if (pos == std::string_view::npos) pos = path_str.size();
-            auto part = std::string(path_str.substr(start, pos - start));
-            if (!part.empty()) module_search_dirs_.emplace_back(part);
-            start = pos + 1;
-        }
-    }
-
-    // 2. Append stdlib bundled alongside the executable (<prefix>/bin/ → <prefix>/stdlib/)
-    std::error_code ec;
-#ifdef _WIN32
-    wchar_t buf[4096];
-    DWORD len = GetModuleFileNameW(nullptr, buf, static_cast<DWORD>(std::size(buf)));
-    if (len > 0 && len < static_cast<DWORD>(std::size(buf))) {
-        auto stdlib = fs::path(buf).parent_path().parent_path() / "stdlib";
-        if (fs::is_directory(stdlib, ec)) module_search_dirs_.push_back(std::move(stdlib));
-    }
-#else
-    fs::path exe = fs::read_symlink("/proc/self/exe", ec);
-    if (!ec) {
-        auto stdlib = exe.parent_path().parent_path() / "stdlib";
-        if (fs::is_directory(stdlib, ec)) module_search_dirs_.push_back(std::move(stdlib));
-    }
-#endif
+    resolver_ = interpreter::ModulePathResolver::from_args_or_env("");
 }
 
 std::optional<std::string> LspServer::resolve_module_source(const std::string& module_name) {
-    namespace fs = std::filesystem;
-    // "std.core" → "std/core.eta"
-    std::string rel = module_name;
-    for (auto& c : rel) { if (c == '.') c = '/'; }
-    rel += ".eta";
-
-    for (const auto& dir : module_search_dirs_) {
-        auto candidate = dir / rel;
-        std::error_code ec;
-        if (fs::is_regular_file(candidate, ec)) {
-            std::ifstream f(candidate);
-            if (!f.is_open()) continue;
-            return std::string(std::istreambuf_iterator<char>(f),
-                               std::istreambuf_iterator<char>());
-        }
-    }
-    return std::nullopt;
+    auto path = resolver_.resolve(module_name);
+    if (!path) return std::nullopt;
+    std::ifstream f(*path);
+    if (!f.is_open()) return std::nullopt;
+    return std::string(std::istreambuf_iterator<char>(f),
+                       std::istreambuf_iterator<char>());
 }
 
 void LspServer::preload_prelude(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
         std::unordered_set<std::string>& seen_modules) {
     using namespace reader::utils;
-    namespace fs = std::filesystem;
 
     // Search for "prelude.eta" directly — this single file defines all the
     // std.* modules inline (std.core, std.math, std.io, std.collections,
     // std.test, std.prelude).  We must load it before preload_module_deps so
     // that (import std.prelude) in user code resolves to a known module.
-    for (const auto& dir : module_search_dirs_) {
-        auto candidate = dir / "prelude.eta";
-        std::error_code ec;
-        if (!fs::is_regular_file(candidate, ec)) continue;
+    static const std::string prelude_uri = "eta://stdlib/prelude.eta";
 
-        std::ifstream f(candidate);
-        if (!f.is_open()) continue;
-        std::string src(std::istreambuf_iterator<char>(f),
-                        std::istreambuf_iterator<char>{});
+    auto prelude_path = resolver_.find_file("prelude.eta");
+    if (!prelude_path) return; // not found — nothing to report
 
-        reader::lexer::Lexer lex(0, src);
-        reader::parser::Parser parser(lex);
-        auto parsed = parser.parse_toplevel();
-        if (!parsed) return; // parse error in prelude — skip silently
+    std::ifstream f(*prelude_path);
+    if (!f.is_open()) return;
+    std::string src(std::istreambuf_iterator<char>(f),
+                    std::istreambuf_iterator<char>{});
 
-        reader::expander::Expander expander;
-        auto expanded = expander.expand_many(*parsed);
-        if (!expanded) return; // expansion error — skip silently
-
-        for (auto& form : *expanded) {
-            // Track module names so preload_module_deps won't try to re-load them
-            const auto* mod = as_list(form);
-            if (mod && mod->elems.size() >= 2 &&
-                is_symbol_named(mod->elems[0], "module")) {
-                if (const auto* name_sym = as_symbol(mod->elems[1])) {
-                    if (seen_modules.count(name_sym->name)) continue; // already present
-                    seen_modules.insert(name_sym->name);
-                }
+    reader::lexer::Lexer lex(0, src);
+    reader::parser::Parser parser(lex);
+    auto parsed = parser.parse_toplevel();
+    if (!parsed) {
+        // Report parse error via publishDiagnostics so the user knows the stdlib is broken.
+        std::vector<LspDiagnostic> diags;
+        std::visit([&](auto&& e) {
+            using T = std::decay_t<decltype(e)>;
+            LspDiagnostic d;
+            d.severity = 1;
+            d.source   = "eta-prelude";
+            if constexpr (std::is_same_v<T, reader::lexer::LexError>) {
+                d.range   = span_to_range(e.span.start.line, e.span.start.column,
+                                          e.span.end.line,   e.span.end.column);
+                d.message = "[prelude.eta] lex error: " + (e.message.empty()
+                    ? std::string(reader::lexer::to_string(e.kind)) : e.message);
+            } else {
+                d.range   = span_to_range(e.span.start.line, e.span.start.column,
+                                          e.span.end.line,   e.span.end.column);
+                d.message = "[prelude.eta] parse error: "
+                    + std::string(reader::parser::to_string(e.kind));
             }
-            all_forms.push_back(std::move(form));
+            diags.push_back(std::move(d));
+        }, parsed.error());
+        publish_diagnostics(prelude_uri, diags);
+        return;
+    }
+
+    reader::expander::Expander expander;
+    auto expanded = expander.expand_many(*parsed);
+    if (!expanded) {
+        // Report expansion error.
+        const auto& err = expanded.error();
+        LspDiagnostic d;
+        d.severity = 1;
+        d.source   = "eta-prelude";
+        d.range    = span_to_range(err.span.start.line, err.span.start.column,
+                                   err.span.end.line,   err.span.end.column);
+        d.message  = "[prelude.eta] expand error: " + (err.message.empty()
+            ? reader::expander::to_string(err.kind)
+            : err.message);
+        publish_diagnostics(prelude_uri, {d});
+        return;
+    }
+
+    for (auto& form : *expanded) {
+        // Track module names so preload_module_deps won't try to re-load them
+        const auto* mod = as_list(form);
+        if (mod && mod->elems.size() >= 2 &&
+            is_symbol_named(mod->elems[0], "module")) {
+            if (const auto* name_sym = as_symbol(mod->elems[1])) {
+                if (seen_modules.count(name_sym->name)) continue; // already present
+                seen_modules.insert(name_sym->name);
+            }
         }
-        return; // Only load the first prelude.eta found
+        all_forms.push_back(std::move(form));
     }
 }
 

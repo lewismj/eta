@@ -83,6 +83,22 @@ struct CallCC { Node* consumer; };
 struct Apply { Node* proc; std::vector<Node*> args; };
 
 /**
+ * @brief Exception raise: (raise 'tag value) or (raise value)
+ *
+ * tag_name: the symbol name to raise with (empty = no tag / catch-all raise)
+ * value: the value to deliver to the handler
+ */
+struct Raise { std::string tag_name; Node* value; };
+
+/**
+ * @brief Exception guard: (catch 'tag body) or (catch body)
+ *
+ * tag_name: symbol to match (empty = catch any raise)
+ * body: expression to protect; on raise the raised value becomes the result
+ */
+struct Guard { std::string tag_name; Node* body; };
+
+/**
  * @brief Lambda (function) node
  *
  * Contains parameter bindings, captured upvalues, and function body.
@@ -113,7 +129,22 @@ struct Call { Node* callee; std::vector<Node*> args; };
  * Note: Let, LetRec, and Case are derived forms that are desugared by the
  * Expander before reaching the IR. They are not part of the core IR.
  */
-using NodeData = std::variant<Var, Const, Quote, If, Begin, Set, Lambda, Call, DynamicWind, Values, CallWithValues, CallCC, Apply>;
+using NodeData = std::variant<  Var,
+                                Const,
+                                Quote,
+                                If,
+                                Begin,
+                                Set,
+                                Lambda,
+                                Call,
+                                DynamicWind,
+                                Values,
+                                CallWithValues,
+                                CallCC,
+                                Apply,
+                                Raise,
+                                Guard>;
+
 struct Node {
     NodeData data;
     Span span;

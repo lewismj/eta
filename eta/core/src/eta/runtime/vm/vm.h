@@ -14,6 +14,7 @@
 #include "eta/runtime/error.h"
 #include "eta/reader/lexer.h"
 #include "bytecode.h"
+#include "debug_state.h"   // DebugState, BreakLocation, StopEvent, StopReason
 
 namespace eta::runtime::memory::gc { class MarkSweepGC; }
 
@@ -24,31 +25,8 @@ using namespace eta::runtime::memory::heap;
 using namespace eta::runtime::memory::intern;
 using namespace eta::runtime::error;
 
-// ── Debug types ──────────────────────────────────────────────────────────────
-
-/// A (file_id, 1-based line) pair identifying a source breakpoint.
-struct BreakLocation {
-    uint32_t file_id{0};
-    uint32_t line{0};
-    bool operator<(const BreakLocation& o) const noexcept {
-        return file_id != o.file_id ? file_id < o.file_id : line < o.line;
-    }
-    bool operator==(const BreakLocation& o) const noexcept {
-        return file_id == o.file_id && line == o.line;
-    }
-};
-
-enum class StopReason { Breakpoint, Step, Pause, Exception };
-
-struct StopEvent {
-    StopReason           reason{StopReason::Pause};
-    reader::lexer::Span  span{};         ///< source location of stopped instruction
-    std::string          exception_text; ///< non-empty when reason == Exception
-};
-
-/// Callback invoked (on the VM thread, with debug_mutex_ held) when the VM stops.
-/// The callback MUST NOT call resume()/step_*() directly — post to a queue instead.
-using StopCallback = std::function<void(const StopEvent&)>;
+// BreakLocation, StopReason, StopEvent, StopCallback, VarEntry, FrameInfo
+// are now defined in debug_state.h and re-exported here.
 
 /// (name, raw value) pair returned by get_locals / get_upvalues.
 struct VarEntry {
@@ -89,6 +67,18 @@ struct WindFrame {
     LispVal after;
 };
 
+/// A live exception catch frame installed by SetupCatch.
+struct CatchFrame {
+    LispVal                     tag;          ///< symbol to match; Nil = catch-all
+    const BytecodeFunction*     func;         ///< function where SetupCatch lives
+    uint32_t                    handler_pc;   ///< pc to jump to on match
+    uint32_t                    fp;           ///< frame pointer to restore
+    LispVal                     closure;      ///< closure to restore
+    std::size_t                 frame_count;  ///< frames_.size() to restore to
+    uint32_t                    stack_top;    ///< stack_.size() before pushing caught value
+    std::size_t                 wind_count;   ///< winding_stack_.size() to restore to
+};
+
 // Result of dispatch_callee helper
 enum class DispatchAction {
     Continue,       // Callee was primitive or continuation; result already pushed
@@ -117,34 +107,59 @@ public:
 
     // ── Debug API ────────────────────────────────────────────────────────────
 
-    /// Install a stop callback (called on VM thread when stopped).
-    /// The callback must not call resume()/step_*() — it should post to a queue.
-    void set_stop_callback(StopCallback cb) { stop_callback_ = std::move(cb); }
+    /// Install a stop callback — activates the debug session.
+    /// Any breakpoints already set via set_breakpoints() are forwarded to the
+    /// new DebugState so call order doesn't matter.
+    void set_stop_callback(StopCallback cb) {
+        debug_ = std::make_unique<DebugState>(std::move(cb));
+        if (!pending_breakpoints_.empty()) {
+            debug_->set_breakpoints(std::move(pending_breakpoints_));
+            pending_breakpoints_.clear();
+        }
+    }
 
     /// Replace the current breakpoint set (thread-safe).
-    void set_breakpoints(std::vector<BreakLocation> locs);
+    /// May be called before or after set_stop_callback().
+    void set_breakpoints(std::vector<BreakLocation> locs) {
+        if (debug_) {
+            debug_->set_breakpoints(std::move(locs));
+        } else {
+            // Buffer until set_stop_callback() is called.
+            pending_breakpoints_ = std::move(locs);
+        }
+    }
 
-    void resume();        ///< Continue free-running.
-    void step_over();     ///< Run until frame depth ≤ entry AND source line changes.
-    void step_in();       ///< Run until any new source line.
-    void step_out();      ///< Run until frame depth < entry depth.
-    void request_pause(); ///< Async: stop at next instruction boundary.
+    void resume()        { if (debug_) debug_->resume(); }
+    void step_over()     {
+        if (debug_) {
+            auto sp = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0) : reader::lexer::Span{};
+            debug_->step_over(sp, frames_.size());
+        }
+    }
+    void step_in()       {
+        if (debug_) {
+            auto sp = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0) : reader::lexer::Span{};
+            debug_->step_in(sp, frames_.size());
+        }
+    }
+    void step_out()      { if (debug_) debug_->step_out(frames_.size()); }
+    void request_pause() { if (debug_) debug_->request_pause(); }
+
+    [[nodiscard]] bool is_paused() const noexcept {
+        return debug_ && debug_->is_paused();
+    }
 
     /// Inspect call stack — only valid while stopped.
     [[nodiscard]] std::vector<FrameInfo> get_frames()                        const;
     [[nodiscard]] std::vector<VarEntry>  get_locals(std::size_t frame_index) const;
     [[nodiscard]] std::vector<VarEntry>  get_upvalues(std::size_t frame_index) const;
 
-    /// True when the VM is currently paused.
-    [[nodiscard]] bool is_paused() const noexcept {
-        std::lock_guard<std::mutex> lk(debug_mutex_);
-        return is_paused_;
-    }
-
     void collect_garbage();
 
     std::expected<LispVal, RuntimeError> execute(const BytecodeFunction& main);
-    
+
+    std::expected<LispVal, RuntimeError> call_value(LispVal proc, std::vector<LispVal> args);
+
     // Test helper to access/modify globals
     std::vector<LispVal>& globals() { return globals_; }
     const std::vector<LispVal>& globals() const { return globals_; }
@@ -158,7 +173,6 @@ public:
     void set_current_output_port(LispVal port) { current_output_ = port; }
     void set_current_error_port(LispVal port) { current_error_ = port; }
 
-
 private:
     Heap& heap_;
     InternTable& intern_table_;
@@ -168,6 +182,7 @@ private:
     std::vector<LispVal> globals_;
     std::vector<WindFrame> winding_stack_;
     std::vector<LispVal> temp_roots_;
+    std::vector<CatchFrame> catch_stack_;  ///< live exception handlers
 
     // Current I/O ports
     LispVal current_input_{nanbox::Nil};
@@ -182,25 +197,9 @@ private:
 
     std::unique_ptr<memory::gc::MarkSweepGC> gc_;
 
-    // ── Debug state ──────────────────────────────────────────────────────────
-    StopCallback                stop_callback_;         ///< set once before VM starts
-
-    mutable std::mutex          debug_mutex_;
-    std::condition_variable     debug_cv_;
-    bool                        is_paused_{false};      ///< guarded by debug_mutex_
-
-    std::mutex                  bp_mutex_;
-    std::vector<BreakLocation>  breakpoints_;           ///< sorted; guarded by bp_mutex_
-
-    enum class StepMode { None, Continue, Over, In, Out };
-    StepMode    step_mode_{StepMode::None};             ///< guarded by debug_mutex_
-    std::size_t step_target_depth_{0};                  ///< guarded by debug_mutex_
-    uint32_t    step_origin_file_{0};                   ///< guarded by debug_mutex_
-    uint32_t    step_origin_line_{0};                   ///< guarded by debug_mutex_
-    uint32_t    step_epoch_{0};                         ///< armed epoch
-    uint32_t    step_current_epoch_{0};                 ///< current epoch (incremented on call/cc)
-
-    std::atomic<bool> should_pause_{false};
+    // ── Debug state (null when not debugging) ────────────────────────────
+    std::unique_ptr<DebugState> debug_;
+    std::vector<BreakLocation>  pending_breakpoints_;  ///< queued before set_stop_callback
 
     std::expected<void, RuntimeError> run_loop();
     std::expected<void, RuntimeError> handle_return(LispVal result);
@@ -212,8 +211,7 @@ private:
     // Unified call dispatch helper
     std::expected<DispatchResult, RuntimeError> dispatch_callee(LispVal callee, uint32_t argc, bool is_tail);
 
-    // Type-checked heap object accessor - returns nullptr if not the expected type
-    // Delegates to Heap::try_get_as after extracting the ObjectId from LispVal
+    // Type-checked heap object accessor
     template<ObjectKind Kind, typename T>
     T* try_get_as(LispVal val) {
         if (!ops::is_boxed(val) || ops::tag(val) != Tag::HeapObject) return nullptr;
@@ -226,7 +224,6 @@ private:
         return heap_.try_get_as<Kind, T>(ops::payload(val));
     }
 
-    // Helper to get typed heap object or return a TypeError
     template<ObjectKind Kind, typename T>
     std::expected<T*, RuntimeError> get_as_or_error(LispVal val, const char* msg) {
         if (auto* ptr = try_get_as<Kind, T>(val)) return ptr;
@@ -239,13 +236,10 @@ private:
         current_closure_ = closure;
         fp_ = static_cast<uint32_t>(stack_.size() - argc);
         pc_ = 0;
-        // Ensure we don't chop off arguments if stack_size is small
-        // Use (std::max) to avoid collision with the max() macro on Windows
         uint32_t needed_size = (std::max)(func->stack_size, argc);
         stack_.resize(fp_ + needed_size, Nil);
     }
 
-    // Restore execution state from a frame (used after function returns)
     void restore_frame(const Frame& f) {
         current_func_ = f.func;
         pc_ = f.pc;
@@ -253,33 +247,23 @@ private:
         current_closure_ = f.closure;
     }
 
-    // Resolve function index to BytecodeFunction pointer
     const BytecodeFunction* resolve_function(uint32_t index) {
         if (func_resolver_) return func_resolver_(index);
         return nullptr;
     }
 
-    // Helper to create type errors
     static RuntimeError make_type_error(const char* msg) {
         return RuntimeError{VMError{RuntimeErrorCode::TypeError, msg}};
     }
 
-    // String-aware value equality (for eqv?/equal? semantics)
-    // Returns true if values are equal, considering string content for strings
     bool values_eqv(LispVal a, LispVal b);
-
-    // Unified binary arithmetic dispatch helper - eliminates code duplication
-    // for Add, Sub, Mul, Div opcodes
     std::expected<void, RuntimeError> do_binary_arithmetic(OpCode op);
-
-    // Pack extra arguments (beyond required arity) into a rest-arg list
-    // at stack_[fp_ + required]. Called after setup_frame / tail reuse.
     std::expected<void, RuntimeError> pack_rest_args(uint32_t argc, uint32_t required);
 
-    // Debug helpers ──────────────────────────────────────────────────────────
-    /// Called at the top of every instruction iteration when stop_callback_ is set.
-    /// Returns a StopEvent if execution should pause, nullopt otherwise.
-    std::optional<StopEvent> check_debug_stop();
+    /// Execute a Throw: pop tag+value, find matching CatchFrame, unwind.
+    /// Returns error if unhandled.
+    std::expected<void, RuntimeError> do_throw(LispVal tag, LispVal value,
+                                                reader::lexer::Span span);
 };
 
 } // namespace eta::runtime::vm
