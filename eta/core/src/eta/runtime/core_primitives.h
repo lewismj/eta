@@ -871,6 +871,37 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto id = ops::payload(v);
         return heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id) ? True : False;
     });
+
+    // ========================================================================
+    // Ground check: ground?
+    // Returns #t iff the term contains no unbound logic variables.
+    // Recurses into Cons pairs and Vectors; treats all other heap objects
+    // (strings, closures, ports, …) as ground.
+    // ========================================================================
+
+    env.register_builtin("ground?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        std::function<bool(LispVal)> is_ground = [&](LispVal v) -> bool {
+            LispVal curr = v;
+            for (;;) {
+                if (!ops::is_boxed(curr) || ops::tag(curr) != Tag::HeapObject)
+                    return true;  // inline primitive — always ground
+                auto id = ops::payload(curr);
+                if (auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id)) {
+                    if (!lv->binding.has_value()) return false;  // unbound
+                    curr = *lv->binding;                          // follow chain
+                } else if (auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
+                    return is_ground(cons->car) && is_ground(cons->cdr);
+                } else if (auto* vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
+                    for (const auto& elem : vec->elements)
+                        if (!is_ground(elem)) return false;
+                    return true;
+                } else {
+                    return true;  // string, closure, port, etc.
+                }
+            }
+        };
+        return is_ground(args[0]) ? True : False;
+    });
 }
 
 } // namespace eta::runtime

@@ -1,7 +1,8 @@
 # Bytecode & VM
 
 [← Back to README](../README.md) · [Architecture](architecture.md) ·
-[NaN-Boxing](nanboxing.md) · [Runtime & GC](runtime.md)
+[NaN-Boxing](nanboxing.md) · [Runtime & GC](runtime.md) ·
+[Logic Programming](logic.md)
 
 ---
 
@@ -98,6 +99,72 @@ by index rather than raw pointer.
 | `Cons` | — | car cdr → pair | Allocate cons cell |
 | `Car` | — | pair → car | First element |
 | `Cdr` | — | pair → cdr | Rest element |
+
+### Exception Handling
+
+| Opcode | Arg | Stack Effect | Description |
+|--------|-----|-------------|-------------|
+| `SetupCatch` | `(tag_idx<<16 \| pc_offset)` | — | Push a `CatchFrame`; handler PC = current PC + `pc_offset`. `constants[tag_idx]` is the tag symbol; `Nil` means catch-all |
+| `PopCatch` | — | — | Pop the top catch frame on normal exit from a protected body |
+| `Throw` | — | tag val → *(non-local)* | Pop `val` then `tag`; search catch stack for matching tag; transfer control or raise `RuntimeError` if none found |
+
+The `catch`/`raise` forms compile to this pattern:
+
+```
+;; (catch 'err body)
+SetupCatch  (tag_const_idx << 16 | offset_to_after_handler)
+  <emit body>
+PopCatch                        ; normal exit — discard frame
+Jump        past_handler
+  <handler: caught value already on stack>
+```
+
+### Unification / Logic Variables
+
+These opcodes implement Robinson-style structural unification directly in the
+VM.  See [Logic Programming](logic.md) for a full description of the semantics.
+
+| Opcode | Arg | Stack Effect | Description |
+|--------|-----|-------------|-------------|
+| `MakeLogicVar` | — | → lvar | Allocate a fresh unbound `LogicVar` on the heap and push its boxed reference |
+| `Unify` | — | a b → bool | Pop `b` then `a`; perform structural unification with occurs check; push `#t` on success (bindings on trail) or `#f` on failure |
+| `DerefLogicVar` | — | x → val | Pop `x`; walk the logic-variable binding chain to its terminus; push the fully dereferenced value |
+| `TrailMark` | — | → mark | Push the current trail stack depth as a fixnum snapshot |
+| `UnwindTrail` | — | mark → | Pop `mark`; undo all variable bindings made since that snapshot by walking the trail back and resetting each `LogicVar.binding` to `nullopt` |
+
+**Trail invariant:** the trail is a per-VM `std::vector<LispVal>` that
+records the boxed reference of every logic variable that was bound.
+`TrailMark` / `UnwindTrail` implement Prolog choice-point semantics
+without requiring a separate WAM-style stack.
+
+**Example — binding and backtracking:**
+
+```
+;; (define x (logic-var))
+MakeLogicVar         ; → HeapObj(lvar, id=7)
+StoreGlobal  N
+Pop
+
+;; (define m (trail-mark))
+TrailMark            ; → Fixnum(0)   trail is empty
+StoreGlobal  M
+Pop
+
+;; (unify x 42)
+LoadGlobal   N       ; push HeapObj(7)
+LoadConst    K       ; push Fixnum(42)
+Unify                ; deref both, bind lv[7]→42, trail=[HeapObj(7)], push #t
+Pop
+
+;; (unwind-trail m)
+LoadGlobal   M       ; push Fixnum(0)
+UnwindTrail          ; trail.size()=1 > 0 → pop HeapObj(7), reset lv[7].binding=nullopt
+
+;; (logic-var? (deref-lvar x))
+LoadGlobal   N       ; push HeapObj(7)
+DerefLogicVar        ; lv[7].binding=nullopt → push HeapObj(7) (still a lvar)
+CallBuiltin "logic-var?"   ; → #t
+```
 
 ---
 

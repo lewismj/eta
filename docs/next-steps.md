@@ -20,16 +20,16 @@ The general BAU work will also include networking extensions to the ports.
 flowchart LR
     BC["1 · Bytecode\nSerialization"]
     FFI["2 · Foreign Function\nInterface"]
-    UNI["3 · Unification\nInstruction"]
+    CLP["3 · Constraint Logic\nProgramming"]
     EX["4 · Examples"]
 
     BC --> FFI
     FFI --> EX
-    UNI --> EX
+    CLP --> EX
 
     style BC  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
     style FFI fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style UNI fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style CLP fill:#16213e,stroke:#79c0ff,color:#c9d1d9
     style EX  fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
@@ -183,88 +183,86 @@ resources when the Eta wrapper is collected.
 
 ---
 
-## 3 · Unification VM Instruction
+## 3 · Constraint Logic Programming (CLP)
+
+### Background
+
+Structural unification is now a first-class VM primitive, with the
+`MakeLogicVar`, `Unify`, `DerefLogicVar`, `TrailMark`, and `UnwindTrail`
+opcodes fully implemented and the `LogicVar` heap object kind in place.
+This provides a solid foundation for the next step: **Constraint Logic
+Programming (CLP)**.
 
 ### Motivation
 
-Prolog-style logic programming relies on **structural unification** — the
-ability to determine whether two terms can be made identical by finding a
-consistent variable substitution. Adding unification as a first-class VM
-primitive makes it possible to implement pattern matching, constraint
-solving, and relational queries without encoding the algorithm in
-user-level Scheme.
+Pure unification can only express *equality* constraints. CLP generalises
+this by allowing variables to be constrained over richer domains — numbers,
+finite sets, booleans — without requiring an immediate ground value. This
+makes it possible to write elegant solvers for scheduling, configuration,
+and combinatorial search problems directly in Eta.
 
-### Proposed Opcodes
+### Proposed Constraint Domains
 
-Extend the existing opcode table
-([`bytecode-vm.md`](bytecode-vm.md)) with a family of logic-programming
-instructions:
+| Domain | Scheme name | Example constraint |
+|--------|------------|-------------------|
+| Integers | `clp(Z)` | `(<= x 10)`, `(= (+ x y) z)` |
+| Finite domains | `clp(FD)` | `(domain x 1 5)`, `(all-different x y z)` |
+| Booleans | `clp(B)` | `(bool-or x y z)` |
 
-| Opcode | Arg | Stack Effect | Description |
-|--------|-----|-------------|-------------|
-| `MakeLogicVar` | — | → lvar | Allocate a fresh unbound logic variable |
-| `Unify` | — | a b → bool | Unify two terms; push `#t` on success, `#f` on failure; binds logic variables as a side-effect |
-| `DerefLogicVar` | — | lvar → val | Walk the substitution chain and push the fully dereferenced value |
-| `UnwindTrail` | `mark` | — | Undo all bindings made since *mark* (backtracking) |
-| `TrailMark` | — | → mark | Push the current trail position as a backtrack point |
+### Architecture
 
-### Logic Variables
+```mermaid
+flowchart TD
+    LV["LogicVar\n(existing)"]
+    CS["Constraint Store\n(per-VM)"]
+    PRO["Propagator\n(domain-specific)"]
+    BT["Backtracking\n(trail, existing)"]
+    SURF["Surface syntax\n(clp forms)"]
 
-A new heap object kind, **`LogicVar`**, represents an unbound or bound
-logic variable:
+    SURF --> CS
+    CS --> PRO
+    PRO --> LV
+    PRO --> BT
 
-```cpp
-struct LogicVar {
-    std::optional<LispVal> binding;   // std::nullopt while unbound
-    uint64_t               trail_id;  // position in the trail for undo
-};
+    style CS  fill:#0f3460,stroke:#56d364,color:#c9d1d9
+    style PRO fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
 ```
 
-The **trail** is a VM-level stack of `(LogicVar*, previous_binding)` pairs
-used to undo bindings during backtracking.
-
-### Unification Algorithm
-
-The `Unify` instruction implements Robinson-style unification:
-
-```
-unify(a, b):
-    a = deref(a)
-    b = deref(b)
-    if a == b                          → #t  (identical)
-    if a is LogicVar                   → bind a to b, record on trail, #t
-    if b is LogicVar                   → bind b to a, record on trail, #t
-    if a is Cons and b is Cons         → unify(car a, car b) ∧ unify(cdr a, cdr b)
-    if a is Vector and b is Vector     → element-wise unify
-    otherwise                          → #f  (clash)
-```
+A **constraint store** lives alongside the trail in the VM. When a
+constraint cannot be immediately satisfied or refuted, it is suspended in
+the store and re-evaluated whenever one of its variables is further
+instantiated.
 
 ### Surface Syntax
 
 ```scheme
-(module logic-demo
+(module schedule
   (import std.core)
-  (import std.io)
+  (import std.clp)
   (begin
-    (let ((x (logic-var))
-          (y (logic-var)))
-      (if (unify (list x 2 3) (list 1 y 3))
-          (begin
-            (println x)    ;; → 1
-            (println y))   ;; → 2
-          (println "unification failed")))))
+    (let ((start (logic-var))
+          (end   (logic-var))
+          (dur   (logic-var)))
+      (clp:domain start 0 23)
+      (clp:domain end   0 23)
+      (clp:domain dur   1  8)
+      (clp:= (+ start dur) end)
+      (clp:solve (list start end dur))
+      (println start)
+      (println end))))
 ```
 
 ### Key Implementation Tasks
 
 | Task | Touches |
 |------|---------|
-| Add `LogicVar` heap object kind | `types/`, `heap.h`, `mark_sweep_gc.h` |
-| Implement trail stack in the VM | `vm.h` |
-| Add `Unify`, `MakeLogicVar`, `DerefLogicVar`, `TrailMark`, `UnwindTrail` opcodes | `bytecode.h`, `vm.h` |
-| Recursive unification with occurs check | `vm.h` |
-| GC support: mark logic-variable bindings as roots | `mark_sweep_gc.h` |
-| `logic-var`, `unify` expander / builtin forms | `expander.h`, `builtin_env.h` |
+| Constraint store data structure in the VM | `vm.h` |
+| `clp:domain` / `clp:=` / `clp:<=` propagators | new `runtime/clp/` |
+| Suspension & wakeup mechanism for propagators | `vm.h`, `types/` |
+| `all-different` global constraint | `runtime/clp/` |
+| Trail integration: undo constraint store on backtrack | `vm.h` |
+| `std.clp` standard-library module | `stdlib/std/clp.eta` |
+| `clp:solve` labelling strategy | `stdlib/std/clp.eta` |
 
 ---
 
@@ -272,7 +270,7 @@ unify(a, b):
 
 ### Motivation
 
-The combination of an FFI (for numerical libraries) and native unification
+The combination of an FFI (for numerical libraries) and CLP
 (for symbolic reasoning) provides the basis for a **causal
 inference** — engine, a domain that blends symbolic graph manipulation
 with statistical computation.
@@ -380,12 +378,13 @@ gantt
     CallForeign opcode & ForeignPtr   :ffi2, after ffi1, 2026-07
     libtorch / Eigen bindings         :ffi3, after ffi2, 2026-08
 
-    section Unification
-    LogicVar kind & trail             :uni1, 2026-05, 2026-07
-    Unify opcode family               :uni2, after uni1, 2026-08
+    section CLP
+    Constraint store & propagators   :clp1, 2026-04, 2026-06
+    clp:domain / all-different       :clp2, after clp1, 2026-07
+    std.clp stdlib module            :clp3, after clp2, 2026-08
 
     section Examples
-    Do-calculus engine                :ex1, after uni2, 2026-09
+    Do-calculus engine                :ex1, after clp3, 2026-09
     Causal factor analysis            :ex2, after ex1, 2026-10
 ```
 -->
