@@ -4,8 +4,9 @@
     Install Eta from an extracted release bundle on Windows.
 
 .DESCRIPTION
-    Adds Eta's bin/ to the user PATH, sets ETA_MODULE_PATH, and
-    optionally installs the VS Code extension.
+    Adds Eta's bin/ to the user PATH (removing any stale Eta entries from
+    previous installs), sets ETA_MODULE_PATH, and optionally installs the
+    VS Code extension.
 
     When called with no argument the bundle directory itself is used.
     When called with a -Prefix, files are copied to that location first.
@@ -65,16 +66,32 @@ Write-Host "  bin     : $BinDir"
 Write-Host "  stdlib  : $StdlibDir"
 Write-Host ""
 
-# -- 1. Add bin/ to user PATH -------------------------------------------------
+# -- 1. Add bin/ to user PATH, removing any stale Eta entries -----------------
 $UserPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-if ($UserPath -notlike "*$BinDir*") {
-    Write-Host "> Adding $BinDir to user PATH..."
-    $NewPath = "$BinDir;$UserPath"
+
+# Split into individual entries and drop any that already contain Eta binaries
+# (i.e. old installs pointing to a different directory).
+$EtaMarker = "etai.exe"
+$CleanEntries = ($UserPath -split ';') | Where-Object {
+    $entry = $_.Trim()
+    if ($entry -eq '')      { return $false }   # drop empty segments
+    if ($entry -eq $BinDir) { return $false }   # will be re-added at front
+    $hasMarker = Test-Path (Join-Path $entry $EtaMarker)
+    if ($hasMarker) {
+        Write-Host "> Removing stale Eta PATH entry: $entry"
+    }
+    return -not $hasMarker
+}
+
+$NewPath = if ($CleanEntries) { "$BinDir;$($CleanEntries -join ';')" } else { $BinDir }
+
+if ($NewPath -ne $UserPath) {
+    Write-Host "> Updating user PATH with $BinDir..."
     [Environment]::SetEnvironmentVariable("PATH", $NewPath, "User")
     $env:PATH = "$BinDir;$env:PATH"
-    Write-Host "  [OK] Added to user PATH."
+    Write-Host "  [OK] PATH updated."
 } else {
-    Write-Host "> Eta already on user PATH -- skipping."
+    Write-Host "> Eta already on user PATH at correct location -- skipping."
 }
 
 # -- 2. Set ETA_MODULE_PATH ---------------------------------------------------
