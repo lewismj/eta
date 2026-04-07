@@ -19,6 +19,7 @@ etai examples/hello.eta
 | [`higher-order.eta`](#higher-ordereta)             | `map*`, `filter`, `foldl`/`foldr`, `reduce`, `sort`, `zip`, `take`/`drop`, `range` |
 | [`composition.eta`](#compositioneta)               | `compose`, `flip`, `constantly`, `negate`, manual currying, pipelines |
 | [`recursion.eta`](#recursioneta)                   | Fibonacci, list reversal, deep flatten, Ackermann, Towers of Hanoi |
+| [`exceptions.eta`](#exceptionseta)                 | `catch`/`raise`, tag specificity, structured payloads, `dynamic-wind` cleanup, re-raising |
 | [`boolean-simplifier.eta`](#boolean-simplifiereta) | Symbolic tree rewriting, De Morgan's laws, fixed-point simplification |
 | [`symbolic-diff.eta`](#symbolic-differentiation)   | Computer algebra: differentiation rules, algebraic simplification |
 | [`aad.eta`](#aadeta)                               | Reverse-mode AD, closures as backpropagators, `define-syntax`, `grad` |
@@ -279,6 +280,162 @@ Classic recursive algorithms.
 ;; Move disk 3 from A to C
 ;; ...
 ```
+
+---
+
+## [exceptions](../examples/exceptions.eta)
+
+Eta's exception system is built on two special forms that compile
+directly to `SetupCatch` / `Throw` VM opcodes:
+
+| Form | Meaning |
+|------|---------|
+| `(raise 'tag value)` | Signal an exception; unwind the stack to the nearest matching `catch` |
+| `(catch 'tag body)` | Evaluate `body`; if a `raise` with `'tag` escapes, return its payload |
+| `(catch body)` | Catch-all: intercepts any `raise` regardless of tag |
+
+Tags are ordinary symbols and serve as typed exception channels.  The
+raised value can be any Eta value — a number, string, pair, or record.
+
+### Basic catch / raise
+
+```scheme
+;; Normal completion — catch is transparent
+(catch 'err 42)                          ; => 42
+
+;; Exception signalled — catch returns the raised payload
+(catch 'err (raise 'err "oops!"))        ; => "oops!"
+
+;; Numeric payload
+(catch 'math-error (raise 'math-error 404))  ; => 404
+
+;; Catch-all — no tag, intercepts everything
+(catch (raise 'anything "caught!"))      ; => "caught!"
+```
+
+### Tag specificity and nested handlers
+
+Handlers are matched from the **inside out**.  An inner `catch` with the
+correct tag fires first; a mismatched inner handler lets the raise
+propagate to the next outer one:
+
+```scheme
+;; Inner handler fires; outer never sees the exception
+(catch 'outer
+  (+ 10 (catch 'inner
+           (raise 'inner 5))))           ; => 15
+
+;; Inner handler is for the wrong tag — raise propagates to catch-all
+(catch
+  (catch 'other-tag
+    (raise 'real-tag "bypassed inner"))) ; => "bypassed inner"
+```
+
+### Propagation through function calls
+
+`raise` performs a **non-local exit**, unwinding any number of call
+frames back to the matching `catch`.  This makes it straightforward to
+implement safe wrappers:
+
+```scheme
+(defun safe-divide (a b)
+  (if (= b 0)
+      (raise 'division-by-zero 'undefined)
+      (/ a b)))
+
+(catch 'division-by-zero (safe-divide 10 2))   ; => 5
+(catch 'division-by-zero (safe-divide 10 0))   ; => undefined
+```
+
+### Structured payloads
+
+The raised value can be any data structure.  Using a pair `(code . detail)`
+gives callers a typed, inspectable error object:
+
+```scheme
+(defun validate-age (age)
+  (cond
+    ((< age 0)   (raise 'validation-error (cons 'negative age)))
+    ((> age 150) (raise 'validation-error (cons 'too-large age)))
+    (#t          age)))
+
+(catch 'validation-error (validate-age 25))    ; => 25
+
+(let ((err (catch 'validation-error (validate-age -5))))
+  (car err)   ; => negative
+  (cdr err))  ; => -5
+
+(let ((err (catch 'validation-error (validate-age 200))))
+  (car err)   ; => too-large
+  (cdr err))  ; => 200
+```
+
+### Early-exit pattern
+
+Raising from inside a loop or recursion is an efficient way to
+**short-circuit** traversal once a result is found:
+
+```scheme
+(defun first-negative (lst)
+  (catch 'found
+    (letrec ((loop (lambda (xs)
+                     (cond
+                       ((null? xs)     #f)
+                       ((< (car xs) 0) (raise 'found (car xs)))
+                       (#t             (loop (cdr xs)))))))
+      (loop lst))))
+
+(first-negative '(3 1 4 1 5))    ; => #f
+(first-negative '(3 1 -4 2 -1)) ; => -4
+```
+
+### Resource cleanup with `dynamic-wind`
+
+`dynamic-wind` guarantees its *after* thunk runs even when an exception
+escapes the body — enabling reliable resource cleanup (file handles,
+locks, database connections):
+
+```scheme
+(define cleanup-called #f)
+
+(catch 'resource-error
+  (dynamic-wind
+    (lambda () (set! cleanup-called #f))       ; before: initialise
+    (lambda () (raise 'resource-error "boom")) ; body: raises
+    (lambda () (set! cleanup-called #t))))     ; after: ALWAYS runs
+
+cleanup-called  ; => #t
+```
+
+### Re-raising (exception chaining)
+
+An inner handler can inspect, wrap, and re-raise a new exception,
+translating low-level errors into higher-level domain errors:
+
+```scheme
+(defun process (x)
+  (catch 'low-level
+    (if (< x 0)
+        (raise 'low-level (list 'bad-input x))
+        (* x 2))))
+
+(let ((result
+       (catch 'high-level
+         (let ((v (process -3)))
+           ;; v holds the intercepted low-level payload; wrap and re-raise
+           (raise 'high-level (cons 'wrapped v))))))
+  (car result)          ; => wrapped
+  (car (cdr result)))   ; => bad-input
+```
+
+### Implementation notes
+
+`catch`/`raise` compile to the `SetupCatch` and `Throw` VM opcodes.
+Each `catch` frame records the tag symbol, the handler program counter,
+and a snapshot of the frame stack, so `raise` can restore execution
+state in O(depth) time.  The catch stack is separate from the logic
+trail, so `unwind-trail` and exception handling compose cleanly —
+backtracking does not accidentally discard live exception handlers.
 
 ---
 

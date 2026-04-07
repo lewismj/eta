@@ -11,6 +11,7 @@
 #include "eta/runtime/numeric_value.h"
 #include "eta/runtime/overflow.h"
 #include "eta/runtime/port.h"
+#include "eta/runtime/clp/domain.h"
 #include <bit>
 
 namespace eta::runtime::vm {
@@ -813,25 +814,42 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             }
             case OpCode::TrailMark: {
-                auto enc = ops::encode<int64_t>(static_cast<int64_t>(trail_stack_.size()));
+                // Pack both the binding-trail size (bits 0-22) and the
+                // constraint-trail size (bits 23-45) into one 47-bit fixnum.
+                // Max trail depth per side: 2^23 - 1 = 8,388,607 — far beyond
+                // any practical limit.  The combined value always fits within
+                // FIXNUM_MAX (2^46 - 1).
+                constexpr int64_t TRAIL_BITS = 23;
+                constexpr int64_t TRAIL_MASK = (1LL << TRAIL_BITS) - 1; // 0x7FFFFF
+                auto bsize = static_cast<int64_t>(trail_stack_.size());
+                auto csize = static_cast<int64_t>(constraint_store_.trail_size());
+                int64_t packed = (bsize & TRAIL_MASK) | ((csize & TRAIL_MASK) << TRAIL_BITS);
+                auto enc = ops::encode<int64_t>(packed);
                 if (!enc) return std::unexpected(make_type_error("trail-mark: trail too deep"));
                 push(*enc);
                 break;
             }
             case OpCode::UnwindTrail: {
+                constexpr int64_t TRAIL_BITS = 23;
+                constexpr int64_t TRAIL_MASK = (1LL << TRAIL_BITS) - 1;
                 LispVal mark_val = pop();
                 if (!ops::is_boxed(mark_val) || ops::tag(mark_val) != Tag::Fixnum)
                     return std::unexpected(make_type_error("unwind-trail: mark must be a fixnum"));
                 auto mark_opt = ops::decode<int64_t>(mark_val);
                 if (!mark_opt)
                     return std::unexpected(make_type_error("unwind-trail: invalid mark"));
-                auto mark = static_cast<std::size_t>(*mark_opt);
-                while (trail_stack_.size() > mark) {
+                int64_t packed = *mark_opt;
+                auto bmark = static_cast<std::size_t>(packed & TRAIL_MASK);
+                auto cmark = static_cast<std::size_t>((packed >> TRAIL_BITS) & TRAIL_MASK);
+                // Unwind binding trail
+                while (trail_stack_.size() > bmark) {
                     LispVal lvar_val = trail_stack_.back();
                     trail_stack_.pop_back();
                     if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(lvar_val))
                         lv->binding = std::nullopt;
                 }
+                // Unwind constraint trail (undo domain changes made since mark)
+                constraint_store_.unwind(cmark);
                 push(Nil);
                 break;
             }
@@ -1307,10 +1325,31 @@ bool VM::unify(LispVal a, LispVal b) {
     // Identical values (includes two unbound vars that are the same object)
     if (a == b) return true;
 
+    // ── Helper: check domain constraint before committing a binding ───────────
+    // When an unbound variable with a CLP domain is about to be bound to a
+    // concrete (non-variable) ground value, verify the value lies in the domain.
+    // If `candidate` is itself an unbound logic variable, skip the check — the
+    // constraint will be re-evaluated when that variable is eventually grounded
+    // (forward-checking style).
+    auto check_domain = [&](LispVal lvar, LispVal candidate) -> bool {
+        LispVal ground = deref(candidate);
+        // If candidate deref's to a logic variable, defer the check.
+        if (try_get_as<ObjectKind::LogicVar, types::LogicVar>(ground))
+            return true;
+        // Ground value — look up any domain constraint on the variable.
+        auto id = ops::payload(lvar);
+        const auto* dom = constraint_store_.get_domain(id);
+        if (!dom) return true;  // no domain constraint
+        auto n = classify_numeric(ground, heap_);
+        if (!n.is_valid() || n.is_flonum()) return false;  // non-integer into integer domain
+        return clp::domain_contains_int(*dom, n.int_val);
+    };
+
     // a is an unbound logic variable
     if (auto* lva = try_get_as<ObjectKind::LogicVar, types::LogicVar>(a)) {
         if (!lva->binding.has_value()) {
             if (occurs_check(a, b)) return false;   // would create cycle
+            if (!check_domain(a, b)) return false;  // CLP domain violation
             lva->binding = b;
             trail_stack_.push_back(a);
             return true;
@@ -1321,6 +1360,7 @@ bool VM::unify(LispVal a, LispVal b) {
     if (auto* lvb = try_get_as<ObjectKind::LogicVar, types::LogicVar>(b)) {
         if (!lvb->binding.has_value()) {
             if (occurs_check(b, a)) return false;   // would create cycle
+            if (!check_domain(b, a)) return false;  // CLP domain violation
             lvb->binding = a;
             trail_stack_.push_back(b);
             return true;

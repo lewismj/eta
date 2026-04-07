@@ -1,0 +1,114 @@
+;;; causal-factor/csv-loader.eta — Port-based CSV ingestion.
+;;;
+;;; Reads a CSV file from a port and returns a list of observation records.
+;;; Each record is an alist ((column-symbol . value) ...) where values are
+;;; parsed as numbers when possible, otherwise kept as strings.
+;;;
+;;; Usage:
+;;;   (define data (csv:load-file "observations.csv" '(sector market-beta stock-return)))
+;;;
+;;; The first argument is the file path; the second is an ordered list of
+;;; column names (as symbols) matching the CSV header order.
+
+(module csv-loader
+  (import std.io)
+  (import std.collections)
+  (begin
+
+    ;; (csv:load-file path column-names)
+    ;; Open `path`, skip the header line, and return a list of observation
+    ;; alists.  `column-names` maps column positions to symbols.
+    (defun csv:load-file (path column-names)
+      (let* ((port (open-input-file path))
+             (data (if port
+                       (let ((result (csv:read-all port column-names)))
+                         (close-input-port port)
+                         result)
+                       (begin
+                         (eprintln (string-append "csv: cannot open " path))
+                         '()))))
+        data))
+
+    ;; (csv:read-all port column-names)
+    ;; Read all data rows (skipping header) from an open input port.
+    (defun csv:read-all (port column-names)
+      ;; Skip header line
+      (read-line port)
+      ;; Read data rows
+      (let loop ((acc '()))
+        (let ((line (read-line port)))
+          (if (or (eq? line #f) (equal? line ""))
+              (reverse acc)
+              (let ((record (csv:parse-row line column-names)))
+                (if record
+                    (loop (cons record acc))
+                    (loop acc)))))))
+
+    ;; (csv:parse-row line column-names)
+    ;; Split `line` on commas and zip with column names.
+    ;; Returns an alist, or #f if the number of fields doesn't match.
+    (defun csv:parse-row (line column-names)
+      (let* ((fields (csv:split-on-comma line))
+             (n-cols (length column-names))
+             (n-fields (length fields)))
+        (if (= n-cols n-fields)
+            (map* (lambda (pair)
+                    (cons (car pair) (csv:parse-value (cdr pair))))
+                  (zip column-names fields))
+            #f)))
+
+    ;; (csv:parse-value str)
+    ;; Try to parse str as a number; fall back to a symbol.
+    (defun csv:parse-value (str)
+      (let ((n (string->number (csv:trim str))))
+        (if n n
+            (string->symbol (csv:trim str)))))
+
+    ;; (csv:split-on-comma str)
+    ;; Split `str` at comma boundaries, returning a list of strings.
+    (defun csv:split-on-comma (str)
+      (let ((out (open-output-string))
+            (fields '()))
+        (letrec ((loop (lambda (i acc)
+                         (if (>= i (string-length str))
+                             (reverse (cons (get-output-string out) acc))
+                             (let ((ch (string-ref str i)))
+                               (if (eq? ch #\,)
+                                   (let ((field (get-output-string out)))
+                                     (close-output-port out)
+                                     (let ((new-out (open-output-string)))
+                                       (loop (+ i 1) (cons field acc))))
+                                   (begin
+                                     (write-char ch out)
+                                     (loop (+ i 1) acc))))))))
+          (loop 0 '()))))
+
+    ;; (csv:trim str)
+    ;; Remove leading and trailing whitespace.
+    (defun csv:trim (str)
+      (let* ((len (string-length str))
+             (start (let find-start ((i 0))
+                      (if (or (>= i len) (not (csv:whitespace? (string-ref str i))))
+                          i
+                          (find-start (+ i 1)))))
+             (end   (let find-end ((i (- len 1)))
+                      (if (or (< i start) (not (csv:whitespace? (string-ref str i))))
+                          (+ i 1)
+                          (find-end (- i 1))))))
+        (substring str start end)))
+
+    (defun csv:whitespace? (ch)
+      (or (eq? ch #\space) (eq? ch #\tab) (eq? ch #\return)))
+
+    ;; (csv:make-sample-data column-names rows)
+    ;; Build an in-memory dataset (list of alists) without file I/O.
+    ;; Useful for demos when no CSV file is present.
+    ;; `rows` is a list of value-lists in the same order as `column-names`.
+    (defun csv:make-sample-data (column-names rows)
+      (map* (lambda (row)
+              (map* (lambda (pair) (cons (car pair) (cdr pair)))
+                    (zip column-names row)))
+            rows))
+
+  ))
+

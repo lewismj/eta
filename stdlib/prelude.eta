@@ -631,8 +631,372 @@
     (defun run1 (template-thunk branches)
       (let ((sols (findall template-thunk branches)))
         (if (null? sols) #f (car sols))))
-
   ))
+
+
+;; ════════════════════════════════════════════════════════════════════
+;; std.clp — Constraint Logic Programming (clp(Z) and clp(FD)).
+;;
+;; Domains are stored in the VM's ConstraintStore (C++ side) and
+;; forward-checked at unification time.  clp:solve uses DFS labelling
+;; with trail-mark / unwind-trail for backtracking.
+;;
+;; See docs/clp.md for a full walkthrough and docs/next-steps.md §3
+;; for the planned arc-consistency propagation extension.
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.clp
+  (import std.collections)
+  (import std.logic)
+  (export
+    clp:domain clp:in-fd
+    clp:domain-z? clp:domain-fd?
+    clp:domain-lo clp:domain-hi
+    clp:domain-values clp:domain-empty?
+    clp:= clp:+
+    clp:<= clp:>= clp:<>
+    clp:all-different
+    clp:solve)
+  (begin
+
+    (defun clp:domain (var lo hi)
+      (%clp-domain-z! var lo hi))
+
+    (defun clp:in-fd (var . values)
+      (%clp-domain-fd! var values))
+
+    (defun clp:domain-z? (dom)
+      (and (pair? dom) (eq? (car dom) 'z)))
+
+    (defun clp:domain-fd? (dom)
+      (and (pair? dom) (eq? (car dom) 'fd)))
+
+    (defun clp:domain-lo (dom)
+      (cond
+        ((clp:domain-z? dom)  (car (cdr dom)))
+        ((clp:domain-fd? dom)
+         (let ((vs (cdr dom)))
+           (if (null? vs) #f (car vs))))
+        (#t #f)))
+
+    (defun clp:domain-hi (dom)
+      (cond
+        ((clp:domain-z? dom)  (car (cdr (cdr dom))))
+        ((clp:domain-fd? dom)
+         (let ((vs (cdr dom)))
+           (if (null? vs) #f
+               (let loop ((xs vs))
+                 (if (null? (cdr xs)) (car xs)
+                     (loop (cdr xs)))))))
+        (#t #f)))
+
+    (defun clp:domain-values (dom)
+      (cond
+        ((clp:domain-z? dom)
+         (range (clp:domain-lo dom) (+ (clp:domain-hi dom) 1)))
+        ((clp:domain-fd? dom) (cdr dom))
+        (#t '())))
+
+    (defun clp:domain-empty? (dom)
+      (or (not dom) (null? (clp:domain-values dom))))
+
+    (defun %clp-member? (x xs)
+      (cond ((null? xs) #f)
+            ((= x (car xs)) #t)
+            (#t (%clp-member? x (cdr xs)))))
+
+    (defun %clp-domain-values-for-var (var)
+      (let ((dom (%clp-get-domain var)))
+        (if dom (clp:domain-values dom) '())))
+
+    (defun clp:= (x y)
+      (let ((dx (%clp-get-domain x))
+            (dy (%clp-get-domain y)))
+        (if (and dx dy)
+            (let* ((vx (clp:domain-values dx))
+                   (vy (clp:domain-values dy))
+                   (common (filter (lambda (v) (%clp-member? v vy)) vx)))
+              (if (null? common)
+                  #f
+                  (begin
+                    (%clp-domain-fd! x common)
+                    (%clp-domain-fd! y common)
+                    (== x y))))
+            (== x y))))
+
+    (defun clp:+ (x y z)
+      (let ((dx (%clp-get-domain x))
+            (dy (%clp-get-domain y))
+            (dz (%clp-get-domain z)))
+        (if (and dx dy dz
+                 (clp:domain-z? dx) (clp:domain-z? dy) (clp:domain-z? dz))
+            (let* ((xlo (clp:domain-lo dx)) (xhi (clp:domain-hi dx))
+                   (ylo (clp:domain-lo dy)) (yhi (clp:domain-hi dy))
+                   (zlo (clp:domain-lo dz)) (zhi (clp:domain-hi dz))
+                   (nzlo (max zlo (+ xlo ylo))) (nzhi (min zhi (+ xhi yhi)))
+                   (nxlo (max xlo (- zlo yhi))) (nxhi (min xhi (- zhi ylo)))
+                   (nylo (max ylo (- zlo xhi))) (nyhi (min yhi (- zhi xlo))))
+              (if (or (> nzlo nzhi) (> nxlo nxhi) (> nylo nyhi))
+                  #f
+                  (begin
+                    (%clp-domain-z! z nzlo nzhi)
+                    (%clp-domain-z! x nxlo nxhi)
+                    (%clp-domain-z! y nylo nyhi)
+                    #t)))
+            #t)))
+
+    (defun clp:<= (x y)
+      (let ((dx (%clp-get-domain x))
+            (dy (%clp-get-domain y)))
+        (if (and dx dy (clp:domain-z? dx) (clp:domain-z? dy))
+            (let* ((nxhi (min (clp:domain-hi dx) (clp:domain-hi dy)))
+                   (nylo (max (clp:domain-lo dy) (clp:domain-lo dx))))
+              (if (or (> (clp:domain-lo dx) nxhi)
+                      (> nylo (clp:domain-hi dy)))
+                  #f
+                  (begin
+                    (%clp-domain-z! x (clp:domain-lo dx) nxhi)
+                    (%clp-domain-z! y nylo (clp:domain-hi dy))
+                    #t)))
+            #t)))
+
+    (defun clp:>= (x y) (clp:<= y x))
+    (defun clp:<> (x y) (clp:all-different (list x y)))
+
+    (define *clp-adiff-groups* '())
+
+    (defun clp:all-different (vars)
+      (set! *clp-adiff-groups* (cons vars *clp-adiff-groups*))
+      #t)
+
+    (defun %clp-check-all-different ()
+      (every? (lambda (group)
+                (let ((ground-vals
+                        (filter (lambda (v) (not (logic-var? v)))
+                                (map* deref-lvar group))))
+                  (%clp-all-distinct? ground-vals)))
+              *clp-adiff-groups*))
+
+    (defun %clp-all-distinct? (xs)
+      (if (null? xs) #t
+          (and (every? (lambda (y) (not (= (car xs) y))) (cdr xs))
+               (%clp-all-distinct? (cdr xs)))))
+
+    (defun clp:solve (vars)
+      (if (null? vars)
+          (%clp-check-all-different)
+          (let* ((v  (car vars))
+                 (vd (deref-lvar v)))
+            (if (not (logic-var? vd))
+                (clp:solve (cdr vars))
+                (let ((vals (%clp-domain-values-for-var v)))
+                  (if (null? vals)
+                      #f
+                      (%clp-label v vals (cdr vars))))))))
+
+    (defun %clp-label (var vals remaining)
+      (if (null? vals)
+          #f
+          (let* ((m  (trail-mark))
+                 (ok (and (unify var (car vals))
+                          (clp:solve remaining))))
+            (if ok
+                #t
+                (begin
+                  (unwind-trail m)
+                  (%clp-label var (cdr vals) remaining))))))
+  ))
+
+
+;; ════════════════════════════════════════════════════════════════════
+;; std.causal — Causal DAG utilities and Pearl do-calculus engine.
+;;
+;; Provides:
+;;   dag:* — graph traversal (parents, children, ancestors, descendants,
+;;            d-separation via back-door criterion)
+;;   do:identify  — symbolic identification of P(Y|do(X))
+;;   do:estimate-effect — numeric estimation via back-door adjustment
+;;                        (pure Eta arithmetic; no FFI required)
+;;
+;; See docs/causal.md for a full finance-oriented walkthrough.
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.causal
+  (import std.core)
+  (import std.collections)
+  (import std.io)
+  (export
+    dag:nodes dag:parents dag:children
+    dag:ancestors dag:descendants dag:non-descendants
+    dag:has-path?
+    dag:satisfies-backdoor?
+    do:identify
+    do:adjustment-formula->string
+    do:estimate-effect
+    do:conditional-mean
+    do:marginal-prob)
+  (begin
+
+    (defun %dag-edge-from (edge) (car edge))
+    (defun %dag-edge-to   (edge) (car (cdr (cdr edge))))
+
+    (defun dag:nodes (dag)
+      (foldr (lambda (edge acc)
+               (let ((f (%dag-edge-from edge))
+                     (t (%dag-edge-to   edge)))
+                 (%causal-adjoin f (%causal-adjoin t acc))))
+             '()
+             dag))
+
+    (defun dag:parents (dag node)
+      (filter (lambda (n) (not (eq? n node)))
+              (map* %dag-edge-from
+                    (filter (lambda (e) (eq? (%dag-edge-to e) node))
+                            dag))))
+
+    (defun dag:children (dag node)
+      (filter (lambda (n) (not (eq? n node)))
+              (map* %dag-edge-to
+                    (filter (lambda (e) (eq? (%dag-edge-from e) node))
+                            dag))))
+
+    (defun dag:ancestors (dag node)
+      (%dag-transitive dag dag:parents node '()))
+
+    (defun dag:descendants (dag node)
+      (%dag-transitive dag dag:children node '()))
+
+    (defun dag:non-descendants (dag node)
+      (let ((desc (%causal-adjoin node (dag:descendants dag node))))
+        (filter (lambda (n) (not (%causal-member? n desc)))
+                (dag:nodes dag))))
+
+    (defun dag:has-path? (dag from to forbidden)
+      (%dag-reachable? dag from to forbidden '()))
+
+    (defun dag:satisfies-backdoor? (dag x y z-set)
+      (and
+        (every? (lambda (z)
+                  (not (%causal-member? z (dag:descendants dag x))))
+                z-set)
+        (%dag-blocks-backdoor-paths? dag x y z-set)))
+
+    (defun do:identify (dag y x)
+      (if (null? (%dag-backdoor-paths dag x y))
+          '(direct)
+          (let* ((pax  (dag:parents dag x))
+                 (nond (dag:non-descendants dag x))
+                 (candidates (list pax '() nond)))
+            (let loop ((cands candidates))
+              (if (null? cands)
+                  #f
+                  (let ((z (car cands)))
+                    (if (dag:satisfies-backdoor? dag x y z)
+                        (if (null? z)
+                            '(direct)
+                            (list 'adjust z
+                                  (list 'P y x z)
+                                  (list 'P z)))
+                        (loop (cdr cands)))))))))
+
+    (defun do:adjustment-formula->string (formula y x)
+      (cond
+        ((eq? formula #f)
+         "Could not identify causal effect from observational data.")
+        ((and (pair? formula) (eq? (car formula) 'direct))
+         (string-append "P(" (symbol->string y)
+                        " | do(" (symbol->string x) ")) = "
+                        "P(" (symbol->string y) " | " (symbol->string x) ")"))
+        ((and (pair? formula) (eq? (car formula) 'adjust))
+         (let* ((z-set (car (cdr formula)))
+                (z-str (if (null? z-set)
+                           "()"
+                           (foldr (lambda (n acc)
+                                    (string-append (symbol->string n)
+                                                   (if (equal? acc "") "" ", ")
+                                                   acc))
+                                  "" z-set))))
+           (string-append
+             "P(" (symbol->string y) " | do(" (symbol->string x) ")) = "
+             "Σ_{" z-str "} P(" (symbol->string y)
+             " | " (symbol->string x) ", " z-str ") · P(" z-str ")")))
+        (#t "Unknown formula")))
+
+    (defun do:estimate-effect (y-var x-var x-val z-set z-val data)
+      (let* ((stratum (filter (lambda (obs)
+                                (and (equal? (%causal-obs-get obs x-var) x-val)
+                                     (%causal-obs-matches-z obs z-set z-val)))
+                              data))
+             (p-z (do:marginal-prob data z-set z-val)))
+        (if (null? stratum) 0
+            (* (do:conditional-mean stratum y-var) p-z))))
+
+    (defun do:conditional-mean (data y-var)
+      (if (null? data) 0
+          (let* ((n    (length data))
+                 (ysum (foldl (lambda (acc obs)
+                                (+ acc (%causal-obs-get obs y-var)))
+                              0 data)))
+            (/ ysum n))))
+
+    (defun do:marginal-prob (data z-set z-val)
+      (if (null? data) 0
+          (let* ((n       (length data))
+                 (matches (count (lambda (obs)
+                                   (%causal-obs-matches-z obs z-set z-val))
+                                 data)))
+            (/ matches n))))
+
+    (defun %dag-transitive (dag next-fn node visited)
+      (let ((nexts (filter (lambda (n) (not (%causal-member? n visited)))
+                           (next-fn dag node))))
+        (foldl (lambda (acc n)
+                 (if (%causal-member? n acc)
+                     acc
+                     (%dag-transitive dag next-fn n (%causal-adjoin n acc))))
+               (foldr %causal-adjoin visited nexts)
+               nexts)))
+
+    (defun %dag-reachable? (dag from to forbidden visited)
+      (cond
+        ((eq? from to) #t)
+        ((%causal-member? from forbidden) #f)
+        ((%causal-member? from visited)  #f)
+        (#t
+         (let ((new-visited (%causal-adjoin from visited)))
+           (any? (lambda (child)
+                   (%dag-reachable? dag child to forbidden new-visited))
+                 (dag:children dag from))))))
+
+    (defun %dag-backdoor-paths (dag x y)
+      (filter (lambda (p) (dag:has-path? dag p y (list x)))
+              (dag:parents dag x)))
+
+    (defun %dag-blocks-backdoor-paths? (dag x y z-set)
+      (every? (lambda (p)
+                (or (%causal-member? p z-set)
+                    (not (dag:has-path? dag p y
+                                        (append (list x) z-set)))))
+              (dag:parents dag x)))
+
+    (defun %causal-member? (x xs)
+      (cond ((null? xs) #f)
+            ((equal? x (car xs)) #t)
+            (#t (%causal-member? x (cdr xs)))))
+
+    (defun %causal-adjoin (x xs)
+      (if (%causal-member? x xs) xs (cons x xs)))
+
+    (defun %causal-obs-get (obs var)
+      (assoc-ref var obs))
+
+    (defun %causal-obs-matches-z (obs z-set z-val)
+      (every? (lambda (z-var)
+                (equal? (%causal-obs-get obs z-var)
+                        (%causal-obs-get z-val z-var)))
+              z-set))
+  ))
+
 
 ;; ════════════════════════════════════════════════════════════════════
 ;; std.prelude — Re-exports from all standard library modules.
@@ -646,6 +1010,8 @@
   (import std.io)
   (import std.collections)
   (import std.logic)
+  (import std.clp)
+  (import std.causal)
   (export
     ;; std.core
     atom? void
@@ -686,7 +1052,26 @@
     ==
     copy-term
     naf succeeds?
-    findall run1)
+    findall run1
+    ;; std.clp
+    clp:domain clp:in-fd
+    clp:domain-z? clp:domain-fd?
+    clp:domain-lo clp:domain-hi
+    clp:domain-values clp:domain-empty?
+    clp:= clp:+
+    clp:<= clp:>= clp:<>
+    clp:all-different
+    clp:solve
+    ;; std.causal
+    dag:nodes dag:parents dag:children
+    dag:ancestors dag:descendants dag:non-descendants
+    dag:has-path?
+    dag:satisfies-backdoor?
+    do:identify
+    do:adjustment-formula->string
+    do:estimate-effect
+    do:conditional-mean
+    do:marginal-prob)
   (begin
     ;; All names are already imported — nothing else to define.
   ))

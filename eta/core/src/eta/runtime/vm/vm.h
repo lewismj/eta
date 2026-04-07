@@ -13,6 +13,7 @@
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/error.h"
 #include "eta/reader/lexer.h"
+#include "eta/runtime/clp/constraint_store.h"
 #include "bytecode.h"
 #include "debug_state.h"   // DebugState, BreakLocation, StopEvent, StopReason
 
@@ -164,6 +165,10 @@ public:
     std::vector<LispVal>& globals() { return globals_; }
     const std::vector<LispVal>& globals() const { return globals_; }
 
+    // ── CLP constraint store (exposed to core_primitives builtins) ────────────
+    clp::ConstraintStore& constraint_store() { return constraint_store_; }
+    const clp::ConstraintStore& constraint_store() const { return constraint_store_; }
+
     // Port accessors
     LispVal current_input_port() const { return current_input_; }
     LispVal current_output_port() const { return current_output_; }
@@ -184,6 +189,7 @@ private:
     std::vector<LispVal> temp_roots_;
     std::vector<CatchFrame> catch_stack_;  ///< live exception handlers
     std::vector<LispVal> trail_stack_;     ///< logic-var trail for backtracking
+    clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
 
     // Current I/O ports
     LispVal current_input_{nanbox::Nil};
