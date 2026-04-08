@@ -1516,3 +1516,352 @@ BOOST_FIXTURE_TEST_CASE(test_dual_backpropagator_chain, FunctionalTestFixture) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
+// ============================================================================
+// SABR — Native Dual AD tests for SABR Hagan implied vol approximation.
+// Validates primal values and gradients against C++ reference implementations.
+// ============================================================================
+
+// ── C++ reference: SABR ATM implied vol ─────────────────────────────────────
+static double cpp_sabr_atm_vol(double F, double T, double alpha, double beta,
+                                double rho, double nu) {
+    double omb = 1.0 - beta;
+    double F_pow = std::pow(F, omb);
+    double base = alpha / F_pow;
+    double t1 = (omb * omb * alpha * alpha) / (24.0 * std::pow(F, 2.0 * omb));
+    double t2 = (rho * beta * nu * alpha) / (4.0 * F_pow);
+    double t3 = ((2.0 - 3.0 * rho * rho) * nu * nu) / 24.0;
+    return base * (1.0 + (t1 + t2 + t3) * T);
+}
+
+// ── C++ reference: SABR general implied vol ─────────────────────────────────
+static double cpp_sabr_general_vol(double F, double K, double T, double alpha,
+                                    double beta, double rho, double nu) {
+    double omb = 1.0 - beta;
+    double FK = F * K;
+    double FK_mid = std::pow(FK, 0.5 * omb);
+    double logFK = std::log(F / K);
+
+    double omb2 = omb * omb;
+    double denom = 1.0 + (omb2 / 24.0) * logFK * logFK
+                       + (omb2 * omb2 / 1920.0) * logFK * logFK * logFK * logFK;
+
+    double z = (nu / alpha) * FK_mid * logFK;
+    double zx_ratio;
+    if (std::abs(z) < 1e-12) {
+        zx_ratio = 1.0;
+    } else {
+        double disc = std::sqrt(1.0 - 2.0 * rho * z + z * z);
+        double xz = std::log((disc + z - rho) / (1.0 - rho));
+        zx_ratio = z / xz;
+    }
+
+    double FK_full = std::pow(FK, omb);
+    double t1 = (omb2 * alpha * alpha) / (24.0 * FK_full);
+    double t2 = (rho * beta * nu * alpha) / (4.0 * FK_mid);
+    double t3 = ((2.0 - 3.0 * rho * rho) * nu * nu) / 24.0;
+    double num_corr = 1.0 + (t1 + t2 + t3) * T;
+
+    return (alpha / (FK_mid * denom)) * zx_ratio * num_corr;
+}
+
+static double cpp_sabr_implied_vol(double F, double K, double T, double alpha,
+                                    double beta, double rho, double nu) {
+    if (std::abs(F - K) < 1e-7)
+        return cpp_sabr_atm_vol(F, T, alpha, beta, rho, nu);
+    return cpp_sabr_general_vol(F, K, T, alpha, beta, rho, nu);
+}
+
+// ── SABR library string for embedding in test modules ───────────────────────
+static const char* SABR_LIB = R"(
+    ;; ── Native Dual AD primitives ──────────────────────────────────
+    (defun nd-val (x) (if (dual? x) (dual-primal x) x))
+    (defun nd-bp  (x) (if (dual? x) (dual-backprop x) (lambda (adj) '())))
+    (defun nd-make-var (v idx) (make-dual v (lambda (adj) (list (cons idx adj)))))
+    (defun nd-ensure (x) (if (dual? x) x (make-dual x (lambda (adj) '()))))
+
+    (defun nd+ (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (+ va vb)
+                     (lambda (adj) (append (ba adj) (bb adj)))))))
+
+    (defun nd- (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (- va vb)
+                     (lambda (adj) (append (ba adj) (bb (* -1 adj))))))))
+
+    (defun nd* (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (* va vb)
+                     (lambda (adj) (append (ba (* adj vb)) (bb (* adj va))))))))
+
+    (defun nd/ (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (/ va vb)
+                     (lambda (adj)
+                       (append (ba (* adj (/ 1 vb)))
+                               (bb (* adj (* -1 (/ va (* vb vb)))))))))))
+
+    (defun ndexp (a)
+      (let ((a (nd-ensure a)))
+        (let ((va (nd-val a)) (ba (nd-bp a)))
+          (let ((ev (exp va)))
+            (make-dual ev (lambda (adj) (ba (* adj ev))))))))
+
+    (defun ndlog (a)
+      (let ((a (nd-ensure a)))
+        (let ((va (nd-val a)) (ba (nd-bp a)))
+          (make-dual (log va) (lambda (adj) (ba (* adj (/ 1 va))))))))
+
+    (defun ndsqrt (a)
+      (ndexp (nd* 0.5 (ndlog a))))
+
+    (defun ndpow (a b)
+      (ndexp (nd* b (ndlog a))))
+
+    ;; ── Gradient driver ────────────────────────────────────────────
+    (defun nd-collect-adjoints (n adj-list)
+      (let ((result (make-vector n 0)))
+        (letrec ((loop (lambda (xs)
+                         (if (null? xs)
+                             result
+                             (let ((p (car xs)))
+                               (let ((i (car p))
+                                     (v (cdr p)))
+                                 (vector-set! result i
+                                   (+ (vector-ref result i) v))
+                                 (loop (cdr xs))))))))
+          (loop adj-list))))
+
+    (defun native-grad (f vals)
+      (letrec ((make-vars
+                 (lambda (vs idx)
+                   (if (null? vs) '()
+                       (cons (nd-make-var (car vs) idx)
+                             (make-vars (cdr vs) (+ idx 1)))))))
+        (let ((duals (make-vars vals 0)))
+          (let ((out (apply f duals)))
+            (let ((primal (nd-val out))
+                  (adjoints ((nd-bp out) 1)))
+              (list primal (nd-collect-adjoints (length vals) adjoints)))))))
+
+    ;; ── SABR x(z) helper ──────────────────────────────────────────
+    (defun sabr-xz (z rho)
+      (let ((disc (ndsqrt (nd+ (nd- 1 (nd* 2 (nd* rho z)))
+                               (nd* z z)))))
+        (ndlog (nd/ (nd+ (nd- disc rho) z)
+                    (nd- 1 rho)))))
+
+    ;; ── SABR ATM vol ──────────────────────────────────────────────
+    (defun sabr-atm-vol (F T alpha beta rho nu)
+      (let ((one-minus-beta (nd- 1 beta)))
+        (let ((F-pow (ndpow F one-minus-beta)))
+          (let ((base-vol (nd/ alpha F-pow)))
+            (let ((term1 (nd/ (nd* (nd* one-minus-beta one-minus-beta)
+                                   (nd* alpha alpha))
+                              (nd* 24 (ndpow F (nd* 2 one-minus-beta)))))
+                  (term2 (nd/ (nd* rho (nd* beta (nd* nu alpha)))
+                              (nd* 4 F-pow)))
+                  (term3 (nd/ (nd* (nd- 2 (nd* 3 (nd* rho rho)))
+                                   (nd* nu nu))
+                              24)))
+              (nd* base-vol
+                   (nd+ 1 (nd* T (nd+ term1 (nd+ term2 term3))))))))))
+
+    ;; ── SABR general vol ──────────────────────────────────────────
+    (defun sabr-general-vol (F K T alpha beta rho nu)
+      (let ((one-minus-beta (nd- 1 beta)))
+        (let ((FK (nd* F K)))
+          (let ((FK-mid (ndpow FK (nd* 0.5 one-minus-beta)))
+                (log-FK (ndlog (nd/ F K))))
+            (let ((omb2 (nd* one-minus-beta one-minus-beta)))
+              (let ((denom-corr (nd+ 1
+                                  (nd+ (nd/ (nd* omb2 (nd* log-FK log-FK)) 24)
+                                       (nd/ (nd* (nd* omb2 omb2)
+                                                 (nd* (nd* log-FK log-FK)
+                                                      (nd* log-FK log-FK)))
+                                            1920)))))
+                (let ((z (nd* (nd/ nu alpha) (nd* FK-mid log-FK))))
+                  (let ((z-val (nd-val z)))
+                    (let ((zx-ratio
+                            (if (< (abs z-val) 1e-12)
+                                1
+                                (nd/ z (sabr-xz z rho)))))
+                      (let ((FK-full (ndpow FK one-minus-beta)))
+                        (let ((term1 (nd/ (nd* omb2 (nd* alpha alpha))
+                                          (nd* 24 FK-full)))
+                              (term2 (nd/ (nd* rho (nd* beta (nd* nu alpha)))
+                                          (nd* 4 FK-mid)))
+                              (term3 (nd/ (nd* (nd- 2 (nd* 3 (nd* rho rho)))
+                                               (nd* nu nu))
+                                          24)))
+                          (let ((num-corr (nd+ 1 (nd* T (nd+ term1 (nd+ term2 term3))))))
+                            (nd* (nd/ alpha (nd* FK-mid denom-corr))
+                                 (nd* zx-ratio num-corr))))))))))))))
+
+    ;; ── Unified SABR implied vol ──────────────────────────────────
+    (defun sabr-implied-vol (F K T alpha beta rho nu)
+      (if (< (abs (- F K)) 1e-7)
+          (sabr-atm-vol F T alpha beta rho nu)
+          (sabr-general-vol F K T alpha beta rho nu)))
+)";
+
+static std::string sabr_module(const std::string& body) {
+    return std::string("(module m\n") + SABR_LIB + "\n" + body + "\n)";
+}
+
+BOOST_AUTO_TEST_SUITE(sabr_tests)
+
+// ── SABR ATM primal value ───────────────────────────────────────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_atm_primal, FunctionalTestFixture) {
+    // ATM implied vol at F=0.03, T=1, alpha=0.035, beta=0.5, rho=-0.25, nu=0.40
+    double expected = cpp_sabr_atm_vol(0.03, 1.0, 0.035, 0.5, -0.25, 0.40);
+    LispVal res = run(sabr_module(R"(
+        (define result (nd-val (sabr-atm-vol 0.03 1.0 0.035 0.5 -0.25 0.40)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected, 1e-6);
+}
+
+// ── SABR general (OTM) primal value ─────────────────────────────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_general_primal_otm, FunctionalTestFixture) {
+    // OTM: K=0.024 (80% of F=0.03), T=1
+    double expected = cpp_sabr_general_vol(0.03, 0.024, 1.0, 0.035, 0.5, -0.25, 0.40);
+    LispVal res = run(sabr_module(R"(
+        (define result (nd-val (sabr-general-vol 0.03 0.024 1.0 0.035 0.5 -0.25 0.40)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
+}
+
+// ── SABR unified: ATM path ──────────────────────────────────────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_unified_atm, FunctionalTestFixture) {
+    double expected = cpp_sabr_implied_vol(0.03, 0.03, 1.0, 0.035, 0.5, -0.25, 0.40);
+    LispVal res = run(sabr_module(R"(
+        (define result (nd-val (sabr-implied-vol 0.03 0.03 1.0 0.035 0.5 -0.25 0.40)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected, 1e-6);
+}
+
+// ── SABR unified: OTM path ──────────────────────────────────────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_unified_otm, FunctionalTestFixture) {
+    double K = 0.03 * 1.20;  // 120% moneyness
+    double expected = cpp_sabr_implied_vol(0.03, K, 1.0, 0.035, 0.5, -0.25, 0.40);
+    LispVal res = run(sabr_module(R"(
+        (define result (nd-val (sabr-implied-vol 0.03 0.036 1.0 0.035 0.5 -0.25 0.40)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
+}
+
+// ── SABR gradient: ∂σ/∂α via native-grad (ATM) ─────────────────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_atm, FunctionalTestFixture) {
+    // Finite-difference reference: bump alpha by h, compute (f(a+h)-f(a-h))/(2h)
+    double h = 1e-7;
+    double vp = cpp_sabr_atm_vol(0.03, 1.0, 0.035 + h, 0.5, -0.25, 0.40);
+    double vm = cpp_sabr_atm_vol(0.03, 1.0, 0.035 - h, 0.5, -0.25, 0.40);
+    double fd_dalpha = (vp - vm) / (2.0 * h);
+
+    LispVal res = run(sabr_module(R"(
+        (define g (native-grad (lambda (alpha beta rho nu)
+                                 (sabr-implied-vol 0.03 0.03 1.0
+                                                   alpha beta rho nu))
+                               '(0.035 0.5 -0.25 0.40)))
+        (define result (vector-ref (car (cdr g)) 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), fd_dalpha, 0.01); // 0.01% tolerance
+}
+
+// ── SABR gradient: ∂σ/∂ρ via native-grad (ATM) ─────────────────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_grad_drho_atm, FunctionalTestFixture) {
+    double h = 1e-7;
+    double vp = cpp_sabr_atm_vol(0.03, 1.0, 0.035, 0.5, -0.25 + h, 0.40);
+    double vm = cpp_sabr_atm_vol(0.03, 1.0, 0.035, 0.5, -0.25 - h, 0.40);
+    double fd_drho = (vp - vm) / (2.0 * h);
+
+    LispVal res = run(sabr_module(R"(
+        (define g (native-grad (lambda (alpha beta rho nu)
+                                 (sabr-implied-vol 0.03 0.03 1.0
+                                                   alpha beta rho nu))
+                               '(0.035 0.5 -0.25 0.40)))
+        (define result (vector-ref (car (cdr g)) 2))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), fd_drho, 0.01);
+}
+
+// ── SABR gradient: ∂σ/∂ν via native-grad (ATM) ─────────────────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dnu_atm, FunctionalTestFixture) {
+    double h = 1e-7;
+    double vp = cpp_sabr_atm_vol(0.03, 1.0, 0.035, 0.5, -0.25, 0.40 + h);
+    double vm = cpp_sabr_atm_vol(0.03, 1.0, 0.035, 0.5, -0.25, 0.40 - h);
+    double fd_dnu = (vp - vm) / (2.0 * h);
+
+    LispVal res = run(sabr_module(R"(
+        (define g (native-grad (lambda (alpha beta rho nu)
+                                 (sabr-implied-vol 0.03 0.03 1.0
+                                                   alpha beta rho nu))
+                               '(0.035 0.5 -0.25 0.40)))
+        (define result (vector-ref (car (cdr g)) 3))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), fd_dnu, 0.01);
+}
+
+// ── SABR gradient: OTM point ∂σ/∂α ─────────────────────────────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_otm, FunctionalTestFixture) {
+    double K = 0.024; // 80% moneyness
+    double h = 1e-7;
+    double vp = cpp_sabr_general_vol(0.03, K, 1.0, 0.035 + h, 0.5, -0.25, 0.40);
+    double vm = cpp_sabr_general_vol(0.03, K, 1.0, 0.035 - h, 0.5, -0.25, 0.40);
+    double fd_dalpha = (vp - vm) / (2.0 * h);
+
+    LispVal res = run(sabr_module(R"(
+        (define g (native-grad (lambda (alpha beta rho nu)
+                                 (sabr-implied-vol 0.03 0.024 1.0
+                                                   alpha beta rho nu))
+                               '(0.035 0.5 -0.25 0.40)))
+        (define result (vector-ref (car (cdr g)) 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), fd_dalpha, 0.1); // slightly wider tolerance for OTM
+}
+
+// ── SABR negative skew: low-strike vol > high-strike vol ────────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_skew_direction, FunctionalTestFixture) {
+    // With rho < 0, vol at K=80%F should be > vol at K=120%F
+    LispVal res = run(sabr_module(R"(
+        (define vol-low  (nd-val (sabr-implied-vol 0.03 0.024 1.0 0.035 0.5 -0.25 0.40)))
+        (define vol-high (nd-val (sabr-implied-vol 0.03 0.036 1.0 0.035 0.5 -0.25 0.40)))
+        (define result (if (> vol-low vol-high) 1.0 0.0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 1.0, 1e-10);
+}
+
+// ── SABR smile: OTM vols > ATM vol on both sides (rho=0) ───────────────────
+
+BOOST_FIXTURE_TEST_CASE(test_sabr_smile_shape, FunctionalTestFixture) {
+    // With rho=0 and high enough nu, both OTM vols should be >= ATM vol (smile shape).
+    // nu must be large enough for the z/x(z) curvature to dominate the backbone
+    // asymmetry introduced by beta=0.5.
+    LispVal res = run(sabr_module(R"(
+        (define vol-atm  (nd-val (sabr-implied-vol 0.03 0.03  1.0 0.035 0.5 0.0 0.80)))
+        (define vol-low  (nd-val (sabr-implied-vol 0.03 0.024 1.0 0.035 0.5 0.0 0.80)))
+        (define vol-high (nd-val (sabr-implied-vol 0.03 0.036 1.0 0.035 0.5 0.0 0.80)))
+        (define result (if (and (>= vol-low vol-atm) (>= vol-high vol-atm)) 1.0 0.0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 1.0, 1e-10);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+

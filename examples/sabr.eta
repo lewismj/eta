@@ -294,7 +294,7 @@
                                                                F-fwd K T
                                                                alpha-val beta-val
                                                                rho-val nu-val)))
-                                                    (display (* 100 vol))
+                                                    (display (* 100 (nd-val vol)))
                                                     (display "  ")
                                                     (col (cdr es))))))))
                               (col expiries)))

@@ -25,6 +25,7 @@ etai examples/hello.eta
 | [`aad.eta`](#aadeta)                               | Reverse-mode AD, closures as backpropagators, `define-syntax`, `grad` |
 | [`xva.eta`](#xvaeta)                               | Quantitative finance: CVA, FVA, xVA sensitivities via AAD |
 | [`european.eta`](#europeaneta)                     | BS option Greeks: first & second order via AAD, custom VJP, Schwarz check |
+| [`sabr.eta`](#sabreta)                             | SABR vol surface with native Dual AD, Hagan approximation, Hessian |
 | [`logic.eta`](#logiceta)                           | Relational logic programming: `parento`, `grandparento`, `membero`, bidirectional queries |
 | [`modules and imports`](#imports)                  | `import`, `export`, `only`, `except`, `rename`, `prefix` |
 
@@ -603,6 +604,41 @@ with custom AD primitives for the normal distribution.  See the full
       '(100.0 90.0 0.03 0.30 0.5))
 ;; => (0.75  #(Gamma  ...  ...  Vanna  ...))
 ```
+
+---
+
+## [sabr — SABR vol surface with native Dual AD](../examples/sabr.eta)
+
+Computes the Hagan et al. (2002) SABR implied volatility approximation
+and all model sensitivities using Eta's **native Dual VM instructions**.
+See the full [SABR walkthrough](sabr.md) for detailed commentary on the
+performance advantage of VM-level Dual arithmetic.
+
+```scheme
+;; Native Dual AD — uses dedicated MakeDual / DualVal / DualBp opcodes
+(defun nd-val (x) (if (dual? x) (dual-primal x) x))
+(defun nd-bp  (x) (if (dual? x) (dual-backprop x) (lambda (adj) '())))
+
+;; SABR ATM vol: σ = α/F^(1-β) × [1 + correction × T]
+(defun sabr-atm-vol (F T alpha beta rho nu) ...)
+
+;; All 4 sensitivities in one backward pass — native Dual
+(native-grad (lambda (alpha beta rho nu)
+               (sabr-implied-vol F K T alpha beta rho nu))
+             (list alpha-val beta-val rho-val nu-val))
+;; => (sigma  #(∂σ/∂α  ∂σ/∂β  ∂σ/∂ρ  ∂σ/∂ν))
+
+;; 4×4 Hessian via reverse-on-reverse (true tape-on-tape)
+(hessian (lambda (alpha beta rho nu)
+           (sabr-atm-vol F T alpha beta rho nu))
+         params)
+```
+
+> [!TIP]
+> **Why native Dual?**  The SABR formula has ~50 elementary ops on 4
+> scalar params.  Library-level `cons`-pair AD needs ~13 Scheme dispatches
+> per op (~650 total).  Native Dual opcodes do it in ~50 C++ dispatches —
+> a **~13× reduction** in VM overhead.
 
 ---
 

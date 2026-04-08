@@ -156,7 +156,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cerr << "compiled " << input_file << " → " << output_file
+    std::cerr << "compiled " << input_file << " > " << output_file
               << " (" << file_registry.size() << " functions, "
               << module_entries.size() << " module(s))\n";
     return 0;
