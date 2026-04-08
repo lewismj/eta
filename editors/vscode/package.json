@@ -15,7 +15,8 @@
     "activationEvents": [
         "onLanguage:eta",
         "onDebugResolve:eta",
-        "onCommand:eta.runFile"
+        "onCommand:eta.runFile",
+        "onCommand:eta.showHeapInspector"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -61,6 +62,12 @@
                 "title": "Run Eta File",
                 "icon": "$(play)",
                 "category": "Eta"
+            },
+            {
+                "command": "eta.showHeapInspector",
+                "title": "Show Heap Inspector",
+                "icon": "$(database)",
+                "category": "Eta"
             }
         ],
         "menus": {
@@ -75,6 +82,9 @@
                 {
                     "command": "eta.runFile",
                     "when": "resourceLangId == eta"
+                },
+                {
+                    "command": "eta.showHeapInspector"
                 }
             ]
         },

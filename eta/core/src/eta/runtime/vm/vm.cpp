@@ -108,6 +108,84 @@ void VM::collect_garbage() {
     });
 }
 
+std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
+    using namespace nanbox;
+
+    auto collect = [](auto begin, auto end) {
+        std::vector<ObjectId> ids;
+        for (auto it = begin; it != end; ++it) {
+            LispVal v = *it;
+            if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject)
+                ids.push_back(static_cast<ObjectId>(ops::payload(v)));
+        }
+        return ids;
+    };
+
+    auto single = [](LispVal v) -> std::vector<ObjectId> {
+        if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject)
+            return {static_cast<ObjectId>(ops::payload(v))};
+        return {};
+    };
+
+    std::vector<GCRootInfo> roots;
+
+    roots.push_back({"Stack", collect(stack_.begin(), stack_.end())});
+    roots.push_back({"Globals", collect(globals_.begin(), globals_.end())});
+
+    {
+        auto ids = single(current_closure_);
+        if (!ids.empty()) roots.push_back({"Current Closure", std::move(ids)});
+    }
+
+    {
+        std::vector<ObjectId> ids;
+        for (const auto& f : frames_) {
+            if (ops::is_boxed(f.closure) && ops::tag(f.closure) == Tag::HeapObject)
+                ids.push_back(static_cast<ObjectId>(ops::payload(f.closure)));
+            if (ops::is_boxed(f.extra) && ops::tag(f.extra) == Tag::HeapObject)
+                ids.push_back(static_cast<ObjectId>(ops::payload(f.extra)));
+        }
+        roots.push_back({"Call Frames", std::move(ids)});
+    }
+
+    {
+        std::vector<ObjectId> ids;
+        for (const auto& w : winding_stack_) {
+            for (LispVal v : {w.before, w.body, w.after}) {
+                if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject)
+                    ids.push_back(static_cast<ObjectId>(ops::payload(v)));
+            }
+        }
+        roots.push_back({"Winding Stack", std::move(ids)});
+    }
+
+    roots.push_back({"Temp Roots", collect(temp_roots_.begin(), temp_roots_.end())});
+
+    {
+        std::vector<ObjectId> ids;
+        for (LispVal v : {current_input_, current_output_, current_error_}) {
+            if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject)
+                ids.push_back(static_cast<ObjectId>(ops::payload(v)));
+        }
+        roots.push_back({"I/O Ports", std::move(ids)});
+    }
+
+    {
+        std::vector<ObjectId> ids;
+        for (const auto& cf : catch_stack_) {
+            if (ops::is_boxed(cf.tag) && nanbox::ops::tag(cf.tag) == Tag::HeapObject)
+                ids.push_back(static_cast<ObjectId>(ops::payload(cf.tag)));
+            if (ops::is_boxed(cf.closure) && nanbox::ops::tag(cf.closure) == Tag::HeapObject)
+                ids.push_back(static_cast<ObjectId>(ops::payload(cf.closure)));
+        }
+        roots.push_back({"Catch Stack", std::move(ids)});
+    }
+
+    roots.push_back({"Trail Stack", collect(trail_stack_.begin(), trail_stack_.end())});
+
+    return roots;
+}
+
 std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
     // Push a sentinel frame to mark the bottom of this execution call.
     // This prevents CallCC from capturing frames above the point where execute() was called.

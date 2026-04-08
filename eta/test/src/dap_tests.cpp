@@ -105,6 +105,27 @@ static std::vector<std::string> collect_output(const std::vector<json::Value>& m
     return out;
 }
 
+/// Collect text from custom "eta-output" events (script stdout/stderr).
+/// The DAP server sends these instead of standard "output" events so the
+/// VS Code extension can route them to the "Eta Output" panel.
+/// Body shape: { "stream": "stdout"|"stderr", "text": "..." }
+static std::vector<std::string> collect_eta_output(const std::vector<json::Value>& msgs,
+                                                    const std::string& stream) {
+    std::vector<std::string> out;
+    for (const auto& m : msgs) {
+        auto t = m.get_string("type");
+        auto e = m.get_string("event");
+        if (t && e && *t == "event" && *e == "eta-output") {
+            auto s = m["body"].get_string("stream");
+            if (s && *s == stream) {
+                auto text = m["body"].get_string("text");
+                if (text) out.push_back(*text);
+            }
+        }
+    }
+    return out;
+}
+
 /// Run the server synchronously with the given framed input and return all
 /// parsed output messages.
 static std::vector<json::Value> run_server(const std::string& input) {
@@ -275,9 +296,11 @@ BOOST_AUTO_TEST_CASE(script_output_captured_as_output_event) {
 
     auto msgs = run_server(input);
 
-    // The "hello-dap" text must appear in a stdout output event —
-    // NOT have leaked into the raw protocol stream.
-    auto stdout_chunks = collect_output(msgs, "stdout");
+    // The "hello-dap" text must appear in a custom "eta-output" event
+    // (stream "stdout") — NOT have leaked into the raw protocol stream.
+    // Script output uses "eta-output" instead of standard "output" events
+    // so the VS Code extension routes it to the dedicated "Eta Output" panel.
+    auto stdout_chunks = collect_eta_output(msgs, "stdout");
     std::string all_stdout;
     for (const auto& c : stdout_chunks) all_stdout += c;
     BOOST_TEST(all_stdout.find("hello-dap") != std::string::npos);

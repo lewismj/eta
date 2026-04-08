@@ -24,4 +24,15 @@ install(DIRECTORY stdlib/ DESTINATION stdlib
 install(DIRECTORY examples/ DESTINATION examples
         FILES_MATCHING PATTERN "*.eta")
 
+# ── VS Code extension build target ──────────────────────────────────
+# Runs `npm run bundle` in editors/vscode to produce out/extension.js.
+# Usage:  cmake --build <build-dir> --target eta_editor_package
+set(VSCODE_EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/editors/vscode")
+add_custom_target(eta_editor_package
+    COMMAND npm run bundle
+    WORKING_DIRECTORY "${VSCODE_EXT_DIR}"
+    COMMENT "Bundling VS Code extension (editors/vscode → out/extension.js)"
+    VERBATIM
+)
+
 

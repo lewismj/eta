@@ -127,6 +127,11 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("dual-backprop",  1, false);
     r("make-dual",      2, false);
 
+    // CLP domain primitives (internal — consumed by std.clp)
+    r("%clp-domain-z!",  3, false);
+    r("%clp-domain-fd!", 2, false);
+    r("%clp-get-domain", 1, false);
+
     // ====================================================================
     // port_primitives.h  (must match registration order exactly)
     // ====================================================================
@@ -146,6 +151,9 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("input-port?",              1, false);
     r("output-port?",             1, false);
     r("close-port",               1, false);
+    r("close-input-port",         1, false);
+    r("close-output-port",        1, false);
+    r("write-char",               1, true);
     r("open-input-file",          1, false);
     r("open-output-file",         1, false);
     r("open-output-bytevector",   0, false);

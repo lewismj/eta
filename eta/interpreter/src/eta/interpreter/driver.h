@@ -206,6 +206,10 @@ public:
         return runtime::format_value(v, mode, heap_, intern_table_);
     }
 
+    /// Direct access to the heap — used by the DAP heap inspector.
+    runtime::memory::heap::Heap& heap() noexcept { return heap_; }
+    const runtime::memory::heap::Heap& heap() const noexcept { return heap_; }
+
 private:
     ModulePathResolver resolver_;
     runtime::memory::heap::Heap heap_;
