@@ -9,8 +9,7 @@
 ## Overview
 
 [`examples/sabr.eta`](../examples/sabr.eta) implements the **Hagan et al.
-(2002)** SABR implied volatility approximation — the industry-standard
-stochastic-volatility model used by rates and FX desks worldwide — and
+(2002)** SABR implied volatility approximation — a stochastic-volatility model. It
 computes **all model sensitivities** using Eta's **native Dual VM type**.
 
 **Key ideas demonstrated:**
@@ -18,8 +17,7 @@ computes **all model sensitivities** using Eta's **native Dual VM type**.
 - SABR Hagan implied vol formula (ATM + general-K branches)
 - Vol surface generation across a strike × expiry grid
 - First-order Greeks (∂σ/∂α, ∂σ/∂β, ∂σ/∂ρ, ∂σ/∂ν) in a **single backward pass**
-- Second-order Hessian via **reverse-on-reverse** (true tape-on-tape)
-- **Performance advantage** of VM-level Dual instructions over library-level AD
+- Second-order Hessian via **reverse-on-reverse** (true tape-on-tape).
 
 ```bash
 etai examples/sabr.eta
@@ -248,7 +246,7 @@ which checks whether either operand is a Dual:
 │  VM opcode: Mul                                              │
 │                                                              │
 │  1. Pop b, pop a                                             │
-│  2. Check heap tag: is_dual(a) || is_dual(b)?    ← 1 branch │
+│  2. Check heap tag: is_dual(a) || is_dual(b)?    ← 1 branch  │
 │  3. If Dual detected:                                        │
 │       pa, pb = a.primal, b.primal  ← C++ field reads         │
 │       ba, bb = a.backprop, b.backprop                        │
@@ -387,8 +385,9 @@ tape level.
 > more realistic performance profile.
 
 ```console
+C:\tmp\eta-v0.1.0-win-x64\examples>etai sabr.etac
 C:\tmp\eta-v0.1.0-win-x64\examples>etac -O sabr.eta
-compiled sabr.eta sabr.etac (110 functions, 1 module(s))
+compiled sabr.eta > sabr.etac (110 functions, 1 module(s))
 
 C:\tmp\eta-v0.1.0-win-x64\examples>etai sabr.etac
 ==================================================
@@ -406,15 +405,15 @@ SABR parameters:
 -- Implied Vol Surface (%) --
 
   K/F(%)   0.25Y   0.5Y   1Y   2Y   5Y
-   80%   #<dual 23.0051>  #<dual 23.0618>  #<dual 23.1753>  #<dual 23.4022>  #<dual 24.0829>
-   85%   #<dual 22.1764>  #<dual 22.2312>  #<dual 22.3409>  #<dual 22.5602>  #<dual 23.2181>
-   90%   #<dual 21.4442>  #<dual 21.4974>  #<dual 21.6037>  #<dual 21.8163>  #<dual 22.4541>
-   95%   #<dual 20.8057>  #<dual 20.8573>  #<dual 20.9607>  #<dual 21.1674>  #<dual 21.7876>
-  100%   #<dual 20.2577>  #<dual 20.3081>  #<dual 20.409>  #<dual 20.6107>  #<dual 21.2159>
-  105%   #<dual 19.7969>  #<dual 19.8463>  #<dual 19.945>  #<dual 20.1426>  #<dual 20.7352>
-  110%   #<dual 19.4188>  #<dual 19.4674>  #<dual 19.5644>  #<dual 19.7586>  #<dual 20.341>
-  115%   #<dual 19.1179>  #<dual 19.1658>  #<dual 19.2615>  #<dual 19.453>  #<dual 20.0275>
-  120%   #<dual 18.8876>  #<dual 18.935>  #<dual 19.0297>  #<dual 19.2192>  #<dual 19.7877>
+   80%   23.0051  23.0618  23.1753  23.4022  24.0829
+   85%   22.1764  22.2312  22.3409  22.5602  23.2181
+   90%   21.4442  21.4974  21.6037  21.8163  22.4541
+   95%   20.8057  20.8573  20.9607  21.1674  21.7876
+  100%   20.2577  20.3081  20.409  20.6107  21.2159
+  105%   19.7969  19.8463  19.945  20.1426  20.7352
+  110%   19.4188  19.4674  19.5644  19.7586  20.341
+  115%   19.1179  19.1658  19.2615  19.453  20.0275
+  120%   18.8876  18.935  19.0297  19.2192  19.7877
 
 
 -- First-Order Greeks (single backward pass) --
