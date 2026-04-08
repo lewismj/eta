@@ -536,7 +536,9 @@
     naf
     succeeds?
     findall
-    run1)
+    run1
+    ;; Relational building blocks
+    membero)
   (begin
 
     ;; ── == ────────────────────────────────────────────────────────────
@@ -631,6 +633,16 @@
     (defun run1 (template-thunk branches)
       (let ((sols (findall template-thunk branches)))
         (if (null? sols) #f (car sols))))
+
+    ;; ── membero ─────────────────────────────────────────────────────────
+    ;; (membero x lst)
+    ;; Returns one goal branch per element of lst; each branch unifies x
+    ;; with that element.  Pass the result directly to findall or run1.
+    (defun membero (x lst)
+      (if (null? lst) '()
+          (cons (lambda () (== x (car lst)))
+                (membero x (cdr lst)))))
+
   ))
 
 
@@ -1057,6 +1069,7 @@
     copy-term
     naf succeeds?
     findall run1
+    membero
     ;; std.clp
     clp:domain clp:in-fd
     clp:domain-z? clp:domain-fd?

@@ -14,6 +14,7 @@
 
 (module logic
   (import std.io)
+  (import std.core)
   (import std.collections)
   (import std.logic)
   (begin
@@ -114,8 +115,8 @@
            (sols (findall (lambda () (deref-lvar x))
                           (map* (lambda (branch)
                                    (lambda ()
-                                     (and (branch)
-                                          (= (mod (deref-lvar x) 2) 0))))
+                                      (and (branch)
+                                           (= (modulo (deref-lvar x) 2) 0))))
                                 (membero x '(1 2 3 4 5 6))))))
       (print "Even members: ")
       (println sols))

@@ -62,20 +62,24 @@ case "$SHELL_NAME" in
 esac
 
 # ── 2. Add to PATH + ETA_MODULE_PATH ─────────────────────────────────
-MARKER="# >>> eta >>>"
-if ! grep -q "$MARKER" "$RC_FILE" 2>/dev/null; then
-    echo "▸ Adding Eta to PATH in ${RC_FILE}..."
-    {
-        echo ""
-        echo "$MARKER"
-        echo "export PATH=\"${BIN_DIR}:\$PATH\""
-        echo "export ETA_MODULE_PATH=\"${STDLIB_DIR}\""
-        echo "# <<< eta <<<"
-    } >> "$RC_FILE"
-    echo "  ✓ Added."
+MARKER_BEGIN="# >>> eta >>>"
+MARKER_END="# <<< eta <<<"
+if grep -q "$MARKER_BEGIN" "$RC_FILE" 2>/dev/null; then
+    echo "▸ Updating Eta PATH entry in ${RC_FILE}..."
+    # Remove the old marker block (everything between >>> eta >>> and <<< eta <<<)
+    sed -i.bak "/$MARKER_BEGIN/,/$MARKER_END/d" "$RC_FILE"
+    rm -f "${RC_FILE}.bak"
 else
-    echo "▸ Eta PATH entry already present in ${RC_FILE} — skipping."
+    echo "▸ Adding Eta to PATH in ${RC_FILE}..."
 fi
+{
+    echo ""
+    echo "$MARKER_BEGIN"
+    echo "export PATH=\"${BIN_DIR}:\$PATH\""
+    echo "export ETA_MODULE_PATH=\"${STDLIB_DIR}\""
+    echo "$MARKER_END"
+} >> "$RC_FILE"
+echo "  ✓ Done."
 
 # ── 3. Install VS Code extension ─────────────────────────────────────
 if command -v code &>/dev/null && [ -f "$VSIX_PATH" ]; then

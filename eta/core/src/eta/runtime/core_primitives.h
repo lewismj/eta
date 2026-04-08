@@ -32,9 +32,11 @@ namespace eta::runtime {
  *  Type preds:   number?  boolean?  string?  char?  symbol?  procedure?  integer?
  *  Numeric:      zero?  positive?  negative?  abs  min  max  modulo  remainder
  *  Lists:        length  append  reverse  list-ref  list-tail  set-car!  set-cdr!
+ *  Association:  assq  assoc  member
  *  Higher-order: apply  map  for-each
  *  Equality:     equal?
  *  Strings:      string-length  string-append  number->string  string->number
+ *  Symbols:      symbol->string  string->symbol
  *  Vectors:      vector  vector-length  vector-ref  vector-set!  vector?  make-vector
  *  Error:        error
  *  Platform:     platform
@@ -719,6 +721,129 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
         if (!cons) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "list-ref: index out of bounds"}});
         return cons->car;
+    });
+
+    env.register_builtin("list-tail", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto idx = classify_numeric(args[1], heap);
+        if (!idx.is_valid() || idx.is_flonum() || idx.int_val < 0)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "list-tail: index must be a non-negative integer"}});
+        LispVal cur = args[0];
+        for (int64_t i = 0; i < idx.int_val; ++i) {
+            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "list-tail: index out of bounds"}});
+            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+            if (!cons) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "list-tail: index out of bounds"}});
+            cur = cons->cdr;
+        }
+        return cur;
+    });
+
+    env.register_builtin("set-car!", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "set-car!: not a pair"}});
+        auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(args[0]));
+        if (!cons) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "set-car!: not a pair"}});
+        cons->car = args[1];
+        return nanbox::Nil;
+    });
+
+    env.register_builtin("set-cdr!", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "set-cdr!: not a pair"}});
+        auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(args[0]));
+        if (!cons) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "set-cdr!: not a pair"}});
+        cons->cdr = args[1];
+        return nanbox::Nil;
+    });
+
+    env.register_builtin("assq", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        // (assq key alist) — identity (eq?) comparison on car of each pair
+        LispVal key = args[0];
+        LispVal cur = args[1];
+        while (cur != nanbox::Nil) {
+            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "assq: not a proper alist"}});
+            auto* outer = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+            if (!outer) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "assq: not a proper alist"}});
+            // Each element must be a pair
+            LispVal pair = outer->car;
+            if (ops::is_boxed(pair) && ops::tag(pair) == Tag::HeapObject) {
+                auto* inner = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(pair));
+                if (inner && inner->car == key) {
+                    return pair; // Return the whole pair
+                }
+            }
+            cur = outer->cdr;
+        }
+        return nanbox::False;
+    });
+
+    env.register_builtin("assoc", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        // (assoc key alist) — structural (equal?) comparison on car of each pair
+        LispVal key = args[0];
+        LispVal cur = args[1];
+
+        std::function<bool(LispVal, LispVal)> equal_impl = [&](LispVal a, LispVal b) -> bool {
+            if (a == b) return true;
+            if (!ops::is_boxed(a) || !ops::is_boxed(b)) return false;
+            if (ops::tag(a) == Tag::String && ops::tag(b) == Tag::String) {
+                auto sa = StringView::try_from(a, intern_table);
+                auto sb = StringView::try_from(b, intern_table);
+                if (sa && sb) return sa->view() == sb->view();
+                return false;
+            }
+            if (ops::tag(a) != Tag::HeapObject || ops::tag(b) != Tag::HeapObject) return false;
+            auto na = classify_numeric(a, heap);
+            auto nb = classify_numeric(b, heap);
+            if (na.is_valid() && nb.is_valid()) {
+                if (na.is_flonum() || nb.is_flonum()) return na.as_double() == nb.as_double();
+                return na.int_val == nb.int_val;
+            }
+            return false;
+        };
+
+        while (cur != nanbox::Nil) {
+            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "assoc: not a proper alist"}});
+            auto* outer = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+            if (!outer) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "assoc: not a proper alist"}});
+            LispVal pair = outer->car;
+            if (ops::is_boxed(pair) && ops::tag(pair) == Tag::HeapObject) {
+                auto* inner = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(pair));
+                if (inner && equal_impl(inner->car, key)) {
+                    return pair;
+                }
+            }
+            cur = outer->cdr;
+        }
+        return nanbox::False;
+    });
+
+    env.register_builtin("member", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        // (member obj list) — eq? comparison, returns sublist starting at match or #f
+        LispVal obj = args[0];
+        LispVal cur = args[1];
+        while (cur != nanbox::Nil) {
+            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "member: not a proper list"}});
+            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+            if (!cons) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "member: not a proper list"}});
+            if (cons->car == obj) return cur;
+            cur = cons->cdr;
+        }
+        return nanbox::False;
+    });
+
+    env.register_builtin("symbol->string", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto name = get_symbol_name(args[0], intern_table);
+        if (!name) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "symbol->string: not a symbol"}});
+        return make_string(heap, intern_table, std::string(*name));
+    });
+
+    env.register_builtin("string->symbol", 1, false, [&intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto sv = StringView::try_from(args[0], intern_table);
+        if (!sv) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string->symbol: not a string"}});
+        return make_symbol(intern_table, std::string(sv->view()));
     });
 
     // ========================================================================

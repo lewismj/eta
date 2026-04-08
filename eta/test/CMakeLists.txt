@@ -21,9 +21,18 @@ set(SOURCES
         src/debug_tests.cpp
         src/dap_tests.cpp
         src/module_path_tests.cpp
-        src/higher_order_tests.cpp)
+        src/higher_order_tests.cpp
+        src/example_runner_tests.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+# Inject source tree paths for the example runner integration test.
+# These point at the source-tree examples/ and stdlib/ directories so the
+# test can find them regardless of the build output directory.
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ETA_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../examples"
+    ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
+)
 
 # Pull in the DAP server implementation (not main_dap.cpp) so dap_tests.cpp
 # can link against DapServer with injected streams.

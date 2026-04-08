@@ -32,7 +32,7 @@ struct PortTestFixture {
         register_io_primitives(builtins, heap, intern_table, vm);
 
         // Install builtins into VM
-        auto result = builtins.install(heap, vm.globals(), 100);
+        auto result = builtins.install(heap, vm.globals(), builtins.size());
         if (!result) {
             throw std::runtime_error("Failed to install builtins");
         }

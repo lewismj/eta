@@ -27,6 +27,7 @@
 
 (module analysis
   (import std.io)
+  (import std.math)
   (import std.collections)
   (import std.causal)
   (import std.clp)
