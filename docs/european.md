@@ -177,7 +177,7 @@ derivatives in one backward pass:
 
 ## Second-Order Greeks
 
-### The Approach: Grad-on-Greek
+### The First Approach: Grad-on-Greek
 
 To compute Gamma (∂²C/∂S²), we express **Delta as an AD function**
 and differentiate it:
@@ -313,30 +313,149 @@ The example now **also** demonstrates true tape-on-tape
 reverse-on-reverse using Eta's dedicated **native Dual heap object**
 and specialised VM opcodes.
 
-### VM-Level Support
+> [!IMPORTANT]
+> ### The Opcode Approach: Why It Matters
+>
+> Traditional AD libraries implement dual numbers as *library-level*
+> wrappers (e.g., a Scheme `cons` pair `(primal . backpropagator)`).
+> Every arithmetic operation must check at runtime whether its
+> arguments are wrapped duals — via Scheme-level `if`/`pair?` tests.
+>
+> Eta pushes this into the **VM itself**.  The `Dual` is a first-class
+> heap object (`ObjectKind::Dual`), and the four arithmetic opcodes
+> (`Add`, `Sub`, `Mul`, `Div`) plus the builtin `exp`, `log`, `sqrt`
+> primitives **natively** detect Dual operands.  When a Dual is
+> encountered the opcode handler transparently:
+>
+> 1. Extracts primals and computes the forward result
+> 2. Builds a backpropagator closure with chain-rule logic
+> 3. Wraps the result in a new `Dual(forward_result, backpropagator)`
+>
+> This means the backward pass's own arithmetic (`* adj pb`,
+> `+ adj_a adj_b`, etc.) also flows through the same Dual-aware
+> opcodes.  Seeding the outer backward pass with a Dual-valued adjoint
+> automatically creates a **second-level computation graph** — true
+> reverse-on-reverse with **zero library-level dispatch overhead**.
 
-| Component | Role |
-|-----------|------|
-| `ObjectKind::Dual` | First-class heap type `(primal, backpropagator)` |
-| `MakeDual` opcode | Allocates a Dual on the heap |
-| `DualVal` opcode | Extracts `.primal` |
-| `DualBp` opcode | Extracts `.backpropagator` |
-| Dual-aware `+`/`-`/`*`/`/` | Primitives transparently lift when either operand is a Dual |
-| Dual-aware `exp`/`log`/`sqrt` | Chain rule applied inside the primitive |
-| GC-traced Primitive roots | `Primitive.gc_roots` keeps captured LispVals alive across GC cycles |
+### Dedicated Opcodes
 
-When the VM's `do_binary_arithmetic` encounters a Dual operand, it:
+Three opcodes in [`bytecode.h`](../eta/core/src/eta/runtime/vm/bytecode.h)
+manage the Dual lifecycle:
 
-1. **Extracts primals** and recursively computes the forward result.
-2. **Builds a backpropagator** (a `Primitive` with gc_roots) that,
-   given an adjoint, applies the chain rule and calls child
-   backpropagators via `call_value`.
-3. **Wraps** the result as a new `Dual(forward_result, backpropagator)`.
+| Opcode | Stack Effect | Description |
+|--------|-------------|-------------|
+| `MakeDual` | `primal backprop →` **dual** | Pop a backpropagator closure and a primal value; allocate a `Dual{primal, backprop}` on the heap and push its boxed reference |
+| `DualVal` | `x →` **primal** | Pop `x`; if `x` is a `Dual`, push its `.primal` field — otherwise push `x` unchanged (pass-through) |
+| `DualBp` | `x →` **closure** | Pop `x`; if `x` is a `Dual`, push its `.backprop` closure — otherwise push a no-op `λ(adj) → '()` |
 
-Because the backpropagator's internal arithmetic (`* adj pb`, etc.)
-also flows through the same Dual-aware primitives, seeding the
-**outer** backward pass with a Dual-valued adjoint causes the inner
-pass to build a *second-level* computation graph automatically.
+These compile directly from the Eta forms `make-dual`, `dual-primal`,
+and `dual-backprop`.
+
+### Dual-Aware Arithmetic Opcodes
+
+> [!IMPORTANT]
+> The critical innovation is inside `do_binary_arithmetic` in
+> [`vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp).  When **any**
+> of `Add`, `Sub`, `Mul`, or `Div` encounters a Dual operand, the
+> opcode handler enters its AD-lifting path **at the C++ level** —
+> no Scheme-side dispatch is involved.
+
+The lifting path for each opcode follows the same pattern:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  do_binary_arithmetic(op)                                    │
+│                                                              │
+│  1. pop b, pop a                                             │
+│  2. if (is_dual(a) || is_dual(b)):                           │
+│       pa = primal(a),  pb = primal(b)                        │
+│       ba = backprop(a), bb = backprop(b)                     │
+│                                                              │
+│       push pa, push pb                                       │
+│       forward_result = do_binary_arithmetic(op)  ← recurse   │
+│                                                              │
+│       build backpropagator closure:                          │
+│         λ(adj) → { compute adj_a, adj_b using chain rule;    │
+│                     merge ba(adj_a) ++ bb(adj_b) }           │
+│                                                              │
+│       push Dual(forward_result, backpropagator)              │
+│  3. else:                                                    │
+│       plain numeric arithmetic                               │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Chain-rule adjoint formulas per opcode:
+
+| Opcode | z = | ∂z/∂a | ∂z/∂b | `adj_a` | `adj_b` |
+|--------|-----|-------|-------|---------|---------|
+| `Add` | a + b | 1 | 1 | `adj` | `adj` |
+| `Sub` | a − b | 1 | −1 | `adj` | `adj * (−1)` |
+| `Mul` | a × b | b | a | `adj * pb` | `adj * pa` |
+| `Div` | a / b | 1/b | −a/b² | `adj / pb` | `adj * (−a/b²)` |
+
+> [!NOTE]
+> The `adj * pb` and `adj / pb` computations in the backpropagator
+> themselves call `dual_binary_op()`, which re-enters
+> `do_binary_arithmetic`.  If `adj` is a Dual (because the *outer*
+> `grad` seeded it with a Dual-valued adjoint), this recursive call
+> triggers AD lifting **again** — building a second-level tape
+> automatically.
+
+### Dual-Aware Builtin Primitives
+
+The builtins `exp`, `log`, and `sqrt` in
+[`core_primitives.h`](../eta/core/src/eta/runtime/core_primitives.h)
+follow the same pattern.  Each checks whether its argument is a
+`Dual` and, if so, builds a lifted result:
+
+| Primitive | Forward | Backward (adjoint rule) |
+|-----------|---------|------------------------|
+| `exp(Dual(x, bp))` | `Dual(eˣ, …)` | `bp(adj * eˣ)` |
+| `log(Dual(x, bp))` | `Dual(ln x, …)` | `bp(adj / x)` |
+| `sqrt(Dual(x, bp))` | `Dual(√x, …)` | `bp(adj / (2√x))` |
+
+The backward closures are allocated as `Primitive` heap objects with
+explicit `gc_roots` vectors so that captured `LispVal`s (primals,
+parent backpropagators) survive garbage collection cycles.
+
+### GC-Safety of Backpropagator Closures
+
+> [!IMPORTANT]
+> Each backpropagator is a `Primitive` that captures `LispVal`
+> references (`pa`, `pb`, `ba`, `bb`).  These are registered in the
+> `Primitive.gc_roots` vector, which the mark-sweep GC traverses
+> during the mark phase.  Without this, deeply nested
+> reverse-on-reverse tapes would suffer from dangling-pointer
+> crashes after a mid-computation GC cycle.
+
+### How Reverse-on-Reverse Works End-to-End
+
+Consider computing the Hessian column for variable *j*:
+
+```
+1. Wrap x_j in a Dual: make-dual(x_j, λ(adj) → [(0 . adj)])
+2. Call native-grad(f, inputs)
+   a. native-grad wraps each variable as a Dual seed
+   b. Forward pass: all arithmetic (Add/Sub/Mul/Div, exp, log, sqrt)
+      sees Dual operands → builds level-1 tape
+   c. Backward pass: call backpropagator with adjoint = 1
+      → collects gradient vector (level-1)
+3. Because x_j was itself a Dual, the backward pass's arithmetic
+   (+, -, *, /) hits the Dual-lifting path again:
+   → level-2 tape is built for the inner backward pass
+4. Extract H[i][j] from the level-2 backpropagators
+```
+
+```mermaid
+graph LR
+    SEED["seed x_j as Dual"]
+    FWD["Forward pass<br/>(level-1 tape)"]
+    BWD1["Backward pass<br/>(adj = 1)"]
+    BWD2["Level-2 tape<br/>(adj is Dual)"]
+    HESS["H[i][j]"]
+
+    SEED --> FWD --> BWD1 --> BWD2 --> HESS
+```
 
 ### Hessian Computation
 
@@ -368,6 +487,27 @@ Greeks as the grad-on-Greek approach:
 The Schwarz symmetry check (H[0][3] vs H[3][0]) matches to ~2×10⁻⁷,
 limited only by floating-point precision.
 
+> [!IMPORTANT]
+> ### Full Reverse-on-Reverse — No Closed-Form Greeks Required
+>
+> Unlike the grad-on-Greek approach (§3–§4), the opcode-level
+> reverse-on-reverse path does **not** require the user to write
+> explicit Delta or Vega functions.  The Hessian is computed purely
+> by differentiating through the **original pricing function**
+> `bs-call-price-nd` twice — the VM handles everything automatically.
+>
+> This means the same technique works for:
+>
+> - **Monte Carlo pricers** with path-level payoffs
+> - **Exotic options** (barriers, Asians, lookbacks)
+> - **PDE solvers** where Greeks have no closed form
+> - **xVA engines** with thousands of risk factors
+>
+> The only requirement is that the pricing code uses the `nd+`, `nd-`,
+> `nd*`, `nd/`, `ndexp`, `ndlog`, `ndsqrt` lifted operations (or
+> equivalently, the VM-level `+`, `-`, `*`, `/`, `exp`, `log`,
+> `sqrt` which lift transparently when a native Dual is detected).
+
 ---
 
 ## Summary
@@ -382,6 +522,11 @@ limited only by floating-point precision.
 | `bs-vega-fn` | 𝒱 = S·φ(d₁)·√T — differentiable for Volga |
 | `grad` (1st call) | Price + all first-order Greeks |
 | `grad` (2nd call) | Gamma, Vanna, Volga via grad-on-Greek |
+| **`MakeDual`** opcode | Allocate `Dual{primal, backprop}` on the heap |
+| **`DualVal`** opcode | Extract `.primal` (pass-through for non-Duals) |
+| **`DualBp`** opcode | Extract `.backprop` (no-op closure for non-Duals) |
+| **`Add`/`Sub`/`Mul`/`Div`** opcodes | Dual-aware: transparently lift when either operand is a Dual |
+| **`exp`/`log`/`sqrt`** builtins | Dual-aware: apply chain rule for native Duals |
 | `native-grad` / `hessian` | True reverse-on-reverse via native Dual VM type |
 | `make-dual` / `dual?` / `dual-primal` / `dual-backprop` | Native Dual primitives |
 
