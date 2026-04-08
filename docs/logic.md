@@ -646,7 +646,6 @@ closure), `copy-term` lets you instantiate it freshly for each invocation:
 | Feature | Status |
 |---------|--------|
 | `copy-term` as a VM opcode | Implemented in Eta; a future `CopyTerm` opcode would eliminate per-pair allocation overhead |
-| Constraint Logic Programming (CLP) | Not supported; would require constraint stores and propagators |
 | Attributed variables | Not supported |
 | Tabling / memoisation | Not supported; would require a WAM-style call stack |
 
