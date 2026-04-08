@@ -21,6 +21,20 @@ namespace eta::semantics {
 // Thread-safe for concurrent add/get operations.
 class BytecodeFunctionRegistry {
 public:
+    BytecodeFunctionRegistry() = default;
+
+    // Move-only (shared_mutex is not movable, so we transfer the data manually).
+    BytecodeFunctionRegistry(BytecodeFunctionRegistry&& other) noexcept
+        : functions_(std::move(other.functions_)) {}
+
+    BytecodeFunctionRegistry& operator=(BytecodeFunctionRegistry&& other) noexcept {
+        if (this != &other) functions_ = std::move(other.functions_);
+        return *this;
+    }
+
+    BytecodeFunctionRegistry(const BytecodeFunctionRegistry&) = delete;
+    BytecodeFunctionRegistry& operator=(const BytecodeFunctionRegistry&) = delete;
+
     // Adds a BytecodeFunction and returns its index in the registry.
     // Thread-safe: uses exclusive lock.
     uint32_t add(runtime::vm::BytecodeFunction&& func) {

@@ -527,93 +527,19 @@ SemResult<core::Node*> analyze(const SExprPtr& expr, Scope& scope, AnalysisConte
 // Generic IR Visitor - Centralizes traversal over all IR node types
 // ============================================================================
 
-/**
- * Generic IR visitor that visits all children of a node.
- * Subclasses can customize pre/post visit behavior while reusing traversal logic.
- *
- * Template parameters:
- *   - Derived: CRTP derived class
- *   - R: Return type for transforming visitors (use void for simple visitors)
- */
-template<typename Derived, typename R = void>
-struct IRVisitor {
-    // Called before visiting children - derived class can override
-    void pre_visit(core::Node*, bool) {}
+// The canonical IRVisitor CRTP base is defined in ir_visitor.h.
+// We reuse it here for the tail-position marker.
+} // close anonymous namespace
 
-    // Called after visiting children - derived class can override
-    // Returns potentially transformed node or same node
-    core::Node* post_visit(core::Node* n, bool) { return n; }
+#include "eta/semantics/ir_visitor.h"
 
-    // Main entry point - visits node and all children
-    core::Node* visit(core::Node* node, bool context) {
-        if (!node) return nullptr;
-
-        auto* derived = static_cast<Derived*>(this);
-        derived->pre_visit(node, context);
-
-        std::visit([&](auto& val) {
-            using T = std::decay_t<decltype(val)>;
-            if constexpr (std::is_same_v<T, core::If>) {
-                val.test = derived->visit(val.test, false);
-                val.conseq = derived->visit(val.conseq, context);
-                val.alt = derived->visit(val.alt, context);
-            } else if constexpr (std::is_same_v<T, core::Begin>) {
-                for (std::size_t i = 0; i < val.exprs.size(); ++i) {
-                    bool is_last = (i + 1 == val.exprs.size());
-                    val.exprs[i] = derived->visit(val.exprs[i], context && is_last);
-                }
-            } else if constexpr (std::is_same_v<T, core::Lambda>) {
-                // Lambda bodies are always in tail context
-                val.body = derived->visit(val.body, true);
-            } else if constexpr (std::is_same_v<T, core::Call>) {
-                val.callee = derived->visit(val.callee, false);
-                for (auto*& a : val.args) {
-                    a = derived->visit(a, false);
-                }
-            } else if constexpr (std::is_same_v<T, core::Set>) {
-                val.value = derived->visit(val.value, false);
-            } else if constexpr (std::is_same_v<T, core::DynamicWind>) {
-                val.before = derived->visit(val.before, false);
-                val.body = derived->visit(val.body, false);
-                val.after = derived->visit(val.after, false);
-            } else if constexpr (std::is_same_v<T, core::Values>) {
-                for (auto*& e : val.exprs) {
-                    e = derived->visit(e, false);
-                }
-            } else if constexpr (std::is_same_v<T, core::CallWithValues>) {
-                val.producer = derived->visit(val.producer, false);
-                val.consumer = derived->visit(val.consumer, false);
-            } else if constexpr (std::is_same_v<T, core::CallCC>) {
-                val.consumer = derived->visit(val.consumer, false);
-            } else if constexpr (std::is_same_v<T, core::Apply>) {
-                val.proc = derived->visit(val.proc, false);
-                for (auto*& a : val.args) {
-                    a = derived->visit(a, false);
-                }
-            } else if constexpr (std::is_same_v<T, core::Raise>) {
-                val.value = derived->visit(val.value, false);
-            } else if constexpr (std::is_same_v<T, core::Guard>) {
-                val.body = derived->visit(val.body, context);
-            } else if constexpr (std::is_same_v<T, core::Unify>) {
-                val.a = derived->visit(val.a, false);
-                val.b = derived->visit(val.b, false);
-            } else if constexpr (std::is_same_v<T, core::DerefLogicVar>) {
-                val.lvar = derived->visit(val.lvar, false);
-            } else if constexpr (std::is_same_v<T, core::UnwindTrail>) {
-                val.mark = derived->visit(val.mark, false);
-            }
-            // core::Const, core::Var, core::Quote, core::MakeLogicVar, core::TrailMark have no children
-        }, node->data);
-
-        return derived->post_visit(node, context);
-    }
-};
+namespace {
 
 /**
  * Marks nodes with their tail context position.
  * Uses IRVisitor to avoid duplicating traversal logic.
  */
-struct TailMarker : IRVisitor<TailMarker> {
+struct TailMarker : eta::semantics::IRVisitor<TailMarker> {
     void pre_visit(core::Node* node, bool in_tail_context) {
         node->tail = in_tail_context;
     }
@@ -627,14 +553,14 @@ inline void mark_tail(core::Node* node, bool in_tail_context) {
 } // namespace
 
 SemResult<std::vector<ModuleSemantics>>
-SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader::ModuleLinker& linker) {
-    eta::runtime::BuiltinEnvironment empty;
+SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::reader::ModuleLinker& linker) {
+    ::eta::runtime::BuiltinEnvironment empty;
     return analyze_all(forms, linker, empty);
 }
 
 SemResult<std::vector<ModuleSemantics>>
-SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader::ModuleLinker& linker,
-                              const eta::runtime::BuiltinEnvironment& builtins) {
+SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::reader::ModuleLinker& linker,
+                              const ::eta::runtime::BuiltinEnvironment& builtins) {
     std::vector<ModuleSemantics> out;
 
     // Unified global slot counter shared across all modules.
@@ -654,7 +580,7 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader
         const auto* ns = lst->elems[1] ? lst->elems[1]->as<Symbol>() : nullptr;
         if (!ns) continue;
         auto mtref = linker.get(ns->name);
-        if (!mtref || mtref->get().state != eta::reader::ModuleState::Linked)
+        if (!mtref || mtref->get().state != ::eta::reader::ModuleState::Linked)
             return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, f->span(), "module not linked"});
 
         ModuleSemantics mod; mod.name = ns->name;
@@ -729,6 +655,15 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const eta::reader
         // Record this module's export slots for downstream modules
         for (const auto& [export_name, binding_id] : mod.exports) {
             export_slots[ns->name][export_name] = mod.bindings[binding_id.id].slot;
+        }
+
+        // Detect optional (defun main ...) entry point
+        // Look for a top-level global binding named "main"
+        if (auto it = toplevel.table.find("main"); it != toplevel.table.end()) {
+            const auto& bi = mod.bindings[it->second.id];
+            if (bi.kind == BindingInfo::Kind::Global) {
+                mod.main_func_slot = bi.slot;
+            }
         }
 
         out.push_back(std::move(mod));

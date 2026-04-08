@@ -1,16 +1,18 @@
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "eta/interpreter/driver.h"
 #include "eta/interpreter/module_path.h"
+#include "eta/runtime/vm/disassembler.h"
 
 namespace fs = std::filesystem;
 
 static void print_usage(const char* prog) {
-    std::cerr << "Usage: " << prog << " [options] <file.eta>\n"
+    std::cerr << "Usage: " << prog << " [options] <file.eta|file.etac>\n"
               << "\n"
               << "Options:\n"
               << "  --path <dirs>   Search path for .eta modules (";
@@ -21,12 +23,14 @@ static void print_usage(const char* prog) {
 #endif
     std::cerr << "-separated).\n"
               << "                  Falls back to ETA_MODULE_PATH environment variable.\n"
+              << "  --disasm        Disassemble bytecode instead of executing.\n"
               << "  --help          Show this help message.\n";
 }
 
 int main(int argc, char* argv[]) {
     std::string cli_path;
     std::string input_file;
+    bool disasm_mode = false;
 
     // ── Parse CLI arguments ──────────────────────────────────────────
     for (int i = 1; i < argc; ++i) {
@@ -35,6 +39,11 @@ int main(int argc, char* argv[]) {
         if (arg == "--help" || arg == "-h") {
             print_usage(argv[0]);
             return 0;
+        }
+
+        if (arg == "--disasm") {
+            disasm_mode = true;
+            continue;
         }
 
         if (arg == "--path") {
@@ -89,10 +98,43 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Execute the user's file
-    if (!driver.run_file(fs::absolute(file_path))) {
-        driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
-        return 1;
+    // Detect .etac extension for pre-compiled bytecode
+    bool is_etac = file_path.extension() == ".etac";
+
+    if (is_etac) {
+        if (disasm_mode) {
+            // Load and disassemble the .etac file
+            std::ifstream in(file_path, std::ios::in | std::ios::binary);
+            if (!in) { std::cerr << "error: cannot open " << input_file << "\n"; return 1; }
+            eta::runtime::vm::BytecodeSerializer serializer(driver.heap(), driver.intern_table());
+            auto etac = serializer.deserialize(in);
+            if (!etac) { std::cerr << "error: " << eta::runtime::vm::to_string(etac.error()) << "\n"; return 1; }
+            eta::runtime::vm::Disassembler disasm(driver.heap(), driver.intern_table());
+            disasm.disassemble_all(etac->registry, std::cout);
+            return 0;
+        }
+        if (!driver.run_etac_file(fs::absolute(file_path))) {
+            driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+            return 1;
+        }
+    } else {
+        if (disasm_mode) {
+            // Compile but don't execute — just disassemble
+            // For disasm mode we still run_file (which compiles + executes),
+            // then dump the registry. A compile-only path could be added later.
+            if (!driver.run_file(fs::absolute(file_path))) {
+                driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+                return 1;
+            }
+            eta::runtime::vm::Disassembler disasm(driver.heap(), driver.intern_table());
+            disasm.disassemble_all(driver.registry(), std::cout);
+            return 0;
+        }
+        // Execute the user's file
+        if (!driver.run_file(fs::absolute(file_path))) {
+            driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+            return 1;
+        }
     }
 
     return 0;

@@ -20,7 +20,10 @@
 #include "eta/reader/module_linker.h"
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/semantics/emitter.h"
+#include "eta/semantics/optimization_pipeline.h"
 #include "eta/runtime/vm/vm.h"
+#include "eta/runtime/vm/bytecode_serializer.h"
+#include "eta/runtime/vm/disassembler.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/core_primitives.h"
 #include "eta/runtime/io_primitives.h"
@@ -81,6 +84,20 @@ public:
         fs::path path;        ///< Path to the prelude file (if found).
     };
 
+    /// Result of a compile_file() call — metadata for all newly emitted modules.
+    struct CompileModuleEntry {
+        std::string name;
+        uint32_t init_func_index{0};        ///< index relative to base_func_idx
+        uint32_t total_globals{0};
+        std::optional<uint32_t> main_func_slot;
+    };
+
+    struct CompileResult {
+        std::vector<CompileModuleEntry> modules;
+        uint32_t base_func_idx{0};   ///< first function index in the registry for this compilation
+        uint32_t end_func_idx{0};    ///< one past the last function index
+    };
+
     /**
      * @brief Load and execute the prelude from the module path.
      *
@@ -122,6 +139,46 @@ public:
 
         auto file_id = allocate_file_id(path.string());
         return run_source_impl(buf.str(), file_id);
+    }
+
+    /**
+     * @brief Compile a .eta file without executing it.
+     *
+     * Runs the full pipeline (lex → parse → expand → link → analyze → emit)
+     * but skips VM execution.  The prelude and imported dependencies are still
+     * executed normally (they must populate globals for semantic analysis).
+     *
+     * @return CompileResult on success, std::nullopt on error.
+     */
+    std::optional<CompileResult> compile_file(const fs::path& path) {
+        std::ifstream in(path, std::ios::in | std::ios::binary);
+        if (!in) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "cannot open file: " + path.string());
+            return std::nullopt;
+        }
+        std::ostringstream buf;
+        buf << in.rdbuf();
+
+        auto file_id = allocate_file_id(path.string());
+        CompileResult cr;
+        if (!run_source_impl(buf.str(), file_id, /*result=*/nullptr,
+                             /*result_binding=*/{}, /*execute=*/false, &cr)) {
+            return std::nullopt;
+        }
+        return cr;
+    }
+
+    /**
+     * @brief Load and compile the prelude without executing user code.
+     *
+     * Note: the prelude itself IS executed (its globals must be live for
+     * downstream modules).  This is simply a convenience alias for
+     * load_prelude().
+     */
+    PreludeResult compile_prelude() {
+        return load_prelude();
     }
 
     /**
@@ -210,6 +267,99 @@ public:
     runtime::memory::heap::Heap& heap() noexcept { return heap_; }
     const runtime::memory::heap::Heap& heap() const noexcept { return heap_; }
 
+    /// Direct access to the intern table.
+    runtime::memory::intern::InternTable& intern_table() noexcept { return intern_table_; }
+
+    /// Access the optimization pipeline — add passes before running files.
+    semantics::OptimizationPipeline& optimization_pipeline() noexcept { return optimization_pipeline_; }
+
+    /**
+     * @brief Load and execute a pre-compiled .etac file.
+     * @return true on success, false on error (diagnostics emitted to engine).
+     */
+    bool run_etac_file(const fs::path& path) {
+        std::ifstream in(path, std::ios::in | std::ios::binary);
+        if (!in) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "cannot open file: " + path.string());
+            return false;
+        }
+
+        runtime::vm::BytecodeSerializer serializer(heap_, intern_table_);
+        auto etac_res = serializer.deserialize(in);
+        if (!etac_res) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "failed to load .etac: " + std::string(runtime::vm::to_string(etac_res.error())));
+            return false;
+        }
+        auto& etac = *etac_res;
+
+        // Move functions from the deserialized registry into ours,
+        // recording the base index so module init_func_index values can be offset.
+        uint32_t base_idx = static_cast<uint32_t>(registry_.size());
+        for (const auto& func : etac.registry.all()) {
+            // Make a copy since the source registry owns the originals.
+            runtime::vm::BytecodeFunction copy = func;
+            registry_.add(std::move(copy));
+        }
+
+        // Wire up function resolver if not already done
+        // (constructor does this, but defensive)
+
+        // Execute each module's _init function
+        for (const auto& mod : etac.modules) {
+            if (executed_modules_.contains(mod.name)) continue;
+
+            auto& globals = vm_.globals();
+            if (globals.size() < mod.total_globals)
+                globals.resize(mod.total_globals, runtime::nanbox::Nil);
+
+            // Re-install builtins
+            if (!builtins_installed_) {
+                for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
+                    const auto& spec = builtins_.specs()[i];
+                    auto prim = runtime::memory::factory::make_primitive(
+                        heap_, spec.func, spec.arity, spec.has_rest);
+                    if (prim) globals[i] = *prim;
+                }
+                builtins_installed_ = true;
+            }
+
+            uint32_t func_idx = base_idx + mod.init_func_index;
+            const auto* init_func = registry_.get(func_idx);
+            if (!init_func) {
+                diag_engine_.emit_error(
+                    diagnostic::DiagnosticCode::ModuleNotFound, {},
+                    "missing init function for module: " + mod.name);
+                return false;
+            }
+
+            auto exec_res = vm_.execute(*init_func);
+            if (!exec_res) {
+                emit_runtime_error(exec_res.error());
+                return false;
+            }
+
+            executed_modules_.insert(mod.name);
+
+            // Invoke optional main
+            if (mod.main_func_slot) {
+                auto main_val = globals[*mod.main_func_slot];
+                if (main_val != runtime::nanbox::Nil) {
+                    auto main_res = vm_.call_value(main_val, {});
+                    if (!main_res) {
+                        emit_runtime_error(main_res.error());
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
 private:
     ModulePathResolver resolver_;
     runtime::memory::heap::Heap heap_;
@@ -219,6 +369,9 @@ private:
     runtime::vm::VM vm_;
 
     diagnostic::DiagnosticEngine diag_engine_;
+
+    // IR-level optimization pipeline (runs between analyze and emit)
+    semantics::OptimizationPipeline optimization_pipeline_;
 
     // Accumulated expanded forms from all prior run_source calls.
     // The linker clears its state on each index_modules() call, so we must
@@ -308,6 +461,8 @@ private:
 
     /// Auto-load module files from the module path for any import that
     /// references a module not yet in the accumulated set.
+    /// When execute is false, only the top-level target skips execution;
+    /// auto-loaded dependencies are always executed (they must populate globals).
     /// Returns false on failure; diagnostics are emitted.
     bool auto_load_imports(std::span<const reader::parser::SExprPtr> new_forms) {
         auto needed = collect_imported_modules(new_forms);
@@ -355,15 +510,20 @@ private:
     }
 
     /**
-     * @brief Core implementation: compile + execute source text.
+     * @brief Core implementation: compile (+ optionally execute) source text.
      *
      * Accumulates expanded forms and re-links everything each time (the
      * ModuleLinker is non-incremental). Only newly-added modules are
      * emitted and executed — previously-run modules are skipped.
+     *
+     * @param execute  When false, skip VM execution and main invocation.
+     * @param out_cr   If non-null, filled with per-module compile metadata.
      */
     bool run_source_impl(const std::string& source, uint32_t file_id,
                          runtime::nanbox::LispVal* result = nullptr,
-                         const std::string& result_binding = {}) {
+                         const std::string& result_binding = {},
+                         bool execute = true,
+                         CompileResult* out_cr = nullptr) {
         diag_engine_.clear();
 
         // ── Lex + Parse ──────────────────────────────────────────────
@@ -456,6 +616,9 @@ private:
         auto sem_mods = std::move(*sem_res);
         if (sem_mods.empty()) return true;
 
+        // ── Run IR optimization passes ───────────────────────────────
+        optimization_pipeline_.run_all(sem_mods);
+
         // ── Emit + Execute only NEW modules ──────────────────────────
         // Grow globals vector if needed, preserving existing values.
         // Re-install builtins in slots 0..N-1 (heap objects may have been GC'd).
@@ -464,18 +627,24 @@ private:
         if (globals.size() < needed) {
             globals.resize(needed, runtime::nanbox::Nil);
         }
-        // Re-install builtin primitives at their fixed slots
-        for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
-            const auto& spec = builtins_.specs()[i];
-            auto prim = runtime::memory::factory::make_primitive(
-                heap_, spec.func, spec.arity, spec.has_rest);
-            if (!prim) {
-                emit_runtime_error(prim.error());
-                return false;
+
+        if (execute) {
+            // Re-install builtin primitives at their fixed slots
+            for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
+                const auto& spec = builtins_.specs()[i];
+                auto prim = runtime::memory::factory::make_primitive(
+                    heap_, spec.func, spec.arity, spec.has_rest);
+                if (!prim) {
+                    emit_runtime_error(prim.error());
+                    return false;
+                }
+                globals[i] = *prim;
             }
-            globals[i] = *prim;
+            builtins_installed_ = true;
         }
-        builtins_installed_ = true;
+
+        // Track the registry range for newly emitted functions.
+        uint32_t base_func_idx = static_cast<uint32_t>(registry_.size());
 
         for (auto& mod : sem_mods) {
             if (executed_modules_.contains(mod.name)) {
@@ -483,30 +652,61 @@ private:
             }
 
             semantics::Emitter emitter(mod, heap_, intern_table_, registry_);
-            auto* main_func = emitter.emit();
+            auto* init_func = emitter.emit();
 
-            auto exec_res = vm_.execute(*main_func);
-            if (!exec_res) {
-                emit_runtime_error(exec_res.error());
-                return false;
+            // Record compile metadata for this module.
+            if (out_cr) {
+                CompileModuleEntry cme;
+                cme.name = mod.name;
+                // init_func is the last function added by emitter.emit()
+                cme.init_func_index = static_cast<uint32_t>(registry_.size()) - 1 - base_func_idx;
+                cme.total_globals = mod.total_globals;
+                cme.main_func_slot = mod.main_func_slot;
+                out_cr->modules.push_back(std::move(cme));
             }
 
-            executed_modules_.insert(mod.name);
+            if (execute) {
+                auto exec_res = vm_.execute(*init_func);
+                if (!exec_res) {
+                    emit_runtime_error(exec_res.error());
+                    return false;
+                }
 
-            // For REPL: capture result from the last NEW module
-            if (result && !result_binding.empty()) {
-                // Check if this is the last new module
-                bool is_last_new = (!new_module_names.empty() &&
-                                    mod.name == new_module_names.back());
-                if (is_last_new) {
-                    for (const auto& bi : mod.bindings) {
-                        if (bi.name == result_binding) {
-                            *result = vm_.globals()[bi.slot];
-                            break;
+                executed_modules_.insert(mod.name);
+
+                // Invoke optional (defun main ...) entry point
+                if (mod.main_func_slot) {
+                    auto main_val = globals[*mod.main_func_slot];
+                    if (main_val != runtime::nanbox::Nil) {
+                        auto main_res = vm_.call_value(main_val, {});
+                        if (!main_res) {
+                            emit_runtime_error(main_res.error());
+                            return false;
+                        }
+                    }
+                }
+
+                // For REPL: capture result from the last NEW module
+                if (result && !result_binding.empty()) {
+                    // Check if this is the last new module
+                    bool is_last_new = (!new_module_names.empty() &&
+                                        mod.name == new_module_names.back());
+                    if (is_last_new) {
+                        for (const auto& bi : mod.bindings) {
+                            if (bi.name == result_binding) {
+                                *result = vm_.globals()[bi.slot];
+                                break;
+                            }
                         }
                     }
                 }
             }
+        }
+
+        uint32_t end_func_idx = static_cast<uint32_t>(registry_.size());
+        if (out_cr) {
+            out_cr->base_func_idx = base_func_idx;
+            out_cr->end_func_idx = end_func_idx;
         }
 
         return true;

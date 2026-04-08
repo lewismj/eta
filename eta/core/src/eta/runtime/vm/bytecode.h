@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <ostream>
 #include <vector>
 #include <string>
 #include "eta/runtime/nanbox.h"
@@ -12,12 +13,18 @@ namespace eta::runtime::vm {
 // When encoding a function index in MakeClosure, set this bit to mark it as an index.
 constexpr uint64_t FUNC_INDEX_TAG = 1ULL << 63;
 
+// Mask for bits 62-32 — these are always zero in a valid func_index
+// (encode_func_index stores only a uint32_t in the lower 32 bits).
+// Negative IEEE-754 doubles also have bit 63 set but their exponent
+// field (bits 62-52) is non-zero, so this mask distinguishes them.
+constexpr uint64_t FUNC_INDEX_UPPER_ZERO_MASK = 0x7FFFFFFF00000000ULL;
+
 inline nanbox::LispVal encode_func_index(uint32_t index) {
     return FUNC_INDEX_TAG | static_cast<uint64_t>(index);
 }
 
 inline bool is_func_index(nanbox::LispVal v) {
-    return (v & FUNC_INDEX_TAG) != 0;
+    return (v & FUNC_INDEX_TAG) != 0 && (v & FUNC_INDEX_UPPER_ZERO_MASK) == 0;
 }
 
 inline uint32_t decode_func_index(nanbox::LispVal v) {
@@ -94,6 +101,60 @@ enum class OpCode : std::uint8_t {
     DualVal,        // [] -> pop dual; push dual.primal (or pass through if not Dual)
     DualBp,         // [] -> pop dual; push dual.backprop (or push no-op closure if not Dual)
 };
+
+/// Human-readable mnemonic for an OpCode (e.g. "LoadConst").
+constexpr const char* to_string(OpCode op) noexcept {
+    using enum OpCode;
+    switch (op) {
+        case Nop:               return "Nop";
+        case LoadConst:         return "LoadConst";
+        case LoadLocal:         return "LoadLocal";
+        case StoreLocal:        return "StoreLocal";
+        case LoadUpval:         return "LoadUpval";
+        case StoreUpval:        return "StoreUpval";
+        case LoadGlobal:        return "LoadGlobal";
+        case StoreGlobal:       return "StoreGlobal";
+        case Pop:               return "Pop";
+        case Dup:               return "Dup";
+        case Jump:              return "Jump";
+        case JumpIfFalse:       return "JumpIfFalse";
+        case Call:              return "Call";
+        case TailCall:          return "TailCall";
+        case Return:            return "Return";
+        case MakeClosure:       return "MakeClosure";
+        case Cons:              return "Cons";
+        case Car:               return "Car";
+        case Cdr:               return "Cdr";
+        case Add:               return "Add";
+        case Sub:               return "Sub";
+        case Mul:               return "Mul";
+        case Div:               return "Div";
+        case Eq:                return "Eq";
+        case Values:            return "Values";
+        case CallWithValues:    return "CallWithValues";
+        case DynamicWind:       return "DynamicWind";
+        case CallCC:            return "CallCC";
+        case PatchClosureUpval: return "PatchClosureUpval";
+        case Apply:             return "Apply";
+        case TailApply:         return "TailApply";
+        case SetupCatch:        return "SetupCatch";
+        case PopCatch:          return "PopCatch";
+        case Throw:             return "Throw";
+        case MakeLogicVar:      return "MakeLogicVar";
+        case Unify:             return "Unify";
+        case DerefLogicVar:     return "DerefLogicVar";
+        case TrailMark:         return "TrailMark";
+        case UnwindTrail:       return "UnwindTrail";
+        case MakeDual:          return "MakeDual";
+        case DualVal:           return "DualVal";
+        case DualBp:            return "DualBp";
+    }
+    return "Unknown";
+}
+
+inline std::ostream& operator<<(std::ostream& os, OpCode op) {
+    return os << to_string(op);
+}
 
 struct Instruction {
     OpCode opcode;

@@ -14,6 +14,8 @@
   <a href="docs/architecture.md">Architecture</a> ·
   <a href="docs/nanboxing.md">NaN-Boxing</a> ·
   <a href="docs/bytecode-vm.md">Bytecode &amp; VM</a> ·
+  <a href="docs/compiler.md">Compiler</a> ·
+  <a href="docs/optimization.md">Optimization</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
@@ -46,10 +48,16 @@ expander with `syntax-rules`, and a module system.
 Eta also provides native structural unification as a first-class VM feature,
 allowing Prolog-style pattern matching and type inference. See [Logic Programming](docs/logic.md).
 
-The implementation ships as four executables — an **interpreter**
-(`etai`), an **interactive REPL** (`eta_repl`), a **Language Server**
-(`eta_lsp`), and a **Debug Adapter** (`eta_dap`) — along with a
-**VS Code extension** that wires them all together.
+The implementation ships as five executables and a VS Code extension:
+
+<p align="center">
+  <strong>Bytecode Compiler</strong> (<code>etac</code>)<br>
+  <strong>Interpreter</strong> (<code>etai</code>)<br>
+  <strong>Interactive REPL</strong> (<code>eta_repl</code>)<br>
+  <strong>Language Server</strong> (<code>eta_lsp</code>)<br>
+  <strong>Debug Adapter</strong> (<code>eta_dap</code>)<br>
+  <strong>VS Code Extension</strong>
+</p>
 
 ```scheme
 ;; Hello, Eta!
@@ -89,6 +97,8 @@ flowchart LR
     LNK --> SEM["Semantic\nAnalyzer"]
     SEM --> EMT["Emitter"]
     EMT --> VM["VM\nExecution"]
+    EMT --> SER["Serialize\n(.etac)"]
+    SER -.->|"etai fast-load"| VM
 
     style SRC fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
     style LEX fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
@@ -98,6 +108,7 @@ flowchart LR
     style SEM fill:#16213e,stroke:#79c0ff,color:#c9d1d9
     style EMT fill:#0f3460,stroke:#56d364,color:#c9d1d9
     style VM  fill:#0f3460,stroke:#56d364,color:#c9d1d9
+    style SER fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
 | Phase | Input | Output | Header |
@@ -122,6 +133,7 @@ flowchart LR
 | Feature | Detail                                                                                                                                                                            |
 |---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **NaN-Boxing** | All values are 64-bit; doubles pass through unboxed while tagged types (fixnums, chars, symbols, heap pointers) are encoded in the NaN mantissa. [→ Deep-dive](docs/nanboxing.md) |
+| **AOT Compilation** | `etac` compiles `.eta` → `.etac` bytecode; `etai` loads `.etac` files directly, skipping all front-end phases. Supports `-O` optimization passes (constant folding, DCE). [→ Deep-dive](docs/compiler.md) |
 | **47-bit Fixnums** | Integers up to ±70 trillion are stored inline — no heap allocation.                                                                                                               |
 | **Mark-Sweep GC** | Stop-the-world collector with sharded heap, hazard pointers, and a GC callback for auto-triggering on soft-limit. [→ Deep-dive](docs/runtime.md)                                  |
 | **Tail-Call Elimination** | `TailCall` and `TailApply` opcodes reuse the current stack frame.                                                                                                                 |
@@ -143,6 +155,8 @@ flowchart LR
 | **[Architecture](docs/architecture.md)** | Full system diagram, phase-by-phase walkthrough, Core IR node types                      |
 | **[NaN-Boxing](docs/nanboxing.md)**      | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                    |
 | **[Bytecode & VM](docs/bytecode-vm.md)** | Opcode reference, end-to-end compilation trace, call stack model, TCO                    |
+| **[Compiler (`etac`)](docs/compiler.md)** | AOT bytecode compiler: CLI reference, `.etac` binary format, optimization passes, disassembly |
+| **[Optimization](docs/optimization.md)** | IR optimization pipeline architecture, built-in passes, writing custom passes               |
 | **[Runtime & GC](docs/runtime.md)**      | Heap architecture, object kinds, mark-sweep GC, intern table, factory                    |
 | **[Modules & Stdlib](docs/modules.md)**  | Module syntax, linker phases, import filters, standard library reference                 |
 | **[Language Guide](docs/examples.md)**   | Guided tour of the language using simple example programs with expected output           |
@@ -151,7 +165,7 @@ flowchart LR
 | **[European Greeks](docs/european.md)**  | BS option Greeks (first & second order) with custom VJP and Schwarz check                |
 | **[CLP](docs/clp.md)**                   | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`     |
 | **[Causal Inference](docs/causal.md)**   | Do-calculus engine, back-door adjustment, finance factor analysis                        |
-| **[Next Steps](docs/next-steps.md)**     | Roadmap: bytecode serialization & `etac`, FFI, CLP arc consistency, example programs |
+| **[Next Steps](docs/next-steps.md)**     | Roadmap: FFI, PyTorch integration, hardware co-processors, example programs          |
 
 ---
 
@@ -191,6 +205,7 @@ The installer:
 etai --help
 eta_repl
 etai examples/hello.eta
+etac examples/hello.eta && etai examples/hello.etac
 ```
 
 #### VS Code Setup
@@ -248,7 +263,8 @@ See [Examples](docs/examples.md) for a guided tour of the example programs.
 ```
 eta-<platform>/
   bin/
-    etai(.exe)          # File interpreter
+    etac(.exe)          # Ahead-of-time bytecode compiler
+    etai(.exe)          # File interpreter (also runs .etac files)
     eta_repl(.exe)      # Interactive REPL
     eta_lsp(.exe)       # Language Server (JSON-RPC over stdio)
     eta_dap(.exe)       # Debug Adapter (DAP over stdio, used by VS Code)
@@ -316,6 +332,7 @@ eta/
 │   │       ├── semantics/      # Semantic Analyzer, Core IR, Emitter, Arena
 │   │       ├── runtime/        # NaN-box, VM, Heap, GC, Types, Primitives
 │   │       └── diagnostic/     # Unified error reporting
+│   ├── compiler/               # etac (AOT bytecode compiler)
 │   ├── interpreter/            # etai + eta_repl (Driver orchestration)
 │   ├── lsp/                    # eta_lsp (Language Server Protocol, JSON-RPC over stdio)
 │   ├── dap/                    # eta_dap (Debug Adapter Protocol, DAP over stdio)
