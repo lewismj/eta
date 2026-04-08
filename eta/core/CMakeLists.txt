@@ -24,6 +24,7 @@ target_sources(${PROJECT_NAME}
         src/eta/semantics/semantic_analyzer.cpp
         src/eta/semantics/emitter.cpp
         src/eta/runtime/vm/vm.cpp
+        src/eta/runtime/vm/bytecode_serializer.cpp
 )
 
 # BMI2/PEXT support check

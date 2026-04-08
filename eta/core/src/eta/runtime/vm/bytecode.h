@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <ostream>
 #include <vector>
 #include <string>
 #include "eta/runtime/nanbox.h"
@@ -94,6 +95,60 @@ enum class OpCode : std::uint8_t {
     DualVal,        // [] -> pop dual; push dual.primal (or pass through if not Dual)
     DualBp,         // [] -> pop dual; push dual.backprop (or push no-op closure if not Dual)
 };
+
+/// Human-readable mnemonic for an OpCode (e.g. "LoadConst").
+constexpr const char* to_string(OpCode op) noexcept {
+    using enum OpCode;
+    switch (op) {
+        case Nop:               return "Nop";
+        case LoadConst:         return "LoadConst";
+        case LoadLocal:         return "LoadLocal";
+        case StoreLocal:        return "StoreLocal";
+        case LoadUpval:         return "LoadUpval";
+        case StoreUpval:        return "StoreUpval";
+        case LoadGlobal:        return "LoadGlobal";
+        case StoreGlobal:       return "StoreGlobal";
+        case Pop:               return "Pop";
+        case Dup:               return "Dup";
+        case Jump:              return "Jump";
+        case JumpIfFalse:       return "JumpIfFalse";
+        case Call:              return "Call";
+        case TailCall:          return "TailCall";
+        case Return:            return "Return";
+        case MakeClosure:       return "MakeClosure";
+        case Cons:              return "Cons";
+        case Car:               return "Car";
+        case Cdr:               return "Cdr";
+        case Add:               return "Add";
+        case Sub:               return "Sub";
+        case Mul:               return "Mul";
+        case Div:               return "Div";
+        case Eq:                return "Eq";
+        case Values:            return "Values";
+        case CallWithValues:    return "CallWithValues";
+        case DynamicWind:       return "DynamicWind";
+        case CallCC:            return "CallCC";
+        case PatchClosureUpval: return "PatchClosureUpval";
+        case Apply:             return "Apply";
+        case TailApply:         return "TailApply";
+        case SetupCatch:        return "SetupCatch";
+        case PopCatch:          return "PopCatch";
+        case Throw:             return "Throw";
+        case MakeLogicVar:      return "MakeLogicVar";
+        case Unify:             return "Unify";
+        case DerefLogicVar:     return "DerefLogicVar";
+        case TrailMark:         return "TrailMark";
+        case UnwindTrail:       return "UnwindTrail";
+        case MakeDual:          return "MakeDual";
+        case DualVal:           return "DualVal";
+        case DualBp:            return "DualBp";
+    }
+    return "Unknown";
+}
+
+inline std::ostream& operator<<(std::ostream& os, OpCode op) {
+    return os << to_string(op);
+}
 
 struct Instruction {
     OpCode opcode;

@@ -20,7 +20,10 @@
 #include "eta/reader/module_linker.h"
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/semantics/emitter.h"
+#include "eta/semantics/optimization_pipeline.h"
 #include "eta/runtime/vm/vm.h"
+#include "eta/runtime/vm/bytecode_serializer.h"
+#include "eta/runtime/vm/disassembler.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/core_primitives.h"
 #include "eta/runtime/io_primitives.h"
@@ -210,6 +213,99 @@ public:
     runtime::memory::heap::Heap& heap() noexcept { return heap_; }
     const runtime::memory::heap::Heap& heap() const noexcept { return heap_; }
 
+    /// Direct access to the intern table.
+    runtime::memory::intern::InternTable& intern_table() noexcept { return intern_table_; }
+
+    /// Access the optimization pipeline — add passes before running files.
+    semantics::OptimizationPipeline& optimization_pipeline() noexcept { return optimization_pipeline_; }
+
+    /**
+     * @brief Load and execute a pre-compiled .etac file.
+     * @return true on success, false on error (diagnostics emitted to engine).
+     */
+    bool run_etac_file(const fs::path& path) {
+        std::ifstream in(path, std::ios::in | std::ios::binary);
+        if (!in) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "cannot open file: " + path.string());
+            return false;
+        }
+
+        runtime::vm::BytecodeSerializer serializer(heap_, intern_table_);
+        auto etac_res = serializer.deserialize(in);
+        if (!etac_res) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "failed to load .etac: " + std::string(runtime::vm::to_string(etac_res.error())));
+            return false;
+        }
+        auto& etac = *etac_res;
+
+        // Move functions from the deserialized registry into ours,
+        // recording the base index so module init_func_index values can be offset.
+        uint32_t base_idx = static_cast<uint32_t>(registry_.size());
+        for (const auto& func : etac.registry.all()) {
+            // Make a copy since the source registry owns the originals.
+            runtime::vm::BytecodeFunction copy = func;
+            registry_.add(std::move(copy));
+        }
+
+        // Wire up function resolver if not already done
+        // (constructor does this, but defensive)
+
+        // Execute each module's _init function
+        for (const auto& mod : etac.modules) {
+            if (executed_modules_.contains(mod.name)) continue;
+
+            auto& globals = vm_.globals();
+            if (globals.size() < mod.total_globals)
+                globals.resize(mod.total_globals, runtime::nanbox::Nil);
+
+            // Re-install builtins
+            if (!builtins_installed_) {
+                for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
+                    const auto& spec = builtins_.specs()[i];
+                    auto prim = runtime::memory::factory::make_primitive(
+                        heap_, spec.func, spec.arity, spec.has_rest);
+                    if (prim) globals[i] = *prim;
+                }
+                builtins_installed_ = true;
+            }
+
+            uint32_t func_idx = base_idx + mod.init_func_index;
+            const auto* init_func = registry_.get(func_idx);
+            if (!init_func) {
+                diag_engine_.emit_error(
+                    diagnostic::DiagnosticCode::ModuleNotFound, {},
+                    "missing init function for module: " + mod.name);
+                return false;
+            }
+
+            auto exec_res = vm_.execute(*init_func);
+            if (!exec_res) {
+                emit_runtime_error(exec_res.error());
+                return false;
+            }
+
+            executed_modules_.insert(mod.name);
+
+            // Invoke optional main
+            if (mod.main_func_slot) {
+                auto main_val = globals[*mod.main_func_slot];
+                if (main_val != runtime::nanbox::Nil) {
+                    auto main_res = vm_.call_value(main_val, {});
+                    if (!main_res) {
+                        emit_runtime_error(main_res.error());
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
 private:
     ModulePathResolver resolver_;
     runtime::memory::heap::Heap heap_;
@@ -219,6 +315,9 @@ private:
     runtime::vm::VM vm_;
 
     diagnostic::DiagnosticEngine diag_engine_;
+
+    // IR-level optimization pipeline (runs between analyze and emit)
+    semantics::OptimizationPipeline optimization_pipeline_;
 
     // Accumulated expanded forms from all prior run_source calls.
     // The linker clears its state on each index_modules() call, so we must
@@ -456,6 +555,9 @@ private:
         auto sem_mods = std::move(*sem_res);
         if (sem_mods.empty()) return true;
 
+        // ── Run IR optimization passes ───────────────────────────────
+        optimization_pipeline_.run_all(sem_mods);
+
         // ── Emit + Execute only NEW modules ──────────────────────────
         // Grow globals vector if needed, preserving existing values.
         // Re-install builtins in slots 0..N-1 (heap objects may have been GC'd).
@@ -492,6 +594,18 @@ private:
             }
 
             executed_modules_.insert(mod.name);
+
+            // Invoke optional (defun main ...) entry point
+            if (mod.main_func_slot) {
+                auto main_val = globals[*mod.main_func_slot];
+                if (main_val != runtime::nanbox::Nil) {
+                    auto main_res = vm_.call_value(main_val, {});
+                    if (!main_res) {
+                        emit_runtime_error(main_res.error());
+                        return false;
+                    }
+                }
+            }
 
             // For REPL: capture result from the last NEW module
             if (result && !result_binding.empty()) {

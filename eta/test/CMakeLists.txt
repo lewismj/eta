@@ -22,7 +22,10 @@ set(SOURCES
         src/dap_tests.cpp
         src/module_path_tests.cpp
         src/higher_order_tests.cpp
-        src/example_runner_tests.cpp)
+        src/example_runner_tests.cpp
+        src/bytecode_serializer_tests.cpp
+        src/disassembler_tests.cpp
+        src/optimization_tests.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 

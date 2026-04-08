@@ -60,7 +60,7 @@ same structure the emitter already produces in memory
 │  Version        2 B   format version (1)             │
 │  Flags          2 B   endianness, debug-info present │
 ├──────────────────────────────────────────────────────┤
-│  Source Hash    32 B   SHA-256 of the .eta source    │
+│  Source Hash     8 B   boost::hash of the .eta source │
 ├──────────────────────────────────────────────────────┤
 │  Constant Pool  var    NaN-boxed literals, interned  │
 │                        strings, function indices     │

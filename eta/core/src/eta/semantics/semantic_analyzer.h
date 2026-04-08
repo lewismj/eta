@@ -85,6 +85,11 @@ struct ModuleSemantics {
     std::uint32_t stack_size{0};              // stack size for module init function
     std::uint32_t total_globals{0};           // unified global count (shared across all modules)
 
+    /// If the module defines a `(defun main ...)`, this holds its global slot.
+    /// Used by the Driver and etac to invoke the designated entry point.
+    std::optional<std::uint32_t> main_func_slot{};
+
+
     /**
      * @brief Construct a node in-place and get a stable pointer
      *

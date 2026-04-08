@@ -16,6 +16,7 @@ endif()
 
 add_subdirectory(core) 
 add_subdirectory(interpreter)
+add_subdirectory(compiler)
 add_subdirectory(lsp)
 add_subdirectory(dap)
 add_subdirectory(test)

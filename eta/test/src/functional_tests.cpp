@@ -1280,7 +1280,75 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_zero_lgd) {
 BOOST_AUTO_TEST_SUITE_END()
 
 // ============================================================================
-// Native Dual VM Type — Tests for make-dual, dual?, dual-primal, dual-backprop
+// Main entry-point tests — verify that (defun main ...) is detected and
+// invoked by the Driver after module initialization.
+// ============================================================================
+
+BOOST_AUTO_TEST_SUITE(main_entry_tests)
+
+BOOST_FIXTURE_TEST_CASE(module_with_main_detects_main_slot, FunctionalTestFixture) {
+    // Verify that the semantic analyzer populates main_func_slot
+    // when a module defines (defun main ...).
+    auto source = R"(
+        (module m
+          (define result 0)
+          (defun main ()
+            (set! result 42)))
+    )";
+
+    reader::lexer::Lexer lex(0, source);
+    reader::parser::Parser p(lex);
+    auto parsed = std::move(*p.parse_toplevel());
+
+    reader::expander::Expander ex;
+    auto expanded = std::move(*ex.expand_many(parsed));
+
+    reader::ModuleLinker linker;
+    (void) linker.index_modules(expanded);
+    (void) linker.link();
+
+    SemanticAnalyzer sa;
+    auto sem_res = sa.analyze_all(expanded, linker, builtins);
+    BOOST_REQUIRE(sem_res.has_value());
+    BOOST_REQUIRE(!sem_res->empty());
+
+    auto& mod = (*sem_res)[0];
+    BOOST_CHECK(mod.main_func_slot.has_value());
+}
+
+BOOST_FIXTURE_TEST_CASE(module_without_main_has_no_slot, FunctionalTestFixture) {
+    // A module without (defun main ...) should have no main_func_slot
+    auto source = "(module m (define result 42))";
+
+    reader::lexer::Lexer lex(0, source);
+    reader::parser::Parser p(lex);
+    auto parsed = std::move(*p.parse_toplevel());
+
+    reader::expander::Expander ex;
+    auto expanded = std::move(*ex.expand_many(parsed));
+
+    reader::ModuleLinker linker;
+    (void) linker.index_modules(expanded);
+    (void) linker.link();
+
+    SemanticAnalyzer sa;
+    auto sem_res = sa.analyze_all(expanded, linker, builtins);
+    BOOST_REQUIRE(sem_res.has_value());
+    BOOST_REQUIRE(!sem_res->empty());
+
+    auto& mod = (*sem_res)[0];
+    BOOST_CHECK(!mod.main_func_slot.has_value());
+}
+
+BOOST_FIXTURE_TEST_CASE(module_without_main_runs_begin, FunctionalTestFixture) {
+    // Existing behaviour: modules without main still execute their top-level forms
+    auto result = run("(module m (define result (+ 10 20)))");
+    auto decoded = nanbox::ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 30);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
 // and reverse-on-reverse AD via VM-level Dual lifting.
 // ============================================================================
 
