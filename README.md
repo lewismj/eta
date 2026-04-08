@@ -70,6 +70,8 @@ The implementation ships as four executables — an **interpreter**
 
  Download the initial release and run examples in [VSCode](TLDR.md)
 
+<img src="docs/img/eta_example_run.png" width="350">
+
 ---
 
 ## Compilation Pipeline

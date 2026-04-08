@@ -151,3 +151,31 @@ Or add them directly to your `settings.json`:
 3. Run the file with the interpreter from the integrated terminal: `etai hello.eta`
 
 ![Running an example in VS Code](docs/img/eta_example_run.png)
+
+---
+
+## 5. Debugging
+
+### Breakpoints & Stepping
+
+1. Open a `.eta` file in VS Code.
+2. Click the gutter to set a breakpoint (red dot).
+3. Press **F5** (or **Run → Start Debugging**) — the DAP adapter launches the script.
+4. When the VM hits a breakpoint it pauses. Use the standard controls:
+   - **F10** Step Over · **F11** Step In · **Shift+F11** Step Out · **F5** Continue
+
+Script output (`display`, `newline`, etc.) appears in the **Eta Output** panel (not the Debug Console).
+
+### Heap Inspector
+
+The Heap Inspector lets you visualise heap usage, per-object-kind statistics, and navigate GC roots while the VM is paused.
+
+1. Set a breakpoint and start debugging (as above).
+2. Open the Command Palette (`Ctrl+Shift+P`) and run **Eta: Show Heap Inspector**.
+3. The inspector panel opens beside your editor showing:
+   - **Memory gauge** — current heap usage vs. soft limit.
+   - **Object Kinds** — count and bytes per type (Cons, Closure, Vector, etc.).
+   - **GC Roots** — expandable tree of root categories (Stack, Globals, Frames, etc.).
+4. Click any **Object #N** link to drill into it — view kind, size, value preview, and child references.
+5. The panel **auto-refreshes** each time the VM stops (breakpoint, step). You can also click **Refresh** manually.
+
