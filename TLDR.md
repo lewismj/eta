@@ -77,6 +77,10 @@ C:\tmp\eta-v0.0.9-win-x64>
 The `examples/` directory inside the release bundle contains several `.eta` programs.
 
 **Interpreter** — run a file directly:
+
+> [!NOTE]
+> `etai` accepts both `.eta` source files (interpreted from source) and `.etac` pre-compiled bytecode files (produced by `etac`). When given a `.etac` file, `etai` skips all compilation phases and loads the bytecode directly.
+
 ```console
 C:\>cd tmp
 
@@ -178,4 +182,32 @@ The Heap Inspector lets you visualise heap usage, per-object-kind statistics, an
    - **GC Roots** — expandable tree of root categories (Stack, Globals, Frames, etc.).
 4. Click any **Object #N** link to drill into it — view kind, size, value preview, and child references.
 5. The panel **auto-refreshes** each time the VM stops (breakpoint, step). You can also click **Refresh** manually.
+
+---
+
+## 6. Compiling to Bytecode
+
+Eta includes an ahead-of-time bytecode compiler, **`etac`**, that compiles `.eta` source files into compact `.etac` bytecode. The interpreter can then load `.etac` files directly — skipping lexing, parsing, expansion, linking, and analysis — for faster startup.
+
+```console
+C:\tmp\eta-v0.0.9-win-x64\examples> etac hello.eta
+compiled examples\hello.eta → examples\hello.etac (3 functions, 1 module(s))
+
+C:\tmp\eta-v0.0.9-win-x64\examples> etai hello.etac
+Hello, world!
+2432902008176640000
+```
+
+Enable optimization passes with `-O`:
+```console
+C:\tmp\eta-v0.0.9-win-x64\examples> etac -O hello.eta -o hello-opt.etac
+```
+
+Inspect the emitted bytecode without writing a file:
+```console
+C:\tmp\eta-v0.0.9-win-x64\examples> etac --disasm hello.eta
+```
+
+> [!TIP]
+> See [docs/compiler.md](docs/compiler.md) for the full CLI reference, binary format specification, and optimization pass details.
 

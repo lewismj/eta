@@ -2,23 +2,25 @@
 
 [← Back to README](../README.md) · [Architecture](architecture.md) ·
 [NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
-[Runtime & GC](runtime.md) · [Modules & Stdlib](modules.md)
+[Compiler](compiler.md) · [Runtime & GC](runtime.md) · [Modules & Stdlib](modules.md)
 
 ---
 
 ## Overview
 
 This document outlines the major workstreams planned for Eta's next
-development phase. Although the immediate focus is on improving the DAP server,
-so that it can be used to fully support development in VS Code.
+development phase. The **bytecode compiler (`etac`)** has shipped — see
+[Compiler](compiler.md) for full details. The immediate focus is now on
+improving the DAP server so that it can fully support development in
+VS Code.
 
 This is in addition to benchmarking, bug-fixing, and general polish across the codebase.
-The general BAU work will also include networking extensions to the ports. 
+The general BAU work will also include networking extensions to the ports.
 
 
 ```mermaid
 flowchart LR
-    BC["1 · Bytecode\nSerialization"]
+    BC["1 · Bytecode\nCompiler ✅"]
     FFI["2 · Foreign Function\nInterface"]
     PT["3 · PyTorch\nIntegration"]
     COP["4 · Hardware\nCo-processors"]
@@ -30,7 +32,7 @@ flowchart LR
     PT --> EX
     COP --> EX
 
-    style BC  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style BC  fill:#0f3460,stroke:#56d364,color:#c9d1d9
     style FFI fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
     style PT  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
     style COP fill:#16213e,stroke:#79c0ff,color:#c9d1d9
@@ -39,73 +41,29 @@ flowchart LR
 
 ---
 
-## 1 · Bytecode Serialization & the `etac` Compiler
+## 1 · Bytecode Compiler (`etac`) — ✅ Done
 
-### Motivation
+The ahead-of-time bytecode compiler has shipped. The full feature set includes:
 
-Today the full pipeline (lex → parse → expand → link → analyze → emit)
-runs every time a source file is executed. For large programs and library
-modules that rarely change, this is wasted work. A binary bytecode format
-lets us **compile once** and **load instantly**.
+| Capability | Detail |
+|------------|--------|
+| **`etac` executable** | Runs the six-phase pipeline and writes a binary `.etac` file instead of executing. |
+| **Binary `.etac` format** | Compact serialization of the `BytecodeFunctionRegistry` with magic bytes, version, source hash, module table, constant pool, function table, and optional debug info. |
+| **`BytecodeSerializer`** | Serialize / deserialize implementation with round-trip tests ([`bytecode_serializer.h`](../eta/core/src/eta/runtime/vm/bytecode_serializer.h)). |
+| **Source-hash validation** | `.etac` files embed a hash of the original source for cache-invalidation. |
+| **Fast-load path in `etai`** | `Driver::run_etac_file` deserializes the registry directly into the VM, skipping all front-end phases. |
+| **Disassembly (`--disasm`)** | Human-readable bytecode dump from both `etac` and `etai`. |
+| **Debug stripping (`--no-debug`)** | Produce smaller `.etac` files by omitting source maps. |
+| **IR optimization (`-O`)** | Constant folding and dead code elimination passes run between analysis and emission. |
 
-### Proposed Binary Format (`.etac`)
-
-Each `.etac` file stores a serialized `BytecodeFunctionRegistry` — the
-same structure the emitter already produces in memory
-([`emitter.h`](../eta/core/src/eta/semantics/emitter.h)).
-
-```
-┌──────────────────────────────────────────────────────┐
-│  Magic          4 B   "ETAC"                         │
-│  Version        2 B   format version (1)             │
-│  Flags          2 B   endianness, debug-info present │
-├──────────────────────────────────────────────────────┤
-│  Source Hash     8 B   boost::hash of the .eta source │
-├──────────────────────────────────────────────────────┤
-│  Constant Pool  var    NaN-boxed literals, interned  │
-│                        strings, function indices     │
-├──────────────────────────────────────────────────────┤
-│  Function Table var   one entry per BytecodeFunction │
-│    ┌─ arity        4 B                               │
-│    ├─ has_rest     1 B                               │
-│    ├─ stack_size   4 B                               │
-│    ├─ name_len     4 B                               │
-│    ├─ name         var   UTF-8                       │
-│    ├─ n_consts     4 B   indices into constant pool  │
-│    ├─ const_refs   var                               │
-│    ├─ n_instrs     4 B                               │
-│    └─ instructions var   (opcode:u8 + arg:u32) × n   │
-├──────────────────────────────────────────────────────┤
-│  Debug Info     var    (optional) source spans per   │
-│                        instruction for diagnostics   │
-└──────────────────────────────────────────────────────┘
+```console
+etac  hello.eta        →  hello.etac       # compile once
+etai  hello.etac                           # run from cache (instant load)
+etac  --disasm hello.eta                   # inspect emitted bytecode
+etac  -O hello.eta                         # compile with optimizations
 ```
 
-### `etac` — the Ahead-of-Time Compiler
-
-A new executable target, **`etac`**, will run the existing six-phase
-pipeline and write the resulting bytecode to disk instead of executing it:
-
-```
-etac  hello.eta   →   hello.etac          # compile
-etai  hello.etac                          # run from cache (skips lex→emit)
-```
-
-The [`Driver`](../eta/interpreter/src/eta/interpreter/driver.h) gains a
-**fast-load path**: when presented with an `.etac` file whose source hash
-matches the corresponding `.eta` file, it deserializes the function
-registry directly into the VM, bypassing every compilation phase.
-
-### Key Implementation Tasks
-
-| Task | Touches |
-|------|---------|
-| Define `serialize()` / `deserialize()` for `BytecodeFunction` | `bytecode.h` |
-| Implement `ConstantPoolWriter` / `ConstantPoolReader` | new files in `runtime/vm/` |
-| Add `--emit-bytecode` flag to `Driver` | `driver.h` |
-| Create `etac` executable target | `CMakeLists.txt`, new `main_etac.cpp` |
-| Source-hash validation & cache invalidation | `driver.h` |
-| Stdlib pre-compilation (`prelude.etac`, `std/*.etac`) | build scripts |
+> **📖 Full documentation:** [Compiler (`etac`)](compiler.md) — CLI reference, binary format spec, optimization passes, and integration details.
 
 ---
 
