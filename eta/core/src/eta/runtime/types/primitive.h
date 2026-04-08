@@ -15,6 +15,7 @@ namespace eta::runtime::types {
         PrimitiveFunc func {};
         uint32_t arity {};
         bool has_rest {};
+        std::vector<LispVal> gc_roots {};  ///< LispVals captured by func that GC must trace
     };
 
 }

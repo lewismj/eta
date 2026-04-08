@@ -20,7 +20,9 @@
 ;;; Run:  etai examples/european.eta
 
 (module european
-  (import std.prelude)
+  (import std.core)
+  (import std.math)
+  (import std.io)
   (begin
 
     ;; ════════════════════════════════════════════════════════════════
@@ -344,6 +346,209 @@
       (let ((g3 (cadr r3)))
         (display "  Vanna      | ") (println (vector-ref g3 0))
         (display "  Volga      | ") (println (vector-ref g3 3))))
+
+    ;; ════════════════════════════════════════════════════════════════
+    ;; §5  Reverse-on-Reverse AD via Native Dual VM Type
+    ;; ════════════════════════════════════════════════════════════════
+    ;;
+    ;; The ETA VM provides a dedicated Dual heap object (ObjectKind::Dual)
+    ;; with MakeDual / DualVal / DualBp opcodes.  When the VM's arithmetic
+    ;; primitives (+, -, *, /, exp, log, sqrt) encounter a native Dual
+    ;; operand, they transparently lift the operation — building a
+    ;; second-level computation graph.  This enables genuine
+    ;; reverse-on-reverse AD without requiring closed-form Greek expressions.
+    ;;
+    ;; Primitives used:
+    ;;   make-dual      — construct Dual{primal, backprop}
+    ;;   dual-primal    — extract primal (or pass through if not Dual)
+    ;;   dual-backprop  — extract backpropagator (or return no-op)
+    ;;   dual?          — type predicate
+    ;;
+    ;; The key insight: the backward pass's arithmetic (*, +, -, /) now
+    ;; also creates Dual graph nodes when the incoming adjoint is itself
+    ;; a native Dual — enabling the outer differentiation to "see through"
+    ;; the inner backward pass.
+
+    ;; ── Native Dual AD primitives ──────────────────────────────────
+
+    (defun nd-val (x) (if (dual? x) (dual-primal x) x))
+    (defun nd-bp  (x) (if (dual? x) (dual-backprop x) (lambda (adj) '())))
+    (defun nd-make-var (v idx) (make-dual v (lambda (adj) (list (cons idx adj)))))
+    (defun nd-ensure (x) (if (dual? x) x (make-dual x (lambda (adj) '()))))
+
+    ;; ── Lifted arithmetic (native Dual) ────────────────────────────
+
+    (defun nd+ (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (+ va vb)
+                     (lambda (adj) (append (ba adj) (bb adj)))))))
+
+    (defun nd- (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (- va vb)
+                     (lambda (adj) (append (ba adj) (bb (* -1 adj))))))))
+
+    (defun nd* (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (* va vb)
+                     (lambda (adj) (append (ba (* adj vb)) (bb (* adj va))))))))
+
+    (defun nd/ (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (/ va vb)
+                     (lambda (adj)
+                       (append (ba (* adj (/ 1 vb)))
+                               (bb (* adj (* -1 (/ va (* vb vb)))))))))))
+
+    (defun ndexp (a)
+      (let ((a (nd-ensure a)))
+        (let ((va (nd-val a)) (ba (nd-bp a)))
+          (let ((ev (exp va)))
+            (make-dual ev (lambda (adj) (ba (* adj ev))))))))
+
+    (defun ndlog (a)
+      (let ((a (nd-ensure a)))
+        (let ((va (nd-val a)) (ba (nd-bp a)))
+          (make-dual (log va) (lambda (adj) (ba (* adj (/ 1 va))))))))
+
+    (defun ndsqrt (a)
+      (ndexp (nd* 0.5 (ndlog a))))
+
+    ;; ── AD-lifted statistical functions (native Dual) ──────────────
+
+    (defun ndnorm-cdf (a)
+      (let ((a (nd-ensure a)))
+        (let ((va (nd-val a)) (ba (nd-bp a)))
+          (make-dual (norm-cdf-approx va)
+                     (lambda (adj) (ba (* adj (norm-pdf va))))))))
+
+    (defun ndnorm-pdf (a)
+      (let ((a (nd-ensure a)))
+        (let ((va (nd-val a)) (ba (nd-bp a)))
+          (let ((pv (norm-pdf va)))
+            (make-dual pv (lambda (adj) (ba (* adj (* (- 0 va) pv)))))))))
+
+    ;; ── Black-Scholes with native Duals ────────────────────────────
+
+    (defun bs-d1-nd (S K r sigma T)
+      (nd/ (nd+ (ndlog (nd/ S K))
+                (nd* (nd+ r (nd/ (nd* sigma sigma) 2)) T))
+           (nd* sigma (ndsqrt T))))
+
+    (defun bs-call-price-nd (S K r sigma T)
+      (let ((d1  (bs-d1-nd S K r sigma T))
+            (svt (nd* sigma (ndsqrt T))))
+        (let ((d2 (nd- d1 svt)))
+          (nd- (nd* S (ndnorm-cdf d1))
+               (nd* (nd* K (ndexp (nd* -1 (nd* r T))))
+                    (ndnorm-cdf d2))))))
+
+    ;; ── Native-Dual gradient driver ────────────────────────────────
+
+    (defun native-grad (f vals)
+      (letrec ((make-vars
+                 (lambda (vs idx)
+                   (if (null? vs) '()
+                       (cons (nd-make-var (car vs) idx)
+                             (make-vars (cdr vs) (+ idx 1)))))))
+        (let ((duals (make-vars vals 0)))
+          (let ((out (apply f duals)))
+            (let ((primal (nd-val out))
+                  (adjoints ((nd-bp out) 1)))
+              (list primal (collect-adjoints (length vals) adjoints)))))))
+
+    ;; ── Hessian via reverse-on-reverse ─────────────────────────────
+    ;; For column j of the Hessian, wrap x_j in a native Dual and
+    ;; compute native-grad.  The inner backward pass's arithmetic
+    ;; (+, -, *, /) sees the native Dual and transparently builds
+    ;; a second-level graph.  The resulting gradient components are
+    ;; themselves native Duals — their backpropagators encode the
+    ;; Hessian.
+
+    (defun list-set (lst j val)
+      (if (= j 0)
+          (cons val (cdr lst))
+          (cons (car lst) (list-set (cdr lst) (- j 1) val))))
+
+    (defun sum-adjoint (adj-list idx)
+      (if (null? adj-list) 0
+          (let ((p (car adj-list)))
+            (if (= (car p) idx)
+                (+ (cdr p) (sum-adjoint (cdr adj-list) idx))
+                (sum-adjoint (cdr adj-list) idx)))))
+
+    (defun hessian-col (f vals j)
+      (let ((n (length vals))
+            (xj (list-ref vals j)))
+        (let ((xj-dual (make-dual xj (lambda (adj) (list (cons 0 adj))))))
+          (let ((inputs (list-set vals j xj-dual)))
+            (let ((result (native-grad f inputs)))
+              (let ((adj-vec (cadr result)))
+                (let ((col (make-vector n 0)))
+                  (letrec ((loop (lambda (i)
+                              (if (= i n) col
+                                  (let ((ai (vector-ref adj-vec i)))
+                                    (let ((h (if (dual? ai)
+                                                 (sum-adjoint ((dual-backprop ai) 1) 0)
+                                                 0)))
+                                      (vector-set! col i h)
+                                      (loop (+ i 1))))))))
+                    (loop 0)))))))))
+
+    (defun hessian (f vals)
+      (let ((n (length vals)))
+        (let ((H (make-vector n #f)))
+          (letrec ((loop (lambda (j)
+                      (if (= j n) H
+                          (begin
+                            (vector-set! H j (hessian-col f vals j))
+                            (loop (+ j 1)))))))
+            (loop 0)))))
+
+    ;; ── Compute and display reverse-on-reverse results ─────────────
+
+    (display (if win "\n\n-- Reverse-on-Reverse (Native Dual VM Type) --\n\n"
+                     "\n\n── Reverse-on-Reverse (Native Dual VM Type) ────────\n\n"))
+    (display "  Using dedicated MakeDual / DualVal / DualBp opcodes.\n")
+    (display "  The VM's +, -, *, / transparently lift for native Duals,\n")
+    (display "  enabling true tape-on-tape 2nd-order AD.\n\n")
+
+    ;; First: verify the native-grad produces the same 1st-order results
+    (let ((r1 (native-grad (lambda (S K r sigma T) (bs-call-price-nd S K r sigma T)) params)))
+      (let ((price (car r1))
+            (g     (cadr r1)))
+        (display "  Native-Dual 1st-order check:\n")
+        (display "    Price = ") (println price)
+        (display "    Delta = ") (println (vector-ref g 0))
+        (display "    Vega  = ") (println (vector-ref g 3))
+        (display "\n")))
+
+    ;; Now: the Hessian via reverse-on-reverse
+    (let ((H (hessian (lambda (S K r sigma T) (bs-call-price-nd S K r sigma T)) params)))
+      (display "  Hessian (reverse-on-reverse):\n")
+      ;; H[0] is column 0 (derivatives of each Greek w.r.t. S)
+      ;; H[3] is column 3 (derivatives of each Greek w.r.t. sigma)
+      (display "    Gamma  (H[0][0] = d2C/dS2)    = ")
+      (println (vector-ref (vector-ref H 0) 0))
+      (display "    Vanna  (H[3][0] = d2C/dSdsig)  = ")
+      (println (vector-ref (vector-ref H 3) 0))
+      (display "    Vanna  (H[0][3] = d2C/dsigdS)  = ")
+      (println (vector-ref (vector-ref H 0) 3))
+      (display "    Volga  (H[3][3] = d2C/dsig2)   = ")
+      (println (vector-ref (vector-ref H 3) 3))
+      (display "\n  Schwarz check (H[0][3] vs H[3][0]):\n")
+      (display "    Difference = ")
+      (println (- (vector-ref (vector-ref H 0) 3)
+                  (vector-ref (vector-ref H 3) 0)))
+      (display "    (Should be ~0)\n"))
 
   ))
 

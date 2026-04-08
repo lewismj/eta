@@ -29,6 +29,7 @@ namespace eta::runtime::memory::heap {
         MultipleValues,  // For (values ...) return
         Port,
         LogicVar,        // Unification logic variable
+        Dual,            // AD dual number (primal + backpropagator)
     };
 
     ETA_ENUM_TO_STRING_BEGIN(ObjectKind)
@@ -43,6 +44,7 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(MultipleValues)
         ETA_ENUM_CASE(Port)
         ETA_ENUM_CASE(LogicVar)
+        ETA_ENUM_CASE(Dual)
     ETA_ENUM_TO_STRING_END("Unknown")
 
     inline std::ostream& operator<<(std::ostream& os, const ObjectKind k) {

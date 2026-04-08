@@ -13,6 +13,7 @@
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/types/logic_var.h"
+#include "eta/runtime/types/dual.h"
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/clp/constraint_store.h"
 
@@ -52,11 +53,49 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                                      vm::VM* vm = nullptr) {
     using Args = const std::vector<LispVal>&;
 
+    // ── AD Dual helpers ─────────────────────────────────────────────────
+    // Check whether any element in an argument list is a native Dual.
+    auto has_dual = [&heap](Args args) -> bool {
+        for (auto v : args) {
+            if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject &&
+                heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v)))
+                return true;
+        }
+        return false;
+    };
+
+    // Recursively strip Dual wrappers to get the numeric primal
+    // (used for comparison operators — non-differentiable control flow).
+    auto deep_primal = [&heap](LispVal v) -> LispVal {
+        for (;;) {
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return v;
+            auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v));
+            if (!d) return v;
+            v = d->primal;
+        }
+    };
+
     // ========================================================================
     // Arithmetic: + - * /
+    //
+    // Each operator checks for native Dual arguments.  When found, the
+    // operation is folded through VM::dual_binary_op() which delegates to
+    // do_binary_arithmetic() — the Dual-aware opcode handler that
+    // transparently builds a second-level computation graph for
+    // reverse-on-reverse AD.
     // ========================================================================
 
-    env.register_builtin("+", 0, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("+", 0, true, [&heap, vm, has_dual](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (vm && has_dual(args)) {
+            if (args.empty()) return make_fixnum(heap, int64_t(0));
+            LispVal acc = args[0];
+            for (size_t i = 1; i < args.size(); ++i) {
+                auto r = vm->dual_binary_op(vm::OpCode::Add, acc, args[i]);
+                if (!r) return r;
+                acc = *r;
+            }
+            return acc;
+        }
         int64_t isum = 0;
         bool use_float = false;
         double fsum = 0.0;
@@ -81,8 +120,23 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fixnum(heap, isum);
     });
 
-    env.register_builtin("-", 1, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("-", 1, true, [&heap, vm, has_dual](Args args) -> std::expected<LispVal, RuntimeError> {
         if (args.empty()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "-: requires at least 1 argument"}});
+        if (vm && has_dual(args)) {
+            if (args.size() == 1) {
+                // Unary negation: 0 - x
+                auto zero = make_fixnum(heap, int64_t(0));
+                if (!zero) return zero;
+                return vm->dual_binary_op(vm::OpCode::Sub, *zero, args[0]);
+            }
+            LispVal acc = args[0];
+            for (size_t i = 1; i < args.size(); ++i) {
+                auto r = vm->dual_binary_op(vm::OpCode::Sub, acc, args[i]);
+                if (!r) return r;
+                acc = *r;
+            }
+            return acc;
+        }
         auto first = classify_numeric(args[0], heap);
         if (!first.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "-: argument is not a number"}});
 
@@ -115,7 +169,17 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fixnum(heap, iresult);
     });
 
-    env.register_builtin("*", 0, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("*", 0, true, [&heap, vm, has_dual](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (vm && has_dual(args)) {
+            if (args.empty()) return make_fixnum(heap, int64_t(1));
+            LispVal acc = args[0];
+            for (size_t i = 1; i < args.size(); ++i) {
+                auto r = vm->dual_binary_op(vm::OpCode::Mul, acc, args[i]);
+                if (!r) return r;
+                acc = *r;
+            }
+            return acc;
+        }
         int64_t iprod = 1;
         bool use_float = false;
         double fprod = 1.0;
@@ -139,8 +203,23 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fixnum(heap, iprod);
     });
 
-    env.register_builtin("/", 1, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("/", 1, true, [&heap, vm, has_dual](Args args) -> std::expected<LispVal, RuntimeError> {
         if (args.empty()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "/: requires at least 1 argument"}});
+        if (vm && has_dual(args)) {
+            if (args.size() == 1) {
+                // Unary reciprocal: 1 / x
+                auto one = make_flonum(1.0);
+                if (!one) return one;
+                return vm->dual_binary_op(vm::OpCode::Div, *one, args[0]);
+            }
+            LispVal acc = args[0];
+            for (size_t i = 1; i < args.size(); ++i) {
+                auto r = vm->dual_binary_op(vm::OpCode::Div, acc, args[i]);
+                if (!r) return r;
+                acc = *r;
+            }
+            return acc;
+        }
         auto first = classify_numeric(args[0], heap);
         if (!first.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "/: argument is not a number"}});
 
@@ -179,12 +258,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     // Comparison: = < > <= >=
     // ========================================================================
 
-    auto make_comparison = [&heap](const char* name, auto cmp_int, auto cmp_float) {
-        return [&heap, name, cmp_int, cmp_float](Args args) -> std::expected<LispVal, RuntimeError> {
+    auto make_comparison = [&heap, deep_primal](const char* name, auto cmp_int, auto cmp_float) {
+        return [&heap, deep_primal, name, cmp_int, cmp_float](Args args) -> std::expected<LispVal, RuntimeError> {
             if (args.size() < 2) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, std::string(name) + ": requires at least 2 arguments"}});
             for (size_t i = 0; i + 1 < args.size(); ++i) {
-                auto a = classify_numeric(args[i], heap);
-                auto b = classify_numeric(args[i + 1], heap);
+                // Extract primal from Duals for comparison (non-differentiable)
+                auto a = classify_numeric(deep_primal(args[i]), heap);
+                auto b = classify_numeric(deep_primal(args[i + 1]), heap);
                 if (!a.is_valid() || !b.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(name) + ": argument is not a number"}});
                 bool result;
                 if (a.is_flonum() || b.is_flonum()) {
@@ -479,19 +559,80 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(std::atan(a.as_double()));
     });
 
-    env.register_builtin("exp", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("exp", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        // Dual-aware: exp(Dual(x, bp)) = Dual(exp(x), λ(adj) → bp(adj * exp(x)))
+        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
+            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(args[0]))) {
+                auto n = classify_numeric(d->primal, heap);
+                if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "exp: primal is not a number"}});
+                double ev = std::exp(n.as_double());
+                auto ev_val = make_flonum(ev);
+                if (!ev_val) return std::unexpected(ev_val.error());
+                LispVal ba = d->backprop;
+                LispVal ev_lv = *ev_val;
+                auto bp = make_primitive(heap,
+                    [vm, ba, ev_lv](const std::vector<LispVal>& bp_args) -> std::expected<LispVal, RuntimeError> {
+                        auto local_adj = vm->dual_binary_op(vm::OpCode::Mul, bp_args[0], ev_lv);
+                        if (!local_adj) return local_adj;
+                        return vm->call_value(ba, {*local_adj});
+                    }, 1, false, {ba, ev_lv});
+                if (!bp) return std::unexpected(bp.error());
+                return make_dual(heap, ev_lv, *bp);
+            }
+        }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "exp: argument is not a number"}});
         return make_flonum(std::exp(n.as_double()));
     });
 
-    env.register_builtin("log", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("log", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        // Dual-aware: log(Dual(x, bp)) = Dual(log(x), λ(adj) → bp(adj / x))
+        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
+            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(args[0]))) {
+                auto n = classify_numeric(d->primal, heap);
+                if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "log: primal is not a number"}});
+                auto log_val = make_flonum(std::log(n.as_double()));
+                if (!log_val) return std::unexpected(log_val.error());
+                LispVal ba = d->backprop;
+                LispVal primal_lv = d->primal;
+                auto bp = make_primitive(heap,
+                    [vm, ba, primal_lv](const std::vector<LispVal>& bp_args) -> std::expected<LispVal, RuntimeError> {
+                        auto local_adj = vm->dual_binary_op(vm::OpCode::Div, bp_args[0], primal_lv);
+                        if (!local_adj) return local_adj;
+                        return vm->call_value(ba, {*local_adj});
+                    }, 1, false, {ba, primal_lv});
+                if (!bp) return std::unexpected(bp.error());
+                return make_dual(heap, *log_val, *bp);
+            }
+        }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "log: argument is not a number"}});
         return make_flonum(std::log(n.as_double()));
     });
 
-    env.register_builtin("sqrt", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("sqrt", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        // Dual-aware: sqrt(Dual(x, bp)) = Dual(sqrt(x), λ(adj) → bp(adj / (2*sqrt(x))))
+        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
+            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(args[0]))) {
+                auto n = classify_numeric(d->primal, heap);
+                if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sqrt: primal is not a number"}});
+                double sv = std::sqrt(n.as_double());
+                auto sqrt_val = make_flonum(sv);
+                if (!sqrt_val) return std::unexpected(sqrt_val.error());
+                LispVal ba = d->backprop;
+                auto two_sqrt = make_flonum(2.0 * sv);
+                if (!two_sqrt) return std::unexpected(two_sqrt.error());
+                LispVal two_sqrt_lv = *two_sqrt;
+                auto bp = make_primitive(heap,
+                    [vm, ba, two_sqrt_lv](const std::vector<LispVal>& bp_args) -> std::expected<LispVal, RuntimeError> {
+                        auto local_adj = vm->dual_binary_op(vm::OpCode::Div, bp_args[0], two_sqrt_lv);
+                        if (!local_adj) return local_adj;
+                        return vm->call_value(ba, {*local_adj});
+                    }, 1, false, {ba, two_sqrt_lv});
+                if (!bp) return std::unexpected(bp.error());
+                return make_dual(heap, *sqrt_val, *bp);
+            }
+        }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sqrt: argument is not a number"}});
         return make_flonum(std::sqrt(n.as_double()));
@@ -903,6 +1044,46 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             }
         };
         return is_ground(args[0]) ? True : False;
+    });
+
+    // ========================================================================
+    // AD Dual number primitives: dual?  dual-primal  dual-backprop  make-dual
+    //
+    // These expose the native Dual heap type (ObjectKind::Dual) to Eta code.
+    // Combined with the Dual-aware arithmetic primitives above, they enable
+    // reverse-on-reverse AD: the backward pass's arithmetic transparently
+    // builds a second-level computation graph.
+    // ========================================================================
+
+    env.register_builtin("dual?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        const LispVal v = args[0];
+        if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
+        return heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v)) ? True : False;
+    });
+
+    env.register_builtin("dual-primal", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        const LispVal v = args[0];
+        if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject) {
+            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v)))
+                return d->primal;
+        }
+        return v;  // pass-through for non-Duals
+    });
+
+    env.register_builtin("dual-backprop", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        const LispVal v = args[0];
+        if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject) {
+            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v)))
+                return d->backprop;
+        }
+        // Non-Dual: return a no-op backpropagator (λ(adj) '())
+        return make_primitive(heap,
+            [](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> { return Nil; },
+            1, false);
+    });
+
+    env.register_builtin("make-dual", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        return make_dual(heap, args[0], args[1]);
     });
 
     // ========================================================================

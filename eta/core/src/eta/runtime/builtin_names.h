@@ -121,6 +121,12 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("logic-var?", 1, false);
     r("ground?",    1, false);
 
+    // AD Dual number primitives
+    r("dual?",          1, false);
+    r("dual-primal",    1, false);
+    r("dual-backprop",  1, false);
+    r("make-dual",      2, false);
+
     // ====================================================================
     // port_primitives.h  (must match registration order exactly)
     // ====================================================================

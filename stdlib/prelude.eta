@@ -773,7 +773,7 @@
       (every? (lambda (group)
                 (let ((ground-vals
                         (filter (lambda (v) (not (logic-var? v)))
-                                (map* deref-lvar group))))
+                                (map* (lambda (v) (deref-lvar v)) group))))
                   (%clp-all-distinct? ground-vals)))
               *clp-adiff-groups*))
 
@@ -836,6 +836,10 @@
     do:conditional-mean
     do:marginal-prob)
   (begin
+
+    ;; Local helper: convert a symbol to its string name.
+    ;; Uses display-to-string from std.io.
+    (defun symbol->string (s) (display-to-string s))
 
     (defun %dag-edge-from (edge) (car edge))
     (defun %dag-edge-to   (edge) (car (cdr (cdr edge))))

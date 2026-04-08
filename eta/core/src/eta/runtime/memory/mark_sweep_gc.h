@@ -69,6 +69,15 @@ namespace eta::runtime::memory::gc {
             if (lv.binding.has_value()) callback(*lv.binding);
         }
 
+        void visit_dual(const types::Dual& d) override {
+            callback(d.primal);
+            callback(d.backprop);
+        }
+
+        void visit_primitive(const types::Primitive& p) override {
+            for (auto v : p.gc_roots) callback(v);
+        }
+
         void visit_leaf(heap::ObjectKind, const void*) override { /* no edges */ }
     };
 

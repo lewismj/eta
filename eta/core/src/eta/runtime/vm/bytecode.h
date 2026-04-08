@@ -88,6 +88,11 @@ enum class OpCode : std::uint8_t {
     DerefLogicVar,  // [lvar ->] pop lvar; push fully dereferenced value
     TrailMark,      // [] -> push current trail size as fixnum (backtrack point)
     UnwindTrail,    // [mark ->] pop mark fixnum; undo all bindings since mark
+
+    // AD dual numbers (reverse-mode automatic differentiation)
+    MakeDual,       // [] -> pop backprop, pop primal; push Dual{primal, backprop}
+    DualVal,        // [] -> pop dual; push dual.primal (or pass through if not Dual)
+    DualBp,         // [] -> pop dual; push dual.backprop (or push no-op closure if not Dual)
 };
 
 struct Instruction {

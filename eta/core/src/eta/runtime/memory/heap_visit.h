@@ -18,6 +18,8 @@ namespace eta::runtime::memory::heap {
         virtual R visit_continuation(const eta::runtime::types::Continuation& c) = 0;
         virtual R visit_multiple_values(const eta::runtime::types::MultipleValues& mv) = 0;
         virtual R visit_logic_var(const eta::runtime::types::LogicVar& lv) = 0;
+        virtual R visit_dual(const eta::runtime::types::Dual& d) = 0;
+        virtual R visit_primitive(const eta::runtime::types::Primitive& p) = 0;
 
         // Fallback for leaf/unknown kinds (no outward edges)
         virtual R visit_leaf(ObjectKind kind, const void* payload) = 0;
@@ -34,10 +36,11 @@ namespace eta::runtime::memory::heap {
             case Continuation: return v.visit_continuation(*static_cast<const eta::runtime::types::Continuation*>(payload));
             case MultipleValues: return v.visit_multiple_values(*static_cast<const eta::runtime::types::MultipleValues*>(payload));
             case LogicVar:     return v.visit_logic_var(*static_cast<const eta::runtime::types::LogicVar*>(payload));
+            case Dual:         return v.visit_dual(*static_cast<const eta::runtime::types::Dual*>(payload));
+            case Primitive:    return v.visit_primitive(*static_cast<const eta::runtime::types::Primitive*>(payload));
 
             case Fixnum:
             case ByteVector:
-            case Primitive:
             case Port:
             case Unknown:
                 return v.visit_leaf(hdr.kind, payload);

@@ -102,6 +102,12 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
+    std::expected<LispVal, RuntimeError> make_primitive(Heap& heap, types::PrimitiveFunc func, uint32_t arity, bool has_rest,
+                                                        std::vector<LispVal> gc_roots) {
+        return make_heap_object<types::Primitive, ObjectKind::Primitive>(heap, types::Primitive{.func = std::move(func), .arity = arity, .has_rest = has_rest, .gc_roots = std::move(gc_roots)});
+    }
+
+    inline_always
     std::expected<LispVal, RuntimeError> make_port(Heap& heap, std::shared_ptr<Port> port) {
         return make_heap_object<types::PortObject, ObjectKind::Port>(heap, types::PortObject{.port = std::move(port)});
     }
@@ -109,6 +115,11 @@ namespace eta::runtime::memory::factory {
     inline_always
     std::expected<LispVal, RuntimeError> make_logic_var(Heap& heap) {
         return make_heap_object<types::LogicVar, ObjectKind::LogicVar>(heap, types::LogicVar{});
+    }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_dual(Heap& heap, LispVal primal, LispVal backprop) {
+        return make_heap_object<types::Dual, ObjectKind::Dual>(heap, types::Dual{.primal = primal, .backprop = backprop});
     }
 }
 

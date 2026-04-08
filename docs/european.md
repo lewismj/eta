@@ -307,6 +307,69 @@ approximations and no numerical noise.
 
 ---
 
+## §5  Reverse-on-Reverse via Native Dual VM Type
+
+The example now **also** demonstrates true tape-on-tape
+reverse-on-reverse using Eta's dedicated **native Dual heap object**
+and specialised VM opcodes.
+
+### VM-Level Support
+
+| Component | Role |
+|-----------|------|
+| `ObjectKind::Dual` | First-class heap type `(primal, backpropagator)` |
+| `MakeDual` opcode | Allocates a Dual on the heap |
+| `DualVal` opcode | Extracts `.primal` |
+| `DualBp` opcode | Extracts `.backpropagator` |
+| Dual-aware `+`/`-`/`*`/`/` | Primitives transparently lift when either operand is a Dual |
+| Dual-aware `exp`/`log`/`sqrt` | Chain rule applied inside the primitive |
+| GC-traced Primitive roots | `Primitive.gc_roots` keeps captured LispVals alive across GC cycles |
+
+When the VM's `do_binary_arithmetic` encounters a Dual operand, it:
+
+1. **Extracts primals** and recursively computes the forward result.
+2. **Builds a backpropagator** (a `Primitive` with gc_roots) that,
+   given an adjoint, applies the chain rule and calls child
+   backpropagators via `call_value`.
+3. **Wraps** the result as a new `Dual(forward_result, backpropagator)`.
+
+Because the backpropagator's internal arithmetic (`* adj pb`, etc.)
+also flows through the same Dual-aware primitives, seeding the
+**outer** backward pass with a Dual-valued adjoint causes the inner
+pass to build a *second-level* computation graph automatically.
+
+### Hessian Computation
+
+```scheme
+(defun hessian-col (f vals col-idx)
+  ;; Seed variable col-idx with a native Dual adjoint.
+  (let ((seed-vals (make-seed-duals vals col-idx)))
+    (let ((result (native-grad f seed-vals)))
+      ;; Gradient entries are now Duals whose backpropagators
+      ;; encode the second-order structure.
+      (extract-hessian-col result (length vals)))))
+
+(defun hessian (f vals)
+  ;; Full n×n Hessian: one hessian-col per variable.
+  …)
+```
+
+### Results
+
+The native Dual reverse-on-reverse produces the same second-order
+Greeks as the grad-on-Greek approach:
+
+| Greek | Grad-on-Greek | Reverse-on-Reverse | Match? |
+|-------|:---:|:---:|:---:|
+| Gamma (∂²C/∂S²) | 0.01499 | 0.01499 | ✓ |
+| Vanna (∂²C/∂S∂σ) | −0.4890 | −0.4890 | ✓ |
+| Volga (∂²C/∂σ²) | 23.29 | 23.29 | ✓ |
+
+The Schwarz symmetry check (H[0][3] vs H[3][0]) matches to ~2×10⁻⁷,
+limited only by floating-point precision.
+
+---
+
 ## Summary
 
 | Component | Role |
@@ -319,4 +382,6 @@ approximations and no numerical noise.
 | `bs-vega-fn` | 𝒱 = S·φ(d₁)·√T — differentiable for Volga |
 | `grad` (1st call) | Price + all first-order Greeks |
 | `grad` (2nd call) | Gamma, Vanna, Volga via grad-on-Greek |
+| `native-grad` / `hessian` | True reverse-on-reverse via native Dual VM type |
+| `make-dual` / `dual?` / `dual-primal` / `dual-backprop` | Native Dual primitives |
 

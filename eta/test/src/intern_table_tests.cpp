@@ -101,9 +101,9 @@ BOOST_AUTO_TEST_CASE(test_fuzzer_crash_case_only_newlines) {
     InternTable tbl;
 
     BOOST_CHECK_NO_THROW({
-        tbl.intern("\n");
-        tbl.intern("\n\n");
-        tbl.intern("\n\n\n");
+        (void) tbl.intern("\n");
+        (void) tbl.intern("\n\n");
+        (void) tbl.intern("\n\n\n");
     });
 }
 

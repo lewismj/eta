@@ -161,6 +161,11 @@ public:
 
     std::expected<LispVal, RuntimeError> call_value(LispVal proc, std::vector<LispVal> args);
 
+    /// Dual-aware binary arithmetic — public wrapper around do_binary_arithmetic.
+    /// Used by the +/-/*/÷ primitives to transparently lift when either operand
+    /// is a native Dual (ObjectKind::Dual), enabling reverse-on-reverse AD.
+    std::expected<LispVal, RuntimeError> dual_binary_op(OpCode op, LispVal a, LispVal b);
+
     // Test helper to access/modify globals
     std::vector<LispVal>& globals() { return globals_; }
     const std::vector<LispVal>& globals() const { return globals_; }

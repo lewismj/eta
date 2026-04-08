@@ -1279,3 +1279,172 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_zero_lgd) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
+// ============================================================================
+// Native Dual VM Type — Tests for make-dual, dual?, dual-primal, dual-backprop
+// and reverse-on-reverse AD via VM-level Dual lifting.
+// ============================================================================
+
+// Helper: inline library for native-Dual AD (uses make-dual etc.)
+static const char* NATIVE_DUAL_LIB = R"(
+    ;; ── Native Dual AD primitives ──────────────────────────────────
+    (defun nd-val (x) (if (dual? x) (dual-primal x) x))
+    (defun nd-bp  (x) (if (dual? x) (dual-backprop x) (lambda (adj) '())))
+    (defun nd-make-var (v idx) (make-dual v (lambda (adj) (list (cons idx adj)))))
+    (defun nd-ensure (x) (if (dual? x) x (make-dual x (lambda (adj) '()))))
+
+    ;; ── Lifted arithmetic (Eta-level, calls * / + on primals) ─────
+    (defun nd* (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (* va vb)
+                     (lambda (adj) (append (ba (* adj vb)) (bb (* adj va))))))))
+
+    (defun nd+ (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (+ va vb)
+                     (lambda (adj) (append (ba adj) (bb adj)))))))
+
+    (defun nd- (a b)
+      (let ((a (nd-ensure a)) (b (nd-ensure b)))
+        (let ((va (nd-val a)) (vb (nd-val b))
+              (ba (nd-bp a))  (bb (nd-bp b)))
+          (make-dual (- va vb)
+                     (lambda (adj) (append (ba adj) (bb (* -1 adj))))))))
+
+    ;; ── Gradient driver ────────────────────────────────────────────
+    (defun nd-collect-adjoints (n adj-list)
+      (let ((result (make-vector n 0)))
+        (letrec ((loop (lambda (xs)
+                         (if (null? xs)
+                             result
+                             (let ((p (car xs)))
+                               (let ((i (car p))
+                                     (v (cdr p)))
+                                 (vector-set! result i
+                                   (+ (vector-ref result i) v))
+                                 (loop (cdr xs))))))))
+          (loop adj-list))))
+
+    (defun native-grad (f vals)
+      (letrec ((make-vars
+                 (lambda (vs idx)
+                   (if (null? vs) '()
+                       (cons (nd-make-var (car vs) idx)
+                             (make-vars (cdr vs) (+ idx 1)))))))
+        (let ((duals (make-vars vals 0)))
+          (let ((out (apply f duals)))
+            (let ((primal (nd-val out))
+                  (adjoints ((nd-bp out) 1)))
+              (list primal (nd-collect-adjoints (length vals) adjoints)))))))
+)";
+
+static std::string native_dual_module(const std::string& body) {
+    return std::string("(module m\n") + NATIVE_DUAL_LIB + "\n" + body + "\n)";
+}
+
+BOOST_AUTO_TEST_SUITE(native_dual_tests)
+
+BOOST_FIXTURE_TEST_CASE(test_make_dual_and_predicates, FunctionalTestFixture) {
+    // make-dual creates a Dual, dual? returns #t, dual-primal extracts primal
+    LispVal res = run(native_dual_module(R"(
+        (define d (make-dual 42.0 (lambda (adj) '())))
+        (define result (if (dual? d) (dual-primal d) -1))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 42.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(test_dual_predicate_false_for_number, FunctionalTestFixture) {
+    LispVal res = run(native_dual_module(R"(
+        (define result (dual? 3.14))
+    )"));
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_FIXTURE_TEST_CASE(test_dual_backprop_extraction, FunctionalTestFixture) {
+    // Extract and call the backpropagator
+    LispVal res = run(native_dual_module(R"(
+        (define d (make-dual 5.0 (lambda (adj) (list (cons 0 adj)))))
+        (define bp (dual-backprop d))
+        (define adj-list (bp 3.0))
+        (define result (cdr (car adj-list)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 3.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(test_native_grad_x_squared, FunctionalTestFixture) {
+    // f(x) = x*x, f'(3) = 6
+    LispVal res = run(native_dual_module(R"(
+        (define g (native-grad (lambda (x) (nd* x x)) '(3.0)))
+        (define result (vector-ref (car (cdr g)) 0))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 6.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(test_native_grad_x_squared_primal, FunctionalTestFixture) {
+    // f(x) = x*x, f(3) = 9
+    LispVal res = run(native_dual_module(R"(
+        (define g (native-grad (lambda (x) (nd* x x)) '(3.0)))
+        (define result (car g))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 9.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(test_native_grad_linear, FunctionalTestFixture) {
+    // f(x,y) = 3x + 2y, grad = (3, 2)
+    LispVal res = run(native_dual_module(R"(
+        (define g (native-grad (lambda (x y)
+                                 (nd+ (nd* 3.0 x) (nd* 2.0 y)))
+                               '(1.0 1.0)))
+        (define gv (car (cdr g)))
+        (define result (+ (vector-ref gv 0) (vector-ref gv 1)))
+    )"));
+    // gradient: (3.0, 2.0), sum = 5.0
+    BOOST_CHECK_CLOSE(to_double(res), 5.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(test_native_grad_product, FunctionalTestFixture) {
+    // f(x,y) = x*y at (3,4): f=12, df/dx=4, df/dy=3
+    LispVal res = run(native_dual_module(R"(
+        (define g (native-grad (lambda (x y) (nd* x y)) '(3.0 4.0)))
+        (define gv (car (cdr g)))
+        (define dx (vector-ref gv 0))
+        (define dy (vector-ref gv 1))
+        (define result (+ (* dx 10) dy))
+    )"));
+    // dx=4, dy=3 → 4*10+3 = 43
+    BOOST_CHECK_CLOSE(to_double(res), 43.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(test_nested_dual_primal_extraction, FunctionalTestFixture) {
+    // Nested Duals: make a Dual whose primal is itself a Dual.
+    // Verify we can extract through both layers.
+    LispVal res = run(native_dual_module(R"(
+        (define inner (make-dual 3.0 (lambda (adj) '())))
+        (define outer (make-dual inner (lambda (adj) '())))
+        (define result (dual-primal (dual-primal outer)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 3.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(test_dual_backpropagator_chain, FunctionalTestFixture) {
+    // Chain two backpropagators manually:
+    // d1 has bp that produces (0 . adj), d2 has bp that calls d1's bp
+    LispVal res = run(native_dual_module(R"(
+        (define d1 (make-dual 5.0 (lambda (adj) (list (cons 0 adj)))))
+        (define d2 (make-dual 10.0
+                     (lambda (adj)
+                       (let ((bp1 (dual-backprop d1)))
+                         (bp1 (* adj 2.0))))))
+        (define adj-list ((dual-backprop d2) 3.0))
+        ;; d2's bp calls d1's bp with adj*2 = 3*2 = 6
+        ;; d1's bp returns ((0 . 6))
+        (define result (cdr (car adj-list)))
+    )"));
+    BOOST_CHECK_CLOSE(to_double(res), 6.0, 1e-10);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+

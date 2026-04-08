@@ -218,6 +218,14 @@ inline std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTa
             return "_G" + std::to_string(id);
         }
 
+        // AD Dual number
+        if (auto* dual = heap.try_get_as<ObjectKind::Dual, types::Dual>(id)) {
+            std::string out = "#<dual ";
+            out += format_value(dual->primal, mode, heap, intern_table);
+            out += ">";
+            return out;
+        }
+
         return "#<object>";
     }
 
