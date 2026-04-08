@@ -46,7 +46,8 @@ elimination, first-class continuations (`call/cc`), a hygienic macro
 expander with `syntax-rules`, and a module system.
 
 Eta also provides native structural unification as a first-class VM feature,
-allowing Prolog-style pattern matching and type inference. See [Logic Programming](docs/logic.md).
+allowing Prolog-style pattern matching and type inference (see [Logic Programming](docs/logic.md)),
+as well as built-in constraint logic programming with interval and finite-domain solvers (see [CLP](docs/clp.md)).
 
 The implementation ships as five executables and a VS Code extension:
 
