@@ -415,6 +415,98 @@ BOOST_AUTO_TEST_CASE(deserialize_version_mismatch) {
 }
 
 // ============================================================================
+// Negative double constants (regression: bit-63 collision with FUNC_INDEX_TAG)
+// ============================================================================
+
+BOOST_AUTO_TEST_CASE(roundtrip_negative_double_constants) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name = "neg_doubles";
+    func.arity = 0;
+    func.stack_size = 4;
+
+    // Negative doubles that previously collided with FUNC_INDEX_TAG (bit 63 = sign bit)
+    std::vector<double> test_values = {
+        -0.5, -1.0, -0.356563782, -1.821255978, -3.14159,
+        0.0, 1.0, -0.0  // include edge cases
+    };
+    for (double d : test_values) {
+        auto enc = ops::encode(d);
+        BOOST_REQUIRE(enc.has_value());
+        func.constants.push_back(*enc);
+    }
+
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_REQUIRE(result.has_value());
+    auto* f = result->registry.get(0);
+    BOOST_REQUIRE(f);
+    BOOST_REQUIRE_EQUAL(f->constants.size(), test_values.size());
+
+    for (std::size_t i = 0; i < test_values.size(); ++i) {
+        auto decoded = ops::decode<double>(f->constants[i]);
+        BOOST_CHECK_MESSAGE(decoded.has_value(),
+            "constant[" << i << "] = " << test_values[i] << " failed to decode as double");
+        if (decoded) {
+            if (std::isnan(test_values[i])) {
+                BOOST_CHECK(std::isnan(*decoded));
+            } else {
+                BOOST_CHECK_CLOSE(*decoded, test_values[i], 1e-10);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(roundtrip_func_index_not_confused_with_negative_double) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name = "mixed";
+    func.arity = 0;
+    func.stack_size = 4;
+
+    // Mix func_index values with negative doubles in the same function
+    func.constants.push_back(encode_func_index(42));   // func_index
+    auto neg = ops::encode(-0.5).value();
+    func.constants.push_back(neg);                       // negative double
+    func.constants.push_back(encode_func_index(100));   // func_index
+    auto neg2 = ops::encode(-3.14).value();
+    func.constants.push_back(neg2);                      // negative double
+
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_REQUIRE(result.has_value());
+    auto* f = result->registry.get(0);
+    BOOST_REQUIRE(f);
+    BOOST_REQUIRE_EQUAL(f->constants.size(), 4u);
+
+    // func_index(42)
+    BOOST_CHECK(is_func_index(f->constants[0]));
+    BOOST_CHECK_EQUAL(decode_func_index(f->constants[0]), 42u);
+
+    // -0.5
+    BOOST_CHECK(!is_func_index(f->constants[1]));
+    auto d1 = ops::decode<double>(f->constants[1]);
+    BOOST_CHECK(d1.has_value());
+    BOOST_CHECK_CLOSE(*d1, -0.5, 1e-10);
+
+    // func_index(100)
+    BOOST_CHECK(is_func_index(f->constants[2]));
+    BOOST_CHECK_EQUAL(decode_func_index(f->constants[2]), 100u);
+
+    // -3.14
+    BOOST_CHECK(!is_func_index(f->constants[3]));
+    auto d2 = ops::decode<double>(f->constants[3]);
+    BOOST_CHECK(d2.has_value());
+    BOOST_CHECK_CLOSE(*d2, -3.14, 1e-10);
+}
+
+// ============================================================================
 // hash_source
 // ============================================================================
 

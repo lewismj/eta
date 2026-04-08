@@ -13,12 +13,18 @@ namespace eta::runtime::vm {
 // When encoding a function index in MakeClosure, set this bit to mark it as an index.
 constexpr uint64_t FUNC_INDEX_TAG = 1ULL << 63;
 
+// Mask for bits 62-32 — these are always zero in a valid func_index
+// (encode_func_index stores only a uint32_t in the lower 32 bits).
+// Negative IEEE-754 doubles also have bit 63 set but their exponent
+// field (bits 62-52) is non-zero, so this mask distinguishes them.
+constexpr uint64_t FUNC_INDEX_UPPER_ZERO_MASK = 0x7FFFFFFF00000000ULL;
+
 inline nanbox::LispVal encode_func_index(uint32_t index) {
     return FUNC_INDEX_TAG | static_cast<uint64_t>(index);
 }
 
 inline bool is_func_index(nanbox::LispVal v) {
-    return (v & FUNC_INDEX_TAG) != 0;
+    return (v & FUNC_INDEX_TAG) != 0 && (v & FUNC_INDEX_UPPER_ZERO_MASK) == 0;
 }
 
 inline uint32_t decode_func_index(nanbox::LispVal v) {

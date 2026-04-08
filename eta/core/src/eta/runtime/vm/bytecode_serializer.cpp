@@ -63,15 +63,22 @@ void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
     if (v == Nil) { write_u8(os, CT_Nil); return; }
     if (v == True) { write_u8(os, CT_True); return; }
 
-    // FUNC_INDEX_TAG-encoded values
-    if (is_func_index(v)) {
+    // Boxed values: dispatch on tag below
+    if (ops::is_boxed(v)) {
+        // fall through to the switch below
+    }
+    // Unboxed: either a func_index sentinel or a raw double.
+    // IMPORTANT: is_func_index must be checked carefully because bit 63
+    // (FUNC_INDEX_TAG) is also the IEEE-754 sign bit of negative doubles.
+    // is_func_index additionally verifies bits 62-32 are zero, which is
+    // true for func_index values (uint32 payload) but not for neg doubles.
+    else if (is_func_index(v)) {
         write_u8(os, CT_FuncIndex);
         write_u32(os, decode_func_index(v));
         return;
     }
-
-    // Raw doubles (unboxed)
-    if (!ops::is_boxed(v)) {
+    else {
+        // Raw double (including negative doubles)
         write_u8(os, CT_Double);
         write_f64(os, std::bit_cast<double>(v));
         return;
