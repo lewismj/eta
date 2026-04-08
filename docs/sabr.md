@@ -380,7 +380,7 @@ tape level.
 
 ## Example Output
 
-[!TIP]
+> [!TIP]
 > ```etai``` can run the .eta or .etac files directly. Use ```etac -O``` to compile with optimizations for a 
 > more realistic performance profile.
 
