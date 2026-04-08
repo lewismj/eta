@@ -203,7 +203,6 @@ leaving the language.
 | Strategy | Mechanism | Pros | Cons |
 |----------|-----------|------|------|
 | **FFI → libtorch** | `foreign-library "libtorch_cpu"` | Reuses § 2 infrastructure; pure C++ | Must manually wrap each ATen op |
-| **Embedded Python** | Embed CPython via `libpython` and call `import torch` | Access to full Python‐level API, pre-trained models | Heavyweight; GIL contention |
 | **Native Bindings** | Dedicated `std.torch` module backed by C++ glue code | Idiomatic Eta API; type-safe tensors | More implementation effort |
 
 ### Proposed Surface Syntax (Native Bindings)
@@ -267,7 +266,6 @@ release the underlying tensor storage.
 | Arithmetic dispatch (`add`, `mul`, `matmul`, …) | glue layer |
 | Autograd support (`backward`, `grad`) | glue layer |
 | GPU device transfer (`to-device`) | glue layer |
-| Python-fallback path via embedded CPython (optional) | `ffi/python.h` |
 
 ---
 
