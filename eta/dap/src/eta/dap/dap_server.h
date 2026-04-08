@@ -99,7 +99,14 @@ private:
     void handle_evaluate(const Value& id, const Value& args);
     void handle_disconnect(const Value& id, const Value& args);
 
+    // ── Custom requests ─────────────────────────────────────────────────────
+    void handle_heap_inspector(const Value& id, const Value& args);
+    void handle_inspect_object(const Value& id, const Value& args);
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+    /// Build a JSON heap snapshot from the paused VM. Caller must hold vm_mutex_.
+    Value build_heap_snapshot();
+
     /// Apply pending_bps_ to the running VM. Caller must hold vm_mutex_.
     void install_pending_breakpoints();
 

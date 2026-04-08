@@ -25,9 +25,11 @@ import {
     ServerOptions,
     Executable,
 } from 'vscode-languageclient/node';
+import { HeapInspectorPanel } from './heapView';
 
 let client: LanguageClient | undefined;
 let outputChannel: OutputChannel;
+let programOutputChannel: OutputChannel;
 
 function log(msg: string): void {
     outputChannel?.appendLine(msg);
@@ -173,7 +175,8 @@ function validateAndLogServerPath(configPath: string): void {
 
 export function activate(context: ExtensionContext) {
     outputChannel = window.createOutputChannel('Eta Language');
-    context.subscriptions.push(outputChannel);
+    programOutputChannel = window.createOutputChannel('Eta Output');
+    context.subscriptions.push(outputChannel, programOutputChannel);
     // outputChannel.show() is intentionally omitted — the panel opens on demand
     // rather than stealing focus on every activation / extension-host restart.
     log('Eta extension activating...');
@@ -191,7 +194,7 @@ export function activate(context: ExtensionContext) {
         debug.registerDebugAdapterDescriptorFactory('eta', factory),
         debug.registerDebugAdapterTrackerFactory('eta', {
             createDebugAdapterTracker(_session: DebugSession): DebugAdapterTracker {
-                return new EtaDebugAdapterTracker(outputChannel);
+                return new EtaDebugAdapterTracker(outputChannel, programOutputChannel);
             },
         }),
         debug.registerDebugConfigurationProvider('eta', new EtaDebugConfigurationProvider()),
@@ -207,6 +210,11 @@ export function activate(context: ExtensionContext) {
                 name: 'Run Eta file',
                 program: editor.document.fileName,
             });
+        }),
+        commands.registerCommand('eta.showHeapInspector', () => {
+            const panel = HeapInspectorPanel.createOrShow(context);
+            panel.setInitialHtml();
+            panel.refresh();
         }),
     );
 
@@ -318,10 +326,15 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
 // exchange without needing to enable VS Code's verbose DAP trace log.
 
 class EtaDebugAdapterTracker implements DebugAdapterTracker {
-    constructor(private readonly channel: OutputChannel) {}
+    constructor(
+        private readonly channel: OutputChannel,
+        private readonly programChannel: OutputChannel,
+    ) {}
 
     onWillStartSession(): void {
         this.channel.appendLine('[DAP] Debug session starting…');
+        this.programChannel.clear();
+        this.programChannel.show(true); // show but don't steal focus
     }
 
     onWillStopSession(): void {
@@ -371,7 +384,13 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const event: string = message?.event ?? '';
 
         if (type === 'event') {
-            if (event === 'output') {
+            if (event === 'eta-output') {
+                // Script stdout/stderr — route to the dedicated "Eta Output" panel
+                const text: string   = message?.body?.text ?? '';
+                if (text) {
+                    this.programChannel.append(text);
+                }
+            } else if (event === 'output') {
                 const output: string = message?.body?.output ?? '';
                 if (output) {
                     // Text already ends with \n in most cases; use append, not appendLine.
@@ -383,6 +402,8 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 const reason: string = message?.body?.reason ?? '?';
                 const tid: number    = message?.body?.threadId ?? 0;
                 this.channel.appendLine(`[DAP←] stopped: reason="${reason}" threadId=${tid}`);
+                // Auto-refresh heap inspector when VM stops
+                HeapInspectorPanel.current()?.notifyStopped();
             } else if (event === 'continued') {
                 this.channel.appendLine('[DAP←] continued');
             } else if (event === 'breakpoint') {

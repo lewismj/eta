@@ -13,6 +13,7 @@
 #include "eta/runtime/port.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/value_formatter.h"
+#include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/diagnostic/diagnostic.h"
 
 namespace eta::dap {
@@ -161,6 +162,8 @@ void DapServer::dispatch(const Value& msg) {
     else if (*cmd == "pause")               handle_pause(id, args);
     else if (*cmd == "evaluate")            handle_evaluate(id, args);
     else if (*cmd == "disconnect")          handle_disconnect(id, args);
+    else if (*cmd == "eta/heapSnapshot")    handle_heap_inspector(id, args);
+    else if (*cmd == "eta/inspectObject")   handle_inspect_object(id, args);
     else {
         // Unknown command – send empty success response to keep VS Code happy
         send_response(id, json::object({}));
@@ -366,14 +369,17 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
     // Without this, any script that calls (display ...) or (newline) would write
     // to std::cout, corrupting the Content-Length framed DAP stream and causing
     // VS Code to report a "read error".  We install CallbackPorts that forward
-    // the text as DAP "output" events instead.
+    // the text as custom "eta-output" DAP events.  The VS Code extension's
+    // DebugAdapterTracker intercepts these and writes to a dedicated "Eta Output"
+    // OutputChannel, so script output appears in the Output panel rather than the
+    // Debug Console.
     drv->set_output_port(std::make_shared<runtime::CallbackPort>(
         [this](const std::string& text) {
-            send_event("output", json::object({{"category", "stdout"}, {"output", text}}));
+            send_event("eta-output", json::object({{"stream", "stdout"}, {"text", text}}));
         }));
     drv->set_error_port(std::make_shared<runtime::CallbackPort>(
         [this](const std::string& text) {
-            send_event("output", json::object({{"category", "stderr"}, {"output", text}}));
+            send_event("eta-output", json::object({{"stream", "stderr"}, {"text", text}}));
         }));
 
     // ── Pre-register the script file ID so breakpoints fire on first run ──────
@@ -749,6 +755,134 @@ void DapServer::notify_breakpoints_verified() {
             })},
         }));
     }
+}
+
+// ============================================================================
+// Heap Inspector — eta/heapSnapshot
+// ============================================================================
+
+void DapServer::handle_heap_inspector(const Value& id, const Value& /*args*/) {
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (!driver_) {
+        send_error_response(id, 2001, "VM not running");
+        return;
+    }
+    if (!driver_->vm().is_paused()) {
+        send_error_response(id, 2002, "VM must be paused to inspect the heap");
+        return;
+    }
+    send_response(id, build_heap_snapshot());
+}
+
+Value DapServer::build_heap_snapshot() {
+    using namespace runtime::memory::heap;
+
+    auto& heap = driver_->heap();
+
+    // ── Per-kind statistics ──────────────────────────────────────────────────
+    struct KindStat { int64_t count{0}; int64_t bytes{0}; };
+    std::unordered_map<uint8_t, KindStat> kind_stats;
+
+    heap.for_each_entry([&](ObjectId /*id*/, HeapEntry& entry) {
+        auto k = static_cast<uint8_t>(entry.header.kind);
+        kind_stats[k].count++;
+        kind_stats[k].bytes += static_cast<int64_t>(entry.size);
+    });
+
+    Array kinds_arr;
+    for (const auto& [k, stat] : kind_stats) {
+        kinds_arr.push_back(json::object({
+            {"kind",  Value(std::string(to_string(static_cast<ObjectKind>(k))))},
+            {"count", Value(stat.count)},
+            {"bytes", Value(stat.bytes)},
+        }));
+    }
+
+    // ── GC roots ─────────────────────────────────────────────────────────────
+    auto gc_roots = driver_->vm().enumerate_gc_roots();
+    Array roots_arr;
+    for (const auto& root : gc_roots) {
+        Array ids;
+        for (auto oid : root.object_ids) {
+            ids.push_back(Value(static_cast<int64_t>(oid)));
+        }
+        roots_arr.push_back(json::object({
+            {"name",      Value(root.name)},
+            {"objectIds", Value(std::move(ids))},
+        }));
+    }
+
+    return json::object({
+        {"totalBytes",    Value(static_cast<int64_t>(heap.total_bytes()))},
+        {"softLimit",     Value(static_cast<int64_t>(heap.soft_limit()))},
+        {"kinds",         Value(std::move(kinds_arr))},
+        {"roots",         Value(std::move(roots_arr))},
+    });
+}
+
+// ============================================================================
+// Heap Inspector — eta/inspectObject
+// ============================================================================
+
+void DapServer::handle_inspect_object(const Value& id, const Value& args) {
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (!driver_) {
+        send_error_response(id, 2001, "VM not running");
+        return;
+    }
+    if (!driver_->vm().is_paused()) {
+        send_error_response(id, 2002, "VM must be paused to inspect the heap");
+        return;
+    }
+
+    auto oid_opt = args.get_int("objectId");
+    if (!oid_opt) {
+        send_error_response(id, 2003, "Missing objectId argument");
+        return;
+    }
+    auto object_id = static_cast<runtime::memory::heap::ObjectId>(*oid_opt);
+
+    auto& heap = driver_->heap();
+    runtime::memory::heap::HeapEntry entry;
+    if (!heap.try_get(object_id, entry)) {
+        send_error_response(id, 2004, "Object not found");
+        return;
+    }
+
+    // Format a human-readable preview using the value formatter
+    auto lisp_val = runtime::nanbox::ops::box(runtime::nanbox::Tag::HeapObject, object_id);
+    std::string preview = driver_->format_value(lisp_val);
+
+    // Collect child references via the centralized heap visitor
+    Array children;
+    constexpr int MAX_CHILDREN = 50;
+
+    runtime::memory::gc::visit_heap_refs(entry, [&](runtime::nanbox::LispVal child) {
+        if (static_cast<int>(children.size()) >= MAX_CHILDREN) return;
+        if (!runtime::nanbox::ops::is_boxed(child) || runtime::nanbox::ops::tag(child) != runtime::nanbox::Tag::HeapObject)
+            return;
+
+        auto child_id = runtime::nanbox::ops::payload(child);
+        runtime::memory::heap::HeapEntry child_entry;
+        if (!heap.try_get(static_cast<runtime::memory::heap::ObjectId>(child_id), child_entry))
+            return;
+
+        auto child_val = runtime::nanbox::ops::box(runtime::nanbox::Tag::HeapObject, static_cast<runtime::memory::heap::ObjectId>(child_id));
+        children.push_back(json::object({
+            {"objectId", Value(static_cast<int64_t>(child_id))},
+            {"kind",     Value(std::string(runtime::memory::heap::to_string(child_entry.header.kind)))},
+            {"size",     Value(static_cast<int64_t>(child_entry.size))},
+            {"preview",  Value(driver_->format_value(child_val))},
+        }));
+    });
+
+    send_response(id, json::object({
+        {"objectId", Value(static_cast<int64_t>(object_id))},
+        {"kind",     Value(std::string(runtime::memory::heap::to_string(entry.header.kind)))},
+        {"size",     Value(static_cast<int64_t>(entry.size))},
+        {"preview",  Value(std::move(preview))},
+        {"children", Value(std::move(children))},
+    }));
 }
 
 

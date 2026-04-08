@@ -249,6 +249,9 @@ namespace eta::runtime::memory::heap {
         // Exposes the aggregate atomic, useful for statistics (e.g., GC stats).
         size_t total_bytes() const { return total_heap_bytes.load(std::memory_order_relaxed); }
 
+        // Soft heap size limit (bytes).
+        size_t soft_limit() const { return max_heap_soft_limit_; }
+
         // Visit all entries in the heap. The callback may ONLY mutate entry.header.flags.
         // Other fields are considered read-only in the callback context.
         void for_each_entry(const std::function<void(ObjectId, HeapEntry&)>& fn);

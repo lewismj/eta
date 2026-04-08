@@ -43,6 +43,12 @@ struct FrameInfo {
     std::size_t          frame_index{0};
 };
 
+/// GC root category with the heap object IDs reachable from it.
+struct GCRootInfo {
+    std::string name;
+    std::vector<memory::heap::ObjectId> object_ids;
+};
+
 enum class FrameKind : uint8_t {
     Normal,
     CallWithValuesConsumer,
@@ -154,6 +160,9 @@ public:
     [[nodiscard]] std::vector<FrameInfo> get_frames()                        const;
     [[nodiscard]] std::vector<VarEntry>  get_locals(std::size_t frame_index) const;
     [[nodiscard]] std::vector<VarEntry>  get_upvalues(std::size_t frame_index) const;
+
+    /// Enumerate GC root categories and their heap object IDs — only valid while stopped.
+    [[nodiscard]] std::vector<GCRootInfo> enumerate_gc_roots() const;
 
     void collect_garbage();
 
