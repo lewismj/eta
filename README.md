@@ -26,7 +26,7 @@ Language Guide and Examples</p>
 <p align="center">
   <a href="docs/examples.md">Basics</a> ·
   <a href="docs/aad.md">Reverse Mode AAD Example w/XVA</a> ·
-  <a href="docs/european.md">European Greeks with AAD</a> ·
+  <a href="docs/european.md">European Option Greeks with AAD</a> ·
   <a href="docs/sabr.md">SABR Vol Surface</a> ·
   <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
   <a href="docs/clp.md">Constraint Logic Programming</a> ·
