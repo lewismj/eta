@@ -159,20 +159,20 @@ flowchart LR
 
 Download the latest release for your platform, unpack it, and run the installer:
 
-| Platform | Archive |
-|----------|---------|
-| Windows x64 | `eta-v0.0.1-win-x64.zip` |
-| Linux x86_64 | `eta-v0.0.1-linux-x86_64.tar.gz` |
+| Platform | Archive                          |
+|----------|----------------------------------|
+| Windows x64 | `eta-v0.0.9-win-x64.zip`         |
+| Linux x86_64 | `eta-v0.0.9-linux-x86_64.tar.gz` |
 
 **Windows (PowerShell / Command Prompt):**
 ```console
-cd eta-v0.0.1-win-x64
+cd eta-v0.0.9-win-x64
 .\install.cmd
 ```
 
 **Linux / macOS:**
 ```console
-cd eta-v0.0.1-linux-x86_64
+cd eta-v0.0.9-linux-x86_64
 chmod +x install.sh && ./install.sh
 ```
 
