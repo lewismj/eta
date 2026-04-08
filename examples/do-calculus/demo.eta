@@ -12,11 +12,14 @@
 (module demo
   (import std.io)
   (import std.causal)
+  (import std.clp)
   (begin
 
-    (println "══════════════════════════════════════════════════════════")
-    (println "  Do-Calculus Identification Engine — Demo")
-    (println "══════════════════════════════════════════════════════════")
+    (define win (eq? (platform) 'Win32))
+
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+    (println (if win "  Do-Calculus Identification Engine -- Demo" "  Do-Calculus Identification Engine — Demo"))
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
 
     ;; ── 1. Weather DAG ────────────────────────────────────────────────────
     ;;
@@ -26,7 +29,7 @@
     ;;
     (println "")
     (println "1. Weather DAG (Pearl 2009)")
-    (println "──────────────────────────")
+    (println (if win "--------------------------" "──────────────────────────"))
 
     (define weather-dag
       '((season    -> rain)
@@ -70,7 +73,7 @@
     ;;
     (println "")
     (println "2. Finance DAG (sector confounder)")
-    (println "───────────────────────────────────")
+    (println (if win "-----------------------------------" "───────────────────────────────────"))
 
     (define finance-dag
       '((sector      -> market-beta)
@@ -99,7 +102,7 @@
     ;;
     (println "")
     (println "3. Education & Income DAG (Angrist & Pischke)")
-    (println "──────────────────────────────────────────────")
+    (println (if win "----------------------------------------------" "──────────────────────────────────────────────"))
 
     (define educ-dag
       '((location  -> education)
@@ -124,7 +127,7 @@
     ;; lie within the unit interval [0, 1] (a probability).
     (println "")
     (println "4. CLP bounds on the causal effect")
-    (println "────────────────────────────────────")
+    (println (if win "------------------------------------" "────────────────────────────────────"))
     (println "(Causal effects that are probabilities lie in [0, 1])")
     (println "")
 
@@ -137,7 +140,8 @@
     ;; such that effect×100 ≠ 0 and effect×100 ≠ 100 (strict interior)
     ;; and effect×100 ≤ 50 (effect is at most 0.5)
 
-    (println "Admissible effect×100 values ≤ 50 (strict interior of [0,1]):")
+    (println (if win "Admissible effect*100 values <= 50 (strict interior of [0,1]):"
+                     "Admissible effect×100 values ≤ 50 (strict interior of [0,1]):"))
     (let* ((eff100 (logic-var)))
       (clp:domain eff100 1 49)   ; clp(Z): 1 ≤ eff100 ≤ 49
       (if (clp:solve (list eff100))
@@ -146,8 +150,8 @@
           (println "No solution")))
 
     (println "")
-    (println "══════════════════════════════════════════════════════════")
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
     (println "  Done.")
-    (println "══════════════════════════════════════════════════════════")
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
   ))
 

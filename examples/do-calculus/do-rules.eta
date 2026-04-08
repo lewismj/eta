@@ -25,6 +25,7 @@
 
 (module do-rules
   (import std.io)
+  (import std.collections)
   (import std.causal)
   (import std.logic)
   (begin
@@ -107,7 +108,10 @@
 
     ;; ── Demonstration ─────────────────────────────────────────────────────
 
-    (println "── Do-Calculus rules demo ──────────────────────────────")
+    (define win (eq? (platform) 'Win32))
+
+    (println (if win "-- Do-Calculus rules demo ------------------------------"
+                     "── Do-Calculus rules demo ──────────────────────────────"))
 
     ;; Finance DAG:
     ;;   sector → market-beta → stock-return
@@ -126,7 +130,8 @@
 
     ;; Rule 2 check: can we replace do(market-beta) with observation?
     ;; Y = {stock-return}, X = {}, Z = {market-beta}, W = {}
-    (print "  Rule 2 (exchange do→obs, X={}, Z={market-beta}):  ")
+    (print (if win "  Rule 2 (exchange do->obs, X={}, Z={market-beta}):  "
+                   "  Rule 2 (exchange do→obs, X={}, Z={market-beta}):  "))
     (println (do-rule2-applies? fin-dag
                                 '(stock-return)
                                 '()

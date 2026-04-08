@@ -43,6 +43,9 @@ using namespace eta::runtime::error;
  *   - input-port?
  *   - output-port?
  *   - close-port
+ *   - close-input-port
+ *   - close-output-port
+ *   - write-char
  */
 inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& intern_table, vm::VM& vm) {
     using Args = const std::vector<LispVal>&;
@@ -227,6 +230,78 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (!port_obj) return std::unexpected(port_obj.error());
 
         auto result = (*port_obj)->port->close();
+        if (!result) return std::unexpected(result.error());
+
+        return Nil;
+    });
+
+    // Standard Scheme aliases for close-port
+    env.register_builtin("close-input-port", 1, false, [get_port](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto port_obj = get_port(args[0]);
+        if (!port_obj) return std::unexpected(port_obj.error());
+        if (!(*port_obj)->port->is_input()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "close-input-port: not an input port"}});
+        }
+        auto result = (*port_obj)->port->close();
+        if (!result) return std::unexpected(result.error());
+        return Nil;
+    });
+
+    env.register_builtin("close-output-port", 1, false, [get_port](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto port_obj = get_port(args[0]);
+        if (!port_obj) return std::unexpected(port_obj.error());
+        if (!(*port_obj)->port->is_output()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "close-output-port: not an output port"}});
+        }
+        auto result = (*port_obj)->port->close();
+        if (!result) return std::unexpected(result.error());
+        return Nil;
+    });
+
+    // ========================================================================
+    // Character I/O
+    // ========================================================================
+
+    env.register_builtin("write-char", 1, true, [&vm, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (args.empty()) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "write-char: requires at least 1 argument"}});
+        }
+
+        // First argument must be a character
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::Char) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "write-char: first argument must be a character"}});
+        }
+        auto ch = ops::decode<char32_t>(args[0]);
+        if (!ch) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "write-char: invalid character"}});
+        }
+
+        // Encode the character as UTF-8
+        std::string utf8;
+        char32_t c = *ch;
+        if (c < 0x80) {
+            utf8 += static_cast<char>(c);
+        } else if (c < 0x800) {
+            utf8 += static_cast<char>(0xC0 | (c >> 6));
+            utf8 += static_cast<char>(0x80 | (c & 0x3F));
+        } else if (c < 0x10000) {
+            utf8 += static_cast<char>(0xE0 | (c >> 12));
+            utf8 += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+            utf8 += static_cast<char>(0x80 | (c & 0x3F));
+        } else {
+            utf8 += static_cast<char>(0xF0 | (c >> 18));
+            utf8 += static_cast<char>(0x80 | ((c >> 12) & 0x3F));
+            utf8 += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+            utf8 += static_cast<char>(0x80 | (c & 0x3F));
+        }
+
+        // Optional port argument (defaults to current-output-port)
+        LispVal port_val = args.size() > 1 ? args[1] : vm.current_output_port();
+
+        auto port_obj = get_port(port_val);
+        if (!port_obj) return std::unexpected(port_obj.error());
+
+        auto result = (*port_obj)->port->write_string(utf8);
         if (!result) return std::unexpected(result.error());
 
         return Nil;

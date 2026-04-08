@@ -33,9 +33,12 @@
   (import std.clp)
   (begin
 
-    (println "══════════════════════════════════════════════════════════")
-    (println "  Causal Factor Analysis — Finance Example")
-    (println "══════════════════════════════════════════════════════════")
+    (define win (eq? (platform) 'Win32))
+
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+    (println (if win "  Causal Factor Analysis -- Finance Example"
+                     "  Causal Factor Analysis — Finance Example"))
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
 
     ;; ── Step 1: Define the causal DAG ─────────────────────────────────────
     ;;
@@ -212,10 +215,12 @@
                                (equal? (%adj-obs-get obs 'sector) 'finance))
                              data))
            (n-total   (length data))
-           ;; Express probabilities as percentages (integers) for CLP
-           (pct-tech    (round (* 100 (/ n-tech    n-total))))
-           (pct-energy  (round (* 100 (/ n-energy  n-total))))
-           (pct-finance (round (* 100 (/ n-finance n-total))))
+            ;; Express probabilities as percentages (integers) for CLP
+            ;; NOTE: multiply before dividing to avoid integer-division truncation
+            ;; (/ 10 30) => 0 with integer operands, but (/ (* 100 10) 30) => 33.
+            (pct-tech    (round (/ (* 100 n-tech)    n-total)))
+            (pct-energy  (round (/ (* 100 n-energy)  n-total)))
+            (pct-finance (round (/ (* 100 n-finance) n-total)))
            ;; Assert each weight is in [1,99] (valid non-degenerate probability)
            (wt  (logic-var))
            (we  (logic-var))
@@ -232,14 +237,16 @@
             (print "  P(tech)    = ") (print pct-tech)    (println "%")
             (print "  P(energy)  = ") (print pct-energy)  (println "%")
             (print "  P(finance) = ") (print pct-finance) (println "%")
-            (println "  ✓ All sector weights are valid probabilities in (0,1)"))
-          (println "  ✗ Domain violation detected in sector weights")))
+            (println (if win "  OK All sector weights are valid probabilities in (0,1)"
+                           "  ✓ All sector weights are valid probabilities in (0,1)")))
+          (println (if win "  FAIL Domain violation detected in sector weights"
+                           "  ✗ Domain violation detected in sector weights"))))
 
     (println "")
-    (println "══════════════════════════════════════════════════════════")
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
     (println "  Analysis complete.")
     (println "  See docs/causal.md for interpretation and limitations.")
-    (println "══════════════════════════════════════════════════════════")
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
 
   ))
 

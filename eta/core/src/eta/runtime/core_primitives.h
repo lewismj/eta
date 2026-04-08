@@ -35,7 +35,7 @@ namespace eta::runtime {
  *  Association:  assq  assoc  member
  *  Higher-order: apply  map  for-each
  *  Equality:     equal?
- *  Strings:      string-length  string-append  number->string  string->number
+ *  Strings:      string-length  string-append  number->string  string->number  string-ref  substring
  *  Symbols:      symbol->string  string->symbol
  *  Vectors:      vector  vector-length  vector-ref  vector-set!  vector?  make-vector
  *  Error:        error
@@ -1032,6 +1032,37 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             if (pos == s.size()) return make_flonum(d);
         } catch (...) {}
         return nanbox::False; // Scheme convention: return #f on failure
+    });
+
+    env.register_builtin("string-ref", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto sv = StringView::try_from(args[0], intern_table);
+        if (!sv) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string-ref: not a string"}});
+        auto idx = classify_numeric(args[1], heap);
+        if (!idx.is_valid() || idx.is_flonum() || idx.int_val < 0)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string-ref: index must be a non-negative integer"}});
+        auto view = sv->view();
+        if (static_cast<size_t>(idx.int_val) >= view.size())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string-ref: index out of bounds"}});
+        // Return the byte at position as a character (treats string as byte-indexed)
+        char32_t ch = static_cast<unsigned char>(view[static_cast<size_t>(idx.int_val)]);
+        return ops::encode(ch);
+    });
+
+    env.register_builtin("substring", 3, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto sv = StringView::try_from(args[0], intern_table);
+        if (!sv) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "substring: not a string"}});
+        auto start = classify_numeric(args[1], heap);
+        auto end   = classify_numeric(args[2], heap);
+        if (!start.is_valid() || start.is_flonum() || start.int_val < 0)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "substring: start must be a non-negative integer"}});
+        if (!end.is_valid() || end.is_flonum() || end.int_val < 0)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "substring: end must be a non-negative integer"}});
+        auto view = sv->view();
+        auto s = static_cast<size_t>(start.int_val);
+        auto e = static_cast<size_t>(end.int_val);
+        if (s > view.size() || e > view.size() || s > e)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "substring: indices out of bounds"}});
+        return make_string(heap, intern_table, std::string(view.substr(s, e - s)));
     });
 
     // ========================================================================

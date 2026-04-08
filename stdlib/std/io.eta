@@ -1,12 +1,14 @@
 ;;; std/io.eta — I/O utilities.
 ;;;
 ;;; Builtins already available:
-;;;   display  write  newline  write-string  read-char
+;;;   display  write  newline  write-string  write-char  read-char
 ;;;   current-input-port  current-output-port  current-error-port
 ;;;   set-current-input-port!  set-current-output-port!  set-current-error-port!
 ;;;   open-input-string  open-output-string  get-output-string
 ;;;   open-input-file  open-output-file
-;;;   port?  input-port?  output-port?  close-port
+;;;   port?  input-port?  output-port?
+;;;   close-port  close-input-port  close-output-port
+;;;   string-ref  substring
 ;;;
 ;;; This module adds convenience helpers on top of those primitives.
 

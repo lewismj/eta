@@ -136,25 +136,31 @@
 
     ;; (adj:print-summary y-var x-var x0 x1 z-vars cate)
     ;; Print a brief causal effect summary table.
-    (defun adj:print-summary (y-var x-var x0 x1 z-vars cate)
+    (defun adj:print-summary (y-var x-var x0 x1 z-vars cate)      (define win (eq? (platform) 'Win32))
       (println "")
-      (println "┌────────────────────────────────────────────────────────┐")
-      (println "│  Back-Door Adjusted Causal Effect Estimate              │")
-      (println "├────────────────────────────────────────────────────────┤")
-      (print   "│  Outcome     Y  = ")
+      (println (if win "+--------------------------------------------------------+"
+                       "┌────────────────────────────────────────────────────────┐"))
+      (println (if win "|  Back-Door Adjusted Causal Effect Estimate              |"
+                       "│  Back-Door Adjusted Causal Effect Estimate              │"))
+      (println (if win "+--------------------------------------------------------+"
+                       "├────────────────────────────────────────────────────────┤"))
+      (print   (if win "|  Outcome     Y  = " "│  Outcome     Y  = "))
       (println (symbol->string y-var))
-      (print   "│  Treatment   X  = ")
+      (print   (if win "|  Treatment   X  = " "│  Treatment   X  = "))
       (println (symbol->string x-var))
-      (print   "│  Control     x0 = ")
+      (print   (if win "|  Control     x0 = " "│  Control     x0 = "))
       (println x0)
-      (print   "│  Treated     x1 = ")
+      (print   (if win "|  Treated     x1 = " "│  Treated     x1 = "))
       (println x1)
-      (print   "│  Adjustment  Z  = ")
+      (print   (if win "|  Adjustment  Z  = " "│  Adjustment  Z  = "))
       (println (map* symbol->string z-vars))
-      (println "├────────────────────────────────────────────────────────┤")
-      (print   "│  CATE  E[Y|do(X=x1)] - E[Y|do(X=x0)]  =  ")
+      (println (if win "+--------------------------------------------------------+"
+                       "├────────────────────────────────────────────────────────┤"))
+      (print   (if win "|  CATE  E[Y|do(X=x1)] - E[Y|do(X=x0)]  =  "
+                       "│  CATE  E[Y|do(X=x1)] - E[Y|do(X=x0)]  =  "))
       (println cate)
-      (println "└────────────────────────────────────────────────────────┘")
+      (println (if win "+--------------------------------------------------------+"
+                       "└────────────────────────────────────────────────────────┘"))
       (println "")
       (println "NOTE: Point estimate only (no CI).  See docs/causal.md §Limitations."))
 

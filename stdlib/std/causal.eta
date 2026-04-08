@@ -178,11 +178,14 @@
                                      (string-append (symbol->string n)
                                                     (if (equal? acc "") "" ", ")
                                                     acc))
-                                   "" z-set))))
+                                   "" z-set)))
+                (win    (eq? (platform) 'Win32))
+                (sigma  (if win "Sum" "Σ"))
+                (dot    (if win " * " " · ")))
            (string-append
              "P(" (symbol->string y) " | do(" (symbol->string x) ")) = "
-             "Σ_{" z-str "} P(" (symbol->string y)
-             " | " (symbol->string x) ", " z-str ") · P(" z-str ")")))
+             sigma "_{" z-str "} P(" (symbol->string y)
+             " | " (symbol->string x) ", " z-str ")" dot "P(" z-str ")")))
         (#t "Unknown formula")))
 
     ;; ── Numeric estimation (pure Eta, no FFI) ──────────────────────────────

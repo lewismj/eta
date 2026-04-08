@@ -530,5 +530,89 @@ limited only by floating-point precision.
 | `native-grad` / `hessian` | True reverse-on-reverse via native Dual VM type |
 | `make-dual` / `dual?` / `dual-primal` / `dual-backprop` | Native Dual primitives |
 
+## Example
 
+```console
+==================================================
+ European Option Greeks with AAD
+==================================================
+
+Market parameters:
+  S     = 100.0  (spot)
+  K     =  90.0  (strike)
+  r     =  3%    (risk-free rate)
+  sigma =  30%   (volatility)
+  T     =  0.5   (maturity, years)
+
+
+-- First-Order Greeks (single backward pass) --
+
+  Price   = 14.8807
+
+  Delta   = 0.74967
+  Rho     = 30.0431
+  Vega    = 22.4859
+  -Theta  = 8.54837
+
+  Normalised:
+    Vega  (per 1% vol)  = 0.224859
+    Rho   (per 1% rate) = 0.300431
+    Theta (per day)     = -0.0234042
+
+
+-- Second-Order Greeks (grad-on-Greek) --
+
+  grad(Delta):
+    Delta         = 0.74967
+    Gamma (dD/dS)  = 0.0149906
+    Vanna (dD/dsigma) = -0.488997
+
+  grad(Vega):
+    Vega          = 22.4859
+    Vanna (dV/dS)  = -0.488997
+    Volga (dV/dsigma) = 23.2861
+
+
+-- Schwarz's Theorem Check --
+
+  Vanna (dDelta/dsigma) = -0.488997
+  Vanna (dVega/dS)      = -0.488997
+  Difference            = -5.55112e-17
+  (Should be ~0 by Schwarz's theorem)
+
+-- Summary --
+
+  Greek      | AD Value
+  -----------+-----------
+  Price      | 14.8807
+  Delta      | 0.74967
+  Vega       | 22.4859
+  Rho        | 30.0431
+  -Theta     | 8.54837
+  Gamma      | 0.0149906
+  Vanna      | -0.488997
+  Volga      | 23.2861
+
+
+-- Reverse-on-Reverse (Native Dual VM Type) --
+
+  Using dedicated MakeDual / DualVal / DualBp opcodes.
+  The VM's +, -, *, / transparently lift for native Duals,
+  enabling true tape-on-tape 2nd-order AD.
+
+  Native-Dual 1st-order check:
+    Price = 14.8807
+    Delta = 0.74967
+    Vega  = 22.4859
+
+  Hessian (reverse-on-reverse):
+    Gamma  (H[0][0] = d2C/dS2)    = 0.0149906
+    Vanna  (H[3][0] = d2C/dSdsig)  = -0.488997
+    Vanna  (H[0][3] = d2C/dsigdS)  = -0.488997
+    Volga  (H[3][3] = d2C/dsig2)   = 23.2861
+
+  Schwarz check (H[0][3] vs H[3][0]):
+    Difference = 2.09989e-07
+    (Should be ~0)
+```
 
