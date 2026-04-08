@@ -155,48 +155,40 @@ struct CompiledExampleFixture {
      * on a fresh Driver, capturing output.
      * Returns {success, captured_output}.
      *
-     * Replicates the same logic as main_etac.cpp (compile) + main_etai.cpp (run).
+     * Uses compile_file() to avoid executing code during compilation.
      */
     std::pair<bool, std::string> run_compiled(const fs::path& file) {
         if (stdlib.empty()) return {false, ""};
 
-        // ── Step 1: Compile (replicating etac logic) ────────────────
+        // ── Step 1: Compile (compile-only — no execution) ───────────
         eta::interpreter::ModulePathResolver comp_resolver({stdlib});
         comp_resolver.add_dir(file.parent_path());
         eta::interpreter::Driver compiler(std::move(comp_resolver), 8 * 1024 * 1024);
 
-        // Suppress output during compilation (run_file executes the code)
-        auto null_port = std::make_shared<eta::runtime::StringPort>(
-            eta::runtime::StringPort::Mode::Output);
-        compiler.set_output_port(null_port);
-        compiler.set_error_port(null_port);
-
         auto prelude = compiler.load_prelude();
         if (!prelude.loaded) return {false, ""};
 
-        uint32_t base_func_idx = static_cast<uint32_t>(compiler.registry().size());
+        auto compile_result = compiler.compile_file(file);
+        if (!compile_result) return {false, ""};
 
-        if (!compiler.run_file(file)) return {false, ""};
+        auto& cr = *compile_result;
 
-        uint32_t end_func_idx = static_cast<uint32_t>(compiler.registry().size());
-
-        // Build sub-registry and module entries (same as main_etac.cpp)
+        // Build sub-registry and module entries from CompileResult
         eta::semantics::BytecodeFunctionRegistry file_registry;
         std::vector<eta::runtime::vm::ModuleEntry> module_entries;
 
         const auto& all_funcs = compiler.registry().all();
-        for (uint32_t i = base_func_idx; i < end_func_idx; ++i) {
-            const auto& func = all_funcs[i];
-            file_registry.add(eta::runtime::vm::BytecodeFunction(func));
+        for (uint32_t i = cr.base_func_idx; i < cr.end_func_idx; ++i) {
+            file_registry.add(eta::runtime::vm::BytecodeFunction(all_funcs[i]));
+        }
 
-            if (func.name.size() > 5 && func.name.ends_with("_init")) {
-                std::string mod_name = func.name.substr(0, func.name.size() - 5);
-                eta::runtime::vm::ModuleEntry entry;
-                entry.name = mod_name;
-                entry.init_func_index = i - base_func_idx;
-                entry.total_globals = static_cast<uint32_t>(compiler.vm().globals().size());
-                module_entries.push_back(std::move(entry));
-            }
+        for (const auto& cme : cr.modules) {
+            eta::runtime::vm::ModuleEntry entry;
+            entry.name = cme.name;
+            entry.init_func_index = cme.init_func_index;
+            entry.total_globals = cme.total_globals;
+            entry.main_func_slot = cme.main_func_slot;
+            module_entries.push_back(std::move(entry));
         }
 
         if (module_entries.empty()) return {false, ""};

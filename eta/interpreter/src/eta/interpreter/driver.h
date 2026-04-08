@@ -84,6 +84,20 @@ public:
         fs::path path;        ///< Path to the prelude file (if found).
     };
 
+    /// Result of a compile_file() call — metadata for all newly emitted modules.
+    struct CompileModuleEntry {
+        std::string name;
+        uint32_t init_func_index{0};        ///< index relative to base_func_idx
+        uint32_t total_globals{0};
+        std::optional<uint32_t> main_func_slot;
+    };
+
+    struct CompileResult {
+        std::vector<CompileModuleEntry> modules;
+        uint32_t base_func_idx{0};   ///< first function index in the registry for this compilation
+        uint32_t end_func_idx{0};    ///< one past the last function index
+    };
+
     /**
      * @brief Load and execute the prelude from the module path.
      *
@@ -125,6 +139,46 @@ public:
 
         auto file_id = allocate_file_id(path.string());
         return run_source_impl(buf.str(), file_id);
+    }
+
+    /**
+     * @brief Compile a .eta file without executing it.
+     *
+     * Runs the full pipeline (lex → parse → expand → link → analyze → emit)
+     * but skips VM execution.  The prelude and imported dependencies are still
+     * executed normally (they must populate globals for semantic analysis).
+     *
+     * @return CompileResult on success, std::nullopt on error.
+     */
+    std::optional<CompileResult> compile_file(const fs::path& path) {
+        std::ifstream in(path, std::ios::in | std::ios::binary);
+        if (!in) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "cannot open file: " + path.string());
+            return std::nullopt;
+        }
+        std::ostringstream buf;
+        buf << in.rdbuf();
+
+        auto file_id = allocate_file_id(path.string());
+        CompileResult cr;
+        if (!run_source_impl(buf.str(), file_id, /*result=*/nullptr,
+                             /*result_binding=*/{}, /*execute=*/false, &cr)) {
+            return std::nullopt;
+        }
+        return cr;
+    }
+
+    /**
+     * @brief Load and compile the prelude without executing user code.
+     *
+     * Note: the prelude itself IS executed (its globals must be live for
+     * downstream modules).  This is simply a convenience alias for
+     * load_prelude().
+     */
+    PreludeResult compile_prelude() {
+        return load_prelude();
     }
 
     /**
@@ -407,6 +461,8 @@ private:
 
     /// Auto-load module files from the module path for any import that
     /// references a module not yet in the accumulated set.
+    /// When execute is false, only the top-level target skips execution;
+    /// auto-loaded dependencies are always executed (they must populate globals).
     /// Returns false on failure; diagnostics are emitted.
     bool auto_load_imports(std::span<const reader::parser::SExprPtr> new_forms) {
         auto needed = collect_imported_modules(new_forms);
@@ -454,15 +510,20 @@ private:
     }
 
     /**
-     * @brief Core implementation: compile + execute source text.
+     * @brief Core implementation: compile (+ optionally execute) source text.
      *
      * Accumulates expanded forms and re-links everything each time (the
      * ModuleLinker is non-incremental). Only newly-added modules are
      * emitted and executed — previously-run modules are skipped.
+     *
+     * @param execute  When false, skip VM execution and main invocation.
+     * @param out_cr   If non-null, filled with per-module compile metadata.
      */
     bool run_source_impl(const std::string& source, uint32_t file_id,
                          runtime::nanbox::LispVal* result = nullptr,
-                         const std::string& result_binding = {}) {
+                         const std::string& result_binding = {},
+                         bool execute = true,
+                         CompileResult* out_cr = nullptr) {
         diag_engine_.clear();
 
         // ── Lex + Parse ──────────────────────────────────────────────
@@ -566,18 +627,24 @@ private:
         if (globals.size() < needed) {
             globals.resize(needed, runtime::nanbox::Nil);
         }
-        // Re-install builtin primitives at their fixed slots
-        for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
-            const auto& spec = builtins_.specs()[i];
-            auto prim = runtime::memory::factory::make_primitive(
-                heap_, spec.func, spec.arity, spec.has_rest);
-            if (!prim) {
-                emit_runtime_error(prim.error());
-                return false;
+
+        if (execute) {
+            // Re-install builtin primitives at their fixed slots
+            for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
+                const auto& spec = builtins_.specs()[i];
+                auto prim = runtime::memory::factory::make_primitive(
+                    heap_, spec.func, spec.arity, spec.has_rest);
+                if (!prim) {
+                    emit_runtime_error(prim.error());
+                    return false;
+                }
+                globals[i] = *prim;
             }
-            globals[i] = *prim;
+            builtins_installed_ = true;
         }
-        builtins_installed_ = true;
+
+        // Track the registry range for newly emitted functions.
+        uint32_t base_func_idx = static_cast<uint32_t>(registry_.size());
 
         for (auto& mod : sem_mods) {
             if (executed_modules_.contains(mod.name)) {
@@ -585,42 +652,61 @@ private:
             }
 
             semantics::Emitter emitter(mod, heap_, intern_table_, registry_);
-            auto* main_func = emitter.emit();
+            auto* init_func = emitter.emit();
 
-            auto exec_res = vm_.execute(*main_func);
-            if (!exec_res) {
-                emit_runtime_error(exec_res.error());
-                return false;
+            // Record compile metadata for this module.
+            if (out_cr) {
+                CompileModuleEntry cme;
+                cme.name = mod.name;
+                // init_func is the last function added by emitter.emit()
+                cme.init_func_index = static_cast<uint32_t>(registry_.size()) - 1 - base_func_idx;
+                cme.total_globals = mod.total_globals;
+                cme.main_func_slot = mod.main_func_slot;
+                out_cr->modules.push_back(std::move(cme));
             }
 
-            executed_modules_.insert(mod.name);
+            if (execute) {
+                auto exec_res = vm_.execute(*init_func);
+                if (!exec_res) {
+                    emit_runtime_error(exec_res.error());
+                    return false;
+                }
 
-            // Invoke optional (defun main ...) entry point
-            if (mod.main_func_slot) {
-                auto main_val = globals[*mod.main_func_slot];
-                if (main_val != runtime::nanbox::Nil) {
-                    auto main_res = vm_.call_value(main_val, {});
-                    if (!main_res) {
-                        emit_runtime_error(main_res.error());
-                        return false;
+                executed_modules_.insert(mod.name);
+
+                // Invoke optional (defun main ...) entry point
+                if (mod.main_func_slot) {
+                    auto main_val = globals[*mod.main_func_slot];
+                    if (main_val != runtime::nanbox::Nil) {
+                        auto main_res = vm_.call_value(main_val, {});
+                        if (!main_res) {
+                            emit_runtime_error(main_res.error());
+                            return false;
+                        }
                     }
                 }
-            }
 
-            // For REPL: capture result from the last NEW module
-            if (result && !result_binding.empty()) {
-                // Check if this is the last new module
-                bool is_last_new = (!new_module_names.empty() &&
-                                    mod.name == new_module_names.back());
-                if (is_last_new) {
-                    for (const auto& bi : mod.bindings) {
-                        if (bi.name == result_binding) {
-                            *result = vm_.globals()[bi.slot];
-                            break;
+                // For REPL: capture result from the last NEW module
+                if (result && !result_binding.empty()) {
+                    // Check if this is the last new module
+                    bool is_last_new = (!new_module_names.empty() &&
+                                        mod.name == new_module_names.back());
+                    if (is_last_new) {
+                        for (const auto& bi : mod.bindings) {
+                            if (bi.name == result_binding) {
+                                *result = vm_.globals()[bi.slot];
+                                break;
+                            }
                         }
                     }
                 }
             }
+        }
+
+        uint32_t end_func_idx = static_cast<uint32_t>(registry_.size());
+        if (out_cr) {
+            out_cr->base_func_idx = base_func_idx;
+            out_cr->end_func_idx = end_func_idx;
         }
 
         return true;

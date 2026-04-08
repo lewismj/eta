@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
         pipeline.add_pass(std::make_unique<eta::semantics::passes::DeadCodeElimination>());
     }
 
-    // Load prelude
+    // Load prelude (must execute — its globals are needed for analysis)
     {
         auto pr = driver.load_prelude();
         if (pr.found && !pr.loaded) {
@@ -105,14 +105,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Record registry size before compilation so we know which
-    // functions belong to this file.
-    uint32_t base_func_idx = static_cast<uint32_t>(driver.registry().size());
-
-    // Compile + execute (execution is needed for side-effects like
-    // populating module tables; a pure compile-only path can be
-    // added later).
-    if (!driver.run_file(fs::absolute(file_path))) {
+    // Compile without executing — no side-effect output.
+    auto compile_result = driver.compile_file(fs::absolute(file_path));
+    if (!compile_result) {
         driver.diagnostics().print_all(std::cerr, true);
         return 1;
     }
@@ -124,36 +119,24 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ── Build module entries from what was just compiled ──────────────
-    // We don't have per-module function index tracking yet, so we
-    // create a single entry for the file.  A more precise per-module
-    // mapping can be added once the emitter returns per-module metadata.
+    // ── Build module entries from CompileResult ───────────────────────
+    auto& cr = *compile_result;
 
-    // For now, collect all functions added by this file.
-    uint32_t end_func_idx = static_cast<uint32_t>(driver.registry().size());
-
-    // Build a sub-registry of just this file's functions.
     eta::semantics::BytecodeFunctionRegistry file_registry;
     std::vector<eta::runtime::vm::ModuleEntry> module_entries;
 
-    // We treat the last function as the module init (the emitter adds it last).
-    // In practice each (module ...) form in the file generates one _init.
-    // We scan function names to find _init functions.
     const auto& all_funcs = driver.registry().all();
-    for (uint32_t i = base_func_idx; i < end_func_idx; ++i) {
-        const auto& func = all_funcs[i];
-        file_registry.add(eta::runtime::vm::BytecodeFunction(func));
+    for (uint32_t i = cr.base_func_idx; i < cr.end_func_idx; ++i) {
+        file_registry.add(eta::runtime::vm::BytecodeFunction(all_funcs[i]));
+    }
 
-        // Detect _init functions to create module entries
-        if (func.name.size() > 5 && func.name.ends_with("_init")) {
-            std::string mod_name = func.name.substr(0, func.name.size() - 5);
-            eta::runtime::vm::ModuleEntry entry;
-            entry.name = mod_name;
-            entry.init_func_index = i - base_func_idx;
-            entry.total_globals = static_cast<uint32_t>(driver.vm().globals().size());
-            // main_func_slot is not easily recoverable here; leave as nullopt for now.
-            module_entries.push_back(std::move(entry));
-        }
+    for (const auto& cme : cr.modules) {
+        eta::runtime::vm::ModuleEntry entry;
+        entry.name = cme.name;
+        entry.init_func_index = cme.init_func_index;
+        entry.total_globals = cme.total_globals;
+        entry.main_func_slot = cme.main_func_slot;
+        module_entries.push_back(std::move(entry));
     }
 
     if (module_entries.empty()) {

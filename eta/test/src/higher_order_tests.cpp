@@ -157,7 +157,7 @@ struct HOTestFixture {
 // map tests
 // ============================================================================
 
-BOOST_FIXTURE_TEST_SUITE(MapTests, HOTestFixture)
+BOOST_FIXTURE_TEST_SUITE(map_tests, HOTestFixture)
 
 BOOST_AUTO_TEST_CASE(map_with_lambda_doubles_each_element) {
     // (map (lambda (x) (* x 2)) '(1 2 3))  → '(2 4 6)
@@ -253,7 +253,7 @@ BOOST_AUTO_TEST_SUITE_END()
 // for-each tests
 // ============================================================================
 
-BOOST_FIXTURE_TEST_SUITE(ForEachTests, HOTestFixture)
+BOOST_FIXTURE_TEST_SUITE(for_each_tests, HOTestFixture)
 
 BOOST_AUTO_TEST_CASE(for_each_calls_lambda_for_each_element) {
     // Use a list to accumulate results via set! (verifies side effects fire)
@@ -325,7 +325,7 @@ BOOST_AUTO_TEST_SUITE_END()
 // call_value trampoline unit tests (lower level)
 // ============================================================================
 
-BOOST_FIXTURE_TEST_SUITE(CallValueTests, HOTestFixture)
+BOOST_FIXTURE_TEST_SUITE(call_value_tests, HOTestFixture)
 
 BOOST_AUTO_TEST_CASE(nested_map_calls) {
     // map inside map — tests recursive trampoline calls

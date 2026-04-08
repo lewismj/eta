@@ -44,7 +44,7 @@ struct TempDir {
 
 // ─── test suite ─────────────────────────────────────────────────────────────
 
-BOOST_AUTO_TEST_SUITE(ModulePathResolverTests)
+BOOST_AUTO_TEST_SUITE(module_path_resolver_tests)
 
 // Bring the class name into scope within this test suite namespace.
 using eta::interpreter::ModulePathResolver;
