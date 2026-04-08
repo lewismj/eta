@@ -187,12 +187,12 @@ resources when the Eta wrapper is collected.
 
 ---
 
-## 3 · PyTorch Integration
+## 3 · libTorch Integration
 
 ### Motivation
 
 Deep learning and differentiable programming are fundamental to modern
-scientific computing. By integrating with **PyTorch** — either through the
+scientific computing. By integrating with **libTorch** — either through the
 FFI (§ 2) calling into **libtorch** (the C++ backend) or via native
 bindings — Eta programs gain access to GPU-accelerated tensor operations,
 automatic differentiation, and the vast PyTorch model ecosystem without
