@@ -270,16 +270,16 @@ This example trains a single linear layer to approximate the function
 ```mermaid
 sequenceDiagram
     participant TL as Training Loop
-    participant Opt as Optimizer (SGD)
+    participant Optim as Optimizer (SGD)
     participant Model as Linear(1,1)
     participant AG as Autograd
 
-    TL->>Opt: zero gradients
+    TL->>Optim: zero gradients
     TL->>Model: forward(train-x) → pred
     TL->>TL: mse-loss(pred, train-y) → loss
     TL->>AG: backward(loss)
     AG-->>Model: ∂loss/∂w, ∂loss/∂b
-    TL->>Opt: step! (w -= lr·∂loss/∂w)
+    TL->>Optim: step! (w -= lr·∂loss/∂w)
     Note over TL: Repeat for each epoch
 ```
 

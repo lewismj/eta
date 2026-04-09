@@ -1,4 +1,4 @@
-# xVA — Valuation Adjustments with Adjoint AD
+# xVA — Valuation Adjustments with Tape-Based AD
 
 [← Back to README](../README.md) · [AAD Deep-Dive](aad.md) ·
 [Examples](examples.md) · [Architecture](architecture.md)
@@ -7,25 +7,31 @@
 
 ## Overview
 
-[`examples/xva.eta`](../examples/xva.eta) builds on the
-[reverse-mode AD library](aad.md) to illustrate **xVA** 
+[`examples/xva.eta`](../examples/xva.eta) builds on
+Eta's built-in [tape-based reverse-mode AD](aad.md) to illustrate **xVA**
 calculations and their **sensitivities**.
 
 **Key ideas:**
 
 - CVA (Credit Valuation Adjustment) and FVA (Funding Valuation
-  Adjustment) computed analytically with lifted AD operations
+  Adjustment) computed analytically with **plain arithmetic** — the
+  VM transparently records onto a tape when TapeRef operands are present
 - Market-risk sensitivities are obtained in a single backward
-  pass. 
+  pass
 - Build domain-specific primitives (`discount-factor`,
-  `survival-prob`, `expected-exposure`) on top of the generic AD
-  library
-- Additional AD operations (`dsqrt`, `dpow`) composed from `dexp`
-  and `dlog`
+  `survival-prob`, `expected-exposure`) using plain `+`, `*`, `exp`,
+  `log`, `sqrt` — no lifted wrappers needed
+- Zero closure allocations — all tape recording happens at the C++ level
 
 ```bash
 etai examples/xva.eta
 ```
+
+> [!NOTE]
+> The xVA building blocks use **plain arithmetic** — no `d+`, `d*`,
+> `dexp` wrappers.  The VM transparently records onto a tape when
+> TapeRef operands are present, making the source code identical to
+> a non-AD version.
 
 ---
 
@@ -61,8 +67,8 @@ notional *N* and maturity *T* = 5 years, uncollateralised.
 | Loss given default | *LGD* | 60 % | 1 − recovery rate |
 | Funding spread | *s_f* | 120 bp | Bank's unsecured funding cost over risk-free |
 
-All six parameters are **dual-valued** — the AD system tracks
-derivatives through every operation that touches them.
+All six parameters are registered as **TapeRef** variables — the tape
+automatically records derivatives through every operation that touches them.
 
 ### Time Grid
 
@@ -80,12 +86,12 @@ $$\text{DF}(r, t) = e^{-r \cdot t}$$
 
 ```scheme
 (defun discount-factor (r t)
-  (dexp (d* (d* -1 r) t)))
+  (exp (* (* -1 r) t)))
 ```
 
-The risk-free discount factor.  `r` is a dual; `t` is a plain
-number (a time point on the grid).  The AD system automatically
-tracks ∂DF/∂r.
+The risk-free discount factor.  `r` is a TapeRef when called inside
+`grad`; `t` is a plain number (a time point on the grid).  The tape
+automatically tracks ∂DF/∂r.
 
 ### Survival probability (hazard-rate model)
 
@@ -93,7 +99,7 @@ $$Q(\lambda, t) = e^{-\lambda \cdot t}$$
 
 ```scheme
 (defun survival-prob (hazard-rate t)
-  (dexp (d* (d* -1 hazard-rate) t)))
+  (exp (* (* -1 hazard-rate) t)))
 ```
 
 The probability that the counterparty has *not* defaulted by time
@@ -105,7 +111,7 @@ $$\text{PD}(\lambda, t) = 1 - e^{-\lambda \cdot t}$$
 
 ```scheme
 (defun default-prob (hazard-rate t)
-  (d- 1 (survival-prob hazard-rate t)))
+  (- 1 (survival-prob hazard-rate t)))
 ```
 
 ### Marginal default probability
@@ -116,8 +122,8 @@ The probability of defaulting in the interval $(t_1, t_2]$.
 
 ```scheme
 (defun marginal-pd (hazard-rate t1 t2)
-  (d- (default-prob hazard-rate t2)
-      (default-prob hazard-rate t1)))
+  (- (default-prob hazard-rate t2)
+     (default-prob hazard-rate t1)))
 ```
 
 ### Expected Positive Exposure (simplified)
@@ -126,26 +132,14 @@ $$\text{EE}(t) \approx N \cdot \sigma \cdot \sqrt{t}$$
 
 ```scheme
 (defun expected-exposure (notional sigma t)
-  (d* notional (d* sigma (dsqrt t))))
+  (* notional (* sigma (sqrt t))))
 ```
 
 This is the leading-order approximation for the expected positive
 exposure of an at-the-money forward under geometric Brownian
 motion.  A production system would use Monte Carlo simulation, but
-the AD plumbing is identical — every path-level operation would
-use `d+`, `d*`, `dexp`, etc., and the backward pass would
-propagate through all of them.
-
-### `dsqrt` — lifted square root
-
-```scheme
-(defun dsqrt (a)
-  (dexp (d* 0.5 (dlog a))))
-```
-
-Computed as $\sqrt{x} = e^{\frac{1}{2} \ln x}$.  The chain rule
-through `dexp` and `dlog` automatically yields
-$\partial\sqrt{x}/\partial x = 1/(2\sqrt{x})$.
+the AD plumbing is identical — every path-level operation uses
+plain arithmetic, and the tape records transparently.
 
 ---
 
@@ -167,23 +161,23 @@ counterparty credit risk.
 ```scheme
 (defun cva-bucket (notional sigma r hazard-rate lgd t-prev t-curr)
   (let ((t-mid (* 0.5 (+ t-prev t-curr))))
-    (d* lgd
-      (d* (expected-exposure notional sigma t-mid)
-        (d* (discount-factor r t-mid)
-            (marginal-pd hazard-rate t-prev t-curr))))))
+    (* lgd
+      (* (expected-exposure notional sigma t-mid)
+        (* (discount-factor r t-mid)
+           (marginal-pd hazard-rate t-prev t-curr))))))
 
 (defun cva-loop (notional sigma r hazard-rate lgd times prev-t acc)
   (if (null? times)
       acc
       (cva-loop notional sigma r hazard-rate lgd
         (cdr times) (car times)
-        (d+ acc (cva-bucket notional sigma r hazard-rate lgd
-                            prev-t (car times))))))
+        (+ acc (cva-bucket notional sigma r hazard-rate lgd
+                           prev-t (car times))))))
 
 (defun compute-cva (notional sigma r hazard-rate lgd)
   (cva-loop notional sigma r hazard-rate lgd
     '(0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0)
-    0.0 (make-const 0)))
+    0.0 0))
 ```
 
 ---
@@ -200,9 +194,9 @@ contributes exposure × discount × spread × time.
 (defun fva-bucket (notional sigma r funding-spread t-prev t-curr)
   (let ((t-mid (* 0.5 (+ t-prev t-curr)))
         (dt    (- t-curr t-prev)))
-    (d* (expected-exposure notional sigma t-mid)
-      (d* (discount-factor r t-mid)
-        (d* funding-spread dt)))))
+    (* (expected-exposure notional sigma t-mid)
+      (* (discount-factor r t-mid)
+        (* funding-spread dt)))))
 ```
 
 ---
@@ -213,20 +207,20 @@ $$\text{xVA} = \text{CVA} + \text{FVA}$$
 
 ```scheme
 (defun total-xva (notional sigma r hazard-rate lgd funding-spread)
-  (d+ (compute-cva notional sigma r hazard-rate lgd)
-      (compute-fva notional sigma r funding-spread)))
+  (+ (compute-cva notional sigma r hazard-rate lgd)
+     (compute-fva notional sigma r funding-spread)))
 ```
 
-All six parameters are dual-valued inputs.  A single call to
-`grad` evaluates the forward pass *and* the backward pass,
-returning the xVA value and all six partial derivatives.
+All six parameters are TapeRef inputs when called inside `grad`.
+A single call to `grad` evaluates the forward pass *and* the backward
+pass, returning the xVA value and all six partial derivatives.
 
 ---
 
 ## Sensitivities (Greeks)
 
-The `grad` function seeds the output's backpropagator with
-adjoint = 1 and collects contributions for every input variable:
+The `grad` function creates TapeRef variables, activates the tape,
+evaluates the function, then runs a single backward sweep:
 
 ```scheme
 (grad (lambda (notional sigma r hazard-rate lgd funding-spread)
@@ -254,7 +248,25 @@ In production these sensitivities drive:
 
 ---
 
-## Why AAD Matters Here
+## Tape-Based AD Architecture
+
+The xVA computation involves ~100 elementary operations on 6 scalar
+parameters — ideal for Eta's tape-based AD.  When `grad` creates
+TapeRef variables and activates the tape, the VM's `+`, `-`, `*`,
+`/`, `exp`, `log`, `sqrt` transparently record each operation
+(~32 bytes per entry, zero closure allocations).
+
+### Key Benefits
+
+| Metric | Tape-based AD |
+|--------|:------------:|
+| Ops per xVA eval | ~100 |
+| Memory per op | ~32 bytes |
+| Closures allocated | 0 |
+| VM dispatches per op | 1 |
+| Backward pass | Single reverse sweep |
+
+### Why AAD Matters Here
 
 A typical xVA book at a large bank contains hundreds of thousands
 of trades across many counterparties.  The exposure simulation
@@ -277,7 +289,7 @@ AAD (reverse mode):  cost = O(1) × forward_pass   (for all N Greeks)
 The Eta example demonstrates the principle with 6 parameters and
 an analytic exposure model.  Scaling to a full Monte Carlo engine
 changes nothing about the AD machinery — every arithmetic
-operation simply uses the `d`-prefixed functions, and the backward
+operation is transparently recorded by the tape, and the backward
 pass propagates through all of them.
 
 ---
@@ -290,9 +302,8 @@ pass propagates through all of them.
 | `survival-prob` / `default-prob` | Hazard-rate credit model |
 | `marginal-pd` | Bucket-level default probability |
 | `expected-exposure` | Simplified EE ≈ Nσ√t |
-| `dsqrt` / `dpow` | AD-lifted power functions |
 | `compute-cva` | CVA = LGD × Σ EE × DF × ΔPD |
 | `compute-fva` | FVA = Σ EE × DF × s_f × Δt |
 | `total-xva` | CVA + FVA with full gradient |
 | `grad` | One backward pass → all 6 sensitivities |
-
+| Tape-aware arithmetic | `+`/`-`/`*`/`/`, `exp`/`log`/`sqrt` — transparent recording |

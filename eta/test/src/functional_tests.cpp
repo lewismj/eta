@@ -381,45 +381,64 @@ static std::string aad_module(const std::string& body) {
 }
 
 // ============================================================================
-// The xVA library: financial building blocks for CVA/FVA built on top of
-// the AAD library.  Inlined so each test is a self-contained single module.
+// The xVA library: financial building blocks for CVA/FVA using tape-based AD.
+// Plain arithmetic — the VM transparently records onto a tape when TapeRef
+// operands are present.  Inlined so each test is self-contained.
 // ============================================================================
 
+static const char* TAPE_GRAD = R"(
+    ;; ── Tape-based AD gradient driver ─────────────────────────────────
+
+    (defun grad (f vals)
+      (let ((tape (tape-new))
+            (n    (length vals)))
+        (let ((vars (letrec ((mk (lambda (vs acc)
+                                   (if (null? vs) (reverse acc)
+                                       (mk (cdr vs)
+                                           (cons (tape-var tape (car vs)) acc))))))
+                      (mk vals '()))))
+          (tape-start! tape)
+          (let ((output (apply f vars)))
+            (tape-stop!)
+            (tape-backward! tape output)
+            (let ((grad-vec (make-vector n 0)))
+              (letrec ((collect (lambda (vs i)
+                                  (if (null? vs) grad-vec
+                                      (begin
+                                        (vector-set! grad-vec i
+                                          (tape-adjoint tape (car vs)))
+                                        (collect (cdr vs) (+ i 1)))))))
+                (collect vars 0))
+              (list (tape-primal tape output) grad-vec))))))
+)";
+
 static const char* XVA_LIB = R"(
-    ;; ── Additional AD primitives ─────────────────────────────────────
-
-    (defun dsqrt (a)
-      (dexp (d* 0.5 (dlog a))))
-
-    (defun dpow (a b)
-      (dexp (d* b (dlog a))))
-
-    ;; ── Financial building blocks ────────────────────────────────────
+    ;; ── Financial building blocks (plain arithmetic) ──────────────────
 
     (defun discount-factor (r t)
-      (dexp (d* (d* -1 r) t)))
+      (exp (* (* -1 r) t)))
 
     (defun survival-prob (hazard-rate t)
-      (dexp (d* (d* -1 hazard-rate) t)))
+      (exp (* (* -1 hazard-rate) t)))
 
     (defun default-prob (hazard-rate t)
-      (d- 1 (survival-prob hazard-rate t)))
+      (- 1 (survival-prob hazard-rate t)))
 
     (defun marginal-pd (hazard-rate t1 t2)
-      (d- (default-prob hazard-rate t2)
-          (default-prob hazard-rate t1)))
+      (- (default-prob hazard-rate t2)
+         (default-prob hazard-rate t1)))
 
     (defun expected-exposure (notional sigma t)
-      (d* notional (d* sigma (dsqrt t))))
+      (* notional (* sigma (sqrt t))))
 
     ;; ── CVA ──────────────────────────────────────────────────────────
 
     (defun cva-bucket (notional sigma r hazard-rate lgd t-prev t-curr)
       (let ((t-mid (* 0.5 (+ t-prev t-curr))))
-        (d* lgd
-          (d* (expected-exposure notional sigma t-mid)
-            (d* (discount-factor r t-mid)
-                (marginal-pd hazard-rate t-prev t-curr))))))
+        (* lgd
+          (* (expected-exposure notional sigma t-mid)
+            (* (discount-factor r t-mid)
+               (marginal-pd hazard-rate t-prev t-curr))))))
 
     (defun cva-loop (notional sigma r hazard-rate lgd times prev-t acc)
       (if (null? times)
@@ -427,24 +446,24 @@ static const char* XVA_LIB = R"(
           (cva-loop notional sigma r hazard-rate lgd
             (cdr times)
             (car times)
-            (d+ acc
-                (cva-bucket notional sigma r hazard-rate lgd
-                            prev-t (car times))))))
+            (+ acc
+               (cva-bucket notional sigma r hazard-rate lgd
+                           prev-t (car times))))))
 
     (defun compute-cva (notional sigma r hazard-rate lgd)
       (cva-loop notional sigma r hazard-rate lgd
         '(0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0)
         0.0
-        (make-const 0)))
+        0))
 
     ;; ── FVA ──────────────────────────────────────────────────────────
 
     (defun fva-bucket (notional sigma r funding-spread t-prev t-curr)
       (let ((t-mid (* 0.5 (+ t-prev t-curr)))
             (dt    (- t-curr t-prev)))
-        (d* (expected-exposure notional sigma t-mid)
-          (d* (discount-factor r t-mid)
-            (d* funding-spread dt)))))
+        (* (expected-exposure notional sigma t-mid)
+          (* (discount-factor r t-mid)
+            (* funding-spread dt)))))
 
     (defun fva-loop (notional sigma r funding-spread times prev-t acc)
       (if (null? times)
@@ -452,26 +471,26 @@ static const char* XVA_LIB = R"(
           (fva-loop notional sigma r funding-spread
             (cdr times)
             (car times)
-            (d+ acc
-                (fva-bucket notional sigma r funding-spread
-                            prev-t (car times))))))
+            (+ acc
+               (fva-bucket notional sigma r funding-spread
+                           prev-t (car times))))))
 
     (defun compute-fva (notional sigma r funding-spread)
       (fva-loop notional sigma r funding-spread
         '(0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0)
         0.0
-        (make-const 0)))
+        0))
 
     ;; ── Total xVA ────────────────────────────────────────────────────
 
     (defun total-xva (notional sigma r hazard-rate lgd funding-spread)
-      (d+ (compute-cva notional sigma r hazard-rate lgd)
-          (compute-fva notional sigma r funding-spread)))
+      (+ (compute-cva notional sigma r hazard-rate lgd)
+         (compute-fva notional sigma r funding-spread)))
 )";
 
-// Helper: wrap AAD_LIB + XVA_LIB + test body in a single module
+// Helper: wrap TAPE_GRAD + XVA_LIB + test body in a single module
 static std::string xva_module(const std::string& body) {
-    return std::string("(module m\n") + AAD_LIB + "\n" + XVA_LIB + "\n" + body + "\n)";
+    return std::string("(module m\n") + TAPE_GRAD + "\n" + XVA_LIB + "\n" + body + "\n)";
 }
 
 // ── C++ reference implementations for expected values ────────────────────────
@@ -824,49 +843,49 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_rosenbrock) {
 }
 
 // ============================================================================
-// xVA — dsqrt / dpow primitives
+// xVA — sqrt / pow via tape-based AD
 // ============================================================================
 
-BOOST_AUTO_TEST_CASE(test_xva_dsqrt_primal_4) {
-    // dsqrt(4) = exp(0.5 * log(4)) = 2.0
+BOOST_AUTO_TEST_CASE(test_xva_sqrt_primal_4) {
+    // sqrt(4) = 2.0
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (dsqrt 4.0)))
+        (define result (sqrt 4.0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 2.0, 1e-6);
 }
 
-BOOST_AUTO_TEST_CASE(test_xva_dsqrt_primal_9) {
-    // dsqrt(9) = 3.0
+BOOST_AUTO_TEST_CASE(test_xva_sqrt_primal_9) {
+    // sqrt(9) = 3.0
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (dsqrt 9.0)))
+        (define result (sqrt 9.0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 3.0, 1e-6);
 }
 
-BOOST_AUTO_TEST_CASE(test_xva_dsqrt_gradient) {
+BOOST_AUTO_TEST_CASE(test_xva_sqrt_gradient) {
     // f(x) = sqrt(x) at x=4
     // df/dx = 1 / (2*sqrt(4)) = 0.25
     LispVal res = run(xva_module(R"(
-        (define g (grad (lambda (x) (dsqrt x)) '(4.0)))
+        (define g (grad (lambda (x) (sqrt x)) '(4.0)))
         (define gv (car (cdr g)))
         (define result (vector-ref gv 0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 0.25, 1e-6);
 }
 
-BOOST_AUTO_TEST_CASE(test_xva_dpow_primal) {
-    // dpow(2, 3) = exp(3 * log(2)) = 8.0
+BOOST_AUTO_TEST_CASE(test_xva_pow_primal) {
+    // exp(3 * log(2)) = 2^3 = 8.0
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (dpow 2.0 3.0)))
+        (define result (exp (* 3.0 (log 2.0))))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 8.0, 1e-6);
 }
 
-BOOST_AUTO_TEST_CASE(test_xva_dpow_gradient_base) {
-    // f(x) = x^3 at x=2.0  (b=3 is constant)
+BOOST_AUTO_TEST_CASE(test_xva_pow_gradient_base) {
+    // f(x) = x^3 = exp(3*log(x)) at x=2.0
     // df/dx = 3 * x^2 = 12.0
     LispVal res = run(xva_module(R"(
-        (define g (grad (lambda (x) (dpow x 3.0)) '(2.0)))
+        (define g (grad (lambda (x) (exp (* 3.0 (log x)))) '(2.0)))
         (define gv (car (cdr g)))
         (define result (vector-ref gv 0))
     )"));
@@ -880,7 +899,7 @@ BOOST_AUTO_TEST_CASE(test_xva_dpow_gradient_base) {
 BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal) {
     // DF(r=0.05, t=1.0) = exp(-0.05)
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (discount-factor 0.05 1.0)))
+        (define result (discount-factor 0.05 1.0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), std::exp(-0.05), 1e-6);
 }
@@ -888,7 +907,7 @@ BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal) {
 BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal_2y) {
     // DF(r=0.05, t=2.0) = exp(-0.10)
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (discount-factor 0.05 2.0)))
+        (define result (discount-factor 0.05 2.0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), std::exp(-0.10), 1e-6);
 }
@@ -896,7 +915,7 @@ BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal_2y) {
 BOOST_AUTO_TEST_CASE(test_xva_survival_prob_primal) {
     // Q(lambda=0.02, t=1.0) = exp(-0.02)
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (survival-prob 0.02 1.0)))
+        (define result (survival-prob 0.02 1.0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), std::exp(-0.02), 1e-6);
 }
@@ -904,7 +923,7 @@ BOOST_AUTO_TEST_CASE(test_xva_survival_prob_primal) {
 BOOST_AUTO_TEST_CASE(test_xva_default_prob_primal) {
     // PD(lambda=0.02, t=1.0) = 1 - exp(-0.02)
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (default-prob 0.02 1.0)))
+        (define result (default-prob 0.02 1.0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 1.0 - std::exp(-0.02), 1e-6);
 }
@@ -912,7 +931,7 @@ BOOST_AUTO_TEST_CASE(test_xva_default_prob_primal) {
 BOOST_AUTO_TEST_CASE(test_xva_marginal_pd_primal) {
     // ΔPD(lambda=0.02, 0, 0.5) = PD(0.5) - PD(0) = (1-exp(-0.01)) - 0
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (marginal-pd 0.02 0.0 0.5)))
+        (define result (marginal-pd 0.02 0.0 0.5))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 1.0 - std::exp(-0.01), 1e-6);
 }
@@ -921,7 +940,7 @@ BOOST_AUTO_TEST_CASE(test_xva_marginal_pd_mid_bucket) {
     // ΔPD(lambda=0.02, 0.5, 1.0) = PD(1.0) - PD(0.5)
     //   = (1-exp(-0.02)) - (1-exp(-0.01)) = exp(-0.01) - exp(-0.02)
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (marginal-pd 0.02 0.5 1.0)))
+        (define result (marginal-pd 0.02 0.5 1.0))
     )"));
     double expected = std::exp(-0.01) - std::exp(-0.02);
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-6);
@@ -930,7 +949,7 @@ BOOST_AUTO_TEST_CASE(test_xva_marginal_pd_mid_bucket) {
 BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_primal) {
     // EE(N=1e6, sigma=0.20, t=0.25) = 1e6 * 0.20 * sqrt(0.25) = 100000
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (expected-exposure 1000000 0.20 0.25)))
+        (define result (expected-exposure 1000000 0.20 0.25))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 100000.0, 1e-6);
 }
@@ -938,7 +957,7 @@ BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_primal) {
 BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_primal_1y) {
     // EE(N=1e6, sigma=0.20, t=1.0) = 1e6 * 0.20 * sqrt(1.0) = 200000
     LispVal res = run(xva_module(R"(
-        (define result (dual-val (expected-exposure 1000000 0.20 1.0)))
+        (define result (expected-exposure 1000000 0.20 1.0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 200000.0, 1e-6);
 }
@@ -1013,9 +1032,7 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_single_bucket) {
     double expected = cpp_expected_cva_first_bucket(1e6, 0.20, 0.05, 0.02, 0.60);
     LispVal res = run(xva_module(R"(
         (define result
-          (dual-val (cva-bucket
-            (make-const 1000000) (make-const 0.20) (make-const 0.05)
-            (make-const 0.02) (make-const 0.60) 0.0 0.5)))
+          (cva-bucket 1000000 0.20 0.05 0.02 0.60 0.0 0.5))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
 }
