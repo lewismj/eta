@@ -114,6 +114,19 @@ static std::string normalize_logic_vars(const std::string& s) {
     return result;
 }
 
+// ── Torch-dependent example filtering ───────────────────────────────────────
+
+static bool requires_torch([[maybe_unused]] const fs::path& file) {
+    auto stem = file.stem().string();
+    if (stem == "torch") return true;
+    std::ifstream ifs(file);
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.find("std.torch") != std::string::npos) return true;
+    }
+    return false;
+}
+
 // ── Test fixture ────────────────────────────────────────────────────────────
 
 struct CompiledExampleFixture {
@@ -179,7 +192,9 @@ struct CompiledExampleFixture {
 
         const auto& all_funcs = compiler.registry().all();
         for (uint32_t i = cr.base_func_idx; i < cr.end_func_idx; ++i) {
-            file_registry.add(eta::runtime::vm::BytecodeFunction(all_funcs[i]));
+            auto func = eta::runtime::vm::BytecodeFunction(all_funcs[i]);
+            func.rebase_func_indices(-static_cast<int32_t>(cr.base_func_idx));
+            file_registry.add(std::move(func));
         }
 
         for (const auto& cme : cr.modules) {
@@ -208,7 +223,8 @@ struct CompiledExampleFixture {
             std::ofstream out(temp_etac, std::ios::out | std::ios::binary);
             if (!out) return {false, ""};
             if (!serializer.serialize(module_entries, file_registry,
-                                      source_hash, /*include_debug=*/true, out)) {
+                                      source_hash, /*include_debug=*/true, out,
+                                      cr.imports)) {
                 return {false, ""};
             }
         }
@@ -268,6 +284,12 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
 
     for (const auto& file : files) {
         auto rel = fs::relative(file, examples);
+#ifndef ETA_HAS_TORCH
+        if (requires_torch(file)) {
+            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped)");
+            continue;
+        }
+#endif
         BOOST_TEST_CONTEXT("Compiled round-trip: " << rel.string()) {
             // Run interpreted
             auto [interp_ok, interp_output] = run_interpreted(file);
@@ -283,6 +305,10 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
                 ++failed;
                 failures.push_back(rel.string() + " (compiled run failed)");
                 BOOST_TEST_MESSAGE("  ✗ " << rel.string() << " — compiled run failed");
+                BOOST_TEST_MESSAGE("  partial output (" << comp_output.size() << " bytes): ["
+                    << comp_output.substr(0, 500) << "]");
+                BOOST_TEST_MESSAGE("  interp output (" << interp_output.size() << " bytes): ["
+                    << interp_output.substr(0, 500) << "]");
                 BOOST_CHECK_MESSAGE(false, "Compiled run failed for " << rel.string());
                 continue;
             }
@@ -291,7 +317,12 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
             // non-deterministic heap IDs)
             auto norm_interp = normalize_logic_vars(interp_output);
             auto norm_comp   = normalize_logic_vars(comp_output);
-            bool output_matches = (norm_interp == norm_comp);
+
+            // Torch examples involve random weight initialization so
+            // training loss values differ between runs.  For those files
+            // we only verify the compiled run succeeds without crashing.
+            bool skip_output_compare = requires_torch(file);
+            bool output_matches = skip_output_compare || (norm_interp == norm_comp);
             if (output_matches) {
                 ++passed;
                 BOOST_TEST_MESSAGE("  ✓ " << rel.string());

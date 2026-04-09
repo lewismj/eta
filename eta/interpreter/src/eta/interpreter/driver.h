@@ -31,6 +31,10 @@
 #include "eta/runtime/value_formatter.h"
 #include "eta/diagnostic/diagnostic.h"
 
+#ifdef ETA_HAS_TORCH
+#include <eta/torch/torch_primitives.h>
+#endif
+
 #include "module_path.h"
 
 namespace eta::interpreter {
@@ -65,6 +69,11 @@ public:
         // Phase 3: I/O primitives (require VM for port-aware display/newline)
         runtime::register_io_primitives(builtins_, heap_, intern_table_, vm_);
 
+#ifdef ETA_HAS_TORCH
+        // Phase 4: Torch/NN/Optim primitives (CPU or CUDA, detected at runtime)
+        torch_bindings::register_torch_primitives(builtins_, heap_, intern_table_, &vm_);
+#endif
+
         // Wire up function resolver
         vm_.set_function_resolver([this](uint32_t idx) {
             return registry_.get(idx);
@@ -94,6 +103,7 @@ public:
 
     struct CompileResult {
         std::vector<CompileModuleEntry> modules;
+        std::vector<std::string> imports;    ///< Non-prelude module dependencies
         uint32_t base_func_idx{0};   ///< first function index in the registry for this compilation
         uint32_t end_func_idx{0};    ///< one past the last function index
     };
@@ -296,12 +306,27 @@ public:
         }
         auto& etac = *etac_res;
 
+        // ── Auto-load non-prelude imports ────────────────────────
+        for (const auto& imp : etac.imports) {
+            if (executed_modules_.contains(imp)) continue;
+            auto imp_path = resolver_.resolve(imp);
+            if (!imp_path) {
+                diag_engine_.emit_error(
+                    diagnostic::DiagnosticCode::ModuleNotFound, {},
+                    "cannot resolve import '" + imp + "' required by .etac");
+                return false;
+            }
+            if (!run_file(*imp_path)) return false;
+        }
+
         // Move functions from the deserialized registry into ours,
         // recording the base index so module init_func_index values can be offset.
+        // The .etac stores 0-based (file-relative) function indices; relocate
+        // them to the runner's absolute indices.
         uint32_t base_idx = static_cast<uint32_t>(registry_.size());
         for (const auto& func : etac.registry.all()) {
-            // Make a copy since the source registry owns the originals.
             runtime::vm::BytecodeFunction copy = func;
+            copy.rebase_func_indices(static_cast<int32_t>(base_idx));
             registry_.add(std::move(copy));
         }
 
@@ -576,6 +601,21 @@ private:
             new_expanded.data(), new_expanded.size());
         if (!auto_load_imports(new_span)) {
             return false;
+        }
+
+        // Record non-prelude imports in the compile result so the
+        // serializer can embed them in .etac files.
+        if (out_cr) {
+            auto needed = collect_imported_modules(new_span);
+            for (const auto& mod_name : needed) {
+                bool defined_locally = false;
+                for (const auto& nm : new_module_names) {
+                    if (nm == mod_name) { defined_locally = true; break; }
+                }
+                if (!defined_locally) {
+                    out_cr->imports.push_back(mod_name);
+                }
+            }
         }
 
         // Append new forms to the accumulated set

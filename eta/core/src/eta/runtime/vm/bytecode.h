@@ -178,6 +178,19 @@ struct BytecodeFunction {
     /// Upvalue names parallel to closure->upvals (populated by Emitter).
     std::vector<std::string> upval_names;
 
+    /// Adjust every function-index constant by @p offset.
+    /// Used to rebase indices to file-relative (0-based) before serialization
+    /// (offset = -base_func_idx) and to relocate them to the runner's registry
+    /// after deserialization (offset = +runner_base_idx).
+    void rebase_func_indices(int32_t offset) {
+        for (auto& c : constants) {
+            if (is_func_index(c)) {
+                auto old_idx = static_cast<int32_t>(decode_func_index(c));
+                c = encode_func_index(static_cast<uint32_t>(old_idx + offset));
+            }
+        }
+    }
+
     /// Return the source span for the instruction at index @p pc.
     /// Returns a zeroed Span if @p pc is out of range or the source_map
     /// was not populated (synthetic instructions have file_id == 0).

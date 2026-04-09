@@ -28,6 +28,11 @@ set(SOURCES
         src/disassembler_tests.cpp
         src/optimization_tests.cpp)
 
+# Conditionally add torch tests when libtorch is available
+if(ETA_BUILD_TORCH)
+    list(APPEND SOURCES src/torch_tests.cpp)
+endif()
+
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 # Inject source tree paths for the example runner integration test.
@@ -48,6 +53,12 @@ target_sources(${PROJECT_NAME} PRIVATE
 # Base linking - only eta_core unconditionally
 target_link_libraries(${PROJECT_NAME} PRIVATE eta_core)
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
+
+# Torch integration (when available)
+if(ETA_BUILD_TORCH)
+    target_link_libraries(${PROJECT_NAME} PRIVATE eta_torch)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_HAS_TORCH=1)
+endif()
 
 # Expose interpreter (driver.h) and DAP headers
 target_include_directories(${PROJECT_NAME} PRIVATE

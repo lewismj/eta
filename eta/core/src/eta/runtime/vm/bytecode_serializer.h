@@ -50,6 +50,7 @@ struct ModuleEntry {
 
 struct EtacFile {
     std::uint64_t source_hash{0};
+    std::vector<std::string> imports;   ///< Non-prelude module dependencies
     std::vector<ModuleEntry> modules;
     semantics::BytecodeFunctionRegistry registry;
 };
@@ -69,12 +70,14 @@ public:
     /// @param source_hash   Hash of the original .eta source (for cache invalidation).
     /// @param include_debug If true, source_map spans are included.
     /// @param os            Output stream (binary mode).
+    /// @param imports       Non-prelude module dependencies to store in the .etac.
     /// @return true on success.
     bool serialize(const std::vector<ModuleEntry>& modules,
                    const semantics::BytecodeFunctionRegistry& registry,
                    std::uint64_t source_hash,
                    bool include_debug,
-                   std::ostream& os) const;
+                   std::ostream& os,
+                   const std::vector<std::string>& imports = {}) const;
 
     /// Deserialize a .etac binary into an EtacFile.
     std::expected<EtacFile, SerializerError>
@@ -124,6 +127,7 @@ private:
         CT_HeapVec   = 9,   // recursive: len + elements
         CT_RawBits   = 10,  // fallback: raw u64
         CT_HeapNil   = 11,  // quoted empty list as heap object (if distinct from Nil)
+        CT_False     = 12,
     };
 
     void write_constant(std::ostream& os, nanbox::LispVal v) const;

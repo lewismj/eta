@@ -20,7 +20,7 @@
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
   <a href="docs/next-steps.md">Next Steps</a>
 </p>
-<p></p>
+<br>
 <p align="center">
 Language Guide and Examples</p>
 <p align="center">

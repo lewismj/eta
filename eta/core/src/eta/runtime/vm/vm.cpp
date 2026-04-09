@@ -1199,6 +1199,8 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
 
             // Compute local adjoints for each operand based on op
             LispVal adj_a, adj_b;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch-enum"
             switch (op) {
                 case OpCode::Add:
                     // z = a + b;  dz/da = 1,  dz/db = 1
@@ -1254,6 +1256,7 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
                 default:
                     return std::unexpected(make_type_error("backprop: unknown arithmetic op"));
             }
+#pragma clang diagnostic pop
 
             // Call child backpropagators and merge results
             LispVal result_a = Nil;
