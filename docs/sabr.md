@@ -1,4 +1,4 @@
-# SABR Volatility Surface with Native Dual AD
+# SABR Volatility Model 
 
 [← Back to README](../README.md) · [AAD Deep-Dive](aad.md) ·
 [European Greeks](european.md) · [xVA Example](xva.md) ·

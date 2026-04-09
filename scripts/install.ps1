@@ -44,6 +44,10 @@ if ($Prefix) {
 
     Copy-Item -Recurse -Force "$BundleDir\bin\*"    "$Prefix\bin\"
     Copy-Item -Recurse -Force "$BundleDir\stdlib\*" "$Prefix\stdlib\"
+    if (Test-Path "$BundleDir\lib") {
+        New-Item -ItemType Directory -Force -Path "$Prefix\lib" | Out-Null
+        Copy-Item -Recurse -Force "$BundleDir\lib\*" "$Prefix\lib\"
+    }
     if (Test-Path "$BundleDir\editors") {
         New-Item -ItemType Directory -Force -Path "$Prefix\editors" | Out-Null
         Copy-Item -Recurse -Force "$BundleDir\editors\*" "$Prefix\editors\"

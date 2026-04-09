@@ -31,6 +31,10 @@ if [ -n "$TARGET" ]; then
     mkdir -p "$TARGET/bin" "$TARGET/stdlib"
     cp -f "$BUNDLE_DIR/bin/"*           "$TARGET/bin/"        2>/dev/null || true
     cp -rf "$BUNDLE_DIR/stdlib/"*       "$TARGET/stdlib/"     2>/dev/null || true
+    if [ -d "$BUNDLE_DIR/lib" ]; then
+        mkdir -p "$TARGET/lib"
+        cp -rf "$BUNDLE_DIR/lib/"*      "$TARGET/lib/"        2>/dev/null || true
+    fi
     if [ -d "$BUNDLE_DIR/editors" ]; then
         mkdir -p "$TARGET/editors"
         cp -rf "$BUNDLE_DIR/editors/"*  "$TARGET/editors/"    2>/dev/null || true

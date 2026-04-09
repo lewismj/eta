@@ -16,6 +16,7 @@ target_link_libraries(etai PRIVATE eta_core)
 if(ETA_BUILD_TORCH)
     target_link_libraries(etai PRIVATE eta_torch)
     target_compile_definitions(etai PRIVATE ETA_HAS_TORCH=1)
+    eta_copy_torch_dlls(etai)
 endif()
 
 # Platform-specific libraries
@@ -61,6 +62,7 @@ target_link_libraries(eta_repl PRIVATE eta_core)
 if(ETA_BUILD_TORCH)
     target_link_libraries(eta_repl PRIVATE eta_torch)
     target_compile_definitions(eta_repl PRIVATE ETA_HAS_TORCH=1)
+    eta_copy_torch_dlls(eta_repl)
 endif()
 
 # Platform-specific libraries

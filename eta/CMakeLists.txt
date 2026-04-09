@@ -44,6 +44,33 @@ if(ETA_BUILD_TORCH)
     endif()
 endif()
 
+# ── Utility: copy libtorch DLLs next to a target (Windows only) ──────
+# Defined here (parent scope) so all subdirectories can call it.
+# Usage: eta_copy_torch_dlls(<target>)
+function(eta_copy_torch_dlls target)
+    if(WIN32 AND TORCH_INSTALL_PREFIX)
+        file(GLOB _torch_dlls "${TORCH_INSTALL_PREFIX}/lib/*.dll")
+        foreach(dll IN LISTS _torch_dlls)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${dll}"
+                    $<TARGET_FILE_DIR:${target}>
+            )
+        endforeach()
+        list(LENGTH _torch_dlls _n)
+        if(_n GREATER 0)
+            message(STATUS "Will copy ${_n} libtorch DLL(s) to ${target} output dir")
+        endif()
+    endif()
+endfunction()
+
+# On Linux/macOS, set RPATH so installed binaries find libtorch in ../lib.
+# Must be set before add_subdirectory() so it applies to all executable targets.
+if(ETA_BUILD_TORCH AND NOT WIN32)
+    set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+endif()
+
 add_subdirectory(core)
 add_subdirectory(interpreter)
 add_subdirectory(compiler)

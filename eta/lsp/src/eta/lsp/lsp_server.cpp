@@ -25,7 +25,7 @@
 
 namespace eta::lsp {
 
-using namespace json;
+using namespace eta::json;
 
 // ============================================================================
 // Construction

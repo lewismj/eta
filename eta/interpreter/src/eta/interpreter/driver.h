@@ -35,7 +35,7 @@
 #include <eta/torch/torch_primitives.h>
 #endif
 
-#include "module_path.h"
+#include "eta/interpreter/module_path.h"
 
 namespace eta::interpreter {
 

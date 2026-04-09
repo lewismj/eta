@@ -1,6 +1,7 @@
 #pragma once
-// Minimal JSON value type + parser/serialiser for the DAP server.
-// Copied from eta/lsp with namespace changed to eta::dap::json.
+// Minimal JSON value type + parser/serialiser.
+// Shared by the LSP and DAP servers; lives in eta_core so both can
+// include it without duplicating code.
 
 #include <cstdint>
 #include <cstdio>
@@ -13,11 +14,7 @@
 #include <variant>
 #include <vector>
 
-namespace eta::dap::json {
-
-// ============================================================================
-// Minimal JSON value type
-// ============================================================================
+namespace eta::json {
 
 class Value;
 using Object = std::map<std::string, Value>;
@@ -56,6 +53,7 @@ public:
     const Object&      as_object() const { return std::get<Object>(data); }
     Object&            as_object()       { return std::get<Object>(data); }
 
+    // Convenience accessors for objects
     const Value& operator[](const std::string& key) const {
         static const Value null_val{};
         if (!is_object()) return null_val;
@@ -82,10 +80,6 @@ public:
         return std::get<Object>(data).contains(key);
     }
 };
-
-// ============================================================================
-// JSON serializer
-// ============================================================================
 
 inline void escape_string(std::ostream& os, const std::string& s) {
     os << '"';
@@ -151,10 +145,6 @@ inline std::string to_string(const Value& v) {
     serialize(os, v);
     return os.str();
 }
-
-// ============================================================================
-// JSON parser
-// ============================================================================
 
 class ParseError : public std::runtime_error {
 public:
@@ -321,9 +311,6 @@ inline Value parse(std::string_view input) {
     return Parser(input).parse();
 }
 
-// ============================================================================
-// Builder helpers
-// ============================================================================
 
 inline Value object(std::initializer_list<std::pair<std::string, Value>> pairs) {
     Object o;
@@ -335,5 +322,5 @@ inline Value array(std::initializer_list<Value> elems) {
     return Value(Array(elems));
 }
 
-} // namespace eta::dap::json
+} // namespace eta::json
 

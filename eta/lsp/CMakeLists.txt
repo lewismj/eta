@@ -16,6 +16,7 @@ target_link_libraries(eta_lsp PRIVATE eta_core)
 if(ETA_BUILD_TORCH)
     target_link_libraries(eta_lsp PRIVATE eta_torch)
     target_compile_definitions(eta_lsp PRIVATE ETA_HAS_TORCH=1)
+    eta_copy_torch_dlls(eta_lsp)
 endif()
 
 # Platform-specific libraries

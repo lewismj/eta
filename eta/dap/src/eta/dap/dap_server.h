@@ -12,15 +12,15 @@
 #include <unordered_map>
 #include <vector>
 
-#include "json.h"
+#include "eta/util/json.h"
 
 namespace eta::interpreter { class Driver; }
 
 namespace eta::dap {
 
-using json::Value;
-using json::Object;
-using json::Array;
+using eta::json::Value;
+using eta::json::Object;
+using eta::json::Array;
 
 class DapServer {
 public:

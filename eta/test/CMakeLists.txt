@@ -58,6 +58,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
 if(ETA_BUILD_TORCH)
     target_link_libraries(${PROJECT_NAME} PRIVATE eta_torch)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_HAS_TORCH=1)
+    eta_copy_torch_dlls(${PROJECT_NAME})
 endif()
 
 # Expose interpreter (driver.h) and DAP headers

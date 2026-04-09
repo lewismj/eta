@@ -6,7 +6,6 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 add_library(${PROJECT_NAME} STATIC)
 
 target_include_directories(${PROJECT_NAME}
-        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
         PUBLIC ${Boost_INCLUDE_DIRS}
         PRIVATE ${PROJECT_SOURCE_DIR}
@@ -111,7 +110,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT MSVC)
     )
 
     target_include_directories(${PROJECT_NAME}_sanitized
-            PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
             PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
 

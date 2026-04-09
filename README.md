@@ -27,7 +27,7 @@ Language Guide and Examples</p>
   <a href="docs/examples.md">Basics</a> ·
   <a href="docs/aad.md">Reverse Mode AAD Example w/XVA</a> ·
   <a href="docs/european.md">European Option Greeks with AAD</a> ·
-  <a href="docs/sabr.md">SABR Vol Surface</a> ·
+  <a href="docs/sabr.md">SABR Model</a> ·
   <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
   <a href="docs/clp.md">Constraint Logic Programming</a> ·
   <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a>
@@ -152,23 +152,23 @@ flowchart LR
 
 ## Documentation
 
-| Page                                     | Contents                                                                                 |
-|------------------------------------------|------------------------------------------------------------------------------------------|
-| **[Architecture](docs/architecture.md)** | Full system diagram, phase-by-phase walkthrough, Core IR node types                      |
-| **[NaN-Boxing](docs/nanboxing.md)**      | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                    |
-| **[Bytecode & VM](docs/bytecode-vm.md)** | Opcode reference, end-to-end compilation trace, call stack model, TCO                    |
-| **[Compiler (`etac`)](docs/compiler.md)** | AOT bytecode compiler: CLI reference, `.etac` binary format, optimization passes, disassembly |
-| **[Optimization](docs/optimization.md)** | IR optimization pipeline architecture, built-in passes, writing custom passes               |
-| **[Runtime & GC](docs/runtime.md)**      | Heap architecture, object kinds, mark-sweep GC, intern table, factory                    |
-| **[Modules & Stdlib](docs/modules.md)**  | Module syntax, linker phases, import filters, standard library reference                 |
-| **[Language Guide](docs/examples.md)**   | Guided tour of the language using simple example programs with expected output           |
-| **[AAD](docs/aad.md)**                   | Reverse-mode automatic differentiation walkthrough                                       |
-| **[xVA](docs/xva.md)**                   | Finance use case: CVA, FVA, and sensitivities via AAD                                   |
-| **[European Greeks](docs/european.md)**  | BS option Greeks (first & second order) with custom VJP and Schwarz check                |
-| **[SABR Vol Surface](docs/sabr.md)**    | SABR Hagan implied vol, native Dual VM performance, Hessian via reverse-on-reverse       |
-| **[CLP](docs/clp.md)**                   | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`     |
-| **[Causal Inference](docs/causal.md)**   | Do-calculus engine, back-door adjustment, finance factor analysis                        |
-| **[Next Steps](docs/next-steps.md)**     | Roadmap: FFI, PyTorch integration, hardware co-processors, example programs          |
+| Page                                       | Contents                                                                                 |
+|--------------------------------------------|------------------------------------------------------------------------------------------|
+| **[Architecture](docs/architecture.md)**   | Full system diagram, phase-by-phase walkthrough, Core IR node types                      |
+| **[NaN-Boxing](docs/nanboxing.md)**        | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                    |
+| **[Bytecode & VM](docs/bytecode-vm.md)**   | Opcode reference, end-to-end compilation trace, call stack model, TCO                    |
+| **[Compiler (`etac`)](docs/compiler.md)**  | AOT bytecode compiler: CLI reference, `.etac` binary format, optimization passes, disassembly |
+| **[Optimization](docs/optimization.md)**   | IR optimization pipeline architecture, built-in passes, writing custom passes               |
+| **[Runtime & GC](docs/runtime.md)**        | Heap architecture, object kinds, mark-sweep GC, intern table, factory                    |
+| **[Modules & Stdlib](docs/modules.md)**    | Module syntax, linker phases, import filters, standard library reference                 |
+| **[Language Guide](docs/examples.md)**     | Guided tour of the language using simple example programs with expected output           |
+| **[AAD](docs/aad.md)**                     | Reverse-mode automatic differentiation walkthrough                                       |
+| **[xVA](docs/xva.md)**                     | Finance use case: CVA, FVA, and sensitivities via AAD                                   |
+| **[European Greeks](docs/european.md)**    | BS option Greeks (first & second order) with custom VJP and Schwarz check                |
+| **[SABR Volatility Model](docs/sabr.md)** | SABR Hagan implied vol, native Dual VM performance, Hessian via reverse-on-reverse       |
+| **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`     |
+| **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                        |
+| **[Next Steps](docs/next-steps.md)**       | Roadmap: FFI, PyTorch integration, hardware co-processors, example programs          |
 
 ---
 
