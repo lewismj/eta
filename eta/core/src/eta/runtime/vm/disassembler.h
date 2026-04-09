@@ -154,7 +154,7 @@ private:
 
         if (v == Nil) return "Nil";
         if (v == True) return "#t";
-        // False == Nil in this encoding
+        if (v == False) return "#f";
 
         if (is_func_index(v))
             return "<func:" + std::to_string(decode_func_index(v)) + ">";
@@ -190,7 +190,7 @@ private:
             case Tag::HeapObject:
                 return "<heap:" + std::to_string(ops::payload(v)) + ">";
             case Tag::Nil:
-                return (v == True) ? "#t" : "()";
+                return "()";
             case Tag::Nan:
                 return "NaN";
             default:

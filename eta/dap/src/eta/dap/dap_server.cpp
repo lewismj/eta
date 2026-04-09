@@ -19,7 +19,7 @@
 namespace eta::dap {
 
 namespace fs = std::filesystem;
-using namespace json;
+using namespace eta::json;
 
 // ---------------------------------------------------------------------------
 // Local helpers

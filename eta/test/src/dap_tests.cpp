@@ -16,10 +16,10 @@
 #include <vector>
 
 #include "eta/dap/dap_server.h"
-#include "eta/dap/json.h"
+#include "eta/util/json.h"
 
 namespace fs   = std::filesystem;
-namespace json = eta::dap::json;
+namespace json = eta::json;
 
 // ============================================================================
 // Helpers

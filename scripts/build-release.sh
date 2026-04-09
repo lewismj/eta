@@ -26,17 +26,26 @@ BUILD_DIR="${PROJECT_ROOT}/build-release"
 # ── Argument handling ─────────────────────────────────────────────────
 VERSION=""
 INSTALL_DIR=""
+ENABLE_TORCH=0
+TORCH_BACKEND="cpu"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -v|--version) VERSION="$2"; shift 2 ;;
+        -t|--torch) ENABLE_TORCH=1; shift ;;
+        --torch-backend) TORCH_BACKEND="$2"; shift 2 ;;
         -h|--help)
-            echo "Usage: $0 [-v VERSION] [install-dir]"
+            echo "Usage: $0 [-v VERSION] [-t|--torch] [--torch-backend BACKEND] [install-dir]"
             echo ""
-            echo "  -v, --version TAG   Version tag (e.g. v0.3.0)."
-            echo "                      Auto-detected from git / CMakeLists.txt."
-            echo "  install-dir         Directory for the bundle."
-            echo "                      Defaults to dist/eta-<version>-<platform>."
+            echo "  -v, --version TAG       Version tag (e.g. v0.3.0)."
+            echo "                          Auto-detected from git / CMakeLists.txt."
+            echo "  -t, --torch             Enable libtorch bindings."
+            echo "                          libtorch is auto-downloaded if not installed."
+            echo "  --torch-backend BACK    cpu (default), cu118, cu121, or cu124."
+            echo "                          CUDA variants need an NVIDIA driver ≥ that CUDA"
+            echo "                          version but do NOT need the CUDA toolkit."
+            echo "  install-dir             Directory for the bundle."
+            echo "                          Defaults to dist/eta-<version>-<platform>."
             exit 0 ;;
         *) INSTALL_DIR="$1"; shift ;;
     esac
@@ -76,14 +85,24 @@ echo "║  Version  : ${VERSION}"
 echo "║  Platform : ${PLATFORM}"
 echo "║  Install  : ${PREFIX}"
 echo "║  Jobs     : ${JOBS}"
+if [ "$ENABLE_TORCH" -eq 1 ]; then
+echo "║  Torch    : Enabled (${TORCH_BACKEND})"
+fi
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo
+
+# ── Build torch flags ────────────────────────────────────────────────
+TORCH_FLAGS=""
+if [ "$ENABLE_TORCH" -eq 1 ]; then
+    TORCH_FLAGS="-DETA_BUILD_TORCH=ON -DETA_TORCH_BACKEND=${TORCH_BACKEND}"
+fi
 
 # ── 1. Configure ─────────────────────────────────────────────────────
 echo "▸ [1/6] Configuring CMake (Release)..."
 cmake -B "$BUILD_DIR" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+      $TORCH_FLAGS \
       "$PROJECT_ROOT"
 
 # ── 2. Build ─────────────────────────────────────────────────────────

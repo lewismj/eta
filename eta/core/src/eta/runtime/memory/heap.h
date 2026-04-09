@@ -30,6 +30,9 @@ namespace eta::runtime::memory::heap {
         Port,
         LogicVar,        // Unification logic variable
         Dual,            // AD dual number (primal + backpropagator)
+        Tensor,          // libtorch tensor (wraps torch::Tensor)
+        NNModule,        // libtorch nn::Module (wraps shared_ptr<torch::nn::Module>)
+        Optimizer,       // libtorch optimizer (wraps shared_ptr<torch::optim::Optimizer>)
     };
 
     ETA_ENUM_TO_STRING_BEGIN(ObjectKind)
@@ -45,6 +48,9 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(Port)
         ETA_ENUM_CASE(LogicVar)
         ETA_ENUM_CASE(Dual)
+        ETA_ENUM_CASE(Tensor)
+        ETA_ENUM_CASE(NNModule)
+        ETA_ENUM_CASE(Optimizer)
     ETA_ENUM_TO_STRING_END("Unknown")
 
     inline std::ostream& operator<<(std::ostream& os, const ObjectKind k) {

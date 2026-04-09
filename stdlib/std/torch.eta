@@ -1,0 +1,157 @@
+;;; std/torch.eta — Convenience wrappers for the libtorch tensor / NN / optim
+;;; primitives.
+;;;
+;;; This module requires the interpreter to be built with -DETA_BUILD_TORCH=ON.
+;;; When built without torch support the torch/* and nn/* builtins do not exist
+;;; and importing this module will produce a compile-time error.
+;;;
+;;; libtorch ships in two flavours:
+;;;   • CPU-only  — no CUDA toolkit required, tensors live on CPU.
+;;;   • CUDA-enabled — tensors can be moved to GPU with (to-gpu t).
+;;;
+;;; The C++ API is identical in both cases; `(gpu-available?)` returns #t only
+;;; when CUDA is present at runtime.
+
+(module std.torch
+  (export
+    ;; Re-export core torch builtins for single-import convenience
+    tensor ones zeros randn arange linspace from-list
+    tensor?
+    t+ t- t* t/ matmul dot
+    neg tabs texp tlog tsqrt relu sigmoid ttanh softmax
+    shape reshape transpose squeeze unsqueeze cat
+    tsum mean tmax tmin argmax argmin
+    item to-list numel
+    requires-grad! requires-grad? detach backward grad zero-grad!
+    ;; NN
+    linear sequential relu-layer sigmoid-layer dropout
+    forward parameters train! eval! module?
+    ;; Loss
+    mse-loss l1-loss cross-entropy-loss
+    ;; Optimizers
+    sgd adam step! optim-zero-grad! optimizer?
+    ;; Serialization
+    tensor-save tensor-load tensor-print
+    ;; Device management
+    gpu-available? gpu-count device to-device to-gpu to-cpu
+    nn-to-device nn-to-gpu nn-to-cpu
+    ;; High-level helpers
+    train-step!)
+  (begin
+
+    ;; ── Tensor creation (thin aliases) ──────────────────────────────
+    (defun tensor  (v . rest) (apply torch/tensor (cons v rest)))
+    (defun ones    (shape)    (torch/ones shape))
+    (defun zeros   (shape)    (torch/zeros shape))
+    (defun randn   (shape)    (torch/randn shape))
+    (defun arange  (s e step) (torch/arange s e step))
+    (defun linspace (s e n)   (torch/linspace s e n))
+    (defun from-list (lst)    (torch/from-list lst))
+
+    ;; ── Predicate ───────────────────────────────────────────────────
+    (defun tensor? (x)        (torch/tensor? x))
+
+    ;; ── Arithmetic (prefixed to avoid shadowing core +,-,*,/) ──────
+    (defun t+ (a b)           (torch/add a b))
+    (defun t- (a b)           (torch/sub a b))
+    (defun t* (a b)           (torch/mul a b))
+    (defun t/ (a b)           (torch/div a b))
+    (defun matmul (a b)       (torch/matmul a b))
+    (defun dot (a b)          (torch/dot a b))
+
+    ;; ── Unary ops ───────────────────────────────────────────────────
+    (defun neg     (t)        (torch/neg t))
+    (defun tabs    (t)        (torch/abs t))
+    (defun texp    (t)        (torch/exp t))
+    (defun tlog    (t)        (torch/log t))
+    (defun tsqrt   (t)        (torch/sqrt t))
+    (defun relu    (t)        (torch/relu t))
+    (defun sigmoid (t)        (torch/sigmoid t))
+    (defun ttanh   (t)        (torch/tanh t))
+    (defun softmax (t dim)    (torch/softmax t dim))
+
+    ;; ── Shape ops ───────────────────────────────────────────────────
+    (defun shape     (t)          (torch/shape t))
+    (defun reshape   (t s)        (torch/reshape t s))
+    (defun transpose (t d0 d1)    (torch/transpose t d0 d1))
+    (defun squeeze   (t)          (torch/squeeze t))
+    (defun unsqueeze (t d)        (torch/unsqueeze t d))
+    (defun cat       (ts dim)     (torch/cat ts dim))
+
+    ;; ── Reductions ──────────────────────────────────────────────────
+    (defun tsum   (t) (torch/sum t))
+    (defun mean   (t) (torch/mean t))
+    (defun tmax   (t) (torch/max t))
+    (defun tmin   (t) (torch/min t))
+    (defun argmax (t) (torch/argmax t))
+    (defun argmin (t) (torch/argmin t))
+
+    ;; ── Conversion ──────────────────────────────────────────────────
+    (defun item    (t) (torch/item t))
+    (defun to-list (t) (torch/to-list t))
+    (defun numel   (t) (torch/numel t))
+
+    ;; ── Autograd ────────────────────────────────────────────────────
+    (defun requires-grad! (t flag) (torch/requires-grad! t flag))
+    (defun requires-grad? (t)      (torch/requires-grad? t))
+    (defun detach    (t)           (torch/detach t))
+    (defun backward  (t)           (torch/backward t))
+    (defun grad      (t)           (torch/grad t))
+    (defun zero-grad! (t)          (torch/zero-grad! t))
+
+    ;; ── NN layers ───────────────────────────────────────────────────
+    (defun linear        (in out) (nn/linear in out))
+    (defun sequential    (first . rest) (apply nn/sequential (cons first rest)))
+    (defun relu-layer    ()       (nn/relu-layer))
+    (defun sigmoid-layer ()       (nn/sigmoid-layer))
+    (defun dropout       (rate)   (nn/dropout rate))
+    (defun forward   (m t)        (nn/forward m t))
+    (defun parameters (m)         (nn/parameters m))
+    (defun train!    (m)          (nn/train! m))
+    (defun eval!     (m)          (nn/eval! m))
+    (defun module?   (x)          (nn/module? x))
+
+    ;; ── Loss functions ──────────────────────────────────────────────
+    (defun mse-loss            (p t) (nn/mse-loss p t))
+    (defun l1-loss             (p t) (nn/l1-loss p t))
+    (defun cross-entropy-loss  (p t) (nn/cross-entropy-loss p t))
+
+    ;; ── Optimizers ──────────────────────────────────────────────────
+    (defun sgd              (m lr) (optim/sgd m lr))
+    (defun adam             (m lr) (optim/adam m lr))
+    (defun step!            (o)    (optim/step! o))
+    (defun optim-zero-grad! (o)    (optim/zero-grad! o))
+    (defun optimizer?       (x)    (optim/optimizer? x))
+
+    ;; ── Serialization ───────────────────────────────────────────────
+    (defun tensor-save  (t path) (torch/save t path))
+    (defun tensor-load  (path)   (torch/load path))
+    (defun tensor-print (t)      (torch/print t))
+
+    ;; ── Device management ───────────────────────────────────────────
+    (defun gpu-available? () (torch/cuda-available?))
+    (defun gpu-count      () (torch/cuda-device-count))
+    (defun device     (t)    (torch/device t))
+    (defun to-device  (t d)  (torch/to-device t d))
+    (defun to-gpu     (t)    (torch/to-device t "cuda"))
+    (defun to-cpu     (t)    (torch/to-device t "cpu"))
+
+    (defun nn-to-device (m d)  (nn/to-device m d))
+    (defun nn-to-gpu    (m)    (nn/to-device m "cuda"))
+    (defun nn-to-cpu    (m)    (nn/to-device m "cpu"))
+
+    ;; ── High-level helpers ──────────────────────────────────────────
+
+    ;; (train-step! model optimizer loss-fn input target)
+    ;; Performs one training step: zero grad → forward → loss → backward → step.
+    ;; Returns the scalar loss value (double).
+    (defun train-step! (model optimizer loss-fn input target)
+      (optim/zero-grad! optimizer)
+      (let* ((pred (nn/forward model input))
+             (loss (loss-fn pred target)))
+        (torch/backward loss)
+        (optim/step! optimizer)
+        (torch/item loss)))
+
+  ))
+

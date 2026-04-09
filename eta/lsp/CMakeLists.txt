@@ -12,6 +12,13 @@ target_include_directories(eta_lsp
 
 target_link_libraries(eta_lsp PRIVATE eta_core)
 
+# Torch integration (when available — provides completion/hover for torch builtins)
+if(ETA_BUILD_TORCH)
+    target_link_libraries(eta_lsp PRIVATE eta_torch)
+    target_compile_definitions(eta_lsp PRIVATE ETA_HAS_TORCH=1)
+    eta_copy_torch_dlls(eta_lsp)
+endif()
+
 # Platform-specific libraries
 if(NOT MSVC)
     target_link_libraries(eta_lsp PRIVATE stdc++ m)

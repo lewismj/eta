@@ -34,6 +34,8 @@
     .\scripts\build-release.cmd -Version v0.3.0
     .\scripts\build-release.cmd -VcpkgRoot C:\src\vcpkg
     .\scripts\build-release.cmd "C:\eta-release" -VcpkgRoot C:\src\vcpkg
+    .\scripts\build-release.cmd -EnableTorch
+    .\scripts\build-release.cmd -EnableTorch -TorchBackend cu124
 #>
 [CmdletBinding()]
 param(
@@ -44,7 +46,14 @@ param(
     [string]$Version,
 
     [Parameter()]
-    [string]$VcpkgRoot
+    [string]$VcpkgRoot,
+
+    [Parameter()]
+    [switch]$EnableTorch,
+
+    [Parameter()]
+    [ValidateSet("cpu", "cu118", "cu121", "cu124")]
+    [string]$TorchBackend = "cpu"
 )
 
 $ErrorActionPreference = "Stop"
@@ -90,6 +99,11 @@ if ($VcpkgRoot) {
     $ToolchainArg = @("-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile")
 }
 
+$TorchArg = @()
+if ($EnableTorch) {
+    $TorchArg = @("-DETA_BUILD_TORCH=ON", "-DETA_TORCH_BACKEND=$TorchBackend")
+}
+
 # ── Resolve install dir ──────────────────────────────────────────────
 if (-not $InstallDir) {
     $InstallDir = Join-Path $ProjectRoot "dist\eta-$Version-$PlatformTag"
@@ -108,12 +122,15 @@ Write-Host "|  Install  : $Prefix"
 if ($VcpkgRoot) {
 Write-Host "|  vcpkg    : $VcpkgRoot"
 }
+if ($EnableTorch) {
+Write-Host "|  Torch    : Enabled ($TorchBackend)"
+}
 Write-Host "+==============================================================+"
 Write-Host ""
 
 # -- 1. Configure --------------------------------------------------------------
 Write-Host "> [1/6] Configuring CMake..."
-& cmake -B $BuildDir -DCMAKE_INSTALL_PREFIX="$Prefix" @ToolchainArg $ProjectRoot
+& cmake -B $BuildDir -DCMAKE_INSTALL_PREFIX="$Prefix" @ToolchainArg @TorchArg $ProjectRoot
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 
 # -- 2. Build ------------------------------------------------------------------

@@ -15,6 +15,13 @@ target_include_directories(eta_dap
 
 target_link_libraries(eta_dap PRIVATE eta_core)
 
+# Torch integration (when available)
+if(ETA_BUILD_TORCH)
+    target_link_libraries(eta_dap PRIVATE eta_torch)
+    target_compile_definitions(eta_dap PRIVATE ETA_HAS_TORCH=1)
+    eta_copy_torch_dlls(eta_dap)
+endif()
+
 # Platform-specific libraries
 if(NOT MSVC)
     target_link_libraries(eta_dap PRIVATE stdc++ m)

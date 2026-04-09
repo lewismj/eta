@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <expected>
+#include <optional>
 #include <cstdint>
 #include <functional>
 
@@ -88,6 +89,14 @@ public:
 
     [[nodiscard]] const std::vector<BuiltinSpec>& specs() const { return specs_; }
     [[nodiscard]] size_t size() const { return specs_.size(); }
+
+    /// Look up a builtin by name.  Returns its index (global slot) or nullopt.
+    [[nodiscard]] std::optional<size_t> lookup(std::string_view name) const {
+        for (size_t i = 0; i < specs_.size(); ++i) {
+            if (specs_[i].name == name) return i;
+        }
+        return std::nullopt;
+    }
 
 private:
     std::vector<BuiltinSpec> specs_;

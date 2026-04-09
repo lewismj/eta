@@ -16,6 +16,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -89,6 +90,21 @@ static std::vector<fs::path> collect_examples() {
     return files;
 }
 
+// ── Torch-dependent example filtering ───────────────────────────────────────
+// When the interpreter is built without -DETA_BUILD_TORCH=ON the torch/*
+// builtins are absent, so examples that `(import std.torch)` cannot run.
+static bool requires_torch([[maybe_unused]] const fs::path& file) {
+    auto stem = file.stem().string();
+    if (stem == "torch") return true;
+    // Scan for (import std.torch) in case of indirect usage
+    std::ifstream ifs(file);
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.find("std.torch") != std::string::npos) return true;
+    }
+    return false;
+}
+
 // ── Test fixture ────────────────────────────────────────────────────────────
 
 struct ExampleRunnerFixture {
@@ -159,6 +175,12 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
 
     for (const auto& file : files) {
         auto rel = fs::relative(file, examples);
+#ifndef ETA_HAS_TORCH
+        if (requires_torch(file)) {
+            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped)");
+            continue;
+        }
+#endif
         BOOST_TEST_CONTEXT("Example: " << rel.string()) {
             bool ok = run_example(file);
             if (ok) {

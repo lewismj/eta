@@ -62,6 +62,7 @@ void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
     // Check special sentinels first
     if (v == Nil) { write_u8(os, CT_Nil); return; }
     if (v == True) { write_u8(os, CT_True); return; }
+    if (v == False) { write_u8(os, CT_False); return; }
 
     // Boxed values: dispatch on tag below
     if (ops::is_boxed(v)) {
@@ -120,10 +121,10 @@ void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
             write_f64(os, std::numeric_limits<double>::quiet_NaN());
             return;
         }
-        default:
-            // Fallback: raw bits
-            write_u8(os, CT_RawBits);
-            write_u64(os, v);
+        case Tag::Nil:
+            // Nil is handled above (sentinel check), but must be listed
+            // explicitly to satisfy -Wswitch-enum.
+            write_u8(os, CT_Nil);
             return;
     }
 }
@@ -163,6 +164,7 @@ BytecodeSerializer::read_constant(std::istream& is) const {
     switch (static_cast<ConstTag>(tag)) {
         case CT_Nil:  return Nil;
         case CT_True: return True;
+        case CT_False: return False;
 
         case CT_Fixnum: {
             int64_t val;
@@ -247,7 +249,8 @@ bool BytecodeSerializer::serialize(
         const semantics::BytecodeFunctionRegistry& registry,
         uint64_t source_hash,
         bool include_debug,
-        std::ostream& os) const
+        std::ostream& os,
+        const std::vector<std::string>& imports) const
 {
     // ── Header ──────────────────────────────────────────────────
     os.write(MAGIC, 4);
@@ -261,6 +264,12 @@ bool BytecodeSerializer::serialize(
 
     write_u32(os, static_cast<uint32_t>(modules.size()));
     write_u32(os, static_cast<uint32_t>(registry.size()));
+
+    // ── Imports table ────────────────────────────────────────────
+    write_u32(os, static_cast<uint32_t>(imports.size()));
+    for (const auto& imp : imports) {
+        write_str(os, imp);
+    }
 
     // ── Module table ────────────────────────────────────────────
     for (const auto& mod : modules) {
@@ -345,6 +354,14 @@ BytecodeSerializer::deserialize(std::istream& is) const
     uint32_t num_modules, num_functions;
     if (!read_u32(is, num_modules)) return std::unexpected(SerializerError::Truncated);
     if (!read_u32(is, num_functions)) return std::unexpected(SerializerError::Truncated);
+
+    // ── Imports table ────────────────────────────────────────────
+    uint32_t num_imports;
+    if (!read_u32(is, num_imports)) return std::unexpected(SerializerError::Truncated);
+    result.imports.resize(num_imports);
+    for (uint32_t i = 0; i < num_imports; ++i) {
+        if (!read_str(is, result.imports[i])) return std::unexpected(SerializerError::Truncated);
+    }
 
     // ── Module table ────────────────────────────────────────────
     result.modules.resize(num_modules);

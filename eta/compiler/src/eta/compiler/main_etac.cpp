@@ -127,7 +127,9 @@ int main(int argc, char* argv[]) {
 
     const auto& all_funcs = driver.registry().all();
     for (uint32_t i = cr.base_func_idx; i < cr.end_func_idx; ++i) {
-        file_registry.add(eta::runtime::vm::BytecodeFunction(all_funcs[i]));
+        auto func = eta::runtime::vm::BytecodeFunction(all_funcs[i]);
+        func.rebase_func_indices(-static_cast<int32_t>(cr.base_func_idx));
+        file_registry.add(std::move(func));
     }
 
     for (const auto& cme : cr.modules) {
@@ -151,7 +153,8 @@ int main(int argc, char* argv[]) {
     }
 
     eta::runtime::vm::BytecodeSerializer serializer(driver.heap(), driver.intern_table());
-    if (!serializer.serialize(module_entries, file_registry, source_hash, include_debug, out)) {
+    if (!serializer.serialize(module_entries, file_registry, source_hash, include_debug, out,
+                              cr.imports)) {
         std::cerr << "error: failed to serialize bytecode\n";
         return 1;
     }

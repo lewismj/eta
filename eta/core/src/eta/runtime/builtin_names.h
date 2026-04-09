@@ -170,6 +170,113 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("display", 1, true);
     r("write",   1, true);
     r("newline", 0, true);
+
+#ifdef ETA_HAS_TORCH
+    // ====================================================================
+    // torch_primitives.h  (must match registration order exactly)
+    //
+    // These are always registered when ETA_HAS_TORCH is defined, even in
+    // analysis-only mode (LSP), so that torch/* names resolve and get
+    // correct arity checking.  The actual implementations are linked
+    // only when a live VM is involved (interpreter, DAP).
+    // ====================================================================
+
+    // Tensor creation
+    r("torch/tensor",    1, true);
+    r("torch/ones",      1, false);
+    r("torch/zeros",     1, false);
+    r("torch/randn",     1, false);
+    r("torch/arange",    3, false);
+    r("torch/linspace",  3, false);
+    r("torch/from-list", 1, false);
+
+    // Predicates
+    r("torch/tensor?",   1, false);
+
+    // Arithmetic
+    r("torch/add",       2, false);
+    r("torch/sub",       2, false);
+    r("torch/mul",       2, false);
+    r("torch/div",       2, false);
+    r("torch/matmul",    2, false);
+    r("torch/dot",       2, false);
+
+    // Unary
+    r("torch/neg",       1, false);
+    r("torch/abs",       1, false);
+    r("torch/exp",       1, false);
+    r("torch/log",       1, false);
+    r("torch/sqrt",      1, false);
+    r("torch/relu",      1, false);
+    r("torch/sigmoid",   1, false);
+    r("torch/tanh",      1, false);
+    r("torch/softmax",   2, false);
+
+    // Shape
+    r("torch/shape",     1, false);
+    r("torch/reshape",   2, false);
+    r("torch/transpose", 3, false);
+    r("torch/squeeze",   1, false);
+    r("torch/unsqueeze", 2, false);
+    r("torch/cat",       2, false);
+
+    // Reductions
+    r("torch/sum",       1, false);
+    r("torch/mean",      1, false);
+    r("torch/max",       1, false);
+    r("torch/min",       1, false);
+    r("torch/argmax",    1, false);
+    r("torch/argmin",    1, false);
+
+    // Conversion
+    r("torch/item",      1, false);
+    r("torch/to-list",   1, false);
+    r("torch/numel",     1, false);
+
+    // Autograd
+    r("torch/requires-grad!",  2, false);
+    r("torch/requires-grad?",  1, false);
+    r("torch/detach",          1, false);
+    r("torch/backward",        1, false);
+    r("torch/grad",            1, false);
+    r("torch/zero-grad!",      1, false);
+
+    // NN layers
+    r("nn/linear",              2, false);
+    r("nn/sequential",          0, true);
+    r("nn/relu-layer",          0, false);
+    r("nn/sigmoid-layer",       0, false);
+    r("nn/dropout",             1, false);
+    r("nn/forward",             2, false);
+    r("nn/parameters",          1, false);
+    r("nn/train!",              1, false);
+    r("nn/eval!",               1, false);
+    r("nn/module?",             1, false);
+
+    // Loss
+    r("nn/mse-loss",            2, false);
+    r("nn/l1-loss",             2, false);
+    r("nn/cross-entropy-loss",  2, false);
+
+    // Optimizers
+    r("optim/sgd",              2, false);
+    r("optim/adam",             2, false);
+    r("optim/step!",            1, false);
+    r("optim/zero-grad!",       1, false);
+    r("optim/optimizer?",       1, false);
+
+    // Serialization / IO
+    r("torch/save",             2, false);
+    r("torch/load",             1, false);
+    r("torch/print",            1, false);
+
+    // Device management
+    r("torch/cuda-available?",    0, false);
+    r("torch/cuda-device-count",  0, false);
+    r("torch/device",             1, false);
+    r("torch/to-device",          2, false);
+    r("nn/to-device",             2, false);
+#endif // ETA_HAS_TORCH
 }
 
 } // namespace eta::runtime

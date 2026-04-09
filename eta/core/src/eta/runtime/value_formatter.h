@@ -226,6 +226,21 @@ inline std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTa
             return out;
         }
 
+        // Torch tensor (opaque — libtorch manages storage)
+        if (heap.try_get_as<ObjectKind::Tensor, void>(id)) {
+            return "#<tensor>";
+        }
+
+        // NN module (opaque)
+        if (heap.try_get_as<ObjectKind::NNModule, void>(id)) {
+            return "#<nn-module>";
+        }
+
+        // Optimizer (opaque)
+        if (heap.try_get_as<ObjectKind::Optimizer, void>(id)) {
+            return "#<optimizer>";
+        }
+
         return "#<object>";
     }
 

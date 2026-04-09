@@ -9,15 +9,15 @@
 #include <unordered_set>
 #include <vector>
 
-#include "json.h"
+#include "eta/util/json.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/reader/parser.h"
 
 namespace eta::lsp {
 
-using json::Value;
-using json::Object;
-using json::Array;
+using eta::json::Value;
+using eta::json::Object;
+using eta::json::Array;
 
 // ============================================================================
 // Document store
