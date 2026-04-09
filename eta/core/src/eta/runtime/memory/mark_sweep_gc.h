@@ -69,9 +69,9 @@ namespace eta::runtime::memory::gc {
             if (lv.binding.has_value()) callback(*lv.binding);
         }
 
-        void visit_dual(const types::Dual& d) override {
-            callback(d.primal);
-            callback(d.backprop);
+
+        void visit_tape(const types::Tape& /*t*/) override {
+            // Tape entries contain only doubles and uint32_t indices — no LispVal references.
         }
 
         void visit_primitive(const types::Primitive& p) override {

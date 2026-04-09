@@ -46,7 +46,7 @@ graph TD
     HO --> MV["MultipleValues"]
     HO --> PORT["Port"]
     HO --> LV["LogicVar"]
-    HO --> DUAL["Dual"]
+    HO --> TAPE["Tape"]
 ```
 
 **Inline values** (Nil, Fixnum, Char, String ID, Symbol ID, NaN, doubles)
@@ -119,7 +119,7 @@ struct HeapEntry {
 | `MultipleValues` | `types::MultipleValues` | `{ vals: vector<LispVal> }` — for `(values ...)` |
 | `Port` | `types::Port` | Input/output port (string or file-backed) |
 | `LogicVar` | `types::LogicVar` | Unification logic variable (binding chain) |
-| `Dual` | `types::Dual` | AD dual number `{ primal: LispVal, backprop: LispVal }` — reverse-mode AD |
+| `Tape` | `types::Tape` | AD tape (Wengert list) `{ entries: vector<TapeEntry> }` — reverse-mode AD |
 
 ### Allocation Flow
 
@@ -241,7 +241,7 @@ The `LambdaHeapVisitor` dispatches to type-specific traversal:
 | `Continuation` | `stack[]`, `frames[].closure`, `frames[].extra`, `winding_stack[]` entries |
 | `MultipleValues` | All `vals[]` |
 | `ByteVector`, `Primitive`, `Port` | None (leaf objects) |
-| `Dual` | `primal`, `backprop` |
+| `Tape` | None (flat array, no LispVal references) |
 
 ### Sweep Phase
 
@@ -303,7 +303,7 @@ objects from a prior cycle.
 **I/O:** `display`, `write`, `newline`, `read-char`
 **Ports:** `open-input-string`, `open-output-string`, `get-output-string`, `current-input-port`, `current-output-port`, `current-error-port`, etc.
 **Error:** `error`
-**AD Duals:** `make-dual`, `dual?`, `dual-primal`, `dual-backprop`
+**AD Tape:** `tape-new`, `tape-start!`, `tape-stop!`, `tape-var`, `tape-backward!`, `tape-adjoint`, `tape-primal`, `tape-ref?`, `tape-ref-value`
 **Logic:** `logic-var`, `unify`, `deref-lvar`, `trail-mark`, `unwind-trail`, `logic-var?`, `ground?`
 
 ---
@@ -326,13 +326,12 @@ graph TD
     HEAP --> CLOS["Closure\n{func*, upvals[]}"]
     HEAP --> VEC["Vector\n{elements[]}"]
     HEAP --> CONT["Continuation\n{stack, frames, wind}"]
-    HEAP --> DUAL["Dual\n{primal, backprop}"]
+    HEAP --> TAPE["Tape\n{entries[]}"]
 
     CONS --> |"car/cdr"| HEAP
     CLOS --> |"upvals"| HEAP
     VEC --> |"elements"| HEAP
     CONT --> |"captured stack"| HEAP
-    DUAL --> |"primal/backprop"| HEAP
 
     IT["InternTable"]
     STACK --> |"String/Symbol tag"| IT

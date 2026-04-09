@@ -211,9 +211,9 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     func.code.push_back({OpCode::DerefLogicVar, 0});
     func.code.push_back({OpCode::TrailMark, 0});
     func.code.push_back({OpCode::UnwindTrail, 0});
-    func.code.push_back({OpCode::MakeDual, 0});
-    func.code.push_back({OpCode::DualVal, 0});
-    func.code.push_back({OpCode::DualBp, 0});
+    func.code.push_back({OpCode::_Reserved0, 0});
+    func.code.push_back({OpCode::_Reserved1, 0});
+    func.code.push_back({OpCode::_Reserved2, 0});
 
     func.constants.push_back(Nil);
     for (size_t i = 0; i < func.code.size(); ++i)
@@ -230,7 +230,7 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     BOOST_CHECK(f->code[12].opcode == OpCode::Call);
     BOOST_CHECK_EQUAL(f->code[12].arg, 2u);
     BOOST_CHECK(f->code[14].opcode == OpCode::Return);
-    BOOST_CHECK(f->code[41].opcode == OpCode::DualBp);
+    BOOST_CHECK(f->code[41].opcode == OpCode::_Reserved2);
 }
 
 BOOST_AUTO_TEST_CASE(roundtrip_source_map) {

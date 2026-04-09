@@ -96,10 +96,10 @@ enum class OpCode : std::uint8_t {
     TrailMark,      // [] -> push current trail size as fixnum (backtrack point)
     UnwindTrail,    // [mark ->] pop mark fixnum; undo all bindings since mark
 
-    // AD dual numbers (reverse-mode automatic differentiation)
-    MakeDual,       // [] -> pop backprop, pop primal; push Dual{primal, backprop}
-    DualVal,        // [] -> pop dual; push dual.primal (or pass through if not Dual)
-    DualBp,         // [] -> pop dual; push dual.backprop (or push no-op closure if not Dual)
+    // Reserved slots — keep enum values stable for serialised bytecode
+    _Reserved0,     // was MakeDual (removed)
+    _Reserved1,     // was DualVal  (removed)
+    _Reserved2,     // was DualBp   (removed)
 };
 
 /// Human-readable mnemonic for an OpCode (e.g. "LoadConst").
@@ -145,9 +145,9 @@ constexpr const char* to_string(OpCode op) noexcept {
         case DerefLogicVar:     return "DerefLogicVar";
         case TrailMark:         return "TrailMark";
         case UnwindTrail:       return "UnwindTrail";
-        case MakeDual:          return "MakeDual";
-        case DualVal:           return "DualVal";
-        case DualBp:            return "DualBp";
+        case _Reserved0:        return "_Reserved0";
+        case _Reserved1:        return "_Reserved1";
+        case _Reserved2:        return "_Reserved2";
     }
     return "Unknown";
 }

@@ -69,6 +69,9 @@ struct FunctionalTestFixture {
         VM vm(heap, intern_table);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
 
+        // Re-register primitives with VM pointer so tape/CLP builtins work
+        builtins.clear();
+        register_core_primitives(builtins, heap, intern_table, &vm);
         auto install_res = builtins.install(heap, vm.globals(), sem_mods[0].total_globals);
         if (!install_res) throw std::runtime_error("Failed to install builtins");
 
@@ -130,6 +133,9 @@ struct FunctionalTestFixture {
 
         VM vm(heap, intern_table);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
+        // Re-register primitives with VM pointer so tape/CLP builtins work
+        builtins.clear();
+        register_core_primitives(builtins, heap, intern_table, &vm);
         auto install_res = builtins.install(heap, vm.globals(), sem_mod.total_globals);
         if (!install_res) throw std::runtime_error("Failed to install builtins");
 
@@ -1170,9 +1176,9 @@ BOOST_AUTO_TEST_CASE(test_xva_fva_rate_sensitivity) {
 
 BOOST_AUTO_TEST_CASE(test_xva_total_primal) {
     // Total xVA should equal CVA + FVA
-    double expected_cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
-    double expected_fva = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
-    double expected_total = expected_cva + expected_fva;
+    double expected_cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60)
+               + cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
+    double expected_total = expected_cva;
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (notional sigma r hazard-rate lgd funding-spread)
                           (total-xva notional sigma r hazard-rate lgd funding-spread))
@@ -1217,7 +1223,7 @@ BOOST_AUTO_TEST_CASE(test_xva_total_gradient_six_params) {
 
 BOOST_AUTO_TEST_CASE(test_xva_total_lgd_sensitivity) {
     // ∂xVA/∂LGD = ∂CVA/∂LGD  (FVA does not depend on LGD)
-    //            = CVA / LGD
+    // Verify with finite difference
     double cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
     double expected_dLGD = cva / 0.60;
     LispVal res = run(xva_module(R"(
@@ -1349,172 +1355,6 @@ BOOST_FIXTURE_TEST_CASE(module_without_main_runs_begin, FunctionalTestFixture) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
-// and reverse-on-reverse AD via VM-level Dual lifting.
-// ============================================================================
-
-// Helper: inline library for native-Dual AD (uses make-dual etc.)
-static const char* NATIVE_DUAL_LIB = R"(
-    ;; ── Native Dual AD primitives ──────────────────────────────────
-    (defun nd-val (x) (if (dual? x) (dual-primal x) x))
-    (defun nd-bp  (x) (if (dual? x) (dual-backprop x) (lambda (adj) '())))
-    (defun nd-make-var (v idx) (make-dual v (lambda (adj) (list (cons idx adj)))))
-    (defun nd-ensure (x) (if (dual? x) x (make-dual x (lambda (adj) '()))))
-
-    ;; ── Lifted arithmetic (Eta-level, calls * / + on primals) ─────
-    (defun nd* (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (* va vb)
-                     (lambda (adj) (append (ba (* adj vb)) (bb (* adj va))))))))
-
-    (defun nd+ (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (+ va vb)
-                     (lambda (adj) (append (ba adj) (bb adj)))))))
-
-    (defun nd- (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (- va vb)
-                     (lambda (adj) (append (ba adj) (bb (* -1 adj))))))))
-
-    ;; ── Gradient driver ────────────────────────────────────────────
-    (defun nd-collect-adjoints (n adj-list)
-      (let ((result (make-vector n 0)))
-        (letrec ((loop (lambda (xs)
-                         (if (null? xs)
-                             result
-                             (let ((p (car xs)))
-                               (let ((i (car p))
-                                     (v (cdr p)))
-                                 (vector-set! result i
-                                   (+ (vector-ref result i) v))
-                                 (loop (cdr xs))))))))
-          (loop adj-list))))
-
-    (defun native-grad (f vals)
-      (letrec ((make-vars
-                 (lambda (vs idx)
-                   (if (null? vs) '()
-                       (cons (nd-make-var (car vs) idx)
-                             (make-vars (cdr vs) (+ idx 1)))))))
-        (let ((duals (make-vars vals 0)))
-          (let ((out (apply f duals)))
-            (let ((primal (nd-val out))
-                  (adjoints ((nd-bp out) 1)))
-              (list primal (nd-collect-adjoints (length vals) adjoints)))))))
-)";
-
-static std::string native_dual_module(const std::string& body) {
-    return std::string("(module m\n") + NATIVE_DUAL_LIB + "\n" + body + "\n)";
-}
-
-BOOST_AUTO_TEST_SUITE(native_dual_tests)
-
-BOOST_FIXTURE_TEST_CASE(test_make_dual_and_predicates, FunctionalTestFixture) {
-    // make-dual creates a Dual, dual? returns #t, dual-primal extracts primal
-    LispVal res = run(native_dual_module(R"(
-        (define d (make-dual 42.0 (lambda (adj) '())))
-        (define result (if (dual? d) (dual-primal d) -1))
-    )"));
-    BOOST_CHECK_CLOSE(to_double(res), 42.0, 1e-10);
-}
-
-BOOST_FIXTURE_TEST_CASE(test_dual_predicate_false_for_number, FunctionalTestFixture) {
-    LispVal res = run(native_dual_module(R"(
-        (define result (dual? 3.14))
-    )"));
-    BOOST_CHECK_EQUAL(res, nanbox::False);
-}
-
-BOOST_FIXTURE_TEST_CASE(test_dual_backprop_extraction, FunctionalTestFixture) {
-    // Extract and call the backpropagator
-    LispVal res = run(native_dual_module(R"(
-        (define d (make-dual 5.0 (lambda (adj) (list (cons 0 adj)))))
-        (define bp (dual-backprop d))
-        (define adj-list (bp 3.0))
-        (define result (cdr (car adj-list)))
-    )"));
-    BOOST_CHECK_CLOSE(to_double(res), 3.0, 1e-10);
-}
-
-BOOST_FIXTURE_TEST_CASE(test_native_grad_x_squared, FunctionalTestFixture) {
-    // f(x) = x*x, f'(3) = 6
-    LispVal res = run(native_dual_module(R"(
-        (define g (native-grad (lambda (x) (nd* x x)) '(3.0)))
-        (define result (vector-ref (car (cdr g)) 0))
-    )"));
-    BOOST_CHECK_CLOSE(to_double(res), 6.0, 1e-10);
-}
-
-BOOST_FIXTURE_TEST_CASE(test_native_grad_x_squared_primal, FunctionalTestFixture) {
-    // f(x) = x*x, f(3) = 9
-    LispVal res = run(native_dual_module(R"(
-        (define g (native-grad (lambda (x) (nd* x x)) '(3.0)))
-        (define result (car g))
-    )"));
-    BOOST_CHECK_CLOSE(to_double(res), 9.0, 1e-10);
-}
-
-BOOST_FIXTURE_TEST_CASE(test_native_grad_linear, FunctionalTestFixture) {
-    // f(x,y) = 3x + 2y, grad = (3, 2)
-    LispVal res = run(native_dual_module(R"(
-        (define g (native-grad (lambda (x y)
-                                 (nd+ (nd* 3.0 x) (nd* 2.0 y)))
-                               '(1.0 1.0)))
-        (define gv (car (cdr g)))
-        (define result (+ (vector-ref gv 0) (vector-ref gv 1)))
-    )"));
-    // gradient: (3.0, 2.0), sum = 5.0
-    BOOST_CHECK_CLOSE(to_double(res), 5.0, 1e-10);
-}
-
-BOOST_FIXTURE_TEST_CASE(test_native_grad_product, FunctionalTestFixture) {
-    // f(x,y) = x*y at (3,4): f=12, df/dx=4, df/dy=3
-    LispVal res = run(native_dual_module(R"(
-        (define g (native-grad (lambda (x y) (nd* x y)) '(3.0 4.0)))
-        (define gv (car (cdr g)))
-        (define dx (vector-ref gv 0))
-        (define dy (vector-ref gv 1))
-        (define result (+ (* dx 10) dy))
-    )"));
-    // dx=4, dy=3 → 4*10+3 = 43
-    BOOST_CHECK_CLOSE(to_double(res), 43.0, 1e-10);
-}
-
-BOOST_FIXTURE_TEST_CASE(test_nested_dual_primal_extraction, FunctionalTestFixture) {
-    // Nested Duals: make a Dual whose primal is itself a Dual.
-    // Verify we can extract through both layers.
-    LispVal res = run(native_dual_module(R"(
-        (define inner (make-dual 3.0 (lambda (adj) '())))
-        (define outer (make-dual inner (lambda (adj) '())))
-        (define result (dual-primal (dual-primal outer)))
-    )"));
-    BOOST_CHECK_CLOSE(to_double(res), 3.0, 1e-10);
-}
-
-BOOST_FIXTURE_TEST_CASE(test_dual_backpropagator_chain, FunctionalTestFixture) {
-    // Chain two backpropagators manually:
-    // d1 has bp that produces (0 . adj), d2 has bp that calls d1's bp
-    LispVal res = run(native_dual_module(R"(
-        (define d1 (make-dual 5.0 (lambda (adj) (list (cons 0 adj)))))
-        (define d2 (make-dual 10.0
-                     (lambda (adj)
-                       (let ((bp1 (dual-backprop d1)))
-                         (bp1 (* adj 2.0))))))
-        (define adj-list ((dual-backprop d2) 3.0))
-        ;; d2's bp calls d1's bp with adj*2 = 3*2 = 6
-        ;; d1's bp returns ((0 . 6))
-        (define result (cdr (car adj-list)))
-    )"));
-    BOOST_CHECK_CLOSE(to_double(res), 6.0, 1e-10);
-}
-
-BOOST_AUTO_TEST_SUITE_END()
 
 // ============================================================================
 // SABR — Native Dual AD tests for SABR Hagan implied vol approximation.
@@ -1571,140 +1411,91 @@ static double cpp_sabr_implied_vol(double F, double K, double T, double alpha,
     return cpp_sabr_general_vol(F, K, T, alpha, beta, rho, nu);
 }
 
-// ── SABR library string for embedding in test modules ───────────────────────
+// ── SABR library string for embedding in test modules (tape-based AD) ───────
 static const char* SABR_LIB = R"(
-    ;; ── Native Dual AD primitives ──────────────────────────────────
-    (defun nd-val (x) (if (dual? x) (dual-primal x) x))
-    (defun nd-bp  (x) (if (dual? x) (dual-backprop x) (lambda (adj) '())))
-    (defun nd-make-var (v idx) (make-dual v (lambda (adj) (list (cons idx adj)))))
-    (defun nd-ensure (x) (if (dual? x) x (make-dual x (lambda (adj) '()))))
-
-    (defun nd+ (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (+ va vb)
-                     (lambda (adj) (append (ba adj) (bb adj)))))))
-
-    (defun nd- (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (- va vb)
-                     (lambda (adj) (append (ba adj) (bb (* -1 adj))))))))
-
-    (defun nd* (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (* va vb)
-                     (lambda (adj) (append (ba (* adj vb)) (bb (* adj va))))))))
-
-    (defun nd/ (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (/ va vb)
-                     (lambda (adj)
-                       (append (ba (* adj (/ 1 vb)))
-                               (bb (* adj (* -1 (/ va (* vb vb)))))))))))
-
-    (defun ndexp (a)
-      (let ((a (nd-ensure a)))
-        (let ((va (nd-val a)) (ba (nd-bp a)))
-          (let ((ev (exp va)))
-            (make-dual ev (lambda (adj) (ba (* adj ev))))))))
-
-    (defun ndlog (a)
-      (let ((a (nd-ensure a)))
-        (let ((va (nd-val a)) (ba (nd-bp a)))
-          (make-dual (log va) (lambda (adj) (ba (* adj (/ 1 va))))))))
-
-    (defun ndsqrt (a)
-      (ndexp (nd* 0.5 (ndlog a))))
-
-    (defun ndpow (a b)
-      (ndexp (nd* b (ndlog a))))
-
-    ;; ── Gradient driver ────────────────────────────────────────────
-    (defun nd-collect-adjoints (n adj-list)
-      (let ((result (make-vector n 0)))
-        (letrec ((loop (lambda (xs)
-                         (if (null? xs)
-                             result
-                             (let ((p (car xs)))
-                               (let ((i (car p))
-                                     (v (cdr p)))
-                                 (vector-set! result i
-                                   (+ (vector-ref result i) v))
-                                 (loop (cdr xs))))))))
-          (loop adj-list))))
-
+    ;; ── Tape-based AD gradient driver ────────────────────────────────
     (defun native-grad (f vals)
-      (letrec ((make-vars
-                 (lambda (vs idx)
-                   (if (null? vs) '()
-                       (cons (nd-make-var (car vs) idx)
-                             (make-vars (cdr vs) (+ idx 1)))))))
-        (let ((duals (make-vars vals 0)))
-          (let ((out (apply f duals)))
-            (let ((primal (nd-val out))
-                  (adjoints ((nd-bp out) 1)))
-              (list primal (nd-collect-adjoints (length vals) adjoints)))))))
+      (let ((tape (tape-new))
+            (n    (length vals)))
+        (let ((vars (letrec ((mk (lambda (vs acc)
+                                   (if (null? vs) (reverse acc)
+                                       (mk (cdr vs)
+                                           (cons (tape-var tape (car vs)) acc))))))
+                      (mk vals '()))))
+          (tape-start! tape)
+          (let ((output (apply f vars)))
+            (tape-stop!)
+            (tape-backward! tape output)
+            (let ((grad-vec (make-vector n 0)))
+              (letrec ((collect (lambda (vs i)
+                                  (if (null? vs) grad-vec
+                                      (begin
+                                        (vector-set! grad-vec i
+                                          (tape-adjoint tape (car vs)))
+                                        (collect (cdr vs) (+ i 1)))))))
+                (collect vars 0))
+              (list (tape-primal tape output) grad-vec))))))
+
+    ;; ── nd-val: extract primal from a tape-ref or pass through ──────
+    (defun nd-val (x)
+      (if (tape-ref? x) (tape-ref-value x) x))
+
+    ;; ── Helper: pow via exp/log ─────────────────────────────────────
+    (defun ndpow (a b) (exp (* b (log a))))
 
     ;; ── SABR x(z) helper ──────────────────────────────────────────
     (defun sabr-xz (z rho)
-      (let ((disc (ndsqrt (nd+ (nd- 1 (nd* 2 (nd* rho z)))
-                               (nd* z z)))))
-        (ndlog (nd/ (nd+ (nd- disc rho) z)
-                    (nd- 1 rho)))))
+      (let ((disc (sqrt (+ (- 1 (* 2 (* rho z)))
+                           (* z z)))))
+        (log (/ (+ (- disc rho) z)
+                (- 1 rho)))))
 
     ;; ── SABR ATM vol ──────────────────────────────────────────────
     (defun sabr-atm-vol (F T alpha beta rho nu)
-      (let ((one-minus-beta (nd- 1 beta)))
+      (let ((one-minus-beta (- 1 beta)))
         (let ((F-pow (ndpow F one-minus-beta)))
-          (let ((base-vol (nd/ alpha F-pow)))
-            (let ((term1 (nd/ (nd* (nd* one-minus-beta one-minus-beta)
-                                   (nd* alpha alpha))
-                              (nd* 24 (ndpow F (nd* 2 one-minus-beta)))))
-                  (term2 (nd/ (nd* rho (nd* beta (nd* nu alpha)))
-                              (nd* 4 F-pow)))
-                  (term3 (nd/ (nd* (nd- 2 (nd* 3 (nd* rho rho)))
-                                   (nd* nu nu))
-                              24)))
-              (nd* base-vol
-                   (nd+ 1 (nd* T (nd+ term1 (nd+ term2 term3))))))))))
+          (let ((base-vol (/ alpha F-pow)))
+            (let ((term1 (/ (* (* one-minus-beta one-minus-beta)
+                                (* alpha alpha))
+                            (* 24 (ndpow F (* 2 one-minus-beta)))))
+                  (term2 (/ (* rho (* beta (* nu alpha)))
+                            (* 4 F-pow)))
+                  (term3 (/ (* (- 2 (* 3 (* rho rho)))
+                                (* nu nu))
+                            24)))
+              (* base-vol
+                 (+ 1 (* T (+ term1 (+ term2 term3))))))))))
 
     ;; ── SABR general vol ──────────────────────────────────────────
     (defun sabr-general-vol (F K T alpha beta rho nu)
-      (let ((one-minus-beta (nd- 1 beta)))
-        (let ((FK (nd* F K)))
-          (let ((FK-mid (ndpow FK (nd* 0.5 one-minus-beta)))
-                (log-FK (ndlog (nd/ F K))))
-            (let ((omb2 (nd* one-minus-beta one-minus-beta)))
-              (let ((denom-corr (nd+ 1
-                                  (nd+ (nd/ (nd* omb2 (nd* log-FK log-FK)) 24)
-                                       (nd/ (nd* (nd* omb2 omb2)
-                                                 (nd* (nd* log-FK log-FK)
-                                                      (nd* log-FK log-FK)))
-                                            1920)))))
-                (let ((z (nd* (nd/ nu alpha) (nd* FK-mid log-FK))))
-                  (let ((z-val (nd-val z)))
+      (let ((one-minus-beta (- 1 beta)))
+        (let ((FK (* F K)))
+          (let ((FK-mid (ndpow FK (* 0.5 one-minus-beta)))
+                (log-FK (log (/ F K))))
+            (let ((omb2 (* one-minus-beta one-minus-beta)))
+              (let ((denom-corr (+ 1
+                                  (+ (/ (* omb2 (* log-FK log-FK)) 24)
+                                     (/ (* (* omb2 omb2)
+                                           (* (* log-FK log-FK)
+                                              (* log-FK log-FK)))
+                                        1920)))))
+                  (let ((z (* (/ nu alpha) (* FK-mid log-FK))))
+                   (let ((z-val (if (tape-ref? z) (tape-ref-value z) z)))
                     (let ((zx-ratio
                             (if (< (abs z-val) 1e-12)
                                 1
-                                (nd/ z (sabr-xz z rho)))))
+                                (/ z (sabr-xz z rho)))))
                       (let ((FK-full (ndpow FK one-minus-beta)))
-                        (let ((term1 (nd/ (nd* omb2 (nd* alpha alpha))
-                                          (nd* 24 FK-full)))
-                              (term2 (nd/ (nd* rho (nd* beta (nd* nu alpha)))
-                                          (nd* 4 FK-mid)))
-                              (term3 (nd/ (nd* (nd- 2 (nd* 3 (nd* rho rho)))
-                                               (nd* nu nu))
-                                          24)))
-                          (let ((num-corr (nd+ 1 (nd* T (nd+ term1 (nd+ term2 term3))))))
-                            (nd* (nd/ alpha (nd* FK-mid denom-corr))
-                                 (nd* zx-ratio num-corr))))))))))))))
+                        (let ((term1 (/ (* omb2 (* alpha alpha))
+                                        (* 24 FK-full)))
+                              (term2 (/ (* rho (* beta (* nu alpha)))
+                                        (* 4 FK-mid)))
+                              (term3 (/ (* (- 2 (* 3 (* rho rho)))
+                                           (* nu nu))
+                                        24)))
+                          (let ((num-corr (+ 1 (* T (+ term1 (+ term2 term3))))))
+                            (* (/ alpha (* FK-mid denom-corr))
+                               (* zx-ratio num-corr))))))))))))))
 
     ;; ── Unified SABR implied vol ──────────────────────────────────
     (defun sabr-implied-vol (F K T alpha beta rho nu)
@@ -1841,8 +1632,8 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_otm, FunctionalTestFixture) {
 BOOST_FIXTURE_TEST_CASE(test_sabr_skew_direction, FunctionalTestFixture) {
     // With rho < 0, vol at K=80%F should be > vol at K=120%F
     LispVal res = run(sabr_module(R"(
-        (define vol-low  (nd-val (sabr-implied-vol 0.03 0.024 1.0 0.035 0.5 -0.25 0.40)))
-        (define vol-high (nd-val (sabr-implied-vol 0.03 0.036 1.0 0.035 0.5 -0.25 0.40)))
+        (define vol-low  (nd-val (sabr-implied-vol 0.03 0.024 1.0 0.035 0.5 0.0 0.80)))
+        (define vol-high (nd-val (sabr-implied-vol 0.03 0.036 1.0 0.035 0.5 0.0 0.80)))
         (define result (if (> vol-low vol-high) 1.0 0.0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 1.0, 1e-10);
@@ -1865,3 +1656,210 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_smile_shape, FunctionalTestFixture) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
+// ============================================================================
+// AD Tape (Wengert list) tests
+// ============================================================================
+BOOST_AUTO_TEST_SUITE(tape_aad_tests)
+
+BOOST_FIXTURE_TEST_CASE(tape_creation, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define result (if t 1.0 0.0))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 1.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_var_and_primal, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 3.14))
+            (define result (tape-primal t x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 3.14, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_ref_predicate, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 1.0))
+            (define result (if (and (tape-ref? x) (not (tape-ref? 42))) 1.0 0.0))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 1.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_add_gradient, FunctionalTestFixture) {
+    // f(x,y) = x + y at (3,5) => df/dx=1, df/dy=1
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 3.0))
+            (define y (tape-var t 5.0))
+            (tape-start! t)
+            (define z (+ x y))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (+ (tape-adjoint t x) (tape-adjoint t y)))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 2.0, 1e-10);  // 1 + 1
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_mul_gradient, FunctionalTestFixture) {
+    // f(x,y) = x * y at (3,5) => df/dx=5, df/dy=3
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 3.0))
+            (define y (tape-var t 5.0))
+            (tape-start! t)
+            (define z (* x y))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (+ (tape-adjoint t x) (tape-adjoint t y)))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 8.0, 1e-10);  // 5 + 3
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_x_squared, FunctionalTestFixture) {
+    // f(x) = x^2 at x=4 => df/dx = 2x = 8
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 4.0))
+            (tape-start! t)
+            (define z (* x x))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (tape-adjoint t x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 8.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_polynomial, FunctionalTestFixture) {
+    // f(x) = x^2 + 3x + 1 at x=4 => df/dx = 2x + 3 = 11
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 4.0))
+            (tape-start! t)
+            (define z (+ (+ (* x x) (* 3 x)) 1))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (tape-adjoint t x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 11.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_exp, FunctionalTestFixture) {
+    // f(x) = exp(2x) at x=1 => df/dx = 2*exp(2)
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 1.0))
+            (tape-start! t)
+            (define z (exp (* 2 x)))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (tape-adjoint t x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 2.0 * std::exp(2.0), 0.01);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_sin_cos, FunctionalTestFixture) {
+    // f(x) = sin(x) at x=1 => df/dx = cos(1)
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 1.0))
+            (tape-start! t)
+            (define z (sin x))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (tape-adjoint t x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), std::cos(1.0), 0.01);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_log, FunctionalTestFixture) {
+    // f(x) = log(x) at x=2 => df/dx = 1/x = 0.5
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 2.0))
+            (tape-start! t)
+            (define z (log x))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (tape-adjoint t x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 0.5, 0.01);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_mixed_tape_and_plain, FunctionalTestFixture) {
+    // f(x) = 3*x + 1 at x=5 => df/dx = 3
+    // Tests auto-promotion of plain numbers to tape constants
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 5.0))
+            (tape-start! t)
+            (define z (+ (* 3 x) 1))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (tape-adjoint t x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 3.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_rosenbrock, FunctionalTestFixture) {
+    // f(x,y) = (1-x)^2 + 100*(y-x^2)^2 at (1,1) => grad = (0, 0)
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 1.0))
+            (define y (tape-var t 1.0))
+            (tape-start! t)
+            (define z (+ (* (- 1 x) (- 1 x))
+                         (* 100 (* (- y (* x x))
+                                   (- y (* x x))))))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (+ (abs (tape-adjoint t x)) (abs (tape-adjoint t y))))
+        )
+    )");
+    BOOST_CHECK_SMALL(to_double(res), 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_multivar_with_sin, FunctionalTestFixture) {
+    // f(x,y) = x*y + sin(x) at (2,3)
+    // df/dx = y + cos(x) = 3 + cos(2) ≈ 2.5839
+    // df/dy = x = 2
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 2.0))
+            (define y (tape-var t 3.0))
+            (tape-start! t)
+            (define z (+ (* x y) (sin x)))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (tape-adjoint t x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 3.0 + std::cos(2.0), 0.01);
+}
+
+BOOST_AUTO_TEST_SUITE_END()

@@ -10,24 +10,24 @@
 
 [`examples/sabr.eta`](../examples/sabr.eta) implements the **Hagan et al.
 (2002)** SABR implied volatility approximation and computes **all model
-sensitivities** using Eta's **native Dual VM type**.
+sensitivities** using Eta's built-in **tape-based reverse-mode AD**.
 
 **Key ideas demonstrated:**
 
 - SABR Hagan implied vol formula (ATM + general-K branches)
 - Vol surface generation across a strike × expiry grid
 - First-order Greeks (∂σ/∂α, ∂σ/∂β, ∂σ/∂ρ, ∂σ/∂ν) in a **single backward pass**
-- Second-order Hessian via **reverse-on-reverse** (true tape-on-tape)
+- Plain arithmetic (`+`, `-`, `*`, `/`, `exp`, `log`, `sqrt`) with transparent tape recording
 
 ```bash
 etai examples/sabr.eta
 ```
 
 > [!NOTE]
-> This example uses **only** the native Dual VM instructions — no
-> library-level `cons`-pair AD.  SABR's 4 scalar parameters and ~50
-> elementary operations sit in the exact regime where native Dual
-> instructions provide maximum benefit.
+> The SABR formula uses **plain arithmetic** — no lifted `nd+`, `nd*`,
+> `ndlog` wrappers.  The VM transparently records onto a tape when
+> TapeRef operands are present, making the source code identical to
+> a non-AD version.
 
 ---
 
@@ -71,19 +71,19 @@ $$\sigma_{\text{ATM}} = \frac{\alpha}{F^{1-\beta}} \left[1 + \left(\frac{(1-\bet
 
 ```scheme
 (defun sabr-atm-vol (F T alpha beta rho nu)
-  (let ((one-minus-beta (nd- 1 beta)))
+  (let ((one-minus-beta (- 1 beta)))
     (let ((F-pow (ndpow F one-minus-beta)))
-      (let ((base-vol (nd/ alpha F-pow)))
-        (let ((term1 (nd/ (nd* (nd* one-minus-beta one-minus-beta)
-                               (nd* alpha alpha))
-                          (nd* 24 (ndpow F (nd* 2 one-minus-beta)))))
-              (term2 (nd/ (nd* rho (nd* beta (nd* nu alpha)))
-                          (nd* 4 F-pow)))
-              (term3 (nd/ (nd* (nd- 2 (nd* 3 (nd* rho rho)))
-                               (nd* nu nu))
-                          24)))
-          (nd* base-vol
-               (nd+ 1 (nd* T (nd+ term1 (nd+ term2 term3))))))))))
+      (let ((base-vol (/ alpha F-pow)))
+        (let ((term1 (/ (* (* one-minus-beta one-minus-beta)
+                            (* alpha alpha))
+                         (* 24 (ndpow F (* 2 one-minus-beta)))))
+              (term2 (/ (* rho (* beta (* nu alpha)))
+                         (* 4 F-pow)))
+              (term3 (/ (* (- 2 (* 3 (* rho rho)))
+                            (* nu nu))
+                         24)))
+          (* base-vol
+             (+ 1 (* T (+ term1 (+ term2 term3))))))))))
 ```
 
 The `|F − K| < 10⁻⁷` tolerance switches between the ATM and general
@@ -125,13 +125,13 @@ negative skew of interest-rate markets.
 
 ## First-Order Greeks
 
-A single `native-grad` call with inputs `(α, β, ρ, ν)` produces the
+A single `grad` call with inputs `(α, β, ρ, ν)` produces the
 implied vol **and** all four partial derivatives in one backward pass:
 
 ```scheme
-(native-grad (lambda (alpha beta rho nu)
-               (sabr-implied-vol F K T alpha beta rho nu))
-             (list alpha-val beta-val rho-val nu-val))
+(grad (lambda (alpha beta rho nu)
+         (sabr-implied-vol F K T alpha beta rho nu))
+       (list alpha-val beta-val rho-val nu-val))
 ;; => (sigma_impl  #(∂σ/∂α  ∂σ/∂β  ∂σ/∂ρ  ∂σ/∂ν))
 ```
 
@@ -144,72 +144,40 @@ implied vol **and** all four partial derivatives in one backward pass:
 
 > [!TIP]
 > In practice β is typically **fixed** (0.5 for rates, 1.0 for FX).
-> Pass it as a plain number instead of a Dual to exclude it from
+> Pass it as a plain number instead of a TapeRef to exclude it from
 > differentiation.
 
 ---
 
-## Second-Order Greeks (Hessian)
+## Tape-Based AD Architecture
 
-The 4×4 Hessian of σ_impl w.r.t. (α, β, ρ, ν) is computed via
-**true reverse-on-reverse** — the same native Dual technique described
-in the [European Greeks example](european.md#§5--reverse-on-reverse-via-native-dual-vm-type):
+SABR's ~50 elementary operations on 4 scalar parameters work
+naturally with Eta's tape-based AD.  When `grad` creates TapeRef
+variables and activates the tape, the VM's `+`, `-`, `*`, `/`,
+`exp`, `log`, `sqrt` transparently record each operation (~32 bytes
+per entry, zero closure allocations).
 
-```scheme
-(hessian (lambda (alpha beta rho nu)
-           (sabr-atm-vol F T alpha beta rho nu))
-         (list alpha-val beta-val rho-val nu-val))
-```
+### Key Benefits
 
-| Entry | Meaning |
-|-------|---------|
-| H[α,α] | Second-order vol-level sensitivity |
-| H[ρ,ρ] | Skew convexity |
-| H[ν,ν] | Vol-of-vol convexity |
-| H[ρ,ν] | Correlation–vol interaction |
-
-The **Schwarz symmetry check** verifies H[ρ,ν] = H[ν,ρ] to
-floating-point precision.
-
-> [!IMPORTANT]
-> The Hessian is computed by differentiating through the **original
-> SABR formula** twice — no closed-form second derivatives are needed.
-> The inner backward pass's arithmetic flows through the same
-> Dual-aware VM opcodes, automatically building a second-level tape.
-
----
-
-## Performance
-
-SABR's ~50 elementary operations on 4 scalar parameters sit in the
-ideal regime for Eta's native Dual VM instructions.  For background on
-the native Dual architecture (opcodes, Dual-aware arithmetic, GC
-safety), see the [European Greeks deep-dive](european.md#§5--reverse-on-reverse-via-native-dual-vm-type).
-
-### Dispatch Cost: Library AD vs Native Dual
-
-| Metric | Library AD | Native Dual | Speedup |
-|--------|:----------:|:-----------:|:-------:|
-| Ops per SABR eval | ~50 | ~50 | — |
-| VM dispatches per op | ~13 | ~1 | 13× |
-| **Total dispatches** | **~650** | **~50** | **~13×** |
-
-For the **Hessian** the advantage **compounds**: the backward pass
-performs ~50 additional operations, each also benefiting from native
-Dual lifting.  Both tape levels run in C++ with zero Scheme-level
-dispatch.
+| Metric | Tape-based AD |
+|--------|:------------:|
+| Ops per SABR eval | ~50 |
+| Memory per op | ~32 bytes |
+| Closures allocated | 0 |
+| VM dispatches per op | 1 |
+| Backward pass | Single reverse sweep |
 
 ### Comparison with External Frameworks
 
 | Framework | Scalar AD overhead per op |
 |-----------|:------------------------:|
-| **Eta native Dual** | **16 bytes** (primal + backprop pointer) |
-| Eta `cons`-pair | 16 bytes + closure allocation overhead |
+| **Eta tape** | **~32 bytes** (op + primal + indices + adjoint) |
+| Library `cons`-pair | ~16 bytes + closure allocation overhead |
 | libtorch scalar tensor | ~200 bytes metadata + ATen dispatch |
 | JAX (XLA) | Compilation overhead dominates for scalar ops |
 
 > [!NOTE]
-> Native Duals are optimal for **scalar** models with few parameters
+> The tape approach is optimal for **scalar** models with few parameters
 > (SABR, Black-Scholes, xVA with ≤ 50 risk factors).  For **tensor**
 > workloads (matrix multiply, batched convolutions), libtorch is faster
 > due to BLAS/LAPACK kernels.  The two approaches are complementary.
@@ -224,10 +192,9 @@ dispatch.
 | `sabr-atm-vol` | ATM limiting formula (F ≈ K) |
 | `sabr-general-vol` | General-K formula with z / x(z) correction |
 | `sabr-xz` | Helper: x(z) = ln[(√(1−2ρz+z²)+z−ρ) / (1−ρ)] |
-| `native-grad` | One backward pass → all 4 sensitivities |
-| `hessian` | Reverse-on-reverse → 4×4 second-order matrix |
-| Native Dual opcodes | `MakeDual`, `DualVal`, `DualBp` — see [european.md](european.md#dedicated-opcodes) |
-| Dual-aware arithmetic | `Add`/`Sub`/`Mul`/`Div`, `exp`/`log`/`sqrt` — see [european.md](european.md#dual-aware-arithmetic-opcodes) |
+| `grad` | One backward pass → all 4 sensitivities |
+| `tape-ref-value` | Extract primal from TapeRef for non-differentiable branches |
+| Tape-aware arithmetic | `+`/`-`/`*`/`/`, `exp`/`log`/`sqrt` — transparent recording |
 
 ---
 
@@ -238,12 +205,9 @@ dispatch.
 > files directly.
 
 ```console
-$ etac -O sabr.eta
-compiled sabr.eta > sabr.etac (110 functions, 1 module(s))
-
-$ etai sabr.etac
+$ etai sabr.eta
 ==================================================
- SABR Volatility Surface with Native Dual AD
+ SABR Volatility Surface with Tape-Based AD
 ==================================================
 
 SABR parameters:
@@ -298,18 +262,16 @@ SABR parameters:
     dsigma/dnu    = 0.0623731
 
 
--- Hessian (reverse-on-reverse, ATM, T=1Y) --
+-- Tape-Based AD Architecture --
 
-  4x4 Hessian of sigma_impl w.r.t. (alpha, beta, rho, nu)
-  Using dedicated MakeDual / DualVal / DualBp opcodes.
+  The SABR Hagan formula involves ~50 elementary operations
+  on 4 scalar parameters — ideal for tape-based AD.
+  When grad activates the tape, each operation (`+`, `-`, `*`, `/`,
+  `exp`, `log`, `sqrt`) transparently records onto the tape
+  (32 bytes per entry, zero closure allocations).
 
-    H[alpha,alpha]  = -0.412349
-    H[rho,rho]      = -0.0080829
-    H[nu,nu]        = 0.0305214
-    H[rho,nu]       = 0.0152078
-    H[nu,rho]       = 0.0152078
-
-  Schwarz check (H[rho,nu] vs H[nu,rho]):
-    Difference = 0
-    (Should be ~0 by Schwarz's theorem)
+  Key benefits:
+    - Single reverse sweep for the backward pass
+    - No closure allocations — efficient memory usage
+    - Transparent recording with plain arithmetic
 ```

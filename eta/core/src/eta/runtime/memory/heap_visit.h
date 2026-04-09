@@ -18,7 +18,7 @@ namespace eta::runtime::memory::heap {
         virtual R visit_continuation(const eta::runtime::types::Continuation& c) = 0;
         virtual R visit_multiple_values(const eta::runtime::types::MultipleValues& mv) = 0;
         virtual R visit_logic_var(const eta::runtime::types::LogicVar& lv) = 0;
-        virtual R visit_dual(const eta::runtime::types::Dual& d) = 0;
+        virtual R visit_tape(const eta::runtime::types::Tape& t) = 0;
         virtual R visit_primitive(const eta::runtime::types::Primitive& p) = 0;
 
         // Fallback for leaf/unknown kinds (no outward edges)
@@ -27,7 +27,7 @@ namespace eta::runtime::memory::heap {
 
     // Centralized dispatcher – single switch over ObjectKind
     template <typename R>
-    inline R visit_heap_object(const ObjectHeader& hdr, const void* payload, HeapVisitor<R>& v) {
+    inline_always R visit_heap_object(const ObjectHeader& hdr, const void* payload, HeapVisitor<R>& v) {
         using enum ObjectKind;
         switch (hdr.kind) {
             case Cons:         return v.visit_cons(*static_cast<const eta::runtime::types::Cons*>(payload));
@@ -36,7 +36,7 @@ namespace eta::runtime::memory::heap {
             case Continuation: return v.visit_continuation(*static_cast<const eta::runtime::types::Continuation*>(payload));
             case MultipleValues: return v.visit_multiple_values(*static_cast<const eta::runtime::types::MultipleValues*>(payload));
             case LogicVar:     return v.visit_logic_var(*static_cast<const eta::runtime::types::LogicVar*>(payload));
-            case Dual:         return v.visit_dual(*static_cast<const eta::runtime::types::Dual*>(payload));
+            case Tape:         return v.visit_tape(*static_cast<const eta::runtime::types::Tape*>(payload));
             case Primitive:    return v.visit_primitive(*static_cast<const eta::runtime::types::Primitive*>(payload));
 
             case Fixnum:

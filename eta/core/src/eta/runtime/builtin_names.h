@@ -132,6 +132,19 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%clp-domain-fd!", 2, false);
     r("%clp-get-domain", 1, false);
 
+    // AD Tape primitives (tape-based reverse-mode AD)
+    r("tape-new",        0, false);
+    r("tape-start!",     1, false);
+    r("tape-stop!",      0, false);
+    r("tape-var",        2, false);
+    r("tape-backward!",  2, false);
+    r("tape-adjoint",    2, false);
+    r("tape-primal",     2, false);
+    r("tape-ref?",       1, false);
+    r("tape-ref-index",  1, false);
+    r("tape-size",       1, false);
+    r("tape-ref-value",  1, false);
+
     // ====================================================================
     // port_primitives.h  (must match registration order exactly)
     // ====================================================================

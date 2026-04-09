@@ -81,9 +81,9 @@ BOOST_AUTO_TEST_CASE(disasm_all_opcodes_have_names) {
     check(OpCode::DerefLogicVar);
     check(OpCode::TrailMark);
     check(OpCode::UnwindTrail);
-    check(OpCode::MakeDual);
-    check(OpCode::DualVal);
-    check(OpCode::DualBp);
+    check(OpCode::_Reserved0);
+    check(OpCode::_Reserved1);
+    check(OpCode::_Reserved2);
 }
 
 BOOST_AUTO_TEST_CASE(disasm_constant_annotation) {

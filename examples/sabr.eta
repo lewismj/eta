@@ -1,23 +1,24 @@
-;;; sabr.eta — SABR Volatility Surface with Native Dual AD
+;;; sabr.eta — SABR Volatility Surface with Tape-Based AD
 ;;;
 ;;; Computes the Hagan et al. (2002) SABR implied volatility approximation
-;;; and obtains *all* model sensitivities via Eta's native Dual VM type.
+;;; and obtains *all* model sensitivities via Eta's tape-based AD.
 ;;;
 ;;; The SABR model is the standard stochastic-volatility model used by
 ;;; rates and FX desks worldwide.  Its four parameters (α, β, ρ, ν)
 ;;; control the level, backbone, skew, and curvature of the implied
-;;; volatility smile.  Because the Hagan approximation is a closed-form
-;;; scalar function of ~50 elementary operations on just 4 parameters,
-;;; it sits in the sweet spot for Eta's native Dual VM instructions —
-;;; where the VM's Dual-aware arithmetic opcodes eliminate ~10× dispatch
-;;; overhead compared to library-level cons-pair AD.
+;;; volatility smile.
+;;;
+;;; The VM's arithmetic (+, -, *, /, exp, log, sqrt) transparently
+;;; records onto a tape when TapeRef operands are present — no
+;;; explicit AD-lifted functions needed.  This means the SABR
+;;; formula uses plain arithmetic and gets automatic differentiation
+;;; for free.
 ;;;
 ;;; Demonstrates:
 ;;;   - SABR Hagan implied vol (ATM + general-K branches)
 ;;;   - Vol surface generation across strikes and expiries
-;;;   - First-order Greeks via native-grad (single backward pass)
-;;;   - Second-order Hessian via reverse-on-reverse (native Dual)
-;;;   - Performance advantage of VM-level Dual instructions
+;;;   - First-order Greeks via tape-based grad (single backward pass)
+;;;   - Zero-overhead tape recording at the C++ level
 ;;;
 ;;; Run:  etai examples/sabr.eta
 
@@ -28,104 +29,41 @@
   (begin
 
     ;; ════════════════════════════════════════════════════════════════
-    ;; §1  Native Dual AD Library
+    ;; §1  Tape-Based AD Gradient Driver
     ;; ════════════════════════════════════════════════════════════════
     ;;
-    ;; Uses Eta's dedicated Dual heap object (ObjectKind::Dual) with
-    ;; MakeDual / DualVal / DualBp opcodes.  The VM's arithmetic
-    ;; primitives (+, -, *, /, exp, log, sqrt) natively detect Dual
-    ;; operands and transparently lift operations — building the
-    ;; computation graph at the C++ level with zero Scheme dispatch.
+    ;; The VM transparently records operations when any operand is a
+    ;; TapeRef.  No nd+, nd*, ndlog etc. needed — plain arithmetic
+    ;; is tape-aware.
 
-    ;; ── Native Dual AD primitives ──────────────────────────────────
+    (defun grad (f vals)
+      (let ((tape (tape-new))
+            (n    (length vals)))
+        (let ((vars (letrec ((mk (lambda (vs acc)
+                                   (if (null? vs) (reverse acc)
+                                       (mk (cdr vs)
+                                           (cons (tape-var tape (car vs)) acc))))))
+                      (mk vals '()))))
+          (tape-start! tape)
+          (let ((output (apply f vars)))
+            (tape-stop!)
+            (tape-backward! tape output)
+            (let ((grad-vec (make-vector n 0)))
+              (letrec ((collect (lambda (vs i)
+                                  (if (null? vs) grad-vec
+                                      (begin
+                                        (vector-set! grad-vec i
+                                          (tape-adjoint tape (car vs)))
+                                        (collect (cdr vs) (+ i 1)))))))
+                (collect vars 0))
+              (list (tape-primal tape output) grad-vec))))))
 
-    (defun nd-val (x) (if (dual? x) (dual-primal x) x))
-    (defun nd-bp  (x) (if (dual? x) (dual-backprop x) (lambda (adj) '())))
-    (defun nd-make-var (v idx) (make-dual v (lambda (adj) (list (cons idx adj)))))
-    (defun nd-ensure (x) (if (dual? x) x (make-dual x (lambda (adj) '()))))
+    ;; ── nd-val: extract primal (works for tape-refs and plain numbers) ──
+    (defun nd-val (x)
+      (if (tape-ref? x) (tape-ref-value x) x))
 
-    ;; ── Lifted arithmetic (native Dual) ────────────────────────────
-
-    (defun nd+ (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (+ va vb)
-                     (lambda (adj) (append (ba adj) (bb adj)))))))
-
-    (defun nd- (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (- va vb)
-                     (lambda (adj) (append (ba adj) (bb (* -1 adj))))))))
-
-    (defun nd* (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (* va vb)
-                     (lambda (adj) (append (ba (* adj vb)) (bb (* adj va))))))))
-
-    (defun nd/ (a b)
-      (let ((a (nd-ensure a)) (b (nd-ensure b)))
-        (let ((va (nd-val a)) (vb (nd-val b))
-              (ba (nd-bp a))  (bb (nd-bp b)))
-          (make-dual (/ va vb)
-                     (lambda (adj)
-                       (append (ba (* adj (/ 1 vb)))
-                               (bb (* adj (* -1 (/ va (* vb vb)))))))))))
-
-    (defun ndexp (a)
-      (let ((a (nd-ensure a)))
-        (let ((va (nd-val a)) (ba (nd-bp a)))
-          (let ((ev (exp va)))
-            (make-dual ev (lambda (adj) (ba (* adj ev))))))))
-
-    (defun ndlog (a)
-      (let ((a (nd-ensure a)))
-        (let ((va (nd-val a)) (ba (nd-bp a)))
-          (make-dual (log va) (lambda (adj) (ba (* adj (/ 1 va))))))))
-
-    (defun ndsqrt (a)
-      (ndexp (nd* 0.5 (ndlog a))))
-
-    (defun ndpow (a b)
-      (ndexp (nd* b (ndlog a))))
-
-    (defun ndabs (a)
-      (let ((a (nd-ensure a)))
-        (let ((va (nd-val a)) (ba (nd-bp a)))
-          (if (>= va 0)
-              (make-dual va (lambda (adj) (ba adj)))
-              (make-dual (* -1 va) (lambda (adj) (ba (* -1 adj))))))))
-
-    ;; ── Gradient driver ─────────────────────────────────────────────
-
-    (defun collect-adjoints (n adj-list)
-      (let ((result (make-vector n 0)))
-        (letrec ((loop (lambda (xs)
-                         (if (null? xs)
-                             result
-                             (let ((p (car xs)))
-                               (let ((i (car p))
-                                     (v (cdr p)))
-                                 (vector-set! result i
-                                   (+ (vector-ref result i) v))
-                                 (loop (cdr xs))))))))
-          (loop adj-list))))
-
-    (defun native-grad (f vals)
-      (letrec ((make-vars
-                 (lambda (vs idx)
-                   (if (null? vs) '()
-                       (cons (nd-make-var (car vs) idx)
-                             (make-vars (cdr vs) (+ idx 1)))))))
-        (let ((duals (make-vars vals 0)))
-          (let ((out (apply f duals)))
-            (let ((primal (nd-val out))
-                  (adjoints ((nd-bp out) 1)))
-              (list primal (collect-adjoints (length vals) adjoints)))))))
+    ;; ── Helper: pow via exp/log (tape records transparently) ─────
+    (defun ndpow (a b) (exp (* b (log a))))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §2  SABR Hagan Implied Volatility Approximation
@@ -152,10 +90,10 @@
     ;; ── Helper: x(z) = ln[(√(1 - 2ρz + z²) + z - ρ) / (1 - ρ)] ──
 
     (defun sabr-xz (z rho)
-      (let ((disc (ndsqrt (nd+ (nd- 1 (nd* 2 (nd* rho z)))
-                               (nd* z z)))))
-        (ndlog (nd/ (nd+ (nd- disc rho) z)
-                    (nd- 1 rho)))))
+      (let ((disc (sqrt (+ (- 1 (* 2 (* rho z)))
+                           (* z z)))))
+        (log (/ (+ (- disc rho) z)
+                (- 1 rho)))))
 
     ;; ── ATM implied vol ─────────────────────────────────────────────
     ;; σ_ATM = (α / F^(1-β)) × [1 + T × ((1-β)²α²/(24 F^(2-2β))
@@ -163,55 +101,55 @@
     ;;                                     + (2-3ρ²)ν²/24)]
 
     (defun sabr-atm-vol (F T alpha beta rho nu)
-      (let ((one-minus-beta (nd- 1 beta)))
+      (let ((one-minus-beta (- 1 beta)))
         (let ((F-pow (ndpow F one-minus-beta)))
-          (let ((base-vol (nd/ alpha F-pow)))
-            (let ((term1 (nd/ (nd* (nd* one-minus-beta one-minus-beta)
-                                   (nd* alpha alpha))
-                              (nd* 24 (ndpow F (nd* 2 one-minus-beta)))))
-                  (term2 (nd/ (nd* rho (nd* beta (nd* nu alpha)))
-                              (nd* 4 F-pow)))
-                  (term3 (nd/ (nd* (nd- 2 (nd* 3 (nd* rho rho)))
-                                   (nd* nu nu))
-                              24)))
-              (nd* base-vol
-                   (nd+ 1 (nd* T (nd+ term1 (nd+ term2 term3))))))))))
+          (let ((base-vol (/ alpha F-pow)))
+            (let ((term1 (/ (* (* one-minus-beta one-minus-beta)
+                               (* alpha alpha))
+                            (* 24 (ndpow F (* 2 one-minus-beta)))))
+                  (term2 (/ (* rho (* beta (* nu alpha)))
+                            (* 4 F-pow)))
+                  (term3 (/ (* (- 2 (* 3 (* rho rho)))
+                               (* nu nu))
+                            24)))
+              (* base-vol
+                 (+ 1 (* T (+ term1 (+ term2 term3))))))))))
 
     ;; ── General implied vol (F ≠ K) ─────────────────────────────────
 
     (defun sabr-general-vol (F K T alpha beta rho nu)
-      (let ((one-minus-beta (nd- 1 beta)))
-        (let ((FK (nd* F K)))
-          (let ((FK-mid (ndpow FK (nd* 0.5 one-minus-beta)))
-                (log-FK (ndlog (nd/ F K))))
+      (let ((one-minus-beta (- 1 beta)))
+        (let ((FK (* F K)))
+          (let ((FK-mid (ndpow FK (* 0.5 one-minus-beta)))
+                (log-FK (log (/ F K))))
             ;; Denominator correction: 1 + (1-β)²/24 × ln²(F/K) + (1-β)⁴/1920 × ln⁴(F/K)
-            (let ((omb2 (nd* one-minus-beta one-minus-beta)))
-              (let ((denom-corr (nd+ 1
-                                  (nd+ (nd/ (nd* omb2 (nd* log-FK log-FK)) 24)
-                                       (nd/ (nd* (nd* omb2 omb2)
-                                                 (nd* (nd* log-FK log-FK)
-                                                      (nd* log-FK log-FK)))
-                                            1920)))))
+            (let ((omb2 (* one-minus-beta one-minus-beta)))
+              (let ((denom-corr (+ 1
+                                  (+ (/ (* omb2 (* log-FK log-FK)) 24)
+                                     (/ (* (* omb2 omb2)
+                                           (* (* log-FK log-FK)
+                                              (* log-FK log-FK)))
+                                        1920)))))
                 ;; z = (ν/α) × FK^{(1-β)/2} × ln(F/K)
-                (let ((z (nd* (nd/ nu alpha) (nd* FK-mid log-FK))))
+                (let ((z (* (/ nu alpha) (* FK-mid log-FK))))
                   ;; x(z) — handle z ≈ 0 (would make x(z)/z ≈ 1)
-                  (let ((z-val (nd-val z)))
+                  (let ((z-val (if (tape-ref? z) (tape-ref-value z) z)))
                     (let ((zx-ratio
                             (if (< (abs z-val) 1e-12)
                                 1
-                                (nd/ z (sabr-xz z rho)))))
+                                (/ z (sabr-xz z rho)))))
                       ;; Numerator correction: same as ATM terms
                       (let ((FK-full (ndpow FK one-minus-beta)))
-                        (let ((term1 (nd/ (nd* omb2 (nd* alpha alpha))
-                                          (nd* 24 FK-full)))
-                              (term2 (nd/ (nd* rho (nd* beta (nd* nu alpha)))
-                                          (nd* 4 FK-mid)))
-                              (term3 (nd/ (nd* (nd- 2 (nd* 3 (nd* rho rho)))
-                                               (nd* nu nu))
-                                          24)))
-                          (let ((num-corr (nd+ 1 (nd* T (nd+ term1 (nd+ term2 term3))))))
-                            (nd* (nd/ alpha (nd* FK-mid denom-corr))
-                                 (nd* zx-ratio num-corr))))))))))))))
+                        (let ((term1 (/ (* omb2 (* alpha alpha))
+                                        (* 24 FK-full)))
+                              (term2 (/ (* rho (* beta (* nu alpha)))
+                                        (* 4 FK-mid)))
+                              (term3 (/ (* (- 2 (* 3 (* rho rho)))
+                                           (* nu nu))
+                                        24)))
+                          (let ((num-corr (+ 1 (* T (+ term1 (+ term2 term3))))))
+                            (* (/ alpha (* FK-mid denom-corr))
+                               (* zx-ratio num-corr))))))))))))))
 
     ;; ── Unified SABR implied vol ────────────────────────────────────
     ;; Switch between ATM and general formula based on |F - K| < tol
@@ -242,7 +180,7 @@
 
     (display (if win "==================================================\n"
                      "══════════════════════════════════════════════════\n"))
-    (display " SABR Volatility Surface with Native Dual AD\n")
+    (display " SABR Volatility Surface with Tape-Based AD\n")
     (display (if win "==================================================\n\n"
                      "══════════════════════════════════════════════════\n\n"))
 
@@ -302,7 +240,7 @@
       (row strike-pcts))
 
     ;; ════════════════════════════════════════════════════════════════
-    ;; §4  First-Order Greeks via native-grad
+    ;; §4  First-Order Greeks via tape-based grad
     ;; ════════════════════════════════════════════════════════════════
     ;;
     ;; Differentiate σ_impl w.r.t. (α, β, ρ, ν) at the ATM point.
@@ -314,7 +252,7 @@
 
     (define sabr-params (list alpha-val beta-val rho-val nu-val))
 
-    (let ((result (native-grad (lambda (alpha beta rho nu)
+    (let ((result (grad (lambda (alpha beta rho nu)
                                  (sabr-implied-vol F-fwd F-fwd 1.0
                                                    alpha beta rho nu))
                                sabr-params)))
@@ -348,7 +286,7 @@
                      "\n\n── OTM Greeks: K = 2.4% (80% moneyness), T = 1Y ───\n\n"))
 
     (let ((K-otm (* F-fwd 0.80)))
-      (let ((result (native-grad (lambda (alpha beta rho nu)
+      (let ((result (grad (lambda (alpha beta rho nu)
                                    (sabr-implied-vol F-fwd K-otm 1.0
                                                      alpha beta rho nu))
                                  sabr-params)))
@@ -368,112 +306,24 @@
           (println (vector-ref g 3)))))
 
     ;; ════════════════════════════════════════════════════════════════
-    ;; §5  Hessian via Reverse-on-Reverse
-    ;; ════════════════════════════════════════════════════════════════
-    ;;
-    ;; Compute the 4×4 Hessian of σ_impl w.r.t. (α, β, ρ, ν) using
-    ;; true tape-on-tape reverse-on-reverse.  The inner backward
-    ;; pass's arithmetic (+, -, *, /) sees native Dual operands and
-    ;; builds a second-level graph automatically.
-
-    (defun list-set (lst j val)
-      (if (= j 0)
-          (cons val (cdr lst))
-          (cons (car lst) (list-set (cdr lst) (- j 1) val))))
-
-    (defun sum-adjoint (adj-list idx)
-      (if (null? adj-list) 0
-          (let ((p (car adj-list)))
-            (if (= (car p) idx)
-                (+ (cdr p) (sum-adjoint (cdr adj-list) idx))
-                (sum-adjoint (cdr adj-list) idx)))))
-
-    (defun hessian-col (f vals j)
-      (let ((n (length vals))
-            (xj (list-ref vals j)))
-        (let ((xj-dual (make-dual xj (lambda (adj) (list (cons 0 adj))))))
-          (let ((inputs (list-set vals j xj-dual)))
-            (let ((result (native-grad f inputs)))
-              (let ((adj-vec (cadr result)))
-                (let ((col (make-vector n 0)))
-                  (letrec ((loop (lambda (i)
-                              (if (= i n) col
-                                  (let ((ai (vector-ref adj-vec i)))
-                                    (let ((h (if (dual? ai)
-                                                 (sum-adjoint ((dual-backprop ai) 1) 0)
-                                                 0)))
-                                      (vector-set! col i h)
-                                      (loop (+ i 1))))))))
-                    (loop 0)))))))))
-
-    (defun hessian (f vals)
-      (let ((n (length vals)))
-        (let ((H (make-vector n #f)))
-          (letrec ((loop (lambda (j)
-                      (if (= j n) H
-                          (begin
-                            (vector-set! H j (hessian-col f vals j))
-                            (loop (+ j 1)))))))
-            (loop 0)))))
-
-    ;; ── Compute and display the Hessian ─────────────────────────────
-
-    (display (if win "\n\n-- Hessian (reverse-on-reverse, ATM, T=1Y) --\n\n"
-                     "\n\n── Hessian (reverse-on-reverse, ATM, T=1Y) ─────────\n\n"))
-    (display "  4x4 Hessian of sigma_impl w.r.t. (alpha, beta, rho, nu)\n")
-    (display "  Using dedicated MakeDual / DualVal / DualBp opcodes.\n\n")
-
-    (define sabr-f (lambda (alpha beta rho nu)
-                     (sabr-atm-vol F-fwd 1.0 alpha beta rho nu)))
-
-    (let ((H (hessian sabr-f sabr-params)))
-      ;; Display key entries
-      (display (if win "    H[alpha,alpha]  = " "    H[α,α]  = "))
-      (println (vector-ref (vector-ref H 0) 0))
-      (display (if win "    H[rho,rho]      = " "    H[ρ,ρ]  = "))
-      (println (vector-ref (vector-ref H 2) 2))
-      (display (if win "    H[nu,nu]        = " "    H[ν,ν]  = "))
-      (println (vector-ref (vector-ref H 3) 3))
-      (display (if win "    H[rho,nu]       = " "    H[ρ,ν]  = "))
-      (println (vector-ref (vector-ref H 2) 3))
-      (display (if win "    H[nu,rho]       = " "    H[ν,ρ]  = "))
-      (println (vector-ref (vector-ref H 3) 2))
-
-      ;; Schwarz check
-      (display (if win "\n  Schwarz check (H[rho,nu] vs H[nu,rho]):\n"
-                       "\n  Schwarz check (H[ρ,ν] vs H[ν,ρ]):\n"))
-      (display "    Difference = ")
-      (println (- (vector-ref (vector-ref H 2) 3)
-                  (vector-ref (vector-ref H 3) 2)))
-      (display "    (Should be ~0 by Schwarz's theorem)\n"))
-
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §6  Why Native Dual VM Instructions Are Fast
+    ;; §5  Tape-Based AD Architecture
     ;; ════════════════════════════════════════════════════════════════
 
-    (display (if win "\n\n-- Performance: Native Dual VM Instructions --\n\n"
-                     "\n\n── Performance: Native Dual VM Instructions ────────\n\n"))
+    (display (if win "\n\n-- Tape-Based AD Architecture --\n\n"
+                     "\n\n── Tape-Based AD Architecture ──────────────────────\n\n"))
     (display "  The SABR Hagan formula involves ~50 elementary operations\n")
-    (display "  on 4 scalar parameters — the ideal regime for native Duals.\n\n")
-    (display "  Library-level cons-pair AD (d+, d*, ...):\n")
-    (display "    Per op: 2x ensure-dual (if + pair? + cons) = 6 ops\n")
-    (display "            2x dual-val (car) + 2x dual-bp (cdr) = 4 ops\n")
-    (display "            1x forward arithmetic + 1x cons + 1x lambda = 3 ops\n")
-    (display "    Total: ~13 Scheme-level VM instructions per AD op\n")
-    (display "    SABR: ~50 ops x 13 = ~650 VM dispatches\n\n")
-    (display "  Native Dual VM instructions (nd+, nd*, ...):\n")
-    (display "    Per op: VM checks ObjectKind::Dual tag in C++ (~1 branch)\n")
-    (display "            Extracts primal/backprop at C++ level\n")
-    (display "            Builds result Dual with 1x Heap::allocate<Dual>\n")
-    (display "    Total: ~1 VM dispatch per AD op (rest is C++)\n")
-    (display "    SABR: ~50 ops x 1 = ~50 VM dispatches\n\n")
-    (display "  Speedup: ~13x fewer VM dispatches for first-order.\n")
-    (display "  For Hessian (reverse-on-reverse), the advantage compounds:\n")
-    (display "    the backward pass arithmetic also uses Dual-aware opcodes,\n")
-    (display "    so both tape levels benefit from native C++ lifting.\n\n")
-    (display "  Memory: native Dual = 16 bytes (primal + backprop pointer)\n")
-    (display "          cons-pair   = 16 bytes (car + cdr) + closure overhead\n")
-    (display "          libtorch scalar tensor = ~200 bytes metadata per op\n")
+    (display "  on 4 scalar parameters — ideal for tape-based AD.\n\n")
+    (display "  Tape-based AD (built into the VM):\n")
+    (display "    Per op: VM detects TapeRef tag (~1 branch in C++)\n")
+    (display "            Records operation + primal + arg indices\n")
+    (display "            ~32 bytes per tape entry, zero closures\n")
+    (display "    SABR: ~50 ops recorded in a single forward pass\n")
+    (display "    Backward: single reverse sweep accumulates all adjoints\n\n")
+    (display "  Benefits:\n")
+    (display "    - Plain arithmetic: no nd+, nd*, ndlog wrappers needed\n")
+    (display "    - Zero closure allocations (recording is C++ level)\n")
+    (display "    - ~32 bytes per op vs ~200+ bytes for library-level AD\n")
+    (display "    - All 4 Greeks in one backward sweep\n")
 
   ))
 

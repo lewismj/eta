@@ -13,7 +13,7 @@
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/types/logic_var.h"
-#include "eta/runtime/types/dual.h"
+#include "eta/runtime/types/tape.h"
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/clp/constraint_store.h"
 
@@ -55,44 +55,31 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                                      vm::VM* vm = nullptr) {
     using Args = const std::vector<LispVal>&;
 
-    // ── AD Dual helpers ─────────────────────────────────────────────────
-    // Check whether any element in an argument list is a native Dual.
-    auto has_dual = [&heap](Args args) -> bool {
+    // ── AD TapeRef helper ─────────────────────────────────────────────────
+    // Helper: check whether any element is a TapeRef
+    auto has_tape_ref = [](Args args) -> bool {
         for (auto v : args) {
-            if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject &&
-                heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v)))
+            if (ops::is_boxed(v) && ops::tag(v) == Tag::TapeRef)
                 return true;
         }
         return false;
     };
 
-    // Recursively strip Dual wrappers to get the numeric primal
-    // (used for comparison operators — non-differentiable control flow).
-    auto deep_primal = [&heap](LispVal v) -> LispVal {
-        for (;;) {
-            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return v;
-            auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v));
-            if (!d) return v;
-            v = d->primal;
-        }
-    };
-
     // ========================================================================
     // Arithmetic: + - * /
     //
-    // Each operator checks for native Dual arguments.  When found, the
-    // operation is folded through VM::dual_binary_op() which delegates to
-    // do_binary_arithmetic() — the Dual-aware opcode handler that
-    // transparently builds a second-level computation graph for
-    // reverse-on-reverse AD.
+    // Each operator checks for TapeRef arguments.  When found, the operation
+    // is folded through VM::tape_binary_op() which delegates to
+    // do_binary_arithmetic() — the handler that transparently records tape
+    // operations for reverse-mode AD.
     // ========================================================================
 
-    env.register_builtin("+", 0, true, [&heap, vm, has_dual](Args args) -> std::expected<LispVal, RuntimeError> {
-        if (vm && has_dual(args)) {
+    env.register_builtin("+", 0, true, [&heap, vm, has_tape_ref](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (vm && has_tape_ref(args)) {
             if (args.empty()) return make_fixnum(heap, int64_t(0));
             LispVal acc = args[0];
             for (size_t i = 1; i < args.size(); ++i) {
-                auto r = vm->dual_binary_op(vm::OpCode::Add, acc, args[i]);
+                auto r = vm->tape_binary_op(vm::OpCode::Add, acc, args[i]);
                 if (!r) return r;
                 acc = *r;
             }
@@ -122,18 +109,18 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fixnum(heap, isum);
     });
 
-    env.register_builtin("-", 1, true, [&heap, vm, has_dual](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("-", 1, true, [&heap, vm, has_tape_ref](Args args) -> std::expected<LispVal, RuntimeError> {
         if (args.empty()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "-: requires at least 1 argument"}});
-        if (vm && has_dual(args)) {
+        if (vm && has_tape_ref(args)) {
             if (args.size() == 1) {
                 // Unary negation: 0 - x
                 auto zero = make_fixnum(heap, int64_t(0));
                 if (!zero) return zero;
-                return vm->dual_binary_op(vm::OpCode::Sub, *zero, args[0]);
+                return vm->tape_binary_op(vm::OpCode::Sub, *zero, args[0]);
             }
             LispVal acc = args[0];
             for (size_t i = 1; i < args.size(); ++i) {
-                auto r = vm->dual_binary_op(vm::OpCode::Sub, acc, args[i]);
+                auto r = vm->tape_binary_op(vm::OpCode::Sub, acc, args[i]);
                 if (!r) return r;
                 acc = *r;
             }
@@ -171,12 +158,12 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fixnum(heap, iresult);
     });
 
-    env.register_builtin("*", 0, true, [&heap, vm, has_dual](Args args) -> std::expected<LispVal, RuntimeError> {
-        if (vm && has_dual(args)) {
+    env.register_builtin("*", 0, true, [&heap, vm, has_tape_ref](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (vm && has_tape_ref(args)) {
             if (args.empty()) return make_fixnum(heap, int64_t(1));
             LispVal acc = args[0];
             for (size_t i = 1; i < args.size(); ++i) {
-                auto r = vm->dual_binary_op(vm::OpCode::Mul, acc, args[i]);
+                auto r = vm->tape_binary_op(vm::OpCode::Mul, acc, args[i]);
                 if (!r) return r;
                 acc = *r;
             }
@@ -205,18 +192,18 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fixnum(heap, iprod);
     });
 
-    env.register_builtin("/", 1, true, [&heap, vm, has_dual](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("/", 1, true, [&heap, vm, has_tape_ref](Args args) -> std::expected<LispVal, RuntimeError> {
         if (args.empty()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "/: requires at least 1 argument"}});
-        if (vm && has_dual(args)) {
+        if (vm && has_tape_ref(args)) {
             if (args.size() == 1) {
                 // Unary reciprocal: 1 / x
                 auto one = make_flonum(1.0);
                 if (!one) return one;
-                return vm->dual_binary_op(vm::OpCode::Div, *one, args[0]);
+                return vm->tape_binary_op(vm::OpCode::Div, *one, args[0]);
             }
             LispVal acc = args[0];
             for (size_t i = 1; i < args.size(); ++i) {
-                auto r = vm->dual_binary_op(vm::OpCode::Div, acc, args[i]);
+                auto r = vm->tape_binary_op(vm::OpCode::Div, acc, args[i]);
                 if (!r) return r;
                 acc = *r;
             }
@@ -260,13 +247,12 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     // Comparison: = < > <= >=
     // ========================================================================
 
-    auto make_comparison = [&heap, deep_primal](const char* name, auto cmp_int, auto cmp_float) {
-        return [&heap, deep_primal, name, cmp_int, cmp_float](Args args) -> std::expected<LispVal, RuntimeError> {
+    auto make_comparison = [&heap](const char* name, auto cmp_int, auto cmp_float) {
+        return [&heap, name, cmp_int, cmp_float](Args args) -> std::expected<LispVal, RuntimeError> {
             if (args.size() < 2) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, std::string(name) + ": requires at least 2 arguments"}});
             for (size_t i = 0; i + 1 < args.size(); ++i) {
-                // Extract primal from Duals for comparison (non-differentiable)
-                auto a = classify_numeric(deep_primal(args[i]), heap);
-                auto b = classify_numeric(deep_primal(args[i + 1]), heap);
+                auto a = classify_numeric(args[i], heap);
+                auto b = classify_numeric(args[i + 1], heap);
                 if (!a.is_valid() || !b.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(name) + ": argument is not a number"}});
                 bool result;
                 if (a.is_flonum() || b.is_flonum()) {
@@ -520,13 +506,31 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     // Transcendental math: sin cos tan asin acos atan atan2 exp log sqrt
     // ========================================================================
 
-    env.register_builtin("sin", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("sin", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        // Tape-aware: record sin on active tape
+        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
+            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
+            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sin: no active tape"}});
+            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
+            double val = std::sin(tape->entries[idx].primal);
+            uint32_t new_idx = tape->push({types::TapeOp::Sin, idx, 0, val, 0.0});
+            return ops::box(Tag::TapeRef, new_idx);
+        }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sin: argument is not a number"}});
         return make_flonum(std::sin(n.as_double()));
     });
 
-    env.register_builtin("cos", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("cos", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        // Tape-aware: record cos on active tape
+        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
+            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
+            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "cos: no active tape"}});
+            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
+            double val = std::cos(tape->entries[idx].primal);
+            uint32_t new_idx = tape->push({types::TapeOp::Cos, idx, 0, val, 0.0});
+            return ops::box(Tag::TapeRef, new_idx);
+        }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "cos: argument is not a number"}});
         return make_flonum(std::cos(n.as_double()));
@@ -562,25 +566,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("exp", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Dual-aware: exp(Dual(x, bp)) = Dual(exp(x), λ(adj) → bp(adj * exp(x)))
-        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
-            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(args[0]))) {
-                auto n = classify_numeric(d->primal, heap);
-                if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "exp: primal is not a number"}});
-                double ev = std::exp(n.as_double());
-                auto ev_val = make_flonum(ev);
-                if (!ev_val) return std::unexpected(ev_val.error());
-                LispVal ba = d->backprop;
-                LispVal ev_lv = *ev_val;
-                auto bp = make_primitive(heap,
-                    [vm, ba, ev_lv](const std::vector<LispVal>& bp_args) -> std::expected<LispVal, RuntimeError> {
-                        auto local_adj = vm->dual_binary_op(vm::OpCode::Mul, bp_args[0], ev_lv);
-                        if (!local_adj) return local_adj;
-                        return vm->call_value(ba, {*local_adj});
-                    }, 1, false, {ba, ev_lv});
-                if (!bp) return std::unexpected(bp.error());
-                return make_dual(heap, ev_lv, *bp);
-            }
+        // Tape-aware: record exp on active tape
+        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
+            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
+            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "exp: no active tape"}});
+            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
+            double val = std::exp(tape->entries[idx].primal);
+            uint32_t new_idx = tape->push({types::TapeOp::Exp, idx, 0, val, 0.0});
+            return ops::box(Tag::TapeRef, new_idx);
         }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "exp: argument is not a number"}});
@@ -588,24 +581,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("log", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Dual-aware: log(Dual(x, bp)) = Dual(log(x), λ(adj) → bp(adj / x))
-        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
-            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(args[0]))) {
-                auto n = classify_numeric(d->primal, heap);
-                if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "log: primal is not a number"}});
-                auto log_val = make_flonum(std::log(n.as_double()));
-                if (!log_val) return std::unexpected(log_val.error());
-                LispVal ba = d->backprop;
-                LispVal primal_lv = d->primal;
-                auto bp = make_primitive(heap,
-                    [vm, ba, primal_lv](const std::vector<LispVal>& bp_args) -> std::expected<LispVal, RuntimeError> {
-                        auto local_adj = vm->dual_binary_op(vm::OpCode::Div, bp_args[0], primal_lv);
-                        if (!local_adj) return local_adj;
-                        return vm->call_value(ba, {*local_adj});
-                    }, 1, false, {ba, primal_lv});
-                if (!bp) return std::unexpected(bp.error());
-                return make_dual(heap, *log_val, *bp);
-            }
+        // Tape-aware: record log on active tape
+        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
+            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
+            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "log: no active tape"}});
+            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
+            double val = std::log(tape->entries[idx].primal);
+            uint32_t new_idx = tape->push({types::TapeOp::Log, idx, 0, val, 0.0});
+            return ops::box(Tag::TapeRef, new_idx);
         }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "log: argument is not a number"}});
@@ -613,27 +596,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("sqrt", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Dual-aware: sqrt(Dual(x, bp)) = Dual(sqrt(x), λ(adj) → bp(adj / (2*sqrt(x))))
-        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
-            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(args[0]))) {
-                auto n = classify_numeric(d->primal, heap);
-                if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sqrt: primal is not a number"}});
-                double sv = std::sqrt(n.as_double());
-                auto sqrt_val = make_flonum(sv);
-                if (!sqrt_val) return std::unexpected(sqrt_val.error());
-                LispVal ba = d->backprop;
-                auto two_sqrt = make_flonum(2.0 * sv);
-                if (!two_sqrt) return std::unexpected(two_sqrt.error());
-                LispVal two_sqrt_lv = *two_sqrt;
-                auto bp = make_primitive(heap,
-                    [vm, ba, two_sqrt_lv](const std::vector<LispVal>& bp_args) -> std::expected<LispVal, RuntimeError> {
-                        auto local_adj = vm->dual_binary_op(vm::OpCode::Div, bp_args[0], two_sqrt_lv);
-                        if (!local_adj) return local_adj;
-                        return vm->call_value(ba, {*local_adj});
-                    }, 1, false, {ba, two_sqrt_lv});
-                if (!bp) return std::unexpected(bp.error());
-                return make_dual(heap, *sqrt_val, *bp);
-            }
+        // Tape-aware: record sqrt on active tape
+        if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
+            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
+            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sqrt: no active tape"}});
+            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
+            double val = std::sqrt(tape->entries[idx].primal);
+            uint32_t new_idx = tape->push({types::TapeOp::Sqrt, idx, 0, val, 0.0});
+            return ops::box(Tag::TapeRef, new_idx);
         }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sqrt: argument is not a number"}});
@@ -1203,43 +1173,31 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     // ========================================================================
-    // AD Dual number primitives: dual?  dual-primal  dual-backprop  make-dual
+    // AD Dual stubs (removed — kept as no-ops for slot stability)
     //
-    // These expose the native Dual heap type (ObjectKind::Dual) to Eta code.
-    // Combined with the Dual-aware arithmetic primitives above, they enable
-    // reverse-on-reverse AD: the backward pass's arithmetic transparently
-    // builds a second-level computation graph.
+    // These builtins were removed along with the Dual heap type.
+    // They are retained as error stubs so that the global builtin slot indices
+    // remain stable (existing compiled bytecode references slots by index).
     // ========================================================================
 
-    env.register_builtin("dual?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        const LispVal v = args[0];
-        if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
-        return heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v)) ? True : False;
+    env.register_builtin("dual?", 1, false, [](Args) -> std::expected<LispVal, RuntimeError> {
+        return False;  // Nothing is a Dual any more
     });
 
-    env.register_builtin("dual-primal", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        const LispVal v = args[0];
-        if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject) {
-            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v)))
-                return d->primal;
-        }
-        return v;  // pass-through for non-Duals
+    env.register_builtin("dual-primal", 1, false, [](Args args) -> std::expected<LispVal, RuntimeError> {
+        return args[0];  // pass-through
     });
 
-    env.register_builtin("dual-backprop", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        const LispVal v = args[0];
-        if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject) {
-            if (auto* d = heap.try_get_as<ObjectKind::Dual, types::Dual>(ops::payload(v)))
-                return d->backprop;
-        }
-        // Non-Dual: return a no-op backpropagator (λ(adj) '())
+    env.register_builtin("dual-backprop", 1, false, [&heap](Args) -> std::expected<LispVal, RuntimeError> {
+        // Return a no-op backpropagator
         return make_primitive(heap,
             [](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> { return Nil; },
             1, false);
     });
 
-    env.register_builtin("make-dual", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        return make_dual(heap, args[0], args[1]);
+    env.register_builtin("make-dual", 2, false, [](Args) -> std::expected<LispVal, RuntimeError> {
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+            "make-dual: Dual AD has been removed — use tape-based AD instead"}});
     });
 
     // ========================================================================
@@ -1382,6 +1340,130 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return *result;
             }
         });
+
+    // ========================================================================
+    // AD Tape primitives: tape-new tape-start! tape-stop! tape-var
+    //                     tape-backward! tape-adjoint tape-primal
+    //                     tape-ref? tape-ref-index tape-size
+    //
+    // These expose the tape-based (Wengert list) reverse-mode AD to Eta code.
+    // Arithmetic +,-,*,/ and transcendentals sin,cos,exp,log,sqrt are
+    // automatically recorded when a TapeRef operand is detected.
+    // ========================================================================
+
+    env.register_builtin("tape-new", 0, false, [&heap](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
+        return make_tape(heap);
+    });
+
+    env.register_builtin("tape-start!", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: requires a running VM"}});
+        // Verify argument is a tape
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: argument must be a tape"}});
+        if (!heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0])))
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: argument must be a tape"}});
+        vm->set_active_tape(args[0]);
+        return True;
+    });
+
+    env.register_builtin("tape-stop!", 0, false, [vm](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
+        if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-stop!: requires a running VM"}});
+        vm->set_active_tape(Nil);
+        return True;
+    });
+
+    env.register_builtin("tape-var", 2, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: requires a running VM"}});
+        // args[0] = tape, args[1] = numeric value
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: first argument must be a tape"}});
+        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
+        if (!tape)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: first argument must be a tape"}});
+        auto n = classify_numeric(args[1], heap);
+        if (!n.is_valid())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: second argument must be a number"}});
+        uint32_t idx = tape->push_var(n.as_double());
+        return ops::box(Tag::TapeRef, idx);
+    });
+
+    env.register_builtin("tape-backward!", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        // args[0] = tape, args[1] = tape-ref (output node)
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-backward!: first argument must be a tape"}});
+        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
+        if (!tape)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-backward!: first argument must be a tape"}});
+        if (!ops::is_boxed(args[1]) || ops::tag(args[1]) != Tag::TapeRef)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-backward!: second argument must be a tape-ref"}});
+        auto output_idx = static_cast<uint32_t>(ops::payload(args[1]));
+        tape->backward(output_idx);
+        return True;
+    });
+
+    env.register_builtin("tape-adjoint", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        // args[0] = tape, args[1] = tape-ref
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-adjoint: first argument must be a tape"}});
+        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
+        if (!tape)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-adjoint: first argument must be a tape"}});
+        if (!ops::is_boxed(args[1]) || ops::tag(args[1]) != Tag::TapeRef)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-adjoint: second argument must be a tape-ref"}});
+        auto idx = static_cast<uint32_t>(ops::payload(args[1]));
+        if (idx >= tape->entries.size())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-adjoint: index out of range"}});
+        return make_flonum(tape->entries[idx].adjoint);
+    });
+
+    env.register_builtin("tape-primal", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        // args[0] = tape, args[1] = tape-ref
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-primal: first argument must be a tape"}});
+        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
+        if (!tape)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-primal: first argument must be a tape"}});
+        if (!ops::is_boxed(args[1]) || ops::tag(args[1]) != Tag::TapeRef)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-primal: second argument must be a tape-ref"}});
+        auto idx = static_cast<uint32_t>(ops::payload(args[1]));
+        if (idx >= tape->entries.size())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-primal: index out of range"}});
+        return make_flonum(tape->entries[idx].primal);
+    });
+
+    env.register_builtin("tape-ref?", 1, false, [](Args args) -> std::expected<LispVal, RuntimeError> {
+        return (ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) ? True : False;
+    });
+
+    env.register_builtin("tape-ref-index", 1, false, [](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::TapeRef)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-index: argument must be a tape-ref"}});
+        return ops::encode(static_cast<int64_t>(ops::payload(args[0])));
+    });
+
+    env.register_builtin("tape-size", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-size: argument must be a tape"}});
+        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
+        if (!tape)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-size: argument must be a tape"}});
+        return ops::encode(static_cast<int64_t>(tape->entries.size()));
+    });
+
+    // tape-ref-value: extract the forward (primal) value of a TapeRef from the
+    // active tape.  Returns the value as-is if it is not a TapeRef.  This is
+    // needed for non-differentiable comparisons (e.g. branch conditions).
+    env.register_builtin("tape-ref-value", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::TapeRef)
+            return args[0];  // pass-through for non-TapeRef
+        if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-value: requires a running VM"}});
+        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
+        if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-value: no active tape"}});
+        auto idx = static_cast<uint32_t>(ops::payload(args[0]));
+        if (idx >= tape->entries.size())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-value: index out of range"}});
+        return make_flonum(tape->entries[idx].primal);
+    });
 }
 
 } // namespace eta::runtime

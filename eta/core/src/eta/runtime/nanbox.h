@@ -42,7 +42,8 @@ namespace eta::runtime::nanbox {
         String,
         Symbol,
         Nan,
-        HeapObject
+        HeapObject,
+        TapeRef        ///< AD tape node index (payload = index into active Tape)
     };
 
     constexpr const char* to_string(const Tag tag) {
@@ -55,6 +56,7 @@ namespace eta::runtime::nanbox {
             case Symbol: return "Tag::Symbol";
             case Nan: return "Tag::Nan";
             case HeapObject: return "Tag::HeapObject";
+            case TapeRef: return "Tag::TapeRef";
             default:
                 return "Tag::Unknown";
         }

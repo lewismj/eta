@@ -52,6 +52,10 @@ namespace eta::runtime::memory::value_visit {
             case Tag::HeapObject: {
                 return visitor.visit_heapref(payload(v));
             }
+            case Tag::TapeRef: {
+                // TapeRef is an immediate value — no heap references to trace
+                return visitor.visit_nil();
+            }
             case Tag::Nil:
             default:
                 return visitor.visit_nil();

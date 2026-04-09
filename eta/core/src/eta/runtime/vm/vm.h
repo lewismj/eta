@@ -170,10 +170,10 @@ public:
 
     std::expected<LispVal, RuntimeError> call_value(LispVal proc, std::vector<LispVal> args);
 
-    /// Dual-aware binary arithmetic — public wrapper around do_binary_arithmetic.
-    /// Used by the +/-/*/÷ primitives to transparently lift when either operand
-    /// is a native Dual (ObjectKind::Dual), enabling reverse-on-reverse AD.
-    std::expected<LispVal, RuntimeError> dual_binary_op(OpCode op, LispVal a, LispVal b);
+    /// Tape-aware binary arithmetic — public wrapper around do_binary_arithmetic.
+    /// Used by the +/-/*/÷ primitives to transparently record when either
+    /// operand is a TapeRef, enabling tape-based reverse-mode AD.
+    std::expected<LispVal, RuntimeError> tape_binary_op(OpCode op, LispVal a, LispVal b);
 
     // Test helper to access/modify globals
     std::vector<LispVal>& globals() { return globals_; }
@@ -182,6 +182,13 @@ public:
     // ── CLP constraint store (exposed to core_primitives builtins) ────────────
     clp::ConstraintStore& constraint_store() { return constraint_store_; }
     const clp::ConstraintStore& constraint_store() const { return constraint_store_; }
+
+    // ── AD Tape state ─────────────────────────────────────────────────────────
+    /// Return the currently active tape (NaN-boxed HeapObject), or Nil if none.
+    [[nodiscard]] LispVal active_tape() const noexcept { return active_tape_; }
+    /// Activate / deactivate a tape.  Pass Nil to deactivate.
+    void set_active_tape(LispVal tape) noexcept { active_tape_ = tape; }
+
 
     // Port accessors
     LispVal current_input_port() const { return current_input_; }
@@ -204,6 +211,7 @@ private:
     std::vector<CatchFrame> catch_stack_;  ///< live exception handlers
     std::vector<LispVal> trail_stack_;     ///< logic-var trail for backtracking
     clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
+    LispVal active_tape_{nanbox::Nil};     ///< Currently active AD tape (HeapObject or Nil)
 
     // Current I/O ports
     LispVal current_input_{nanbox::Nil};

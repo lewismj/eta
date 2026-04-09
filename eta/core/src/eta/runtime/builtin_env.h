@@ -87,6 +87,9 @@ public:
         return {};
     }
 
+    /// Remove all registered builtins (used before re-registering with a different VM pointer).
+    void clear() { specs_.clear(); }
+
     [[nodiscard]] const std::vector<BuiltinSpec>& specs() const { return specs_; }
     [[nodiscard]] size_t size() const { return specs_.size(); }
 
