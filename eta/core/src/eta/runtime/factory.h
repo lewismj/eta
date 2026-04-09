@@ -117,9 +117,10 @@ namespace eta::runtime::memory::factory {
         return make_heap_object<types::LogicVar, ObjectKind::LogicVar>(heap, types::LogicVar{});
     }
 
+
     inline_always
-    std::expected<LispVal, RuntimeError> make_dual(Heap& heap, LispVal primal, LispVal backprop) {
-        return make_heap_object<types::Dual, ObjectKind::Dual>(heap, types::Dual{.primal = primal, .backprop = backprop});
+    std::expected<LispVal, RuntimeError> make_tape(Heap& heap) {
+        return make_heap_object<types::Tape, ObjectKind::Tape>(heap, types::Tape{});
     }
 }
 

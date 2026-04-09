@@ -166,57 +166,38 @@ DerefLogicVar        ; lv[7].binding=nullopt → push HeapObj(7) (still a lvar)
 CallBuiltin "logic-var?"   ; → #t
 ```
 
-### AD Dual Numbers (Reverse-Mode Automatic Differentiation)
+### Tape-Based Reverse-Mode AD
 
-These opcodes manage the native `Dual` heap type (`ObjectKind::Dual`),
-enabling reverse-mode AD at the VM level.  See
-[European Option Greeks](european.md) for a full worked example
-including reverse-on-reverse (second-order) differentiation.
+The VM provides tape-based (Wengert list) reverse-mode automatic
+differentiation.  When a **tape is active**, the arithmetic opcodes
+`Add`, `Sub`, `Mul`, `Div` and the builtins `exp`, `log`, `sqrt`,
+`sin`, `cos` **transparently record** every operation involving a
+`TapeRef` operand onto the active tape.
 
-| Opcode | Arg | Stack Effect | Description |
-|--------|-----|-------------|-------------|
-| `MakeDual` | — | primal backprop → dual | Pop backpropagator closure, pop primal value; allocate `Dual{primal, backprop}` on the heap; push boxed reference |
-| `DualVal` | — | x → primal | Pop `x`; if `x` is a `Dual`, push `.primal` — otherwise push `x` unchanged |
-| `DualBp` | — | x → closure | Pop `x`; if `x` is a `Dual`, push `.backprop` — otherwise push a no-op `λ(adj) → '()` |
+Three former opcode slots are reserved for bytecode compatibility:
 
-**Dual-aware arithmetic:** The existing `Add`, `Sub`, `Mul`, `Div`
-opcodes are **automatically Dual-aware**.  When `do_binary_arithmetic`
-detects that either operand is a `Dual`, it:
+| Opcode | Status |
+|--------|--------|
+| `_Reserved0` | was `MakeDual` (removed) |
+| `_Reserved1` | was `DualVal` (removed) |
+| `_Reserved2` | was `DualBp` (removed) |
 
-1. Extracts primals, recursively computes the forward result
-2. Builds a chain-rule backpropagator as a `Primitive` (with GC roots)
-3. Wraps the result as `Dual(forward_result, backpropagator)`
+**Tape-aware arithmetic:** When `do_binary_arithmetic` detects that
+either operand is a `TapeRef`, it:
 
-The builtins `exp`, `log`, and `sqrt` follow the same pattern.
-Because the backpropagator's internal arithmetic re-enters the same
-Dual-aware path, seeding the outer backward pass with a Dual-valued
-adjoint triggers automatic **reverse-on-reverse** (second-order) AD.
+1. Looks up the primals from the active tape
+2. Computes the forward result
+3. Appends a new tape entry recording the operation, operand indices,
+   and the primal result (~32 bytes)
+4. Returns a new `TapeRef` pointing to the appended entry
 
-**Example — creating and inspecting a Dual:**
+The builtins `exp`, `log`, `sqrt`, `sin`, `cos` follow the same
+pattern.  The backward pass (`tape-backward!`) sweeps the tape in
+reverse, accumulating adjoints via the chain rule — zero closures
+allocated.
 
-```
-;; (define d (make-dual 3.0 (lambda (adj) (list (cons 0 adj)))))
-LoadConst    K0        ; push 3.0
-MakeClosure  (bp, 0)   ; push λ(adj) → '((0 . adj))
-MakeDual               ; pop bp, pop 3.0 → push Dual{3.0, bp}
-StoreGlobal  D
-Pop
-
-;; (dual-primal d)
-LoadGlobal   D         ; push Dual{3.0, bp}
-DualVal                ; → push 3.0
-
-;; (dual-backprop d)
-LoadGlobal   D         ; push Dual{3.0, bp}
-DualBp                 ; → push bp closure
-
-;; (+ d 2.0) — Dual-aware Add
-LoadGlobal   D         ; push Dual{3.0, bp}
-LoadConst    K1        ; push 2.0
-Add                    ; detects Dual operand:
-                       ;   forward: 3.0 + 2.0 = 5.0
-                       ;   builds: Dual{5.0, λ(adj) → bp(adj)}
-```
+See [AAD documentation](aad.md) for a full description and
+[European Option Greeks](european.md) for a worked example.
 
 ---
 

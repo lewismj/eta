@@ -5,7 +5,7 @@
 #include "eta/runtime/types/types.h"
 #include "eta/runtime/types/logic_var.h"
 #include "eta/runtime/types/primitive.h"
-#include "eta/runtime/types/dual.h"
+#include "eta/runtime/types/tape.h"
 #include "eta/runtime/memory/value_visit.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/string_view.h"
@@ -105,6 +105,8 @@ void VM::collect_garbage() {
         // Mark logic-variable trail (prevents live unbound vars from being swept
         // during an active unification / backtracking context)
         for (auto v : trail_stack_) visit(v);
+        // Mark active AD tape
+        visit(active_tape_);
     });
 }
 
@@ -182,6 +184,11 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
     }
 
     roots.push_back({"Trail Stack", collect(trail_stack_.begin(), trail_stack_.end())});
+
+    {
+        auto ids = single(active_tape_);
+        if (!ids.empty()) roots.push_back({"Active Tape", std::move(ids)});
+    }
 
     return roots;
 }
@@ -302,7 +309,7 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     return result;
 }
 
-std::expected<LispVal, RuntimeError> VM::dual_binary_op(OpCode op, LispVal a, LispVal b) {
+std::expected<LispVal, RuntimeError> VM::tape_binary_op(OpCode op, LispVal a, LispVal b) {
     auto saved_size = stack_.size();
     push(a);
     push(b);
@@ -945,38 +952,10 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             }
 
-            // ── AD Dual number opcodes ──────────────────────────────────
-            case OpCode::MakeDual: {
-                LispVal backprop = pop();
-                LispVal primal = pop();
-                auto res = make_dual(heap_, primal, backprop);
-                if (!res) return std::unexpected(res.error());
-                push(*res);
-                break;
-            }
-            case OpCode::DualVal: {
-                LispVal v = pop();
-                auto* d = try_get_as<ObjectKind::Dual, types::Dual>(v);
-                push(d ? d->primal : v);
-                break;
-            }
-            case OpCode::DualBp: {
-                LispVal v = pop();
-                auto* d = try_get_as<ObjectKind::Dual, types::Dual>(v);
-                if (d) {
-                    push(d->backprop);
-                } else {
-                    // Not a dual — return a no-op backpropagator (lambda (adj) '())
-                    auto noop = make_primitive(heap_,
-                        [](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
-                            return Nil;
-                        }, 1, false);
-                    if (!noop) return std::unexpected(noop.error());
-                    push(*noop);
-                }
-                break;
-            }
 
+            case OpCode::_Reserved0:
+            case OpCode::_Reserved1:
+            case OpCode::_Reserved2:
             default:
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::NotImplemented, "OpCode not implemented"}});
         }
@@ -1161,171 +1140,64 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
     LispVal b = pop();
     LispVal a = pop();
 
-    // ── AD Dual lifting ────────────────────────────────────────────────
-    // If either operand is a Dual heap object, transparently lift the
-    // operation so that the backward pass builds a computation graph.
-    // This is the core of reverse-on-reverse: the inner backward pass's
-    // plain `*`, `+`, `-`, `/` opcodes become graph-building when the
-    // outer grad seeds dual-valued adjoints.
-    auto* dual_a = try_get_as<ObjectKind::Dual, Dual>(a);
-    auto* dual_b = try_get_as<ObjectKind::Dual, Dual>(b);
+    // ── AD Tape recording ────────────────────────────────────────────────
+    // If a tape is active and either operand is a TapeRef, record the
+    // operation on the tape and push the new TapeRef.  Plain numeric
+    // operands are auto-promoted to tape constants.
+    const bool is_tape_a = ops::is_boxed(a) && ops::tag(a) == Tag::TapeRef;
+    const bool is_tape_b = ops::is_boxed(b) && ops::tag(b) == Tag::TapeRef;
 
-    if (dual_a || dual_b) {
-        // Extract ALL fields from the Dual structs NOW, before any
-        // allocations that could invalidate the pointers.
-        LispVal pa = dual_a ? dual_a->primal   : a;
-        LispVal pb = dual_b ? dual_b->primal   : b;
-        LispVal ba = dual_a ? dual_a->backprop  : Nil;
-        LispVal bb = dual_b ? dual_b->backprop  : Nil;
-
-        // Compute forward result using plain arithmetic on primals
-        push(pa);
-        push(pb);
-        auto fwd = do_binary_arithmetic(op);
-        if (!fwd) return fwd;
-        LispVal primal_result = pop();
-
-
-        // The backward closure is a Primitive that, given an adjoint,
-        // applies the chain rule and returns the merged adjoint list.
-        // We capture pa, pb, ba, bb, op by value in the C++ lambda.
-        // All arithmetic uses dual_binary_op() which properly saves/restores
-        // the stack, making nested Dual lifting safe (reverse-on-reverse).
-        auto bp_func = [this, pa, pb, ba, bb, op](const std::vector<LispVal>& args)
-            -> std::expected<LispVal, RuntimeError>
-        {
-            if (args.empty()) return std::unexpected(make_type_error("backprop: requires adjoint argument"));
-            LispVal adj = args[0];
-
-            // Compute local adjoints for each operand based on op
-            LispVal adj_a, adj_b;
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wswitch-enum"
-#endif
-            switch (op) {
-                case OpCode::Add:
-                    // z = a + b;  dz/da = 1,  dz/db = 1
-                    adj_a = adj;
-                    adj_b = adj;
-                    break;
-                case OpCode::Sub:
-                    // z = a - b;  dz/da = 1,  dz/db = -1
-                    adj_a = adj;
-                    {
-                        auto neg1 = make_flonum(-1.0);
-                        if (!neg1) return std::unexpected(neg1.error());
-                        auto r = dual_binary_op(OpCode::Mul, adj, *neg1);
-                        if (!r) return r;
-                        adj_b = *r;
-                    }
-                    break;
-                case OpCode::Mul:
-                    // z = a * b;  dz/da = b,  dz/db = a
-                    {
-                        auto r1 = dual_binary_op(OpCode::Mul, adj, pb);
-                        if (!r1) return r1;
-                        adj_a = *r1;
-                    }
-                    {
-                        auto r2 = dual_binary_op(OpCode::Mul, adj, pa);
-                        if (!r2) return r2;
-                        adj_b = *r2;
-                    }
-                    break;
-                case OpCode::Div:
-                    // z = a / b;  dz/da = 1/b,  dz/db = -a/b²
-                    {
-                        auto r1 = dual_binary_op(OpCode::Div, adj, pb);
-                        if (!r1) return r1;
-                        adj_a = *r1;
-                    }
-                    {
-                        // adj_b = adj * (-a / b²)
-                        auto b_sq = dual_binary_op(OpCode::Mul, pb, pb);
-                        if (!b_sq) return b_sq;
-                        auto a_over_bsq = dual_binary_op(OpCode::Div, pa, *b_sq);
-                        if (!a_over_bsq) return a_over_bsq;
-                        auto neg1 = make_flonum(-1.0);
-                        if (!neg1) return std::unexpected(neg1.error());
-                        auto neg_a_over_bsq = dual_binary_op(OpCode::Mul, *neg1, *a_over_bsq);
-                        if (!neg_a_over_bsq) return neg_a_over_bsq;
-                        auto r5 = dual_binary_op(OpCode::Mul, adj, *neg_a_over_bsq);
-                        if (!r5) return r5;
-                        adj_b = *r5;
-                    }
-                    break;
-                default:
-                    return std::unexpected(make_type_error("backprop: unknown arithmetic op"));
-            }
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-
-            // Call child backpropagators and merge results
-            LispVal result_a = Nil;
-            if (ba != Nil) {
-                auto ra = call_value(ba, {adj_a});
-                if (!ra) return std::unexpected(ra.error());
-                result_a = *ra;
-            }
-
-            LispVal result_b = Nil;
-            if (bb != Nil) {
-                auto rb = call_value(bb, {adj_b});
-                if (!rb) return std::unexpected(rb.error());
-                result_b = *rb;
-            }
-
-            // append result_a result_b
-            if (result_a == Nil) return result_b;
-            if (result_b == Nil) return result_a;
-
-            // Walk to end of result_a list and splice result_b
-            std::vector<LispVal> elems_a;
-            LispVal cur = result_a;
-            while (cur != Nil) {
-                auto* c = try_get_as<ObjectKind::Cons, Cons>(cur);
-                if (!c) break;
-                elems_a.push_back(c->car);
-                cur = c->cdr;
-            }
-            LispVal merged = result_b;
-            for (auto it = elems_a.rbegin(); it != elems_a.rend(); ++it) {
-                auto c = make_cons(heap_, *it, merged);
-                if (!c) return std::unexpected(c.error());
-                merged = *c;
-            }
-            return merged;
-        };
-
-        // Collect GC roots for the captured LispVals so GC won't free them
-        std::vector<LispVal> roots;
-        roots.reserve(4);
-        roots.push_back(pa);
-        roots.push_back(pb);
-        if (ba != Nil) roots.push_back(ba);
-        if (bb != Nil) roots.push_back(bb);
-
-        // Protect primal_result from GC during allocations below
-        temp_roots_.push_back(primal_result);
-
-        // Allocate the backprop as a Primitive (with GC roots)
-        auto bp_prim = make_primitive(heap_, bp_func, 1, false, std::move(roots));
-        if (!bp_prim) {
-            temp_roots_.pop_back();
-            return std::unexpected(bp_prim.error());
+    if (is_tape_a || is_tape_b) {
+        auto* tape = heap_.try_get_as<ObjectKind::Tape, Tape>(ops::payload(active_tape_));
+        if (!tape) {
+            return std::unexpected(make_type_error("tape arithmetic: no active tape"));
         }
 
-        // Allocate the result Dual
-        auto dual_result = make_dual(heap_, primal_result, *bp_prim);
-        temp_roots_.pop_back();
-        if (!dual_result) return std::unexpected(dual_result.error());
+        // Map opcode to tape op
+        TapeOp tape_op;
+        switch (op) {
+            case OpCode::Add: tape_op = TapeOp::Add; break;
+            case OpCode::Sub: tape_op = TapeOp::Sub; break;
+            case OpCode::Mul: tape_op = TapeOp::Mul; break;
+            case OpCode::Div: tape_op = TapeOp::Div; break;
+            default:
+                return std::unexpected(make_type_error("tape arithmetic: unknown op"));
+        }
 
-        push(*dual_result);
+        // Resolve operand indices — auto-promote plain numbers to constants
+        auto resolve_idx = [&](LispVal v, bool is_tape) -> std::expected<uint32_t, RuntimeError> {
+            if (is_tape) return static_cast<uint32_t>(ops::payload(v));
+            // Promote plain number to tape constant
+            auto nv = classify_numeric(v, heap_);
+            if (!nv.is_valid()) return std::unexpected(make_type_error("tape arithmetic: operand is not a number"));
+            return tape->push_const(nv.as_double());
+        };
+
+        auto idx_a = resolve_idx(a, is_tape_a);
+        if (!idx_a) return std::unexpected(idx_a.error());
+        auto idx_b = resolve_idx(b, is_tape_b);
+        if (!idx_b) return std::unexpected(idx_b.error());
+
+        double pa = tape->entries[*idx_a].primal;
+        double pb = tape->entries[*idx_b].primal;
+
+        double result;
+        switch (op) {
+            case OpCode::Add: result = pa + pb; break;
+            case OpCode::Sub: result = pa - pb; break;
+            case OpCode::Mul: result = pa * pb; break;
+            case OpCode::Div:
+                if (pb == 0.0) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
+                result = pa / pb;
+                break;
+            default: result = 0.0; break;
+        }
+
+        uint32_t new_idx = tape->push({tape_op, *idx_a, *idx_b, result, 0.0});
+        push(ops::box(Tag::TapeRef, new_idx));
         return {};
     }
-    // ── End AD Dual lifting ────────────────────────────────────────────
+
 
     auto num_a = classify_numeric(a, heap_);
     auto num_b = classify_numeric(b, heap_);

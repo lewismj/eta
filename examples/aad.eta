@@ -1,17 +1,23 @@
 ;;; aad.eta — Adjoint Algorithmic Differentiation (reverse-mode AD)
 ;;;
-;;; A closure-based reverse-mode AD library that computes exact gradients
-;;; of scalar functions.  Each "dual" value is a pair (primal . backprop)
-;;; where backprop is a closure that, given an output adjoint, returns a
-;;; list of (index . adjoint-contribution) updates for every input variable.
+;;; Tape-based reverse-mode AD using a Wengert list.  The VM records
+;;; arithmetic operations (+, -, *, /) and transcendental functions
+;;; (sin, cos, exp, log, sqrt) onto a flat tape when a TapeRef operand
+;;; is detected.  The backward pass sweeps in reverse, accumulating
+;;; adjoints via the chain rule — ~32 bytes per operation, zero
+;;; closure allocations.
 ;;;
-;;; The `ad` macro (defined via syntax-rules) rewrites arithmetic
-;;; expressions — replacing +, *, -, /, sin, cos, exp, log with their
-;;; lifted counterparts — so user code reads naturally.
+;;; Builtins used:
+;;;   tape-new        — create a fresh tape
+;;;   tape-start!     — activate a tape (enables recording)
+;;;   tape-stop!      — deactivate the tape
+;;;   tape-var        — register an independent variable on the tape
+;;;   tape-backward!  — run the reverse sweep from an output node
+;;;   tape-adjoint    — read the accumulated adjoint of a tape node
+;;;   tape-primal     — read the forward value of a tape node
+;;;   tape-ref?       — predicate: is the value a tape reference?
 ;;;
-;;; Demonstrates: define-syntax with literal keywords, recursive macro
-;;; expansion, closures as backpropagators, higher-order functions,
-;;; cons / car / cdr, append, foldl, and list manipulation.
+;;; Demonstrates: tape-based AD, higher-order functions, vectors.
 ;;;
 ;;; Run:  etai examples/aad.eta
 
@@ -19,168 +25,39 @@
   (import std.prelude)
   (begin
 
-    ;; ── Dual representation ─────────────────────────────────────────
-    ;; A dual is (primal-value . backprop-fn)
-    ;; backprop-fn : adjoint -> list of (index . adjoint-contribution)
-
-    (defun dual-val (d)
-      (if (pair? d) (car d) d))
-
-    (defun dual-bp (d)
-      (if (pair? d)
-          (cdr d)
-          (lambda (adj) '())))
-
-    (defun make-const (v)
-      (cons v (lambda (adj) '())))
-
-    (defun make-var (v idx)
-      (cons v (lambda (adj) (list (cons idx adj)))))
-
-    ;; Auto-promote: wrap a plain number as a constant dual
-    (defun ensure-dual (x)
-      (if (pair? x) x (make-const x)))
-
-    ;; ── Lifted arithmetic operations ────────────────────────────────
-
-    ;; Addition: z = a + b,  dz/da = 1,  dz/db = 1
-    (defun d+ (a b)
-      (let ((a (ensure-dual a))
-            (b (ensure-dual b)))
-        (let ((va (dual-val a)) (vb (dual-val b))
-              (ba (dual-bp a))  (bb (dual-bp b)))
-          (cons (+ va vb)
-                (lambda (adj)
-                  (append (ba adj) (bb adj)))))))
-
-    ;; Subtraction: z = a - b,  dz/da = 1,  dz/db = -1
-    (defun d- (a b)
-      (let ((a (ensure-dual a))
-            (b (ensure-dual b)))
-        (let ((va (dual-val a)) (vb (dual-val b))
-              (ba (dual-bp a))  (bb (dual-bp b)))
-          (cons (- va vb)
-                (lambda (adj)
-                  (append (ba adj) (bb (* -1 adj))))))))
-
-    ;; Multiplication: z = a * b,  dz/da = b,  dz/db = a
-    (defun d* (a b)
-      (let ((a (ensure-dual a))
-            (b (ensure-dual b)))
-        (let ((va (dual-val a)) (vb (dual-val b))
-              (ba (dual-bp a))  (bb (dual-bp b)))
-          (cons (* va vb)
-                (lambda (adj)
-                  (append (ba (* adj vb)) (bb (* adj va))))))))
-
-    ;; Division: z = a / b,  dz/da = 1/b,  dz/db = -a/b²
-    (defun d/ (a b)
-      (let ((a (ensure-dual a))
-            (b (ensure-dual b)))
-        (let ((va (dual-val a)) (vb (dual-val b))
-              (ba (dual-bp a))  (bb (dual-bp b)))
-          (cons (/ va vb)
-                (lambda (adj)
-                  (append (ba (* adj (/ 1 vb)))
-                          (bb (* adj (* -1 (/ va (* vb vb)))))))))))
-
-    ;; Sine: z = sin(a),  dz/da = cos(a)
-    (defun dsin (a)
-      (let ((a (ensure-dual a)))
-        (let ((va (dual-val a))
-              (ba (dual-bp a)))
-          (cons (sin va)
-                (lambda (adj)
-                  (ba (* adj (cos va))))))))
-
-    ;; Cosine: z = cos(a),  dz/da = -sin(a)
-    (defun dcos (a)
-      (let ((a (ensure-dual a)))
-        (let ((va (dual-val a))
-              (ba (dual-bp a)))
-          (cons (cos va)
-                (lambda (adj)
-                  (ba (* adj (* -1 (sin va)))))))))
-
-    ;; Exponential: z = exp(a),  dz/da = exp(a)
-    (defun dexp (a)
-      (let ((a (ensure-dual a)))
-        (let ((va (dual-val a))
-              (ba (dual-bp a)))
-          (let ((ev (exp va)))
-            (cons ev
-                  (lambda (adj)
-                    (ba (* adj ev))))))))
-
-    ;; Logarithm: z = log(a),  dz/da = 1/a
-    (defun dlog (a)
-      (let ((a (ensure-dual a)))
-        (let ((va (dual-val a))
-              (ba (dual-bp a)))
-          (cons (log va)
-                (lambda (adj)
-                  (ba (* adj (/ 1 va))))))))
-
-    ;; ── The `ad` tree-walking macro ─────────────────────────────────
-    ;; Rewrites arithmetic expressions so that +, *, -, /, sin, cos,
-    ;; exp, log are replaced by their lifted AD counterparts.
-    ;;
-    ;; Usage:  (ad (+ (* x y) (sin x)))
-    ;; Expands to: (d+ (d* x y) (dsin x))
-    ;;
-    ;; Note: because Eta does not yet have defmacro, syntax-rules
-    ;; cannot walk *arbitrary* code (e.g. let-bodies).  The macro
-    ;; covers literal arithmetic trees — which is exactly what AD
-    ;; tapes look like.  For anything outside the grammar, call the
-    ;; d-prefixed functions directly.
-
-    (define-syntax ad
-      (syntax-rules (+ * - / sin cos exp log)
-        ((_ (+ a b))   (d+ (ad a) (ad b)))
-        ((_ (* a b))   (d* (ad a) (ad b)))
-        ((_ (- a b))   (d- (ad a) (ad b)))
-        ((_ (/ a b))   (d/ (ad a) (ad b)))
-        ((_ (sin a))   (dsin (ad a)))
-        ((_ (cos a))   (dcos (ad a)))
-        ((_ (exp a))   (dexp (ad a)))
-        ((_ (log a))   (dlog (ad a)))
-        ((_ x)         x)))
-
     ;; ── Gradient computation ────────────────────────────────────────
 
-    ;; Collect adjoint contributions: given a list of (index . value)
-    ;; pairs, sum values that share the same index into a vector of
-    ;; size n.
-    (defun collect-adjoints (n adj-list)
-      (let ((result (make-vector n 0)))
-        (letrec ((loop (lambda (xs)
-                         (if (null? xs)
-                             result
-                             (let ((p (car xs)))
-                               (let ((i (car p))
-                                     (v (cdr p)))
-                                 (vector-set! result i
-                                   (+ (vector-ref result i) v))
-                                 (loop (cdr xs))))))))
-          (loop adj-list))))
-
-    ;; Compute the gradient of a function f at a given point.
-    ;; f  — a function of N dual-valued arguments
+    ;; Compute the gradient of f at a given point.
+    ;; f    — a function of N arguments (receives tape-ref values)
     ;; vals — a list of N numeric input values
     ;; Returns: (primal-value gradient-vector)
     (defun grad (f vals)
-      (letrec ((make-vars
-                 (lambda (vs idx)
-                   (if (null? vs) '()
-                       (cons (make-var (car vs) idx)
-                             (make-vars (cdr vs) (+ idx 1)))))))
-        (let ((duals (make-vars vals 0)))
-          (let ((out (apply f duals)))
-            (let ((primal (dual-val out))
-                  (adjoints ((dual-bp out) 1)))
-              (list primal (collect-adjoints (length vals) adjoints)))))))
+      (let ((tape (tape-new))
+            (n    (length vals)))
+        ;; Register each input as an independent variable
+        (let ((vars (letrec ((mk (lambda (vs acc)
+                                   (if (null? vs) (reverse acc)
+                                       (mk (cdr vs)
+                                           (cons (tape-var tape (car vs)) acc))))))
+                      (mk vals '()))))
+          ;; Activate the tape, evaluate f, then backward pass
+          (tape-start! tape)
+          (let ((output (apply f vars)))
+            (tape-stop!)
+            (tape-backward! tape output)
+            ;; Collect adjoints into a gradient vector
+            (let ((grad-vec (make-vector n 0)))
+              (letrec ((collect (lambda (vs i)
+                                  (if (null? vs) grad-vec
+                                      (begin
+                                        (vector-set! grad-vec i
+                                          (tape-adjoint tape (car vs)))
+                                        (collect (cdr vs) (+ i 1)))))))
+                (collect vars 0))
+              (list (tape-primal tape output) grad-vec))))))
 
-    ;; ── Demonstrations ──────────────────────────────────────────────
+
+    ;; ── Examples ──────────────────────────────────────────────
 
     ;; 1. f(x,y) = x·y + sin(x)  at (2, 3)
     ;;    ∂f/∂x = y + cos(x) = 3 + cos(2) ≈ 2.5839
@@ -189,19 +66,19 @@
 
     (display (if win "f(x,y) = x*y + sin(x)\n" "f(x,y) = x·y + sin(x)\n"))
     (display "  grad at (2,3): ")
-    (println (grad (lambda (x y) (ad (+ (* x y) (sin x)))) '(2 3)))
+    (println (grad (lambda (x y) (+ (* x y) (sin x))) '(2 3)))
 
     ;; 2. g(x) = x² + 3x + 1  at x = 4
     ;;    dg/dx = 2x + 3 = 11
     (display (if win "g(x) = x^2 + 3x + 1\n" "g(x) = x² + 3x + 1\n"))
     (display "  grad at (4): ")
-    (println (grad (lambda (x) (ad (+ (+ (* x x) (* 3 x)) 1))) '(4)))
+    (println (grad (lambda (x) (+ (+ (* x x) (* 3 x)) 1)) '(4)))
 
     ;; 3. h(x) = exp(2x)  at x = 1
     ;;    dh/dx = 2·exp(2) ≈ 14.778
     (display "h(x) = exp(2x)\n")
     (display "  grad at (1): ")
-    (println (grad (lambda (x) (ad (exp (* 2 x)))) '(1)))
+    (println (grad (lambda (x) (exp (* 2 x))) '(1)))
 
     ;; 4. Rosenbrock: f(x,y) = (1-x)² + 100·(y-x²)²
     ;;    At (1,1) the gradient is (0, 0) — the global minimum.
@@ -209,9 +86,9 @@
                      "Rosenbrock f(x,y) = (1-x)² + 100(y-x²)²\n"))
     (display "  grad at (1,1): ")
     (println (grad (lambda (x y)
-                     (ad (+ (* (- 1 x) (- 1 x))
-                            (* 100 (* (- y (* x x))
-                                      (- y (* x x)))))))
+                     (+ (* (- 1 x) (- 1 x))
+                        (* 100 (* (- y (* x x))
+                                  (- y (* x x))))))
                    '(1 1)))
 
     ;; 5. Composition with higher-order functions: dot product
@@ -220,11 +97,10 @@
     (display "dot(v, [1,2,3])\n")
     (display "  grad at (1,1,1): ")
     (println (grad (lambda (x y z)
-                     (foldl d+ (make-const 0)
-                       (list (ad (* x 1))
-                             (ad (* y 2))
-                             (ad (* z 3)))))
+                     (foldl + 0
+                       (list (* x 1)
+                             (* y 2)
+                             (* z 3))))
                    '(1 1 1)))
 
   ))
-

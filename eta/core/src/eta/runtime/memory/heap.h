@@ -29,7 +29,7 @@ namespace eta::runtime::memory::heap {
         MultipleValues,  // For (values ...) return
         Port,
         LogicVar,        // Unification logic variable
-        Dual,            // AD dual number (primal + backpropagator)
+        Tape,            // AD tape (Wengert list for reverse-mode AD)
         Tensor,          // libtorch tensor (wraps torch::Tensor)
         NNModule,        // libtorch nn::Module (wraps shared_ptr<torch::nn::Module>)
         Optimizer,       // libtorch optimizer (wraps shared_ptr<torch::optim::Optimizer>)
@@ -47,7 +47,7 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(MultipleValues)
         ETA_ENUM_CASE(Port)
         ETA_ENUM_CASE(LogicVar)
-        ETA_ENUM_CASE(Dual)
+        ETA_ENUM_CASE(Tape)
         ETA_ENUM_CASE(Tensor)
         ETA_ENUM_CASE(NNModule)
         ETA_ENUM_CASE(Optimizer)

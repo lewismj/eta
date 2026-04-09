@@ -126,6 +126,9 @@ void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
             // explicitly to satisfy -Wswitch-enum.
             write_u8(os, CT_Nil);
             return;
+        case Tag::TapeRef:
+            // TapeRef values are runtime-only (never serialized into bytecode)
+            return;
     }
 }
 

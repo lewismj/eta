@@ -25,7 +25,7 @@ etai examples/hello.eta
 | [`aad.eta`](#aadeta)                               | Reverse-mode AD, closures as backpropagators, `define-syntax`, `grad` |
 | [`xva.eta`](#xvaeta)                               | Quantitative finance: CVA, FVA, xVA sensitivities via AAD |
 | [`european.eta`](#europeaneta)                     | BS option Greeks: first & second order via AAD, custom VJP, Schwarz check |
-| [`sabr.eta`](#sabreta)                             | SABR vol surface with native Dual AD, Hagan approximation, Hessian |
+| [`sabr.eta`](#sabreta)                             | SABR vol surface with tape-based AD, Hagan approximation, Greeks |
 | [`logic.eta`](#logiceta)                           | Relational logic programming: `parento`, `grandparento`, `membero`, bidirectional queries |
 | [`modules and imports`](#imports)                  | `import`, `export`, `only`, `except`, `rename`, `prefix` |
 
@@ -510,33 +510,27 @@ d/dx y (wrt x)     = 0
 
 ## [aad — adjoint algorithmic differentiation](../examples/aad.eta)
 
-A closure-based reverse-mode AD library that computes exact gradients.
+A tape-based reverse-mode AD library that computes exact gradients.
+The VM transparently records arithmetic onto a flat tape when TapeRef
+operands are detected — zero closure allocations.
 See the full [AAD walkthrough](aad.md) for detailed commentary and
 worked examples.
 
 ```scheme
-;; Dual = (primal . backprop-fn)
-;; backprop-fn : adjoint → list of (index . adjoint-contribution)
-
-;; Lifted operations propagate adjoints through the computation graph
-(defun d+ (a b) ...)    ;; ∂z/∂a = 1,  ∂z/∂b = 1
-(defun d* (a b) ...)    ;; ∂z/∂a = b,  ∂z/∂b = a
-(defun dsin (a) ...)    ;; ∂z/∂a = cos(a)
-
-;; The `ad` macro rewrites natural syntax into lifted calls
-(define-syntax ad
-  (syntax-rules (+ * - / sin cos exp log)
-    ((_ (+ a b))  (d+ (ad a) (ad b)))
-    ((_ (* a b))  (d* (ad a) (ad b)))
-    ...
-    ((_ x)        x)))
-
 ;; grad: compute gradient of f at a given point
-(grad (lambda (x y) (ad (+ (* x y) (sin x)))) '(2 3))
+;; The tape records +, -, *, /, sin, cos, exp, log, sqrt transparently
+(grad (lambda (x y) (+ (* x y) (sin x))) '(2 3))
 ;; => (8.909.. #(2.583.. 2))
 ;;    primal = 2*3 + sin(2)
 ;;    ∂f/∂x = y + cos(x) = 3 + cos(2) ≈ 2.584
 ;;    ∂f/∂y = x = 2
+
+;; Rosenbrock function: gradient at (1,1) = (0,0) — global minimum
+(grad (lambda (x y)
+        (+ (* (- 1 x) (- 1 x))
+           (* 100 (* (- y (* x x)) (- y (* x x))))))
+      '(1 1))
+;; => (0 #(0 0))
 ```
 
 ---
@@ -571,20 +565,20 @@ Adjustment) and **FVA** (Funding Valuation Adjustment . See the full
 
 ## [european — Black-Scholes Greeks with AAD](../examples/european.eta)
 
-Computes first- and second-order option Greeks using the AD library
-with custom AD primitives for the normal distribution.  See the full
+Computes first- and second-order option Greeks using tape-based AD.
+The normal CDF uses a polynomial approximation through which the tape
+records and differentiates automatically.  See the full
 [European Greeks walkthrough](european.md) for detailed commentary.
 
 ```scheme
-;; Custom AD primitive — normal CDF with exact backward derivative
-(defun dnorm-cdf (a)
-  (let ((a (ensure-dual a)))
-    (let ((va (dual-val a))
-          (ba (dual-bp a)))
-      (cons (norm-cdf-approx va)         ;; forward: polynomial approx
-            (lambda (adj)
-              (ba (* adj (norm-pdf va)))) ;; backward: exact φ(x)
-            ))))
+;; Normal CDF — tape records every arithmetic step automatically
+(defun norm-cdf (x)
+  (let ((xv (if (tape-ref? x) (tape-ref-value x) x)))
+    (if (< xv 0)
+        (- 1.0 (norm-cdf (* -1 x)))
+        (let ((t (/ 1.0 (+ 1.0 (* 0.2316419 x)))))
+          (- 1.0 (* (* inv-sqrt-2pi (exp (* -0.5 (* x x))))
+                     (* t (+ 0.319381530 ...))))))))
 
 ;; Black-Scholes: C = S·Φ(d₁) − K·e⁻ʳᵀ·Φ(d₂)
 (defun bs-call-price (S K r sigma T) ...)
@@ -597,7 +591,7 @@ with custom AD primitives for the normal distribution.  See the full
 
 ;; Second-order Greeks — grad applied to Delta expression
 (defun bs-delta-fn (S K r sigma T)
-  (dnorm-cdf (bs-d1 S K r sigma T)))
+  (norm-cdf (bs-d1 S K r sigma T)))
 
 (grad (lambda (S K r sigma T)
         (bs-delta-fn S K r sigma T))
@@ -607,38 +601,30 @@ with custom AD primitives for the normal distribution.  See the full
 
 ---
 
-## [sabr — SABR vol surface with native Dual AD](../examples/sabr.eta)
+## [sabr — SABR vol surface with tape-based AD](../examples/sabr.eta)
 
 Computes the Hagan et al. (2002) SABR implied volatility approximation
-and all model sensitivities using Eta's **native Dual VM instructions**.
-See the full [SABR walkthrough](sabr.md) for detailed commentary on the
-performance advantage of VM-level Dual arithmetic.
+and all model sensitivities using Eta's **tape-based reverse-mode AD**.
+See the full [SABR walkthrough](sabr.md) for detailed commentary.
 
 ```scheme
-;; Native Dual AD — uses dedicated MakeDual / DualVal / DualBp opcodes
-(defun nd-val (x) (if (dual? x) (dual-primal x) x))
-(defun nd-bp  (x) (if (dual? x) (dual-backprop x) (lambda (adj) '())))
+;; Tape-based AD — plain arithmetic, transparent recording
+(defun ndpow (a b) (exp (* b (log a))))
 
 ;; SABR ATM vol: σ = α/F^(1-β) × [1 + correction × T]
 (defun sabr-atm-vol (F T alpha beta rho nu) ...)
 
-;; All 4 sensitivities in one backward pass — native Dual
-(native-grad (lambda (alpha beta rho nu)
-               (sabr-implied-vol F K T alpha beta rho nu))
-             (list alpha-val beta-val rho-val nu-val))
+;; All 4 sensitivities in one backward pass
+(grad (lambda (alpha beta rho nu)
+         (sabr-implied-vol F K T alpha beta rho nu))
+       (list alpha-val beta-val rho-val nu-val))
 ;; => (sigma  #(∂σ/∂α  ∂σ/∂β  ∂σ/∂ρ  ∂σ/∂ν))
-
-;; 4×4 Hessian via reverse-on-reverse (true tape-on-tape)
-(hessian (lambda (alpha beta rho nu)
-           (sabr-atm-vol F T alpha beta rho nu))
-         params)
 ```
 
 > [!TIP]
-> **Why native Dual?**  The SABR formula has ~50 elementary ops on 4
-> scalar params.  Library-level `cons`-pair AD needs ~13 Scheme dispatches
-> per op (~650 total).  Native Dual opcodes do it in ~50 C++ dispatches —
-> a **~13× reduction** in VM overhead.
+> **Why tape-based AD?**  The SABR formula has ~50 elementary ops on 4
+> scalar params.  The tape records each op at the C++ level (~32 bytes,
+> zero closure allocations).  A single reverse sweep yields all 4 Greeks.
 
 ---
 
