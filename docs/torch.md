@@ -35,10 +35,10 @@ map inputs to desired outputs.
 
 ```mermaid
 flowchart LR
-    X["Input\nx"] --> L1["Linear Layer\nw*x + b"]
-    L1 --> A1["Activation\n(ReLU)"]
-    A1 --> L2["Linear Layer\nw*x + b"]
-    L2 --> Y["Output\ny-hat"]
+    X["Input\nx"] --> L1["Linear Layer\nw·x + b"]
+    L1 --> A1["Activation\n(ReLU / σ)"]
+    A1 --> L2["Linear Layer\nw·x + b"]
+    L2 --> Y["Output\nŷ"]
 
     style X  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
     style L1 fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
@@ -211,10 +211,10 @@ This builds the following network:
 
 ```mermaid
 flowchart LR
-    IN["Input\n(1 x 4)"] --> L1["Linear\n4 to 8"]
+    IN["Input\n(1 × 4)"] --> L1["Linear\n4 → 8"]
     L1 --> R["ReLU"]
-    R --> L2["Linear\n8 to 2"]
-    L2 --> OUT["Output\n(1 x 2)"]
+    R --> L2["Linear\n8 → 2"]
+    L2 --> OUT["Output\n(1 × 2)"]
 
     style IN  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
     style L1  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
@@ -269,18 +269,18 @@ This example trains a single linear layer to approximate the function
 
 ```mermaid
 sequenceDiagram
-    participant Loop as Training Loop
+    participant TL as Training Loop
     participant Opt as Optimizer (SGD)
     participant Model as Linear(1,1)
     participant AG as Autograd
 
-    Loop->>Opt: zero gradients
-    Loop->>Model: forward(train-x) -> pred
-    Loop->>Loop: mse-loss(pred, train-y) -> loss
-    Loop->>AG: backward(loss)
-    AG-->>Model: dloss/dw, dloss/db
-    Loop->>Opt: step! (w -= lr * dloss/dw)
-    Note over Loop: Repeat for each epoch
+    TL->>Opt: zero gradients
+    TL->>Model: forward(train-x) → pred
+    TL->>TL: mse-loss(pred, train-y) → loss
+    TL->>AG: backward(loss)
+    AG-->>Model: ∂loss/∂w, ∂loss/∂b
+    TL->>Opt: step! (w -= lr·∂loss/∂w)
+    Note over TL: Repeat for each epoch
 ```
 
 ---
