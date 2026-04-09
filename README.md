@@ -30,7 +30,8 @@ Language Guide and Examples</p>
   <a href="docs/sabr.md">SABR Model</a> ·
   <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
   <a href="docs/clp.md">Constraint Logic Programming</a> ·
-  <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a>
+  <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a> ·
+  <a href="docs/torch.md">Neural Networks with libtorch</a>
 </p>
 
 
@@ -146,6 +147,7 @@ flowchart LR
 | **Concurrent Heap** | `boost::unordered::concurrent_flat_map` with 16 shards for lock-free reads.                                                                                                       |
 | **LSP Integration** | JSON-RPC language server for real-time diagnostics in any editor.                                                                                                                 |
 | **DAP Integration** | Debug Adapter Protocol server (`eta_dap`) enables breakpoints, step-through debugging, call-stack inspection, and REPL-style expression evaluation directly in VS Code.           |
+| **libtorch Integration** | Optional native bindings to PyTorch's C++ backend for tensors, autograd, neural-network layers, optimizers, and GPU offload. [→ Deep-dive](docs/torch.md) |
 
 ---
 
@@ -168,7 +170,8 @@ flowchart LR
 | **[SABR Volatility Model](docs/sabr.md)** | SABR Hagan implied vol, native Dual VM performance, Hessian via reverse-on-reverse       |
 | **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`     |
 | **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                        |
-| **[Next Steps](docs/next-steps.md)**       | Roadmap: FFI, PyTorch integration, hardware co-processors, example programs          |
+| **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support      |
+| **[Next Steps](docs/next-steps.md)**       | Roadmap: network stack, VS Code debugger improvements, performance                   |
 
 ---
 
@@ -274,7 +277,7 @@ eta-<platform>/
   stdlib/
     prelude.eta         # Auto-loaded standard library
     std/
-      core.eta  math.eta  io.eta  collections.eta  test.eta
+      core.eta  math.eta  io.eta  collections.eta  test.eta  torch.eta
   examples/
     hello.eta           # Hello world & factorial
     basics.eta          # Arithmetic, let, lists, quoting
@@ -287,6 +290,7 @@ eta-<platform>/
     aad.eta                 # Reverse-mode automatic differentiation
     xva.eta                 # Finance example: CVA, FVA calculations with AAD
     european.eta            # European option Greeks (1st & 2nd order) with AAD
+    torch.eta               # Tensor computing & neural network training (libtorch)
   editors/
     vscode/             # VS Code extension (.vsix)
   install.sh / install.cmd
@@ -307,6 +311,7 @@ The prelude auto-loads the following modules:
 | **`std.logic`** | `==`, `copy-term`, `naf`, `findall`, `run1` — Prolog-style combinators |
 | **`std.clp`** | `clp:domain`, `clp:in-fd`, `clp:solve`, `clp:all-different` — constraint solving |
 | **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` — causal inference engine |
+| **`std.torch`** | `tensor`, `forward`, `train-step!`, `sgd`, `adam` — libtorch neural networks ([requires `-DETA_BUILD_TORCH=ON`](docs/torch.md)) |
 | **`std.test`** | `assert-equal`, `assert-true`, `run-tests` — lightweight test framework |
 
 ```scheme

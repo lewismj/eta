@@ -8,344 +8,241 @@
 
 ## Overview
 
-This document outlines the major workstreams planned for Eta's next
-development phase. The **bytecode compiler (`etac`)** has shipped — see
-[Compiler](compiler.md) for full details. The immediate focus is now on
-improving the DAP server so that it can fully support development in
-VS Code.
-
-This is in addition to benchmarking, bug-fixing, and general polish across the codebase.
-The general BAU work will also include networking extensions to the ports.
-
+This document outlines the roadmap for Eta's next development phase.
+The core language, compiler, runtime, and libtorch integration are all
+shipped — the focus now shifts to three workstreams that improve the
+developer experience, extend the standard library, and make the runtime
+faster.
 
 ```mermaid
 flowchart LR
-    BC["1 · Bytecode\nCompiler ✅"]
-    FFI["2 · Foreign Function\nInterface"]
-    PT["3 · PyTorch\nIntegration"]
-    COP["4 · Hardware\nCo-processors"]
-    EX["5 · Examples"]
+    NET["1 · Network\nStack"]
+    DAP["2 · VS Code\nDebugger"]
+    PERF["3 · Performance\nImprovements"]
 
-    BC --> FFI
-    FFI --> PT
-    FFI --> COP
-    PT --> EX
-    COP --> EX
+    NET --> DAP
+    DAP --> PERF
 
-    style BC  fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style FFI fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style PT  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style COP fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style EX  fill:#0f3460,stroke:#56d364,color:#c9d1d9
+    style NET  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style DAP  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style PERF fill:#16213e,stroke:#79c0ff,color:#c9d1d9
 ```
 
 ---
 
-## 1 · Bytecode Compiler (`etac`) — ✅ Done
-
-The ahead-of-time bytecode compiler has shipped. The full feature set includes:
-
-| Capability | Detail |
-|------------|--------|
-| **`etac` executable** | Runs the six-phase pipeline and writes a binary `.etac` file instead of executing. |
-| **Binary `.etac` format** | Compact serialization of the `BytecodeFunctionRegistry` with magic bytes, version, source hash, module table, constant pool, function table, and optional debug info. |
-| **`BytecodeSerializer`** | Serialize / deserialize implementation with round-trip tests ([`bytecode_serializer.h`](../eta/core/src/eta/runtime/vm/bytecode_serializer.h)). |
-| **Source-hash validation** | `.etac` files embed a hash of the original source for cache-invalidation. |
-| **Fast-load path in `etai`** | `Driver::run_etac_file` deserializes the registry directly into the VM, skipping all front-end phases. |
-| **Disassembly (`--disasm`)** | Human-readable bytecode dump from both `etac` and `etai`. |
-| **Debug stripping (`--no-debug`)** | Produce smaller `.etac` files by omitting source maps. |
-| **IR optimization (`-O`)** | Constant folding and dead code elimination passes run between analysis and emission. |
-
-```console
-etac  hello.eta        →  hello.etac       # compile once
-etai  hello.etac                           # run from cache (instant load)
-etac  --disasm hello.eta                   # inspect emitted bytecode
-etac  -O hello.eta                         # compile with optimizations
-```
-
-> **📖 Full documentation:** [Compiler (`etac`)](compiler.md) — CLI reference, binary format spec, optimization passes, and integration details.
-
----
-
-## 2 · Foreign Function Interface (FFI)
+## 1 · Network Stack
 
 ### Motivation
 
-Scientific computing, machine learning, and systems programming all
-require calling into native shared libraries. An FFI lets Eta programs
-interoperate with C-ABI libraries — including **libtorch** (PyTorch's C++
-backend), BLAS/LAPACK, SQLite, and any `dlopen`-compatible shared object.
+Eta's port system currently supports file I/O and string ports, but has no
+networking primitives.  Adding TCP (and later UDP / TLS) support unlocks a
+large class of programs — HTTP clients and servers, database drivers,
+message-queue consumers, and distributed computing examples — all written
+in pure Eta.
 
-### Surface Syntax
+### Proposed API
 
 ```scheme
-(module ml
+(module http-demo
   (import std.core)
-  (foreign-library "libtorch_cpu" :as torch)
-
-  ;; Declare a foreign function: name, return type, param types
-  (foreign-fn torch:ones  "at_ones"   (-> int int tensor))
-  (foreign-fn torch:add   "at_add"    (-> tensor tensor tensor))
-  (foreign-fn torch:print "at_print"  (-> tensor void))
-
+  (import std.io)
+  (import std.net)
   (begin
-    (let ((a (torch:ones 3 4))
-          (b (torch:ones 3 4)))
-      (torch:print (torch:add a b)))))
+    ;; TCP client
+    (let ((conn (tcp-connect "example.com" 80)))
+      (write-string "GET / HTTP/1.0\r\n\r\n" conn)
+      (println (read-line conn))
+      (close-port conn))
+
+    ;; TCP server
+    (let ((srv (tcp-listen 8080)))
+      (let loop ((client (tcp-accept srv)))
+        (write-string "HTTP/1.0 200 OK\r\n\r\nHello from Eta!\n" client)
+        (close-port client)
+        (loop (tcp-accept srv))))))
 ```
 
 ### Architecture
 
 ```mermaid
 flowchart TD
-    ETF["(foreign-fn …)\nform"]
-    EXP["Expander"]
-    SEM["Semantic Analyzer"]
-    EMT["Emitter"]
-    VM["VM"]
-    FFB["FFI Bridge\n(dlopen / LoadLibrary)"]
-    LIB["Native .so / .dll / .dylib"]
+    ETA["Eta Program\n(import std.net)"]
+    STD["std.net Module\n(Eta wrappers)"]
+    PRIM["C++ Net Primitives\n(net_primitives.h)"]
+    PORT["Port Abstraction\n(port.h)"]
+    OS["OS Sockets\n(POSIX / Winsock)"]
 
-    ETF --> EXP --> SEM --> EMT
-    EMT --> |"CallForeign opcode"| VM
-    VM  --> FFB --> LIB
+    ETA --> STD --> PRIM --> PORT --> OS
 
-    style FFB fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style LIB fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
+    style ETA  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
+    style STD  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style PRIM fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style PORT fill:#0f3460,stroke:#56d364,color:#c9d1d9
+    style OS   fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
 ```
 
-### Type Marshalling
+Network connections would be exposed as **ports** — the same abstraction
+used for files and string buffers — so `read-line`, `write-string`, and
+`close-port` work uniformly across all I/O kinds.
 
-The FFI bridge must convert between NaN-boxed `LispVal` values and C
-types at call boundaries:
+### Planned Primitives
 
-| Eta Type | C ABI Type | Notes |
-|----------|-----------|-------|
-| fixnum   | `int64_t` | direct — 47-bit fixnums sign-extended |
-| double   | `double`  | direct — unboxed NaN-box payload |
-| string   | `const char*` | intern-table lookup → UTF-8 pointer |
-| boolean  | `int`     | `#t` → 1, `#f` → 0 |
-| bytevector | `void*, size_t` | raw buffer pass-through |
-| opaque pointer | `void*` | wrapped in a new `ForeignPtr` heap object |
-
-A new heap object kind, **`ForeignPtr`**, would wrap an opaque native
-pointer with an optional destructor so that the GC can release native
-resources when the Eta wrapper is collected.
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `tcp-connect` | `(host port) → port` | Open a TCP client connection |
+| `tcp-listen` | `(port) → server-port` | Bind and listen on a TCP port |
+| `tcp-accept` | `(server-port) → port` | Accept an incoming connection |
+| `udp-socket` | `([port]) → port` | Create a UDP socket |
+| `udp-send` | `(port host port data)` | Send a UDP datagram |
+| `udp-recv` | `(port) → (data host port)` | Receive a UDP datagram |
+| `tls-connect` | `(host port) → port` | TCP + TLS handshake (stretch goal) |
 
 ### Key Implementation Tasks
 
 | Task | Touches |
 |------|---------|
-| Implement platform `DynLib` wrapper (`dlopen` / `LoadLibrary`) | new `ffi/dynlib.h` |
-| `foreign-library` / `foreign-fn` expander forms | `expander.h` |
-| New `CallForeign` opcode | `bytecode.h`, `vm.h` |
-| `ForeignPtr` heap object kind | `types/`, `heap.h`, `mark_sweep_gc.h` |
-| Type-marshalling layer (`LispVal` ↔ C ABI) | new `ffi/marshal.h` |
-| libffi or hand-rolled call-ABI trampolines | platform-specific |
+| Platform socket abstraction (POSIX `socket` / Winsock `SOCKET`) | new `net/socket.h` |
+| `TcpPort` / `UdpPort` subclass of `PortObject` | `port.h`, `types/` |
+| `net_primitives.h` — register builtins | new `net_primitives.h` |
+| `std.net` Eta wrapper module | new `stdlib/std/net.eta` |
+| Non-blocking I/O & timeout support | `socket.h` |
+| TLS via OpenSSL / Schannel (stretch goal) | optional dependency |
+| Example: minimal HTTP server | `examples/` |
 
 ---
 
-## 3 · libTorch Integration
+## 2 · VS Code Debugger Improvements
 
-### Motivation
+### Current State
 
-Deep learning and differentiable programming are fundamental to modern
-scientific computing. By integrating with **libTorch** — either through the
-FFI (§ 2) calling into **libtorch** (the C++ backend) or via native
-bindings — Eta programs gain access to GPU-accelerated tensor operations,
-automatic differentiation, and the vast PyTorch model ecosystem without
-leaving the language.
+The DAP server (`eta_dap`) already supports:
 
-### Integration Strategies
+- Breakpoints (line-based, exception breakpoints)
+- Step-through execution (next, step-in, step-out)
+- Pause / continue
+- Call-stack inspection
+- Local & upvalue variable display
+- REPL-style expression evaluation (`evaluate` request)
+- Heap inspector (custom request)
+- `stopOnEntry` launch option
 
-| Strategy | Mechanism | Pros | Cons |
-|----------|-----------|------|------|
-| **FFI → libtorch** | `foreign-library "libtorch_cpu"` | Reuses § 2 infrastructure; pure C++ | Must manually wrap each ATen op |
-| **Native Bindings** | Dedicated `std.torch` module backed by C++ glue code | Idiomatic Eta API; type-safe tensors | More implementation effort |
-
-### Proposed Surface Syntax (Native Bindings)
-
-```scheme
-(module nn-demo
-  (import std.core)
-  (import std.torch)
-
-  (begin
-    (let ((a (torch/ones '(3 4)))
-          (b (torch/randn '(3 4))))
-      (define c (torch/add a b))
-      (torch/print c)
-
-      ;; Autograd
-      (let ((x (torch/tensor 2.0 :requires-grad #t)))
-        (define y (torch/mul x x))        ;; y = x²
-        (torch/backward y)
-        (display (torch/grad x))))))      ;; → 4.0
-```
-
-### Architecture
+### Planned Improvements
 
 ```mermaid
 flowchart TD
-    ETM["(import std.torch)"]
-    VM["VM"]
-    NB["Native Bindings\n(std.torch glue)"]
-    LT["libtorch\n(ATen / Autograd)"]
-    GPU["CUDA / ROCm\n(optional)"]
+    WATCH["Watch\nExpressions"]
+    COND["Conditional\nBreakpoints"]
+    HOVER["Hover\nEvaluation"]
+    LOG["Logpoints"]
+    MOD["Module-Aware\nScope Tree"]
+    COMP["REPL\nCompletions"]
 
-    ETM --> VM --> NB --> LT --> GPU
+    WATCH --> HOVER
+    COND --> LOG
+    MOD --> COMP
 
-    style NB  fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style LT  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style GPU fill:#1a1a2e,stroke:#f78166,color:#c9d1d9
+    style WATCH fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style COND  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style HOVER fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style LOG   fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style MOD   fill:#0f3460,stroke:#56d364,color:#c9d1d9
+    style COMP  fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
-### Tensor Representation
-
-A new heap object kind, **`TensorPtr`**, wraps a `torch::Tensor` handle.
-Like `ForeignPtr` (§ 2), the GC invokes a destructor on collection to
-release the underlying tensor storage.
-
-| Eta Value | C++ Mapping | Notes |
-|-----------|------------|-------|
-| `tensor`  | `torch::Tensor` | reference-counted via libtorch's intrusive_ptr |
-| `device`  | `torch::Device`  | `:cpu`, `:cuda`, `:mps` |
-| `dtype`   | `torch::Dtype`   | `:float32`, `:float64`, `:int64` |
-| `shape`   | `std::vector<int64_t>` | Eta list of fixnums |
+| Feature | Description | Touches |
+|---------|-------------|---------|
+| **Watch expressions** | Evaluate user-defined expressions every time the debugger pauses, displaying results in the Watch pane. | `dap_server.h` — `handle_evaluate` with `context: "watch"` |
+| **Conditional breakpoints** | Break only when a user-supplied Eta expression evaluates to `#t`. | `dap_server.h`, `vm.h` — breakpoint callback predicate |
+| **Hover evaluation** | Evaluate the symbol under the cursor when hovering during a debug pause. | VS Code extension `EvaluatableExpressionProvider` + existing `evaluate` |
+| **Logpoints** | Print a message (with interpolated expressions) instead of stopping. | `dap_server.h` — `handle_set_breakpoints` logMessage support |
+| **Module-aware scope tree** | Show globals grouped by module in the Variables pane, not a flat list. | `dap_server.h` — `handle_scopes` / `handle_variables` |
+| **REPL completions** | Tab-completion in the Debug Console using the module's visible names. | `dap_server.h` — `handle_completions` |
+| **Data breakpoints** | Break when a specific global slot is written to. | `vm.h` — write-watch on global slots |
+| **Disassembly view** | Show the bytecode alongside source in a split pane. | VS Code extension custom editor |
 
 ### Key Implementation Tasks
 
 | Task | Touches |
 |------|---------|
-| Add libtorch as an optional CMake dependency | `CMakeLists.txt` |
-| Implement `TensorPtr` heap object | `types/`, `heap.h`, `mark_sweep_gc.h` |
-| `std.torch` native-binding module | new `stdlib/std/torch.eta` + C++ glue |
-| Tensor creation ops (`ones`, `zeros`, `randn`, `tensor`) | glue layer |
-| Arithmetic dispatch (`add`, `mul`, `matmul`, …) | glue layer |
-| Autograd support (`backward`, `grad`) | glue layer |
-| GPU device transfer (`to-device`) | glue layer |
+| Wire `context` field in `evaluate` to support `watch` / `hover` | `dap_server.cpp` |
+| Conditional breakpoint predicate evaluation in the VM | `vm.h`, `dap_server.cpp` |
+| `logMessage` handling in `setBreakpoints` | `dap_server.cpp` |
+| Group globals by module in variable scopes | `dap_server.cpp`, `module_linker.h` |
+| `completions` request handler | `dap_server.cpp` |
+| VS Code extension: hover evaluation, disassembly view | `editors/vscode/` |
 
 ---
 
-## 4 · Hardware Co-processors (FPGA / GPU Offload)
+## 3 · Performance Improvements
 
 ### Motivation
 
-For numerically intensive workloads — large-scale simulations, batch
-matrix arithmetic, Monte-Carlo paths — the VM's interpreted arithmetic
-loop becomes the bottleneck. Offloading the numeric "fast path" from
-`VM::do_binary_arithmetic` to dedicated hardware (an **FPGA** fabric or a
-**GPU** compute kernel) can yield order-of-magnitude throughput
-improvements while maintaining compatibility with the VM's NaN-boxing
-memory model.
+Eta's VM is a straightforward interpreter loop with NaN-boxed values.
+There is significant room to improve throughput without changing the
+language semantics.
 
-### 4.1 · Hardware / Software Interface (HSI)
+### 3.1 · Benchmarking Infrastructure
 
-The VM and the co-processor communicate via **memory-mapped I/O** (MMIO)
-registers or a high-bandwidth bus (AXI4-Lite for control, AXI4-Stream for
-data):
+Before optimising, establish a repeatable benchmark suite:
 
-| Register | Width | Description |
-|----------|-------|-------------|
-| `REG_OP_A` | 64-bit | First operand (raw `LispVal` or unboxed `int64_t` / `double`) |
-| `REG_OP_B` | 64-bit | Second operand |
-| `REG_RESULT` | 64-bit | Result of the operation |
+| Benchmark | What it measures |
+|-----------|-----------------|
+| `fib(35)` | Recursive call overhead, TCO savings |
+| `(foldl + 0 (iota 1000000))` | Arithmetic hot loop, GC pressure |
+| `(sort < (iota 100000))` | Allocation-heavy higher-order code |
+| `torch training loop` | libtorch FFI round-trip overhead |
+| `SABR Hessian` | Dual-number AD throughput |
+| `unify / backtrack` | Logic variable creation & trail management |
 
-**Control / Status Register** (32-bit):
+Results should be tracked per-commit in CI so regressions are caught
+automatically.
 
-| Bits | Field | Meaning |
-|------|-------|---------|
-| `[0:3]` | `OpCode` | 0 = Add, 1 = Sub, 2 = Mul, 3 = Div |
-| `[4]` | `IsFlonum` | 0 = 47-bit Fixnum, 1 = 64-bit Double |
-| `[8]` | `Start` | Host sets to 1 to begin computation |
-| `[9]` | `Busy` | Co-processor sets to 1 while calculating |
-| `[10]` | `Overflow` | Set if Fixnum result requires promotion to Double |
+### 3.2 · VM Dispatch Optimisation
 
-### 4.2 · VM Integration
+| Technique | Description | Expected Impact |
+|-----------|-------------|-----------------|
+| **Computed goto / direct threading** | Replace the `switch` dispatch loop with GCC/Clang `&&label` computed gotos. | 15–30 % speedup on tight loops (eliminates branch predictor pollution from the switch). |
+| **Super-instructions** | Fuse common opcode pairs (e.g. `LoadLocal` + `Add`, `LoadConst` + `Call`) into single opcodes that skip a dispatch cycle. | 10–20 % on arithmetic-heavy code. |
+| **Inline caching** | Cache the resolved global slot index for `LoadGlobal` so repeated lookups hit a fast path. | Benefits module-heavy code with many cross-module calls. |
 
-Modify [`vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) to delegate to
-the co-processor when beneficial:
+### 3.3 · Garbage Collector Tuning
 
-1. **Detection** — In `VM::do_binary_arithmetic`, identify operations that
-   do *not* involve `Dual` objects (AD) or complex logic variables.
-2. **Offloading Logic:**
-   1. Check the co-processor is available and idle (`Busy == 0`).
-   2. Write unboxed payloads of `a` and `b` to `REG_OP_A` / `REG_OP_B`.
-   3. Write the `OpCode` and `Start` bit to the control register.
-   4. **Poll or Yield** — for single ops, spin on `Busy`; for batch work,
-      yield back to the scheduler and resume on interrupt.
-   5. **Read Result** — if `Overflow` is set, promote to flonum; otherwise
-      box `REG_RESULT` as the appropriate NaN-boxed type.
+| Improvement | Description |
+|-------------|-------------|
+| **Generational collection** | Promote long-lived objects to an "old" generation collected less frequently. Most allocations (cons cells, closures) are short-lived. |
+| **Concurrent marking** | Run the mark phase on a background thread while the VM continues executing, reducing pause times. |
+| **Adaptive soft-limit** | Tune the GC trigger threshold based on allocation rate rather than a fixed byte count. |
+| **Compacting / copying collector** | Defragment the heap after mark-sweep to improve cache locality. |
 
-### 4.3 · Co-processor Kernel Design
+### 3.4 · Compiler Optimisations
 
-Implement the arithmetic logic in RTL (Verilog / VHDL) or High-Level
-Synthesis (HLS):
+| Pass | Description |
+|------|-------------|
+| **Constant propagation** | Propagate known constant values through `let` bindings and inline them at use sites. |
+| **Closure lifting** | Convert closures that capture only constants into top-level functions, eliminating the closure allocation. |
+| **Inlining** | Inline small functions (below a threshold) at their call sites to remove call overhead. |
+| **Escape analysis** | Detect allocations that do not escape their scope and stack-allocate them instead of heap-allocating. |
+| **Loop analysis** | Recognise tail-recursive `letrec` loops and generate tighter bytecode (dedicated loop opcodes). |
 
-*   **Fixnum Unit** — 47-bit signed adder / subtractor / multiplier with
-    overflow detection that triggers the `Overflow` flag when the result
-    exceeds `FIXNUM_MIN / MAX`.
-*   **Flonum Unit** — IEEE-754 double-precision FPU (vendor IP cores such
-    as Xilinx Floating-Point Operator for Add, Sub, Mul, Div).
-*   **Promotion Logic** — hardware Fixnum-to-Double converter; on Fixnum
-    overflow the co-processor automatically re-runs the operation in the
-    FPU before returning.
+### 3.5 · Memory Layout
 
-### 4.4 · Data Transfer Mechanisms
-
-| Mechanism | Best For | Details |
-|-----------|----------|---------|
-| **MMIO (register-based)** | Single op (e.g. `(+ a b)`) | Low latency, high per-call overhead |
-| **DMA / Shared Memory** | Vectorised arithmetic | VM writes a buffer of numbers; co-processor processes the array in bulk |
-
-For the DMA path a new VM instruction — `OpCode::CoprocessorMap` — would
-apply an arithmetic operation element-wise over a list or vector, shipping
-the entire buffer to the co-processor in one transfer.
-
-### 4.5 · GPU Compute Offload (Alternative Path)
-
-Instead of (or in addition to) an FPGA, arithmetic kernels can be
-dispatched to a **GPU** via CUDA or OpenCL:
-
-*   A `std.gpu` module exposes `gpu/map`, `gpu/reduce`, and
-    `gpu/matmul`.
-*   The VM ships operand buffers to device memory, launches a kernel, and
-    reads back results — reusing the same `OpCode::CoprocessorMap`
-    instruction with a different backend flag.
-
-### 4.6 · Verification & Fallback Strategy
-
-*   **Software Fallback** — the existing C++ arithmetic logic is always
-    retained. If the co-processor is busy, missing, or returns an error
-    the VM falls back transparently.
-*   **Bit-Exactness** — the co-processor's FPU rounding modes and NaN
-    handling must match the host `double` semantics to prevent divergence
-    in complex simulations.
-*   **Cycle-Accurate Simulation** — use Verilator to co-simulate the
-    hardware alongside the VM during development before deploying to
-    physical silicon.
-
-### Workflow Summary
-
-```
-Extract  →  VM unboxes LispVal to raw numeric bits
-Ship     →  Send bits + opcode to co-processor registers (or DMA buffer)
-Compute  →  Co-processor runs 47-bit / 64-bit parallel logic
-Retrieve →  VM reads result + status flags (Overflow / Error)
-Re-box   →  VM wraps result back into a LispVal and pushes to the stack
-```
+| Improvement | Description |
+|-------------|-------------|
+| **Object headers** | Shrink heap object headers from 16 bytes to 8 bytes by packing kind + GC mark + size into a single 64-bit word. |
+| **Cons-cell pooling** | Maintain a free-list of recently collected cons cells to avoid heap fragmentation and speed up allocation. |
+| **Intern table** | Replace the concurrent hash map with a Robin Hood or Swiss table for better probe locality. |
 
 ### Key Implementation Tasks
 
 | Task | Touches |
 |------|---------|
-| Define MMIO register layout & platform abstraction | new `coproc/interface.h` |
-| `OpCode::CoprocessorMap` instruction | `bytecode.h`, `vm.h` |
-| FPGA kernel (Fixnum + Flonum units) | RTL / HLS sources |
-| DMA buffer management & shared-memory allocator | new `coproc/dma.h` |
-| GPU offload path (CUDA / OpenCL kernels) | new `coproc/gpu.h` |
-| Verilator co-simulation test harness | `test/` |
-| Software fallback & feature-detection logic | `vm.cpp` |
+| Benchmark suite + CI integration | new `bench/`, `CMakeLists.txt` |
+| Computed-goto dispatch in `vm.cpp` | `vm.cpp`, `bytecode.h` |
+| Super-instruction definitions and emitter support | `emitter.h`, `vm.cpp` |
+| Generational GC prototype | `mark_sweep_gc.h`, `heap.h` |
+| Constant propagation IR pass | `optimization/` |
+| Closure lifting IR pass | `optimization/` |
+| Object header compaction | `types/`, `heap.h` |
 
 ---
 

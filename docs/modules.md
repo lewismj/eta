@@ -326,6 +326,33 @@ and `std.collections` in a single import for convenience.
 
 ---
 
+### `std.torch` — libtorch Neural Network Bindings
+
+```scheme
+(import std.torch)
+```
+
+> Requires the interpreter to be built with `-DETA_BUILD_TORCH=ON`.
+
+| Category | Key Functions |
+|----------|---------------|
+| **Tensor creation** | `tensor`, `ones`, `zeros`, `randn`, `arange`, `linspace`, `from-list` |
+| **Arithmetic** | `t+`, `t-`, `t*`, `t/`, `matmul`, `dot` |
+| **Unary ops** | `neg`, `tabs`, `texp`, `tlog`, `tsqrt`, `relu`, `sigmoid`, `ttanh`, `softmax` |
+| **Shape** | `shape`, `reshape`, `transpose`, `squeeze`, `unsqueeze`, `cat` |
+| **Reductions** | `tsum`, `mean`, `tmax`, `tmin`, `argmax`, `argmin` |
+| **Conversion** | `item`, `to-list`, `numel` |
+| **Autograd** | `requires-grad!`, `requires-grad?`, `detach`, `backward`, `grad`, `zero-grad!` |
+| **NN layers** | `linear`, `sequential`, `relu-layer`, `sigmoid-layer`, `dropout`, `forward`, `parameters`, `train!`, `eval!` |
+| **Loss functions** | `mse-loss`, `l1-loss`, `cross-entropy-loss` |
+| **Optimizers** | `sgd`, `adam`, `step!`, `optim-zero-grad!` |
+| **Device** | `gpu-available?`, `gpu-count`, `device`, `to-device`, `to-gpu`, `to-cpu`, `nn-to-device` |
+| **Helpers** | `train-step!` — one-call training step (zero-grad → forward → loss → backward → step) |
+
+> **📖 Full documentation:** [Neural Networks with libtorch](torch.md)
+
+---
+
 ## Builtin Primitives vs. Standard Library
 
 There are two layers of "standard" functionality:
