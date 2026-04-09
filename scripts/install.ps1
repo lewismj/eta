@@ -130,7 +130,7 @@ if ($CodeExe -and (Test-Path $VsixPath)) {
 # -- 4. Smoke test -------------------------------------------------------------
 Write-Host ""
 Write-Host "> Verifying..."
-foreach ($bin in @("etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe")) {
+foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe")) {
     $p = Join-Path $BinDir $bin
     if (Test-Path $p) {
         Write-Host "  [OK] $bin"

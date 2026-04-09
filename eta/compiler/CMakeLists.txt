@@ -13,6 +13,13 @@ target_include_directories(etac
 
 target_link_libraries(etac PRIVATE eta_core)
 
+# Torch integration (when available)
+if(ETA_BUILD_TORCH)
+    target_link_libraries(etac PRIVATE eta_torch)
+    target_compile_definitions(etac PRIVATE ETA_HAS_TORCH=1)
+    eta_copy_torch_dlls(etac)
+endif()
+
 # Platform-specific libraries
 if(NOT MSVC)
     target_link_libraries(etac PRIVATE stdc++ m)

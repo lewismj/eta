@@ -250,7 +250,8 @@ bool BytecodeSerializer::serialize(
         uint64_t source_hash,
         bool include_debug,
         std::ostream& os,
-        const std::vector<std::string>& imports) const
+        const std::vector<std::string>& imports,
+        uint32_t num_builtins) const
 {
     // ── Header ──────────────────────────────────────────────────
     os.write(MAGIC, 4);
@@ -261,6 +262,7 @@ bool BytecodeSerializer::serialize(
     write_u16(os, flags);
 
     write_u64(os, source_hash);
+    write_u32(os, num_builtins);
 
     write_u32(os, static_cast<uint32_t>(modules.size()));
     write_u32(os, static_cast<uint32_t>(registry.size()));
@@ -331,7 +333,7 @@ bool BytecodeSerializer::serialize(
 // ============================================================================
 
 std::expected<EtacFile, SerializerError>
-BytecodeSerializer::deserialize(std::istream& is) const
+BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) const
 {
     EtacFile result;
 
@@ -350,6 +352,11 @@ BytecodeSerializer::deserialize(std::istream& is) const
     bool has_debug = (flags & FLAG_HAS_DEBUG) != 0;
 
     if (!read_u64(is, result.source_hash)) return std::unexpected(SerializerError::Truncated);
+
+    uint32_t file_builtins;
+    if (!read_u32(is, file_builtins)) return std::unexpected(SerializerError::Truncated);
+    if (expected_builtins != 0 && file_builtins != expected_builtins)
+        return std::unexpected(SerializerError::BuiltinCountMismatch);
 
     uint32_t num_modules, num_functions;
     if (!read_u32(is, num_modules)) return std::unexpected(SerializerError::Truncated);

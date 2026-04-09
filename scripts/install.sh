@@ -11,7 +11,7 @@
 # bin/ is added to PATH and ETA_MODULE_PATH is set in your shell rc.
 #
 # When called with a <prefix>, files are copied:
-#   <prefix>/bin/         ← etai, eta_repl, eta_lsp, eta_dap
+#   <prefix>/bin/         ← etac, etai, eta_repl, eta_lsp, eta_dap
 #   <prefix>/stdlib/      ← prelude.eta, std/*.eta
 #   <prefix>/editors/     ← VS Code extension (optional)
 # ──────────────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ fi
 # ── 4. Smoke test ─────────────────────────────────────────────────────
 echo
 echo "▸ Verifying..."
-for bin in etai eta_repl eta_lsp eta_dap; do
+for bin in etac etai eta_repl eta_lsp eta_dap; do
     p="${BIN_DIR}/${bin}"
     if [ -x "$p" ]; then
         echo "  ✓ ${bin}"

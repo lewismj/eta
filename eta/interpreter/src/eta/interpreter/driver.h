@@ -283,6 +283,9 @@ public:
     /// Access the optimization pipeline — add passes before running files.
     semantics::OptimizationPipeline& optimization_pipeline() noexcept { return optimization_pipeline_; }
 
+    /// Number of registered builtins (used to embed in .etac for mismatch detection).
+    [[nodiscard]] std::size_t builtin_count() const noexcept { return builtins_.specs().size(); }
+
     /**
      * @brief Load and execute a pre-compiled .etac file.
      * @return true on success, false on error (diagnostics emitted to engine).
@@ -297,7 +300,8 @@ public:
         }
 
         runtime::vm::BytecodeSerializer serializer(heap_, intern_table_);
-        auto etac_res = serializer.deserialize(in);
+        auto etac_res = serializer.deserialize(in,
+            static_cast<uint32_t>(builtins_.specs().size()));
         if (!etac_res) {
             diag_engine_.emit_error(
                 diagnostic::DiagnosticCode::ModuleNotFound, {},

@@ -153,8 +153,9 @@ int main(int argc, char* argv[]) {
     }
 
     eta::runtime::vm::BytecodeSerializer serializer(driver.heap(), driver.intern_table());
+    auto num_builtins = static_cast<uint32_t>(driver.builtin_count());
     if (!serializer.serialize(module_entries, file_registry, source_hash, include_debug, out,
-                              cr.imports)) {
+                              cr.imports, num_builtins)) {
         std::cerr << "error: failed to serialize bytecode\n";
         return 1;
     }

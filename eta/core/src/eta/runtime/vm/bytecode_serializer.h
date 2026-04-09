@@ -22,17 +22,20 @@ enum class SerializerError : std::uint8_t {
     CorruptConstant,
     HashMismatch,
     IOError,
+    BuiltinCountMismatch,
 };
 
 constexpr const char* to_string(SerializerError e) noexcept {
     using enum SerializerError;
     switch (e) {
-        case BadMagic:         return "bad magic bytes (expected ETAC)";
-        case VersionMismatch:  return "unsupported .etac version";
-        case Truncated:        return "truncated .etac file";
-        case CorruptConstant:  return "corrupt constant in .etac file";
-        case HashMismatch:     return "source hash mismatch";
-        case IOError:          return "I/O error";
+        case BadMagic:              return "bad magic bytes (expected ETAC)";
+        case VersionMismatch:       return "unsupported .etac version";
+        case Truncated:             return "truncated .etac file";
+        case CorruptConstant:       return "corrupt constant in .etac file";
+        case HashMismatch:          return "source hash mismatch";
+        case IOError:               return "I/O error";
+        case BuiltinCountMismatch:  return ".etac was compiled with a different builtin set "
+                                           "(e.g. torch-enabled vs non-torch); please recompile with etac";
     }
     return "unknown serializer error";
 }
@@ -71,24 +74,29 @@ public:
     /// @param include_debug If true, source_map spans are included.
     /// @param os            Output stream (binary mode).
     /// @param imports       Non-prelude module dependencies to store in the .etac.
+    /// @param num_builtins  Number of builtin slots registered at compile time.
     /// @return true on success.
     bool serialize(const std::vector<ModuleEntry>& modules,
                    const semantics::BytecodeFunctionRegistry& registry,
                    std::uint64_t source_hash,
                    bool include_debug,
                    std::ostream& os,
-                   const std::vector<std::string>& imports = {}) const;
+                   const std::vector<std::string>& imports = {},
+                   std::uint32_t num_builtins = 0) const;
 
     /// Deserialize a .etac binary into an EtacFile.
+    /// @param is             Input stream (binary mode).
+    /// @param expected_builtins  Number of builtin slots in the current runtime.
+    ///                           When non-zero, a mismatch triggers BuiltinCountMismatch.
     std::expected<EtacFile, SerializerError>
-    deserialize(std::istream& is) const;
+    deserialize(std::istream& is, std::uint32_t expected_builtins = 0) const;
 
     /// Compute a source hash using boost::hash.
     static std::uint64_t hash_source(std::string_view source);
 
     // Format constants
     static constexpr char     MAGIC[4]       = {'E','T','A','C'};
-    static constexpr uint16_t FORMAT_VERSION = 1;
+    static constexpr uint16_t FORMAT_VERSION = 2;
     static constexpr uint16_t FLAG_HAS_DEBUG = 0x0001;
 
 private:

@@ -222,9 +222,10 @@ struct CompiledExampleFixture {
                 compiler.heap(), compiler.intern_table());
             std::ofstream out(temp_etac, std::ios::out | std::ios::binary);
             if (!out) return {false, ""};
+            auto num_builtins = static_cast<uint32_t>(compiler.builtin_count());
             if (!serializer.serialize(module_entries, file_registry,
                                       source_hash, /*include_debug=*/true, out,
-                                      cr.imports)) {
+                                      cr.imports, num_builtins)) {
                 return {false, ""};
             }
         }
