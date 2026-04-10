@@ -22,18 +22,22 @@
 </p>
 <br>
 <p align="center">
-Language Guide and Examples</p>
+Language Guide</p>
 <p align="center">
   <a href="docs/examples.md">Basics</a> ·
   <a href="docs/aad.md">Reverse Mode AAD Example w/XVA</a> ·
   <a href="docs/european.md">European Option Greeks with AAD</a> ·
-  <a href="docs/sabr.md">SABR Model</a> ·
+  <a href="docs/sabr.md">SABR Volatility Model</a> ·
   <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
   <a href="docs/clp.md">Constraint Logic Programming</a> ·
   <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a> ·
   <a href="docs/torch.md">Neural Networks with libtorch</a>
 </p>
-
+<br>
+<p align="center">
+<strong>Featured Examples</strong>
+  <a href="docs/causal_factor.md">Causal Neural Model</a> — Symbolic → Causal → Logic → Neural → Causal estimation pipeline
+</p>
 
 
 ---
@@ -154,24 +158,25 @@ flowchart LR
 
 ## Documentation
 
-| Page                                       | Contents                                                                                 |
-|--------------------------------------------|------------------------------------------------------------------------------------------|
-| **[Architecture](docs/architecture.md)**   | Full system diagram, phase-by-phase walkthrough, Core IR node types                      |
-| **[NaN-Boxing](docs/nanboxing.md)**        | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                    |
-| **[Bytecode & VM](docs/bytecode-vm.md)**   | Opcode reference, end-to-end compilation trace, call stack model, TCO                    |
+| Page                                       | Contents                                                                                      |
+|--------------------------------------------|-----------------------------------------------------------------------------------------------|
+| **[Architecture](docs/architecture.md)**   | Full system diagram, phase-by-phase walkthrough, Core IR node types                           |
+| **[NaN-Boxing](docs/nanboxing.md)**        | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                         |
+| **[Bytecode & VM](docs/bytecode-vm.md)**   | Opcode reference, end-to-end compilation trace, call stack model, TCO                         |
 | **[Compiler (`etac`)](docs/compiler.md)**  | AOT bytecode compiler: CLI reference, `.etac` binary format, optimization passes, disassembly |
-| **[Optimization](docs/optimization.md)**   | IR optimization pipeline architecture, built-in passes, writing custom passes               |
-| **[Runtime & GC](docs/runtime.md)**        | Heap architecture, object kinds, mark-sweep GC, intern table, factory                    |
-| **[Modules & Stdlib](docs/modules.md)**    | Module syntax, linker phases, import filters, standard library reference                 |
-| **[Language Guide](docs/examples.md)**     | Guided tour of the language using simple example programs with expected output           |
-| **[AAD](docs/aad.md)**                     | Reverse-mode automatic differentiation walkthrough                                       |
-| **[xVA](docs/xva.md)**                     | Finance use case: CVA, FVA, and sensitivities via AAD                                   |
-| **[European Greeks](docs/european.md)**    | BS option Greeks (first & second order) with custom VJP and Schwarz check                |
-| **[SABR Volatility Model](docs/sabr.md)** | SABR Hagan implied vol, native Dual VM performance, Hessian via reverse-on-reverse       |
-| **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`     |
-| **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                        |
-| **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support      |
-| **[Next Steps](docs/next-steps.md)**       | Roadmap: network stack, VS Code debugger improvements, performance                   |
+| **[Optimization](docs/optimization.md)**   | IR optimization pipeline architecture, built-in passes, writing custom passes                 |
+| **[Runtime & GC](docs/runtime.md)**        | Heap architecture, object kinds, mark-sweep GC, intern table, factory                         |
+| **[Modules & Stdlib](docs/modules.md)**    | Module syntax, linker phases, import filters, standard library reference                      |
+| **[Language Guide](docs/examples.md)**     | Guided tour of the language using simple example programs with expected output                |
+| **[AAD](docs/aad.md)**                     | Reverse-mode automatic differentiation walkthrough                                            |
+| **[xVA](docs/xva.md)**                     | Finance use case: CVA, FVA, and sensitivities via AAD                                         |
+| **[European Greeks](docs/european.md)**    | BS option Greeks (first & second order) with custom VJP and Schwarz check                     |
+| **[SABR Volatility Model](docs/sabr.md)** | SABR Hagan implied vol, native Dual VM performance, Hessian via reverse-on-reverse            |
+| **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`           |
+| **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                             |
+| **[Causal Neural Factor Analysis](docs/causal_factor.md)** | Demo: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE                             |
+| **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support               |
+| **[Next Steps](docs/next-steps.md)**       | Roadmap: network stack, VS Code debugger improvements, performance                            |
 
 ---
 
@@ -277,7 +282,8 @@ eta-<platform>/
   stdlib/
     prelude.eta         # Auto-loaded standard library
     std/
-      core.eta  math.eta  io.eta  collections.eta  test.eta  torch.eta
+      core.eta  math.eta  io.eta  collections.eta  test.eta
+      logic.eta  clp.eta  causal.eta  torch.eta
   examples/
     hello.eta           # Hello world & factorial
     basics.eta          # Arithmetic, let, lists, quoting
@@ -285,12 +291,19 @@ eta-<platform>/
     higher-order.eta    # map, filter, fold, sort, zip
     composition.eta     # compose, flip, currying, pipelines
     recursion.eta       # Fibonacci, Ackermann, Hanoi
+    exceptions.eta      # catch/raise, dynamic-wind
     boolean-simplifier.eta  # Symbolic boolean rewriting
     symbolic-diff.eta       # Symbolic differentiation & simplification
+    unification.eta         # Native structural unification primitives
+    logic.eta               # Relational logic programming
     aad.eta                 # Reverse-mode automatic differentiation
     xva.eta                 # Finance example: CVA, FVA calculations with AAD
     european.eta            # European option Greeks (1st & 2nd order) with AAD
+    sabr.eta                # SABR vol surface with tape-based AD
     torch.eta               # Tensor computing & neural network training (libtorch)
+    causal_demo.eta         # Demo: symbolic + causal + logic/CLP + libtorch
+    causal-factor/          # End-to-end causal factor analysis
+    do-calculus/            # Do-calculus identification engine demos
   editors/
     vscode/             # VS Code extension (.vsix)
   install.sh / install.cmd
@@ -311,7 +324,7 @@ The prelude auto-loads the following modules:
 | **`std.logic`** | `==`, `copy-term`, `naf`, `findall`, `run1` — Prolog-style combinators |
 | **`std.clp`** | `clp:domain`, `clp:in-fd`, `clp:solve`, `clp:all-different` — constraint solving |
 | **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` — causal inference engine |
-| **`std.torch`** | `tensor`, `forward`, `train-step!`, `sgd`, `adam` — libtorch neural networks ([requires `-DETA_BUILD_TORCH=ON`](docs/torch.md)) |
+| **`std.torch`** | `tensor`, `forward`, `train-step!`, `sgd`, `adam` — libtorch neural networks |
 | **`std.test`** | `assert-equal`, `assert-true`, `run-tests` — lightweight test framework |
 
 ```scheme
@@ -344,10 +357,41 @@ eta/
 │   ├── interpreter/            # etai + eta_repl (Driver orchestration)
 │   ├── lsp/                    # eta_lsp (Language Server Protocol, JSON-RPC over stdio)
 │   ├── dap/                    # eta_dap (Debug Adapter Protocol, DAP over stdio)
+│   ├── torch/                  # libtorch integration (optional, -DETA_BUILD_TORCH=ON)
 │   ├── test/                   # Boost.Test unit tests
 │   └── fuzz/                   # Fuzz testing (heap, intern table, nanbox)
 ├── stdlib/                     # Standard library (.eta files)
-├── examples/                   # Example programs (basics → symbolic algebra)
+│   ├── prelude.eta             # Auto-loaded prelude
+│   └── std/
+│       ├── core.eta            # Combinators, list utilities, platform helpers
+│       ├── math.eta            # Arithmetic, trig, gcd/lcm
+│       ├── io.eta              # I/O primitives
+│       ├── collections.eta     # map*, filter, foldl, sort, zip, range
+│       ├── logic.eta           # Prolog-style unification & backtracking
+│       ├── clp.eta             # Constraint Logic Programming: clp(Z), clp(FD)
+│       ├── causal.eta          # DAG utilities & Pearl do-calculus engine
+│       ├── torch.eta           # libtorch wrappers (tensors, NN, optimizers)
+│       └── test.eta            # Lightweight test framework
+├── examples/                   # Example programs
+│   ├── hello.eta               # Hello world & factorial
+│   ├── basics.eta              # Arithmetic, let, lists, quoting
+│   ├── functions.eta           # defun, lambda, closures, recursion
+│   ├── higher-order.eta        # map, filter, fold, sort, zip
+│   ├── composition.eta         # compose, flip, currying, pipelines
+│   ├── recursion.eta           # Fibonacci, Ackermann, Hanoi
+│   ├── exceptions.eta          # catch/raise, dynamic-wind, re-raising
+│   ├── boolean-simplifier.eta  # Symbolic boolean rewriting
+│   ├── symbolic-diff.eta       # Symbolic differentiation & simplification
+│   ├── unification.eta         # Native structural unification primitives
+│   ├── logic.eta               # Relational logic programming (parento, findall)
+│   ├── aad.eta                 # Reverse-mode automatic differentiation
+│   ├── xva.eta                 # Finance: CVA, FVA with AAD sensitivities
+│   ├── european.eta            # European option Greeks (1st & 2nd order) with AAD
+│   ├── sabr.eta                # SABR vol surface with tape-based AD
+│   ├── torch.eta               # Tensor computing & neural network training
+│   ├── causal_demo.eta         # Flagship: symbolic + causal + logic/CLP + libtorch
+│   ├── causal-factor/          # End-to-end causal factor analysis (finance)
+│   └── do-calculus/            # Do-calculus identification engine demos
 ├── editors/vscode/             # VS Code extension (TextMate grammar)
 ├── scripts/                    # Build & install automation
 └── docs/                       # Design documentation (you are here)

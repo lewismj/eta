@@ -522,6 +522,12 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
             auto fn = m->forward_fn;
             seq->push_back("layer" + std::to_string(i),
                 ::torch::nn::Functional([fn](::torch::Tensor t) { return fn(std::move(t)); }));
+            // Also register the original module so its learnable parameters
+            // (e.g. Linear weight/bias) are visible via parameters().
+            // Functional wrappers are stateless and have no parameters.
+            if (!m->module->parameters().empty()) {
+                seq->register_module("params" + std::to_string(i), m->module);
+            }
         }
         seq->to(::torch::kFloat64);
         return factory::make_nn_module(heap, seq.ptr(), "Sequential");

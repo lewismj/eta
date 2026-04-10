@@ -13,6 +13,7 @@ etai examples/hello.eta
 
 | Example                                            | Key Concepts |
 |----------------------------------------------------|-------------|
+| [`causal_demo.eta`](#causal-demo--causal-neural-factor-analysis) | **Flagship** — symbolic diff, do-calculus, findall+CLP, libtorch NN, causal ATE |
 | [`hello.eta`](#helloeta)                           | Minimal program, `println`, `defun`, recursion |
 | [`basics.eta`](#basicseta)                         | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, records, quoting |
 | [`functions.eta`](#functionseta)                   | `defun`, `lambda`, closures, tail recursion, variadic args, `letrec` |
@@ -28,6 +29,37 @@ etai examples/hello.eta
 | [`sabr.eta`](#sabreta)                             | SABR vol surface with tape-based AD, Hagan approximation, Greeks |
 | [`logic.eta`](#logiceta)                           | Relational logic programming: `parento`, `grandparento`, `membero`, bidirectional queries |
 | [`modules and imports`](#imports)                  | `import`, `export`, `only`, `except`, `rename`, `prefix` |
+
+---
+
+## [causal demo — Causal Neural Factor Analysis](../examples/causal_demo.eta)
+
+The flagship example that threads **all four pillars** of Eta through a
+single quantitative-finance pipeline:
+
+1. **Symbolic Processing** — factor model as S-expressions, symbolic
+   differentiation, algebraic simplification
+2. **Causal Reasoning** — DAG definition, `do:identify` derives back-door
+   adjustment formula
+3. **Logic & CLP** — `findall` + backtracking enumerates valid adjustment
+   sets; `clp:domain` validates probability weights
+4. **libtorch Integration** — trains a neural network to learn
+   E[return | beta, sector]
+5. **Integration** — plugs NN predictions into the causal formula to
+   compute the Average Treatment Effect (ATE ≈ 0.45)
+
+Each section's output feeds the next, forming a dependency chain.
+
+```console
+etac -O examples/causal_demo.eta -o causal_demo.etac
+etai causal_demo.etac
+```
+
+> [!TIP]
+> See the full [Causal Neural Factor Analysis walkthrough](causal_factor.md)
+> for detailed commentary on each step, including how the VM handles
+> unification, trail management, CLP forward checking, and libtorch
+> tensor objects.
 
 ---
 

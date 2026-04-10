@@ -1142,8 +1142,14 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
 
     // ── AD Tape recording ────────────────────────────────────────────────
     // If a tape is active and either operand is a TapeRef, record the
-    // operation on the tape and push the new TapeRef.  Plain numeric
-    // operands are auto-promoted to tape constants.
+    // operation on the tape and push a new TapeRef.
+    // Only the four arithmetic opcodes are relevant here; the default
+    // branch handles the (impossible) case where a non-arithmetic opcode
+    // reaches this path.
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch-enum"
+#endif
     const bool is_tape_a = ops::is_boxed(a) && ops::tag(a) == Tag::TapeRef;
     const bool is_tape_b = ops::is_boxed(b) && ops::tag(b) == Tag::TapeRef;
 
@@ -1197,6 +1203,9 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
         push(ops::box(Tag::TapeRef, new_idx));
         return {};
     }
+#if defined(__clang__) || defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 
     auto num_a = classify_numeric(a, heap_);
