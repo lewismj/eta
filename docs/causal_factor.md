@@ -23,7 +23,7 @@ paradigms interoperate within a single Eta program.
 | **§2** | Causal Reasoning     | Encode a DAG of market variables; derive the back-door adjustment formula with `do:identify` |
 | **§3** | Logic & CLP          | Use `findall` + backtracking to discover all valid adjustment sets; validate with `clp(Z)` domains |
 | **§4** | libTorch Integration | Train a neural network to learn E[return \| beta, sector] |
-| **§5** | Neural Causal Estimation (ATE) | Plug NN predictions into the causal formula to compute the Average Treatment Effect |
+| **§5** | Neural Back-Door Estimation (ATE) | Plug NN predictions into the back-door adjustment formula to compute the Average Treatment Effect |
 
 
 ---
@@ -490,14 +490,14 @@ corresponding C++ function registered in `core_primitives.h`.
 
 ---
 
-## §5 — Neural Causal Estimation (ATE)
+## §5 — Neural Back-Door Estimation (ATE)
 
 ### What it does
 
 Plug the trained NN into the do-calculus adjustment formula:
 
 ```
-E[return | do(beta=x)] = Σ_s  E_NN[return | beta=x, sector=s] · P(s)
+E[return | do(beta=x)] = Σ_{sector}  E_NN[return | beta=x, sector=s] · P(s)
 ```
 
 `nn-predict` creates a fresh input tensor, runs the forward pass, and
@@ -691,7 +691,7 @@ correctly isolates the causal contribution of beta.
   Pipeline Summary
 ----------------------------------------------------------
   S1. Symbolic diff  => beta sensitivity depends on sector
-  S2. Do-calculus    => P(return|do(beta)) = Σ_s P(ret|beta,s)·P(s)
+  S2. Do-calculus    => P(return|do(beta)) = Σ_{sector} P(ret|beta,s)·P(s)
   S3. findall + CLP  => {sector} is the unique valid adjustment set
   S4. libtorch NN    => learned E[return | beta, sector]
   S5. Neural ATE     => causal effect estimated via NN + formula
@@ -725,7 +725,7 @@ standard fast path.
              │  insight: confounding
              ▼
   ┌──────────────────────┐
-  │ §2 Do-Calculus       │  DAG → back-door formula: Σ_s P(R|β,s)·P(s)
+  │ §2 Do-Calculus       │  DAG → back-door formula: Σ_{sector} P(R|β,s)·P(s)
   └──────────┬───────────┘
              │  formula + adjustment set Z
              ▼
