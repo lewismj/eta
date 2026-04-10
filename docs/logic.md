@@ -10,7 +10,7 @@
 
 Eta provides **native structural unification** as a first-class VM feature,
 giving you the core machinery of a Prolog engine without leaving the language.
-Six built-in special forms are compiled directly to dedicated opcodes; no
+Seven built-in special forms are compiled directly to dedicated opcodes; no
 external library, no interpretation overhead, and no separate runtime process.
 
 ```scheme
@@ -29,11 +29,11 @@ etai examples/unification.eta
 
 ---
 
-## The Six Built-in Primitives
+## The Seven Built-in Primitives
 
 These are **special forms** handled at every level of the pipeline
 (expander → semantic analyser → emitter → VM).  They are not function calls —
-each compiles to a single dedicated opcode.
+each compiles to a single dedicated opcode (except `ground?` which is a builtin).
 
 | Form | Opcode | Description |
 |------|--------|-------------|
@@ -42,6 +42,7 @@ each compiles to a single dedicated opcode.
 | `(deref-lvar x)` | `DerefLogicVar` | Walk the variable chain to find the current value |
 | `(trail-mark)` | `TrailMark` | Snapshot the trail stack depth; pushes a fixnum mark |
 | `(unwind-trail mark)` | `UnwindTrail` | Undo all bindings made since `mark` |
+| `(copy-term t)` | `CopyTerm` | Deep-copy `t`, replacing unbound logic variables with fresh ones (sharing preserved via memo) |
 | `(ground? t)` | *(builtin)* | `#t` iff `t` contains no unbound logic variables |
 
 `ground?` is registered as a **builtin function** (not a special form) so it
@@ -254,8 +255,8 @@ Source text
       push(unify(a, b) ? True : False)
 ```
 
-The same path applies to all six forms, each with its own Core IR node type:
-`MakeLogicVar`, `Unify`, `DerefLogicVar`, `TrailMark`, `UnwindTrail`.
+The same path applies to all seven forms, each with its own Core IR node type:
+`MakeLogicVar`, `Unify`, `DerefLogicVar`, `TrailMark`, `UnwindTrail`, `CopyTerm`.
 
 ---
 
@@ -356,6 +357,13 @@ replaced by a fresh one.  Sharing is preserved: if the same unbound variable
 appears at multiple positions in `t`, all those positions map to the same
 fresh variable in the copy.
 
+`copy-term` is a **special form** compiled to the dedicated `CopyTerm` opcode.
+The VM performs the walk in C++ with an O(1)-amortised hash-map memo, making
+it significantly faster than an equivalent Eta-level implementation.
+
+The `std.logic` module exports `copy-term*` as a thin wrapper that calls the
+special form, allowing it to be passed as a first-class function value.
+
 **Why it matters:**  If you store a parameterised rule as a term template
 `(head . body)` and want to try it more than once, each attempt needs its own
 independent set of variables.  `copy-term` provides that isolation.
@@ -374,27 +382,10 @@ independent set of variables.  `copy-term` provides that isolation.
 (logic-var? (car tmpl)) ; => #t  — original is untouched
 ```
 
-**Implementation:** purely functional memo-threaded recursion (no mutation):
-
-```scheme
-(defun %ct-walk (x memo)
-  (let ((xd (deref-lvar x)))
-    (cond
-      ((logic-var? xd)
-       (let ((cached (%ct-assq xd memo)))
-         (if cached
-             (cons cached memo)
-             (let ((nv (logic-var)))
-               (cons nv (cons (cons xd nv) memo))))))
-      ((pair? xd)
-       (let* ((r1 (%ct-walk (car xd) memo))
-              (r2 (%ct-walk (cdr xd) (cdr r1))))
-         (cons (cons (car r1) (car r2)) (cdr r2))))
-      (#t (cons xd memo)))))
-```
-
-Each call returns `(new-value . updated-memo)`.  The `eq?`-based memo lookup
-(`%ct-assq`) preserves identity — two occurrences of the same unbound variable
+**Implementation (VM-level):**  The `CopyTerm` opcode pops a term, walks it
+recursively using `VM::copy_term()`, and pushes the result.  The C++
+implementation uses an `std::unordered_map<ObjectId, LispVal>` as a memo
+table to preserve sharing — two occurrences of the same unbound variable
 both map to the same fresh copy.
 
 ### `naf` — Negation as Failure
@@ -625,7 +616,7 @@ closure), `copy-term` lets you instantiate it freshly for each invocation:
 | Backtracking (choice point) | `(trail-mark)` / `(unwind-trail m)` | Manual; composable |
 | `findall/3` | `(findall thunk branches)` | Branch list explicit |
 | Negation as failure `\+` | `(naf thunk)` | Always unwinds |
-| `copy_term/2` | `(copy-term t)` | Functional memo-table implementation |
+| `copy_term/2` | `(copy-term t)` | Native `CopyTerm` VM opcode with hash-map memo |
 | `ground/1` | `(ground? t)` | VM builtin, walks heap graph |
 | `assert/retract` | *(not built-in)* | Use mutable list + `set!` |
 | Cut `!` | *(not built-in)* | `run1` covers the most common use |
@@ -641,11 +632,10 @@ closure), `copy-term` lets you instantiate it freshly for each invocation:
 
 ---
 
-## What Is Not Supported (Yet)
+## Current Limitations
 
 | Feature | Status |
 |---------|--------|
-| `copy-term` as a VM opcode | Implemented in Eta; a future `CopyTerm` opcode would eliminate per-pair allocation overhead |
 | Attributed variables | Not supported |
 | Tabling / memoisation | Not supported; would require a WAM-style call stack |
 
@@ -657,8 +647,8 @@ closure), `copy-term` lets you instantiate it freshly for each invocation:
 |-----------|------|
 | `LogicVar` heap type | [`logic_var.h`](../eta/core/src/eta/runtime/types/logic_var.h) |
 | `ObjectKind::LogicVar` | [`heap.h`](../eta/core/src/eta/runtime/memory/heap.h) |
-| `MakeLogicVar` … `UnwindTrail` opcodes | [`bytecode.h`](../eta/core/src/eta/runtime/vm/bytecode.h) |
-| `VM::unify`, `deref`, `occurs_check` | [`vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) |
+| `MakeLogicVar` … `UnwindTrail`, `CopyTerm` opcodes | [`bytecode.h`](../eta/core/src/eta/runtime/vm/bytecode.h) |
+| `VM::unify`, `deref`, `occurs_check`, `copy_term` | [`vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) |
 | `trail_stack` GC rooting | [`vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) — `collect_garbage()` |
 | `logic-var?`, `ground?` builtins | [`core_primitives.h`](../eta/core/src/eta/runtime/core_primitives.h) |
 | Expander handlers | [`expander.cpp`](../eta/core/src/eta/reader/expander.cpp) |

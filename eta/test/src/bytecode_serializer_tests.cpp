@@ -211,7 +211,7 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     func.code.push_back({OpCode::DerefLogicVar, 0});
     func.code.push_back({OpCode::TrailMark, 0});
     func.code.push_back({OpCode::UnwindTrail, 0});
-    func.code.push_back({OpCode::_Reserved0, 0});
+    func.code.push_back({OpCode::CopyTerm, 0});
     func.code.push_back({OpCode::_Reserved1, 0});
     func.code.push_back({OpCode::_Reserved2, 0});
 

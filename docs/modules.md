@@ -315,6 +315,26 @@ Output:
 
 ---
 
+### `std.fact_table` — Columnar Fact Tables
+
+```scheme
+(import std.fact_table)
+```
+
+An in-memory, column-oriented store of fixed-arity rows with optional
+per-column hash indexes for O(1) equality lookups.
+
+| Category | Key Functions |
+|----------|---------------|
+| **Construction** | `make-fact-table`, `fact-table?` |
+| **Mutation** | `fact-table-insert!`, `fact-table-build-index!` |
+| **Query** | `fact-table-query`, `fact-table-ref`, `fact-table-row-count`, `fact-table-row` |
+| **Iteration** | `fact-table-for-each`, `fact-table-filter`, `fact-table-fold` |
+
+> **📖 Full documentation:** [Fact Tables](fact-table.md)
+
+---
+
 ### `std.prelude` — Convenience Re-Export
 
 ```scheme
@@ -322,7 +342,8 @@ Output:
 ```
 
 Re-exports **all** public names from `std.core`, `std.math`, `std.io`,
-and `std.collections` in a single import for convenience.
+`std.collections`, `std.logic`, `std.clp`, `std.causal`, and
+`std.fact_table` in a single import for convenience.
 
 ---
 

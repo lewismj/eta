@@ -110,7 +110,7 @@ public:
                 case OpCode::DerefLogicVar:
                 case OpCode::TrailMark:
                 case OpCode::UnwindTrail:
-                case OpCode::_Reserved0:
+                case OpCode::CopyTerm:
                 case OpCode::_Reserved1:
                 case OpCode::_Reserved2:
                     // No arg to display

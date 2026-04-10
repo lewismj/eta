@@ -953,7 +953,14 @@ std::expected<void, RuntimeError> VM::run_loop() {
             }
 
 
-            case OpCode::_Reserved0:
+            case OpCode::CopyTerm: {
+                LispVal term = pop();
+                auto result = copy_term(term);
+                if (!result) return std::unexpected(result.error());
+                push(*result);
+                break;
+            }
+
             case OpCode::_Reserved1:
             case OpCode::_Reserved2:
             default:
@@ -1558,6 +1565,70 @@ bool VM::unify(LispVal a, LispVal b) {
 
     // Structural mismatch
     return false;
+}
+
+// ============================================================================
+// CopyTerm — deep copy with fresh logic variables
+// ============================================================================
+
+std::expected<LispVal, RuntimeError> VM::copy_term(LispVal term) {
+    // Memo: maps original unbound LogicVar ObjectId → fresh LispVal copy.
+    // Preserves sharing: the same unbound variable seen twice maps to the
+    // same fresh copy.
+    std::unordered_map<ObjectId, LispVal> memo;
+
+    // Recursive copy worker (as a std::function to allow self-reference).
+    std::function<std::expected<LispVal, RuntimeError>(LispVal)> walk;
+    walk = [&](LispVal v) -> std::expected<LispVal, RuntimeError> {
+        v = deref(v);
+
+        // Check if this is a heap object
+        if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject)
+            return v;  // immediate value — always ground, return as-is
+
+        auto id = ops::payload(v);
+
+        // Unbound logic variable — look up or create fresh copy
+        if (auto* lv = heap_.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id)) {
+            if (!lv->binding.has_value()) {
+                auto it = memo.find(id);
+                if (it != memo.end()) return it->second;
+                auto fresh = make_logic_var(heap_);
+                if (!fresh) return std::unexpected(fresh.error());
+                memo[id] = *fresh;
+                return *fresh;
+            }
+            // Bound — deref already followed the chain, so this shouldn't happen,
+            // but handle gracefully.
+            return walk(*lv->binding);
+        }
+
+        // Cons pair — recursively copy car and cdr
+        if (auto* cons = heap_.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
+            auto car_copy = walk(cons->car);
+            if (!car_copy) return car_copy;
+            auto cdr_copy = walk(cons->cdr);
+            if (!cdr_copy) return cdr_copy;
+            return make_cons(heap_, *car_copy, *cdr_copy);
+        }
+
+        // Vector — recursively copy each element
+        if (auto* vec = heap_.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
+            std::vector<LispVal> elems;
+            elems.reserve(vec->elements.size());
+            for (auto& elem : vec->elements) {
+                auto elem_copy = walk(elem);
+                if (!elem_copy) return elem_copy;
+                elems.push_back(*elem_copy);
+            }
+            return make_vector(heap_, std::move(elems));
+        }
+
+        // All other heap objects (strings, closures, ports, etc.) — return as-is
+        return v;
+    };
+
+    return walk(term);
 }
 
 } // namespace eta::runtime::vm

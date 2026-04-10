@@ -78,6 +78,11 @@ namespace eta::runtime::memory::gc {
             for (auto v : p.gc_roots) callback(v);
         }
 
+        void visit_fact_table(const types::FactTable& ft) override {
+            for (const auto& col : ft.columns)
+                for (auto v : col) callback(v);
+        }
+
         void visit_leaf(heap::ObjectKind, const void*) override { /* no edges */ }
     };
 

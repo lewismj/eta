@@ -1464,6 +1464,127 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-value: index out of range"}});
         return make_flonum(tape->entries[idx].primal);
     });
+
+    // ── Fact-table builtins ──────────────────────────────────────────────
+
+    // Helper: extract FactTable* from a LispVal or return a type error.
+    auto get_fact_table = [&heap](LispVal v, const char* who) -> std::expected<types::FactTable*, RuntimeError> {
+        if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": argument must be a fact-table"}});
+        auto* ft = heap.try_get_as<ObjectKind::FactTable, types::FactTable>(ops::payload(v));
+        if (!ft)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": argument must be a fact-table"}});
+        return ft;
+    };
+
+    // fact-table? predicate
+    env.register_builtin("fact-table?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
+            if (heap.try_get_as<ObjectKind::FactTable, types::FactTable>(ops::payload(args[0])))
+                return True;
+        }
+        return False;
+    });
+
+    // %make-fact-table : (col-name-list) → fact-table
+    //   col-name-list is an Eta list of symbols or strings.
+    env.register_builtin("%make-fact-table", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        // Walk the Eta list and collect column names
+        std::vector<std::string> names;
+        LispVal cur = args[0];
+        while (cur != Nil) {
+            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%make-fact-table: expected a list of column names"}});
+            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+            if (!cons)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%make-fact-table: expected a list of column names"}});
+            LispVal name_val = cons->car;
+            if (ops::is_boxed(name_val) && ops::tag(name_val) == Tag::Symbol) {
+                auto sv = intern_table.get_string(ops::payload(name_val));
+                names.push_back(sv ? std::string(*sv) : "?");
+            } else if (ops::is_boxed(name_val) && ops::tag(name_val) == Tag::String) {
+                auto sv = intern_table.get_string(ops::payload(name_val));
+                names.push_back(sv ? std::string(*sv) : "?");
+            } else {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%make-fact-table: column name must be a symbol or string"}});
+            }
+            cur = cons->cdr;
+        }
+        if (names.empty())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%make-fact-table: need at least one column"}});
+        return make_fact_table(heap, std::move(names));
+    });
+
+    // %fact-table-insert! : (table row-list) → #t
+    env.register_builtin("%fact-table-insert!", 2, false, [&heap, get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-insert!");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        auto* ft = *ft_res;
+        // Walk the Eta list to collect row values
+        std::vector<LispVal> row;
+        LispVal cur = args[1];
+        while (cur != Nil) {
+            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-insert!: second arg must be a list"}});
+            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+            if (!cons)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-insert!: second arg must be a list"}});
+            row.push_back(cons->car);
+            cur = cons->cdr;
+        }
+        if (!ft->add_row(row))
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-insert!: row arity mismatch"}});
+        return True;
+    });
+
+    // %fact-table-build-index! : (table col-index) → #t
+    env.register_builtin("%fact-table-build-index!", 2, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-build-index!");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        auto col_opt = ops::decode<int64_t>(args[1]);
+        if (!col_opt)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-build-index!: column index must be a fixnum"}});
+        (*ft_res)->build_index(static_cast<std::size_t>(*col_opt));
+        return True;
+    });
+
+    // %fact-table-query : (table col-index key) → list of row-index fixnums
+    env.register_builtin("%fact-table-query", 3, false, [&heap, get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-query");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        auto col_opt = ops::decode<int64_t>(args[1]);
+        if (!col_opt)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-query: column index must be a fixnum"}});
+        auto rows = (*ft_res)->query(static_cast<std::size_t>(*col_opt), args[2]);
+        // Build an Eta list of fixnums
+        LispVal result = Nil;
+        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+            auto enc = ops::encode(static_cast<int64_t>(*it));
+            if (!enc) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-query: row index too large"}});
+            auto cell = make_cons(heap, *enc, result);
+            if (!cell) return std::unexpected(cell.error());
+            result = *cell;
+        }
+        return result;
+    });
+
+    // %fact-table-ref : (table row-index col-index) → value
+    env.register_builtin("%fact-table-ref", 3, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-ref");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        auto row_opt = ops::decode<int64_t>(args[1]);
+        auto col_opt = ops::decode<int64_t>(args[2]);
+        if (!row_opt || !col_opt)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-ref: indices must be fixnums"}});
+        return (*ft_res)->get_cell(static_cast<std::size_t>(*row_opt), static_cast<std::size_t>(*col_opt));
+    });
+
+    // %fact-table-row-count : (table) → fixnum
+    env.register_builtin("%fact-table-row-count", 1, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-row-count");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        return ops::encode(static_cast<int64_t>((*ft_res)->row_count));
+    });
 }
 
 } // namespace eta::runtime

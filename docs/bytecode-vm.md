@@ -131,6 +131,7 @@ VM.  See [Logic Programming](logic.md) for a full description of the semantics.
 | `DerefLogicVar` | — | x → val | Pop `x`; walk the logic-variable binding chain to its terminus; push the fully dereferenced value |
 | `TrailMark` | — | → mark | Push the current trail stack depth as a fixnum snapshot |
 | `UnwindTrail` | — | mark → | Pop `mark`; undo all variable bindings made since that snapshot by walking the trail back and resetting each `LogicVar.binding` to `nullopt` |
+| `CopyTerm` | — | term → copy | Pop `term`; deep-copy it replacing unbound logic variables with fresh ones (sharing preserved via hash-map memo); push the copy |
 
 **Trail invariant:** the trail is a per-VM `std::vector<LispVal>` that
 records the boxed reference of every logic variable that was bound.

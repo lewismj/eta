@@ -140,6 +140,7 @@ private:
     void emit_deref_lvar(const core::DerefLogicVar& n, Context& ctx, const Span& span);
     void emit_trail_mark(const core::TrailMark& n, Context& ctx, const Span& span);
     void emit_unwind_trail(const core::UnwindTrail& n, Context& ctx, const Span& span);
+    void emit_copy_term(const core::CopyTerm& n, Context& ctx, const Span& span);
 };
 
 } // namespace eta::semantics

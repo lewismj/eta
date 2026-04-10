@@ -472,6 +472,12 @@ const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handler
             auto m = analyze(lst->elems[1], scope, ctx); if (!m) return m;
             return ctx.mod.emplace<core::UnwindTrail>(lst->span, *m);
         }},
+        {"copy-term",    [](const List* lst, Scope& scope, AnalysisContext& ctx) -> SemResult<core::Node*> {
+            if (lst->elems.size() != 2)
+                return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->span, "copy-term requires 1 argument"});
+            auto t = analyze(lst->elems[1], scope, ctx); if (!t) return t;
+            return ctx.mod.emplace<core::CopyTerm>(lst->span, *t);
+        }},
         // NOTE: Derived forms (let, letrec, case, do) are no longer handled here.
         // They MUST be desugared by the Expander. If encountered, they will be
         // treated as function applications, which will produce a meaningful error.
