@@ -1,0 +1,116 @@
+;;; torch_tests/arithmetic.eta — Tensor arithmetic and unary op primitives
+;;;
+;;; Tests: t+, t-, t*, t/, matmul, dot, neg, tabs, texp, tlog, tsqrt,
+;;;        relu, sigmoid, ttanh, softmax
+;;;
+;;; Run:  etai examples/torch_tests/arithmetic.eta
+
+(module torch-test-arithmetic
+  (import std.core)
+  (import std.io)
+  (import std.torch)
+  (import std.test)
+  (begin
+
+    (define results
+      (run (make-group "Tensor Arithmetic & Unary Ops"
+        (list
+
+          ;; ── Binary arithmetic ─────────────────────────────────────
+          (make-test "add"
+            (lambda ()
+              (let ((r (t+ (from-list '(1.0 2.0)) (from-list '(3.0 4.0)))))
+                (assert-equal '(4.0 6.0) (to-list r)))))
+
+          (make-test "sub"
+            (lambda ()
+              (let ((r (t- (from-list '(5.0 3.0)) (from-list '(2.0 1.0)))))
+                (assert-equal '(3.0 2.0) (to-list r)))))
+
+          (make-test "mul"
+            (lambda ()
+              (let ((r (t* (from-list '(2.0 3.0)) (from-list '(4.0 5.0)))))
+                (assert-equal '(8.0 15.0) (to-list (reshape r '(2)))
+                  "expected (8 15) but mul gave wrong result")
+                ;; also check sum for simpler assertion
+                (assert-equal 23.0 (item (tsum r))))))
+
+          (make-test "div"
+            (lambda ()
+              (let ((r (t/ (from-list '(6.0 9.0)) (from-list '(2.0 3.0)))))
+                (assert-equal '(3.0 3.0) (to-list r)))))
+
+          ;; ── Matrix multiplication ─────────────────────────────────
+          (make-test "matmul"
+            (lambda ()
+              (let* ((a (ones '(2 3)))
+                     (b (ones '(3 4)))
+                     (c (matmul a b)))
+                (assert-equal '(2 4) (shape c) "matmul shape")
+                ;; Each element = 3.0 (dot of 3 ones), total = 2*4*3 = 24
+                (assert-equal 24.0 (item (tsum c)) "matmul sum"))))
+
+          ;; ── Dot product ───────────────────────────────────────────
+          (make-test "dot"
+            (lambda ()
+              (let ((r (dot (from-list '(1.0 2.0 3.0))
+                            (from-list '(4.0 5.0 6.0)))))
+                ;; 1*4 + 2*5 + 3*6 = 32
+                (assert-equal 32.0 (item r) "dot product"))))
+
+          ;; ── Unary ops ─────────────────────────────────────────────
+          (make-test "neg"
+            (lambda ()
+              (assert-equal '(-1.0 -2.0 -3.0)
+                (to-list (neg (from-list '(1.0 2.0 3.0)))))))
+
+          (make-test "abs"
+            (lambda ()
+              (assert-equal '(2.0 0.0 3.0)
+                (to-list (tabs (from-list '(-2.0 0.0 3.0)))))))
+
+          (make-test "exp of zero"
+            (lambda ()
+              (assert-equal 1.0 (item (texp (tensor 0.0))))))
+
+          (make-test "log of one"
+            (lambda ()
+              (assert-equal 0.0 (item (tlog (tensor 1.0))))))
+
+          (make-test "sqrt"
+            (lambda ()
+              (assert-equal '(2.0 3.0)
+                (to-list (tsqrt (from-list '(4.0 9.0)))))))
+
+          ;; ── Activation functions ──────────────────────────────────
+          (make-test "relu"
+            (lambda ()
+              (assert-equal '(0.0 0.0 3.0)
+                (to-list (relu (from-list '(-2.0 0.0 3.0)))))))
+
+          (make-test "sigmoid bounds"
+            (lambda ()
+              (let ((r (sigmoid (from-list '(-10.0 0.0 10.0)))))
+                (assert-true (> (item (tmin r)) 0.0) "sigmoid > 0")
+                (assert-true (< (item (tmax r)) 1.0) "sigmoid < 1"))))
+
+          (make-test "tanh bounds"
+            (lambda ()
+              (let ((r (ttanh (from-list '(-10.0 0.0 10.0)))))
+                (assert-true (> (item (tmin r)) -1.0) "tanh > -1")
+                (assert-true (< (item (tmax r)) 1.0)  "tanh < 1"))))
+
+          (make-test "softmax sums to 1"
+            (lambda ()
+              (let ((r (softmax (from-list '(1.0 2.0 3.0)) 0)))
+                (assert-true (< (abs (- (item (tsum r)) 1.0)) 1e-10)
+                  "softmax should sum to 1")
+                (assert-true (> (item (tmin r)) 0.0)
+                  "softmax elements positive"))))
+
+        ))))
+
+    (print-summary (summary results))
+    (assert-equal 0 (summary-failed (summary results)) "arithmetic tests failed")
+  ))
+

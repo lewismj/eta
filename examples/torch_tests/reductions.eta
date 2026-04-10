@@ -1,0 +1,57 @@
+;;; torch_tests/reductions.eta — Reduction primitives
+;;;
+;;; Tests: tsum, mean, tmax, tmin, argmax, argmin
+;;;
+;;; Run:  etai examples/torch_tests/reductions.eta
+
+(module torch-test-reductions
+  (import std.core)
+  (import std.io)
+  (import std.torch)
+  (import std.test)
+  (begin
+
+    (define t (from-list '(1.0 5.0 3.0 2.0)))
+
+    (define results
+      (run (make-group "Reductions"
+        (list
+
+          (make-test "sum"
+            (lambda ()
+              (assert-equal 11.0 (item (tsum t)))))
+
+          (make-test "mean"
+            (lambda ()
+              (assert-equal 2.75 (item (mean t)))))
+
+          (make-test "max"
+            (lambda ()
+              (assert-equal 5.0 (item (tmax t)))))
+
+          (make-test "min"
+            (lambda ()
+              (assert-equal 1.0 (item (tmin t)))))
+
+          (make-test "argmax"
+            (lambda ()
+              ;; index of 5.0 is 1
+              (assert-equal 1.0 (item (argmax t)))))
+
+          (make-test "argmin"
+            (lambda ()
+              ;; index of 1.0 is 0
+              (assert-equal 0.0 (item (argmin t)))))
+
+          ;; Multi-dimensional reduction
+          (make-test "sum 2D"
+            (lambda ()
+              (let ((m (ones '(3 4))))
+                (assert-equal 12.0 (item (tsum m))))))
+
+        ))))
+
+    (print-summary (summary results))
+    (assert-equal 0 (summary-failed (summary results)) "reduction tests failed")
+  ))
+

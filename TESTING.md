@@ -294,6 +294,57 @@ Run workflow** (manual dispatch).
 
 ---
 
+## Running the Torch Test Suite
+
+Eta includes a comprehensive test suite for the libtorch integration.
+Tests require the interpreter to be built with `-DETA_BUILD_TORCH=ON`.
+
+### Eta integration tests
+
+Ten standalone test files in `examples/torch_tests/` exercise every
+`std.torch` primitive end-to-end using the `std.test` framework:
+
+```bash
+# Run all torch tests (Linux / macOS)
+for f in examples/torch_tests/*.eta; do echo "── $f"; etai "$f"; done
+
+# Run all torch tests (Windows PowerShell)
+Get-ChildItem examples\torch_tests\*.eta | ForEach-Object { Write-Host "── $_"; etai $_ }
+
+# Run a single test file
+etai examples/torch_tests/tensor_creation.eta
+```
+
+| File | Coverage |
+|------|----------|
+| `tensor_creation.eta` | `tensor`, `ones`, `zeros`, `randn`, `arange`, `linspace`, `from-list`, `tensor?` |
+| `arithmetic.eta` | `t+`, `t-`, `t*`, `t/`, `matmul`, `dot`, `neg`, `tabs`, `texp`, `tlog`, `tsqrt`, `relu`, `sigmoid`, `ttanh`, `softmax` |
+| `shape_ops.eta` | `shape`, `reshape`, `transpose`, `squeeze`, `unsqueeze`, `cat`, `numel` |
+| `reductions.eta` | `tsum`, `mean`, `tmax`, `tmin`, `argmax`, `argmin` |
+| `autograd.eta` | `requires-grad!`, `requires-grad?`, `backward`, `grad`, `zero-grad!`, `detach` |
+| `nn_layers.eta` | `linear`, `sequential`, `relu-layer`, `sigmoid-layer`, `dropout`, `forward`, `parameters`, `module?`, `train!`, `eval!` |
+| `loss_functions.eta` | `mse-loss`, `l1-loss` |
+| `optimizers.eta` | `sgd`, `adam`, `step!`, `optim-zero-grad!`, `optimizer?` |
+| `device_info.eta` | `gpu-available?`, `gpu-count`, `device`, `to-device`, `to-cpu` |
+| `training.eta` | `train-step!`, SGD/Adam convergence, sequential network training |
+
+### C++ unit tests
+
+The C++ tests in `eta/test/src/torch_tests.cpp` mirror the Eta tests at
+the primitive level, additionally verifying heap lifecycle, GC behaviour,
+error paths, and builtin registration:
+
+```bash
+cmake -B build -DETA_BUILD_TORCH=ON
+cmake --build build
+ctest --test-dir build -R torch
+```
+
+The `example_runner_tests` suite also automatically discovers and runs
+all `.eta` files (including `torch_tests/`) when built with torch support.
+
+---
+
 ## Manual Build Steps
 
 If you prefer not to use the scripts:

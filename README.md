@@ -392,7 +392,8 @@ eta/
 │   ├── torch.eta               # Tensor computing & neural network training
 │   ├── causal_demo.eta         # Flagship: symbolic + causal + logic/CLP + libtorch
 │   ├── causal-factor/          # End-to-end causal factor analysis (finance)
-│   └── do-calculus/            # Do-calculus identification engine demos
+│   ├── do-calculus/            # Do-calculus identification engine demos
+│   └── torch_tests/            # libtorch integration test suite (10 files)
 ├── editors/vscode/             # VS Code extension (TextMate grammar)
 ├── scripts/                    # Build & install automation
 └── docs/                       # Design documentation (you are here)

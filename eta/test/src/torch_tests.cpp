@@ -645,5 +645,808 @@ BOOST_AUTO_TEST_CASE(training_loop_converges) {
     BOOST_TEST(final_loss < 0.1);  // Should converge reasonably well
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// nn/sequential via Eta primitive (the gap that caused the sequential bug)
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+    // Helper: count elements in an Eta cons-list
+    int count_list(Heap& heap, LispVal lst) {
+        int n = 0;
+        while (lst != Nil) {
+            if (!ops::is_boxed(lst) || ops::tag(lst) != Tag::HeapObject) break;
+            auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(lst));
+            if (!c) break;
+            ++n;
+            lst = c->cdr;
+        }
+        return n;
+    }
+}
+
+BOOST_AUTO_TEST_CASE(prim_nn_sequential_forward_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    // Lookup all needed primitives
+    auto lin_idx  = env.lookup("nn/linear");
+    auto relu_idx = env.lookup("nn/relu-layer");
+    auto seq_idx  = env.lookup("nn/sequential");
+    auto fwd_idx  = env.lookup("nn/forward");
+    auto par_idx  = env.lookup("nn/parameters");
+    auto mod_idx  = env.lookup("nn/module?");
+    BOOST_REQUIRE(lin_idx && relu_idx && seq_idx && fwd_idx && par_idx && mod_idx);
+
+    auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
+
+    // Create: Linear(4, 8), ReLU, Linear(8, 2)
+    auto lin1 = expect_ok(env.specs()[*lin_idx].func({mk(4), mk(8)}));
+    auto relu = expect_ok(env.specs()[*relu_idx].func({}));
+    auto lin2 = expect_ok(env.specs()[*lin_idx].func({mk(8), mk(2)}));
+
+    // Build sequential through the Eta primitive — this is the exact path the VM takes
+    auto seq = expect_ok(env.specs()[*seq_idx].func({lin1, relu, lin2}));
+
+    // Verify it's a module
+    auto is_mod = expect_ok(env.specs()[*mod_idx].func({seq}));
+    BOOST_TEST(is_mod == True);
+
+    // Forward pass
+    auto input = expect_ok(tf::make_tensor(heap, torch::randn({1, 4}, torch::kFloat64)));
+    auto output = expect_ok(env.specs()[*fwd_idx].func({seq, input}));
+    auto* tp = heap.try_get_as<ObjectKind::Tensor, TensorPtr>(ops::payload(output));
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({1, 2}));
+
+    // Verify parameters are accessible (weight+bias from both linears = 4 tensors)
+    auto params = expect_ok(env.specs()[*par_idx].func({seq}));
+    BOOST_TEST(count_list(heap, params) == 4);
+}
+
+BOOST_AUTO_TEST_CASE(prim_nn_sequential_single_layer) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto lin_idx = *env.lookup("nn/linear");
+    auto seq_idx = *env.lookup("nn/sequential");
+    auto fwd_idx = *env.lookup("nn/forward");
+
+    auto l1  = expect_ok(env.specs()[lin_idx].func({mk(3), mk(2)}));
+    auto seq = expect_ok(env.specs()[seq_idx].func({l1}));
+
+    auto input  = expect_ok(tf::make_tensor(heap, torch::randn({1, 3}, torch::kFloat64)));
+    auto output = expect_ok(env.specs()[fwd_idx].func({seq, input}));
+    auto* tp = get_tensor(heap, output);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({1, 2}));
+}
+
+BOOST_AUTO_TEST_CASE(prim_nn_sequential_deep_network) {
+    // 5-layer network mirroring causal_demo: 2 → 32 → ReLU → 16 → ReLU → 1
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto lin_idx  = *env.lookup("nn/linear");
+    auto relu_idx = *env.lookup("nn/relu-layer");
+    auto seq_idx  = *env.lookup("nn/sequential");
+    auto fwd_idx  = *env.lookup("nn/forward");
+    auto par_idx  = *env.lookup("nn/parameters");
+
+    auto l1 = expect_ok(env.specs()[lin_idx].func({mk(2), mk(32)}));
+    auto r1 = expect_ok(env.specs()[relu_idx].func({}));
+    auto l2 = expect_ok(env.specs()[lin_idx].func({mk(32), mk(16)}));
+    auto r2 = expect_ok(env.specs()[relu_idx].func({}));
+    auto l3 = expect_ok(env.specs()[lin_idx].func({mk(16), mk(1)}));
+
+    auto seq = expect_ok(env.specs()[seq_idx].func({l1, r1, l2, r2, l3}));
+
+    // Forward with batch of 5
+    auto input  = expect_ok(tf::make_tensor(heap, torch::randn({5, 2}, torch::kFloat64)));
+    auto output = expect_ok(env.specs()[fwd_idx].func({seq, input}));
+    auto* tp = get_tensor(heap, output);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({5, 1}));
+
+    // 3 linear layers × (weight + bias) = 6 parameter tensors
+    auto params = expect_ok(env.specs()[par_idx].func({seq}));
+    BOOST_TEST(count_list(heap, params) == 6);
+}
+
+BOOST_AUTO_TEST_CASE(prim_nn_sequential_with_sigmoid) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto lin_idx = *env.lookup("nn/linear");
+    auto sig_idx = *env.lookup("nn/sigmoid-layer");
+    auto seq_idx = *env.lookup("nn/sequential");
+    auto fwd_idx = *env.lookup("nn/forward");
+
+    auto l1  = expect_ok(env.specs()[lin_idx].func({mk(4), mk(2)}));
+    auto sig = expect_ok(env.specs()[sig_idx].func({}));
+    auto seq = expect_ok(env.specs()[seq_idx].func({l1, sig}));
+
+    auto input  = expect_ok(tf::make_tensor(heap, torch::randn({1, 4}, torch::kFloat64)));
+    auto output = expect_ok(env.specs()[fwd_idx].func({seq, input}));
+    auto* tp = get_tensor(heap, output);
+    BOOST_REQUIRE(tp);
+    // Sigmoid outputs are in (0, 1)
+    BOOST_TEST(tp->tensor.min().item<double>() >= 0.0);
+    BOOST_TEST(tp->tensor.max().item<double>() <= 1.0);
+}
+
+BOOST_AUTO_TEST_CASE(prim_nn_sequential_with_dropout) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk     = [](int64_t v)  { return expect_ok(ops::encode(v)); };
+    auto mk_dbl = [](double v)   { return expect_ok(ops::encode(v)); };
+    auto lin_idx  = *env.lookup("nn/linear");
+    auto drop_idx = *env.lookup("nn/dropout");
+    auto seq_idx  = *env.lookup("nn/sequential");
+    auto fwd_idx  = *env.lookup("nn/forward");
+    auto par_idx  = *env.lookup("nn/parameters");
+
+    auto l1   = expect_ok(env.specs()[lin_idx].func({mk(4), mk(4)}));
+    auto drop = expect_ok(env.specs()[drop_idx].func({mk_dbl(0.5)}));
+    auto l2   = expect_ok(env.specs()[lin_idx].func({mk(4), mk(1)}));
+    auto seq  = expect_ok(env.specs()[seq_idx].func({l1, drop, l2}));
+
+    // Forward pass should work — just verify it produces valid output
+    auto input = expect_ok(tf::make_tensor(heap, torch::ones({1, 4}, torch::kFloat64)));
+    auto out = expect_ok(env.specs()[fwd_idx].func({seq, input}));
+    auto* tp = get_tensor(heap, out);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({1, 1}));
+
+    // Parameters should come from the two linear layers (dropout has none)
+    auto params = expect_ok(env.specs()[par_idx].func({seq}));
+    BOOST_TEST(count_list(heap, params) == 4);  // l1 weight+bias + l2 weight+bias
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// nn/train! and nn/eval! via primitives
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_nn_train_eval_mode) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk_dbl   = [](double v) { return expect_ok(ops::encode(v)); };
+    auto drop_idx  = *env.lookup("nn/dropout");
+    auto train_idx = *env.lookup("nn/train!");
+    auto eval_idx  = *env.lookup("nn/eval!");
+    auto fwd_idx   = *env.lookup("nn/forward");
+
+    auto drop = expect_ok(env.specs()[drop_idx].func({mk_dbl(0.5)}));
+
+    // In eval mode, dropout should be identity
+    env.specs()[eval_idx].func({drop});
+    auto input = expect_ok(tf::make_tensor(heap, torch::ones({100}, torch::kFloat64)));
+    auto out_eval = expect_ok(env.specs()[fwd_idx].func({drop, input}));
+    auto* tp = get_tensor(heap, out_eval);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(std::abs(tp->tensor.sum().item<double>() - 100.0) < 1e-10);
+
+    // Switch back to train mode — output should differ from identity
+    // (statistically, with p=0.5 on 100 elements, sum should be ~100 after
+    //  scaling but individual elements are zeroed; just verify it runs)
+    env.specs()[train_idx].func({drop});
+    auto out_train = expect_ok(env.specs()[fwd_idx].func({drop, input}));
+    BOOST_REQUIRE(get_tensor(heap, out_train));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tensor creation primitives via env (arange, linspace, zeros, randn)
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_torch_zeros_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto two  = mk(2);
+    auto tail = expect_ok(make_cons(heap, mk(3), Nil));
+    auto shape = expect_ok(make_cons(heap, two, tail));
+
+    auto result = expect_ok(env.specs()[*env.lookup("torch/zeros")].func({shape}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({2, 3}));
+    BOOST_TEST(tp->tensor.sum().item<double>() == 0.0);
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_arange_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk_dbl = [](double v) { return expect_ok(ops::encode(v)); };
+    auto result = expect_ok(env.specs()[*env.lookup("torch/arange")].func(
+        {mk_dbl(0.0), mk_dbl(5.0), mk_dbl(1.0)}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.numel() == 5);
+    BOOST_TEST(tp->tensor[0].item<double>() == 0.0);
+    BOOST_TEST(tp->tensor[4].item<double>() == 4.0);
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_linspace_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk = [](double v) { return expect_ok(ops::encode(v)); };
+    auto mk_i = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto result = expect_ok(env.specs()[*env.lookup("torch/linspace")].func(
+        {mk(0.0), mk(1.0), mk_i(5)}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.numel() == 5);
+    BOOST_TEST(std::abs(tp->tensor[0].item<double>() - 0.0) < 1e-10);
+    BOOST_TEST(std::abs(tp->tensor[4].item<double>() - 1.0) < 1e-10);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Arithmetic primitives via env (sub, mul, div, dot)
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_torch_sub_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto a = expect_ok(tf::make_tensor(heap, torch::tensor({5.0, 3.0}, torch::kFloat64)));
+    auto b = expect_ok(tf::make_tensor(heap, torch::tensor({2.0, 1.0}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/sub")].func({a, b}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor[0].item<double>() == 3.0);
+    BOOST_TEST(tp->tensor[1].item<double>() == 2.0);
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_mul_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto a = expect_ok(tf::make_tensor(heap, torch::tensor({2.0, 3.0}, torch::kFloat64)));
+    auto b = expect_ok(tf::make_tensor(heap, torch::tensor({4.0, 5.0}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/mul")].func({a, b}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor[0].item<double>() == 8.0);
+    BOOST_TEST(tp->tensor[1].item<double>() == 15.0);
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_div_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto a = expect_ok(tf::make_tensor(heap, torch::tensor({6.0, 9.0}, torch::kFloat64)));
+    auto b = expect_ok(tf::make_tensor(heap, torch::tensor({2.0, 3.0}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/div")].func({a, b}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor[0].item<double>() == 3.0);
+    BOOST_TEST(tp->tensor[1].item<double>() == 3.0);
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_matmul_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto a = expect_ok(tf::make_tensor(heap, torch::ones({2, 3}, torch::kFloat64)));
+    auto b = expect_ok(tf::make_tensor(heap, torch::ones({3, 4}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/matmul")].func({a, b}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({2, 4}));
+    BOOST_TEST(tp->tensor[0][0].item<double>() == 3.0);
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_dot_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto a = expect_ok(tf::make_tensor(heap, torch::tensor({1.0, 2.0, 3.0}, torch::kFloat64)));
+    auto b = expect_ok(tf::make_tensor(heap, torch::tensor({4.0, 5.0, 6.0}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/dot")].func({a, b}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.item<double>() == 32.0);  // 1*4 + 2*5 + 3*6
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Unary ops via env
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_unary_ops_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto t_val = expect_ok(tf::make_tensor(heap, torch::tensor({-2.0, 0.0, 3.0}, torch::kFloat64)));
+
+    // neg
+    auto neg_r = expect_ok(env.specs()[*env.lookup("torch/neg")].func({t_val}));
+    BOOST_TEST(get_tensor(heap, neg_r)->tensor[0].item<double>() == 2.0);
+
+    // abs
+    auto abs_r = expect_ok(env.specs()[*env.lookup("torch/abs")].func({t_val}));
+    BOOST_TEST(get_tensor(heap, abs_r)->tensor[0].item<double>() == 2.0);
+
+    // relu
+    auto relu_r = expect_ok(env.specs()[*env.lookup("torch/relu")].func({t_val}));
+    BOOST_TEST(get_tensor(heap, relu_r)->tensor[0].item<double>() == 0.0);
+    BOOST_TEST(get_tensor(heap, relu_r)->tensor[2].item<double>() == 3.0);
+
+    // sigmoid — output in (0, 1)
+    auto sig_r = expect_ok(env.specs()[*env.lookup("torch/sigmoid")].func({t_val}));
+    auto* sig_tp = get_tensor(heap, sig_r);
+    for (int i = 0; i < 3; ++i) {
+        BOOST_TEST(sig_tp->tensor[i].item<double>() > 0.0);
+        BOOST_TEST(sig_tp->tensor[i].item<double>() < 1.0);
+    }
+
+    // tanh — output in (-1, 1)
+    auto tanh_r = expect_ok(env.specs()[*env.lookup("torch/tanh")].func({t_val}));
+    auto* tanh_tp = get_tensor(heap, tanh_r);
+    for (int i = 0; i < 3; ++i) {
+        BOOST_TEST(tanh_tp->tensor[i].item<double>() > -1.0);
+        BOOST_TEST(tanh_tp->tensor[i].item<double>() < 1.0);
+    }
+
+    // exp
+    auto z = expect_ok(tf::make_tensor(heap, torch::zeros({2}, torch::kFloat64)));
+    auto exp_r = expect_ok(env.specs()[*env.lookup("torch/exp")].func({z}));
+    BOOST_TEST(std::abs(get_tensor(heap, exp_r)->tensor[0].item<double>() - 1.0) < 1e-10);
+
+    // log
+    auto ones_val = expect_ok(tf::make_tensor(heap, torch::ones({2}, torch::kFloat64)));
+    auto log_r = expect_ok(env.specs()[*env.lookup("torch/log")].func({ones_val}));
+    BOOST_TEST(std::abs(get_tensor(heap, log_r)->tensor[0].item<double>()) < 1e-10);
+
+    // sqrt
+    auto sq_val = expect_ok(tf::make_tensor(heap, torch::tensor({4.0, 9.0}, torch::kFloat64)));
+    auto sqrt_r = expect_ok(env.specs()[*env.lookup("torch/sqrt")].func({sq_val}));
+    BOOST_TEST(std::abs(get_tensor(heap, sqrt_r)->tensor[0].item<double>() - 2.0) < 1e-10);
+    BOOST_TEST(std::abs(get_tensor(heap, sqrt_r)->tensor[1].item<double>() - 3.0) < 1e-10);
+}
+
+BOOST_AUTO_TEST_CASE(prim_softmax_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto t_val = expect_ok(tf::make_tensor(heap, torch::tensor({1.0, 2.0, 3.0}, torch::kFloat64)));
+    auto dim = expect_ok(ops::encode(int64_t(0)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/softmax")].func({t_val, dim}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    // Softmax sums to 1.0
+    BOOST_TEST(std::abs(tp->tensor.sum().item<double>() - 1.0) < 1e-10);
+    // All elements positive
+    BOOST_TEST(tp->tensor.min().item<double>() > 0.0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Shape ops via env
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_shape_ops_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk_i = [](int64_t v) { return expect_ok(ops::encode(v)); };
+
+    // Create a (2, 3) tensor
+    auto t_val = expect_ok(tf::make_tensor(heap, torch::ones({2, 3}, torch::kFloat64)));
+
+    // shape
+    auto shape_r = expect_ok(env.specs()[*env.lookup("torch/shape")].func({t_val}));
+    auto shape_vec = list_to_shape(shape_r, heap);
+    BOOST_TEST(shape_vec.size() == 2);
+    BOOST_TEST(shape_vec[0] == 2);
+    BOOST_TEST(shape_vec[1] == 3);
+
+    // reshape to (3, 2)
+    auto new_shape = expect_ok(make_cons(heap, mk_i(2), Nil));
+    new_shape = expect_ok(make_cons(heap, mk_i(3), new_shape));
+    auto reshaped = expect_ok(env.specs()[*env.lookup("torch/reshape")].func({t_val, new_shape}));
+    auto* rp = get_tensor(heap, reshaped);
+    BOOST_REQUIRE(rp);
+    BOOST_TEST(rp->tensor.sizes() == std::vector<int64_t>({3, 2}));
+
+    // transpose
+    auto transposed = expect_ok(env.specs()[*env.lookup("torch/transpose")].func(
+        {t_val, mk_i(0), mk_i(1)}));
+    auto* trp = get_tensor(heap, transposed);
+    BOOST_REQUIRE(trp);
+    BOOST_TEST(trp->tensor.sizes() == std::vector<int64_t>({3, 2}));
+
+    // unsqueeze
+    auto unsq = expect_ok(env.specs()[*env.lookup("torch/unsqueeze")].func({t_val, mk_i(0)}));
+    auto* up = get_tensor(heap, unsq);
+    BOOST_REQUIRE(up);
+    BOOST_TEST(up->tensor.sizes() == std::vector<int64_t>({1, 2, 3}));
+
+    // squeeze
+    auto squeezed = expect_ok(env.specs()[*env.lookup("torch/squeeze")].func({unsq}));
+    auto* sp = get_tensor(heap, squeezed);
+    BOOST_REQUIRE(sp);
+    BOOST_TEST(sp->tensor.sizes() == std::vector<int64_t>({2, 3}));
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_cat_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto a = expect_ok(tf::make_tensor(heap, torch::ones({2, 3}, torch::kFloat64)));
+    auto b = expect_ok(tf::make_tensor(heap, torch::zeros({2, 3}, torch::kFloat64)));
+    // Build list (a b)
+    auto lst = expect_ok(make_cons(heap, b, Nil));
+    lst = expect_ok(make_cons(heap, a, lst));
+    auto dim = expect_ok(ops::encode(int64_t(0)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/cat")].func({lst, dim}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({4, 3}));
+    BOOST_TEST(tp->tensor.sum().item<double>() == 6.0);  // 2*3 ones + 2*3 zeros
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Reduction primitives via env
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_reductions_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto t_val = expect_ok(tf::make_tensor(heap, torch::tensor({1.0, 5.0, 3.0, 2.0}, torch::kFloat64)));
+
+    // sum
+    auto sum_r = expect_ok(env.specs()[*env.lookup("torch/sum")].func({t_val}));
+    BOOST_TEST(get_tensor(heap, sum_r)->tensor.item<double>() == 11.0);
+
+    // mean
+    auto mean_r = expect_ok(env.specs()[*env.lookup("torch/mean")].func({t_val}));
+    BOOST_TEST(std::abs(get_tensor(heap, mean_r)->tensor.item<double>() - 2.75) < 1e-10);
+
+    // max
+    auto max_r = expect_ok(env.specs()[*env.lookup("torch/max")].func({t_val}));
+    BOOST_TEST(get_tensor(heap, max_r)->tensor.item<double>() == 5.0);
+
+    // min
+    auto min_r = expect_ok(env.specs()[*env.lookup("torch/min")].func({t_val}));
+    BOOST_TEST(get_tensor(heap, min_r)->tensor.item<double>() == 1.0);
+
+    // argmax → index 1 (value 5.0)
+    auto amax_r = expect_ok(env.specs()[*env.lookup("torch/argmax")].func({t_val}));
+    BOOST_TEST(get_tensor(heap, amax_r)->tensor.item<int64_t>() == 1);
+
+    // argmin → index 0 (value 1.0)
+    auto amin_r = expect_ok(env.specs()[*env.lookup("torch/argmin")].func({t_val}));
+    BOOST_TEST(get_tensor(heap, amin_r)->tensor.item<int64_t>() == 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Conversion primitives via env (numel, to-list)
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_torch_numel_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto t_val = expect_ok(tf::make_tensor(heap, torch::ones({3, 4}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/numel")].func({t_val}));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_TEST(*decoded == 12);
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_to_list_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto t_val = expect_ok(tf::make_tensor(heap, torch::tensor({1.0, 2.0, 3.0}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/to-list")].func({t_val}));
+    BOOST_TEST(count_list(heap, result) == 3);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Autograd primitives via env (requires-grad!, requires-grad?, detach, zero-grad!)
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_autograd_full_cycle_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    // Create a tensor and enable grad tracking
+    auto t_val = expect_ok(tf::make_tensor(heap, torch::tensor(4.0, torch::kFloat64)));
+    auto rg_set = expect_ok(env.specs()[*env.lookup("torch/requires-grad!")].func({t_val, True}));
+    BOOST_TEST(rg_set == t_val);  // returns same handle
+
+    // requires-grad? should be true
+    auto rg_q = expect_ok(env.specs()[*env.lookup("torch/requires-grad?")].func({t_val}));
+    BOOST_TEST(rg_q == True);
+
+    // y = x * x, backward, check grad = 2*4 = 8
+    auto* xp = get_tensor(heap, t_val);
+    auto y_t = xp->tensor * xp->tensor;
+    auto y_val = expect_ok(tf::make_tensor(heap, y_t));
+    env.specs()[*env.lookup("torch/backward")].func({y_val});
+    auto gr = expect_ok(env.specs()[*env.lookup("torch/grad")].func({t_val}));
+    BOOST_TEST(std::abs(get_tensor(heap, gr)->tensor.item<double>() - 8.0) < 1e-10);
+
+    // zero-grad!
+    env.specs()[*env.lookup("torch/zero-grad!")].func({t_val});
+    auto gr2 = expect_ok(env.specs()[*env.lookup("torch/grad")].func({t_val}));
+    BOOST_TEST(std::abs(get_tensor(heap, gr2)->tensor.item<double>()) < 1e-10);
+
+    // detach
+    auto det = expect_ok(env.specs()[*env.lookup("torch/detach")].func({t_val}));
+    auto rg_det = expect_ok(env.specs()[*env.lookup("torch/requires-grad?")].func({det}));
+    BOOST_TEST(rg_det == False);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Loss functions via env (L1, cross-entropy)
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_l1_loss_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto pred   = expect_ok(tf::make_tensor(heap, torch::tensor({1.0, 2.0, 3.0}, torch::kFloat64)));
+    auto target = expect_ok(tf::make_tensor(heap, torch::tensor({2.0, 2.0, 2.0}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("nn/l1-loss")].func({pred, target}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    // L1 = (|1-2| + |2-2| + |3-2|) / 3 = 2/3
+    BOOST_TEST(std::abs(tp->tensor.item<double>() - 2.0/3.0) < 1e-10);
+}
+
+BOOST_AUTO_TEST_CASE(prim_mse_loss_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto pred   = expect_ok(tf::make_tensor(heap, torch::tensor({1.0, 2.0, 3.0}, torch::kFloat64)));
+    auto target = expect_ok(tf::make_tensor(heap, torch::tensor({1.0, 2.0, 3.0}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("nn/mse-loss")].func({pred, target}));
+    BOOST_TEST(std::abs(get_tensor(heap, result)->tensor.item<double>()) < 1e-10);
+}
+
+BOOST_AUTO_TEST_CASE(prim_cross_entropy_loss_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    // logits for 2-sample, 3-class classification
+    auto logits  = expect_ok(tf::make_tensor(heap, torch::tensor({{2.0, 1.0, 0.1}, {0.1, 0.2, 3.0}}, torch::kFloat64)));
+    auto targets = expect_ok(tf::make_tensor(heap, torch::tensor({0, 2}, torch::kLong)));
+    auto result  = expect_ok(env.specs()[*env.lookup("nn/cross-entropy-loss")].func({logits, targets}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.item<double>() > 0.0);  // loss should be positive
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Optimizer primitives via env (sgd, adam, step!, zero-grad!, optimizer?)
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_optimizer_full_cycle_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto mk_dbl = [](double v) { return expect_ok(ops::encode(v)); };
+
+    // Create a linear layer and both optimizer types
+    auto lin = expect_ok(env.specs()[*env.lookup("nn/linear")].func({mk(2), mk(1)}));
+
+    auto sgd_opt = expect_ok(env.specs()[*env.lookup("optim/sgd")].func({lin, mk_dbl(0.01)}));
+    BOOST_TEST(expect_ok(env.specs()[*env.lookup("optim/optimizer?")].func({sgd_opt})) == True);
+    BOOST_TEST(expect_ok(env.specs()[*env.lookup("optim/optimizer?")].func({lin})) == False);
+
+    auto adam_opt = expect_ok(env.specs()[*env.lookup("optim/adam")].func({lin, mk_dbl(0.001)}));
+    BOOST_TEST(expect_ok(env.specs()[*env.lookup("optim/optimizer?")].func({adam_opt})) == True);
+
+    // zero-grad! and step! should not crash
+    auto zg = env.specs()[*env.lookup("optim/zero-grad!")].func({sgd_opt});
+    BOOST_TEST(zg.has_value());
+    auto st = env.specs()[*env.lookup("optim/step!")].func({sgd_opt});
+    BOOST_TEST(st.has_value());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// nn/linear via env
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_nn_linear_forward_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto lin = expect_ok(env.specs()[*env.lookup("nn/linear")].func({mk(4), mk(2)}));
+
+    // module? should be true
+    BOOST_TEST(expect_ok(env.specs()[*env.lookup("nn/module?")].func({lin})) == True);
+
+    // parameters: weight (4×2) + bias (2) = 2 tensors
+    auto params = expect_ok(env.specs()[*env.lookup("nn/parameters")].func({lin}));
+    BOOST_TEST(count_list(heap, params) == 2);
+
+    // forward
+    auto input  = expect_ok(tf::make_tensor(heap, torch::randn({1, 4}, torch::kFloat64)));
+    auto output = expect_ok(env.specs()[*env.lookup("nn/forward")].func({lin, input}));
+    auto* tp = get_tensor(heap, output);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({1, 2}));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tensor predicate via env
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_tensor_predicate_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto t_val = expect_ok(tf::make_tensor(heap, torch::ones({2}, torch::kFloat64)));
+    auto r1 = expect_ok(env.specs()[*env.lookup("torch/tensor?")].func({t_val}));
+    BOOST_TEST(r1 == True);
+
+    // A non-tensor (fixnum) should return false
+    auto fixnum = expect_ok(ops::encode(int64_t(42)));
+    auto r2 = expect_ok(env.specs()[*env.lookup("torch/tensor?")].func({fixnum}));
+    BOOST_TEST(r2 == False);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// End-to-end: sequential training loop via Eta primitives
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_sequential_training_converges_via_env) {
+    Heap heap(1ull << 24);  // 16 MB — training allocates many tensors
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk  = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto mk_dbl = [](double v) { return expect_ok(ops::encode(v)); };
+
+    auto lin_idx  = *env.lookup("nn/linear");
+    auto relu_idx = *env.lookup("nn/relu-layer");
+    auto seq_idx  = *env.lookup("nn/sequential");
+    auto fwd_idx  = *env.lookup("nn/forward");
+    auto adam_idx = *env.lookup("optim/adam");
+    auto zg_idx   = *env.lookup("optim/zero-grad!");
+    auto step_idx = *env.lookup("optim/step!");
+    auto mse_idx  = *env.lookup("nn/mse-loss");
+    auto bw_idx   = *env.lookup("torch/backward");
+    auto item_idx = *env.lookup("torch/item");
+
+    // Network: 1 → 8 → ReLU → 1
+    auto l1  = expect_ok(env.specs()[lin_idx].func({mk(1), mk(8)}));
+    auto r1  = expect_ok(env.specs()[relu_idx].func({}));
+    auto l2  = expect_ok(env.specs()[lin_idx].func({mk(8), mk(1)}));
+    auto net = expect_ok(env.specs()[seq_idx].func({l1, r1, l2}));
+
+    auto opt = expect_ok(env.specs()[adam_idx].func({net, mk_dbl(0.01)}));
+
+    auto x = expect_ok(tf::make_tensor(heap,
+        torch::tensor({{1.0},{2.0},{3.0},{4.0}}, torch::kFloat64)));
+    auto y = expect_ok(tf::make_tensor(heap,
+        torch::tensor({{3.0},{5.0},{7.0},{9.0}}, torch::kFloat64)));
+
+    double first_loss = 0, last_loss = 0;
+    for (int epoch = 0; epoch < 300; ++epoch) {
+        env.specs()[zg_idx].func({opt});
+        auto pred = expect_ok(env.specs()[fwd_idx].func({net, x}));
+        auto loss = expect_ok(env.specs()[mse_idx].func({pred, y}));
+        env.specs()[bw_idx].func({loss});
+        env.specs()[step_idx].func({opt});
+        auto lv = expect_ok(env.specs()[item_idx].func({loss}));
+        double d = std::bit_cast<double>(lv);
+        if (epoch == 0) first_loss = d;
+        if (epoch == 299) last_loss = d;
+    }
+    BOOST_TEST(last_loss < first_loss);
+    BOOST_TEST(last_loss < 1.0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Error paths — wrong argument types should return errors, not crash
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(prim_error_paths) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto fixnum = expect_ok(ops::encode(int64_t(42)));
+
+    // torch/add with non-tensor args
+    auto r1 = env.specs()[*env.lookup("torch/add")].func({fixnum, fixnum});
+    BOOST_TEST(!r1.has_value());
+
+    // nn/forward with non-module first arg
+    auto t_val = expect_ok(tf::make_tensor(heap, torch::ones({2}, torch::kFloat64)));
+    auto r2 = env.specs()[*env.lookup("nn/forward")].func({fixnum, t_val});
+    BOOST_TEST(!r2.has_value());
+
+    // nn/forward with non-tensor second arg
+    auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto lin = expect_ok(env.specs()[*env.lookup("nn/linear")].func({mk(2), mk(1)}));
+    auto r3 = env.specs()[*env.lookup("nn/forward")].func({lin, fixnum});
+    BOOST_TEST(!r3.has_value());
+
+    // torch/item on non-scalar tensor
+    auto multi = expect_ok(tf::make_tensor(heap, torch::ones({3}, torch::kFloat64)));
+    auto r4 = env.specs()[*env.lookup("torch/item")].func({multi});
+    BOOST_TEST(!r4.has_value());
+
+    // optim/sgd with non-module
+    auto r5 = env.specs()[*env.lookup("optim/sgd")].func({fixnum, expect_ok(ops::encode(0.01))});
+    BOOST_TEST(!r5.has_value());
+
+    // nn/sequential with non-module arg
+    auto r6 = env.specs()[*env.lookup("nn/sequential")].func({fixnum});
+    BOOST_TEST(!r6.has_value());
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 

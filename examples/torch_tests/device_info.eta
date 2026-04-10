@@ -1,0 +1,56 @@
+;;; torch_tests/device_info.eta — Device management primitives
+;;;
+;;; Tests: gpu-available?, gpu-count, device, to-device, to-cpu
+;;;
+;;; Run:  etai examples/torch_tests/device_info.eta
+
+(module torch-test-device-info
+  (import std.core)
+  (import std.io)
+  (import std.torch)
+  (import std.test)
+  (begin
+
+    (define results
+      (run (make-group "Device Info"
+        (list
+
+          (make-test "gpu-available? returns boolean"
+            (lambda ()
+              (let ((r (gpu-available?)))
+                (assert-true (or (eq? r #t) (eq? r #f))
+                  "gpu-available? should return bool"))))
+
+          (make-test "gpu-count returns non-negative"
+            (lambda ()
+              (assert-true (>= (gpu-count) 0)
+                "gpu-count >= 0")))
+
+          (make-test "tensor device is cpu"
+            (lambda ()
+              (let ((d (device (ones '(2 3)))))
+                (assert-true (string? d) "device should return string")
+                ;; The device string for CPU tensors is "cpu"
+                (assert-equal "cpu" d "device should be cpu"))))
+
+          (make-test "to-cpu roundtrip"
+            (lambda ()
+              (let* ((t (ones '(3)))
+                     (c (to-cpu t)))
+                (assert-true (tensor? c) "to-cpu returns tensor")
+                (assert-equal 3 (numel c))
+                (assert-equal 3.0 (item (tsum c))))))
+
+          (make-test "to-device cpu"
+            (lambda ()
+              (let* ((t (ones '(2)))
+                     (c (to-device t "cpu")))
+                (assert-equal "cpu" (device c)))))
+
+        ))))
+
+    (print-summary (summary results))
+    (assert-equal 0 (summary-failed (summary results)) "device tests failed")
+  ))
+
+

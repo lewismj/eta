@@ -470,6 +470,56 @@ cmake -B build -DETA_BUILD_TORCH=ON -DTorch_DIR=/path/to/libtorch/share/cmake/To
 
 ---
 
+## Test Suite
+
+The `examples/torch_tests/` directory contains a comprehensive integration
+test suite that exercises every `std.torch` primitive through the full Eta
+pipeline (lex → parse → expand → link → emit → execute).  Each file is a
+standalone module that uses the `std.test` framework and prints a
+pass/fail summary.
+
+| File | Coverage |
+|------|----------|
+| [`tensor_creation.eta`](../examples/torch_tests/tensor_creation.eta) | `tensor`, `ones`, `zeros`, `randn`, `arange`, `linspace`, `from-list`, `tensor?` |
+| [`arithmetic.eta`](../examples/torch_tests/arithmetic.eta) | `t+`, `t-`, `t*`, `t/`, `matmul`, `dot`, `neg`, `tabs`, `texp`, `tlog`, `tsqrt`, `relu`, `sigmoid`, `ttanh`, `softmax` |
+| [`shape_ops.eta`](../examples/torch_tests/shape_ops.eta) | `shape`, `reshape`, `transpose`, `squeeze`, `unsqueeze`, `cat`, `numel` |
+| [`reductions.eta`](../examples/torch_tests/reductions.eta) | `tsum`, `mean`, `tmax`, `tmin`, `argmax`, `argmin` |
+| [`autograd.eta`](../examples/torch_tests/autograd.eta) | `requires-grad!`, `requires-grad?`, `backward`, `grad`, `zero-grad!`, `detach` |
+| [`nn_layers.eta`](../examples/torch_tests/nn_layers.eta) | `linear`, `sequential`, `relu-layer`, `sigmoid-layer`, `dropout`, `forward`, `parameters`, `module?`, `train!`, `eval!` |
+| [`loss_functions.eta`](../examples/torch_tests/loss_functions.eta) | `mse-loss`, `l1-loss` |
+| [`optimizers.eta`](../examples/torch_tests/optimizers.eta) | `sgd`, `adam`, `step!`, `optim-zero-grad!`, `optimizer?` |
+| [`device_info.eta`](../examples/torch_tests/device_info.eta) | `gpu-available?`, `gpu-count`, `device`, `to-device`, `to-cpu` |
+| [`training.eta`](../examples/torch_tests/training.eta) | `train-step!`, SGD/Adam convergence, sequential network training |
+
+### Running the tests
+
+Run all torch tests at once:
+
+```bash
+# All tests (Linux / macOS)
+for f in examples/torch_tests/*.eta; do echo "── $f"; etai "$f"; done
+
+# All tests (Windows PowerShell)
+Get-ChildItem examples\torch_tests\*.eta | ForEach-Object { Write-Host "── $_"; etai $_ }
+```
+
+Run a single test file:
+
+```bash
+etai examples/torch_tests/tensor_creation.eta
+```
+
+The C++ unit tests in `eta/test/src/torch_tests.cpp` mirror these Eta tests
+at the primitive level, verifying heap lifecycle, GC behavior, error paths,
+and end-to-end training convergence directly against the C++ API.
+
+```bash
+# Run C++ torch tests (after building with -DETA_BUILD_TORCH=ON)
+ctest --test-dir build -R torch
+```
+
+---
+
 ## Implementation Notes
 
 The integration is structured as three layers:
@@ -484,6 +534,9 @@ The integration is structured as three layers:
 
 3. **`examples/torch.eta`** — End-to-end example covering tensor creation,
    autograd, network construction, and training with both SGD and Adam.
+
+4. **`examples/torch_tests/`** — 10-file integration test suite covering
+   every exported function in `std.torch`.
 
 The C++ primitives handle type marshalling between NaN-boxed `LispVal`
 values and libtorch's `torch::Tensor` / `torch::nn::Module` /

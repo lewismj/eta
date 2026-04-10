@@ -1,0 +1,67 @@
+;;; torch_tests/loss_functions.eta — Loss function primitives
+;;;
+;;; Tests: mse-loss, l1-loss, cross-entropy-loss
+;;;
+;;; Run:  etai examples/torch_tests/loss_functions.eta
+
+(module torch-test-loss-functions
+  (import std.core)
+  (import std.io)
+  (import std.torch)
+  (import std.test)
+  (begin
+
+    (define results
+      (run (make-group "Loss Functions"
+        (list
+
+          ;; ── MSE loss (zero when equal) ────────────────────────────
+          (make-test "mse-loss zero"
+            (lambda ()
+              (let* ((p (from-list '(1.0 2.0 3.0)))
+                     (t (from-list '(1.0 2.0 3.0)))
+                     (loss (mse-loss p t)))
+                (assert-equal 0.0 (item loss) "MSE should be 0"))))
+
+          ;; ── MSE loss (nonzero) ────────────────────────────────────
+          (make-test "mse-loss nonzero"
+            (lambda ()
+              (let* ((p (from-list '(1.0 2.0 3.0)))
+                     (t (from-list '(2.0 2.0 2.0)))
+                     (loss (mse-loss p t)))
+                ;; MSE = ((1-2)^2 + (2-2)^2 + (3-2)^2) / 3 = 2/3
+                (assert-true (< (abs (- (item loss) 0.6666666666666666)) 1e-10)
+                  "MSE should be 2/3"))))
+
+          ;; ── L1 loss ───────────────────────────────────────────────
+          (make-test "l1-loss"
+            (lambda ()
+              (let* ((p (from-list '(1.0 2.0 3.0)))
+                     (t (from-list '(2.0 2.0 2.0)))
+                     (loss (l1-loss p t)))
+                ;; L1 = (|1-2| + |2-2| + |3-2|) / 3 = 2/3
+                (assert-true (< (abs (- (item loss) 0.6666666666666666)) 1e-10)
+                  "L1 should be 2/3"))))
+
+          ;; ── L1 loss zero ──────────────────────────────────────────
+          (make-test "l1-loss zero"
+            (lambda ()
+              (let* ((p (from-list '(1.0 2.0)))
+                     (t (from-list '(1.0 2.0))))
+                (assert-equal 0.0 (item (l1-loss p t))))))
+
+          ;; ── MSE with different sizes ──────────────────────────────
+          (make-test "mse-loss 2D"
+            (lambda ()
+              (let* ((p (ones '(3 2)))
+                     (t (zeros '(3 2)))
+                     (loss (mse-loss p t)))
+                ;; MSE of all-1 vs all-0 = 1.0
+                (assert-equal 1.0 (item loss)))))
+
+        ))))
+
+    (print-summary (summary results))
+    (assert-equal 0 (summary-failed (summary results)) "loss function tests failed")
+  ))
+

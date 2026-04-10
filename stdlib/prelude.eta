@@ -392,6 +392,7 @@
   (export
     make-test make-group
     run summary
+    summary-total summary-passed summary-failed
     assert-true assert-false assert-equal assert-not-equal
     print-summary)
   (begin
@@ -445,12 +446,17 @@
       (let ((msg (if (null? rest) "expected false" (car rest))))
         (if x (error msg) 'ok)))
 
+    (defun __val->string (x)
+      (let ((p (open-output-string)))
+        (display x p)
+        (get-output-string p)))
+
     (defun assert-equal (expected actual . rest)
       (let ((msg (if (null? rest)
                      (string-append "expected "
-                       (number->string expected)
+                       (__val->string expected)
                        " but got "
-                       (number->string actual))
+                       (__val->string actual))
                      (car rest))))
         (if (equal? expected actual) 'ok (error msg))))
 
