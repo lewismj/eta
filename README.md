@@ -22,7 +22,7 @@
 </p>
 <br>
 <p align="center">
-Language Guide</p>
+<strong>Language Guide</strong></p>
 <p align="center">
   <a href="docs/examples.md">Basics</a> ·
   <a href="docs/aad.md">Reverse Mode AAD Example w/XVA</a> ·
