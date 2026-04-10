@@ -1,4 +1,4 @@
-# Causal Neural Factor Analysis — Showcase
+# End-to-End Causal Pipeline — Symbolic → Causal → Logic → Neural
 
 [← Back to README](../README.md) · [Examples](examples.md) ·
 [Causal](causal.md) · [Logic](logic.md) · [CLP](clp.md) ·
@@ -8,8 +8,14 @@
 
 ## Overview
 
-[`examples/causal_demo.eta`](../examples/causal_demo.eta) is an example that threads together a number of language features.
-It demonstrates a causal factor analysis pipeline:
+[`examples/causal_demo.eta`](../examples/causal_demo.eta) demonstrates an
+end-to-end causal inference pipeline, combining symbolic algebra, causal
+reasoning, logic search, and neural estimation in a single program.
+Rather than isolated features, each stage feeds the next — illustrating
+how the language supports composable reasoning across paradigms.
+
+This example serves as a **reference pipeline**, showing how multiple
+paradigms interoperate within a single Eta program.
 
 | Section | Pillar               | What it does |
 |---------|----------------------|--------------|
@@ -17,7 +23,7 @@ It demonstrates a causal factor analysis pipeline:
 | **§2** | Causal Reasoning     | Encode a DAG of market variables; derive the back-door adjustment formula with `do:identify` |
 | **§3** | Logic & CLP          | Use `findall` + backtracking to discover all valid adjustment sets; validate with `clp(Z)` domains |
 | **§4** | libTorch Integration | Train a neural network to learn E[return \| beta, sector] |
-| **§5** | Integration          | Plug NN predictions into the causal formula to compute the Average Treatment Effect (ATE) |
+| **§5** | Neural Causal Estimation (ATE) | Plug NN predictions into the causal formula to compute the Average Treatment Effect |
 
 
 ---
@@ -48,9 +54,8 @@ etai examples/causal_demo.eta
 
 ## The Question
 
-> *"Does increasing a portfolio's market-beta exposure actually cause
->  higher excess returns — or does the apparent relationship simply
->  reflect sector-level confounding?"*
+> *"Does increasing a portfolio's market-beta exposure causally increase
+>  returns, or is the relationship driven by sector composition?"*
 
 A naive regression of `stock-return` on `market-beta` conflates two
 paths:
@@ -176,6 +181,8 @@ is exactly the confounding that motivates causal analysis.
 
 ### How the VM handles it
 
+*Under the hood:*
+
 The factor model is a **quoted list** — the compiler emits `LoadConst`
 instructions that push NaN-boxed `ConsPtr` heap objects.  No
 evaluation happens until `diff` pattern-matches on the tree by calling
@@ -242,6 +249,8 @@ we must **stratify by sector** — computing `E[return | beta, sector]`
 within each sector and then averaging over the sector distribution.
 
 ### How the VM handles it
+
+*Under the hood:*
 
 The DAG is a list of 3-element lists `(from -> to)` — plain heap
 `ConsPtr` chains.  `do:identify` is a pure Eta function that:
@@ -337,6 +346,8 @@ immediately.
 ```
 
 ### How the VM handles it
+
+*Under the hood:*
 
 **Logic variables** are heap-allocated objects with tag `LogicVar`.
 `(logic-var)` compiles to the `MakeLogicVar` opcode, which allocates
@@ -449,6 +460,8 @@ in one call.
 
 ### How the VM handles it
 
+*Under the hood:*
+
 **Tensor objects** are heap-allocated `TensorPtr` values — the VM
 stores a `std::shared_ptr<at::Tensor>` inside a GC-managed heap
 object.  When the GC traces reachable objects, tensor pointers
@@ -477,7 +490,7 @@ corresponding C++ function registered in `core_primitives.h`.
 
 ---
 
-## §5 — Neural Back-Door ATE Estimation
+## §5 — Neural Causal Estimation (ATE)
 
 ### What it does
 
@@ -581,7 +594,7 @@ correctly isolates the causal contribution of beta.
       +--------------------------------+
 
   Query:   P(stock-return | do(market-beta))
-  Result:  P(stock-return | do(market-beta)) = Sum_{sector} P(stock-return | market-beta, sector) * P(sector)
+  Result:  P(stock-return | do(market-beta)) = Σ_{sector} P(stock-return | market-beta, sector) · P(sector)
   Adjustment set Z = (sector)
 
 ==========================================================
@@ -657,7 +670,7 @@ correctly isolates the causal contribution of beta.
 ==========================================================
 
   Back-door adjustment formula (from do-calculus):
-    P(stock-return | do(market-beta)) = Sum_{sector} P(stock-return | market-beta, sector) * P(sector)
+    P(stock-return | do(market-beta)) = Σ_{sector} P(stock-return | market-beta, sector) · P(sector)
 
   Per-sector NN predictions (E[return | beta, sector]):
                       beta=0.9     beta=1.2
@@ -678,7 +691,7 @@ correctly isolates the causal contribution of beta.
   Pipeline Summary
 ----------------------------------------------------------
   S1. Symbolic diff  => beta sensitivity depends on sector
-  S2. Do-calculus    => P(return|do(beta)) = Sum_s P(ret|beta,s)*P(s)
+  S2. Do-calculus    => P(return|do(beta)) = Σ_s P(ret|beta,s)·P(s)
   S3. findall + CLP  => {sector} is the unique valid adjustment set
   S4. libtorch NN    => learned E[return | beta, sector]
   S5. Neural ATE     => causal effect estimated via NN + formula
@@ -689,6 +702,8 @@ correctly isolates the causal contribution of beta.
 ```
 
 ### How the VM handles it
+
+*Under the hood:*
 
 `nn-predict` creates a fresh `[1, 2]` input tensor (`from-list` →
 `reshape` → `TensorPtr`), runs `nn/forward` (libtorch forward pass),
