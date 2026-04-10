@@ -199,7 +199,7 @@ The key insight is that `∂return/∂beta` contains `sector` — the beta
 sensitivity is **not constant** across sectors.  This interaction term
 is exactly the confounding that motivates causal analysis.
 
-[!NOTE]
+>[!NOTE]
 >### How the VM handles it
 >
 >The factor model is a **quoted list** — the compiler emits `LoadConst`
