@@ -200,7 +200,7 @@ sensitivity is **not constant** across sectors.  This interaction term
 is exactly the confounding that motivates causal analysis.
 
 >[!NOTE]
->### How the VM handles it
+>**How the VM handles it**
 >
 >The factor model is a **quoted list** — the compiler emits `LoadConst`
 >instructions that push NaN-boxed `ConsPtr` heap objects.  No
