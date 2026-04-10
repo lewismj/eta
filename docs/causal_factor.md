@@ -248,24 +248,23 @@ The formula tells us: to estimate the causal effect of beta on returns,
 we must **stratify by sector** — computing `E[return | beta, sector]`
 within each sector and then averaging over the sector distribution.
 
-### How the VM handles it
-
-*Under the hood:*
-
-The DAG is a list of 3-element lists `(from -> to)` — plain heap
-`ConsPtr` chains.  `do:identify` is a pure Eta function that:
-
-1. Calls `dag:parents` to find parents of X (= `(sector)`).
-2. Calls `dag:non-descendants` to enumerate candidate adjustment
-   nodes.
-3. Tries each candidate set with `dag:satisfies-backdoor?`, which
-   uses `dag:has-path?` — a DFS reachability test that checks
-   whether a directed path exists from a source to a target while
-   avoiding forbidden nodes.
-
-All graph traversal is implemented as recursive Eta functions over
-lists — no FFI or special VM support.  The VM's tail-call optimization
-keeps the DFS stack bounded.
+> [!NOTE]
+> **How the VM handles it**
+>
+> The DAG is a list of 3-element lists `(from -> to)` — plain heap
+> `ConsPtr` chains.  `do:identify` is a pure Eta function that:
+>
+> 1. Calls `dag:parents` to find parents of X (= `(sector)`).
+> 2. Calls `dag:non-descendants` to enumerate candidate adjustment
+>    nodes.
+> 3. Tries each candidate set with `dag:satisfies-backdoor?`, which
+>    uses `dag:has-path?` — a DFS reachability test that checks
+>    whether a directed path exists from a source to a target while
+>    avoiding forbidden nodes.
+>
+> All graph traversal is implemented as recursive Eta functions over
+> lists — no FFI or special VM support.  The VM's tail-call optimization
+> keeps the DFS stack bounded.
 
 ---
 
@@ -345,33 +344,32 @@ immediately.
     ✓ All weights are valid probabilities in (0,1)
 ```
 
-### How the VM handles it
-
-*Under the hood:*
-
-**Logic variables** are heap-allocated objects with tag `LogicVar`.
-`(logic-var)` compiles to the `MakeLogicVar` opcode, which allocates
-a fresh cell on the GC heap.
-
-**Unification** (`== z cand`) compiles to the `Unify` opcode.  The
-VM's `unify()` method performs Robinson's structural unification:
-- Walk both sides to their root (pointer chasing through bound vars).
-- If one side is unbound, bind it and **push the binding onto the
-  trail** (a stack of `(variable, old-value)` pairs).
-- If both sides are ground, test structural equality.
-
-**Trail management:** `(trail-mark)` → `TrailMark` opcode — pushes the
-current trail stack pointer.  `(unwind-trail mark)` → `UnwindTrail`
-opcode — pops and unbinds every trail entry back to the saved mark.
-This gives `findall` its backtracking: each branch is tried in
-isolation.
-
-**CLP forward checking:** `(clp:domain w-tech 1 99)` calls the C++
-primitive `%clp-domain-z!`, which attaches a `ConstraintStore::Domain`
-to the logic variable.  When `(unify w-tech 33)` fires, the VM's
-`unify()` method checks the domain **before** committing the binding:
-if the ground value 33 is outside [1, 99], unification returns `#f`
-immediately — no search is wasted.
+> [!NOTE]
+> **How the VM handles it**
+>
+> **Logic variables** are heap-allocated objects with tag `LogicVar`.
+> `(logic-var)` compiles to the `MakeLogicVar` opcode, which allocates
+> a fresh cell on the GC heap.
+>
+> **Unification** (`== z cand`) compiles to the `Unify` opcode.  The
+> VM's `unify()` method performs Robinson's structural unification:
+> - Walk both sides to their root (pointer chasing through bound vars).
+> - If one side is unbound, bind it and **push the binding onto the
+>   trail** (a stack of `(variable, old-value)` pairs).
+> - If both sides are ground, test structural equality.
+>
+> **Trail management:** `(trail-mark)` → `TrailMark` opcode — pushes the
+> current trail stack pointer.  `(unwind-trail mark)` → `UnwindTrail`
+> opcode — pops and unbinds every trail entry back to the saved mark.
+> This gives `findall` its backtracking: each branch is tried in
+> isolation.
+>
+> **CLP forward checking:** `(clp:domain w-tech 1 99)` calls the C++
+> primitive `%clp-domain-z!`, which attaches a `ConstraintStore::Domain`
+> to the logic variable.  When `(unify w-tech 33)` fires, the VM's
+> `unify()` method checks the domain **before** committing the binding:
+> if the ground value 33 is outside [1, 99], unification returns `#f`
+> immediately — no search is wasted.
 
 ---
 
@@ -458,35 +456,34 @@ before inference.
 in one call.
 
 
-### How the VM handles it
-
-*Under the hood:*
-
-**Tensor objects** are heap-allocated `TensorPtr` values — the VM
-stores a `std::shared_ptr<at::Tensor>` inside a GC-managed heap
-object.  When the GC traces reachable objects, tensor pointers
-participate in the mark phase; when collected, the destructor releases
-the libtorch tensor memory.
-
-**`nn/sequential`** creates an `NNModulePtr` heap object wrapping a
-`torch::nn::Sequential` container.  Each `nn/linear` and `nn/relu-layer`
-call produces a sub-module pointer that is registered with the
-sequential container.
-
-**`optim/adam`** creates an `OptimizerPtr` heap object wrapping a
-`torch::optim::Adam` instance.  The optimizer holds references to the
-module's parameters (also tensors on the GC heap).
-
-**`train-step!`** is a pure Eta function (defined in `std.torch`) that
-sequences five C++ primitive calls:
-1. `optim/zero-grad!` — clears accumulated gradients
-2. `nn/forward` — runs the forward pass (returns a `TensorPtr`)
-3. The `loss-fn` — here `nn/mse-loss` (returns a scalar `TensorPtr`)
-4. `torch/backward` — triggers libtorch's autograd backward pass
-5. `optim/step!` — updates parameters using the Adam rule
-
-Each of these compiles to a `CallBuiltin` opcode that invokes the
-corresponding C++ function registered in `core_primitives.h`.
+> [!NOTE]
+> **How the VM handles it**
+>
+> **Tensor objects** are heap-allocated `TensorPtr` values — the VM
+> stores a `std::shared_ptr<at::Tensor>` inside a GC-managed heap
+> object.  When the GC traces reachable objects, tensor pointers
+> participate in the mark phase; when collected, the destructor releases
+> the libtorch tensor memory.
+>
+> **`nn/sequential`** creates an `NNModulePtr` heap object wrapping a
+> `torch::nn::Sequential` container.  Each `nn/linear` and `nn/relu-layer`
+> call produces a sub-module pointer that is registered with the
+> sequential container.
+>
+> **`optim/adam`** creates an `OptimizerPtr` heap object wrapping a
+> `torch::optim::Adam` instance.  The optimizer holds references to the
+> module's parameters (also tensors on the GC heap).
+>
+> **`train-step!`** is a pure Eta function (defined in `std.torch`) that
+> sequences five C++ primitive calls:
+> 1. `optim/zero-grad!` — clears accumulated gradients
+> 2. `nn/forward` — runs the forward pass (returns a `TensorPtr`)
+> 3. The `loss-fn` — here `nn/mse-loss` (returns a scalar `TensorPtr`)
+> 4. `torch/backward` — triggers libtorch's autograd backward pass
+> 5. `optim/step!` — updates parameters using the Adam rule
+>
+> Each of these compiles to a `CallBuiltin` opcode that invokes the
+> corresponding C++ function registered in `core_primitives.h`.
 
 ---
 
@@ -560,7 +557,7 @@ returns) and underestimate it for finance.  The back-door adjustment
 — whether implemented with sample means or a neural network —
 correctly isolates the causal contribution of beta.
 
-### Output
+### Actual Output
 
 ```console
 ==========================================================
@@ -701,18 +698,17 @@ correctly isolates the causal contribution of beta.
 
 ```
 
-### How the VM handles it
-
-*Under the hood:*
-
-`nn-predict` creates a fresh `[1, 2]` input tensor (`from-list` →
-`reshape` → `TensorPtr`), runs `nn/forward` (libtorch forward pass),
-and extracts a scalar with `torch/item` (returns a NaN-boxed `double`).
-
-The arithmetic `(/ (+ (+ a b) c) 3.0)` operates on plain NaN-boxed
-doubles — no tape, no tensors — since these are ordinary Eta numbers
-at this point.  The VM executes `Add`, `Add`, `Div` opcodes in the
-standard fast path.
+> [!NOTE]
+> **How the VM handles it**
+>
+> `nn-predict` creates a fresh `[1, 2]` input tensor (`from-list` →
+> `reshape` → `TensorPtr`), runs `nn/forward` (libtorch forward pass),
+> and extracts a scalar with `torch/item` (returns a NaN-boxed `double`).
+>
+> The arithmetic `(/ (+ (+ a b) c) 3.0)` operates on plain NaN-boxed
+> doubles — no tape, no tensors — since these are ordinary Eta numbers
+> at this point.  The VM executes `Add`, `Add`, `Div` opcodes in the
+> standard fast path.
 
 ---
 
