@@ -557,46 +557,6 @@ standard fast path.
 
 ---
 
-## Data: Realistic Numbers via yfinance
-
-The embedded dataset uses synthetic observations from a known DGP so
-that the true ATE can be verified.  For production-quality analysis
-with real market data, download from [yfinance](https://pypi.org/project/yfinance/):
-
-```python
-import yfinance as yf
-import pandas as pd
-
-tickers = {
-    'tech':    ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META'],
-    'energy':  ['XOM', 'CVX', 'COP', 'SLB', 'EOG'],
-    'finance': ['JPM', 'BAC', 'GS', 'MS', 'C'],
-}
-spy = yf.download('SPY', period='5y', interval='1mo')['Close'].pct_change().dropna()
-
-rows = []
-for sector, syms in tickers.items():
-    for sym in syms:
-        ret = yf.download(sym, period='5y', interval='1mo')['Close'].pct_change().dropna()
-        merged = pd.concat([ret, spy], axis=1, join='inner')
-        merged.columns = ['stock', 'market']
-        beta = merged['stock'].cov(merged['market']) / merged['market'].var()
-        for _, r in merged.iterrows():
-            rows.append({'sector': sector, 'market_beta': round(beta, 2),
-                         'stock_return': round(r['stock'] * 100, 2)})
-df = pd.DataFrame(rows)
-df.to_csv('market_data.csv', index=False)
-```
-
-Then load in Eta:
-
-```scheme
-;; (import csv-loader)   ; see examples/causal-factor/csv-loader.eta
-;; (define data (csv:load-file "market_data.csv" '(sector market-beta stock-return)))
-```
-
----
-
 ## Pipeline Flow
 
 ```

@@ -35,8 +35,9 @@ Language Guide</p>
 </p>
 <br>
 <p align="center">
-<strong>Featured Examples</strong>
-  <a href="docs/causal_factor.md">Causal Neural Model</a> — Symbolic → Causal → Logic → Neural → Causal estimation pipeline
+<strong>Featured Examples</strong></p>
+<p align="center">
+  <a href="docs/causal_factor.md">Causal Neural Model</a> (Symbolic → Causal → Logic → Neural) Causal estimation pipeline
 </p>
 
 
