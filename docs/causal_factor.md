@@ -179,21 +179,20 @@ The key insight is that `∂return/∂beta` contains `sector` — the beta
 sensitivity is **not constant** across sectors.  This interaction term
 is exactly the confounding that motivates causal analysis.
 
-### How the VM handles it
-
-*Under the hood:*
-
-The factor model is a **quoted list** — the compiler emits `LoadConst`
-instructions that push NaN-boxed `ConsPtr` heap objects.  No
-evaluation happens until `diff` pattern-matches on the tree by calling
-`car`, `cdr`, `eq?` (which compile to `Car`, `Cdr`, `Eq` opcodes).
-
-`simplify*` is a **fixed-point loop**: it calls `simplify`, compares
-the result with `equal?` (deep structural equality, O(n) tree walk),
-and loops until no further reductions fire.  The compiler recognises
-the self-tail-call and emits a `Jump` back to the function entry
-instead of a `Call` + `Return` pair — so the fixed-point iteration
-runs in constant stack space.
+[!NOTE]
+>### How the VM handles it
+>
+>The factor model is a **quoted list** — the compiler emits `LoadConst`
+>instructions that push NaN-boxed `ConsPtr` heap objects.  No
+>evaluation happens until `diff` pattern-matches on the tree by calling
+>`car`, `cdr`, `eq?` (which compile to `Car`, `Cdr`, `Eq` opcodes).
+>
+>`simplify*` is a **fixed-point loop**: it calls `simplify`, compares
+>the result with `equal?` (deep structural equality, O(n) tree walk),
+>and loops until no further reductions fire.  The compiler recognises
+>the self-tail-call and emits a `Jump` back to the function entry
+>instead of a `Call` + `Return` pair — so the fixed-point iteration
+>runs in constant stack space.
 
 ---
 
