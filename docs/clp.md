@@ -31,9 +31,9 @@ Two constraint domains are supported:
   (println (deref-lvar y)))  ; => 3
 ```
 
-CLP builds on the six existing unification primitives
+CLP builds on the seven existing unification primitives
 (`logic-var`, `unify`, `deref-lvar`, `trail-mark`, `unwind-trail`,
-`ground?`) — no new opcodes are required.
+`copy-term`, `ground?`) — no new opcodes are required.
 
 ---
 
@@ -251,6 +251,7 @@ The classic N-Queens puzzle demonstrates `clp:all-different`:
 | Constraint type | Equality only (`unify`) | Integer intervals & finite sets |
 | Backtracking | `trail-mark` / `unwind-trail` (manual) | `clp:solve` (automatic DFS) |
 | Constraint propagation | None | Forward checking at bind time |
+| Term copying | `copy-term` (native `CopyTerm` opcode) | Uses `copy-term` transitively via `std.logic` |
 | All-different | Requires manual `naf` | `clp:all-different` global constraint |
 | Requires C++ | VM opcodes already exist | `ConstraintStore` in VM + 3 builtins |
 

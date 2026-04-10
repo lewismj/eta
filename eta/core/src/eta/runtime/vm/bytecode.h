@@ -97,7 +97,7 @@ enum class OpCode : std::uint8_t {
     UnwindTrail,    // [mark ->] pop mark fixnum; undo all bindings since mark
 
     // Reserved slots — keep enum values stable for serialised bytecode
-    _Reserved0,     // was MakeDual (removed)
+    CopyTerm,       // [term ->] pop term; push deep copy with fresh logic vars
     _Reserved1,     // was DualVal  (removed)
     _Reserved2,     // was DualBp   (removed)
 };
@@ -145,7 +145,7 @@ constexpr const char* to_string(OpCode op) noexcept {
         case DerefLogicVar:     return "DerefLogicVar";
         case TrailMark:         return "TrailMark";
         case UnwindTrail:       return "UnwindTrail";
-        case _Reserved0:        return "_Reserved0";
+        case CopyTerm:          return "CopyTerm";
         case _Reserved1:        return "_Reserved1";
         case _Reserved2:        return "_Reserved2";
     }

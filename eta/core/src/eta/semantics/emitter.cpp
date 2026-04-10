@@ -87,6 +87,8 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
             emit_trail_mark(n, ctx, span);
         else if constexpr (std::is_same_v<T, core::UnwindTrail>)
             emit_unwind_trail(n, ctx, span);
+        else if constexpr (std::is_same_v<T, core::CopyTerm>)
+            emit_copy_term(n, ctx, span);
     }, node->data);
 }
 
@@ -496,6 +498,11 @@ void Emitter::emit_trail_mark(const core::TrailMark&, Context& ctx, const Span& 
 void Emitter::emit_unwind_trail(const core::UnwindTrail& n, Context& ctx, const Span& span) {
     emit_node(n.mark, ctx);
     ctx.emit_instr(OpCode::UnwindTrail, 0, span);
+}
+
+void Emitter::emit_copy_term(const core::CopyTerm& n, Context& ctx, const Span& span) {
+    emit_node(n.term, ctx);
+    ctx.emit_instr(OpCode::CopyTerm, 0, span);
 }
 
 } // namespace eta::semantics

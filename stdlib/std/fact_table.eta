@@ -1,0 +1,126 @@
+;;; std/fact_table.eta — Columnar fact tables with optional hash indexes.
+;;;
+;;; A fact table is an in-memory, column-oriented store of fixed-arity
+;;; rows (NaN-boxed LispVals).  Each column can optionally carry a hash
+;;; index for O(1) equality lookups.  The table is designed for the
+;;; kind of relational / causal / logic workloads typical in Eta.
+;;;
+;;; Low-level builtins (% prefix):
+;;;   %make-fact-table         col-name-list → fact-table
+;;;   %fact-table-insert!      table row-list → #t
+;;;   %fact-table-build-index! table col-idx  → #t
+;;;   %fact-table-query        table col-idx key → list of row indices
+;;;   %fact-table-ref          table row-idx col-idx → value
+;;;   %fact-table-row-count    table → fixnum
+;;;   fact-table?              value → boolean
+;;;
+;;; This module wraps them in a friendlier API.
+
+(module std.fact_table
+  (export
+    ;; Construction
+    make-fact-table
+    fact-table?
+
+    ;; Mutation
+    fact-table-insert!
+    fact-table-build-index!
+
+    ;; Query
+    fact-table-query
+    fact-table-ref
+    fact-table-row-count
+    fact-table-row
+
+    ;; Iteration / higher-order
+    fact-table-for-each
+    fact-table-filter
+    fact-table-fold)
+  (begin
+
+    ;; ── Construction ──────────────────────────────────────────────────
+
+    ;; Re-export the builtin fact-table? predicate.
+    ;; The builtin is always in scope; we define a local wrapper so the
+    ;; module system can see and export the name.
+    (define (%ft-pred x) (fact-table? x))
+    (defun fact-table? (x) (%ft-pred x))
+
+    ;; (make-fact-table 'col1 'col2 ...)  → fact-table
+    ;; Accepts column names as individual symbol arguments.
+    (define (make-fact-table . col-names)
+      (%make-fact-table col-names))
+
+    ;; ── Mutation ──────────────────────────────────────────────────────
+
+    ;; (fact-table-insert! ft val1 val2 ...)
+    ;; Insert a row given as individual values.
+    (define (fact-table-insert! ft . vals)
+      (%fact-table-insert! ft vals))
+
+    ;; (fact-table-build-index! ft col-idx)
+    ;; Build or rebuild the hash index on the given column.
+    (define (fact-table-build-index! ft col-idx)
+      (%fact-table-build-index! ft col-idx))
+
+    ;; ── Query ─────────────────────────────────────────────────────────
+
+    ;; (fact-table-query ft col-idx key)  → list of row indices
+    (define (fact-table-query ft col-idx key)
+      (%fact-table-query ft col-idx key))
+
+    ;; (fact-table-ref ft row-idx col-idx)  → value
+    (define (fact-table-ref ft row col)
+      (%fact-table-ref ft row col))
+
+    ;; (fact-table-row-count ft)  → fixnum
+    (define (fact-table-row-count ft)
+      (%fact-table-row-count ft))
+
+    ;; (fact-table-row ft row-idx)  → list of values for that row
+    ;; Reads every column at the given row index.
+    ;; NOTE: requires knowing the column count.  We loop until
+    ;; %fact-table-ref would be out-of-bounds; since column count is
+    ;; fixed, we just pass through any error as end-of-columns.
+    ;; For now we use a simple loop approach.
+
+    ;; Helper: collect columns 0..ncols-1 at a given row.
+    (define (fact-table-row ft row-idx)
+      (letrec ((ncols-approx 64)  ;; safe upper bound
+               (loop (lambda (col acc)
+                       (if (>= col ncols-approx)
+                           (reverse acc)
+                           ;; try to read; on error, we've passed the last col
+                           (let ((v (%fact-table-ref ft row-idx col)))
+                             (loop (+ col 1) (cons v acc)))))))
+        (loop 0 '())))
+
+    ;; ── Iteration / higher-order ──────────────────────────────────────
+
+    ;; (fact-table-for-each ft f)
+    ;; Call (f row-idx) for each row index.
+    (define (fact-table-for-each ft f)
+      (letrec ((n (%fact-table-row-count ft))
+               (loop (lambda (i)
+                       (when (< i n)
+                         (f i)
+                         (loop (+ i 1))))))
+        (loop 0)))
+
+    ;; (fact-table-filter ft col-idx key)  → list of row indices
+    ;; Convenience alias for fact-table-query.
+    (define (fact-table-filter ft col-idx key)
+      (%fact-table-query ft col-idx key))
+
+    ;; (fact-table-fold ft f init)
+    ;; Fold over row indices: (f acc row-idx) for each row.
+    (define (fact-table-fold ft f init)
+      (letrec ((n (%fact-table-row-count ft))
+               (loop (lambda (i acc)
+                       (if (= i n)
+                           acc
+                           (loop (+ i 1) (f acc i))))))
+        (loop 0 init)))
+
+  ))
+

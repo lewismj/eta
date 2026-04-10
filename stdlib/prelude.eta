@@ -537,7 +537,7 @@
     ;; Unification goal
     ==
     ;; Term utilities
-    copy-term
+    copy-term*
     ;; Goal combinators
     naf
     succeeds?
@@ -553,39 +553,10 @@
     (defun == (a b) (unify a b))
 
     ;; ── copy-term ─────────────────────────────────────────────────────
-    ;; Deep-copy a term, replacing every unbound logic variable with a
-    ;; fresh one.  Sharing is preserved: the same unbound variable always
-    ;; maps to the same fresh variable throughout the copy.
-    ;;
-    ;; Uses a functional memo-table threaded through the recursion
-    ;; (no mutation required).  Each recursive call returns
-    ;; (new-value . updated-memo).
-
-    (defun %ct-assq (k xs)
-      (if (null? xs) #f
-          (if (eq? k (car (car xs))) (cdr (car xs))
-              (%ct-assq k (cdr xs)))))
-
-    (defun %ct-walk (x memo)
-      (let ((xd (deref-lvar x)))
-        (cond
-          ((logic-var? xd)
-           ;; Unbound — return cached fresh var or allocate a new one
-           (let ((cached (%ct-assq xd memo)))
-             (if cached
-                 (cons cached memo)
-                 (let ((nv (logic-var)))
-                   (cons nv (cons (cons xd nv) memo))))))
-          ((pair? xd)
-           ;; Recurse into car then cdr, threading the memo through
-           (let* ((r1 (%ct-walk (car xd) memo))
-                  (r2 (%ct-walk (cdr xd) (cdr r1))))
-             (cons (cons (car r1) (car r2)) (cdr r2))))
-          ;; Atom / ground heap object — return unchanged
-          (#t (cons xd memo)))))
-
-    (defun copy-term (t)
-      (car (%ct-walk t '())))
+    ;; Wrap the (copy-term t) special form as an ordinary callable
+    ;; function.  The special form compiles to the CopyTerm opcode which
+    ;; performs the walk in C++ with an O(1)-amortised hash-map memo.
+    (defun copy-term* (t) (copy-term t))
 
     ;; ── naf ───────────────────────────────────────────────────────────
     ;; Negation as failure.
@@ -1021,6 +992,90 @@
 
 
 ;; ════════════════════════════════════════════════════════════════════
+;; std.fact_table — Columnar fact tables with optional hash indexes.
+;;
+;; A fact table is an in-memory, column-oriented store of fixed-arity
+;; rows (NaN-boxed LispVals).  Each column can optionally carry a hash
+;; index for O(1) equality lookups.
+;;
+;; Low-level builtins (%-prefix, registered in core_primitives.h):
+;;   %make-fact-table, %fact-table-insert!, %fact-table-build-index!,
+;;   %fact-table-query, %fact-table-ref, %fact-table-row-count,
+;;   fact-table?
+;;
+;; This module wraps them in a friendlier variadic API.
+;; See docs/fact-table.md for a full walkthrough.
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.fact_table
+  (export
+    make-fact-table
+    fact-table?
+    fact-table-insert!
+    fact-table-build-index!
+    fact-table-query
+    fact-table-ref
+    fact-table-row-count
+    fact-table-row
+    fact-table-for-each
+    fact-table-filter
+    fact-table-fold)
+  (begin
+
+    ;; Re-export the builtin fact-table? predicate.
+    (define (%ft-pred x) (fact-table? x))
+    (defun fact-table? (x) (%ft-pred x))
+
+    (define (make-fact-table . col-names)
+      (%make-fact-table col-names))
+
+    (define (fact-table-insert! ft . vals)
+      (%fact-table-insert! ft vals))
+
+    (define (fact-table-build-index! ft col-idx)
+      (%fact-table-build-index! ft col-idx))
+
+    (define (fact-table-query ft col-idx key)
+      (%fact-table-query ft col-idx key))
+
+    (define (fact-table-ref ft row col)
+      (%fact-table-ref ft row col))
+
+    (define (fact-table-row-count ft)
+      (%fact-table-row-count ft))
+
+    (define (fact-table-row ft row-idx)
+      (letrec ((ncols-approx 64)
+               (loop (lambda (col acc)
+                       (if (>= col ncols-approx)
+                           (reverse acc)
+                           (let ((v (%fact-table-ref ft row-idx col)))
+                             (loop (+ col 1) (cons v acc)))))))
+        (loop 0 '())))
+
+    (define (fact-table-for-each ft f)
+      (letrec ((n (%fact-table-row-count ft))
+               (loop (lambda (i)
+                       (when (< i n)
+                         (f i)
+                         (loop (+ i 1))))))
+        (loop 0)))
+
+    (define (fact-table-filter ft col-idx key)
+      (%fact-table-query ft col-idx key))
+
+    (define (fact-table-fold ft f init)
+      (letrec ((n (%fact-table-row-count ft))
+               (loop (lambda (i acc)
+                       (if (= i n)
+                           acc
+                           (loop (+ i 1) (f acc i))))))
+        (loop 0 init)))
+
+  ))
+
+
+;; ════════════════════════════════════════════════════════════════════
 ;; std.prelude — Re-exports from all standard library modules.
 ;;
 ;; (import std.prelude) gives you everything in one shot.
@@ -1034,6 +1089,7 @@
   (import std.logic)
   (import std.clp)
   (import std.causal)
+  (import std.fact_table)
   (export
     ;; std.core
     atom? void
@@ -1072,7 +1128,7 @@
     vector->list list->vector
     ;; std.logic
     ==
-    copy-term
+    copy-term*
     naf succeeds?
     findall run1
     membero
@@ -1094,7 +1150,19 @@
     do:adjustment-formula->string
     do:estimate-effect
     do:conditional-mean
-    do:marginal-prob)
+    do:marginal-prob
+    ;; std.fact_table
+    make-fact-table
+    fact-table?
+    fact-table-insert!
+    fact-table-build-index!
+    fact-table-query
+    fact-table-ref
+    fact-table-row-count
+    fact-table-row
+    fact-table-for-each
+    fact-table-filter
+    fact-table-fold)
   (begin
     ;; All names are already imported — nothing else to define.
   ))

@@ -33,6 +33,7 @@ namespace eta::runtime::memory::heap {
         Tensor,          // libtorch tensor (wraps torch::Tensor)
         NNModule,        // libtorch nn::Module (wraps shared_ptr<torch::nn::Module>)
         Optimizer,       // libtorch optimizer (wraps shared_ptr<torch::optim::Optimizer>)
+        FactTable,       // Columnar fact table with per-column hash indexes
     };
 
     ETA_ENUM_TO_STRING_BEGIN(ObjectKind)
@@ -51,6 +52,7 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(Tensor)
         ETA_ENUM_CASE(NNModule)
         ETA_ENUM_CASE(Optimizer)
+        ETA_ENUM_CASE(FactTable)
     ETA_ENUM_TO_STRING_END("Unknown")
 
     inline std::ostream& operator<<(std::ostream& os, const ObjectKind k) {

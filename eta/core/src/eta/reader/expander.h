@@ -256,6 +256,7 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_deref_lvar(const List& lst);    // (deref-lvar x)
         ExpanderResult<SExprPtr> handle_trail_mark(const List& lst);    // (trail-mark)
         ExpanderResult<SExprPtr> handle_unwind_trail(const List& lst);  // (unwind-trail mark)
+        ExpanderResult<SExprPtr> handle_copy_term(const List& lst);     // (copy-term t)
 
 
         //! Modules/directives

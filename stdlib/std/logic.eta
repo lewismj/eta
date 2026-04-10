@@ -10,6 +10,7 @@
 ;;;   (trail-mark)         – snapshot the binding stack for backtracking
 ;;;   (unwind-trail mark)  – undo every binding made since the snapshot
 ;;;   (ground? t)          – #t if t contains no unbound logic variables
+;;;   (copy-term t)        – deep copy term; unbound vars → fresh copies
 ;;;
 ;;; This module adds higher-level combinators on top of those primitives.
 ;;; It has no external dependencies — all helpers are self-contained.
@@ -19,7 +20,7 @@
     ;; Unification as a callable goal function
     ==
     ;; Term utilities
-    copy-term
+    copy-term*
     ;; Goal combinators
     naf
     succeeds?
@@ -35,42 +36,15 @@
     (defun == (a b) (unify a b))
 
     ;; ── copy-term ─────────────────────────────────────────────────────────
-    ;; Return a deep copy of term t where every unbound logic variable has
-    ;; been replaced by a fresh one.  Sharing is preserved: if the same
-    ;; unbound variable appears more than once in the input it maps to the
-    ;; same fresh variable in the output.
+    ;; Wrap the (copy-term t) special form as an ordinary callable function.
+    ;; Returns a deep copy of t where every unbound logic variable has been
+    ;; replaced by a fresh one.  Sharing is preserved: if the same unbound
+    ;; variable appears more than once in the input it maps to the same
+    ;; fresh variable in the output.
     ;;
-    ;; Implementation: thread a functional association list (memo) through
-    ;; the recursion.  Each call returns (new-value . updated-memo) so no
-    ;; mutation is required.
-
-    ;; eq?-based alist lookup (identity comparison, not structural equality)
-    (defun %ct-assq (k xs)
-      (if (null? xs) #f
-          (if (eq? k (car (car xs))) (cdr (car xs))
-              (%ct-assq k (cdr xs)))))
-
-    ;; Recursive copy worker; returns (new-value . memo)
-    (defun %ct-walk (x memo)
-      (let ((xd (deref-lvar x)))
-        (cond
-          ;; Unbound logic variable — return the cached fresh copy or make one
-          ((logic-var? xd)
-           (let ((cached (%ct-assq xd memo)))
-             (if cached
-                 (cons cached memo)
-                 (let ((nv (logic-var)))
-                   (cons nv (cons (cons xd nv) memo))))))
-          ;; Cons pair — copy car then cdr, threading memo through both
-          ((pair? xd)
-           (let* ((r1 (%ct-walk (car xd) memo))
-                  (r2 (%ct-walk (cdr xd) (cdr r1))))
-             (cons (cons (car r1) (car r2)) (cdr r2))))
-          ;; Atom / ground heap object — return unchanged
-          (#t (cons xd memo)))))
-
-    (defun copy-term (t)
-      (car (%ct-walk t '())))
+    ;; The copy-term special form compiles to the CopyTerm opcode which
+    ;; performs the walk in C++ with an O(1)-amortised hash-map memo table.
+    (defun copy-term* (t) (copy-term t))
 
     ;; ── naf ───────────────────────────────────────────────────────────────
     ;; Negation as failure.

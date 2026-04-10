@@ -31,7 +31,7 @@ namespace eta::reader::expander {
             // Exception handling
             "catch","raise",
             // Logic variables / unification
-            "logic-var","unify","deref-lvar","trail-mark","unwind-trail"
+            "logic-var","unify","deref-lvar","trail-mark","unwind-trail","copy-term"
         };
         return K;
     }
@@ -288,6 +288,7 @@ namespace eta::reader::expander {
             {"deref-lvar",   &Expander::handle_deref_lvar},
             {"trail-mark",   &Expander::handle_trail_mark},
             {"unwind-trail", &Expander::handle_unwind_trail},
+            {"copy-term",    &Expander::handle_copy_term},
         };
 
         if (lst.elems.empty()) {
@@ -2320,6 +2321,14 @@ namespace eta::reader::expander {
             return std::unexpected(invalid_syntax(lst.span, "unwind-trail", "expected (unwind-trail mark)"));
         auto m = expand_form(lst.elems[1]); if (!m) return std::unexpected(m.error());
         return make_form(lst.span, "unwind-trail", std::move(*m));
+    }
+
+    // (copy-term t)
+    ExpanderResult<SExprPtr> Expander::handle_copy_term(const List& lst) {
+        if (lst.elems.size() != 2)
+            return std::unexpected(invalid_syntax(lst.span, "copy-term", "expected (copy-term t)"));
+        auto t = expand_form(lst.elems[1]); if (!t) return std::unexpected(t.error());
+        return make_form(lst.span, "copy-term", std::move(*t));
     }
 
 }

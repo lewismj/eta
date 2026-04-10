@@ -115,6 +115,9 @@ struct TrailMark {};
 /// (unwind-trail mark) — undo all bindings made since mark
 struct UnwindTrail { Node* mark; };
 
+/// (copy-term t) — deep copy term replacing unbound vars with fresh copies
+struct CopyTerm { Node* term; };
+
 /**
  * @brief Lambda (function) node
  *
@@ -165,7 +168,8 @@ using NodeData = std::variant<  Var,
                                 Unify,
                                 DerefLogicVar,
                                 TrailMark,
-                                UnwindTrail>;
+                                UnwindTrail,
+                                CopyTerm>;
 
 struct Node {
     NodeData data;

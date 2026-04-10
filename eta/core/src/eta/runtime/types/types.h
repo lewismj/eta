@@ -12,3 +12,4 @@
 #include "port.h"
 #include "logic_var.h"
 #include "tape.h"
+#include "fact_table.h"

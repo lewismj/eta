@@ -122,6 +122,16 @@ namespace eta::runtime::memory::factory {
     std::expected<LispVal, RuntimeError> make_tape(Heap& heap) {
         return make_heap_object<types::Tape, ObjectKind::Tape>(heap, types::Tape{});
     }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_fact_table(Heap& heap, std::vector<std::string> col_names) {
+        std::size_t ncols = col_names.size();
+        types::FactTable ft;
+        ft.col_names = std::move(col_names);
+        ft.columns.resize(ncols);
+        ft.indexes.resize(ncols);
+        return make_heap_object<types::FactTable, ObjectKind::FactTable>(heap, std::move(ft));
+    }
 }
 
 

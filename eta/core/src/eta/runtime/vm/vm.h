@@ -304,6 +304,10 @@ private:
     /// Robinson unification with occurs check on both binding branches.
     /// Binds variables and trails them; returns true on success.
     bool unify(LispVal a, LispVal b);
+
+    /// Deep-copy a term, replacing unbound logic variables with fresh copies.
+    /// Shared variables map to the same fresh copy (identity preserved).
+    std::expected<LispVal, RuntimeError> copy_term(LispVal term);
 };
 
 } // namespace eta::runtime::vm

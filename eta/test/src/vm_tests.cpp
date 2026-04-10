@@ -808,7 +808,7 @@ BOOST_AUTO_TEST_CASE(test_vector_pred_false) {
 // Multi-module execution tests (unified global allocation)
 // ============================================================================
 
-BOOST_AUTO_TEST_CASE(test_multi_module_analyze_produces_multiple) {
+BOOST_AUTO_TEST_CASE(test_multi_module_analyze_proDUCES_multiple) {
     // Verify that the pipeline at least produces multiple ModuleSemantics
     std::string_view source =
         "(module lib (export answer) (define answer 42))\n"
@@ -2026,8 +2026,6 @@ BOOST_AUTO_TEST_CASE(test_syntax_rules_hygiene) {
 // Unification tests
 // ============================================================================
 
-BOOST_AUTO_TEST_SUITE_END()  // vm_tests
-
 BOOST_FIXTURE_TEST_SUITE(unification_tests, VMTestFixture)
 
 BOOST_AUTO_TEST_CASE(logic_var_is_unbound_after_creation) {
@@ -2092,12 +2090,13 @@ BOOST_AUTO_TEST_CASE(unify_list_patterns) {
         "(module m"
         "  (define x (logic-var))"
         "  (define y (logic-var))"
-        "  (define ok (unify (cons x (cons 2 (cons 3 '())))"
-        "                    (cons 1 (cons y (cons 3 '())))))"
-        "  (define result (if ok (+ (deref-lvar x) (deref-lvar y)) -1)))");
+        "  (define l1 (cons x (cons 2 (cons 3 '()))))"
+        "  (define l2 (cons 1 (cons y (cons 3 '()))))"
+        "  (unify l1 l2)"
+        "  (define result (+ (deref-lvar x) (deref-lvar y))))");
     auto v = nanbox::ops::decode<int64_t>(res);
     BOOST_REQUIRE(v.has_value());
-    BOOST_CHECK_EQUAL(*v, 3);   // 1 + 2
+    BOOST_CHECK_EQUAL(*v, 3);  // x=1, y=2, sum=3
 }
 
 BOOST_AUTO_TEST_CASE(unify_occurs_check_rejects_cycle) {
@@ -2143,3 +2142,241 @@ BOOST_AUTO_TEST_CASE(backtrack_restores_multiple_bindings) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
+// ============================================================================
+// copy-term opcode tests
+// ============================================================================
+
+BOOST_FIXTURE_TEST_SUITE(copy_term_tests, VMTestFixture)
+
+BOOST_AUTO_TEST_CASE(copy_term_ground_value_unchanged) {
+    // Copying a ground integer returns the same integer
+    LispVal res = run(
+        "(module m"
+        "  (define result (copy-term 42)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 42);
+}
+
+BOOST_AUTO_TEST_CASE(copy_term_ground_list_unchanged) {
+    // Copying a ground list returns an equal list
+    LispVal res = run(
+        "(module m"
+        "  (define lst (cons 1 (cons 2 (cons 3 '()))))"
+        "  (define c (copy-term lst))"
+        "  (define result (+ (car c) (+ (car (cdr c)) (car (cdr (cdr c)))))))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 6);  // 1 + 2 + 3
+}
+
+BOOST_AUTO_TEST_CASE(copy_term_unbound_var_creates_fresh) {
+    // Copying an unbound variable yields a different unbound variable
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (define y (copy-term x))"
+        "  (define result (and (logic-var? (deref-lvar y))"
+        "                      (not (eq? x y)))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(copy_term_preserves_sharing) {
+    // The same unbound variable appearing twice maps to the same fresh copy
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (define pair (cons x x))"
+        "  (define c (copy-term pair))"
+        "  (unify (car c) 99)"
+        "  (define result (deref-lvar (cdr c))))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 99);  // cdr(c) is the same fresh var as car(c)
+}
+
+BOOST_AUTO_TEST_CASE(copy_term_does_not_affect_original) {
+    // Binding the copy does not affect the original template
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (define tmpl (cons x (logic-var)))"
+        "  (define c (copy-term tmpl))"
+        "  (unify (car c) 'hello)"
+        "  (define result (logic-var? (deref-lvar x))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(copy_term_mixed_ground_and_vars) {
+    // A list with both ground values and unbound vars copies correctly
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (define lst (cons 1 (cons x (cons 3 '()))))"
+        "  (define c (copy-term lst))"
+        "  (unify (car (cdr c)) 2)"
+        "  (define result (+ (car c) (+ (deref-lvar (car (cdr c)))"
+        "                                (car (cdr (cdr c)))))))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 6);  // 1 + 2 + 3
+}
+
+BOOST_AUTO_TEST_CASE(copy_term_bound_var_copies_value) {
+    // A bound variable is dereferenced; the copy contains the ground value
+    LispVal res = run(
+        "(module m"
+        "  (define x (logic-var))"
+        "  (unify x 42)"
+        "  (define c (copy-term x))"
+        "  (define result c))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 42);
+}
+
+BOOST_AUTO_TEST_CASE(copy_term_nested_pairs) {
+    // Deep nested structure with variables at various depths
+    LispVal res = run(
+        "(module m"
+        "  (define a (logic-var))"
+        "  (define b (logic-var))"
+        "  (define tmpl (cons (cons a b) (cons 'x a)))"
+        "  (define c (copy-term tmpl))"
+        "  (unify (car (car c)) 10)"
+        "  (define result (deref-lvar (cdr (cdr c)))))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 10);  // sharing preserved across nesting
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+// ============================================================================
+// fact-table builtin tests
+// ============================================================================
+
+BOOST_FIXTURE_TEST_SUITE(fact_table_tests, VMTestFixture)
+
+BOOST_AUTO_TEST_CASE(fact_table_predicate) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(name age)))"
+        "  (define result (fact-table? ft)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_predicate_false_for_non_table) {
+    LispVal res = run(
+        "(module m"
+        "  (define result (fact-table? 42)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_insert_and_row_count) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(a b)))"
+        "  (%fact-table-insert! ft '(1 2))"
+        "  (%fact-table-insert! ft '(3 4))"
+        "  (%fact-table-insert! ft '(5 6))"
+        "  (define result (%fact-table-row-count ft)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 3);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_ref_cell) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(x y)))"
+        "  (%fact-table-insert! ft '(10 20))"
+        "  (%fact-table-insert! ft '(30 40))"
+        "  (define result (+ (%fact-table-ref ft 0 0)"
+        "                    (%fact-table-ref ft 1 1))))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 50);  // 10 + 40
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_query_linear_scan) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(name val)))"
+        "  (%fact-table-insert! ft '(a 1))"
+        "  (%fact-table-insert! ft '(b 2))"
+        "  (%fact-table-insert! ft '(a 3))"
+        "  (define rows (%fact-table-query ft 0 'a))"
+        "  (define result (length rows)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 2);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_query_with_index) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(name val)))"
+        "  (%fact-table-insert! ft '(a 1))"
+        "  (%fact-table-insert! ft '(b 2))"
+        "  (%fact-table-insert! ft '(a 3))"
+        "  (%fact-table-build-index! ft 0)"
+        "  (define rows (%fact-table-query ft 0 'a))"
+        "  (define result (length rows)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 2);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_query_returns_correct_row_ids) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(k v)))"
+        "  (%fact-table-insert! ft '(x 10))"
+        "  (%fact-table-insert! ft '(y 20))"
+        "  (%fact-table-insert! ft '(x 30))"
+        "  (%fact-table-build-index! ft 0)"
+        "  (define rows (%fact-table-query ft 0 'x))"
+        "  (define v1 (%fact-table-ref ft (car rows) 1))"
+        "  (define v2 (%fact-table-ref ft (car (cdr rows)) 1))"
+        "  (define result (+ v1 v2)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 40);  // 10 + 30
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_query_no_match) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(a)))"
+        "  (%fact-table-insert! ft '(1))"
+        "  (define rows (%fact-table-query ft 0 999))"
+        "  (define result (null? rows)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_insert_arity_mismatch_errors) {
+    BOOST_CHECK_THROW(
+        run("(module m"
+            "  (define ft (%make-fact-table '(a b)))"
+            "  (define result (%fact-table-insert! ft '(1))))"),
+        std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_incremental_index_update) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(k v)))"
+        "  (%fact-table-insert! ft '(a 1))"
+        "  (%fact-table-build-index! ft 0)"
+        "  (%fact-table-insert! ft '(a 2))"
+        "  (define rows (%fact-table-query ft 0 'a))"
+        "  (define result (length rows)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 2);
+}
+
+BOOST_AUTO_TEST_SUITE_END() // fact_table_tests
+
+BOOST_AUTO_TEST_SUITE_END() // vm_tests

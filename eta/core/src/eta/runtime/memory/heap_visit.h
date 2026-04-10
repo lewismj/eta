@@ -20,6 +20,7 @@ namespace eta::runtime::memory::heap {
         virtual R visit_logic_var(const eta::runtime::types::LogicVar& lv) = 0;
         virtual R visit_tape(const eta::runtime::types::Tape& t) = 0;
         virtual R visit_primitive(const eta::runtime::types::Primitive& p) = 0;
+        virtual R visit_fact_table(const eta::runtime::types::FactTable& ft) = 0;
 
         // Fallback for leaf/unknown kinds (no outward edges)
         virtual R visit_leaf(ObjectKind kind, const void* payload) = 0;
@@ -38,6 +39,7 @@ namespace eta::runtime::memory::heap {
             case LogicVar:     return v.visit_logic_var(*static_cast<const eta::runtime::types::LogicVar*>(payload));
             case Tape:         return v.visit_tape(*static_cast<const eta::runtime::types::Tape*>(payload));
             case Primitive:    return v.visit_primitive(*static_cast<const eta::runtime::types::Primitive*>(payload));
+            case FactTable:    return v.visit_fact_table(*static_cast<const eta::runtime::types::FactTable*>(payload));
 
             case Fixnum:
             case ByteVector:
