@@ -714,30 +714,24 @@ correctly isolates the causal contribution of beta.
 
 ## Pipeline Flow
 
-```
-  ┌──────────────────────┐
-  │ §1 Symbolic Diff     │  factor model → ∂R/∂β depends on sector
-  └──────────┬───────────┘
-             │  insight: confounding
-             ▼
-  ┌──────────────────────┐
-  │ §2 Do-Calculus       │  DAG → back-door formula: Σ_{sector} P(R|β,s)·P(s)
-  └──────────┬───────────┘
-             │  formula + adjustment set Z
-             ▼
-  ┌──────────────────────┐
-  │ §3 findall + CLP     │  exhaustive search → {sector} is unique valid Z
-  └──────────┬───────────┘
-             │  validated formula
-             ▼
-  ┌──────────────────────┐
-  │ §4 libtorch NN       │  learn E[R | β, s] from data
-  └──────────┬───────────┘
-             │  trained NN
-             ▼
-  ┌──────────────────────┐
-  │ §5 Neural ATE        │  NN + formula → ATE ≈ 0.45
-  └──────────────────────┘
+```mermaid
+flowchart TD
+    S1["§1 Symbolic Diff\nfactor model → ∂R/∂β depends on sector"]
+    S2["§2 Do-Calculus\nDAG → back-door formula: Σ_sector P(R|β,s)·P(s)"]
+    S3["§3 findall + CLP\nexhaustive search → {sector} is unique valid Z"]
+    S4["§4 libtorch NN\nlearn E[R | β, s] from data"]
+    S5["§5 Neural ATE\nNN + formula → ATE ≈ 0.45"]
+
+    S1 -->|"insight: confounding"| S2
+    S2 -->|"formula + adjustment set Z"| S3
+    S3 -->|"validated formula"| S4
+    S4 -->|"trained NN"| S5
+
+    style S1 fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
+    style S2 fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style S3 fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style S4 fill:#0f3460,stroke:#56d364,color:#c9d1d9
+    style S5 fill:#0f3460,stroke:#f78166,color:#c9d1d9
 ```
 
 ---
