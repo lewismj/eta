@@ -87,13 +87,19 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
-    std::expected<LispVal, RuntimeError> make_cons(Heap& heap, const LispVal car) {
-        return make_heap_object<types::Cons, ObjectKind::Cons>(heap, types::Cons{.car = car, .cdr = nanbox::Nil});
+    std::expected<LispVal, RuntimeError> make_cons(Heap& heap, const LispVal car, const LispVal cdr) {
+        auto id = heap.alloc_cons(car, cdr);
+        if (id.has_value()) {
+            return ops::box(Tag::HeapObject, *id);
+        }
+        // Pool slab allocation failed — fall back to general heap
+        return make_heap_object<types::Cons, ObjectKind::Cons>(
+            heap, types::Cons{.car = car, .cdr = cdr});
     }
 
     inline_always
-    std::expected<LispVal, RuntimeError> make_cons(Heap& heap, const LispVal car, const LispVal cdr) {
-        return make_heap_object<types::Cons, ObjectKind::Cons>(heap, types::Cons{.car = car, .cdr = cdr});
+    std::expected<LispVal, RuntimeError> make_cons(Heap& heap, const LispVal car) {
+        return make_cons(heap, car, nanbox::Nil);
     }
 
     inline_always

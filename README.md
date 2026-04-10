@@ -37,7 +37,7 @@
 <p align="center">
 <strong>Featured Examples</strong></p>
 <p align="center">
-  <a href="docs/causal_factor.md">End-to-End Causal Pipeline</a> (Symbolic → Causal → Logic → Neural) Causal estimation pipeline
+  <a href="docs/causal-factor.md">End-to-End Causal Pipeline</a> (Symbolic → Causal → Logic → Neural) Causal estimation pipeline
 </p>
 
 
@@ -175,7 +175,7 @@ flowchart LR
 | **[SABR Volatility Model](docs/sabr.md)** | SABR Hagan implied vol, native Dual VM performance, Hessian via reverse-on-reverse            |
 | **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`           |
 | **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                             |
-| **[End-to-End Causal Pipeline](docs/causal_factor.md)** | Showcase: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE                             |
+| **[End-to-End Causal Pipeline](docs/causal-factor.md)** | Showcase: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE                             |
 | **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support               |
 | **[Next Steps](docs/next-steps.md)**       | Roadmap: network stack, VS Code debugger improvements, performance                            |
 
