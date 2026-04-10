@@ -87,8 +87,70 @@ return = α + β·market + γ·sector + δ·β·sector
 ```
 
 A self-contained symbolic differentiator computes `∂return/∂beta` and
-`∂return/∂sector` using the sum and product rules, then an algebraic
-simplifier runs in a fixed-point loop (keep simplifying until stable):
+`∂return/∂sector` using the sum and product rules.  Three small
+helpers destructure any S-expression node into its operator and
+operands:
+
+```scheme
+(defun op (e) (car e))
+(defun a1 (e) (car (cdr e)))
+(defun a2 (e) (car (cdr (cdr e))))
+```
+
+The **differentiator** pattern-matches on `+` and `*` nodes,
+applying the sum rule `d(a+b) = da + db` and the product rule
+`d(a·b) = da·b + a·db`:
+
+```scheme
+(defun diff (e v)
+  (cond
+    ((number? e) 0)
+    ((symbol? e) (if (eq? e v) 1 0))
+    ((eq? (op e) '+)
+      (list '+ (diff (a1 e) v) (diff (a2 e) v)))
+    ((eq? (op e) '*)
+      (list '+ (list '* (diff (a1 e) v) (a2 e))
+               (list '* (a1 e) (diff (a2 e) v))))
+    (#t 0)))
+```
+
+The **algebraic simplifier** eliminates identity elements (`0 + x → x`,
+`1 * x → x`) and folds constants (`3 + 4 → 7`):
+
+```scheme
+(defun simplify (e)
+  (cond
+    ((atom? e) e)
+    ((eq? (op e) '+)
+      (let ((sa (simplify (a1 e))) (sb (simplify (a2 e))))
+        (cond
+          ((and (number? sa) (= sa 0)) sb)
+          ((and (number? sb) (= sb 0)) sa)
+          ((and (number? sa) (number? sb)) (+ sa sb))
+          (#t (list '+ sa sb)))))
+    ((eq? (op e) '*)
+      (let ((sa (simplify (a1 e))) (sb (simplify (a2 e))))
+        (cond
+          ((and (number? sa) (= sa 0)) 0)
+          ((and (number? sb) (= sb 0)) 0)
+          ((and (number? sa) (= sa 1)) sb)
+          ((and (number? sb) (= sb 1)) sa)
+          ((and (number? sa) (number? sb)) (* sa sb))
+          (#t (list '* sa sb)))))
+    (#t e)))
+```
+
+`simplify*` wraps the one-step simplifier in a **fixed-point loop** —
+keep simplifying until the expression is stable:
+
+```scheme
+(defun simplify* (e)
+  (let ((s (simplify e)))
+    (if (equal? s e) s (simplify* s))))
+```
+
+The convenience function `D` composes differentiation with
+simplification, and the two sensitivities are computed:
 
 ```scheme
 (defun D (expr var) (simplify* (diff expr var)))
@@ -154,6 +216,19 @@ non-descendants(X) that satisfies the back-door criterion:
 1. **No descendant condition** — no member of Z is a descendant of X.
 2. **Blocking condition** — Z blocks all back-door paths from X to Y.
 
+The result is converted to a human-readable string, and the raw
+adjustment set is extracted for use in §3:
+
+```scheme
+(define formula-str
+  (do:adjustment-formula->string formula 'stock-return 'market-beta))
+
+(define z-set
+  (if (and (pair? formula) (eq? (car formula) 'adjust))
+      (car (cdr formula))
+      '()))
+```
+
 ### Expected output
 
 ```
@@ -192,7 +267,20 @@ keeps the DFS stack bounded.
 **Logic search with `findall`:** instead of relying on the single
 adjustment set returned by `do:identify`, we use `findall` with
 backtracking to **exhaustively enumerate** all valid back-door
-adjustment sets:
+adjustment sets.
+
+First, the candidate adjustment sets are built from the DAG's
+non-descendants of X:
+
+```scheme
+(define all-nodes (dag:nodes finance-dag))
+(define non-desc  (dag:non-descendants finance-dag 'market-beta))
+
+(define candidates
+  (map* (lambda (n) (list n)) non-desc))
+```
+
+Then `findall` tests each candidate against the back-door criterion:
 
 ```scheme
 (let* ((z  (logic-var))
@@ -216,7 +304,8 @@ trail** — restoring `z` to its unbound state for the next candidate.
 
 **CLP validation:** the sector weights in the adjustment formula are
 probabilities, so each must lie in (0, 1).  We express this as a
-`clp(Z)` domain constraint on integer percentages:
+`clp(Z)` domain constraint on integer percentages.  The `unify`
+calls commit the concrete weights only if they satisfy the domain:
 
 ```scheme
 (let* ((w-tech    (logic-var))
@@ -225,9 +314,11 @@ probabilities, so each must lie in (0, 1).  We express this as a
   (clp:domain w-tech    1 99)
   (clp:domain w-energy  1 99)
   (clp:domain w-finance 1 99)
-  (unify w-tech 33)      ;; 33% of sample is tech
-  (unify w-energy 33)    ;; 33% is energy
-  (unify w-finance 34))  ;; 34% is finance
+  (if (and (unify w-tech 33)
+           (unify w-energy 33)
+           (unify w-finance 34))
+      (display "✓ All weights are valid probabilities in (0,1)\n")
+      (display "✗ Domain violation\n")))
 ```
 
 If any weight fell outside [1, 99] — e.g. a degenerate stratum with
@@ -289,6 +380,39 @@ return = 1.5·beta + 0.8·sector_code + 0.3·beta·sector_code + noise
 
 Sector encoding: tech = 1.0, energy = 0.0, finance = −1.0.
 
+Each row in the training set is a 3-element list
+`(beta  sector_code  return)`.  A representative slice:
+
+```scheme
+(define train-data
+  (list
+    ;; Technology (sector_code = 1.0) — DGP: return = 1.8*beta + 0.8
+    '(1.10  1.0  2.81) '(1.10  1.0  2.76) '(1.15  1.0  2.88) '(1.15  1.0  2.93)
+    '(1.20  1.0  2.99) '(1.20  1.0  2.93) ...
+    ;; Energy (sector_code = 0.0)   — DGP: return = 1.5*beta
+    '(0.70  0.0  1.08) '(0.70  0.0  1.02) '(0.75  0.0  1.15) '(0.75  0.0  1.10)
+    '(0.80  0.0  1.23) '(0.80  0.0  1.17) ...
+    ;; Finance (sector_code = -1.0) — DGP: return = 1.2*beta - 0.8
+    '(0.90 -1.0  0.31) '(0.90 -1.0  0.25) '(0.95 -1.0  0.37) '(0.95 -1.0  0.31)
+    '(1.00 -1.0  0.43) '(1.00 -1.0  0.37) ...))
+```
+
+The raw list-of-lists is reshaped into libtorch tensors using
+`foldl`, `map*`, `from-list`, and `reshape`:
+
+```scheme
+;; Build input tensor [N, 2] and target tensor [N, 1]
+(define input-list
+  (foldl (lambda (acc row) (append acc (list (car row) (car (cdr row)))))
+         '() train-data))
+(define target-list
+  (map* (lambda (row) (car (cdr (cdr row)))) train-data))
+
+(define n-samples (length train-data))
+(define X (reshape (from-list input-list) (list n-samples 2)))
+(define Y (reshape (from-list target-list) (list n-samples 1)))
+```
+
 **Network architecture:**
 
 ```scheme
@@ -300,19 +424,21 @@ Sector encoding: tech = 1.0, energy = 0.0, finance = −1.0.
 (define opt (adam net 0.001))
 ```
 
-This is a 2 → 32 → ReLU → 32 → ReLU → 1 feedforward network trained
-with Adam (lr=0.001) for 2000 epochs using MSE loss.  `(train! net)` is
-called before training to ensure proper gradient flow, and `(eval! net)`
-is called before inference.
+This is a 2 → 32 → ReLU → 16 → ReLU → 1 feedforward network trained
+with Adam (lr=0.001) using MSE loss.  `(train! net)` is called before
+training to ensure proper gradient flow, and `(eval! net)` is called
+before inference.
 
 **Training loop:**
 
 ```scheme
 (train! net)
 (letrec ((loop (lambda (epoch)
-           (if (> epoch 2000) 'done
+           (if (> epoch 8000) 'done
                (let ((loss (train-step! net opt mse-loss X Y)))
-                 ...)))))
+                 (if (= (modulo epoch 200) 0)
+                     (begin (display epoch) (display "   |  ") (println loss)))
+                 (loop (+ epoch 1)))))))
   (loop 1))
 (eval! net)
 ```
@@ -361,19 +487,37 @@ Plug the trained NN into the do-calculus adjustment formula:
 E[return | do(beta=x)] = Σ_s  E_NN[return | beta=x, sector=s] · P(s)
 ```
 
+`nn-predict` creates a fresh input tensor, runs the forward pass, and
+extracts a scalar:
+
+```scheme
+(defun nn-predict (beta-val sector-code)
+  (let* ((inp (reshape (from-list (list beta-val sector-code)) '(1 2)))
+         (out (forward net inp)))
+    (item out)))
+```
+
+The back-door adjustment averages the NN prediction over all three
+sectors (equal-weighted):
+
 ```scheme
 (defun nn-adjusted-effect (beta-val)
   (/ (+ (+ (nn-predict beta-val  1.0)    ; tech
             (nn-predict beta-val  0.0))   ; energy
          (nn-predict beta-val -1.0))      ; finance
      3.0))
-
-(define ate (- (nn-adjusted-effect 1.2)
-               (nn-adjusted-effect 0.9)))
 ```
 
 The ATE is the difference in causally-adjusted expected returns
-between beta=1.2 and beta=0.9.
+between beta=1.2 and beta=0.9:
+
+```scheme
+(define beta-high 1.2)
+(define beta-low  0.9)
+(define e-high (nn-adjusted-effect beta-high))
+(define e-low  (nn-adjusted-effect beta-low))
+(define ate    (- e-high e-low))
+```
 
 ### Expected output
 
