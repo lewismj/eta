@@ -284,6 +284,12 @@ public:
         return runtime::format_value(v, mode, heap_, intern_table_);
     }
 
+    /// Named global variables: slot index → variable name.
+    /// Populated during compilation for debugger display.
+    [[nodiscard]] const std::unordered_map<uint32_t, std::string>& global_names() const noexcept {
+        return global_names_;
+    }
+
     /// Direct access to the heap — used by the DAP heap inspector.
     runtime::memory::heap::Heap& heap() noexcept { return heap_; }
     const runtime::memory::heap::Heap& heap() const noexcept { return heap_; }
@@ -436,6 +442,9 @@ private:
 
     // Guard against recursive auto-loading cycles
     std::unordered_set<std::string> loading_modules_;
+
+    // Global slot → variable name mapping (for debugger display)
+    std::unordered_map<uint32_t, std::string> global_names_;
 
     /// Normalise a path to a stable lowercase key used in path_to_file_id_.
     /// On Windows this lowercases and ensures backslashes; on POSIX it is
@@ -708,6 +717,14 @@ private:
 
             semantics::Emitter emitter(mod, heap_, intern_table_, registry_);
             auto* init_func = emitter.emit();
+
+            // Record global slot → name mapping for debugger display.
+            // Skip builtin slots (those have numeric indices < builtins count).
+            for (const auto& bi : mod.bindings) {
+                if (bi.kind == semantics::BindingInfo::Kind::Global && !bi.name.empty()) {
+                    global_names_[bi.slot] = bi.name;
+                }
+            }
 
             // Record compile metadata for this module.
             if (out_cr) {

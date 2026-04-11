@@ -31,7 +31,15 @@ using namespace eta::json;
 // Construction
 // ============================================================================
 
-LspServer::LspServer() {
+LspServer::LspServer()
+    : in_(std::cin), out_(std::cout)
+{
+    init_module_path();
+}
+
+LspServer::LspServer(std::istream& in, std::ostream& out)
+    : in_(in), out_(out)
+{
     init_module_path();
 }
 
@@ -204,7 +212,7 @@ std::optional<std::string> LspServer::read_message() {
     // Read headers until blank line
     std::size_t content_length = 0;
     std::string header_line;
-    while (std::getline(std::cin, header_line)) {
+    while (std::getline(in_, header_line)) {
         // Strip \r if present
         if (!header_line.empty() && header_line.back() == '\r')
             header_line.pop_back();
@@ -218,21 +226,21 @@ std::optional<std::string> LspServer::read_message() {
         // Ignore other headers (Content-Type, etc.)
     }
 
-    if (std::cin.eof() || std::cin.fail()) return std::nullopt;
+    if (in_.eof() || in_.fail()) return std::nullopt;
     if (content_length == 0) return std::nullopt;
 
     // Read exactly content_length bytes
     std::string body(content_length, '\0');
-    std::cin.read(body.data(), static_cast<std::streamsize>(content_length));
-    if (std::cin.fail()) return std::nullopt;
+    in_.read(body.data(), static_cast<std::streamsize>(content_length));
+    if (in_.fail()) return std::nullopt;
 
     return body;
 }
 
 void LspServer::send_message(const Value& msg) {
     std::string body = json::to_string(msg);
-    std::cout << "Content-Length: " << body.size() << "\r\n\r\n" << body;
-    std::cout.flush();
+    out_ << "Content-Length: " << body.size() << "\r\n\r\n" << body;
+    out_.flush();
 }
 
 void LspServer::send_response(const Value& id, const Value& result) {
@@ -325,6 +333,15 @@ void LspServer::dispatch(const Value& msg) {
     } else if (method == "textDocument/completion") {
         auto result = handle_completion(params);
         if (has_id) send_response(id, result);
+    } else if (method == "textDocument/documentSymbol") {
+        auto result = handle_document_symbol(params);
+        if (has_id) send_response(id, result);
+    } else if (method == "textDocument/references") {
+        auto result = handle_references(params);
+        if (has_id) send_response(id, result);
+    } else if (method == "textDocument/rename") {
+        auto result = handle_rename(params);
+        if (has_id) send_response(id, result);
     } else {
         if (has_id) {
             send_error(id, -32601, "Method not found: " + method);
@@ -348,6 +365,9 @@ Value LspServer::handle_initialize(const Value& /*params*/) {
             })},
             {"hoverProvider", true},
             {"definitionProvider", true},
+            {"documentSymbolProvider", true},
+            {"referencesProvider", true},
+            {"renameProvider", true},
             {"completionProvider", json::object({
                 {"triggerCharacters", json::array({"(", " "})},
             })},
@@ -612,8 +632,8 @@ Value LspServer::handle_hover(const Value& params) {
         {"define-syntax","**define-syntax** — Define a hygienic macro.\n\n`(define-syntax name (syntax-rules (literals...) clause...))`"},
         {"syntax-rules", "**syntax-rules** — Hygienic macro transformer.\n\n`(syntax-rules (literals...) (pattern template)...)`"},
         {"define-record-type", "**define-record-type** — Define a record type.\n\n`(define-record-type name (ctor field...) pred (field accessor [mutator])...)`"},
-        {"def",          "**def** — Sugar for `define`.\n\n`(def name expr)` or `(def (name args...) body...)`"},
-        {"defun",        "**defun** — Sugar for function definition.\n\n`(defun name (args...) body...)`"},
+        {"def",          "**def** — Alias for `define`.\n\n`(def name expr)` or `(def (name args...) body...)`"},
+        {"defun",        "**defun** — Alias for function definition.\n\n`(defun name (args...) body...)`"},
         {"progn",        "**progn** — Alias for `begin`.\n\n`(progn expr...)`"},
         {"quasiquote",   "**quasiquote** — Template with unquote.\n\n`` `(datum ,expr ,@splice) ``"},
         {"call/cc",      "**call/cc** — Call with current continuation.\n\n`(call/cc proc)`"},
@@ -725,15 +745,23 @@ Value LspServer::handle_completion(const Value& params) {
         {"define-syntax","Macro: define a syntax transformer"},
         {"syntax-rules", "Macro: hygienic macro rules"},
         {"define-record-type", "Record: define a record type"},
-        {"def",          "Sugar: alias for define"},
-        {"defun",        "Sugar: function definition"},
-        {"progn",        "Sugar: alias for begin"},
+        {"def",          "Alias: for define"},
+        {"defun",        "Alias: function definition"},
+        {"progn",        "Alias: for begin"},
         {"quasiquote",   "Core: template with unquote"},
         {"call/cc",      "Advanced: call with current continuation"},
         {"dynamic-wind", "Advanced: continuation guard"},
         {"values",       "Advanced: multiple return values"},
         {"call-with-values", "Advanced: receive multiple values"},
         {"apply",        "Core: apply procedure to args"},
+        {"raise",        "Exception: raise an exception"},
+        {"catch",        "Exception: catch an exception"},
+        {"logic-var",    "Logic: create a logic variable"},
+        {"unify",        "Logic: unify two terms"},
+        {"deref-lvar",   "Logic: dereference a logic variable"},
+        {"trail-mark",   "Logic: mark the trail"},
+        {"unwind-trail", "Logic: unwind the trail"},
+        {"copy-term",    "Logic: deep-copy a term"},
     };
 
     for (const auto& [kw, detail] : keywords) {
@@ -895,6 +923,165 @@ Value LspServer::handle_completion(const Value& params) {
     return json::object({
         {"isIncomplete", false},
         {"items", Value(std::move(items))},
+    });
+}
+
+// ============================================================================
+// textDocument/documentSymbol
+// ============================================================================
+
+Value LspServer::handle_document_symbol(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    const auto& source = it->second.content;
+    auto symbols = collect_symbols(source, /*capture_signature=*/true);
+
+    // LSP SymbolKind values
+    constexpr int SK_Module   = 2;
+    constexpr int SK_Function = 12;
+    constexpr int SK_Variable = 13;
+    constexpr int SK_Class    = 5;  // for record types
+
+    Array result;
+    for (const auto& sym : symbols) {
+        int kind = SK_Variable;
+        if (sym.kind == "defun" || sym.kind == "function") kind = SK_Function;
+        else if (sym.kind == "module") kind = SK_Module;
+        else if (sym.kind == "macro") kind = SK_Function;
+        else if (sym.kind == "record") kind = SK_Class;
+
+        // Build detail string
+        std::string detail = sym.kind;
+        if (!sym.signature.empty()) detail += " " + sym.signature;
+
+        // Compute a reasonable selection range (just the symbol name)
+        auto name_end_char = sym.character + static_cast<int64_t>(sym.name.size());
+        auto sel_range = Range{
+            Position{sym.line, sym.character},
+            Position{sym.line, name_end_char},
+        };
+
+        // For the full range, use the whole line as an approximation
+        // (precise ranges would require parsing the S-expression depth)
+        auto full_range = sel_range; // same for now
+
+        result.push_back(json::object({
+            {"name", sym.name},
+            {"detail", detail},
+            {"kind", kind},
+            {"range", range_to_json(full_range)},
+            {"selectionRange", range_to_json(sel_range)},
+        }));
+    }
+
+    return Value(std::move(result));
+}
+
+// ============================================================================
+// textDocument/references
+// ============================================================================
+
+std::vector<Range> LspServer::find_all_occurrences(
+        const std::string& source, const std::string& symbol) {
+    std::vector<Range> result;
+    if (symbol.empty()) return result;
+
+    auto is_sym_char = [](char c) -> bool {
+        if (c <= ' ') return false;
+        if (c == '(' || c == ')' || c == '[' || c == ']' ||
+            c == '"' || c == ';' || c == '#') return false;
+        return true;
+    };
+
+    std::istringstream iss(source);
+    std::string line;
+    int64_t line_num = 0;
+
+    while (std::getline(iss, line)) {
+        std::size_t pos = 0;
+        while (pos < line.size()) {
+            auto found = line.find(symbol, pos);
+            if (found == std::string::npos) break;
+
+            // Check word boundaries
+            bool left_ok = (found == 0) || !is_sym_char(line[found - 1]);
+            auto end_pos = found + symbol.size();
+            bool right_ok = (end_pos >= line.size()) || !is_sym_char(line[end_pos]);
+
+            if (left_ok && right_ok) {
+                result.push_back(Range{
+                    Position{line_num, static_cast<int64_t>(found)},
+                    Position{line_num, static_cast<int64_t>(end_pos)},
+                });
+            }
+            pos = found + 1;
+        }
+        ++line_num;
+    }
+    return result;
+}
+
+Value LspServer::handle_references(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    auto line = params["position"].get_int("line").value_or(0);
+    auto character = params["position"].get_int("character").value_or(0);
+
+    const auto& source = it->second.content;
+    auto word = word_at_position(source, line, character);
+    if (word.empty()) return Value(Array{});
+
+    auto occurrences = find_all_occurrences(source, word);
+
+    Array result;
+    for (const auto& r : occurrences) {
+        result.push_back(json::object({
+            {"uri", uri},
+            {"range", range_to_json(r)},
+        }));
+    }
+
+    return Value(std::move(result));
+}
+
+// ============================================================================
+// textDocument/rename
+// ============================================================================
+
+Value LspServer::handle_rename(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(nullptr);
+
+    auto line = params["position"].get_int("line").value_or(0);
+    auto character = params["position"].get_int("character").value_or(0);
+    auto new_name = params.get_string("newName").value_or("");
+    if (new_name.empty()) return Value(nullptr);
+
+    const auto& source = it->second.content;
+    auto word = word_at_position(source, line, character);
+    if (word.empty()) return Value(nullptr);
+
+    auto occurrences = find_all_occurrences(source, word);
+    if (occurrences.empty()) return Value(nullptr);
+
+    Array edits;
+    for (const auto& r : occurrences) {
+        edits.push_back(json::object({
+            {"range", range_to_json(r)},
+            {"newText", new_name},
+        }));
+    }
+
+    // WorkspaceEdit with changes map
+    return json::object({
+        {"changes", json::object({
+            {uri, Value(std::move(edits))},
+        })},
     });
 }
 

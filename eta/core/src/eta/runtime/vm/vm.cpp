@@ -1314,7 +1314,15 @@ std::vector<FrameInfo> VM::get_frames() const {
     if (current_func_) {
         FrameInfo fi;
         fi.func_name  = current_func_->name;
-        fi.span        = current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0);
+        // When the VM is paused at the debug hook, pc_ points to the
+        // about-to-execute instruction (pre-increment).  Using pc_ - 1
+        // would read the *previous* instruction's span — wrong line.
+        // Use the exact span saved by DebugState when it stopped.
+        if (debug_ && debug_->is_paused()) {
+            fi.span = debug_->stopped_span();
+        } else {
+            fi.span = current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0);
+        }
         fi.frame_index = 0;
         result.push_back(fi);
     }
@@ -1366,10 +1374,22 @@ std::vector<VarEntry> VM::get_locals(std::size_t frame_index) const {
     // Only expose the slots that the emitter gave real names to.
     // stack_size includes +32 temporary headroom that we must not expose as
     // variables — they are uninitialized scratch space.  If local_names was not
-    // populated (e.g. module-init functions) fall back to just the parameters.
-    uint32_t num_slots = func->local_names.empty()
-                         ? num_params
-                         : static_cast<uint32_t>(func->local_names.size());
+    // populated (e.g. module-init functions) fall back to num_params or, if
+    // that is also zero, scan the stack for meaningful (non-Nil) values so the
+    // Variables panel is not completely empty.
+    uint32_t num_slots;
+    if (!func->local_names.empty()) {
+        num_slots = static_cast<uint32_t>(func->local_names.size());
+    } else if (num_params > 0) {
+        num_slots = num_params;
+    } else {
+        // Module-init: expose occupied stack slots up to stack_size minus headroom
+        uint32_t headroom = 32;
+        num_slots = func->stack_size > headroom ? func->stack_size - headroom : func->stack_size;
+        // Clamp to actual stack extent
+        uint32_t avail = static_cast<uint32_t>(stack_.size()) - frame_fp;
+        if (num_slots > avail) num_slots = avail;
+    }
     for (uint32_t slot = 0; slot < num_slots; ++slot) {
         std::size_t stack_idx = static_cast<std::size_t>(frame_fp) + slot;
         if (stack_idx >= stack_.size()) break;

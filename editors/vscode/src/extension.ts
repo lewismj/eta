@@ -28,6 +28,7 @@ import {
 import { HeapInspectorPanel } from './heapView';
 import { GCRootsTreeProvider } from './gcRootsTreeView';
 import { DisassemblyContentProvider, showDisassembly } from './disassemblyView';
+import { DisassemblyTreeProvider } from './disassemblyTreeView';
 
 let client: LanguageClient | undefined;
 let outputChannel: OutputChannel;
@@ -37,6 +38,7 @@ let extensionCtx: ExtensionContext;
 // Shared providers (accessible from tracker)
 let gcRootsProvider: GCRootsTreeProvider;
 let disasmProvider: DisassemblyContentProvider;
+let disasmTreeProvider: DisassemblyTreeProvider;
 
 function log(msg: string): void {
     outputChannel?.appendLine(msg);
@@ -204,6 +206,15 @@ export function activate(context: ExtensionContext) {
         workspace.registerTextDocumentContentProvider('eta-disasm', disasmProvider),
     );
 
+    // ── Disassembly tree view (debug sidebar) ────────────────────────
+    disasmTreeProvider = new DisassemblyTreeProvider();
+    context.subscriptions.push(
+        window.createTreeView('etaDisassembly', {
+            treeDataProvider: disasmTreeProvider,
+            showCollapseAll: false,
+        }),
+    );
+
     // ── Always register the debug adapter ──────────────────────────
     const serverPath = findServerBinary(context);
     const dapPath    = findDapBinary(serverPath, context);
@@ -247,6 +258,9 @@ export function activate(context: ExtensionContext) {
         }),
         commands.registerCommand('eta.refreshGCRoots', () => {
             gcRootsProvider.refresh();
+        }),
+        commands.registerCommand('eta.refreshDisassembly', () => {
+            disasmTreeProvider.refresh();
         }),
         commands.registerCommand('eta.inspectObjectFromTree', (objectId: number) => {
             // Open the heap inspector and inspect the clicked object
@@ -451,7 +465,8 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 HeapInspectorPanel.current()?.notifyStopped();
                 // Auto-refresh GC roots tree view
                 gcRootsProvider?.notifyStopped();
-                // Auto-refresh disassembly view (if open)
+                // Auto-refresh disassembly views (sidebar tree + virtual doc)
+                disasmTreeProvider?.notifyStopped();
                 disasmProvider?.refresh();
             } else if (event === 'continued') {
                 this.channel.appendLine('[DAP←] continued');

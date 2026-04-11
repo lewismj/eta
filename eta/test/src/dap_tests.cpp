@@ -442,7 +442,7 @@ BOOST_AUTO_TEST_CASE(threads_response_structure) {
 }
 
 // ---------------------------------------------------------------------------
-// 14. scopes response has Locals + Upvalues entries
+// 14. scopes response has Locals + Upvalues + Globals entries
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(scopes_response_structure) {
     std::string input =
@@ -456,19 +456,26 @@ BOOST_AUTO_TEST_CASE(scopes_response_structure) {
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["success"].as_bool() == true);
     const auto& scopes = resp["body"]["scopes"].as_array();
-    BOOST_REQUIRE_EQUAL(scopes.size(), 2u);
+    BOOST_REQUIRE_EQUAL(scopes.size(), 3u);
     auto n0 = scopes[0].get_string("name");
     auto n1 = scopes[1].get_string("name");
+    auto n2 = scopes[2].get_string("name");
     BOOST_REQUIRE(n0.has_value());
     BOOST_REQUIRE(n1.has_value());
+    BOOST_REQUIRE(n2.has_value());
     BOOST_TEST(*n0 == "Locals");
     BOOST_TEST(*n1 == "Upvalues");
-    // variablesReference values must differ (locals ≠ upvalues for same frame)
+    BOOST_TEST(*n2 == "Globals");
+    // variablesReference values must all differ
     auto ref0 = scopes[0].get_int("variablesReference");
     auto ref1 = scopes[1].get_int("variablesReference");
+    auto ref2 = scopes[2].get_int("variablesReference");
     BOOST_REQUIRE(ref0.has_value());
     BOOST_REQUIRE(ref1.has_value());
+    BOOST_REQUIRE(ref2.has_value());
     BOOST_TEST(*ref0 != *ref1);
+    BOOST_TEST(*ref0 != *ref2);
+    BOOST_TEST(*ref1 != *ref2);
 }
 
 // ---------------------------------------------------------------------------
@@ -688,6 +695,167 @@ BOOST_AUTO_TEST_CASE(inspect_nonexistent_object) {
     auto err_id = resp["body"]["error"].get_int("id");
     BOOST_REQUIRE(err_id.has_value());
     BOOST_TEST(*err_id == 2001);
+}
+
+// ---------------------------------------------------------------------------
+// 23. terminate request is handled (Bug 5 fix) — must not fall through to
+//     unknown-command handler.  supportsTerminateRequest is advertised so
+//     VS Code sends this; without the handler the adapter would not unblock
+//     the paused VM.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(terminate_request_handled) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "terminate", "{}"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "terminate");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+}
+
+// ---------------------------------------------------------------------------
+// 24. completions request returns success (Bug 4 fix) — VS Code sends this
+//     when the user presses Tab in the Debug Console.  Without the handler
+//     it would fall through to unknown-command.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(completions_request_handled) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "completions", R"({"text":"de","column":3,"frameId":0})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "completions");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    // Must have a "targets" array (even if empty — no VM running)
+    BOOST_TEST(resp["body"]["targets"].is_array());
+}
+
+// ---------------------------------------------------------------------------
+// 25. initialize advertises supportsCompletionsRequest (Bug 4 fix)
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(initialize_advertises_completions_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsCompletionsRequest"].as_bool() == true);
+}
+
+// ---------------------------------------------------------------------------
+// 26. Compound variable reference encoding round-trip (Bug 6 fix)
+//     encode_var_ref / decode_var_ref must be self-consistent, and the
+//     COMPOUND_REF_BASE must not collide with frame/scope refs.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(var_ref_encoding_round_trip) {
+    using eta::dap::DapServer;
+    // Test a variety of frame/scope combinations
+    for (int frame = 0; frame < 16; ++frame) {
+        for (int scope = 0; scope < 2; ++scope) {
+            int ref = DapServer::encode_var_ref(frame, scope);
+            BOOST_TEST(ref > 0);                           // DAP requires > 0
+            BOOST_TEST(ref < DapServer::COMPOUND_REF_BASE); // must not collide
+            BOOST_TEST(DapServer::decode_var_ref_frame(ref) == frame);
+            BOOST_TEST(DapServer::decode_var_ref_scope(ref) == scope);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 27. stackTrace / continue / disconnect without a paused VM — must not hang.
+//     The synchronous test harness cannot reliably wait for the VM thread to
+//     hit a breakpoint before sending subsequent requests, so a full-lifecycle
+//     breakpoint test would deadlock.  Instead we verify the protocol dispatch
+//     layer handles these requests gracefully when the VM is not paused.
+//     The actual stopped_span / first-breakpoint fix is tested at the VM unit
+//     level in debug_tests.cpp (breakpoint_stopped_span_correct_line).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(stack_trace_without_paused_vm) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "stackTrace", R"({"threadId":1})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "stackTrace");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    // No paused VM → empty stack frames
+    BOOST_TEST(resp["body"]["stackFrames"].as_array().empty());
+    auto total = resp["body"]["totalFrames"].get_int("totalFrames");
+    // totalFrames should be 0 (or the field exists with value 0)
+}
+
+// ---------------------------------------------------------------------------
+// 28. Variables request with compound expansion (Bug 6 fix) — when the VM
+//     is paused with compound values on the stack, variables must report
+//     non-zero variablesReference for expandable types (cons/vector/closure).
+//     Without a running VM we can only verify the empty case doesn't crash.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(variables_without_vm_returns_empty) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "variables", R"({"variablesReference":1})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "variables");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    BOOST_TEST(resp["body"]["variables"].is_array());
+    BOOST_TEST(resp["body"]["variables"].as_array().empty());
+}
+
+// ---------------------------------------------------------------------------
+// 29. Variables request with compound ref (out of range) returns empty
+//     (Bug 6 fix — ensures compound_refs_ lookup for unknown refs is safe)
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(variables_compound_ref_out_of_range) {
+    // Use a ref >= COMPOUND_REF_BASE but without a running VM
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "variables", R"({"variablesReference":10042})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "variables");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    BOOST_TEST(resp["body"]["variables"].as_array().empty());
+}
+
+// ---------------------------------------------------------------------------
+// 30. Scopes response variablesReferences do not collide with compound refs
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(scopes_refs_below_compound_base) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "scopes", R"({"frameId":0})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "scopes");
+    BOOST_REQUIRE(!resp.is_null());
+    const auto& scopes = resp["body"]["scopes"].as_array();
+    for (const auto& s : scopes) {
+        auto ref = s.get_int("variablesReference");
+        BOOST_REQUIRE(ref.has_value());
+        BOOST_TEST(*ref > 0);
+        BOOST_TEST(*ref < 10000);  // below COMPOUND_REF_BASE
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

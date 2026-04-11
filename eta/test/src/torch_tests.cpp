@@ -835,7 +835,7 @@ BOOST_AUTO_TEST_CASE(prim_nn_train_eval_mode) {
     auto drop = expect_ok(env.specs()[drop_idx].func({mk_dbl(0.5)}));
 
     // In eval mode, dropout should be identity
-    env.specs()[eval_idx].func({drop});
+    (void) env.specs()[eval_idx].func({drop});
     auto input = expect_ok(tf::make_tensor(heap, torch::ones({100}, torch::kFloat64)));
     auto out_eval = expect_ok(env.specs()[fwd_idx].func({drop, input}));
     auto* tp = get_tensor(heap, out_eval);
@@ -845,7 +845,7 @@ BOOST_AUTO_TEST_CASE(prim_nn_train_eval_mode) {
     // Switch back to train mode — output should differ from identity
     // (statistically, with p=0.5 on 100 elements, sum should be ~100 after
     //  scaling but individual elements are zeroed; just verify it runs)
-    env.specs()[train_idx].func({drop});
+    (void) env.specs()[train_idx].func({drop});
     auto out_train = expect_ok(env.specs()[fwd_idx].func({drop, input}));
     BOOST_REQUIRE(get_tensor(heap, out_train));
 }
@@ -1215,12 +1215,12 @@ BOOST_AUTO_TEST_CASE(prim_autograd_full_cycle_via_env) {
     auto* xp = get_tensor(heap, t_val);
     auto y_t = xp->tensor * xp->tensor;
     auto y_val = expect_ok(tf::make_tensor(heap, y_t));
-    env.specs()[*env.lookup("torch/backward")].func({y_val});
+    (void) env.specs()[*env.lookup("torch/backward")].func({y_val});
     auto gr = expect_ok(env.specs()[*env.lookup("torch/grad")].func({t_val}));
     BOOST_TEST(std::abs(get_tensor(heap, gr)->tensor.item<double>() - 8.0) < 1e-10);
 
     // zero-grad!
-    env.specs()[*env.lookup("torch/zero-grad!")].func({t_val});
+    (void) env.specs()[*env.lookup("torch/zero-grad!")].func({t_val});
     auto gr2 = expect_ok(env.specs()[*env.lookup("torch/grad")].func({t_val}));
     BOOST_TEST(std::abs(get_tensor(heap, gr2)->tensor.item<double>()) < 1e-10);
 
@@ -1393,11 +1393,11 @@ BOOST_AUTO_TEST_CASE(prim_sequential_training_converges_via_env) {
 
     double first_loss = 0, last_loss = 0;
     for (int epoch = 0; epoch < 300; ++epoch) {
-        env.specs()[zg_idx].func({opt});
+        (void) env.specs()[zg_idx].func({opt});
         auto pred = expect_ok(env.specs()[fwd_idx].func({net, x}));
         auto loss = expect_ok(env.specs()[mse_idx].func({pred, y}));
-        env.specs()[bw_idx].func({loss});
-        env.specs()[step_idx].func({opt});
+        (void) env.specs()[bw_idx].func({loss});
+        (void) env.specs()[step_idx].func({opt});
         auto lv = expect_ok(env.specs()[item_idx].func({loss}));
         double d = std::bit_cast<double>(lv);
         if (epoch == 0) first_loss = d;

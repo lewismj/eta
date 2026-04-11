@@ -130,12 +130,20 @@ public:
         {
             std::lock_guard<std::mutex> lk(debug_mutex_);
             is_paused_ = true;
+            stopped_span_ = sp;
         }
         stop_callback_(ev);
         {
             std::unique_lock<std::mutex> lk(debug_mutex_);
             debug_cv_.wait(lk, [this] { return !is_paused_; });
         }
+    }
+
+    /// Return the source span that triggered the most recent stop.
+    /// Only meaningful while is_paused() is true.
+    [[nodiscard]] reader::lexer::Span stopped_span() const noexcept {
+        std::lock_guard<std::mutex> lk(debug_mutex_);
+        return stopped_span_;
     }
 
     // ── Main poll — called at the top of each VM instruction loop ─────────
@@ -155,6 +163,7 @@ public:
         {
             std::lock_guard<std::mutex> lk(debug_mutex_);
             is_paused_ = true;
+            stopped_span_ = sp;
         }
         stop_callback_(*ev);   // called WITHOUT lock held
         {
@@ -171,6 +180,7 @@ private:
     mutable std::mutex         debug_mutex_;
     std::condition_variable    debug_cv_;
     bool                       is_paused_{false};
+    reader::lexer::Span        stopped_span_{};  ///< span that triggered the most recent stop
 
     std::mutex                 bp_mutex_;
     std::vector<BreakLocation> breakpoints_;

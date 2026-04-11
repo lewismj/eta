@@ -154,6 +154,62 @@
                     "captures": {
                         "1": { "name": "keyword.control.advanced.eta" }
                     }
+                },
+                {
+                    "comment": "Exception handling",
+                    "match": "(?<=\\()\\s*(raise|catch)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.exception.eta" }
+                    }
+                },
+                {
+                    "comment": "Logic / unification",
+                    "match": "(?<=\\()\\s*(logic-var|unify|deref-lvar|trail-mark|unwind-trail|copy-term)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.logic.eta" }
+                    }
+                },
+                {
+                    "comment": "Common builtin procedures",
+                    "match": "(?<=\\()\\s*(display|write|newline|println|error|cons|car|cdr|list|length|append|reverse|map|for-each|not|abs|min|max|modulo|remainder|string-length|string-append|number->string|string->number|vector|vector-length|vector-ref|vector-set!|make-vector)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.builtin.eta" }
+                    }
+                },
+                {
+                    "comment": "Type predicates and comparisons",
+                    "match": "(?<=\\()\\s*(null\\?|pair\\?|list\\?|number\\?|boolean\\?|string\\?|symbol\\?|procedure\\?|integer\\?|char\\?|vector\\?|port\\?|zero\\?|positive\\?|negative\\?|eq\\?|eqv\\?|equal\\?|logic-var\\?|ground\\?|input-port\\?|output-port\\?|binary-port\\?|dual\\?|tape-ref\\?)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.predicate.eta" }
+                    }
+                },
+                {
+                    "comment": "AD / tape builtins",
+                    "match": "(?<=\\()\\s*(make-dual|dual-primal|dual-backprop|tape-new|tape-start!|tape-stop!|tape-var|tape-backward!|tape-adjoint|tape-primal|tape-ref-index|tape-size|tape-ref-value)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.ad.eta" }
+                    }
+                },
+                {
+                    "comment": "CLP builtins",
+                    "match": "(?<=\\()\\s*(%clp-domain-z!|%clp-domain-fd!|%clp-get-domain)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.clp.eta" }
+                    }
+                },
+                {
+                    "comment": "I/O port operations",
+                    "match": "(?<=\\()\\s*(current-input-port|current-output-port|current-error-port|set-current-input-port!|set-current-output-port!|set-current-error-port!|open-output-string|get-output-string|open-input-string|write-string|read-char|close-port|close-input-port|close-output-port|write-char|open-input-file|open-output-file|open-output-bytevector|open-input-bytevector|get-output-bytevector|read-u8|write-u8)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.io.eta" }
+                    }
+                },
+                {
+                    "comment": "Math / transcendentals",
+                    "match": "(?<=\\()\\s*(sin|cos|tan|asin|acos|atan|exp|log|sqrt|expt|floor|ceiling|truncate|round)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.math.eta" }
+                    }
                 }
             ]
         },

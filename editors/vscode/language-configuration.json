@@ -22,6 +22,22 @@
         "increaseIndentPattern": "^\\s*\\((?!.*\\)).*$",
         "decreaseIndentPattern": "^\\s*\\).*$"
     },
+    "folding": {
+        "markers": {
+            "start": "^\\s*#\\|",
+            "end": "\\|#\\s*$"
+        }
+    },
+    "onEnterRules": [
+        {
+            "beforeText": "^.*\\([^)]*$",
+            "action": { "indent": "indent" }
+        },
+        {
+            "beforeText": "^\\s*\\)\\s*$",
+            "action": { "indent": "outdent" }
+        }
+    ],
     "wordPattern": "[^\\s()\\[\\]{}\",'`;#|\\\\]+"
 }
 

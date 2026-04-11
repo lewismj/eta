@@ -308,6 +308,56 @@ function getWebviewHtml(): string {
         html += '<div class="section"><h2>GC Roots</h2><ul class="tree">';
         for (const root of snap.roots) {
             if (root.objectIds.length === 0) continue;
+
+            // ── Special handling for Globals: group by module prefix ──────
+            if (root.name === 'Globals' && root.labels && root.labels.length > 0) {
+                html += '<li>';
+                html += '<span class="toggle" data-root="Globals">Globals';
+                html += ' <span class="badge">' + root.objectIds.length + '</span></span>';
+                html += '<ul class="children" style="display:none">';
+
+                // Group labels by module prefix (everything before last '.')
+                const groups = {};
+                for (let i = 0; i < root.objectIds.length; i++) {
+                    const oid = root.objectIds[i];
+                    const label = root.labels[i] || ('Object #' + oid);
+                    const dotIdx = label.lastIndexOf('.');
+                    const mod = dotIdx > 0 ? label.substring(0, dotIdx) : '(top-level)';
+                    if (!groups[mod]) groups[mod] = [];
+                    groups[mod].push({ oid, label });
+                }
+
+                // Sort module names; put (top-level) last
+                const modNames = Object.keys(groups).sort((a, b) => {
+                    if (a === '(top-level)') return 1;
+                    if (b === '(top-level)') return -1;
+                    return a.localeCompare(b);
+                });
+
+                for (const mod of modNames) {
+                    const items = groups[mod];
+                    html += '<li>';
+                    html += '<span class="toggle" data-root="' + esc(mod) + '">' + esc(mod);
+                    html += ' <span class="badge">' + items.length + '</span></span>';
+                    html += '<ul class="children" style="display:none">';
+                    const cap = Math.min(items.length, 100);
+                    for (let i = 0; i < cap; i++) {
+                        const it = items[i];
+                        // Show short name (after last dot) for readability
+                        const shortName = it.label.includes('.') ? it.label.substring(it.label.lastIndexOf('.') + 1) : it.label;
+                        html += '<li><span class="obj-link" data-oid="' + it.oid + '">' + esc(shortName) + ' <span class="badge">#' + it.oid + '</span></span></li>';
+                    }
+                    if (items.length > 100) {
+                        html += '<li><em>… and ' + (items.length - 100) + ' more</em></li>';
+                    }
+                    html += '</ul></li>';
+                }
+
+                html += '</ul></li>';
+                continue;
+            }
+
+            // ── Default rendering for non-Globals roots ───────────────────
             html += '<li>';
             html += '<span class="toggle" data-root="' + esc(root.name) + '">' + esc(root.name);
             html += ' <span class="badge">' + root.objectIds.length + '</span></span>';

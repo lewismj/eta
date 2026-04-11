@@ -10,7 +10,7 @@ import {
 
 // ── Node types ────────────────────────────────────────────────────────────────
 
-export type GCRootNode = RootCategoryNode | RootObjectNode;
+export type GCRootNode = RootCategoryNode | RootObjectNode | ObjectFieldNode;
 
 export class RootCategoryNode {
     constructor(
@@ -26,6 +26,31 @@ export class RootObjectNode {
         public readonly label: string,
         public readonly parentName: string,
     ) {}
+}
+
+/** A child field of an inspected heap object (car/cdr, vector element, upvalue). */
+export class ObjectFieldNode {
+    constructor(
+        public readonly fieldName: string,
+        public readonly objectId: number,
+        public readonly kind: string,
+        public readonly preview: string,
+    ) {}
+}
+
+// ── Inspection result type ────────────────────────────────────────────────────
+
+interface InspectResult {
+    objectId: number;
+    kind: string;
+    size: number;
+    preview: string;
+    children: Array<{
+        objectId: number;
+        kind: string;
+        size: number;
+        preview: string;
+    }>;
 }
 
 // ── Snapshot types ────────────────────────────────────────────────────────────
@@ -87,21 +112,40 @@ export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
             item.iconPath = new ThemeIcon('symbol-namespace');
             item.tooltip = `${element.name}: ${element.objectIds.length} heap object(s)`;
             return item;
-        } else {
-            const item = new TreeItem(element.label, TreeItemCollapsibleState.None);
+        } else if (element instanceof RootObjectNode) {
+            // Make root objects expandable — children loaded via eta/inspectObject
+            const item = new TreeItem(element.label, TreeItemCollapsibleState.Collapsed);
             item.iconPath = new ThemeIcon('symbol-variable');
             item.description = `#${element.objectId}`;
-            item.tooltip = `Object ID: ${element.objectId}\nRoot: ${element.parentName}`;
+            item.tooltip = `Object ID: ${element.objectId}\nRoot: ${element.parentName}\nClick to expand fields`;
             item.command = {
                 command: 'eta.inspectObjectFromTree',
                 title: 'Inspect Object',
                 arguments: [element.objectId],
             };
             return item;
+        } else {
+            // ObjectFieldNode — expandable if it has a valid objectId
+            const hasChildren = element.objectId > 0;
+            const item = new TreeItem(
+                element.fieldName,
+                hasChildren ? TreeItemCollapsibleState.Collapsed : TreeItemCollapsibleState.None,
+            );
+            item.iconPath = new ThemeIcon('symbol-field');
+            item.description = element.preview;
+            item.tooltip = `${element.kind} #${element.objectId}: ${element.preview}`;
+            if (hasChildren) {
+                item.command = {
+                    command: 'eta.inspectObjectFromTree',
+                    title: 'Inspect Object',
+                    arguments: [element.objectId],
+                };
+            }
+            return item;
         }
     }
 
-    getChildren(element?: GCRootNode): GCRootNode[] {
+    getChildren(element?: GCRootNode): GCRootNode[] | Thenable<GCRootNode[]> {
         if (!element) {
             // Root level: one node per GC root category
             return this.roots
@@ -122,7 +166,28 @@ export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
             }
             return children;
         }
+        // RootObjectNode or ObjectFieldNode — drill down via eta/inspectObject
+        if (element instanceof RootObjectNode || element instanceof ObjectFieldNode) {
+            return this.inspectAndExpand(element.objectId);
+        }
         return [];
     }
-}
 
+    private async inspectAndExpand(objectId: number): Promise<ObjectFieldNode[]> {
+        const session = debug.activeDebugSession;
+        if (!session || session.type !== 'eta') { return []; }
+        try {
+            const result = await session.customRequest('eta/inspectObject', { objectId }) as InspectResult;
+            return (result.children ?? []).map((child, i) =>
+                new ObjectFieldNode(
+                    `[${i}]`,
+                    child.objectId,
+                    child.kind,
+                    child.preview,
+                ),
+            );
+        } catch {
+            return [];
+        }
+    }
+}

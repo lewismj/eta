@@ -12,14 +12,16 @@
         "vscode": "^1.85.0"
     },
     "categories": ["Programming Languages"],
+    "keywords": ["eta", "lisp", "scheme", "functional", "logic-programming", "unification"],
+    "license": "MIT",
     "activationEvents": [
         "onLanguage:eta",
         "onDebugResolve:eta",
-        "onDebug",
         "onCommand:eta.runFile",
         "onCommand:eta.showHeapInspector",
         "onCommand:eta.showDisassembly",
-        "onView:etaGCRoots"
+        "onView:etaGCRoots",
+        "onView:etaDisassembly"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -34,22 +36,23 @@
             "scopeName": "source.eta",
             "path": "./syntaxes/eta.tmLanguage.json"
         }],
-        "viewsContainers": {
-            "panel": [
-                {
-                    "id": "eta-debug-panel",
-                    "title": "Eta Debug",
-                    "icon": "$(bug)"
-                }
-            ]
-        },
-        "views": {
+        "snippets": [{
+            "language": "eta",
+            "path": "./snippets/eta.json"
+        }],
+            "views": {
             "debug": [
                 {
                     "id": "etaGCRoots",
-                    "name": "Eta GC Roots",
-                    "when": "debugType == 'eta'",
+                    "name": "Memory",
+                    "when": "inDebugMode && debugType == 'eta'",
                     "icon": "$(list-tree)"
+                },
+                {
+                    "id": "etaDisassembly",
+                    "name": "Disassembly",
+                    "when": "inDebugMode && debugType == 'eta'",
+                    "icon": "$(file-binary)"
                 }
             ]
         },
@@ -113,6 +116,12 @@
                 "title": "Refresh GC Roots",
                 "icon": "$(refresh)",
                 "category": "Eta"
+            },
+            {
+                "command": "eta.refreshDisassembly",
+                "title": "Refresh Disassembly",
+                "icon": "$(refresh)",
+                "category": "Eta"
             }
         ],
         "menus": {
@@ -144,6 +153,11 @@
                 {
                     "command": "eta.refreshGCRoots",
                     "when": "view == etaGCRoots",
+                    "group": "navigation"
+                },
+                {
+                    "command": "eta.refreshDisassembly",
+                    "when": "view == etaDisassembly",
                     "group": "navigation"
                 }
             ]
