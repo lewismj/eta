@@ -1,6 +1,7 @@
 # Bytecode Compiler (`etac`)
 
-[← Back to README](../README.md) · [Architecture](architecture.md) ·
+[← Back to README](../README.md) · [Quick Start](quickstart.md) · [Build from Source](build.md) ·
+[Architecture](architecture.md) ·
 [NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
 [Optimization](optimization.md) · [Runtime & GC](runtime.md) ·
 [Modules & Stdlib](modules.md) · [Next Steps](next-steps.md)

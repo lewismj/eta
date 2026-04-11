@@ -197,7 +197,7 @@ Write-Host "> [5/6] Copying install script and docs..."
 $helpers = @(
     (Join-Path $ProjectRoot "scripts\install.ps1"),
     (Join-Path $ProjectRoot "scripts\install.cmd"),
-    (Join-Path $ProjectRoot "TESTING.md")
+    (Join-Path $ProjectRoot "docs\quickstart.md")
 )
 foreach ($h in $helpers) {
     if (Test-Path $h) { Copy-Item -Force $h "$Prefix\" }

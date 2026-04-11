@@ -11,6 +11,8 @@
 </p>
 
 <p align="center">
+  <a href="docs/quickstart.md">Quick Start</a> ·
+  <a href="docs/build.md">Build from Source</a> ·
   <a href="docs/architecture.md">Architecture</a> ·
   <a href="docs/nanboxing.md">NaN-Boxing</a> ·
   <a href="docs/bytecode-vm.md">Bytecode &amp; VM</a> ·
@@ -83,11 +85,166 @@ The implementation ships as five executables and a VS Code extension:
 ```
  
 ---
- ## TLDR;
 
- Download the initial release and run examples in [VSCode](TLDR.md)
+## Quick Start
 
-<img src="docs/img/eta_example_run.png" width="350">
+Download the latest [release](https://github.com/lewismj/eta/releases)
+for your platform, unpack it, and run the installer:
+
+| Platform     | Archive                            |
+|--------------|------------------------------------|
+| Windows x64  | `eta-v0.2.0-win-x64.zip`          |
+| Linux x86_64 | `eta-v0.2.0-linux-x86_64.tar.gz`  |
+
+```bash
+# Windows                              # Linux / macOS
+cd eta-v0.2.0-win-x64                  cd eta-v0.2.0-linux-x86_64
+.\install.cmd                          chmod +x install.sh && ./install.sh
+```
+
+The installer adds `bin/` to your `PATH`, sets `ETA_MODULE_PATH`, and
+installs the VS Code extension automatically if VS Code is detected.
+
+> [!NOTE]
+> Open a **new** terminal after running the installer for the environment changes to take effect.
+
+### Interpret from Source — `etai`
+
+`etai` compiles a `.eta` file in-memory and executes it immediately:
+
+```console
+$ etai examples/hello.eta
+Hello, world!
+2432902008176640000
+```
+
+### Ahead-of-Time Compilation — `etac` + `etai`
+
+`etac` compiles `.eta` source to compact `.etac` bytecode. `etai` then
+loads `.etac` files directly, **skipping all front-end phases** (lex,
+parse, expand, link, analyze, emit) for faster startup:
+
+```console
+$ etac examples/hello.eta
+compiled examples/hello.eta → examples/hello.etac (3 functions, 1 module(s))
+
+$ etai examples/hello.etac
+Hello, world!
+2432902008176640000
+```
+
+Key `etac` flags:
+
+| Flag | Effect |
+|------|--------|
+| `-O` | Enable optimization passes (constant folding, dead code elimination) |
+| `--disasm` | Print human-readable bytecode to stdout (no `.etac` written) |
+| `--no-debug` | Strip source maps for a smaller output file |
+| `-o <path>` | Custom output path (default: `<input>.etac`) |
+
+```console
+$ etac -O examples/hello.eta -o hello-opt.etac
+$ etac --disasm examples/hello.eta
+```
+
+### Interactive REPL
+
+```console
+$ eta_repl
+η> (+ 1 2 3 4 5)
+=> 15
+η> (exit)
+```
+
+### VS Code
+
+The installer automatically sets up the VS Code extension. Configure the
+paths in settings (`Ctrl+,` → search **Eta**):
+
+```json
+{
+  "eta.lsp.serverPath":     "/path/to/eta-v0.2.0/bin/eta_lsp",
+  "eta.dap.executablePath": "/path/to/eta-v0.2.0/bin/eta_dap"
+}
+```
+
+Open the `examples/` folder, open any `.eta` file, and press **F5** to
+debug. The extension provides:
+
+- **Syntax highlighting** and **live diagnostics** (LSP)
+- **Breakpoints & stepping** — F10 Step Over · F11 Step In · Shift+F11 Step Out · F5 Continue
+- **Heap Inspector** — live memory gauge, per-kind object stats, GC root tree with drill-down (`Ctrl+Shift+P` → *Eta: Show Heap Inspector*)
+- **Disassembly View** — live bytecode with current-PC marker in the Debug sidebar (`Ctrl+Shift+P` → *Eta: Show Disassembly*)
+- **GC Roots Tree** — expandable root categories (Stack, Globals, Frames), module-grouped globals, object drill-down
+
+<img src="docs/img/eta_example_run.png" width="500">
+
+> [!TIP]
+> See [TLDR.md](TLDR.md) for a step-by-step walkthrough with screenshots,
+> or [Quick Start](docs/quickstart.md) for the full reference.
+
+---
+
+### Build from Source
+
+For contributors or those who want to build from source, see
+**[Building from Source](docs/build.md)** — prerequisites, one-script
+builds, manual CMake steps, and CI details.
+
+Quick version:
+
+```bash
+# Linux / macOS
+./scripts/build-release.sh ./dist/eta-release
+cd dist/eta-release && ./install.sh
+
+# Windows (PowerShell)
+.\scripts\build-release.ps1 .\dist\eta-release
+cd dist\eta-release; .\install.cmd
+```
+
+See [Language Guide](docs/examples.md) for a guided tour of the example programs.
+
+### Bundle Layout
+
+```
+eta-v0.2.0-<platform>/
+  bin/
+    etac(.exe)          # Ahead-of-time bytecode compiler
+    etai(.exe)          # File interpreter (also runs .etac files)
+    eta_repl(.exe)      # Interactive REPL
+    eta_lsp(.exe)       # Language Server (JSON-RPC over stdio)
+    eta_dap(.exe)       # Debug Adapter (DAP over stdio, used by VS Code)
+  stdlib/
+    prelude.eta         # Auto-loaded standard library
+    std/
+      core.eta  math.eta  io.eta  collections.eta  test.eta
+      logic.eta  clp.eta  causal.eta  fact_table.eta  torch.eta
+  examples/
+    hello.eta           # Hello world & factorial
+    basics.eta          # Arithmetic, let, lists, quoting
+    functions.eta       # defun, lambda, closures, recursion
+    higher-order.eta    # map, filter, fold, sort, zip
+    composition.eta     # compose, flip, currying, pipelines
+    recursion.eta       # Fibonacci, Ackermann, Hanoi
+    exceptions.eta      # catch/raise, dynamic-wind
+    boolean-simplifier.eta  # Symbolic boolean rewriting
+    symbolic-diff.eta       # Symbolic differentiation & simplification
+    unification.eta         # Native structural unification primitives
+    logic.eta               # Relational logic programming
+    aad.eta                 # Reverse-mode automatic differentiation
+    xva.eta                 # Finance example: CVA, FVA calculations with AAD
+    european.eta            # European option Greeks (1st & 2nd order) with AAD
+    sabr.eta                # SABR vol surface with tape-based AD
+    fact-table.eta          # Columnar fact tables with hash-indexed queries
+    torch.eta               # Tensor computing & neural network training (libtorch)
+    causal_demo.eta         # Demo: symbolic + causal + logic/CLP + libtorch
+    causal-factor/          # End-to-end causal factor analysis
+    do-calculus/            # Do-calculus identification engine demos
+  editors/
+    eta-lang-<version>.vsix # VS Code extension
+  install.sh / install.cmd
+```
 
 ---
 
@@ -162,6 +319,8 @@ flowchart LR
 
 | Page                                       | Contents                                                                                      |
 |--------------------------------------------|-----------------------------------------------------------------------------------------------|
+| **[Quick Start](docs/quickstart.md)**      | Installing, running `etai`/`etac`, REPL, modules, VS Code extension (full reference)          |
+| **[Build from Source](docs/build.md)**     | Prerequisites, one-script builds, manual CMake, CI, testing                                   |
 | **[Architecture](docs/architecture.md)**   | Full system diagram, phase-by-phase walkthrough, Core IR node types                           |
 | **[NaN-Boxing](docs/nanboxing.md)**        | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                         |
 | **[Bytecode & VM](docs/bytecode-vm.md)**   | Opcode reference, end-to-end compilation trace, call stack model, TCO                         |
@@ -183,137 +342,6 @@ flowchart LR
 
 ---
 
-## Quick Start
-
-### Option 1 — Pre-built Release (recommended)
-
-Download the latest release for your platform, unpack it, and run the installer:
-
-| Platform | Archive                          |
-|----------|----------------------------------|
-| Windows x64 | `eta-v0.0.9-win-x64.zip`         |
-| Linux x86_64 | `eta-v0.0.9-linux-x86_64.tar.gz` |
-
-**Windows (PowerShell / Command Prompt):**
-```console
-cd eta-v0.0.9-win-x64
-.\install.cmd
-```
-
-**Linux / macOS:**
-```console
-cd eta-v0.0.9-linux-x86_64
-chmod +x install.sh && ./install.sh
-```
-
-The installer:
-- Adds `bin/` to your `PATH`
-- Sets `ETA_MODULE_PATH` so the runtime can locate the standard library
-- Installs the VS Code extension automatically if VS Code is detected
-
-> [!NOTE]
-> Open a **new** terminal after running the installer for the environment changes to take effect.
-
-**Try it out:**
-```console
-etai --help
-eta_repl
-etai examples/hello.eta
-etac examples/hello.eta && etai examples/hello.etac
-```
-
-#### VS Code Setup
-
-The VS Code extension is installed automatically by the installer. You only need to point it at the executables inside the release bundle. Open VS Code settings (`Ctrl+,`) and search for **Eta**, or add the following to your `settings.json`:
-
-```json
-{
-  "eta.executablePath": "/path/to/eta-release/bin/etai",
-  "eta.lspPath":        "/path/to/eta-release/bin/eta_lsp",
-  "eta.dapPath":        "/path/to/eta-release/bin/eta_dap"
-}
-```
-
-Then open the `examples/` folder (**File → Open Folder**), open any `.eta` file, and run it from the integrated terminal with `etai <file>.eta`.  To start a debug session press **F5** — the extension launches `eta_dap` automatically and connects VS Code's debugger, giving you breakpoints, step-through execution, call-stack inspection, and an inline expression evaluator.
-
-See [TLDR.md](TLDR.md) for a step-by-step walkthrough with screenshots.
-
----
-
-### Option 2 — Build from Source
-
-#### Prerequisites
-
-| Tool | Version |
-|------|---------|
-| CMake | ≥ 3.28 |
-| C++ compiler | C++23 (Clang 17+, GCC 13+, MSVC 17.8+) |
-| Boost | ≥ 1.88 (`unit_test_framework`, `concurrent_flat_map`) |
-| Node.js / npm | ≥ 18 *(for VS Code extension)* |
-
-
-**Linux / macOS**
-```bash
-chmod +x scripts/build-release.sh
-./scripts/build-release.sh ./dist/eta-release
-cd dist/eta-release
-./install.sh
-bin/eta_repl
-```
-
-**Windows (PowerShell)**
-```powershell
-.\scripts\build-release.ps1 .\dist\eta-release
-cd dist\eta-release
-.\install.cmd
-etai examples\hello.eta
-```
-
-See [TESTING.md](TESTING.md) for full build, test, and release instructions.
-See [Examples](docs/examples.md) for a guided tour of the example programs.
-
-### Bundle Layout
-
-```
-eta-<platform>/
-  bin/
-    etac(.exe)          # Ahead-of-time bytecode compiler
-    etai(.exe)          # File interpreter (also runs .etac files)
-    eta_repl(.exe)      # Interactive REPL
-    eta_lsp(.exe)       # Language Server (JSON-RPC over stdio)
-    eta_dap(.exe)       # Debug Adapter (DAP over stdio, used by VS Code)
-  stdlib/
-    prelude.eta         # Auto-loaded standard library
-    std/
-      core.eta  math.eta  io.eta  collections.eta  test.eta
-      logic.eta  clp.eta  causal.eta  fact_table.eta  torch.eta
-  examples/
-    hello.eta           # Hello world & factorial
-    basics.eta          # Arithmetic, let, lists, quoting
-    functions.eta       # defun, lambda, closures, recursion
-    higher-order.eta    # map, filter, fold, sort, zip
-    composition.eta     # compose, flip, currying, pipelines
-    recursion.eta       # Fibonacci, Ackermann, Hanoi
-    exceptions.eta      # catch/raise, dynamic-wind
-    boolean-simplifier.eta  # Symbolic boolean rewriting
-    symbolic-diff.eta       # Symbolic differentiation & simplification
-    unification.eta         # Native structural unification primitives
-    logic.eta               # Relational logic programming
-    aad.eta                 # Reverse-mode automatic differentiation
-    xva.eta                 # Finance example: CVA, FVA calculations with AAD
-    european.eta            # European option Greeks (1st & 2nd order) with AAD
-    sabr.eta                # SABR vol surface with tape-based AD
-    fact-table.eta          # Columnar fact tables with hash-indexed queries
-    torch.eta               # Tensor computing & neural network training (libtorch)
-    causal_demo.eta         # Demo: symbolic + causal + logic/CLP + libtorch
-    causal-factor/          # End-to-end causal factor analysis
-    do-calculus/            # Do-calculus identification engine demos
-  editors/
-    vscode/             # VS Code extension (.vsix)
-  install.sh / install.cmd
-```
-
----
 
 ## Standard Library
 

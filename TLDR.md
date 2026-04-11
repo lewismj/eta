@@ -2,19 +2,20 @@
 
 The fastest way to get started is to download a pre-built release, run the installer, and try the examples.
 
-Note: the DAP server is still early in development, will add features and fixes soon, but you can 
-still run set breakpoints and run through the examples, as shown below.
+> [!TIP]
+> For the full reference — modules, import variants, all VS Code features,
+> and `etac` CLI details — see [Quick Start](docs/quickstart.md).
 
 ---
 
 ## 1. Download & Unpack
 
-Download the latest [release](https://github.com/lewismj/eta/releases/tag/v0.0.1) for your platform:
+Download the latest [release](https://github.com/lewismj/eta/releases) for your platform:
 
 | Platform | Archive                          |
 |----------|----------------------------------|
-| Windows x64 | `eta-v0.0.9-win-x64.zip`         |
-| Linux x86_64 | `eta-v0.0.9-linux-x86_64.tar.gz` |
+| Windows x64 | `eta-v0.2.0-win-x64.zip`         |
+| Linux x86_64 | `eta-v0.2.0-linux-x86_64.tar.gz` |
 
 Unzip the archive into a directory of your choice.
 
@@ -26,25 +27,25 @@ The installer adds the `bin/` directory to your `PATH`, sets the `ETA_MODULE_PAT
 
 **Windows (PowerShell / Command Prompt):**
 ```console
-cd eta-v0.0.9-win-x64
+cd eta-v0.2.0-win-x64
 .\install.cmd
 ```
 
 **Linux / macOS:**
 ```console
-cd eta-v0.0.9-linux-x86_64
+cd eta-v0.2.0-linux-x86_64
 chmod +x install.sh && ./install.sh
 ```
 
 Example output (Windows):
 ```console
-C:\tmp\eta-v0.0.9-win-x64>.\install.cmd
+C:\tmp\eta-v0.2.0-win-x64>.\install.cmd
 +==============================================================+
 |  Eta Installer (Windows)                                     |
 +==============================================================+
 
-  bin     : C:\tmp\eta-v0.0.9-win-x64\bin
-  stdlib  : C:\tmp\eta-v0.0.9-win-x64\stdlib
+  bin     : C:\tmp\eta-v0.2.0-win-x64\bin
+  stdlib  : C:\tmp\eta-v0.2.0-win-x64\stdlib
 
 > Eta already on user PATH -- skipping.
 > ETA_MODULE_PATH already set -- skipping.
@@ -54,6 +55,7 @@ Extension 'eta-lang.vsix' was successfully installed.
   [OK] VS Code extension installed.
 
 > Verifying...
+  [OK] etac.exe
   [OK] etai.exe
   [OK] eta_repl.exe
   [OK] eta_lsp.exe
@@ -64,7 +66,7 @@ Extension 'eta-lang.vsix' was successfully installed.
     etai --help
     eta_repl
 
-C:\tmp\eta-v0.0.9-win-x64>
+C:\tmp\eta-v0.2.0-win-x64>
 ```
 
 > [!NOTE]
@@ -76,28 +78,19 @@ C:\tmp\eta-v0.0.9-win-x64>
 
 The `examples/` directory inside the release bundle contains several `.eta` programs.
 
-**Interpreter** — run a file directly:
+### Interpret from Source — `etai`
 
-> [!NOTE]
-> `etai` accepts both `.eta` source files (interpreted from source) and `.etac` pre-compiled bytecode files (produced by `etac`). When given a `.etac` file, `etai` skips all compilation phases and loads the bytecode directly.
+`etai` compiles a `.eta` file in-memory (lex → parse → expand → link →
+analyze → emit) and executes it immediately:
 
 ```console
-C:\>cd tmp
-
-C:\tmp>cd eta-v0.0.9-win-x64
-
-C:\tmp\eta-v0.0.9-win-x64>cd examples
-
-C:\tmp\eta-v0.0.9-win-x64\examples>etai hello.eta
+C:\tmp\eta-v0.2.0-win-x64\examples> etai hello.eta
 Hello, world!
 2432902008176640000
-
-C:\tmp\eta-v0.0.9-win-x64\examples>
-
 ```
 
 ```console
-C:\tmp\eta-v0.0.9-win-x64\examples> etai aad.eta
+C:\tmp\eta-v0.2.0-win-x64\examples> etai aad.eta
 f(x,y) = x*y + sin(x)
   grad at (2,3): (6.9093 #(2.58385 2))
 g(x) = x^2 + 3x + 1
@@ -110,10 +103,48 @@ dot(v, [1,2,3])
   grad at (1,1,1): (6 #(1 2 3))
 ```
 
-**REPL** — interactive session:
+### Ahead-of-Time Compilation — `etac` + `etai`
+
+`etac` compiles `.eta` source files into compact `.etac` bytecode.
+`etai` then loads `.etac` files directly — **skipping all front-end
+phases** for faster startup:
+
 ```console
-C:\tmp\eta-v0.0.9-win-x64> eta_repl
-Loaded C:\tmp\eta-v0.0.2-win-x64\stdlib\prelude.eta
+C:\tmp\eta-v0.2.0-win-x64\examples> etac hello.eta
+compiled examples\hello.eta → examples\hello.etac (3 functions, 1 module(s))
+
+C:\tmp\eta-v0.2.0-win-x64\examples> etai hello.etac
+Hello, world!
+2432902008176640000
+```
+
+Enable optimization passes with `-O`:
+```console
+C:\tmp\eta-v0.2.0-win-x64\examples> etac -O hello.eta -o hello-opt.etac
+```
+
+Inspect the emitted bytecode without writing a file:
+```console
+C:\tmp\eta-v0.2.0-win-x64\examples> etac --disasm hello.eta
+```
+
+Key `etac` flags:
+
+| Flag | Effect |
+|------|--------|
+| `-O` | Enable optimization passes (constant folding, dead code elimination) |
+| `--disasm` | Print human-readable bytecode to stdout (no `.etac` written) |
+| `--no-debug` | Strip source maps for a smaller output file |
+| `-o <path>` | Custom output path (default: `<input>.etac`) |
+
+> [!TIP]
+> See [Compiler (`etac`)](docs/compiler.md) for the full CLI reference, binary format specification, and optimization pass details.
+
+### Interactive REPL
+
+```console
+C:\tmp\eta-v0.2.0-win-x64> eta_repl
+Loaded C:\tmp\eta-v0.2.0-win-x64\stdlib\prelude.eta
 eta REPL - type an expression and press Enter.
 Use Ctrl+C or (exit) to quit.
 eta> (+ 1 2 3 4 5)
@@ -125,24 +156,25 @@ eta> (exit)
 
 ## 4. VS Code Setup
 
-The installer automatically installs the VS Code extension when VS Code is present. The extension provides syntax highlighting and live diagnostics via the Language Server (`eta_lsp`).
+The installer automatically installs the VS Code extension when VS Code is present. The extension provides syntax highlighting, live diagnostics via the Language Server (`eta_lsp`), and full debugging via the Debug Adapter (`eta_dap`).
 
-### Configure the Language Server
+### Configure the Extension
 
-Open VS Code settings (`Ctrl+,` or `Cmd+,`) and search for **Eta**. Set the following two values to point at the executables inside the release bundle:
+Open VS Code settings (`Ctrl+,` or `Cmd+,`) and search for **Eta**. The key settings are:
 
-| Setting | Value (Windows example)                     |
-|---------|---------------------------------------------|
-| `eta.executablePath` | `C:\tmp\eta-v0.0.2-win-x64\bin\etai.exe`    |
-| `eta.lspPath` | `C:\tmp\eta-v0.0.2-win-x64\bin\eta_lsp.exe` |
-| `eta.lspPath` | `C:\tmp\eta-v0.0.2-win-x64\bin\eta_lsp.exe` |
+| Setting | Description | Example |
+|---------|-------------|---------|
+| `eta.lsp.serverPath` | Path to the `eta_lsp` executable | `C:\tmp\eta-v0.2.0-win-x64\bin\eta_lsp.exe` |
+| `eta.dap.executablePath` | Path to the `eta_dap` executable | `C:\tmp\eta-v0.2.0-win-x64\bin\eta_dap.exe` |
+| `eta.modulePath` | Module search path (`ETA_MODULE_PATH`) | `C:\tmp\eta-v0.2.0-win-x64\stdlib` |
+| `eta.debug.autoShowHeap` | Auto-open Heap Inspector on debug start | `true` (default) |
 
 Or add them directly to your `settings.json`:
 
 ```json
 {
-  "eta.executablePath": "C:\\tmp\\eta-v0.0.9-win-x64\\bin\\etai.exe",
-  "eta.lspPath":        "C:\\tmp\\eta-v0.0.9-win-x64\\bin\\eta_lsp.exe"
+  "eta.lsp.serverPath":     "C:\\tmp\\eta-v0.2.0-win-x64\\bin\\eta_lsp.exe",
+  "eta.dap.executablePath": "C:\\tmp\\eta-v0.2.0-win-x64\\bin\\eta_dap.exe"
 }
 ```
 
@@ -176,38 +208,29 @@ The Heap Inspector lets you visualise heap usage, per-object-kind statistics, an
 
 1. Set a breakpoint and start debugging (as above).
 2. Open the Command Palette (`Ctrl+Shift+P`) and run **Eta: Show Heap Inspector**.
+   (Also opens automatically if `eta.debug.autoShowHeap` is enabled.)
 3. The inspector panel opens beside your editor showing:
    - **Memory gauge** — current heap usage vs. soft limit.
-   - **Object Kinds** — count and bytes per type (Cons, Closure, Vector, etc.).
-   - **GC Roots** — expandable tree of root categories (Stack, Globals, Frames, etc.).
+   - **Cons Pool** — pool utilisation (live/capacity/free/bytes).
+   - **Object Kinds** — count and bytes per type (Cons, Closure, Vector, String, etc.), sorted by size.
+   - **GC Roots** — expandable tree of root categories (Stack, Globals, Frames, etc.). Globals are grouped by module.
 4. Click any **Object #N** link to drill into it — view kind, size, value preview, and child references.
 5. The panel **auto-refreshes** each time the VM stops (breakpoint, step). You can also click **Refresh** manually.
 
----
+### Disassembly View
 
-## 6. Compiling to Bytecode
+The Disassembly View shows live bytecode while debugging:
 
-Eta includes an ahead-of-time bytecode compiler, **`etac`**, that compiles `.eta` source files into compact `.etac` bytecode. The interpreter can then load `.etac` files directly — skipping lexing, parsing, expansion, linking, and analysis — for faster startup.
+- **Sidebar panel:** The **Disassembly** panel appears in the Debug sidebar when an Eta debug session is active. Each bytecode instruction is shown as a tree item with a `◀ PC` marker highlighting the current program counter. It auto-refreshes on every step/breakpoint.
+- **Full-document view:** Open the Command Palette (`Ctrl+Shift+P`) and run:
+  - **Eta: Show Disassembly** — disassembly of the current function.
+  - **Eta: Show Disassembly (All Functions)** — disassembly of every loaded function.
 
-```console
-C:\tmp\eta-v0.0.9-win-x64\examples> etac hello.eta
-compiled examples\hello.eta → examples\hello.etac (3 functions, 1 module(s))
+### GC Roots Tree
 
-C:\tmp\eta-v0.0.9-win-x64\examples> etai hello.etac
-Hello, world!
-2432902008176640000
-```
+The **Memory** panel in the Debug sidebar provides an expandable tree of GC root categories (Stack, Globals, Frames, etc.):
 
-Enable optimization passes with `-O`:
-```console
-C:\tmp\eta-v0.0.9-win-x64\examples> etac -O hello.eta -o hello-opt.etac
-```
-
-Inspect the emitted bytecode without writing a file:
-```console
-C:\tmp\eta-v0.0.9-win-x64\examples> etac --disasm hello.eta
-```
-
-> [!TIP]
-> See [docs/compiler.md](docs/compiler.md) for the full CLI reference, binary format specification, and optimization pass details.
-
+- **Globals** are automatically grouped by module prefix for readability.
+- Each root object is expandable — clicking it shows child fields (car/cdr, vector elements, upvalues, etc.).
+- Click any object to open it in the Heap Inspector for detailed inspection.
+- Auto-refreshes on each VM stop; manual refresh via the title bar button.
