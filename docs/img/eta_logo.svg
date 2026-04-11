@@ -4,50 +4,15 @@
 <svg
    version="1.1"
    id="svg1"
-   width="261.62399"
+   width="160.57468"
    height="183.36133"
-   viewBox="0 0 261.62399 183.36133"
-   sodipodi:docname="eta_logo.svg"
-   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   viewBox="0 0 160.57468 183.36133"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
   <defs
      id="defs1" />
-  <sodipodi:namedview
-     id="namedview1"
-     pagecolor="#ffffff"
-     bordercolor="#000000"
-     borderopacity="0"
-     inkscape:showpageshadow="2"
-     inkscape:pageopacity="0.0"
-     inkscape:pagecheckerboard="true"
-     inkscape:deskcolor="#d1d1d1"
-     showgrid="false"
-     inkscape:zoom="6.3644828"
-     inkscape:cx="130.88259"
-     inkscape:cy="91.680663"
-     inkscape:window-width="2560"
-     inkscape:window-height="1369"
-     inkscape:window-x="-8"
-     inkscape:window-y="-8"
-     inkscape:window-maximized="1"
-     inkscape:current-layer="g1">
-    <inkscape:page
-       x="0"
-       y="0"
-       inkscape:label="1"
-       id="page1"
-       width="261.62399"
-       height="183.36133"
-       margin="0"
-       bleed="0" />
-  </sodipodi:namedview>
   <g
-     id="g1"
-     inkscape:groupmode="layer"
-     inkscape:label="1">
+     id="g1">
     <path
        id="path1"
        d="M 4.90965,60.9453 50.32542,34.72444 c 2.71157,-1.56549 4.90967,-5.37272 4.90967,-8.50381 v -52.44126 c 0,-3.13109 -2.1981,-6.93832 -4.90967,-8.50381 L 4.90965,-60.9453 c -2.71156,-1.56549 -7.10774,-1.56549 -9.8193,0 l -45.41577,26.22086 c -2.71157,1.56549 -4.90967,5.37272 -4.90967,8.50381 v 52.44126 c 0,3.13109 2.1981,6.93832 4.90967,8.50381 L -4.90965,60.9453 c 2.71156,1.56549 7.10774,1.56549 9.8193,0 z"
@@ -59,14 +24,5 @@
        style="fill:#ff8000;fill-opacity:1;fill-rule:nonzero;stroke:none"
        aria-label="η"
        transform="matrix(1.3333333,0,0,1.3333333,40.648,109.71467)" />
-    <text
-       id="text2"
-       xml:space="preserve"
-       transform="matrix(1.3333333,0,-0.26666667,1.3333333,179.46933,107.72133)"><tspan
-         id="tspan2"
-         style="font-variant:normal;font-weight:normal;font-size:34.8692px;font-family:D-DIN;writing-mode:lr-tb;fill:#000000;fill-opacity:1;fill-rule:nonzero;stroke:none"
-         x="0"
-         dx="0 0 -2.6849315"
-         y="0">ETA</tspan></text>
   </g>
 </svg>

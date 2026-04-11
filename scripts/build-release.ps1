@@ -179,6 +179,8 @@ Push-Location $VscodeSrc
 try {
     & npm ci
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+    & npm run bundle
+    if ($LASTEXITCODE -ne 0) { throw "npm run bundle failed" }
     if ($VsixLabel -ne "latest") {
         & npm version $VsixLabel --no-git-tag-version --allow-same-version
         if ($LASTEXITCODE -ne 0) { throw "npm version failed" }

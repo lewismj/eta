@@ -20,6 +20,7 @@ set(SOURCES
         src/functional_tests.cpp
         src/debug_tests.cpp
         src/dap_tests.cpp
+        src/lsp_tests.cpp
         src/module_path_tests.cpp
         src/higher_order_tests.cpp
         src/example_runner_tests.cpp
@@ -49,6 +50,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_io.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_server.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../lsp/src/eta/lsp/lsp_server.cpp
 )
 
 # Base linking - only eta_core unconditionally
@@ -62,10 +64,11 @@ if(ETA_BUILD_TORCH)
     eta_copy_torch_dlls(${PROJECT_NAME})
 endif()
 
-# Expose interpreter (driver.h) and DAP headers
+# Expose interpreter (driver.h), DAP, and LSP headers
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../lsp/src
 )
 
 # vcpkg x64-windows builds shared Boost; x64-linux builds static.

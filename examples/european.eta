@@ -251,6 +251,7 @@
         (display "  Vanna      | ") (println (vector-ref g3 0))
         (display "  Volga      | ") (println (vector-ref g3 3))))
 
+    
     ;; ════════════════════════════════════════════════════════════════
     ;; §6  How Tape-Based AD Works
     ;; ════════════════════════════════════════════════════════════════
@@ -268,6 +269,8 @@
     ;; Memory: ~32 bytes per tape entry (op, primal, args, adjoint)
     ;; Speed:  zero closure allocations — all recording is in C++
     ;; Accuracy: chain rule through polynomial CDF approximation
+
+
 
     (display (if win "\n\n-- Tape-Based AD Architecture --\n\n"
                      "\n\n── Tape-Based AD Architecture ──────────────────────\n\n"))

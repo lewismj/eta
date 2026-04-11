@@ -57,12 +57,37 @@ struct LspDiagnostic {
 
 class LspServer {
 public:
+    /// Production constructor: communicates over the process stdin/stdout.
     LspServer();
+
+    /// Testable constructor: communicates over the supplied streams.
+    LspServer(std::istream& in, std::ostream& out);
 
     /// Main loop: reads JSON-RPC from stdin, writes to stdout. Blocks until exit.
     void run();
 
+    /// Collect all defined symbols from source (for completion / hover / documentSymbol).
+    /// When capture_signature is true, also captures the parameter list text
+    /// for defun/define forms (e.g. "(f g)" from "(defun compose (f g) ...)").
+    struct SymbolInfo {
+        std::string name;
+        std::string kind; // "define", "defun", "macro", "module", etc.
+        std::string signature; // e.g. "(f g)" — only populated when capture_signature is true
+        std::string module_name; // originating module (empty for document-local)
+        int64_t line{0};
+        int64_t character{0};
+    };
+    static std::vector<SymbolInfo> collect_symbols(const std::string& source, bool capture_signature = false);
+
+    /// Find all occurrences of a symbol name in the given source text.
+    /// Returns a vector of Range for each occurrence.
+    static std::vector<Range> find_all_occurrences(const std::string& source,
+                                                    const std::string& symbol);
+
 private:
+    std::istream& in_;
+    std::ostream& out_;
+
     bool running_{true};
     bool initialized_{false};
     bool shutdown_requested_{false};
@@ -95,10 +120,13 @@ private:
     void handle_did_close(const Value& params);
     void handle_did_save(const Value& params);
 
-    // Language features (Step 6)
+    // Language features
     Value handle_hover(const Value& params);
     Value handle_definition(const Value& params);
     Value handle_completion(const Value& params);
+    Value handle_document_symbol(const Value& params);
+    Value handle_references(const Value& params);
+    Value handle_rename(const Value& params);
 
     // ── Diagnostics ───────────────────────────────────────────────────
     void validate_document(const std::string& uri);
@@ -116,14 +144,6 @@ private:
     /// Find word at position in source text
     static std::string word_at_position(const std::string& text, int64_t line, int64_t character);
 
-    /// Collect all defined symbols from source (for completion / hover)
-    struct SymbolInfo {
-        std::string name;
-        std::string kind; // "define", "defun", "macro", "module", etc.
-        int64_t line{0};
-        int64_t character{0};
-    };
-    static std::vector<SymbolInfo> collect_symbols(const std::string& source);
 
     /// Initialise resolver_ from ETA_MODULE_PATH env var + bundled stdlib.
     void init_module_path();
@@ -146,6 +166,18 @@ private:
     void preload_module_deps(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
         std::unordered_set<std::string>& seen_modules);
+
+    // ── Completion caches ─────────────────────────────────────────────
+    /// Cached symbols from prelude + module-path .eta files (populated lazily).
+    bool completion_cache_loaded_{false};
+    std::vector<SymbolInfo> prelude_symbols_;
+    std::vector<SymbolInfo> module_path_symbols_;
+
+    /// Populate prelude_symbols_ and module_path_symbols_ from disk.
+    void load_completion_cache();
+
+    /// Scan all .eta files in the module search path and collect their symbols.
+    void scan_module_path_symbols();
 };
 
 } // namespace eta::lsp

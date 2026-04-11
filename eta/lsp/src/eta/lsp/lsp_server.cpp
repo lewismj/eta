@@ -31,7 +31,15 @@ using namespace eta::json;
 // Construction
 // ============================================================================
 
-LspServer::LspServer() {
+LspServer::LspServer()
+    : in_(std::cin), out_(std::cout)
+{
+    init_module_path();
+}
+
+LspServer::LspServer(std::istream& in, std::ostream& out)
+    : in_(in), out_(out)
+{
     init_module_path();
 }
 
@@ -204,7 +212,7 @@ std::optional<std::string> LspServer::read_message() {
     // Read headers until blank line
     std::size_t content_length = 0;
     std::string header_line;
-    while (std::getline(std::cin, header_line)) {
+    while (std::getline(in_, header_line)) {
         // Strip \r if present
         if (!header_line.empty() && header_line.back() == '\r')
             header_line.pop_back();
@@ -218,21 +226,21 @@ std::optional<std::string> LspServer::read_message() {
         // Ignore other headers (Content-Type, etc.)
     }
 
-    if (std::cin.eof() || std::cin.fail()) return std::nullopt;
+    if (in_.eof() || in_.fail()) return std::nullopt;
     if (content_length == 0) return std::nullopt;
 
     // Read exactly content_length bytes
     std::string body(content_length, '\0');
-    std::cin.read(body.data(), static_cast<std::streamsize>(content_length));
-    if (std::cin.fail()) return std::nullopt;
+    in_.read(body.data(), static_cast<std::streamsize>(content_length));
+    if (in_.fail()) return std::nullopt;
 
     return body;
 }
 
 void LspServer::send_message(const Value& msg) {
     std::string body = json::to_string(msg);
-    std::cout << "Content-Length: " << body.size() << "\r\n\r\n" << body;
-    std::cout.flush();
+    out_ << "Content-Length: " << body.size() << "\r\n\r\n" << body;
+    out_.flush();
 }
 
 void LspServer::send_response(const Value& id, const Value& result) {
@@ -325,6 +333,15 @@ void LspServer::dispatch(const Value& msg) {
     } else if (method == "textDocument/completion") {
         auto result = handle_completion(params);
         if (has_id) send_response(id, result);
+    } else if (method == "textDocument/documentSymbol") {
+        auto result = handle_document_symbol(params);
+        if (has_id) send_response(id, result);
+    } else if (method == "textDocument/references") {
+        auto result = handle_references(params);
+        if (has_id) send_response(id, result);
+    } else if (method == "textDocument/rename") {
+        auto result = handle_rename(params);
+        if (has_id) send_response(id, result);
     } else {
         if (has_id) {
             send_error(id, -32601, "Method not found: " + method);
@@ -348,6 +365,9 @@ Value LspServer::handle_initialize(const Value& /*params*/) {
             })},
             {"hoverProvider", true},
             {"definitionProvider", true},
+            {"documentSymbolProvider", true},
+            {"referencesProvider", true},
+            {"renameProvider", true},
             {"completionProvider", json::object({
                 {"triggerCharacters", json::array({"(", " "})},
             })},
@@ -612,8 +632,8 @@ Value LspServer::handle_hover(const Value& params) {
         {"define-syntax","**define-syntax** — Define a hygienic macro.\n\n`(define-syntax name (syntax-rules (literals...) clause...))`"},
         {"syntax-rules", "**syntax-rules** — Hygienic macro transformer.\n\n`(syntax-rules (literals...) (pattern template)...)`"},
         {"define-record-type", "**define-record-type** — Define a record type.\n\n`(define-record-type name (ctor field...) pred (field accessor [mutator])...)`"},
-        {"def",          "**def** — Sugar for `define`.\n\n`(def name expr)` or `(def (name args...) body...)`"},
-        {"defun",        "**defun** — Sugar for function definition.\n\n`(defun name (args...) body...)`"},
+        {"def",          "**def** — Alias for `define`.\n\n`(def name expr)` or `(def (name args...) body...)`"},
+        {"defun",        "**defun** — Alias for function definition.\n\n`(defun name (args...) body...)`"},
         {"progn",        "**progn** — Alias for `begin`.\n\n`(progn expr...)`"},
         {"quasiquote",   "**quasiquote** — Template with unquote.\n\n`` `(datum ,expr ,@splice) ``"},
         {"call/cc",      "**call/cc** — Call with current continuation.\n\n`(call/cc proc)`"},
@@ -692,9 +712,15 @@ Value LspServer::handle_completion(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
     auto it = documents_.find(uri);
 
-    Array items;
+    // Lazily load the completion cache on first completion request
+    if (!completion_cache_loaded_) {
+        load_completion_cache();
+    }
 
-    // Always suggest keywords
+    Array items;
+    std::unordered_set<std::string> seen; // dedup across all tiers
+
+    // ── Tier 0: Keywords (special forms) ──────────────────────────────────
     static const std::vector<std::pair<std::string, std::string>> keywords = {
         {"define",       "Core: define a variable or function"},
         {"lambda",       "Core: anonymous function"},
@@ -719,18 +745,27 @@ Value LspServer::handle_completion(const Value& params) {
         {"define-syntax","Macro: define a syntax transformer"},
         {"syntax-rules", "Macro: hygienic macro rules"},
         {"define-record-type", "Record: define a record type"},
-        {"def",          "Sugar: alias for define"},
-        {"defun",        "Sugar: function definition"},
-        {"progn",        "Sugar: alias for begin"},
+        {"def",          "Alias: for define"},
+        {"defun",        "Alias: function definition"},
+        {"progn",        "Alias: for begin"},
         {"quasiquote",   "Core: template with unquote"},
         {"call/cc",      "Advanced: call with current continuation"},
         {"dynamic-wind", "Advanced: continuation guard"},
         {"values",       "Advanced: multiple return values"},
         {"call-with-values", "Advanced: receive multiple values"},
         {"apply",        "Core: apply procedure to args"},
+        {"raise",        "Exception: raise an exception"},
+        {"catch",        "Exception: catch an exception"},
+        {"logic-var",    "Logic: create a logic variable"},
+        {"unify",        "Logic: unify two terms"},
+        {"deref-lvar",   "Logic: dereference a logic variable"},
+        {"trail-mark",   "Logic: mark the trail"},
+        {"unwind-trail", "Logic: unwind the trail"},
+        {"copy-term",    "Logic: deep-copy a term"},
     };
 
     for (const auto& [kw, detail] : keywords) {
+        seen.insert(kw);
         items.push_back(json::object({
             {"label", kw},
             {"kind", 14}, // Keyword
@@ -738,23 +773,150 @@ Value LspServer::handle_completion(const Value& params) {
         }));
     }
 
-    // Add document-local symbols
-    if (it != documents_.end()) {
-        auto symbols = collect_symbols(it->second.content);
-        std::unordered_set<std::string> seen;
-        for (const auto& sym : symbols) {
-            if (seen.insert(sym.name).second) {
-                int kind = 6; // Variable
-                if (sym.kind == "defun" || sym.kind == "function") kind = 3; // Function
-                if (sym.kind == "macro") kind = 15; // Snippet
-                if (sym.kind == "module") kind = 9; // Module
+    // ── Tier 1: Static builtins (from builtin_names.h) ────────────────────
+    // name, arity, has_rest, category
+    struct BuiltinDesc { const char* name; int arity; bool has_rest; const char* category; };
+    static const std::vector<BuiltinDesc> builtins = {
+        // Arithmetic
+        {"+", 0, true, "Arithmetic"}, {"-", 1, true, "Arithmetic"},
+        {"*", 0, true, "Arithmetic"}, {"/", 1, true, "Arithmetic"},
+        // Numeric comparison
+        {"=", 2, true, "Comparison"}, {"<", 2, true, "Comparison"},
+        {">", 2, true, "Comparison"}, {"<=", 2, true, "Comparison"},
+        {">=", 2, true, "Comparison"},
+        // Equivalence
+        {"eq?", 2, false, "Equivalence"}, {"eqv?", 2, false, "Equivalence"},
+        {"not", 1, false, "Equivalence"},
+        // Pairs / lists
+        {"cons", 2, false, "List"}, {"car", 1, false, "List"},
+        {"cdr", 1, false, "List"}, {"pair?", 1, false, "List"},
+        {"null?", 1, false, "List"}, {"list", 0, true, "List"},
+        // Type predicates
+        {"number?", 1, false, "Predicate"}, {"boolean?", 1, false, "Predicate"},
+        {"string?", 1, false, "Predicate"}, {"char?", 1, false, "Predicate"},
+        {"symbol?", 1, false, "Predicate"}, {"procedure?", 1, false, "Predicate"},
+        {"integer?", 1, false, "Predicate"},
+        // Numeric predicates
+        {"zero?", 1, false, "Predicate"}, {"positive?", 1, false, "Predicate"},
+        {"negative?", 1, false, "Predicate"},
+        // Numeric operations
+        {"abs", 1, false, "Math"}, {"min", 2, true, "Math"},
+        {"max", 2, true, "Math"}, {"modulo", 2, false, "Math"},
+        {"remainder", 2, false, "Math"},
+        // Transcendentals
+        {"sin", 1, false, "Math"}, {"cos", 1, false, "Math"},
+        {"tan", 1, false, "Math"}, {"asin", 1, false, "Math"},
+        {"acos", 1, false, "Math"}, {"atan", 1, true, "Math"},
+        {"exp", 1, false, "Math"}, {"log", 1, false, "Math"},
+        {"sqrt", 1, false, "Math"},
+        // List operations
+        {"length", 1, false, "List"}, {"append", 0, true, "List"},
+        {"reverse", 1, false, "List"}, {"list-ref", 2, false, "List"},
+        // Higher-order
+        {"map", 2, false, "Higher-order"}, {"for-each", 2, false, "Higher-order"},
+        // Deep equality
+        {"equal?", 2, false, "Equivalence"},
+        // String operations
+        {"string-length", 1, false, "String"}, {"string-append", 0, true, "String"},
+        {"number->string", 1, false, "String"}, {"string->number", 1, false, "String"},
+        // Vector operations
+        {"vector", 0, true, "Vector"}, {"vector-length", 1, false, "Vector"},
+        {"vector-ref", 2, false, "Vector"}, {"vector-set!", 3, false, "Vector"},
+        {"vector?", 1, false, "Vector"}, {"make-vector", 2, false, "Vector"},
+        // Misc
+        {"error", 1, true, "Misc"}, {"platform", 0, false, "Misc"},
+        {"logic-var?", 1, false, "Logic"}, {"ground?", 1, false, "Logic"},
+        // AD Dual
+        {"dual?", 1, false, "AD"}, {"dual-primal", 1, false, "AD"},
+        {"dual-backprop", 1, false, "AD"}, {"make-dual", 2, false, "AD"},
+        // CLP
+        {"%clp-domain-z!", 3, false, "CLP"}, {"%clp-domain-fd!", 2, false, "CLP"},
+        {"%clp-get-domain", 1, false, "CLP"},
+        // AD Tape
+        {"tape-new", 0, false, "AD"}, {"tape-start!", 1, false, "AD"},
+        {"tape-stop!", 0, false, "AD"}, {"tape-var", 2, false, "AD"},
+        {"tape-backward!", 2, false, "AD"}, {"tape-adjoint", 2, false, "AD"},
+        {"tape-primal", 2, false, "AD"}, {"tape-ref?", 1, false, "AD"},
+        {"tape-ref-index", 1, false, "AD"}, {"tape-size", 1, false, "AD"},
+        {"tape-ref-value", 1, false, "AD"},
+        // Port primitives
+        {"current-input-port", 0, false, "Port"}, {"current-output-port", 0, false, "Port"},
+        {"current-error-port", 0, false, "Port"},
+        {"set-current-input-port!", 1, false, "Port"}, {"set-current-output-port!", 1, false, "Port"},
+        {"set-current-error-port!", 1, false, "Port"},
+        {"open-output-string", 0, false, "Port"}, {"get-output-string", 1, false, "Port"},
+        {"open-input-string", 1, false, "Port"}, {"write-string", 1, true, "Port"},
+        {"read-char", 0, true, "Port"}, {"port?", 1, false, "Port"},
+        {"input-port?", 1, false, "Port"}, {"output-port?", 1, false, "Port"},
+        {"close-port", 1, false, "Port"}, {"close-input-port", 1, false, "Port"},
+        {"close-output-port", 1, false, "Port"}, {"write-char", 1, true, "Port"},
+        {"open-input-file", 1, false, "Port"}, {"open-output-file", 1, false, "Port"},
+        {"open-output-bytevector", 0, false, "Port"}, {"open-input-bytevector", 1, false, "Port"},
+        {"get-output-bytevector", 1, false, "Port"}, {"read-u8", 0, true, "Port"},
+        {"write-u8", 1, true, "Port"}, {"binary-port?", 1, false, "Port"},
+        // I/O
+        {"display", 1, true, "I/O"}, {"write", 1, true, "I/O"},
+        {"newline", 0, true, "I/O"},
+    };
 
-                items.push_back(json::object({
-                    {"label", sym.name},
-                    {"kind", kind},
-                    {"detail", sym.kind},
-                }));
-            }
+    for (const auto& b : builtins) {
+        if (!seen.insert(b.name).second) continue; // already added (e.g. apply is a keyword)
+        std::string detail = std::string(b.category) + " (arity " + std::to_string(b.arity);
+        if (b.has_rest) detail += "+";
+        detail += ")";
+        items.push_back(json::object({
+            {"label", b.name},
+            {"kind", 3}, // Function
+            {"detail", detail},
+        }));
+    }
+
+    // ── Tier 2: Prelude symbols (std.core, std.math, etc.) ────────────────
+    for (const auto& sym : prelude_symbols_) {
+        if (!seen.insert(sym.name).second) continue;
+        int kind = 3; // Function
+        if (sym.kind == "macro") kind = 15;
+        if (sym.kind == "module") kind = 9;
+        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + " — " + sym.kind);
+        if (!sym.signature.empty()) detail += " " + sym.signature;
+        items.push_back(json::object({
+            {"label", sym.name},
+            {"kind", kind},
+            {"detail", detail},
+        }));
+    }
+
+    // ── Tier 3: Module-path symbols ───────────────────────────────────────
+    for (const auto& sym : module_path_symbols_) {
+        if (!seen.insert(sym.name).second) continue;
+        int kind = 3;
+        if (sym.kind == "macro") kind = 15;
+        if (sym.kind == "module") kind = 9;
+        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + " — " + sym.kind);
+        if (!sym.signature.empty()) detail += " " + sym.signature;
+        items.push_back(json::object({
+            {"label", sym.name},
+            {"kind", kind},
+            {"detail", detail},
+        }));
+    }
+
+    // ── Tier 4: Document-local symbols ────────────────────────────────────
+    if (it != documents_.end()) {
+        auto symbols = collect_symbols(it->second.content, true);
+        for (const auto& sym : symbols) {
+            if (!seen.insert(sym.name).second) continue;
+            int kind = 6; // Variable
+            if (sym.kind == "defun" || sym.kind == "function") kind = 3;
+            if (sym.kind == "macro") kind = 15;
+            if (sym.kind == "module") kind = 9;
+            std::string detail = sym.kind;
+            if (!sym.signature.empty()) detail += " " + sym.signature;
+            items.push_back(json::object({
+                {"label", sym.name},
+                {"kind", kind},
+                {"detail", detail},
+            }));
         }
     }
 
@@ -762,6 +924,254 @@ Value LspServer::handle_completion(const Value& params) {
         {"isIncomplete", false},
         {"items", Value(std::move(items))},
     });
+}
+
+// ============================================================================
+// textDocument/documentSymbol
+// ============================================================================
+
+Value LspServer::handle_document_symbol(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    const auto& source = it->second.content;
+    auto symbols = collect_symbols(source, /*capture_signature=*/true);
+
+    // LSP SymbolKind values
+    constexpr int SK_Module   = 2;
+    constexpr int SK_Function = 12;
+    constexpr int SK_Variable = 13;
+    constexpr int SK_Class    = 5;  // for record types
+
+    Array result;
+    for (const auto& sym : symbols) {
+        int kind = SK_Variable;
+        if (sym.kind == "defun" || sym.kind == "function") kind = SK_Function;
+        else if (sym.kind == "module") kind = SK_Module;
+        else if (sym.kind == "macro") kind = SK_Function;
+        else if (sym.kind == "record") kind = SK_Class;
+
+        // Build detail string
+        std::string detail = sym.kind;
+        if (!sym.signature.empty()) detail += " " + sym.signature;
+
+        // Compute a reasonable selection range (just the symbol name)
+        auto name_end_char = sym.character + static_cast<int64_t>(sym.name.size());
+        auto sel_range = Range{
+            Position{sym.line, sym.character},
+            Position{sym.line, name_end_char},
+        };
+
+        // For the full range, use the whole line as an approximation
+        // (precise ranges would require parsing the S-expression depth)
+        auto full_range = sel_range; // same for now
+
+        result.push_back(json::object({
+            {"name", sym.name},
+            {"detail", detail},
+            {"kind", kind},
+            {"range", range_to_json(full_range)},
+            {"selectionRange", range_to_json(sel_range)},
+        }));
+    }
+
+    return Value(std::move(result));
+}
+
+// ============================================================================
+// textDocument/references
+// ============================================================================
+
+std::vector<Range> LspServer::find_all_occurrences(
+        const std::string& source, const std::string& symbol) {
+    std::vector<Range> result;
+    if (symbol.empty()) return result;
+
+    auto is_sym_char = [](char c) -> bool {
+        if (c <= ' ') return false;
+        if (c == '(' || c == ')' || c == '[' || c == ']' ||
+            c == '"' || c == ';' || c == '#') return false;
+        return true;
+    };
+
+    std::istringstream iss(source);
+    std::string line;
+    int64_t line_num = 0;
+
+    while (std::getline(iss, line)) {
+        std::size_t pos = 0;
+        while (pos < line.size()) {
+            auto found = line.find(symbol, pos);
+            if (found == std::string::npos) break;
+
+            // Check word boundaries
+            bool left_ok = (found == 0) || !is_sym_char(line[found - 1]);
+            auto end_pos = found + symbol.size();
+            bool right_ok = (end_pos >= line.size()) || !is_sym_char(line[end_pos]);
+
+            if (left_ok && right_ok) {
+                result.push_back(Range{
+                    Position{line_num, static_cast<int64_t>(found)},
+                    Position{line_num, static_cast<int64_t>(end_pos)},
+                });
+            }
+            pos = found + 1;
+        }
+        ++line_num;
+    }
+    return result;
+}
+
+Value LspServer::handle_references(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    auto line = params["position"].get_int("line").value_or(0);
+    auto character = params["position"].get_int("character").value_or(0);
+
+    const auto& source = it->second.content;
+    auto word = word_at_position(source, line, character);
+    if (word.empty()) return Value(Array{});
+
+    auto occurrences = find_all_occurrences(source, word);
+
+    Array result;
+    for (const auto& r : occurrences) {
+        result.push_back(json::object({
+            {"uri", uri},
+            {"range", range_to_json(r)},
+        }));
+    }
+
+    return Value(std::move(result));
+}
+
+// ============================================================================
+// textDocument/rename
+// ============================================================================
+
+Value LspServer::handle_rename(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(nullptr);
+
+    auto line = params["position"].get_int("line").value_or(0);
+    auto character = params["position"].get_int("character").value_or(0);
+    auto new_name = params.get_string("newName").value_or("");
+    if (new_name.empty()) return Value(nullptr);
+
+    const auto& source = it->second.content;
+    auto word = word_at_position(source, line, character);
+    if (word.empty()) return Value(nullptr);
+
+    auto occurrences = find_all_occurrences(source, word);
+    if (occurrences.empty()) return Value(nullptr);
+
+    Array edits;
+    for (const auto& r : occurrences) {
+        edits.push_back(json::object({
+            {"range", range_to_json(r)},
+            {"newText", new_name},
+        }));
+    }
+
+    // WorkspaceEdit with changes map
+    return json::object({
+        {"changes", json::object({
+            {uri, Value(std::move(edits))},
+        })},
+    });
+}
+
+// ============================================================================
+// Completion cache — prelude + module path scanning
+// ============================================================================
+
+void LspServer::load_completion_cache() {
+    completion_cache_loaded_ = true;
+    prelude_symbols_.clear();
+    module_path_symbols_.clear();
+
+    // ── Scan prelude ──────────────────────────────────────────────────
+    auto prelude_path = resolver_.find_file("prelude.eta");
+    if (prelude_path) {
+        std::ifstream f(*prelude_path);
+        if (f.is_open()) {
+            std::string src(std::istreambuf_iterator<char>(f),
+                            std::istreambuf_iterator<char>{});
+            auto syms = collect_symbols(src, /*capture_signature=*/true);
+
+            // Determine which module each symbol belongs to by tracking
+            // (module <name> ...) boundaries in the source.
+            std::string current_module;
+            std::istringstream lines(src);
+            std::string line;
+            int64_t line_num = 0;
+            std::vector<std::pair<int64_t, std::string>> module_starts;
+            while (std::getline(lines, line)) {
+                auto pos = line.find("(module ");
+                if (pos != std::string::npos) {
+                    auto name_start = pos + 8;
+                    while (name_start < line.size() && line[name_start] == ' ') ++name_start;
+                    auto name_end = name_start;
+                    while (name_end < line.size() && line[name_end] != ' ' && line[name_end] != ')' && line[name_end] != '\n')
+                        ++name_end;
+                    if (name_end > name_start)
+                        module_starts.push_back({line_num, line.substr(name_start, name_end - name_start)});
+                }
+                ++line_num;
+            }
+
+            for (auto& sym : syms) {
+                if (sym.kind == "module") continue; // skip module declarations
+                // Find which module this symbol belongs to
+                for (auto rit = module_starts.rbegin(); rit != module_starts.rend(); ++rit) {
+                    if (sym.line >= rit->first) {
+                        sym.module_name = rit->second;
+                        break;
+                    }
+                }
+                prelude_symbols_.push_back(std::move(sym));
+            }
+        }
+    }
+
+    // ── Scan module path ──────────────────────────────────────────────
+    scan_module_path_symbols();
+}
+
+void LspServer::scan_module_path_symbols() {
+    namespace fs = std::filesystem;
+    std::unordered_set<std::string> scanned_files;
+
+    for (const auto& dir : resolver_.dirs()) {
+        std::error_code ec;
+        for (auto& entry : fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec)) {
+            if (!entry.is_regular_file()) continue;
+            if (entry.path().extension() != ".eta") continue;
+
+            auto canonical = entry.path().string();
+            if (!scanned_files.insert(canonical).second) continue;
+
+            // Skip prelude.eta — already handled above
+            if (entry.path().filename() == "prelude.eta") continue;
+
+            std::ifstream f(entry.path());
+            if (!f.is_open()) continue;
+            std::string src(std::istreambuf_iterator<char>(f),
+                            std::istreambuf_iterator<char>{});
+
+            auto syms = collect_symbols(src, /*capture_signature=*/true);
+            auto stem = entry.path().stem().string();
+            for (auto& sym : syms) {
+                if (sym.kind == "module") continue;
+                if (sym.module_name.empty()) sym.module_name = stem;
+                module_path_symbols_.push_back(std::move(sym));
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -835,7 +1245,7 @@ std::string LspServer::word_at_position(const std::string& text,
     return current_line.substr(start, end - start);
 }
 
-std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string& source) {
+std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string& source, bool capture_signature) {
     std::vector<SymbolInfo> result;
 
     // Quick scan for definition forms
@@ -867,8 +1277,10 @@ std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string&
 
             // If the name starts with '(', extract first symbol inside
             auto actual_start = name_start;
+            bool had_paren = false;
             if (line[actual_start] == '(') {
                 ++actual_start;
+                had_paren = true;
                 while (actual_start < line.size() &&
                        (line[actual_start] == ' ' || line[actual_start] == '\t'))
                     ++actual_start;
@@ -884,12 +1296,42 @@ std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string&
             }
 
             if (name_end > actual_start) {
-                result.push_back(SymbolInfo{
-                    line.substr(actual_start, name_end - actual_start),
-                    kind,
-                    line_num,
-                    static_cast<int64_t>(actual_start),
-                });
+                SymbolInfo sym;
+                sym.name = line.substr(actual_start, name_end - actual_start);
+                sym.kind = kind;
+                sym.line = line_num;
+                sym.character = static_cast<int64_t>(actual_start);
+
+                // Capture signature: for defun/define with (name args...) form
+                if (capture_signature && (kind == "defun" || kind == "define")) {
+                    // For defun: (defun name (args...) body...)
+                    // Signature is the next (...) after name
+                    if (kind == "defun" && !had_paren) {
+                        auto sig_start = name_end;
+                        while (sig_start < line.size() && line[sig_start] == ' ') ++sig_start;
+                        if (sig_start < line.size() && line[sig_start] == '(') {
+                            int depth = 0;
+                            auto sig_end = sig_start;
+                            for (; sig_end < line.size(); ++sig_end) {
+                                if (line[sig_end] == '(') ++depth;
+                                else if (line[sig_end] == ')') { --depth; if (depth == 0) { ++sig_end; break; } }
+                            }
+                            sym.signature = line.substr(sig_start, sig_end - sig_start);
+                        }
+                    }
+                    // For define: (define (name args...) body...) — args follow name in same parens
+                    if (kind == "define" && had_paren) {
+                        auto sig_start = name_end;
+                        // Capture everything up to the closing ')'
+                        auto sig_end = sig_start;
+                        while (sig_end < line.size() && line[sig_end] != ')') ++sig_end;
+                        if (sig_end > sig_start) {
+                            sym.signature = "(" + line.substr(sig_start, sig_end - sig_start) + ")";
+                        }
+                    }
+                }
+
+                result.push_back(std::move(sym));
             }
         };
 

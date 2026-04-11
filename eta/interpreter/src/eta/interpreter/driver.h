@@ -214,6 +214,17 @@ public:
     [[nodiscard]] diagnostic::DiagnosticEngine& diagnostics() noexcept { return diag_engine_; }
     [[nodiscard]] const diagnostic::DiagnosticEngine& diagnostics() const noexcept { return diag_engine_; }
 
+    /// Create a FileResolver that maps file_id → filename string.
+    /// Suitable for passing to format_diagnostic / DiagnosticEngine::print_all.
+    [[nodiscard]] diagnostic::FileResolver file_resolver() const {
+        return [this](uint32_t id) -> std::string {
+            auto it = file_id_to_path_.find(id);
+            if (it != file_id_to_path_.end())
+                return it->second.filename().string();
+            return {};
+        };
+    }
+
     /// Access the module path resolver.
     [[nodiscard]] ModulePathResolver& resolver() noexcept { return resolver_; }
 
@@ -271,6 +282,12 @@ public:
     [[nodiscard]] std::string format_value(runtime::nanbox::LispVal v,
                                            runtime::FormatMode mode = runtime::FormatMode::Write) {
         return runtime::format_value(v, mode, heap_, intern_table_);
+    }
+
+    /// Named global variables: slot index → variable name.
+    /// Populated during compilation for debugger display.
+    [[nodiscard]] const std::unordered_map<uint32_t, std::string>& global_names() const noexcept {
+        return global_names_;
     }
 
     /// Direct access to the heap — used by the DAP heap inspector.
@@ -425,6 +442,9 @@ private:
 
     // Guard against recursive auto-loading cycles
     std::unordered_set<std::string> loading_modules_;
+
+    // Global slot → variable name mapping (for debugger display)
+    std::unordered_map<uint32_t, std::string> global_names_;
 
     /// Normalise a path to a stable lowercase key used in path_to_file_id_.
     /// On Windows this lowercases and ensures backslashes; on POSIX it is
@@ -697,6 +717,14 @@ private:
 
             semantics::Emitter emitter(mod, heap_, intern_table_, registry_);
             auto* init_func = emitter.emit();
+
+            // Record global slot → name mapping for debugger display.
+            // Prefix with "module." so the UI can group by module.
+            for (const auto& bi : mod.bindings) {
+                if (bi.kind == semantics::BindingInfo::Kind::Global && !bi.name.empty()) {
+                    global_names_[bi.slot] = mod.name + "." + bi.name;
+                }
+            }
 
             // Record compile metadata for this module.
             if (out_cr) {

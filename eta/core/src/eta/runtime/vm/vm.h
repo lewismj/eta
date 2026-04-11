@@ -139,13 +139,15 @@ public:
     void resume()        { if (debug_) debug_->resume(); }
     void step_over()     {
         if (debug_) {
-            auto sp = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0) : reader::lexer::Span{};
+            // Use the exact span saved when the VM stopped, not pc_ - 1
+            // (which is wrong because the debug hook fires pre-increment).
+            auto sp = debug_->stopped_span();
             debug_->step_over(sp, frames_.size());
         }
     }
     void step_in()       {
         if (debug_) {
-            auto sp = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0) : reader::lexer::Span{};
+            auto sp = debug_->stopped_span();
             debug_->step_in(sp, frames_.size());
         }
     }

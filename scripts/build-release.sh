@@ -131,6 +131,7 @@ mkdir -p "$EDITORS_DIR"
 (
     cd "$VSCODE_SRC"
     npm ci --silent
+    npm run bundle
     if [ "$VSIX_LABEL" != "latest" ]; then
         npm version "$VSIX_LABEL" --no-git-tag-version --allow-same-version
     fi

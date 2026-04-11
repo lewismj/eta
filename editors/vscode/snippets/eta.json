@@ -1,0 +1,145 @@
+{
+    "Module": {
+        "prefix": "module",
+        "body": [
+            "(module ${1:name}",
+            "  (import ${2:std.prelude})",
+            "  (export ${3:})",
+            "  (begin",
+            "    $0))"
+        ],
+        "description": "Module skeleton with import and begin"
+    },
+    "Function Definition": {
+        "prefix": "defun",
+        "body": [
+            "(defun ${1:name} (${2:args})",
+            "  $0)"
+        ],
+        "description": "Define a named function"
+    },
+    "Variable Definition": {
+        "prefix": "define",
+        "body": "(define ${1:name} ${0:value})",
+        "description": "Define a variable"
+    },
+    "Lambda": {
+        "prefix": "lambda",
+        "body": [
+            "(lambda (${1:args})",
+            "  $0)"
+        ],
+        "description": "Anonymous function"
+    },
+    "Let": {
+        "prefix": "let",
+        "body": [
+            "(let ((${1:var} ${2:init}))",
+            "  $0)"
+        ],
+        "description": "Parallel local bindings"
+    },
+    "Let*": {
+        "prefix": "let*",
+        "body": [
+            "(let* ((${1:var} ${2:init}))",
+            "  $0)"
+        ],
+        "description": "Sequential local bindings"
+    },
+    "Letrec": {
+        "prefix": "letrec",
+        "body": [
+            "(letrec ((${1:var} ${2:init}))",
+            "  $0)"
+        ],
+        "description": "Recursive local bindings"
+    },
+    "If": {
+        "prefix": "if",
+        "body": "(if ${1:test}\n    ${2:consequent}\n    ${0:alternate})",
+        "description": "Conditional expression"
+    },
+    "Cond": {
+        "prefix": "cond",
+        "body": [
+            "(cond",
+            "  (${1:test} ${2:expr})",
+            "  (else ${0:default}))"
+        ],
+        "description": "Multi-way conditional"
+    },
+    "Case": {
+        "prefix": "case",
+        "body": [
+            "(case ${1:key}",
+            "  ((${2:datum}) ${3:expr})",
+            "  (else ${0:default}))"
+        ],
+        "description": "Dispatch on datum equality"
+    },
+    "When": {
+        "prefix": "when",
+        "body": [
+            "(when ${1:test}",
+            "  $0)"
+        ],
+        "description": "One-armed conditional (when test is true)"
+    },
+    "Unless": {
+        "prefix": "unless",
+        "body": [
+            "(unless ${1:test}",
+            "  $0)"
+        ],
+        "description": "One-armed conditional (when test is false)"
+    },
+    "Define Record Type": {
+        "prefix": "define-record-type",
+        "body": [
+            "(define-record-type ${1:name}",
+            "  (${2:make-name} ${3:field1})",
+            "  ${4:name?}",
+            "  (${3:field1} ${5:name-field1}))"
+        ],
+        "description": "Record type definition"
+    },
+    "Import": {
+        "prefix": "import",
+        "body": "(import ${1:module-name})",
+        "description": "Import bindings from a module"
+    },
+    "Catch": {
+        "prefix": "catch",
+        "body": [
+            "(catch '${1:tag}",
+            "  $0)"
+        ],
+        "description": "Catch exceptions with a tag"
+    },
+    "Raise": {
+        "prefix": "raise",
+        "body": "(raise '${1:tag} ${0:value})",
+        "description": "Raise an exception with a tag"
+    },
+    "Define Syntax": {
+        "prefix": "define-syntax",
+        "body": [
+            "(define-syntax ${1:name}",
+            "  (syntax-rules ()",
+            "    ((${1:name} ${2:pattern})",
+            "     ${0:template})))"
+        ],
+        "description": "Define a hygienic macro"
+    },
+    "Do": {
+        "prefix": "do",
+        "body": [
+            "(do ((${1:var} ${2:init} ${3:step}))",
+            "    ((${4:test}) ${5:result})",
+            "  $0)"
+        ],
+        "description": "Iteration construct"
+    }
+}
+

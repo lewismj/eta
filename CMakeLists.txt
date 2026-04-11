@@ -39,12 +39,35 @@ set(ETA_VSIX_VERSION "latest" CACHE STRING
 set(VSCODE_EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/editors/vscode")
 set(VSIX_OUTPUT    "${CMAKE_BINARY_DIR}/bin/eta-lang-${ETA_VSIX_VERSION}.vsix")
 
+# ── eta_all — rebuild every component in one command ─────────────────
+# CMake's built-in "all" target covers normal libraries and executables
+# but skips CUSTOM targets (eta_editor_package).  This umbrella target
+# lets you build absolutely everything with:
+#
+#   cmake --build build --target eta_all
+#
+add_custom_target(eta_all
+    COMMENT "Building all Eta components (binaries + tests + VS Code extension)"
+)
+# Executables + test target (added by subdirectories)
+add_dependencies(eta_all
+    etai eta_repl etac eta_lsp eta_dap
+    eta_core_test
+)
+
+set(VSIX_FILENAME "eta-lang-${ETA_VSIX_VERSION}.vsix")
+
 if(ETA_VSIX_VERSION STREQUAL "latest")
-    # Local build — keep package.json version as-is
+    # Local build — keep package.json version as-is.
+    # Write the .vsix into the extension working directory first (avoids
+    # Node/vsce mangling WSL /mnt/… paths into invalid Windows paths),
+    # then cmake -E copy moves it to the final output location.
     add_custom_target(eta_editor_package
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
         COMMAND npm ci --ignore-scripts
-        COMMAND npx vsce package -o "${VSIX_OUTPUT}" --skip-license
+        COMMAND npx vsce package -o "${VSIX_FILENAME}" --skip-license
+        COMMAND ${CMAKE_COMMAND} -E copy "${VSIX_FILENAME}" "${VSIX_OUTPUT}"
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${VSIX_FILENAME}"
         WORKING_DIRECTORY "${VSCODE_EXT_DIR}"
         COMMENT "Packaging VS Code extension → bin/eta-lang-latest.vsix"
         VERBATIM
@@ -55,11 +78,15 @@ else()
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
         COMMAND npm ci --ignore-scripts
         COMMAND npm version "${ETA_VSIX_VERSION}" --no-git-tag-version --allow-same-version
-        COMMAND npx vsce package -o "${VSIX_OUTPUT}" --skip-license
+        COMMAND npx vsce package -o "${VSIX_FILENAME}" --skip-license
+        COMMAND ${CMAKE_COMMAND} -E copy "${VSIX_FILENAME}" "${VSIX_OUTPUT}"
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${VSIX_FILENAME}"
         WORKING_DIRECTORY "${VSCODE_EXT_DIR}"
         COMMENT "Packaging VS Code extension ${ETA_VSIX_VERSION} → bin/eta-lang-${ETA_VSIX_VERSION}.vsix"
         VERBATIM
     )
 endif()
 
+# Wire the VS Code extension into the eta_all umbrella
+add_dependencies(eta_all eta_editor_package)
 

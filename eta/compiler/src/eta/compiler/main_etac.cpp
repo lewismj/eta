@@ -88,6 +88,7 @@ int main(int argc, char* argv[]) {
 
     // ── Create driver ────────────────────────────────────────────────
     eta::interpreter::Driver driver(std::move(resolver));
+    auto resolve = driver.file_resolver();
 
     // ── Configure optimization pipeline ──────────────────────────────
     if (optimize) {
@@ -100,7 +101,7 @@ int main(int argc, char* argv[]) {
     {
         auto pr = driver.load_prelude();
         if (pr.found && !pr.loaded) {
-            driver.diagnostics().print_all(std::cerr, true);
+            driver.diagnostics().print_all(std::cerr, true, resolve);
             return 1;
         }
     }
@@ -108,7 +109,7 @@ int main(int argc, char* argv[]) {
     // Compile without executing — no side-effect output.
     auto compile_result = driver.compile_file(fs::absolute(file_path));
     if (!compile_result) {
-        driver.diagnostics().print_all(std::cerr, true);
+        driver.diagnostics().print_all(std::cerr, true, resolve);
         return 1;
     }
 

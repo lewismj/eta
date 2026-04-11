@@ -37,6 +37,18 @@ public:
     /// Blocks until the "disconnect" request is received or stdin closes.
     void run();
 
+    // Variable reference packing: encode (frame_index, scope) into a single int.
+    // scope 0 = locals, scope 1 = upvalues
+    // +1 offset ensures the result is always >= 1: DAP treats variablesReference == 0
+    // as "not expandable", so frame 0 / scope 0 (top-frame locals) would silently
+    // suppress the variables request without this offset.
+    static int encode_var_ref(int frame, int scope) { return ((frame << 8) | (scope & 0xFF)) + 1; }
+    static int decode_var_ref_frame(int ref) { return (ref - 1) >> 8; }
+    static int decode_var_ref_scope(int ref) { return (ref - 1) & 0xFF; }
+
+    // Compound variable references start at this value.
+    static constexpr int COMPOUND_REF_BASE = 10000;
+
 private:
     // ── Injected I/O ──────────────────────────────────────────────────────────
     std::istream& in_;
@@ -97,11 +109,14 @@ private:
     void handle_step_out(const Value& id, const Value& args);
     void handle_pause(const Value& id, const Value& args);
     void handle_evaluate(const Value& id, const Value& args);
+    void handle_terminate(const Value& id, const Value& args);
+    void handle_completions(const Value& id, const Value& args);
     void handle_disconnect(const Value& id, const Value& args);
 
     // ── Custom requests ─────────────────────────────────────────────────────
     void handle_heap_inspector(const Value& id, const Value& args);
     void handle_inspect_object(const Value& id, const Value& args);
+    void handle_disassemble(const Value& id, const Value& args);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     /// Build a JSON heap snapshot from the paused VM. Caller must hold vm_mutex_.
@@ -114,14 +129,27 @@ private:
     /// file_id can now be resolved.  Must be called WITHOUT vm_mutex_ held.
     void notify_breakpoints_verified();
 
-    // Variable reference packing: encode (frame_index, scope) into a single int.
-    // scope 0 = locals, scope 1 = upvalues
-    // +1 offset ensures the result is always >= 1: DAP treats variablesReference == 0
-    // as "not expandable", so frame 0 / scope 0 (top-frame locals) would silently
-    // suppress the variables request without this offset.
-    static int encode_var_ref(int frame, int scope) { return ((frame << 8) | (scope & 0xFF)) + 1; }
-    static int decode_var_ref_frame(int ref) { return (ref - 1) >> 8; }
-    static int decode_var_ref_scope(int ref) { return (ref - 1) & 0xFF; }
+    // ── Compound variable expansion ──────────────────────────────────────────
+    // References >= COMPOUND_REF_BASE are compound value expansions (cons, vector,
+    // closure) stored in compound_refs_.  Cleared on each stop event.
+    int next_compound_ref_{COMPOUND_REF_BASE};
+    std::unordered_map<int, uint64_t> compound_refs_;  // ref → NaN-boxed LispVal
+
+    /// Allocate a compound variablesReference for a NaN-boxed value.
+    int alloc_compound_ref(uint64_t val);
+    /// Clear compound refs (called on each stop/continue cycle).
+    void clear_compound_refs();
+    /// Check if a value is a compound type that can be expanded.
+    bool is_compound_value(uint64_t val) const;
+    /// Build a variable JSON object, assigning a compound ref if expandable.
+    Value make_variable_json(const std::string& name, uint64_t val);
+    /// Expand a compound value into child variables.
+    Array expand_compound(uint64_t val);
+
+    /// Derive the Eta module name (e.g. "composition", "std.io") that owns
+    /// the function executing in the given frame index (0 = innermost).
+    /// Must be called with vm_mutex_ held.
+    std::string current_module_from_frame(std::size_t frame_idx);
 };
 
 } // namespace eta::dap
