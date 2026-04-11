@@ -1359,6 +1359,10 @@ BOOST_AUTO_TEST_CASE(prim_tensor_predicate_via_env) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_sequential_training_converges_via_env) {
+    // Pin random seed so weight initialisation is deterministic and training
+    // reliably converges within the epoch budget.
+    ::torch::manual_seed(42);
+
     Heap heap(1ull << 24);  // 16 MB — training allocates many tensors
     InternTable intern;
     BuiltinEnvironment env;

@@ -989,8 +989,8 @@ BOOST_AUTO_TEST_CASE(enclosing_sexp_ranges_nested) {
     BOOST_REQUIRE_EQUAL(ranges.size(), 3u);
 
     // Innermost should be the smallest
-    BOOST_TEST(ranges[0].start.character == 6);  // '(' of (c)
-    BOOST_TEST(ranges[0].end.character == 10);    // ')' of (c) + 1
+    BOOST_TEST(ranges[0].start.character == 6);  // '(' of (c) at index 6
+    BOOST_TEST(ranges[0].end.character == 9);     // ')' of (c) at index 8, +1 = 9
 }
 
 BOOST_AUTO_TEST_SUITE_END()
