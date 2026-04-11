@@ -90,4 +90,3 @@ endif()
 # Wire the VS Code extension into the eta_all umbrella
 add_dependencies(eta_all eta_editor_package)
 
-

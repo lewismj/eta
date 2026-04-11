@@ -859,4 +859,3 @@ BOOST_AUTO_TEST_CASE(scopes_refs_below_compound_base) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
-

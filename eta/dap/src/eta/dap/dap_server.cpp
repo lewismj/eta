@@ -1320,5 +1320,3 @@ std::string DapServer::current_module_from_frame(std::size_t frame_idx) {
 
 } // namespace eta::dap
 
-
-

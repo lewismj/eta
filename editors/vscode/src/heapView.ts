@@ -27,6 +27,13 @@ interface ConsPoolStats {
     bytes: number;
 }
 
+interface ConsPoolStats {
+    capacity: number;
+    live: number;
+    free: number;
+    bytes: number;
+}
+
 interface HeapSnapshot {
     totalBytes: number;
     softLimit: number;
