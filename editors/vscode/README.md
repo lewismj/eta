@@ -18,6 +18,10 @@ Powered by the native `eta_lsp` binary:
 - **Hover** — documentation for keywords, special forms, and document-local definitions
 - **Go to Definition** — jump to the definition site of any symbol
 - **Completion** — keywords, builtins, prelude symbols, module-path symbols, and document-local definitions
+- **Outline view** — `define`, `defun`, `define-record-type`, `define-syntax`, and `module` forms shown in the breadcrumb / Outline panel
+- **Find All References** — find every occurrence of a symbol in the current file
+- **Rename** — safely rename any local binding or module-scoped definition
+- **Signature Help** — parameter hints when calling functions (`(`, `,` triggers)
 
 ### Debugger (DAP)
 
@@ -65,9 +69,10 @@ Install Eta from a [release bundle](https://github.com/eta-lang/eta/releases) �
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
+| `eta.modulePath` | `string` | `""` | Colon/semicolon-separated directories to search for Eta modules (`ETA_MODULE_PATH`). Used by both LSP and DAP servers. Falls back to the environment variable. |
 | `eta.lsp.serverPath` | `string` | `""` | Path to the `eta_lsp` executable. If empty, searches bundled binary, workspace build output, then `PATH`. |
 | `eta.lsp.enabled` | `boolean` | `true` | Enable the Eta Language Server for diagnostics and IDE features. |
-| `eta.lsp.modulePath` | `string` | `""` | Colon/semicolon-separated directories to search for Eta modules (`ETA_MODULE_PATH`). Falls back to the environment variable. |
+| `eta.lsp.modulePath` | `string` | `""` | Deprecated — use `eta.modulePath` instead. |
 | `eta.dap.executablePath` | `string` | `""` | Path to the `eta_dap` executable or its parent directory. |
 | `eta.debug.autoShowHeap` | `boolean` | `true` | Automatically open the Heap Inspector when a debug session starts. |
 
@@ -97,9 +102,8 @@ Install Eta from a [release bundle](https://github.com/eta-lang/eta/releases) �
 
 ## Known Limitations
 
-- **Outline view** — not yet supported (requires `textDocument/documentSymbol` in the LSP server)
-- **Find All References / Rename** — not yet implemented
-- **Semantic tokens** — highlighting is grammar-based; no context-aware token colouring yet
+- **Semantic tokens** — highlighting is grammar-based; no context-aware token colouring yet (planned for a future release)
+- **Cross-file references / rename** — references and rename currently operate on the current file only
 
 ---
 

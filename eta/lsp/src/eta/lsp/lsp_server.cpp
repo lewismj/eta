@@ -342,6 +342,9 @@ void LspServer::dispatch(const Value& msg) {
     } else if (method == "textDocument/rename") {
         auto result = handle_rename(params);
         if (has_id) send_response(id, result);
+    } else if (method == "textDocument/signatureHelp") {
+        auto result = handle_signature_help(params);
+        if (has_id) send_response(id, result);
     } else {
         if (has_id) {
             send_error(id, -32601, "Method not found: " + method);
@@ -370,6 +373,10 @@ Value LspServer::handle_initialize(const Value& /*params*/) {
             {"renameProvider", true},
             {"completionProvider", json::object({
                 {"triggerCharacters", json::array({"(", " "})},
+            })},
+            {"signatureHelpProvider", json::object({
+                {"triggerCharacters", json::array({"(", ","})},
+                {"retriggerCharacters", json::array({","})},
             })},
         })},
         {"serverInfo", json::object({
@@ -431,13 +438,14 @@ void LspServer::handle_did_change(const Value& params) {
 void LspServer::handle_did_close(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
     documents_.erase(uri);
+    last_validated_content_.erase(uri); // clean up cache entry
     // Clear diagnostics for closed document
     publish_diagnostics(uri, {});
 }
 
 void LspServer::handle_did_save(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
-    // Re-validate on save
+    // Re-validate on save; update stored content if the server sent it back
     auto text = params.get_string("text");
     if (text) {
         auto it = documents_.find(uri);
@@ -445,6 +453,9 @@ void LspServer::handle_did_save(const Value& params) {
             it->second.content = *text;
         }
     }
+    // Invalidate validation and completion caches so file changes are reflected
+    last_validated_content_.erase(uri);
+    completion_cache_loaded_ = false;
     validate_document(uri);
 }
 
@@ -457,6 +468,12 @@ void LspServer::validate_document(const std::string& uri) {
     if (it == documents_.end()) return;
 
     const auto& source = it->second.content;
+
+    // Skip if the content hasn't changed since the last successful validation run
+    // (avoids re-running the full 4-phase pipeline on every keystroke for no-op edits).
+    auto& cached = last_validated_content_[uri];
+    if (cached == source) return;
+    cached = source;
     std::vector<LspDiagnostic> diags;
 
     // ── Phase 1: Lex + Parse ──────────────────────────────────────────
@@ -642,6 +659,36 @@ Value LspServer::handle_hover(const Value& params) {
         {"values",       "**values** — Return multiple values.\n\n`(values expr...)`"},
         {"call-with-values", "**call-with-values** — Receive multiple values.\n\n`(call-with-values producer consumer)`"},
         {"apply",        "**apply** — Apply procedure to argument list.\n\n`(apply proc arg... arg-list)`"},
+        // Exception handling
+        {"raise",        "**raise** — Raise an exception.\n\n`(raise tag value)`"},
+        {"catch",        "**catch** — Catch an exception by tag.\n\n`(catch 'tag body ...)`"},
+        // Logic / unification
+        {"logic-var",    "**logic-var** — Create a fresh logic variable.\n\n`(logic-var)`"},
+        {"unify",        "**unify** — Unify two terms, extending the substitution.\n\n`(unify term1 term2)`"},
+        {"deref-lvar",   "**deref-lvar** — Walk the substitution chain for a logic variable.\n\n`(deref-lvar lvar)`"},
+        {"trail-mark",   "**trail-mark** — Record the current trail position.\n\n`(trail-mark)`"},
+        {"unwind-trail", "**unwind-trail** — Undo bindings back to a saved trail mark.\n\n`(unwind-trail mark)`"},
+        {"copy-term",    "**copy-term** — Deep-copy a term, freshening logic variables.\n\n`(copy-term term)`"},
+        // AD / tape
+        {"make-dual",        "**make-dual** — Construct a dual number for forward-mode AD.\n\n`(make-dual primal tangent)`"},
+        {"dual?",            "**dual?** — Predicate: is the value a dual number?\n\n`(dual? val)`"},
+        {"dual-primal",      "**dual-primal** — Extract the primal from a dual number.\n\n`(dual-primal dual)`"},
+        {"dual-backprop",    "**dual-backprop** — Extract the backprop closure from a dual.\n\n`(dual-backprop dual)`"},
+        {"tape-new",         "**tape-new** — Create a new AD tape.\n\n`(tape-new)`"},
+        {"tape-start!",      "**tape-start!** — Activate a tape for recording.\n\n`(tape-start! tape)`"},
+        {"tape-stop!",       "**tape-stop!** — Deactivate the current tape.\n\n`(tape-stop! tape)`"},
+        {"tape-var",         "**tape-var** — Create a tracked tape variable.\n\n`(tape-var tape value)`"},
+        {"tape-backward!",   "**tape-backward!** — Run reverse-mode backpropagation.\n\n`(tape-backward! tape root-ref)`"},
+        {"tape-adjoint",     "**tape-adjoint** — Read the adjoint of a tape ref.\n\n`(tape-adjoint tape ref)`"},
+        {"tape-primal",      "**tape-primal** — Read the primal value of a tape ref.\n\n`(tape-primal tape ref)`"},
+        {"tape-ref?",        "**tape-ref?** — Predicate: is the value a tape reference?\n\n`(tape-ref? val)`"},
+        {"tape-ref-index",   "**tape-ref-index** — Get the integer index of a tape ref.\n\n`(tape-ref-index ref)`"},
+        {"tape-size",        "**tape-size** — Number of recorded nodes on the tape.\n\n`(tape-size tape)`"},
+        {"tape-ref-value",   "**tape-ref-value** — Get the primal value stored in a tape ref.\n\n`(tape-ref-value ref)`"},
+        // CLP
+        {"%clp-domain-z!",  "**%clp-domain-z!** — Set an integer domain constraint.\n\n`(%clp-domain-z! lvar lo hi)`"},
+        {"%clp-domain-fd!",  "**%clp-domain-fd!** — Set a finite-domain constraint.\n\n`(%clp-domain-fd! lvar domain)`"},
+        {"%clp-get-domain",  "**%clp-get-domain** — Query the current domain of a constrained variable.\n\n`(%clp-get-domain lvar)`"},
     };
 
     auto kit = keyword_docs.find(word);
@@ -938,6 +985,17 @@ Value LspServer::handle_document_symbol(const Value& params) {
     const auto& source = it->second.content;
     auto symbols = collect_symbols(source, /*capture_signature=*/true);
 
+    // Pre-split source into lines to find the opening '(' of each form.
+    std::vector<std::string> lines;
+    {
+        std::istringstream iss(source);
+        std::string ln;
+        while (std::getline(iss, ln)) {
+            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+            lines.push_back(std::move(ln));
+        }
+    }
+
     // LSP SymbolKind values
     constexpr int SK_Module   = 2;
     constexpr int SK_Function = 12;
@@ -952,20 +1010,34 @@ Value LspServer::handle_document_symbol(const Value& params) {
         else if (sym.kind == "macro") kind = SK_Function;
         else if (sym.kind == "record") kind = SK_Class;
 
-        // Build detail string
         std::string detail = sym.kind;
         if (!sym.signature.empty()) detail += " " + sym.signature;
 
-        // Compute a reasonable selection range (just the symbol name)
+        // Selection range = just the symbol name
         auto name_end_char = sym.character + static_cast<int64_t>(sym.name.size());
         auto sel_range = Range{
             Position{sym.line, sym.character},
             Position{sym.line, name_end_char},
         };
 
-        // For the full range, use the whole line as an approximation
-        // (precise ranges would require parsing the S-expression depth)
-        auto full_range = sel_range; // same for now
+        // Full range: scan backward from the symbol name to find the '(' that opens
+        // this form, then use sexp_end to find the matching ')'.
+        int64_t form_col = sym.character;
+        if (sym.line < static_cast<int64_t>(lines.size())) {
+            const auto& ln = lines[static_cast<std::size_t>(sym.line)];
+            for (int64_t c = sym.character - 1; c >= 0; --c) {
+                if (ln[static_cast<std::size_t>(c)] == '(') { form_col = c; break; }
+            }
+        }
+        auto [end_line, end_col] = sexp_end(source, sym.line, form_col);
+        auto full_range = Range{
+            Position{sym.line, form_col},
+            Position{end_line, end_col},
+        };
+        // Fallback: if sexp_end didn't advance, use the selection range
+        if (end_line == sym.line && end_col == form_col) {
+            full_range = sel_range;
+        }
 
         result.push_back(json::object({
             {"name", sym.name},
@@ -1243,6 +1315,260 @@ std::string LspServer::word_at_position(const std::string& text,
     while (end < current_line.size() && is_sym_char(current_line[end])) ++end;
 
     return current_line.substr(start, end - start);
+}
+
+// ============================================================================
+// sexp_end — find the closing ')' of an S-expression
+// ============================================================================
+
+std::pair<int64_t, int64_t> LspServer::sexp_end(
+        const std::string& source, int64_t start_line, int64_t start_col) {
+    std::istringstream iss(source);
+    std::string ln;
+    int64_t row = 0;
+    int depth = 0;
+    bool in_string = false;
+
+    while (std::getline(iss, ln)) {
+        if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+
+        std::size_t col_start = (row == start_line)
+            ? static_cast<std::size_t>(std::max<int64_t>(start_col, 0))
+            : 0;
+
+        bool in_line_comment = false;
+        for (std::size_t col = col_start; col < ln.size(); ++col) {
+            char c = ln[col];
+            if (in_line_comment) break;
+            if (in_string) {
+                if (c == '\\') { ++col; continue; } // skip escape
+                if (c == '"')  { in_string = false; }
+                continue;
+            }
+            if (c == '"') { in_string = true;  continue; }
+            if (c == ';') { in_line_comment = true; break; }
+            if (c == '(') { ++depth; }
+            else if (c == ')') {
+                --depth;
+                if (depth == 0) {
+                    // Return position just after the closing ')'
+                    return {row, static_cast<int64_t>(col) + 1};
+                }
+            }
+        }
+        ++row;
+    }
+    // Not found — return the start position as a sentinel
+    return {start_line, start_col};
+}
+
+// ============================================================================
+// textDocument/signatureHelp
+// ============================================================================
+
+Value LspServer::handle_signature_help(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(nullptr);
+
+    auto line_num = params["position"].get_int("line").value_or(0);
+    auto col_num  = params["position"].get_int("character").value_or(0);
+
+    const auto& source = it->second.content;
+
+    // Build a flat string of all text up to the cursor
+    std::string prefix;
+    {
+        std::istringstream iss(source);
+        std::string ln;
+        int64_t row = 0;
+        while (std::getline(iss, ln)) {
+            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+            if (row < line_num) {
+                prefix += ln + '\n';
+            } else if (row == line_num) {
+                auto clip = static_cast<std::size_t>(std::max<int64_t>(col_num, 0));
+                prefix += ln.substr(0, std::min(clip, ln.size()));
+                break;
+            }
+            ++row;
+        }
+    }
+
+    // Walk backwards to find the innermost unclosed '(' — that is our call site.
+    // We track paren depth; skip strings; ignore line comments (scanning backwards
+    // so we just skip everything after a ';' on each line when going forward).
+    int paren_depth = 0;
+    int func_start  = -1;
+
+    for (int i = static_cast<int>(prefix.size()) - 1; i >= 0; --i) {
+        char c = prefix[static_cast<std::size_t>(i)];
+        if (c == ')')      { ++paren_depth; }
+        else if (c == '(') {
+            if (paren_depth == 0) { func_start = i + 1; break; }
+            --paren_depth;
+        }
+        // Note: string / comment handling when scanning backwards is complex;
+        // for the common case this simple scan is sufficient.
+    }
+
+    if (func_start < 0) return Value(nullptr);
+
+    // Skip whitespace between '(' and function name
+    while (func_start < static_cast<int>(prefix.size()) &&
+           (prefix[static_cast<std::size_t>(func_start)] == ' ' ||
+            prefix[static_cast<std::size_t>(func_start)] == '\t' ||
+            prefix[static_cast<std::size_t>(func_start)] == '\n'))
+        ++func_start;
+
+    // Extract function name (up to whitespace / paren)
+    int func_end = func_start;
+    while (func_end < static_cast<int>(prefix.size())) {
+        char c = prefix[static_cast<std::size_t>(func_end)];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '(' || c == ')') break;
+        ++func_end;
+    }
+    if (func_end <= func_start) return Value(nullptr);
+
+    std::string func_name = prefix.substr(
+        static_cast<std::size_t>(func_start),
+        static_cast<std::size_t>(func_end - func_start));
+
+    // Count complete top-level arguments after the function name (= active param index)
+    int active_param = 0;
+    {
+        int pos      = func_end;
+        bool in_tok  = false;
+        int depth2   = 0;
+        while (pos < static_cast<int>(prefix.size())) {
+            char c = prefix[static_cast<std::size_t>(pos)];
+            if (c == '(') { ++depth2; in_tok = true; }
+            else if (c == ')') {
+                if (depth2 == 0) break;
+                --depth2;
+                if (depth2 == 0) in_tok = true; // closing a nested sexp counts as a token
+            } else if (depth2 == 0) {
+                if (c == ' ' || c == '\t' || c == '\n') {
+                    if (in_tok) { ++active_param; in_tok = false; }
+                } else {
+                    in_tok = true;
+                }
+            }
+            ++pos;
+        }
+    }
+
+    // ── Signature lookup ─────────────────────────────────────────────────────
+
+    // Static table of builtin signatures
+    static const std::vector<std::pair<std::string, std::string>> builtin_sigs = {
+        {"+",              "(+ z ...)"}, {"-",  "(- z1 z2 ...)"}, {"*", "(* z ...)"}, {"/", "(/ z1 z2 ...)"},
+        {"=",              "(= z1 z2 ...)"}, {"<",  "(< x1 x2 ...)"}, {">",  "(> x1 x2 ...)"},
+        {"<=",             "(<= x1 x2 ...)"}, {">=", "(>= x1 x2 ...)"},
+        {"cons",           "(cons obj1 obj2)"}, {"car",  "(car pair)"}, {"cdr", "(cdr pair)"},
+        {"list",           "(list obj ...)"}, {"length",  "(length list)"},
+        {"append",         "(append list ...)"}, {"reverse", "(reverse list)"},
+        {"list-ref",       "(list-ref list k)"},
+        {"map",            "(map proc list ...)"}, {"for-each", "(for-each proc list ...)"},
+        {"display",        "(display obj [port])"}, {"write",   "(write obj [port])"},
+        {"newline",        "(newline [port])"},   {"error",   "(error message irritant ...)"},
+        {"apply",          "(apply proc arg ... args)"},
+        {"not",            "(not obj)"},    {"eq?",    "(eq? obj1 obj2)"},
+        {"eqv?",           "(eqv? obj1 obj2)"}, {"equal?",  "(equal? obj1 obj2)"},
+        {"null?",          "(null? obj)"},  {"pair?",  "(pair? obj)"},  {"list?",   "(list? obj)"},
+        {"number?",        "(number? obj)"},{"boolean?","(boolean? obj)"},{"string?","(string? obj)"},
+        {"symbol?",        "(symbol? obj)"},{"procedure?","(procedure? obj)"},{"integer?","(integer? obj)"},
+        {"zero?",          "(zero? z)"},    {"positive?","(positive? x)"},{"negative?","(negative? x)"},
+        {"abs",            "(abs x)"},      {"min",  "(min x1 x2 ...)"}, {"max",   "(max x1 x2 ...)"},
+        {"modulo",         "(modulo n1 n2)"},{"remainder","(remainder n1 n2)"},
+        {"sqrt",           "(sqrt z)"},     {"expt",   "(expt z1 z2)"},
+        {"floor",          "(floor x)"},    {"ceiling","(ceiling x)"},
+        {"truncate",       "(truncate x)"}, {"round",  "(round x)"},
+        {"sin",            "(sin z)"},{"cos","(cos z)"},{"tan","(tan z)"},
+        {"asin",           "(asin z)"},{"acos","(acos z)"},{"atan","(atan y [x])"},
+        {"exp",            "(exp z)"},{"log","(log z)"},
+        {"string-length",  "(string-length string)"},
+        {"string-append",  "(string-append string ...)"},
+        {"number->string", "(number->string z [radix])"},
+        {"string->number", "(string->number string [radix])"},
+        {"vector",         "(vector obj ...)"}, {"make-vector", "(make-vector k [fill])"},
+        {"vector-ref",     "(vector-ref vector k)"}, {"vector-set!", "(vector-set! vector k obj)"},
+        {"vector-length",  "(vector-length vector)"},
+        {"values",         "(values obj ...)"}, {"call-with-values", "(call-with-values producer consumer)"},
+        {"call/cc",        "(call/cc proc)"}, {"dynamic-wind", "(dynamic-wind before thunk after)"},
+        {"raise",          "(raise tag value)"},   {"catch",  "(catch 'tag body ...)"},
+        {"logic-var",      "(logic-var)"},    {"unify", "(unify term1 term2)"},
+        {"deref-lvar",     "(deref-lvar lvar)"},  {"trail-mark", "(trail-mark)"},
+        {"unwind-trail",   "(unwind-trail mark)"}, {"copy-term", "(copy-term term)"},
+        {"make-dual",      "(make-dual primal tangent)"},
+        {"tape-new",       "(tape-new)"},          {"tape-start!", "(tape-start! tape)"},
+        {"tape-stop!",     "(tape-stop! tape)"},   {"tape-var",    "(tape-var tape value)"},
+        {"tape-backward!", "(tape-backward! tape root-ref)"},
+        {"tape-adjoint",   "(tape-adjoint tape ref)"},
+        {"tape-primal",    "(tape-primal tape ref)"},
+        {"tape-ref-index", "(tape-ref-index ref)"}, {"tape-size", "(tape-size tape)"},
+        {"tape-ref-value", "(tape-ref-value ref)"},
+        {"%clp-domain-z!", "(%clp-domain-z! lvar lo hi)"},
+        {"%clp-domain-fd!","(%clp-domain-fd! lvar domain)"},
+        {"%clp-get-domain","(%clp-get-domain lvar)"},
+        {"define",         "(define name value)"}, {"defun",  "(defun name (args...) body...)"},
+        {"lambda",         "(lambda (args...) body...)"},
+        {"let",            "(let ((var init) ...) body ...)"}, {"let*",  "(let* ((var init) ...) body ...)"},
+        {"letrec",         "(letrec ((var init) ...) body ...)"}, {"if", "(if test consequent alternate)"},
+        {"when",           "(when test body ...)"}, {"unless", "(unless test body ...)"},
+        {"begin",          "(begin expr ...)"}, {"cond",  "(cond (test expr ...) ... (else expr ...))"},
+        {"case",           "(case key ((datum ...) expr ...) ... (else expr ...))"},
+        {"set!",           "(set! name value)"},
+    };
+
+    std::string label;
+    for (const auto& [name, sig] : builtin_sigs) {
+        if (name == func_name) { label = sig; break; }
+    }
+
+    // Check document-local symbols
+    if (label.empty()) {
+        auto syms = collect_symbols(source, true);
+        for (const auto& sym : syms) {
+            if (sym.name == func_name && !sym.signature.empty()) {
+                label = "(" + sym.name + " " +
+                        sym.signature.substr(1, sym.signature.size() > 2 ? sym.signature.size() - 2 : 0) + ")";
+                break;
+            }
+        }
+    }
+
+    // Check cached prelude / module-path symbols
+    if (label.empty() && completion_cache_loaded_) {
+        for (const auto& sym : prelude_symbols_) {
+            if (sym.name == func_name && !sym.signature.empty()) {
+                label = "(" + sym.name + " " +
+                        sym.signature.substr(1, sym.signature.size() > 2 ? sym.signature.size() - 2 : 0) + ")";
+                break;
+            }
+        }
+        if (label.empty()) {
+            for (const auto& sym : module_path_symbols_) {
+                if (sym.name == func_name && !sym.signature.empty()) {
+                    label = "(" + sym.name + " " +
+                            sym.signature.substr(1, sym.signature.size() > 2 ? sym.signature.size() - 2 : 0) + ")";
+                    break;
+                }
+            }
+        }
+    }
+
+    if (label.empty()) return Value(nullptr);
+
+    return json::object({
+        {"signatures", json::array({
+            json::object({
+                {"label", label},
+            }),
+        })},
+        {"activeSignature", 0},
+        {"activeParameter", active_param},
+    });
 }
 
 std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string& source, bool capture_signature) {

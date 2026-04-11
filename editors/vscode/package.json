@@ -2,7 +2,7 @@
     "name": "eta-lang",
     "displayName": "Eta Language",
     "description": "Language support for the Eta programming language",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "publisher": "eta-lang",
     "repository": {
         "type": "git",
@@ -59,6 +59,11 @@
         "configuration": {
             "title": "Eta",
             "properties": {
+                "eta.modulePath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Colon/semicolon-separated list of directories to search for Eta modules (ETA_MODULE_PATH). Used by both the LSP and DAP servers. Falls back to eta.lsp.modulePath, then to the ETA_MODULE_PATH environment variable."
+                },
                 "eta.lsp.serverPath": {
                     "type": "string",
                     "default": "",
@@ -72,7 +77,7 @@
                 "eta.lsp.modulePath": {
                     "type": "string",
                     "default": "",
-                    "description": "Colon/semicolon-separated list of directories to search for Eta modules (ETA_MODULE_PATH). If empty, falls back to the ETA_MODULE_PATH environment variable."
+                    "description": "Deprecated — use eta.modulePath instead. Colon/semicolon-separated list of directories to search for Eta modules."
                 },
                 "eta.dap.executablePath": {
                     "type": "string",
@@ -122,6 +127,11 @@
                 "title": "Refresh Disassembly",
                 "icon": "$(refresh)",
                 "category": "Eta"
+            },
+            {
+                "command": "eta.inspectObjectFromTree",
+                "title": "Inspect Object",
+                "category": "Eta"
             }
         ],
         "menus": {
@@ -147,6 +157,10 @@
                 {
                     "command": "eta.showDisassemblyAll",
                     "when": "debugType == 'eta'"
+                },
+                {
+                    "command": "eta.inspectObjectFromTree",
+                    "when": "false"
                 }
             ],
             "view/title": [

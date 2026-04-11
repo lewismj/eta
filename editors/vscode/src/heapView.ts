@@ -5,57 +5,7 @@ import {
     ViewColumn,
     ExtensionContext,
 } from 'vscode';
-
-// ── Heap snapshot types (mirror DAP response) ────────────────────────────────
-
-interface KindStat {
-    kind: string;
-    count: number;
-    bytes: number;
-}
-
-interface GCRoot {
-    name: string;
-    objectIds: number[];
-    labels?: string[];
-}
-
-interface ConsPoolStats {
-    capacity: number;
-    live: number;
-    free: number;
-    bytes: number;
-}
-
-interface ConsPoolStats {
-    capacity: number;
-    live: number;
-    free: number;
-    bytes: number;
-}
-
-interface HeapSnapshot {
-    totalBytes: number;
-    softLimit: number;
-    kinds: KindStat[];
-    roots: GCRoot[];
-    consPool?: ConsPoolStats;   // optional for backward compat
-}
-
-interface ObjectChild {
-    objectId: number;
-    kind: string;
-    size: number;
-    preview: string;
-}
-
-interface ObjectInspection {
-    objectId: number;
-    kind: string;
-    size: number;
-    preview: string;
-    children: ObjectChild[];
-}
+import type { HeapSnapshot, ObjectInspection } from './dapTypes';
 
 // ── HeapInspectorPanel ───────────────────────────────────────────────────────
 
@@ -68,6 +18,8 @@ export class HeapInspectorPanel {
 
     private constructor(panel: WebviewPanel) {
         this.panel = panel;
+        // Set HTML immediately so the webview is ready to receive messages.
+        this.panel.webview.html = getWebviewHtml();
 
         panel.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.command) {
@@ -138,15 +90,6 @@ export class HeapInspectorPanel {
         }
     }
 
-    /** Update the HTML when the panel is first shown. */
-    public setInitialHtml(): void {
-        this.panel.webview.html = getWebviewHtml();
-    }
-
-    /** Expose the underlying panel for subscription cleanup. */
-    public get webviewPanel(): WebviewPanel {
-        return this.panel;
-    }
 
     /** Get the singleton (if any). */
     public static current(): HeapInspectorPanel | undefined {

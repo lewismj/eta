@@ -127,6 +127,7 @@ private:
     Value handle_document_symbol(const Value& params);
     Value handle_references(const Value& params);
     Value handle_rename(const Value& params);
+    Value handle_signature_help(const Value& params);
 
     // ── Diagnostics ───────────────────────────────────────────────────
     void validate_document(const std::string& uri);
@@ -143,6 +144,12 @@ private:
 
     /// Find word at position in source text
     static std::string word_at_position(const std::string& text, int64_t line, int64_t character);
+
+    /// Find the end position {line, col} of the S-expression that begins at
+    /// (start_line, start_col) — i.e., the position just after the matching ')'.
+    /// Returns {start_line, start_col} when no balanced close is found.
+    static std::pair<int64_t, int64_t> sexp_end(
+        const std::string& source, int64_t start_line, int64_t start_col);
 
 
     /// Initialise resolver_ from ETA_MODULE_PATH env var + bundled stdlib.
@@ -178,6 +185,10 @@ private:
 
     /// Scan all .eta files in the module search path and collect their symbols.
     void scan_module_path_symbols();
+
+    // ── Validation content cache ──────────────────────────────────────
+    /// Last content validated per URI — skip redundant full-pipeline runs.
+    std::unordered_map<std::string, std::string> last_validated_content_;
 };
 
 } // namespace eta::lsp
