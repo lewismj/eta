@@ -94,9 +94,8 @@ jobs:
           mkdir -p "$PREFIX/editors"
           cp "editors/vscode/eta-lang-${{ env.VSIX_LABEL }}.vsix" "$PREFIX/editors/"
 
-          # Install script + docs
+          # Install script
           cp scripts/install.sh "$PREFIX/" && chmod +x "$PREFIX/install.sh"
-          cp TESTING.md         "$PREFIX/"
 
           # Ensure binaries are executable
           chmod +x "$PREFIX/bin/"*
@@ -186,7 +185,6 @@ jobs:
 
           Copy-Item "scripts\install.ps1" "$prefix\" -ErrorAction SilentlyContinue
           Copy-Item "scripts\install.cmd" "$prefix\" -ErrorAction SilentlyContinue
-          Copy-Item "TESTING.md"          "$prefix\" -ErrorAction SilentlyContinue
 
       - name: Create archive
         shell: pwsh
