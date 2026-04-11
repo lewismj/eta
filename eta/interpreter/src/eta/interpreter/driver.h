@@ -719,10 +719,10 @@ private:
             auto* init_func = emitter.emit();
 
             // Record global slot → name mapping for debugger display.
-            // Skip builtin slots (those have numeric indices < builtins count).
+            // Prefix with "module." so the UI can group by module.
             for (const auto& bi : mod.bindings) {
                 if (bi.kind == semantics::BindingInfo::Kind::Global && !bi.name.empty()) {
-                    global_names_[bi.slot] = bi.name;
+                    global_names_[bi.slot] = mod.name + "." + bi.name;
                 }
             }
 

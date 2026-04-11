@@ -145,6 +145,11 @@ private:
     Value make_variable_json(const std::string& name, uint64_t val);
     /// Expand a compound value into child variables.
     Array expand_compound(uint64_t val);
+
+    /// Derive the Eta module name (e.g. "composition", "std.io") that owns
+    /// the function executing in the given frame index (0 = innermost).
+    /// Must be called with vm_mutex_ held.
+    std::string current_module_from_frame(std::size_t frame_idx);
 };
 
 } // namespace eta::dap

@@ -564,6 +564,12 @@ void DapServer::handle_scopes(const Value& id, const Value& args) {
     send_response(id, json::object({
         {"scopes", json::array({
             json::object({
+                {"name",               "Module"},
+                {"variablesReference", Value(static_cast<int64_t>(encode_var_ref(frame_id, 3)))},
+                {"expensive",          false},
+                {"presentationHint",   "locals"},
+            }),
+            json::object({
                 {"name",               "Locals"},
                 {"variablesReference", Value(static_cast<int64_t>(encode_var_ref(frame_id, 0)))},
                 {"expensive",          false},
@@ -576,7 +582,7 @@ void DapServer::handle_scopes(const Value& id, const Value& args) {
             json::object({
                 {"name",               "Globals"},
                 {"variablesReference", Value(static_cast<int64_t>(encode_var_ref(frame_id, 2)))},
-                {"expensive",          false},
+                {"expensive",          true},
             }),
         })},
     }));
@@ -616,6 +622,27 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
     // ── Frame scope variables (locals / upvalues / globals) ────────────────
     int frame_idx  = decode_var_ref_frame(ref);
     int scope      = decode_var_ref_scope(ref);
+
+    if (scope == 3) {
+        // ── Module scope: globals that belong to the currently-executing module ──
+        // Shows only the user's own defines (e.g. composition.top5 → "top5")
+        // so they are immediately visible without scrolling through all prelude/std.* entries.
+        std::string cur_mod = current_module_from_frame(static_cast<std::size_t>(frame_idx));
+        const auto& globals = driver_->vm().globals();
+        const auto& names   = driver_->global_names();
+        Array vars;
+        for (const auto& [slot, full_name] : names) {
+            if (slot >= globals.size()) continue;
+            auto v = globals[slot];
+            if (v == runtime::nanbox::Nil) continue;
+            auto dot = full_name.rfind('.');
+            if (dot == std::string::npos) continue;
+            if (full_name.substr(0, dot) != cur_mod) continue;
+            vars.push_back(make_variable_json(full_name.substr(dot + 1), v));
+        }
+        send_response(id, json::object({{"variables", Value(std::move(vars))}}));
+        return;
+    }
 
     if (scope == 2) {
         // ── Globals scope ─────────────────────────────────────────────────
@@ -709,26 +736,61 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
     if (driver_->vm().is_paused()) {
         const std::string& expr = *expr_opt;
         auto frames = driver_->vm().get_frames();
+
+        // ── 1. Search locals and upvalues across all frames ───────────────────
         for (std::size_t fi = 0; fi < frames.size(); ++fi) {
             for (const auto& e : driver_->vm().get_locals(fi)) {
                 if (e.name == expr) {
+                    int vr = is_compound_value(e.value) ? alloc_compound_ref(e.value) : 0;
                     send_response(id, json::object({
                         {"result",             Value(driver_->format_value(e.value))},
-                        {"variablesReference", 0},
+                        {"variablesReference", Value(static_cast<int64_t>(vr))},
                     }));
                     return;
                 }
             }
             for (const auto& e : driver_->vm().get_upvalues(fi)) {
                 if (e.name == expr) {
+                    int vr = is_compound_value(e.value) ? alloc_compound_ref(e.value) : 0;
                     send_response(id, json::object({
                         {"result",             Value(driver_->format_value(e.value))},
-                        {"variablesReference", 0},
+                        {"variablesReference", Value(static_cast<int64_t>(vr))},
                     }));
                     return;
                 }
             }
         }
+
+        // ── 2. Search globals: exact full name ("composition.top5") first ─────
+        const auto& gvals  = driver_->vm().globals();
+        const auto& gnames = driver_->global_names();
+        for (const auto& [slot, full_name] : gnames) {
+            if (full_name == expr && slot < gvals.size()) {
+                auto v = gvals[slot];
+                int vr = is_compound_value(v) ? alloc_compound_ref(v) : 0;
+                send_response(id, json::object({
+                    {"result",             Value(driver_->format_value(v))},
+                    {"variablesReference", Value(static_cast<int64_t>(vr))},
+                }));
+                return;
+            }
+        }
+
+        // ── 3. Search globals: short name ("top5" matches "composition.top5") ─
+        for (const auto& [slot, full_name] : gnames) {
+            auto dot = full_name.rfind('.');
+            if (dot == std::string::npos) continue;
+            if (full_name.substr(dot + 1) == expr && slot < gvals.size()) {
+                auto v = gvals[slot];
+                int vr = is_compound_value(v) ? alloc_compound_ref(v) : 0;
+                send_response(id, json::object({
+                    {"result",             Value(driver_->format_value(v))},
+                    {"variablesReference", Value(static_cast<int64_t>(vr))},
+                }));
+                return;
+            }
+        }
+
         send_response(id, json::object({{"result", "<not available>"}, {"variablesReference", 0}}));
         return;
     }
@@ -1211,6 +1273,48 @@ void DapServer::handle_completions(const Value& id, const Value& args) {
     }
 
     send_response(id, json::object({{"targets", Value(std::move(targets))}}));
+}
+
+// ============================================================================
+// current_module_from_frame
+// ============================================================================
+
+std::string DapServer::current_module_from_frame(std::size_t frame_idx) {
+    // Must be called with vm_mutex_ held.
+    // Returns the Eta module name (e.g. "composition", "std.io") that owns the
+    // function executing in the requested frame.
+    //
+    // Strategy: function names are "<mod_underscored>_init" or
+    // "<mod_underscored>_lambda<N>..." where dots in the module name are
+    // replaced by underscores.  We scan global_names_ to find the longest
+    // module prefix whose underscore form is a prefix of the function name.
+    auto frames = driver_->vm().get_frames();
+    if (frame_idx >= frames.size()) return "";
+    const std::string& fn = frames[frame_idx].func_name;
+
+    const auto& names = driver_->global_names();
+    std::string best_mod;
+    std::size_t best_len = 0;
+
+    for (const auto& [slot, full_name] : names) {
+        auto dot = full_name.rfind('.');
+        if (dot == std::string::npos) continue;
+        std::string mod = full_name.substr(0, dot);
+        if (mod.size() <= best_len) continue; // can't beat current best
+
+        // Build the underscore form of the module name for matching
+        std::string mod_ul = mod;
+        for (char& c : mod_ul) if (c == '.') c = '_';
+
+        // Function name must start with mod_ul followed by '_' (or be exactly mod_ul)
+        if (fn.size() >= mod_ul.size() &&
+            fn.compare(0, mod_ul.size(), mod_ul) == 0 &&
+            (fn.size() == mod_ul.size() || fn[mod_ul.size()] == '_')) {
+            best_mod = mod;
+            best_len = mod_ul.size();
+        }
+    }
+    return best_mod;
 }
 
 

@@ -10,13 +10,21 @@ import {
 
 // ── Node types ────────────────────────────────────────────────────────────────
 
-export type GCRootNode = RootCategoryNode | RootObjectNode | ObjectFieldNode;
+export type GCRootNode = RootCategoryNode | ModuleGroupNode | RootObjectNode | ObjectFieldNode;
 
 export class RootCategoryNode {
     constructor(
         public readonly name: string,
         public readonly objectIds: number[],
         public readonly labels: string[],
+    ) {}
+}
+
+/** Intermediate grouping node: one module under the Globals root. */
+export class ModuleGroupNode {
+    constructor(
+        public readonly moduleName: string,
+        public readonly items: Array<{ oid: number; label: string }>,
     ) {}
 }
 
@@ -69,6 +77,18 @@ interface HeapSnapshot {
     consPool?: any;
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Split "module.symbol" → ["module", "symbol"].
+ *  Labels without a dot go into the "(top-level)" group. */
+function splitLabel(label: string): { mod: string; sym: string } {
+    const dot = label.lastIndexOf('.');
+    if (dot > 0) {
+        return { mod: label.substring(0, dot), sym: label.substring(dot + 1) };
+    }
+    return { mod: '(top-level)', sym: label };
+}
+
 // ── Tree data provider ───────────────────────────────────────────────────────
 
 export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
@@ -112,8 +132,15 @@ export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
             item.iconPath = new ThemeIcon('symbol-namespace');
             item.tooltip = `${element.name}: ${element.objectIds.length} heap object(s)`;
             return item;
+        } else if (element instanceof ModuleGroupNode) {
+            const item = new TreeItem(
+                `${element.moduleName} (${element.items.length})`,
+                TreeItemCollapsibleState.Collapsed,
+            );
+            item.iconPath = new ThemeIcon('symbol-module');
+            item.tooltip = `Module: ${element.moduleName} — ${element.items.length} global(s)`;
+            return item;
         } else if (element instanceof RootObjectNode) {
-            // Make root objects expandable — children loaded via eta/inspectObject
             const item = new TreeItem(element.label, TreeItemCollapsibleState.Collapsed);
             item.iconPath = new ThemeIcon('symbol-variable');
             item.description = `#${element.objectId}`;
@@ -150,27 +177,61 @@ export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
             // Root level: one node per GC root category
             return this.roots
                 .filter(r => r.objectIds.length > 0)
-                .map(r => new RootCategoryNode(
-                    r.name,
-                    r.objectIds,
-                    r.labels ?? [],
-                ));
+                .map(r => new RootCategoryNode(r.name, r.objectIds, r.labels ?? []));
         }
+
         if (element instanceof RootCategoryNode) {
-            const cap = Math.min(element.objectIds.length, 200);
-            const children: RootObjectNode[] = [];
-            for (let i = 0; i < cap; i++) {
-                const oid = element.objectIds[i];
-                const label = element.labels[i] ?? `Object #${oid}`;
-                children.push(new RootObjectNode(oid, label, element.name));
+            // If we have module-qualified labels (contain a dot), group by module.
+            if (element.labels.length > 0 && element.labels.some(l => l.includes('.'))) {
+                return this.buildModuleGroups(element);
             }
-            return children;
+            // Flat list for non-Globals roots (no module prefix available).
+            return element.objectIds.map((oid, i) => {
+                const label = element.labels[i] ?? `Object #${oid}`;
+                return new RootObjectNode(oid, label, element.name);
+            });
         }
+
+        if (element instanceof ModuleGroupNode) {
+            // All items in this module group — no cap.
+            return element.items.map(it =>
+                new RootObjectNode(it.oid, it.label, element.moduleName),
+            );
+        }
+
         // RootObjectNode or ObjectFieldNode — drill down via eta/inspectObject
         if (element instanceof RootObjectNode || element instanceof ObjectFieldNode) {
             return this.inspectAndExpand(element.objectId);
         }
         return [];
+    }
+
+    // ── Private ───────────────────────────────────────────────────────────────
+
+    /** Group all labeled items into ModuleGroupNodes, sorted alphabetically
+     *  with "(top-level)" last. */
+    private buildModuleGroups(cat: RootCategoryNode): ModuleGroupNode[] {
+        const groups = new Map<string, Array<{ oid: number; label: string; sym: string }>>();
+
+        for (let i = 0; i < cat.objectIds.length; i++) {
+            const oid = cat.objectIds[i];
+            const rawLabel = cat.labels[i] ?? `Object #${oid}`;
+            const { mod, sym } = splitLabel(rawLabel);
+            if (!groups.has(mod)) { groups.set(mod, []); }
+            groups.get(mod)!.push({ oid, label: rawLabel, sym });
+        }
+
+        return [...groups.entries()]
+            .sort(([a], [b]) => {
+                if (a === '(top-level)') { return 1; }
+                if (b === '(top-level)') { return -1; }
+                return a.localeCompare(b);
+            })
+            .map(([mod, items]) => {
+                // Store sym on items so getChildren can use the short name.
+                const group = new ModuleGroupNode(mod, items.map(it => ({ oid: it.oid, label: it.sym })));
+                return group;
+            });
     }
 
     private async inspectAndExpand(objectId: number): Promise<ObjectFieldNode[]> {

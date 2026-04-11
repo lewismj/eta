@@ -340,15 +340,11 @@ function getWebviewHtml(): string {
                     html += '<span class="toggle" data-root="' + esc(mod) + '">' + esc(mod);
                     html += ' <span class="badge">' + items.length + '</span></span>';
                     html += '<ul class="children" style="display:none">';
-                    const cap = Math.min(items.length, 100);
-                    for (let i = 0; i < cap; i++) {
+                    for (let i = 0; i < items.length; i++) {
                         const it = items[i];
                         // Show short name (after last dot) for readability
                         const shortName = it.label.includes('.') ? it.label.substring(it.label.lastIndexOf('.') + 1) : it.label;
                         html += '<li><span class="obj-link" data-oid="' + it.oid + '">' + esc(shortName) + ' <span class="badge">#' + it.oid + '</span></span></li>';
-                    }
-                    if (items.length > 100) {
-                        html += '<li><em>… and ' + (items.length - 100) + ' more</em></li>';
                     }
                     html += '</ul></li>';
                 }
@@ -362,14 +358,10 @@ function getWebviewHtml(): string {
             html += '<span class="toggle" data-root="' + esc(root.name) + '">' + esc(root.name);
             html += ' <span class="badge">' + root.objectIds.length + '</span></span>';
             html += '<ul class="children" style="display:none">';
-            const cap = Math.min(root.objectIds.length, 50);
-            for (let i = 0; i < cap; i++) {
+            for (let i = 0; i < root.objectIds.length; i++) {
                 const oid = root.objectIds[i];
                 const label = (root.labels && root.labels[i]) ? root.labels[i] : ('Object #' + oid);
                 html += '<li><span class="obj-link" data-oid="' + oid + '">' + esc(label) + ' <span class="badge">#' + oid + '</span></span></li>';
-            }
-            if (root.objectIds.length > 50) {
-                html += '<li><em>… and ' + (root.objectIds.length - 50) + ' more</em></li>';
             }
             html += '</ul></li>';
         }
