@@ -214,6 +214,17 @@ public:
     [[nodiscard]] diagnostic::DiagnosticEngine& diagnostics() noexcept { return diag_engine_; }
     [[nodiscard]] const diagnostic::DiagnosticEngine& diagnostics() const noexcept { return diag_engine_; }
 
+    /// Create a FileResolver that maps file_id → filename string.
+    /// Suitable for passing to format_diagnostic / DiagnosticEngine::print_all.
+    [[nodiscard]] diagnostic::FileResolver file_resolver() const {
+        return [this](uint32_t id) -> std::string {
+            auto it = file_id_to_path_.find(id);
+            if (it != file_id_to_path_.end())
+                return it->second.filename().string();
+            return {};
+        };
+    }
+
     /// Access the module path resolver.
     [[nodiscard]] ModulePathResolver& resolver() noexcept { return resolver_; }
 

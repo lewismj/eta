@@ -102,6 +102,7 @@ private:
     // ── Custom requests ─────────────────────────────────────────────────────
     void handle_heap_inspector(const Value& id, const Value& args);
     void handle_inspect_object(const Value& id, const Value& args);
+    void handle_disassemble(const Value& id, const Value& args);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     /// Build a JSON heap snapshot from the paused VM. Caller must hold vm_mutex_.

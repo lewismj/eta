@@ -232,6 +232,7 @@ int main(int argc, char* argv[]) {
 
     // ── Create driver ────────────────────────────────────────────────
     eta::interpreter::Driver driver(std::move(resolver));
+    auto resolve = driver.file_resolver();
 
     // Load prelude (if available in module path)
     bool prelude_available = false;
@@ -244,7 +245,7 @@ int main(int argc, char* argv[]) {
             } else {
                 std::cerr << "error: failed to load prelude from "
                           << pr.path.string() << "\n";
-                driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+                driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
             }
         } else {
             std::cerr << "warning: prelude.eta not found in module search path.\n";
@@ -398,7 +399,7 @@ int main(int argc, char* argv[]) {
             }
         } else {
             // Print diagnostics
-            driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+            driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
         }
     }
 

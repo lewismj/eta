@@ -73,6 +73,8 @@ public:
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_mode_  = StepMode::None;
         is_paused_  = false;
+        last_bp_file_ = 0;
+        last_bp_line_ = 0;
         debug_cv_.notify_one();
     }
 
@@ -180,6 +182,11 @@ private:
     uint32_t    step_epoch_{0};         ///< epoch when step was armed
     uint32_t    step_current_epoch_{0}; ///< incremented on call/cc
 
+    // Track last breakpoint hit to avoid re-firing on consecutive instructions
+    // with the same source location (fixes first-breakpoint off-by-one).
+    uint32_t    last_bp_file_{0};
+    uint32_t    last_bp_line_{0};
+
     std::atomic<bool> should_pause_{false};
 
     // ── Internal check (no waiting) ───────────────────────────────────────
@@ -195,9 +202,23 @@ private:
             BreakLocation loc{sp.file_id, sp.start.line};
             std::lock_guard<std::mutex> lk(bp_mutex_);
             if (std::binary_search(breakpoints_.begin(), breakpoints_.end(), loc)) {
-                std::lock_guard<std::mutex> dlk(debug_mutex_);
-                step_mode_ = StepMode::None;
-                return StopEvent{StopReason::Breakpoint, sp, {}};
+                // Skip if this is the same location as the last breakpoint hit.
+                // This prevents the first breakpoint from firing on the instruction
+                // before the actual breakpoint line when consecutive bytecodes
+                // share the same source span.
+                if (sp.file_id == last_bp_file_ && sp.start.line == last_bp_line_) {
+                    // Already stopped here — do not re-fire
+                } else {
+                    std::lock_guard<std::mutex> dlk(debug_mutex_);
+                    step_mode_ = StepMode::None;
+                    last_bp_file_ = sp.file_id;
+                    last_bp_line_ = sp.start.line;
+                    return StopEvent{StopReason::Breakpoint, sp, {}};
+                }
+            } else {
+                // Moved past the last breakpoint location — clear dedup state
+                last_bp_file_ = 0;
+                last_bp_line_ = 0;
             }
         }
 

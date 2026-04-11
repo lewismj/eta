@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -137,18 +138,39 @@ struct Diagnostic {
 };
 
 /**
+ * @brief Optional callback to resolve a numeric file_id to a human-readable
+ *        filename.  When provided to formatting functions, the output will
+ *        show the actual file name instead of "file N".
+ *
+ * Return an empty string to fall back to the numeric file_id display.
+ */
+using FileResolver = std::function<std::string(uint32_t file_id)>;
+
+/**
  * @brief Format a span for display
  */
-inline void write_span(std::ostream& os, const Span& sp) {
-    os << "[file " << sp.file_id
-       << ":" << sp.start.line << ":" << sp.start.column
+inline void write_span(std::ostream& os, const Span& sp,
+                        const FileResolver& resolve_file = {}) {
+    os << "[";
+    if (resolve_file) {
+        auto name = resolve_file(sp.file_id);
+        if (!name.empty())
+            os << name;
+        else
+            os << "file " << sp.file_id;
+    } else {
+        os << "file " << sp.file_id;
+    }
+    os << ":" << sp.start.line << ":" << sp.start.column
        << "-" << sp.end.line << ":" << sp.end.column << "]";
 }
 
 /**
  * @brief Format a diagnostic for display (with optional ANSI colors)
  */
-inline void format_diagnostic(std::ostream& os, const Diagnostic& d, bool use_color = false) {
+inline void format_diagnostic(std::ostream& os, const Diagnostic& d,
+                               bool use_color = false,
+                               const FileResolver& resolve_file = {}) {
     const char* severity_color = "";
     const char* reset = "";
 
@@ -163,12 +185,12 @@ inline void format_diagnostic(std::ostream& os, const Diagnostic& d, bool use_co
     }
 
     os << severity_color << to_string(d.severity) << reset << " ";
-    write_span(os, d.span);
+    write_span(os, d.span, resolve_file);
     os << ": " << d.message;
 
     for (const auto& rel : d.related) {
         os << "\n  ";
-        write_span(os, rel.span);
+        write_span(os, rel.span, resolve_file);
         os << ": " << rel.label;
     }
 }
@@ -205,9 +227,10 @@ public:
         error_count_ = 0;
     }
 
-    void print_all(std::ostream& os, bool use_color = false) const {
+    void print_all(std::ostream& os, bool use_color = false,
+                   const FileResolver& resolve_file = {}) const {
         for (const auto& d : diagnostics_) {
-            format_diagnostic(os, d, use_color);
+            format_diagnostic(os, d, use_color, resolve_file);
             os << '\n';
         }
     }

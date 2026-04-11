@@ -89,11 +89,13 @@ int main(int argc, char* argv[]) {
     // ── Create driver and run ────────────────────────────────────────
     eta::interpreter::Driver driver(std::move(resolver));
 
+    auto resolve = driver.file_resolver();
+
     // Load prelude (if available in module path)
     {
         auto pr = driver.load_prelude();
         if (pr.found && !pr.loaded) {
-            driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+            driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
             return 1;
         }
     }
@@ -114,7 +116,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (!driver.run_etac_file(fs::absolute(file_path))) {
-            driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+            driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
             return 1;
         }
     } else {
@@ -123,7 +125,7 @@ int main(int argc, char* argv[]) {
             // For disasm mode we still run_file (which compiles + executes),
             // then dump the registry. A compile-only path could be added later.
             if (!driver.run_file(fs::absolute(file_path))) {
-                driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+                driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
                 return 1;
             }
             eta::runtime::vm::Disassembler disasm(driver.heap(), driver.intern_table());
@@ -132,7 +134,7 @@ int main(int argc, char* argv[]) {
         }
         // Execute the user's file
         if (!driver.run_file(fs::absolute(file_path))) {
-            driver.diagnostics().print_all(std::cerr, /*use_color=*/true);
+            driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
             return 1;
         }
     }

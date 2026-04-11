@@ -15,8 +15,11 @@
     "activationEvents": [
         "onLanguage:eta",
         "onDebugResolve:eta",
+        "onDebug",
         "onCommand:eta.runFile",
-        "onCommand:eta.showHeapInspector"
+        "onCommand:eta.showHeapInspector",
+        "onCommand:eta.showDisassembly",
+        "onView:etaGCRoots"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -31,6 +34,25 @@
             "scopeName": "source.eta",
             "path": "./syntaxes/eta.tmLanguage.json"
         }],
+        "viewsContainers": {
+            "panel": [
+                {
+                    "id": "eta-debug-panel",
+                    "title": "Eta Debug",
+                    "icon": "$(bug)"
+                }
+            ]
+        },
+        "views": {
+            "debug": [
+                {
+                    "id": "etaGCRoots",
+                    "name": "Eta GC Roots",
+                    "when": "debugType == 'eta'",
+                    "icon": "$(list-tree)"
+                }
+            ]
+        },
         "configuration": {
             "title": "Eta",
             "properties": {
@@ -53,6 +75,11 @@
                     "type": "string",
                     "default": "",
                     "description": "Full path to the eta_dap executable OR the directory containing it (e.g. C:\\Eta\\bin or C:\\Eta\\bin\\eta_dap.exe). If empty, searches next to eta_lsp, then workspace build output, then PATH."
+                },
+                "eta.debug.autoShowHeap": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Automatically show the Heap Inspector when a debug session starts."
                 }
             }
         },
@@ -67,6 +94,24 @@
                 "command": "eta.showHeapInspector",
                 "title": "Show Heap Inspector",
                 "icon": "$(database)",
+                "category": "Eta"
+            },
+            {
+                "command": "eta.showDisassembly",
+                "title": "Show Disassembly",
+                "icon": "$(file-binary)",
+                "category": "Eta"
+            },
+            {
+                "command": "eta.showDisassemblyAll",
+                "title": "Show Disassembly (All Functions)",
+                "icon": "$(file-binary)",
+                "category": "Eta"
+            },
+            {
+                "command": "eta.refreshGCRoots",
+                "title": "Refresh GC Roots",
+                "icon": "$(refresh)",
                 "category": "Eta"
             }
         ],
@@ -85,6 +130,21 @@
                 },
                 {
                     "command": "eta.showHeapInspector"
+                },
+                {
+                    "command": "eta.showDisassembly",
+                    "when": "debugType == 'eta'"
+                },
+                {
+                    "command": "eta.showDisassemblyAll",
+                    "when": "debugType == 'eta'"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "eta.refreshGCRoots",
+                    "when": "view == etaGCRoots",
+                    "group": "navigation"
                 }
             ]
         },

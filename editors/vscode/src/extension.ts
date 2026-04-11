@@ -26,10 +26,17 @@ import {
     Executable,
 } from 'vscode-languageclient/node';
 import { HeapInspectorPanel } from './heapView';
+import { GCRootsTreeProvider } from './gcRootsTreeView';
+import { DisassemblyContentProvider, showDisassembly } from './disassemblyView';
 
 let client: LanguageClient | undefined;
 let outputChannel: OutputChannel;
 let programOutputChannel: OutputChannel;
+let extensionCtx: ExtensionContext;
+
+// Shared providers (accessible from tracker)
+let gcRootsProvider: GCRootsTreeProvider;
+let disasmProvider: DisassemblyContentProvider;
 
 function log(msg: string): void {
     outputChannel?.appendLine(msg);
@@ -174,12 +181,28 @@ function validateAndLogServerPath(configPath: string): void {
 }
 
 export function activate(context: ExtensionContext) {
+    extensionCtx = context;
     outputChannel = window.createOutputChannel('Eta Language');
     programOutputChannel = window.createOutputChannel('Eta Output');
     context.subscriptions.push(outputChannel, programOutputChannel);
     // outputChannel.show() is intentionally omitted — the panel opens on demand
     // rather than stealing focus on every activation / extension-host restart.
     log('Eta extension activating...');
+
+    // ── GC Roots tree view ──────────────────────────────────────────
+    gcRootsProvider = new GCRootsTreeProvider();
+    context.subscriptions.push(
+        window.createTreeView('etaGCRoots', {
+            treeDataProvider: gcRootsProvider,
+            showCollapseAll: true,
+        }),
+    );
+
+    // ── Disassembly virtual document provider ───────────────────────
+    disasmProvider = new DisassemblyContentProvider();
+    context.subscriptions.push(
+        workspace.registerTextDocumentContentProvider('eta-disasm', disasmProvider),
+    );
 
     // ── Always register the debug adapter ──────────────────────────
     const serverPath = findServerBinary(context);
@@ -212,9 +235,24 @@ export function activate(context: ExtensionContext) {
             });
         }),
         commands.registerCommand('eta.showHeapInspector', () => {
-            const panel = HeapInspectorPanel.createOrShow(context);
+            const panel = HeapInspectorPanel.createOrShow(extensionCtx);
             panel.setInitialHtml();
             panel.refresh();
+        }),
+        commands.registerCommand('eta.showDisassembly', () => {
+            showDisassembly(disasmProvider, 'current');
+        }),
+        commands.registerCommand('eta.showDisassemblyAll', () => {
+            showDisassembly(disasmProvider, 'all');
+        }),
+        commands.registerCommand('eta.refreshGCRoots', () => {
+            gcRootsProvider.refresh();
+        }),
+        commands.registerCommand('eta.inspectObjectFromTree', (objectId: number) => {
+            // Open the heap inspector and inspect the clicked object
+            const panel = HeapInspectorPanel.createOrShow(extensionCtx);
+            panel.setInitialHtml();
+            panel.inspectObject(objectId);
         }),
     );
 
@@ -335,6 +373,13 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         this.channel.appendLine('[DAP] Debug session starting…');
         this.programChannel.clear();
         this.programChannel.show(true); // show but don't steal focus
+
+        // Auto-show heap inspector if enabled
+        const autoShow = workspace.getConfiguration('eta.debug').get<boolean>('autoShowHeap', true);
+        if (autoShow && extensionCtx) {
+            const panel = HeapInspectorPanel.createOrShow(extensionCtx);
+            panel.setInitialHtml();
+        }
     }
 
     onWillStopSession(): void {
@@ -404,6 +449,10 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 this.channel.appendLine(`[DAP←] stopped: reason="${reason}" threadId=${tid}`);
                 // Auto-refresh heap inspector when VM stops
                 HeapInspectorPanel.current()?.notifyStopped();
+                // Auto-refresh GC roots tree view
+                gcRootsProvider?.notifyStopped();
+                // Auto-refresh disassembly view (if open)
+                disasmProvider?.refresh();
             } else if (event === 'continued') {
                 this.channel.appendLine('[DAP←] continued');
             } else if (event === 'breakpoint') {

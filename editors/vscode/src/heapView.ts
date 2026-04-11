@@ -17,6 +17,7 @@ interface KindStat {
 interface GCRoot {
     name: string;
     objectIds: number[];
+    labels?: string[];
 }
 
 interface ConsPoolStats {
@@ -314,7 +315,8 @@ function getWebviewHtml(): string {
             const cap = Math.min(root.objectIds.length, 50);
             for (let i = 0; i < cap; i++) {
                 const oid = root.objectIds[i];
-                html += '<li><span class="obj-link" data-oid="' + oid + '">Object #' + oid + '</span></li>';
+                const label = (root.labels && root.labels[i]) ? root.labels[i] : ('Object #' + oid);
+                html += '<li><span class="obj-link" data-oid="' + oid + '">' + esc(label) + ' <span class="badge">#' + oid + '</span></span></li>';
             }
             if (root.objectIds.length > 50) {
                 html += '<li><em>… and ' + (root.objectIds.length - 50) + ' more</em></li>';
