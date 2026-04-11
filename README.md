@@ -7,7 +7,8 @@
 
 <p align="center">
   <strong>η (Eta)</strong><br>
-  A Lisp/Scheme-inspired language.
+  A Lisp/Scheme-inspired language with built-in logic programming,<br>
+  automatic differentiation, neural networks, and causal inference.
 </p>
 
 <p align="center">
@@ -48,16 +49,25 @@
 
 ## What is Eta?
 
-**Eta** is a Scheme-like programming language implemented in 
-C++. It features a multi-phase compilation pipeline that transforms
-S-expression source code into compact bytecode and executes it on a
-stack-based virtual machine with NaN-boxed values, closures, tail-call
-elimination, first-class continuations (`call/cc`), a hygienic macro
-expander with `syntax-rules`, and a module system.
+**Eta** is a Scheme-like language designed for **symbolic reasoning,
+differentiable programming, neural-network training, and causal
+inference** — all from a single S-expression syntax.
+It compiles to compact bytecode and runs on a stack-based VM implemented
+in C++ (NaN-boxed values, closures, TCO, `call/cc`, hygienic macros,
+module system — see [Architecture](docs/architecture.md) for the
+full compilation pipeline).
 
-Eta also provides native structural unification as a first-class VM feature,
-allowing Prolog-style pattern matching and type inference (see [Logic Programming](docs/logic.md)),
-as well as built-in constraint logic programming with interval and finite-domain solvers (see [CLP](docs/clp.md)).
+### Headline Features
+
+| Domain | What you get | Deep-dive |
+|--------|-------------|-----------|
+| **Scheme Core** | Closures, tail-call elimination, first-class continuations (`call/cc`), hygienic `syntax-rules` macros, module system with import filters | [Bytecode & VM](docs/bytecode-vm.md) · [Modules](docs/modules.md) |
+| **Logic Programming** | VM-native structural unification & backtracking — seven dedicated opcodes give you Prolog-style pattern matching without leaving the language | [Logic](docs/logic.md) |
+| **Constraint Logic Programming** | `clp(Z)` integer-interval and `clp(FD)` finite-domain solvers built on the unification layer | [CLP](docs/clp.md) |
+| **Reverse-Mode AAD** | VM-native tape-based automatic differentiation — standard arithmetic is recorded transparently when a `TapeRef` operand is present; zero closure overhead | [AAD](docs/aad.md) · [xVA](docs/xva.md) · [European Greeks](docs/european.md) · [SABR](docs/sabr.md) |
+| **Neural Networks (libtorch)** | Native C++ bindings to PyTorch's backend — tensors, autograd, NN layers, optimizers, and GPU offload from Eta code | [Torch](docs/torch.md) |
+| **Causal Inference** | Pearl's do-calculus engine, back-door / front-door adjustment, and end-to-end factor analysis | [Causal](docs/causal.md) |
+| **End-to-End Pipeline** | All domains compose: symbolic differentiation → do-calculus identification → logic/CLP validation → libtorch neural estimation | [Causal Factor Pipeline](docs/causal-factor.md) |
 
 The implementation ships as five executables and a VS Code extension:
 
