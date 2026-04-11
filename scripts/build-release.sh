@@ -116,13 +116,24 @@ cmake --install "$BUILD_DIR"
 # ── 4. Build VS Code extension ───────────────────────────────────────
 VSCODE_SRC="${PROJECT_ROOT}/editors/vscode"
 EDITORS_DIR="${PREFIX}/editors"
-VSIX_DEST="${EDITORS_DIR}/eta-lang.vsix"
 
-echo "▸ [4/6] Building VS Code extension..."
+# Derive semver from VERSION (strip leading 'v'), or fall back to "latest"
+SEMVER="${VERSION#v}"
+if echo "$SEMVER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+    VSIX_LABEL="$SEMVER"
+else
+    VSIX_LABEL="latest"
+fi
+VSIX_DEST="${EDITORS_DIR}/eta-lang-${VSIX_LABEL}.vsix"
+
+echo "▸ [4/6] Building VS Code extension (${VSIX_LABEL})..."
 mkdir -p "$EDITORS_DIR"
 (
     cd "$VSCODE_SRC"
     npm ci --silent
+    if [ "$VSIX_LABEL" != "latest" ]; then
+        npm version "$VSIX_LABEL" --no-git-tag-version --allow-same-version
+    fi
     npx @vscode/vsce package -o "$VSIX_DEST" --skip-license
 )
 

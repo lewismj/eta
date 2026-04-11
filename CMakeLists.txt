@@ -24,15 +24,42 @@ install(DIRECTORY stdlib/ DESTINATION stdlib
 install(DIRECTORY examples/ DESTINATION examples
         FILES_MATCHING PATTERN "*.eta")
 
-# ── VS Code extension build target ──────────────────────────────────
-# Runs `npm run bundle` in editors/vscode to produce out/extension.js.
-# Usage:  cmake --build <build-dir> --target eta_editor_package
+# ── VS Code extension package target ─────────────────────────────────
+# Builds a .vsix and places it in ${CMAKE_BINARY_DIR}/bin/.
+#
+#   Local:  cmake --build build --target eta_editor_package
+#           → build/bin/eta-lang-latest.vsix
+#
+#   CI:     cmake -DETA_VSIX_VERSION=0.1.8 ...
+#           cmake --build build --target eta_editor_package
+#           → build/bin/eta-lang-0.1.8.vsix
+set(ETA_VSIX_VERSION "latest" CACHE STRING
+    "Version label for the .vsix (e.g. 0.1.8 from CI tag, or 'latest' for local builds)")
+
 set(VSCODE_EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/editors/vscode")
-add_custom_target(eta_editor_package
-    COMMAND npm run bundle
-    WORKING_DIRECTORY "${VSCODE_EXT_DIR}"
-    COMMENT "Bundling VS Code extension (editors/vscode → out/extension.js)"
-    VERBATIM
-)
+set(VSIX_OUTPUT    "${CMAKE_BINARY_DIR}/bin/eta-lang-${ETA_VSIX_VERSION}.vsix")
+
+if(ETA_VSIX_VERSION STREQUAL "latest")
+    # Local build — keep package.json version as-is
+    add_custom_target(eta_editor_package
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
+        COMMAND npm ci --ignore-scripts
+        COMMAND npx vsce package -o "${VSIX_OUTPUT}" --skip-license
+        WORKING_DIRECTORY "${VSCODE_EXT_DIR}"
+        COMMENT "Packaging VS Code extension → bin/eta-lang-latest.vsix"
+        VERBATIM
+    )
+else()
+    # CI / tagged build — stamp the tag version into package.json first
+    add_custom_target(eta_editor_package
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin"
+        COMMAND npm ci --ignore-scripts
+        COMMAND npm version "${ETA_VSIX_VERSION}" --no-git-tag-version --allow-same-version
+        COMMAND npx vsce package -o "${VSIX_OUTPUT}" --skip-license
+        WORKING_DIRECTORY "${VSCODE_EXT_DIR}"
+        COMMENT "Packaging VS Code extension ${ETA_VSIX_VERSION} → bin/eta-lang-${ETA_VSIX_VERSION}.vsix"
+        VERBATIM
+    )
+endif()
 
 

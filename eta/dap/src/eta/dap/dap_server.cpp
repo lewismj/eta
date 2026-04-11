@@ -14,6 +14,7 @@
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
+#include "eta/runtime/memory/cons_pool.h"
 #include "eta/diagnostic/diagnostic.h"
 
 namespace eta::dap {
@@ -54,9 +55,12 @@ DapServer::DapServer(std::istream& in, std::ostream& out) : in_(in), out_(out) {
 // ============================================================================
 
 DapServer::~DapServer() {
-    // If the VM thread is still running, ask it to stop and join.
+    // If the VM thread is still running, wake it (in case it's blocked on
+    // debug_cv_ after a pause) so the thread can finish and be joined.
+    // NOTE: request_pause() alone would deadlock here — the VM is waiting on
+    // debug_cv_ for resume(), not for another pause request.
     if (driver_) {
-        driver_->vm().request_pause();
+        driver_->vm().resume();
     }
     if (vm_thread_.joinable()) {
         vm_thread_.join();
@@ -812,11 +816,21 @@ Value DapServer::build_heap_snapshot() {
         }));
     }
 
+    // ── Cons pool statistics ────────────────────────────────────────────────
+    auto pool = heap.cons_pool().stats();
+    auto cons_pool_obj = json::object({
+        {"capacity", Value(static_cast<int64_t>(pool.capacity))},
+        {"live",     Value(static_cast<int64_t>(pool.live_count))},
+        {"free",     Value(static_cast<int64_t>(pool.free_count))},
+        {"bytes",    Value(static_cast<int64_t>(pool.bytes))},
+    });
+
     return json::object({
         {"totalBytes",    Value(static_cast<int64_t>(heap.total_bytes()))},
         {"softLimit",     Value(static_cast<int64_t>(heap.soft_limit()))},
         {"kinds",         Value(std::move(kinds_arr))},
         {"roots",         Value(std::move(roots_arr))},
+        {"consPool",      Value(std::move(cons_pool_obj))},
     });
 }
 
