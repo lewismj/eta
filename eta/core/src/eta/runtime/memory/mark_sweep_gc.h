@@ -7,6 +7,7 @@
 #include <eta/runtime/types/types.h>
 #include <eta/runtime/memory/heap_visit.h>
 #include <eta/runtime/memory/heap.h>
+#include <eta/runtime/memory/cons_pool.h>
 
 namespace eta::runtime::memory::gc {
     using namespace eta::runtime::nanbox;
@@ -165,11 +166,25 @@ namespace eta::runtime::memory::gc {
                 push_if_heap_ref(v, work);
             };
 
+            auto& pool = heap.cons_pool();
             heap::HeapEntry entry{};
             while (!work.empty()) {
                 const auto id = work.back();
                 work.pop_back();
 
+                // ── Fast path: pool-owned cons cell ──
+                // try_mark returns Cons* only if newly marked (skips already-marked
+                // and freed slots).  Avoids try_get / with_entry / HeapVisitor dispatch.
+                if (auto* cons = pool.try_mark(id)) {
+                    push_if_heap_ref(cons->car, work);
+                    push_if_heap_ref(cons->cdr, work);
+                    continue;
+                }
+                // Pool owns the ID but try_mark returned nullptr → already marked
+                // or freed slot.  Either way, nothing to do.
+                if (pool.owns(id)) continue;
+
+                // ── General-heap path (unchanged) ──
                 if (!heap.try_get(id, entry)) continue; // stale id
                 if ((entry.header.flags & heap::MARK_BIT) != 0) continue; // already marked
 

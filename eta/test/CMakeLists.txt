@@ -26,7 +26,8 @@ set(SOURCES
         src/compiled_example_tests.cpp
         src/bytecode_serializer_tests.cpp
         src/disassembler_tests.cpp
-        src/optimization_tests.cpp)
+        src/optimization_tests.cpp
+        src/cons_pool_tests.cpp)
 
 # Conditionally add torch tests when libtorch is available
 if(ETA_BUILD_TORCH)

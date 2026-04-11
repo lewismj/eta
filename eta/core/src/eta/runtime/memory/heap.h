@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <ostream>
 #include <functional>
 #include <boost/unordered/concurrent_flat_map.hpp>
@@ -107,30 +108,13 @@ namespace eta::runtime::memory::heap {
         void (*destructor)(void*){}; // type-erased destructor
     };
 
+    // Forward-declare — full definition in cons_pool.h
+    class ConsPool;
+
     class Heap {
     public:
-        explicit Heap(const size_t max_heap_soft_limit)
-            : max_heap_soft_limit_(static_cast<std::size_t>(max_heap_soft_limit))
-        {
-        }
-
-        //! Destroy the heap. Here we don't bother updating stats at this point, since
-        //! we're terminating the heap entirely.
-        ~Heap() {
-            for (auto& [heap_objects, stats] : shards) {
-                heap_objects.visit_all([](const auto& kv) {
-                    if (const auto& entry = kv.second; entry.ptr && entry.destructor) {
-                       try {
-                           entry.destructor(entry.ptr);
-                       } catch (...) {
-                           //! Policy is to not allow any stored destructors at this point
-                           //! to invoke std::terminate
-                       }
-
-                    }
-                });
-            }
-        }
+        explicit Heap(size_t max_heap_soft_limit);
+        ~Heap();
 
         Heap(const Heap&) = delete;
         Heap& operator=(const Heap&) = delete;
@@ -211,47 +195,11 @@ namespace eta::runtime::memory::heap {
             return id;
         }
 
-        std::expected<void, HeapError> deallocate(const ObjectId id) {
-            const size_t shard_index = select_shard(id);
-            auto& [heap_objects, stats] = shards[shard_index];
+        std::expected<void, HeapError> deallocate(ObjectId id);
 
-            HeapEntry entry;
-            const bool found = heap_objects.visit(id, [&](const auto& kv) {
-                entry = kv.second;
-            });
-
-            [[unlikely]] if (!found) {
-                return std::unexpected(HeapError::ObjectIdNotFound);
-            }
-
-            [[unlikely]] if (entry.ptr == nullptr) {
-                return std::unexpected(HeapError::NullPtrReference);
-            }
-
-            // Update stats before removal
-            stats.num_objects.fetch_sub(1, std::memory_order_relaxed);
-            stats.heap_bytes.fetch_sub(entry.size, std::memory_order_relaxed);
-            total_heap_bytes.fetch_sub(entry.size, std::memory_order_relaxed);
-
-            // CRITICAL: Erase from map BEFORE calling destructor to prevent
-            // other threads from accessing freed memory via try_get()
-            heap_objects.erase(id);
-
-            // Now safe to destroy - no other thread can find this entry
-            try {
-                if (entry.destructor) {
-                    entry.destructor(entry.ptr);
-                } else {
-                    ::operator delete(entry.ptr);
-                }
-            } catch (...) {
-                // Destructor threw, but entry is already removed from map.
-                // Memory may be leaked, but we maintain safety.
-                return std::unexpected(HeapError::FailedToDeallocateMemory);
-            }
-
-            return {};
-        }
+        // Pool-accelerated cons cell allocation.
+        // Performs soft-limit check, then delegates to ConsPool.
+        std::expected<ObjectId, HeapError> alloc_cons(LispVal car, LispVal cdr);
 
         // Total bytes currently allocated across all shards.
         // Exposes the aggregate atomic, useful for statistics (e.g., GC stats).
@@ -299,6 +247,14 @@ namespace eta::runtime::memory::heap {
 
         void set_gc_callback(std::function<void()> cb) { gc_callback_ = std::move(cb); }
 
+        // Sweep the cons pool and adjust total_heap_bytes.
+        // Returns the number of freed pool cells.
+        std::size_t sweep_cons_pool();
+
+        // Access the dedicated cons-cell pool (for GC / DAP).
+        ConsPool& cons_pool();
+        const ConsPool& cons_pool() const;
+
     private:
 
         struct ShardStats {
@@ -325,6 +281,7 @@ namespace eta::runtime::memory::heap {
         size_t max_heap_soft_limit_;
         std::array<Shard, NUM_SHARDS> shards;
         std::atomic<ObjectId> next_id{ 1 };
+        std::unique_ptr<ConsPool> cons_pool_;
 
     };
 

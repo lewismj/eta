@@ -56,7 +56,7 @@ etai causal_demo.etac
 ```
 
 > [!TIP]
-> See the full [Causal Neural Factor Analysis walkthrough](causal_factor.md)
+> See the full [Causal Neural Factor Analysis walkthrough](causal-factor.md)
 > for detailed commentary on each step, including how the VM handles
 > unification, trail management, CLP forward checking, and libtorch
 > tensor objects.

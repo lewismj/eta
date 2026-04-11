@@ -7,7 +7,7 @@
 
 <p align="center">
   <strong>η (Eta)</strong><br>
-  A Lisp/Scheme-inspired language. 
+  A Lisp/Scheme-inspired language.
 </p>
 
 <p align="center">
@@ -31,13 +31,14 @@
   <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
   <a href="docs/clp.md">Constraint Logic Programming</a> ·
   <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a> ·
+  <a href="docs/fact-table.md">Fact Tables</a> ·
   <a href="docs/torch.md">Neural Networks with libtorch</a>
 </p>
 <br>
 <p align="center">
 <strong>Featured Examples</strong></p>
 <p align="center">
-  <a href="docs/causal_factor.md">End-to-End Causal Pipeline</a> (Symbolic → Causal → Logic → Neural) Causal estimation pipeline
+  <a href="docs/causal-factor.md">End-to-End Causal Pipeline</a> (Symbolic → Causal → Logic → Neural) Causal estimation pipeline
 </p>
 
 
@@ -175,7 +176,8 @@ flowchart LR
 | **[SABR Volatility Model](docs/sabr.md)** | SABR Hagan implied vol, native Dual VM performance, Hessian via reverse-on-reverse            |
 | **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`           |
 | **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                             |
-| **[End-to-End Causal Pipeline](docs/causal_factor.md)** | Showcase: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE                             |
+| **[Fact Tables](docs/fact-table.md)**      | Columnar fact tables with hash-indexed queries, iteration, and fold                           |
+| **[End-to-End Causal Pipeline](docs/causal-factor.md)** | Showcase: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE                             |
 | **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support               |
 | **[Next Steps](docs/next-steps.md)**       | Roadmap: network stack, VS Code debugger improvements, performance                            |
 
@@ -284,7 +286,7 @@ eta-<platform>/
     prelude.eta         # Auto-loaded standard library
     std/
       core.eta  math.eta  io.eta  collections.eta  test.eta
-      logic.eta  clp.eta  causal.eta  torch.eta
+      logic.eta  clp.eta  causal.eta  fact_table.eta  torch.eta
   examples/
     hello.eta           # Hello world & factorial
     basics.eta          # Arithmetic, let, lists, quoting
@@ -301,6 +303,7 @@ eta-<platform>/
     xva.eta                 # Finance example: CVA, FVA calculations with AAD
     european.eta            # European option Greeks (1st & 2nd order) with AAD
     sabr.eta                # SABR vol surface with tape-based AD
+    fact-table.eta          # Columnar fact tables with hash-indexed queries
     torch.eta               # Tensor computing & neural network training (libtorch)
     causal_demo.eta         # Demo: symbolic + causal + logic/CLP + libtorch
     causal-factor/          # End-to-end causal factor analysis
@@ -325,6 +328,7 @@ The prelude auto-loads the following modules:
 | **`std.logic`** | `==`, `copy-term`, `naf`, `findall`, `run1` — Prolog-style combinators |
 | **`std.clp`** | `clp:domain`, `clp:in-fd`, `clp:solve`, `clp:all-different` — constraint solving |
 | **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` — causal inference engine |
+| **`std.fact_table`** | `make-fact-table`, `fact-table-insert!`, `fact-table-query`, `fact-table-fold` — columnar fact tables |
 | **`std.torch`** | `tensor`, `forward`, `train-step!`, `sgd`, `adam` — libtorch neural networks |
 | **`std.test`** | `assert-equal`, `assert-true`, `run-tests` — lightweight test framework |
 
@@ -371,6 +375,7 @@ eta/
 │       ├── logic.eta           # Prolog-style unification & backtracking
 │       ├── clp.eta             # Constraint Logic Programming: clp(Z), clp(FD)
 │       ├── causal.eta          # DAG utilities & Pearl do-calculus engine
+│       ├── fact_table.eta      # Columnar fact tables with hash indexes
 │       ├── torch.eta           # libtorch wrappers (tensors, NN, optimizers)
 │       └── test.eta            # Lightweight test framework
 ├── examples/                   # Example programs
@@ -389,6 +394,7 @@ eta/
 │   ├── xva.eta                 # Finance: CVA, FVA with AAD sensitivities
 │   ├── european.eta            # European option Greeks (1st & 2nd order) with AAD
 │   ├── sabr.eta                # SABR vol surface with tape-based AD
+│   ├── fact-table.eta          # Columnar fact tables with hash-indexed queries
 │   ├── torch.eta               # Tensor computing & neural network training
 │   ├── causal_demo.eta         # Flagship: symbolic + causal + logic/CLP + libtorch
 │   ├── causal-factor/          # End-to-end causal factor analysis (finance)
