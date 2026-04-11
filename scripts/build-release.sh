@@ -141,7 +141,7 @@ mkdir -p "$EDITORS_DIR"
 # ── 5. Copy helpers + docs ───────────────────────────────────────────
 echo "▸ [5/6] Copying install script and docs..."
 [ -f "$PROJECT_ROOT/scripts/install.sh" ]  && cp "$PROJECT_ROOT/scripts/install.sh" "$PREFIX/" && chmod +x "$PREFIX/install.sh"
-[ -f "$PROJECT_ROOT/TESTING.md" ]          && cp "$PROJECT_ROOT/TESTING.md" "$PREFIX/"
+[ -f "$PROJECT_ROOT/docs/quickstart.md" ]  && cp "$PROJECT_ROOT/docs/quickstart.md" "$PREFIX/"
 
 # Make binaries executable
 chmod +x "$PREFIX/bin/"* 2>/dev/null || true

@@ -7,6 +7,7 @@ import {
     debug,
     ThemeIcon,
 } from 'vscode';
+import type { GCRoot, HeapSnapshot, ObjectInspection } from './dapTypes';
 
 // ── Node types ────────────────────────────────────────────────────────────────
 
@@ -46,36 +47,6 @@ export class ObjectFieldNode {
     ) {}
 }
 
-// ── Inspection result type ────────────────────────────────────────────────────
-
-interface InspectResult {
-    objectId: number;
-    kind: string;
-    size: number;
-    preview: string;
-    children: Array<{
-        objectId: number;
-        kind: string;
-        size: number;
-        preview: string;
-    }>;
-}
-
-// ── Snapshot types ────────────────────────────────────────────────────────────
-
-interface GCRoot {
-    name: string;
-    objectIds: number[];
-    labels?: string[];
-}
-
-interface HeapSnapshot {
-    totalBytes: number;
-    softLimit: number;
-    kinds: any[];
-    roots: GCRoot[];
-    consPool?: any;
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -200,10 +171,7 @@ export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
         }
 
         // RootObjectNode or ObjectFieldNode — drill down via eta/inspectObject
-        if (element instanceof RootObjectNode || element instanceof ObjectFieldNode) {
-            return this.inspectAndExpand(element.objectId);
-        }
-        return [];
+        return this.inspectAndExpand(element.objectId);
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
@@ -228,9 +196,7 @@ export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
                 return a.localeCompare(b);
             })
             .map(([mod, items]) => {
-                // Store sym on items so getChildren can use the short name.
-                const group = new ModuleGroupNode(mod, items.map(it => ({ oid: it.oid, label: it.sym })));
-                return group;
+                return new ModuleGroupNode(mod, items.map(it => ({ oid: it.oid, label: it.sym })));
             });
     }
 
@@ -238,7 +204,7 @@ export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
         const session = debug.activeDebugSession;
         if (!session || session.type !== 'eta') { return []; }
         try {
-            const result = await session.customRequest('eta/inspectObject', { objectId }) as InspectResult;
+            const result = await session.customRequest('eta/inspectObject', { objectId }) as ObjectInspection;
             return (result.children ?? []).map((child, i) =>
                 new ObjectFieldNode(
                     `[${i}]`,

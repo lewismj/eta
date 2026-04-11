@@ -455,5 +455,543 @@ BOOST_AUTO_TEST_CASE(find_all_occurrences_word_boundaries) {
     BOOST_TEST(occ[1].start.character == 3);
 }
 
+// ---------------------------------------------------------------------------
+// 3.1  initialize advertises foldingRangeProvider
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(initialize_advertises_folding_range) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "shutdown"))
+      + frame(notification("exit"));
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 1);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["result"]["capabilities"]["foldingRangeProvider"].as_bool() == true);
+}
+
+// ---------------------------------------------------------------------------
+// 3.2  initialize advertises selectionRangeProvider
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(initialize_advertises_selection_range) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "shutdown"))
+      + frame(notification("exit"));
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 1);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["result"]["capabilities"]["selectionRangeProvider"].as_bool() == true);
+}
+
+// ---------------------------------------------------------------------------
+// 3.3  initialize advertises workspaceSymbolProvider
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(initialize_advertises_workspace_symbol) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "shutdown"))
+      + frame(notification("exit"));
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 1);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["result"]["capabilities"]["workspaceSymbolProvider"].as_bool() == true);
+}
+
+// ---------------------------------------------------------------------------
+// 3.4  foldingRange returns ranges for multi-line S-expressions
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(folding_range_multi_line_sexp) {
+    const std::string uri = "file:///test/fold.eta";
+    const std::string src =
+        "(module m1\n"
+        "  (defun foo (x)\n"
+        "    (+ x 1))\n"
+        "  (define bar 42))\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/foldingRange",
+            R"({"textDocument":{"uri":")" + uri + R"("}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& ranges = resp["result"].as_array();
+    // At minimum, the outer (module ...) form spans lines 0..3
+    BOOST_TEST(!ranges.empty());
+
+    // Find the outermost fold (starts at line 0)
+    bool found_outer = false;
+    for (const auto& r : ranges) {
+        auto sl = r.get_int("startLine");
+        auto el = r.get_int("endLine");
+        if (sl && el && *sl == 0 && *el == 3) {
+            found_outer = true;
+            break;
+        }
+    }
+    BOOST_TEST(found_outer);
+}
+
+// ---------------------------------------------------------------------------
+// 3.5  foldingRange folds consecutive comment lines
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(folding_range_comment_block) {
+    const std::string uri = "file:///test/fold_comment.eta";
+    const std::string src =
+        "; This is a\n"
+        "; multi-line comment\n"
+        "; block\n"
+        "(define x 1)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/foldingRange",
+            R"({"textDocument":{"uri":")" + uri + R"("}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& ranges = resp["result"].as_array();
+    bool found_comment_fold = false;
+    for (const auto& r : ranges) {
+        auto kind = r.get_string("kind");
+        if (kind && *kind == "comment") {
+            auto sl = r.get_int("startLine");
+            auto el = r.get_int("endLine");
+            if (sl && el && *sl == 0 && *el == 2) {
+                found_comment_fold = true;
+                break;
+            }
+        }
+    }
+    BOOST_TEST(found_comment_fold);
+}
+
+// ---------------------------------------------------------------------------
+// 3.6  workspace/symbol returns symbols from open documents
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(workspace_symbol_finds_open_doc_symbols) {
+    const std::string uri = "file:///test/ws.eta";
+    const std::string src =
+        "(module ws-test\n"
+        "  (defun my-func (x) x)\n"
+        "  (define my-var 42))\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "workspace/symbol",
+            R"({"query":"my-"})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& symbols = resp["result"].as_array();
+    // Should find my-func and my-var (and maybe ws-test module, but that doesn't start with "my-")
+    std::vector<std::string> names;
+    for (const auto& s : symbols) {
+        auto n = s.get_string("name");
+        if (n) names.push_back(*n);
+    }
+
+    BOOST_CHECK(std::find(names.begin(), names.end(), "my-func") != names.end());
+    BOOST_CHECK(std::find(names.begin(), names.end(), "my-var") != names.end());
+
+    // Each symbol must have a location with the correct URI
+    for (const auto& s : symbols) {
+        auto n = s.get_string("name");
+        if (n && (n->find("my-") == 0)) {
+            auto loc_uri = s["location"].get_string("uri");
+            BOOST_REQUIRE(loc_uri.has_value());
+            BOOST_TEST(*loc_uri == uri);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 3.7  workspace/symbol with empty query returns symbols
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(workspace_symbol_empty_query) {
+    const std::string uri = "file:///test/ws2.eta";
+    const std::string src = "(module m1 (define x 1))\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "workspace/symbol", R"({"query":""})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    // With empty query, should return at least the document-local symbols
+    const auto& symbols = resp["result"].as_array();
+    BOOST_TEST(!symbols.empty());
+}
+
+// ---------------------------------------------------------------------------
+// 3.8  selectionRange returns nested S-expression ranges
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(selection_range_nested_sexp) {
+    const std::string uri = "file:///test/sel.eta";
+    const std::string src =
+        "(module m1\n"
+        "  (define x (+ 1 2)))\n";
+
+    // Position inside "(+ 1 2)" — line 1, character 15 (on the '1')
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/selectionRange",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"positions":[{"line":1,"character":15}]})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& sel_ranges = resp["result"].as_array();
+    BOOST_REQUIRE_EQUAL(sel_ranges.size(), 1u);
+
+    // The innermost range should exist
+    const auto& inner = sel_ranges[0];
+    BOOST_TEST(inner.has("range"));
+
+    // There should be a parent (the define form) and a grandparent (the module form)
+    BOOST_TEST(inner.has("parent"));
+}
+
+// ---------------------------------------------------------------------------
+// 3.9  selectionRange on whitespace returns a range without parent
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(selection_range_on_whitespace) {
+    const std::string uri = "file:///test/sel2.eta";
+    const std::string src = "(define x 1)\n\n";
+
+    // Position on the blank line
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/selectionRange",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"positions":[{"line":1,"character":0}]})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& sel_ranges = resp["result"].as_array();
+    BOOST_REQUIRE_EQUAL(sel_ranges.size(), 1u);
+    // Should have a range but no enclosing S-expression parent
+    BOOST_TEST(sel_ranges[0].has("range"));
+}
+
+// ---------------------------------------------------------------------------
+// Unit test: path_to_uri produces valid file:// URIs
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(path_to_uri_basic) {
+    // Unix-style path
+    auto uri = eta::lsp::LspServer::path_to_uri("/tmp/test.eta");
+    BOOST_TEST(uri.find("file:///") == 0u);
+    BOOST_TEST(uri.find("test.eta") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// 4.1  initialize advertises semanticTokensProvider
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(initialize_advertises_semantic_tokens) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "shutdown"))
+      + frame(notification("exit"));
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 1);
+    BOOST_REQUIRE(!resp.is_null());
+    const auto& stp = resp["result"]["capabilities"]["semanticTokensProvider"];
+    BOOST_TEST(!stp.is_null());
+    // Check legend has tokenTypes
+    const auto& legend = stp["legend"];
+    BOOST_TEST(!legend.is_null());
+    const auto& token_types = legend["tokenTypes"];
+    BOOST_TEST(token_types.is_array());
+    BOOST_TEST(!token_types.as_array().empty());
+}
+
+// ---------------------------------------------------------------------------
+// 4.2  initialize advertises documentFormattingProvider
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(initialize_advertises_formatting) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "shutdown"))
+      + frame(notification("exit"));
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 1);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["result"]["capabilities"]["documentFormattingProvider"].as_bool() == true);
+}
+
+// ---------------------------------------------------------------------------
+// 4.3  semanticTokens/full returns data array
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(semantic_tokens_returns_data) {
+    const std::string uri = "file:///test/semtok.eta";
+    const std::string src =
+        "(module m1\n"
+        "  (defun foo (x) x)\n"
+        "  (define bar 42))\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/semanticTokens/full",
+            R"({"textDocument":{"uri":")" + uri + R"("}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& data = resp["result"]["data"];
+    BOOST_TEST(data.is_array());
+    // Data should contain token entries (each 5 ints)
+    BOOST_TEST(data.as_array().size() >= 5u);
+    // Data length must be a multiple of 5
+    BOOST_TEST(data.as_array().size() % 5 == 0u);
+}
+
+// ---------------------------------------------------------------------------
+// 4.4  semanticTokens classifies keywords correctly
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(semantic_tokens_classifies_keywords) {
+    const std::string uri = "file:///test/semtok2.eta";
+    const std::string src = "(define x 42)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/semanticTokens/full",
+            R"({"textDocument":{"uri":")" + uri + R"("}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& data = resp["result"]["data"].as_array();
+    BOOST_REQUIRE(data.size() >= 5u);
+    // First token should be "define" which is keyword (type 0)
+    // Token format: deltaLine, deltaCol, length, tokenType, tokenModifiers
+    auto first_type = data[3].as_int();
+    BOOST_TEST(first_type == 0);  // 0 = keyword
+}
+
+// ---------------------------------------------------------------------------
+// 4.5  semanticTokens on empty document returns empty data
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(semantic_tokens_empty_doc) {
+    const std::string uri = "file:///test/semtok_empty.eta";
+    const std::string src = "";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/semanticTokens/full",
+            R"({"textDocument":{"uri":")" + uri + R"("}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& data = resp["result"]["data"];
+    BOOST_TEST(data.is_array());
+    BOOST_TEST(data.as_array().empty());
+}
+
+// ---------------------------------------------------------------------------
+// 4.6  formatting indents nested S-expressions
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(formatting_indents_nested) {
+    const std::string uri = "file:///test/fmt.eta";
+    // Badly indented source
+    const std::string src =
+        "(module m1\n"
+        "(defun foo (x)\n"
+        "(+ x 1))\n"
+        "(define bar 42))\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/formatting",
+            R"({"textDocument":{"uri":")" + uri + R"("},"options":{"tabSize":2,"insertSpaces":true}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& edits = resp["result"].as_array();
+    BOOST_REQUIRE(!edits.empty());
+
+    // Check that the replacement text exists
+    auto new_text = edits[0].get_string("newText");
+    BOOST_REQUIRE(new_text.has_value());
+
+    // The formatted output should have indentation
+    BOOST_TEST(new_text->find("  (defun") != std::string::npos);
+    BOOST_TEST(new_text->find("    (+ x 1)") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// 4.7  formatting preserves empty document
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(formatting_empty_doc) {
+    const std::string uri = "file:///test/fmt_empty.eta";
+    const std::string src = "";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/formatting",
+            R"({"textDocument":{"uri":")" + uri + R"("},"options":{"tabSize":2,"insertSpaces":true}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& edits = resp["result"].as_array();
+    BOOST_TEST(edits.empty());
+}
+
+// ---------------------------------------------------------------------------
+// 4.8  formatting with custom tab size
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(formatting_custom_tab_size) {
+    const std::string uri = "file:///test/fmt4.eta";
+    const std::string src =
+        "(module m1\n"
+        "(define x 1))\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/formatting",
+            R"({"textDocument":{"uri":")" + uri + R"("},"options":{"tabSize":4,"insertSpaces":true}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& edits = resp["result"].as_array();
+    BOOST_REQUIRE(!edits.empty());
+
+    auto new_text = edits[0].get_string("newText");
+    BOOST_REQUIRE(new_text.has_value());
+
+    // With tab size 4, inner form should be indented 4 spaces
+    BOOST_TEST(new_text->find("    (define x 1)") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// 4.9  references across open documents
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(references_cross_file) {
+    // We test that references in one doc find occurrences
+    // by verifying the result includes the current document matches
+    const std::string uri = "file:///test/refs_cross.eta";
+    const std::string src =
+        "(module m1\n"
+        "  (define x 1)\n"
+        "  (define y x)\n"
+        "  (define z (+ x y)))\n";
+
+    // Position on 'x' at line 1, character 10
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/references",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":1,"character":10},"context":{"includeDeclaration":true}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& refs = resp["result"].as_array();
+    // x appears 3 times in the current document
+    BOOST_TEST(refs.size() >= 3u);
+}
+
+// ---------------------------------------------------------------------------
+// 4.10  semanticTokens classifies strings and numbers
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(semantic_tokens_strings_and_numbers) {
+    const std::string uri = "file:///test/semtok3.eta";
+    const std::string src = R"((define msg "hello") (define n 42))";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/semanticTokens/full",
+            R"({"textDocument":{"uri":")" + uri + R"("}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& data = resp["result"]["data"].as_array();
+    // Should have multiple tokens including string (type 3) and number (type 4)
+    bool found_string = false;
+    bool found_number = false;
+    for (std::size_t i = 3; i < data.size(); i += 5) {
+        auto type = data[i].as_int();
+        if (type == 3) found_string = true;
+        if (type == 4) found_number = true;
+    }
+    BOOST_TEST(found_string);
+    BOOST_TEST(found_number);
+}
+
+// ---------------------------------------------------------------------------
+// 4.11  formatting trims trailing whitespace
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(formatting_trims_trailing) {
+    const std::string uri = "file:///test/fmt_trail.eta";
+    const std::string src = "(define x 1)   \n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/formatting",
+            R"({"textDocument":{"uri":")" + uri + R"("},"options":{"tabSize":2,"insertSpaces":true}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& edits = resp["result"].as_array();
+    BOOST_REQUIRE(!edits.empty());
+
+    auto new_text = edits[0].get_string("newText");
+    BOOST_REQUIRE(new_text.has_value());
+
+    // Should not have trailing spaces
+    auto first_newline = new_text->find('\n');
+    BOOST_REQUIRE(first_newline != std::string::npos);
+    if (first_newline > 0) {
+        BOOST_TEST((*new_text)[first_newline - 1] != ' ');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Unit test: enclosing_sexp_ranges finds nested ranges
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(enclosing_sexp_ranges_nested) {
+    const std::string src = "(a (b (c)))";
+    // Position on 'c' at line 0, col 7
+    auto ranges = eta::lsp::LspServer::enclosing_sexp_ranges(src, 0, 7);
+
+    // Should find 3 ranges: (c), (b (c)), (a (b (c)))
+    BOOST_REQUIRE_EQUAL(ranges.size(), 3u);
+
+    // Innermost should be the smallest
+    BOOST_TEST(ranges[0].start.character == 6);  // '(' of (c) at index 6
+    BOOST_TEST(ranges[0].end.character == 9);     // ')' of (c) at index 8, +1 = 9
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 

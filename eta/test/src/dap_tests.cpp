@@ -442,7 +442,7 @@ BOOST_AUTO_TEST_CASE(threads_response_structure) {
 }
 
 // ---------------------------------------------------------------------------
-// 14. scopes response has Locals + Upvalues + Globals entries
+// 14. scopes response has Module + Locals + Upvalues + Globals entries
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(scopes_response_structure) {
     std::string input =
@@ -456,26 +456,34 @@ BOOST_AUTO_TEST_CASE(scopes_response_structure) {
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["success"].as_bool() == true);
     const auto& scopes = resp["body"]["scopes"].as_array();
-    BOOST_REQUIRE_EQUAL(scopes.size(), 3u);
+    BOOST_REQUIRE_EQUAL(scopes.size(), 4u);
     auto n0 = scopes[0].get_string("name");
     auto n1 = scopes[1].get_string("name");
     auto n2 = scopes[2].get_string("name");
+    auto n3 = scopes[3].get_string("name");
     BOOST_REQUIRE(n0.has_value());
     BOOST_REQUIRE(n1.has_value());
     BOOST_REQUIRE(n2.has_value());
-    BOOST_TEST(*n0 == "Locals");
-    BOOST_TEST(*n1 == "Upvalues");
-    BOOST_TEST(*n2 == "Globals");
+    BOOST_REQUIRE(n3.has_value());
+    BOOST_TEST(*n0 == "Module");
+    BOOST_TEST(*n1 == "Locals");
+    BOOST_TEST(*n2 == "Upvalues");
+    BOOST_TEST(*n3 == "Globals");
     // variablesReference values must all differ
     auto ref0 = scopes[0].get_int("variablesReference");
     auto ref1 = scopes[1].get_int("variablesReference");
     auto ref2 = scopes[2].get_int("variablesReference");
+    auto ref3 = scopes[3].get_int("variablesReference");
     BOOST_REQUIRE(ref0.has_value());
     BOOST_REQUIRE(ref1.has_value());
     BOOST_REQUIRE(ref2.has_value());
+    BOOST_REQUIRE(ref3.has_value());
     BOOST_TEST(*ref0 != *ref1);
     BOOST_TEST(*ref0 != *ref2);
+    BOOST_TEST(*ref0 != *ref3);
     BOOST_TEST(*ref1 != *ref2);
+    BOOST_TEST(*ref1 != *ref3);
+    BOOST_TEST(*ref2 != *ref3);
 }
 
 // ---------------------------------------------------------------------------
