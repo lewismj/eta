@@ -162,15 +162,27 @@ Write-Host "  Node.js $NodeVersion -- OK"
 
 $VscodeSrc  = Join-Path $ProjectRoot "editors\vscode"
 $EditorsDir = Join-Path $Prefix "editors"
-$VsixDest   = Join-Path $EditorsDir "eta-lang.vsix"
 
-Write-Host "> [4/6] Building VS Code extension..."
+# Derive semver from Version (strip leading 'v'), or fall back to "latest"
+$Semver = $Version -replace '^v',''
+if ($Semver -match '^\d+\.\d+\.\d+') {
+    $VsixLabel = $Semver
+} else {
+    $VsixLabel = "latest"
+}
+$VsixDest = Join-Path $EditorsDir "eta-lang-${VsixLabel}.vsix"
+
+Write-Host "> [4/6] Building VS Code extension ($VsixLabel)..."
 New-Item -ItemType Directory -Force -Path $EditorsDir | Out-Null
 
 Push-Location $VscodeSrc
 try {
     & npm ci
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+    if ($VsixLabel -ne "latest") {
+        & npm version $VsixLabel --no-git-tag-version --allow-same-version
+        if ($LASTEXITCODE -ne 0) { throw "npm version failed" }
+    }
     & npx vsce package -o $VsixDest --skip-license
     if ($LASTEXITCODE -ne 0) { throw "vsce package failed" }
 } finally {

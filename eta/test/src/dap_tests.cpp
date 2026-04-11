@@ -543,5 +543,152 @@ BOOST_AUTO_TEST_CASE(malformed_json_is_tolerated) {
     BOOST_TEST(!find_msg(msgs, "response", "disconnect").is_null());
 }
 
+// ---------------------------------------------------------------------------
+// 18. eta/heapSnapshot without a running VM → error 2001
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(heap_snapshot_without_vm_returns_error) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/heapSnapshot", "{}"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/heapSnapshot");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == false);
+    // Must report error code 2001
+    auto err_id = resp["body"]["error"].get_int("id");
+    BOOST_REQUIRE(err_id.has_value());
+    BOOST_TEST(*err_id == 2001);
+}
+
+// ---------------------------------------------------------------------------
+// 19. eta/inspectObject without a running VM → error 2001
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(inspect_object_without_vm_returns_error) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/inspectObject", R"({"objectId":42})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/inspectObject");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == false);
+    auto err_id = resp["body"]["error"].get_int("id");
+    BOOST_REQUIRE(err_id.has_value());
+    BOOST_TEST(*err_id == 2001);
+}
+
+// ---------------------------------------------------------------------------
+// 20. eta/inspectObject without objectId argument (no VM) → error 2001
+//     NOTE: The deeper error 2003 (missing objectId) is only reachable with a
+//     paused VM.  The synchronous test harness cannot reliably pause the VM
+//     (stopOnEntry causes a hang because disconnect's resume() fires before
+//     the VM thread reaches check_and_wait, leaving it blocked on debug_cv_
+//     with nobody to wake it).  We verify the dispatch path doesn't crash.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(inspect_object_missing_objectid) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/inspectObject", "{}"))   // no objectId field
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/inspectObject");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == false);
+    // Without a running VM we get error 2001 before objectId is checked
+    auto err_id = resp["body"]["error"].get_int("id");
+    BOOST_REQUIRE(err_id.has_value());
+    BOOST_TEST(*err_id == 2001);
+}
+
+// ---------------------------------------------------------------------------
+// 21. Heap snapshot consPool field — run a script to completion (no
+//     stopOnEntry) and request a snapshot.  The VM is likely not paused so
+//     we expect error 2002 ("VM must be paused"), but if timing allows a
+//     successful response we validate the consPool shape.
+//
+//     NOTE: stopOnEntry + disconnect hangs the synchronous harness (see #20).
+//     The consPool integration is already covered by cons_pool_tests.cpp;
+//     this test just verifies the DAP endpoint doesn't crash and handles the
+//     not-paused case gracefully.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(heap_snapshot_while_vm_running_returns_not_paused) {
+    const std::string src = R"(
+(module dap-test-pool
+  (begin (display "pool-test")))
+)";
+    auto tmp = fs::temp_directory_path() / "eta_dap_test_pool.eta";
+    {
+        std::ofstream f(tmp);
+        BOOST_REQUIRE(f.is_open());
+        f << src;
+    }
+    std::string prog_arg = R"({"program":")" + json_path(tmp) + R"("})";
+
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "launch", prog_arg))
+      + frame(request(3, "configurationDone", "{}"))
+      + frame(request(4, "eta/heapSnapshot", "{}"))
+      + frame(request(5, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/heapSnapshot");
+    BOOST_REQUIRE(!resp.is_null());
+
+    if (resp["success"].as_bool()) {
+        // Script finished before snapshot request — verify consPool shape
+        const auto& body = resp["body"];
+        BOOST_TEST(body.has("totalBytes"));
+        BOOST_TEST(body.has("softLimit"));
+        BOOST_TEST(body.has("kinds"));
+        BOOST_TEST(body.has("consPool"));
+
+        if (body.has("consPool")) {
+            const auto& pool = body["consPool"];
+            BOOST_TEST(pool.has("capacity"));
+            BOOST_TEST(pool.has("live"));
+            BOOST_TEST(pool.has("free"));
+            BOOST_TEST(pool.has("bytes"));
+            auto cap = pool.get_int("capacity");
+            BOOST_REQUIRE(cap.has_value());
+            BOOST_TEST(*cap > 0);
+        }
+    } else {
+        // Expected: error 2002 (VM must be paused)
+        auto err_id = resp["body"]["error"].get_int("id");
+        BOOST_REQUIRE(err_id.has_value());
+        BOOST_TEST(*err_id == 2002);
+    }
+
+    fs::remove(tmp);
+}
+
+// ---------------------------------------------------------------------------
+// 22. Inspect a non-existent object by ID (no VM) → error 2001
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(inspect_nonexistent_object) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/inspectObject", R"({"objectId":999999999})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/inspectObject");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == false);
+    auto err_id = resp["body"]["error"].get_int("id");
+    BOOST_REQUIRE(err_id.has_value());
+    BOOST_TEST(*err_id == 2001);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 

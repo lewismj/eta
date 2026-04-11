@@ -19,11 +19,19 @@ interface GCRoot {
     objectIds: number[];
 }
 
+interface ConsPoolStats {
+    capacity: number;
+    live: number;
+    free: number;
+    bytes: number;
+}
+
 interface HeapSnapshot {
     totalBytes: number;
     softLimit: number;
     kinds: KindStat[];
     roots: GCRoot[];
+    consPool?: ConsPoolStats;   // optional for backward compat
 }
 
 interface ObjectChild {
@@ -265,6 +273,24 @@ function getWebviewHtml(): string {
         html += '  <div class="gauge-bar"><div class="gauge-fill" style="width:' + pct + '%"></div></div>';
         html += '  <span class="gauge-label">' + fmt(snap.totalBytes) + ' / ' + fmt(snap.softLimit) + ' (' + pct + '%)</span>';
         html += '</div></div>';
+
+        // ── Cons Pool gauge (only when present) ───────────────────────────
+        if (snap.consPool && snap.consPool.capacity > 0) {
+            const pool = snap.consPool;
+            const poolPct = Math.min(100, (pool.live / pool.capacity) * 100).toFixed(1);
+            html += '<div class="section">';
+            html += '<h2>Cons Pool</h2>';
+            html += '<div class="gauge-container">';
+            html += '  <div class="gauge-bar"><div class="gauge-fill" style="width:' + poolPct + '%"></div></div>';
+            html += '  <span class="gauge-label">' + poolPct + '%</span>';
+            html += '</div>';
+            html += '<div style="opacity:0.8; font-size:0.92em;">'
+                  + pool.live.toLocaleString() + ' / ' + pool.capacity.toLocaleString()
+                  + ' · Free: ' + pool.free.toLocaleString()
+                  + ' · ' + fmt(pool.bytes)
+                  + '</div>';
+            html += '</div>';
+        }
 
         // ── Per-kind table ────────────────────────────────────────────────
         const sorted = [...snap.kinds].sort((a, b) => b.bytes - a.bytes);

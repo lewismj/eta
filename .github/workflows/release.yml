@@ -73,14 +73,26 @@ jobs:
         run: |
           cd editors/vscode
           npm ci
-          npx vsce package -o eta-lang.vsix --skip-license
+
+          # Strip leading 'v' to get semver (v0.1.8 → 0.1.8).
+          # For workflow_dispatch / 'dev', fall back to 'latest'.
+          SEMVER="${VERSION#v}"
+          if echo "$SEMVER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            npm version "$SEMVER" --no-git-tag-version --allow-same-version
+            LABEL="$SEMVER"
+          else
+            LABEL="latest"
+          fi
+
+          npx vsce package -o "eta-lang-${LABEL}.vsix" --skip-license
+          echo "VSIX_LABEL=${LABEL}" >> $GITHUB_ENV
 
       - name: Assemble bundle
         run: |
           PREFIX=${{ github.workspace }}/dist/${{ env.BUNDLE }}
 
           mkdir -p "$PREFIX/editors"
-          cp editors/vscode/eta-lang.vsix "$PREFIX/editors/"
+          cp "editors/vscode/eta-lang-${{ env.VSIX_LABEL }}.vsix" "$PREFIX/editors/"
 
           # Install script + docs
           cp scripts/install.sh "$PREFIX/" && chmod +x "$PREFIX/install.sh"
@@ -146,10 +158,23 @@ jobs:
           node-version: '20.18'
 
       - name: Build VS Code extension
+        shell: pwsh
         run: |
           cd editors\vscode
           npm ci
-          npx vsce package -o eta-lang.vsix --skip-license
+
+          # Strip leading 'v' to get semver (v0.1.8 → 0.1.8).
+          # For workflow_dispatch / 'dev', fall back to 'latest'.
+          $semver = "${{ env.VERSION }}" -replace '^v',''
+          if ($semver -match '^\d+\.\d+\.\d+') {
+            npm version $semver --no-git-tag-version --allow-same-version
+            $label = $semver
+          } else {
+            $label = "latest"
+          }
+
+          npx vsce package -o "eta-lang-${label}.vsix" --skip-license
+          echo "VSIX_LABEL=${label}" >> $env:GITHUB_ENV
 
       - name: Assemble bundle
         shell: pwsh
@@ -157,7 +182,7 @@ jobs:
           $prefix = "${{ github.workspace }}\dist\${{ env.BUNDLE }}"
 
           New-Item -ItemType Directory -Force "$prefix\editors" | Out-Null
-          Copy-Item "editors\vscode\eta-lang.vsix" "$prefix\editors\"
+          Copy-Item "editors\vscode\eta-lang-${{ env.VSIX_LABEL }}.vsix" "$prefix\editors\"
 
           Copy-Item "scripts\install.ps1" "$prefix\" -ErrorAction SilentlyContinue
           Copy-Item "scripts\install.cmd" "$prefix\" -ErrorAction SilentlyContinue

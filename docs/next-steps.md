@@ -229,7 +229,6 @@ automatically.
 | Improvement | Description |
 |-------------|-------------|
 | **Object headers** | Shrink heap object headers from 16 bytes to 8 bytes by packing kind + GC mark + size into a single 64-bit word. |
-| **Cons-cell pooling** | Maintain a free-list of recently collected cons cells to avoid heap fragmentation and speed up allocation. |
 | **Intern table** | Replace the concurrent hash map with a Robin Hood or Swiss table for better probe locality. |
 
 ### Key Implementation Tasks
