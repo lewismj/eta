@@ -74,6 +74,7 @@ public:
         std::string kind; // "define", "defun", "macro", "module", etc.
         std::string signature; // e.g. "(f g)" — only populated when capture_signature is true
         std::string module_name; // originating module (empty for document-local)
+        std::string file_path; // filesystem path of the originating file (empty for current doc)
         int64_t line{0};
         int64_t character{0};
     };
@@ -83,6 +84,14 @@ public:
     /// Returns a vector of Range for each occurrence.
     static std::vector<Range> find_all_occurrences(const std::string& source,
                                                     const std::string& symbol);
+
+    /// Find nested S-expression ranges enclosing the given position.
+    /// Returns ranges from innermost to outermost (each is a balanced parenthesized form).
+    static std::vector<Range> enclosing_sexp_ranges(
+        const std::string& source, int64_t line, int64_t character);
+
+    /// Convert a filesystem path to a file:// URI.
+    static std::string path_to_uri(const std::string& path);
 
 private:
     std::istream& in_;
@@ -128,6 +137,11 @@ private:
     Value handle_references(const Value& params);
     Value handle_rename(const Value& params);
     Value handle_signature_help(const Value& params);
+    Value handle_folding_range(const Value& params);
+    Value handle_workspace_symbol(const Value& params);
+    Value handle_selection_range(const Value& params);
+    Value handle_semantic_tokens_full(const Value& params);
+    Value handle_formatting(const Value& params);
 
     // ── Diagnostics ───────────────────────────────────────────────────
     void validate_document(const std::string& uri);
@@ -150,6 +164,7 @@ private:
     /// Returns {start_line, start_col} when no balanced close is found.
     static std::pair<int64_t, int64_t> sexp_end(
         const std::string& source, int64_t start_line, int64_t start_col);
+
 
 
     /// Initialise resolver_ from ETA_MODULE_PATH env var + bundled stdlib.

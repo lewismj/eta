@@ -345,6 +345,21 @@ void LspServer::dispatch(const Value& msg) {
     } else if (method == "textDocument/signatureHelp") {
         auto result = handle_signature_help(params);
         if (has_id) send_response(id, result);
+    } else if (method == "textDocument/foldingRange") {
+        auto result = handle_folding_range(params);
+        if (has_id) send_response(id, result);
+    } else if (method == "textDocument/selectionRange") {
+        auto result = handle_selection_range(params);
+        if (has_id) send_response(id, result);
+    } else if (method == "workspace/symbol") {
+        auto result = handle_workspace_symbol(params);
+        if (has_id) send_response(id, result);
+    } else if (method == "textDocument/semanticTokens/full") {
+        auto result = handle_semantic_tokens_full(params);
+        if (has_id) send_response(id, result);
+    } else if (method == "textDocument/formatting") {
+        auto result = handle_formatting(params);
+        if (has_id) send_response(id, result);
     } else {
         if (has_id) {
             send_error(id, -32601, "Method not found: " + method);
@@ -377,6 +392,23 @@ Value LspServer::handle_initialize(const Value& /*params*/) {
             {"signatureHelpProvider", json::object({
                 {"triggerCharacters", json::array({"(", ","})},
                 {"retriggerCharacters", json::array({","})},
+            })},
+            {"foldingRangeProvider", true},
+            {"selectionRangeProvider", true},
+            {"workspaceSymbolProvider", true},
+            {"documentFormattingProvider", true},
+            {"semanticTokensProvider", json::object({
+                {"legend", json::object({
+                    {"tokenTypes", json::array({
+                        "keyword", "function", "variable", "string",
+                        "number", "comment", "operator", "type",
+                        "macro", "parameter"
+                    })},
+                    {"tokenModifiers", json::array({
+                        "declaration", "definition"
+                    })},
+                })},
+                {"full", true},
             })},
         })},
         {"serverInfo", json::object({
@@ -735,11 +767,43 @@ Value LspServer::handle_definition(const Value& params) {
     auto word = word_at_position(source, line, character);
     if (word.empty()) return Value(nullptr);
 
+    // 1. Search document-local symbols first
     auto symbols = collect_symbols(source);
     for (const auto& sym : symbols) {
         if (sym.name == word) {
             return json::object({
                 {"uri", uri},
+                {"range", range_to_json(Range{
+                    Position{sym.line, sym.character},
+                    Position{sym.line, sym.character + static_cast<int64_t>(sym.name.size())},
+                })},
+            });
+        }
+    }
+
+    // 2. Lazily load the completion cache so prelude/module symbols are available
+    if (!completion_cache_loaded_) {
+        load_completion_cache();
+    }
+
+    // 3. Search prelude symbols
+    for (const auto& sym : prelude_symbols_) {
+        if (sym.name == word && !sym.file_path.empty()) {
+            return json::object({
+                {"uri", path_to_uri(sym.file_path)},
+                {"range", range_to_json(Range{
+                    Position{sym.line, sym.character},
+                    Position{sym.line, sym.character + static_cast<int64_t>(sym.name.size())},
+                })},
+            });
+        }
+    }
+
+    // 4. Search module-path symbols
+    for (const auto& sym : module_path_symbols_) {
+        if (sym.name == word && !sym.file_path.empty()) {
+            return json::object({
+                {"uri", path_to_uri(sym.file_path)},
                 {"range", range_to_json(Range{
                     Position{sym.line, sym.character},
                     Position{sym.line, sym.character + static_cast<int64_t>(sym.name.size())},
@@ -1107,15 +1171,64 @@ Value LspServer::handle_references(const Value& params) {
     auto word = word_at_position(source, line, character);
     if (word.empty()) return Value(Array{});
 
-    auto occurrences = find_all_occurrences(source, word);
-
     Array result;
+
+    // 1. Current document
+    auto occurrences = find_all_occurrences(source, word);
     for (const auto& r : occurrences) {
         result.push_back(json::object({
             {"uri", uri},
             {"range", range_to_json(r)},
         }));
     }
+
+    // 2. Other open documents
+    for (const auto& [doc_uri, doc] : documents_) {
+        if (doc_uri == uri) continue;
+        auto occ = find_all_occurrences(doc.content, word);
+        for (const auto& r : occ) {
+            result.push_back(json::object({
+                {"uri", doc_uri},
+                {"range", range_to_json(r)},
+            }));
+        }
+    }
+
+    // 3. Module-path files (prelude + module path)
+    if (!completion_cache_loaded_) {
+        load_completion_cache();
+    }
+
+    // Collect unique file paths from cached symbols that match the word
+    std::unordered_set<std::string> scanned_files;
+    // Track URIs we've already added results for
+    scanned_files.insert(uri);
+    for (const auto& [doc_uri, doc] : documents_) {
+        scanned_files.insert(doc_uri);
+    }
+
+    auto scan_cached = [&](const std::vector<SymbolInfo>& syms) {
+        for (const auto& sym : syms) {
+            if (sym.file_path.empty()) continue;
+            auto file_uri = path_to_uri(sym.file_path);
+            if (!scanned_files.insert(file_uri).second) continue;
+            // Read and scan the file
+            std::ifstream f(sym.file_path);
+            if (!f.is_open()) continue;
+            std::string src(std::istreambuf_iterator<char>(f),
+                            std::istreambuf_iterator<char>{});
+            auto occ = find_all_occurrences(src, word);
+            for (const auto& r : occ) {
+                result.push_back(json::object({
+                    {"uri", file_uri},
+                    {"range", range_to_json(r)},
+                }));
+            }
+        }
+    };
+
+    scan_cached(prelude_symbols_);
+    scan_cached(module_path_symbols_);
 
     return Value(std::move(result));
 }
@@ -1198,6 +1311,7 @@ void LspServer::load_completion_cache() {
 
             for (auto& sym : syms) {
                 if (sym.kind == "module") continue; // skip module declarations
+                sym.file_path = prelude_path->string();
                 // Find which module this symbol belongs to
                 for (auto rit = module_starts.rbegin(); rit != module_starts.rend(); ++rit) {
                     if (sym.line >= rit->first) {
@@ -1237,9 +1351,11 @@ void LspServer::scan_module_path_symbols() {
 
             auto syms = collect_symbols(src, /*capture_signature=*/true);
             auto stem = entry.path().stem().string();
+            auto file_str = entry.path().string();
             for (auto& sym : syms) {
                 if (sym.kind == "module") continue;
                 if (sym.module_name.empty()) sym.module_name = stem;
+                sym.file_path = file_str;
                 module_path_symbols_.push_back(std::move(sym));
             }
         }
@@ -1570,6 +1686,721 @@ Value LspServer::handle_signature_help(const Value& params) {
         {"activeParameter", active_param},
     });
 }
+
+// ============================================================================
+// textDocument/foldingRange — fold S-expressions and comment blocks
+// ============================================================================
+
+Value LspServer::handle_folding_range(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    const auto& source = it->second.content;
+
+    // Split into lines
+    std::vector<std::string> lines;
+    {
+        std::istringstream iss(source);
+        std::string ln;
+        while (std::getline(iss, ln)) {
+            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+            lines.push_back(std::move(ln));
+        }
+    }
+
+    Array result;
+
+    // Track paren-based folding: stack of (line, col) for each opening '('
+    struct OpenParen { int64_t line; int64_t col; };
+    std::vector<OpenParen> paren_stack;
+    bool in_string = false;
+    bool in_block_comment = false;
+    int64_t block_comment_start = -1;
+
+    for (int64_t row = 0; row < static_cast<int64_t>(lines.size()); ++row) {
+        const auto& ln = lines[static_cast<std::size_t>(row)];
+        for (std::size_t col = 0; col < ln.size(); ++col) {
+            char c = ln[col];
+
+            // Block comment tracking
+            if (in_block_comment) {
+                if (c == '|' && col + 1 < ln.size() && ln[col + 1] == '#') {
+                    in_block_comment = false;
+                    if (block_comment_start >= 0 && row > block_comment_start) {
+                        result.push_back(json::object({
+                            {"startLine",      Value(block_comment_start)},
+                            {"endLine",        Value(row)},
+                            {"kind",           "comment"},
+                        }));
+                    }
+                    ++col; // skip '#'
+                }
+                continue;
+            }
+
+            if (in_string) {
+                if (c == '\\') { ++col; continue; }
+                if (c == '"') in_string = false;
+                continue;
+            }
+
+            // Block comment start
+            if (c == '#' && col + 1 < ln.size() && ln[col + 1] == '|') {
+                in_block_comment = true;
+                block_comment_start = row;
+                ++col;
+                continue;
+            }
+
+            if (c == '"') { in_string = true; continue; }
+            if (c == ';') break; // rest of line is a comment
+
+            if (c == '(') {
+                paren_stack.push_back({row, static_cast<int64_t>(col)});
+            } else if (c == ')') {
+                if (!paren_stack.empty()) {
+                    auto open = paren_stack.back();
+                    paren_stack.pop_back();
+                    // Only fold if the form spans multiple lines
+                    if (row > open.line) {
+                        result.push_back(json::object({
+                            {"startLine",      Value(open.line)},
+                            {"startCharacter", Value(open.col)},
+                            {"endLine",        Value(row)},
+                            {"endCharacter",   Value(static_cast<int64_t>(col) + 1)},
+                            {"kind",           "region"},
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    // Fold consecutive line-comment blocks
+    {
+        int64_t comment_start = -1;
+        for (int64_t row = 0; row < static_cast<int64_t>(lines.size()); ++row) {
+            const auto& ln = lines[static_cast<std::size_t>(row)];
+            auto first = ln.find_first_not_of(" \t");
+            bool is_comment = (first != std::string::npos && ln[first] == ';');
+            if (is_comment) {
+                if (comment_start < 0) comment_start = row;
+            } else {
+                if (comment_start >= 0 && row - 1 > comment_start) {
+                    result.push_back(json::object({
+                        {"startLine", Value(comment_start)},
+                        {"endLine",   Value(row - 1)},
+                        {"kind",      "comment"},
+                    }));
+                }
+                comment_start = -1;
+            }
+        }
+        // Handle trailing comment block
+        if (comment_start >= 0 && static_cast<int64_t>(lines.size()) - 1 > comment_start) {
+            result.push_back(json::object({
+                {"startLine", Value(comment_start)},
+                {"endLine",   Value(static_cast<int64_t>(lines.size()) - 1)},
+                {"kind",      "comment"},
+            }));
+        }
+    }
+
+    return Value(std::move(result));
+}
+
+// ============================================================================
+// workspace/symbol — search across all cached symbols
+// ============================================================================
+
+Value LspServer::handle_workspace_symbol(const Value& params) {
+    auto query_opt = params.get_string("query");
+    std::string query = query_opt ? *query_opt : "";
+
+    if (!completion_cache_loaded_) {
+        load_completion_cache();
+    }
+
+    // LSP SymbolKind values
+    constexpr int SK_Module   = 2;
+    constexpr int SK_Function = 12;
+    constexpr int SK_Variable = 13;
+    constexpr int SK_Class    = 5;
+
+    auto kind_for = [&](const std::string& k) -> int {
+        if (k == "defun" || k == "function") return SK_Function;
+        if (k == "module") return SK_Module;
+        if (k == "macro") return SK_Function;
+        if (k == "record") return SK_Class;
+        return SK_Variable;
+    };
+
+    auto matches = [&](const std::string& name) -> bool {
+        if (query.empty()) return true;
+        // Case-insensitive substring match
+        auto it = std::search(name.begin(), name.end(), query.begin(), query.end(),
+            [](char a, char b) {
+                return std::tolower(static_cast<unsigned char>(a)) ==
+                       std::tolower(static_cast<unsigned char>(b));
+            });
+        return it != name.end();
+    };
+
+    Array result;
+    constexpr std::size_t MAX_RESULTS = 200;
+
+    // Search open documents
+    for (const auto& [doc_uri, doc] : documents_) {
+        if (result.size() >= MAX_RESULTS) break;
+        auto syms = collect_symbols(doc.content, true);
+        for (const auto& sym : syms) {
+            if (result.size() >= MAX_RESULTS) break;
+            if (!matches(sym.name)) continue;
+            result.push_back(json::object({
+                {"name", sym.name},
+                {"kind", kind_for(sym.kind)},
+                {"location", json::object({
+                    {"uri", doc_uri},
+                    {"range", range_to_json(Range{
+                        Position{sym.line, sym.character},
+                        Position{sym.line, sym.character + static_cast<int64_t>(sym.name.size())},
+                    })},
+                })},
+                {"containerName", sym.module_name.empty() ? Value(nullptr) : Value(sym.module_name)},
+            }));
+        }
+    }
+
+    // Search prelude symbols
+    for (const auto& sym : prelude_symbols_) {
+        if (result.size() >= MAX_RESULTS) break;
+        if (!matches(sym.name)) continue;
+        std::string sym_uri = sym.file_path.empty() ? "" : path_to_uri(sym.file_path);
+        result.push_back(json::object({
+            {"name", sym.name},
+            {"kind", kind_for(sym.kind)},
+            {"location", json::object({
+                {"uri", sym_uri},
+                {"range", range_to_json(Range{
+                    Position{sym.line, sym.character},
+                    Position{sym.line, sym.character + static_cast<int64_t>(sym.name.size())},
+                })},
+            })},
+            {"containerName", sym.module_name.empty() ? Value(nullptr) : Value(sym.module_name)},
+        }));
+    }
+
+    // Search module-path symbols
+    for (const auto& sym : module_path_symbols_) {
+        if (result.size() >= MAX_RESULTS) break;
+        if (!matches(sym.name)) continue;
+        std::string sym_uri = sym.file_path.empty() ? "" : path_to_uri(sym.file_path);
+        result.push_back(json::object({
+            {"name", sym.name},
+            {"kind", kind_for(sym.kind)},
+            {"location", json::object({
+                {"uri", sym_uri},
+                {"range", range_to_json(Range{
+                    Position{sym.line, sym.character},
+                    Position{sym.line, sym.character + static_cast<int64_t>(sym.name.size())},
+                })},
+            })},
+            {"containerName", sym.module_name.empty() ? Value(nullptr) : Value(sym.module_name)},
+        }));
+    }
+
+    return Value(std::move(result));
+}
+
+// ============================================================================
+// textDocument/selectionRange — expand to enclosing S-expression
+// ============================================================================
+
+Value LspServer::handle_selection_range(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    const auto& source = it->second.content;
+    const auto& positions = params["positions"];
+    if (!positions.is_array()) return Value(Array{});
+
+    Array result;
+    for (const auto& pos : positions.as_array()) {
+        auto line = pos.get_int("line").value_or(0);
+        auto character = pos.get_int("character").value_or(0);
+
+        auto ranges = enclosing_sexp_ranges(source, line, character);
+
+        if (ranges.empty()) {
+            // No enclosing S-expression — return the word range
+            auto word = word_at_position(source, line, character);
+            Range wr{Position{line, character},
+                     Position{line, character + static_cast<int64_t>(word.size())}};
+            result.push_back(json::object({
+                {"range", range_to_json(wr)},
+            }));
+            continue;
+        }
+
+        // Build nested selectionRange from innermost to outermost
+        // The protocol wants innermost.parent = next outer, etc.
+        Value current(nullptr);
+        for (auto rit = ranges.rbegin(); rit != ranges.rend(); ++rit) {
+            if (current.is_null()) {
+                current = json::object({{"range", range_to_json(*rit)}});
+            } else {
+                current = json::object({
+                    {"range",  range_to_json(*rit)},
+                    {"parent", std::move(current)},
+                });
+            }
+        }
+        result.push_back(std::move(current));
+    }
+
+    return Value(std::move(result));
+}
+
+// ============================================================================
+// enclosing_sexp_ranges — find nested S-expression ranges at a position
+// ============================================================================
+
+std::vector<Range> LspServer::enclosing_sexp_ranges(
+        const std::string& source, int64_t target_line, int64_t target_char) {
+    // Convert target position to a flat offset
+    std::size_t target_offset = 0;
+    {
+        std::istringstream iss(source);
+        std::string ln;
+        int64_t row = 0;
+        while (std::getline(iss, ln)) {
+            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+            if (row == target_line) {
+                target_offset += static_cast<std::size_t>(std::min(target_char,
+                    static_cast<int64_t>(ln.size())));
+                break;
+            }
+            target_offset += ln.size() + 1; // +1 for newline
+            ++row;
+        }
+    }
+
+    // Scan source tracking parentheses; record open-paren offsets on a stack.
+    // When we find a close-paren, if the range includes target_offset, record it.
+    struct OpenInfo { std::size_t offset; int64_t line; int64_t col; };
+    std::vector<OpenInfo> stack;
+    std::vector<Range> result; // innermost first
+
+    bool in_string = false;
+    int64_t row = 0;
+    int64_t col = 0;
+
+    for (std::size_t i = 0; i < source.size(); ++i) {
+        char c = source[i];
+
+        if (c == '\n') { ++row; col = 0; continue; }
+        if (c == '\r') { continue; }
+
+        if (in_string) {
+            if (c == '\\') { ++i; ++col; ++col; continue; }
+            if (c == '"') in_string = false;
+            ++col;
+            continue;
+        }
+
+        if (c == '"') { in_string = true; ++col; continue; }
+        if (c == ';') {
+            // Skip to end of line
+            while (i + 1 < source.size() && source[i + 1] != '\n') ++i;
+            ++col;
+            continue;
+        }
+
+        if (c == '(') {
+            stack.push_back({i, row, col});
+        } else if (c == ')') {
+            if (!stack.empty()) {
+                auto open = stack.back();
+                stack.pop_back();
+                // Check if target_offset falls within [open.offset, i]
+                if (target_offset >= open.offset && target_offset <= i) {
+                    result.push_back(Range{
+                        Position{open.line, open.col},
+                        Position{row, col + 1},
+                    });
+                }
+            }
+        }
+        ++col;
+    }
+
+    // Sort innermost first (smallest range first)
+    std::sort(result.begin(), result.end(), [](const Range& a, const Range& b) {
+        auto a_size = (a.end.line - a.start.line) * 10000 + (a.end.character - a.start.character);
+        auto b_size = (b.end.line - b.start.line) * 10000 + (b.end.character - b.start.character);
+        return a_size < b_size;
+    });
+
+    return result;
+}
+
+// ============================================================================
+// path_to_uri — convert filesystem path to file:// URI
+// ============================================================================
+
+std::string LspServer::path_to_uri(const std::string& path) {
+    namespace fs = std::filesystem;
+    // Normalise to absolute path
+    std::error_code ec;
+    std::string abs_path = fs::absolute(fs::path(path), ec).string();
+    if (ec) abs_path = path;
+
+    // Replace backslashes with forward slashes
+    std::string uri = "file:///";
+    for (char c : abs_path) {
+        if (c == '\\') {
+            uri += '/';
+        } else if (c == ' ') {
+            uri += "%20";
+        } else {
+            uri += c;
+        }
+    }
+    // On Unix, absolute paths start with '/', so we'd get file:////
+    // Normalise to file:///
+    while (uri.size() > 8 && uri[7] == '/' && uri[8] == '/') {
+        uri.erase(7, 1);
+    }
+    return uri;
+}
+
+// ============================================================================
+// textDocument/semanticTokens/full — lexer-based semantic highlighting
+// ============================================================================
+
+Value LspServer::handle_semantic_tokens_full(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return json::object({{"data", json::array({})}});
+
+    const auto& source = it->second.content;
+
+    // Token type indices (must match the legend in handle_initialize):
+    // 0=keyword, 1=function, 2=variable, 3=string, 4=number,
+    // 5=comment, 6=operator, 7=type, 8=macro, 9=parameter
+    constexpr int TT_KEYWORD  = 0;
+    constexpr int TT_FUNCTION = 1;
+    constexpr int TT_VARIABLE = 2;
+    constexpr int TT_STRING   = 3;
+    constexpr int TT_NUMBER   = 4;
+    constexpr int TT_COMMENT  = 5;
+    constexpr int TT_OPERATOR = 6;
+    constexpr int TT_TYPE     = 7;
+    constexpr int TT_MACRO    = 8;
+
+    // Token modifier bits: 0x1=declaration, 0x2=definition
+    constexpr int TM_DEFINITION = 2;
+
+    // Collect defined symbols for classification
+    auto symbols = collect_symbols(source, true);
+    std::unordered_set<std::string> defun_names;
+    std::unordered_set<std::string> macro_names;
+    std::unordered_set<std::string> record_names;
+    std::unordered_set<std::string> defined_names;
+    for (const auto& sym : symbols) {
+        if (sym.kind == "defun" || sym.kind == "function") defun_names.insert(sym.name);
+        else if (sym.kind == "macro") macro_names.insert(sym.name);
+        else if (sym.kind == "record") record_names.insert(sym.name);
+        defined_names.insert(sym.name);
+    }
+
+    // Also include prelude/module-path symbols
+    if (!completion_cache_loaded_) load_completion_cache();
+    for (const auto& sym : prelude_symbols_) {
+        if (sym.kind == "defun" || sym.kind == "function") defun_names.insert(sym.name);
+        else if (sym.kind == "macro") macro_names.insert(sym.name);
+        else if (sym.kind == "record") record_names.insert(sym.name);
+    }
+    for (const auto& sym : module_path_symbols_) {
+        if (sym.kind == "defun" || sym.kind == "function") defun_names.insert(sym.name);
+        else if (sym.kind == "macro") macro_names.insert(sym.name);
+        else if (sym.kind == "record") record_names.insert(sym.name);
+    }
+
+    static const std::unordered_set<std::string> keywords = {
+        "define", "lambda", "if", "begin", "set!", "quote", "let", "let*",
+        "letrec", "letrec*", "cond", "case", "and", "or", "when", "unless",
+        "do", "module", "import", "export", "define-syntax", "syntax-rules",
+        "define-record-type", "def", "defun", "progn", "quasiquote",
+        "call/cc", "dynamic-wind", "values", "call-with-values", "apply",
+        "raise", "catch", "logic-var", "unify", "deref-lvar", "trail-mark",
+        "unwind-trail", "copy-term",
+    };
+
+    static const std::unordered_set<std::string> operators = {
+        "+", "-", "*", "/", "=", "<", ">", "<=", ">=",
+        "eq?", "eqv?", "equal?", "not",
+    };
+
+    // Process source line-by-line to handle comments, then use lexer for code
+    // We'll scan manually to also capture comments (lexer skips them)
+
+    // First pass: collect comment token positions
+    struct SemanticToken {
+        int64_t line;     // 0-based
+        int64_t col;      // 0-based
+        int64_t length;
+        int type;
+        int modifiers;
+    };
+    std::vector<SemanticToken> tokens;
+
+    // Scan for comments
+    {
+        std::istringstream iss(source);
+        std::string ln;
+        int64_t row = 0;
+        bool in_block_comment = false;
+
+        while (std::getline(iss, ln)) {
+            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+
+            for (std::size_t col = 0; col < ln.size(); ++col) {
+                if (in_block_comment) {
+                    if (ln[col] == '|' && col + 1 < ln.size() && ln[col + 1] == '#') {
+                        // End of block comment — emit token for each line of the block
+                        in_block_comment = false;
+                        ++col; // skip '#'
+                    }
+                    continue;
+                }
+
+                char c = ln[col];
+                if (c == '#' && col + 1 < ln.size() && ln[col + 1] == '|') {
+                    in_block_comment = true;
+                    ++col;
+                    continue;
+                }
+                if (c == '"') {
+                    // Skip strings
+                    ++col;
+                    while (col < ln.size()) {
+                        if (ln[col] == '\\') { ++col; }
+                        else if (ln[col] == '"') break;
+                        ++col;
+                    }
+                    continue;
+                }
+                if (c == ';') {
+                    // Line comment from ';' to end of line
+                    tokens.push_back({row, static_cast<int64_t>(col),
+                                      static_cast<int64_t>(ln.size() - col),
+                                      TT_COMMENT, 0});
+                    break;
+                }
+            }
+            ++row;
+        }
+    }
+
+    // Lexer pass for code tokens
+    {
+        reader::lexer::Lexer lex(0, source);
+        while (true) {
+            auto result = lex.next_token();
+            if (!result) break;
+            auto& tok = *result;
+            if (tok.kind == reader::lexer::Token::Kind::EOF_) break;
+
+            // Lexer uses 1-based lines/columns; LSP uses 0-based
+            int64_t tok_line = static_cast<int64_t>(tok.span.start.line) - 1;
+            int64_t tok_col  = static_cast<int64_t>(tok.span.start.column) - 1;
+            int64_t tok_end_col = static_cast<int64_t>(tok.span.end.column) - 1;
+            int64_t tok_len = tok_end_col - tok_col;
+            if (tok_len <= 0) tok_len = 1;
+
+            int type = -1;
+            int modifiers = 0;
+
+            switch (tok.kind) {
+                case reader::lexer::Token::Kind::String:
+                    type = TT_STRING;
+                    break;
+                case reader::lexer::Token::Kind::Number:
+                    type = TT_NUMBER;
+                    break;
+                case reader::lexer::Token::Kind::Boolean:
+                    type = TT_KEYWORD;
+                    break;
+                case reader::lexer::Token::Kind::Symbol: {
+                    auto* sv = std::get_if<std::string>(&tok.value);
+                    if (!sv) break;
+                    const auto& name = *sv;
+
+                    if (keywords.count(name)) {
+                        type = TT_KEYWORD;
+                    } else if (operators.count(name)) {
+                        type = TT_OPERATOR;
+                    } else if (macro_names.count(name)) {
+                        type = TT_MACRO;
+                    } else if (record_names.count(name)) {
+                        type = TT_TYPE;
+                    } else if (defun_names.count(name)) {
+                        type = TT_FUNCTION;
+                    } else {
+                        type = TT_VARIABLE;
+                    }
+
+                    // Mark definitions
+                    for (const auto& sym : symbols) {
+                        if (sym.name == name && sym.line == tok_line &&
+                            sym.character == tok_col) {
+                            modifiers |= TM_DEFINITION;
+                            break;
+                        }
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+
+            if (type >= 0) {
+                tokens.push_back({tok_line, tok_col, tok_len, type, modifiers});
+            }
+        }
+    }
+
+    // Sort by position
+    std::sort(tokens.begin(), tokens.end(), [](const SemanticToken& a, const SemanticToken& b) {
+        return a.line < b.line || (a.line == b.line && a.col < b.col);
+    });
+
+    // Encode as delta format
+    Array data;
+    int64_t prev_line = 0;
+    int64_t prev_col = 0;
+    for (const auto& t : tokens) {
+        int64_t delta_line = t.line - prev_line;
+        int64_t delta_col = (delta_line == 0) ? (t.col - prev_col) : t.col;
+        data.push_back(Value(delta_line));
+        data.push_back(Value(delta_col));
+        data.push_back(Value(t.length));
+        data.push_back(Value(static_cast<int64_t>(t.type)));
+        data.push_back(Value(static_cast<int64_t>(t.modifiers)));
+        prev_line = t.line;
+        prev_col = t.col;
+    }
+
+    return json::object({{"data", Value(std::move(data))}});
+}
+
+// ============================================================================
+// textDocument/formatting — basic Lisp indentation
+// ============================================================================
+
+Value LspServer::handle_formatting(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    // Read tab size (default 2)
+    int64_t tab_size = 2;
+    if (params.has("options")) {
+        tab_size = params["options"].get_int("tabSize").value_or(2);
+    }
+
+    const auto& source = it->second.content;
+
+    // Split into lines
+    std::vector<std::string> lines;
+    {
+        std::istringstream iss(source);
+        std::string ln;
+        while (std::getline(iss, ln)) {
+            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+            lines.push_back(std::move(ln));
+        }
+    }
+
+    if (lines.empty()) return Value(Array{});
+
+    // Rebuild with correct indentation based on paren depth
+    std::string formatted;
+    int depth = 0;
+    bool in_string = false;
+
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        const auto& raw_line = lines[i];
+
+        // Strip leading whitespace to get content
+        auto first = raw_line.find_first_not_of(" \t");
+        std::string content = (first == std::string::npos) ? "" : raw_line.substr(first);
+
+        // Trim trailing whitespace
+        auto last = content.find_last_not_of(" \t");
+        if (last != std::string::npos) content = content.substr(0, last + 1);
+
+        // If line starts with ')', decrease depth before indenting
+        int pre_adjust = 0;
+        if (!content.empty() && !in_string) {
+            for (std::size_t c = 0; c < content.size(); ++c) {
+                if (content[c] == ')') ++pre_adjust;
+                else break;
+            }
+        }
+
+        int indent_depth = std::max(0, depth - pre_adjust);
+        std::string indent(static_cast<std::size_t>(indent_depth * tab_size), ' ');
+
+        if (content.empty()) {
+            formatted += "\n";
+        } else if (in_string) {
+            // Inside a multi-line string, preserve as-is
+            formatted += raw_line + "\n";
+        } else {
+            formatted += indent + content + "\n";
+        }
+
+        // Update depth for next line by scanning this line
+        for (std::size_t c = 0; c < content.size(); ++c) {
+            char ch = content[c];
+            if (in_string) {
+                if (ch == '\\') { ++c; continue; }
+                if (ch == '"') in_string = false;
+                continue;
+            }
+            if (ch == '"') { in_string = true; continue; }
+            if (ch == ';') break; // rest is comment
+            if (ch == '(') ++depth;
+            else if (ch == ')') --depth;
+        }
+        if (depth < 0) depth = 0;
+    }
+
+    // Remove trailing newline if original didn't have one
+    bool orig_trailing_newline = !source.empty() && source.back() == '\n';
+    if (!orig_trailing_newline && !formatted.empty() && formatted.back() == '\n') {
+        formatted.pop_back();
+    }
+
+    // Return a single TextEdit replacing the entire document
+    return json::array({
+        json::object({
+            {"range", range_to_json(Range{
+                Position{0, 0},
+                Position{static_cast<int64_t>(lines.size()), 0},
+            })},
+            {"newText", formatted},
+        }),
+    });
+}
+
+// ============================================================================
+// collect_symbols
+// ============================================================================
 
 std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string& source, bool capture_signature) {
     std::vector<SymbolInfo> result;
