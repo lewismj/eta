@@ -12,7 +12,7 @@ target_include_directories(${PROJECT_NAME}
 )
 
 target_sources(${PROJECT_NAME}
-        PUBLIC
+        PRIVATE
         src/eta/runtime/memory/intern_table.cpp
         src/eta/runtime/memory/heap.cpp
         src/eta/runtime/memory/mark_sweep_gc.cpp
@@ -24,6 +24,7 @@ target_sources(${PROJECT_NAME}
         src/eta/semantics/emitter.cpp
         src/eta/runtime/vm/vm.cpp
         src/eta/runtime/vm/bytecode_serializer.cpp
+        src/eta/runtime/value_formatter.cpp
 )
 
 # BMI2/PEXT support check
@@ -100,7 +101,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT MSVC)
     add_library(${PROJECT_NAME}_sanitized)
 
     target_sources(${PROJECT_NAME}_sanitized
-            PUBLIC
+            PRIVATE
             src/eta/reader/expander.cpp
             src/eta/reader/parser.cpp
             src/eta/reader/lexer.cpp
