@@ -400,7 +400,7 @@ made, regardless of success or failure.  Returns `#t` if the goal failed;
 
 ```scheme
 (define x (logic-var))
-(naf (lambda () (== x 1)))   ; => #t  (x=1 succeeds, naf returns #f → wait...)
+(naf (lambda () (== x 1)))   ; => #f  (x=1 succeeds, so naf returns #f)
 ;; after naf: x is unbound regardless
 ```
 

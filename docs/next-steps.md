@@ -32,6 +32,10 @@ flowchart LR
 
 ## 1 · Network Stack
 
+> [!TIP]
+> A detailed design document for this workstream is available at
+> [Network & Message-Passing Parallelism](network-message-passing.md).
+
 ### Motivation
 
 Eta's port system currently supports file I/O and string ports, but has no

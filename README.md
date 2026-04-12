@@ -21,7 +21,8 @@
   <a href="docs/optimization.md">Optimization</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
-  <a href="docs/next-steps.md">Next Steps</a>
+  <a href="docs/next-steps.md">Next Steps</a> ·
+  <a href="docs/network-message-passing.md">Network &amp; Message Passing</a>
 </p>
 <br>
 <p align="center">
@@ -187,7 +188,7 @@ debug. The extension provides:
 - **Disassembly View** — live bytecode with current-PC marker in the Debug sidebar (`Ctrl+Shift+P` → *Eta: Show Disassembly*)
 - **GC Roots Tree** — expandable root categories (Stack, Globals, Frames), module-grouped globals, object drill-down
 
-<img src="docs/img/eta_example_run.png" width="500">
+<img src="docs/img/eta_example_run.png" alt="Eta example run in VS Code" width="500">
 
 > [!TIP]
 > See [TLDR.md](TLDR.md) for a step-by-step walkthrough with screenshots,
@@ -342,13 +343,14 @@ flowchart LR
 | **[AAD](docs/aad.md)**                     | Reverse-mode automatic differentiation walkthrough                                            |
 | **[xVA](docs/xva.md)**                     | Finance use case: CVA, FVA, and sensitivities via AAD                                         |
 | **[European Greeks](docs/european.md)**    | BS option Greeks (first & second order) with custom VJP and Schwarz check                     |
-| **[SABR Volatility Model](docs/sabr.md)** | SABR Hagan implied vol, native Dual VM performance, Hessian via reverse-on-reverse            |
+| **[SABR Volatility Model](docs/sabr.md)** | SABR Hagan implied vol, tape-based reverse-mode AD, vol surface Greeks                        |
 | **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`           |
 | **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                             |
 | **[Fact Tables](docs/fact-table.md)**      | Columnar fact tables with hash-indexed queries, iteration, and fold                           |
 | **[End-to-End Causal Pipeline](docs/causal-factor.md)** | Showcase: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE                             |
 | **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support               |
 | **[Next Steps](docs/next-steps.md)**       | Roadmap: network stack, VS Code debugger improvements, performance                            |
+| **[Network & Message Passing](docs/network-message-passing.md)** | Design doc: nng-based actor model, message passing, distributed computing                     |
 
 ---
 
