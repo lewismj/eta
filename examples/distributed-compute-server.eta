@@ -1,0 +1,47 @@
+;;; examples/distributed-compute-server.eta — Server child for distributed-compute.eta
+;;;
+;;; Spawned by distributed-compute.eta. Binds a REP socket on TCP, signals
+;;; readiness to the parent via the mailbox, then handles arithmetic tasks.
+;;; The parent kills this process after the client is done.
+
+(module distributed-compute-server
+  (import std.core)
+  (import std.io)
+  (begin
+
+    (define endpoint "tcp://127.0.0.1:6000")
+    (define mailbox (current-mailbox))
+
+    ;; Bind the REP socket — nng-listen is synchronous, so by the time
+    ;; we send 'ready below the socket is guaranteed to be listening.
+    (define sock (nng-socket 'rep))
+    (nng-listen sock endpoint)
+
+    ;; Signal the parent: we are ready to accept connections.
+    (send! mailbox 'ready 'wait)
+    (println (string-append "server: listening on " endpoint))
+
+    ;; Process tasks until killed by parent.
+    ;; Task format: (op arg1 arg2)  e.g. '(add 10 20)
+    (letrec ((loop (lambda ()
+                     (let ((task (recv! sock 'wait)))
+                       (when task
+                         (print "server: received task: ")
+                         (println task)
+                         (let ((result
+                                (cond
+                                  ((equal? (car task) 'add)
+                                   (+ (cadr task) (caddr task)))
+                                  ((equal? (car task) 'mul)
+                                   (* (cadr task) (caddr task)))
+                                  ((equal? (car task) 'fib)
+                                   (letrec ((fib (lambda (n)
+                                                   (if (< n 2) n
+                                                       (+ (fib (- n 1))
+                                                          (fib (- n 2)))))))
+                                     (fib (cadr task))))
+                                  (#t 'unknown-op))))
+                           (send! sock result 'wait)
+                           (loop)))))))
+      (loop))))
+

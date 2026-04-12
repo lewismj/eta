@@ -6,8 +6,8 @@
 ;;;   - All workers run simultaneously on separate cores
 ;;;   - Results are collected in task-submission order
 ;;;
-;;; This example computes Fibonacci numbers in parallel, which would
-;;; otherwise be serial when using a single-threaded interpreter.
+;;; This example doubles each input in parallel.
+;;; See parallel-fib.eta for a parallel Fibonacci example.
 ;;;
 ;;; Run:
 ;;;   etai examples/parallel-map.eta
@@ -20,10 +20,10 @@
   (import std.io)
   (begin
 
-    ;; Inputs to map over (large Fibonacci indices to show parallelism benefit)
-    (define inputs '(30 31 32 33 34 35))
+    ;; Inputs to map over
+    (define inputs '(1 2 3 4 5 6))
 
-    (println "parallel-map: computing Fibonacci numbers in parallel...")
+    (println "parallel-map: doubling inputs in parallel...")
     (println (string-append "  inputs: " (display-to-string inputs)))
 
     ;; worker-pool spawns one child per input and collects results
@@ -33,11 +33,12 @@
     (println (string-append "  results: " (display-to-string results)))
 
     ;; Display input → result pairs
-    (for-each (lambda (n fib)
-                (println (string-append "  fib(" (number->string n) ") = "
-                                        (number->string fib))))
-              inputs
-              results)
+    (for-each (lambda (pair)
+                (let ((n   (car pair))
+                      (r   (cdr pair)))
+                  (println (string-append "  " (number->string n) " * 2 = "
+                                          (number->string r)))))
+              (zip inputs results))
 
     (println "parallel-map: done.")))
 

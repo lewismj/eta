@@ -1,0 +1,20 @@
+;;; examples/parallel-fib-worker.eta — Worker for parallel-fib.eta
+;;;
+;;; Receives a Fibonacci index, computes fib(n) using a tail-recursive
+;;; accumulator (O(n) time, O(1) stack), sends back the result.
+;;; One instance is spawned per input value.
+
+(module parallel-fib-worker
+  (begin
+
+    ;; Tail-recursive Fibonacci: fib(0)=0, fib(1)=1, fib(n)=fib(n-1)+fib(n-2)
+    (defun fib (idx)
+      (letrec ((fib-iter (lambda (k a b)
+                           (if (= k 0) a
+                               (fib-iter (- k 1) b (+ a b))))))
+        (fib-iter idx 0 1)))
+
+    (define mailbox (current-mailbox))
+    (define task (recv! mailbox 'wait))
+    (send! mailbox (fib task) 'wait)))
+

@@ -9,6 +9,10 @@
 
     (define mailbox (current-mailbox))
 
+    ;; Guard: this file must be run as a spawned child, not directly.
+    (when (null? mailbox)
+      (error "message-passing-worker: must be launched via (spawn ...), not run directly"))
+
     ;; Simple message dispatch loop
     (letrec ((loop (lambda ()
                      (let ((msg (recv! mailbox 'wait)))

@@ -14,8 +14,8 @@
     ;; ── LCG pseudo-random number generator ───────────────────────────
     ;; Returns (value . next-state) where value ∈ [0.0, 1.0)
     (defun lcg-next (state)
-      (let ((next (mod (+ (* 1664525 state) 1013904223) 4294967296)))
-        (cons (/ (exact->inexact next) 4294967296.0) next)))
+      (let ((next (modulo (+ (* 1664525 state) 1013904223) 4294967296)))
+        (cons (/ (* 1.0 next) 4294967296.0) next)))
 
     ;; ── Monte Carlo π estimator ───────────────────────────────────────
     ;; Count how many random (x,y) points fall inside the unit circle.
@@ -23,8 +23,8 @@
     (defun estimate-pi (seed n-samples)
       (letrec ((loop (lambda (state inside remaining)
                        (if (= remaining 0)
-                           (* 4.0 (/ (exact->inexact inside)
-                                     (exact->inexact n-samples)))
+                            (* 4.0 (/ (* 1.0 inside)
+                                      (* 1.0 n-samples)))
                            (let* ((rx (lcg-next state))
                                   (x  (car rx))
                                   (ry (lcg-next (cdr rx)))

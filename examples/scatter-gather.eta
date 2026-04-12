@@ -42,10 +42,9 @@
            (range 0 n-workers)))
 
     ;; Send each worker its ID so it can identify itself in responses
-    (for-each (lambda (w id)
-                (send! w id))
-              workers
-              (range 0 n-workers))
+    (for-each (lambda (pair)
+                (send! (car pair) (cdr pair)))
+              (zip workers (range 0 n-workers)))
 
     ;; Wait for all workers to confirm they've connected
     (for-each (lambda (w) (recv! w 'wait)) workers)
@@ -55,12 +54,13 @@
     (send! surveyor '(status?) 'wait)
 
     ;; ── Collect all responses within the deadline ─────────────────────
-    (letrec ((collect (lambda (acc)
-                        (let ((r (recv! surveyor)))
-                          (if r
-                              (collect (cons r acc))
-                              (reverse acc))))))
-      (define responses (collect '()))
+    (let ((responses
+           (letrec ((collect (lambda (acc)
+                               (let ((r (recv! surveyor)))
+                                 (if r
+                                     (collect (cons r acc))
+                                     (reverse acc))))))
+             (collect '()))))
       (println (string-append "scatter-gather: received "
                               (number->string (length responses))
                               " response(s)"))

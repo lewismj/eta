@@ -1,100 +1,50 @@
 ;;; examples/distributed-compute.eta — Cross-machine message passing.
 ;;;
-;;; Demonstrates that the same send!/recv! API works transparently over TCP,
-;;; enabling Eta programs to communicate across machines.
+;;; Demonstrates that the same send!/recv! API works transparently over TCP.
+;;; Spawns a server child process that binds a REP socket on localhost:6000,
+;;; waits for it to signal readiness, then runs the client in the parent.
 ;;;
-;;; ── How to run this example ──────────────────────────────────────────────
+;;; For real cross-machine use:
+;;;   - Run distributed-compute-server.eta on the server machine
+;;;   - Change endpoint below to point at the server's IP
 ;;;
-;;; Start the server on one machine (or in a second terminal):
-;;;   etai examples/distributed-compute.eta server
-;;;
-;;; Start the client on another machine (or in a first terminal):
-;;;   etai examples/distributed-compute.eta client
-;;;
-;;; Replace "127.0.0.1" with the server's actual IP for cross-machine use.
-;;;
-;;; The server receives arithmetic tasks and returns results.
-;;; The client sends tasks and collects results.
-;;;
-;;; ── How it differs from spawn ────────────────────────────────────────────
-;;;
-;;; spawn creates a child process automatically and connects it via IPC.
-;;; For cross-machine communication, start each process independently
-;;; and use nng-listen / nng-dial with tcp:// endpoints.
-;;; The Eta code on both sides is identical to the local spawn case —
-;;; only the transport changes.
+;;; Run:
+;;;   etai examples/distributed-compute.eta
 
 (module distributed-compute
-  (import std.io)
+  (import std.prelude)
   (begin
 
-    (define server-host "127.0.0.1")  ; change to server IP for cross-machine
-    (define server-port "6000")
-    (define endpoint
-      (string-append "tcp://" server-host ":" server-port))
+    (define endpoint "tcp://127.0.0.1:6000")
 
-    ;; ── Dispatch on command-line argument ─────────────────────────────
-    ;; This module acts as either server or client depending on the argument.
-    ;; (For a real application, use separate module files.)
+    ;; ── Spawn server child ────────────────────────────────────────────
+    ;; The server binds nng-listen synchronously, then sends 'ready.
+    ;; Waiting here guarantees the socket is listening before we dial.
+    (println "distributed-compute: starting server...")
+    (define server (spawn "examples/distributed-compute-server.eta"))
+    (recv! server 'wait)   ; block until server sends 'ready
 
-    (defun run-server ()
-      (println (string-append "server: listening on " endpoint))
-      (define sock (nng-socket 'rep))
-      (nng-listen sock endpoint)
-      (letrec ((loop (lambda ()
-                       (let ((task (recv! sock 'wait)))
-                         (when task
-                           (print "server: received task: ")
-                           (println task)
-                           ;; Task format: (op arg1 arg2)
-                           (define result
-                             (cond
-                               ((equal? (car task) 'add)
-                                (+ (cadr task) (caddr task)))
-                               ((equal? (car task) 'mul)
-                                (* (cadr task) (caddr task)))
-                               ((equal? (car task) 'fib)
-                                (letrec ((fib (lambda (n)
-                                               (if (< n 2) n
-                                                   (+ (fib (- n 1))
-                                                      (fib (- n 2)))))))
-                                  (fib (cadr task))))
-                               (#t 'unknown-op)))
-                           (send! sock result 'wait)
-                           (loop))))))
-        (loop)))
-
-    (defun run-client ()
-      (println (string-append "client: connecting to " endpoint))
-      (define sock (nng-socket 'req))
+    ;; ── Run client ────────────────────────────────────────────────────
+    (println (string-append "client: connecting to " endpoint))
+    (let ((sock (nng-socket 'req)))
       (nng-dial sock endpoint)
-
-      ;; Send a sequence of compute tasks
-      (define tasks
-        (list '(add 10 20)
-              '(mul 6 7)
-              '(fib 20)
-              '(add 100 200)))
-
-      (for-each (lambda (task)
-                  (send! sock task)
-                  (define result (recv! sock 'wait))
-                  (print (string-append "client: "
-                                        (display-to-string task)
-                                        " => "))
-                  (println result))
-                tasks)
-
+      (let ((tasks (list '(add 10 20)
+                         '(mul 6 7)
+                         '(fib 20)
+                         '(add 100 200))))
+        (for-each (lambda (task)
+                    (send! sock task)
+                    (let ((result (recv! sock 'wait)))
+                      (print (string-append "client: "
+                                            (display-to-string task)
+                                            " => "))
+                      (println result)))
+                  tasks))
       (nng-close sock)
       (println "client: done."))
 
-    ;; ── Entry point ───────────────────────────────────────────────────
-    ;; Default: run as client if no argument given
-    ;; In practice, pass 'server or 'client via a parameter or env variable.
-    ;; Here we default to client for demonstration; comment/uncomment as needed.
-
-    ;; (run-server)   ; uncomment to run as server
-    (run-client)     ; default: run as client (requires server already running)
-
-    ))
-
+    ;; ── Shutdown ──────────────────────────────────────────────────────
+    (spawn-kill server)
+    (spawn-wait server)
+    (nng-close server)
+    (println "distributed-compute: done.")))

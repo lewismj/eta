@@ -1,0 +1,39 @@
+;;; examples/parallel-fib.eta — Parallel Fibonacci using a worker pool.
+;;;
+;;; Demonstrates parallelism with a compute-intensive pure function.
+;;; Each worker computes fib(n) independently using a tail-recursive
+;;; accumulator, so all 6 values are calculated simultaneously.
+;;;
+;;; Run:
+;;;   etai examples/parallel-fib.eta
+;;;
+;;; Worker: examples/parallel-fib-worker.eta
+
+(module parallel-fib
+  (import std.net)
+  (import std.collections)
+  (import std.io)
+  (begin
+
+    ;; Fibonacci indices to compute in parallel
+    (define inputs '(30 31 32 33 34 35))
+
+    (println "parallel-fib: computing Fibonacci numbers in parallel...")
+    (println (string-append "  inputs: " (display-to-string inputs)))
+
+    ;; worker-pool spawns one child per input and collects results in order
+    (define results
+      (worker-pool "examples/parallel-fib-worker.eta" inputs))
+
+    (println (string-append "  results: " (display-to-string results)))
+
+    ;; Display input → result pairs
+    (for-each (lambda (pair)
+                (let ((n   (car pair))
+                      (fib (cdr pair)))
+                  (println (string-append "  fib(" (number->string n) ") = "
+                                          (number->string fib)))))
+              (zip inputs results))
+
+    (println "parallel-fib: done.")))
+
