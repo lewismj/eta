@@ -128,11 +128,17 @@ static bool requires_torch([[maybe_unused]] const fs::path& file) {
 }
 
 // ── Networking example filtering ─────────────────────────────────────────────
-// Spawned-worker files call (current-mailbox) and error immediately when run
-// standalone (no parent mailbox).  Parent/orchestrator files import std.net and
-// call (spawn ...) / (worker-pool ...) — without a real etai binary the spawn
-// blocks forever waiting for the child to connect.
-// Only non-comment lines are scanned so doc-comment mentions of current-mailbox
+// Three kinds of files need to be skipped:
+//   1. Spawned-worker files  — call (current-mailbox) to receive tasks from a
+//      parent.  Running standalone returns Nil and the first recv! errors out.
+//   2. Parent/orchestrator files — call (spawn ...) or (worker-pool ...) via
+//      (import std.net).  Without a real etai binary the spawn blocks forever
+//      waiting for the child to connect.
+//   3. Raw-NNG files — call (nng-socket ...) / (nng-dial ...) / (nng-listen ...)
+//      directly without importing std.net (e.g. distributed-compute.eta,
+//      echo-server.eta).  These need a live peer and cannot run standalone.
+//
+// Only non-comment lines are scanned so doc-comment mentions of these symbols
 // (e.g. message-passing.eta header) do not falsely trigger the filter.
 static bool requires_net(const fs::path& file) {
     std::ifstream ifs(file);
@@ -142,6 +148,9 @@ static bool requires_net(const fs::path& file) {
         if (pos != std::string::npos && line[pos] == ';') continue;
         if (line.find("current-mailbox") != std::string::npos) return true;
         if (line.find("std.net")         != std::string::npos) return true;
+        if (line.find("nng-socket")      != std::string::npos) return true;
+        if (line.find("nng-dial")        != std::string::npos) return true;
+        if (line.find("nng-listen")      != std::string::npos) return true;
     }
     return false;
 }
