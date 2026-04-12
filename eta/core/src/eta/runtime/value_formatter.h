@@ -35,7 +35,7 @@ enum class FormatMode { Display, Write };
  * continuations, ports, and other heap objects.
  */
 
-inline_always std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& intern_table) {
+std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& intern_table) {
     if (v == nanbox::Nil) return "()";
     if (v == nanbox::True) return "#t";
     if (v == nanbox::False) return "#f";
