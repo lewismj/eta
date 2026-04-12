@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cstring>
 #include <deque>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -265,7 +266,10 @@ inline void register_nng_primitives(
 
     // ── send! ──────────────────────────────────────────────────────────────
     // (send! sock value [flag]) → #t on success, #f if EAGAIN (noblock)
-    // flag: 'noblock → NNG_FLAG_NONBLOCK; 'wait → blocking (no timeout change)
+    // flag: 'noblock → NNG_FLAG_NONBLOCK
+    //       'wait    → blocking (no timeout change)
+    //       'text    → use s-expression text format instead of binary
+    // Default serialisation format: binary (Phase 6).
     env.register_builtin("send!", 2, true,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -281,16 +285,30 @@ inline void register_nng_primitives(
             // Parse optional flag argument
             int flags = 0;
             bool wait_mode = false;
+            bool use_text  = false;
             if (args.size() >= 3) {
                 auto flag_sym = symbol_to_string(args[2], intern);
                 if (flag_sym) {
-                    if (*flag_sym == "noblock") flags = NNG_FLAG_NONBLOCK;
-                    else if (*flag_sym == "wait") wait_mode = true;
+                    if      (*flag_sym == "noblock") flags = NNG_FLAG_NONBLOCK;
+                    else if (*flag_sym == "wait")    wait_mode = true;
+                    else if (*flag_sym == "text")    use_text  = true;
                 }
             }
 
-            // Serialize the value to s-expression text
-            std::string text = serialize_value(args[1], heap, intern);
+            // Serialize: binary by default, text when 'text flag given
+            std::vector<uint8_t> bin_buf;
+            std::string          text_buf;
+            const void*  msg_ptr;
+            size_t       msg_size;
+            if (use_text) {
+                text_buf = serialize_value(args[1], heap, intern);
+                msg_ptr  = text_buf.data();
+                msg_size = text_buf.size();
+            } else {
+                bin_buf  = serialize_binary(args[1], heap, intern);
+                msg_ptr  = bin_buf.data();
+                msg_size = bin_buf.size();
+            }
 
             // Optionally override timeout for 'wait
             nng_duration saved_timeout = 0;
@@ -300,8 +318,8 @@ inline void register_nng_primitives(
             }
 
             int rv = nng_send(sp->socket,
-                              const_cast<char*>(text.data()),
-                              text.size(),
+                              const_cast<void*>(msg_ptr),
+                              msg_size,
                               flags);
 
             if (wait_mode) {
@@ -316,6 +334,9 @@ inline void register_nng_primitives(
     // ── recv! ──────────────────────────────────────────────────────────────
     // (recv! sock [flag]) → LispVal or #f on timeout/EAGAIN
     // flag: 'noblock → NNG_FLAG_NONBLOCK; 'wait → blocking
+    //
+    // Auto-detects serialisation format: binary messages start with 0xEA
+    // (BINARY_VERSION_BYTE); everything else is treated as s-expression text.
     env.register_builtin("recv!", 1, true,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -328,12 +349,20 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::InternalError, "recv!: socket is closed"}});
             }
 
-            // Check the pending message queue first (messages saved by nng-poll)
+            // Check the pending message queue first (messages saved by nng-poll).
+            // Auto-detect format in buffered messages too.
             if (!sp->pending_msgs.empty()) {
                 auto data = std::move(sp->pending_msgs.front());
                 sp->pending_msgs.pop_front();
-                std::string_view sv(reinterpret_cast<const char*>(data.data()), data.size());
-                auto result = deserialize_value(sv, heap, intern);
+                std::expected<LispVal, RuntimeError> result;
+                if (is_binary_format(data.data(), data.size())) {
+                    result = deserialize_binary(
+                        std::span<const uint8_t>(data), heap, intern);
+                } else {
+                    std::string_view sv(reinterpret_cast<const char*>(data.data()),
+                                        data.size());
+                    result = deserialize_value(sv, heap, intern);
+                }
                 if (!result) return std::unexpected(result.error());
                 return *result;
             }
@@ -344,8 +373,8 @@ inline void register_nng_primitives(
             if (args.size() >= 2) {
                 auto flag_sym = symbol_to_string(args[1], intern);
                 if (flag_sym) {
-                    if (*flag_sym == "noblock") flags = NNG_FLAG_NONBLOCK;
-                    else if (*flag_sym == "wait") wait_mode = true;
+                    if      (*flag_sym == "noblock") flags = NNG_FLAG_NONBLOCK;
+                    else if (*flag_sym == "wait")    wait_mode = true;
                 }
             }
 
@@ -367,8 +396,15 @@ inline void register_nng_primitives(
             if (rv == NNG_EAGAIN || rv == NNG_ETIMEDOUT) return nanbox::False;
             if (rv != 0) return nng_error(rv);
 
-            std::string_view sv(static_cast<const char*>(buf), sz);
-            auto result = deserialize_value(sv, heap, intern);
+            // Auto-detect binary vs text format
+            std::expected<LispVal, RuntimeError> result;
+            if (is_binary_format(static_cast<const uint8_t*>(buf), sz)) {
+                std::span<const uint8_t> sp_data(static_cast<const uint8_t*>(buf), sz);
+                result = deserialize_binary(sp_data, heap, intern);
+            } else {
+                std::string_view sv(static_cast<const char*>(buf), sz);
+                result = deserialize_value(sv, heap, intern);
+            }
             nng_free(buf, sz);
             if (!result) return std::unexpected(result.error());
             return *result;

@@ -1462,6 +1462,415 @@ BOOST_AUTO_TEST_CASE(p3_recv_wrong_socket_type) {
 BOOST_AUTO_TEST_SUITE_END()
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Phase 6 — Binary Wire Format
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_SUITE(nng_phase6_tests)
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/// Binary round-trip helper: serialize_binary then deserialize_binary,
+/// verify the re-serialized text string matches expected.
+static void binary_round_trip(LispVal v, Heap& heap, InternTable& intern,
+                               const std::string& expected_text)
+{
+    auto bin = serialize_binary(v, heap, intern);
+    BOOST_REQUIRE(!bin.empty());
+    BOOST_TEST(bin[0] == eta::nng::BINARY_VERSION_BYTE);
+
+    auto result = deserialize_binary(std::span<const uint8_t>(bin), heap, intern);
+    BOOST_REQUIRE_MESSAGE(result.has_value(), "binary deserialization failed");
+
+    std::string re_text = serialize_value(*result, heap, intern);
+    BOOST_TEST(re_text == expected_text);
+}
+
+// ── is_binary_format ───────────────────────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p6_is_binary_format_detects_version_byte) {
+    std::vector<uint8_t> bin{0xEA, 0x00};
+    BOOST_TEST(is_binary_format(bin.data(), bin.size()) == true);
+}
+
+BOOST_AUTO_TEST_CASE(p6_is_binary_format_rejects_text) {
+    std::string text = "(1 2 3)";
+    BOOST_TEST(is_binary_format(
+        reinterpret_cast<const uint8_t*>(text.data()), text.size()) == false);
+}
+
+BOOST_AUTO_TEST_CASE(p6_is_binary_format_empty_returns_false) {
+    BOOST_TEST(is_binary_format(nullptr, 0) == false);
+}
+
+// ── Binary round-trips: all types ──────────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p6_binary_nil) {
+    Heap heap(1ull << 20); InternTable intern;
+    binary_round_trip(nanbox::Nil, heap, intern, "()");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_true) {
+    Heap heap(1ull << 20); InternTable intern;
+    binary_round_trip(nanbox::True, heap, intern, "#t");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_false) {
+    Heap heap(1ull << 20); InternTable intern;
+    binary_round_trip(nanbox::False, heap, intern, "#f");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_fixnum_zero) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_fixnum(heap, int64_t{0}));
+    binary_round_trip(v, heap, intern, "0");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_fixnum_positive) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_fixnum(heap, int64_t{42}));
+    binary_round_trip(v, heap, intern, "42");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_fixnum_negative) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_fixnum(heap, int64_t{-99}));
+    binary_round_trip(v, heap, intern, "-99");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_fixnum_heap_allocated) {
+    Heap heap(1ull << 20); InternTable intern;
+    constexpr int64_t big = 1000000000000000LL;
+    auto v = require_ok(make_fixnum(heap, big));
+    binary_round_trip(v, heap, intern, "1000000000000000");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_flonum_pi) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_flonum(3.14));
+    auto bin = serialize_binary(v, heap, intern);
+    auto result = deserialize_binary(std::span<const uint8_t>(bin), heap, intern);
+    BOOST_REQUIRE(result.has_value());
+    auto dec = ops::decode<double>(*result);
+    BOOST_REQUIRE(dec.has_value());
+    BOOST_CHECK_CLOSE(*dec, 3.14, 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_flonum_negative) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_flonum(-2.718));
+    auto bin = serialize_binary(v, heap, intern);
+    auto result = deserialize_binary(std::span<const uint8_t>(bin), heap, intern);
+    BOOST_REQUIRE(result.has_value());
+    auto dec = ops::decode<double>(*result);
+    BOOST_REQUIRE(dec.has_value());
+    BOOST_CHECK_CLOSE(*dec, -2.718, 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_flonum_zero) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_flonum(0.0));
+    binary_round_trip(v, heap, intern, "0.0");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_char_printable) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(ops::encode<char32_t>(U'z'));
+    binary_round_trip(v, heap, intern, "#\\z");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_char_space) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(ops::encode<char32_t>(U' '));
+    binary_round_trip(v, heap, intern, "#\\space");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_char_newline) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(ops::encode<char32_t>(U'\n'));
+    binary_round_trip(v, heap, intern, "#\\newline");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_string_simple) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_string(heap, intern, "hello world"));
+    binary_round_trip(v, heap, intern, "\"hello world\"");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_string_empty) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_string(heap, intern, ""));
+    binary_round_trip(v, heap, intern, "\"\"");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_string_with_escapes) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_string(heap, intern, "line1\nline2"));
+    binary_round_trip(v, heap, intern, "\"line1\\nline2\"");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_symbol) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_symbol(intern, "hello"));
+    binary_round_trip(v, heap, intern, "hello");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_symbol_with_special) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_symbol(intern, "my-func!"));
+    binary_round_trip(v, heap, intern, "my-func!");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_dotted_pair) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto a = require_ok(make_fixnum(heap, int64_t{1}));
+    auto b = require_ok(make_fixnum(heap, int64_t{2}));
+    auto pair = require_ok(make_cons(heap, a, b));
+    binary_round_trip(pair, heap, intern, "(1 . 2)");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_proper_list) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto a = require_ok(make_fixnum(heap, int64_t{1}));
+    auto b = require_ok(make_fixnum(heap, int64_t{2}));
+    auto c = require_ok(make_fixnum(heap, int64_t{3}));
+    auto l = require_ok(make_cons(heap, c, nanbox::Nil));
+    l = require_ok(make_cons(heap, b, l));
+    l = require_ok(make_cons(heap, a, l));
+    binary_round_trip(l, heap, intern, "(1 2 3)");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_nested_list) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto a = require_ok(make_fixnum(heap, int64_t{1}));
+    auto b = require_ok(make_fixnum(heap, int64_t{2}));
+    auto inner = require_ok(make_cons(heap, b, nanbox::Nil));
+    inner = require_ok(make_cons(heap, a, inner));
+    auto three = require_ok(make_fixnum(heap, int64_t{3}));
+    auto outer_tail = require_ok(make_cons(heap, three, nanbox::Nil));
+    auto outer = require_ok(make_cons(heap, inner, outer_tail));
+    binary_round_trip(outer, heap, intern, "((1 2) 3)");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_vector) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto a = require_ok(make_fixnum(heap, int64_t{10}));
+    auto b = require_ok(make_fixnum(heap, int64_t{20}));
+    auto c = require_ok(make_fixnum(heap, int64_t{30}));
+    auto v = require_ok(make_vector(heap, {a, b, c}));
+    binary_round_trip(v, heap, intern, "#(10 20 30)");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_empty_vector) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_vector(heap, {}));
+    binary_round_trip(v, heap, intern, "#()");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_bytevector) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_bytevector(heap, {0, 128, 255}));
+    binary_round_trip(v, heap, intern, "#u8(0 128 255)");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_empty_bytevector) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto v = require_ok(make_bytevector(heap, {}));
+    binary_round_trip(v, heap, intern, "#u8()");
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_mixed_list) {
+    // (1 "hi" #t #(a b))
+    Heap heap(1ull << 20); InternTable intern;
+    auto one   = require_ok(make_fixnum(heap, int64_t{1}));
+    auto hi    = require_ok(make_string(heap, intern, "hi"));
+    auto sym_a = require_ok(make_symbol(intern, "a"));
+    auto sym_b = require_ok(make_symbol(intern, "b"));
+    auto vec   = require_ok(make_vector(heap, {sym_a, sym_b}));
+    auto l4 = require_ok(make_cons(heap, vec,          nanbox::Nil));
+    auto l3 = require_ok(make_cons(heap, nanbox::True, l4));
+    auto l2 = require_ok(make_cons(heap, hi,           l3));
+    auto l1 = require_ok(make_cons(heap, one,          l2));
+    binary_round_trip(l1, heap, intern, "(1 \"hi\" #t #(a b))");
+}
+
+// ── Error handling ─────────────────────────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p6_binary_deserialize_missing_version_byte) {
+    Heap heap(1ull << 20); InternTable intern;
+    std::vector<uint8_t> bad{0x00};   // wrong version byte
+    auto res = deserialize_binary(std::span<const uint8_t>(bad), heap, intern);
+    BOOST_TEST(!res.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_deserialize_empty_buffer) {
+    Heap heap(1ull << 20); InternTable intern;
+    std::vector<uint8_t> empty;
+    auto res = deserialize_binary(std::span<const uint8_t>(empty), heap, intern);
+    BOOST_TEST(!res.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_deserialize_truncated) {
+    Heap heap(1ull << 20); InternTable intern;
+    // Version byte + BT_Fixnum tag, but no payload
+    std::vector<uint8_t> trunc{0xEA, 0x02};
+    auto res = deserialize_binary(std::span<const uint8_t>(trunc), heap, intern);
+    BOOST_TEST(!res.has_value());
+}
+
+// ── Performance: binary vs text ────────────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p6_binary_large_vector_performance) {
+    // Binary serialize+deserialize of a 10,000-element vector.
+    // Acceptance criterion: < 10 ms in release builds (half the text threshold).
+    Heap heap(1ull << 24); InternTable intern;
+
+    constexpr size_t VEC_SIZE = 10000;
+    std::vector<LispVal> elems;
+    elems.reserve(VEC_SIZE);
+    for (int64_t i = 0; i < static_cast<int64_t>(VEC_SIZE); ++i)
+        elems.push_back(*make_fixnum(heap, i));
+    auto vec = require_ok(make_vector(heap, std::move(elems)));
+
+    BOOST_TEST_MESSAGE("Built 10,000-element vector, starting binary serialization...");
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    auto bin      = serialize_binary(vec, heap, intern);
+    auto result   = deserialize_binary(std::span<const uint8_t>(bin), heap, intern);
+
+    auto end = std::chrono::high_resolution_clock::now();
+
+    BOOST_REQUIRE_MESSAGE(result.has_value(),
+        "binary deserialization of large vector failed");
+
+    auto duration_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    BOOST_TEST_MESSAGE("Binary: 10,000-element vector round-trip in "
+                       << duration_ms << " ms ("
+                       << bin.size() << " bytes)");
+
+#if defined(_DEBUG) || !defined(NDEBUG)
+    BOOST_TEST(duration_ms < 100);
+#else
+    BOOST_TEST(duration_ms < 10);
+#endif
+
+    // Structural check
+    auto* result_vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(
+        ops::payload(*result));
+    BOOST_REQUIRE(result_vec != nullptr);
+    BOOST_REQUIRE_EQUAL(result_vec->elements.size(), VEC_SIZE);
+    BOOST_TEST(*ops::decode<int64_t>(result_vec->elements[0]) == 0);
+    BOOST_TEST(*ops::decode<int64_t>(result_vec->elements[VEC_SIZE - 1]) ==
+               static_cast<int64_t>(VEC_SIZE - 1));
+}
+
+// ── auto-detection via send!/recv! over inproc:// ──────────────────────────
+
+BOOST_AUTO_TEST_CASE(p6_send_default_binary_recv_autodetects) {
+    // Default send! uses binary; recv! should auto-detect and return the value.
+    NngEnv e;
+    std::string addr = inproc_addr();
+
+    auto server = e.call("nng-socket", {e.sym("pair")});
+    auto client = e.call("nng-socket", {e.sym("pair")});
+    e.call("nng-listen", {server, e.str(addr)});
+    e.call("nng-dial",   {client, e.str(addr)});
+
+    // Send a list in binary (default)
+    auto a = e.fixnum(10);
+    auto b = e.fixnum(20);
+    auto lst = require_ok(make_cons(e.heap, b, nanbox::Nil));
+    lst = require_ok(make_cons(e.heap, a, lst));
+
+    auto send_res = e.call("send!", {client, lst});
+    BOOST_TEST(send_res == nanbox::True);
+
+    auto recv_res = e.call("recv!", {server});
+    BOOST_REQUIRE(recv_res != nanbox::False);
+
+    // Should be (10 20)
+    auto* cons = e.heap.try_get_as<ObjectKind::Cons, Cons>(ops::payload(recv_res));
+    BOOST_REQUIRE(cons != nullptr);
+    BOOST_TEST(*ops::decode<int64_t>(cons->car) == 10);
+
+    e.call("nng-close", {server});
+    e.call("nng-close", {client});
+}
+
+BOOST_AUTO_TEST_CASE(p6_send_text_flag_recv_autodetects) {
+    // 'text flag on send! → s-expression; recv! should still auto-detect and parse.
+    NngEnv e;
+    std::string addr = inproc_addr();
+
+    auto server = e.call("nng-socket", {e.sym("pair")});
+    auto client = e.call("nng-socket", {e.sym("pair")});
+    e.call("nng-listen", {server, e.str(addr)});
+    e.call("nng-dial",   {client, e.str(addr)});
+
+    auto val = e.fixnum(777);
+    auto send_res = e.call("send!", {client, val, e.sym("text")});
+    BOOST_TEST(send_res == nanbox::True);
+
+    auto recv_res = e.call("recv!", {server});
+    BOOST_REQUIRE(recv_res != nanbox::False);
+    BOOST_TEST(*ops::decode<int64_t>(recv_res) == 777);
+
+    e.call("nng-close", {server});
+    e.call("nng-close", {client});
+}
+
+BOOST_AUTO_TEST_CASE(p6_binary_round_trip_over_socket_all_types) {
+    // Binary round-trip through a real nng socket for a heterogeneous structure.
+    NngEnv e;
+    std::string addr = inproc_addr();
+
+    auto server = e.call("nng-socket", {e.sym("pair")});
+    auto client = e.call("nng-socket", {e.sym("pair")});
+    e.call("nng-listen", {server, e.str(addr)});
+    e.call("nng-dial",   {client, e.str(addr)});
+
+    // Build (#t "binary" 42 #\x #(1 2) #u8(0 1 2))
+    auto flag   = nanbox::True;
+    auto str    = require_ok(make_string(e.heap, e.intern, "binary"));
+    auto num    = require_ok(make_fixnum(e.heap, int64_t{42}));
+    auto ch     = require_ok(ops::encode<char32_t>(U'x'));
+    auto v1     = require_ok(make_fixnum(e.heap, int64_t{1}));
+    auto v2     = require_ok(make_fixnum(e.heap, int64_t{2}));
+    auto vec    = require_ok(make_vector(e.heap, {v1, v2}));
+    auto bvec   = require_ok(make_bytevector(e.heap, {0, 1, 2}));
+
+    auto tail5  = require_ok(make_cons(e.heap, bvec, nanbox::Nil));
+    auto tail4  = require_ok(make_cons(e.heap, vec, tail5));
+    auto tail3  = require_ok(make_cons(e.heap, ch, tail4));
+    auto tail2  = require_ok(make_cons(e.heap, num, tail3));
+    auto tail1  = require_ok(make_cons(e.heap, str, tail2));
+    auto msg    = require_ok(make_cons(e.heap, flag, tail1));
+
+    e.call("send!", {client, msg});   // binary by default
+    auto recv_res = e.call("recv!", {server});
+    BOOST_REQUIRE(recv_res != nanbox::False);
+
+    // Verify it's a list starting with #t
+    auto* hd = e.heap.try_get_as<ObjectKind::Cons, Cons>(ops::payload(recv_res));
+    BOOST_REQUIRE(hd != nullptr);
+    BOOST_TEST(hd->car == nanbox::True);
+
+    // Second element should be the string "binary"
+    auto* tl = e.heap.try_get_as<ObjectKind::Cons, Cons>(ops::payload(hd->cdr));
+    BOOST_REQUIRE(tl != nullptr);
+    BOOST_TEST(ops::tag(tl->car) == Tag::String);
+    auto sv = e.intern.get_string(ops::payload(tl->car));
+    BOOST_REQUIRE(sv.has_value());
+    BOOST_TEST(*sv == "binary");
+
+    e.call("nng-close", {server});
+    e.call("nng-close", {client});
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Phase 4 — Process Spawning & Actor Model
 // ═══════════════════════════════════════════════════════════════════════════
 
