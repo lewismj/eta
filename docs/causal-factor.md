@@ -17,12 +17,12 @@ how the language supports composable reasoning across paradigms.
 This example serves as a **reference pipeline**, showing how multiple
 paradigms interoperate within a single Eta program.
 
-| Section | Pillar               | What it does |
-|---------|----------------------|--------------|
-| **§1** | Symbolic Processing  | Define a factor model as S-expressions, differentiate it, simplify with fixed-point rewriting |
-| **§2** | Causal Reasoning     | Encode a DAG of market variables; derive the back-door adjustment formula with `do:identify` |
-| **§3** | Logic & CLP          | Use `findall` + backtracking to discover all valid adjustment sets; validate with `clp(Z)` domains |
-| **§4** | libTorch Integration | Train a neural network to learn E[return \| beta, sector] |
+| Section | Stage                             | What it does |
+|---------|-----------------------------------|--------------|
+| **§1** | Symbolic Processing               | Define a factor model as S-expressions, differentiate it, simplify with fixed-point rewriting |
+| **§2** | Causal Reasoning                  | Encode a DAG of market variables; derive the back-door adjustment formula with `do:identify` |
+| **§3** | Logic & CLP                       | Use `findall` + backtracking to discover all valid adjustment sets; validate with `clp(Z)` domains |
+| **§4** | libTorch Integration              | Train a neural network to learn E[return \| beta, sector] |
 | **§5** | Neural Back-Door Estimation (ATE) | Plug NN predictions into the back-door adjustment formula to compute the Average Treatment Effect |
 
 ```mermaid
