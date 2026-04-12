@@ -30,7 +30,7 @@ This gives you:
 ┌───────────────────────┐     PAIR socket      ┌────────────────────────┐
 │     Parent Process    │◄──────────────────►  │     Child Process      │
 │                       │  ipc:// or tcp://    │                        │
-│  VM₁  Heap₁  GC₁     │                      │  VM₂  Heap₂  GC₂      │
+│  VM₁  Heap₁  GC₁      │                      │  VM₂  Heap₂  GC₂       │
 │                       │                      │                        │
 │  (define w            │                      │  (define mailbox       │
 │    (spawn "w.eta"))   │                      │    (current-mailbox))  │

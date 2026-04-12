@@ -2,7 +2,8 @@
 
 [← Back to README](../README.md) · [Architecture](architecture.md) ·
 [NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
-[Runtime & GC](runtime.md)
+[Runtime & GC](runtime.md) · [Networking](networking.md) ·
+[Message Passing](message-passing.md)
 
 ---
 
@@ -371,6 +372,83 @@ Re-exports **all** public names from `std.core`, `std.math`, `std.io`,
 | **Helpers** | `train-step!` — one-call training step (zero-grad → forward → loss → backward → step) |
 
 > **📖 Full documentation:** [Neural Networks with libtorch](torch.md)
+
+---
+
+### `std.net` — Networking & Message Passing
+
+```scheme
+(import std.net)
+```
+
+> Requires the interpreter to be built with `-DETA_BUILD_NNG=ON` (the default).
+> The low-level nng primitives (`nng-socket`, `send!`, `recv!`, `spawn`, etc.)
+> are registered as global builtins when nng support is compiled in.
+> `std.net` adds high-level Erlang-inspired patterns on top.
+
+#### High-level helpers
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `with-socket` | `(with-socket type thunk)` | Create a socket, run `(thunk sock)`, close via `dynamic-wind` — safe even on exceptions |
+| `request-reply` | `(request-reply endpoint message)` | Open a REQ socket, dial, send, receive exactly one reply, close |
+| `worker-pool` | `(worker-pool module-path tasks)` | Spawn one child per task, dispatch, collect results in order, clean up |
+| `pub-sub` | `(pub-sub endpoint topics handler)` | Connect a SUB socket, subscribe to `topics`, call `handler` on each message |
+| `survey` | `(survey endpoint question timeout-ms)` | Open a SURVEYOR socket, broadcast `question`, collect all responses before deadline |
+
+#### Low-level nng builtins (globally available)
+
+| Primitive | Signature | Description |
+|-----------|-----------|-------------|
+| `nng-socket` | `(nng-socket type-sym)` | Create a socket — `'pair`, `'req`, `'rep`, `'pub`, `'sub`, `'push`, `'pull`, `'surveyor`, `'respondent`, `'bus` |
+| `nng-listen` | `(nng-listen sock endpoint)` | Bind and listen on an endpoint |
+| `nng-dial` | `(nng-dial sock endpoint)` | Connect to an endpoint (auto-reconnects) |
+| `nng-close` | `(nng-close sock)` | Close the socket (idempotent; also called by GC) |
+| `nng-socket?` | `(nng-socket? x)` | Socket predicate |
+| `send!` | `(send! sock value [flag])` | Serialize and send; flags: `'text`, `'noblock`, `'wait` |
+| `recv!` | `(recv! sock [flag])` | Receive and deserialize; returns `#f` on timeout; flags: `'noblock`, `'wait` |
+| `nng-poll` | `(nng-poll items timeout-ms)` | Poll multiple sockets; returns list of ready sockets |
+| `nng-subscribe` | `(nng-subscribe sock topic)` | Set SUB topic filter (byte prefix) |
+| `nng-set-option` | `(nng-set-option sock option value)` | Set socket option (`'recv-timeout`, `'send-timeout`, `'survey-time`, …) |
+
+#### Actor model builtins (globally available)
+
+| Primitive | Signature | Description |
+|-----------|-----------|-------------|
+| `spawn` | `(spawn module-path [endpoint])` | Spawn a child `etai` process; returns parent-side PAIR socket |
+| `spawn-wait` | `(spawn-wait sock)` | Block until the child process exits; return exit code |
+| `spawn-kill` | `(spawn-kill sock)` | Forcibly terminate the child process |
+| `current-mailbox` | `(current-mailbox)` | Inside a spawned child: return the PAIR socket to the parent |
+
+#### Usage examples
+
+```scheme
+;; Safe socket management
+(with-socket 'req
+  (lambda (sock)
+    (nng-dial sock "tcp://localhost:5555")
+    (send! sock '(compute 42))
+    (recv! sock 'wait)))
+
+;; One-shot synchronous RPC
+(request-reply "tcp://localhost:5555" '(compute 42))
+
+;; Parallel fan-out
+(worker-pool "worker.eta" '(1 2 3 4 5))
+
+;; Subscribe to a topic stream
+(pub-sub "tcp://localhost:5556"
+         '("prices" "alerts")
+         (lambda (msg) (println msg)))
+
+;; Scatter-gather query
+(survey "tcp://*:5557" '(status?) 1000)
+```
+
+> **📖 Full documentation:**
+> [Networking Primitives](networking.md) ·
+> [Message Passing & Actors](message-passing.md) ·
+> [Examples](examples.md#networking--message-passing)
 
 ---
 

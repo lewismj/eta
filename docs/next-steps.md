@@ -2,116 +2,53 @@
 
 [← Back to README](../README.md) · [Architecture](architecture.md) ·
 [NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
-[Compiler](compiler.md) · [Runtime & GC](runtime.md) · [Modules & Stdlib](modules.md)
+[Compiler](compiler.md) · [Runtime & GC](runtime.md) · [Modules & Stdlib](modules.md) ·
+[Networking](networking.md) · [Message Passing](message-passing.md)
 
 ---
 
 ## Overview
 
 This document outlines the roadmap for Eta's next development phase.
-The core language, compiler, runtime, and libtorch integration are all
-shipped — the focus now shifts to three workstreams that improve the
-developer experience, extend the standard library, and make the runtime
-faster.
+The core language, compiler, runtime, libtorch integration, and nng-based
+actor model are all shipped.  The focus now shifts to five workstreams that
+improve the developer experience, extend the standard library, open Eta
+to arbitrary native code, and deepen the actor model.
 
 ```mermaid
 flowchart LR
-    NET["1 · Network\nStack"]
+    FFI["4 · Foreign\nFunction Interface"]
+    ACTOR["5 · Actor Model\nEnhancements"]
     DAP["2 · VS Code\nDebugger"]
     PERF["3 · Performance\nImprovements"]
 
-    NET --> DAP
+    FFI --> ACTOR
     DAP --> PERF
 
-    style NET  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style DAP  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style PERF fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style FFI   fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style ACTOR fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style DAP   fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style PERF  fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
 ---
 
-## 1 · Network Stack
+## 1 · Network Stack ✅
 
-> [!TIP]
-> A detailed design document for this workstream is available at
-> [Network & Message-Passing Parallelism](network-message-passing.md).
+The nng-based networking and actor model is **shipped**.
 
-### Motivation
+| Component | Status |
+|-----------|--------|
+| nng socket primitives (`nng-socket`, `send!`, `recv!`, …) | ✅ |
+| Actor model (`spawn`, `current-mailbox`, `spawn-wait`, `spawn-kill`) | ✅ |
+| `std.net` high-level helpers (`with-socket`, `request-reply`, `worker-pool`, `pub-sub`, `survey`) | ✅ |
+| Binary + text wire format with auto-detection | ✅ |
+| VS Code extension: syntax highlighting, snippets, DAP child process tree view | ✅ |
 
-Eta's port system currently supports file I/O and string ports, but has no
-networking primitives.  Adding TCP (and later UDP / TLS) support unlocks a
-large class of programs — HTTP clients and servers, database drivers,
-message-queue consumers, and distributed computing examples — all written
-in pure Eta.
-
-### Proposed API
-
-```scheme
-(module http-demo
-  (import std.core)
-  (import std.io)
-  (import std.net)
-  (begin
-    ;; TCP client
-    (let ((conn (tcp-connect "example.com" 80)))
-      (write-string "GET / HTTP/1.0\r\n\r\n" conn)
-      (println (read-line conn))
-      (close-port conn))
-
-    ;; TCP server
-    (let ((srv (tcp-listen 8080)))
-      (let loop ((client (tcp-accept srv)))
-        (write-string "HTTP/1.0 200 OK\r\n\r\nHello from Eta!\n" client)
-        (close-port client)
-        (loop (tcp-accept srv))))))
-```
-
-### Architecture
-
-```mermaid
-flowchart TD
-    ETA["Eta Program\n(import std.net)"]
-    STD["std.net Module\n(Eta wrappers)"]
-    PRIM["C++ Net Primitives\n(net_primitives.h)"]
-    PORT["Port Abstraction\n(port.h)"]
-    OS["OS Sockets\n(POSIX / Winsock)"]
-
-    ETA --> STD --> PRIM --> PORT --> OS
-
-    style ETA  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style STD  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style PRIM fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style PORT fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style OS   fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-```
-
-Network connections would be exposed as **ports** — the same abstraction
-used for files and string buffers — so `read-line`, `write-string`, and
-`close-port` work uniformly across all I/O kinds.
-
-### Planned Primitives
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `tcp-connect` | `(host port) → port` | Open a TCP client connection |
-| `tcp-listen` | `(port) → server-port` | Bind and listen on a TCP port |
-| `tcp-accept` | `(server-port) → port` | Accept an incoming connection |
-| `udp-socket` | `([port]) → port` | Create a UDP socket |
-| `udp-send` | `(port host port data)` | Send a UDP datagram |
-| `udp-recv` | `(port) → (data host port)` | Receive a UDP datagram |
-| `tls-connect` | `(host port) → port` | TCP + TLS handshake (stretch goal) |
-
-### Key Implementation Tasks
-
-| Task | Touches |
-|------|---------|
-| Platform socket abstraction (POSIX `socket` / Winsock `SOCKET`) | new `net/socket.h` |
-| `TcpPort` / `UdpPort` subclass of `PortObject` | `port.h`, `types/` |
-| `net_primitives.h` — register builtins | new `net_primitives.h` |
-| `std.net` Eta wrapper module | new `stdlib/std/net.eta` |
-| Non-blocking I/O & timeout support | `socket.h` |
-| TLS via OpenSSL / Schannel (stretch goal) | optional dependency |
-| Example: minimal HTTP server | `examples/` |
+> **📖 See:**
+> [Networking Primitives](networking.md) ·
+> [Message Passing & Actors](message-passing.md) ·
+> [Network Design](network-message-passing.md)
 
 ---
 
@@ -249,3 +186,120 @@ automatically.
 
 ---
 
+## 4 · Foreign Function Interface
+
+> [!TIP]
+> A detailed design document for this workstream is available at
+> [Foreign Function Interface](ffi.md).
+
+### Motivation
+
+Eta's FFI support is currently limited to C functions with `ptr` arguments
+and return values.  A more flexible FFI unlocks libraries and services
+written in any language, including C++, Rust, and Python.
+
+### Proposed API
+
+```scheme
+(module example
+  (import std.core)
+  (import std.io)
+  (import std.ffi)
+  (begin
+    ;; Call C function
+    (let ((puts (ffi-foreign "puts" (-> c-string int))))
+      (puts "Hello from Eta via C!"))
+
+    ;; Call Rust function
+    (let ((add (ffi-foreign "add" (-> int int int))))
+      (println (add 40 2 2)))
+
+    ;; Call Python function
+    (let ((py-obj (ffi-foreign "PyObject_GetAttrString" (-> ptr c-string))))
+      (println (py-obj (py-encode "hello"))))))
+```
+
+### Key Implementation Tasks
+
+| Task | Touches |
+|------|---------|
+| `ffi-foreign` implementation | `ffi.cpp`, `ffi.h` |
+| C++ / Rust / Python example integrations | `examples/` |
+| Documentation | `docs/` |
+
+---
+
+## 5 · Actor Model Enhancements
+
+> [!TIP]
+> A detailed design document for this workstream is available at
+> [Actor Model Enhancements](actor-model.md).
+
+### Motivation
+
+Eta's actor model provides a powerful concurrency primitive, but the
+current implementation has limitations in performance, error handling,
+and interoperability with non-actor code.
+
+### Proposed API
+
+```scheme
+(module actor-demo
+  (import std.core)
+  (import std.io)
+  (import std.actor)
+  (begin
+    ;; Spawn actor
+    (def hello-actor
+      (actor []
+        (println "Hello from actor!")
+        (loop-receive
+          ;; Handle messages
+          (msg
+            (case msg
+              ("stop" (println "Actor stopping.") (actor-stop))
+              (_ (println "Received:" msg))))))
+
+    ;; Send message to actor
+    (hello-actor "Eta greets you!")
+
+    ;; Spawn and wait for actor
+    (def worker
+      (actor []
+        (loop-receive
+          (msg
+            (case msg
+              ("do-work"
+                (println "Worker doing work...")
+                (actor-reply "work-done"))
+              (_ (println "Worker received unknown message"))))))
+
+    (worker "do-work")
+    (println "Waiting for worker...")
+    (actor-await worker)
+
+    ;; Supervise actor
+    (def supervisor
+      (actor []
+        (loop-receive
+          (msg
+            (case msg
+              ("start-worker"
+                (let ((w (actor-spawn worker)))
+                  (println "Supervisor started worker:" w)
+                  (actor-watch w))
+              (_ (println "Supervisor received:" msg))))))
+
+    (supervisor "start-worker")
+    (println "Supervisor is monitoring the worker."))))
+```
+
+### Key Implementation Tasks
+
+| Task | Touches |
+|------|---------|
+| Actor model performance optimisations | `actor.cpp`, `actor.h` |
+| Supervision and error handling enhancements | `actor.cpp`, `actor.h` |
+| Documentation | `docs/` |
+
+---

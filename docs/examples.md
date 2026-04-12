@@ -1,7 +1,8 @@
 # Eta — Language Examples 
 
 [← Back to README](../README.md) · [Quick Start](quickstart.md) ·
-[Architecture](architecture.md) · [Modules & Stdlib](modules.md)
+[Architecture](architecture.md) · [Modules & Stdlib](modules.md) ·
+[Networking](networking.md) · [Message Passing](message-passing.md)
 
 ---
 
@@ -34,6 +35,14 @@ etai examples/hello.eta
 | [`sabr.eta`](#sabr--sabr-vol-surface-with-tape-based-ad) | SABR vol surface with tape-based AD, Hagan approximation, Greeks |
 | [`logic.eta`](#logic-relations)                    | Relational logic programming: `parento`, `grandparento`, `membero`, bidirectional queries |
 | [`modules and imports`](#imports)                  | `import`, `export`, `only`, `except`, `rename`, `prefix` |
+| [`message-passing.eta`](#message-passing--parent--child-actor) | Erlang-style actor: `spawn`, `send!`, `recv!`, `current-mailbox` |
+| [`worker-pool.eta`](#worker-pool--parallel-fan-out) | Parallel fan-out: `worker-pool`, collect results from N workers |
+| [`echo-server.eta`](#echo-server--reqrep) | REQ/REP echo server; `request-reply` client |
+| [`pub-sub.eta`](#publish--subscribe) | PUB/SUB topic filtering; `nng-subscribe` |
+| [`scatter-gather.eta`](#scatter--gather) | SURVEYOR/RESPONDENT; `survey`, deadline-based collection |
+| [`parallel-map.eta`](#parallel-map) | Parallel map: Fibonacci via `worker-pool` |
+| [`monte-carlo.eta`](#monte-carlo--parallel-π-estimation) | Embarrassingly parallel Monte Carlo π estimation |
+| [`distributed-compute.eta`](#distributed-compute--cross-machine) | Cross-machine TCP messaging; two-process arithmetic server |
 
 ---
 
@@ -882,6 +891,286 @@ Prefix is especially useful when two modules export the same name:
     (a:process data)
     (b:process data)))
 ```
+
+---
+
+## Networking & Message Passing
+
+Requires the interpreter built with `-DETA_BUILD_NNG=ON` (the default).
+All examples import `(import std.net)` which provides both the raw nng
+primitives and high-level helpers.
+
+> [!TIP]
+> See [Networking Primitives](networking.md) for the complete nng API
+> reference and [Message Passing & Actors](message-passing.md) for the
+> actor model guide.
+
+---
+
+### [message-passing — parent / child actor](../examples/message-passing.eta)
+
+Demonstrates Erlang-style message passing between a parent process and a
+spawned child using a PAIR socket:
+
+- `(spawn module-path)` — launch a child, get back a socket handle
+- `(send! sock value 'wait)` — serialize and send a value
+- `(recv! sock 'wait)` — block until a message arrives
+- `(current-mailbox)` — child-side: get the socket to the parent
+- `(spawn-wait sock)` — block until the child process exits
+
+```scheme
+;; parent side
+(define worker (spawn "examples/message-passing-worker.eta"))
+(send! worker '(hello from-parent) 'wait)
+(define reply (recv! worker 'wait))     ; => (hello from-worker)
+
+(send! worker '(compute 21) 'wait)
+(define result (recv! worker 'wait))    ; => 42
+
+(send! worker '(exit) 'wait)
+(spawn-wait worker)
+(nng-close worker)
+```
+
+```scheme
+;; worker side (message-passing-worker.eta)
+(define mailbox (current-mailbox))
+(letrec ((loop (lambda ()
+                 (define msg (recv! mailbox 'wait))
+                 (cond
+                   ((equal? (car msg) 'hello)
+                    (send! mailbox '(hello from-worker) 'wait) (loop))
+                   ((equal? (car msg) 'compute)
+                    (send! mailbox (* (cadr msg) 2) 'wait) (loop))
+                   ((equal? (car msg) 'exit) #f)))))
+  (loop))
+```
+
+```bash
+etai examples/message-passing.eta
+```
+
+```
+parent: spawning worker...
+parent: sent (hello from-parent)
+parent: received: (hello from-worker)
+parent: compute result: 42
+parent: done.
+```
+
+---
+
+### [worker-pool — parallel fan-out](../examples/worker-pool.eta)
+
+Distributes a list of tasks across N spawned worker processes and
+collects results in submission order using `worker-pool` from `std.net`:
+
+```scheme
+(define tasks '(1 2 3 4 5))
+(define results
+  (worker-pool "examples/worker-pool-worker.eta" tasks))
+; => (2 4 6 8 10)
+```
+
+Each worker receives one task via `(recv! (current-mailbox) 'wait)`,
+computes a result, and sends it back.  `worker-pool` handles spawning,
+dispatching, collecting, and cleanup automatically.
+
+```bash
+etai examples/worker-pool.eta
+```
+
+---
+
+### [echo-server — REQ/REP](../examples/echo-server.eta)
+
+A standalone REP server that echoes any received message back unchanged.
+Demonstrates the request-reply protocol.
+
+```scheme
+;; echo-server.eta — run in one terminal
+(define sock (nng-socket 'rep))
+(nng-listen sock "tcp://*:5555")
+(letrec ((loop (lambda ()
+                 (define msg (recv! sock 'wait))
+                 (when msg (send! sock msg 'wait) (loop)))))
+  (loop))
+```
+
+```bash
+# Terminal 1
+etai examples/echo-server.eta
+
+# Terminal 2
+etai examples/echo-client.eta
+```
+
+```
+echo-client: got: (hello world)
+echo-client: got: "ping"
+echo-client: got: (1 2 3 4 5)
+```
+
+Or from the REPL (with server already running):
+```scheme
+(import std.net)
+(request-reply "tcp://localhost:5555" '(hello world))
+; => (hello world)
+```
+
+---
+
+### [publish / subscribe](../examples/pub-sub.eta)
+
+Demonstrates PUB/SUB topic filtering: a publisher broadcasts on multiple
+topic prefixes, subscribers receive only the topics they requested.
+
+Key points:
+- `(nng-socket 'pub)` / `(nng-socket 'sub)` — protocol pair
+- `(nng-subscribe sock "prices")` — subscribe to any message starting with `"prices"`
+- A fresh SUB socket discards all messages until at least one subscription is added
+- PUB/SUB is **best-effort** — slow subscribers may drop messages
+
+```scheme
+;; subscriber
+(define sub (nng-socket 'sub))
+(nng-dial sub "tcp://localhost:5556")
+(nng-subscribe sub "prices")   ; receive messages starting with "prices"
+(nng-subscribe sub "alert")    ; also receive "alert" messages
+(letrec ((loop (lambda ()
+                 (define msg (recv! sub 'wait))
+                 (when msg (println msg) (loop)))))
+  (loop))
+```
+
+```bash
+etai examples/pub-sub.eta
+```
+
+```
+sub received: (prices 100.5)
+sub received: (prices 101.0)
+sub received: (alert margin call)
+sub received: (prices 99.8)
+sub received: (alert low balance)
+sub received: (prices 102.3)
+```
+
+The `(weather sunny)` message from the publisher is silently filtered
+because neither `"prices"` nor `"alert"` matches the `"weather"` prefix.
+
+---
+
+### [scatter / gather](../examples/scatter-gather.eta)
+
+Demonstrates the SURVEYOR/RESPONDENT scatter-gather pattern: a surveyor
+broadcasts a question to all connected respondents and collects responses
+within a deadline.
+
+```scheme
+;; surveyor
+(define surveyor (nng-socket 'surveyor))
+(nng-listen surveyor "tcp://*:5557")
+(nng-set-option surveyor 'survey-time 1000)   ; 1 s deadline
+(send! surveyor '(status?) 'wait)             ; broadcast question
+;; collect until timeout
+(letrec ((collect (lambda (acc)
+                    (define r (recv! surveyor))
+                    (if r (collect (cons r acc)) (reverse acc)))))
+  (define responses (collect '())))
+```
+
+```bash
+etai examples/scatter-gather.eta
+```
+
+```
+scatter-gather: spawning respondents...
+scatter-gather: asking 'status?'...
+worker-0: answered survey
+worker-1: answered survey
+worker-2: answered survey
+scatter-gather: received 3 response(s)
+  (status worker-0 idle)
+  (status worker-1 idle)
+  (status worker-2 idle)
+scatter-gather: done.
+```
+
+---
+
+### [parallel map](../examples/parallel-map.eta)
+
+Applies a pure function to each element of a list in parallel by spawning
+one worker per input.  This example computes slow Fibonacci numbers to
+make the speedup visible:
+
+```scheme
+(define inputs '(30 31 32 33 34 35))
+(define results
+  (worker-pool "examples/parallel-map-worker.eta" inputs))
+; => (832040 1346269 2178309 3524578 5702887 9227465)
+```
+
+All 6 workers run simultaneously, so the total wall-clock time is
+approximately equal to the time for the single slowest task.
+
+```bash
+etai examples/parallel-map.eta
+```
+
+---
+
+### [monte-carlo — parallel π estimation](../examples/monte-carlo.eta)
+
+Estimates π by sampling random points in the unit square in parallel.
+Each worker uses an independent LCG seed so the samples are uncorrelated:
+
+```scheme
+(define estimates
+  (worker-pool "examples/monte-carlo-worker.eta"
+               (map (lambda (i) (list (* i 1000007) 50000))
+                    (range 0 8))))
+(define pi-estimate (/ (foldl + 0.0 estimates) 8))
+```
+
+```bash
+etai examples/monte-carlo.eta
+```
+
+```
+monte-carlo: estimating π using 8 workers × 50000 samples = 400000 total samples
+monte-carlo: π estimate = 3.14159...
+monte-carlo: true π     = 3.141592653589793
+monte-carlo: error      = 0.000003...
+```
+
+---
+
+### [distributed compute — cross-machine](../examples/distributed-compute.eta)
+
+Shows that the same `send!` / `recv!` API works transparently over TCP
+for cross-machine communication.  Run the server on one machine (or in a
+second terminal) and the client on another:
+
+```bash
+# Terminal 1 (server) — edit distributed-compute.eta to call (run-server)
+etai examples/distributed-compute.eta
+
+# Terminal 2 (client) — default, calls (run-client)
+etai examples/distributed-compute.eta
+```
+
+```
+client: (add 10 20) => 30
+client: (mul 6 7) => 42
+client: (fib 20) => 6765
+client: (add 100 200) => 300
+```
+
+Replace `"127.0.0.1"` with the server's real IP for cross-machine use.
+The Eta code on both sides is identical to the local spawn case — only
+the endpoint string changes.
 
 ---
 

@@ -21,8 +21,9 @@
   <a href="docs/optimization.md">Optimization</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
+  <a href="docs/networking.md">Networking</a> ·
+  <a href="docs/message-passing.md">Message Passing</a>
   <a href="docs/next-steps.md">Next Steps</a> ·
-  <a href="docs/network-message-passing.md">Network &amp; Message Passing</a>
 </p>
 <br>
 <p align="center">
@@ -68,6 +69,7 @@ full compilation pipeline).
 | **Reverse-Mode AAD** | VM-native tape-based automatic differentiation — standard arithmetic is recorded transparently when a `TapeRef` operand is present; zero closure overhead | [AAD](docs/aad.md) · [xVA](docs/xva.md) · [European Greeks](docs/european.md) · [SABR](docs/sabr.md) |
 | **Neural Networks (libtorch)** | Native C++ bindings to PyTorch's backend — tensors, autograd, NN layers, optimizers, and GPU offload from Eta code | [Torch](docs/torch.md) |
 | **Causal Inference** | Pearl's do-calculus engine, back-door / front-door adjustment, and end-to-end factor analysis | [Causal](docs/causal.md) |
+| **Message Passing & Actors** | Erlang-style actor model via nng: `spawn` child processes, `send!`/`recv!` over PAIR sockets, `worker-pool` parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT — network-transparent across machines | [Networking](docs/networking.md) · [Message Passing](docs/message-passing.md) |
 | **End-to-End Pipeline** | All domains compose: symbolic differentiation → do-calculus identification → logic/CLP validation → libtorch neural estimation | [Causal Factor Pipeline](docs/causal-factor.md) |
 
 The implementation ships as five executables and a VS Code extension:
@@ -187,6 +189,7 @@ debug. The extension provides:
 - **Heap Inspector** — live memory gauge, per-kind object stats, GC root tree with drill-down (`Ctrl+Shift+P` → *Eta: Show Heap Inspector*)
 - **Disassembly View** — live bytecode with current-PC marker in the Debug sidebar (`Ctrl+Shift+P` → *Eta: Show Disassembly*)
 - **GC Roots Tree** — expandable root categories (Stack, Globals, Frames), module-grouped globals, object drill-down
+- **Child Processes** — debug sidebar panel listing all spawned actor processes with PID, endpoint, and live/exited status
 
 <img src="docs/img/eta_example_run.png" alt="Eta example run in VS Code" width="500">
 
@@ -231,6 +234,7 @@ eta-v0.2.0-<platform>/
     std/
       core.eta  math.eta  io.eta  collections.eta  test.eta
       logic.eta  clp.eta  causal.eta  fact_table.eta  torch.eta
+      net.eta             # Networking & actor model (nng)
   examples/
     hello.eta           # Hello world & factorial
     basics.eta          # Arithmetic, let, lists, quoting
@@ -250,6 +254,21 @@ eta-v0.2.0-<platform>/
     fact-table.eta          # Columnar fact tables with hash-indexed queries
     torch.eta               # Tensor computing & neural network training (libtorch)
     causal_demo.eta         # Demo: symbolic + causal + logic/CLP + libtorch
+    message-passing.eta     # Erlang-style parent/child messaging (spawn/send!/recv!)
+    message-passing-worker.eta
+    worker-pool.eta         # Parallel fan-out: distribute tasks across N workers
+    worker-pool-worker.eta
+    echo-server.eta         # REP echo server (request-reply pattern)
+    echo-client.eta         # REQ echo client
+    pub-sub.eta             # PUB/SUB topic filtering
+    pub-sub-publisher.eta
+    scatter-gather.eta      # SURVEYOR/RESPONDENT scatter-gather
+    scatter-gather-worker.eta
+    parallel-map.eta        # Parallel map via worker-pool
+    parallel-map-worker.eta
+    monte-carlo.eta         # Parallel Monte Carlo π estimation
+    monte-carlo-worker.eta
+    distributed-compute.eta # Cross-machine TCP messaging (server + client)
     causal-factor/          # End-to-end causal factor analysis
     do-calculus/            # Do-calculus identification engine demos
   editors/
@@ -322,6 +341,7 @@ flowchart LR
 | **LSP Integration** | JSON-RPC language server for real-time diagnostics in any editor.                                                                                                                 |
 | **DAP Integration** | Debug Adapter Protocol server (`eta_dap`) enables breakpoints, step-through debugging, call-stack inspection, and REPL-style expression evaluation directly in VS Code.           |
 | **libtorch Integration** | Optional native bindings to PyTorch's C++ backend for tensors, autograd, neural-network layers, optimizers, and GPU offload. [→ Deep-dive](docs/torch.md) |
+| **nng Networking** | Erlang-style actor model: `spawn` processes, `send!`/`recv!`, `worker-pool` for parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT — network-transparent over IPC or TCP. [→ Deep-dive](docs/networking.md) · [Actor Model](docs/message-passing.md) |
 
 ---
 
@@ -340,6 +360,9 @@ flowchart LR
 | **[Runtime & GC](docs/runtime.md)**        | Heap architecture, object kinds, mark-sweep GC, intern table, factory                         |
 | **[Modules & Stdlib](docs/modules.md)**    | Module syntax, linker phases, import filters, standard library reference                      |
 | **[Language Guide](docs/examples.md)**     | Guided tour of the language using simple example programs with expected output                |
+| **[Networking Primitives](docs/networking.md)** | nng socket API: `nng-socket`, `send!`, `recv!`, `nng-poll`, endpoints, error handling   |
+| **[Message Passing & Actors](docs/message-passing.md)** | Actor model: `spawn`, `worker-pool`, REQ/REP, PUB/SUB, scatter-gather, timeouts  |
+| **[Network & Message Passing Design](docs/network-message-passing.md)** | Full design doc: architecture, phases, nng rationale             |
 | **[AAD](docs/aad.md)**                     | Reverse-mode automatic differentiation walkthrough                                            |
 | **[xVA](docs/xva.md)**                     | Finance use case: CVA, FVA, and sensitivities via AAD                                         |
 | **[European Greeks](docs/european.md)**    | BS option Greeks (first & second order) with custom VJP and Schwarz check                     |
@@ -350,7 +373,6 @@ flowchart LR
 | **[End-to-End Causal Pipeline](docs/causal-factor.md)** | Showcase: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE                             |
 | **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support               |
 | **[Next Steps](docs/next-steps.md)**       | Roadmap: network stack, VS Code debugger improvements, performance                            |
-| **[Network & Message Passing](docs/network-message-passing.md)** | Design doc: nng-based actor model, message passing, distributed computing                     |
 
 ---
 
@@ -370,6 +392,7 @@ The prelude auto-loads the following modules:
 | **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` — causal inference engine |
 | **`std.fact_table`** | `make-fact-table`, `fact-table-insert!`, `fact-table-query`, `fact-table-fold` — columnar fact tables |
 | **`std.torch`** | `tensor`, `forward`, `train-step!`, `sgd`, `adam` — libtorch neural networks |
+| **`std.net`** | `spawn`, `send!`, `recv!`, `worker-pool`, `with-socket`, `request-reply`, `pub-sub`, `survey` — Erlang-style actors & nng networking |
 | **`std.test`** | `assert-equal`, `assert-true`, `run-tests` — lightweight test framework |
 
 ```scheme
@@ -402,6 +425,7 @@ eta/
 │   ├── interpreter/            # etai + eta_repl (Driver orchestration)
 │   ├── lsp/                    # eta_lsp (Language Server Protocol, JSON-RPC over stdio)
 │   ├── dap/                    # eta_dap (Debug Adapter Protocol, DAP over stdio)
+│   ├── nng/                    # nng networking layer (optional, -DETA_BUILD_NNG=ON)
 │   ├── torch/                  # libtorch integration (optional, -DETA_BUILD_TORCH=ON)
 │   ├── test/                   # Boost.Test unit tests
 │   └── fuzz/                   # Fuzz testing (heap, intern table, nanbox)
@@ -417,6 +441,7 @@ eta/
 │       ├── causal.eta          # DAG utilities & Pearl do-calculus engine
 │       ├── fact_table.eta      # Columnar fact tables with hash indexes
 │       ├── torch.eta           # libtorch wrappers (tensors, NN, optimizers)
+│       ├── net.eta             # Networking & actor model (nng): spawn, send!, recv!, worker-pool
 │       └── test.eta            # Lightweight test framework
 ├── examples/                   # Example programs
 │   ├── hello.eta               # Hello world & factorial
