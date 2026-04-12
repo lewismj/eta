@@ -114,14 +114,19 @@ public:
     /// 3. Forks/creates the child: `etai <module_path> --mailbox <endpoint>`.
     /// 4. Stores the child handle and returns the boxed parent-side socket.
     ///
-    /// @param module_path  Path to the .eta module to run in the child.
-    /// @param heap         Heap for socket allocation.
-    /// @param intern       Intern table (unused directly; kept for API symmetry).
-    /// @param etai_path    Full path to the etai executable.
+    /// @param module_path        Path to the .eta module to run in the child.
+    /// @param heap               Heap for socket allocation.
+    /// @param intern             Intern table (kept for API symmetry).
+    /// @param etai_path          Full path to the etai executable.
+    /// @param module_search_path Colon/semicolon-separated search path to
+    ///                           forward to the child via ETA_MODULE_PATH.
+    ///                           Only applied if ETA_MODULE_PATH is NOT already
+    ///                           set in the environment (env var wins).
     std::expected<LispVal, RuntimeError>
     spawn(const std::string& module_path,
           Heap& heap, InternTable& intern,
-          const std::string& etai_path);
+          const std::string& etai_path,
+          const std::string& module_search_path = {});
 
     // ── wait / kill ───────────────────────────────────────────────────────
 
@@ -202,7 +207,8 @@ inline ProcessManager::ChildHandle* ProcessManager::find_by_socket(LispVal sock_
 inline std::expected<LispVal, RuntimeError>
 ProcessManager::spawn(const std::string& module_path,
                       Heap& heap, InternTable& /*intern*/,
-                      const std::string& etai_path)
+                      const std::string& etai_path,
+                      const std::string& module_search_path)
 {
     if (etai_path.empty()) {
         return std::unexpected(RuntimeError{VMError{
@@ -247,7 +253,20 @@ ProcessManager::spawn(const std::string& module_path,
     child.socket      = sock_val;
 
 #ifdef _WIN32
-    // Windows: build a command-line string and use CreateProcessA.
+    // ── Windows ────────────────────────────────────────────────────────────
+    // Propagate module search path via ETA_MODULE_PATH only if the variable
+    // is not already set in the current environment.
+    bool set_env_var = false;
+    if (!module_search_path.empty()) {
+        char existing[32767];
+        DWORD len = GetEnvironmentVariableA("ETA_MODULE_PATH", existing,
+                                             static_cast<DWORD>(sizeof(existing)));
+        if (len == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+            SetEnvironmentVariableA("ETA_MODULE_PATH", module_search_path.c_str());
+            set_env_var = true;
+        }
+    }
+
     std::string cmdline =
         "\"" + etai_path + "\" \"" + module_path +
         "\" --mailbox \"" + endpoint + "\"";
@@ -256,13 +275,17 @@ ProcessManager::spawn(const std::string& module_path,
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
 
-    if (!CreateProcessA(
-            nullptr,
-            const_cast<char*>(cmdline.c_str()),
-            nullptr, nullptr, FALSE,
-            0, nullptr, nullptr,
-            &si, &pi))
-    {
+    bool created = CreateProcessA(
+        nullptr,
+        const_cast<char*>(cmdline.c_str()),
+        nullptr, nullptr, FALSE,
+        0, nullptr, nullptr,
+        &si, &pi);
+
+    // Restore the environment variable state
+    if (set_env_var) SetEnvironmentVariableA("ETA_MODULE_PATH", nullptr);
+
+    if (!created) {
         return std::unexpected(RuntimeError{VMError{
             RuntimeErrorCode::InternalError,
             "spawn: CreateProcess failed (error " +
@@ -272,16 +295,7 @@ ProcessManager::spawn(const std::string& module_path,
     child.process_handle = pi.hProcess;
     child.process_id     = pi.dwProcessId;
 #else
-    // POSIX: fork + execv.
-    // argv: etai  <module_path>  --mailbox  <endpoint>  nullptr
-    const char* args[] = {
-        etai_path.c_str(),
-        module_path.c_str(),
-        "--mailbox",
-        endpoint.c_str(),
-        nullptr
-    };
-
+    // ── POSIX ──────────────────────────────────────────────────────────────
     pid_t pid = ::fork();
     if (pid < 0) {
         return std::unexpected(RuntimeError{VMError{
@@ -289,11 +303,20 @@ ProcessManager::spawn(const std::string& module_path,
             "spawn: fork() failed"}});
     }
     if (pid == 0) {
-        // ── Child process ──────────────────────────────────────────────
-        // Close any inherited nng file descriptors so they don't
-        // interfere with the child's fresh nng state.
+        // Child: propagate search path via ETA_MODULE_PATH only if not set.
+        // setenv with overwrite=0 leaves an existing value untouched.
+        if (!module_search_path.empty()) {
+            ::setenv("ETA_MODULE_PATH", module_search_path.c_str(), 0);
+        }
+
+        const char* args[] = {
+            etai_path.c_str(),
+            module_path.c_str(),
+            "--mailbox",
+            endpoint.c_str(),
+            nullptr
+        };
         ::execv(etai_path.c_str(), const_cast<char**>(args));
-        // execv only returns on error
         ::_exit(127);
     }
     child.process_id = pid;

@@ -90,10 +90,27 @@ public:
         if (etai_path.empty()) etai_path = detect_etai_path();
         etai_path_ = etai_path;
 
+        // Build colon-separated module search path to forward to child processes.
+        // Child receives this via ETA_MODULE_PATH only if ETA_MODULE_PATH is not
+        // already set in the environment (so user env overrides always win).
+        std::string module_search_path;
+        {
+#ifdef _WIN32
+            constexpr char path_sep = ';';
+#else
+            constexpr char path_sep = ':';
+#endif
+            for (const auto& d : resolver_.dirs()) {
+                if (!module_search_path.empty()) module_search_path += path_sep;
+                module_search_path += d.string();
+            }
+        }
+
         // Phase 5: nng networking + actor-model primitives
         eta::nng::register_nng_primitives(
             builtins_, heap_, intern_table_,
-            &proc_mgr_, etai_path_, &mailbox_val_);
+            &proc_mgr_, etai_path_, &mailbox_val_,
+            module_search_path);
 #endif
 
         // Wire up function resolver

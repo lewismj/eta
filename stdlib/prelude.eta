@@ -1076,6 +1076,129 @@
 
 
 ;; ════════════════════════════════════════════════════════════════════
+;; std.net — Networking and message-passing (nng / actor model).
+;;
+;; Requires: -DETA_BUILD_NNG=ON  (otherwise nng builtins are absent).
+;;
+;; Low-level nng primitives are available as global builtins when NNG
+;; is compiled in:
+;;   nng-socket  nng-listen  nng-dial  nng-close  nng-socket?
+;;   send!  recv!  nng-poll  nng-subscribe  nng-set-option
+;;   spawn  spawn-kill  spawn-wait  current-mailbox
+;;
+;; This module adds high-level Erlang-inspired helpers on top.
+;; See docs/network-message-passing.md § Phase 5 for details.
+;; ════════════════════════════════════════════════════════════════════
+
+(module std.net
+  (export
+    ;; High-level patterns
+    with-socket        ; dynamic-wind wrapper for safe socket lifetime
+    request-reply      ; synchronous single request/reply round-trip
+    worker-pool        ; distribute tasks across N spawned workers
+    pub-sub            ; subscribe and drive an event loop
+    survey)            ; scatter-gather query via SURVEYOR/RESPONDENT
+  (begin
+
+    ;; ── with-socket ──────────────────────────────────────────────────
+    ;; (with-socket type thunk) → result of thunk
+    ;;
+    ;; Creates a socket of the given type symbol ('pair, 'req, 'rep,
+    ;; 'pub, 'sub, 'push, 'pull, 'surveyor, 'respondent, 'bus), runs
+    ;; thunk with the socket as its argument, and closes the socket via
+    ;; dynamic-wind so cleanup happens even on continuation escape.
+    ;; Implementation note: Eta let-bindings are captured by value in
+    ;; closures, so set! on a let variable is not visible across lambda
+    ;; boundaries.  We use a single-element vector as a mutable box to
+    ;; share the socket reference between the before- and after-thunks.
+    (defun with-socket (type thunk)
+      (let ((box (make-vector 1 #f)))
+        (dynamic-wind
+          (lambda () (vector-set! box 0 (nng-socket type)))
+          (lambda () (thunk (vector-ref box 0)))
+          (lambda ()
+            (let ((s (vector-ref box 0)))
+              (when s (nng-close s)))))))
+
+    ;; ── request-reply ───────────────────────────────────────────────
+    ;; (request-reply endpoint message) → reply value
+    ;;
+    ;; Opens a fresh REQ socket, dials endpoint, sends message, and
+    ;; blocks until exactly one reply arrives, then closes the socket.
+    (defun request-reply (endpoint message)
+      (with-socket 'req
+        (lambda (sock)
+          (nng-dial sock endpoint)
+          (send! sock message)
+          (recv! sock 'wait))))
+
+    ;; ── worker-pool ─────────────────────────────────────────────────
+    ;; (worker-pool module-path tasks) → list of results
+    ;;
+    ;; Spawns one child Eta process per task, sends each worker its
+    ;; task, collects one reply from each (in spawn order), cleans up
+    ;; all sockets, and returns the list of results.
+    ;;
+    ;; The worker module must recv! its task from (current-mailbox)
+    ;; and send! its result back.
+    (defun worker-pool (module-path tasks)
+      (let ((workers (map (lambda (dummy) (spawn module-path)) tasks)))
+        ;; Dispatch: send each task to its dedicated worker
+        (letrec ((dispatch (lambda (ws ts)
+                             (when (not (null? ws))
+                               (send! (car ws) (car ts))
+                               (dispatch (cdr ws) (cdr ts))))))
+          (dispatch workers tasks))
+        ;; Collect: wait for each worker's result (in spawn order)
+        (let ((results (map (lambda (w) (recv! w 'wait)) workers)))
+          ;; Cleanup: close all parent-side sockets
+          (for-each nng-close workers)
+          results)))
+
+    ;; ── pub-sub ─────────────────────────────────────────────────────
+    ;; (pub-sub listen-endpoint topics handler) → loops indefinitely
+    ;;
+    ;; Connects a SUB socket to listen-endpoint, subscribes to each
+    ;; topic string in topics, and calls handler on every received
+    ;; message.  Returns only when recv! returns #f (socket closed /
+    ;; peer disconnected).
+    (defun pub-sub (listen-endpoint topics handler)
+      (with-socket 'sub
+        (lambda (sock)
+          (nng-dial sock listen-endpoint)
+          (for-each (lambda (t) (nng-subscribe sock t)) topics)
+          (letrec ((loop (lambda ()
+                           (let ((msg (recv! sock)))
+                             (when msg (handler msg)))
+                           (loop))))
+            (loop)))))
+
+    ;; ── survey ──────────────────────────────────────────────────────
+    ;; (survey endpoint question timeout-ms) → list of responses
+    ;;
+    ;; Opens a SURVEYOR socket on endpoint, sets the survey deadline
+    ;; to timeout-ms ms, sends question, and collects all responses
+    ;; that arrive before the deadline.  Returns them in arrival order.
+    ;;
+    ;; recv! returns #f when the survey deadline has passed, which
+    ;; terminates the collection loop.
+    (defun survey (endpoint question timeout-ms)
+      (with-socket 'surveyor
+        (lambda (sock)
+          (nng-listen sock endpoint)
+          (nng-set-option sock 'survey-time timeout-ms)
+          (send! sock question)
+          (letrec ((collect (lambda (responses)
+                              (let ((r (recv! sock)))
+                                (if r
+                                    (collect (cons r responses))
+                                    (reverse responses))))))
+            (collect '())))))
+
+  ))
+
+
+;; ════════════════════════════════════════════════════════════════════
 ;; std.prelude — Re-exports from all standard library modules.
 ;;
 ;; (import std.prelude) gives you everything in one shot.
@@ -1090,6 +1213,7 @@
   (import std.clp)
   (import std.causal)
   (import std.fact_table)
+  (import std.net)
   (export
     ;; std.core
     atom? void
@@ -1162,7 +1286,13 @@
     fact-table-row
     fact-table-for-each
     fact-table-filter
-    fact-table-fold)
+    fact-table-fold
+    ;; std.net
+    with-socket
+    request-reply
+    worker-pool
+    pub-sub
+    survey)
   (begin
     ;; All names are already imported — nothing else to define.
   ))

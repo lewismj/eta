@@ -1,0 +1,34 @@
+;;; examples/message-passing-worker.eta — Child process for message-passing.eta
+;;;
+;;; Launched by the parent via (spawn "examples/message-passing-worker.eta").
+;;; Receives messages from the parent via (current-mailbox) and replies.
+
+(module message-passing-worker
+  (import std.io)
+  (begin
+
+    (define mailbox (current-mailbox))
+
+    ;; Simple message dispatch loop
+    (letrec ((loop (lambda ()
+                     (let ((msg (recv! mailbox 'wait)))
+                       (cond
+                         ;; Greeting — echo back
+                         ((and (pair? msg) (eq? (car msg) 'hello))
+                          (send! mailbox '(hello from-worker) 'wait)
+                          (loop))
+                         ;; Compute request — double the number
+                         ((and (pair? msg) (eq? (car msg) 'compute))
+                          (let ((n (car (cdr msg))))
+                            (send! mailbox (* n 2) 'wait))
+                          (loop))
+                         ;; Exit signal — stop looping
+                         ((and (pair? msg) (eq? (car msg) 'exit))
+                          (display "worker: exiting cleanly")
+                          (newline))
+                         ;; Unknown
+                         (#t
+                          (send! mailbox '(unknown-message) 'wait)
+                          (loop)))))))
+      (loop))))
+

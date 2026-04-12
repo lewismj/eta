@@ -134,16 +134,20 @@ inline std::optional<NngProtocol> parse_protocol(const std::string& name) {
 /// primitives registered (so arity checking still works in the LSP/analyzer)
 /// but they return a clear error when actually called without a process manager.
 ///
-/// @param proc_mgr   ProcessManager owned by the Driver. nullptr = no spawning.
-/// @param etai_path  Full path to the etai executable. Empty = no spawning.
-/// @param mailbox_val Pointer to the Driver's mailbox_val_ field (child only).
+/// @param proc_mgr          ProcessManager owned by the Driver. nullptr = no spawning.
+/// @param etai_path         Full path to the etai executable. Empty = no spawning.
+/// @param mailbox_val       Pointer to the Driver's mailbox_val_ field (child only).
+/// @param module_search_path Colon/semicolon-separated module search path to
+///                           propagate to spawned children via ETA_MODULE_PATH
+///                           (only if ETA_MODULE_PATH is not already set in env).
 ///
 /// Registration order MUST match the ETA_HAS_NNG section in builtin_names.h.
 inline void register_nng_primitives(
     BuiltinEnvironment& env, Heap& heap, InternTable& intern,
-    ProcessManager* proc_mgr   = nullptr,
-    std::string     etai_path  = {},
-    LispVal*        mailbox_val = nullptr)
+    ProcessManager* proc_mgr          = nullptr,
+    std::string     etai_path         = {},
+    LispVal*        mailbox_val       = nullptr,
+    std::string     module_search_path = {})
 {
     // ── nng-socket ─────────────────────────────────────────────────────────
     // (nng-socket type-symbol) → socket
@@ -557,7 +561,7 @@ inline void register_nng_primitives(
 
     // ── Phase 4: spawn ─────────────────────────────────────────────────────
     env.register_builtin("spawn", 1, true,
-        [&heap, &intern, proc_mgr, etai_path](Args args) -> std::expected<LispVal, RuntimeError> {
+        [&heap, &intern, proc_mgr, etai_path, module_search_path](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!proc_mgr || etai_path.empty()) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::InternalError,
@@ -575,7 +579,8 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::InternalError,
                     "spawn: failed to resolve module path string"}});
             }
-            return proc_mgr->spawn(std::string(*path_sv), heap, intern, etai_path);
+            return proc_mgr->spawn(std::string(*path_sv), heap, intern,
+                                   etai_path, module_search_path);
         });
 
     // ── spawn-kill ─────────────────────────────────────────────────────────

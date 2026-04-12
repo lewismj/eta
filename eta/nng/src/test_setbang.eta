@@ -1,0 +1,25 @@
+(module test-setbang
+  (begin
+    ;; Test if set! inside one closure is visible in another
+    ;; (standard Scheme shared mutable binding semantics)
+    (let ((x #f))
+      (define setter (lambda () (set! x 42)))
+      (define getter (lambda () x))
+      (setter)
+      (display "After setter, getter sees: ")
+      (display (getter))
+      (newline))
+
+    ;; Test set! with dynamic-wind specifically
+    (let ((v #f))
+      (dynamic-wind
+        (lambda () (set! v 99))
+        (lambda ()
+          (display "In body, v = ")
+          (display v)
+          (newline))
+        (lambda ()
+          (display "In after, v = ")
+          (display v)
+          (newline))))))
+

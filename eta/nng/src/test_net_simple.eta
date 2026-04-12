@@ -1,0 +1,42 @@
+(module test-net-simple
+  (import std.net)
+  (begin
+
+    ;; Test 1: Basic nng-socket works
+    (define s1 (nng-socket 'pair))
+    (display "created pair socket: ")
+    (display (nng-socket? s1))
+    (newline)
+    (nng-close s1)
+
+    ;; Test 2: with-socket — inline debugging
+    (let ((outer-sock #f))
+      (dynamic-wind
+        (lambda () (set! outer-sock (nng-socket 'pair)))
+        (lambda ()
+          (display "inside dynamic-wind body, socket?: ")
+          (display (nng-socket? outer-sock))
+          (newline)
+          (nng-listen outer-sock "inproc://dbg-test")
+          (display "listen OK")
+          (newline))
+        (lambda ()
+          (when outer-sock (nng-close outer-sock))
+          (display "cleanup OK")
+          (newline))))
+
+    ;; Test 3: with-socket helper
+    (define r
+      (with-socket 'pair
+        (lambda (sock)
+          (display "with-socket thunk, sock type: ")
+          (display (nng-socket? sock))
+          (newline)
+          42)))
+    (display "with-socket result: ")
+    (display r)
+    (newline)
+
+    (display "Done.")
+    (newline)))
+
