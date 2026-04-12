@@ -203,6 +203,11 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("nng-poll",       2, false);
     r("nng-subscribe",  2, false);
     r("nng-set-option", 3, false);
+    // Phase 4 — actor model
+    r("spawn",           1, true);
+    r("spawn-kill",      1, false);
+    r("spawn-wait",      1, false);
+    r("current-mailbox", 0, false);
 #endif // ETA_HAS_NNG
 
 #ifdef ETA_HAS_TORCH

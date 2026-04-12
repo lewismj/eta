@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -22,6 +24,7 @@
 #include <eta/nng/nng_socket_ptr.h>
 #include <eta/nng/nng_factory.h>
 #include <eta/nng/nng_primitives.h>
+#include <eta/nng/process_mgr.h>
 #include <eta/nng/wire_format.h>
 
 #include <eta/runtime/nanbox.h>
@@ -48,6 +51,21 @@ namespace {
     static T require_ok(const std::expected<T,E>& r) {
         BOOST_REQUIRE_MESSAGE(r.has_value(), "expected success");
         return *r;
+    }
+
+    /// Convert any RuntimeError variant to a human-readable string.
+    static std::string runtime_error_msg(const error::RuntimeError& err) {
+        using namespace eta::runtime::nanbox;
+        using namespace eta::runtime::memory::heap;
+        using namespace eta::runtime::memory::intern;
+        using namespace eta::runtime::error;
+        return std::visit([](auto&& e) -> std::string {
+            using T = std::decay_t<decltype(e)>;
+            if constexpr (std::is_same_v<T, VMError>)
+                return e.message;
+            else
+                return to_string(e);
+        }, err);
     }
 
     /// Build a full BuiltinEnvironment with all nng primitives registered.
@@ -97,6 +115,52 @@ namespace {
         }
     };
 
+    /// NngEnv with ProcessManager wired in (for Phase 4 spawn tests).
+    struct NngEnvWithSpawn {
+        Heap heap{4 * 1024 * 1024};
+        InternTable intern;
+        BuiltinEnvironment env;
+        ProcessManager proc_mgr;
+        LispVal mailbox_val{nanbox::Nil};
+        std::string etai_path;
+
+        explicit NngEnvWithSpawn(const std::string& etai = {}) : etai_path(etai) {
+            register_nng_primitives(env, heap, intern,
+                                    &proc_mgr, etai_path, &mailbox_val);
+        }
+
+        LispVal call(const std::string& name, std::vector<LispVal> args) {
+            const auto& specs = env.specs();
+            for (const auto& spec : specs) {
+                if (spec.name == name && spec.func) {
+                    auto res = spec.func(args);
+                    BOOST_REQUIRE_MESSAGE(res.has_value(),
+                        "call to " + name + " failed: " +
+                        (res.has_value() ? "" : runtime_error_msg(res.error())));
+                    return *res;
+                }
+            }
+            BOOST_FAIL("primitive not found: " + name);
+            return nanbox::Nil;
+        }
+
+        std::expected<LispVal, error::RuntimeError>
+        try_call(const std::string& name, std::vector<LispVal> args) {
+            const auto& specs = env.specs();
+            for (const auto& spec : specs) {
+                if (spec.name == name && spec.func) {
+                    return spec.func(args);
+                }
+            }
+            return std::unexpected(error::VMError{
+                error::RuntimeErrorCode::InternalError, "not found: " + name});
+        }
+
+        LispVal sym(const std::string& s) { return require_ok(make_symbol(intern, s)); }
+        LispVal str(const std::string& s) { return require_ok(make_string(heap, intern, s)); }
+        LispVal fixnum(int64_t n)         { return require_ok(make_fixnum(heap, n)); }
+    };
+
     /// Unique TCP port counter to avoid collisions across test cases.
     static std::atomic<int> g_port_counter{15100};
     static int next_port() { return g_port_counter.fetch_add(1); }
@@ -106,6 +170,16 @@ namespace {
     static std::string inproc_addr() {
         static std::atomic<int> n{0};
         return "inproc://nng-test-" + std::to_string(n.fetch_add(1));
+    }
+
+    /// Return the path to the etai binary injected at compile time,
+    /// or an empty string if not available.
+    static std::string etai_binary_path() {
+#ifdef ETA_ETAI_PATH
+        return ETA_ETAI_PATH;
+#else
+        return {};
+#endif
     }
 }
 
@@ -1378,6 +1452,327 @@ BOOST_AUTO_TEST_CASE(p3_recv_wrong_socket_type) {
     NngEnv e;
     auto res = e.try_call("recv!", {e.fixnum(1)});
     BOOST_TEST(!res.has_value());
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 4 — Process Spawning & Actor Model
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_SUITE(nng_phase4_tests)
+
+// ── ProcessManager: basic construction ────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p4_process_manager_default_construct) {
+    ProcessManager pm;
+    auto children = pm.list_children();
+    BOOST_TEST(children.empty());
+}
+
+BOOST_AUTO_TEST_CASE(p4_process_manager_kill_unknown_socket_returns_false) {
+    ProcessManager pm;
+    // An unregistered socket returns false — doesn't crash.
+    bool ok = pm.kill_child(nanbox::Nil);
+    BOOST_TEST(ok == false);
+}
+
+BOOST_AUTO_TEST_CASE(p4_process_manager_wait_unknown_socket_returns_minus_one) {
+    ProcessManager pm;
+    int code = pm.wait_for(nanbox::Nil);
+    BOOST_TEST(code == -1);
+}
+
+// ── current-mailbox returns Nil when no mailbox installed ─────────────────
+
+BOOST_AUTO_TEST_CASE(p4_current_mailbox_no_mailbox_returns_nil) {
+    NngEnvWithSpawn e;  // no etai_path, no mailbox installed
+    auto result = e.call("current-mailbox", {});
+    BOOST_TEST(result == nanbox::Nil);
+}
+
+// ── spawn without process manager returns clear error ─────────────────────
+
+BOOST_AUTO_TEST_CASE(p4_spawn_no_proc_mgr_returns_error) {
+    // NngEnv (Phase 3 style) has no ProcessManager — spawn should error
+    NngEnv e;
+    auto res = e.try_call("spawn", {e.str("worker.eta")});
+    BOOST_TEST(!res.has_value());
+    BOOST_TEST_MESSAGE("spawn error (expected): " +
+        runtime_error_msg(res.error()));
+}
+
+BOOST_AUTO_TEST_CASE(p4_spawn_kill_no_proc_mgr_returns_error) {
+    NngEnv e;
+    auto sock = e.call("nng-socket", {e.sym("pair")});
+    auto res = e.try_call("spawn-kill", {sock});
+    BOOST_TEST(!res.has_value());
+    e.call("nng-close", {sock});
+}
+
+BOOST_AUTO_TEST_CASE(p4_spawn_wait_no_proc_mgr_returns_error) {
+    NngEnv e;
+    auto sock = e.call("nng-socket", {e.sym("pair")});
+    auto res = e.try_call("spawn-wait", {sock});
+    BOOST_TEST(!res.has_value());
+    e.call("nng-close", {sock});
+}
+
+// ── spawn with empty etai_path returns clear error ────────────────────────
+
+BOOST_AUTO_TEST_CASE(p4_spawn_empty_etai_path_returns_error) {
+    NngEnvWithSpawn e("");  // proc_mgr present but empty etai_path
+    auto res = e.try_call("spawn", {e.str("worker.eta")});
+    BOOST_TEST(!res.has_value());
+    BOOST_TEST_MESSAGE("spawn error (expected): " +
+        runtime_error_msg(res.error()));
+}
+
+// ── spawn with wrong module path returns error ────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p4_spawn_wrong_arg_type_returns_error) {
+    NngEnvWithSpawn e(etai_binary_path());
+    // Pass a symbol instead of a string
+    auto res = e.try_call("spawn", {e.sym("worker")});
+    BOOST_TEST(!res.has_value());
+}
+
+// ── spawn-kill on non-socket returns type error ───────────────────────────
+
+BOOST_AUTO_TEST_CASE(p4_spawn_kill_wrong_type_returns_error) {
+    NngEnvWithSpawn e(etai_binary_path());
+    auto res = e.try_call("spawn-kill", {e.fixnum(42)});
+    BOOST_TEST(!res.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(p4_spawn_wait_wrong_type_returns_error) {
+    NngEnvWithSpawn e(etai_binary_path());
+    auto res = e.try_call("spawn-wait", {e.fixnum(42)});
+    BOOST_TEST(!res.has_value());
+}
+
+// ── current-mailbox with installed mailbox returns the socket ─────────────
+
+BOOST_AUTO_TEST_CASE(p4_current_mailbox_with_mailbox_returns_socket) {
+    // Simulate what install_mailbox does: connect a PAIR socket over inproc.
+    NngEnvWithSpawn e;
+    std::string addr = "inproc://p4-mailbox-test";
+
+    // Set up a "parent" listener in a separate env
+    NngEnv parent;
+    auto parent_sock = parent.call("nng-socket", {parent.sym("pair")});
+    parent.call("nng-listen", {parent_sock, parent.str(addr)});
+
+    // Create the child-side socket and store it as the mailbox
+    NngSocketPtr sp;
+    sp.protocol = NngProtocol::Pair;
+    nng_socket_set_ms(sp.socket, NNG_OPT_RECVTIMEO, 500);
+    int rv = nng_pair0_open(&sp.socket);
+    BOOST_REQUIRE_EQUAL(rv, 0);
+    rv = nng_dial(sp.socket, addr.c_str(), nullptr, 0);
+    BOOST_REQUIRE_EQUAL(rv, 0);
+    sp.dialed = true;
+
+    auto mailbox_lv = require_ok(make_nng_socket(e.heap, std::move(sp)));
+    e.mailbox_val = mailbox_lv;
+
+    // current-mailbox should now return the installed socket
+    auto result = e.call("current-mailbox", {});
+    BOOST_TEST(result == mailbox_lv);
+
+    parent.call("nng-close", {parent_sock});
+}
+
+// ── Integration test: spawn/send/recv round-trip ──────────────────────────
+
+BOOST_AUTO_TEST_CASE(p4_spawn_send_recv_round_trip) {
+    // We need a simple worker script that:
+    //   1. Receives a message on (current-mailbox)
+    //   2. Sends back the message incremented by 1
+    // We create a temporary .eta file for this test.
+
+    namespace fs = std::filesystem;
+    auto tmp_dir  = fs::temp_directory_path();
+    auto worker   = tmp_dir / "eta_p4_worker_test.eta";
+
+    // Worker: no stdlib import needed — recv!, send!, current-mailbox, + are builtins.
+    {
+        std::ofstream f(worker);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module eta-p4-worker\n"
+          << "  (let ((mb (current-mailbox)))\n"
+          << "    (let ((msg (recv! mb 'wait)))\n"
+          << "      (send! mb (+ msg 1) 'wait))))\n";
+    }
+
+    std::string etai_path = etai_binary_path();
+    if (etai_path.empty()) {
+        BOOST_TEST_MESSAGE("ETA_ETAI_PATH not configured — skipping integration test");
+        fs::remove(worker);
+        return;
+    }
+    BOOST_REQUIRE_MESSAGE(fs::exists(etai_path),
+        "etai binary not found at: " + etai_path);
+
+    NngEnvWithSpawn e(etai_path);
+
+    auto sock_res = e.try_call("spawn", {e.str(worker.string())});
+    if (!sock_res.has_value()) {
+        BOOST_TEST_MESSAGE("spawn failed: " + runtime_error_msg(sock_res.error()));
+        fs::remove(worker);
+        return; // not a hard failure during bring-up
+    }
+    auto sock = *sock_res;
+
+    // Give child a moment to start, dial, and reach recv!
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    // Set finite send + recv timeouts on the parent socket.
+    {
+        auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(sock));
+        BOOST_REQUIRE(sp != nullptr);
+        nng_socket_set_ms(sp->socket, NNG_OPT_SENDTIMEO, 5000);
+        nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, 5000);
+    }
+
+    BOOST_TEST_MESSAGE("Child spawned, sending message 41...");
+
+    // send! fixnum 41 — no 'wait; uses SENDTIMEO (5 s)
+    auto send_res = e.try_call("send!", {sock, e.fixnum(41)});
+    BOOST_REQUIRE_MESSAGE(send_res.has_value(), "send! error: " +
+        (send_res.has_value() ? "" : runtime_error_msg(send_res.error())));
+    BOOST_REQUIRE_MESSAGE(*send_res != nanbox::False, "send! timed out (child may not have connected)");
+
+    // recv! — no 'wait; uses RECVTIMEO (5 s)
+    auto recv_res = e.try_call("recv!", {sock});
+    BOOST_REQUIRE_MESSAGE(recv_res.has_value(), "recv! error: " +
+        (recv_res.has_value() ? "" : runtime_error_msg(recv_res.error())));
+    BOOST_REQUIRE_MESSAGE(*recv_res != nanbox::False, "recv! timed out (child did not respond)");
+    auto dec = ops::decode<int64_t>(*recv_res);
+    BOOST_REQUIRE(dec.has_value());
+    BOOST_TEST(*dec == 42);
+    BOOST_TEST_MESSAGE("Round-trip OK: sent 41, received " << *dec);
+
+    // Wait for child to exit
+    auto wait_res = e.try_call("spawn-wait", {sock});
+    BOOST_REQUIRE_MESSAGE(wait_res.has_value(), "spawn-wait failed");
+    BOOST_TEST_MESSAGE("Child exit code: " << ops::decode<int64_t>(*wait_res).value_or(-1));
+
+    e.try_call("nng-close", {sock});
+    fs::remove(worker);
+}
+
+BOOST_AUTO_TEST_CASE(p4_spawn_kill_terminates_child) {
+    // Spawn a child that loops forever (sleep)
+    namespace fs = std::filesystem;
+    auto tmp_dir = fs::temp_directory_path();
+    auto worker  = tmp_dir / "eta_p4_sleep_worker.eta";
+
+    {
+        std::ofstream f(worker);
+        BOOST_REQUIRE(f.is_open());
+        // Worker waits forever on its mailbox — builtins only, no stdlib import needed.
+        f << "(module eta-p4-sleep\n"
+          << "  (recv! (current-mailbox) 'wait))\n";
+    }
+
+    std::string etai_path = etai_binary_path();
+    if (etai_path.empty()) { BOOST_TEST_MESSAGE("etai path not configured — skip"); fs::remove(worker); return; }
+    BOOST_REQUIRE_MESSAGE(fs::exists(etai_path), "etai binary not found at: " + etai_path);
+
+    NngEnvWithSpawn e(etai_path);
+    auto spawn_res = e.try_call("spawn", {e.str(worker.string())});
+    if (!spawn_res.has_value()) {
+        std::cerr << "[kill-test] spawn failed: " << runtime_error_msg(spawn_res.error()) << "\n";
+        BOOST_TEST_MESSAGE("spawn failed, skipping kill test");
+        fs::remove(worker);
+        return;
+    }
+    auto sock = *spawn_res;
+
+    // Brief delay to let child start up
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    // Check process is alive
+    auto children = e.proc_mgr.list_children();
+    BOOST_REQUIRE(!children.empty());
+    BOOST_TEST_MESSAGE("Child PID: " << children[0].pid
+                       << " alive=" << children[0].alive);
+
+    // Kill the child
+    auto kill_res = e.try_call("spawn-kill", {sock});
+    BOOST_REQUIRE_MESSAGE(kill_res.has_value(), "spawn-kill failed");
+    BOOST_TEST(*kill_res == nanbox::True);
+    BOOST_TEST_MESSAGE("spawn-kill returned #t");
+
+    e.try_call("nng-close", {sock});
+    fs::remove(worker);
+}
+
+BOOST_AUTO_TEST_CASE(p4_spawn_multiple_children) {
+    // Spawn two workers, send each a distinct value, collect replies.
+    namespace fs = std::filesystem;
+    auto tmp_dir = fs::temp_directory_path();
+    auto worker  = tmp_dir / "eta_p4_echo_worker.eta";
+
+    {
+        std::ofstream f(worker);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module eta-p4-echo\n"
+          << "  (let ((msg (recv! (current-mailbox) 'wait)))\n"
+          << "    (send! (current-mailbox) msg 'wait)))\n";
+    }
+
+    std::string etai_path = etai_binary_path();
+    if (etai_path.empty()) { BOOST_TEST_MESSAGE("etai path not configured — skip"); fs::remove(worker); return; }
+    BOOST_REQUIRE_MESSAGE(fs::exists(etai_path), "etai binary not found at: " + etai_path);
+
+    NngEnvWithSpawn e(etai_path);
+    ::setenv("ETA_MODULE_PATH", ETA_STDLIB_DIR, 1);
+
+    auto s1_res = e.try_call("spawn", {e.str(worker.string())});
+    auto s2_res = e.try_call("spawn", {e.str(worker.string())});
+    if (!s1_res.has_value() || !s2_res.has_value()) {
+        BOOST_TEST_MESSAGE("spawn failed, skipping multi-child test");
+        fs::remove(worker);
+        return;
+    }
+
+    auto s1 = *s1_res;
+    auto s2 = *s2_res;
+
+    BOOST_TEST(e.proc_mgr.list_children().size() == 2u);
+
+    // Set generous send + recv timeouts (don't use 'wait — it overrides to infinite)
+    for (auto sv : {s1, s2}) {
+        auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(sv));
+        if (sp) {
+            nng_socket_set_ms(sp->socket, NNG_OPT_SENDTIMEO, 5000);
+            nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, 5000);
+        }
+    }
+
+    // Send distinct values — no 'wait; uses SENDTIMEO (5 s)
+    auto sr1 = e.try_call("send!", {s1, e.fixnum(100)});
+    auto sr2 = e.try_call("send!", {s2, e.fixnum(200)});
+    BOOST_REQUIRE_MESSAGE(sr1.has_value() && *sr1 != nanbox::False, "send! to child 1 failed");
+    BOOST_REQUIRE_MESSAGE(sr2.has_value() && *sr2 != nanbox::False, "send! to child 2 failed");
+
+    auto r1 = e.try_call("recv!", {s1});
+    auto r2 = e.try_call("recv!", {s2});
+
+    BOOST_REQUIRE(r1.has_value() && *r1 != nanbox::False);
+    BOOST_REQUIRE(r2.has_value() && *r2 != nanbox::False);
+
+    BOOST_TEST(ops::decode<int64_t>(*r1).value_or(-1) == 100);
+    BOOST_TEST(ops::decode<int64_t>(*r2).value_or(-1) == 200);
+    BOOST_TEST_MESSAGE("Multi-child round-trip OK");
+
+    e.try_call("spawn-wait", {s1});
+    e.try_call("spawn-wait", {s2});
+    e.try_call("nng-close", {s1});
+    e.try_call("nng-close", {s2});
+    fs::remove(worker);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

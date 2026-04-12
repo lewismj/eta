@@ -1,0 +1,4 @@
+(module worker-test)
+(let ((msg (recv! (current-mailbox) 'wait)))
+  (send! (current-mailbox) (+ msg 1) 'wait))
+

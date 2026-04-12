@@ -1,0 +1,4 @@
+(module test)
+(display (nng-socket 'pair0))
+(newline)
+

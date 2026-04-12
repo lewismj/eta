@@ -179,6 +179,7 @@ void DapServer::dispatch(const Value& msg) {
     else if (*cmd == "eta/heapSnapshot")    handle_heap_inspector(id, args);
     else if (*cmd == "eta/inspectObject")   handle_inspect_object(id, args);
     else if (*cmd == "eta/disassemble")     handle_disassemble(id, args);
+    else if (*cmd == "eta/childProcesses")  handle_child_processes(id, args);
     else {
         // Unknown command – send empty success response to keep VS Code happy
         send_response(id, json::object({}));
@@ -1356,6 +1357,31 @@ std::string DapServer::current_module_from_frame(std::size_t frame_idx) {
         }
     }
     return best_mod;
+}
+
+
+// ============================================================================
+// eta/childProcesses — DAP custom request (Phase 4)
+// ============================================================================
+
+void DapServer::handle_child_processes(const Value& id, const Value& /*args*/) {
+    Array children;
+
+#ifdef ETA_HAS_NNG
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (driver_ && driver_->process_manager()) {
+        for (const auto& ci : driver_->process_manager()->list_children()) {
+            children.push_back(json::object({
+                {"pid",        Value(static_cast<int64_t>(ci.pid))},
+                {"endpoint",   Value(ci.endpoint)},
+                {"modulePath", Value(ci.module_path)},
+                {"alive",      Value(ci.alive)},
+            }));
+        }
+    }
+#endif
+
+    send_response(id, json::object({{"children", Value(std::move(children))}}));
 }
 
 

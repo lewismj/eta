@@ -69,6 +69,14 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
 )
 
+# Inject the path to the etai binary for Phase 4 spawn tests.
+# $<TARGET_FILE:etai> expands to the full path at build time (generator expression).
+if(ETA_BUILD_NNG)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        ETA_ETAI_PATH="$<TARGET_FILE:etai>"
+    )
+endif()
+
 # Pull in the DAP server implementation (not main_dap.cpp) so dap_tests.cpp
 # can link against DapServer with injected streams.
 target_sources(${PROJECT_NAME} PRIVATE

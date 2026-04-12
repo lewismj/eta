@@ -175,14 +175,6 @@ differentiation.  When a **tape is active**, the arithmetic opcodes
 `sin`, `cos` **transparently record** every operation involving a
 `TapeRef` operand onto the active tape.
 
-Three former opcode slots are reserved for bytecode compatibility:
-
-| Opcode | Status |
-|--------|--------|
-| `_Reserved0` | was `MakeDual` (removed) |
-| `_Reserved1` | was `DualVal` (removed) |
-| `_Reserved2` | was `DualBp` (removed) |
-
 **Tape-aware arithmetic:** When `do_binary_arithmetic` detects that
 either operand is a `TapeRef`, it:
 

@@ -733,6 +733,11 @@ Value LspServer::handle_hover(const Value& params) {
         {"nng-poll",       "**nng-poll** — Poll multiple sockets for readiness.\n\n`(nng-poll items timeout-ms)` — items is a list of `(socket . events)` pairs; returns list of ready sockets"},
         {"nng-subscribe",  "**nng-subscribe** — Set SUB topic filter.\n\n`(nng-subscribe sock topic)` — topic is a string prefix"},
         {"nng-set-option", "**nng-set-option** — Set a socket option.\n\n`(nng-set-option sock option value)` — option: `'recv-timeout` `'send-timeout` `'recv-buf-size` `'survey-time`"},
+        // Phase 4 — actor model
+        {"spawn",           "**spawn** — Spawn a child Eta process.\n\n`(spawn module-path)` — launches `etai <module-path>` as a child process and returns the parent-side PAIR socket for communication"},
+        {"spawn-kill",      "**spawn-kill** — Forcibly terminate a spawned child.\n\n`(spawn-kill sock)` — sends SIGTERM; returns `#t` on success"},
+        {"spawn-wait",      "**spawn-wait** — Wait for a spawned child to exit.\n\n`(spawn-wait sock)` — blocks until child exits; returns the exit code as a fixnum"},
+        {"current-mailbox", "**current-mailbox** — The PAIR socket to the parent process.\n\n`(current-mailbox)` — returns the socket established by `--mailbox` at startup, or `()` if not a spawned child"},
 #endif
     };
 
@@ -988,6 +993,9 @@ Value LspServer::handle_completion(const Value& params) {
         {"nng-socket?",    1, false, "NNG"}, {"send!",          2, true,  "NNG"},
         {"recv!",          1, true,  "NNG"}, {"nng-poll",       2, false, "NNG"},
         {"nng-subscribe",  2, false, "NNG"}, {"nng-set-option", 3, false, "NNG"},
+        // Phase 4 — actor model
+        {"spawn",           1, true,  "NNG"}, {"spawn-kill",      1, false, "NNG"},
+        {"spawn-wait",      1, false, "NNG"}, {"current-mailbox", 0, false, "NNG"},
 #endif
     };
 
@@ -1668,6 +1676,11 @@ Value LspServer::handle_signature_help(const Value& params) {
         {"nng-poll",      "(nng-poll items timeout-ms)"},
         {"nng-subscribe", "(nng-subscribe sock topic)"},
         {"nng-set-option","(nng-set-option sock option value)"},
+        // Phase 4 — actor model
+        {"spawn",           "(spawn module-path)"},
+        {"spawn-kill",      "(spawn-kill sock)"},
+        {"spawn-wait",      "(spawn-wait sock)"},
+        {"current-mailbox", "(current-mailbox)"},
 #endif
     };
 

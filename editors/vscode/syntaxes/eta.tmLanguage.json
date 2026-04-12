@@ -213,7 +213,7 @@
                 },
                 {
                     "comment": "nng / message-passing builtins",
-                    "match": "(?<=\\()\\s*(nng-socket|nng-listen|nng-dial|nng-close|nng-socket\\?|send!|recv!|nng-poll|nng-subscribe|nng-set-option)(?=[\\s()\\[\\]])",
+                    "match": "(?<=\\()\\s*(nng-socket|nng-listen|nng-dial|nng-close|nng-socket\\?|send!|recv!|nng-poll|nng-subscribe|nng-set-option|spawn|spawn-kill|spawn-wait|current-mailbox)(?=[\\s()\\[\\]])",
                     "captures": {
                         "1": { "name": "support.function.nng.eta" }
                     }

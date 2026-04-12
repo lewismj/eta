@@ -36,7 +36,12 @@
 #endif
 
 #ifdef ETA_HAS_NNG
+#include <nng/nng.h>
+#include <nng/protocol/pair0/pair.h>
+#include <eta/nng/nng_socket_ptr.h>
+#include <eta/nng/nng_factory.h>
 #include <eta/nng/nng_primitives.h>
+#include <eta/nng/process_mgr.h>
 #endif
 
 #include "eta/interpreter/module_path.h"
@@ -56,7 +61,9 @@ namespace fs = std::filesystem;
  */
 class Driver {
 public:
-    explicit Driver(ModulePathResolver resolver, std::size_t heap_bytes = 4 * 1024 * 1024)
+    explicit Driver(ModulePathResolver resolver,
+                    std::size_t heap_bytes = 4 * 1024 * 1024,
+                    std::string etai_path  = {})
         : resolver_(std::move(resolver)),
           heap_(heap_bytes),
           intern_table_(),
@@ -79,8 +86,14 @@ public:
 #endif
 
 #ifdef ETA_HAS_NNG
-        // Phase 5: nng networking and message-passing primitives
-        eta::nng::register_nng_primitives(builtins_, heap_, intern_table_);
+        // Detect etai binary path if not explicitly supplied
+        if (etai_path.empty()) etai_path = detect_etai_path();
+        etai_path_ = etai_path;
+
+        // Phase 5: nng networking + actor-model primitives
+        eta::nng::register_nng_primitives(
+            builtins_, heap_, intern_table_,
+            &proc_mgr_, etai_path_, &mailbox_val_);
 #endif
 
         // Wire up function resolver
@@ -293,6 +306,46 @@ public:
         return runtime::format_value(v, mode, heap_, intern_table_);
     }
 
+#ifdef ETA_HAS_NNG
+    /// Install the `--mailbox` socket for a spawned child process.
+    ///
+    /// Called by main_etai.cpp when the `--mailbox <endpoint>` argument is
+    /// present.  Creates a PAIR socket, dials the endpoint (connecting to the
+    /// parent's listening socket), and stores the socket as `current-mailbox`.
+    ///
+    /// @return true on success, false if the dial fails.
+    bool install_mailbox(const std::string& endpoint) {
+        eta::nng::NngSocketPtr sp;
+        sp.protocol = eta::nng::NngProtocol::Pair;
+        int rv = nng_pair0_open(&sp.socket);
+        if (rv != 0) return false;
+
+        nng_socket_set_ms(sp.socket, NNG_OPT_RECVTIMEO, 1000);
+
+        rv = nng_dial(sp.socket, endpoint.c_str(), nullptr, 0);
+        if (rv != 0) return false;
+        sp.dialed = true;
+
+        auto val = eta::nng::factory::make_nng_socket(heap_, std::move(sp));
+        if (!val) return false;
+        mailbox_val_ = *val;
+        return true;
+    }
+
+    /// Access the process manager (for DAP child process tree view).
+    [[nodiscard]] eta::nng::ProcessManager* process_manager() noexcept {
+        return &proc_mgr_;
+    }
+    [[nodiscard]] const eta::nng::ProcessManager* process_manager() const noexcept {
+        return &proc_mgr_;
+    }
+
+    /// Return the current mailbox socket (Nil if not a spawned child).
+    [[nodiscard]] runtime::nanbox::LispVal mailbox() const noexcept {
+        return mailbox_val_;
+    }
+#endif
+
     /// Named global variables: slot index → variable name.
     /// Populated during compilation for debugger display.
     [[nodiscard]] const std::unordered_map<uint32_t, std::string>& global_names() const noexcept {
@@ -427,6 +480,45 @@ private:
 
     // IR-level optimization pipeline (runs between analyze and emit)
     semantics::OptimizationPipeline optimization_pipeline_;
+
+#ifdef ETA_HAS_NNG
+    eta::nng::ProcessManager         proc_mgr_;
+    runtime::nanbox::LispVal         mailbox_val_{runtime::nanbox::Nil};
+    std::string                      etai_path_;
+
+    /// Auto-detect the path to the etai binary at startup.
+    /// Reads /proc/self/exe on Linux, then looks for "etai" in the same
+    /// directory.  Falls back to "etai" (searched on PATH).
+    static std::string detect_etai_path() {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+#if defined(__linux__)
+        auto self = fs::read_symlink("/proc/self/exe", ec);
+        if (!ec) {
+            auto candidate = self.parent_path() / "etai";
+            if (fs::exists(candidate, ec) && !ec)
+                return candidate.string();
+        }
+#elif defined(__APPLE__)
+        // macOS: use _NSGetExecutablePath
+        char buf[4096] = {};
+        uint32_t size = sizeof(buf);
+        if (_NSGetExecutablePath(buf, &size) == 0) {
+            auto candidate = fs::path(buf).parent_path() / "etai";
+            if (fs::exists(candidate, ec) && !ec)
+                return candidate.string();
+        }
+#elif defined(_WIN32)
+        char buf[MAX_PATH] = {};
+        if (GetModuleFileNameA(nullptr, buf, MAX_PATH)) {
+            auto candidate = fs::path(buf).parent_path() / "etai.exe";
+            if (fs::exists(candidate, ec) && !ec)
+                return candidate.string();
+        }
+#endif
+        return "etai"; // fallback to PATH
+    }
+#endif
 
     // Accumulated expanded forms from all prior run_source calls.
     // The linker clears its state on each index_modules() call, so we must

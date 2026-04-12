@@ -5,6 +5,7 @@
 ///
 /// Provides:  nng-socket  nng-listen  nng-dial  nng-close  nng-socket?
 ///            send!  recv!  nng-poll  nng-subscribe  nng-set-option
+///            spawn  spawn-kill  spawn-wait  current-mailbox      (Phase 4)
 ///
 /// Registration order MUST match builtin_names.h (ETA_HAS_NNG section).
 /// All primitives capture Heap& and InternTable& by reference.
@@ -41,6 +42,7 @@
 #include "nng_socket_ptr.h"
 #include "nng_factory.h"
 #include "wire_format.h"
+#include "process_mgr.h"
 
 namespace eta::nng {
 
@@ -126,10 +128,22 @@ inline std::optional<NngProtocol> parse_protocol(const std::string& name) {
 
 // ─── register_nng_primitives ──────────────────────────────────────────────────
 
-/// Register all nng primitives into the given BuiltinEnvironment.
+/// Register all nng primitives (Phases 3 + 4) into the given BuiltinEnvironment.
+///
+/// Phase 4 parameters are optional; omitting them leaves spawn/mailbox
+/// primitives registered (so arity checking still works in the LSP/analyzer)
+/// but they return a clear error when actually called without a process manager.
+///
+/// @param proc_mgr   ProcessManager owned by the Driver. nullptr = no spawning.
+/// @param etai_path  Full path to the etai executable. Empty = no spawning.
+/// @param mailbox_val Pointer to the Driver's mailbox_val_ field (child only).
+///
 /// Registration order MUST match the ETA_HAS_NNG section in builtin_names.h.
 inline void register_nng_primitives(
-    BuiltinEnvironment& env, Heap& heap, InternTable& intern)
+    BuiltinEnvironment& env, Heap& heap, InternTable& intern,
+    ProcessManager* proc_mgr   = nullptr,
+    std::string     etai_path  = {},
+    LispVal*        mailbox_val = nullptr)
 {
     // ── nng-socket ─────────────────────────────────────────────────────────
     // (nng-socket type-symbol) → socket
@@ -540,8 +554,76 @@ inline void register_nng_primitives(
             if (rv != 0) return nng_error(rv);
             return nanbox::True;
         });
+
+    // ── Phase 4: spawn ─────────────────────────────────────────────────────
+    env.register_builtin("spawn", 1, true,
+        [&heap, &intern, proc_mgr, etai_path](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!proc_mgr || etai_path.empty()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn: process manager not configured "
+                    "(this build does not support spawning, or etai_path is empty)"}});
+            }
+            if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::String) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "spawn: expected a string module path"}});
+            }
+            auto path_sv = intern.get_string(ops::payload(args[0]));
+            if (!path_sv) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn: failed to resolve module path string"}});
+            }
+            return proc_mgr->spawn(std::string(*path_sv), heap, intern, etai_path);
+        });
+
+    // ── spawn-kill ─────────────────────────────────────────────────────────
+    // (spawn-kill sock) → #t if signal sent, #f if not found
+    env.register_builtin("spawn-kill", 1, false,
+        [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!proc_mgr) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn-kill: process manager not configured"}});
+            }
+            auto* sp = get_socket(heap, args[0]);
+            if (!sp) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "spawn-kill: expected an nng-socket"}});
+            }
+            return proc_mgr->kill_child(args[0]) ? nanbox::True : nanbox::False;
+        });
+
+    // ── spawn-wait ─────────────────────────────────────────────────────────
+    // (spawn-wait sock) → exit-code (fixnum) or #f if not found
+    env.register_builtin("spawn-wait", 1, false,
+        [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!proc_mgr) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn-wait: process manager not configured"}});
+            }
+            auto* sp = get_socket(heap, args[0]);
+            if (!sp) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "spawn-wait: expected an nng-socket"}});
+            }
+            int code = proc_mgr->wait_for(args[0]);
+            if (code < 0) return nanbox::False;
+            return make_fixnum(heap, static_cast<int64_t>(code));
+        });
+
+    // ── current-mailbox ────────────────────────────────────────────────────
+    // (current-mailbox) → the PAIR socket to the parent, or () if not a child
+    env.register_builtin("current-mailbox", 0, false,
+        [mailbox_val](Args) -> std::expected<LispVal, RuntimeError> {
+            if (!mailbox_val) return nanbox::Nil;
+            return *mailbox_val;
+        });
 }
 
 } // namespace eta::nng
-
 
