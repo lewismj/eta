@@ -738,6 +738,11 @@ Value LspServer::handle_hover(const Value& params) {
         {"spawn-kill",      "**spawn-kill** — Forcibly terminate a spawned child.\n\n`(spawn-kill sock)` — sends SIGTERM; returns `#t` on success"},
         {"spawn-wait",      "**spawn-wait** — Wait for a spawned child to exit.\n\n`(spawn-wait sock)` — blocks until child exits; returns the exit code as a fixnum"},
         {"current-mailbox", "**current-mailbox** — The PAIR socket to the parent process.\n\n`(current-mailbox)` — returns the socket established by `--mailbox` at startup, or `()` if not a spawned child"},
+        // Phase 7 — in-process actor threads
+        {"spawn-thread-with", "**spawn-thread-with** — Spawn an in-process actor thread.\n\n`(spawn-thread-with module-path func-name args...)` — launches a new OS thread with its own VM, loads the module, calls `(func-name args...)`, communicates via `inproc://` PAIR socket"},
+        {"spawn-thread",      "**spawn-thread** — Spawn an actor thread from a closure (Phase 7b, not yet implemented).\n\n`(spawn-thread thunk)` — use `spawn-thread-with` instead for named functions"},
+        {"thread-join",       "**thread-join** — Wait for an actor thread to complete.\n\n`(thread-join sock)` — blocks until the thread exits; returns `0` on success, `#f` if not found"},
+        {"thread-alive?",     "**thread-alive?** — Check if an actor thread is still running.\n\n`(thread-alive? sock)` — returns `#t` while the thread is executing, `#f` after it exits"},
 #endif
     };
 
@@ -996,6 +1001,9 @@ Value LspServer::handle_completion(const Value& params) {
         // Phase 4 — actor model
         {"spawn",           1, true,  "NNG"}, {"spawn-kill",      1, false, "NNG"},
         {"spawn-wait",      1, false, "NNG"}, {"current-mailbox", 0, false, "NNG"},
+        // Phase 7 — in-process actor threads
+        {"spawn-thread-with", 2, true,  "NNG"}, {"spawn-thread",  1, false, "NNG"},
+        {"thread-join",       1, false, "NNG"}, {"thread-alive?", 1, false, "NNG"},
 #endif
     };
 
@@ -1692,6 +1700,11 @@ Value LspServer::handle_signature_help(const Value& params) {
         {"spawn-kill",      "(spawn-kill sock)"},
         {"spawn-wait",      "(spawn-wait sock)"},
         {"current-mailbox", "(current-mailbox)"},
+        // Phase 7 — in-process actor threads
+        {"spawn-thread-with", "(spawn-thread-with module-path func-name args...)"},
+        {"spawn-thread",      "(spawn-thread thunk)"},
+        {"thread-join",       "(thread-join sock)"},
+        {"thread-alive?",     "(thread-alive? sock)"},
 #endif
     };
 

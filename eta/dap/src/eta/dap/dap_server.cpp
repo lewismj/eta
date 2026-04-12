@@ -508,11 +508,24 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
 // ============================================================================
 
 void DapServer::handle_threads(const Value& id, const Value& /*args*/) {
-    send_response(id, json::object({
-        {"threads", json::array({
-            json::object({{"id", 1}, {"name", "main"}}),
-        })},
-    }));
+    Array threads;
+    threads.push_back(json::object({{"id", 1}, {"name", "main"}}));
+#ifdef ETA_HAS_NNG
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (driver_ && driver_->process_manager()) {
+        int tid = 2;
+        for (const auto& ti : driver_->process_manager()->list_threads()) {
+            std::string name = "actor-" + std::to_string(tid - 1);
+            if (!ti.func_name.empty()) name += " (" + ti.func_name + ")";
+            threads.push_back(json::object({
+                {"id",   Value(static_cast<int64_t>(tid))},
+                {"name", Value(name)},
+            }));
+            ++tid;
+        }
+    }
+#endif
+    send_response(id, json::object({{"threads", Value(std::move(threads))}}));
 }
 
 // ============================================================================

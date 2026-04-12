@@ -1,20 +1,28 @@
 #pragma once
 
 /// @file process_mgr.h
-/// @brief Process lifecycle manager for the Eta actor model (Phase 4).
+/// @brief Process lifecycle manager for the Eta actor model (Phases 4 & 7).
 ///
-/// Spawns child etai processes connected to the parent via nng PAIR sockets.
-/// Each spawned child runs its own VM instance and communicates with the parent
-/// exclusively through the PAIR socket returned by spawn().
+/// Phase 4: Spawns child etai OS-processes connected via nng PAIR sockets.
+/// Phase 7: Spawns in-process actor threads, each with an independent VM,
+///          communicating via nng inproc:// PAIR sockets.
 ///
-/// Usage:
+/// Usage (Phase 4):
 ///   ProcessManager pm;
 ///   auto sock = pm.spawn("worker.eta", heap, intern, "/path/to/etai");
-///   // send! / recv! via sock
 ///   pm.kill_child(sock);
+///
+/// Usage (Phase 7):
+///   ProcessManager pm;
+///   pm.set_worker_factory(my_factory);
+///   auto sock = pm.spawn_thread_with("worker.eta","my-fn",{}, heap, intern);
+///   pm.join_thread(sock);
 
 #include <atomic>
 #include <expected>
+#include <functional>
+#include <future>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -94,6 +102,42 @@ public:
         bool        alive{false};
     };
 
+    // ── Phase 7: in-process actor threads ─────────────────────────────────
+
+    /// Signature of the factory that runs inside the new thread.
+    /// Responsible for: dialing endpoint, loading the module, calling the
+    /// function with text_args, signalling alive=false when done.
+    using ThreadWorkerFn = std::function<void(
+        const std::string& module_path,   ///< .eta file to load
+        const std::string& func_name,     ///< top-level function to call
+        const std::string& endpoint,      ///< inproc:// endpoint to dial
+        std::vector<std::string> text_args, ///< s-expression text arguments
+        std::shared_ptr<std::atomic<bool>> alive ///< set false when done
+    )>;
+
+    struct ThreadHandle {
+        std::thread thread;
+        std::string endpoint;
+        std::string module_path;
+        std::string func_name;
+        LispVal     socket{Nil};
+        std::shared_ptr<std::atomic<bool>> alive_;
+
+        ThreadHandle() : alive_(std::make_shared<std::atomic<bool>>(true)) {}
+        ThreadHandle(ThreadHandle&&) = default;
+        ThreadHandle& operator=(ThreadHandle&&) = default;
+        ThreadHandle(const ThreadHandle&) = delete;
+        ThreadHandle& operator=(const ThreadHandle&) = delete;
+    };
+
+    struct ThreadInfo {
+        int         index{0};
+        std::string endpoint;
+        std::string module_path;
+        std::string func_name;
+        bool        alive{false};
+    };
+
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
     ProcessManager() = default;
@@ -143,6 +187,37 @@ public:
     /// Snapshot of all children for the DAP child process tree view.
     std::vector<ChildInfo> list_children() const;
 
+    // ── Phase 7: in-process threads ───────────────────────────────────────
+
+    /// Install the factory that runs inside each spawned thread.
+    /// Must be called before spawn_thread_with().
+    void set_worker_factory(ThreadWorkerFn fn) {
+        std::lock_guard<std::mutex> lk(mu_);
+        worker_factory_ = std::move(fn);
+    }
+
+    /// Spawn an in-process actor thread (Phase 7a).
+    ///
+    /// 1. Generates a unique inproc:// endpoint.
+    /// 2. Creates a parent-side PAIR socket and calls nng_listen().
+    /// 3. Launches a std::thread running worker_factory_ with the given args.
+    /// 4. Returns the boxed parent-side socket.
+    std::expected<LispVal, RuntimeError>
+    spawn_thread_with(const std::string& module_path,
+                      const std::string& func_name,
+                      std::vector<std::string> text_args,
+                      Heap& heap, InternTable& intern);
+
+    /// Block until the actor thread associated with sock_val completes.
+    /// Returns 0 on success, -1 if not found or already joined.
+    int join_thread(LispVal sock_val);
+
+    /// Check if the actor thread associated with sock_val is still running.
+    bool is_thread_alive(LispVal sock_val) const;
+
+    /// Snapshot of all actor threads for DAP display.
+    std::vector<ThreadInfo> list_threads() const;
+
     /// Mutex guarding children_ (exposed for Phase 7 thread safety).
     mutable std::mutex mu_;
 
@@ -150,18 +225,30 @@ private:
     std::vector<ChildHandle>  children_;
     std::atomic<int>          spawn_counter_{0};
 
+    // Phase 7
+    std::vector<ThreadHandle> threads_;
+    ThreadWorkerFn            worker_factory_;
+
     /// Return a pointer to the ChildHandle whose socket == sock_val.
     /// Caller MUST hold mu_.
     ChildHandle* find_by_socket(LispVal sock_val);
 
-    /// Generate the next unique IPC endpoint string.
+    /// Return a pointer to the ThreadHandle whose socket == sock_val.
+    /// Caller MUST hold mu_.
+    ThreadHandle* find_thread_by_socket(LispVal sock_val);
+
+    /// Generate the next unique IPC endpoint string (for OS processes).
     std::string next_endpoint();
+
+    /// Generate the next unique inproc endpoint string (for threads).
+    std::string next_inproc_endpoint();
 };
 
 // ─── Inline implementation ────────────────────────────────────────────────────
 
 inline ProcessManager::~ProcessManager() {
     std::lock_guard<std::mutex> lk(mu_);
+    // Kill / reap child processes
     for (auto& ch : children_) {
         if (!ch.is_alive()) continue;
 #ifdef _WIN32
@@ -184,6 +271,10 @@ inline ProcessManager::~ProcessManager() {
         }
     }
 #endif
+    // Detach actor threads (don't block on potentially-blocked recv!)
+    for (auto& th : threads_) {
+        if (th.thread.joinable()) th.thread.detach();
+    }
 }
 
 inline std::string ProcessManager::next_endpoint() {
@@ -195,6 +286,11 @@ inline std::string ProcessManager::next_endpoint() {
     return "ipc:///tmp/eta-" + std::to_string(static_cast<int>(::getpid()))
            + "-" + std::to_string(counter) + ".sock";
 #endif
+}
+
+inline std::string ProcessManager::next_inproc_endpoint() {
+    int counter = spawn_counter_.fetch_add(1);
+    return "inproc://eta-thread-" + std::to_string(counter);
 }
 
 inline ProcessManager::ChildHandle* ProcessManager::find_by_socket(LispVal sock_val) {
@@ -394,6 +490,123 @@ inline std::vector<ProcessManager::ChildInfo> ProcessManager::list_children() co
         ci.module_path = ch.module_path;
         ci.alive       = ch.is_alive();
         result.push_back(std::move(ci));
+    }
+    return result;
+}
+
+// ─── Phase 7: in-process thread implementation ───────────────────────────────
+
+inline ProcessManager::ThreadHandle*
+ProcessManager::find_thread_by_socket(LispVal sock_val) {
+    for (auto& th : threads_) {
+        if (th.socket == sock_val) return &th;
+    }
+    return nullptr;
+}
+
+inline std::expected<LispVal, RuntimeError>
+ProcessManager::spawn_thread_with(const std::string& module_path,
+                                   const std::string& func_name,
+                                   std::vector<std::string> text_args,
+                                   Heap& heap, InternTable& /*intern*/)
+{
+    std::lock_guard<std::mutex> lk(mu_);
+
+    if (!worker_factory_) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "spawn-thread-with: no thread worker factory configured "
+            "(Driver was not set up for in-process threads)"}});
+    }
+
+    // ── 1. Generate a unique inproc endpoint ─────────────────────────────
+    std::string endpoint = next_inproc_endpoint();
+
+    // ── 2. Create parent-side PAIR socket and listen ──────────────────────
+    NngSocketPtr sp;
+    sp.protocol = NngProtocol::Pair;
+    int rv = nng_pair0_open(&sp.socket);
+    if (rv != 0) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "spawn-thread-with: nng_pair0_open failed: " +
+            std::string(nng_strerror(rv))}});
+    }
+    nng_socket_set_ms(sp.socket, NNG_OPT_RECVTIMEO, 1000);
+
+    rv = nng_listen(sp.socket, endpoint.c_str(), nullptr, 0);
+    if (rv != 0) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "spawn-thread-with: nng_listen failed on " + endpoint + ": " +
+            std::string(nng_strerror(rv))}});
+    }
+    sp.listening = true;
+
+    // ── 3. Allocate socket on the Eta heap ────────────────────────────────
+    auto sock_val_res = eta::nng::factory::make_nng_socket(heap, std::move(sp));
+    if (!sock_val_res) return std::unexpected(sock_val_res.error());
+    LispVal sock_val = *sock_val_res;
+
+    // ── 4. Build and launch the actor thread ──────────────────────────────
+    ThreadHandle th;
+    th.endpoint    = endpoint;
+    th.module_path = module_path;
+    th.func_name   = func_name;
+    th.socket      = sock_val;
+
+    auto alive_ptr = th.alive_;  // shared with the thread
+    ThreadWorkerFn factory_copy = worker_factory_;
+
+    th.thread = std::thread([factory_copy, module_path, func_name,
+                              endpoint, text_args, alive_ptr]() mutable {
+        try {
+            factory_copy(module_path, func_name, endpoint,
+                         std::move(text_args), alive_ptr);
+        } catch (...) {}
+        alive_ptr->store(false, std::memory_order_release);
+    });
+
+    threads_.push_back(std::move(th));
+    return sock_val;
+}
+
+inline int ProcessManager::join_thread(LispVal sock_val) {
+    std::unique_lock<std::mutex> lk(mu_);
+    auto* th = find_thread_by_socket(sock_val);
+    if (!th) return -1;
+    if (!th->thread.joinable()) return 0;
+    // Release lock while joining so other threads can proceed
+    std::thread t = std::move(th->thread);
+    lk.unlock();
+    t.join();
+    return 0;
+}
+
+inline bool ProcessManager::is_thread_alive(LispVal sock_val) const {
+    std::lock_guard<std::mutex> lk(mu_);
+    for (const auto& th : threads_) {
+        if (th.socket == sock_val) {
+            return th.alive_ && th.alive_->load(std::memory_order_acquire);
+        }
+    }
+    return false;
+}
+
+inline std::vector<ProcessManager::ThreadInfo>
+ProcessManager::list_threads() const {
+    std::lock_guard<std::mutex> lk(mu_);
+    std::vector<ThreadInfo> result;
+    result.reserve(threads_.size());
+    int idx = 0;
+    for (const auto& th : threads_) {
+        ThreadInfo ti;
+        ti.index       = idx++;
+        ti.endpoint    = th.endpoint;
+        ti.module_path = th.module_path;
+        ti.func_name   = th.func_name;
+        ti.alive       = th.alive_ && th.alive_->load(std::memory_order_acquire);
+        result.push_back(std::move(ti));
     }
     return result;
 }

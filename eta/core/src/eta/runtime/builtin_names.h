@@ -229,6 +229,11 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("spawn-kill",      1, false);
     r("spawn-wait",      1, false);
     r("current-mailbox", 0, false);
+    // Phase 7 — in-process actor threads
+    r("spawn-thread-with", 2, true);
+    r("spawn-thread",      1, false);
+    r("thread-join",       1, false);
+    r("thread-alive?",     1, false);
 #endif // ETA_HAS_NNG
 
 #ifdef ETA_HAS_TORCH

@@ -2194,3 +2194,360 @@ BOOST_AUTO_TEST_CASE(p4_spawn_multiple_children) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 7 — In-Process Actor Threads
+// ═══════════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_SUITE(nng_phase7_tests)
+
+// ── Helper: simple worker factory that uses raw nng (no Driver needed) ────
+
+namespace {
+
+using SimpleThreadTask = std::function<void(nng_socket child_sock)>;
+
+static ProcessManager::ThreadWorkerFn make_simple_worker(SimpleThreadTask task) {
+    return [task = std::move(task)](
+        const std::string& /*module_path*/,
+        const std::string& /*func_name*/,
+        const std::string& endpoint,
+        std::vector<std::string> /*text_args*/,
+        std::shared_ptr<std::atomic<bool>> alive) noexcept
+    {
+        try {
+            nng_socket child;
+            if (nng_pair0_open(&child) != 0) { alive->store(false); return; }
+            nng_socket_set_ms(child, NNG_OPT_RECVTIMEO, 2000);
+            nng_socket_set_ms(child, NNG_OPT_SENDTIMEO, 2000);
+            if (nng_dial(child, endpoint.c_str(), nullptr, 0) != 0) {
+                nng_close(child);
+                alive->store(false);
+                return;
+            }
+            task(child);
+            nng_close(child);
+        } catch (...) {}
+        alive->store(false, std::memory_order_release);
+    };
+}
+
+struct NngEnvWithThread {
+    Heap heap{4 * 1024 * 1024};
+    InternTable intern;
+    BuiltinEnvironment env;
+    ProcessManager proc_mgr;
+    LispVal mailbox_val{nanbox::Nil};
+
+    NngEnvWithThread() {
+        register_nng_primitives(env, heap, intern, &proc_mgr, "", &mailbox_val, {});
+    }
+
+    LispVal call(const std::string& name, std::vector<LispVal> args) {
+        const auto& specs = env.specs();
+        for (const auto& spec : specs) {
+            if (spec.name == name && spec.func) {
+                auto res = spec.func(args);
+                BOOST_REQUIRE_MESSAGE(res.has_value(), "call to " + name + " failed");
+                return *res;
+            }
+        }
+        BOOST_FAIL("primitive not found: " + name);
+        return nanbox::Nil;
+    }
+
+    std::expected<LispVal, error::RuntimeError>
+    try_call(const std::string& name, std::vector<LispVal> args) {
+        const auto& specs = env.specs();
+        for (const auto& spec : specs) {
+            if (spec.name == name && spec.func) return spec.func(args);
+        }
+        return std::unexpected(error::VMError{
+            error::RuntimeErrorCode::InternalError, "not found: " + name});
+    }
+
+    LispVal sym(const std::string& s) { return require_ok(make_symbol(intern, s)); }
+    LispVal str(const std::string& s) { return require_ok(make_string(heap, intern, s)); }
+    LispVal fixnum(int64_t n)         { return require_ok(make_fixnum(heap, n)); }
+};
+
+} // anonymous namespace
+
+// ── ProcessManager thread infrastructure ──────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p7_process_manager_list_threads_empty) {
+    ProcessManager pm;
+    BOOST_TEST(pm.list_threads().empty());
+}
+
+BOOST_AUTO_TEST_CASE(p7_process_manager_is_thread_alive_unknown_socket) {
+    ProcessManager pm;
+    BOOST_TEST(pm.is_thread_alive(nanbox::Nil) == false);
+}
+
+BOOST_AUTO_TEST_CASE(p7_process_manager_join_thread_unknown_socket) {
+    ProcessManager pm;
+    int rc = pm.join_thread(nanbox::Nil);
+    BOOST_TEST(rc == -1);
+}
+
+// ── spawn-thread-with: no process manager returns clear error ─────────────
+
+BOOST_AUTO_TEST_CASE(p7_spawn_thread_with_no_proc_mgr_error) {
+    NngEnv e;  // Phase 3 env — no process manager
+    auto res = e.try_call("spawn-thread-with",
+                          {e.str("worker.eta"), e.sym("my-fn")});
+    BOOST_TEST(!res.has_value());
+    BOOST_TEST_MESSAGE("error (expected): " + runtime_error_msg(res.error()));
+}
+
+// ── spawn-thread returns clear "not implemented" error ────────────────────
+
+BOOST_AUTO_TEST_CASE(p7_spawn_thread_returns_not_implemented_error) {
+    NngEnv e;
+    auto res = e.try_call("spawn-thread", {nanbox::False});
+    BOOST_TEST(!res.has_value());
+    BOOST_TEST_MESSAGE("spawn-thread error (expected): " + runtime_error_msg(res.error()));
+}
+
+// ── spawn-thread-with: wrong arg types ────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p7_spawn_thread_with_wrong_first_arg_type) {
+    NngEnvWithThread e;
+    e.proc_mgr.set_worker_factory(make_simple_worker([](nng_socket) {}));
+    auto res = e.try_call("spawn-thread-with", {e.sym("not-a-string"), e.sym("my-fn")});
+    BOOST_TEST(!res.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(p7_spawn_thread_with_wrong_second_arg_type) {
+    NngEnvWithThread e;
+    e.proc_mgr.set_worker_factory(make_simple_worker([](nng_socket) {}));
+    auto res = e.try_call("spawn-thread-with", {e.str("worker.eta"), e.str("not-a-symbol")});
+    BOOST_TEST(!res.has_value());
+}
+
+// ── spawn-thread-with: creates socket ────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p7_spawn_thread_with_returns_socket) {
+    NngEnvWithThread e;
+    e.proc_mgr.set_worker_factory(make_simple_worker([](nng_socket) { /* noop */ }));
+
+    auto res = e.try_call("spawn-thread-with", {e.str("test.eta"), e.sym("my-fn")});
+    BOOST_REQUIRE_MESSAGE(res.has_value(), "spawn-thread-with failed: " +
+        (res.has_value() ? "" : runtime_error_msg(res.error())));
+
+    auto sock = *res;
+    BOOST_TEST(ops::is_boxed(sock));
+    BOOST_TEST(ops::tag(sock) == Tag::HeapObject);
+
+    auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(sock));
+    BOOST_REQUIRE(sp != nullptr);
+    BOOST_TEST(sp->protocol == NngProtocol::Pair);
+
+    e.call("thread-join", {sock});
+    e.call("nng-close", {sock});
+}
+
+// ── thread-alive? ─────────────────────────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p7_thread_alive_while_running) {
+    NngEnvWithThread e;
+    e.proc_mgr.set_worker_factory(
+        make_simple_worker([](nng_socket s) {
+            void* buf = nullptr; size_t sz = 0;
+            nng_socket_set_ms(s, NNG_OPT_RECVTIMEO, 500);
+            nng_recv(s, &buf, &sz, NNG_FLAG_ALLOC);
+            if (buf) nng_free(buf, sz);
+        }));
+
+    auto res = e.try_call("spawn-thread-with", {e.str("test.eta"), e.sym("loop-fn")});
+    BOOST_REQUIRE(res.has_value());
+    auto sock = *res;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+
+    auto alive = e.call("thread-alive?", {sock});
+    BOOST_TEST_MESSAGE("thread-alive? = " << (alive == nanbox::True ? "#t" : "#f"));
+    BOOST_TEST(alive == nanbox::True);
+
+    e.call("thread-join", {sock});
+    auto alive2 = e.call("thread-alive?", {sock});
+    BOOST_TEST(alive2 == nanbox::False);
+    e.call("nng-close", {sock});
+}
+
+// ── thread-join: blocks until thread completes ────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p7_thread_join_waits_for_completion) {
+    NngEnvWithThread e;
+    std::atomic<bool> thread_ran{false};
+
+    e.proc_mgr.set_worker_factory(
+        [&thread_ran](
+            const std::string&, const std::string&,
+            const std::string& endpoint,
+            std::vector<std::string>,
+            std::shared_ptr<std::atomic<bool>> alive) noexcept
+        {
+            try {
+                nng_socket s;
+                if (nng_pair0_open(&s) != 0) { alive->store(false); return; }
+                nng_dial(s, endpoint.c_str(), nullptr, 0);
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                thread_ran.store(true);
+                nng_close(s);
+            } catch (...) {}
+            alive->store(false, std::memory_order_release);
+        });
+
+    auto res = e.try_call("spawn-thread-with", {e.str("test.eta"), e.sym("slow-fn")});
+    BOOST_REQUIRE(res.has_value());
+    auto sock = *res;
+
+    BOOST_TEST(thread_ran.load() == false);
+
+    auto join_res = e.call("thread-join", {sock});
+    BOOST_TEST(*ops::decode<int64_t>(join_res) == 0);
+    BOOST_TEST(thread_ran.load() == true);
+
+    e.call("nng-close", {sock});
+}
+
+// ── thread-join / thread-alive? wrong type errors ─────────────────────────
+
+BOOST_AUTO_TEST_CASE(p7_thread_join_wrong_type_error) {
+    NngEnvWithThread e;
+    auto res = e.try_call("thread-join", {e.fixnum(42)});
+    BOOST_TEST(!res.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(p7_thread_alive_wrong_type_error) {
+    NngEnvWithThread e;
+    auto res = e.try_call("thread-alive?", {e.fixnum(42)});
+    BOOST_TEST(!res.has_value());
+}
+
+// ── send!/recv! round-trip over inproc:// ─────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p7_spawn_thread_send_recv_round_trip) {
+    NngEnvWithThread e;
+
+    // Echo worker: recv one message, send it back
+    e.proc_mgr.set_worker_factory(
+        make_simple_worker([](nng_socket s) {
+            void* buf = nullptr; size_t sz = 0;
+            if (nng_recv(s, &buf, &sz, NNG_FLAG_ALLOC) == 0) {
+                nng_send(s, buf, sz, NNG_FLAG_ALLOC);
+            }
+        }));
+
+    auto res = e.try_call("spawn-thread-with", {e.str("test.eta"), e.sym("echo-fn")});
+    BOOST_REQUIRE(res.has_value());
+    auto sock = *res;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+
+    {
+        auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(sock));
+        BOOST_REQUIRE(sp != nullptr);
+        nng_socket_set_ms(sp->socket, NNG_OPT_SENDTIMEO, 2000);
+        nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, 2000);
+    }
+
+    auto send_res = e.try_call("send!", {sock, e.fixnum(99)});
+    BOOST_REQUIRE_MESSAGE(send_res.has_value() && *send_res != nanbox::False,
+        "send! failed or timed out");
+
+    auto recv_res = e.try_call("recv!", {sock});
+    BOOST_REQUIRE_MESSAGE(recv_res.has_value() && *recv_res != nanbox::False,
+        "recv! failed or timed out");
+    BOOST_TEST(ops::decode<int64_t>(*recv_res).value_or(-1) == 99);
+    BOOST_TEST_MESSAGE("Thread echo round-trip OK: 99 → 99");
+
+    e.call("thread-join", {sock});
+    e.call("nng-close", {sock});
+}
+
+// ── list_threads() returns thread metadata ────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(p7_list_threads_returns_metadata) {
+    NngEnvWithThread e;
+    e.proc_mgr.set_worker_factory(
+        make_simple_worker([](nng_socket s) {
+            void* buf = nullptr; size_t sz = 0;
+            nng_socket_set_ms(s, NNG_OPT_RECVTIMEO, 300);
+            nng_recv(s, &buf, &sz, NNG_FLAG_ALLOC);
+            if (buf) nng_free(buf, sz);
+        }));
+
+    auto res = e.try_call("spawn-thread-with",
+                          {e.str("test-module.eta"), e.sym("worker-fn")});
+    BOOST_REQUIRE(res.has_value());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    auto threads = e.proc_mgr.list_threads();
+    BOOST_REQUIRE(!threads.empty());
+    BOOST_TEST(threads[0].module_path == "test-module.eta");
+    BOOST_TEST(threads[0].func_name   == "worker-fn");
+    BOOST_TEST(threads[0].alive == true);
+
+    e.call("thread-join", {*res});
+    e.call("nng-close", {*res});
+}
+
+// ── Stress test: 20 threads, each echoes a distinct value ─────────────────
+
+BOOST_AUTO_TEST_CASE(p7_stress_test_multiple_threads) {
+    constexpr int N = 20;
+    NngEnvWithThread e;
+    e.proc_mgr.set_worker_factory(
+        make_simple_worker([](nng_socket s) {
+            void* buf = nullptr; size_t sz = 0;
+            nng_socket_set_ms(s, NNG_OPT_RECVTIMEO, 3000);
+            if (nng_recv(s, &buf, &sz, NNG_FLAG_ALLOC) == 0) {
+                nng_send(s, buf, sz, NNG_FLAG_ALLOC);
+            }
+        }));
+
+    std::vector<LispVal> sockets;
+    sockets.reserve(N);
+    for (int i = 0; i < N; ++i) {
+        auto r = e.try_call("spawn-thread-with", {e.str("test.eta"), e.sym("echo")});
+        BOOST_REQUIRE_MESSAGE(r.has_value(),
+            "spawn-thread-with " + std::to_string(i) + " failed");
+        sockets.push_back(*r);
+    }
+
+    BOOST_TEST_MESSAGE("Spawned " << N << " actor threads");
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    for (int i = 0; i < N; ++i) {
+        auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(
+            ops::payload(sockets[static_cast<size_t>(i)]));
+        if (sp) {
+            nng_socket_set_ms(sp->socket, NNG_OPT_SENDTIMEO, 3000);
+            nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, 3000);
+        }
+        auto sr = e.try_call("send!", {sockets[static_cast<size_t>(i)], e.fixnum(i)});
+        BOOST_REQUIRE_MESSAGE(sr.has_value() && *sr != nanbox::False,
+            "send! to thread " + std::to_string(i) + " failed");
+    }
+
+    int ok_count = 0;
+    for (int i = 0; i < N; ++i) {
+        auto rr = e.try_call("recv!", {sockets[static_cast<size_t>(i)]});
+        if (rr.has_value() && *rr != nanbox::False) {
+            BOOST_TEST(ops::decode<int64_t>(*rr).value_or(-99) == i);
+            ++ok_count;
+        }
+        e.call("thread-join", {sockets[static_cast<size_t>(i)]});
+        e.call("nng-close", {sockets[static_cast<size_t>(i)]});
+    }
+
+    BOOST_TEST_MESSAGE("Stress test: " << ok_count << "/" << N << " threads OK");
+    BOOST_TEST(ok_count == N);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+

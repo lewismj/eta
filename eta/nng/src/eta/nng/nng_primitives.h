@@ -129,7 +129,7 @@ inline std::optional<NngProtocol> parse_protocol(const std::string& name) {
 
 // ─── register_nng_primitives ──────────────────────────────────────────────────
 
-/// Register all nng primitives (Phases 3 + 4) into the given BuiltinEnvironment.
+/// Register all nng primitives (Phases 3 + 4 + 7) into the given BuiltinEnvironment.
 ///
 /// Phase 4 parameters are optional; omitting them leaves spawn/mailbox
 /// primitives registered (so arity checking still works in the LSP/analyzer)
@@ -141,6 +141,7 @@ inline std::optional<NngProtocol> parse_protocol(const std::string& name) {
 /// @param module_search_path Colon/semicolon-separated module search path to
 ///                           propagate to spawned children via ETA_MODULE_PATH
 ///                           (only if ETA_MODULE_PATH is not already set in env).
+/// @param thread_worker_fn  Factory for in-process actor threads (Phase 7).
 ///
 /// Registration order MUST match the ETA_HAS_NNG section in builtin_names.h.
 inline void register_nng_primitives(
@@ -148,7 +149,8 @@ inline void register_nng_primitives(
     ProcessManager* proc_mgr          = nullptr,
     std::string     etai_path         = {},
     LispVal*        mailbox_val       = nullptr,
-    std::string     module_search_path = {})
+    std::string     module_search_path = {},
+    ProcessManager::ThreadWorkerFn thread_worker_fn = {})
 {
     // ── nng-socket ─────────────────────────────────────────────────────────
     // (nng-socket type-symbol) → socket
@@ -663,6 +665,107 @@ inline void register_nng_primitives(
         [mailbox_val](Args) -> std::expected<LispVal, RuntimeError> {
             if (!mailbox_val) return nanbox::Nil;
             return *mailbox_val;
+        });
+
+    // ── Phase 7: spawn-thread-with ─────────────────────────────────────────
+    // (spawn-thread-with module-path func-name args...) → socket
+    // Creates a new in-process actor thread with an independent VM.
+    // Install the worker factory in proc_mgr now (if provided at registration time);
+    // tests may also call proc_mgr->set_worker_factory() before calling this primitive.
+    if (proc_mgr && thread_worker_fn) {
+        proc_mgr->set_worker_factory(std::move(thread_worker_fn));
+    }
+
+    env.register_builtin("spawn-thread-with", 2, true,
+        [&heap, &intern, proc_mgr](Args args)
+            -> std::expected<LispVal, RuntimeError>
+        {
+            if (!proc_mgr) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn-thread-with: process manager not configured"}});
+            }
+
+            // arg0: module path string
+            if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::String) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "spawn-thread-with: first argument must be a module-path string"}});
+            }
+            auto path_sv = intern.get_string(ops::payload(args[0]));
+            if (!path_sv) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn-thread-with: failed to resolve module-path string"}});
+            }
+
+            // arg1: function name symbol
+            auto func_sym = symbol_to_string(args[1], intern);
+            if (!func_sym) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "spawn-thread-with: second argument must be a symbol (function name)"}});
+            }
+
+            // remaining args: serialize each as s-expression text
+            std::vector<std::string> text_args;
+            text_args.reserve(args.size() - 2);
+            for (std::size_t i = 2; i < args.size(); ++i) {
+                text_args.push_back(serialize_value(args[i], heap, intern));
+            }
+
+            return proc_mgr->spawn_thread_with(
+                std::string(*path_sv), *func_sym,
+                std::move(text_args), heap, intern);
+        });
+
+    // ── spawn-thread ──────────────────────────────────────────────────────
+    // (spawn-thread thunk) → Phase 7b — not yet implemented
+    // Anonymous closures cannot be serialized; use spawn-thread-with instead.
+    env.register_builtin("spawn-thread", 1, false,
+        [](Args) -> std::expected<LispVal, RuntimeError> {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::InternalError,
+                "spawn-thread: anonymous closure serialization is not yet supported "
+                "(Phase 7b) — use spawn-thread-with with a named module function instead"}});
+        });
+
+    // ── thread-join ───────────────────────────────────────────────────────
+    // (thread-join sock) → 0 on success, #f if not found
+    env.register_builtin("thread-join", 1, false,
+        [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!proc_mgr) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "thread-join: process manager not configured"}});
+            }
+            auto* sp = get_socket(heap, args[0]);
+            if (!sp) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "thread-join: expected an nng-socket"}});
+            }
+            int rc = proc_mgr->join_thread(args[0]);
+            if (rc < 0) return nanbox::False;
+            return make_fixnum(heap, static_cast<int64_t>(rc));
+        });
+
+    // ── thread-alive? ─────────────────────────────────────────────────────
+    // (thread-alive? sock) → #t if the actor thread is still running
+    env.register_builtin("thread-alive?", 1, false,
+        [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!proc_mgr) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "thread-alive?: process manager not configured"}});
+            }
+            auto* sp = get_socket(heap, args[0]);
+            if (!sp) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "thread-alive?: expected an nng-socket"}});
+            }
+            return proc_mgr->is_thread_alive(args[0]) ? nanbox::True : nanbox::False;
         });
 }
 

@@ -106,11 +106,52 @@ public:
             }
         }
 
+        // Phase 7: build the thread worker factory.
+        // The lambda captures only the module search path string (value, not ref),
+        // so it is safe to use from any thread. It creates a fresh Driver + VM
+        // for each actor thread.
+        eta::nng::ProcessManager::ThreadWorkerFn thread_worker_fn =
+            [module_search_path](
+                const std::string& th_module_path,
+                const std::string& th_func_name,
+                const std::string& th_endpoint,
+                std::vector<std::string> th_text_args,
+                std::shared_ptr<std::atomic<bool>> alive) noexcept
+        {
+            try {
+                auto resolver = ModulePathResolver::from_path_string(module_search_path);
+                Driver child(std::move(resolver));
+                child.load_prelude();
+
+                // Dial the parent's inproc:// listener → sets current-mailbox
+                if (!child.install_mailbox(th_endpoint)) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                // Load the target module
+                if (!child.run_file(fs::path(th_module_path))) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                // Build and evaluate: (func-name arg1 arg2 ...)
+                std::string call_src = "(" + th_func_name;
+                for (const auto& a : th_text_args) {
+                    call_src += " ";
+                    call_src += a;
+                }
+                call_src += ")";
+                child.run_source(call_src);
+            } catch (...) {}
+            alive->store(false, std::memory_order_release);
+        };
+
         // Phase 5: nng networking + actor-model primitives
         eta::nng::register_nng_primitives(
             builtins_, heap_, intern_table_,
             &proc_mgr_, etai_path_, &mailbox_val_,
-            module_search_path);
+            module_search_path, std::move(thread_worker_fn));
 #endif
 
         // Wire up function resolver
