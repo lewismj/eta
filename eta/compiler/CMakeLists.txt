@@ -20,6 +20,12 @@ if(ETA_BUILD_TORCH)
     eta_copy_torch_dlls(etac)
 endif()
 
+# nng integration (when available)
+if(ETA_BUILD_NNG)
+    target_link_libraries(etac PRIVATE eta_nng)
+    target_compile_definitions(etac PRIVATE ETA_HAS_NNG=1)
+endif()
+
 # Platform-specific libraries
 if(NOT MSVC)
     target_link_libraries(etac PRIVATE stdc++ m)

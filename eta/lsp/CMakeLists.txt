@@ -19,6 +19,12 @@ if(ETA_BUILD_TORCH)
     eta_copy_torch_dlls(eta_lsp)
 endif()
 
+# nng integration (when available — provides completion/hover for nng builtins)
+if(ETA_BUILD_NNG)
+    target_link_libraries(eta_lsp PRIVATE eta_nng)
+    target_compile_definitions(eta_lsp PRIVATE ETA_HAS_NNG=1)
+endif()
+
 # Platform-specific libraries
 if(NOT MSVC)
     target_link_libraries(eta_lsp PRIVATE stdc++ m)

@@ -175,9 +175,13 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
 
     for (const auto& file : files) {
         auto rel = fs::relative(file, examples);
-#ifndef ETA_HAS_TORCH
+#if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
         if (requires_torch(file)) {
+#ifdef ETA_TORCH_DEBUG_SKIP
+            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped in MSVC Debug)");
+#else
             BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped)");
+#endif
             continue;
         }
 #endif

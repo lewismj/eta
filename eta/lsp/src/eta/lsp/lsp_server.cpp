@@ -721,6 +721,19 @@ Value LspServer::handle_hover(const Value& params) {
         {"%clp-domain-z!",  "**%clp-domain-z!** — Set an integer domain constraint.\n\n`(%clp-domain-z! lvar lo hi)`"},
         {"%clp-domain-fd!",  "**%clp-domain-fd!** — Set a finite-domain constraint.\n\n`(%clp-domain-fd! lvar domain)`"},
         {"%clp-get-domain",  "**%clp-get-domain** — Query the current domain of a constrained variable.\n\n`(%clp-get-domain lvar)`"},
+#ifdef ETA_HAS_NNG
+        // nng / message-passing builtins
+        {"nng-socket",     "**nng-socket** — Create an nng socket.\n\n`(nng-socket type-sym)` where type-sym is one of: `'pair` `'pub` `'sub` `'push` `'pull` `'req` `'rep` `'surveyor` `'respondent` `'bus`"},
+        {"nng-listen",     "**nng-listen** — Listen on an endpoint.\n\n`(nng-listen sock endpoint)` — e.g. `\"tcp://*:5555\"`, `\"ipc:///tmp/eta.sock\"`, `\"inproc://workers\"`"},
+        {"nng-dial",       "**nng-dial** — Dial (connect to) an endpoint.\n\n`(nng-dial sock endpoint)`"},
+        {"nng-close",      "**nng-close** — Close the socket (idempotent).\n\n`(nng-close sock)`"},
+        {"nng-socket?",    "**nng-socket?** — Socket predicate.\n\n`(nng-socket? x)` → `#t` if x is an nng socket"},
+        {"send!",          "**send!** — Serialize a value and send it over a socket.\n\n`(send! sock value [flag])` — flag: `'noblock` or `'wait`"},
+        {"recv!",          "**recv!** — Receive a value from a socket.\n\n`(recv! sock [flag])` — returns value or `#f` on timeout; flag: `'noblock` or `'wait`"},
+        {"nng-poll",       "**nng-poll** — Poll multiple sockets for readiness.\n\n`(nng-poll items timeout-ms)` — items is a list of `(socket . events)` pairs; returns list of ready sockets"},
+        {"nng-subscribe",  "**nng-subscribe** — Set SUB topic filter.\n\n`(nng-subscribe sock topic)` — topic is a string prefix"},
+        {"nng-set-option", "**nng-set-option** — Set a socket option.\n\n`(nng-set-option sock option value)` — option: `'recv-timeout` `'send-timeout` `'recv-buf-size` `'survey-time`"},
+#endif
     };
 
     auto kit = keyword_docs.find(word);
@@ -968,6 +981,14 @@ Value LspServer::handle_completion(const Value& params) {
         // I/O
         {"display", 1, true, "I/O"}, {"write", 1, true, "I/O"},
         {"newline", 0, true, "I/O"},
+#ifdef ETA_HAS_NNG
+        // nng / message-passing
+        {"nng-socket",     1, false, "NNG"}, {"nng-listen",     2, false, "NNG"},
+        {"nng-dial",       2, false, "NNG"}, {"nng-close",      1, false, "NNG"},
+        {"nng-socket?",    1, false, "NNG"}, {"send!",          2, true,  "NNG"},
+        {"recv!",          1, true,  "NNG"}, {"nng-poll",       2, false, "NNG"},
+        {"nng-subscribe",  2, false, "NNG"}, {"nng-set-option", 3, false, "NNG"},
+#endif
     };
 
     for (const auto& b : builtins) {
@@ -1635,6 +1656,19 @@ Value LspServer::handle_signature_help(const Value& params) {
         {"begin",          "(begin expr ...)"}, {"cond",  "(cond (test expr ...) ... (else expr ...))"},
         {"case",           "(case key ((datum ...) expr ...) ... (else expr ...))"},
         {"set!",           "(set! name value)"},
+#ifdef ETA_HAS_NNG
+        // nng / message-passing
+        {"nng-socket",    "(nng-socket type-symbol)"},
+        {"nng-listen",    "(nng-listen sock endpoint)"},
+        {"nng-dial",      "(nng-dial sock endpoint)"},
+        {"nng-close",     "(nng-close sock)"},
+        {"nng-socket?",   "(nng-socket? x)"},
+        {"send!",         "(send! sock value [flag])"},
+        {"recv!",         "(recv! sock [flag])"},
+        {"nng-poll",      "(nng-poll items timeout-ms)"},
+        {"nng-subscribe", "(nng-subscribe sock topic)"},
+        {"nng-set-option","(nng-set-option sock option value)"},
+#endif
     };
 
     std::string label;

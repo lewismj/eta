@@ -9,6 +9,8 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
 endif()
 
+# stacktrace_windbg gives rich symbols on Windows; stacktrace_basic is the
+# portable fallback on Linux/macOS (addresses only unless addr2line is present).
 find_package(Boost 1.88 REQUIRED COMPONENTS unit_test_framework)
 if(NOT Boost_FOUND)
     message(FATAL_ERROR "Boost not found.")
@@ -23,6 +25,7 @@ option(ETA_BUILD_TORCH "Enable native libtorch bindings (requires libtorch)" ON)
 # (the CUDA toolkit itself is NOT required — libtorch ships all runtime libs).
 set(ETA_TORCH_BACKEND "cpu" CACHE STRING
     "libtorch backend for auto-download: cpu, cu118, cu121, or cu124")
+
 
 if(ETA_BUILD_TORCH)
     find_package(Torch QUIET)
@@ -64,6 +67,18 @@ function(eta_copy_torch_dlls target)
     endif()
 endfunction()
 
+# ── Optional nng networking & message-passing ─────────────────────────────
+option(ETA_BUILD_NNG "Enable nng networking and message-passing" ON)
+
+if(ETA_BUILD_NNG)
+    message(STATUS "Fetching nng (nanomsg-next-gen) v1.9.0 ...")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchNng.cmake")
+    if(NOT TARGET nng)
+        message(STATUS "nng fetch FAILED — disabling ETA_BUILD_NNG")
+        set(ETA_BUILD_NNG OFF CACHE BOOL "" FORCE)
+    endif()
+endif()
+
 # On Linux/macOS, set RPATH so installed binaries find libtorch in ../lib.
 # Must be set before add_subdirectory() so it applies to all executable targets.
 if(ETA_BUILD_TORCH AND NOT WIN32)
@@ -79,6 +94,10 @@ add_subdirectory(dap)
 
 if(ETA_BUILD_TORCH)
     add_subdirectory(torch)
+endif()
+
+if(ETA_BUILD_NNG)
+    add_subdirectory(nng)
 endif()
 
 add_subdirectory(test)

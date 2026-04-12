@@ -20,6 +20,11 @@
 #include "eta/runtime/types/types.h"
 #include "eta/diagnostic/diagnostic.h"
 
+#ifdef ETA_HAS_NNG
+#include "eta/nng/nng_socket_ptr.h"
+#include "eta/nng/nng_primitives.h"
+#endif
+
 namespace eta::dap {
 
 namespace fs = std::filesystem;
@@ -1150,6 +1155,9 @@ bool DapServer::is_compound_value(uint64_t val) const {
         case runtime::memory::heap::ObjectKind::Cons:
         case runtime::memory::heap::ObjectKind::Vector:
         case runtime::memory::heap::ObjectKind::Closure:
+#ifdef ETA_HAS_NNG
+        case runtime::memory::heap::ObjectKind::NngSocket:
+#endif
             return true;
         default:
             return false;
@@ -1223,6 +1231,39 @@ Array DapServer::expand_compound(uint64_t val) {
         }
         return children;
     }
+
+#ifdef ETA_HAS_NNG
+    // NngSocket → protocol / listening / dialed fields
+    if (auto* ns = heap.try_get_as<ObjectKind::NngSocket, eta::nng::NngSocketPtr>(
+            static_cast<ObjectId>(ops::payload(val)))) {
+        children.push_back(json::object({
+            {"name",  "protocol"},
+            {"value", Value(std::string(eta::nng::protocol_name(ns->protocol)))},
+            {"variablesReference", 0},
+        }));
+        children.push_back(json::object({
+            {"name",  "listening"},
+            {"value", Value(ns->listening ? std::string("true") : std::string("false"))},
+            {"variablesReference", 0},
+        }));
+        children.push_back(json::object({
+            {"name",  "dialed"},
+            {"value", Value(ns->dialed ? std::string("true") : std::string("false"))},
+            {"variablesReference", 0},
+        }));
+        children.push_back(json::object({
+            {"name",  "closed"},
+            {"value", Value(ns->closed ? std::string("true") : std::string("false"))},
+            {"variablesReference", 0},
+        }));
+        children.push_back(json::object({
+            {"name",  "pending-msgs"},
+            {"value", Value(std::to_string(ns->pending_msgs.size()))},
+            {"variablesReference", 0},
+        }));
+        return children;
+    }
+#endif
 
     return children;
 }

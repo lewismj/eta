@@ -184,6 +184,27 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("write",   1, true);
     r("newline", 0, true);
 
+#ifdef ETA_HAS_NNG
+    // ====================================================================
+    // nng_primitives.h  (must match registration order exactly)
+    //
+    // These are always registered when ETA_HAS_NNG is defined, even in
+    // analysis-only mode (LSP), so that nng/* names resolve and get
+    // correct arity checking.  The actual implementations are linked
+    // only when a live VM is involved (interpreter, DAP).
+    // ====================================================================
+    r("nng-socket",     1, false);
+    r("nng-listen",     2, false);
+    r("nng-dial",       2, false);
+    r("nng-close",      1, false);
+    r("nng-socket?",    1, false);
+    r("send!",          2, true);
+    r("recv!",          1, true);
+    r("nng-poll",       2, false);
+    r("nng-subscribe",  2, false);
+    r("nng-set-option", 3, false);
+#endif // ETA_HAS_NNG
+
 #ifdef ETA_HAS_TORCH
     // ====================================================================
     // torch_primitives.h  (must match registration order exactly)

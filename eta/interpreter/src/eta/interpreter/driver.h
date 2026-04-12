@@ -35,6 +35,10 @@
 #include <eta/torch/torch_primitives.h>
 #endif
 
+#ifdef ETA_HAS_NNG
+#include <eta/nng/nng_primitives.h>
+#endif
+
 #include "eta/interpreter/module_path.h"
 
 namespace eta::interpreter {
@@ -72,6 +76,11 @@ public:
 #ifdef ETA_HAS_TORCH
         // Phase 4: Torch/NN/Optim primitives (CPU or CUDA, detected at runtime)
         torch_bindings::register_torch_primitives(builtins_, heap_, intern_table_, &vm_);
+#endif
+
+#ifdef ETA_HAS_NNG
+        // Phase 5: nng networking and message-passing primitives
+        eta::nng::register_nng_primitives(builtins_, heap_, intern_table_);
 #endif
 
         // Wire up function resolver

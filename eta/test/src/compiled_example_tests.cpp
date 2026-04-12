@@ -285,7 +285,7 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
 
     for (const auto& file : files) {
         auto rel = fs::relative(file, examples);
-#ifndef ETA_HAS_TORCH
+#if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
         if (requires_torch(file)) {
             BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped)");
             continue;
