@@ -34,7 +34,8 @@ enum class FormatMode { Display, Write };
  * strings, symbols, pairs/lists, vectors, bytevectors, closures, primitives,
  * continuations, ports, and other heap objects.
  */
-inline std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& intern_table) {
+
+inline_always std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& intern_table) {
     if (v == nanbox::Nil) return "()";
     if (v == nanbox::True) return "#t";
     if (v == nanbox::False) return "#f";
@@ -75,26 +76,26 @@ inline std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTa
         }
 
         // Write mode: #\<name> or #\<char>
-        switch (c) {
-            case ' ':    return "#\\space";
-            case '\n':   return "#\\newline";
-            case '\r':   return "#\\return";
-            case '\t':   return "#\\tab";
-            case '\0':   return "#\\null";
-            case '\x1B': return "#\\escape";
-            case '\x7F': return "#\\delete";
-            case '\a':   return "#\\alarm";
-            case '\b':   return "#\\backspace";
-            default:
-                if (c >= 0x21 && c <= 0x7E) {
-                    // Printable ASCII
-                    return std::string("#\\") + static_cast<char>(c);
-                }
-                // Non-printable or non-ASCII: #\xHEX
-                std::ostringstream oss;
-                oss << "#\\x" << std::hex << std::uppercase << static_cast<uint32_t>(c);
-                return oss.str();
+        // Using if-else instead of switch to avoid MSVC optimizer issues
+        if (c == U' ')    return "#\\space";
+        if (c == U'\n')   return "#\\newline";
+        if (c == U'\r')   return "#\\return";
+        if (c == U'\t')   return "#\\tab";
+        if (c == U'\0')   return "#\\null";
+        if (c == 0x1B)    return "#\\escape";
+        if (c == 0x7F)    return "#\\delete";
+        if (c == U'\a')   return "#\\alarm";
+        if (c == U'\b')   return "#\\backspace";
+
+        if (c >= 0x21 && c <= 0x7E) {
+            // Printable ASCII - use array initialization to avoid potential issues
+            char buf[4] = {'#', '\\', static_cast<char>(c), '\0'};
+            return std::string(buf);
         }
+        // Non-printable or non-ASCII: #\xHEX
+        std::ostringstream oss;
+        oss << "#\\x" << std::hex << std::uppercase << static_cast<uint32_t>(c);
+        return oss.str();
     }
 
     if (t == Tag::String) {

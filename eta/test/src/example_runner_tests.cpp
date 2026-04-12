@@ -90,6 +90,29 @@ static std::vector<fs::path> collect_examples() {
     return files;
 }
 
+// ── Networking example filtering ─────────────────────────────────────────────
+// Two kinds of files need to be skipped:
+//   1. Spawned-worker files  — call (current-mailbox) to receive tasks from a
+//      parent.  Running standalone returns Nil and the first recv! errors out.
+//   2. Parent/orchestrator files — call (spawn ...) or (worker-pool ...) via
+//      (import std.net).  Without a real etai binary as the process manager the
+//      spawn call blocks forever waiting for the child to connect.
+//
+// We scan only non-comment lines so that files whose doc-comment *mentions*
+// current-mailbox (e.g. message-passing.eta) are not falsely excluded.
+static bool requires_net(const fs::path& file) {
+    std::ifstream ifs(file);
+    std::string line;
+    while (std::getline(ifs, line)) {
+        // Treat any line whose first non-whitespace character is ';' as a comment
+        auto pos = line.find_first_not_of(" \t");
+        if (pos != std::string::npos && line[pos] == ';') continue;
+        if (line.find("current-mailbox") != std::string::npos) return true;
+        if (line.find("std.net")         != std::string::npos) return true;
+    }
+    return false;
+}
+
 // ── Torch-dependent example filtering ───────────────────────────────────────
 // When the interpreter is built without -DETA_BUILD_TORCH=ON the torch/*
 // builtins are absent, so examples that `(import std.torch)` cannot run.
@@ -175,12 +198,21 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
 
     for (const auto& file : files) {
         auto rel = fs::relative(file, examples);
-#ifndef ETA_HAS_TORCH
+#if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
         if (requires_torch(file)) {
+#ifdef ETA_TORCH_DEBUG_SKIP
+            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped in MSVC Debug)");
+#else
             BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped)");
+#endif
             continue;
         }
 #endif
+        if (requires_net(file)) {
+            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires networking runtime — skipped)");
+            continue;
+        }
+
         BOOST_TEST_CONTEXT("Example: " << rel.string()) {
             bool ok = run_example(file);
             if (ok) {

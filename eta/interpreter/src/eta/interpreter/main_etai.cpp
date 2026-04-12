@@ -15,21 +15,24 @@ static void print_usage(const char* prog) {
     std::cerr << "Usage: " << prog << " [options] <file.eta|file.etac>\n"
               << "\n"
               << "Options:\n"
-              << "  --path <dirs>   Search path for .eta modules (";
+              << "  --path <dirs>       Search path for .eta modules (";
 #ifdef _WIN32
     std::cerr << "semicolon";
 #else
     std::cerr << "colon";
 #endif
     std::cerr << "-separated).\n"
-              << "                  Falls back to ETA_MODULE_PATH environment variable.\n"
-              << "  --disasm        Disassemble bytecode instead of executing.\n"
-              << "  --help          Show this help message.\n";
+              << "                      Falls back to ETA_MODULE_PATH environment variable.\n"
+              << "  --mailbox <url>     nng endpoint to dial on startup (spawned child mode).\n"
+              << "                      The child dials this endpoint to connect to the parent.\n"
+              << "  --disasm            Disassemble bytecode instead of executing.\n"
+              << "  --help              Show this help message.\n";
 }
 
 int main(int argc, char* argv[]) {
     std::string cli_path;
     std::string input_file;
+    std::string mailbox_endpoint;  // --mailbox <url>  (spawned child mode)
     bool disasm_mode = false;
 
     // ── Parse CLI arguments ──────────────────────────────────────────
@@ -52,6 +55,15 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             cli_path = argv[++i];
+            continue;
+        }
+
+        if (arg == "--mailbox") {
+            if (i + 1 >= argc) {
+                std::cerr << "error: --mailbox requires a value\n";
+                return 1;
+            }
+            mailbox_endpoint = argv[++i];
             continue;
         }
 
@@ -86,10 +98,33 @@ int main(int argc, char* argv[]) {
     auto parent_dir = fs::absolute(file_path).parent_path();
     resolver.add_dir(parent_dir);
 
-    // ── Create driver and run ────────────────────────────────────────
-    eta::interpreter::Driver driver(std::move(resolver));
+    // ── Create driver (pass argv[0] as the etai path) ────────────────
+    std::string self_path = argv[0];
+#if defined(__linux__)
+    {
+        std::error_code ec;
+        auto resolved = fs::read_symlink("/proc/self/exe", ec);
+        if (!ec) self_path = resolved.string();
+    }
+#endif
+    eta::interpreter::Driver driver(std::move(resolver), 4 * 1024 * 1024, self_path);
 
     auto resolve = driver.file_resolver();
+
+    // ── Install mailbox socket if we are a spawned child ────────────
+#ifdef ETA_HAS_NNG
+    if (!mailbox_endpoint.empty()) {
+        if (!driver.install_mailbox(mailbox_endpoint)) {
+            std::cerr << "error: --mailbox: failed to connect to parent at "
+                      << mailbox_endpoint << "\n";
+            return 1;
+        }
+    }
+#else
+    if (!mailbox_endpoint.empty()) {
+        std::cerr << "warning: --mailbox ignored (built without ETA_HAS_NNG)\n";
+    }
+#endif
 
     // Load prelude (if available in module path)
     {

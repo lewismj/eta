@@ -3,6 +3,16 @@ project(eta VERSION 0.1.0)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ── MSVC: use /Z7 (embedded debug info) globally ─────────────────────────────
+# libtorch's Caffe2Targets.cmake injects /Z7 via INTERFACE_COMPILE_OPTIONS.
+# CMake 3.25+ defaults to /Zi unless CMAKE_MSVC_DEBUG_INFORMATION_FORMAT is
+# set; having both on the same command line produces warning D9025.
+# Setting this before any add_subdirectory() suppresses the warning project-wide.
+if(MSVC)
+    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "Embedded"
+        CACHE STRING "MSVC debug-info format (Embedded=/Z7, ProgramDatabase=/Zi)" FORCE)
+endif()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_CXX_STANDARD 23)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)

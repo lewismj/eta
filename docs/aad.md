@@ -20,10 +20,10 @@ Eta provides tape-based reverse-mode AD:
 |----------|-------------|
 | **Tape (Wengert list)** | ~32 bytes/op, zero closure allocations, VM-native recording |
 
-Standard arithmetic is automatically tape-aware.  Standard
-arithmetic (`+`, `-`, `*`, `/`) and transcendentals (`sin`, `cos`,
-`exp`, `log`, `sqrt`) are **automatically recorded** when a `TapeRef`
-operand is detected — no macro rewriting or lifted operators needed.
+Standard arithmetic (`+`, `-`, `*`, `/`) and transcendentals (`sin`,
+`cos`, `exp`, `log`, `sqrt`) are **automatically recorded** when a
+`TapeRef` operand is detected — no macro rewriting or lifted operators
+needed.
 
 **Key ideas demonstrated:**
 
@@ -134,7 +134,7 @@ Usage — gradients are computed with plain arithmetic:
 Each tape entry is ~32 bytes:
 
 ```
-┌────────┬──────┬───────┬─────────┬─────────┐
+┌────────┬──────┬───────┬─────────┬──────────┐
 │ TapeOp │ left │ right │ primal  │ adjoint  │
 │ (1B)   │(4B)  │ (4B)  │ (8B)    │ (8B)     │
 └────────┴──────┴───────┴─────────┴──────────┘

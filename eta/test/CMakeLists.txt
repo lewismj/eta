@@ -30,12 +30,36 @@ set(SOURCES
         src/optimization_tests.cpp
         src/cons_pool_tests.cpp)
 
-# Conditionally add torch tests when libtorch is available
+# Conditionally add torch tests when libtorch is available.
+# libtorch ships release binaries only (_ITERATOR_DEBUG_LEVEL=0).
+# MSVC Debug builds use _ITERATOR_DEBUG_LEVEL=2 which causes ABI mismatch and
+# crashes inside libtorch inline template code (ordered_dict.h etc.).
+# Skip torch_tests entirely in MSVC Debug; mark torch examples as skippable.
 if(ETA_BUILD_TORCH)
-    list(APPEND SOURCES src/torch_tests.cpp)
+    if(NOT (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug"))
+        list(APPEND SOURCES src/torch_tests.cpp)
+    endif()
+endif()
+
+# Conditionally add nng tests when nng is available
+if(ETA_BUILD_NNG)
+    list(APPEND SOURCES src/nng_tests.cpp)
 endif()
 
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+# Disable C++20 module scanning — this project doesn't use modules and the
+# scanner fails to locate standard library headers when Boost headers are
+# transitively included (MSVC + CMake 3.28+ scanDependencies bug).
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+
+# libtorch ships release binaries only (_ITERATOR_DEBUG_LEVEL=0).
+# MSVC Debug uses _ITERATOR_DEBUG_LEVEL=2 — ABI mismatch crashes torch inline
+# template code. Skip torch_tests (excluded above) and mark torch examples
+# as skippable via ETA_TORCH_DEBUG_SKIP.
+if(ETA_BUILD_TORCH AND MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_TORCH_DEBUG_SKIP=1)
+endif()
 
 # Inject source tree paths for the example runner integration test.
 # These point at the source-tree examples/ and stdlib/ directories so the
@@ -44,6 +68,14 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../examples"
     ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
 )
+
+# Inject the path to the etai binary for Phase 4 spawn tests.
+# $<TARGET_FILE:etai> expands to the full path at build time (generator expression).
+if(ETA_BUILD_NNG)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        ETA_ETAI_PATH="$<TARGET_FILE:etai>"
+    )
+endif()
 
 # Pull in the DAP server implementation (not main_dap.cpp) so dap_tests.cpp
 # can link against DapServer with injected streams.
@@ -64,6 +96,13 @@ if(ETA_BUILD_TORCH)
     eta_copy_torch_dlls(${PROJECT_NAME})
 endif()
 
+# nng integration (when available)
+if(ETA_BUILD_NNG)
+    target_link_libraries(${PROJECT_NAME} PRIVATE eta_nng)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_HAS_NNG=1)
+    eta_copy_nng_dlls(${PROJECT_NAME})
+endif()
+
 # Expose interpreter (driver.h), DAP, and LSP headers
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
@@ -76,7 +115,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE BOOST_TEST_DYN_LINK)
 endif()
-
 
 # Platform-specific libraries
 if(NOT MSVC)

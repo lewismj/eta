@@ -127,6 +127,25 @@ static bool requires_torch([[maybe_unused]] const fs::path& file) {
     return false;
 }
 
+// ── Networking example filtering ─────────────────────────────────────────────
+// Spawned-worker files call (current-mailbox) and error immediately when run
+// standalone (no parent mailbox).  Parent/orchestrator files import std.net and
+// call (spawn ...) / (worker-pool ...) — without a real etai binary the spawn
+// blocks forever waiting for the child to connect.
+// Only non-comment lines are scanned so doc-comment mentions of current-mailbox
+// (e.g. message-passing.eta header) do not falsely trigger the filter.
+static bool requires_net(const fs::path& file) {
+    std::ifstream ifs(file);
+    std::string line;
+    while (std::getline(ifs, line)) {
+        auto pos = line.find_first_not_of(" \t");
+        if (pos != std::string::npos && line[pos] == ';') continue;
+        if (line.find("current-mailbox") != std::string::npos) return true;
+        if (line.find("std.net")         != std::string::npos) return true;
+    }
+    return false;
+}
+
 // ── Test fixture ────────────────────────────────────────────────────────────
 
 struct CompiledExampleFixture {
@@ -285,12 +304,16 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
 
     for (const auto& file : files) {
         auto rel = fs::relative(file, examples);
-#ifndef ETA_HAS_TORCH
+#if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
         if (requires_torch(file)) {
             BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped)");
             continue;
         }
 #endif
+        if (requires_net(file)) {
+            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires networking runtime — skipped)");
+            continue;
+        }
         BOOST_TEST_CONTEXT("Compiled round-trip: " << rel.string()) {
             // Run interpreted
             auto [interp_ok, interp_output] = run_interpreted(file);

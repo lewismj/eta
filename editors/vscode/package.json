@@ -21,7 +21,8 @@
         "onCommand:eta.showHeapInspector",
         "onCommand:eta.showDisassembly",
         "onView:etaGCRoots",
-        "onView:etaDisassembly"
+        "onView:etaDisassembly",
+        "onView:etaChildProcesses"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -53,6 +54,12 @@
                     "name": "Disassembly",
                     "when": "inDebugMode && debugType == 'eta'",
                     "icon": "$(file-binary)"
+                },
+                {
+                    "id": "etaChildProcesses",
+                    "name": "Child Processes",
+                    "when": "inDebugMode && debugType == 'eta'",
+                    "icon": "$(server-process)"
                 }
             ]
         },
@@ -129,6 +136,12 @@
                 "category": "Eta"
             },
             {
+                "command": "eta.refreshChildProcesses",
+                "title": "Refresh Child Processes",
+                "icon": "$(refresh)",
+                "category": "Eta"
+            },
+            {
                 "command": "eta.inspectObjectFromTree",
                 "title": "Inspect Object",
                 "category": "Eta"
@@ -172,6 +185,11 @@
                 {
                     "command": "eta.refreshDisassembly",
                     "when": "view == etaDisassembly",
+                    "group": "navigation"
+                },
+                {
+                    "command": "eta.refreshChildProcesses",
+                    "when": "view == etaChildProcesses",
                     "group": "navigation"
                 }
             ]

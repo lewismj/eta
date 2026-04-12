@@ -1,5 +1,10 @@
 # Eta — Language Examples 
 
+[← Back to README](../README.md) · [Quick Start](quickstart.md) ·
+[Architecture](architecture.md) · [Modules & Stdlib](modules.md)
+
+---
+
 A tour of the example programs in [`examples/`](../examples/).  Each file
 is a self-contained module that can be run directly:
 
@@ -14,20 +19,20 @@ etai examples/hello.eta
 | Example                                            | Key Concepts |
 |----------------------------------------------------|-------------|
 | [`causal_demo.eta`](#causal-demo--causal-neural-factor-analysis) | **Flagship** — symbolic diff, do-calculus, findall+CLP, libtorch NN, causal ATE |
-| [`hello.eta`](#helloeta)                           | Minimal program, `println`, `defun`, recursion |
-| [`basics.eta`](#basicseta)                         | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, records, quoting |
-| [`functions.eta`](#functionseta)                   | `defun`, `lambda`, closures, tail recursion, variadic args, `letrec` |
-| [`higher-order.eta`](#higher-ordereta)             | `map*`, `filter`, `foldl`/`foldr`, `reduce`, `sort`, `zip`, `take`/`drop`, `range` |
-| [`composition.eta`](#compositioneta)               | `compose`, `flip`, `constantly`, `negate`, manual currying, pipelines |
-| [`recursion.eta`](#recursioneta)                   | Fibonacci, list reversal, deep flatten, Ackermann, Towers of Hanoi |
-| [`exceptions.eta`](#exceptionseta)                 | `catch`/`raise`, tag specificity, structured payloads, `dynamic-wind` cleanup, re-raising |
-| [`boolean-simplifier.eta`](#boolean-simplifiereta) | Symbolic tree rewriting, De Morgan's laws, fixed-point simplification |
+| [`hello.eta`](#hello-world)                        | Minimal program, `println`, `defun`, recursion |
+| [`basics.eta`](#basics)                            | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, records, quoting |
+| [`functions.eta`](#functions)                      | `defun`, `lambda`, closures, tail recursion, variadic args, `letrec` |
+| [`higher-order.eta`](#higher-order-functions)      | `map*`, `filter`, `foldl`/`foldr`, `reduce`, `sort`, `zip`, `take`/`drop`, `range` |
+| [`composition.eta`](#currying-and-composition)     | `compose`, `flip`, `constantly`, `negate`, manual currying, pipelines |
+| [`recursion.eta`](#recursion)                      | Fibonacci, list reversal, deep flatten, Ackermann, Towers of Hanoi |
+| [`exceptions.eta`](#exceptions)                    | `catch`/`raise`, tag specificity, structured payloads, `dynamic-wind` cleanup, re-raising |
+| [`boolean-simplifier.eta`](#boolean-simplifier)    | Symbolic tree rewriting, De Morgan's laws, fixed-point simplification |
 | [`symbolic-diff.eta`](#symbolic-differentiation)   | Computer algebra: differentiation rules, algebraic simplification |
-| [`aad.eta`](#aadeta)                               | Reverse-mode AD, closures as backpropagators, `define-syntax`, `grad` |
-| [`xva.eta`](#xvaeta)                               | Quantitative finance: CVA, FVA, xVA sensitivities via AAD |
-| [`european.eta`](#europeaneta)                     | BS option Greeks: first & second order via AAD, custom VJP, Schwarz check |
-| [`sabr.eta`](#sabreta)                             | SABR vol surface with tape-based AD, Hagan approximation, Greeks |
-| [`logic.eta`](#logiceta)                           | Relational logic programming: `parento`, `grandparento`, `membero`, bidirectional queries |
+| [`aad.eta`](#aad--adjoint-algorithmic-differentiation) | Reverse-mode AD, closures as backpropagators, `define-syntax`, `grad` |
+| [`xva.eta`](#xva--valuation-adjustments-with-aad) | Quantitative finance: CVA, FVA, xVA sensitivities via AAD |
+| [`european.eta`](#european--black-scholes-greeks-with-aad) | BS option Greeks: first & second order via AAD, custom VJP, Schwarz check |
+| [`sabr.eta`](#sabr--sabr-vol-surface-with-tape-based-ad) | SABR vol surface with tape-based AD, Hagan approximation, Greeks |
+| [`logic.eta`](#logic-relations)                    | Relational logic programming: `parento`, `grandparento`, `membero`, bidirectional queries |
 | [`modules and imports`](#imports)                  | `import`, `export`, `only`, `except`, `rename`, `prefix` |
 
 ---
@@ -69,7 +74,7 @@ The canonical first program.
 
 ```scheme
 (module hello
-  import std.io)
+  (import std.io)
   (begin
     (println "Hello, world!")
 

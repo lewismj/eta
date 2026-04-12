@@ -266,7 +266,7 @@ The `grad` function:
 │       push TapeRef(new_index)                                │
 │  3. else:                                                    │
 │       plain numeric arithmetic                               │
-│  ──────────────────────────────────────────────────────────   │
+│  ──────────────────────────────────────────────────────────  │
 │  Backward sweep:                                             │
 │       for each entry in reverse:                             │
 │         compute ∂result/∂arg_a and ∂result/∂arg_b            │

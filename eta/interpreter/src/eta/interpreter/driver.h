@@ -35,6 +35,15 @@
 #include <eta/torch/torch_primitives.h>
 #endif
 
+#ifdef ETA_HAS_NNG
+#include <nng/nng.h>
+#include <nng/protocol/pair0/pair.h>
+#include <eta/nng/nng_socket_ptr.h>
+#include <eta/nng/nng_factory.h>
+#include <eta/nng/nng_primitives.h>
+#include <eta/nng/process_mgr.h>
+#endif
+
 #include "eta/interpreter/module_path.h"
 
 namespace eta::interpreter {
@@ -52,7 +61,9 @@ namespace fs = std::filesystem;
  */
 class Driver {
 public:
-    explicit Driver(ModulePathResolver resolver, std::size_t heap_bytes = 4 * 1024 * 1024)
+    explicit Driver(ModulePathResolver resolver,
+                    std::size_t heap_bytes = 4 * 1024 * 1024,
+                    std::string etai_path  = {})
         : resolver_(std::move(resolver)),
           heap_(heap_bytes),
           intern_table_(),
@@ -62,16 +73,85 @@ public:
           diag_engine_(),
           next_file_id_(1) // 0 is reserved for REPL / anonymous input
     {
-        // Phase 1: core primitives — pass vm_ so map/for-each support closures
+        // core primitives — pass vm_ so map/for-each support closures
         runtime::register_core_primitives(builtins_, heap_, intern_table_, &vm_);
-        // Phase 2: port primitives (require VM reference)
+        // port primitives (require VM reference)
         runtime::register_port_primitives(builtins_, heap_, intern_table_, vm_);
-        // Phase 3: I/O primitives (require VM for port-aware display/newline)
+        // I/O primitives (require VM for port-aware display/newline)
         runtime::register_io_primitives(builtins_, heap_, intern_table_, vm_);
 
 #ifdef ETA_HAS_TORCH
         // Phase 4: Torch/NN/Optim primitives (CPU or CUDA, detected at runtime)
         torch_bindings::register_torch_primitives(builtins_, heap_, intern_table_, &vm_);
+#endif
+
+#ifdef ETA_HAS_NNG
+        // Detect etai binary path if not explicitly supplied
+        if (etai_path.empty()) etai_path = detect_etai_path();
+        etai_path_ = etai_path;
+
+        // Build colon-separated module search path to forward to child processes.
+        // Child receives this via ETA_MODULE_PATH only if ETA_MODULE_PATH is not
+        // already set in the environment (so user env overrides always win).
+        std::string module_search_path;
+        {
+#ifdef _WIN32
+            constexpr char path_sep = ';';
+#else
+            constexpr char path_sep = ':';
+#endif
+            for (const auto& d : resolver_.dirs()) {
+                if (!module_search_path.empty()) module_search_path += path_sep;
+                module_search_path += d.string();
+            }
+        }
+
+        // Phase 7: build the thread worker factory.
+        // The lambda captures only the module search path string (value, not ref),
+        // so it is safe to use from any thread. It creates a fresh Driver + VM
+        // for each actor thread.
+        eta::nng::ProcessManager::ThreadWorkerFn thread_worker_fn =
+            [module_search_path](
+                const std::string& th_module_path,
+                const std::string& th_func_name,
+                const std::string& th_endpoint,
+                std::vector<std::string> th_text_args,
+                std::shared_ptr<std::atomic<bool>> alive) noexcept
+        {
+            try {
+                auto resolver = ModulePathResolver::from_path_string(module_search_path);
+                Driver child(std::move(resolver));
+                child.load_prelude();
+
+                // Dial the parent's inproc:// listener → sets current-mailbox
+                if (!child.install_mailbox(th_endpoint)) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                // Load the target module
+                if (!child.run_file(fs::path(th_module_path))) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                // Build and evaluate: (func-name arg1 arg2 ...)
+                std::string call_src = "(" + th_func_name;
+                for (const auto& a : th_text_args) {
+                    call_src += " ";
+                    call_src += a;
+                }
+                call_src += ")";
+                child.run_source(call_src);
+            } catch (...) {}
+            alive->store(false, std::memory_order_release);
+        };
+
+        // Phase 5: nng networking + actor-model primitives
+        eta::nng::register_nng_primitives(
+            builtins_, heap_, intern_table_,
+            &proc_mgr_, etai_path_, &mailbox_val_,
+            module_search_path, std::move(thread_worker_fn));
 #endif
 
         // Wire up function resolver
@@ -284,6 +364,46 @@ public:
         return runtime::format_value(v, mode, heap_, intern_table_);
     }
 
+#ifdef ETA_HAS_NNG
+    /// Install the `--mailbox` socket for a spawned child process.
+    ///
+    /// Called by main_etai.cpp when the `--mailbox <endpoint>` argument is
+    /// present.  Creates a PAIR socket, dials the endpoint (connecting to the
+    /// parent's listening socket), and stores the socket as `current-mailbox`.
+    ///
+    /// @return true on success, false if the dial fails.
+    bool install_mailbox(const std::string& endpoint) {
+        eta::nng::NngSocketPtr sp;
+        sp.protocol = eta::nng::NngProtocol::Pair;
+        int rv = nng_pair0_open(&sp.socket);
+        if (rv != 0) return false;
+
+        nng_socket_set_ms(sp.socket, NNG_OPT_RECVTIMEO, 1000);
+
+        rv = nng_dial(sp.socket, endpoint.c_str(), nullptr, 0);
+        if (rv != 0) return false;
+        sp.dialed = true;
+
+        auto val = eta::nng::factory::make_nng_socket(heap_, std::move(sp));
+        if (!val) return false;
+        mailbox_val_ = *val;
+        return true;
+    }
+
+    /// Access the process manager (for DAP child process tree view).
+    [[nodiscard]] eta::nng::ProcessManager* process_manager() noexcept {
+        return &proc_mgr_;
+    }
+    [[nodiscard]] const eta::nng::ProcessManager* process_manager() const noexcept {
+        return &proc_mgr_;
+    }
+
+    /// Return the current mailbox socket (Nil if not a spawned child).
+    [[nodiscard]] runtime::nanbox::LispVal mailbox() const noexcept {
+        return mailbox_val_;
+    }
+#endif
+
     /// Named global variables: slot index → variable name.
     /// Populated during compilation for debugger display.
     [[nodiscard]] const std::unordered_map<uint32_t, std::string>& global_names() const noexcept {
@@ -418,6 +538,45 @@ private:
 
     // IR-level optimization pipeline (runs between analyze and emit)
     semantics::OptimizationPipeline optimization_pipeline_;
+
+#ifdef ETA_HAS_NNG
+    eta::nng::ProcessManager         proc_mgr_;
+    runtime::nanbox::LispVal         mailbox_val_{runtime::nanbox::Nil};
+    std::string                      etai_path_;
+
+    /// Auto-detect the path to the etai binary at startup.
+    /// Reads /proc/self/exe on Linux, then looks for "etai" in the same
+    /// directory.  Falls back to "etai" (searched on PATH).
+    static std::string detect_etai_path() {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+#if defined(__linux__)
+        auto self = fs::read_symlink("/proc/self/exe", ec);
+        if (!ec) {
+            auto candidate = self.parent_path() / "etai";
+            if (fs::exists(candidate, ec) && !ec)
+                return candidate.string();
+        }
+#elif defined(__APPLE__)
+        // macOS: use _NSGetExecutablePath
+        char buf[4096] = {};
+        uint32_t size = sizeof(buf);
+        if (_NSGetExecutablePath(buf, &size) == 0) {
+            auto candidate = fs::path(buf).parent_path() / "etai";
+            if (fs::exists(candidate, ec) && !ec)
+                return candidate.string();
+        }
+#elif defined(_WIN32)
+        char buf[MAX_PATH] = {};
+        if (GetModuleFileNameA(nullptr, buf, MAX_PATH)) {
+            auto candidate = fs::path(buf).parent_path() / "etai.exe";
+            if (fs::exists(candidate, ec) && !ec)
+                return candidate.string();
+        }
+#endif
+        return "etai"; // fallback to PATH
+    }
+#endif
 
     // Accumulated expanded forms from all prior run_source calls.
     // The linker clears its state on each index_modules() call, so we must

@@ -42,3 +42,9 @@ export interface ObjectInspection {
     children: ObjectChild[];
 }
 
+export interface ChildProcessInfo {
+    pid: number;
+    endpoint: string;
+    modulePath: string;
+    alive: boolean;
+}

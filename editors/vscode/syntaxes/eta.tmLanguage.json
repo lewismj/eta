@@ -210,6 +210,13 @@
                     "captures": {
                         "1": { "name": "support.function.math.eta" }
                     }
+                },
+                {
+                    "comment": "nng / message-passing builtins",
+                    "match": "(?<=\\()\\s*(nng-socket|nng-listen|nng-dial|nng-close|nng-socket\\?|send!|recv!|nng-poll|nng-subscribe|nng-set-option|spawn|spawn-kill|spawn-wait|current-mailbox|spawn-thread-with|spawn-thread|thread-join|thread-alive\\?)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.nng.eta" }
+                    }
                 }
             ]
         },

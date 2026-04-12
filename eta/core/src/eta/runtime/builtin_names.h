@@ -92,6 +92,16 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("append",   0, true);
     r("reverse",  1, false);
     r("list-ref", 2, false);
+    r("list-tail", 2, false);
+    r("set-car!",  2, false);
+    r("set-cdr!",  2, false);
+    r("assq",      2, false);
+    r("assoc",     2, false);
+    r("member",    2, false);
+
+    // Symbol / string interop
+    r("symbol->string", 1, false);
+    r("string->symbol", 1, false);
 
     // Higher-order
     r("apply",    2, true);
@@ -106,6 +116,8 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("string-append",   0, true);
     r("number->string",  1, false);
     r("string->number",  1, false);
+    r("string-ref",      2, false);
+    r("substring",       3, false);
 
     // Vector operations
     r("vector",        0, true);
@@ -145,6 +157,15 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("tape-size",       1, false);
     r("tape-ref-value",  1, false);
 
+    // Fact-table builtins (must match core_primitives.h registration order)
+    r("fact-table?",             1, false);
+    r("%make-fact-table",        1, false);
+    r("%fact-table-insert!",     2, false);
+    r("%fact-table-build-index!", 2, false);
+    r("%fact-table-query",       3, false);
+    r("%fact-table-ref",         3, false);
+    r("%fact-table-row-count",   1, false);
+
     // ====================================================================
     // port_primitives.h  (must match registration order exactly)
     // ====================================================================
@@ -183,6 +204,41 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("display", 1, true);
     r("write",   1, true);
     r("newline", 0, true);
+
+#ifdef ETA_HAS_NNG
+    // ====================================================================
+    // nng_primitives.h  (must match registration order exactly)
+    //
+    // These are always registered when ETA_HAS_NNG is defined, even in
+    // analysis-only mode (LSP), so that nng/* names resolve and get
+    // correct arity checking.  The actual implementations are linked
+    // only when a live VM is involved (interpreter, DAP).
+    // ====================================================================
+    r("nng-socket",     1, false);
+    r("nng-listen",     2, false);
+    r("nng-dial",       2, false);
+    r("nng-close",      1, false);
+    r("nng-socket?",    1, false);
+    r("send!",          2, true);
+    r("recv!",          1, true);
+    r("nng-poll",       2, false);
+    r("nng-subscribe",  2, false);
+    r("nng-set-option", 3, false);
+    // Phase 4 — actor model
+    r("spawn",           1, true);
+    r("spawn-kill",      1, false);
+    r("spawn-wait",      1, false);
+    r("current-mailbox", 0, false);
+    // Phase 7 — in-process actor threads
+    r("spawn-thread-with", 2, true);
+    r("spawn-thread",      1, false);
+    r("thread-join",       1, false);
+    r("thread-alive?",     1, false);
+    // Phase 8 — monitoring, heartbeats & supervision
+    r("monitor",           1, false);
+    r("demonitor",         1, false);
+    r("enable-heartbeat",  2, false);
+#endif // ETA_HAS_NNG
 
 #ifdef ETA_HAS_TORCH
     // ====================================================================

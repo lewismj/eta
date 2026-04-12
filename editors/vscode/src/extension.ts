@@ -29,6 +29,7 @@ import { HeapInspectorPanel } from './heapView';
 import { GCRootsTreeProvider } from './gcRootsTreeView';
 import { DisassemblyContentProvider, showDisassembly } from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
+import { ChildProcessTreeProvider } from './childProcessTreeView';
 
 let client: LanguageClient | undefined;
 let outputChannel: OutputChannel;
@@ -39,6 +40,7 @@ let extensionCtx: ExtensionContext;
 let gcRootsProvider: GCRootsTreeProvider;
 let disasmProvider: DisassemblyContentProvider;
 let disasmTreeProvider: DisassemblyTreeProvider;
+let childProcProvider: ChildProcessTreeProvider;
 
 function log(msg: string): void {
     outputChannel?.appendLine(msg);
@@ -191,11 +193,20 @@ export function activate(context: ExtensionContext) {
         workspace.registerTextDocumentContentProvider('eta-disasm', disasmProvider),
     );
 
-    // ── Disassembly tree view (debug sidebar) ────────────────────────
+    // ── Disassembly tree view (debug sidebar) ────────────────────────────
     disasmTreeProvider = new DisassemblyTreeProvider();
     context.subscriptions.push(
         window.createTreeView('etaDisassembly', {
             treeDataProvider: disasmTreeProvider,
+            showCollapseAll: false,
+        }),
+    );
+
+    // ── Child process tree view (debug sidebar) ──────────────────────────
+    childProcProvider = new ChildProcessTreeProvider();
+    context.subscriptions.push(
+        window.createTreeView('etaChildProcesses', {
+            treeDataProvider: childProcProvider,
             showCollapseAll: false,
         }),
     );
@@ -244,6 +255,9 @@ export function activate(context: ExtensionContext) {
         }),
         commands.registerCommand('eta.refreshDisassembly', () => {
             disasmTreeProvider.refresh();
+        }),
+        commands.registerCommand('eta.refreshChildProcesses', () => {
+            childProcProvider.refresh();
         }),
         commands.registerCommand('eta.inspectObjectFromTree', (objectId: number) => {
             HeapInspectorPanel.createOrShow(extensionCtx).inspectObject(objectId);
@@ -370,6 +384,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
 
     onWillStopSession(): void {
         this.channel.appendLine('[DAP] Debug session stopping…');
+        childProcProvider?.notifySessionEnded();
     }
 
     onWillReceiveMessage(message: any): void {
@@ -427,6 +442,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 gcRootsProvider?.notifyStopped();
                 disasmTreeProvider?.notifyStopped();
                 disasmProvider?.refresh();
+                childProcProvider?.notifyStopped();
             } else if (event === 'continued') {
                 this.channel.appendLine('[DAP←] continued');
             } else if (event === 'breakpoint') {

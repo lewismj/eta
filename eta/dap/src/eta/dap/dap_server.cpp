@@ -20,6 +20,11 @@
 #include "eta/runtime/types/types.h"
 #include "eta/diagnostic/diagnostic.h"
 
+#ifdef ETA_HAS_NNG
+#include "eta/nng/nng_socket_ptr.h"
+#include "eta/nng/nng_primitives.h"
+#endif
+
 namespace eta::dap {
 
 namespace fs = std::filesystem;
@@ -174,6 +179,7 @@ void DapServer::dispatch(const Value& msg) {
     else if (*cmd == "eta/heapSnapshot")    handle_heap_inspector(id, args);
     else if (*cmd == "eta/inspectObject")   handle_inspect_object(id, args);
     else if (*cmd == "eta/disassemble")     handle_disassemble(id, args);
+    else if (*cmd == "eta/childProcesses")  handle_child_processes(id, args);
     else {
         // Unknown command – send empty success response to keep VS Code happy
         send_response(id, json::object({}));
@@ -502,11 +508,24 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
 // ============================================================================
 
 void DapServer::handle_threads(const Value& id, const Value& /*args*/) {
-    send_response(id, json::object({
-        {"threads", json::array({
-            json::object({{"id", 1}, {"name", "main"}}),
-        })},
-    }));
+    Array threads;
+    threads.push_back(json::object({{"id", 1}, {"name", "main"}}));
+#ifdef ETA_HAS_NNG
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (driver_ && driver_->process_manager()) {
+        int tid = 2;
+        for (const auto& ti : driver_->process_manager()->list_threads()) {
+            std::string name = "actor-" + std::to_string(tid - 1);
+            if (!ti.func_name.empty()) name += " (" + ti.func_name + ")";
+            threads.push_back(json::object({
+                {"id",   Value(static_cast<int64_t>(tid))},
+                {"name", Value(name)},
+            }));
+            ++tid;
+        }
+    }
+#endif
+    send_response(id, json::object({{"threads", Value(std::move(threads))}}));
 }
 
 // ============================================================================
@@ -1150,6 +1169,9 @@ bool DapServer::is_compound_value(uint64_t val) const {
         case runtime::memory::heap::ObjectKind::Cons:
         case runtime::memory::heap::ObjectKind::Vector:
         case runtime::memory::heap::ObjectKind::Closure:
+#ifdef ETA_HAS_NNG
+        case runtime::memory::heap::ObjectKind::NngSocket:
+#endif
             return true;
         default:
             return false;
@@ -1223,6 +1245,39 @@ Array DapServer::expand_compound(uint64_t val) {
         }
         return children;
     }
+
+#ifdef ETA_HAS_NNG
+    // NngSocket → protocol / listening / dialed fields
+    if (auto* ns = heap.try_get_as<ObjectKind::NngSocket, eta::nng::NngSocketPtr>(
+            static_cast<ObjectId>(ops::payload(val)))) {
+        children.push_back(json::object({
+            {"name",  "protocol"},
+            {"value", Value(std::string(eta::nng::protocol_name(ns->protocol)))},
+            {"variablesReference", 0},
+        }));
+        children.push_back(json::object({
+            {"name",  "listening"},
+            {"value", Value(ns->listening ? std::string("true") : std::string("false"))},
+            {"variablesReference", 0},
+        }));
+        children.push_back(json::object({
+            {"name",  "dialed"},
+            {"value", Value(ns->dialed ? std::string("true") : std::string("false"))},
+            {"variablesReference", 0},
+        }));
+        children.push_back(json::object({
+            {"name",  "closed"},
+            {"value", Value(ns->closed ? std::string("true") : std::string("false"))},
+            {"variablesReference", 0},
+        }));
+        children.push_back(json::object({
+            {"name",  "pending-msgs"},
+            {"value", Value(std::to_string(ns->pending_msgs.size()))},
+            {"variablesReference", 0},
+        }));
+        return children;
+    }
+#endif
 
     return children;
 }
@@ -1315,6 +1370,31 @@ std::string DapServer::current_module_from_frame(std::size_t frame_idx) {
         }
     }
     return best_mod;
+}
+
+
+// ============================================================================
+// eta/childProcesses — DAP custom request (Phase 4)
+// ============================================================================
+
+void DapServer::handle_child_processes(const Value& id, const Value& /*args*/) {
+    Array children;
+
+#ifdef ETA_HAS_NNG
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (driver_ && driver_->process_manager()) {
+        for (const auto& ci : driver_->process_manager()->list_children()) {
+            children.push_back(json::object({
+                {"pid",        Value(static_cast<int64_t>(ci.pid))},
+                {"endpoint",   Value(ci.endpoint)},
+                {"modulePath", Value(ci.module_path)},
+                {"alive",      Value(ci.alive)},
+            }));
+        }
+    }
+#endif
+
+    send_response(id, json::object({{"children", Value(std::move(children))}}));
 }
 
 
