@@ -1,0 +1,48 @@
+;;; examples/inproc.eta — In-process threads via spawn-thread-with.
+;;;
+;;; Demonstrates (spawn-thread-with module-path function-name . args):
+;;;   - Launches an in-process thread (separate VM, inproc:// socket)
+;;;   - Cheaper than OS-process spawn — no fork/exec overhead
+;;;   - Communication via the same send!/recv! mailbox API
+;;;
+;;; Run:
+;;;   etai examples/inproc.eta
+;;;
+;;; Worker: examples/inproc-worker.eta
+
+(module inproc-demo
+  (import std.net)
+  (import std.collections)
+  (import std.io)
+  (begin
+
+    (define tasks '(10 20 30))
+
+    (println "inproc: spawning in-process threads...")
+
+    ;; Spawn one thread per task.  Each thread blocks at (recv! mailbox 'wait)
+    ;; inside the worker module's top-level code, waiting for its task.
+    ;; 'noop is a placeholder — spawn-thread-with requires a function name.
+    (define threads
+      (map* (lambda (dummy)
+              (spawn-thread-with "examples/inproc-worker.eta" 'noop))
+            tasks))
+
+    ;; Send each task to its dedicated thread.
+    ;; nng buffers the message even if the thread hasn't reached recv! yet.
+    (for-each (lambda (pair)
+                (send! (car pair) (cdr pair) 'wait))
+              (zip threads tasks))
+
+    ;; Collect results — each thread sends exactly one reply.
+    (define results
+      (map* (lambda (t) (recv! t 'wait)) threads))
+
+    (println (string-append "  inputs:  " (display-to-string tasks)))
+    (println (string-append "  results: " (display-to-string results)))
+
+    ;; Wait for all threads to finish, then close sockets.
+    (for-each thread-join threads)
+    (for-each nng-close threads)
+
+    (println "inproc: done.")))

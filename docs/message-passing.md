@@ -10,6 +10,12 @@
 > through message passing over nng sockets.
 
 ---
+>[!WARNING]
+> The networking and (actor) message passing primitives are considered
+> beta at this stage. There are many examples that illustrate the
+> usage. However, the system needs more work for a full actor model.
+
+---
 
 ## Overview
 
