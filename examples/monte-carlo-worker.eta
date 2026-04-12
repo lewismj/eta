@@ -1,0 +1,46 @@
+;;; examples/monte-carlo-worker.eta — Worker for monte-carlo.eta
+;;;
+;;; Receives (seed n-samples), estimates π using Monte Carlo sampling,
+;;; and sends back the estimate.
+;;;
+;;; Simple LCG pseudo-random number generator (no external dependency):
+;;;   x_{n+1} = (a * x_n + c) mod m
+;;;   a = 1664525, c = 1013904223, m = 2^32  (Numerical Recipes LCG)
+;;;   Normalized to [0, 1) by dividing by m.
+
+(module monte-carlo-worker
+  (begin
+
+    ;; ── LCG pseudo-random number generator ───────────────────────────
+    ;; Returns (value . next-state) where value ∈ [0.0, 1.0)
+    (defun lcg-next (state)
+      (let ((next (mod (+ (* 1664525 state) 1013904223) 4294967296)))
+        (cons (/ (exact->inexact next) 4294967296.0) next)))
+
+    ;; ── Monte Carlo π estimator ───────────────────────────────────────
+    ;; Count how many random (x,y) points fall inside the unit circle.
+    ;; Returns 4 * (inside / total) as the π estimate.
+    (defun estimate-pi (seed n-samples)
+      (letrec ((loop (lambda (state inside remaining)
+                       (if (= remaining 0)
+                           (* 4.0 (/ (exact->inexact inside)
+                                     (exact->inexact n-samples)))
+                           (let* ((rx (lcg-next state))
+                                  (x  (car rx))
+                                  (ry (lcg-next (cdr rx)))
+                                  (y  (car ry))
+                                  (r2 (+ (* x x) (* y y)))
+                                  (hit (if (<= r2 1.0) 1 0)))
+                             (loop (cdr ry)
+                                   (+ inside hit)
+                                   (- remaining 1)))))))
+        (loop seed 0 n-samples)))
+
+    ;; ── Main ─────────────────────────────────────────────────────────
+    (define mailbox (current-mailbox))
+    (define task (recv! mailbox 'wait))
+    (define seed      (car task))
+    (define n-samples (car (cdr task)))
+    (define estimate  (estimate-pi seed n-samples))
+    (send! mailbox estimate 'wait)))
+

@@ -1,0 +1,44 @@
+;;; examples/parallel-map.eta — Parallel map using a worker pool.
+;;;
+;;; Demonstrates how to parallelize a pure function across a list of inputs
+;;; using (worker-pool module-path tasks):
+;;;   - One child process is spawned per task
+;;;   - All workers run simultaneously on separate cores
+;;;   - Results are collected in task-submission order
+;;;
+;;; This example computes Fibonacci numbers in parallel, which would
+;;; otherwise be serial when using a single-threaded interpreter.
+;;;
+;;; Run:
+;;;   etai examples/parallel-map.eta
+;;;
+;;; Worker: examples/parallel-map-worker.eta
+
+(module parallel-map
+  (import std.net)
+  (import std.collections)
+  (import std.io)
+  (begin
+
+    ;; Inputs to map over (Fibonacci indices — intentionally large
+    ;; to show the benefit of parallelism)
+    (define inputs '(30 31 32 33 34 35))
+
+    (println "parallel-map: computing Fibonacci numbers in parallel...")
+    (println (string-append "  inputs: " (display-to-string inputs)))
+
+    ;; worker-pool spawns one child per input and collects results
+    (define results
+      (worker-pool "examples/parallel-map-worker.eta" inputs))
+
+    (println (string-append "  results: " (display-to-string results)))
+
+    ;; Display input → result pairs
+    (for-each (lambda (n fib)
+                (println (string-append "  fib(" (number->string n) ") = "
+                                        (number->string fib))))
+              inputs
+              results)
+
+    (println "parallel-map: done.")))
+

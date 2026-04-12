@@ -1,0 +1,18 @@
+;;; examples/parallel-map-worker.eta — Worker for parallel-map.eta
+;;;
+;;; Receives a Fibonacci index n, computes fib(n), sends back the result.
+;;; One instance is spawned per input value.
+
+(module parallel-map-worker
+  (begin
+
+    ;; Naive (slow) Fibonacci — intentionally non-tail-recursive so the
+    ;; parallel version is clearly faster than a sequential alternative
+    (defun fib (n)
+      (if (< n 2) n
+          (+ (fib (- n 1)) (fib (- n 2)))))
+
+    (define mailbox (current-mailbox))
+    (define n (recv! mailbox 'wait))
+    (send! mailbox (fib n) 'wait)))
+

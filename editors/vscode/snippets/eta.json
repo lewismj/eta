@@ -140,6 +140,77 @@
             "  $0)"
         ],
         "description": "Iteration construct"
+    },
+
+    "Import Net": {
+        "prefix": "import-net",
+        "body": "(import std.net)",
+        "description": "Import the networking / message-passing module"
+    },
+    "NNG Socket": {
+        "prefix": "nng-socket",
+        "body": [
+            "(define ${1:sock} (nng-socket '${2|pair,pub,sub,push,pull,req,rep,surveyor,respondent,bus|}))",
+            "(nng-${3|listen,dial|} ${1:sock} \"${4:tcp://localhost:5555}\")",
+            "$0"
+        ],
+        "description": "Create and listen/dial an nng socket"
+    },
+    "With Socket": {
+        "prefix": "with-socket",
+        "body": [
+            "(with-socket '${1|pair,req,rep,pub,sub,push,pull,surveyor,respondent,bus|}",
+            "  (lambda (${2:sock})",
+            "    (nng-dial ${2:sock} \"${3:tcp://localhost:5555}\")",
+            "    $0))"
+        ],
+        "description": "Safe socket with automatic dynamic-wind cleanup"
+    },
+    "Spawn Worker": {
+        "prefix": "spawn",
+        "body": [
+            "(define ${1:worker} (spawn \"${2:worker.eta}\"))",
+            "(send! ${1:worker} ${3:'(task)})",
+            "(define ${4:result} (recv! ${1:worker} 'wait))",
+            "(spawn-wait ${1:worker})",
+            "(nng-close ${1:worker})",
+            "$0"
+        ],
+        "description": "Spawn a child process, send a message, receive the result, and clean up"
+    },
+    "Send/Recv": {
+        "prefix": "send-recv",
+        "body": [
+            "(send! ${1:sock} ${2:value})",
+            "(define ${3:reply} (recv! ${1:sock} 'wait))",
+            "$0"
+        ],
+        "description": "Send a message and wait for a reply"
+    },
+    "Worker Pool": {
+        "prefix": "worker-pool",
+        "body": [
+            "(define ${1:results} (worker-pool \"${2:worker.eta}\" ${3:tasks}))",
+            "$0"
+        ],
+        "description": "Distribute tasks across a pool of worker processes and collect results"
+    },
+    "Request Reply": {
+        "prefix": "request-reply",
+        "body": [
+            "(define ${1:result} (request-reply \"${2:tcp://localhost:5555}\" ${3:message}))",
+            "$0"
+        ],
+        "description": "Synchronous one-shot request-reply over a REQ socket"
+    },
+    "Current Mailbox": {
+        "prefix": "current-mailbox",
+        "body": [
+            "(define ${1:mailbox} (current-mailbox))",
+            "(define ${2:msg} (recv! ${1:mailbox} 'wait))",
+            "$0"
+        ],
+        "description": "Receive the parent socket inside a spawned child process"
     }
 }
 
