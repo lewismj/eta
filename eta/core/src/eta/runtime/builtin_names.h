@@ -234,6 +234,10 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("spawn-thread",      1, false);
     r("thread-join",       1, false);
     r("thread-alive?",     1, false);
+    // Phase 8 — monitoring, heartbeats & supervision
+    r("monitor",           1, false);
+    r("demonitor",         1, false);
+    r("enable-heartbeat",  2, false);
 #endif // ETA_HAS_NNG
 
 #ifdef ETA_HAS_TORCH

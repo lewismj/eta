@@ -338,7 +338,10 @@ ProcessManager::spawn(const std::string& module_path,
     sp.listening = true;
 
     // ── 3. Allocate the socket on the Eta heap ─────────────────────────────
-    auto sock_val_res = eta::nng::factory::make_nng_socket(heap, std::move(sp));
+    NngSocketPtr sp_tmp;
+    sp_tmp = std::move(sp);
+    sp_tmp.endpoint_hint = endpoint;  // Phase 8: store endpoint for down messages
+    auto sock_val_res = eta::nng::factory::make_nng_socket(heap, std::move(sp_tmp));
     if (!sock_val_res) return std::unexpected(sock_val_res.error());
     LispVal sock_val = *sock_val_res;
 
@@ -542,6 +545,7 @@ ProcessManager::spawn_thread_with(const std::string& module_path,
             std::string(nng_strerror(rv))}});
     }
     sp.listening = true;
+    sp.endpoint_hint = endpoint;  // Phase 8: store endpoint for down messages
 
     // ── 3. Allocate socket on the Eta heap ────────────────────────────────
     auto sock_val_res = eta::nng::factory::make_nng_socket(heap, std::move(sp));

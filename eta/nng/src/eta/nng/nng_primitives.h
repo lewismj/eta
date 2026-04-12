@@ -6,6 +6,7 @@
 /// Provides:  nng-socket  nng-listen  nng-dial  nng-close  nng-socket?
 ///            send!  recv!  nng-poll  nng-subscribe  nng-set-option
 ///            spawn  spawn-kill  spawn-wait  current-mailbox      (Phase 4)
+///            monitor  demonitor  enable-heartbeat                 (Phase 8)
 ///
 /// Registration order MUST match builtin_names.h (ETA_HAS_NNG section).
 /// All primitives capture Heap& and InternTable& by reference.
@@ -127,6 +128,28 @@ inline std::optional<NngProtocol> parse_protocol(const std::string& name) {
     return std::nullopt;
 }
 
+// ─── Phase 8 helpers ─────────────────────────────────────────────────────────
+
+/// Return current time as milliseconds since the steady_clock epoch.
+inline int64_t current_epoch_ms() noexcept {
+    return static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+/// Static pipe-removal callback registered by `monitor`.
+/// arg == raw NngSocketPtr* (stable heap address).
+/// Called from nng's internal I/O thread on peer disconnect.
+static void monitor_pipe_cb(nng_pipe /*pipe*/, nng_pipe_ev /*ev*/, void* arg) noexcept {
+    auto* sp = static_cast<NngSocketPtr*>(arg);
+    if (!sp || !sp->monitor_state) return;
+    auto& ms = *sp->monitor_state;
+    if (ms.closing_normally.load(std::memory_order_acquire)) return;
+    if (!ms.monitored) return;
+    if (ms.monitor_down_msg.empty()) return;
+    ms.push_notification(ms.monitor_down_msg);
+}
+
 // ─── register_nng_primitives ──────────────────────────────────────────────────
 
 /// Register all nng primitives (Phases 3 + 4 + 7) into the given BuiltinEnvironment.
@@ -208,6 +231,7 @@ inline void register_nng_primitives(
             int rv = nng_listen(sp->socket, endpoint.c_str(), nullptr, 0);
             if (rv != 0) return nng_error(rv);
             sp->listening = true;
+            sp->endpoint_hint = endpoint;  // Phase 8: store for down messages
             return args[0]; // return the socket itself
         });
 
@@ -238,6 +262,7 @@ inline void register_nng_primitives(
             int rv = nng_dial(sp->socket, endpoint.c_str(), nullptr, 0);
             if (rv != 0) return nng_error(rv);
             sp->dialed = true;
+            if (sp->endpoint_hint.empty()) sp->endpoint_hint = endpoint;  // Phase 8
             return args[0]; // return the socket itself
         });
 
@@ -251,6 +276,13 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::TypeError, "nng-close: expected an nng-socket"}});
             }
             if (!sp->closed) {
+                // Phase 8: signal closing_normally before nng_close to suppress
+                // spurious disconnect notifications via monitor_pipe_cb.
+                if (sp->monitor_state) {
+                    sp->monitor_state->closing_normally.store(true, std::memory_order_release);
+                    if (sp->monitor_state->heartbeat)
+                        sp->monitor_state->heartbeat->stop.store(true, std::memory_order_release);
+                }
                 nng_close(sp->socket);
                 sp->socket = NNG_SOCKET_INITIALIZER;
                 sp->closed = true;
@@ -337,8 +369,11 @@ inline void register_nng_primitives(
     // (recv! sock [flag]) → LispVal or #f on timeout/EAGAIN
     // flag: 'noblock → NNG_FLAG_NONBLOCK; 'wait → blocking
     //
-    // Auto-detects serialisation format: binary messages start with 0xEA
-    // (BINARY_VERSION_BYTE); everything else is treated as s-expression text.
+    // Phase 8: checks monitor/heartbeat notifications first.
+    // Heartbeat ping/pong control messages (0xEB prefix) are handled
+    // transparently: pings receive an auto-reply pong, pongs update the
+    // heartbeat timestamp.  Up to 16 consecutive heartbeat messages are
+    // filtered before returning #f.
     env.register_builtin("recv!", 1, true,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -351,18 +386,44 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::InternalError, "recv!: socket is closed"}});
             }
 
-            // Check the pending message queue first (messages saved by nng-poll).
-            // Auto-detect format in buffered messages too.
+            // Check monitor/heartbeat notifications first (thread-safe).
+            if (sp->monitor_state) {
+                auto notif = sp->monitor_state->pop_notification();
+                if (notif) {
+                    auto& data = *notif;
+                    std::expected<LispVal, RuntimeError> res;
+                    if (is_binary_format(data.data(), data.size())) {
+                        res = deserialize_binary(std::span<const uint8_t>(data), heap, intern);
+                    } else {
+                        std::string_view sv(reinterpret_cast<const char*>(data.data()), data.size());
+                        res = deserialize_value(sv, heap, intern);
+                    }
+                    if (!res) return std::unexpected(res.error());
+                    return *res;
+                }
+            }
+
+            // Check the pending message queue (messages saved by nng-poll).
             if (!sp->pending_msgs.empty()) {
                 auto data = std::move(sp->pending_msgs.front());
                 sp->pending_msgs.pop_front();
+                // Heartbeat check on buffered messages
+                if (is_heartbeat_ping(data.data(), data.size())) {
+                    auto pong = make_heartbeat_pong();
+                    nng_send(sp->socket, pong.data(), pong.size(), NNG_FLAG_NONBLOCK);
+                    // Return #f — caller can retry; this avoids infinite recursion
+                    return nanbox::False;
+                }
+                if (is_heartbeat_pong(data.data(), data.size())) {
+                    if (sp->monitor_state && sp->monitor_state->heartbeat)
+                        sp->monitor_state->heartbeat->last_pong_epoch_ms.store(current_epoch_ms());
+                    return nanbox::False;
+                }
                 std::expected<LispVal, RuntimeError> result;
                 if (is_binary_format(data.data(), data.size())) {
-                    result = deserialize_binary(
-                        std::span<const uint8_t>(data), heap, intern);
+                    result = deserialize_binary(std::span<const uint8_t>(data), heap, intern);
                 } else {
-                    std::string_view sv(reinterpret_cast<const char*>(data.data()),
-                                        data.size());
+                    std::string_view sv(reinterpret_cast<const char*>(data.data()), data.size());
                     result = deserialize_value(sv, heap, intern);
                 }
                 if (!result) return std::unexpected(result.error());
@@ -387,16 +448,46 @@ inline void register_nng_primitives(
                 nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, NNG_DURATION_INFINITE);
             }
 
+            // Inner recv loop: filter up to 16 heartbeat messages transparently.
+            constexpr int MAX_HB_SKIP = 16;
+            int hb_skipped = 0;
+        recv_loop:
             void* buf = nullptr;
             size_t sz = 0;
             int rv = nng_recv(sp->socket, &buf, &sz, flags | NNG_FLAG_ALLOC);
+
+            if (wait_mode && rv != 0) {
+                nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, saved_timeout);
+            }
+
+            if (rv == NNG_EAGAIN || rv == NNG_ETIMEDOUT) return nanbox::False;
+            if (rv != 0) {
+                if (wait_mode) nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, saved_timeout);
+                return nng_error(rv);
+            }
+
+            // Phase 8: transparent heartbeat handling
+            if (is_heartbeat_ping(static_cast<const uint8_t*>(buf), sz)) {
+                nng_free(buf, sz);
+                auto pong = make_heartbeat_pong();
+                nng_send(sp->socket, pong.data(), pong.size(), NNG_FLAG_NONBLOCK);
+                if (++hb_skipped < MAX_HB_SKIP) goto recv_loop;
+                if (wait_mode) nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, saved_timeout);
+                return nanbox::False;
+            }
+            if (is_heartbeat_pong(static_cast<const uint8_t*>(buf), sz)) {
+                nng_free(buf, sz);
+                if (sp->monitor_state && sp->monitor_state->heartbeat)
+                    sp->monitor_state->heartbeat->last_pong_epoch_ms.store(current_epoch_ms());
+                if (++hb_skipped < MAX_HB_SKIP) goto recv_loop;
+                if (wait_mode) nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, saved_timeout);
+                return nanbox::False;
+            }
 
             if (wait_mode) {
                 nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, saved_timeout);
             }
 
-            if (rv == NNG_EAGAIN || rv == NNG_ETIMEDOUT) return nanbox::False;
-            if (rv != 0) return nng_error(rv);
 
             // Auto-detect binary vs text format
             std::expected<LispVal, RuntimeError> result;
@@ -767,7 +858,196 @@ inline void register_nng_primitives(
             }
             return proc_mgr->is_thread_alive(args[0]) ? nanbox::True : nanbox::False;
         });
+
+    // ── Phase 8: monitor ───────────────────────────────────────────────────
+    // (monitor sock) → #t
+    // Registers a pipe-disconnect callback.  When the remote peer closes the
+    // connection, recv! on sock will return '(down endpoint "disconnected").
+    env.register_builtin("monitor", 1, false,
+        [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto* sp = get_socket(heap, args[0]);
+            if (!sp) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "monitor: expected an nng-socket"}});
+            }
+            if (sp->closed) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError, "monitor: socket is already closed"}});
+            }
+
+            // Create monitor state on first use
+            if (!sp->monitor_state) sp->monitor_state = std::make_shared<MonitorState>();
+
+            // Pre-serialise the down message: (down endpoint "disconnected")
+            auto endpoint_str = sp->endpoint_hint.empty() ? "<unknown>" : sp->endpoint_hint;
+            auto sym_down   = make_symbol(intern, "down");
+            auto str_ep     = make_string(heap, intern, endpoint_str);
+            auto str_reason = make_string(heap, intern, "disconnected");
+            if (!sym_down || !str_ep || !str_reason) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError, "monitor: heap allocation failed"}});
+            }
+            auto tail2 = make_cons(heap, *str_reason, nanbox::Nil);
+            auto tail1 = make_cons(heap, *str_ep,     *tail2);
+            auto down_list = make_cons(heap, *sym_down, *tail1);
+            if (!tail2 || !tail1 || !down_list) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError, "monitor: cons allocation failed"}});
+            }
+            sp->monitor_state->monitor_down_msg = serialize_binary(*down_list, heap, intern);
+            sp->monitor_state->monitored = true;
+
+            // Register the pipe-removal callback.
+            // nng_pipe_notify replaces any previous registration for this event.
+            nng_pipe_notify(sp->socket, NNG_PIPE_EV_REM_POST,
+                            monitor_pipe_cb, static_cast<void*>(sp));
+            return nanbox::True;
+        });
+
+    // ── Phase 8: demonitor ─────────────────────────────────────────────────
+    // (demonitor sock) → #t
+    // Cancels monitoring on sock.
+    env.register_builtin("demonitor", 1, false,
+        [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto* sp = get_socket(heap, args[0]);
+            if (!sp) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "demonitor: expected an nng-socket"}});
+            }
+            if (sp->monitor_state) {
+                sp->monitor_state->monitored = false;
+                sp->monitor_state->monitor_down_msg.clear();
+            }
+            if (!sp->closed) {
+                // Unregister the callback by passing nullptr
+                nng_pipe_notify(sp->socket, NNG_PIPE_EV_REM_POST, nullptr, nullptr);
+            }
+            return nanbox::True;
+        });
+
+    // ── Phase 8: enable-heartbeat ──────────────────────────────────────────
+    // (enable-heartbeat sock interval-ms) → #t
+    //
+    // Starts a background thread that sends a heartbeat ping every interval-ms
+    // milliseconds.  If no pong is received within interval-ms after the ping,
+    // a (down endpoint "heartbeat-timeout") message is pushed into the socket's
+    // notification queue (returned by the next recv! call).
+    //
+    // recv! handles pong messages transparently, updating the heartbeat
+    // timestamp.  recv! also transparently replies to any incoming pings with
+    // a pong (so the remote side can detect liveness too).
+    env.register_builtin("enable-heartbeat", 2, false,
+        [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto* sp = get_socket(heap, args[0]);
+            if (!sp) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "enable-heartbeat: expected an nng-socket"}});
+            }
+            if (sp->closed) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "enable-heartbeat: socket is already closed"}});
+            }
+
+            // Parse interval
+            int64_t interval_ms = 1000;
+            {
+                auto n = classify_numeric(args[1], heap);
+                if (n.is_fixnum())       interval_ms = n.int_val;
+                else if (n.is_flonum())  interval_ms = static_cast<int64_t>(n.float_val);
+            }
+            if (interval_ms <= 0) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "enable-heartbeat: interval-ms must be positive"}});
+            }
+
+            // Create monitor state on first use
+            if (!sp->monitor_state) sp->monitor_state = std::make_shared<MonitorState>();
+
+            // Stop any existing heartbeat
+            if (sp->monitor_state->heartbeat) {
+                sp->monitor_state->heartbeat->stop.store(true, std::memory_order_release);
+                if (sp->monitor_state->heartbeat->thread.joinable())
+                    sp->monitor_state->heartbeat->thread.detach();
+            }
+
+            // Pre-serialise the heartbeat-timeout down message
+            auto endpoint_str = sp->endpoint_hint.empty() ? "<unknown>" : sp->endpoint_hint;
+            auto sym_down   = make_symbol(intern, "down");
+            auto str_ep     = make_string(heap, intern, endpoint_str);
+            auto str_reason = make_string(heap, intern, "heartbeat-timeout");
+            if (!sym_down || !str_ep || !str_reason) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "enable-heartbeat: heap allocation failed"}});
+            }
+            auto tail2 = make_cons(heap, *str_reason, nanbox::Nil);
+            auto tail1 = make_cons(heap, *str_ep,     *tail2);
+            auto down_list = make_cons(heap, *sym_down, *tail1);
+            if (!tail2 || !tail1 || !down_list) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "enable-heartbeat: cons allocation failed"}});
+            }
+            auto down_msg_binary = serialize_binary(*down_list, heap, intern);
+
+            // Build HeartbeatState
+            auto hb = std::make_shared<HeartbeatState>();
+            hb->interval_ms = interval_ms;
+            hb->last_pong_epoch_ms.store(current_epoch_ms());
+            sp->monitor_state->heartbeat = hb;
+
+            // Capture everything the thread needs by value.
+            // The thread holds shared_ptr ownership of monitor_state and hb so they stay
+            // alive until the thread exits.
+            nng_socket sock_copy = sp->socket;
+            auto monitor_shared = sp->monitor_state;
+
+            hb->thread = std::thread([monitor_shared, sock_copy, interval_ms,
+                                       hb, down_msg_binary = std::move(down_msg_binary)]()
+            {
+                auto sleep_ms = [&](int64_t ms) {
+                    constexpr int64_t step = 10;
+                    for (int64_t i = 0; i < ms && !hb->stop.load(std::memory_order_acquire); i += step) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(
+                            std::min(step, ms - i)));
+                    }
+                };
+
+                // Wait one interval before the first ping
+                sleep_ms(interval_ms);
+
+                while (!hb->stop.load(std::memory_order_acquire)) {
+                    // Send ping
+                    auto ping = make_heartbeat_ping();
+                    nng_send(sock_copy, ping.data(), ping.size(), NNG_FLAG_NONBLOCK);
+                    int64_t ping_time = current_epoch_ms();
+                    hb->last_ping_epoch_ms.store(ping_time, std::memory_order_release);
+
+                    // Wait one interval for pong
+                    sleep_ms(interval_ms);
+                    if (hb->stop.load(std::memory_order_acquire)) break;
+
+                    // Check if a pong arrived since the ping was sent
+                    int64_t last_pong = hb->last_pong_epoch_ms.load(std::memory_order_acquire);
+                    if (last_pong < ping_time) {
+                        // No pong within the interval → timeout
+                        if (!monitor_shared->closing_normally.load(std::memory_order_acquire)) {
+                            monitor_shared->push_notification(down_msg_binary);
+                        }
+                        break;
+                    }
+                }
+                hb->stop.store(true, std::memory_order_release);
+            });
+
+            return nanbox::True;
+        });
 }
 
 } // namespace eta::nng
+
+
 

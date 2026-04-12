@@ -54,6 +54,33 @@ deserialize_value(std::string_view data, Heap& heap, InternTable& intern) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 8 — Heartbeat wire format
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Magic byte that marks a heartbeat control message (ping/pong).
+/// Distinct from the binary format version byte (0xEA) and all printable ASCII.
+constexpr uint8_t HEARTBEAT_VERSION_BYTE = 0xEB;
+constexpr uint8_t HB_PING = 0x00;  ///< second byte for ping
+constexpr uint8_t HB_PONG = 0x01;  ///< second byte for pong
+
+/// Return true if the buffer contains a heartbeat ping message.
+inline bool is_heartbeat_ping(const uint8_t* d, size_t sz) noexcept {
+    return sz == 2 && d[0] == HEARTBEAT_VERSION_BYTE && d[1] == HB_PING;
+}
+/// Return true if the buffer contains a heartbeat pong message.
+inline bool is_heartbeat_pong(const uint8_t* d, size_t sz) noexcept {
+    return sz == 2 && d[0] == HEARTBEAT_VERSION_BYTE && d[1] == HB_PONG;
+}
+/// Build a heartbeat ping message.
+inline std::vector<uint8_t> make_heartbeat_ping() {
+    return {HEARTBEAT_VERSION_BYTE, HB_PING};
+}
+/// Build a heartbeat pong message.
+inline std::vector<uint8_t> make_heartbeat_pong() {
+    return {HEARTBEAT_VERSION_BYTE, HB_PONG};
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Phase 6 — Binary wire format
 // ─────────────────────────────────────────────────────────────────────────────
 

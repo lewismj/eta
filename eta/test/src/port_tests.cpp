@@ -24,11 +24,11 @@ struct PortTestFixture {
         : heap(1024 * 1024),
           intern_table(),
           vm(heap, intern_table) {
-        // Phase 1: Register core primitives (no VM dependency)
+        // Register core primitives (no VM dependency)
         register_core_primitives(builtins, heap, intern_table);
-        // Phase 2: Register port primitives (requires VM)
+        // Register port primitives (requires VM)
         register_port_primitives(builtins, heap, intern_table, vm);
-        // Phase 3: Register I/O primitives (requires VM for port-aware display/newline)
+        // Register I/O primitives (requires VM for port-aware display/newline)
         register_io_primitives(builtins, heap, intern_table, vm);
 
         // Install builtins into VM
