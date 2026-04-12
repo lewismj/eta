@@ -90,15 +90,25 @@ static std::vector<fs::path> collect_examples() {
     return files;
 }
 
-// ── Spawn-worker example filtering ──────────────────────────────────────────
-// Files that call (current-mailbox) are designed to be launched by a parent
-// process via (spawn ...).  Running them standalone returns Nil from
-// current-mailbox and then errors on the first (recv! ...) call.
-static bool requires_spawn_parent(const fs::path& file) {
+// ── Networking example filtering ─────────────────────────────────────────────
+// Two kinds of files need to be skipped:
+//   1. Spawned-worker files  — call (current-mailbox) to receive tasks from a
+//      parent.  Running standalone returns Nil and the first recv! errors out.
+//   2. Parent/orchestrator files — call (spawn ...) or (worker-pool ...) via
+//      (import std.net).  Without a real etai binary as the process manager the
+//      spawn call blocks forever waiting for the child to connect.
+//
+// We scan only non-comment lines so that files whose doc-comment *mentions*
+// current-mailbox (e.g. message-passing.eta) are not falsely excluded.
+static bool requires_net(const fs::path& file) {
     std::ifstream ifs(file);
     std::string line;
     while (std::getline(ifs, line)) {
+        // Treat any line whose first non-whitespace character is ';' as a comment
+        auto pos = line.find_first_not_of(" \t");
+        if (pos != std::string::npos && line[pos] == ';') continue;
         if (line.find("current-mailbox") != std::string::npos) return true;
+        if (line.find("std.net")         != std::string::npos) return true;
     }
     return false;
 }
@@ -198,8 +208,8 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
             continue;
         }
 #endif
-        if (requires_spawn_parent(file)) {
-            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires spawning parent — skipped)");
+        if (requires_net(file)) {
+            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires networking runtime — skipped)");
             continue;
         }
 
