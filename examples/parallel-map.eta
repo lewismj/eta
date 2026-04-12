@@ -20,8 +20,7 @@
   (import std.io)
   (begin
 
-    ;; Inputs to map over (Fibonacci indices — intentionally large
-    ;; to show the benefit of parallelism)
+    ;; Inputs to map over (large Fibonacci indices to show parallelism benefit)
     (define inputs '(30 31 32 33 34 35))
 
     (println "parallel-map: computing Fibonacci numbers in parallel...")

@@ -6,13 +6,13 @@
 (module parallel-map-worker
   (begin
 
-    ;; Naive (slow) Fibonacci — intentionally non-tail-recursive so the
-    ;; parallel version is clearly faster than a sequential alternative
+    ;; Tail-recursive Fibonacci via accumulator — O(n) time, O(1) stack.
     (defun fib (n)
-      (if (< n 2) n
-          (+ (fib (- n 1)) (fib (- n 2)))))
+      (letrec ((fib-iter (lambda (n a b)
+                           (if (= n 0) a
+                               (fib-iter (- n 1) b (+ a b))))))
+        (fib-iter n 0 1)))
 
     (define mailbox (current-mailbox))
     (define n (recv! mailbox 'wait))
     (send! mailbox (fib n) 'wait)))
-
