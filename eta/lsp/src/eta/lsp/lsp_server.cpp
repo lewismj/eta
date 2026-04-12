@@ -1237,8 +1237,19 @@ Value LspServer::handle_references(const Value& params) {
     }
 
     auto scan_cached = [&](const std::vector<SymbolInfo>& syms) {
+        // Only scan files that actually define the searched symbol — this
+        // prevents false-positive matches in prelude/stdlib files for symbols
+        // (e.g. a local variable "x") that are not defined there.
+        std::unordered_set<std::string> files_with_symbol;
+        for (const auto& sym : syms) {
+            if (sym.name == word && !sym.file_path.empty())
+                files_with_symbol.insert(sym.file_path);
+        }
+        if (files_with_symbol.empty()) return;
+
         for (const auto& sym : syms) {
             if (sym.file_path.empty()) continue;
+            if (!files_with_symbol.count(sym.file_path)) continue;
             auto file_uri = path_to_uri(sym.file_path);
             if (!scanned_files.insert(file_uri).second) continue;
             // Read and scan the file

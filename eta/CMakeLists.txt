@@ -79,6 +79,21 @@ if(ETA_BUILD_NNG)
     endif()
 endif()
 
+# ── Utility: copy nng DLL next to a target (Windows only) ────────────
+# On Windows, nng is built as a shared library; the DLL must sit beside
+# each executable.  On Linux/macOS nng is static — this is a no-op.
+# Usage: eta_copy_nng_dlls(<target>)
+function(eta_copy_nng_dlls target)
+    if(WIN32 AND ETA_BUILD_NNG AND TARGET nng)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:nng>
+                $<TARGET_FILE_DIR:${target}>
+            COMMENT "Copying nng DLL to ${target} output dir"
+        )
+    endif()
+endfunction()
+
 # On Linux/macOS, set RPATH so installed binaries find libtorch in ../lib.
 # Must be set before add_subdirectory() so it applies to all executable targets.
 if(ETA_BUILD_TORCH AND NOT WIN32)
@@ -98,6 +113,10 @@ endif()
 
 if(ETA_BUILD_NNG)
     add_subdirectory(nng)
+    # On Windows, install the nng DLL alongside executables
+    if(WIN32 AND TARGET nng)
+        install(FILES $<TARGET_FILE:nng> DESTINATION bin)
+    endif()
 endif()
 
 add_subdirectory(test)

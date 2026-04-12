@@ -23,6 +23,7 @@ endif()
 if(ETA_BUILD_NNG)
     target_link_libraries(eta_lsp PRIVATE eta_nng)
     target_compile_definitions(eta_lsp PRIVATE ETA_HAS_NNG=1)
+    eta_copy_nng_dlls(eta_lsp)
 endif()
 
 # Platform-specific libraries

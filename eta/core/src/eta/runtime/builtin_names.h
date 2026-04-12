@@ -92,6 +92,16 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("append",   0, true);
     r("reverse",  1, false);
     r("list-ref", 2, false);
+    r("list-tail", 2, false);
+    r("set-car!",  2, false);
+    r("set-cdr!",  2, false);
+    r("assq",      2, false);
+    r("assoc",     2, false);
+    r("member",    2, false);
+
+    // Symbol / string interop
+    r("symbol->string", 1, false);
+    r("string->symbol", 1, false);
 
     // Higher-order
     r("apply",    2, true);
@@ -106,6 +116,8 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("string-append",   0, true);
     r("number->string",  1, false);
     r("string->number",  1, false);
+    r("string-ref",      2, false);
+    r("substring",       3, false);
 
     // Vector operations
     r("vector",        0, true);
@@ -144,6 +156,15 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("tape-ref-index",  1, false);
     r("tape-size",       1, false);
     r("tape-ref-value",  1, false);
+
+    // Fact-table builtins (must match core_primitives.h registration order)
+    r("fact-table?",             1, false);
+    r("%make-fact-table",        1, false);
+    r("%fact-table-insert!",     2, false);
+    r("%fact-table-build-index!", 2, false);
+    r("%fact-table-query",       3, false);
+    r("%fact-table-ref",         3, false);
+    r("%fact-table-row-count",   1, false);
 
     // ====================================================================
     // port_primitives.h  (must match registration order exactly)

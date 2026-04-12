@@ -23,6 +23,7 @@ endif()
 if(ETA_BUILD_NNG)
     target_link_libraries(etai PRIVATE eta_nng)
     target_compile_definitions(etai PRIVATE ETA_HAS_NNG=1)
+    eta_copy_nng_dlls(etai)
 endif()
 
 # Platform-specific libraries
@@ -75,6 +76,7 @@ endif()
 if(ETA_BUILD_NNG)
     target_link_libraries(eta_repl PRIVATE eta_nng)
     target_compile_definitions(eta_repl PRIVATE ETA_HAS_NNG=1)
+    eta_copy_nng_dlls(eta_repl)
 endif()
 
 # Platform-specific libraries

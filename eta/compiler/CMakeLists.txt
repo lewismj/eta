@@ -24,6 +24,7 @@ endif()
 if(ETA_BUILD_NNG)
     target_link_libraries(etac PRIVATE eta_nng)
     target_compile_definitions(etac PRIVATE ETA_HAS_NNG=1)
+    eta_copy_nng_dlls(etac)
 endif()
 
 # Platform-specific libraries

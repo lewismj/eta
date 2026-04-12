@@ -100,6 +100,7 @@ endif()
 if(ETA_BUILD_NNG)
     target_link_libraries(${PROJECT_NAME} PRIVATE eta_nng)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_HAS_NNG=1)
+    eta_copy_nng_dlls(${PROJECT_NAME})
 endif()
 
 # Expose interpreter (driver.h), DAP, and LSP headers
