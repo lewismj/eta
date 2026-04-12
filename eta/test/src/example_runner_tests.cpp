@@ -90,6 +90,19 @@ static std::vector<fs::path> collect_examples() {
     return files;
 }
 
+// ── Spawn-worker example filtering ──────────────────────────────────────────
+// Files that call (current-mailbox) are designed to be launched by a parent
+// process via (spawn ...).  Running them standalone returns Nil from
+// current-mailbox and then errors on the first (recv! ...) call.
+static bool requires_spawn_parent(const fs::path& file) {
+    std::ifstream ifs(file);
+    std::string line;
+    while (std::getline(ifs, line)) {
+        if (line.find("current-mailbox") != std::string::npos) return true;
+    }
+    return false;
+}
+
 // ── Torch-dependent example filtering ───────────────────────────────────────
 // When the interpreter is built without -DETA_BUILD_TORCH=ON the torch/*
 // builtins are absent, so examples that `(import std.torch)` cannot run.
@@ -185,6 +198,11 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
             continue;
         }
 #endif
+        if (requires_spawn_parent(file)) {
+            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires spawning parent — skipped)");
+            continue;
+        }
+
         BOOST_TEST_CONTEXT("Example: " << rel.string()) {
             bool ok = run_example(file);
             if (ok) {
