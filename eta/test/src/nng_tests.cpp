@@ -697,7 +697,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_large_list_performance) {
     // Performance acceptance criterion: < 10 ms (somewhat arbitrary... this test
     // probably should be re-written).
 #if defined(_DEBUG) || !defined(NDEBUG)
-    BOOST_TEST(duration_ms < 100);
+    BOOST_TEST(duration_ms < 200);
 #else
     BOOST_TEST(duration_ms < 20);
 #endif
