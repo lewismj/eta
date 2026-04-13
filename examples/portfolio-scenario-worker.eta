@@ -1,0 +1,68 @@
+;;; portfolio-scenario-worker.eta — Scenario stress worker for portfolio.eta
+;;;
+;;; Receives a task (weights macro-value) from the parent, computes the
+;;; portfolio return under the given macro scenario using a simple linear
+;;; model (the worker cannot load the parent's NN), and sends the result back.
+;;;
+;;; In production, each worker would load its own model checkpoint from disk.
+;;; Here we use the known DGP coefficients as a stand-in, which also serves
+;;; as an independent cross-check against the NN estimates.
+;;;
+;;; Usage: launched automatically by worker-pool in portfolio.eta §7.
+
+(module portfolio-scenario-worker
+  (begin
+
+    ;; Known DGP coefficients (ground truth)
+    ;; return = 1.2*beta + 0.6*macro + 0.4*sector_code
+    ;;        - 0.3*rate + 0.2*beta*macro + 0.5*sentiment
+
+    (defun dgp-return (beta macro sector-code rate sentiment)
+      (+ (* 1.2 beta)
+         (+ (* 0.6 macro)
+            (+ (* 0.4 sector-code)
+               (+ (* -0.3 rate)
+                  (+ (* 0.2 (* beta macro))
+                     (* 0.5 sentiment)))))))
+
+    ;; Representative per-sector parameters
+    ;; (sector-code  beta  rate-avg)
+    (define sectors
+      (list (list  1.0  1.3  0.03)    ; tech
+            (list  0.0  0.8  0.03)    ; energy
+            (list -0.5  1.0  0.03)    ; finance
+            (list -1.0  0.7  0.03)))  ; healthcare
+
+    (defun portfolio-return-under-macro (wt we wf wh macro-val)
+      ;; Marginalize over sentiment (uniform prior -> average over grid)
+      (let* ((sent-grid (list 0.1 0.3 0.5 0.7 0.9))
+             (avg
+               (letrec ((loop (lambda (svs acc n)
+                          (if (null? svs) (/ acc n)
+                              (let* ((sv (car svs))
+                                     (ret-t (dgp-return 1.3 macro-val  1.0 0.03 sv))
+                                     (ret-e (dgp-return 0.8 macro-val  0.0 0.03 sv))
+                                     (ret-f (dgp-return 1.0 macro-val -0.5 0.03 sv))
+                                     (ret-h (dgp-return 0.7 macro-val -1.0 0.03 sv))
+                                     (pr (+ (* (/ wt 100.0) ret-t)
+                                            (+ (* (/ we 100.0) ret-e)
+                                               (+ (* (/ wf 100.0) ret-f)
+                                                  (* (/ wh 100.0) ret-h))))))
+                                (loop (cdr svs) (+ acc pr) (+ n 1)))))))
+                 (loop sent-grid 0 0))))
+        avg))
+
+    ;; ── Main: receive task, compute, reply ────────────────────────────
+    (define mailbox (current-mailbox))
+    (define task (recv! mailbox 'wait))
+
+    ;; task = (w-tech w-energy w-finance w-healthcare macro-value)
+    (define wt  (car task))
+    (define we  (car (cdr task)))
+    (define wf  (car (cdr (cdr task))))
+    (define wh  (car (cdr (cdr (cdr task)))))
+    (define mv  (car (cdr (cdr (cdr (cdr task))))))
+
+    (define result (portfolio-return-under-macro wt we wf wh mv))
+    (send! mailbox result 'wait)))
+

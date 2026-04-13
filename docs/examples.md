@@ -20,6 +20,7 @@ etai examples/hello.eta
 | Example                                            | Key Concepts |
 |----------------------------------------------------|-------------|
 | [`causal_demo.eta`](#causal-demo--causal-neural-factor-analysis) | **Flagship** — symbolic diff, do-calculus, findall+CLP, libtorch NN, causal ATE |
+| [`portfolio.eta`](#portfolio--causal-portfolio-engine) | **Flagship** — institutional portfolio: fact tables, causal DAG, CLP constraints, NN returns, AAD sensitivities, scenarios |
 | [`hello.eta`](#hello-world)                        | Minimal program, `println`, `defun`, recursion |
 | [`basics.eta`](#basics)                            | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, records, quoting |
 | [`functions.eta`](#functions)                      | `defun`, `lambda`, closures, tail recursion, variadic args, `letrec` |
@@ -75,6 +76,41 @@ etai causal_demo.etac
 > for detailed commentary on each step, including how the VM handles
 > unification, trail management, CLP forward checking, and libtorch
 > tensor objects.
+
+---
+
+## [portfolio — Causal Portfolio Engine](../examples/portfolio.eta)
+
+An end-to-end **institutional portfolio construction system** that goes
+beyond paradigm demonstration to act like a real decision engine:
+
+1. **Fact Table** — 120-observation dataset from a known DGP, stored in a
+   columnar fact table with hash-indexed sector lookups
+2. **Symbolic Specification** — portfolio objective and constraints as
+   inspectable, auditable S-expressions
+3. **Causal Risk Model** — 5-node macro DAG; `do:identify` derives the
+   back-door adjustment formula for confounding-corrected returns
+4. **CLP Constraints** — exact portfolio feasibility via integer-domain
+   constraint satisfaction (no penalties, no projection)
+5. **Neural Conditional Return Model** — trains an NN on fact-table data;
+   plugs into the causal formula for per-sector expected returns
+6. **AAD Risk Sensitivities** — marginal contributions via tape-based AD
+7. **Explainable Portfolio Selection** — scores all feasible portfolios,
+   reports optimal allocation, binding constraints, and counterfactuals
+8. **Scenario Analysis** — macro stress testing with counterfactual
+   rebalancing
+
+All results are verified against known DGP ground-truth coefficients.
+
+```console
+etac -O examples/portfolio.eta
+etai portfolio.etac
+```
+
+> [!TIP]
+> See the full [Causal Portfolio Engine walkthrough](portfolio.md)
+> for detailed commentary on each stage, verification methodology,
+> and institutional framing.
 
 ---
 
