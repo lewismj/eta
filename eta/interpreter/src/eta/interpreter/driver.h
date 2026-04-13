@@ -81,7 +81,7 @@ public:
         runtime::register_io_primitives(builtins_, heap_, intern_table_, vm_);
 
 #ifdef ETA_HAS_TORCH
-        // Phase 4: Torch/NN/Optim primitives (CPU or CUDA, detected at runtime)
+        // Torch/NN/Optim primitives (CPU or CUDA, detected at runtime)
         torch_bindings::register_torch_primitives(builtins_, heap_, intern_table_, &vm_);
 #endif
 
@@ -106,7 +106,6 @@ public:
             }
         }
 
-        // Phase 7: build the thread worker factory.
         // The lambda captures only the module search path string (value, not ref),
         // so it is safe to use from any thread. It creates a fresh Driver + VM
         // for each actor thread.
@@ -147,11 +146,87 @@ public:
             alive->store(false, std::memory_order_release);
         };
 
-        // Phase 5: nng networking + actor-model primitives
+        // Receives a SerializedClosure, deserializes the bytecode into the child
+        // Driver's registry, reconstructs upvalues, creates the Closure heap
+        // object, and calls it via call_value().
+        eta::nng::ProcessManager::ClosureWorkerFn closure_worker_fn =
+            [module_search_path](
+                const std::string& th_endpoint,
+                eta::nng::ProcessManager::SerializedClosure sc,
+                std::shared_ptr<std::atomic<bool>> alive) noexcept
+        {
+            try {
+                auto resolver = ModulePathResolver::from_path_string(module_search_path);
+                Driver child(std::move(resolver));
+                child.load_prelude();
+
+                // Dial the parent's inproc:// listener → sets current-mailbox
+                if (!child.install_mailbox(th_endpoint)) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                // Deserialize the function registry from the etac-format blob
+                runtime::vm::BytecodeSerializer ser(child.heap(), child.intern_table());
+                std::istringstream iss(std::string(sc.funcs_bytes.begin(),
+                                                   sc.funcs_bytes.end()),
+                                      std::ios::binary);
+                auto etac_res = ser.deserialize(iss, /*expected_builtins=*/0);
+                if (!etac_res) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+                auto& etac = *etac_res;
+
+                // Rebase and register the functions in the child's registry
+                uint32_t base_idx = static_cast<uint32_t>(child.registry().size());
+                for (const auto& func : etac.registry.all()) {
+                    runtime::vm::BytecodeFunction copy = func;
+                    copy.rebase_func_indices(static_cast<int32_t>(base_idx));
+                    child.registry().add(std::move(copy));
+                }
+
+                // Deserialize upvalues
+                std::vector<runtime::nanbox::LispVal> upval_vals;
+                upval_vals.reserve(sc.upvals.size());
+                for (const auto& uv_bytes : sc.upvals) {
+                    auto uv = eta::nng::deserialize_binary(
+                        std::span<const uint8_t>(uv_bytes),
+                        child.heap(), child.intern_table());
+                    if (!uv) {
+                        alive->store(false, std::memory_order_release);
+                        return;
+                    }
+                    upval_vals.push_back(*uv);
+                }
+
+                // Reconstruct the Closure heap object in the child's heap
+                const auto* entry_func = child.registry().get(base_idx);
+                if (!entry_func) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+                auto closure_val = runtime::memory::factory::make_closure(
+                    child.heap(), entry_func, std::move(upval_vals));
+                if (!closure_val) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                // Call the thunk with 0 arguments
+                (void) child.vm().call_value(*closure_val, {});
+            } catch (...) {}
+            alive->store(false, std::memory_order_release);
+        };
+
+        // nng networking + actor-model primitives
         eta::nng::register_nng_primitives(
             builtins_, heap_, intern_table_,
             &proc_mgr_, etai_path_, &mailbox_val_,
-            module_search_path, std::move(thread_worker_fn));
+            module_search_path, std::move(thread_worker_fn),
+            &registry_);
+
+        proc_mgr_.set_closure_factory(std::move(closure_worker_fn));
 #endif
 
         // Wire up function resolver
@@ -447,7 +522,7 @@ public:
         }
         auto& etac = *etac_res;
 
-        // ── Auto-load non-prelude imports ────────────────────────
+        // Auto-load non-prelude imports
         for (const auto& imp : etac.imports) {
             if (executed_modules_.contains(imp)) continue;
             auto imp_path = resolver_.resolve(imp);
@@ -734,7 +809,7 @@ private:
                          CompileResult* out_cr = nullptr) {
         diag_engine_.clear();
 
-        // ── Lex + Parse ──────────────────────────────────────────────
+        // Lex + Parse
         reader::lexer::Lexer lex(file_id, source);
         reader::parser::Parser parser(lex);
 
@@ -752,7 +827,7 @@ private:
             return true;
         }
 
-        // ── Expand ───────────────────────────────────────────────────
+        // Expand
         reader::expander::Expander expander;
         auto expanded_res = expander.expand_many(parsed);
         if (!expanded_res) {
@@ -779,7 +854,7 @@ private:
             }
         }
 
-        // ── Auto-load imported modules from the module path ──────────
+        // Auto-load imported modules from the module path
         std::span<const reader::parser::SExprPtr> new_span(
             new_expanded.data(), new_expanded.size());
         if (!auto_load_imports(new_span)) {
@@ -806,7 +881,7 @@ private:
             accumulated_forms_.push_back(reader::parser::deep_copy(f));
         }
 
-        // ── Link ALL accumulated forms ───────────────────────────────
+        // Link ALL accumulated forms
         reader::ModuleLinker linker;
         auto idx_res = linker.index_modules(accumulated_forms_);
         if (!idx_res) {
@@ -826,7 +901,7 @@ private:
             return false;
         }
 
-        // ── Semantic analysis (all accumulated modules) ──────────────
+        // Semantic analysis (all accumulated modules)
         semantics::SemanticAnalyzer sa;
         auto sem_res = sa.analyze_all(accumulated_forms_, linker, builtins_);
         if (!sem_res) {
@@ -839,10 +914,10 @@ private:
         auto sem_mods = std::move(*sem_res);
         if (sem_mods.empty()) return true;
 
-        // ── Run IR optimization passes ───────────────────────────────
+        // Run IR optimization passes
         optimization_pipeline_.run_all(sem_mods);
 
-        // ── Emit + Execute only NEW modules ──────────────────────────
+        // Emit + Execute only NEW modules
         // Grow globals vector if needed, preserving existing values.
         // Re-install builtins in slots 0..N-1 (heap objects may have been GC'd).
         auto& globals = vm_.globals();

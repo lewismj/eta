@@ -172,7 +172,7 @@ namespace eta::runtime::memory::gc {
                 const auto id = work.back();
                 work.pop_back();
 
-                // ── Fast path: pool-owned cons cell ──
+                // Fast path: pool-owned cons cell
                 // try_mark returns Cons* only if newly marked (skips already-marked
                 // and freed slots).  Avoids try_get / with_entry / HeapVisitor dispatch.
                 if (auto* cons = pool.try_mark(id)) {
@@ -184,7 +184,7 @@ namespace eta::runtime::memory::gc {
                 // or freed slot.  Either way, nothing to do.
                 if (pool.owns(id)) continue;
 
-                // ── General-heap path (unchanged) ──
+                // General-heap path (unchanged)
                 if (!heap.try_get(id, entry)) continue; // stale id
                 if ((entry.header.flags & heap::MARK_BIT) != 0) continue; // already marked
 

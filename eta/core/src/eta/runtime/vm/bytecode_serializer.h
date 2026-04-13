@@ -13,7 +13,7 @@
 
 namespace eta::runtime::vm {
 
-// ── Error type ──────────────────────────────────────────────────────
+// Error type
 
 enum class SerializerError : std::uint8_t {
     BadMagic,
@@ -40,7 +40,7 @@ constexpr const char* to_string(SerializerError e) noexcept {
     return "unknown serializer error";
 }
 
-// ── Per-module metadata stored in .etac ─────────────────────────────
+// Per-module metadata stored in .etac
 
 struct ModuleEntry {
     std::string name;
@@ -49,7 +49,7 @@ struct ModuleEntry {
     std::optional<std::uint32_t> main_func_slot; // global slot of main, if any
 };
 
-// ── Result of deserialization ───────────────────────────────────────
+// Result of deserialization
 
 struct EtacFile {
     std::uint64_t source_hash{0};
@@ -58,7 +58,7 @@ struct EtacFile {
     semantics::BytecodeFunctionRegistry registry;
 };
 
-// ── Serializer / Deserializer ───────────────────────────────────────
+// Serializer / Deserializer
 
 class BytecodeSerializer {
 public:
@@ -103,7 +103,7 @@ private:
     memory::heap::Heap& heap_;
     memory::intern::InternTable& intern_table_;
 
-    // ── Low-level binary I/O helpers ────────────────────────────
+    // Low-level binary I/O helpers
     static void write_u8 (std::ostream& os, std::uint8_t  v);
     static void write_u16(std::ostream& os, std::uint16_t v);
     static void write_u32(std::ostream& os, std::uint32_t v);
@@ -120,7 +120,7 @@ private:
     static bool read_f64(std::istream& is, double& v);
     static bool read_str(std::istream& is, std::string& s);
 
-    // ── Constant encoding ───────────────────────────────────────
+    // Constant encoding
     // Tag byte preceding each constant in the pool.
     enum ConstTag : std::uint8_t {
         CT_Nil       = 0,

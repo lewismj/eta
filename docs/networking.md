@@ -57,8 +57,14 @@ socket lifetimes explicitly via `dynamic-wind`.
 | [`nng-poll`](#nng-poll) | `(nng-poll items timeout-ms)` | Poll multiple sockets |
 | [`nng-subscribe`](#nng-subscribe) | `(nng-subscribe sock topic)` | Set SUB topic filter |
 | [`nng-set-option`](#nng-set-option) | `(nng-set-option sock option value)` | Set socket option |
+| [`spawn-thread`](#spawn-thread) | `(spawn-thread thunk)` | Launch a lambda as an in-process actor thread |
+| [`spawn-thread-with`](#spawn-thread-with) | `(spawn-thread-with path fn-sym args…)` | Launch a named function from a source file as an in-process thread |
+| [`thread-join`](#thread-join) | `(thread-join sock)` | Block until the thread completes |
+| [`thread-alive?`](#thread-alive) | `(thread-alive? sock)` | Returns `#t` if the thread is still running |
+
 
 ---
+
 
 ## Socket Protocols
 
@@ -371,6 +377,110 @@ Sets a socket-level option.  Common options:
 ;; Set SURVEYOR deadline to 2 s
 (nng-set-option surveyor 'survey-time 2000)
 ```
+
+---
+
+## In-Process Actor Threads
+
+`spawn-thread` and `spawn-thread-with` launch independent **in-process threads**
+— each with its own VM, heap, and GC — connected to the parent via an
+`inproc://` PAIR socket.  They are cheaper than OS-process `spawn` (no
+fork/exec) and support upvalue capture, but upvalues must be serializable.
+
+### `spawn-thread`
+
+```scheme
+(spawn-thread thunk) → socket
+```
+
+Serializes the zero-argument closure `thunk` (its bytecode and all captured
+upvalues) and launches it in a fresh thread VM.  Returns the **parent-side
+PAIR socket**, which is used for all subsequent `send!` / `recv!` calls.
+
+Inside the thunk, `(current-mailbox)` returns the thread's end of the socket.
+
+```scheme
+;; Capture an offset as an upvalue — runs in its own thread VM
+(define (make-worker offset)
+  (spawn-thread
+    (lambda ()
+      (let ((mb (current-mailbox)))
+        (let ((n (recv! mb 'wait)))
+          (send! mb (+ n offset) 'wait))))))
+
+(define t (make-worker 7))
+(send! t 35 'wait)
+(recv! t 'wait)         ; => 42
+(thread-join t)
+(nng-close t)
+```
+
+**Serializable upvalues:** numbers, strings, symbols, booleans, pairs,
+lists, and vectors.  Closures, ports, sockets, and tensors are **not**
+serializable; attempting to use them as upvalues raises a runtime error.
+
+**Errors:**
+- `'runtime-error "spawn-thread: argument must be a 0-argument closure (thunk)"` —
+  argument is not a thunk.
+- `'runtime-error "spawn-thread: process manager not configured"` — built
+  without nng support.
+
+---
+
+### `spawn-thread-with`
+
+```scheme
+(spawn-thread-with module-path func-sym args...) → socket
+```
+
+Loads `module-path` in a fresh thread VM (the same way `spawn` loads a child
+process), then calls the named function `func-sym` with any additional `args`.
+Returns the **parent-side PAIR socket**.
+
+Use this when you prefer to keep worker logic in a separate source file, or
+when the thunk cannot be serialized (e.g. because it captures non-serializable
+values).
+
+```scheme
+;; inproc-worker.eta defines a (noop) stub; real work is in module body.
+(define t (spawn-thread-with "examples/inproc-worker.eta" 'noop))
+(send! t 42 'wait)
+(recv! t 'wait)
+(thread-join t)
+(nng-close t)
+```
+
+---
+
+### `thread-join`
+
+```scheme
+(thread-join sock) → 0
+```
+
+Blocks until the thread associated with `sock` has finished.  Returns `0`
+on success.  Raises a type error if `sock` is not a thread socket.
+
+---
+
+### `thread-alive?`
+
+```scheme
+(thread-alive? sock) → boolean
+```
+
+Returns `#t` if the thread is still running, `#f` once it has exited.
+
+```scheme
+(define t (spawn-thread (lambda () (thread-sleep! 200))))
+(thread-alive? t)   ; => #t  (while sleeping)
+(thread-join  t)
+(thread-alive? t)   ; => #f
+(nng-close t)
+```
+
+**Tip:** prefer `thread-join` over a polling loop on `thread-alive?` — joining
+is O(1) and does not spin.
 
 ---
 

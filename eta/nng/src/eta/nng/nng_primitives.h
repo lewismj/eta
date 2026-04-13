@@ -5,8 +5,8 @@
 ///
 /// Provides:  nng-socket  nng-listen  nng-dial  nng-close  nng-socket?
 ///            send!  recv!  nng-poll  nng-subscribe  nng-set-option
-///            spawn  spawn-kill  spawn-wait  current-mailbox      (Phase 4)
-///            monitor  demonitor  enable-heartbeat                 (Phase 8)
+///            spawn  spawn-kill  spawn-wait  current-mailbox
+///            monitor  demonitor  enable-heartbeat
 ///
 /// Registration order MUST match builtin_names.h (ETA_HAS_NNG section).
 /// All primitives capture Heap& and InternTable& by reference.
@@ -15,9 +15,13 @@
 #include <chrono>
 #include <cstring>
 #include <deque>
+#include <queue>
 #include <span>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <nng/nng.h>
@@ -40,6 +44,8 @@
 #include <eta/runtime/factory.h>
 #include <eta/runtime/numeric_value.h>
 #include <eta/runtime/types/types.h>
+#include <eta/runtime/vm/bytecode_serializer.h>
+#include <eta/semantics/emitter.h>
 
 #include "nng_socket_ptr.h"
 #include "nng_factory.h"
@@ -56,7 +62,7 @@ using namespace eta::runtime::error;
 using namespace eta::runtime::memory::factory;
 using Args = const std::vector<LispVal>&;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 
 /// Build a nng-error runtime error from an nng return code.
 inline std::unexpected<RuntimeError> nng_error(int rv) {
@@ -128,7 +134,7 @@ inline std::optional<NngProtocol> parse_protocol(const std::string& name) {
     return std::nullopt;
 }
 
-// ─── Phase 8 helpers ─────────────────────────────────────────────────────────
+// Monitoring helpers
 
 /// Return current time as milliseconds since the steady_clock epoch.
 inline int64_t current_epoch_ms() noexcept {
@@ -150,11 +156,100 @@ static void monitor_pipe_cb(nng_pipe /*pipe*/, nng_pipe_ev /*ev*/, void* arg) no
     ms.push_notification(ms.monitor_down_msg);
 }
 
-// ─── register_nng_primitives ──────────────────────────────────────────────────
+// register_nng_primitives
 
-/// Register all nng primitives (Phases 3 + 4 + 7) into the given BuiltinEnvironment.
+// Thread closure serialization helpers
+
+/// Collect all function indices reachable from @p entry_idx via MakeClosure
+/// constants (BFS).  The entry function is always first in the returned list.
+inline std::vector<uint32_t> collect_closure_deps(
+    uint32_t entry_idx,
+    const semantics::BytecodeFunctionRegistry& reg)
+{
+    std::vector<uint32_t> order;
+    std::unordered_set<uint32_t> visited;
+    std::queue<uint32_t> todo;
+    todo.push(entry_idx);
+    while (!todo.empty()) {
+        auto idx = todo.front(); todo.pop();
+        if (!visited.insert(idx).second) continue;
+        order.push_back(idx);
+        const auto* f = reg.get(idx);
+        if (!f) continue;
+        for (const auto& c : f->constants) {
+            if (runtime::vm::is_func_index(c))
+                todo.push(runtime::vm::decode_func_index(c));
+        }
+    }
+    return order;
+}
+
+/// Build a SerializedClosure from a closure object's entry function and upvalues.
 ///
-/// Phase 4 parameters are optional; omitting them leaves spawn/mailbox
+/// Collects all reachable function bytecode (entry first), remaps function-index
+/// constants to a 0-based mini-registry, serializes via BytecodeSerializer, and
+/// serializes each upvalue via the binary wire format.
+///
+/// Returns nullopt if any upvalue is non-serializable (closure, port, socket…).
+inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure(
+    uint32_t entry_idx,
+    const std::vector<LispVal>& upvals,
+    const semantics::BytecodeFunctionRegistry& src_reg,
+    Heap& heap,
+    InternTable& intern)
+{
+    // 1. Collect reachable functions (entry at index 0)
+    auto order = collect_closure_deps(entry_idx, src_reg);
+
+    // 2. Build index remap: old_global → new_0based
+    std::unordered_map<uint32_t, uint32_t> remap;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(order.size()); ++i)
+        remap[order[i]] = i;
+
+    // 3. Build new registry with rebased function-index constants
+    semantics::BytecodeFunctionRegistry new_reg;
+    for (uint32_t old_idx : order) {
+        const auto* f = src_reg.get(old_idx);
+        if (!f) return std::nullopt;
+        runtime::vm::BytecodeFunction copy = *f;
+        for (auto& c : copy.constants) {
+            if (runtime::vm::is_func_index(c)) {
+                auto it = remap.find(runtime::vm::decode_func_index(c));
+                if (it == remap.end()) return std::nullopt;
+                c = runtime::vm::encode_func_index(it->second);
+            }
+        }
+        new_reg.add(std::move(copy));
+    }
+
+    // 4. Serialize the mini-registry as etac bytes
+    runtime::vm::BytecodeSerializer ser(heap, intern);
+    runtime::vm::ModuleEntry mod;
+    mod.name             = "__spawn_thread__";
+    mod.init_func_index  = 0; // entry is always index 0
+    mod.total_globals    = 0;
+
+    std::ostringstream oss(std::ios::binary);
+    // Pass num_builtins=0 to skip builtin-count validation on deserialization
+    if (!ser.serialize({mod}, new_reg, 0, false, oss, {}, 0))
+        return std::nullopt;
+
+    ProcessManager::SerializedClosure sc;
+    auto str = oss.str();
+    sc.funcs_bytes = std::vector<uint8_t>(str.begin(), str.end());
+
+    // 5. Serialize upvalues via binary wire format
+    for (const auto& uv : upvals) {
+        auto bin = serialize_binary(uv, heap, intern);
+        if (bin.empty()) return std::nullopt; // non-serializable upvalue
+        sc.upvals.push_back(std::move(bin));
+    }
+    return sc;
+}
+
+/// Register all nng primitives into the given BuiltinEnvironment.
+///
+/// Process-manager parameters are optional; omitting them leaves spawn/mailbox
 /// primitives registered (so arity checking still works in the LSP/analyzer)
 /// but they return a clear error when actually called without a process manager.
 ///
@@ -164,18 +259,21 @@ static void monitor_pipe_cb(nng_pipe /*pipe*/, nng_pipe_ev /*ev*/, void* arg) no
 /// @param module_search_path Colon/semicolon-separated module search path to
 ///                           propagate to spawned children via ETA_MODULE_PATH
 ///                           (only if ETA_MODULE_PATH is not already set in env).
-/// @param thread_worker_fn  Factory for in-process actor threads (Phase 7).
+/// @param thread_worker_fn  Factory for in-process actor threads.
+/// @param func_registry     Pointer to the Driver's function registry, required
+///                           for spawn-thread. nullptr disables it.
 ///
 /// Registration order MUST match the ETA_HAS_NNG section in builtin_names.h.
 inline void register_nng_primitives(
     BuiltinEnvironment& env, Heap& heap, InternTable& intern,
-    ProcessManager* proc_mgr          = nullptr,
-    std::string     etai_path         = {},
-    LispVal*        mailbox_val       = nullptr,
+    ProcessManager* proc_mgr           = nullptr,
+    std::string     etai_path          = {},
+    LispVal*        mailbox_val        = nullptr,
     std::string     module_search_path = {},
-    ProcessManager::ThreadWorkerFn thread_worker_fn = {})
+    ProcessManager::ThreadWorkerFn thread_worker_fn = {},
+    semantics::BytecodeFunctionRegistry* func_registry = nullptr)
 {
-    // ── nng-socket ─────────────────────────────────────────────────────────
+    // nng-socket
     // (nng-socket type-symbol) → socket
     env.register_builtin("nng-socket", 1, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -204,7 +302,7 @@ inline void register_nng_primitives(
             return factory::make_nng_socket(heap, std::move(sp));
         });
 
-    // ── nng-listen ─────────────────────────────────────────────────────────
+    // nng-listen
     // (nng-listen sock endpoint) → sock
     env.register_builtin("nng-listen", 2, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -231,11 +329,11 @@ inline void register_nng_primitives(
             int rv = nng_listen(sp->socket, endpoint.c_str(), nullptr, 0);
             if (rv != 0) return nng_error(rv);
             sp->listening = true;
-            sp->endpoint_hint = endpoint;  // Phase 8: store for down messages
+            sp->endpoint_hint = endpoint;  // store endpoint for supervision down-messages
             return args[0]; // return the socket itself
         });
 
-    // ── nng-dial ───────────────────────────────────────────────────────────
+    // nng-dial
     // (nng-dial sock endpoint) → sock
     env.register_builtin("nng-dial", 2, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -262,11 +360,11 @@ inline void register_nng_primitives(
             int rv = nng_dial(sp->socket, endpoint.c_str(), nullptr, 0);
             if (rv != 0) return nng_error(rv);
             sp->dialed = true;
-            if (sp->endpoint_hint.empty()) sp->endpoint_hint = endpoint;  // Phase 8
+            if (sp->endpoint_hint.empty()) sp->endpoint_hint = endpoint;  // store endpoint for supervision down-messages
             return args[0]; // return the socket itself
         });
 
-    // ── nng-close ──────────────────────────────────────────────────────────
+    // nng-close
     // (nng-close sock) → #t (idempotent)
     env.register_builtin("nng-close", 1, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -276,7 +374,7 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::TypeError, "nng-close: expected an nng-socket"}});
             }
             if (!sp->closed) {
-                // Phase 8: signal closing_normally before nng_close to suppress
+                // Signal closing_normally before nng_close to suppress
                 // spurious disconnect notifications via monitor_pipe_cb.
                 if (sp->monitor_state) {
                     sp->monitor_state->closing_normally.store(true, std::memory_order_release);
@@ -290,7 +388,7 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // ── nng-socket? ────────────────────────────────────────────────────────
+    // nng-socket?
     // (nng-socket? x) → #t/#f
     env.register_builtin("nng-socket?", 1, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -298,12 +396,12 @@ inline void register_nng_primitives(
             return sp ? nanbox::True : nanbox::False;
         });
 
-    // ── send! ──────────────────────────────────────────────────────────────
+    // send!
     // (send! sock value [flag]) → #t on success, #f if EAGAIN (noblock)
     // flag: 'noblock → NNG_FLAG_NONBLOCK
     //       'wait    → blocking (no timeout change)
     //       'text    → use s-expression text format instead of binary
-    // Default serialisation format: binary (Phase 6).
+    // Default serialisation format: binary.
     env.register_builtin("send!", 2, true,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -365,11 +463,11 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // ── recv! ──────────────────────────────────────────────────────────────
+    // recv!
     // (recv! sock [flag]) → LispVal or #f on timeout/EAGAIN
     // flag: 'noblock → NNG_FLAG_NONBLOCK; 'wait → blocking
     //
-    // Phase 8: checks monitor/heartbeat notifications first.
+    // Checks monitor/heartbeat notifications first.
     // Heartbeat ping/pong control messages (0xEB prefix) are handled
     // transparently: pings receive an auto-reply pong, pongs update the
     // heartbeat timestamp.  Up to 16 consecutive heartbeat messages are
@@ -466,7 +564,7 @@ inline void register_nng_primitives(
                 return nng_error(rv);
             }
 
-            // Phase 8: transparent heartbeat handling
+            // Transparent heartbeat handling
             if (is_heartbeat_ping(static_cast<const uint8_t*>(buf), sz)) {
                 nng_free(buf, sz);
                 auto pong = make_heartbeat_pong();
@@ -503,7 +601,7 @@ inline void register_nng_primitives(
             return *result;
         });
 
-    // ── nng-poll ───────────────────────────────────────────────────────────
+    // nng-poll
     // (nng-poll items timeout-ms) → list of ready sockets
     // items: list of (socket . events) pairs  (events ignored for now)
     // Checks each socket with non-blocking recv; buffers any received
@@ -600,7 +698,7 @@ inline void register_nng_primitives(
             return result;
         });
 
-    // ── nng-subscribe ──────────────────────────────────────────────────────
+    // nng-subscribe
     // (nng-subscribe sock topic) → #t
     // topic is a string prefix filter for SUB sockets
     env.register_builtin("nng-subscribe", 2, false,
@@ -636,7 +734,7 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // ── nng-set-option ─────────────────────────────────────────────────────
+    // nng-set-option
     // (nng-set-option sock option value) → #t
     // option symbols: 'recv-timeout 'send-timeout 'recv-buf-size 'survey-time
     env.register_builtin("nng-set-option", 3, false,
@@ -688,7 +786,7 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // ── Phase 4: spawn ─────────────────────────────────────────────────────
+    // spawn
     env.register_builtin("spawn", 1, true,
         [&heap, &intern, proc_mgr, etai_path, module_search_path](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!proc_mgr || etai_path.empty()) {
@@ -712,7 +810,7 @@ inline void register_nng_primitives(
                                    etai_path, module_search_path);
         });
 
-    // ── spawn-kill ─────────────────────────────────────────────────────────
+    // spawn-kill
     // (spawn-kill sock) → #t if signal sent, #f if not found
     env.register_builtin("spawn-kill", 1, false,
         [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -730,7 +828,7 @@ inline void register_nng_primitives(
             return proc_mgr->kill_child(args[0]) ? nanbox::True : nanbox::False;
         });
 
-    // ── spawn-wait ─────────────────────────────────────────────────────────
+    // spawn-wait
     // (spawn-wait sock) → exit-code (fixnum) or #f if not found
     env.register_builtin("spawn-wait", 1, false,
         [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -750,7 +848,7 @@ inline void register_nng_primitives(
             return make_fixnum(heap, static_cast<int64_t>(code));
         });
 
-    // ── current-mailbox ────────────────────────────────────────────────────
+    // current-mailbox
     // (current-mailbox) → the PAIR socket to the parent, or () if not a child
     env.register_builtin("current-mailbox", 0, false,
         [mailbox_val](Args) -> std::expected<LispVal, RuntimeError> {
@@ -758,7 +856,7 @@ inline void register_nng_primitives(
             return *mailbox_val;
         });
 
-    // ── Phase 7: spawn-thread-with ─────────────────────────────────────────
+    // spawn-thread-with
     // (spawn-thread-with module-path func-name args...) → socket
     // Creates a new in-process actor thread with an independent VM.
     // Install the worker factory in proc_mgr now (if provided at registration time);
@@ -810,18 +908,75 @@ inline void register_nng_primitives(
                 std::move(text_args), heap, intern);
         });
 
-    // ── spawn-thread ──────────────────────────────────────────────────────
-    // (spawn-thread thunk) → Phase 7b — not yet implemented
-    // Anonymous closures cannot be serialized; use spawn-thread-with instead.
+    // spawn-thread
+    // (spawn-thread thunk) → socket
+    // Serialize the thunk's bytecode + upvalues, then launch a
+    // fresh in-process thread that reconstructs and calls the closure.
     env.register_builtin("spawn-thread", 1, false,
-        [](Args) -> std::expected<LispVal, RuntimeError> {
-            return std::unexpected(RuntimeError{VMError{
-                RuntimeErrorCode::InternalError,
-                "spawn-thread: anonymous closure serialization is not yet supported "
-                "(Phase 7b) — use spawn-thread-with with a named module function instead"}});
+        [&heap, &intern, proc_mgr, func_registry](Args args)
+            -> std::expected<LispVal, RuntimeError>
+        {
+            if (!proc_mgr) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn-thread: process manager not configured"}});
+            }
+            if (!func_registry) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn-thread: function registry not available "
+                    "(use spawn-thread-with for file-based workers)"}});
+            }
+
+            // Validate: must be a Closure heap object
+            if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "spawn-thread: argument must be a 0-argument closure (thunk)"}});
+            }
+            auto* cl = heap.try_get_as<ObjectKind::Closure,
+                                       eta::runtime::types::Closure>(ops::payload(args[0]));
+            if (!cl) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "spawn-thread: argument must be a closure (thunk)"}});
+            }
+            if (cl->func->arity != 0 || cl->func->has_rest) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "spawn-thread: thunk must take 0 arguments (arity=" +
+                    std::to_string(cl->func->arity) + ")"}});
+            }
+
+            // Reverse-lookup: closure function pointer → registry index
+            uint32_t entry_idx = UINT32_MAX;
+            {
+                auto n = static_cast<uint32_t>(func_registry->size());
+                for (uint32_t i = 0; i < n; ++i) {
+                    if (func_registry->get(i) == cl->func) { entry_idx = i; break; }
+                }
+            }
+            if (entry_idx == UINT32_MAX) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn-thread: closure function not found in registry"}});
+            }
+
+            // Serialize the closure (bytecode + upvalues)
+            auto sc_opt = build_serialized_closure(
+                entry_idx, cl->upvals, *func_registry, heap, intern);
+            if (!sc_opt) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn-thread: failed to serialize closure — upvalues must "
+                    "be serializable (numbers, strings, symbols, lists, vectors; "
+                    "not closures, ports, or sockets)"}});
+            }
+
+            return proc_mgr->spawn_thread(std::move(*sc_opt), heap, intern);
         });
 
-    // ── thread-join ───────────────────────────────────────────────────────
+    // thread-join
     // (thread-join sock) → 0 on success, #f if not found
     env.register_builtin("thread-join", 1, false,
         [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -841,7 +996,7 @@ inline void register_nng_primitives(
             return make_fixnum(heap, static_cast<int64_t>(rc));
         });
 
-    // ── thread-alive? ─────────────────────────────────────────────────────
+    // thread-alive?
     // (thread-alive? sock) → #t if the actor thread is still running
     env.register_builtin("thread-alive?", 1, false,
         [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -859,7 +1014,7 @@ inline void register_nng_primitives(
             return proc_mgr->is_thread_alive(args[0]) ? nanbox::True : nanbox::False;
         });
 
-    // ── Phase 8: monitor ───────────────────────────────────────────────────
+    // monitor
     // (monitor sock) → #t
     // Registers a pipe-disconnect callback.  When the remote peer closes the
     // connection, recv! on sock will return '(down endpoint "disconnected").
@@ -904,7 +1059,7 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // ── Phase 8: demonitor ─────────────────────────────────────────────────
+    // demonitor
     // (demonitor sock) → #t
     // Cancels monitoring on sock.
     env.register_builtin("demonitor", 1, false,
@@ -925,7 +1080,7 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // ── Phase 8: enable-heartbeat ──────────────────────────────────────────
+    // enable-heartbeat
     // (enable-heartbeat sock interval-ms) → #t
     //
     // Starts a background thread that sends a heartbeat ping every interval-ms

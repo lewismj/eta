@@ -419,6 +419,60 @@ prevents blocking on any single socket:
 
 ---
 
+### Pattern 7 — In-Process Threads (`spawn-thread`)
+
+
+`spawn-thread` is a lightweight alternative to `spawn` for actors that live
+inside the same OS process.  There is no fork/exec overhead; the thunk's
+bytecode and upvalues are serialized and executed in a fresh in-process VM
+thread connected over an `inproc://` PAIR socket.  The API is identical to
+`spawn` / `current-mailbox`.
+
+```scheme
+;; A worker that captures an offset in its closure.
+;; No separate worker file needed.
+(define (make-worker offset)
+  (spawn-thread
+    (lambda ()
+      (let ((mb (current-mailbox)))          ; thread-side PAIR socket
+        (let ((n (recv! mb 'wait)))
+          (send! mb (+ n offset) 'wait))))))
+
+(define t1 (make-worker 10))
+(define t2 (make-worker 20))
+(define t3 (make-worker 30))
+
+(send! t1 5 'wait)  (send! t2 5 'wait)  (send! t3 5 'wait)
+(recv! t1 'wait)    ; => 15
+(recv! t2 'wait)    ; => 25
+(recv! t3 'wait)    ; => 35
+
+(thread-join t1) (thread-join t2) (thread-join t3)
+(nng-close t1)   (nng-close t2)   (nng-close t3)
+```
+
+See [`examples/inproc.eta`](../examples/inproc.eta) for the runnable demo.
+
+#### Thread lifecycle
+
+| Event | Effect |
+|-------|--------|
+| Parent calls `(nng-close sock)` | Socket closes; thread's next `recv!` returns `#f` → thread should exit |
+| Thread thunk returns normally | Thread exits; parent's `recv!` returns `#f` on next call |
+| Thread raises an unhandled exception | Thread exits; parent's next `recv!` raises `'nng-error` |
+| `(thread-alive? sock)` | `#t` while running, `#f` after exit |
+| `(thread-join sock)` | Blocks until thread exits; returns `0` |
+
+#### Constraints
+
+- The thunk must take **0 arguments**.
+- All captured **upvalues must be serializable** (numbers, strings, symbols,
+  booleans, pairs, lists, vectors).  Closures, ports, sockets, and tensors
+  are not serializable — keep those in a separate worker file and use
+  `spawn-thread-with` instead.
+
+---
+
 ## Cross-Host Messaging
 
 The same `send!` / `recv!` API works across machines — just use `tcp://`

@@ -112,7 +112,7 @@ public:
         func_resolver_ = std::move(resolver);
     }
 
-    // ── Debug API ────────────────────────────────────────────────────────────
+    // Debug API
 
     /// Install a stop callback — activates the debug session.
     /// Any breakpoints already set via set_breakpoints() are forwarded to the
@@ -181,11 +181,11 @@ public:
     std::vector<LispVal>& globals() { return globals_; }
     const std::vector<LispVal>& globals() const { return globals_; }
 
-    // ── CLP constraint store (exposed to core_primitives builtins) ────────────
+    // CLP constraint store (exposed to core_primitives builtins)
     clp::ConstraintStore& constraint_store() { return constraint_store_; }
     const clp::ConstraintStore& constraint_store() const { return constraint_store_; }
 
-    // ── AD Tape state ─────────────────────────────────────────────────────────
+    // AD Tape state
     /// Return the currently active tape (NaN-boxed HeapObject), or Nil if none.
     [[nodiscard]] LispVal active_tape() const noexcept { return active_tape_; }
     /// Activate / deactivate a tape.  Pass Nil to deactivate.
@@ -228,7 +228,7 @@ private:
 
     std::unique_ptr<memory::gc::MarkSweepGC> gc_;
 
-    // ── Debug state (null when not debugging) ────────────────────────────
+    // Debug state (null when not debugging)
     std::unique_ptr<DebugState> debug_;
     std::vector<BreakLocation>  pending_breakpoints_;  ///< queued before set_stop_callback
 
@@ -296,7 +296,7 @@ private:
     std::expected<void, RuntimeError> do_throw(LispVal tag, LispVal value,
                                                 reader::lexer::Span span);
 
-    // ── Unification helpers ───────────────────────────────────────────────────
+    // Unification helpers
     /// Walk the logic-variable binding chain; return the first unbound var or non-var value.
     LispVal deref(LispVal v);
 

@@ -36,6 +36,7 @@ etai examples/hello.eta
 | [`logic.eta`](#logic-relations)                    | Relational logic programming: `parento`, `grandparento`, `membero`, bidirectional queries |
 | [`modules and imports`](#imports)                  | `import`, `export`, `only`, `except`, `rename`, `prefix` |
 | [`message-passing.eta`](#message-passing--parent--child-actor) | Erlang-style actor: `spawn`, `send!`, `recv!`, `current-mailbox` |
+| [`inproc.eta`](#inproc--in-process-actor-threads) | In-process threads: `spawn-thread`, upvalue capture, `thread-join` |
 | [`worker-pool.eta`](#worker-pool--parallel-fan-out) | Parallel fan-out: `worker-pool`, collect results from N workers |
 | [`echo-server.eta`](#echo-server--reqrep) | REQ/REP echo server; `request-reply` client |
 | [`pub-sub.eta`](#publish--subscribe) | PUB/SUB topic filtering; `nng-subscribe` |
@@ -956,6 +957,55 @@ parent: sent (hello from-parent)
 parent: received: (hello from-worker)
 parent: compute result: 42
 parent: done.
+```
+
+---
+
+### [inproc — In-process actor threads](../examples/inproc.eta)
+
+Demonstrates `spawn-thread` — the lightweight alternative to `spawn` that
+runs a closure in a fresh in-process VM thread:
+
+- `(spawn-thread thunk)` — serialize a 0-argument lambda with its captured
+  upvalues and launch it as an independent thread VM
+- No separate worker file needed — the closure carries its own logic
+- Same `send!` / `recv!` / `current-mailbox` API as `spawn`
+- `(thread-join sock)` — wait for the thread to finish
+- `(thread-alive? sock)` — check thread status without blocking
+
+```scheme
+;; Each worker captures a distinct 'offset' upvalue
+(define (make-worker offset)
+  (spawn-thread
+    (lambda ()
+      (let ((mb (current-mailbox)))
+        (let ((n (recv! mb 'wait)))
+          (send! mb (+ n offset) 'wait))))))
+
+(define t1 (make-worker 10))
+(define t2 (make-worker 20))
+(define t3 (make-worker 30))
+
+(send! t1 5 'wait)  (send! t2 5 'wait)  (send! t3 5 'wait)
+
+(recv! t1 'wait)  ; => 15
+(recv! t2 'wait)  ; => 25
+(recv! t3 'wait)  ; => 35
+
+(thread-join t1) (thread-join t2) (thread-join t3)
+(nng-close t1)   (nng-close t2)   (nng-close t3)
+```
+
+```bash
+etai examples/inproc.eta
+```
+
+```
+inproc: spawning in-process threads...
+  inputs:   (5 5 5)
+  offsets:  (10 20 30)
+  results:  (15 25 35)
+inproc: done.
 ```
 
 ---

@@ -10,7 +10,7 @@
 
 namespace eta::runtime::clp {
 
-// ── clp(Z): closed integer interval [lo, hi] ───────────────────────────────
+// clp(Z): closed integer interval [lo, hi]
 
 struct ZDomain {
     int64_t lo;
@@ -27,7 +27,7 @@ struct ZDomain {
     }
 };
 
-// ── clp(FD): sorted, deduplicated finite set of integers ───────────────────
+// clp(FD): sorted, deduplicated finite set of integers
 
 struct FDDomain {
     std::vector<int64_t> values;  // always sorted and deduplicated
@@ -54,7 +54,7 @@ struct FDDomain {
     }
 };
 
-// ── Tagged union over the two domain kinds ─────────────────────────────────
+// Tagged union over the two domain kinds
 
 using Domain = std::variant<ZDomain, FDDomain>;
 

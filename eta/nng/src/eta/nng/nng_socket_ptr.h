@@ -19,7 +19,7 @@ namespace eta::nng {
         Pair, Req, Rep, Pub, Sub, Push, Pull, Surveyor, Respondent, Bus
     };
 
-    // ── Heartbeat state ───────────────────────────────────────────
+    // Heartbeat state
 
     /// State for the background heartbeat thread.
     /// Owned jointly by NngSocketPtr (via MonitorState) and the heartbeat thread lambda
@@ -43,7 +43,7 @@ namespace eta::nng {
         HeartbeatState& operator=(const HeartbeatState&) = delete;
     };
 
-    // ── Monitor / heartbeat state ─────────────────────────────────────────────
+    // Monitor / heartbeat state
 
     /// Thread-safe notification state created lazily when monitor() or
     /// enable-heartbeat() is called on a socket.

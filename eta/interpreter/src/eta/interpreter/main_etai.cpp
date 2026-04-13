@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
     std::string mailbox_endpoint;  // --mailbox <url>  (spawned child mode)
     bool disasm_mode = false;
 
-    // ── Parse CLI arguments ──────────────────────────────────────────
+    // Parse CLI arguments
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
 
@@ -83,14 +83,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ── Validate input file ──────────────────────────────────────────
+    // Validate input file
     fs::path file_path(input_file);
     if (!fs::exists(file_path)) {
         std::cerr << "error: file not found: " << input_file << "\n";
         return 1;
     }
 
-    // ── Build module path resolver ───────────────────────────────────
+    // Build module path resolver
     auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
 
     // Also add the directory containing the input file so sibling
@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
     auto parent_dir = fs::absolute(file_path).parent_path();
     resolver.add_dir(parent_dir);
 
-    // ── Create driver (pass argv[0] as the etai path) ────────────────
+    // Create driver (pass argv[0] as the etai path)
     std::string self_path = argv[0];
 #if defined(__linux__)
     {
@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
 
     auto resolve = driver.file_resolver();
 
-    // ── Install mailbox socket if we are a spawned child ────────────
+    // Install mailbox socket if we are a spawned child
 #ifdef ETA_HAS_NNG
     if (!mailbox_endpoint.empty()) {
         if (!driver.install_mailbox(mailbox_endpoint)) {

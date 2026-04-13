@@ -347,7 +347,7 @@ SemResult<core::Node*> handle_apply(const List* lst, Scope& scope, AnalysisConte
     return ctx.mod.emplace<core::Apply>(lst->span, *proc, std::move(args));
 }
 
-// ── Exception handlers ──────────────────────────────────────────────────────
+// Exception handlers
 
 // Helper: extract symbol name from a quoted symbol form '(quote tag).
 // Returns empty string if not a valid quoted symbol.

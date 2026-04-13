@@ -15,13 +15,13 @@
 
 namespace eta::runtime::vm {
 
-// ── Forward decls ──────────────────────────────────────────────────────────
+// Forward decls
 struct BreakLocation;
 struct StopEvent;
 enum class StopReason;
 using StopCallback = std::function<void(const StopEvent&)>;
 
-// ── BreakLocation ──────────────────────────────────────────────────────────
+// BreakLocation
 struct BreakLocation {
     uint32_t file_id{0};
     uint32_t line{0};
@@ -33,7 +33,7 @@ struct BreakLocation {
     }
 };
 
-// ── Stop event ─────────────────────────────────────────────────────────────
+// Stop event
 enum class StopReason { Breakpoint, Step, Pause, Exception };
 
 struct StopEvent {
@@ -42,7 +42,7 @@ struct StopEvent {
     std::string          exception_text;
 };
 
-// ── DebugState ─────────────────────────────────────────────────────────────
+// DebugState
 
 /**
  * @brief All debug machinery extracted from VM.
@@ -61,14 +61,14 @@ public:
     explicit DebugState(StopCallback cb)
         : stop_callback_(std::move(cb)) {}
 
-    // ── Breakpoints ───────────────────────────────────────────────────────
+    // Breakpoints
     void set_breakpoints(std::vector<BreakLocation> locs) {
         std::sort(locs.begin(), locs.end());
         std::lock_guard<std::mutex> lk(bp_mutex_);
         breakpoints_ = std::move(locs);
     }
 
-    // ── Stepping / resume ─────────────────────────────────────────────────
+    // Stepping / resume
     void resume() {
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_mode_  = StepMode::None;
@@ -118,13 +118,13 @@ public:
         return is_paused_;
     }
 
-    // ── Called from VM when a call/cc context switch happens ──────────────
+    // Called from VM when a call/cc context switch happens
     void notify_continuation_jump() {
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_current_epoch_++;
     }
 
-    // ── Called from VM when an unhandled exception is about to propagate ──
+    // Called from VM when an unhandled exception is about to propagate
     void notify_exception(const std::string& msg, reader::lexer::Span sp) {
         StopEvent ev{StopReason::Exception, sp, msg};
         {
@@ -146,7 +146,7 @@ public:
         return stopped_span_;
     }
 
-    // ── Main poll — called at the top of each VM instruction loop ─────────
+    // Main poll — called at the top of each VM instruction loop
     /**
      * @brief Check whether the VM should pause at the current instruction.
      *
@@ -199,7 +199,7 @@ private:
 
     std::atomic<bool> should_pause_{false};
 
-    // ── Internal check (no waiting) ───────────────────────────────────────
+    // Internal check (no waiting)
     std::optional<StopEvent> check_stop(reader::lexer::Span sp, std::size_t depth) {
         // 1. Async pause request
         if (should_pause_.load(std::memory_order_relaxed)) {

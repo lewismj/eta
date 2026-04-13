@@ -30,9 +30,7 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(torch_tests)
 
-// ═══════════════════════════════════════════════════════════════════════════
 // TensorPtr heap lifecycle
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(tensor_allocate_and_retrieve) {
     Heap heap(1ull << 22);
@@ -94,9 +92,7 @@ BOOST_AUTO_TEST_CASE(tensor_deallocate) {
     BOOST_TEST(!heap.try_get(id, entry));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Tensor creation primitives
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(torch_ones_creates_correct_shape) {
     Heap heap(1ull << 22);
@@ -143,9 +139,7 @@ BOOST_AUTO_TEST_CASE(torch_from_list_roundtrip) {
     BOOST_TEST(std::bit_cast<double>(c1->car) == 1.0);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Tensor arithmetic
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(tensor_add) {
     auto a = torch::ones({3}, torch::kFloat64);
@@ -175,9 +169,7 @@ BOOST_AUTO_TEST_CASE(tensor_unary_ops) {
     BOOST_TEST(std::abs(e[0].item<double>() - 1.0) < 1e-10);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Autograd
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(autograd_basic_grad) {
     auto x = torch::tensor(2.0, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
@@ -203,9 +195,7 @@ BOOST_AUTO_TEST_CASE(autograd_requires_grad_heap) {
     BOOST_TEST(tp->tensor.requires_grad());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // NN Modules
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(nn_linear_creates_module) {
     Heap heap(1ull << 22);
@@ -252,9 +242,7 @@ BOOST_AUTO_TEST_CASE(nn_module_gc_collects) {
     BOOST_TEST(stats.objects_freed == 1);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Optimizers
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(optimizer_sgd_step) {
     auto model = torch::nn::Linear(torch::nn::LinearOptions(2, 1));
@@ -290,9 +278,7 @@ BOOST_AUTO_TEST_CASE(optimizer_adam_heap) {
     BOOST_TEST(op->name == "Adam");
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Loss functions
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(mse_loss_correct) {
     auto pred = torch::tensor({1.0, 2.0, 3.0}, torch::kFloat64);
@@ -309,9 +295,7 @@ BOOST_AUTO_TEST_CASE(mse_loss_nonzero) {
     BOOST_TEST(std::abs(loss.item<double>() - 2.0/3.0) < 1e-10);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Primitive registration (smoke test)
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(register_torch_primitives_smoke) {
     Heap heap(1ull << 22);
@@ -342,9 +326,7 @@ BOOST_AUTO_TEST_CASE(register_torch_builtin_names_smoke) {
     BOOST_TEST(idx.has_value());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Device management
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(cuda_available_returns_bool) {
     Heap heap(1ull << 22);
@@ -480,9 +462,7 @@ BOOST_AUTO_TEST_CASE(nn_to_device_cpu) {
     BOOST_TEST(mp->module->parameters()[0].device().is_cpu());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Device management builtin names
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(device_builtin_names_registered) {
     BuiltinEnvironment env;
@@ -495,9 +475,7 @@ BOOST_AUTO_TEST_CASE(device_builtin_names_registered) {
     BOOST_TEST(env.lookup("nn/to-device").has_value());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Primitive invocation through BuiltinSpec (integration smoke tests)
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_torch_ones_via_env) {
     Heap heap(1ull << 22);
@@ -617,9 +595,7 @@ BOOST_AUTO_TEST_CASE(builtin_names_and_primitives_count_match) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // End-to-end: training loop
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(training_loop_converges) {
     // Simple regression: y = 2x + 1
@@ -645,9 +621,7 @@ BOOST_AUTO_TEST_CASE(training_loop_converges) {
     BOOST_TEST(final_loss < 0.2);  // Should converge reasonably well
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // nn/sequential via Eta primitive (the gap that caused the sequential bug)
-// ═══════════════════════════════════════════════════════════════════════════
 
 namespace {
     // Helper: count elements in an Eta cons-list
@@ -816,9 +790,7 @@ BOOST_AUTO_TEST_CASE(prim_nn_sequential_with_dropout) {
     BOOST_TEST(count_list(heap, params) == 4);  // l1 weight+bias + l2 weight+bias
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // nn/train! and nn/eval! via primitives
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_nn_train_eval_mode) {
     Heap heap(1ull << 22);
@@ -850,9 +822,7 @@ BOOST_AUTO_TEST_CASE(prim_nn_train_eval_mode) {
     BOOST_REQUIRE(get_tensor(heap, out_train));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Tensor creation primitives via env (arange, linspace, zeros, randn)
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_torch_zeros_via_env) {
     Heap heap(1ull << 22);
@@ -905,9 +875,7 @@ BOOST_AUTO_TEST_CASE(prim_torch_linspace_via_env) {
     BOOST_TEST(std::abs(tp->tensor[4].item<double>() - 1.0) < 1e-10);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Arithmetic primitives via env (sub, mul, div, dot)
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_torch_sub_via_env) {
     Heap heap(1ull << 22);
@@ -983,9 +951,7 @@ BOOST_AUTO_TEST_CASE(prim_torch_dot_via_env) {
     BOOST_TEST(tp->tensor.item<double>() == 32.0);  // 1*4 + 2*5 + 3*6
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Unary ops via env
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_unary_ops_via_env) {
     Heap heap(1ull << 22);
@@ -1058,9 +1024,7 @@ BOOST_AUTO_TEST_CASE(prim_softmax_via_env) {
     BOOST_TEST(tp->tensor.min().item<double>() > 0.0);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Shape ops via env
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_shape_ops_via_env) {
     Heap heap(1ull << 22);
@@ -1127,9 +1091,7 @@ BOOST_AUTO_TEST_CASE(prim_torch_cat_via_env) {
     BOOST_TEST(tp->tensor.sum().item<double>() == 6.0);  // 2*3 ones + 2*3 zeros
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Reduction primitives via env
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_reductions_via_env) {
     Heap heap(1ull << 22);
@@ -1164,9 +1126,7 @@ BOOST_AUTO_TEST_CASE(prim_reductions_via_env) {
     BOOST_TEST(get_tensor(heap, amin_r)->tensor.item<int64_t>() == 0);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Conversion primitives via env (numel, to-list)
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_torch_numel_via_env) {
     Heap heap(1ull << 22);
@@ -1192,9 +1152,7 @@ BOOST_AUTO_TEST_CASE(prim_torch_to_list_via_env) {
     BOOST_TEST(count_list(heap, result) == 3);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Autograd primitives via env (requires-grad!, requires-grad?, detach, zero-grad!)
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_autograd_full_cycle_via_env) {
     Heap heap(1ull << 22);
@@ -1230,9 +1188,7 @@ BOOST_AUTO_TEST_CASE(prim_autograd_full_cycle_via_env) {
     BOOST_TEST(rg_det == False);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Loss functions via env (L1, cross-entropy)
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_l1_loss_via_env) {
     Heap heap(1ull << 22);
@@ -1276,9 +1232,7 @@ BOOST_AUTO_TEST_CASE(prim_cross_entropy_loss_via_env) {
     BOOST_TEST(tp->tensor.item<double>() > 0.0);  // loss should be positive
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Optimizer primitives via env (sgd, adam, step!, zero-grad!, optimizer?)
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_optimizer_full_cycle_via_env) {
     Heap heap(1ull << 22);
@@ -1306,9 +1260,7 @@ BOOST_AUTO_TEST_CASE(prim_optimizer_full_cycle_via_env) {
     BOOST_TEST(st.has_value());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // nn/linear via env
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_nn_linear_forward_via_env) {
     Heap heap(1ull << 22);
@@ -1334,9 +1286,7 @@ BOOST_AUTO_TEST_CASE(prim_nn_linear_forward_via_env) {
     BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({1, 2}));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Tensor predicate via env
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_tensor_predicate_via_env) {
     Heap heap(1ull << 22);
@@ -1354,9 +1304,7 @@ BOOST_AUTO_TEST_CASE(prim_tensor_predicate_via_env) {
     BOOST_TEST(r2 == False);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // End-to-end: sequential training loop via Eta primitives
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_sequential_training_converges_via_env) {
     // Pin random seed so weight initialisation is deterministic and training
@@ -1411,9 +1359,7 @@ BOOST_AUTO_TEST_CASE(prim_sequential_training_converges_via_env) {
     BOOST_TEST(last_loss < 1.0);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Error paths — wrong argument types should return errors, not crash
-// ═══════════════════════════════════════════════════════════════════════════
 
 BOOST_AUTO_TEST_CASE(prim_error_paths) {
     Heap heap(1ull << 22);

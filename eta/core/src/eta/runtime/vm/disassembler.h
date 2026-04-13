@@ -29,7 +29,7 @@ public:
 
     /// Disassemble a single BytecodeFunction.
     void disassemble(const BytecodeFunction& func, std::ostream& os) const {
-        // ── Header ──────────────────────────────────────────────
+        // Header
         os << "=== " << (func.name.empty() ? "<anonymous>" : func.name) << " ===\n";
         os << "  arity:      " << func.arity
            << (func.has_rest ? " + rest" : "") << '\n';
@@ -54,7 +54,7 @@ public:
             os << "]\n";
         }
 
-        // ── Constant pool ───────────────────────────────────────
+        // Constant pool
         if (!func.constants.empty()) {
             os << "  -- constant pool --\n";
             for (std::size_t i = 0; i < func.constants.size(); ++i) {
@@ -62,7 +62,7 @@ public:
             }
         }
 
-        // ── Instructions ────────────────────────────────────────
+        // Instructions
         os << "  -- code --\n";
         for (std::size_t i = 0; i < func.code.size(); ++i) {
             const auto& instr = func.code[i];

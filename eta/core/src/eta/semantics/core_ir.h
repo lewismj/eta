@@ -98,7 +98,7 @@ struct Raise { std::string tag_name; Node* value; };
  */
 struct Guard { std::string tag_name; Node* body; };
 
-// ── Unification / logic variable IR nodes ────────────────────────────────────
+// Unification / logic variable IR nodes
 
 /// (logic-var) — allocate a fresh unbound logic variable
 struct MakeLogicVar {};

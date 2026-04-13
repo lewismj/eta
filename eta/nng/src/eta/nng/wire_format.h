@@ -53,9 +53,7 @@ deserialize_value(std::string_view data, Heap& heap, InternTable& intern) {
     return parse_datum_string(data, heap, intern);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Phase 8 — Heartbeat wire format
-// ─────────────────────────────────────────────────────────────────────────────
+// Heartbeat wire format
 
 /// Magic byte that marks a heartbeat control message (ping/pong).
 /// Distinct from the binary format version byte (0xEA) and all printable ASCII.
@@ -80,9 +78,7 @@ inline std::vector<uint8_t> make_heartbeat_pong() {
     return {HEARTBEAT_VERSION_BYTE, HB_PONG};
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Phase 6 — Binary wire format
-// ─────────────────────────────────────────────────────────────────────────────
+// Binary wire format
 
 /// Magic version byte that marks a binary-format nng message.
 /// S-expression messages always start with a printable ASCII character,
@@ -109,7 +105,7 @@ enum BinaryTag : uint8_t {
     BT_ByteVec  = 13,   ///< u32 len + raw bytes
 };
 
-// ── Internal: buffered binary writer ─────────────────────────────────────────
+// Internal: buffered binary writer
 
 namespace detail {
 
@@ -236,7 +232,7 @@ struct BinaryWriter {
     }
 };
 
-// ── Internal: buffered binary reader ─────────────────────────────────────────
+// Internal: buffered binary reader
 
 struct BinaryReader {
     std::span<const uint8_t> data;
@@ -378,9 +374,7 @@ struct BinaryReader {
 
 } // namespace detail
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Public API
-// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * @brief Check whether a raw byte buffer starts with the binary wire-format

@@ -190,7 +190,7 @@ static constexpr const char* BANNER =
 int main(int argc, char* argv[]) {
     std::string cli_path;
 
-    // ── Parse CLI arguments ──────────────────────────────────────────
+    // Parse CLI arguments
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
 
@@ -213,7 +213,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ── Build module path resolver ───────────────────────────────────
+    // Build module path resolver
     auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
 
     // Warn when the module path is empty and no explicit --path was given.
@@ -230,7 +230,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ── Create driver ────────────────────────────────────────────────
+    // Create driver
     eta::interpreter::Driver driver(std::move(resolver));
     auto resolve = driver.file_resolver();
 
@@ -261,7 +261,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ── REPL loop ────────────────────────────────────────────────────
+    // REPL loop
     std::cout << BANNER;
 
     std::string buffer;

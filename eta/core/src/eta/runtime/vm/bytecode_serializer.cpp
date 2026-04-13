@@ -256,7 +256,7 @@ bool BytecodeSerializer::serialize(
         const std::vector<std::string>& imports,
         uint32_t num_builtins) const
 {
-    // ── Header ──────────────────────────────────────────────────
+    // Header
     os.write(MAGIC, 4);
     write_u16(os, FORMAT_VERSION);
 
@@ -270,13 +270,13 @@ bool BytecodeSerializer::serialize(
     write_u32(os, static_cast<uint32_t>(modules.size()));
     write_u32(os, static_cast<uint32_t>(registry.size()));
 
-    // ── Imports table ────────────────────────────────────────────
+    // Imports table
     write_u32(os, static_cast<uint32_t>(imports.size()));
     for (const auto& imp : imports) {
         write_str(os, imp);
     }
 
-    // ── Module table ────────────────────────────────────────────
+    // Module table
     for (const auto& mod : modules) {
         write_str(os, mod.name);
         write_u32(os, mod.init_func_index);
@@ -286,7 +286,7 @@ bool BytecodeSerializer::serialize(
         write_u32(os, mod.main_func_slot.value_or(0xFFFFFFFFu));
     }
 
-    // ── Function table ──────────────────────────────────────────
+    // Function table
     const auto& funcs = registry.all();
     for (const auto& func : funcs) {
         write_str(os, func.name);
@@ -340,7 +340,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
 {
     EtacFile result;
 
-    // ── Header ──────────────────────────────────────────────────
+    // Header
     char magic[4];
     is.read(magic, 4);
     if (!is.good() || std::memcmp(magic, MAGIC, 4) != 0)
@@ -365,7 +365,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     if (!read_u32(is, num_modules)) return std::unexpected(SerializerError::Truncated);
     if (!read_u32(is, num_functions)) return std::unexpected(SerializerError::Truncated);
 
-    // ── Imports table ────────────────────────────────────────────
+    // Imports table
     uint32_t num_imports;
     if (!read_u32(is, num_imports)) return std::unexpected(SerializerError::Truncated);
     result.imports.resize(num_imports);
@@ -373,7 +373,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         if (!read_str(is, result.imports[i])) return std::unexpected(SerializerError::Truncated);
     }
 
-    // ── Module table ────────────────────────────────────────────
+    // Module table
     result.modules.resize(num_modules);
     for (uint32_t m = 0; m < num_modules; ++m) {
         auto& mod = result.modules[m];
@@ -387,7 +387,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         if (has_main) mod.main_func_slot = main_slot;
     }
 
-    // ── Function table ──────────────────────────────────────────
+    // Function table
     for (uint32_t f = 0; f < num_functions; ++f) {
         BytecodeFunction func;
 

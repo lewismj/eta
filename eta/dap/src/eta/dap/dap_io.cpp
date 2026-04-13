@@ -53,7 +53,7 @@ void write_message(std::ostream& out, const std::string& body) {
     out.flush();
 }
 
-// ── Convenience wrappers using the process stdin/stdout ──────────────────────
+// Convenience wrappers using the process stdin/stdout
 
 std::optional<std::string> read_message() {
     return read_message(std::cin);

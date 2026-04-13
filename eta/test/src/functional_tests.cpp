@@ -191,7 +191,7 @@ struct FunctionalTestFixture {
 // ============================================================================
 
 static const char* AAD_LIB = R"(
-    ;; ── Dual representation ─────────────────────────────────────────
+    ;; Dual representation
     (defun dual-val (d)
       (if (pair? d) (car d) d))
 
@@ -209,7 +209,7 @@ static const char* AAD_LIB = R"(
     (defun ensure-dual (x)
       (if (pair? x) x (make-const x)))
 
-    ;; ── Lifted operations ────────────────────────────────────────────
+    ;; Lifted operations
 
     (defun d+ (a b)
       (let ((a (ensure-dual a))
@@ -281,7 +281,7 @@ static const char* AAD_LIB = R"(
                 (lambda (adj)
                   (ba (* adj (/ 1 va))))))))
 
-    ;; ── ad macro ─────────────────────────────────────────────────────
+    ;; ad macro
     ;; Inlines the dual operations using only builtin names (cons, car,
     ;; cdr, pair?, append, lambda, let, if) so that the hygienic macro
     ;; system correctly renames only local bindings, not references to
@@ -348,7 +348,7 @@ static const char* AAD_LIB = R"(
                    (lambda (g) (ba (* g (/ 1 va))))))))
         ((_ x) x)))
 
-    ;; ── Gradient helpers ─────────────────────────────────────────────
+    ;; Gradient helpers
     (defun collect-adjoints (n adj-list)
       (let ((result (make-vector n 0)))
         (letrec ((loop (lambda (xs)
@@ -387,7 +387,7 @@ static std::string aad_module(const std::string& body) {
 // ============================================================================
 
 static const char* TAPE_GRAD = R"(
-    ;; ── Tape-based AD gradient driver ─────────────────────────────────
+    ;; Tape-based AD gradient driver
 
     (defun grad (f vals)
       (let ((tape (tape-new))
@@ -413,7 +413,7 @@ static const char* TAPE_GRAD = R"(
 )";
 
 static const char* XVA_LIB = R"(
-    ;; ── Financial building blocks (plain arithmetic) ──────────────────
+    ;; Financial building blocks (plain arithmetic)
 
     (defun discount-factor (r t)
       (exp (* (* -1 r) t)))
@@ -431,7 +431,7 @@ static const char* XVA_LIB = R"(
     (defun expected-exposure (notional sigma t)
       (* notional (* sigma (sqrt t))))
 
-    ;; ── CVA ──────────────────────────────────────────────────────────
+    ;; CVA
 
     (defun cva-bucket (notional sigma r hazard-rate lgd t-prev t-curr)
       (let ((t-mid (* 0.5 (+ t-prev t-curr))))
@@ -456,7 +456,7 @@ static const char* XVA_LIB = R"(
         0.0
         0))
 
-    ;; ── FVA ──────────────────────────────────────────────────────────
+    ;; FVA
 
     (defun fva-bucket (notional sigma r funding-spread t-prev t-curr)
       (let ((t-mid (* 0.5 (+ t-prev t-curr)))
@@ -481,7 +481,7 @@ static const char* XVA_LIB = R"(
         0.0
         0))
 
-    ;; ── Total xVA ────────────────────────────────────────────────────
+    ;; Total xVA
 
     (defun total-xva (notional sigma r hazard-rate lgd funding-spread)
       (+ (compute-cva notional sigma r hazard-rate lgd)
@@ -493,7 +493,7 @@ static std::string xva_module(const std::string& body) {
     return std::string("(module m\n") + TAPE_GRAD + "\n" + XVA_LIB + "\n" + body + "\n)";
 }
 
-// ── C++ reference implementations for expected values ────────────────────────
+// C++ reference implementations for expected values
 
 static double cpp_expected_cva(double N, double sigma, double r, double lam, double lgd) {
     double times[] = {0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0};
@@ -1378,7 +1378,7 @@ BOOST_AUTO_TEST_SUITE_END()
 // Validates primal values and gradients against C++ reference implementations.
 // ============================================================================
 
-// ── C++ reference: SABR ATM implied vol ─────────────────────────────────────
+// C++ reference: SABR ATM implied vol
 static double cpp_sabr_atm_vol(double F, double T, double alpha, double beta,
                                 double rho, double nu) {
     double omb = 1.0 - beta;
@@ -1390,7 +1390,7 @@ static double cpp_sabr_atm_vol(double F, double T, double alpha, double beta,
     return base * (1.0 + (t1 + t2 + t3) * T);
 }
 
-// ── C++ reference: SABR general implied vol ─────────────────────────────────
+// C++ reference: SABR general implied vol
 static double cpp_sabr_general_vol(double F, double K, double T, double alpha,
                                     double beta, double rho, double nu) {
     double omb = 1.0 - beta;
@@ -1428,9 +1428,9 @@ static double cpp_sabr_implied_vol(double F, double K, double T, double alpha,
     return cpp_sabr_general_vol(F, K, T, alpha, beta, rho, nu);
 }
 
-// ── SABR library string for embedding in test modules (tape-based AD) ───────
+// SABR library string for embedding in test modules (tape-based AD)
 static const char* SABR_LIB = R"(
-    ;; ── Tape-based AD gradient driver ────────────────────────────────
+    ;; Tape-based AD gradient driver
     (defun native-grad (f vals)
       (let ((tape (tape-new))
             (n    (length vals)))
@@ -1453,21 +1453,21 @@ static const char* SABR_LIB = R"(
                 (collect vars 0))
               (list (tape-primal tape output) grad-vec))))))
 
-    ;; ── nd-val: extract primal from a tape-ref or pass through ──────
+    ;; nd-val: extract primal from a tape-ref or pass through
     (defun nd-val (x)
       (if (tape-ref? x) (tape-ref-value x) x))
 
-    ;; ── Helper: pow via exp/log ─────────────────────────────────────
+    ;; Helper: pow via exp/log
     (defun ndpow (a b) (exp (* b (log a))))
 
-    ;; ── SABR x(z) helper ──────────────────────────────────────────
+    ;; SABR x(z) helper
     (defun sabr-xz (z rho)
       (let ((disc (sqrt (+ (- 1 (* 2 (* rho z)))
                            (* z z)))))
         (log (/ (+ (- disc rho) z)
                 (- 1 rho)))))
 
-    ;; ── SABR ATM vol ──────────────────────────────────────────────
+    ;; SABR ATM vol
     (defun sabr-atm-vol (F T alpha beta rho nu)
       (let ((one-minus-beta (- 1 beta)))
         (let ((F-pow (ndpow F one-minus-beta)))
@@ -1483,7 +1483,7 @@ static const char* SABR_LIB = R"(
               (* base-vol
                  (+ 1 (* T (+ term1 (+ term2 term3))))))))))
 
-    ;; ── SABR general vol ──────────────────────────────────────────
+    ;; SABR general vol
     (defun sabr-general-vol (F K T alpha beta rho nu)
       (let ((one-minus-beta (- 1 beta)))
         (let ((FK (* F K)))
@@ -1514,7 +1514,7 @@ static const char* SABR_LIB = R"(
                             (* (/ alpha (* FK-mid denom-corr))
                                (* zx-ratio num-corr))))))))))))))
 
-    ;; ── Unified SABR implied vol ──────────────────────────────────
+    ;; Unified SABR implied vol
     (defun sabr-implied-vol (F K T alpha beta rho nu)
       (if (< (abs (- F K)) 1e-7)
           (sabr-atm-vol F T alpha beta rho nu)
@@ -1527,7 +1527,7 @@ static std::string sabr_module(const std::string& body) {
 
 BOOST_AUTO_TEST_SUITE(sabr_tests)
 
-// ── SABR ATM primal value ───────────────────────────────────────────────────
+// SABR ATM primal value
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_atm_primal, FunctionalTestFixture) {
     // ATM implied vol at F=0.03, T=1, alpha=0.035, beta=0.5, rho=-0.25, nu=0.40
@@ -1538,7 +1538,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_atm_primal, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-6);
 }
 
-// ── SABR general (OTM) primal value ─────────────────────────────────────────
+// SABR general (OTM) primal value
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_general_primal_otm, FunctionalTestFixture) {
     // OTM: K=0.024 (80% of F=0.03), T=1
@@ -1549,7 +1549,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_general_primal_otm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
 }
 
-// ── SABR unified: ATM path ──────────────────────────────────────────────────
+// SABR unified: ATM path
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_unified_atm, FunctionalTestFixture) {
     double expected = cpp_sabr_implied_vol(0.03, 0.03, 1.0, 0.035, 0.5, -0.25, 0.40);
@@ -1559,7 +1559,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_unified_atm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-6);
 }
 
-// ── SABR unified: OTM path ──────────────────────────────────────────────────
+// SABR unified: OTM path
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_unified_otm, FunctionalTestFixture) {
     double K = 0.03 * 1.20;  // 120% moneyness
@@ -1570,7 +1570,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_unified_otm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
 }
 
-// ── SABR gradient: ∂σ/∂α via native-grad (ATM) ─────────────────────────────
+// SABR gradient: ∂σ/∂α via native-grad (ATM)
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_atm, FunctionalTestFixture) {
     // Finite-difference reference: bump alpha by h, compute (f(a+h)-f(a-h))/(2h)
@@ -1589,7 +1589,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_atm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), fd_dalpha, 0.01); // 0.01% tolerance
 }
 
-// ── SABR gradient: ∂σ/∂ρ via native-grad (ATM) ─────────────────────────────
+// SABR gradient: ∂σ/∂ρ via native-grad (ATM)
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_grad_drho_atm, FunctionalTestFixture) {
     double h = 1e-7;
@@ -1607,7 +1607,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_grad_drho_atm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), fd_drho, 0.01);
 }
 
-// ── SABR gradient: ∂σ/∂ν via native-grad (ATM) ─────────────────────────────
+// SABR gradient: ∂σ/∂ν via native-grad (ATM)
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dnu_atm, FunctionalTestFixture) {
     double h = 1e-7;
@@ -1625,7 +1625,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dnu_atm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), fd_dnu, 0.01);
 }
 
-// ── SABR gradient: OTM point ∂σ/∂α ─────────────────────────────────────────
+// SABR gradient: OTM point ∂σ/∂α
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_otm, FunctionalTestFixture) {
     double K = 0.024; // 80% moneyness
@@ -1644,7 +1644,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_otm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), fd_dalpha, 0.1); // slightly wider tolerance for OTM
 }
 
-// ── SABR negative skew: low-strike vol > high-strike vol ────────────────────
+// SABR negative skew: low-strike vol > high-strike vol
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_skew_direction, FunctionalTestFixture) {
     // With rho < 0, vol at K=80%F should be > vol at K=120%F
@@ -1656,7 +1656,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_skew_direction, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), 1.0, 1e-10);
 }
 
-// ── SABR smile: OTM vols > ATM vol on both sides (rho=0) ───────────────────
+// SABR smile: OTM vols > ATM vol on both sides (rho=0)
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_smile_shape, FunctionalTestFixture) {
     // With rho=0 and high enough nu, both OTM vols should be >= ATM vol (smile shape).
