@@ -20,19 +20,17 @@
   <a href="docs/compiler.md">Compiler</a> ·
   <a href="docs/optimization.md">Optimization</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
-  <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
   <a href="docs/networking.md">Networking</a> ·
-  <a href="docs/message-passing.md">Message Passing</a>
-  <a href="docs/next-steps.md">Next Steps</a> ·
+  <a href="docs/message-passing.md">Message Passing</a> ·
+  <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
+  <a href="docs/next-steps.md">Next Steps</a>
 </p>
 <br>
 <p align="center">
 <strong>Language Guide</strong></p>
 <p align="center">
   <a href="docs/examples.md">Basics</a> ·
-  <a href="docs/aad.md">Reverse Mode AAD Example w/XVA</a> ·
-  <a href="docs/european.md">European Option Greeks with AAD</a> ·
-  <a href="docs/sabr.md">SABR Volatility Model</a> ·
+  <a href="docs/aad.md">Reverse Mode (Finance Examples)</a> ·
   <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
   <a href="docs/clp.md">Constraint Logic Programming</a> ·
   <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a> ·
@@ -66,7 +64,7 @@ full compilation pipeline).
 | **Scheme Core** | Closures, tail-call elimination, first-class continuations (`call/cc`), hygienic `syntax-rules` macros, module system with import filters | [Bytecode & VM](docs/bytecode-vm.md) · [Modules](docs/modules.md) |
 | **Logic Programming** | VM-native structural unification & backtracking — seven dedicated opcodes give you Prolog-style pattern matching without leaving the language | [Logic](docs/logic.md) |
 | **Constraint Logic Programming** | `clp(Z)` integer-interval and `clp(FD)` finite-domain solvers built on the unification layer | [CLP](docs/clp.md) |
-| **Reverse-Mode AAD** | VM-native tape-based automatic differentiation — standard arithmetic is recorded transparently when a `TapeRef` operand is present; zero closure overhead | [AAD](docs/aad.md) · [xVA](docs/xva.md) · [European Greeks](docs/european.md) · [SABR](docs/sabr.md) |
+| **Reverse-Mode AAD** | VM-native tape-based automatic differentiation — standard arithmetic is recorded transparently when a `TapeRef` operand is present; zero closure overhead | [AAD – Finance Examples](docs/aad.md) |
 | **Neural Networks (libtorch)** | Native C++ bindings to PyTorch's backend — tensors, autograd, NN layers, optimizers, and GPU offload from Eta code | [Torch](docs/torch.md) |
 | **Causal Inference** | Pearl's do-calculus engine, back-door / front-door adjustment, and end-to-end factor analysis | [Causal](docs/causal.md) |
 | **Message Passing & Actors** | Erlang-style actor model via nng: `spawn` child processes, `send!`/`recv!` over PAIR sockets, `worker-pool` parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT — network-transparent across machines | [Networking](docs/networking.md) · [Message Passing](docs/message-passing.md) |
@@ -363,10 +361,7 @@ flowchart LR
 | **[Networking Primitives](docs/networking.md)** | nng socket API: `nng-socket`, `send!`, `recv!`, `nng-poll`, endpoints, error handling   |
 | **[Message Passing & Actors](docs/message-passing.md)** | Actor model: `spawn`, `worker-pool`, REQ/REP, PUB/SUB, scatter-gather, timeouts  |
 | **[Network & Message Passing Design](docs/network-message-passing.md)** | Full design doc: architecture, phases, nng rationale             |
-| **[AAD](docs/aad.md)**                     | Reverse-mode automatic differentiation walkthrough                                            |
-| **[xVA](docs/xva.md)**                     | Finance use case: CVA, FVA, and sensitivities via AAD                                         |
-| **[European Greeks](docs/european.md)**    | BS option Greeks (first & second order) with custom VJP and Schwarz check                     |
-| **[SABR Volatility Model](docs/sabr.md)** | SABR Hagan implied vol, tape-based reverse-mode AD, vol surface Greeks                        |
+| **[AAD – Finance Examples](docs/aad.md)** | Reverse-mode AD walkthrough, xVA sensitivities, European Greeks, SABR vol surface            |
 | **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`           |
 | **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                             |
 | **[Fact Tables](docs/fact-table.md)**      | Columnar fact tables with hash-indexed queries, iteration, and fold                           |

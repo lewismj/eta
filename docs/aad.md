@@ -5,6 +5,20 @@
 
 ---
 
+## Contents
+
+- [Overview](#overview)
+- [How Reverse-Mode AD Works](#how-reverse-mode-ad-works)
+- [Tape-Based AD](#tape-based-ad)
+  - [Tape API](#tape-api)
+  - [Tape Usage Pattern](#tape-usage-pattern)
+  - [The `grad` Helper](#the-grad-helper)
+  - [Tape Internal Structure](#tape-internal-structure)
+- [Summary](#summary)
+- [Finance Examples](#finance-examples)
+
+---
+
 ## Overview
 
 [`examples/aad.eta`](../examples/aad.eta) implements **reverse-mode
@@ -162,23 +176,23 @@ in multiple sub-expressions receives the sum of all path contributions.
 
 ---
 
-## Next: xVA and European Option Greeks
+## Finance Examples
 
-The [xVA example](xva.md) builds on this AD library to compute
-**Credit Valuation Adjustment (CVA)** and **Funding Valuation
-Adjustment (FVA)**.  It demonstrates computing market-risk
-sensitivities in a single backward pass.
+All of these examples build on the tape-based AD described above —
+plain arithmetic is transparently recorded, and gradients are obtained
+in a single backward pass.
+
+| Example | Description | Docs |
+|---------|-------------|------|
+| [`aad.eta`](../examples/aad.eta) | Core AD walkthrough — `grad` helper, multi-variable gradients | *(this page)* |
+| [`xva.eta`](../examples/xva.eta) | CVA & FVA valuation adjustments with market-risk sensitivities | [xVA](xva.md) |
+| [`european.eta`](../examples/european.eta) | Black-Scholes Greeks (1st & 2nd order), custom VJP, Schwarz check | [European Greeks](european.md) |
+| [`sabr.eta`](../examples/sabr.eta) | SABR Hagan implied vol, strike × expiry vol surface Greeks | [SABR](sabr.md) |
 
 ```bash
+etai examples/aad.eta
 etai examples/xva.eta
-```
-
-The [European option Greeks example](european.md) goes further,
-adding **custom AD primitives** (`dnorm-cdf`, `dnorm-pdf`) and
-computing **second-order Greeks** (Gamma, Vanna, Volga) by applying
-`grad` to the closed-form Delta and Vega expressions.
-
-```bash
 etai examples/european.eta
+etai examples/sabr.eta
 ```
 
