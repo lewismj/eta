@@ -107,17 +107,17 @@ private:
     // Module resolver — populated from ETA_MODULE_PATH + bundled stdlib
     interpreter::ModulePathResolver resolver_;
 
-    // ── Transport ─────────────────────────────────────────────────────
+    // Transport
     std::optional<std::string> read_message();
     void send_message(const Value& msg);
     void send_response(const Value& id, const Value& result);
     void send_error(const Value& id, int code, const std::string& message);
     void send_notification(const std::string& method, const Value& params);
 
-    // ── Dispatch ──────────────────────────────────────────────────────
+    // Dispatch
     void dispatch(const Value& msg);
 
-    // ── LSP Methods ───────────────────────────────────────────────────
+    // LSP Methods
     Value handle_initialize(const Value& params);
     void handle_initialized(const Value& params);
     void handle_shutdown();
@@ -143,11 +143,11 @@ private:
     Value handle_semantic_tokens_full(const Value& params);
     Value handle_formatting(const Value& params);
 
-    // ── Diagnostics ───────────────────────────────────────────────────
+    // Diagnostics
     void validate_document(const std::string& uri);
     void publish_diagnostics(const std::string& uri, const std::vector<LspDiagnostic>& diags);
 
-    // ── Helpers ───────────────────────────────────────────────────────
+    // Helpers
     static Value position_to_json(const Position& p);
     static Value range_to_json(const Range& r);
     static Value diagnostic_to_json(const LspDiagnostic& d);
@@ -189,7 +189,7 @@ private:
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
         std::unordered_set<std::string>& seen_modules);
 
-    // ── Completion caches ─────────────────────────────────────────────
+    // Completion caches
     /// Cached symbols from prelude + module-path .eta files (populated lazily).
     bool completion_cache_loaded_{false};
     std::vector<SymbolInfo> prelude_symbols_;
@@ -201,7 +201,7 @@ private:
     /// Scan all .eta files in the module search path and collect their symbols.
     void scan_module_path_symbols();
 
-    // ── Validation content cache ──────────────────────────────────────
+    // Validation content cache
     /// Last content validated per URI — skip redundant full-pipeline runs.
     std::unordered_map<std::string, std::string> last_validated_content_;
 };

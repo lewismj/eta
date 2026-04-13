@@ -2251,9 +2251,7 @@ namespace eta::reader::expander {
         return std::unexpected(syntax_error(lst.span, "no matching clause for macro: " + name));
     }
 
-    // ────────────────────────────────────────────────────────────────────────
     // Exception handling special forms
-    // ────────────────────────────────────────────────────────────────────────
 
     // (catch body)         — catch-all
     // (catch 'tag body)    — catch specific tag
@@ -2280,9 +2278,7 @@ namespace eta::reader::expander {
         return make_list(std::move(*expanded), lst.span);
     }
 
-    // ────────────────────────────────────────────────────────────────────────
     // Logic variable / unification special forms
-    // ────────────────────────────────────────────────────────────────────────
 
     // (logic-var)
     ExpanderResult<SExprPtr> Expander::handle_logic_var(const List& lst) {

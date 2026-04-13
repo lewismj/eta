@@ -1391,7 +1391,7 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
               ;; Atoms (variables or constants) return as-is
               ((atom? e) e)
 
-              ;; ── not ────────────────────────────────────────────
+              ;; not
               ((eq? (op e) 'not)
                 (let ((u (simplify-bool (a1 e))))
                   (cond
@@ -1407,7 +1407,7 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
                       (list 'and (list 'not (a1 u)) (list 'not (a2 u))))
                     (#t (list 'not u)))))
 
-              ;; ── and ────────────────────────────────────────────
+              ;; and
               ((eq? (op e) 'and)
                 (let ((sa (simplify-bool (a1 e)))
                       (sb (simplify-bool (a2 e))))
@@ -1419,7 +1419,7 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
                     ((equal? sa sb) sa)
                     (#t (list 'and sa sb)))))
 
-              ;; ── or ─────────────────────────────────────────────
+              ;; or
               ((eq? (op e) 'or)
                 (let ((sa (simplify-bool (a1 e)))
                       (sb (simplify-bool (a2 e))))
@@ -1439,7 +1439,7 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
             (let ((s (simplify-bool e)))
               (if (equal? s e) s (simplify-bool* s))))
 
-          ;; ── Test cases ──────────────────────────────────────────
+          ;; Test cases
           ;; x ∧ ⊤ = x
           (define t1 (simplify-bool* '(and x #t)))
           ;; x ∧ ⊥ = ⊥
@@ -1586,13 +1586,13 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_comprehensive) {
     // Full diff + simplify system with all rules, tested against 4 examples
     std::string src = R"(
         (module m
-          ;; ── Prelude helpers ─────────────────────────────────────
+          ;; Prelude helpers
           (defun atom? (x) (not (pair? x)))
           (defun op (e) (car e))
           (defun a1 (e) (car (cdr e)))
           (defun a2 (e) (car (cdr (cdr e))))
 
-          ;; ── Algebraic simplifier ────────────────────────────────
+          ;; Algebraic simplifier
           (defun simplify (e)
             (cond
               ;; atoms simplify to themselves
@@ -1630,7 +1630,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_comprehensive) {
             (let ((s (simplify e)))
               (if (equal? s e) s (simplify* s))))
 
-          ;; ── Symbolic differentiator ─────────────────────────────
+          ;; Symbolic differentiator
           (defun diff (e v)
             (cond
               ((number? e) 0)
@@ -1667,7 +1667,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_comprehensive) {
                   (list '* (list '/ 1 u) (diff u v))))
               (#t 0)))
 
-          ;; ── Test cases ──────────────────────────────────────────
+          ;; Test cases
 
           ;; 1) d/dx (x² + 3) = 2x
           (define t1 (simplify* (diff '(+ (* x x) 3) 'x)))

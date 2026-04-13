@@ -1,18 +1,16 @@
 #pragma once
 
 /// @file process_mgr.h
-/// @brief Process lifecycle manager for the Eta actor model (Phases 4 & 7).
+/// @brief Process lifecycle manager for the Eta actor model.
 ///
-/// Phase 4: Spawns child etai OS-processes connected via nng PAIR sockets.
-/// Phase 7: Spawns in-process actor threads, each with an independent VM,
+/// Spawns child etai OS-processes connected via nng PAIR sockets.
+/// Can also spawn in-process actor threads, each with an independent VM,
 ///          communicating via nng inproc:// PAIR sockets.
 ///
-/// Usage (Phase 4):
 ///   ProcessManager pm;
 ///   auto sock = pm.spawn("worker.eta", heap, intern, "/path/to/etai");
 ///   pm.kill_child(sock);
 ///
-/// Usage (Phase 7):
 ///   ProcessManager pm;
 ///   pm.set_worker_factory(my_factory);
 ///   auto sock = pm.spawn_thread_with("worker.eta","my-fn",{}, heap, intern);
@@ -65,7 +63,7 @@ using namespace eta::runtime::memory::factory;
 /// is needed for send!/recv! operations on the returned socket values.
 class ProcessManager {
 public:
-    // ── ChildHandle ───────────────────────────────────────────────────────
+    // ChildHandle
 
     struct ChildHandle {
 #ifdef _WIN32
@@ -93,7 +91,7 @@ public:
         }
     };
 
-    // ── ChildInfo: summary for DAP / list view ────────────────────────────
+    // ChildInfo: summary for DAP / list view
 
     struct ChildInfo {
         int         pid{0};
@@ -102,7 +100,6 @@ public:
         bool        alive{false};
     };
 
-    // ── Phase 7: in-process actor threads ─────────────────────────────────
 
     /// Signature of the factory that runs inside the new thread.
     /// Responsible for: dialing endpoint, loading the module, calling the
@@ -130,6 +127,20 @@ public:
         ThreadHandle& operator=(const ThreadHandle&) = delete;
     };
 
+    /// Serialized closure for spawn-thread.
+    /// Contains the closure's bytecode (etac-format, 0-based) plus
+    /// binary-serialized upvalues for transfer to a new in-process thread.
+    struct SerializedClosure {
+        std::vector<uint8_t> funcs_bytes;           ///< etac-format bytecode (entry at index 0)
+        std::vector<std::vector<uint8_t>> upvals;   ///< serialized upvalues (binary wire format)
+    };
+
+    /// Factory for spawn-thread: receives endpoint + serialized closure, dials, executes.
+    using ClosureWorkerFn = std::function<void(
+        const std::string& endpoint,        ///< inproc:// endpoint to dial
+        SerializedClosure sc,               ///< serialized closure to execute
+        std::shared_ptr<std::atomic<bool>> alive)>;
+
     struct ThreadInfo {
         int         index{0};
         std::string endpoint;
@@ -138,7 +149,7 @@ public:
         bool        alive{false};
     };
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────
+    // Lifecycle
 
     ProcessManager() = default;
 
@@ -149,7 +160,7 @@ public:
     ProcessManager(const ProcessManager&)            = delete;
     ProcessManager& operator=(const ProcessManager&) = delete;
 
-    // ── spawn ─────────────────────────────────────────────────────────────
+    // spawn
 
     /// Spawn a child Eta process.
     ///
@@ -172,7 +183,7 @@ public:
           const std::string& etai_path,
           const std::string& module_search_path = {});
 
-    // ── wait / kill ───────────────────────────────────────────────────────
+    // wait / kill
 
     /// Block until the child associated with sock_val exits.
     /// Returns the exit code, or -1 if the socket handle is not found.
@@ -182,12 +193,11 @@ public:
     /// Returns true if the signal was delivered.
     bool kill_child(LispVal sock_val);
 
-    // ── inspection ───────────────────────────────────────────────────────
+    // inspection
 
     /// Snapshot of all children for the DAP child process tree view.
     std::vector<ChildInfo> list_children() const;
 
-    // ── Phase 7: in-process threads ───────────────────────────────────────
 
     /// Install the factory that runs inside each spawned thread.
     /// Must be called before spawn_thread_with().
@@ -196,7 +206,14 @@ public:
         worker_factory_ = std::move(fn);
     }
 
-    /// Spawn an in-process actor thread (Phase 7a).
+    /// Install the factory for spawn-thread.
+    /// Must be called before spawn_thread().
+    void set_closure_factory(ClosureWorkerFn fn) {
+        std::lock_guard<std::mutex> lk(mu_);
+        closure_worker_factory_ = std::move(fn);
+    }
+
+    /// Spawn an in-process actor thread.
     ///
     /// 1. Generates a unique inproc:// endpoint.
     /// 2. Creates a parent-side PAIR socket and calls nng_listen().
@@ -208,6 +225,15 @@ public:
                       std::vector<std::string> text_args,
                       Heap& heap, InternTable& intern);
 
+    /// Spawn an in-process actor thread from a serialized closure.
+    ///
+    /// 1. Generates a unique inproc:// endpoint.
+    /// 2. Creates a parent-side PAIR socket and calls nng_listen().
+    /// 3. Launches a std::thread running closure_worker_factory_ with @p sc.
+    /// 4. Returns the boxed parent-side socket.
+    std::expected<LispVal, RuntimeError>
+    spawn_thread(SerializedClosure sc, Heap& heap, InternTable& intern);
+
     /// Block until the actor thread associated with sock_val completes.
     /// Returns 0 on success, -1 if not found or already joined.
     int join_thread(LispVal sock_val);
@@ -218,16 +244,16 @@ public:
     /// Snapshot of all actor threads for DAP display.
     std::vector<ThreadInfo> list_threads() const;
 
-    /// Mutex guarding children_ (exposed for Phase 7 thread safety).
+    /// Mutex guarding children_
     mutable std::mutex mu_;
 
 private:
     std::vector<ChildHandle>  children_;
     std::atomic<int>          spawn_counter_{0};
 
-    // Phase 7
     std::vector<ThreadHandle> threads_;
     ThreadWorkerFn            worker_factory_;
+    ClosureWorkerFn           closure_worker_factory_;
 
     /// Return a pointer to the ChildHandle whose socket == sock_val.
     /// Caller MUST hold mu_.
@@ -244,7 +270,7 @@ private:
     std::string next_inproc_endpoint();
 };
 
-// ─── Inline implementation ────────────────────────────────────────────────────
+// Inline implementation
 
 inline ProcessManager::~ProcessManager() {
     std::lock_guard<std::mutex> lk(mu_);
@@ -312,10 +338,10 @@ ProcessManager::spawn(const std::string& module_path,
             "spawn: etai executable path is not configured"}});
     }
 
-    // ── 1. Generate a unique endpoint ─────────────────────────────────────
+    // 1. Generate a unique endpoint
     std::string endpoint = next_endpoint();
 
-    // ── 2. Create parent-side PAIR socket and listen ───────────────────────
+    // 2. Create parent-side PAIR socket and listen
     NngSocketPtr sp;
     sp.protocol = NngProtocol::Pair;
     int rv = nng_pair0_open(&sp.socket);
@@ -337,22 +363,22 @@ ProcessManager::spawn(const std::string& module_path,
     }
     sp.listening = true;
 
-    // ── 3. Allocate the socket on the Eta heap ─────────────────────────────
+    // 3. Allocate the socket on the Eta heap
     NngSocketPtr sp_tmp;
     sp_tmp = std::move(sp);
-    sp_tmp.endpoint_hint = endpoint;  // Phase 8: store endpoint for down messages
+    sp_tmp.endpoint_hint = endpoint;  // store endpoint for supervision down-messages
     auto sock_val_res = eta::nng::factory::make_nng_socket(heap, std::move(sp_tmp));
     if (!sock_val_res) return std::unexpected(sock_val_res.error());
     LispVal sock_val = *sock_val_res;
 
-    // ── 4. Launch the child process ────────────────────────────────────────
+    // 4. Launch the child process
     ChildHandle child;
     child.endpoint    = endpoint;
     child.module_path = module_path;
     child.socket      = sock_val;
 
 #ifdef _WIN32
-    // ── Windows ────────────────────────────────────────────────────────────
+    // Windows
     // Propagate module search path via ETA_MODULE_PATH only if the variable
     // is not already set in the current environment.
     bool set_env_var = false;
@@ -394,7 +420,7 @@ ProcessManager::spawn(const std::string& module_path,
     child.process_handle = pi.hProcess;
     child.process_id     = pi.dwProcessId;
 #else
-    // ── POSIX ──────────────────────────────────────────────────────────────
+    // POSIX
     pid_t pid = ::fork();
     if (pid < 0) {
         return std::unexpected(RuntimeError{VMError{
@@ -497,7 +523,7 @@ inline std::vector<ProcessManager::ChildInfo> ProcessManager::list_children() co
     return result;
 }
 
-// ─── Phase 7: in-process thread implementation ───────────────────────────────
+// In-process thread implementation
 
 inline ProcessManager::ThreadHandle*
 ProcessManager::find_thread_by_socket(LispVal sock_val) {
@@ -522,10 +548,10 @@ ProcessManager::spawn_thread_with(const std::string& module_path,
             "(Driver was not set up for in-process threads)"}});
     }
 
-    // ── 1. Generate a unique inproc endpoint ─────────────────────────────
+    // 1. Generate a unique inproc endpoint
     std::string endpoint = next_inproc_endpoint();
 
-    // ── 2. Create parent-side PAIR socket and listen ──────────────────────
+    // 2. Create parent-side PAIR socket and listen
     NngSocketPtr sp;
     sp.protocol = NngProtocol::Pair;
     int rv = nng_pair0_open(&sp.socket);
@@ -545,14 +571,14 @@ ProcessManager::spawn_thread_with(const std::string& module_path,
             std::string(nng_strerror(rv))}});
     }
     sp.listening = true;
-    sp.endpoint_hint = endpoint;  // Phase 8: store endpoint for down messages
+    sp.endpoint_hint = endpoint;  // store endpoint for supervision down-messages
 
-    // ── 3. Allocate socket on the Eta heap ────────────────────────────────
+    // 3. Allocate socket on the Eta heap
     auto sock_val_res = eta::nng::factory::make_nng_socket(heap, std::move(sp));
     if (!sock_val_res) return std::unexpected(sock_val_res.error());
     LispVal sock_val = *sock_val_res;
 
-    // ── 4. Build and launch the actor thread ──────────────────────────────
+    // 4. Build and launch the actor thread
     ThreadHandle th;
     th.endpoint    = endpoint;
     th.module_path = module_path;
@@ -567,6 +593,69 @@ ProcessManager::spawn_thread_with(const std::string& module_path,
         try {
             factory_copy(module_path, func_name, endpoint,
                          std::move(text_args), alive_ptr);
+        } catch (...) {}
+        alive_ptr->store(false, std::memory_order_release);
+    });
+
+    threads_.push_back(std::move(th));
+    return sock_val;
+}
+
+inline std::expected<LispVal, RuntimeError>
+ProcessManager::spawn_thread(SerializedClosure sc, Heap& heap, InternTable& /*intern*/)
+{
+    std::lock_guard<std::mutex> lk(mu_);
+
+    if (!closure_worker_factory_) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "spawn-thread: no closure worker factory configured "
+            "(Driver was not set up for in-process threads)"}});
+    }
+
+    // 1. Generate a unique inproc endpoint
+    std::string endpoint = next_inproc_endpoint();
+
+    // 2. Create parent-side PAIR socket and listen
+    NngSocketPtr sp;
+    sp.protocol = NngProtocol::Pair;
+    int rv = nng_pair0_open(&sp.socket);
+    if (rv != 0) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "spawn-thread: nng_pair0_open failed: " +
+            std::string(nng_strerror(rv))}});
+    }
+    nng_socket_set_ms(sp.socket, NNG_OPT_RECVTIMEO, 1000);
+
+    rv = nng_listen(sp.socket, endpoint.c_str(), nullptr, 0);
+    if (rv != 0) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "spawn-thread: nng_listen failed on " + endpoint + ": " +
+            std::string(nng_strerror(rv))}});
+    }
+    sp.listening = true;
+    sp.endpoint_hint = endpoint;
+
+    // 3. Allocate socket on the Eta heap
+    auto sock_val_res = eta::nng::factory::make_nng_socket(heap, std::move(sp));
+    if (!sock_val_res) return std::unexpected(sock_val_res.error());
+    LispVal sock_val = *sock_val_res;
+
+    // 4. Build and launch the actor thread
+    ThreadHandle th;
+    th.endpoint    = endpoint;
+    th.module_path = "(spawn-thread)";
+    th.func_name   = "(thunk)";
+    th.socket      = sock_val;
+
+    auto alive_ptr = th.alive_;
+    ClosureWorkerFn factory_copy = closure_worker_factory_;
+
+    th.thread = std::thread([factory_copy, endpoint, sc = std::move(sc), alive_ptr]() mutable {
+        try {
+            factory_copy(endpoint, std::move(sc), alive_ptr);
         } catch (...) {}
         alive_ptr->store(false, std::memory_order_release);
     });

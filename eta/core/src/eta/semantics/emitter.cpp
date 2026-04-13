@@ -396,7 +396,7 @@ uint32_t Emitter::emit_lambda(const core::Lambda& lambda,
     ctx.func.has_rest   = lambda.arity.has_rest;
     ctx.func.stack_size = lambda.stack_size;
 
-    // ── Populate local_names from params, rest param, and locals ─────────────
+    // Populate local_names from params, rest param, and locals
     auto record_local = [&](const core::BindingId& id) {
         if (id.id >= sem_.bindings.size()) return;
         const auto& info = sem_.bindings[id.id];
@@ -412,7 +412,7 @@ uint32_t Emitter::emit_lambda(const core::Lambda& lambda,
     if (lambda.rest) record_local(*lambda.rest);
     for (const auto& lid : lambda.locals) record_local(lid);
 
-    // ── Populate upval_names from captured bindings ───────────────────────────
+    // Populate upval_names from captured bindings
     ctx.func.upval_names.resize(lambda.upvals.size());
     for (std::size_t i = 0; i < lambda.upvals.size(); ++i) {
         const auto& uid = lambda.upvals[i];

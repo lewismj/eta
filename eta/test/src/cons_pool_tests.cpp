@@ -22,7 +22,7 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(cons_pool_tests)
 
-// ── basic allocation ─────────────────────────────────────────
+// basic allocation
 
 BOOST_AUTO_TEST_CASE(alloc_returns_valid_id) {
     Heap heap(1ull << 20);
@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(multiple_allocs_unique_ids) {
     BOOST_TEST(id1 != id3);
 }
 
-// ── ownership ────────────────────────────────────────────────
+// ownership
 
 BOOST_AUTO_TEST_CASE(owns_returns_true_for_pool_ids) {
     Heap heap(1ull << 20);
@@ -80,7 +80,7 @@ BOOST_AUTO_TEST_CASE(owns_returns_false_for_general_heap_ids) {
     BOOST_TEST(!pool.owns(gen_id));
 }
 
-// ── free-list recycling ──────────────────────────────────────
+// free-list recycling
 
 BOOST_AUTO_TEST_CASE(free_list_recycle) {
     Heap heap(1ull << 20);
@@ -120,7 +120,7 @@ BOOST_AUTO_TEST_CASE(try_get_returns_null_for_freed_slot) {
     BOOST_TEST(pool.try_get(id) == nullptr);
 }
 
-// ── stats ────────────────────────────────────────────────────
+// stats
 
 BOOST_AUTO_TEST_CASE(stats_reflect_allocations) {
     Heap heap(1ull << 20);
@@ -138,7 +138,7 @@ BOOST_AUTO_TEST_CASE(stats_reflect_allocations) {
     BOOST_TEST(after.bytes == after.live_count * sizeof(Cons));
 }
 
-// ── slab growth ──────────────────────────────────────────────
+// slab growth
 
 BOOST_AUTO_TEST_CASE(slab_growth_on_exhaustion) {
     Heap heap(1ull << 24);   // 16 MiB — room for many cons cells
@@ -159,7 +159,7 @@ BOOST_AUTO_TEST_CASE(slab_growth_on_exhaustion) {
     BOOST_TEST(pool.try_get(*r) != nullptr);
 }
 
-// ── mark / sweep (pool-level) ────────────────────────────────
+// mark / sweep (pool-level)
 
 BOOST_AUTO_TEST_CASE(clear_marks_clears_all) {
     Heap heap(1ull << 20);
@@ -196,7 +196,7 @@ BOOST_AUTO_TEST_CASE(sweep_frees_unmarked_only) {
     BOOST_TEST(pool.try_get(id3) == nullptr);
 }
 
-// ── try_mark ─────────────────────────────────────────────────
+// try_mark
 
 BOOST_AUTO_TEST_CASE(try_mark_returns_cons_on_first_call) {
     Heap heap(1ull << 20);
@@ -226,7 +226,7 @@ BOOST_AUTO_TEST_CASE(try_mark_returns_null_for_freed_slot) {
     BOOST_TEST(pool.try_mark(id) == nullptr);
 }
 
-// ── GC integration (pool + full mark-sweep) ──────────────────
+// GC integration (pool + full mark-sweep)
 
 BOOST_AUTO_TEST_CASE(gc_retains_reachable_pooled_cons) {
     Heap heap(1ull << 20);

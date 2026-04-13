@@ -22,7 +22,7 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(gc_tests)
 
-// ── existing basic tests ─────────────────────────────────────
+// existing basic tests
 
 BOOST_AUTO_TEST_CASE(collects_unreachable_cons_cells) {
     Heap heap(1ull << 20);
@@ -197,7 +197,7 @@ BOOST_AUTO_TEST_CASE(retains_reachable_closure_vector_continuation) {
     BOOST_TEST(stats.objects_freed == 7);
 }
 
-// ── per-type GC traversal: LogicVar ──────────────────────────
+// per-type GC traversal: LogicVar
 
 BOOST_AUTO_TEST_CASE(retains_bound_logic_var_target) {
     Heap heap(1ull << 20);
@@ -263,7 +263,7 @@ BOOST_AUTO_TEST_CASE(collects_logic_var_binding_chain) {
     BOOST_TEST(stats.objects_freed == 3);
 }
 
-// ── per-type GC traversal: MultipleValues ────────────────────
+// per-type GC traversal: MultipleValues
 
 BOOST_AUTO_TEST_CASE(retains_multiple_values_elements) {
     Heap heap(1ull << 20);
@@ -285,7 +285,7 @@ BOOST_AUTO_TEST_CASE(retains_multiple_values_elements) {
     BOOST_TEST(stats.objects_freed == 3); // mv + a + b
 }
 
-// ── per-type GC traversal: Primitive with gc_roots ───────────
+// per-type GC traversal: Primitive with gc_roots
 
 BOOST_AUTO_TEST_CASE(retains_primitive_gc_roots) {
     Heap heap(1ull << 20);
@@ -316,7 +316,7 @@ BOOST_AUTO_TEST_CASE(retains_primitive_gc_roots) {
     BOOST_TEST(stats.objects_freed == 2); // prim + captured cons
 }
 
-// ── per-type GC traversal: FactTable ─────────────────────────
+// per-type GC traversal: FactTable
 
 BOOST_AUTO_TEST_CASE(retains_fact_table_column_values) {
     Heap heap(1ull << 20);
@@ -348,7 +348,7 @@ BOOST_AUTO_TEST_CASE(retains_fact_table_column_values) {
     BOOST_TEST(stats.objects_freed == 4); // ft + v1 + v2 + v3
 }
 
-// ── per-type GC traversal: Closure with func->constants ──────
+// per-type GC traversal: Closure with func->constants
 
 BOOST_AUTO_TEST_CASE(retains_closure_func_constants) {
     Heap heap(1ull << 20);
@@ -371,7 +371,7 @@ BOOST_AUTO_TEST_CASE(retains_closure_func_constants) {
     BOOST_TEST(stats.objects_freed == 0);
 }
 
-// ── leaf types as roots ──────────────────────────────────────
+// leaf types as roots
 
 BOOST_AUTO_TEST_CASE(bytevector_leaf_retained) {
     Heap heap(1ull << 20);
@@ -430,7 +430,7 @@ BOOST_AUTO_TEST_CASE(unreachable_leaf_types_collected) {
     BOOST_TEST(stats.objects_freed == 3);
 }
 
-// ── continuation sub-fields: winding_stack ───────────────────
+// continuation sub-fields: winding_stack
 
 BOOST_AUTO_TEST_CASE(retains_continuation_winding_stack_refs) {
     Heap heap(1ull << 20);
@@ -460,7 +460,7 @@ BOOST_AUTO_TEST_CASE(retains_continuation_winding_stack_refs) {
     BOOST_TEST(stats.objects_freed == 4); // cont + 3 closures
 }
 
-// ── continuation sub-fields: frame.extra ─────────────────────
+// continuation sub-fields: frame.extra
 
 BOOST_AUTO_TEST_CASE(retains_continuation_frame_extra) {
     Heap heap(1ull << 20);
@@ -489,7 +489,7 @@ BOOST_AUTO_TEST_CASE(retains_continuation_frame_extra) {
     BOOST_TEST(stats.objects_freed == 3);
 }
 
-// ── GC pause mechanism ──────────────────────────────────────
+// GC pause mechanism
 
 BOOST_AUTO_TEST_CASE(pause_for_gc_rejects_allocations) {
     Heap heap(1ull << 20);
@@ -513,7 +513,7 @@ BOOST_AUTO_TEST_CASE(pause_for_gc_rejects_allocations) {
     BOOST_TEST(result2.has_value());
 }
 
-// ── GC callback on soft-limit ────────────────────────────────
+// GC callback on soft-limit
 
 BOOST_AUTO_TEST_CASE(gc_callback_frees_memory_on_soft_limit) {
     // Use a very small heap.  The soft-limit check is strict >, so set the
@@ -541,7 +541,7 @@ BOOST_AUTO_TEST_CASE(gc_callback_frees_memory_on_soft_limit) {
     BOOST_TEST(result.has_value());
 }
 
-// ── multiple GC cycles ──────────────────────────────────────
+// multiple GC cycles
 
 BOOST_AUTO_TEST_CASE(multi_cycle_stability) {
     Heap heap(1ull << 20);
@@ -596,7 +596,7 @@ BOOST_AUTO_TEST_CASE(allocate_between_collections) {
     BOOST_TEST(heap.total_bytes() > 0u);
 }
 
-// ── cyclic graph ─────────────────────────────────────────────
+// cyclic graph
 
 BOOST_AUTO_TEST_CASE(cyclic_cons_does_not_loop) {
     Heap heap(1ull << 20);
@@ -631,7 +631,7 @@ BOOST_AUTO_TEST_CASE(cyclic_cons_does_not_loop) {
     BOOST_TEST(stats.objects_freed == 2);
 }
 
-// ── deep chain stress ────────────────────────────────────────
+// deep chain stress
 
 BOOST_AUTO_TEST_CASE(deep_cons_chain_retained) {
     Heap heap(1ull << 22);  // 4 MiB — room for deep chain
@@ -657,7 +657,7 @@ BOOST_AUTO_TEST_CASE(deep_cons_chain_retained) {
     BOOST_TEST(stats.objects_freed == static_cast<std::size_t>(DEPTH));
 }
 
-// ── vector with nested heap objects ──────────────────────────
+// vector with nested heap objects
 
 BOOST_AUTO_TEST_CASE(vector_with_nested_vectors) {
     Heap heap(1ull << 20);
@@ -681,7 +681,7 @@ BOOST_AUTO_TEST_CASE(vector_with_nested_vectors) {
     BOOST_TEST(stats.objects_freed == 4);
 }
 
-// ── mixed type graph ─────────────────────────────────────────
+// mixed type graph
 
 BOOST_AUTO_TEST_CASE(mixed_type_interconnected_graph) {
     Heap heap(1ull << 20);
@@ -713,7 +713,7 @@ BOOST_AUTO_TEST_CASE(mixed_type_interconnected_graph) {
     BOOST_TEST(stats.objects_freed == 2);
 }
 
-// ── multiple roots sharing subgraph ──────────────────────────
+// multiple roots sharing subgraph
 
 BOOST_AUTO_TEST_CASE(shared_subgraph_from_multiple_roots) {
     Heap heap(1ull << 20);
@@ -740,7 +740,7 @@ BOOST_AUTO_TEST_CASE(shared_subgraph_from_multiple_roots) {
     BOOST_TEST(stats.objects_freed == 1); // only vec1 freed
 }
 
-// ── span convenience overload ────────────────────────────────
+// span convenience overload
 
 BOOST_AUTO_TEST_CASE(collect_with_span) {
     Heap heap(1ull << 20);
@@ -757,7 +757,7 @@ BOOST_AUTO_TEST_CASE(collect_with_span) {
     BOOST_TEST(stats.objects_freed == 1);
 }
 
-// ── callback-based root enumeration ──────────────────────────
+// callback-based root enumeration
 
 BOOST_AUTO_TEST_CASE(collect_with_callback_enumeration) {
     Heap heap(1ull << 20);
@@ -776,7 +776,7 @@ BOOST_AUTO_TEST_CASE(collect_with_callback_enumeration) {
     BOOST_TEST(stats.objects_freed == 1);
 }
 
-// ── non-heap roots ignored gracefully ────────────────────────
+// non-heap roots ignored gracefully
 
 BOOST_AUTO_TEST_CASE(non_heap_roots_ignored) {
     Heap heap(1ull << 20);

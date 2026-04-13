@@ -27,7 +27,7 @@
 
 namespace fs = std::filesystem;
 
-// ── Path discovery ──────────────────────────────────────────────────────────
+// Path discovery
 // Compile definitions set by CMake; fall back to source-relative paths.
 
 #ifndef ETA_EXAMPLES_DIR
@@ -73,7 +73,7 @@ static fs::path stdlib_dir() {
     return {};
 }
 
-// ── Collect all .eta example files ──────────────────────────────────────────
+// Collect all .eta example files
 
 static std::vector<fs::path> collect_examples() {
     std::vector<fs::path> files;
@@ -90,7 +90,7 @@ static std::vector<fs::path> collect_examples() {
     return files;
 }
 
-// ── Networking example filtering ─────────────────────────────────────────────
+// Networking example filtering
 // Three kinds of files need to be skipped:
 //   1. Spawned-worker files  — call (current-mailbox) to receive tasks from a
 //      parent.  Running standalone returns Nil and the first recv! errors out.
@@ -119,7 +119,7 @@ static bool requires_net(const fs::path& file) {
     return false;
 }
 
-// ── Torch-dependent example filtering ───────────────────────────────────────
+// Torch-dependent example filtering
 // When the interpreter is built without -DETA_BUILD_TORCH=ON the torch/*
 // builtins are absent, so examples that `(import std.torch)` cannot run.
 static bool requires_torch([[maybe_unused]] const fs::path& file) {
@@ -134,7 +134,7 @@ static bool requires_torch([[maybe_unused]] const fs::path& file) {
     return false;
 }
 
-// ── Test fixture ────────────────────────────────────────────────────────────
+// Test fixture
 
 struct ExampleRunnerFixture {
     fs::path stdlib;
@@ -183,7 +183,7 @@ struct ExampleRunnerFixture {
     }
 };
 
-// ── Test suite ──────────────────────────────────────────────────────────────
+// Test suite
 
 BOOST_FIXTURE_TEST_SUITE(example_runner_tests, ExampleRunnerFixture)
 

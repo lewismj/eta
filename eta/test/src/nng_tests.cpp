@@ -27,6 +27,9 @@
 #include <eta/nng/process_mgr.h>
 #include <eta/nng/wire_format.h>
 
+#include <eta/interpreter/driver.h>
+#include <eta/interpreter/module_path.h>
+
 #include <eta/runtime/nanbox.h>
 #include <eta/runtime/memory/heap.h>
 #include <eta/runtime/memory/intern_table.h>
@@ -115,7 +118,6 @@ namespace {
         }
     };
 
-    /// NngEnv with ProcessManager wired in (for Phase 4 spawn tests).
     struct NngEnvWithSpawn {
         Heap heap{4 * 1024 * 1024};
         InternTable intern;
@@ -185,9 +187,7 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(nng_tests)
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Phase 1 — Basic nng library integration
-// ═══════════════════════════════════════════════════════════════════════════
+// Basic nng library integration
 
 BOOST_AUTO_TEST_CASE(pair_socket_open_close) {
     nng_socket sock;
@@ -223,9 +223,7 @@ BOOST_AUTO_TEST_CASE(nng_socket_ptr_move) {
     // 'a' should be in moved-from state (NNG_SOCKET_INITIALIZER)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Phase 2 — Wire format: round-trip serialization tests
-// ═══════════════════════════════════════════════════════════════════════════
+// Wire format: round-trip serialization tests
 
 // Helper: serialize then deserialize, check the re-serialized string matches.
 static void round_trip(LispVal v, Heap& heap, InternTable& intern, const std::string& expected_text) {
@@ -574,7 +572,7 @@ BOOST_AUTO_TEST_CASE(wire_deserialize_empty_input) {
 }
 
 // ------ Non-serializable value error handling ------
-// Per Phase 2 limitations: closures, continuations, ports, and tensors produce
+// Closures, continuations, ports, and tensors produce
 // opaque strings like "#<closure>" that cannot be deserialized.
 
 BOOST_AUTO_TEST_CASE(wire_deserialize_rejects_closure) {
@@ -649,9 +647,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_symbol_list) {
     round_trip(l1, heap, intern, "(hello world)");
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Phase 2 — Performance tests
-// ═══════════════════════════════════════════════════════════════════════════
+// Performance tests
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_large_list_performance) {
     // NOTE: We benchmark with a *vector*, not a linked list.
@@ -711,13 +707,11 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_large_list_performance) {
     BOOST_TEST(*first_val == 0);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Phase 3 — nng Socket Primitives
-// ═══════════════════════════════════════════════════════════════════════════
+// nng Socket Primitives
 
-// ── nng-socket: creation and heap storage ──────────────────────────────────
+// nng-socket: creation and heap storage
 
-BOOST_AUTO_TEST_CASE(p3_nng_socket_create_pair) {
+BOOST_AUTO_TEST_CASE(nng_socket_create_pair) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     BOOST_REQUIRE(ops::is_boxed(sock) && ops::tag(sock) == Tag::HeapObject);
@@ -727,7 +721,7 @@ BOOST_AUTO_TEST_CASE(p3_nng_socket_create_pair) {
     BOOST_TEST(!sp->closed);
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_socket_create_all_protocols) {
+BOOST_AUTO_TEST_CASE(nng_socket_create_all_protocols) {
     NngEnv e;
     const std::vector<std::pair<std::string, NngProtocol>> protos = {
         {"pair",       NngProtocol::Pair},
@@ -752,22 +746,22 @@ BOOST_AUTO_TEST_CASE(p3_nng_socket_create_all_protocols) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_socket_unknown_protocol_error) {
+BOOST_AUTO_TEST_CASE(nng_socket_unknown_protocol_error) {
     NngEnv e;
     auto res = e.try_call("nng-socket", {e.sym("unknownprotocol")});
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_socket_wrong_arg_type) {
+BOOST_AUTO_TEST_CASE(nng_socket_wrong_arg_type) {
     NngEnv e;
     auto num = e.fixnum(42);
     auto res = e.try_call("nng-socket", {num});
     BOOST_TEST(!res.has_value());
 }
 
-// ── nng-socket? predicate ──────────────────────────────────────────────────
+// nng-socket? predicate
 
-BOOST_AUTO_TEST_CASE(p3_nng_socket_predicate_true) {
+BOOST_AUTO_TEST_CASE(nng_socket_predicate_true) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     auto result = e.call("nng-socket?", {sock});
@@ -775,27 +769,27 @@ BOOST_AUTO_TEST_CASE(p3_nng_socket_predicate_true) {
     e.call("nng-close", {sock});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_socket_predicate_false_for_fixnum) {
+BOOST_AUTO_TEST_CASE(nng_socket_predicate_false_for_fixnum) {
     NngEnv e;
     auto result = e.call("nng-socket?", {e.fixnum(42)});
     BOOST_TEST(result == nanbox::False);
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_socket_predicate_false_for_nil) {
+BOOST_AUTO_TEST_CASE(nng_socket_predicate_false_for_nil) {
     NngEnv e;
     auto result = e.call("nng-socket?", {nanbox::Nil});
     BOOST_TEST(result == nanbox::False);
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_socket_predicate_false_for_bool) {
+BOOST_AUTO_TEST_CASE(nng_socket_predicate_false_for_bool) {
     NngEnv e;
     auto result = e.call("nng-socket?", {nanbox::True});
     BOOST_TEST(result == nanbox::False);
 }
 
-// ── Heap allocation via make_nng_socket factory ────────────────────────────
+// Heap allocation via make_nng_socket factory
 
-BOOST_AUTO_TEST_CASE(p3_make_nng_socket_factory) {
+BOOST_AUTO_TEST_CASE(make_nng_socket_factory) {
     Heap heap(1 << 20);
     NngSocketPtr sp;
     int rv = nng_pair0_open(&sp.socket);
@@ -810,9 +804,9 @@ BOOST_AUTO_TEST_CASE(p3_make_nng_socket_factory) {
     BOOST_TEST(ptr->protocol == NngProtocol::Pair);
 }
 
-// ── nng-close ─────────────────────────────────────────────────────────────
+// nng-close
 
-BOOST_AUTO_TEST_CASE(p3_nng_close_basic) {
+BOOST_AUTO_TEST_CASE(nng_close_basic) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     auto result = e.call("nng-close", {sock});
@@ -823,7 +817,7 @@ BOOST_AUTO_TEST_CASE(p3_nng_close_basic) {
     BOOST_TEST(sp->closed == true);
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_close_idempotent) {
+BOOST_AUTO_TEST_CASE(nng_close_idempotent) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     // Close twice — must not crash or return error
@@ -833,15 +827,15 @@ BOOST_AUTO_TEST_CASE(p3_nng_close_idempotent) {
     BOOST_TEST(*second == nanbox::True);
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_close_wrong_type) {
+BOOST_AUTO_TEST_CASE(nng_close_wrong_type) {
     NngEnv e;
     auto res = e.try_call("nng-close", {e.fixnum(99)});
     BOOST_TEST(!res.has_value());
 }
 
-// ── Default recv timeout set at creation ──────────────────────────────────
+// Default recv timeout set at creation
 
-BOOST_AUTO_TEST_CASE(p3_default_recv_timeout_is_1000ms) {
+BOOST_AUTO_TEST_CASE(default_recv_timeout_is_1000ms) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(sock));
@@ -854,9 +848,9 @@ BOOST_AUTO_TEST_CASE(p3_default_recv_timeout_is_1000ms) {
     e.call("nng-close", {sock});
 }
 
-// ── nng-set-option ────────────────────────────────────────────────────────
+// nng-set-option
 
-BOOST_AUTO_TEST_CASE(p3_nng_set_option_recv_timeout) {
+BOOST_AUTO_TEST_CASE(nng_set_option_recv_timeout) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
 
@@ -871,7 +865,7 @@ BOOST_AUTO_TEST_CASE(p3_nng_set_option_recv_timeout) {
     e.call("nng-close", {sock});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_set_option_send_timeout) {
+BOOST_AUTO_TEST_CASE(nng_set_option_send_timeout) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
 
@@ -886,7 +880,7 @@ BOOST_AUTO_TEST_CASE(p3_nng_set_option_send_timeout) {
     e.call("nng-close", {sock});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_set_option_recv_buf_size) {
+BOOST_AUTO_TEST_CASE(nng_set_option_recv_buf_size) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("push")});
     auto result = e.try_call("nng-set-option", {sock, e.sym("recv-buf-size"), e.fixnum(16)});
@@ -895,7 +889,7 @@ BOOST_AUTO_TEST_CASE(p3_nng_set_option_recv_buf_size) {
     e.call("nng-close", {sock});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_set_option_unknown_option_error) {
+BOOST_AUTO_TEST_CASE(nng_set_option_unknown_option_error) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     auto res = e.try_call("nng-set-option", {sock, e.sym("nonexistent-option"), e.fixnum(0)});
@@ -903,13 +897,13 @@ BOOST_AUTO_TEST_CASE(p3_nng_set_option_unknown_option_error) {
     e.call("nng-close", {sock});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_set_option_wrong_socket_type) {
+BOOST_AUTO_TEST_CASE(nng_set_option_wrong_socket_type) {
     NngEnv e;
     auto res = e.try_call("nng-set-option", {e.fixnum(1), e.sym("recv-timeout"), e.fixnum(1000)});
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_set_option_non_number_value) {
+BOOST_AUTO_TEST_CASE(nng_set_option_non_number_value) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     auto res = e.try_call("nng-set-option", {sock, e.sym("recv-timeout"), e.sym("bad")});
@@ -917,9 +911,9 @@ BOOST_AUTO_TEST_CASE(p3_nng_set_option_non_number_value) {
     e.call("nng-close", {sock});
 }
 
-// ── nng-listen and nng-dial ────────────────────────────────────────────────
+// nng-listen and nng-dial
 
-BOOST_AUTO_TEST_CASE(p3_nng_listen_and_dial_tcp) {
+BOOST_AUTO_TEST_CASE(nng_listen_and_dial_tcp) {
     NngEnv e;
     std::string addr = tcp_addr();
 
@@ -944,7 +938,7 @@ BOOST_AUTO_TEST_CASE(p3_nng_listen_and_dial_tcp) {
     e.call("nng-close", {client});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_listen_invalid_endpoint) {
+BOOST_AUTO_TEST_CASE(nng_listen_invalid_endpoint) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     auto res = e.try_call("nng-listen", {sock, e.str("not-a-valid-endpoint")});
@@ -952,19 +946,19 @@ BOOST_AUTO_TEST_CASE(p3_nng_listen_invalid_endpoint) {
     e.call("nng-close", {sock});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_listen_wrong_socket_type) {
+BOOST_AUTO_TEST_CASE(nng_listen_wrong_socket_type) {
     NngEnv e;
     auto res = e.try_call("nng-listen", {e.fixnum(1), e.str("tcp://*:9000")});
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_dial_wrong_socket_type) {
+BOOST_AUTO_TEST_CASE(nng_dial_wrong_socket_type) {
     NngEnv e;
     auto res = e.try_call("nng-dial", {e.fixnum(1), e.str("tcp://127.0.0.1:9000")});
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_dial_on_closed_socket_error) {
+BOOST_AUTO_TEST_CASE(nng_dial_on_closed_socket_error) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     e.call("nng-close", {sock});
@@ -972,9 +966,9 @@ BOOST_AUTO_TEST_CASE(p3_nng_dial_on_closed_socket_error) {
     BOOST_TEST(!res.has_value());
 }
 
-// ── send! and recv! — full PAIR round-trip ─────────────────────────────────
+// send! and recv! — full PAIR round-trip
 
-BOOST_AUTO_TEST_CASE(p3_send_recv_pair_fixnum) {
+BOOST_AUTO_TEST_CASE(send_recv_pair_fixnum) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1001,7 +995,7 @@ BOOST_AUTO_TEST_CASE(p3_send_recv_pair_fixnum) {
     e.call("nng-close", {client});
 }
 
-BOOST_AUTO_TEST_CASE(p3_send_recv_pair_symbol) {
+BOOST_AUTO_TEST_CASE(send_recv_pair_symbol) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1026,7 +1020,7 @@ BOOST_AUTO_TEST_CASE(p3_send_recv_pair_symbol) {
     e.call("nng-close", {client});
 }
 
-BOOST_AUTO_TEST_CASE(p3_send_recv_pair_list) {
+BOOST_AUTO_TEST_CASE(send_recv_pair_list) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1058,7 +1052,7 @@ BOOST_AUTO_TEST_CASE(p3_send_recv_pair_list) {
     e.call("nng-close", {client});
 }
 
-BOOST_AUTO_TEST_CASE(p3_send_recv_pair_string) {
+BOOST_AUTO_TEST_CASE(send_recv_pair_string) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1082,7 +1076,7 @@ BOOST_AUTO_TEST_CASE(p3_send_recv_pair_string) {
     e.call("nng-close", {client});
 }
 
-BOOST_AUTO_TEST_CASE(p3_send_recv_bidirectional) {
+BOOST_AUTO_TEST_CASE(send_recv_bidirectional) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1105,7 +1099,7 @@ BOOST_AUTO_TEST_CASE(p3_send_recv_bidirectional) {
     e.call("nng-close", {client});
 }
 
-BOOST_AUTO_TEST_CASE(p3_recv_timeout_returns_false) {
+BOOST_AUTO_TEST_CASE(recv_timeout_returns_false) {
     NngEnv e;
     // Set a very short timeout, recv on an unconnected socket should time out
     auto sock = e.call("nng-socket", {e.sym("pull")});
@@ -1116,7 +1110,7 @@ BOOST_AUTO_TEST_CASE(p3_recv_timeout_returns_false) {
     e.call("nng-close", {sock});
 }
 
-BOOST_AUTO_TEST_CASE(p3_send_noblock_no_peer_returns_false) {
+BOOST_AUTO_TEST_CASE(send_noblock_no_peer_returns_false) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("push")});
     // Not connected → noblock send should return #f (EAGAIN)
@@ -1125,7 +1119,7 @@ BOOST_AUTO_TEST_CASE(p3_send_noblock_no_peer_returns_false) {
     e.call("nng-close", {sock});
 }
 
-BOOST_AUTO_TEST_CASE(p3_recv_noblock_empty_returns_false) {
+BOOST_AUTO_TEST_CASE(recv_noblock_empty_returns_false) {
     NngEnv e;
     std::string addr = inproc_addr();
     auto server = e.call("nng-socket", {e.sym("pair")});
@@ -1136,7 +1130,7 @@ BOOST_AUTO_TEST_CASE(p3_recv_noblock_empty_returns_false) {
     e.call("nng-close", {server});
 }
 
-BOOST_AUTO_TEST_CASE(p3_send_recv_on_closed_socket_error) {
+BOOST_AUTO_TEST_CASE(send_recv_on_closed_socket_error) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     e.call("nng-close", {sock});
@@ -1148,9 +1142,9 @@ BOOST_AUTO_TEST_CASE(p3_send_recv_on_closed_socket_error) {
     BOOST_TEST(!recv_res.has_value());
 }
 
-// ── REQ/REP round-trip ─────────────────────────────────────────────────────
+// REQ/REP round-trip
 
-BOOST_AUTO_TEST_CASE(p3_send_recv_req_rep) {
+BOOST_AUTO_TEST_CASE(send_recv_req_rep) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1177,9 +1171,9 @@ BOOST_AUTO_TEST_CASE(p3_send_recv_req_rep) {
     e.call("nng-close", {req});
 }
 
-// ── PUSH/PULL fan-out ─────────────────────────────────────────────────────
+// PUSH/PULL fan-out
 
-BOOST_AUTO_TEST_CASE(p3_push_pull_fanout) {
+BOOST_AUTO_TEST_CASE(push_pull_fanout) {
     NngEnv e;
     // Use TCP transport: with inproc:// and default buffering (SENDBUF=0),
     // multiple sends before any recv can block. This is not because recv()
@@ -1218,9 +1212,9 @@ BOOST_AUTO_TEST_CASE(p3_push_pull_fanout) {
     e.call("nng-close", {puller});
 }
 
-// ── PUB/SUB with topic filtering ─────────────────────────────────────────
+// PUB/SUB with topic filtering
 
-BOOST_AUTO_TEST_CASE(p3_pub_sub_basic) {
+BOOST_AUTO_TEST_CASE(pub_sub_basic) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1251,7 +1245,7 @@ BOOST_AUTO_TEST_CASE(p3_pub_sub_basic) {
     e.call("nng-close", {sub});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_subscribe_wrong_socket_type) {
+BOOST_AUTO_TEST_CASE(nng_subscribe_wrong_socket_type) {
     NngEnv e;
     auto pair = e.call("nng-socket", {e.sym("pair")});
     auto res = e.try_call("nng-subscribe", {pair, e.str("topic")});
@@ -1259,15 +1253,15 @@ BOOST_AUTO_TEST_CASE(p3_nng_subscribe_wrong_socket_type) {
     e.call("nng-close", {pair});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_subscribe_wrong_first_arg) {
+BOOST_AUTO_TEST_CASE(nng_subscribe_wrong_first_arg) {
     NngEnv e;
     auto res = e.try_call("nng-subscribe", {e.fixnum(1), e.str("topic")});
     BOOST_TEST(!res.has_value());
 }
 
-// ── SURVEYOR/RESPONDENT scatter-gather ────────────────────────────────────
+// SURVEYOR/RESPONDENT scatter-gather
 
-BOOST_AUTO_TEST_CASE(p3_surveyor_respondent_basic) {
+BOOST_AUTO_TEST_CASE(surveyor_respondent_basic) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1300,9 +1294,9 @@ BOOST_AUTO_TEST_CASE(p3_surveyor_respondent_basic) {
     e.call("nng-close", {respondent});
 }
 
-// ── BUS many-to-many ──────────────────────────────────────────────────────
+// BUS many-to-many
 
-BOOST_AUTO_TEST_CASE(p3_bus_many_to_many) {
+BOOST_AUTO_TEST_CASE(bus_many_to_many) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1340,9 +1334,9 @@ BOOST_AUTO_TEST_CASE(p3_bus_many_to_many) {
     e.call("nng-close", {bus3});
 }
 
-// ── nng-poll ──────────────────────────────────────────────────────────────
+// nng-poll
 
-BOOST_AUTO_TEST_CASE(p3_nng_poll_detects_ready_socket) {
+BOOST_AUTO_TEST_CASE(nng_poll_detects_ready_socket) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1378,13 +1372,13 @@ BOOST_AUTO_TEST_CASE(p3_nng_poll_detects_ready_socket) {
     e.call("nng-close", {client});
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_poll_empty_list_returns_nil) {
+BOOST_AUTO_TEST_CASE(nng_poll_empty_list_returns_nil) {
     NngEnv e;
     auto ready = e.call("nng-poll", {nanbox::Nil, e.fixnum(0)});
     BOOST_TEST(ready == nanbox::Nil);
 }
 
-BOOST_AUTO_TEST_CASE(p3_nng_poll_pending_msg_returned_immediately) {
+BOOST_AUTO_TEST_CASE(nng_poll_pending_msg_returned_immediately) {
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1413,9 +1407,9 @@ BOOST_AUTO_TEST_CASE(p3_nng_poll_pending_msg_returned_immediately) {
     e.call("nng-close", {client});
 }
 
-// ── GC integration: NngSocket heap object ─────────────────────────────────
+// GC integration: NngSocket heap object
 
-BOOST_AUTO_TEST_CASE(p3_nng_socket_heap_object_kind) {
+BOOST_AUTO_TEST_CASE(nng_socket_heap_object_kind) {
     Heap heap(1 << 20);
     NngSocketPtr sp;
     nng_pair0_open(&sp.socket);
@@ -1430,9 +1424,9 @@ BOOST_AUTO_TEST_CASE(p3_nng_socket_heap_object_kind) {
     BOOST_TEST(to_string(entry.header.kind) == std::string("NngSocket"));
 }
 
-// ── protocol_name helper ───────────────────────────────────────────────────
+// protocol_name helper
 
-BOOST_AUTO_TEST_CASE(p3_protocol_name_all) {
+BOOST_AUTO_TEST_CASE(protocol_name_all) {
     BOOST_TEST(std::string(protocol_name(NngProtocol::Pair))       == "pair");
     BOOST_TEST(std::string(protocol_name(NngProtocol::Req))        == "req");
     BOOST_TEST(std::string(protocol_name(NngProtocol::Rep))        == "rep");
@@ -1445,15 +1439,15 @@ BOOST_AUTO_TEST_CASE(p3_protocol_name_all) {
     BOOST_TEST(std::string(protocol_name(NngProtocol::Bus))        == "bus");
 }
 
-// ── send!/recv! wrong-type errors ─────────────────────────────────────────
+// send!/recv! wrong-type errors
 
-BOOST_AUTO_TEST_CASE(p3_send_wrong_socket_type) {
+BOOST_AUTO_TEST_CASE(send_wrong_socket_type) {
     NngEnv e;
     auto res = e.try_call("send!", {e.fixnum(1), e.fixnum(42)});
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p3_recv_wrong_socket_type) {
+BOOST_AUTO_TEST_CASE(recv_wrong_socket_type) {
     NngEnv e;
     auto res = e.try_call("recv!", {e.fixnum(1)});
     BOOST_TEST(!res.has_value());
@@ -1461,13 +1455,11 @@ BOOST_AUTO_TEST_CASE(p3_recv_wrong_socket_type) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Phase 6 — Binary Wire Format
-// ═══════════════════════════════════════════════════════════════════════════
+// Binary Wire Format
 
-BOOST_AUTO_TEST_SUITE(nng_phase6_tests)
+BOOST_AUTO_TEST_SUITE(nng_binary_wire_format_tests)
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// Helpers
 
 /// Binary round-trip helper: serialize_binary then deserialize_binary,
 /// verify the re-serialized text string matches expected.
@@ -1485,66 +1477,66 @@ static void binary_round_trip(LispVal v, Heap& heap, InternTable& intern,
     BOOST_TEST(re_text == expected_text);
 }
 
-// ── is_binary_format ───────────────────────────────────────────────────────
+// is_binary_format
 
-BOOST_AUTO_TEST_CASE(p6_is_binary_format_detects_version_byte) {
+BOOST_AUTO_TEST_CASE(is_binary_format_detects_version_byte) {
     std::vector<uint8_t> bin{0xEA, 0x00};
     BOOST_TEST(is_binary_format(bin.data(), bin.size()) == true);
 }
 
-BOOST_AUTO_TEST_CASE(p6_is_binary_format_rejects_text) {
+BOOST_AUTO_TEST_CASE(is_binary_format_rejects_text) {
     std::string text = "(1 2 3)";
     BOOST_TEST(is_binary_format(
         reinterpret_cast<const uint8_t*>(text.data()), text.size()) == false);
 }
 
-BOOST_AUTO_TEST_CASE(p6_is_binary_format_empty_returns_false) {
+BOOST_AUTO_TEST_CASE(is_binary_format_empty_returns_false) {
     BOOST_TEST(is_binary_format(nullptr, 0) == false);
 }
 
-// ── Binary round-trips: all types ──────────────────────────────────────────
+// Binary round-trips: all types
 
-BOOST_AUTO_TEST_CASE(p6_binary_nil) {
+BOOST_AUTO_TEST_CASE(binary_nil) {
     Heap heap(1ull << 20); InternTable intern;
     binary_round_trip(nanbox::Nil, heap, intern, "()");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_true) {
+BOOST_AUTO_TEST_CASE(binary_true) {
     Heap heap(1ull << 20); InternTable intern;
     binary_round_trip(nanbox::True, heap, intern, "#t");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_false) {
+BOOST_AUTO_TEST_CASE(binary_false) {
     Heap heap(1ull << 20); InternTable intern;
     binary_round_trip(nanbox::False, heap, intern, "#f");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_fixnum_zero) {
+BOOST_AUTO_TEST_CASE(binary_fixnum_zero) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_fixnum(heap, int64_t{0}));
     binary_round_trip(v, heap, intern, "0");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_fixnum_positive) {
+BOOST_AUTO_TEST_CASE(binary_fixnum_positive) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_fixnum(heap, int64_t{42}));
     binary_round_trip(v, heap, intern, "42");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_fixnum_negative) {
+BOOST_AUTO_TEST_CASE(binary_fixnum_negative) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_fixnum(heap, int64_t{-99}));
     binary_round_trip(v, heap, intern, "-99");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_fixnum_heap_allocated) {
+BOOST_AUTO_TEST_CASE(binary_fixnum_heap_allocated) {
     Heap heap(1ull << 20); InternTable intern;
     constexpr int64_t big = 1000000000000000LL;
     auto v = require_ok(make_fixnum(heap, big));
     binary_round_trip(v, heap, intern, "1000000000000000");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_flonum_pi) {
+BOOST_AUTO_TEST_CASE(binary_flonum_pi) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_flonum(3.14));
     auto bin = serialize_binary(v, heap, intern);
@@ -1555,7 +1547,7 @@ BOOST_AUTO_TEST_CASE(p6_binary_flonum_pi) {
     BOOST_CHECK_CLOSE(*dec, 3.14, 1e-9);
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_flonum_negative) {
+BOOST_AUTO_TEST_CASE(binary_flonum_negative) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_flonum(-2.718));
     auto bin = serialize_binary(v, heap, intern);
@@ -1566,61 +1558,61 @@ BOOST_AUTO_TEST_CASE(p6_binary_flonum_negative) {
     BOOST_CHECK_CLOSE(*dec, -2.718, 1e-9);
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_flonum_zero) {
+BOOST_AUTO_TEST_CASE(binary_flonum_zero) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_flonum(0.0));
     binary_round_trip(v, heap, intern, "0.0");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_char_printable) {
+BOOST_AUTO_TEST_CASE(binary_char_printable) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(ops::encode<char32_t>(U'z'));
     binary_round_trip(v, heap, intern, "#\\z");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_char_space) {
+BOOST_AUTO_TEST_CASE(binary_char_space) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(ops::encode<char32_t>(U' '));
     binary_round_trip(v, heap, intern, "#\\space");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_char_newline) {
+BOOST_AUTO_TEST_CASE(binary_char_newline) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(ops::encode<char32_t>(U'\n'));
     binary_round_trip(v, heap, intern, "#\\newline");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_string_simple) {
+BOOST_AUTO_TEST_CASE(binary_string_simple) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_string(heap, intern, "hello world"));
     binary_round_trip(v, heap, intern, "\"hello world\"");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_string_empty) {
+BOOST_AUTO_TEST_CASE(binary_string_empty) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_string(heap, intern, ""));
     binary_round_trip(v, heap, intern, "\"\"");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_string_with_escapes) {
+BOOST_AUTO_TEST_CASE(binary_string_with_escapes) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_string(heap, intern, "line1\nline2"));
     binary_round_trip(v, heap, intern, "\"line1\\nline2\"");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_symbol) {
+BOOST_AUTO_TEST_CASE(binary_symbol) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_symbol(intern, "hello"));
     binary_round_trip(v, heap, intern, "hello");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_symbol_with_special) {
+BOOST_AUTO_TEST_CASE(binary_symbol_with_special) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_symbol(intern, "my-func!"));
     binary_round_trip(v, heap, intern, "my-func!");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_dotted_pair) {
+BOOST_AUTO_TEST_CASE(binary_dotted_pair) {
     Heap heap(1ull << 20); InternTable intern;
     auto a = require_ok(make_fixnum(heap, int64_t{1}));
     auto b = require_ok(make_fixnum(heap, int64_t{2}));
@@ -1628,7 +1620,7 @@ BOOST_AUTO_TEST_CASE(p6_binary_dotted_pair) {
     binary_round_trip(pair, heap, intern, "(1 . 2)");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_proper_list) {
+BOOST_AUTO_TEST_CASE(binary_proper_list) {
     Heap heap(1ull << 20); InternTable intern;
     auto a = require_ok(make_fixnum(heap, int64_t{1}));
     auto b = require_ok(make_fixnum(heap, int64_t{2}));
@@ -1639,7 +1631,7 @@ BOOST_AUTO_TEST_CASE(p6_binary_proper_list) {
     binary_round_trip(l, heap, intern, "(1 2 3)");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_nested_list) {
+BOOST_AUTO_TEST_CASE(binary_nested_list) {
     Heap heap(1ull << 20); InternTable intern;
     auto a = require_ok(make_fixnum(heap, int64_t{1}));
     auto b = require_ok(make_fixnum(heap, int64_t{2}));
@@ -1651,7 +1643,7 @@ BOOST_AUTO_TEST_CASE(p6_binary_nested_list) {
     binary_round_trip(outer, heap, intern, "((1 2) 3)");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_vector) {
+BOOST_AUTO_TEST_CASE(binary_vector) {
     Heap heap(1ull << 20); InternTable intern;
     auto a = require_ok(make_fixnum(heap, int64_t{10}));
     auto b = require_ok(make_fixnum(heap, int64_t{20}));
@@ -1660,25 +1652,25 @@ BOOST_AUTO_TEST_CASE(p6_binary_vector) {
     binary_round_trip(v, heap, intern, "#(10 20 30)");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_empty_vector) {
+BOOST_AUTO_TEST_CASE(binary_empty_vector) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_vector(heap, {}));
     binary_round_trip(v, heap, intern, "#()");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_bytevector) {
+BOOST_AUTO_TEST_CASE(binary_bytevector) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_bytevector(heap, {0, 128, 255}));
     binary_round_trip(v, heap, intern, "#u8(0 128 255)");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_empty_bytevector) {
+BOOST_AUTO_TEST_CASE(binary_empty_bytevector) {
     Heap heap(1ull << 20); InternTable intern;
     auto v = require_ok(make_bytevector(heap, {}));
     binary_round_trip(v, heap, intern, "#u8()");
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_mixed_list) {
+BOOST_AUTO_TEST_CASE(binary_mixed_list) {
     // (1 "hi" #t #(a b))
     Heap heap(1ull << 20); InternTable intern;
     auto one   = require_ok(make_fixnum(heap, int64_t{1}));
@@ -1693,23 +1685,23 @@ BOOST_AUTO_TEST_CASE(p6_binary_mixed_list) {
     binary_round_trip(l1, heap, intern, "(1 \"hi\" #t #(a b))");
 }
 
-// ── Error handling ─────────────────────────────────────────────────────────
+// Error handling
 
-BOOST_AUTO_TEST_CASE(p6_binary_deserialize_missing_version_byte) {
+BOOST_AUTO_TEST_CASE(binary_deserialize_missing_version_byte) {
     Heap heap(1ull << 20); InternTable intern;
     std::vector<uint8_t> bad{0x00};   // wrong version byte
     auto res = deserialize_binary(std::span<const uint8_t>(bad), heap, intern);
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_deserialize_empty_buffer) {
+BOOST_AUTO_TEST_CASE(binary_deserialize_empty_buffer) {
     Heap heap(1ull << 20); InternTable intern;
     std::vector<uint8_t> empty;
     auto res = deserialize_binary(std::span<const uint8_t>(empty), heap, intern);
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_deserialize_truncated) {
+BOOST_AUTO_TEST_CASE(binary_deserialize_truncated) {
     Heap heap(1ull << 20); InternTable intern;
     // Version byte + BT_Fixnum tag, but no payload
     std::vector<uint8_t> trunc{0xEA, 0x02};
@@ -1717,9 +1709,9 @@ BOOST_AUTO_TEST_CASE(p6_binary_deserialize_truncated) {
     BOOST_TEST(!res.has_value());
 }
 
-// ── Performance: binary vs text ────────────────────────────────────────────
+// Performance: binary vs text
 
-BOOST_AUTO_TEST_CASE(p6_binary_large_vector_performance) {
+BOOST_AUTO_TEST_CASE(binary_large_vector_performance) {
     // Binary serialize+deserialize of a 10,000-element vector.
     // Acceptance criterion: < 10 ms in release builds (half the text threshold).
     Heap heap(1ull << 24); InternTable intern;
@@ -1765,9 +1757,9 @@ BOOST_AUTO_TEST_CASE(p6_binary_large_vector_performance) {
                static_cast<int64_t>(VEC_SIZE - 1));
 }
 
-// ── auto-detection via send!/recv! over inproc:// ──────────────────────────
+// auto-detection via send!/recv! over inproc://
 
-BOOST_AUTO_TEST_CASE(p6_send_default_binary_recv_autodetects) {
+BOOST_AUTO_TEST_CASE(send_default_binary_recv_autodetects) {
     // Default send! uses binary; recv! should auto-detect and return the value.
     NngEnv e;
     std::string addr = inproc_addr();
@@ -1798,7 +1790,7 @@ BOOST_AUTO_TEST_CASE(p6_send_default_binary_recv_autodetects) {
     e.call("nng-close", {client});
 }
 
-BOOST_AUTO_TEST_CASE(p6_send_text_flag_recv_autodetects) {
+BOOST_AUTO_TEST_CASE(send_text_flag_recv_autodetects) {
     // 'text flag on send! → s-expression; recv! should still auto-detect and parse.
     NngEnv e;
     std::string addr = inproc_addr();
@@ -1820,7 +1812,7 @@ BOOST_AUTO_TEST_CASE(p6_send_text_flag_recv_autodetects) {
     e.call("nng-close", {client});
 }
 
-BOOST_AUTO_TEST_CASE(p6_binary_round_trip_over_socket_all_types) {
+BOOST_AUTO_TEST_CASE(binary_round_trip_over_socket_all_types) {
     // Binary round-trip through a real nng socket for a heterogeneous structure.
     NngEnv e;
     std::string addr = inproc_addr();
@@ -1870,45 +1862,43 @@ BOOST_AUTO_TEST_CASE(p6_binary_round_trip_over_socket_all_types) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Phase 4 — Process Spawning & Actor Model
-// ═══════════════════════════════════════════════════════════════════════════
+// Process Spawning & Actor Model
 
-BOOST_AUTO_TEST_SUITE(nng_phase4_tests)
+BOOST_AUTO_TEST_SUITE(nng_process_actor_model_tests)
 
-// ── ProcessManager: basic construction ────────────────────────────────────
+// ProcessManager: basic construction
 
-BOOST_AUTO_TEST_CASE(p4_process_manager_default_construct) {
+BOOST_AUTO_TEST_CASE(process_manager_default_construct) {
     ProcessManager pm;
     auto children = pm.list_children();
     BOOST_TEST(children.empty());
 }
 
-BOOST_AUTO_TEST_CASE(p4_process_manager_kill_unknown_socket_returns_false) {
+BOOST_AUTO_TEST_CASE(process_manager_kill_unknown_socket_returns_false) {
     ProcessManager pm;
     // An unregistered socket returns false — doesn't crash.
     bool ok = pm.kill_child(nanbox::Nil);
     BOOST_TEST(ok == false);
 }
 
-BOOST_AUTO_TEST_CASE(p4_process_manager_wait_unknown_socket_returns_minus_one) {
+BOOST_AUTO_TEST_CASE(process_manager_wait_unknown_socket_returns_minus_one) {
     ProcessManager pm;
     int code = pm.wait_for(nanbox::Nil);
     BOOST_TEST(code == -1);
 }
 
-// ── current-mailbox returns Nil when no mailbox installed ─────────────────
+// current-mailbox returns Nil when no mailbox installed
 
-BOOST_AUTO_TEST_CASE(p4_current_mailbox_no_mailbox_returns_nil) {
+BOOST_AUTO_TEST_CASE(current_mailbox_no_mailbox_returns_nil) {
     NngEnvWithSpawn e;  // no etai_path, no mailbox installed
     auto result = e.call("current-mailbox", {});
     BOOST_TEST(result == nanbox::Nil);
 }
 
-// ── spawn without process manager returns clear error ─────────────────────
+// spawn without process manager returns clear error
 
-BOOST_AUTO_TEST_CASE(p4_spawn_no_proc_mgr_returns_error) {
-    // NngEnv (Phase 3 style) has no ProcessManager — spawn should error
+BOOST_AUTO_TEST_CASE(spawn_no_proc_mgr_returns_error) {
+    // NngEnv (socket-only) has no ProcessManager — spawn should error
     NngEnv e;
     auto res = e.try_call("spawn", {e.str("worker.eta")});
     BOOST_TEST(!res.has_value());
@@ -1916,7 +1906,7 @@ BOOST_AUTO_TEST_CASE(p4_spawn_no_proc_mgr_returns_error) {
         runtime_error_msg(res.error()));
 }
 
-BOOST_AUTO_TEST_CASE(p4_spawn_kill_no_proc_mgr_returns_error) {
+BOOST_AUTO_TEST_CASE(spawn_kill_no_proc_mgr_returns_error) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     auto res = e.try_call("spawn-kill", {sock});
@@ -1924,7 +1914,7 @@ BOOST_AUTO_TEST_CASE(p4_spawn_kill_no_proc_mgr_returns_error) {
     e.call("nng-close", {sock});
 }
 
-BOOST_AUTO_TEST_CASE(p4_spawn_wait_no_proc_mgr_returns_error) {
+BOOST_AUTO_TEST_CASE(spawn_wait_no_proc_mgr_returns_error) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     auto res = e.try_call("spawn-wait", {sock});
@@ -1932,9 +1922,9 @@ BOOST_AUTO_TEST_CASE(p4_spawn_wait_no_proc_mgr_returns_error) {
     e.call("nng-close", {sock});
 }
 
-// ── spawn with empty etai_path returns clear error ────────────────────────
+// spawn with empty etai_path returns clear error
 
-BOOST_AUTO_TEST_CASE(p4_spawn_empty_etai_path_returns_error) {
+BOOST_AUTO_TEST_CASE(spawn_empty_etai_path_returns_error) {
     NngEnvWithSpawn e("");  // proc_mgr present but empty etai_path
     auto res = e.try_call("spawn", {e.str("worker.eta")});
     BOOST_TEST(!res.has_value());
@@ -1942,32 +1932,32 @@ BOOST_AUTO_TEST_CASE(p4_spawn_empty_etai_path_returns_error) {
         runtime_error_msg(res.error()));
 }
 
-// ── spawn with wrong module path returns error ────────────────────────────
+// spawn with wrong module path returns error
 
-BOOST_AUTO_TEST_CASE(p4_spawn_wrong_arg_type_returns_error) {
+BOOST_AUTO_TEST_CASE(spawn_wrong_arg_type_returns_error) {
     NngEnvWithSpawn e(etai_binary_path());
     // Pass a symbol instead of a string
     auto res = e.try_call("spawn", {e.sym("worker")});
     BOOST_TEST(!res.has_value());
 }
 
-// ── spawn-kill on non-socket returns type error ───────────────────────────
+// spawn-kill on non-socket returns type error
 
-BOOST_AUTO_TEST_CASE(p4_spawn_kill_wrong_type_returns_error) {
+BOOST_AUTO_TEST_CASE(spawn_kill_wrong_type_returns_error) {
     NngEnvWithSpawn e(etai_binary_path());
     auto res = e.try_call("spawn-kill", {e.fixnum(42)});
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p4_spawn_wait_wrong_type_returns_error) {
+BOOST_AUTO_TEST_CASE(spawn_wait_wrong_type_returns_error) {
     NngEnvWithSpawn e(etai_binary_path());
     auto res = e.try_call("spawn-wait", {e.fixnum(42)});
     BOOST_TEST(!res.has_value());
 }
 
-// ── current-mailbox with installed mailbox returns the socket ─────────────
+// current-mailbox with installed mailbox returns the socket
 
-BOOST_AUTO_TEST_CASE(p4_current_mailbox_with_mailbox_returns_socket) {
+BOOST_AUTO_TEST_CASE(current_mailbox_with_mailbox_returns_socket) {
     // Simulate what install_mailbox does: connect a PAIR socket over inproc.
     NngEnvWithSpawn e;
     std::string addr = "inproc://p4-mailbox-test";
@@ -1997,9 +1987,9 @@ BOOST_AUTO_TEST_CASE(p4_current_mailbox_with_mailbox_returns_socket) {
     parent.call("nng-close", {parent_sock});
 }
 
-// ── Integration test: spawn/send/recv round-trip ──────────────────────────
+// Integration test: spawn/send/recv round-trip
 
-BOOST_AUTO_TEST_CASE(p4_spawn_send_recv_round_trip) {
+BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
     // We need a simple worker script that:
     //   1. Receives a message on (current-mailbox)
     //   2. Sends back the message incremented by 1
@@ -2007,7 +1997,7 @@ BOOST_AUTO_TEST_CASE(p4_spawn_send_recv_round_trip) {
 
     namespace fs = std::filesystem;
     auto tmp_dir  = fs::temp_directory_path();
-    auto worker   = tmp_dir / "eta_p4_worker_test.eta";
+    auto worker   = tmp_dir / "eta_worker_test.eta";
 
     // Worker: no stdlib import needed — recv!, send!, current-mailbox, + are builtins.
     {
@@ -2076,11 +2066,11 @@ BOOST_AUTO_TEST_CASE(p4_spawn_send_recv_round_trip) {
     fs::remove(worker);
 }
 
-BOOST_AUTO_TEST_CASE(p4_spawn_kill_terminates_child) {
+BOOST_AUTO_TEST_CASE(spawn_kill_terminates_child) {
     // Spawn a child that loops forever (sleep)
     namespace fs = std::filesystem;
     auto tmp_dir = fs::temp_directory_path();
-    auto worker  = tmp_dir / "eta_p4_sleep_worker.eta";
+    auto worker  = tmp_dir / "eta_sleep_worker.eta";
 
     {
         std::ofstream f(worker);
@@ -2123,11 +2113,11 @@ BOOST_AUTO_TEST_CASE(p4_spawn_kill_terminates_child) {
     fs::remove(worker);
 }
 
-BOOST_AUTO_TEST_CASE(p4_spawn_multiple_children) {
+BOOST_AUTO_TEST_CASE(spawn_multiple_children) {
     // Spawn two workers, send each a distinct value, collect replies.
     namespace fs = std::filesystem;
     auto tmp_dir = fs::temp_directory_path();
-    auto worker  = tmp_dir / "eta_p4_echo_worker.eta";
+    auto worker  = tmp_dir / "eta_echo_worker.eta";
 
     {
         std::ofstream f(worker);
@@ -2195,13 +2185,11 @@ BOOST_AUTO_TEST_CASE(p4_spawn_multiple_children) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Phase 7 — In-Process Actor Threads
-// ═══════════════════════════════════════════════════════════════════════════
+// In-Process Actor Threads
 
-BOOST_AUTO_TEST_SUITE(nng_phase7_tests)
+BOOST_AUTO_TEST_SUITE(nng_actor_thread_tests)
 
-// ── Helper: simple worker factory that uses raw nng (no Driver needed) ────
+// Helper: simple worker factory that uses raw nng (no Driver needed)
 
 namespace {
 
@@ -2273,62 +2261,71 @@ struct NngEnvWithThread {
 
 } // anonymous namespace
 
-// ── ProcessManager thread infrastructure ──────────────────────────────────
+// ProcessManager thread infrastructure
 
-BOOST_AUTO_TEST_CASE(p7_process_manager_list_threads_empty) {
+BOOST_AUTO_TEST_CASE(process_manager_list_threads_empty) {
     ProcessManager pm;
     BOOST_TEST(pm.list_threads().empty());
 }
 
-BOOST_AUTO_TEST_CASE(p7_process_manager_is_thread_alive_unknown_socket) {
+BOOST_AUTO_TEST_CASE(process_manager_is_thread_alive_unknown_socket) {
     ProcessManager pm;
     BOOST_TEST(pm.is_thread_alive(nanbox::Nil) == false);
 }
 
-BOOST_AUTO_TEST_CASE(p7_process_manager_join_thread_unknown_socket) {
+BOOST_AUTO_TEST_CASE(process_manager_join_thread_unknown_socket) {
     ProcessManager pm;
     int rc = pm.join_thread(nanbox::Nil);
     BOOST_TEST(rc == -1);
 }
 
-// ── spawn-thread-with: no process manager returns clear error ─────────────
+// spawn-thread-with: no process manager returns clear error
 
-BOOST_AUTO_TEST_CASE(p7_spawn_thread_with_no_proc_mgr_error) {
-    NngEnv e;  // Phase 3 env — no process manager
+BOOST_AUTO_TEST_CASE(spawn_thread_with_no_proc_mgr_error) {
+    NngEnv e;  // socket-only env — no process manager
     auto res = e.try_call("spawn-thread-with",
                           {e.str("worker.eta"), e.sym("my-fn")});
     BOOST_TEST(!res.has_value());
     BOOST_TEST_MESSAGE("error (expected): " + runtime_error_msg(res.error()));
 }
 
-// ── spawn-thread returns clear "not implemented" error ────────────────────
+// spawn-thread: type errors without proc_mgr
 
-BOOST_AUTO_TEST_CASE(p7_spawn_thread_returns_not_implemented_error) {
+BOOST_AUTO_TEST_CASE(spawn_thread_no_proc_mgr_error) {
+    // NngEnv has no proc_mgr — should get "not configured" error
     NngEnv e;
     auto res = e.try_call("spawn-thread", {nanbox::False});
     BOOST_TEST(!res.has_value());
     BOOST_TEST_MESSAGE("spawn-thread error (expected): " + runtime_error_msg(res.error()));
 }
 
-// ── spawn-thread-with: wrong arg types ────────────────────────────────────
+BOOST_AUTO_TEST_CASE(spawn_thread_type_error_non_closure) {
+    // Wrong argument type: a fixnum is not a closure
+    NngEnvWithThread e;
+    auto res = e.try_call("spawn-thread", {e.fixnum(42)});
+    BOOST_TEST(!res.has_value());
+    BOOST_TEST_MESSAGE("spawn-thread type error (expected): " + runtime_error_msg(res.error()));
+}
 
-BOOST_AUTO_TEST_CASE(p7_spawn_thread_with_wrong_first_arg_type) {
+// spawn-thread-with: wrong arg types
+
+BOOST_AUTO_TEST_CASE(spawn_thread_with_wrong_first_arg_type) {
     NngEnvWithThread e;
     e.proc_mgr.set_worker_factory(make_simple_worker([](nng_socket) {}));
     auto res = e.try_call("spawn-thread-with", {e.sym("not-a-string"), e.sym("my-fn")});
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p7_spawn_thread_with_wrong_second_arg_type) {
+BOOST_AUTO_TEST_CASE(spawn_thread_with_wrong_second_arg_type) {
     NngEnvWithThread e;
     e.proc_mgr.set_worker_factory(make_simple_worker([](nng_socket) {}));
     auto res = e.try_call("spawn-thread-with", {e.str("worker.eta"), e.str("not-a-symbol")});
     BOOST_TEST(!res.has_value());
 }
 
-// ── spawn-thread-with: creates socket ────────────────────────────────────
+// spawn-thread-with: creates socket
 
-BOOST_AUTO_TEST_CASE(p7_spawn_thread_with_returns_socket) {
+BOOST_AUTO_TEST_CASE(spawn_thread_with_returns_socket) {
     NngEnvWithThread e;
     e.proc_mgr.set_worker_factory(make_simple_worker([](nng_socket) { /* noop */ }));
 
@@ -2348,9 +2345,9 @@ BOOST_AUTO_TEST_CASE(p7_spawn_thread_with_returns_socket) {
     e.call("nng-close", {sock});
 }
 
-// ── thread-alive? ─────────────────────────────────────────────────────────
+// thread-alive?
 
-BOOST_AUTO_TEST_CASE(p7_thread_alive_while_running) {
+BOOST_AUTO_TEST_CASE(thread_alive_while_running) {
     NngEnvWithThread e;
     e.proc_mgr.set_worker_factory(
         make_simple_worker([](nng_socket s) {
@@ -2376,9 +2373,9 @@ BOOST_AUTO_TEST_CASE(p7_thread_alive_while_running) {
     e.call("nng-close", {sock});
 }
 
-// ── thread-join: blocks until thread completes ────────────────────────────
+// thread-join: blocks until thread completes
 
-BOOST_AUTO_TEST_CASE(p7_thread_join_waits_for_completion) {
+BOOST_AUTO_TEST_CASE(thread_join_waits_for_completion) {
     NngEnvWithThread e;
     std::atomic<bool> thread_ran{false};
 
@@ -2413,23 +2410,23 @@ BOOST_AUTO_TEST_CASE(p7_thread_join_waits_for_completion) {
     e.call("nng-close", {sock});
 }
 
-// ── thread-join / thread-alive? wrong type errors ─────────────────────────
+// thread-join / thread-alive? wrong type errors
 
-BOOST_AUTO_TEST_CASE(p7_thread_join_wrong_type_error) {
+BOOST_AUTO_TEST_CASE(thread_join_wrong_type_error) {
     NngEnvWithThread e;
     auto res = e.try_call("thread-join", {e.fixnum(42)});
     BOOST_TEST(!res.has_value());
 }
 
-BOOST_AUTO_TEST_CASE(p7_thread_alive_wrong_type_error) {
+BOOST_AUTO_TEST_CASE(thread_alive_wrong_type_error) {
     NngEnvWithThread e;
     auto res = e.try_call("thread-alive?", {e.fixnum(42)});
     BOOST_TEST(!res.has_value());
 }
 
-// ── send!/recv! round-trip over inproc:// ─────────────────────────────────
+// send!/recv! round-trip over inproc://
 
-BOOST_AUTO_TEST_CASE(p7_spawn_thread_send_recv_round_trip) {
+BOOST_AUTO_TEST_CASE(spawn_thread_send_recv_round_trip) {
     NngEnvWithThread e;
 
     // Echo worker: recv one message, send it back
@@ -2468,9 +2465,9 @@ BOOST_AUTO_TEST_CASE(p7_spawn_thread_send_recv_round_trip) {
     e.call("nng-close", {sock});
 }
 
-// ── list_threads() returns thread metadata ────────────────────────────────
+// list_threads() returns thread metadata
 
-BOOST_AUTO_TEST_CASE(p7_list_threads_returns_metadata) {
+BOOST_AUTO_TEST_CASE(list_threads_returns_metadata) {
     NngEnvWithThread e;
     e.proc_mgr.set_worker_factory(
         make_simple_worker([](nng_socket s) {
@@ -2496,9 +2493,9 @@ BOOST_AUTO_TEST_CASE(p7_list_threads_returns_metadata) {
     e.call("nng-close", {*res});
 }
 
-// ── Stress test: 20 threads, each echoes a distinct value ─────────────────
+// Stress test: 20 threads, each echoes a distinct value
 
-BOOST_AUTO_TEST_CASE(p7_stress_test_multiple_threads) {
+BOOST_AUTO_TEST_CASE(stress_test_multiple_threads) {
     constexpr int N = 20;
     NngEnvWithThread e;
     e.proc_mgr.set_worker_factory(
@@ -2549,15 +2546,140 @@ BOOST_AUTO_TEST_CASE(p7_stress_test_multiple_threads) {
     BOOST_TEST(ok_count == N);
 }
 
+// spawn-thread integration: full Driver round-trip
+//
+// Uses the real Driver so that:
+//  1. A thunk lambda is compiled into the function registry.
+//  2. spawn-thread serializes it and launches a real in-process thread.
+//  3. The thread's VM reconstructs the closure, dials the socket, executes
+//     the thunk (which reads from the mailbox and echoes back).
+//  4. Parent sends a value, receives the echo, thread-join confirms completion.
+
+BOOST_AUTO_TEST_CASE(spawn_thread_full_driver_round_trip) {
+    std::string etai_path = etai_binary_path();
+    std::string stdlib_path;
+#ifdef ETA_STDLIB_DIR
+    stdlib_path = ETA_STDLIB_DIR;
+#endif
+    if (stdlib_path.empty()) {
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set — skipping spawn-thread Driver test");
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    using namespace eta::interpreter;
+
+    // Build a Driver with the stdlib path
+    ModulePathResolver resolver({fs::path(stdlib_path)});
+    Driver driver(std::move(resolver));
+    driver.load_prelude();
+
+    // The thunk: receives a value from the mailbox, adds the captured
+    // constant (7), and sends the result back.
+    const char* src = R"eta(
+(module spawn-thread-test
+  (begin
+    (define result #f)
+    (define t
+      (spawn-thread
+        (lambda ()
+          (let ((mb (current-mailbox)))
+            (let ((n (recv! mb 'wait)))
+              (send! mb (+ n 7) 'wait))))))
+    ;; Send 35, expect 42 back
+    (send! t 35 'wait)
+    (set! result (recv! t 'wait))
+    (thread-join t)
+    (nng-close t)))
+)eta";
+
+    LispVal result_val{Nil};
+    bool ok = driver.run_source(src, &result_val, "result");
+    BOOST_REQUIRE_MESSAGE(ok, "Driver::run_source failed");
+
+    auto dec = ops::decode<int64_t>(result_val);
+    BOOST_REQUIRE_MESSAGE(dec.has_value(), "result is not a fixnum");
+    BOOST_TEST(*dec == 42);
+    BOOST_TEST_MESSAGE("spawn-thread round-trip OK: 35 + 7 = " << *dec);
+}
+
+// spawn-thread: 3 concurrent threads, each with a distinct upvalue
+
+BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
+    std::string stdlib_path;
+#ifdef ETA_STDLIB_DIR
+    stdlib_path = ETA_STDLIB_DIR;
+#endif
+    if (stdlib_path.empty()) {
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set — skipping spawn-thread multi test");
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    using namespace eta::interpreter;
+
+    ModulePathResolver resolver({fs::path(stdlib_path)});
+    Driver driver(std::move(resolver));
+    driver.load_prelude();
+
+    // Each thunk captures a different offset (10, 20, 30) as an upvalue.
+    // Parent sends 1 to each; expects 11, 21, 31 back.
+    const char* src = R"eta(
+(module spawn-thread-multi
+  (begin
+    (define make-worker
+      (lambda (offset)
+        (spawn-thread
+          (lambda ()
+            (let ((mb (current-mailbox)))
+              (let ((n (recv! mb 'wait)))
+                (send! mb (+ n offset) 'wait)))))))
+
+    (define t1 (make-worker 10))
+    (define t2 (make-worker 20))
+    (define t3 (make-worker 30))
+
+    (send! t1 1 'wait)
+    (send! t2 1 'wait)
+    (send! t3 1 'wait)
+
+    (define r1 (recv! t1 'wait))
+    (define r2 (recv! t2 'wait))
+    (define r3 (recv! t3 'wait))
+
+    (thread-join t1) (thread-join t2) (thread-join t3)
+    (nng-close t1) (nng-close t2) (nng-close t3)
+
+    (define result (list r1 r2 r3))))
+)eta";
+
+    LispVal result_val{Nil};
+    bool ok = driver.run_source(src, &result_val, "result");
+    BOOST_REQUIRE_MESSAGE(ok, "Driver::run_source failed for multi-upvalue test");
+
+    // result should be (11 21 31)
+    auto* cons1 = driver.heap().try_get_as<ObjectKind::Cons, Cons>(
+        ops::payload(result_val));
+    BOOST_REQUIRE_MESSAGE(cons1 != nullptr, "result is not a list");
+    BOOST_TEST(*ops::decode<int64_t>(cons1->car) == 11);
+    auto* cons2 = driver.heap().try_get_as<ObjectKind::Cons, Cons>(
+        ops::payload(cons1->cdr));
+    BOOST_REQUIRE(cons2 != nullptr);
+    BOOST_TEST(*ops::decode<int64_t>(cons2->car) == 21);
+    auto* cons3 = driver.heap().try_get_as<ObjectKind::Cons, Cons>(
+        ops::payload(cons2->cdr));
+    BOOST_REQUIRE(cons3 != nullptr);
+    BOOST_TEST(*ops::decode<int64_t>(cons3->car) == 31);
+    BOOST_TEST_MESSAGE("spawn-thread multi-upvalue OK: (11 21 31)");
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Phase 8 — Monitoring, Heartbeats & Supervision
-// ═══════════════════════════════════════════════════════════════════════════
+// Monitoring, Heartbeats & Supervision
 
-BOOST_AUTO_TEST_SUITE(nng_phase8_tests)
+BOOST_AUTO_TEST_SUITE(nng_monitoring_supervision_tests)
 
-// ── Primitive registration checks ─────────────────────────────────────────
+// Primitive registration checks
 
 BOOST_AUTO_TEST_CASE(monitor_primitive_registered) {
     NngEnv e;
@@ -2581,7 +2703,7 @@ BOOST_AUTO_TEST_CASE(enable_heartbeat_registered) {
     BOOST_TEST_MESSAGE("enable-heartbeat error (expected): " + runtime_error_msg(res.error()));
 }
 
-// ── monitor: basic error handling ─────────────────────────────────────────
+// monitor: basic error handling
 
 BOOST_AUTO_TEST_CASE(monitor_closed_socket_error) {
     NngEnv e;
@@ -2617,7 +2739,7 @@ BOOST_AUTO_TEST_CASE(enable_heartbeat_zero_interval_error) {
     e.call("nng-close", {sock});
 }
 
-// ── endpoint_hint is set by nng-listen and nng-dial ───────────────────────
+// endpoint_hint is set by nng-listen and nng-dial
 
 BOOST_AUTO_TEST_CASE(endpoint_hint_set_on_listen) {
     NngEnv e;
@@ -2644,7 +2766,7 @@ BOOST_AUTO_TEST_CASE(endpoint_hint_set_on_dial) {
     e.call("nng-close", {client});
 }
 
-// ── monitor: MonitorState created on monitor() call ──────────────────────
+// monitor: MonitorState created on monitor() call
 
 BOOST_AUTO_TEST_CASE(monitor_creates_monitor_state) {
     NngEnv e;
@@ -2665,7 +2787,7 @@ BOOST_AUTO_TEST_CASE(monitor_creates_monitor_state) {
     e.call("nng-close", {sock});
 }
 
-// ── demonitor: clears monitored flag ──────────────────────────────────────
+// demonitor: clears monitored flag
 
 BOOST_AUTO_TEST_CASE(demonitor_clears_state) {
     NngEnv e;
@@ -2685,7 +2807,7 @@ BOOST_AUTO_TEST_CASE(demonitor_clears_state) {
     e.call("nng-close", {sock});
 }
 
-// ── monitor: detects peer disconnect ─────────────────────────────────────
+// monitor: detects peer disconnect
 
 BOOST_AUTO_TEST_CASE(monitor_detects_disconnect) {
     NngEnv e;
@@ -2731,7 +2853,7 @@ BOOST_AUTO_TEST_CASE(monitor_detects_disconnect) {
     e.call("nng-close", {server});
 }
 
-// ── demonitor: suppresses disconnect notification ─────────────────────────
+// demonitor: suppresses disconnect notification
 
 BOOST_AUTO_TEST_CASE(demonitor_suppresses_notification) {
     NngEnv e;
@@ -2764,7 +2886,7 @@ BOOST_AUTO_TEST_CASE(demonitor_suppresses_notification) {
     e.call("nng-close", {server});
 }
 
-// ── normal nng-close does NOT fire a down notification ────────────────────
+// normal nng-close does NOT fire a down notification
 
 BOOST_AUTO_TEST_CASE(closing_normally_suppresses_down) {
     NngEnv e;
@@ -2793,7 +2915,7 @@ BOOST_AUTO_TEST_CASE(closing_normally_suppresses_down) {
     e.call("nng-close", {client});
 }
 
-// ── enable-heartbeat: monitor state created, heartbeat field set ──────────
+// enable-heartbeat: monitor state created, heartbeat field set
 
 BOOST_AUTO_TEST_CASE(enable_heartbeat_creates_state) {
     NngEnv e;
@@ -2813,7 +2935,7 @@ BOOST_AUTO_TEST_CASE(enable_heartbeat_creates_state) {
     e.call("nng-close", {server});
 }
 
-// ── heartbeat: detects hung peer (no pong response) ───────────────────────
+// heartbeat: detects hung peer (no pong response)
 // The test sets up two connected sockets.  Side A enables heartbeat with a
 // very short interval.  Side B never calls recv! (so it never replies with
 // pong).  After 3 intervals, side A should receive a (down … "heartbeat-timeout").
@@ -2863,7 +2985,7 @@ BOOST_AUTO_TEST_CASE(heartbeat_detects_hung_peer) {
     e.call("nng-close", {srvB});
 }
 
-// ── heartbeat: ping/pong transparent (both sides call recv!) ──────────────
+// heartbeat: ping/pong transparent (both sides call recv!)
 // When both sides call recv!, heartbeat pings/pongs are filtered and normal
 // messages still flow through unaffected.
 
@@ -2903,7 +3025,7 @@ BOOST_AUTO_TEST_CASE(heartbeat_ping_pong_transparent) {
     e.call("nng-close", {srvB});
 }
 
-// ── down message binary format is well-formed ─────────────────────────────
+// down message binary format is well-formed
 
 BOOST_AUTO_TEST_CASE(monitor_down_msg_well_formed) {
     NngEnv e;

@@ -31,7 +31,7 @@ namespace eta::runtime::types {
         /// Number of rows currently stored.
         std::size_t row_count{0};
 
-        // ── Mutators ──────────────────────────────────────────────────────
+        // Mutators
 
         /// Add a row.  `values` must have exactly col_names.size() elements.
         /// Returns true on success, false on arity mismatch.
@@ -59,7 +59,7 @@ namespace eta::runtime::types {
             }
         }
 
-        // ── Queries ───────────────────────────────────────────────────────
+        // Queries
 
         /// Look up all row indices where column `col` has value `key`.
         /// Uses the index if available; otherwise falls back to linear scan.

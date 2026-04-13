@@ -3,7 +3,7 @@
 
 namespace eta::runtime::memory::heap {
 
-    // ── construction / destruction ───────────────────────────────
+    // construction / destruction
 
     Heap::Heap(const size_t max_heap_soft_limit)
         : max_heap_soft_limit_(max_heap_soft_limit)
@@ -31,7 +31,7 @@ namespace eta::runtime::memory::heap {
         }
     }
 
-    // ── static helpers ──────────────────────────────────────────
+    // static helpers
 
     uint64_t Heap::split_mix_64(uint64_t x) noexcept {
         x += 0x9e3779b97f4a7c15ULL;
@@ -46,7 +46,7 @@ namespace eta::runtime::memory::heap {
         return x & (NUM_SHARDS - 1);
     }
 
-    // ── pool-accelerated cons allocation ────────────────────────
+    // pool-accelerated cons allocation
 
     std::expected<ObjectId, HeapError> Heap::alloc_cons(LispVal car, LispVal cdr) {
         // Reject allocations during GC
@@ -74,7 +74,7 @@ namespace eta::runtime::memory::heap {
         return result;
     }
 
-    // ── deallocation (pool-aware) ───────────────────────────────
+    // deallocation (pool-aware)
 
     std::expected<void, HeapError> Heap::deallocate(const ObjectId id) {
         // Fast path: pool-owned cons cell
@@ -129,7 +129,7 @@ namespace eta::runtime::memory::heap {
         return {};
     }
 
-    // ── iteration (pool + general) ──────────────────────────────
+    // iteration (pool + general)
 
     void Heap::for_each_entry(const std::function<void(ObjectId, HeapEntry&)>& fn) {
         // Pool entries first (dense array walk)
@@ -149,7 +149,7 @@ namespace eta::runtime::memory::heap {
         }
     }
 
-    // ── lookup (pool-aware) ─────────────────────────────────────
+    // lookup (pool-aware)
 
     bool Heap::try_get(ObjectId id, HeapEntry& out) const {
         // Fast path: pool-owned cons cell
@@ -187,12 +187,12 @@ namespace eta::runtime::memory::heap {
         return found;
     }
 
-    // ── pool accessor ───────────────────────────────────────────
+    // pool accessor
 
     ConsPool& Heap::cons_pool() { return *cons_pool_; }
     const ConsPool& Heap::cons_pool() const { return *cons_pool_; }
 
-    // ── pool sweep (updates total_heap_bytes) ────────────────────
+    // pool sweep (updates total_heap_bytes)
 
     std::size_t Heap::sweep_cons_pool() {
         auto freed = cons_pool_->sweep();

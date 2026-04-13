@@ -69,7 +69,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
 )
 
-# Inject the path to the etai binary for Phase 4 spawn tests.
+# Inject the path to the etai binary for spawn tests.
 # $<TARGET_FILE:etai> expands to the full path at build time (generator expression).
 if(ETA_BUILD_NNG)
     target_compile_definitions(${PROJECT_NAME} PRIVATE

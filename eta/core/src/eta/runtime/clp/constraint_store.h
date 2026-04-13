@@ -19,7 +19,7 @@ using ObjectId = eta::runtime::memory::heap::ObjectId;
 
 class ConstraintStore {
 public:
-    // ── Queries ───────────────────────────────────────────────────────────────
+    // Queries
 
     /// Return a pointer to the domain of `id`, or nullptr if unconstrained.
     [[nodiscard]] const Domain* get_domain(ObjectId id) const noexcept {
@@ -27,7 +27,7 @@ public:
         return (it != domains_.end()) ? &it->second : nullptr;
     }
 
-    // ── Mutators (trailed — always undoable via unwind) ───────────────────────
+    // Mutators (trailed — always undoable via unwind)
 
     /// Set the domain of `id`, recording the old state on the trail for undo.
     void set_domain(ObjectId id, Domain dom) {
@@ -41,7 +41,7 @@ public:
         }
     }
 
-    // ── Trail interface ───────────────────────────────────────────────────────
+    // Trail interface
 
     [[nodiscard]] std::size_t trail_size() const noexcept { return trail_.size(); }
 

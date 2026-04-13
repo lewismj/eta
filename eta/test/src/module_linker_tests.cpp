@@ -146,7 +146,7 @@ BOOST_AUTO_TEST_CASE(linker_multi_clause_imports) {
     BOOST_CHECK(!M2.visible.contains("b"));
 }
 
-// ─── Prefix import tests ─────────────────────────────────────────────
+// Prefix import tests
 
 BOOST_AUTO_TEST_CASE(linker_prefix_import_basic) {
     // (prefix m1 m1:) should import all exports with "m1:" prefix

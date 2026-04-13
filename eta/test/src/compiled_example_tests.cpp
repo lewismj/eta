@@ -30,7 +30,7 @@
 
 namespace fs = std::filesystem;
 
-// ── Path discovery (same as example_runner_tests.cpp) ───────────────────────
+// Path discovery (same as example_runner_tests.cpp)
 
 #ifndef ETA_EXAMPLES_DIR
 #define ETA_EXAMPLES_DIR ""
@@ -86,7 +86,7 @@ static std::vector<fs::path> collect_examples() {
     return files;
 }
 
-// ── Output normalization ────────────────────────────────────────────────────
+// Output normalization
 // Logic variables print as _G<heap_id>.  Heap IDs differ between interpreted
 // and compiled runs because the two Drivers allocate objects independently.
 // Normalize by replacing each distinct _G<N> with _G0, _G1, … in order of
@@ -114,7 +114,7 @@ static std::string normalize_logic_vars(const std::string& s) {
     return result;
 }
 
-// ── Torch-dependent example filtering ───────────────────────────────────────
+// Torch-dependent example filtering
 
 static bool requires_torch([[maybe_unused]] const fs::path& file) {
     auto stem = file.stem().string();
@@ -127,7 +127,7 @@ static bool requires_torch([[maybe_unused]] const fs::path& file) {
     return false;
 }
 
-// ── Networking example filtering ─────────────────────────────────────────────
+// Networking example filtering
 // Three kinds of files need to be skipped:
 //   1. Spawned-worker files  — call (current-mailbox) to receive tasks from a
 //      parent.  Running standalone returns Nil and the first recv! errors out.
@@ -155,7 +155,7 @@ static bool requires_net(const fs::path& file) {
     return false;
 }
 
-// ── Test fixture ────────────────────────────────────────────────────────────
+// Test fixture
 
 struct CompiledExampleFixture {
     fs::path stdlib;
@@ -201,7 +201,7 @@ struct CompiledExampleFixture {
     std::pair<bool, std::string> run_compiled(const fs::path& file) {
         if (stdlib.empty()) return {false, ""};
 
-        // ── Step 1: Compile (compile-only — no execution) ───────────
+        // Step 1: Compile (compile-only — no execution)
         eta::interpreter::ModulePathResolver comp_resolver({stdlib});
         comp_resolver.add_dir(file.parent_path());
         eta::interpreter::Driver compiler(std::move(comp_resolver), 8 * 1024 * 1024);
@@ -258,7 +258,7 @@ struct CompiledExampleFixture {
             }
         }
 
-        // ── Step 2: Load and run the .etac (replicating etai logic) ─
+        // Step 2: Load and run the .etac (replicating etai logic)
         eta::interpreter::ModulePathResolver run_resolver({stdlib});
         run_resolver.add_dir(file.parent_path());
         eta::interpreter::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
@@ -292,7 +292,7 @@ struct CompiledExampleFixture {
     }
 };
 
-// ── Test suite ──────────────────────────────────────────────────────────────
+// Test suite
 
 BOOST_FIXTURE_TEST_SUITE(compiled_example_tests, CompiledExampleFixture)
 

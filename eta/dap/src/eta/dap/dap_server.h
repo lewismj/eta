@@ -50,11 +50,11 @@ public:
     static constexpr int COMPOUND_REF_BASE = 10000;
 
 private:
-    // ── Injected I/O ──────────────────────────────────────────────────────────
+    // Injected I/O
     std::istream& in_;
     std::ostream& out_;
 
-    // ── State ─────────────────────────────────────────────────────────────────
+    // State
     bool running_{true};
     int  next_seq_{1};
 
@@ -84,16 +84,16 @@ private:
     std::mutex  vm_mutex_;    // guards driver_ / VM state access from DAP thread
     std::mutex  output_mutex_; // serialises send() calls from DAP + VM threads
 
-    // ── Transport ─────────────────────────────────────────────────────────────
+    // Transport
     void send(const Value& msg);
     void send_response(const Value& id, const Value& body);
     void send_error_response(const Value& id, int code, const std::string& msg);
     void send_event(const std::string& event_name, const Value& body);
 
-    // ── Dispatch ──────────────────────────────────────────────────────────────
+    // Dispatch
     void dispatch(const Value& msg);
 
-    // ── DAP request handlers ──────────────────────────────────────────────────
+    // DAP request handlers
     void handle_initialize(const Value& id, const Value& args);
     void handle_launch(const Value& id, const Value& args);
     void handle_set_breakpoints(const Value& id, const Value& args);
@@ -113,13 +113,13 @@ private:
     void handle_completions(const Value& id, const Value& args);
     void handle_disconnect(const Value& id, const Value& args);
 
-    // ── Custom requests ─────────────────────────────────────────────────────
+    // Custom requests
     void handle_heap_inspector(const Value& id, const Value& args);
     void handle_inspect_object(const Value& id, const Value& args);
     void handle_disassemble(const Value& id, const Value& args);
     void handle_child_processes(const Value& id, const Value& args);
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // Helpers
     /// Build a JSON heap snapshot from the paused VM. Caller must hold vm_mutex_.
     Value build_heap_snapshot();
 
@@ -130,7 +130,7 @@ private:
     /// file_id can now be resolved.  Must be called WITHOUT vm_mutex_ held.
     void notify_breakpoints_verified();
 
-    // ── Compound variable expansion ──────────────────────────────────────────
+    // Compound variable expansion
     // References >= COMPOUND_REF_BASE are compound value expansions (cons, vector,
     // closure) stored in compound_refs_.  Cleared on each stop event.
     int next_compound_ref_{COMPOUND_REF_BASE};

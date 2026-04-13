@@ -213,7 +213,7 @@ std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
 }
 
 std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<LispVal> args) {
-    // ── Fast path: primitive procedures — direct call, no VM re-entry ──────────
+    // Fast path: primitive procedures — direct call, no VM re-entry
     if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(proc)) {
         uint32_t argc = static_cast<uint32_t>(args.size());
         if (prim->has_rest) {
@@ -228,7 +228,7 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
         return prim->func(args);
     }
 
-    // ── Closure path — save outer state, run nested loop, restore ──────────────
+    // Closure path — save outer state, run nested loop, restore
     auto* cl = try_get_as<ObjectKind::Closure, Closure>(proc);
     if (!cl) {
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
@@ -486,13 +486,12 @@ void VM::unpack_to_stack(LispVal value) {
 
 std::expected<void, RuntimeError> VM::run_loop() {
     while (current_func_ && pc_ < current_func_->code.size()) {
-        // ── Debug hook ─────────────────────────────────────────────────────
+        // Debug hook
         // Zero-cost when debug_ is null (non-debug runs).
         if (debug_) {
             const auto sp = current_func_->span_at(pc_);
             debug_->check_and_wait(sp, frames_.size());
         }
-        // ──────────────────────────────────────────────────────────────────
         const auto& instr = current_func_->code[pc_++];
         switch (instr.opcode) {
             case OpCode::Nop:
@@ -894,7 +893,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             }
 
-            // ── Unification opcodes ───────────────────────────────────────
+            // Unification opcodes
             case OpCode::MakeLogicVar: {
                 auto lv = make_logic_var(heap_);
                 if (!lv) return std::unexpected(lv.error());
@@ -1147,7 +1146,7 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
     LispVal b = pop();
     LispVal a = pop();
 
-    // ── AD Tape recording ────────────────────────────────────────────────
+    // AD Tape recording
     // If a tape is active and either operand is a TapeRef, record the
     // operation on the tape and push a new TapeRef.
     // Only the four arithmetic opcodes are relevant here; the default
@@ -1522,7 +1521,7 @@ bool VM::unify(LispVal a, LispVal b) {
     // Identical values (includes two unbound vars that are the same object)
     if (a == b) return true;
 
-    // ── Helper: check domain constraint before committing a binding ───────────
+    // Helper: check domain constraint before committing a binding
     // When an unbound variable with a CLP domain is about to be bound to a
     // concrete (non-variable) ground value, verify the value lies in the domain.
     // If `candidate` is itself an unbound logic variable, skip the check — the

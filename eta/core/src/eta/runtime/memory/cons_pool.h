@@ -51,7 +51,7 @@ namespace eta::runtime::memory::heap {
             grow(initial_capacity);
         }
 
-        // ── allocation ──────────────────────────────────────────────
+        // allocation
 
         /// Pop free-list or grow; return ObjectId for the new cons cell.
         std::expected<ObjectId, HeapError> alloc(LispVal car, LispVal cdr) {
@@ -74,7 +74,7 @@ namespace eta::runtime::memory::heap {
             return slot->id;
         }
 
-        // ── lookup ──────────────────────────────────────────────────
+        // lookup
 
         /// O(1) lookup — returns pointer to Cons if id is in pool and live.
         types::Cons* try_get(ObjectId id) {
@@ -105,7 +105,7 @@ namespace eta::runtime::memory::heap {
             return find_slot(id) != nullptr;
         }
 
-        // ── deallocation ────────────────────────────────────────────
+        // deallocation
 
         /// Return a live slot to the free-list.
         void free_slot(ObjectId id) {
@@ -117,7 +117,7 @@ namespace eta::runtime::memory::heap {
             --live_count_;
         }
 
-        // ── GC support ─────────────────────────────────────────────
+        // GC support
 
         /// Zero all mark bits on allocated slots (dense sweep).
         void clear_marks() {
@@ -168,7 +168,7 @@ namespace eta::runtime::memory::heap {
             return freed;
         }
 
-        // ── stats / iteration ───────────────────────────────────────
+        // stats / iteration
 
         PoolStats stats() const {
             return {

@@ -508,7 +508,7 @@ void LspServer::validate_document(const std::string& uri) {
     cached = source;
     std::vector<LspDiagnostic> diags;
 
-    // ── Phase 1: Lex + Parse ──────────────────────────────────────────
+    // Phase 1: Lex + Parse
     reader::lexer::Lexer lex(0, source);
     reader::parser::Parser parser(lex);
 
@@ -542,7 +542,7 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    // ── Phase 2: Expand ───────────────────────────────────────────────
+    // Phase 2: Expand
     reader::expander::Expander expander;
     auto expanded_res = expander.expand_many(parsed);
     if (!expanded_res) {
@@ -559,7 +559,7 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    // ── Phase 3: Link ─────────────────────────────────────────────────
+    // Phase 3: Link
     // Move expanded forms out (SExprPtr = unique_ptr, not copyable).
     // Load any external modules required by (import ...) forms so the
     // linker can resolve cross-module references without false diagnostics.
@@ -605,7 +605,7 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    // ── Phase 4: Semantic Analysis ────────────────────────────────────
+    // Phase 4: Semantic Analysis
     semantics::SemanticAnalyzer sa;
     runtime::BuiltinEnvironment builtins;
     runtime::register_builtin_names(builtins);
@@ -733,14 +733,14 @@ Value LspServer::handle_hover(const Value& params) {
         {"nng-poll",       "**nng-poll** — Poll multiple sockets for readiness.\n\n`(nng-poll items timeout-ms)` — items is a list of `(socket . events)` pairs; returns list of ready sockets"},
         {"nng-subscribe",  "**nng-subscribe** — Set SUB topic filter.\n\n`(nng-subscribe sock topic)` — topic is a string prefix"},
         {"nng-set-option", "**nng-set-option** — Set a socket option.\n\n`(nng-set-option sock option value)` — option: `'recv-timeout` `'send-timeout` `'recv-buf-size` `'survey-time`"},
-        // Phase 4 — actor model
+        // actor model
         {"spawn",           "**spawn** — Spawn a child Eta process.\n\n`(spawn module-path)` — launches `etai <module-path>` as a child process and returns the parent-side PAIR socket for communication"},
         {"spawn-kill",      "**spawn-kill** — Forcibly terminate a spawned child.\n\n`(spawn-kill sock)` — sends SIGTERM; returns `#t` on success"},
         {"spawn-wait",      "**spawn-wait** — Wait for a spawned child to exit.\n\n`(spawn-wait sock)` — blocks until child exits; returns the exit code as a fixnum"},
         {"current-mailbox", "**current-mailbox** — The PAIR socket to the parent process.\n\n`(current-mailbox)` — returns the socket established by `--mailbox` at startup, or `()` if not a spawned child"},
-        // Phase 7 — in-process actor threads
+        // in-process actor threads
         {"spawn-thread-with", "**spawn-thread-with** — Spawn an in-process actor thread.\n\n`(spawn-thread-with module-path func-name args...)` — launches a new OS thread with its own VM, loads the module, calls `(func-name args...)`, communicates via `inproc://` PAIR socket"},
-        {"spawn-thread",      "**spawn-thread** — Spawn an actor thread from a closure (Phase 7b, not yet implemented).\n\n`(spawn-thread thunk)` — use `spawn-thread-with` instead for named functions"},
+        {"spawn-thread",      "**spawn-thread** — Spawn an actor thread from a closure.\n\n`(spawn-thread thunk)` — use `spawn-thread-with` instead for named functions"},
         {"thread-join",       "**thread-join** — Wait for an actor thread to complete.\n\n`(thread-join sock)` — blocks until the thread exits; returns `0` on success, `#f` if not found"},
         {"thread-alive?",     "**thread-alive?** — Check if an actor thread is still running.\n\n`(thread-alive? sock)` — returns `#t` while the thread is executing, `#f` after it exits"},
 #endif
@@ -854,7 +854,7 @@ Value LspServer::handle_completion(const Value& params) {
     Array items;
     std::unordered_set<std::string> seen; // dedup across all tiers
 
-    // ── Tier 0: Keywords (special forms) ──────────────────────────────────
+    // Tier 0: Keywords (special forms)
     static const std::vector<std::pair<std::string, std::string>> keywords = {
         {"define",       "Core: define a variable or function"},
         {"lambda",       "Core: anonymous function"},
@@ -907,7 +907,7 @@ Value LspServer::handle_completion(const Value& params) {
         }));
     }
 
-    // ── Tier 1: Static builtins (from builtin_names.h) ────────────────────
+    // Tier 1: Static builtins (from builtin_names.h)
     // name, arity, has_rest, category
     struct BuiltinDesc { const char* name; int arity; bool has_rest; const char* category; };
     static const std::vector<BuiltinDesc> builtins = {
@@ -998,10 +998,10 @@ Value LspServer::handle_completion(const Value& params) {
         {"nng-socket?",    1, false, "NNG"}, {"send!",          2, true,  "NNG"},
         {"recv!",          1, true,  "NNG"}, {"nng-poll",       2, false, "NNG"},
         {"nng-subscribe",  2, false, "NNG"}, {"nng-set-option", 3, false, "NNG"},
-        // Phase 4 — actor model
+        // actor model
         {"spawn",           1, true,  "NNG"}, {"spawn-kill",      1, false, "NNG"},
         {"spawn-wait",      1, false, "NNG"}, {"current-mailbox", 0, false, "NNG"},
-        // Phase 7 — in-process actor threads
+        // in-process actor threads
         {"spawn-thread-with", 2, true,  "NNG"}, {"spawn-thread",  1, false, "NNG"},
         {"thread-join",       1, false, "NNG"}, {"thread-alive?", 1, false, "NNG"},
 #endif
@@ -1019,7 +1019,7 @@ Value LspServer::handle_completion(const Value& params) {
         }));
     }
 
-    // ── Tier 2: Prelude symbols (std.core, std.math, etc.) ────────────────
+    // Tier 2: Prelude symbols (std.core, std.math, etc.)
     for (const auto& sym : prelude_symbols_) {
         if (!seen.insert(sym.name).second) continue;
         int kind = 3; // Function
@@ -1034,7 +1034,7 @@ Value LspServer::handle_completion(const Value& params) {
         }));
     }
 
-    // ── Tier 3: Module-path symbols ───────────────────────────────────────
+    // Tier 3: Module-path symbols
     for (const auto& sym : module_path_symbols_) {
         if (!seen.insert(sym.name).second) continue;
         int kind = 3;
@@ -1049,7 +1049,7 @@ Value LspServer::handle_completion(const Value& params) {
         }));
     }
 
-    // ── Tier 4: Document-local symbols ────────────────────────────────────
+    // Tier 4: Document-local symbols
     if (it != documents_.end()) {
         auto symbols = collect_symbols(it->second.content, true);
         for (const auto& sym : symbols) {
@@ -1327,7 +1327,7 @@ void LspServer::load_completion_cache() {
     prelude_symbols_.clear();
     module_path_symbols_.clear();
 
-    // ── Scan prelude ──────────────────────────────────────────────────
+    // Scan prelude
     auto prelude_path = resolver_.find_file("prelude.eta");
     if (prelude_path) {
         std::ifstream f(*prelude_path);
@@ -1372,7 +1372,7 @@ void LspServer::load_completion_cache() {
         }
     }
 
-    // ── Scan module path ──────────────────────────────────────────────
+    // Scan module path
     scan_module_path_symbols();
 }
 
@@ -1622,7 +1622,7 @@ Value LspServer::handle_signature_help(const Value& params) {
         }
     }
 
-    // ── Signature lookup ─────────────────────────────────────────────────────
+    // Signature lookup
 
     // Static table of builtin signatures
     static const std::vector<std::pair<std::string, std::string>> builtin_sigs = {
@@ -1695,12 +1695,12 @@ Value LspServer::handle_signature_help(const Value& params) {
         {"nng-poll",      "(nng-poll items timeout-ms)"},
         {"nng-subscribe", "(nng-subscribe sock topic)"},
         {"nng-set-option","(nng-set-option sock option value)"},
-        // Phase 4 — actor model
+        // actor model
         {"spawn",           "(spawn module-path)"},
         {"spawn-kill",      "(spawn-kill sock)"},
         {"spawn-wait",      "(spawn-wait sock)"},
         {"current-mailbox", "(current-mailbox)"},
-        // Phase 7 — in-process actor threads
+        // in-process actor threads
         {"spawn-thread-with", "(spawn-thread-with module-path func-name args...)"},
         {"spawn-thread",      "(spawn-thread thunk)"},
         {"thread-join",       "(thread-join sock)"},

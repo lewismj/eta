@@ -278,6 +278,11 @@ Eta code on both sides is identical.
 - All ten nng socket protocols across IPC, TCP, and inproc transports
 - Linux, macOS, and Windows (IPC via named pipes on Windows)
 - `spawn` for local child processes; `current-mailbox` in the child
+- **`spawn-thread` for in-process actor threads** — serializes a thunk
+  (bytecode + upvalues) into a fresh VM thread; same `send!`/`recv!` API
+- **`spawn-thread-with` for file-based in-process threads** — loads a source
+  module in a fresh VM thread and calls a named function
+- **`thread-join` / `thread-alive?`** — lifecycle management for thread actors
 - Binary and text wire formats with auto-detection on receive
 - `std.net` high-level helpers: `with-socket`, `request-reply`,
   `worker-pool`, `pub-sub`, `survey`
@@ -289,7 +294,6 @@ Eta code on both sides is identical.
 |---------|-----------|
 | **Remote `spawn-remote`** | Requires SSH integration or a distributed node agent.  V1 supports cross-host messaging via raw `tcp://`; remote processes are started independently. |
 | **Actor name registry** | Erlang's `register/2` and `whereis/1` provide process lookup by name.  V1 requires knowing the endpoint or holding the socket handle directly. |
-| **In-process thread actors** (`spawn-thread`) | Closure serialization for anonymous lambdas is non-trivial. `spawn-thread-with` (name-based dispatch) is the planned first step. |
 | **Monitoring & supervision trees** | `monitor`, `demonitor`, and OTP-style `one-for-one` supervisors are the next actor-model milestone — see [Next Steps](next-steps.md#5--actor-model-enhancements). |
 | **Distributed GC** | Not planned. Lifecycle is managed explicitly via `nng-close` / `spawn-wait`. |
 | **WebSocket / TLS transports** | nng supports these; they can be enabled post-v1. |

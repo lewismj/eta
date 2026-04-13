@@ -55,7 +55,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                                      vm::VM* vm = nullptr) {
     using Args = const std::vector<LispVal>&;
 
-    // ── AD TapeRef helper ─────────────────────────────────────────────────
+    // AD TapeRef helper
     // Helper: check whether any element is a TapeRef
     auto has_tape_ref = [](Args args) -> bool {
         for (auto v : args) {
@@ -1465,7 +1465,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(tape->entries[idx].primal);
     });
 
-    // ── Fact-table builtins ──────────────────────────────────────────────
+    // Fact-table builtins
 
     // Helper: extract FactTable* from a LispVal or return a type error.
     auto get_fact_table = [&heap](LispVal v, const char* who) -> std::expected<types::FactTable*, RuntimeError> {

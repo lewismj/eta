@@ -387,7 +387,7 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
         }));
     });
 
-    // ── Redirect script stdout/stderr away from the protocol pipe ─────────────
+    // Redirect script stdout/stderr away from the protocol pipe
     // Do this on the LOCAL drv BEFORE making it visible via driver_.
     // Without this, any script that calls (display ...) or (newline) would write
     // to std::cout, corrupting the Content-Length framed DAP stream and causing
@@ -405,14 +405,14 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
             send_event("eta-output", json::object({{"stream", "stderr"}, {"text", text}}));
         }));
 
-    // ── Pre-register the script file ID so breakpoints fire on first run ──────
+    // Pre-register the script file ID so breakpoints fire on first run
     // We allocate the file_id NOW (before the VM thread starts loading any file).
     // When run_file() is later called with the same (normalised) path, Driver
     // reuses this id — so the breakpoints we install below will be active
     // inside vm_.execute().
     drv->ensure_file_id(script_path_);
 
-    // ── Atomically publish driver_ and install breakpoints under the lock ─────
+    // Atomically publish driver_ and install breakpoints under the lock
     // All setup is done on the local drv above; only now do we make it visible
     // to other DAP-thread handlers (evaluate, setBreakpoints, etc.).
     {
@@ -442,7 +442,7 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
     vm_thread_ = std::thread([this]() {
         auto* drv = driver_.get();
 
-        // ── Load prelude ─────────────────────────────────────────────────────
+        // Load prelude
         auto pr = drv->load_prelude();
         if (!pr.found) {
             send_event("output", json::object({
@@ -475,10 +475,10 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
         // Notify VS Code about any breakpoints that became verified after prelude load
         notify_breakpoints_verified();
 
-        // ── Execute the script ────────────────────────────────────────────────
+        // Execute the script
         bool ok = drv->run_file(script_path_);
 
-        // ── Signal IDE ───────────────────────────────────────────────────────
+        // Signal IDE
         if (ok) {
             send_event("terminated", json::object({}));
         } else {
@@ -626,7 +626,7 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
 
     int ref = static_cast<int>(*ref_opt);
 
-    // ── Compound variable expansion (cons/vector/closure) ────────────────
+    // Compound variable expansion (cons/vector/closure)
     if (ref >= COMPOUND_REF_BASE) {
         auto cit = compound_refs_.find(ref);
         if (cit == compound_refs_.end()) {
@@ -638,12 +638,12 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
         return;
     }
 
-    // ── Frame scope variables (locals / upvalues / globals) ────────────────
+    // Frame scope variables (locals / upvalues / globals)
     int frame_idx  = decode_var_ref_frame(ref);
     int scope      = decode_var_ref_scope(ref);
 
     if (scope == 3) {
-        // ── Module scope: globals that belong to the currently-executing module ──
+        // Module scope: globals that belong to the currently-executing module
         // Shows only the user's own defines (e.g. composition.top5 → "top5")
         // so they are immediately visible without scrolling through all prelude/std.* entries.
         std::string cur_mod = current_module_from_frame(static_cast<std::size_t>(frame_idx));
@@ -664,7 +664,7 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
     }
 
     if (scope == 2) {
-        // ── Globals scope ─────────────────────────────────────────────────
+        // Globals scope
         const auto& globals = driver_->vm().globals();
         const auto& names   = driver_->global_names();
         Array vars;
@@ -756,7 +756,7 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
         const std::string& expr = *expr_opt;
         auto frames = driver_->vm().get_frames();
 
-        // ── 1. Search locals and upvalues across all frames ───────────────────
+        // 1. Search locals and upvalues across all frames
         for (std::size_t fi = 0; fi < frames.size(); ++fi) {
             for (const auto& e : driver_->vm().get_locals(fi)) {
                 if (e.name == expr) {
@@ -780,7 +780,7 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
             }
         }
 
-        // ── 2. Search globals: exact full name ("composition.top5") first ─────
+        // 2. Search globals: exact full name ("composition.top5") first
         const auto& gvals  = driver_->vm().globals();
         const auto& gnames = driver_->global_names();
         for (const auto& [slot, full_name] : gnames) {
@@ -795,7 +795,7 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
             }
         }
 
-        // ── 3. Search globals: short name ("top5" matches "composition.top5") ─
+        // 3. Search globals: short name ("top5" matches "composition.top5")
         for (const auto& [slot, full_name] : gnames) {
             auto dot = full_name.rfind('.');
             if (dot == std::string::npos) continue;
@@ -930,7 +930,7 @@ Value DapServer::build_heap_snapshot() {
 
     auto& heap = driver_->heap();
 
-    // ── Per-kind statistics ──────────────────────────────────────────────────
+    // Per-kind statistics
     struct KindStat { int64_t count{0}; int64_t bytes{0}; };
     std::unordered_map<uint8_t, KindStat> kind_stats;
 
@@ -949,7 +949,7 @@ Value DapServer::build_heap_snapshot() {
         }));
     }
 
-    // ── GC roots ─────────────────────────────────────────────────────────────
+    // GC roots
     auto gc_roots = driver_->vm().enumerate_gc_roots();
     Array roots_arr;
     for (const auto& root : gc_roots) {
@@ -1000,7 +1000,7 @@ Value DapServer::build_heap_snapshot() {
         }
     }
 
-    // ── Cons pool statistics ────────────────────────────────────────────────
+    // Cons pool statistics
     auto pool = heap.cons_pool().stats();
     auto cons_pool_obj = json::object({
         {"capacity", Value(static_cast<int64_t>(pool.capacity))},
@@ -1374,7 +1374,7 @@ std::string DapServer::current_module_from_frame(std::size_t frame_idx) {
 
 
 // ============================================================================
-// eta/childProcesses — DAP custom request (Phase 4)
+// eta/childProcesses — DAP custom request
 // ============================================================================
 
 void DapServer::handle_child_processes(const Value& id, const Value& /*args*/) {

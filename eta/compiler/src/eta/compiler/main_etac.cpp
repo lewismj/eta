@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
         output_file = fs::path(input_file).replace_extension(".etac").string();
     }
 
-    // ── Read source for hashing ──────────────────────────────────────
+    // Read source for hashing
     std::ifstream src_in(file_path, std::ios::in | std::ios::binary);
     if (!src_in) { std::cerr << "error: cannot open " << input_file << "\n"; return 1; }
     std::ostringstream src_buf;
@@ -82,15 +82,15 @@ int main(int argc, char* argv[]) {
 
     uint64_t source_hash = eta::runtime::vm::BytecodeSerializer::hash_source(source_text);
 
-    // ── Build module path resolver ───────────────────────────────────
+    // Build module path resolver
     auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
     resolver.add_dir(fs::absolute(file_path).parent_path());
 
-    // ── Create driver ────────────────────────────────────────────────
+    // Create driver
     eta::interpreter::Driver driver(std::move(resolver));
     auto resolve = driver.file_resolver();
 
-    // ── Configure optimization pipeline ──────────────────────────────
+    // Configure optimization pipeline
     if (optimize) {
         auto& pipeline = driver.optimization_pipeline();
         pipeline.add_pass(std::make_unique<eta::semantics::passes::ConstantFolding>());
@@ -113,14 +113,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ── Disassemble mode ─────────────────────────────────────────────
+    // Disassemble mode
     if (disasm_mode) {
         eta::runtime::vm::Disassembler disasm(driver.heap(), driver.intern_table());
         disasm.disassemble_all(driver.registry(), std::cout);
         return 0;
     }
 
-    // ── Build module entries from CompileResult ───────────────────────
+    // Build module entries from CompileResult
     auto& cr = *compile_result;
 
     eta::semantics::BytecodeFunctionRegistry file_registry;
@@ -146,7 +146,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "warning: no modules found in " << input_file << "\n";
     }
 
-    // ── Serialize ────────────────────────────────────────────────────
+    // Serialize
     std::ofstream out(output_file, std::ios::out | std::ios::binary);
     if (!out) {
         std::cerr << "error: cannot open output file: " << output_file << "\n";
