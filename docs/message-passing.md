@@ -6,23 +6,33 @@
 
 ---
 
-> Erlang-style actor model for Eta: independent processes communicating
+> Erlang-style actor model for Eta: independent actors communicating
 > through message passing over nng sockets.
-
----
->[!WARNING]
-> The networking and (actor) message passing primitives are considered
-> beta at this stage. There are many examples that illustrate the
-> usage. However, the system needs more work for a full actor model.
 
 ---
 
 ## Overview
 
 Eta's actor model is built on a simple principle: **share nothing, communicate
-through messages**.  Each actor is an independent OS process (or thread) with
-its own VM, heap, and GC.  Actors exchange data exclusively through serialized
-messages over nng sockets.
+through messages**.  Each actor has its own VM, heap, and GC, and exchanges
+data exclusively through serialized messages over nng sockets.
+
+Actors come in two flavours:
+
+| Primitive | Isolation | Transport | Use case |
+|-----------|-----------|-----------|----------|
+| `spawn` | Separate **OS process** | `ipc://` or `tcp://` | Heavy work, fault isolation, cross-host distribution |
+| `spawn-thread` | In-process **thread** | `inproc://` | Low-latency, no fork/exec overhead, closures as workers |
+
+Both return a PAIR socket and use the same `send!` / `recv!` /
+`current-mailbox` API — code written for one works unchanged with the other.
+
+> [!NOTE]
+> `spawn` launches a child **process** (separate executable) connected over
+> IPC or TCP, while `spawn-thread` runs a thunk in a new **in-process VM
+> thread** over an `inproc://` socket.  The messaging API is identical —
+> choose `spawn` for fault isolation and network distribution, or
+> `spawn-thread` for minimal overhead when actors share a machine.
 
 This gives you:
 
