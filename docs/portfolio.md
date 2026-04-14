@@ -120,7 +120,10 @@ Everything above — data, causal model, constraints, neural training,
 optimisation, scenario analysis — composes into one call:
 
 > [!NOTE]
-> **Pipeline function** 
+> Five arguments fully specify the problem.  One orchestration entry
+> point; multiple internally composable semantics.  Every value traces
+> back to its originating pipeline stage (§0–§7).
+> 
 > ```scheme
 > (define result
 >   (run-pipeline
@@ -140,9 +143,7 @@ optimisation, scenario analysis — composes into one call:
 > ;;     (scenarios ((base 1.87) (boom 2.07)
 > ;;                 (recession 1.60) (rate-hike 1.77))))
 > ```
-> Five arguments fully specify the problem.  One orchestration entry
-> point; multiple internally composable semantics.  Every value traces
-> back to its originating pipeline stage (§0–§7).
+
 
 `run-pipeline` is defined at the end of
 [`examples/portfolio.eta`](../examples/portfolio.eta), after all
