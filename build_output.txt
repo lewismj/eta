@@ -1,2 +1,0 @@
-[1/2] Building CXX object eta/test/CMakeFiles/eta_core_test.dir/src/functional_tests.cpp.o
-[2/2] Linking CXX executable eta/test/eta_core_test
