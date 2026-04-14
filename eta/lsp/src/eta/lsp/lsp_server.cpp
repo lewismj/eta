@@ -708,7 +708,7 @@ Value LspServer::handle_hover(const Value& params) {
         {"dual-backprop",    "**dual-backprop** — Extract the backprop closure from a dual.\n\n`(dual-backprop dual)`"},
         {"tape-new",         "**tape-new** — Create a new AD tape.\n\n`(tape-new)`"},
         {"tape-start!",      "**tape-start!** — Activate a tape for recording.\n\n`(tape-start! tape)`"},
-        {"tape-stop!",       "**tape-stop!** — Deactivate the current tape.\n\n`(tape-stop! tape)`"},
+        {"tape-stop!",       "**tape-stop!** — Deactivate the current tape (pops the most recent).\n\n`(tape-stop!)`"},
         {"tape-var",         "**tape-var** — Create a tracked tape variable.\n\n`(tape-var tape value)`"},
         {"tape-backward!",   "**tape-backward!** — Run reverse-mode backpropagation.\n\n`(tape-backward! tape root-ref)`"},
         {"tape-adjoint",     "**tape-adjoint** — Read the adjoint of a tape ref.\n\n`(tape-adjoint tape ref)`"},

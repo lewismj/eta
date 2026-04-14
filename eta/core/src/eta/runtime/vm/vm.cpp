@@ -105,8 +105,8 @@ void VM::collect_garbage() {
         // Mark logic-variable trail (prevents live unbound vars from being swept
         // during an active unification / backtracking context)
         for (auto v : trail_stack_) visit(v);
-        // Mark active AD tape
-        visit(active_tape_);
+        // Mark active AD tape stack
+        for (auto v : active_tapes_) visit(v);
     });
 }
 
@@ -186,8 +186,8 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
     roots.push_back({"Trail Stack", collect(trail_stack_.begin(), trail_stack_.end())});
 
     {
-        auto ids = single(active_tape_);
-        if (!ids.empty()) roots.push_back({"Active Tape", std::move(ids)});
+        auto ids = collect(active_tapes_.begin(), active_tapes_.end());
+        if (!ids.empty()) roots.push_back({"Active Tapes", std::move(ids)});
     }
 
     return roots;
@@ -876,6 +876,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 cf.frame_count = frames_.size();
                 cf.stack_top   = static_cast<uint32_t>(stack_.size());
                 cf.wind_count  = winding_stack_.size();
+                cf.tape_count  = active_tapes_.size();
                 catch_stack_.push_back(cf);
                 break;
             }
@@ -1160,7 +1161,7 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
     const bool is_tape_b = ops::is_boxed(b) && ops::tag(b) == Tag::TapeRef;
 
     if (is_tape_a || is_tape_b) {
-        auto* tape = heap_.try_get_as<ObjectKind::Tape, Tape>(ops::payload(active_tape_));
+        auto* tape = heap_.try_get_as<ObjectKind::Tape, Tape>(ops::payload(active_tape()));
         if (!tape) {
             return std::unexpected(make_type_error("tape arithmetic: no active tape"));
         }
@@ -1459,6 +1460,7 @@ std::expected<void, RuntimeError> VM::do_throw(LispVal tag, LispVal value,
             // Restore VM frame state.
             frames_.resize(cf.frame_count);
             winding_stack_.resize(cf.wind_count);
+            active_tapes_.resize(cf.tape_count);
 
             // Restore stack to the saved top, then push the caught value.
             stack_.resize(cf.stack_top);
