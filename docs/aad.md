@@ -83,8 +83,8 @@ closures are allocated and no macro rewriting is required.
 | Builtin | Arity | Description |
 |---------|-------|-------------|
 | `tape-new` | 0 | Create a fresh, empty tape |
-| `tape-start!` | 1 | Activate a tape (enables recording) |
-| `tape-stop!` | 0 | Deactivate the active tape |
+| `tape-start!` | 1 | Push a tape onto the active-tape stack (enables recording) |
+| `tape-stop!` | 0 | Pop the most recent tape from the active-tape stack |
 | `tape-var` | 2 | Register an independent variable: `(tape-var tape value)` → TapeRef |
 | `tape-backward!` | 2 | Run reverse sweep: `(tape-backward! tape output-ref)` |
 | `tape-adjoint` | 2 | Read accumulated adjoint: `(tape-adjoint tape ref)` → number |
@@ -92,6 +92,24 @@ closures are allocated and no macro rewriting is required.
 | `tape-ref?` | 1 | Predicate: is the value a TapeRef? |
 | `tape-ref-index` | 1 | Extract the raw index from a TapeRef |
 | `tape-size` | 1 | Number of entries on the tape |
+
+> **Nesting & exception safety.** Active tapes are managed as a stack
+> inside the VM.  Calling `tape-start!` pushes a tape; `tape-stop!`
+> pops it.  This means you can nest independent AD computations:
+>
+> ```scheme
+> (tape-start! outer)        ; outer is now active
+> (tape-start! inner)        ; inner is now active (outer is preserved)
+> ...                        ; arithmetic records on inner
+> (tape-stop!)               ; inner popped — outer is active again
+> ...                        ; arithmetic records on outer
+> (tape-stop!)               ; outer popped — no tape active
+> ```
+>
+> If an exception (`raise`) is thrown between `tape-start!` and
+> `tape-stop!`, the tape stack is automatically unwound to the depth
+> saved by the enclosing `catch`, so the caller's tape context is
+> not corrupted.
 
 ### Tape Usage Pattern
 
@@ -168,7 +186,7 @@ in multiple sub-expressions receives the sum of all path contributions.
 | Component | Role |
 |-----------|------|
 | `tape-new` | Create a fresh, empty tape |
-| `tape-start!` / `tape-stop!` | Activate / deactivate recording |
+| `tape-start!` / `tape-stop!` | Push / pop the active tape (stack-based, nestable) |
 | `tape-var` | Register an independent variable on the tape |
 | `tape-backward!` | Run the reverse sweep from an output node |
 | `tape-adjoint` / `tape-primal` | Read accumulated adjoint / forward value |
