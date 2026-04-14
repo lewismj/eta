@@ -120,7 +120,7 @@ Everything above — data, causal model, constraints, neural training,
 optimisation, scenario analysis — composes into one call:
 
 > [!NOTE]
-> **Pipeline Function** Five arguments fully specify the problem.  One orchestration entry
+> **Pipeline Function** — Five arguments fully specify the problem.  One orchestration entry
 > point; multiple internally composable semantics.  Every value traces
 > back to its originating pipeline stage (§0–§7).
 > 
