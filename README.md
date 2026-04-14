@@ -41,7 +41,7 @@
 <p align="center">
 <strong>Featured Examples</strong></p>
 <p align="center">
-  <a href="docs/causal-factor.md">End-to-End Causal Pipeline</a> (Symbolic → Causal → Logic → Neural) Causal estimation pipeline
+  <a href="docs/portfolio.md">Causal Decision Engine for Portfolio Optimisation</a>
 </p>
 
 
