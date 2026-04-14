@@ -120,7 +120,7 @@ Everything above — data, causal model, constraints, neural training,
 optimisation, scenario analysis — composes into one call:
 
 > [!NOTE]
-> ** Pipeline function:** 
+> **Pipeline function** 
 > ```scheme
 > (define result
 >   (run-pipeline
@@ -1170,6 +1170,436 @@ NN vs DGP cross-check (base case):
 ```
 
 ---
+
+### Output
+
+```console
+C:\Users\lewis\develop\eta>etac examples\portfolio.eta
+compiled examples\portfolio.eta > examples\portfolio.etac (198 functions, 1 module(s))
+
+C:\Users\lewis\develop\eta>etai examples\portfolio.etac
+==========================================================
+  Causal Portfolio Engine
+==========================================================
+
+  The Question:
+    Given a universe of liquid sector-representative assets,
+    what portfolio maximises causal expected return under
+    macroeconomic uncertainty, subject to risk, sector, and
+    regulatory constraints?
+
+  Investment Universe:
+    4 liquid sector ETFs: Technology, Energy, Finance, Healthcare
+    Each asset is characterised by:
+      - factor exposures (beta)
+      - sector classification
+      - macro sensitivity
+      - observed returns
+
+  Why Synthetic Data?
+    We use a controlled DGP so every result is verifiable.
+    The DGP causal structure is known by construction; model
+    estimates can be checked against ground truth; each stage
+    independently.  The same pipeline applies to real market
+    data without modification.
+
+  Pipeline layers (each independently verifiable):
+    DGP (known) -> Estimator (NN + back-door) -> Optimizer (ret - l*w'Ew)
+    Structural truth | Learned model output  | Decision
+
+==========================================================
+ S0. Data Generation & Fact Table
+==========================================================
+
+  DGP: sentiment ~ Uniform(0, 1)  [confounder]
+       macro = 0.15 + 0.35*sentiment + noise_m
+       return = 1.2*beta + 0.6*macro + 0.4*sector
+              - 0.3*rate + 0.2*beta*macro + 0.5*sentiment + noise
+
+  Fact table: 120 observations across 4 sectors
+  Columns: sector, beta, macro_growth, interest_rate, sentiment, return
+
+  Sample rows (first 3):
+    tech  beta=1.2257  macro=0.2963  rate=0.0189022  sent=0.088125  ret=2.1432
+    tech  beta=1.40596  macro=0.453287  rate=0.0444582  sent=0.499677  ret=2.78224
+    tech  beta=1.31515  macro=0.323198  rate=0.0203587  sent=0.180517  ret=2.36896
+
+  Ground truth coefficients:
+    beta: 1.2  macro: 0.6  sector: 0.4  rate: -0.3  beta*macro: 0.2  sentiment: 0.5
+
+==========================================================
+ S1. Symbolic Portfolio Specification
+==========================================================
+
+  Objective (S-expression):
+    (maximize (- expected-return (* lambda risk))
+  )
+
+  Constraints:
+    (<= w-tech 30)
+    (<= w-energy 20)
+    (>= w-healthcare 10)
+    (== (+ w-tech (+ w-energy (+ w-finance w-healthcare))) 100)
+
+  Symbolic sensitivities of objective:
+    d(Objective)/d(expected-return) = 1
+    d(Objective)/d(risk)            = (- 0 lambda)
+
+  The objective is inspectable, auditable data ÔÇö not a black box.
+
+==========================================================
+ S2. Causal Risk Model
+==========================================================
+
+  DAG (data-generating process):
+    ((sentiment -> macro_growth) (sentiment -> asset_return) (macro_growth -> sector_perf) (macro_growth -> interest_rate) (macro_growth -> asset_return) (sector_perf -> asset_return) (interest_rate -> asset_return))
+
+    sentiment ---> macro_growth ---> sector_perf ---> asset_return
+        |              |                                    ^
+        |              +---> interest_rate ----------------+
+        +------------------------------------------------>+
+
+  Query:   P(asset_return | do(macro_growth))
+  Result:  P(asset_return | do(macro_growth)) = Sum_{sector_perf, interest_rate} P(asset_return | macro_growth, sector_perf, interest_rate) * P(sector_perf, interest_rate)
+  Adjustment set Z = (sentiment)
+
+  Valid back-door adjustment sets (via findall):
+    ((sentiment))
+
+  Sentiment confounds macro and asset return.
+  The back-door path macro <- sentiment -> return
+  must be blocked by conditioning on sentiment.
+
+  Back-door adjustment (under assumed SCM):
+    E[Y|do(X)] = Sum_s E[Y|X,S=s] P(S=s)
+
+  Identification assumptions:
+    1. DAG is correctly specified (no hidden confounders beyond sentiment)
+    2. Positivity: all (macro, sentiment) pairs have support in data
+    3. SUTVA: no cross-asset interference in return generation
+
+  Note: SCM is assumed known (synthetic data regime).
+  On real data, DAG must be justified from domain knowledge.
+
+==========================================================
+ S3. CLP Portfolio Constraints
+==========================================================
+
+  Constraints (hard, exact):
+    w_tech + w_energy + w_finance + w_healthcare = 100%
+    w_tech     <= 30%
+    w_energy   <= 20%
+    w_healthcare >= 10%
+    All weights in {0, 5, 10, ..., 100}
+
+  Feasible portfolios found: 490
+  Method: discrete grid search over simplex (step 5%),
+  filtered by CLP domain constraints on each weight.
+  CLP validation: sample (30,10,40,20) satisfies all domains
+
+  All portfolios satisfy constraints exactly by construction.
+  Unlike traditional optimisers:
+    - no penalty terms
+    - no post-hoc projection
+    - no infeasible intermediate states
+
+==========================================================
+ S4. Neural Conditional Return Model
+==========================================================
+
+  Training data: 120 samples from fact table
+  Input shape:   (120 4)
+  Target shape:  (120 1)
+
+  Network: Sequential(Linear(4,32), ReLU, Linear(32,16), ReLU, Linear(16,1))
+  Optimizer: Adam (lr=0.001)
+
+  epoch  |   MSE loss
+  -------+-----------
+   500   |  0.0211314
+  1000   |  0.0123447
+  1500   |  0.00585984
+  2000   |  0.00457092
+  2500   |  0.00415386
+  3000   |  0.00383912
+  3500   |  0.00374041
+  4000   |  0.00365742
+  4500   |  0.00359528
+  5000   |  0.00354159
+
+  Causally-adjusted expected returns (E[return | do(macro=0.5)]):
+    Tech:       2.61557
+    Energy:     1.58739
+    Finance:    1.63338
+    Healthcare: 1.04141
+
+  Ground truth vs NN estimate:
+                  True     NN       Error
+    Tech        2.631   2.61557   0.0154318
+    Energy      1.581   1.58739   0.00638776
+    Finance     1.641   1.63338   0.00761536
+    Healthcare  1.051   1.04141   0.0095857
+
+  Note: 'True' = DGP structural expectations (known).
+  NN estimates are learned conditional expectations from finite data.
+  Agreement validates that the estimator approximates the structural
+  relationship, not that it has recovered exact parameters.
+
+----------------------------------------------------------
+  Naive vs Causal Estimation
+----------------------------------------------------------
+
+  Naive estimate (pooled, no causal adjustment):
+    dReturn/dMacro (naive)  = 0.759339
+
+  Causal estimate (back-door adjusted, per-sector):
+    dReturn/dMacro (causal) = 0.73139
+
+  Ground truth (DGP):
+    dReturn/dMacro (DGP)    = 0.6  (+ 0.2*beta interaction)
+
+  Conclusion:
+    Naive estimation conflates sentiment with macro exposure
+    (biased under this confounding structure).
+    Causal adjustment removes confounding under the assumed DAG,
+    yielding an estimate consistent with the structural model.
+
+==========================================================
+ S5. AAD Risk Sensitivities
+==========================================================
+
+  Portfolio return at (30/10/40/20):
+    Expected return = 1.80505
+
+  Marginal contributions (single backward pass):
+    dReturn/dw_tech       = 2.61557
+    dReturn/dw_energy     = 1.58739
+    dReturn/dw_finance    = 1.63338
+    dReturn/dw_healthcare = 1.04141
+
+  Risk model: s2_p = w'Ew  (full covariance, 6 correlation pairs)
+
+  Correlations:
+    p(Tech,Fin)=0.60  p(Ene,Fin)=0.40  p(Fin,Hlt)=0.35
+    p(Tech,Hlt)=0.30  p(Tech,Ene)=0.20  p(Ene,Hlt)=0.15
+
+  Portfolio risk at (30/10/40/20):
+    Risk (w'Ew) = 0.0222304
+
+  Risk sensitivities:
+    dRisk/dw_tech       = 0.054472
+    dRisk/dw_energy     = 0.04172
+    dRisk/dw_finance    = 0.047988
+    dRisk/dw_healthcare = 0.02376
+
+  Risk Contribution by Asset:
+    Tech          36.7551%
+    Energy        9.38355%
+    Finance       43.1733%
+    Healthcare    10.6881%
+
+  Top risk drivers:
+    - Tech (high volatility + large weight)
+    - Finance (moderate volatility, large allocation)
+
+  AAD computes all risk contributions in a single backward pass,
+  avoiding repeated revaluation -- the same technique used
+  by production xVA desks.
+
+==========================================================
+ S6. Explainable Portfolio Selection
+==========================================================
+
+  Top 3 Portfolios (from 490 feasible candidates):
+
+    1. (30, 0, 60, 10)  score=1.81579
+    2. (30, 5, 55, 10)  score=1.81536
+    3. (30, 10, 50, 10)  score=1.81422
+
+  Optimal (grid search, 5% resolution) (#1):
+    Tech        30%
+    Energy      0%
+    Finance     60%
+    Healthcare  10%
+
+    Expected Return (causal): 1.86884
+    Risk (w'Ew):              0.0265266
+    Score (ret - 2*w'Ew):     1.81579
+
+  Why this portfolio?
+    + Tech: highest causal return sensitivity to macro growth
+      (capped at 30% -- constraint binding)
+    + Finance: strong return with moderate volatility
+    - Energy: limited by 20% cap and lower return/risk ratio
+    * Healthcare: at 10% minimum (constraint binding)
+
+  Binding Constraints:
+    - Tech capped at 30% (limit reached)
+    - Healthcare >= 10% constraint active
+    - Energy underweight: return/risk tradeoff
+    These constraints directly shape the optimal allocation.
+
+  Counterfactual: if tech cap relaxed to 40%?
+    Relaxed optimal: Tech 40%, Energy 0%, Finance 50%, Healthcare 10%
+    Return improvement: +0.0982184
+
+  Decision Sensitivity to Risk Aversion (lambda):
+
+    lambda  Allocation          Score    Style
+    ------  -----------------   ------   -----------
+    lambda=0.5  30/0/60/10  score=1.85558  (risk-seeking)
+    lambda=1  30/0/60/10  score=1.84232  (aggressive)
+    lambda=2  30/0/60/10  score=1.81579  (balanced)
+    lambda=3  30/5/55/10  score=1.78976  (conservative)
+    lambda=5  30/10/50/10  score=1.73918  (defensive)
+
+  The system adapts portfolio structure to investor risk appetite.
+
+  Marginal Contributions (AAD at optimal):
+    dReturn/dw_tech       = 2.61557
+    dReturn/dw_finance    = 1.63338
+    dRisk/dw_tech         = 0.059532
+    dRisk/dw_finance      = 0.055026
+
+----------------------------------------------------------
+  Traditional pipeline:
+    ML prediction -> penalty-based optimisation -> post-hoc risk
+
+  Eta pipeline:
+    constraints (logic) + causal model + learning + differentiation
+    -> unified, composable decision system
+----------------------------------------------------------
+
+==========================================================
+ S7. Parallel Scenario Analysis (Actor Model)
+==========================================================
+
+  Each scenario is a do-operator intervention: do(macro=m).
+  Return(m) = E[Y|do(m)] estimated via S4 model + S2 adjustment.
+  Scenario              Macro   Portfolio Return
+  --------------------  -----   ----------------
+  Base case              0.50   1.86884
+  Growth boom            0.80   2.07589
+  Recession              0.10   1.55411
+  Rate hike              0.35   1.76533
+
+  Worst-case return: 1.55411
+  Best-case return:  2.07589
+  Range:             0.52178
+
+  Counterfactual rebalancing (macro = 0.8, growth boom):
+    Rebalanced: Tech 30%, Energy 0%, Finance 60%, Healthcare 10%
+
+----------------------------------------------------------
+  Stability Check
+----------------------------------------------------------
+
+  Perturbing expected returns (tech up, healthcare down)
+  at multiple levels to test robustness...
+
+    Perturbation  Optimal After       Changed?
+    ------------  ------------------  --------
+    +/- 1%         (30, 0, 60, 10)  no
+    +/- 2%         (30, 0, 60, 10)  no
+    +/- 5%         (30, 0, 60, 10)  no
+
+    Original: (30, 0, 60, 10)
+
+----------------------------------------------------------
+  Causal-Decision Coupling
+----------------------------------------------------------
+
+  Portfolio macro exposure:
+    B_p = Sum w_i * beta_i (DGP exposures)
+    Optimal:      B_p  = 1.06   (vs equal-weight B = 0.95)
+
+  The optimizer tilts toward macro-sensitive assets because the
+  causal model identifies macro growth as a structural return
+  driver -- not a spurious correlation with sentiment.
+
+  Coupling chain:
+    S2 DAG -> Z={sentiment} -> S4 NN conditions on sentiment
+        -> S4 back-door marginalizes over sentiment
+           -> S6 optimizer uses S2-adjusted returns + w'Ew risk
+              -> portfolio has higher macro beta than equal-weight
+                 -> S7 scenario analysis validates the tilt
+
+  Remove any link and the result changes:
+    - Without causal model: biased returns, wrong portfolio
+    - Without CLP: no feasibility guarantee
+    - Without covariance: diversification invisible to optimizer
+    - Without AAD: opaque risk decomposition
+
+----------------------------------------------------------
+  Distributed Scenario Validation (Actors)
+----------------------------------------------------------
+
+  Scatter-gather: 4 worker threads via spawn-thread
+  Each thread uses DGP ground truth (independent cross-check)
+
+  Results (DGP ground truth, via actors):
+    Base case:    1.879
+    Growth boom:  2.1226
+    Recession:    1.5542
+    Rate hike:    1.7572
+
+  NN vs DGP cross-check (base case):
+    NN estimate:   1.86884
+    DGP (actors):  1.879
+    Agreement validates both the NN and the actor pathway.
+
+==========================================================
+Pipeline
+==========================================================
+
+  (run-pipeline
+    universe market-dag constraint-spec
+    2.0                      ; lambda (risk aversion)
+    '((base 0.5) (boom 0.8) (recession 0.1) (rate-hike 0.35)))
+
+  => ((allocation 30 0 60 10) (return . 1.86884) (risk . 0.0265266) (score . 1.81579) (scenarios (base 1.86884) (boom 2.07589) (recession 1.55411) (rate-hike 1.76533)))
+
+  Five arguments.  One result.  Every value traceable to ┬º0-┬º7.
+
+==========================================================
+  Portfolio Engine Summary
+----------------------------------------------------------
+
+  Optimal Allocation:
+    Tech 30% | Energy 0% | Finance 60% | Healthcare 10%
+
+  Expected Return (causal): 1.86884
+  Risk (w'Ew):              0.0265266
+
+  Key Drivers:
+    + Macro growth sensitivity (causal model)
+    + Finance exposure with moderate volatility
+    - Tech capped by regulatory constraint
+
+  DGP Validation:
+    NN approximates conditional expectation; errors within noise
+    Causal adjustment set matches known DGP structure
+    Naive estimator biased under this confounding; causal corrects under DAG
+
+  System Capabilities Demonstrated:
+    [Specification]
+    - Symbolic specification (auditable objectives)
+    - Constraint solving (exact feasibility via CLP)
+    [Estimation]
+    - Causal inference (confounding-corrected returns)
+    - Machine learning (nonlinear return estimation)
+    - Covariance risk model (w'Ew, 6 correlation pairs)
+    [Decision]
+    - Automatic differentiation (risk sensitivities)
+    - Scenario analysis (do-operator macro interventions)
+    - Robustness verification (multi-level perturbation)
+    [Distribution]
+    - Actor-based scatter-gather (spawn-thread + send!/recv!)
+
+==========================================================
+  Done.
+==========================================================
+```
 
 ## Verification Summary
 
