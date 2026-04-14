@@ -84,6 +84,7 @@ struct CatchFrame {
     std::size_t                 frame_count;  ///< frames_.size() to restore to
     uint32_t                    stack_top;    ///< stack_.size() before pushing caught value
     std::size_t                 wind_count;   ///< winding_stack_.size() to restore to
+    std::size_t                 tape_count;   ///< active_tapes_.size() to restore to
 };
 
 // Result of dispatch_callee helper
@@ -187,9 +188,15 @@ public:
 
     // AD Tape state
     /// Return the currently active tape (NaN-boxed HeapObject), or Nil if none.
-    [[nodiscard]] LispVal active_tape() const noexcept { return active_tape_; }
-    /// Activate / deactivate a tape.  Pass Nil to deactivate.
-    void set_active_tape(LispVal tape) noexcept { active_tape_ = tape; }
+    [[nodiscard]] LispVal active_tape() const noexcept {
+        return active_tapes_.empty() ? nanbox::Nil : active_tapes_.back();
+    }
+    /// Push a tape onto the active-tape stack (enables nesting).
+    void push_active_tape(LispVal tape) { active_tapes_.push_back(tape); }
+    /// Pop the most recent active tape.  No-op if the stack is empty.
+    void pop_active_tape() { if (!active_tapes_.empty()) active_tapes_.pop_back(); }
+    /// Current depth of the active-tape stack (used by CatchFrame for unwind).
+    [[nodiscard]] std::size_t active_tape_count() const noexcept { return active_tapes_.size(); }
 
 
     // Port accessors
@@ -213,7 +220,7 @@ private:
     std::vector<CatchFrame> catch_stack_;  ///< live exception handlers
     std::vector<LispVal> trail_stack_;     ///< logic-var trail for backtracking
     clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
-    LispVal active_tape_{nanbox::Nil};     ///< Currently active AD tape (HeapObject or Nil)
+    std::vector<LispVal> active_tapes_;    ///< Stack of active AD tapes (supports nesting)
 
     // Current I/O ports
     LispVal current_input_{nanbox::Nil};

@@ -1362,13 +1362,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: argument must be a tape"}});
         if (!heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0])))
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: argument must be a tape"}});
-        vm->set_active_tape(args[0]);
+        vm->push_active_tape(args[0]);
         return True;
     });
 
     env.register_builtin("tape-stop!", 0, false, [vm](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
         if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-stop!: requires a running VM"}});
-        vm->set_active_tape(Nil);
+        vm->pop_active_tape();
         return True;
     });
 

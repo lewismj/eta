@@ -6,11 +6,6 @@
 
 namespace eta::runtime::types {
 
-    /// Thread-local active tape for tape-based AD.
-    /// Set by tape-start!/tape-stop! builtins. Read by VM arithmetic and
-    /// tape-aware transcendentals (sin, cos, exp, log, sqrt).
-    /// Value is a NaN-boxed HeapObject LispVal pointing to a Tape, or 0 = inactive.
-    inline thread_local std::uint64_t g_active_tape = 0;
 
     /// Operation recorded on the AD tape (Wengert list).
     enum class TapeOp : std::uint8_t {

@@ -1879,4 +1879,107 @@ BOOST_FIXTURE_TEST_CASE(tape_multivar_with_sin, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), 3.0 + std::cos(2.0), 0.01);
 }
 
+// ============================================================================
+// Nested tape tests — verify the stack-based active-tape design
+// ============================================================================
+
+BOOST_FIXTURE_TEST_CASE(tape_nested_independent, FunctionalTestFixture) {
+    // Start tape1, then start tape2 inside, stop tape2, continue recording
+    // on tape1.  Both tapes should produce correct, independent gradients.
+    //
+    // tape1: f(x) = x^2  at x=3  => df/dx = 6
+    // tape2: g(y) = y*2  at y=5  => dg/dy = 2
+    LispVal res = run(R"(
+        (module test
+            (define t1 (tape-new))
+            (define x  (tape-var t1 3.0))
+            (tape-start! t1)
+
+            ;; nested tape
+            (define t2 (tape-new))
+            (define y  (tape-var t2 5.0))
+            (tape-start! t2)
+            (define g  (* y 2))
+            (tape-stop!)          ;; pops t2, t1 becomes active again
+            (tape-backward! t2 g)
+
+            ;; continue on t1
+            (define f  (* x x))
+            (tape-stop!)          ;; pops t1
+            (tape-backward! t1 f)
+
+            ;; df/dx=6, dg/dy=2  => 6 + 2 = 8
+            (define result (+ (tape-adjoint t1 x) (tape-adjoint t2 y)))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 8.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_nested_start_stop_balancing, FunctionalTestFixture) {
+    // After starting and stopping two nested tapes, the active-tape stack
+    // should be empty — subsequent arithmetic should NOT record.
+    // Verify by computing a plain addition that returns a number, not a TapeRef.
+    LispVal res = run(R"(
+        (module test
+            (define t1 (tape-new))
+            (define t2 (tape-new))
+            (tape-start! t1)
+            (tape-start! t2)
+            (tape-stop!)
+            (tape-stop!)
+            ;; No tape active — plain arithmetic
+            (define result (+ 10 20))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 30.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_exception_unwinds_tape_stack, FunctionalTestFixture) {
+    // Start a tape, throw an exception, catch it — the tape stack should be
+    // unwound so subsequent arithmetic is plain (not tape-recorded).
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define caught
+                (catch 'boom
+                    (begin
+                        (tape-start! t)
+                        (raise 'boom 'oops))))
+            ;; tape-stack should have been restored by the exception handler
+            ;; so this is plain arithmetic, not a TapeRef
+            (define result (+ 100 200))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 300.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_exception_preserves_outer_tape, FunctionalTestFixture) {
+    // Outer tape is active, inner tape is started then an exception fires.
+    // After the catch the outer tape should still be active and recording.
+    //
+    // outer: f(x) = x * 3  at x=4  => df/dx = 3
+    LispVal res = run(R"(
+        (module test
+            (define t-outer (tape-new))
+            (define x (tape-var t-outer 4.0))
+            (tape-start! t-outer)
+
+            ;; Inner block that throws — its tape-start! should be unwound
+            (define t-inner (tape-new))
+            (define caught
+                (catch 'fail
+                    (begin
+                        (tape-start! t-inner)
+                        (raise 'fail 'caught))))
+
+            ;; The outer tape should still be active
+            (define f (* x 3))
+            (tape-stop!)
+            (tape-backward! t-outer f)
+            (define result (tape-adjoint t-outer x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 3.0, 1e-10);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
