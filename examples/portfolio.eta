@@ -1284,7 +1284,7 @@
 
     ;; Cleanup
     (for-each (lambda (w) (thread-join w) (nng-close w))
-              (list w-base w-boom w-recess w-rate))
+              (list w-base)) ;;w-boom w-recess w-rate))
 
     (display "  Results (DGP ground truth, via actors):\n")
     (display "    Base case:    ") (println res-base)

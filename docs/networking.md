@@ -7,7 +7,7 @@
 ---
 
 > nng (nanomsg-next-generation) socket primitives for Eta.
-> Available when the interpreter is built with `-DETA_BUILD_NNG=ON`.
+> nng is a required dependency, fetched automatically at build time.
 
 ---
 

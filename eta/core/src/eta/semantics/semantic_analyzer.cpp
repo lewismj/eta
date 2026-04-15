@@ -573,6 +573,7 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::read
     // Builtins occupy slots 0..N-1; subsequent modules share the rest.
     uint32_t next_global = static_cast<uint32_t>(builtins.size());
 
+
     // Map (module_name, export_name) -> unified global slot.
     // Built incrementally as modules are analyzed.
     std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> export_slots;
@@ -605,6 +606,7 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::read
             }
             ctx.shared_next_global = &next_global; // restore shared counter
         }
+
 
         // Wire imports to the exporting module's unified slot
         for (const auto& [ln, orign] : mtref->get().import_origins) {

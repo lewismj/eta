@@ -8,29 +8,18 @@ add_executable(eta_lsp
 
 target_include_directories(eta_lsp
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
 )
 
-target_link_libraries(eta_lsp PRIVATE eta_core)
-
-# Torch integration (when available — provides completion/hover for torch builtins)
-if(ETA_BUILD_TORCH)
-    target_link_libraries(eta_lsp PRIVATE eta_torch)
-    target_compile_definitions(eta_lsp PRIVATE ETA_HAS_TORCH=1)
-    eta_copy_torch_dlls(eta_lsp)
-endif()
-
-# nng integration (when available — provides completion/hover for nng builtins)
-if(ETA_BUILD_NNG)
-    target_link_libraries(eta_lsp PRIVATE eta_nng)
-    target_compile_definitions(eta_lsp PRIVATE ETA_HAS_NNG=1)
-    eta_copy_nng_dlls(eta_lsp)
-endif()
+target_link_libraries(eta_lsp PRIVATE eta_core eta_torch eta_nng eta_stats)
+target_compile_definitions(eta_lsp PRIVATE ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
+eta_copy_torch_dlls(eta_lsp)
+eta_copy_nng_dlls(eta_lsp)
 
 # Platform-specific libraries
 if(NOT MSVC)
     target_link_libraries(eta_lsp PRIVATE stdc++ m)
 
-    # Check for PEXT support (mirrors core/interpreter setup)
     include(CheckCXXSourceCompiles)
     set(CMAKE_REQUIRED_FLAGS "-mbmi2")
     set(CMAKE_CXX_SCAN_FOR_MODULES_OLD ${CMAKE_CXX_SCAN_FOR_MODULES})
@@ -55,4 +44,3 @@ if(NOT MSVC)
 endif()
 
 install(TARGETS eta_lsp RUNTIME DESTINATION bin)
-

@@ -19,9 +19,9 @@ etai examples/torch.eta
 ```
 
 > [!NOTE]
-> Requires the interpreter to be built with `-DETA_BUILD_TORCH=ON`.
-> libtorch is downloaded automatically at configure time (CPU ~200 MB).
-> Pass `-DETA_TORCH_BACKEND=cu121` for CUDA support (~2 GB).
+> libtorch is a required dependency.  If not found by `find_package(Torch)`
+> the build system downloads the official pre-built CPU archive automatically
+> (~200 MB).  Pass `-DETA_TORCH_BACKEND=cu121` to select a CUDA variant (~2 GB).
 
 ---
 
@@ -445,19 +445,18 @@ Tensors and modules can be moved between CPU and GPU:
 ### CMake Options
 
 ```bash
-cmake -B build -DETA_BUILD_TORCH=ON          # CPU-only (auto-downloads libtorch)
-cmake -B build -DETA_BUILD_TORCH=ON -DETA_TORCH_BACKEND=cu121  # CUDA 12.1
+cmake -B build                                       # CPU-only (auto-downloads libtorch)
+cmake -B build -DETA_TORCH_BACKEND=cu121             # CUDA 12.1
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `ETA_BUILD_TORCH` | `OFF` | Enable libtorch integration |
-| `ETA_TORCH_BACKEND` | `cpu` | `cpu`, `cu118`, `cu121`, or `cu124` |
+| `ETA_TORCH_BACKEND` | `cpu` | libtorch variant: `cpu`, `cu118`, `cu121`, or `cu124` |
 | `ETA_LIBTORCH_VER` | `2.5.1` | libtorch version to download |
 
-If libtorch is not found by `find_package(Torch)`, the build system
-automatically downloads the official pre-built archive from
-`download.pytorch.org`.  The download is cached in the build directory, so
+libtorch is downloaded automatically if not found by `find_package(Torch)`.
+The build system fetches the official pre-built archive from
+`download.pytorch.org`.  The download is cached in the build directory so
 re-configures do not re-download.
 
 ### Manual libtorch
@@ -465,7 +464,7 @@ re-configures do not re-download.
 If you prefer to manage libtorch yourself:
 
 ```bash
-cmake -B build -DETA_BUILD_TORCH=ON -DTorch_DIR=/path/to/libtorch/share/cmake/Torch
+cmake -B build -DTorch_DIR=/path/to/libtorch/share/cmake/Torch
 ```
 
 ---
@@ -514,7 +513,7 @@ at the primitive level, verifying heap lifecycle, GC behavior, error paths,
 and end-to-end training convergence directly against the C++ API.
 
 ```bash
-# Run C++ torch tests (after building with -DETA_BUILD_TORCH=ON)
+# Run C++ torch tests
 ctest --test-dir build -R torch
 ```
 

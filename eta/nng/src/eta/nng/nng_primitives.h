@@ -210,12 +210,16 @@ inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure
     semantics::BytecodeFunctionRegistry new_reg;
     for (uint32_t old_idx : order) {
         const auto* f = src_reg.get(old_idx);
-        if (!f) return std::nullopt;
+        if (!f) {
+            return std::nullopt;
+        }
         runtime::vm::BytecodeFunction copy = *f;
         for (auto& c : copy.constants) {
             if (runtime::vm::is_func_index(c)) {
                 auto it = remap.find(runtime::vm::decode_func_index(c));
-                if (it == remap.end()) return std::nullopt;
+                if (it == remap.end()) {
+                    return std::nullopt;
+                }
                 c = runtime::vm::encode_func_index(it->second);
             }
         }
@@ -231,17 +235,21 @@ inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure
 
     std::ostringstream oss(std::ios::binary);
     // Pass num_builtins=0 to skip builtin-count validation on deserialization
-    if (!ser.serialize({mod}, new_reg, 0, false, oss, {}, 0))
+    if (!ser.serialize({mod}, new_reg, 0, false, oss, {}, 0)) {
         return std::nullopt;
+    }
 
     ProcessManager::SerializedClosure sc;
     auto str = oss.str();
     sc.funcs_bytes = std::vector<uint8_t>(str.begin(), str.end());
 
     // 5. Serialize upvalues via binary wire format
-    for (const auto& uv : upvals) {
+    for (std::size_t i = 0; i < upvals.size(); ++i) {
+        const auto& uv = upvals[i];
         auto bin = serialize_binary(uv, heap, intern);
-        if (bin.empty()) return std::nullopt; // non-serializable upvalue
+        if (bin.empty()) {
+            return std::nullopt;
+        }
         sc.upvals.push_back(std::move(bin));
     }
     return sc;
@@ -597,7 +605,9 @@ inline void register_nng_primitives(
                 result = deserialize_value(sv, heap, intern);
             }
             nng_free(buf, sz);
-            if (!result) return std::unexpected(result.error());
+            if (!result) {
+                return std::unexpected(result.error());
+            }
             return *result;
         });
 
@@ -607,7 +617,7 @@ inline void register_nng_primitives(
     // Checks each socket with non-blocking recv; buffers any received
     // message into the socket's pending_msgs queue and marks it as ready.
     env.register_builtin("nng-poll", 2, false,
-        [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
+        [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
             // Parse timeout-ms
             int64_t timeout_ms = 0;
             {
@@ -1200,6 +1210,35 @@ inline void register_nng_primitives(
 
             return nanbox::True;
         });
+}
+
+/// Analysis-only name registration — no nng dependency required at link time.
+/// MUST be kept in sync with register_nng_primitives() above (same order).
+inline void register_nng_builtin_names(BuiltinEnvironment& env) {
+    auto r = [&env](const char* name, uint32_t arity, bool has_rest) {
+        env.register_builtin(name, arity, has_rest, PrimitiveFunc{});
+    };
+    r("nng-socket",          1, false);
+    r("nng-listen",          2, false);
+    r("nng-dial",            2, false);
+    r("nng-close",           1, false);
+    r("nng-socket?",         1, false);
+    r("send!",               2, true);
+    r("recv!",               1, true);
+    r("nng-poll",            2, false);
+    r("nng-subscribe",       2, false);
+    r("nng-set-option",      3, false);
+    r("spawn",               1, true);
+    r("spawn-kill",          1, false);
+    r("spawn-wait",          1, false);
+    r("current-mailbox",     0, false);
+    r("spawn-thread-with",   2, true);
+    r("spawn-thread",        1, false);
+    r("thread-join",         1, false);
+    r("thread-alive?",       1, false);
+    r("monitor",             1, false);
+    r("demonitor",           1, false);
+    r("enable-heartbeat",    2, false);
 }
 
 } // namespace eta::nng

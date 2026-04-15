@@ -5,14 +5,14 @@
  * @brief Analysis-only builtin registration for the LSP and other tools
  *        that need to know builtin names/arities but do NOT execute code.
  *
- * Registers every builtin that the runtime provides (core + port + io) into
- * a BuiltinEnvironment using null PrimitiveFuncs.  The SemanticAnalyzer only
- * reads names/arities from the env to pre-allocate global slots — it never
- * calls the funcs — so null is safe here.
+ * Registers every builtin that the runtime provides (core + port + io +
+ * torch + stats + nng) into a BuiltinEnvironment using null PrimitiveFuncs.
+ * The SemanticAnalyzer only reads names/arities from the env to pre-allocate
+ * global slots — it never calls the funcs — so null is safe here.
  *
- * Registration order MUST stay in sync with the three runtime headers:
- *   core_primitives.h  →  port_primitives.h  →  io_primitives.h
- * because the order determines the global-slot indices used by emitted IR.
+ * REGISTRATION ORDER must stay in sync with all_primitives.h / driver.h:
+ *   core_primitives.h → port_primitives.h → io_primitives.h
+ *   → torch_primitives.h → stats_primitives.h → nng_primitives.h
  */
 
 #include "eta/runtime/builtin_env.h"
@@ -166,6 +166,20 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%fact-table-ref",         3, false);
     r("%fact-table-row-count",   1, false);
 
+    // Statistics builtins (must match core_primitives.h registration order)
+    r("%stats-mean",             1, false);
+    r("%stats-variance",         1, false);
+    r("%stats-stddev",           1, false);
+    r("%stats-sem",              1, false);
+    r("%stats-percentile",       2, false);
+    r("%stats-covariance",       2, false);
+    r("%stats-correlation",      2, false);
+    r("%stats-t-cdf",            2, false);
+    r("%stats-t-quantile",       2, false);
+    r("%stats-ci",               2, false);
+    r("%stats-t-test-2",         2, false);
+    r("%stats-ols",              2, false);
+
     // ====================================================================
     // port_primitives.h  (must match registration order exactly)
     // ====================================================================
@@ -205,46 +219,8 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("write",   1, true);
     r("newline", 0, true);
 
-#ifdef ETA_HAS_NNG
-    // ====================================================================
-    // nng_primitives.h  (must match registration order exactly)
-    //
-    // These are always registered when ETA_HAS_NNG is defined, even in
-    // analysis-only mode (LSP), so that nng/* names resolve and get
-    // correct arity checking.  The actual implementations are linked
-    // only when a live VM is involved (interpreter, DAP).
-    // ====================================================================
-    r("nng-socket",     1, false);
-    r("nng-listen",     2, false);
-    r("nng-dial",       2, false);
-    r("nng-close",      1, false);
-    r("nng-socket?",    1, false);
-    r("send!",          2, true);
-    r("recv!",          1, true);
-    r("nng-poll",       2, false);
-    r("nng-subscribe",  2, false);
-    r("nng-set-option", 3, false);
-    r("spawn",           1, true);
-    r("spawn-kill",      1, false);
-    r("spawn-wait",      1, false);
-    r("current-mailbox", 0, false);
-    r("spawn-thread-with", 2, true);
-    r("spawn-thread",      1, false);
-    r("thread-join",       1, false);
-    r("thread-alive?",     1, false);
-    r("monitor",           1, false);
-    r("demonitor",         1, false);
-    r("enable-heartbeat",  2, false);
-#endif // ETA_HAS_NNG
-
-#ifdef ETA_HAS_TORCH
     // ====================================================================
     // torch_primitives.h  (must match registration order exactly)
-    //
-    // These are always registered when ETA_HAS_TORCH is defined, even in
-    // analysis-only mode (LSP), so that torch/* names resolve and get
-    // correct arity checking.  The actual implementations are linked
-    // only when a live VM is involved (interpreter, DAP).
     // ====================================================================
 
     // Tensor creation
@@ -342,7 +318,41 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("torch/device",             1, false);
     r("torch/to-device",          2, false);
     r("nn/to-device",             2, false);
-#endif // ETA_HAS_TORCH
+
+    // ====================================================================
+    // stats_primitives.h  (must match registration order exactly)
+    // ====================================================================
+    r("stats/mean-vec",     2, false);
+    r("stats/var-vec",      2, false);
+    r("stats/cov",          2, false);
+    r("stats/cor",          2, false);
+    r("stats/quantile-vec", 3, false);
+    r("stats/ols-multi",    3, false);
+
+    // ====================================================================
+    // nng_primitives.h  (must match registration order exactly)
+    // ====================================================================
+    r("nng-socket",          1, false);
+    r("nng-listen",          2, false);
+    r("nng-dial",            2, false);
+    r("nng-close",           1, false);
+    r("nng-socket?",         1, false);
+    r("send!",               2, true);
+    r("recv!",               1, true);
+    r("nng-poll",            2, false);
+    r("nng-subscribe",       2, false);
+    r("nng-set-option",      3, false);
+    r("spawn",               1, true);
+    r("spawn-kill",          1, false);
+    r("spawn-wait",          1, false);
+    r("current-mailbox",     0, false);
+    r("spawn-thread-with",   2, true);
+    r("spawn-thread",        1, false);
+    r("thread-join",         1, false);
+    r("thread-alive?",       1, false);
+    r("monitor",             1, false);
+    r("demonitor",           1, false);
+    r("enable-heartbeat",    2, false);
 }
 
 } // namespace eta::runtime

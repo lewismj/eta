@@ -35,7 +35,8 @@
   <a href="docs/clp.md">Constraint Logic Programming</a> ·
   <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a> ·
   <a href="docs/fact-table.md">Fact Tables</a> ·
-  <a href="docs/torch.md">Neural Networks with libtorch</a>
+  <a href="docs/stats.md">Eigen: Linear Algebra, Statistics</a> ·
+  <a href="docs/torch.md">LibTorch: Neural Networks</a>
 </p>
 <br>
 <p align="center">
@@ -65,7 +66,8 @@ full compilation pipeline).
 | **Logic Programming** | VM-native structural unification & backtracking — seven dedicated opcodes give you Prolog-style pattern matching without leaving the language | [Logic](docs/logic.md) |
 | **Constraint Logic Programming** | `clp(Z)` integer-interval and `clp(FD)` finite-domain solvers built on the unification layer | [CLP](docs/clp.md) |
 | **Reverse-Mode AAD** | VM-native tape-based automatic differentiation — standard arithmetic is recorded transparently when a `TapeRef` operand is present; zero closure overhead | [AAD – Finance Examples](docs/aad.md) |
-| **Neural Networks (libtorch)** | Native C++ bindings to PyTorch's backend — tensors, autograd, NN layers, optimizers, and GPU offload from Eta code | [Torch](docs/torch.md) |
+| **Linear Algebra & Statistics** | Eigen-backed multivariate OLS, covariance/correlation matrices, column quantiles over FactTables; plus `std.stats` descriptive stats, CIs, t-tests, and simple OLS over lists | [Stats](docs/stats.md) |
+| **Neural Networks (libtorch)** | Native C++ bindings to PyTorch's backend — tensors, autograd, NN layers, optimizers, and GPU offload from Eta code | [LibTorch](docs/torch.md) |
 | **Causal Inference** | Pearl's do-calculus engine, back-door / front-door adjustment, and end-to-end factor analysis | [Causal](docs/causal.md) |
 | **Message Passing & Actors** | Erlang-style actor model via nng: `spawn` child processes, `send!`/`recv!` over PAIR sockets, `worker-pool` parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT — network-transparent across machines | [Networking](docs/networking.md) · [Message Passing](docs/message-passing.md) |
 | **End-to-End Pipeline** | All domains compose: symbolic differentiation → do-calculus identification → logic/CLP validation → libtorch neural estimation | [Causal Factor Pipeline](docs/causal-factor.md) |
@@ -250,6 +252,7 @@ eta-v0.2.0-<platform>/
     european.eta            # European option Greeks (1st & 2nd order) with AAD
     sabr.eta                # SABR vol surface with tape-based AD
     fact-table.eta          # Columnar fact tables with hash-indexed queries
+    stats.eta               # Descriptive stats, t-tests, OLS regression
     torch.eta               # Tensor computing & neural network training (libtorch)
     causal_demo.eta         # Demo: symbolic + causal + logic/CLP + libtorch
     message-passing.eta     # Erlang-style parent/child messaging (spawn/send!/recv!)
@@ -338,7 +341,7 @@ flowchart LR
 | **Concurrent Heap** | `boost::unordered::concurrent_flat_map` with 16 shards for lock-free reads.                                                                                                       |
 | **LSP Integration** | JSON-RPC language server for real-time diagnostics in any editor.                                                                                                                 |
 | **DAP Integration** | Debug Adapter Protocol server (`eta_dap`) enables breakpoints, step-through debugging, call-stack inspection, and REPL-style expression evaluation directly in VS Code.           |
-| **libtorch Integration** | Optional native bindings to PyTorch's C++ backend for tensors, autograd, neural-network layers, optimizers, and GPU offload. [→ Deep-dive](docs/torch.md) |
+| **libtorch Integration** | Native C++ bindings to PyTorch's backend for tensors, autograd, neural-network layers, optimizers, and GPU offload. [→ Deep-dive](docs/torch.md) |
 | **nng Networking** | Erlang-style actor model: `spawn` processes, `send!`/`recv!`, `worker-pool` for parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT — network-transparent over IPC or TCP. [→ Deep-dive](docs/networking.md) · [Actor Model](docs/message-passing.md) |
 
 ---
@@ -365,9 +368,10 @@ flowchart LR
 | **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`           |
 | **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                             |
 | **[Fact Tables](docs/fact-table.md)**      | Columnar fact tables with hash-indexed queries, iteration, and fold                           |
+| **[Linear Algebra & Statistics](docs/stats.md)** | Eigen-backed multivariate stats on FactTables; `std.stats` descriptive stats, CIs, t-tests, OLS |
 | **[End-to-End Causal Pipeline](docs/causal-factor.md)** | Showcase: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE                             |
 | **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support               |
-| **[Next Steps](docs/next-steps.md)**       | Roadmap: network stack, VS Code debugger improvements, performance                            |
+| **[Next Steps](docs/next-steps.md)**       | Roadmap: compiler, GC, testing, logic/CLP upgrades, VS Code improvements, Jupyter kernel |
 
 ---
 
@@ -420,8 +424,9 @@ eta/
 │   ├── interpreter/            # etai + eta_repl (Driver orchestration)
 │   ├── lsp/                    # eta_lsp (Language Server Protocol, JSON-RPC over stdio)
 │   ├── dap/                    # eta_dap (Debug Adapter Protocol, DAP over stdio)
-│   ├── nng/                    # nng networking layer (optional, -DETA_BUILD_NNG=ON)
-│   ├── torch/                  # libtorch integration (optional, -DETA_BUILD_TORCH=ON)
+│   ├── nng/                    # nng networking layer
+│   ├── torch/                  # libtorch integration
+│   ├── stats/                  # Eigen-backed statistics primitives
 │   ├── test/                   # Boost.Test unit tests
 │   └── fuzz/                   # Fuzz testing (heap, intern table, nanbox)
 ├── stdlib/                     # Standard library (.eta files)
@@ -436,6 +441,7 @@ eta/
 │       ├── causal.eta          # DAG utilities & Pearl do-calculus engine
 │       ├── fact_table.eta      # Columnar fact tables with hash indexes
 │       ├── torch.eta           # libtorch wrappers (tensors, NN, optimizers)
+│       ├── stats.eta           # Descriptive stats, CIs, t-tests, OLS
 │       ├── net.eta             # Networking & actor model (nng): spawn, send!, recv!, worker-pool
 │       └── test.eta            # Lightweight test framework
 ├── examples/                   # Example programs

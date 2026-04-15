@@ -73,6 +73,8 @@ bool VM::values_eqv(LispVal a, LispVal b) {
 void VM::collect_garbage() {
     if (!gc_) return;
 
+    gc_collections_++;
+
     gc_->collect(heap_, [&](auto&& visit) {
         // Mark stack
         for (auto v : stack_) visit(v);
@@ -93,6 +95,8 @@ void VM::collect_garbage() {
         }
         // Mark temporary roots
         for (auto v : temp_roots_) visit(v);
+        // Mark external roots registered by non-VM heap reconstruction helpers
+        for (auto v : heap_.external_roots()) visit(v);
         // Mark current ports
         visit(current_input_);
         visit(current_output_);
@@ -253,6 +257,13 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     const LispVal           saved_closure = current_closure_;
     const auto              saved_frames  = frames_.size();
     const uint32_t          nested_sp     = static_cast<uint32_t>(stack_.size());
+    const auto              saved_temp_roots = temp_roots_.size();
+
+    // Protect proc from GC for the entire closure execution.
+    // Tail calls inside the closure body may overwrite current_closure_
+    // and reuse the frame, leaving proc unreachable from normal GC roots
+    // while C++ callers (e.g. for-each, map) still hold a reference to it.
+    temp_roots_.push_back(proc);
 
     // Helper: restore outer state and truncate any accumulated frames
     auto restore = [&]() {
@@ -262,6 +273,7 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
         pc_              = saved_pc;
         fp_              = saved_fp;
         current_closure_ = saved_closure;
+        temp_roots_.resize(saved_temp_roots);
     };
 
     // Temporarily null out execution state so that setup_frame saves a
@@ -305,6 +317,7 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     pc_              = saved_pc;
     fp_              = saved_fp;
     current_closure_ = saved_closure;
+    temp_roots_.resize(saved_temp_roots);
 
     return result;
 }

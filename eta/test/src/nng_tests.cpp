@@ -2673,6 +2673,119 @@ BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
     BOOST_TEST_MESSAGE("spawn-thread multi-upvalue OK: (11 21 31)");
 }
 
+BOOST_AUTO_TEST_CASE(spawn_thread_list_payload_and_quoted_constant_regression) {
+    std::string stdlib_path;
+#ifdef ETA_STDLIB_DIR
+    stdlib_path = ETA_STDLIB_DIR;
+#endif
+    if (stdlib_path.empty()) {
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set — skipping spawn-thread list/quote regression test");
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    using namespace eta::interpreter;
+
+    ModulePathResolver resolver({fs::path(stdlib_path)});
+    Driver driver(std::move(resolver));
+    driver.load_prelude();
+
+    const char* src = R"eta(
+(module spawn-thread-list-quote-regression
+  (begin
+    (define result #f)
+    (define t
+      (spawn-thread
+        (lambda ()
+          (let* ((mb   (current-mailbox))
+                 (task (recv! mb 'wait))
+                 (a    (car task))
+                 (b    (car (cdr task)))
+                 (svs  '(0.1 0.3 0.5 0.7 0.9)))
+            (send! mb (+ a (+ b (car svs))) 'wait)))))
+    (send! t (list 30 10 40 20 0.5) 'wait)
+    (set! result (recv! t 'wait))
+    (thread-join t)
+    (nng-close t)))
+)eta";
+
+    LispVal result_val{Nil};
+    bool ok = driver.run_source(src, &result_val, "result");
+    BOOST_REQUIRE_MESSAGE(ok, "Driver::run_source failed for spawn-thread list/quote regression test");
+
+    auto dec = ops::decode<double>(result_val);
+    BOOST_REQUIRE_MESSAGE(dec.has_value(), "result is not a flonum");
+    BOOST_CHECK_CLOSE(*dec, 40.1, 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_portfolio_worker_shape_regression) {
+    std::string stdlib_path;
+#ifdef ETA_STDLIB_DIR
+    stdlib_path = ETA_STDLIB_DIR;
+#endif
+    if (stdlib_path.empty()) {
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set — skipping portfolio worker-shape regression test");
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    using namespace eta::interpreter;
+
+    ModulePathResolver resolver({fs::path(stdlib_path)});
+    Driver driver(std::move(resolver));
+    driver.load_prelude();
+
+    const char* src = R"eta(
+(module spawn-thread-portfolio-worker-shape
+  (begin
+    ;; Create some garbage before the actor stage so GC pressure is closer to
+    ;; the real portfolio example than the simple list/quote regression above.
+    (define (burn n acc)
+      (if (= n 0) acc
+          (burn (- n 1) (cons n acc))))
+    (burn 20000 '())
+
+    (define result #f)
+    (define t
+      (spawn-thread
+        (lambda ()
+          (let* ((mb (current-mailbox))
+                 (task (recv! mb 'wait))
+                 (wt  (/ (car task) 100.0))
+                 (we  (/ (car (cdr task)) 100.0))
+                 (wf  (/ (car (cdr (cdr task))) 100.0))
+                 (wh  (/ (car (cdr (cdr (cdr task)))) 100.0))
+                 (mv  (car (cdr (cdr (cdr (cdr task)))))))
+            (letrec ((dgp (lambda (b m sc r s)
+                            (+ (* 1.2 b) (+ (* 0.6 m) (+ (* 0.4 sc)
+                               (+ (* -0.3 r) (+ (* 0.2 (* b m))
+                                  (* 0.5 s))))))))
+                     (avg-sent (lambda (svs acc n)
+                                 (if (null? svs) (/ acc n)
+                                     (let ((sv (car svs)))
+                                       (avg-sent (cdr svs)
+                                         (+ acc (+ (* wt (dgp 1.3 mv  1.0 0.03 sv))
+                                                   (+ (* we (dgp 0.8 mv  0.0 0.03 sv))
+                                                      (+ (* wf (dgp 1.0 mv -0.5 0.03 sv))
+                                                         (* wh (dgp 0.7 mv -1.0 0.03 sv))))))
+                                         (+ n 1)))))))
+              (send! mb (avg-sent '(0.1 0.3 0.5 0.7 0.9) 0 0) 'wait))))))
+
+    (send! t (list 30 10 40 20 0.5) 'wait)
+    (set! result (recv! t 'wait))
+    (thread-join t)
+    (nng-close t)))
+)eta";
+
+    LispVal result_val{Nil};
+    bool ok = driver.run_source(src, &result_val, "result");
+    BOOST_REQUIRE_MESSAGE(ok, "Driver::run_source failed for portfolio worker-shape regression test");
+
+    auto dec = ops::decode<double>(result_val);
+    BOOST_REQUIRE_MESSAGE(dec.has_value(), "portfolio worker-shape result is not a flonum");
+    BOOST_CHECK_CLOSE(*dec, 1.814, 1e-9);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 // Monitoring, Heartbeats & Supervision

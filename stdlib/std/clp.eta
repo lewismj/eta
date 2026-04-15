@@ -198,7 +198,7 @@
       (every? (lambda (group)
                 (let ((ground-vals
                         (filter (lambda (v) (not (logic-var? v)))
-                                (map* deref-lvar group))))
+                                (map* (lambda (v) (deref-lvar v)) group))))
                   (%clp-all-distinct? ground-vals)))
               *clp-adiff-groups*))
 

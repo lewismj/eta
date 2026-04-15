@@ -7,6 +7,7 @@
 #include <memory>
 #include <ostream>
 #include <functional>
+#include <vector>
 #include <boost/unordered/concurrent_flat_map.hpp>
 
 #include <eta/arch.h>
@@ -115,6 +116,35 @@ namespace eta::runtime::memory::heap {
 
     class Heap {
     public:
+        class ExternalRootFrame {
+        public:
+            explicit ExternalRootFrame(Heap& heap)
+                : heap_(heap), saved_size_(heap.external_roots_.size()) {}
+
+            ExternalRootFrame(const ExternalRootFrame&) = delete;
+            ExternalRootFrame& operator=(const ExternalRootFrame&) = delete;
+
+            ExternalRootFrame(ExternalRootFrame&& other) noexcept
+                : heap_(other.heap_), saved_size_(other.saved_size_), active_(other.active_) {
+                other.active_ = false;
+            }
+
+            ExternalRootFrame& operator=(ExternalRootFrame&&) = delete;
+
+            ~ExternalRootFrame() {
+                if (active_) heap_.external_roots_.resize(saved_size_);
+            }
+
+            void push(LispVal v) {
+                heap_.external_roots_.push_back(v);
+            }
+
+        private:
+            Heap& heap_;
+            std::size_t saved_size_{};
+            bool active_{true};
+        };
+
         explicit Heap(size_t max_heap_soft_limit);
         ~Heap();
 
@@ -249,6 +279,9 @@ namespace eta::runtime::memory::heap {
 
         void set_gc_callback(std::function<void()> cb) { gc_callback_ = std::move(cb); }
 
+        ExternalRootFrame make_external_root_frame() { return ExternalRootFrame(*this); }
+        const std::vector<LispVal>& external_roots() const { return external_roots_; }
+
         // Sweep the cons pool and adjust total_heap_bytes.
         // Returns the number of freed pool cells.
         std::size_t sweep_cons_pool();
@@ -284,6 +317,7 @@ namespace eta::runtime::memory::heap {
         std::array<Shard, NUM_SHARDS> shards;
         std::atomic<ObjectId> next_id{ 1 };
         std::unique_ptr<ConsPool> cons_pool_;
+        std::vector<LispVal> external_roots_;
 
     };
 

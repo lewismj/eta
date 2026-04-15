@@ -333,10 +333,12 @@ void Emitter::emit_quote(const core::Quote& n, Context& ctx, const Span& span) {
                 }, node.value);
             } else if constexpr (std::is_same_v<T, P::List>) {
                 LispVal result;
+                auto roots = heap_.make_external_root_frame();
                 if (node.dotted && node.tail) {
                     auto tail_res = self(self, *node.tail);
                     if (!tail_res) return std::unexpected(tail_res.error());
                     result = *tail_res;
+                    roots.push(result);
                 } else {
                     result = Nil;
                 }
@@ -344,32 +346,39 @@ void Emitter::emit_quote(const core::Quote& n, Context& ctx, const Span& span) {
                     if (!*it) continue;
                     auto elem = self(self, **it);
                     if (!elem) return std::unexpected(elem.error());
+                    roots.push(*elem);
                     auto cons = make_cons(heap_, *elem, result);
                     if (!cons) return std::unexpected(cons.error());
                     result = *cons;
+                    roots.push(result);
                 }
                 return result;
             } else if constexpr (std::is_same_v<T, P::Vector>) {
                 std::vector<LispVal> elems;
                 elems.reserve(node.elems.size());
+                auto roots = heap_.make_external_root_frame();
                 for (const auto& e : node.elems) {
                     if (!e) continue;
                     auto elem = self(self, *e);
                     if (!elem) return std::unexpected(elem.error());
                     elems.push_back(*elem);
+                    roots.push(*elem);
                 }
                 return make_vector(heap_, std::move(elems));
             } else if constexpr (std::is_same_v<T, P::ByteVector>) {
                 return make_bytevector(heap_, node.bytes);
             } else if constexpr (std::is_same_v<T, P::ReaderForm>) {
                 if (node.kind == P::QuoteKind::Quote && node.expr) {
+                    auto roots = heap_.make_external_root_frame();
                     auto sym_res = intern_table_.intern("quote");
                     if (!sym_res) return std::unexpected(sym_res.error());
                     auto sym_val = ops::box(Tag::Symbol, *sym_res);
                     auto datum_val = self(self, *node.expr);
                     if (!datum_val) return std::unexpected(datum_val.error());
+                    roots.push(*datum_val);
                     auto inner = make_cons(heap_, *datum_val, Nil);
                     if (!inner) return std::unexpected(inner.error());
+                    roots.push(*inner);
                     return make_cons(heap_, sym_val, *inner);
                 }
                 return Nil;

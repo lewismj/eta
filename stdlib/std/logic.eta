@@ -13,9 +13,10 @@
 ;;;   (copy-term t)        – deep copy term; unbound vars → fresh copies
 ;;;
 ;;; This module adds higher-level combinators on top of those primitives.
-;;; It has no external dependencies — all helpers are self-contained.
+;;; It depends on std.collections for map* (used in membero).
 
 (module std.logic
+  (import std.collections)
   (export
     ;; Unification as a callable goal function
     ==

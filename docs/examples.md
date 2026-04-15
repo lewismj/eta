@@ -933,7 +933,6 @@ Prefix is especially useful when two modules export the same name:
 
 ## Networking & Message Passing
 
-Requires the interpreter built with `-DETA_BUILD_NNG=ON` (the default).
 All examples import `(import std.net)` which provides both the raw nng
 primitives and high-level helpers.
 

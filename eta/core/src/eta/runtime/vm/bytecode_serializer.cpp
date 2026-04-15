@@ -210,10 +210,13 @@ BytecodeSerializer::read_constant(std::istream& is) const {
             return encode_func_index(idx);
         }
         case CT_HeapCons: {
+            auto roots = heap_.make_external_root_frame();
             auto car = read_constant(is);
             if (!car) return car;
+            roots.push(*car);
             auto cdr = read_constant(is);
             if (!cdr) return cdr;
+            roots.push(*cdr);
             auto res = memory::factory::make_cons(heap_, *car, *cdr);
             if (!res) return std::unexpected(SerializerError::CorruptConstant);
             return *res;
@@ -223,10 +226,12 @@ BytecodeSerializer::read_constant(std::istream& is) const {
             if (!read_u32(is, len)) return std::unexpected(SerializerError::Truncated);
             std::vector<LispVal> elems;
             elems.reserve(len);
+            auto roots = heap_.make_external_root_frame();
             for (uint32_t i = 0; i < len; ++i) {
                 auto elem = read_constant(is);
                 if (!elem) return elem;
                 elems.push_back(*elem);
+                roots.push(*elem);
             }
             auto res = memory::factory::make_vector(heap_, std::move(elems));
             if (!res) return std::unexpected(SerializerError::CorruptConstant);

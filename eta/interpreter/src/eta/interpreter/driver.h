@@ -25,24 +25,20 @@
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/disassembler.h"
 #include "eta/runtime/builtin_env.h"
-#include "eta/runtime/core_primitives.h"
-#include "eta/runtime/io_primitives.h"
-#include "eta/runtime/port_primitives.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/diagnostic/diagnostic.h"
 
-#ifdef ETA_HAS_TORCH
-#include <eta/torch/torch_primitives.h>
-#endif
+// Single source of truth for live primitive registration order:
+//   core → port → io → torch → stats → nng
+#include "eta/interpreter/all_primitives.h"
 
-#ifdef ETA_HAS_NNG
+// NNG — registered separately (requires driver-specific arguments)
 #include <nng/nng.h>
 #include <nng/protocol/pair0/pair.h>
 #include <eta/nng/nng_socket_ptr.h>
 #include <eta/nng/nng_factory.h>
 #include <eta/nng/nng_primitives.h>
 #include <eta/nng/process_mgr.h>
-#endif
 
 #include "eta/interpreter/module_path.h"
 
@@ -73,19 +69,18 @@ public:
           diag_engine_(),
           next_file_id_(1) // 0 is reserved for REPL / anonymous input
     {
-        // core primitives — pass vm_ so map/for-each support closures
-        runtime::register_core_primitives(builtins_, heap_, intern_table_, &vm_);
-        // port primitives (require VM reference)
-        runtime::register_port_primitives(builtins_, heap_, intern_table_, vm_);
-        // I/O primitives (require VM for port-aware display/newline)
-        runtime::register_io_primitives(builtins_, heap_, intern_table_, vm_);
+        // The VM installs a default heap GC callback in its constructor, but at
+        // the Driver level we also need compiled bytecode constants in the
+        // function registry to act as GC roots. Large modules (e.g. portfolio)
+        // can emit quoted heap-backed constants long before they are executed or
+        // serialized for spawn-thread.
+        heap_.set_gc_callback([this]() { collect_garbage_with_registry_roots(); });
 
-#ifdef ETA_HAS_TORCH
-        // Torch/NN/Optim primitives (CPU or CUDA, detected at runtime)
-        torch_bindings::register_torch_primitives(builtins_, heap_, intern_table_, &vm_);
-#endif
+        // Register all core + port + io + torch + stats primitives.
+        // NNG follows with driver-specific arguments.
+        register_all_primitives(builtins_, heap_, intern_table_, vm_);
 
-#ifdef ETA_HAS_NNG
+
         // Detect etai binary path if not explicitly supplied
         if (etai_path.empty()) etai_path = detect_etai_path();
         etai_path_ = etai_path;
@@ -189,7 +184,8 @@ public:
                 // Deserialize upvalues
                 std::vector<runtime::nanbox::LispVal> upval_vals;
                 upval_vals.reserve(sc.upvals.size());
-                for (const auto& uv_bytes : sc.upvals) {
+                for (std::size_t uvi = 0; uvi < sc.upvals.size(); ++uvi) {
+                    const auto& uv_bytes = sc.upvals[uvi];
                     auto uv = eta::nng::deserialize_binary(
                         std::span<const uint8_t>(uv_bytes),
                         child.heap(), child.intern_table());
@@ -214,8 +210,12 @@ public:
                 }
 
                 // Call the thunk with 0 arguments
-                (void) child.vm().call_value(*closure_val, {});
-            } catch (...) {}
+                auto result = child.vm().call_value(*closure_val, {});
+                if (!result) {
+                }
+            } catch (const std::exception&) {
+            } catch (...) {
+            }
             alive->store(false, std::memory_order_release);
         };
 
@@ -227,7 +227,7 @@ public:
             &registry_);
 
         proc_mgr_.set_closure_factory(std::move(closure_worker_fn));
-#endif
+
 
         // Wire up function resolver
         vm_.set_function_resolver([this](uint32_t idx) {
@@ -439,7 +439,6 @@ public:
         return runtime::format_value(v, mode, heap_, intern_table_);
     }
 
-#ifdef ETA_HAS_NNG
     /// Install the `--mailbox` socket for a spawned child process.
     ///
     /// Called by main_etai.cpp when the `--mailbox <endpoint>` argument is
@@ -458,6 +457,7 @@ public:
         rv = nng_dial(sp.socket, endpoint.c_str(), nullptr, 0);
         if (rv != 0) return false;
         sp.dialed = true;
+        sp.endpoint_hint = endpoint;
 
         auto val = eta::nng::factory::make_nng_socket(heap_, std::move(sp));
         if (!val) return false;
@@ -477,7 +477,6 @@ public:
     [[nodiscard]] runtime::nanbox::LispVal mailbox() const noexcept {
         return mailbox_val_;
     }
-#endif
 
     /// Named global variables: slot index → variable name.
     /// Populated during compilation for debugger display.
@@ -602,6 +601,19 @@ public:
     }
 
 private:
+    void collect_garbage_with_registry_roots() {
+        auto roots = heap_.make_external_root_frame();
+        for (const auto& func : registry_.all()) {
+            for (auto c : func.constants) {
+                if (runtime::nanbox::ops::is_boxed(c) &&
+                    runtime::nanbox::ops::tag(c) == runtime::nanbox::Tag::HeapObject) {
+                    roots.push(c);
+                }
+            }
+        }
+        vm_.collect_garbage();
+    }
+
     ModulePathResolver resolver_;
     runtime::memory::heap::Heap heap_;
     runtime::memory::intern::InternTable intern_table_;
@@ -614,7 +626,6 @@ private:
     // IR-level optimization pipeline (runs between analyze and emit)
     semantics::OptimizationPipeline optimization_pipeline_;
 
-#ifdef ETA_HAS_NNG
     eta::nng::ProcessManager         proc_mgr_;
     runtime::nanbox::LispVal         mailbox_val_{runtime::nanbox::Nil};
     std::string                      etai_path_;
@@ -651,7 +662,6 @@ private:
 #endif
         return "etai"; // fallback to PATH
     }
-#endif
 
     // Accumulated expanded forms from all prior run_source calls.
     // The linker clears its state on each index_modules() call, so we must
@@ -750,9 +760,24 @@ private:
     bool auto_load_imports(std::span<const reader::parser::SExprPtr> new_forms) {
         auto needed = collect_imported_modules(new_forms);
         for (const auto& mod_name : needed) {
-            // Skip modules already loaded or being loaded (cycle guard)
+            // Skip modules already loaded.
             if (executed_modules_.contains(mod_name)) continue;
-            if (loading_modules_.contains(mod_name)) continue;
+
+            // Circular import detected — error immediately rather than silently skip.
+            if (loading_modules_.contains(mod_name)) {
+                // Build the cycle description for a helpful error message.
+                std::string cycle;
+                for (const auto& m : loading_modules_) {
+                    if (!cycle.empty()) cycle += " -> ";
+                    cycle += m;
+                }
+                cycle += " -> ";
+                cycle += mod_name;
+                diag_engine_.emit_error(
+                    diagnostic::DiagnosticCode::ModuleNotFound, {},
+                    "circular module import detected: " + cycle);
+                return false;
+            }
 
             // Check if it's already in the accumulated forms (defined but not yet executed)
             bool already_accumulated = false;
