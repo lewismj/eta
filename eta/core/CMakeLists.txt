@@ -11,6 +11,10 @@ target_include_directories(${PROJECT_NAME}
         PRIVATE ${PROJECT_SOURCE_DIR}
 )
 
+# Eigen is header-only; propagate PUBLIC so downstream targets (eta_stats etc.)
+# inherit the include paths automatically.
+target_link_libraries(${PROJECT_NAME} PUBLIC Eigen3::Eigen)
+
 target_sources(${PROJECT_NAME}
         PRIVATE
         src/eta/runtime/memory/intern_table.cpp

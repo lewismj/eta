@@ -8,18 +8,22 @@
 
 ## Overview
 
-Eta ships two complementary statistics layers:
+Eta ships two complementary statistics layers — **both backed by Eigen**:
 
 | Layer | What it covers | Where it lives |
 |-------|---------------|----------------|
-| **`std.stats`** | Descriptive stats, CIs, t-tests, simple OLS — all over plain Eta lists | `stdlib/std/stats.eta` + `stats_math.h` |
-| **`stats/` primitives** | Multivariate OLS, covariance/correlation matrices, column quantiles — over `FactTable` columns | `eta/stats/src/eta/stats/stats_primitives.h` backed by Eigen |
+| **`std.stats`** | Descriptive stats, CIs, t-tests, simple OLS — polymorphic over lists, vectors, and fact-table columns | `stdlib/std/stats.eta` + `stats_math.h` + `stats_extract.h` |
+| **`stats/` primitives** | Multivariate OLS, covariance/correlation matrices, column quantiles — over `FactTable` columns | `eta/stats/src/eta/stats/stats_primitives.h` |
+
+All statistical computation ultimately delegates to
+[Eigen](https://eigen.tuxfamily.org/) for vectorised operations and
+numerically stable decompositions (QR for OLS, etc.).
 
 The `std.stats` module is part of the prelude; the Eigen-backed `stats/`
 builtins are registered alongside it.
 
 ```scheme
-(import std.stats)     ; descriptive stats on lists
+(import std.stats)     ; descriptive stats on any numeric sequence
 ; stats/ols-multi etc. are registered as global builtins (no extra import needed)
 ```
 
@@ -27,9 +31,11 @@ builtins are registered alongside it.
 
 ## The `std.stats` Module
 
-All functions in `std.stats` operate on **Eta lists of numbers**.
-The underlying `%stats-*` primitives are C++ builtins registered in
-`core_primitives.h`; `std.stats` re-exports them under stable names.
+All functions in `std.stats` accept **any numeric sequence**: plain Eta
+lists, Scheme-style vectors (`#(...)`), or fact-table columns.  The
+underlying `%stats-*` primitives use the polymorphic `stats::to_eigen()`
+helper (defined in `stats_extract.h`) to convert the input into an
+`Eigen::VectorXd` before calling the Eigen-backed math in `stats_math.h`.
 
 ```bash
 etai examples/stats.eta
@@ -270,14 +276,16 @@ alist with the following keys:
 ```mermaid
 flowchart TD
     SL["std.stats\n(Eta library)"]
-    BP["%stats-* builtins\n(stats_math.h + core_primitives.h)"]
+    BP["%stats-* builtins\n(stats_math.h + stats_extract.h\n+ core_primitives.h)"]
     SP["stats/ builtins\n(stats_primitives.h)"]
     EG["Eigen\n(header-only, C++)"]
     FT["FactTable\n(columnar storage)"]
 
     SL --> BP
+    BP --> EG
     SP --> EG
     SP --> FT
+    BP -.->|"polymorphic:\nlists, vectors,\nfact-table cols"| FT
 
     style SL  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
     style BP  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
@@ -286,14 +294,20 @@ flowchart TD
     style FT  fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
-The two layers are independent:
+Both layers use **Eigen** for all vector/matrix operations:
 
-- **`std.stats` / `%stats-*`** — operate on plain Eta lists; use hand-rolled
-  C++ math in `stats_math.h`.
+- **`std.stats` / `%stats-*`** — accept any numeric sequence (list, vector,
+  or fact-table column) via the polymorphic `stats::to_eigen()` helper;
+  delegate to Eigen-backed math in `stats_math.h` (mean, variance, QR-based
+  OLS, etc.).  The hand-rolled C++ accumulation loops and Lanczos
+  log-gamma that were here previously have been replaced by `Eigen::VectorXd`
+  operations and `std::lgamma`.
 
 - **`stats/` / Eigen primitives** — operate on `FactTable` columns; use Eigen
-  for numerically stable linear algebra.  Eigen is a header-only library
-  fetched automatically at configure time; no system installation is needed.
+  for numerically stable linear algebra (covariance matrices via centred
+  dot-products, multivariate OLS via `ColPivHouseholderQR`).  Eigen is a
+  header-only library fetched automatically at configure time; no system
+  installation is needed.
 
 ---
 
@@ -341,6 +355,7 @@ Equity fund (monthly %):
 | Component | File |
 |-----------|------|
 | `%stats-mean`, `%stats-variance`, `%stats-t-test-2`, `%stats-ols`, … | [`eta/core/src/eta/runtime/stats_math.h`](../eta/core/src/eta/runtime/stats_math.h) |
+| Polymorphic input extraction (list / vector / fact-table → Eigen) | [`eta/core/src/eta/runtime/stats_extract.h`](../eta/core/src/eta/runtime/stats_extract.h) |
 | `stats:mean`, `stats:stddev`, `stats:ci`, `stats:t-test`, `stats:ols`, … | [`stdlib/std/stats.eta`](../stdlib/std/stats.eta) |
 | `stats/mean-vec`, `stats/cov`, `stats/cor`, `stats/ols-multi`, … | [`eta/stats/src/eta/stats/stats_primitives.h`](../eta/stats/src/eta/stats/stats_primitives.h) |
 | Eigen fetch | [`cmake/FetchEigen.cmake`](../cmake/FetchEigen.cmake) |

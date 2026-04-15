@@ -18,6 +18,7 @@
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/clp/constraint_store.h"
 #include "eta/runtime/stats_math.h"
+#include "eta/runtime/stats_extract.h"
 
 namespace eta::runtime {
 
@@ -1594,95 +1595,78 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     // ================================================================
-    // Statistics builtins (stats_math.h)
+    // Statistics builtins (stats_math.h + stats_extract.h)
     //
-    // All %stats-* primitives accept Eta lists of numbers and return
-    // numeric results.  They provide the foundation for std.stats.
+    // All %stats-* primitives accept any numeric sequence (list, vector,
+    // or fact-table column) via the polymorphic stats::to_eigen() helper
+    // and return numeric results.  They provide the foundation for
+    // std.stats.
     // ================================================================
 
-    // Helper: walk an Eta list and collect doubles into a vector.
-    auto list_to_doubles = [&heap](LispVal lst, const char* who) -> std::expected<std::vector<double>, RuntimeError> {
-        std::vector<double> result;
-        LispVal cur = lst;
-        while (cur != Nil) {
-            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": expected a list of numbers"}});
-            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
-            if (!cons)
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": expected a list of numbers"}});
-            auto nv = classify_numeric(cons->car, heap);
-            if (!nv.is_valid())
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": list element is not a number"}});
-            result.push_back(nv.as_double());
-            cur = cons->cdr;
-        }
-        return result;
-    };
-
-    // %stats-mean : list → number
-    env.register_builtin("%stats-mean", 1, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-mean");
+    // %stats-mean : sequence → number
+    env.register_builtin("%stats-mean", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-mean");
         if (!xs) return std::unexpected(xs.error());
-        if (xs->empty()) return make_flonum(0.0);
+        if (xs->size() == 0) return make_flonum(0.0);
         return make_flonum(stats::mean(*xs));
     });
 
-    // %stats-variance : list → number  (sample variance, N-1)
-    env.register_builtin("%stats-variance", 1, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-variance");
+    // %stats-variance : sequence → number  (sample variance, N-1)
+    env.register_builtin("%stats-variance", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-variance");
         if (!xs) return std::unexpected(xs.error());
         if (xs->size() < 2)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-variance: need at least 2 elements"}});
         return make_flonum(stats::variance(*xs));
     });
 
-    // %stats-stddev : list → number
-    env.register_builtin("%stats-stddev", 1, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-stddev");
+    // %stats-stddev : sequence → number
+    env.register_builtin("%stats-stddev", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-stddev");
         if (!xs) return std::unexpected(xs.error());
         if (xs->size() < 2)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-stddev: need at least 2 elements"}});
         return make_flonum(stats::stddev(*xs));
     });
 
-    // %stats-sem : list → number  (standard error of mean)
-    env.register_builtin("%stats-sem", 1, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-sem");
+    // %stats-sem : sequence → number  (standard error of mean)
+    env.register_builtin("%stats-sem", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-sem");
         if (!xs) return std::unexpected(xs.error());
         if (xs->size() < 2)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-sem: need at least 2 elements"}});
         return make_flonum(stats::sem(*xs));
     });
 
-    // %stats-percentile : list p → number
-    env.register_builtin("%stats-percentile", 2, false, [&heap, list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-percentile");
+    // %stats-percentile : sequence p → number
+    env.register_builtin("%stats-percentile", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-percentile");
         if (!xs) return std::unexpected(xs.error());
         auto pv = classify_numeric(args[1], heap);
         if (!pv.is_valid())
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-percentile: p must be a number"}});
-        return make_flonum(stats::percentile(*xs, pv.as_double()));
+        return make_flonum(stats::percentile(std::move(*xs), pv.as_double()));
     });
 
-    // %stats-covariance : list1 list2 → number
-    env.register_builtin("%stats-covariance", 2, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-covariance");
+    // %stats-covariance : sequence1 sequence2 → number
+    env.register_builtin("%stats-covariance", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-covariance");
         if (!xs) return std::unexpected(xs.error());
-        auto ys = list_to_doubles(args[1], "%stats-covariance");
+        auto ys = stats::to_eigen(heap, args[1], "%stats-covariance");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::covariance(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-covariance: lists must be same length (≥2)"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-covariance: sequences must be same length (≥2)"}});
         return make_flonum(*r);
     });
 
-    // %stats-correlation : list1 list2 → number
-    env.register_builtin("%stats-correlation", 2, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-correlation");
+    // %stats-correlation : sequence1 sequence2 → number
+    env.register_builtin("%stats-correlation", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-correlation");
         if (!xs) return std::unexpected(xs.error());
-        auto ys = list_to_doubles(args[1], "%stats-correlation");
+        auto ys = stats::to_eigen(heap, args[1], "%stats-correlation");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::correlation(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-correlation: lists must be same length (≥2), non-constant"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-correlation: sequences must be same length (≥2), non-constant"}});
         return make_flonum(*r);
     });
 
@@ -1704,9 +1688,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(stats::t_quantile(pv.as_double(), dv.as_double()));
     });
 
-    // %stats-ci : list confidence-level → (lower . upper)
-    env.register_builtin("%stats-ci", 2, false, [&heap, list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-ci");
+    // %stats-ci : sequence confidence-level → (lower . upper)
+    env.register_builtin("%stats-ci", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-ci");
         if (!xs) return std::unexpected(xs.error());
         auto lv = classify_numeric(args[1], heap);
         if (!lv.is_valid())
@@ -1720,14 +1704,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_cons(heap, *lo, *hi);
     });
 
-    // %stats-t-test-2 : list1 list2 → (t-stat p-value df mean-diff)
-    env.register_builtin("%stats-t-test-2", 2, false, [&heap, list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-t-test-2");
+    // %stats-t-test-2 : sequence1 sequence2 → (t-stat p-value df mean-diff)
+    env.register_builtin("%stats-t-test-2", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-t-test-2");
         if (!xs) return std::unexpected(xs.error());
-        auto ys = list_to_doubles(args[1], "%stats-t-test-2");
+        auto ys = stats::to_eigen(heap, args[1], "%stats-t-test-2");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::t_test_2(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-t-test-2: each list must have ≥2 elements"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-t-test-2: each sequence must have ≥2 elements"}});
 
         // Build result list: (t-stat p-value df mean-diff)
         auto v_md = make_flonum(r->mean_diff); if (!v_md) return std::unexpected(v_md.error());
@@ -1742,14 +1726,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return *l1;
     });
 
-    // %stats-ols : x-list y-list → (slope intercept r² se-slope se-intercept t-slope t-intercept p-slope p-intercept)
-    env.register_builtin("%stats-ols", 2, false, [&heap, list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto xs = list_to_doubles(args[0], "%stats-ols");
+    // %stats-ols : x-sequence y-sequence → (slope intercept r² se-slope se-intercept t-slope t-intercept p-slope p-intercept)
+    env.register_builtin("%stats-ols", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = stats::to_eigen(heap, args[0], "%stats-ols");
         if (!xs) return std::unexpected(xs.error());
-        auto ys = list_to_doubles(args[1], "%stats-ols");
+        auto ys = stats::to_eigen(heap, args[1], "%stats-ols");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::ols(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ols: lists must be same length (≥3)"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ols: sequences must be same length (≥3)"}});
 
         // Build result list: (slope intercept r² se-slope se-intercept t-slope t-intercept p-slope p-intercept)
         auto v9 = make_flonum(r->p_intercept); if (!v9) return std::unexpected(v9.error());

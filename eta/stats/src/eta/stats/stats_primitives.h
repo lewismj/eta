@@ -24,6 +24,7 @@
 #include <eta/runtime/factory.h>
 #include <eta/runtime/types/fact_table.h>
 #include <eta/runtime/stats_math.h>
+#include <eta/runtime/stats_extract.h>
 #include <eta/runtime/vm/vm.h>
 
 namespace eta::stats_bindings {
@@ -56,21 +57,11 @@ get_fact_table(Heap& heap, LispVal v, const char* who) {
 /// Walk an Eta list of numbers → std::vector<double>.
 inline std::expected<std::vector<double>, RuntimeError>
 list_to_doubles(Heap& heap, LispVal lst, const char* who) {
-    std::vector<double> result;
-    LispVal cur = lst;
-    while (cur != Nil) {
-        if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
-            return std::unexpected(stats_error(std::string(who) + ": expected a list of numbers"));
-        auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
-        if (!cons)
-            return std::unexpected(stats_error(std::string(who) + ": expected a list of numbers"));
-        auto nv = classify_numeric(cons->car, heap);
-        if (!nv.is_valid())
-            return std::unexpected(stats_error(std::string(who) + ": list element is not a number"));
-        result.push_back(nv.as_double());
-        cur = cons->cdr;
-    }
-    return result;
+    // Delegate to the polymorphic to_eigen, then copy back to vector.
+    // (Kept for local compat; new code should use stats::to_eigen directly.)
+    auto ev = stats::to_eigen(heap, lst, who);
+    if (!ev) return std::unexpected(ev.error());
+    return std::vector<double>(ev->data(), ev->data() + ev->size());
 }
 
 /// Walk an Eta list of integers (column indices) → std::vector<std::size_t>.
@@ -94,18 +85,10 @@ list_to_col_indices(Heap& heap, LispVal lst, const char* who) {
 }
 
 /// Extract a FactTable column as an Eigen::VectorXd.
+/// Delegates to the shared stats::column_to_eigen from stats_extract.h.
 inline std::expected<Eigen::VectorXd, RuntimeError>
 column_to_eigen(types::FactTable& ft, std::size_t col, Heap& heap, const char* who) {
-    if (col >= ft.columns.size())
-        return std::unexpected(stats_error(std::string(who) + ": column index out of range"));
-    Eigen::VectorXd v(static_cast<Eigen::Index>(ft.row_count));
-    for (std::size_t r = 0; r < ft.row_count; ++r) {
-        auto nv = classify_numeric(ft.columns[col][r], heap);
-        if (!nv.is_valid())
-            return std::unexpected(stats_error(std::string(who) + ": column contains non-numeric value at row " + std::to_string(r)));
-        v(static_cast<Eigen::Index>(r)) = nv.as_double();
-    }
-    return v;
+    return stats::column_to_eigen(ft, col, heap, who);
 }
 
 /// Convert an Eigen::VectorXd to an Eta list of flonums (built in reverse).

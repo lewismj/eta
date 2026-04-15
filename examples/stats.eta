@@ -10,6 +10,9 @@
 ;;;   - Two-sample Welch t-test
 ;;;   - Simple OLS linear regression
 ;;;
+;;; All std.stats functions accept any numeric sequence (lists, vectors,
+;;; or fact-table columns).  This example uses plain lists for clarity.
+;;;
 ;;; Run:  etai examples/stats.eta
 
 (module stats-example

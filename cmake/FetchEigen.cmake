@@ -1,8 +1,9 @@
 # ──────────────────────────────────────────────────────────────────────────
 # FetchEigen.cmake — Fetch Eigen 3.4.0 (header-only) via FetchContent
 #
-# Called by eta/CMakeLists.txt when ETA_BUILD_STATS is ON.
-# Downloads Eigen from GitLab and makes the `Eigen3::Eigen` target available.
+# Called unconditionally by eta/CMakeLists.txt.  Eigen is a required
+# dependency — eta_core links it PUBLIC so all downstream targets
+# (eta_stats, interpreter, tests, etc.) inherit the include paths.
 #
 # Eigen is header-only — no shared/static library is produced, so no
 # DLL-copy or RPATH plumbing is needed.
