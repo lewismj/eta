@@ -234,6 +234,7 @@ private:
     LispVal current_closure_{0};
 
     std::unique_ptr<memory::gc::MarkSweepGC> gc_;
+    std::size_t gc_collections_{0};  // DEBUG: count GC runs
 
     // Debug state (null when not debugging)
     std::unique_ptr<DebugState> debug_;

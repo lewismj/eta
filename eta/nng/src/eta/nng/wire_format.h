@@ -334,10 +334,13 @@ struct BinaryReader {
                 return *res;
             }
             case BT_HeapCons: {
+                auto roots = heap.make_external_root_frame();
                 auto car = read_value();
                 if (!car) return car;
+                roots.push(*car);
                 auto cdr = read_value();
                 if (!cdr) return cdr;
+                roots.push(*cdr);
                 auto res = make_cons(heap, *car, *cdr);
                 if (!res) return std::unexpected(res.error());
                 return *res;
@@ -347,10 +350,12 @@ struct BinaryReader {
                 if (!read_u32(len)) return err("truncated vector length");
                 std::vector<LispVal> elems;
                 elems.reserve(len);
+                auto roots = heap.make_external_root_frame();
                 for (uint32_t i = 0; i < len; ++i) {
                     auto elem = read_value();
                     if (!elem) return elem;
                     elems.push_back(*elem);
+                    roots.push(*elem);
                 }
                 auto res = make_vector(heap, std::move(elems));
                 if (!res) return std::unexpected(res.error());

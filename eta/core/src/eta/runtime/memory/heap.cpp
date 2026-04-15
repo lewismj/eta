@@ -1,5 +1,6 @@
 #include "heap.h"
 #include "cons_pool.h"
+#include <iostream>
 
 namespace eta::runtime::memory::heap {
 

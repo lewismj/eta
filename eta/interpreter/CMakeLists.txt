@@ -10,27 +10,15 @@ target_include_directories(etai
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(etai PRIVATE eta_core)
-
-# Torch integration (when available)
-if(ETA_BUILD_TORCH)
-    target_link_libraries(etai PRIVATE eta_torch)
-    target_compile_definitions(etai PRIVATE ETA_HAS_TORCH=1)
-    eta_copy_torch_dlls(etai)
-endif()
-
-# nng integration (when available)
-if(ETA_BUILD_NNG)
-    target_link_libraries(etai PRIVATE eta_nng)
-    target_compile_definitions(etai PRIVATE ETA_HAS_NNG=1)
-    eta_copy_nng_dlls(etai)
-endif()
+target_link_libraries(etai PRIVATE eta_core eta_torch eta_nng eta_stats)
+target_compile_definitions(etai PRIVATE ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
+eta_copy_torch_dlls(etai)
+eta_copy_nng_dlls(etai)
 
 # Platform-specific libraries
 if(NOT MSVC)
     target_link_libraries(etai PRIVATE stdc++ m)
 
-    # Check for PEXT support (mirrors core/test setup)
     include(CheckCXXSourceCompiles)
     set(CMAKE_REQUIRED_FLAGS "-mbmi2")
     set(CMAKE_CXX_SCAN_FOR_MODULES_OLD ${CMAKE_CXX_SCAN_FOR_MODULES})
@@ -63,21 +51,10 @@ target_include_directories(eta_repl
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(eta_repl PRIVATE eta_core)
-
-# Torch integration (when available)
-if(ETA_BUILD_TORCH)
-    target_link_libraries(eta_repl PRIVATE eta_torch)
-    target_compile_definitions(eta_repl PRIVATE ETA_HAS_TORCH=1)
-    eta_copy_torch_dlls(eta_repl)
-endif()
-
-# nng integration (when available)
-if(ETA_BUILD_NNG)
-    target_link_libraries(eta_repl PRIVATE eta_nng)
-    target_compile_definitions(eta_repl PRIVATE ETA_HAS_NNG=1)
-    eta_copy_nng_dlls(eta_repl)
-endif()
+target_link_libraries(eta_repl PRIVATE eta_core eta_torch eta_nng eta_stats)
+target_compile_definitions(eta_repl PRIVATE ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
+eta_copy_torch_dlls(eta_repl)
+eta_copy_nng_dlls(eta_repl)
 
 # Platform-specific libraries
 if(NOT MSVC)
@@ -92,4 +69,3 @@ endif()
 
 # ── Install ───────────────────────────────────────────────────────────
 install(TARGETS etai eta_repl RUNTIME DESTINATION bin)
-

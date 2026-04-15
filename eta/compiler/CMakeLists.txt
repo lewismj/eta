@@ -8,24 +8,13 @@ add_executable(etac
 
 target_include_directories(etac
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src   # for driver.h / module_path.h
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
 )
 
-target_link_libraries(etac PRIVATE eta_core)
-
-# Torch integration (when available)
-if(ETA_BUILD_TORCH)
-    target_link_libraries(etac PRIVATE eta_torch)
-    target_compile_definitions(etac PRIVATE ETA_HAS_TORCH=1)
-    eta_copy_torch_dlls(etac)
-endif()
-
-# nng integration (when available)
-if(ETA_BUILD_NNG)
-    target_link_libraries(etac PRIVATE eta_nng)
-    target_compile_definitions(etac PRIVATE ETA_HAS_NNG=1)
-    eta_copy_nng_dlls(etac)
-endif()
+target_link_libraries(etac PRIVATE eta_core eta_torch eta_nng eta_stats)
+target_compile_definitions(etac PRIVATE ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
+eta_copy_torch_dlls(etac)
+eta_copy_nng_dlls(etac)
 
 # Platform-specific libraries
 if(NOT MSVC)
@@ -56,4 +45,3 @@ endif()
 
 # ── Install ───────────────────────────────────────────────────────────
 install(TARGETS etac RUNTIME DESTINATION bin)
-

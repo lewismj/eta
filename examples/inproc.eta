@@ -35,15 +35,15 @@
     ;; Send one task to each thread — nng buffers the message even if
     ;; the thread hasn't reached recv! yet.
     (send! t1 5 'wait)
-    (send! t2 5 'wait)
-    (send! t3 5 'wait)
+    (send! t2 6 'wait)
+    (send! t3 7 'wait)
 
     ;; Collect results.
     (define r1 (recv! t1 'wait))
     (define r2 (recv! t2 'wait))
     (define r3 (recv! t3 'wait))
 
-    (println (string-append "  inputs:   (5 5 5)"))
+    (println (string-append "  inputs:   (5 6 7)"))
     (println (string-append "  offsets:  (10 20 30)"))
     (println (string-append "  results:  ("
                             (number->string r1) " "

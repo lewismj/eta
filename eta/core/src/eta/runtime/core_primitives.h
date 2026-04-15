@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <functional>
+#include <iostream>
 #include <sstream>
 #include <string>
 
@@ -16,6 +17,7 @@
 #include "eta/runtime/types/tape.h"
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/clp/constraint_store.h"
+#include "eta/runtime/stats_math.h"
 
 namespace eta::runtime {
 
@@ -326,7 +328,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "car: not a pair"}});
         }
         auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(args[0]));
-        if (!cons) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "car: not a pair"}});
+        if (!cons) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "car: not a pair"}});
+        }
         return cons->car;
     });
 
@@ -350,10 +354,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     env.register_builtin("list", 0, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         LispVal result = nanbox::Nil;
+        auto roots = heap.make_external_root_frame();
+        for (auto v : args) roots.push(v);
         for (auto it = args.rbegin(); it != args.rend(); ++it) {
             auto cons = make_cons(heap, *it, result);
             if (!cons) return cons;
             result = *cons;
+            roots.push(result);
         }
         return result;
     });
@@ -1584,6 +1591,187 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto ft_res = get_fact_table(args[0], "%fact-table-row-count");
         if (!ft_res) return std::unexpected(ft_res.error());
         return ops::encode(static_cast<int64_t>((*ft_res)->row_count));
+    });
+
+    // ================================================================
+    // Statistics builtins (stats_math.h)
+    //
+    // All %stats-* primitives accept Eta lists of numbers and return
+    // numeric results.  They provide the foundation for std.stats.
+    // ================================================================
+
+    // Helper: walk an Eta list and collect doubles into a vector.
+    auto list_to_doubles = [&heap](LispVal lst, const char* who) -> std::expected<std::vector<double>, RuntimeError> {
+        std::vector<double> result;
+        LispVal cur = lst;
+        while (cur != Nil) {
+            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": expected a list of numbers"}});
+            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+            if (!cons)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": expected a list of numbers"}});
+            auto nv = classify_numeric(cons->car, heap);
+            if (!nv.is_valid())
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": list element is not a number"}});
+            result.push_back(nv.as_double());
+            cur = cons->cdr;
+        }
+        return result;
+    };
+
+    // %stats-mean : list → number
+    env.register_builtin("%stats-mean", 1, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-mean");
+        if (!xs) return std::unexpected(xs.error());
+        if (xs->empty()) return make_flonum(0.0);
+        return make_flonum(stats::mean(*xs));
+    });
+
+    // %stats-variance : list → number  (sample variance, N-1)
+    env.register_builtin("%stats-variance", 1, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-variance");
+        if (!xs) return std::unexpected(xs.error());
+        if (xs->size() < 2)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-variance: need at least 2 elements"}});
+        return make_flonum(stats::variance(*xs));
+    });
+
+    // %stats-stddev : list → number
+    env.register_builtin("%stats-stddev", 1, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-stddev");
+        if (!xs) return std::unexpected(xs.error());
+        if (xs->size() < 2)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-stddev: need at least 2 elements"}});
+        return make_flonum(stats::stddev(*xs));
+    });
+
+    // %stats-sem : list → number  (standard error of mean)
+    env.register_builtin("%stats-sem", 1, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-sem");
+        if (!xs) return std::unexpected(xs.error());
+        if (xs->size() < 2)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-sem: need at least 2 elements"}});
+        return make_flonum(stats::sem(*xs));
+    });
+
+    // %stats-percentile : list p → number
+    env.register_builtin("%stats-percentile", 2, false, [&heap, list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-percentile");
+        if (!xs) return std::unexpected(xs.error());
+        auto pv = classify_numeric(args[1], heap);
+        if (!pv.is_valid())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-percentile: p must be a number"}});
+        return make_flonum(stats::percentile(*xs, pv.as_double()));
+    });
+
+    // %stats-covariance : list1 list2 → number
+    env.register_builtin("%stats-covariance", 2, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-covariance");
+        if (!xs) return std::unexpected(xs.error());
+        auto ys = list_to_doubles(args[1], "%stats-covariance");
+        if (!ys) return std::unexpected(ys.error());
+        auto r = stats::covariance(*xs, *ys);
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-covariance: lists must be same length (≥2)"}});
+        return make_flonum(*r);
+    });
+
+    // %stats-correlation : list1 list2 → number
+    env.register_builtin("%stats-correlation", 2, false, [list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-correlation");
+        if (!xs) return std::unexpected(xs.error());
+        auto ys = list_to_doubles(args[1], "%stats-correlation");
+        if (!ys) return std::unexpected(ys.error());
+        auto r = stats::correlation(*xs, *ys);
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-correlation: lists must be same length (≥2), non-constant"}});
+        return make_flonum(*r);
+    });
+
+    // %stats-t-cdf : t-statistic df → p-value (cumulative)
+    env.register_builtin("%stats-t-cdf", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto tv = classify_numeric(args[0], heap);
+        auto dv = classify_numeric(args[1], heap);
+        if (!tv.is_valid() || !dv.is_valid())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-t-cdf: arguments must be numbers"}});
+        return make_flonum(stats::t_cdf(tv.as_double(), dv.as_double()));
+    });
+
+    // %stats-t-quantile : p df → t-quantile
+    env.register_builtin("%stats-t-quantile", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto pv = classify_numeric(args[0], heap);
+        auto dv = classify_numeric(args[1], heap);
+        if (!pv.is_valid() || !dv.is_valid())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-t-quantile: arguments must be numbers"}});
+        return make_flonum(stats::t_quantile(pv.as_double(), dv.as_double()));
+    });
+
+    // %stats-ci : list confidence-level → (lower . upper)
+    env.register_builtin("%stats-ci", 2, false, [&heap, list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-ci");
+        if (!xs) return std::unexpected(xs.error());
+        auto lv = classify_numeric(args[1], heap);
+        if (!lv.is_valid())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ci: confidence level must be a number"}});
+        auto ci = stats::ci_mean(*xs, lv.as_double());
+        if (!ci)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ci: need at least 2 elements and 0<level<1"}});
+        auto lo = make_flonum(ci->lower);
+        auto hi = make_flonum(ci->upper);
+        if (!lo || !hi) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ci: encoding error"}});
+        return make_cons(heap, *lo, *hi);
+    });
+
+    // %stats-t-test-2 : list1 list2 → (t-stat p-value df mean-diff)
+    env.register_builtin("%stats-t-test-2", 2, false, [&heap, list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-t-test-2");
+        if (!xs) return std::unexpected(xs.error());
+        auto ys = list_to_doubles(args[1], "%stats-t-test-2");
+        if (!ys) return std::unexpected(ys.error());
+        auto r = stats::t_test_2(*xs, *ys);
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-t-test-2: each list must have ≥2 elements"}});
+
+        // Build result list: (t-stat p-value df mean-diff)
+        auto v_md = make_flonum(r->mean_diff); if (!v_md) return std::unexpected(v_md.error());
+        auto v_df = make_flonum(r->df);        if (!v_df) return std::unexpected(v_df.error());
+        auto v_pv = make_flonum(r->p_value);   if (!v_pv) return std::unexpected(v_pv.error());
+        auto v_ts = make_flonum(r->t_stat);    if (!v_ts) return std::unexpected(v_ts.error());
+
+        auto l4 = make_cons(heap, *v_md, Nil);   if (!l4) return std::unexpected(l4.error());
+        auto l3 = make_cons(heap, *v_df, *l4);   if (!l3) return std::unexpected(l3.error());
+        auto l2 = make_cons(heap, *v_pv, *l3);   if (!l2) return std::unexpected(l2.error());
+        auto l1 = make_cons(heap, *v_ts, *l2);   if (!l1) return std::unexpected(l1.error());
+        return *l1;
+    });
+
+    // %stats-ols : x-list y-list → (slope intercept r² se-slope se-intercept t-slope t-intercept p-slope p-intercept)
+    env.register_builtin("%stats-ols", 2, false, [&heap, list_to_doubles](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto xs = list_to_doubles(args[0], "%stats-ols");
+        if (!xs) return std::unexpected(xs.error());
+        auto ys = list_to_doubles(args[1], "%stats-ols");
+        if (!ys) return std::unexpected(ys.error());
+        auto r = stats::ols(*xs, *ys);
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ols: lists must be same length (≥3)"}});
+
+        // Build result list: (slope intercept r² se-slope se-intercept t-slope t-intercept p-slope p-intercept)
+        auto v9 = make_flonum(r->p_intercept); if (!v9) return std::unexpected(v9.error());
+        auto v8 = make_flonum(r->p_slope);     if (!v8) return std::unexpected(v8.error());
+        auto v7 = make_flonum(r->t_intercept); if (!v7) return std::unexpected(v7.error());
+        auto v6 = make_flonum(r->t_slope);     if (!v6) return std::unexpected(v6.error());
+        auto v5 = make_flonum(r->se_intercept);if (!v5) return std::unexpected(v5.error());
+        auto v4 = make_flonum(r->se_slope);    if (!v4) return std::unexpected(v4.error());
+        auto v3 = make_flonum(r->r_squared);   if (!v3) return std::unexpected(v3.error());
+        auto v2 = make_flonum(r->intercept);   if (!v2) return std::unexpected(v2.error());
+        auto v1 = make_flonum(r->slope);       if (!v1) return std::unexpected(v1.error());
+
+        auto l9 = make_cons(heap, *v9, Nil);  if (!l9) return std::unexpected(l9.error());
+        auto l8 = make_cons(heap, *v8, *l9);  if (!l8) return std::unexpected(l8.error());
+        auto l7 = make_cons(heap, *v7, *l8);  if (!l7) return std::unexpected(l7.error());
+        auto l6 = make_cons(heap, *v6, *l7);  if (!l6) return std::unexpected(l6.error());
+        auto l5 = make_cons(heap, *v5, *l6);  if (!l5) return std::unexpected(l5.error());
+        auto l4 = make_cons(heap, *v4, *l5);  if (!l4) return std::unexpected(l4.error());
+        auto l3 = make_cons(heap, *v3, *l4);  if (!l3) return std::unexpected(l3.error());
+        auto l2 = make_cons(heap, *v2, *l3);  if (!l2) return std::unexpected(l2.error());
+        auto l1 = make_cons(heap, *v1, *l2);  if (!l1) return std::unexpected(l1.error());
+        return *l1;
     });
 }
 

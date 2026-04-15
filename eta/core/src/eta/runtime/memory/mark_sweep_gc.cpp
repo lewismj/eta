@@ -39,7 +39,6 @@ namespace eta::runtime::memory::gc {
                 ++total_freed;
             }
         }
-
         return total_freed;
     }
 }

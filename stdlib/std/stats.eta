@@ -1,0 +1,81 @@
+;;; std/stats.eta — Statistical functions for the Eta language.
+;;;
+;;; Provides descriptive statistics, confidence intervals, t-distribution,
+;;; two-sample Welch t-test, simple OLS regression, and a summary helper.
+;;; All functions operate on Eta lists of numbers.
+;;;
+;;; Underlying primitives (%stats-*) are registered in core_primitives.h.
+
+(module std.stats
+  (import std.core)
+  (export
+    stats:mean
+    stats:variance stats:stddev stats:sem
+    stats:percentile stats:median
+    stats:covariance stats:correlation
+    stats:ci stats:ci-lower stats:ci-upper
+    stats:t-cdf stats:t-quantile
+    stats:t-test stats:t-test-stat stats:t-test-pvalue
+    stats:t-test-df stats:t-test-mean-diff
+    stats:ols stats:ols-slope stats:ols-intercept stats:ols-r2
+    stats:ols-se-slope stats:ols-se-intercept
+    stats:ols-t-slope stats:ols-t-intercept
+    stats:ols-p-slope stats:ols-p-intercept
+    stats:summary)
+  (begin
+
+
+    (defun stats:mean     (xs) (%stats-mean xs))
+    (defun stats:variance (xs) (%stats-variance xs))
+    (defun stats:stddev   (xs) (%stats-stddev xs))
+    (defun stats:sem      (xs) (%stats-sem xs))
+
+    (defun stats:percentile (xs p) (%stats-percentile xs p))
+    (defun stats:median     (xs)   (%stats-percentile xs 0.5))
+
+    (defun stats:covariance  (xs ys) (%stats-covariance xs ys))
+    (defun stats:correlation (xs ys) (%stats-correlation xs ys))
+
+    ;; Returns (lower . upper) for the mean at the given confidence level.
+    (defun stats:ci       (xs level) (%stats-ci xs level))
+    (defun stats:ci-lower (ci)       (car ci))
+    (defun stats:ci-upper (ci)       (cdr ci))
+
+    (defun stats:t-cdf      (t-stat df) (%stats-t-cdf t-stat df))
+    (defun stats:t-quantile (p df)      (%stats-t-quantile p df))
+
+    ;; Returns (t-stat p-value df mean-diff) as a list.
+    (defun stats:t-test          (xs ys)   (%stats-t-test-2 xs ys))
+    (defun stats:t-test-stat     (result)  (car result))
+    (defun stats:t-test-pvalue   (result)  (cadr result))
+    (defun stats:t-test-df       (result)  (caddr result))
+    (defun stats:t-test-mean-diff(result)  (car (cdr (cdr (cdr result)))))
+
+    ;; ── OLS simple linear regression ───────────────────────────────
+    ;; Returns (slope intercept r2 se-slope se-intercept
+    ;;          t-slope t-intercept p-slope p-intercept) as a list.
+    (defun stats:ols             (xs ys) (%stats-ols xs ys))
+    (defun stats:ols-slope       (r)     (car r))
+    (defun stats:ols-intercept   (r)     (cadr r))
+    (defun stats:ols-r2          (r)     (caddr r))
+    (defun stats:ols-se-slope    (r)     (car (cdr (cdr (cdr r)))))
+    (defun stats:ols-se-intercept(r)     (car (cdr (cdr (cdr (cdr r))))))
+    (defun stats:ols-t-slope     (r)     (car (cdr (cdr (cdr (cdr (cdr r)))))))
+    (defun stats:ols-t-intercept (r)     (car (cdr (cdr (cdr (cdr (cdr (cdr r))))))))
+    (defun stats:ols-p-slope     (r)     (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr r)))))))))
+    (defun stats:ols-p-intercept (r)     (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr r))))))))))
+
+    ;; Returns an alist with key statistics for a numeric list.
+    (defun stats:summary (xs)
+      (list
+        (list 'n      (length xs))
+        (list 'mean   (stats:mean xs))
+        (list 'stddev (stats:stddev xs))
+        (list 'sem    (stats:sem xs))
+        (list 'median (stats:median xs))
+        (list 'min    (stats:percentile xs 0.0))
+        (list 'max    (stats:percentile xs 1.0))
+        (list 'ci-95  (stats:ci xs 0.95))))
+
+  ))
+

@@ -28,22 +28,16 @@ set(SOURCES
         src/bytecode_serializer_tests.cpp
         src/disassembler_tests.cpp
         src/optimization_tests.cpp
-        src/cons_pool_tests.cpp)
+        src/cons_pool_tests.cpp
+        src/stats_tests.cpp
+        src/nng_tests.cpp)
 
-# Conditionally add torch tests when libtorch is available.
 # libtorch ships release binaries only (_ITERATOR_DEBUG_LEVEL=0).
 # MSVC Debug builds use _ITERATOR_DEBUG_LEVEL=2 which causes ABI mismatch and
 # crashes inside libtorch inline template code (ordered_dict.h etc.).
 # Skip torch_tests entirely in MSVC Debug; mark torch examples as skippable.
-if(ETA_BUILD_TORCH)
-    if(NOT (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug"))
-        list(APPEND SOURCES src/torch_tests.cpp)
-    endif()
-endif()
-
-# Conditionally add nng tests when nng is available
-if(ETA_BUILD_NNG)
-    list(APPEND SOURCES src/nng_tests.cpp)
+if(NOT (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug"))
+    list(APPEND SOURCES src/torch_tests.cpp)
 endif()
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -57,25 +51,20 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 # MSVC Debug uses _ITERATOR_DEBUG_LEVEL=2 — ABI mismatch crashes torch inline
 # template code. Skip torch_tests (excluded above) and mark torch examples
 # as skippable via ETA_TORCH_DEBUG_SKIP.
-if(ETA_BUILD_TORCH AND MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_TORCH_DEBUG_SKIP=1)
 endif()
 
 # Inject source tree paths for the example runner integration test.
-# These point at the source-tree examples/ and stdlib/ directories so the
-# test can find them regardless of the build output directory.
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../examples"
     ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
 )
 
 # Inject the path to the etai binary for spawn tests.
-# $<TARGET_FILE:etai> expands to the full path at build time (generator expression).
-if(ETA_BUILD_NNG)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE
-        ETA_ETAI_PATH="$<TARGET_FILE:etai>"
-    )
-endif()
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ETA_ETAI_PATH="$<TARGET_FILE:etai>"
+)
 
 # Pull in the DAP server implementation (not main_dap.cpp) so dap_tests.cpp
 # can link against DapServer with injected streams.
@@ -85,23 +74,13 @@ target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../lsp/src/eta/lsp/lsp_server.cpp
 )
 
-# Base linking - only eta_core unconditionally
-target_link_libraries(${PROJECT_NAME} PRIVATE eta_core)
+# Always link all runtime libraries
+target_link_libraries(${PROJECT_NAME} PRIVATE eta_core eta_torch eta_nng eta_stats)
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
-
-# Torch integration (when available)
-if(ETA_BUILD_TORCH)
-    target_link_libraries(${PROJECT_NAME} PRIVATE eta_torch)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_HAS_TORCH=1)
-    eta_copy_torch_dlls(${PROJECT_NAME})
-endif()
-
-# nng integration (when available)
-if(ETA_BUILD_NNG)
-    target_link_libraries(${PROJECT_NAME} PRIVATE eta_nng)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_HAS_NNG=1)
-    eta_copy_nng_dlls(${PROJECT_NAME})
-endif()
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
+eta_copy_torch_dlls(${PROJECT_NAME})
+eta_copy_nng_dlls(${PROJECT_NAME})
 
 # Expose interpreter (driver.h), DAP, and LSP headers
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -111,7 +90,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # vcpkg x64-windows builds shared Boost; x64-linux builds static.
-# BOOST_TEST_DYN_LINK is required only when linking the shared library.
 if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE BOOST_TEST_DYN_LINK)
 endif()
@@ -120,10 +98,8 @@ endif()
 if(NOT MSVC)
     target_link_libraries(${PROJECT_NAME} PRIVATE stdc++ m)
 
-    # Add SSE2 flags - required by Boost concurrent containers
     target_compile_options(${PROJECT_NAME} PRIVATE "-msse2")
 
-    # Check for PEXT support
     set(CMAKE_REQUIRED_FLAGS "-mbmi2")
     set(CMAKE_CXX_SCAN_FOR_MODULES_OLD ${CMAKE_CXX_SCAN_FOR_MODULES})
     set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
@@ -149,18 +125,15 @@ if(NOT MSVC)
     endif()
 endif()
 
-
 if(WIN32)
     if(NOT DEFINED BOOST_ROOT)
         if(DEFINED ENV{BOOST_ROOT})
             set(BOOST_ROOT "$ENV{BOOST_ROOT}")
         elseif(Boost_INCLUDE_DIRS)
-            # Derive from CMake/vcpkg found include path
-            # e.g. .../installed/x64-windows/include -> .../installed/x64-windows
             list(GET Boost_INCLUDE_DIRS 0 _boost_inc)
             get_filename_component(BOOST_ROOT "${_boost_inc}" DIRECTORY)
         else()
-            message(FATAL_ERROR "BOOST_ROOT not set. Please specify BOOST_ROOT in CMake or in your environment.")
+            message(FATAL_ERROR "BOOST_ROOT not set.")
         endif()
     endif()
 
