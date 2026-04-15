@@ -354,7 +354,6 @@ Re-exports **all** public names from `std.core`, `std.math`, `std.io`,
 (import std.torch)
 ```
 
-> Requires the interpreter to be built with `-DETA_BUILD_TORCH=ON`.
 
 | Category | Key Functions |
 |----------|---------------|
@@ -381,10 +380,9 @@ Re-exports **all** public names from `std.core`, `std.math`, `std.io`,
 (import std.net)
 ```
 
-> Requires the interpreter to be built with `-DETA_BUILD_NNG=ON` (the default).
-> The low-level nng primitives (`nng-socket`, `send!`, `recv!`, `spawn`, etc.)
-> are registered as global builtins when nng support is compiled in.
-> `std.net` adds high-level Erlang-inspired patterns on top.
+nng is the networking layer; the low-level primitives (`nng-socket`,
+`send!`, `recv!`, `spawn`, etc.) are registered as global builtins.
+`std.net` adds high-level Erlang-inspired patterns on top.
 
 #### High-level helpers
 

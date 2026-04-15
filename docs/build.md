@@ -84,16 +84,19 @@ cmake --build build --config Release
 cmake --install build --prefix dist\eta-v0.2.0-win-x64 --config Release
 ```
 
-### With libtorch
+### With CUDA
+
+By default the build downloads the CPU-only libtorch archive automatically.
+To select a CUDA variant:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DETA_BUILD_TORCH=ON
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DETA_TORCH_BACKEND=cu124
 cmake --build build -j$(nproc)
 ```
 
-The `FetchLibtorch.cmake` module auto-downloads the correct libtorch
-archive for your platform. Use `-DETA_TORCH_BACKEND=cu124` to select a
-CUDA variant (default: `cpu`).
+The `FetchLibtorch.cmake` module downloads the correct libtorch archive for
+your platform and caches it in the build directory.  Supported backends:
+`cpu` (default), `cu118`, `cu121`, `cu124`.
 
 ---
 
@@ -154,9 +157,6 @@ ctest --test-dir build
 
 ### Torch Test Suite
 
-Tests require the interpreter to be built with `-DETA_BUILD_TORCH=ON`.
-
-#### Eta Integration Tests
 
 Ten standalone test files in `examples/torch_tests/` exercise every
 `std.torch` primitive end-to-end using the `std.test` framework:
@@ -192,7 +192,7 @@ the primitive level, additionally verifying heap lifecycle, GC behaviour,
 error paths, and builtin registration:
 
 ```bash
-cmake -B build -DETA_BUILD_TORCH=ON
+cmake -B build
 cmake --build build
 ctest --test-dir build -R torch
 ```

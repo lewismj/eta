@@ -3,56 +3,230 @@
 [← Back to README](../README.md) · [Architecture](architecture.md) ·
 [NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
 [Compiler](compiler.md) · [Runtime & GC](runtime.md) · [Modules & Stdlib](modules.md) ·
-[Networking](networking.md) · [Message Passing](message-passing.md)
+[Logic Programming](logic.md) · [CLP](clp.md)
 
 ---
 
 ## Overview
 
 This document outlines the roadmap for Eta's next development phase.
-The core language, compiler, runtime, libtorch integration, and nng-based
-actor model are all shipped.  The focus now shifts to five workstreams that
-improve the developer experience, extend the standard library, open Eta
-to arbitrary native code, and deepen the actor model.
+The core language, compiler, runtime, networking/actor model, libtorch
+integration, Eigen statistics, causal inference, and debug adapter are all
+shipped.  The focus now shifts to six workstreams that harden correctness,
+improve throughput, extend the logic/constraint programming layers, and
+broaden the developer experience.
 
 ```mermaid
 flowchart LR
-    FFI["4 · Foreign\nFunction Interface"]
-    ACTOR["5 · Actor Model\nEnhancements"]
-    DAP["2 · VS Code\nDebugger"]
-    PERF["3 · Performance\nImprovements"]
+    COMP["1 · Compiler\nUpgrades"]
+    GC["2 · GC &\nRuntime"]
+    TEST["3 · Testing\nInfrastructure"]
+    LOGIC["4 · Logic &\nCLP Upgrades"]
+    DAP["5 · VS Code\nImprovements"]
+    JUP["6 · Jupyter\nKernel"]
 
-    FFI --> ACTOR
-    DAP --> PERF
+    COMP --> GC
+    TEST --> LOGIC
+    DAP --> JUP
 
-    style FFI   fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style ACTOR fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style DAP   fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style PERF  fill:#0f3460,stroke:#56d364,color:#c9d1d9
+    style COMP  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style GC    fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style TEST  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style LOGIC fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style DAP   fill:#0f3460,stroke:#56d364,color:#c9d1d9
+    style JUP   fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
 ---
 
-## 1 · Network Stack ✅
+## 1 · Compiler Upgrades
 
-The nng-based networking and actor model is **shipped**.
+### Motivation
 
-| Component | Status |
-|-----------|--------|
-| nng socket primitives (`nng-socket`, `send!`, `recv!`, …) | ✅ |
-| Actor model (`spawn`, `current-mailbox`, `spawn-wait`, `spawn-kill`) | ✅ |
-| `std.net` high-level helpers (`with-socket`, `request-reply`, `worker-pool`, `pub-sub`, `survey`) | ✅ |
-| Binary + text wire format with auto-detection | ✅ |
-| VS Code extension: syntax highlighting, snippets, DAP child process tree view | ✅ |
+The current emitter performs a single forward pass over the Core IR and
+produces correct but unoptimised bytecode.  Several well-understood IR passes
+would meaningfully reduce allocation pressure and call overhead for
+data-intensive workloads.
 
-> **📖 See:**
-> [Networking Primitives](networking.md) ·
-> [Message Passing & Actors](message-passing.md) ·
-> [Network Design](network-message-passing.md)
+### 1.1 · Optimisation Passes
+
+| Pass | Description | Expected Impact |
+|------|-------------|-----------------|
+| **Constant propagation** | Propagate known constant values through `let` bindings; replace use sites with inline literals. | Eliminates redundant `LoadGlobal` / `LoadConst` pairs; benefits arithmetic-heavy code. |
+| **Closure lifting** | Convert closures that capture only compile-time constants into top-level functions. | Removes closure-allocation overhead for many helper lambdas. |
+| **Inlining** | Inline small functions (below a threshold) at their call sites. | Removes call overhead; enables subsequent constant propagation across call boundaries. |
+| **Escape analysis** | Detect allocations that do not escape their defining scope. | Enables stack allocation instead of heap allocation for short-lived cons cells and closures. |
+| **Loop recognition** | Detect tail-recursive `letrec` loops and emit dedicated loop opcodes. | Avoids repeated closure entry overhead in tight recursive loops. |
+
+### 1.2 · VM Dispatch
+
+| Technique | Description | Expected Impact |
+|-----------|-------------|-----------------|
+| **Computed goto / direct threading** | Replace the `switch` dispatch loop with GCC/Clang `&&label` computed gotos. | 15-30% speedup on tight loops (eliminates switch branch-predictor pressure). |
+| **Super-instructions** | Fuse common opcode pairs (e.g. `LoadLocal` + `Add`, `LoadConst` + `Call`) into single opcodes. | 10-20% on arithmetic-heavy code. |
+| **Inline caching** | Cache the resolved global slot for `LoadGlobal` on the first access. | Benefits module-heavy code with many cross-module calls. |
+
+### Key Implementation Tasks
+
+| Task | Touches |
+|------|---------|
+| Constant propagation IR pass | `optimization/` |
+| Closure lifting IR pass | `optimization/` |
+| Inlining IR pass | `optimization/` |
+| Computed-goto dispatch | `vm.cpp`, `bytecode.h` |
+| Super-instruction definitions and emitter support | `emitter.h`, `vm.cpp` |
 
 ---
 
-## 2 · VS Code Debugger Improvements
+## 2 · GC & Runtime Upgrades
+
+### 2.1 · Garbage Collector
+
+The current collector is a stop-the-world mark-sweep over a sharded
+`boost::concurrent_flat_map` heap.  Three targeted improvements address the
+main bottlenecks:
+
+| Improvement | Description |
+|-------------|-------------|
+| **Generational collection** | Promote long-lived objects to an "old" generation collected less frequently.  Most cons cells and closures are short-lived; a nursery GC would dramatically reduce average pause time. |
+| **Concurrent marking** | Run the mark phase on a background thread while the VM continues executing; stop only for the final remark and sweep.  Reduces worst-case pause from O(live-set) to O(dirty-set). |
+| **Compacting / copying collector** | Defragment the heap after mark-sweep to improve cache locality and reduce fragmentation in long-running actor workloads. |
+
+### 2.2 · Heap Size Configuration
+
+The heap soft-limit is currently fixed at 4 MiB per `Driver` instance.
+Making it configurable via environment variables enables tuning without
+recompilation:
+
+| Variable | Effect |
+|----------|--------|
+| `ETA_HEAP_SOFT_LIMIT` | Soft-limit for the main interpreter process. |
+| `ETA_HEAP_SOFT_LIMIT_CHILD_THREADS` | Soft-limit for spawned actor threads; inherits `ETA_HEAP_SOFT_LIMIT` if unset. |
+
+Both variables accept human-readable sizes: `512K`, `4M`, `2G`, etc.
+
+### 2.3 · Object Layout
+
+| Improvement | Description |
+|-------------|-------------|
+| **Object header compaction** | Shrink heap object headers from 16 bytes to 8 bytes by packing kind + GC mark + size into a single 64-bit word. |
+| **Intern table improvement** | Replace the concurrent hash map with a Robin Hood or Swiss table for better probe locality. |
+
+### Key Implementation Tasks
+
+| Task | Touches |
+|------|---------|
+| Generational GC prototype | `mark_sweep_gc.h`, `heap.h` |
+| Background mark thread | `mark_sweep_gc.cpp`, `vm.cpp` |
+| `ETA_HEAP_SOFT_LIMIT` env parsing in `Driver` | `driver.h`, `main_etai.cpp`, `main_repl.cpp` |
+| Object header compaction | `types/`, `heap.h` |
+| Adaptive GC trigger (allocation-rate based) | `heap.h`, `mark_sweep_gc.h` |
+
+---
+
+## 3 · Testing Infrastructure
+
+### Motivation
+
+The current unit-test binary (`eta_core_test`) runs a broad suite of
+Boost.Test cases but several areas have limited deterministic coverage:
+GC correctness under pressure, actor-thread round-trips at scale, and
+regression for specific bytecode optimisation passes.
+
+### 3.1 · GC Stress Tests
+
+Deterministic GC-stress tests construct known live graphs with a deliberately
+small heap soft-limit, verify that all live objects survive collection, and
+assert that dead objects are reclaimed:
+
+```cpp
+Driver driver(resolver, 64 * 1024);  // 64 KB -- forces many collections
+// ... run a quoted-constant actor round-trip ...
+BOOST_CHECK_CLOSE(*dec, expected, 1e-9);
+```
+
+| Test Group | What to Cover |
+|------------|---------------|
+| `gc_stress_tests/quoted_constant_survives` | GC does not sweep bytecode-registry constants before spawn-thread serialisation. |
+| `gc_stress_tests/actor_round_trip_under_pressure` | List payloads through mailboxes survive GC in both parent and child heaps. |
+| `gc_stress_tests/recursive_cons_reconstruction` | Deep nested list reconstruction under allocation pressure. |
+| `gc_stress_tests/multithread_gc_isolation` | Two concurrent actor threads do not corrupt each other's heap. |
+
+### 3.2 · Benchmarking Suite
+
+Before optimising the compiler or GC, establish a repeatable benchmark suite
+tracked per-commit in CI:
+
+| Benchmark | What it Measures |
+|-----------|-----------------|
+| `fib(35)` | Recursive call overhead, TCO savings |
+| `(foldl + 0 (iota 1000000))` | Arithmetic hot loop, GC pressure |
+| `(sort < (iota 100000))` | Allocation-heavy higher-order code |
+| `SABR Hessian` | Tape-based AD throughput |
+| `unify / backtrack` | Logic variable creation and trail management |
+| `stats/ols-multi` on large FactTable | Eigen FFI round-trip overhead |
+
+### 3.3 · Coverage Expansion
+
+| Area | Current Gap |
+|------|-------------|
+| Bytecode optimisation passes | No deterministic tests for constant-folding / DCE correctness |
+| CLP propagation | AC-3 arc-consistency pass needs property-based tests |
+| Actor supervision | `spawn-wait` / error propagation paths not covered |
+| LSP / DAP protocol | Existing tests cover basic requests; edge cases (large documents, restart) are untested |
+
+### Key Implementation Tasks
+
+| Task | Touches |
+|------|---------|
+| New `gc_stress_tests` Boost.Test suite | `eta/test/src/gc_stress_tests.cpp` |
+| Benchmark harness + CI integration | new `bench/`, `CMakeLists.txt` |
+| Property-based test helpers | `eta/test/src/` |
+
+---
+
+## 4 · Logic Programming & CLP Upgrades
+
+### 4.1 · Logic Programming
+
+The core unification engine and `std.logic` library are complete (see
+[Logic Programming](logic.md)).  The following features are not yet
+implemented:
+
+| Feature | Current Status | Notes |
+|---------|---------------|-------|
+| **Attributed variables** | Not supported | Required for full CLP wakeup semantics.  Would need a new `AttrVar` heap kind and a wakeup queue in the VM. |
+| **Tabling / memoisation** | Not supported | Standard SLG tabling requires a WAM-style call stack; a simplified memo-table for ground queries is a tractable first step. |
+| **`assert` / `retract`** | Encodeable via `set!` | A dedicated dynamic fact-database primitive would be more ergonomic and integrate with `findall` directly. |
+| **Cut (`!`)** | Not built-in | `run1` covers the most common use case; a proper cut would require a choicepoint stack in the VM. |
+| **DCG rules** | Not built-in | Definite-clause grammars can be encoded as difference lists today; native `-->` syntax would improve readability. |
+
+### 4.2 · CLP Upgrades
+
+The current CLP implementation uses forward checking with DFS labelling.
+Four enhancements are planned (see also [CLP — Current Limitations](clp.md)):
+
+| Feature | Current Status | Description |
+|---------|---------------|-------------|
+| **Arc consistency (AC-3)** | Not yet | Propagate constraint narrowing transitively at each assignment.  Requires an arc queue and wakeup on domain change. |
+| **Attributed variables** | Not yet | Full AC-3 requires attributed variables to attach wakeup hooks.  The two features are co-dependent. |
+| **Non-integer domains** | Not yet | Real-interval `clp(R)` for float/rational constraints.  Requires a new `RDomain` type in `constraint_store.h`. |
+| **Optimisation goals** | Not yet | `(clp:minimize cost vars)` / `(clp:maximize cost vars)` via branch-and-bound.  Needed for scheduling and portfolio problems. |
+
+### Key Implementation Tasks
+
+| Task | Touches |
+|------|---------|
+| `AttrVar` heap kind + wakeup queue in VM | `heap.h`, `vm.cpp`, `core_primitives.h` |
+| AC-3 arc queue in `ConstraintStore` | `clp/constraint_store.h`, `vm.cpp` |
+| `RDomain` float-interval domain | `clp/domain.h`, `constraint_store.h` |
+| `clp:minimize` / `clp:maximize` in `std.clp` | `stdlib/std/clp.eta`, `clp/constraint_store.h` |
+| Simplified ground-query memo table | `std.logic`, `vm.cpp` |
+| Native DCG syntax (`-->`) in expander | `expander.cpp`, `semantic_analyzer.cpp` |
+
+---
+
+## 5 · VS Code Improvements
 
 ### Current State
 
@@ -66,6 +240,9 @@ The DAP server (`eta_dap`) already supports:
 - REPL-style expression evaluation (`evaluate` request)
 - Heap inspector (custom request)
 - `stopOnEntry` launch option
+- Disassembly view (bytecode with current-PC marker)
+- GC Roots tree (Stack, Globals, Frames with drill-down)
+- Child process panel (spawned actor PID, endpoint, live/exited status)
 
 ### Planned Improvements
 
@@ -99,7 +276,6 @@ flowchart TD
 | **Module-aware scope tree** | Show globals grouped by module in the Variables pane, not a flat list. | `dap_server.h` — `handle_scopes` / `handle_variables` |
 | **REPL completions** | Tab-completion in the Debug Console using the module's visible names. | `dap_server.h` — `handle_completions` |
 | **Data breakpoints** | Break when a specific global slot is written to. | `vm.h` — write-watch on global slots |
-| **Disassembly view** | Show the bytecode alongside source in a split pane. | VS Code extension custom editor |
 
 ### Key Implementation Tasks
 
@@ -110,196 +286,110 @@ flowchart TD
 | `logMessage` handling in `setBreakpoints` | `dap_server.cpp` |
 | Group globals by module in variable scopes | `dap_server.cpp`, `module_linker.h` |
 | `completions` request handler | `dap_server.cpp` |
-| VS Code extension: hover evaluation, disassembly view | `editors/vscode/` |
+| VS Code extension: hover evaluation | `editors/vscode/` |
 
 ---
 
-## 3 · Performance Improvements
+## 6 · Jupyter Kernel
 
 ### Motivation
 
-Eta's VM is a straightforward interpreter loop with NaN-boxed values.
-There is significant room to improve throughput without changing the
-language semantics.
+A Jupyter kernel would let users interact with Eta from notebooks —
+incrementally evaluating cells, mixing prose with live computation,
+and inline-rendering tensor or statistics outputs.  This would make Eta
+particularly accessible for exploratory quantitative finance and
+causal-inference workflows.
 
-### 3.1 · Benchmarking Infrastructure
+### Architecture — xeus
 
-Before optimising, establish a repeatable benchmark suite:
+The kernel is built on [**xeus**](https://github.com/jupyter-xeus/xeus),
+the official C++ framework for Jupyter kernels.  xeus handles the
+ZeroMQ transport, Jupyter wire protocol, heartbeat, and control channels.
+The Eta implementation only needs to subclass `xeus::xinterpreter` and
+override five methods.
 
-| Benchmark | What it measures |
-|-----------|-----------------|
-| `fib(35)` | Recursive call overhead, TCO savings |
-| `(foldl + 0 (iota 1000000))` | Arithmetic hot loop, GC pressure |
-| `(sort < (iota 100000))` | Allocation-heavy higher-order code |
-| `torch training loop` | libtorch FFI round-trip overhead |
-| `SABR Hessian` | Dual-number AD throughput |
-| `unify / backtrack` | Logic variable creation & trail management |
+```mermaid
+flowchart LR
+    NB["Jupyter\nNotebook / Lab"]
+    KM["Kernel Manager\n(jupyter_client)"]
+    EK["eta_kernel\n(xeus::xinterpreter)"]
+    DRV["Driver\n(interpreter)"]
 
-Results should be tracked per-commit in CI so regressions are caught
-automatically.
+    NB <-->|Jupyter Wire Protocol| KM
+    KM <-->|Spawn + ZeroMQ| EK
+    EK <-->|in-process| DRV
 
-### 3.2 · VM Dispatch Optimisation
-
-| Technique | Description | Expected Impact |
-|-----------|-------------|-----------------|
-| **Computed goto / direct threading** | Replace the `switch` dispatch loop with GCC/Clang `&&label` computed gotos. | 15–30 % speedup on tight loops (eliminates branch predictor pollution from the switch). |
-| **Super-instructions** | Fuse common opcode pairs (e.g. `LoadLocal` + `Add`, `LoadConst` + `Call`) into single opcodes that skip a dispatch cycle. | 10–20 % on arithmetic-heavy code. |
-| **Inline caching** | Cache the resolved global slot index for `LoadGlobal` so repeated lookups hit a fast path. | Benefits module-heavy code with many cross-module calls. |
-
-### 3.3 · Garbage Collector Tuning
-
-| Improvement | Description |
-|-------------|-------------|
-| **Generational collection** | Promote long-lived objects to an "old" generation collected less frequently. Most allocations (cons cells, closures) are short-lived. |
-| **Concurrent marking** | Run the mark phase on a background thread while the VM continues executing, reducing pause times. |
-| **Adaptive soft-limit** | Tune the GC trigger threshold based on allocation rate rather than a fixed byte count. |
-| **Compacting / copying collector** | Defragment the heap after mark-sweep to improve cache locality. |
-
-### 3.4 · Compiler Optimisations
-
-| Pass | Description |
-|------|-------------|
-| **Constant propagation** | Propagate known constant values through `let` bindings and inline them at use sites. |
-| **Closure lifting** | Convert closures that capture only constants into top-level functions, eliminating the closure allocation. |
-| **Inlining** | Inline small functions (below a threshold) at their call sites to remove call overhead. |
-| **Escape analysis** | Detect allocations that do not escape their scope and stack-allocate them instead of heap-allocating. |
-| **Loop analysis** | Recognise tail-recursive `letrec` loops and generate tighter bytecode (dedicated loop opcodes). |
-
-### 3.5 · Memory Layout
-
-| Improvement | Description |
-|-------------|-------------|
-| **Object headers** | Shrink heap object headers from 16 bytes to 8 bytes by packing kind + GC mark + size into a single 64-bit word. |
-| **Intern table** | Replace the concurrent hash map with a Robin Hood or Swiss table for better probe locality. |
-
-### Key Implementation Tasks
-
-| Task | Touches |
-|------|---------|
-| Benchmark suite + CI integration | new `bench/`, `CMakeLists.txt` |
-| Computed-goto dispatch in `vm.cpp` | `vm.cpp`, `bytecode.h` |
-| Super-instruction definitions and emitter support | `emitter.h`, `vm.cpp` |
-| Generational GC prototype | `mark_sweep_gc.h`, `heap.h` |
-| Constant propagation IR pass | `optimization/` |
-| Closure lifting IR pass | `optimization/` |
-| Object header compaction | `types/`, `heap.h` |
-
----
-
-## 4 · Foreign Function Interface
-
-> [!TIP]
-> A detailed design document for this workstream is available at
-> [Foreign Function Interface](ffi.md).
-
-### Motivation
-
-Eta's FFI support is currently limited to C functions with `ptr` arguments
-and return values.  A more flexible FFI unlocks libraries and services
-written in any language, including C++, Rust, and Python.
-
-### Proposed API
-
-```scheme
-(module example
-  (import std.core)
-  (import std.io)
-  (import std.ffi)
-  (begin
-    ;; Call C function
-    (let ((puts (ffi-foreign "puts" (-> c-string int))))
-      (puts "Hello from Eta via C!"))
-
-    ;; Call Rust function
-    (let ((add (ffi-foreign "add" (-> int int int))))
-      (println (add 40 2 2)))
-
-    ;; Call Python function
-    (let ((py-obj (ffi-foreign "PyObject_GetAttrString" (-> ptr c-string))))
-      (println (py-obj (py-encode "hello"))))))
+    style NB  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
+    style KM  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
+    style EK  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style DRV fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
-### Key Implementation Tasks
+The `EtaInterpreter` class subclasses `xeus::xinterpreter`; xeus-zmq
+provides the ZeroMQ transport backend.  All protocol-level concerns
+(HMAC signing, message framing, heartbeat) are handled by xeus.
 
-| Task | Touches |
-|------|---------|
-| `ffi-foreign` implementation | `ffi.cpp`, `ffi.h` |
-| C++ / Rust / Python example integrations | `examples/` |
-| Documentation | `docs/` |
+### xinterpreter Interface
 
----
+```cpp
+// eta/kernel/eta_interpreter.h
+class EtaInterpreter : public xeus::xinterpreter {
+public:
+    EtaInterpreter();
 
-## 5 · Actor Model Enhancements
+private:
+    // Execute a cell; publish stdout/stderr via xeus streams.
+    nl::json execute_request_impl(int execution_count,
+                                  const std::string& code,
+                                  bool silent, bool store_history,
+                                  nl::json user_expressions,
+                                  bool allow_stdin) override;
 
-> [!TIP]
-> A detailed design document for this workstream is available at
-> [Actor Model Enhancements](actor-model.md).
+    // Tab-completion using the Driver's visible name set.
+    nl::json complete_request_impl(const std::string& code,
+                                   int cursor_pos) override;
 
-### Motivation
+    // Symbol inspection (arity, doc-string if present).
+    nl::json inspect_request_impl(const std::string& code,
+                                  int cursor_pos,
+                                  int detail_level) override;
 
-Eta's actor model provides a powerful concurrency primitive, but the
-current implementation has limitations in performance, error handling,
-and interoperability with non-actor code.
+    // Incremental parse check — lets Jupyter know whether to show
+    // a continuation prompt or execute immediately.
+    nl::json is_complete_request_impl(const std::string& code) override;
 
-### Proposed API
+    // Kernel metadata (language name, version, file extension).
+    nl::json kernel_info_request_impl() override;
 
-```scheme
-(module actor-demo
-  (import std.core)
-  (import std.io)
-  (import std.actor)
-  (begin
-    ;; Spawn actor
-    (def hello-actor
-      (actor []
-        (println "Hello from actor!")
-        (loop-receive
-          ;; Handle messages
-          (msg
-            (case msg
-              ("stop" (println "Actor stopping.") (actor-stop))
-              (_ (println "Received:" msg))))))
-
-    ;; Send message to actor
-    (hello-actor "Eta greets you!")
-
-    ;; Spawn and wait for actor
-    (def worker
-      (actor []
-        (loop-receive
-          (msg
-            (case msg
-              ("do-work"
-                (println "Worker doing work...")
-                (actor-reply "work-done"))
-              (_ (println "Worker received unknown message"))))))
-
-    (worker "do-work")
-    (println "Waiting for worker...")
-    (actor-await worker)
-
-    ;; Supervise actor
-    (def supervisor
-      (actor []
-        (loop-receive
-          (msg
-            (case msg
-              ("start-worker"
-                (let ((w (actor-spawn worker)))
-                  (println "Supervisor started worker:" w)
-                  (actor-watch w))
-              (_ (println "Supervisor received:" msg))))))
-
-    (supervisor "start-worker")
-    (println "Supervisor is monitoring the worker."))))
+    Driver driver_;   // persistent state across cells
+};
 ```
 
+Each `execute_request_impl` call passes the cell source to
+`driver_.run_source()`; stdout and stderr from the `Driver` are captured
+and forwarded as `stream` messages via `publish_stream`.
+
+### Proposed Features
+
+| Feature | Description |
+|---------|-------------|
+| **Cell execution** | Each cell is a `(module …)` or bare `(begin …)` form fed to `Driver::run_source`. |
+| **Incremental state** | Globals, loaded modules, and GC roots persist across cells exactly as in the REPL. |
+| **Tab-completion** | `complete_request_impl` queries the `Driver`'s global name table. |
+| **Rich output** | Tensors and fact-tables rendered as `text/html` tables via `display_data`. |
+| **Interrupt handling** | `SIGINT` sets a VM interrupt flag, aborting the current evaluation cleanly. |
+| **Kernel spec** | A `kernelspec/` directory installable via `jupyter kernelspec install`. |
+| **Magic commands** | `%disasm`, `%heap`, `%time` — thin prefix checks before passing to `run_source`. |
+
 ### Key Implementation Tasks
 
 | Task | Touches |
 |------|---------|
-| Actor model performance optimisations | `actor.cpp`, `actor.h` |
-| Supervision and error handling enhancements | `actor.cpp`, `actor.h` |
-| Documentation | `docs/` |
+| Fetch xeus + xeus-zmq via CMake | `CMakeLists.txt`, `cmake/FetchXeus.cmake` |
+| `EtaInterpreter` subclass | `eta/kernel/eta_interpreter.h`, `eta/kernel/eta_interpreter.cpp` |
+| `main()` wiring xeus-zmq server | `eta/kernel/main_kernel.cpp` |
+| Kernel spec JSON + install target | `editors/jupyter/kernelspec/` |
+| Rich display formatters for tensors / fact-tables | `eta/kernel/display.cpp` |
+| Magic command dispatch (`%disasm`, `%heap`, `%time`) | `eta/kernel/magics.cpp` |
 
 ---
