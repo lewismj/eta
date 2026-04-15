@@ -665,7 +665,8 @@ sector for O(1) lookups:
 > (fact-table-fold tbl f init)               ; fold over all rows
 > (fact-table-ref tbl row col)               ; random access
 > ```
-> Same architecture as kdb+ / DuckDB — C++ backed, VM-level primitives.
+> Similar architecture as kdb+ / DuckDB (Eta fact table implementation 
+> does not compress the columns - _at present_.) — C++ backed, VM-level primitives.
 
 ---
 
@@ -991,7 +992,7 @@ through.  The risk model is currently a quadratic form (wᵀΣw), but the
 ## §6 — Explainable Portfolio Selection
 
 Scores every CLP-feasible portfolio, ranks the top 3, and produces a
-full institutional-grade explanation:
+full explanation:
 
 ```
 Top 3 Portfolios (from 490 feasible candidates):
