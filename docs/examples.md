@@ -88,7 +88,7 @@ beyond paradigm demonstration to act like a real decision engine:
    columnar fact table with hash-indexed sector lookups
 2. **Symbolic Specification** — portfolio objective and constraints as
    inspectable, auditable S-expressions
-3. **Causal Risk Model** — 5-node macro DAG; `do:identify` derives the
+3. **Causal Return Model** — 5-node macro DAG; `do:identify` derives the
    back-door adjustment formula for confounding-corrected returns
 4. **CLP Constraints** — exact portfolio feasibility via integer-domain
    constraint satisfaction (no penalties, no projection)
