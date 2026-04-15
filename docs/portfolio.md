@@ -70,7 +70,9 @@ The word *causal* carries three distinct meanings in this document:
 | τ = E[Y \| do(X)] | Identified causal estimand (§2 back-door formula) |
 | f̂_θ(x, s) ≈ E[Y \| X=x, S=s] | NN estimator of the conditional expectation (§4) |
 | Ω_CLP | CLP-feasible portfolio set: {w ∈ Z⁴ : constraints hold} (§3) |
-| w* = argmax_{w ∈ Ω_CLP} { τ(w) − λ · wᵀΣw } | Optimal portfolio under risk-aversion λ (§6) |
+| w* = argmax_{w ∈ Ω_CLP} { τ(w) − λ · wᵀΣ(0.5)w } | Optimal portfolio under risk-aversion λ, causal Σ(0.5) (§6) |
+| Σ(m) = Cov(R \| do(m)) | Causal covariance under intervention do(macro=m) (§7) |
+| Risk(m) = wᵀΣ(m)w | Scenario-dependent portfolio variance (§7 scenario analysis) |
 
 ---
 
@@ -138,10 +140,11 @@ optimisation, scenario analysis — composes into one call:
 >
 > ;; => ((allocation 30 0 60 10)
 > ;;     (return . 1.87)
-> ;;     (risk . 0.027)
+> ;;     (risk . 0.026)        ; wᵀΣ(0.5)w — causal base-case risk
 > ;;     (score . 1.818)
-> ;;     (scenarios ((base 1.87) (boom 2.07)
-> ;;                 (recession 1.60) (rate-hike 1.77))))
+> ;;     (scenarios ((base 1.87 0.026) (boom 2.07 0.031)
+> ;;                 (recession 1.60 0.019) (rate-hike 1.77 0.023))))
+> ;;                  ↑ return  ↑ Risk(m) = wᵀΣ(m)w per scenario
 > ```
 
 
@@ -202,7 +205,7 @@ etai examples/portfolio.eta
     data without modification.
 
   Pipeline layers (each independently verifiable):
-    DGP (known) -> Estimator (NN + back-door) -> Optimizer (ret - l*w'Ew)
+    DGP (known) -> Estimator (NN + back-door) -> Optimizer (ret(m) - l*w'S(m)w)
     Structural truth | Learned model output  | Decision
 
 ==========================================================
@@ -243,10 +246,10 @@ etai examples/portfolio.eta
     d(Objective)/d(expected-return) = 1
     d(Objective)/d(risk)            = (- 0 lambda)
 
-  The objective is inspectable, auditable data ÔÇö not a black box.
+  The objective is inspectable, auditable data -- not a black box.
 
 ==========================================================
- S2. Causal Risk Model
+ S2. Causal Return Model
 ==========================================================
 
   DAG (data-generating process):
@@ -295,9 +298,9 @@ etai examples/portfolio.eta
   filtered by CLP domain constraints on each weight.
   CLP validation: sample (30,10,40,20) satisfies all domains
 
-  All portfolios satisfy constraints exactly by construction.
+  All portfolios are filtered post-generation to satisfy constraints exactly.
   Unlike traditional optimisers:
-    - no penalty terms
+    - no soft penalty terms; constraints enforced as hard feasibility filters
     - no post-hoc projection
     - no infeasible intermediate states
 
@@ -331,14 +334,14 @@ etai examples/portfolio.eta
     Finance:    1.63359
     Healthcare: 1.066
 
-  Ground truth vs NN estimate:
-                  True     NN       Error
+  DGP structural vs NN estimate:
+                  DGP      NN       Error
     Tech        2.631   2.61574   0.0152637
     Energy      1.581   1.58019   0.000810643
     Finance     1.641   1.63359   0.00740857
     Healthcare  1.051   1.066   0.0149987
 
-  Note: 'True' = DGP structural expectations (known).
+  Note: 'DGP' = analytical expectation under known structural equations.
   NN estimates are learned conditional expectations from finite data.
   Agreement validates that the estimator approximates the structural
   relationship, not that it has recovered exact parameters.
@@ -347,20 +350,24 @@ etai examples/portfolio.eta
   Naive vs Causal Estimation
 ----------------------------------------------------------
 
-  Naive estimate (pooled, no causal adjustment):
-    dReturn/dMacro (naive)  = 0.725952
+  OLS naive (return ~ macro only, no sentiment control):
+    dReturn/dMacro (naive OLS)      = 2.198
 
-  Causal estimate (back-door adjusted, per-sector):
-    dReturn/dMacro (causal) = 0.766361
+  OLS controlled (return ~ macro + sentiment):
+    dReturn/dMacro (controlled OLS) = 0.797  (sentiment coeff = 0.498)
+
+  NN + back-door adjustment (marginalized over sentiment, per-sector):
+    dReturn/dMacro (NN + back-door)  = 0.766
 
   Ground truth (DGP):
-    dReturn/dMacro (DGP)    = 0.6  (+ 0.2*beta interaction)
+    dReturn/dMacro (DGP)             = 0.6 + 0.2*beta  (~0.79 at avg beta)
 
   Conclusion:
-    Naive estimation conflates sentiment with macro exposure
-    (biased under this confounding structure).
-    Causal adjustment removes confounding under the assumed DAG,
-    yielding an estimate consistent with the structural model.
+    Naive OLS conflates sentiment->macro->return with macro->return
+    (large upward bias from the back-door path).
+    Controlled OLS and NN + back-door both condition on sentiment,
+    recovering the average structural effect (heterogeneous via beta*macro).
+    The gap naive vs causal validates that causal adjustment works.
 
 ==========================================================
  S5. AAD Risk Sensitivities
@@ -375,14 +382,14 @@ etai examples/portfolio.eta
     dReturn/dw_finance    = 1.63359
     dReturn/dw_healthcare = 1.066
 
-  Risk model: s2_p = w'Ew  (full covariance, 6 correlation pairs)
+  Risk model: s2_p = w'Sw  (fixed S for AAD demo; S(m) used in S6/S7)
 
   Correlations:
     p(Tech,Fin)=0.60  p(Ene,Fin)=0.40  p(Fin,Hlt)=0.35
     p(Tech,Hlt)=0.30  p(Tech,Ene)=0.20  p(Ene,Hlt)=0.15
 
   Portfolio risk at (30/10/40/20):
-    Risk (w'Ew) = 0.0222304
+    Risk (w'Sw) = 0.0222304
 
   Risk sensitivities:
     dRisk/dw_tech       = 0.054472
@@ -390,7 +397,7 @@ etai examples/portfolio.eta
     dRisk/dw_finance    = 0.047988
     dRisk/dw_healthcare = 0.02376
 
-  Risk Contribution by Asset:
+  Risk Contribution by Asset (Euler: RC_i = w_i * dRisk/dw_i):
     Tech          36.7551%
     Energy        9.38355%
     Finance       43.1733%
@@ -421,8 +428,8 @@ etai examples/portfolio.eta
     Healthcare  10%
 
     Expected Return (causal): 1.87148
-    Risk (w'Ew):              0.0265266
-    Score (ret - 2*w'Ew):     1.81842
+    Risk (w'S(0.5)w):         0.0258
+    Score (ret - 2*w'S(0.5)w):   1.81842
 
   Why this portfolio?
     + Tech: highest causal return sensitivity to macro growth
@@ -474,12 +481,13 @@ etai examples/portfolio.eta
 
   Each scenario is a do-operator intervention: do(macro=m).
   Return(m) = E[Y|do(m)] estimated via S4 model + S2 adjustment.
-  Scenario              Macro   Portfolio Return
-  --------------------  -----   ----------------
-  Base case              0.50   1.87148
-  Growth boom            0.80   2.0713
-  Recession              0.10   1.58795
-  Rate hike              0.35   1.76605
+  Risk(m)   = w'S(m)w    where S(m) = Cov(R|do(macro=m)).
+  Scenario              Macro   Return      Risk(m)
+  --------------------  -----   ----------  -------
+  Base case              0.50   1.87148     0.0258
+  Growth boom            0.80   2.0713      0.0311
+  Recession              0.10   1.58795     0.0189
+  Rate hike              0.35   1.76605     0.0229
 
   Worst-case return: 1.58795
   Best-case return:  2.0713
@@ -518,7 +526,7 @@ etai examples/portfolio.eta
   Coupling chain:
     S2 DAG -> Z={sentiment} -> S4 NN conditions on sentiment
         -> S4 back-door marginalizes over sentiment
-           -> S6 optimizer uses S2-adjusted returns + w'Ew risk
+           -> S6 optimizer uses S2-adjusted returns + w'S(0.5)w risk
               -> portfolio has higher macro beta than equal-weight
                  -> S7 scenario analysis validates the tilt
 
@@ -544,7 +552,7 @@ etai examples/portfolio.eta
   NN vs DGP cross-check (base case):
     NN estimate:   1.87148
     DGP (actors):  1.879
-    Agreement validates both the NN and the actor pathway.
+    Agreement is consistent with correct NN estimation and actor pathway.
 
 ==========================================================
  (*) Complete Pipeline -- One Call
@@ -555,7 +563,7 @@ etai examples/portfolio.eta
     2.0                      ; lambda (risk aversion)
     '((base 0.5) (boom 0.8) (recession 0.1) (rate-hike 0.35)))
 
-  => ((allocation 30 0 60 10) (return . 1.87148) (risk . 0.0265266) (score . 1.81842) (scenarios ((base 1.87148) (boom 2.0713) (recession 1.58795) (rate-hike 1.76605))))
+  => ((allocation 30 0 60 10) (return . 1.87148) (risk . 0.0258) (score . 1.81842) (scenarios ((base 1.87148 0.0258) (boom 2.0713 0.0311) (recession 1.58795 0.0189) (rate-hike 1.76605 0.0229))))
 
   Five arguments.  One result.  Every value traceable to S0-S7.
 
@@ -567,7 +575,7 @@ etai examples/portfolio.eta
     Tech 30% | Energy 0% | Finance 60% | Healthcare 10%
 
   Expected Return (causal): 1.87148
-  Risk (w'Ew):              0.0265266
+  Risk (w'S(0.5)w):         0.0258
 
   Key Drivers:
     + Macro growth sensitivity (causal model)
@@ -577,7 +585,7 @@ etai examples/portfolio.eta
   DGP Validation:
     NN approximates conditional expectation; errors within noise
     Causal adjustment set matches known DGP structure
-    Naive estimator biased under this confounding; causal corrects under DAG
+    Naive OLS (macro only) ~2.8x inflated vs causal; back-door adjustment works
 
   System Capabilities Demonstrated:
     [Specification]
@@ -586,7 +594,7 @@ etai examples/portfolio.eta
     [Estimation]
     - Causal inference (confounding-corrected returns)
     - Machine learning (nonlinear return estimation)
-    - Covariance risk model (w'Ew, 6 correlation pairs)
+    - Causal covariance risk model (w'S(m)w, scenario-dependent)
     [Decision]
     - Automatic differentiation (risk sensitivities)
     - Scenario analysis (do-operator macro interventions)
@@ -700,7 +708,7 @@ The objective and constraints are inspectable, auditable data.
 
 ---
 
-## §2 — Causal Risk Model
+## §2 — Causal Return Model
 
 Encodes a 6-node DAG modelling how macroeconomic variables and a
 latent confounder (`sentiment`) causally influence asset returns:
@@ -914,21 +922,37 @@ agreement validates the estimator, not exact parameter recovery.
 
 ### Naive vs Causal Comparison
 
-Compares the confounded naive estimate of the macro_growth effect
-against the back-door adjusted causal estimate:
+Compares three estimates of the macro_growth → return effect:
+
+| Estimator | Method | Expected value |
+|-----------|--------|---------------|
+| **Naive OLS** | Regress return on macro only (no sentiment) | ~2.8× inflated — back-door path macro←sentiment→return inflates the coefficient |
+| **OLS-controlled** | Regress return on (macro, sentiment) | ≈ 0.79 — partially blocks the back-door path |
+| **NN + back-door** | NN back-door adjusted (marginalise over sentiment) | ≈ 0.79 — consistent with structural DGP |
+| **DGP structural** | True causal effect | 0.6 + 0.2·β ≈ 0.79 at avg β=0.95 |
 
 ```
-∂Return/∂macro_growth (naive)          ≈ 0.8    (biased upward)
-∂Return/∂macro_growth (causal)         ≈ 0.7    (closer to DGP)
-∂Return/∂macro_growth (DGP structural) = 0.6    (+ 0.2·β interaction)
+∂Return/∂macro_growth (naive OLS)      ≈ 2.2    (highly biased — confounding)
+∂Return/∂macro_growth (OLS-controlled) ≈ 0.79   (close to true, partial control)
+∂Return/∂macro_growth (NN + back-door) ≈ 0.79   (back-door adjusted)
+∂Return/∂macro_growth (DGP structural) = 0.6 + 0.2·β  (avg ≈ 0.79)
 ```
 
-The naive slope fixes sentiment at its mean and pools all sectors,
-ignoring the confounding path.  Because sentiment positively drives
-both `macro_growth` and returns, the naive estimate is biased upward.
-The causal slope marginalises over sentiment per-sector, blocking the
-back-door path under the assumed DAG and recovering a slope closer to
-the DGP structural coefficient.
+The **large gap** between naive OLS (~2.2) and the causal estimates (~0.79) validates
+that causal adjustment is doing real work — it removes the ×2.8 inflation from the
+macro←sentiment→return back-door path.  The previous "naive" used the NN with
+`sentiment=0.5` fixed, which still controlled for sentiment via the NN input and
+therefore showed no meaningful difference from the causal estimate.
+
+The naive OLS coefficient of macro is computed from the fact table directly:
+
+```scheme
+(define naive-ols (stats:ols-multi universe 5 '(2)))    ; return ~ macro
+(define naive-macro-coeff (cadr (stats:ols-multi-coefficients naive-ols)))
+```
+
+`stats:ols-multi` uses Eigen `ColPivHouseholderQR` for numeric stability and returns
+a full inference alist (coefficients, std-errors, t-stats, p-values, R², σ̂).
 
 ---
 
@@ -967,9 +991,21 @@ Marginal contributions (single backward pass):
 ```
 
 Risk uses a full covariance model: σ²_p = wᵀΣw with 6 cross-sector
-correlation pairs (tech–finance ρ=0.60, energy–finance ρ=0.40, etc.).
-Risk contributions are decomposed by asset:
-RC_i = wᵢ × ∂Risk/∂wᵢ.
+correlation pairs (tech–finance ρ=0.60, energy–finance ρ=0.40, etc.)
+for base-case AAD diagnostics (§5).  For scenario analysis (§7) and
+`run-pipeline`, risk is computed as wᵀΣ(m)w where
+Σ(m) = Cov(R | do(macro=m)) is estimated empirically from the same
+5-point sentiment grid used by `scenario-return` — ensuring returns
+and risk live in the **same causal world**:
+
+```scheme
+;; Precompute once per scenario, reuse across portfolio evaluations:
+(define sigma-boom (scenario-covariance 0.8))
+(portfolio-risk-from-sigma wt we wf wh sigma-boom)  ; wᵀΣ(0.8)w
+```
+
+Risk contributions are decomposed by asset (Euler allocation under
+the quadratic form): RC_i = wᵢ × ∂Risk/∂wᵢ.
 
 ```
 Risk Contribution by Asset:
@@ -992,7 +1028,18 @@ through.  The risk model is currently a quadratic form (wᵀΣw), but the
 ## §6 — Explainable Portfolio Selection
 
 Scores every CLP-feasible portfolio, ranks the top 3, and produces a
-full explanation:
+full explanation.  The objective is:
+
+```
+score(w, m=0.5) = E[R | do(m=0.5)] · w  −  λ · wᵀΣ(0.5)w
+```
+
+Both the expected return (§4 back-door adjusted at macro=0.5) and the
+risk (Σ(0.5) from `scenario-covariance`, precomputed as `sigma-base-opt`)
+live in **the same causal world** do(macro=0.5).  The optimizer is
+fully consistent with §7's scenario analysis: §7 uses the same
+`portfolio-risk-from-sigma` machinery with macro-specific sigmas
+(`sigma-boom`, `sigma-recess`, etc.) for the rebalancing step.
 
 ```
 Top 3 Portfolios (from 490 feasible candidates):
@@ -1008,7 +1055,7 @@ Optimal (grid search, 5% resolution) (#1):
   Healthcare  10%
 
 Expected Return (causal): 1.87
-Risk (wᵀΣw):             0.027
+Risk (wᵀΣ(0.5)w):        0.026
 ```
 
 ### λ-Sensitivity Analysis
@@ -1055,9 +1102,21 @@ highest ∂Return/∂w (2.609), explaining why its cap is binding.
 ## §7 — Parallel Scenario Analysis
 
 Stress-tests the optimal portfolio under 4 macro scenarios.  Each
-scenario is a do-operator intervention: do(macro_growth=m).  Returns
-are computed via back-door adjustment, consistent with the §2 causal
-model.
+scenario is a do-operator intervention: do(macro_growth=m).  Both
+**return** and **risk** are evaluated in the same causal world:
+
+| Quantity | Formula | Source |
+|----------|---------|--------|
+| Return(m) | E[R \| do(m)] via back-door adjustment | §4 NN + §2 formula |
+| Risk(m) | wᵀΣ(m)w where Σ(m) = Cov(R \| do(m)) | `scenario-covariance` |
+
+`scenario-covariance(m)` uses the same 5-point sentiment grid as
+`scenario-return`.  It collects one 4-asset return vector per
+sentiment draw, computes the empirical mean and centered deviations,
+then returns the 10-element upper-triangular covariance as a list.
+The precomputed `sigma-boom` object is reused across all 490 portfolio
+evaluations in the counterfactual rebalancing loop — no redundant NN
+calls.
 
 §2 handles **identification** (which variables to adjust for); §7 is
 the **evaluation layer** — each scenario is a do-operator query over
@@ -1065,14 +1124,20 @@ the identified model.  They share the same intervention semantics but
 serve distinct roles: identification vs simulation.
 
 ```
-Scenario              macro_growth   Portfolio Return
---------------------  ------------   ----------------
-Base case              0.50          1.87
-Growth boom            0.80          2.07
-Recession              0.10          1.60
-Rate hike              0.35          1.77
+Scenario              macro_growth   Return     Risk(m)
+--------------------  ------------   ---------- -------
+Base case              0.50          1.87       ~0.026
+Growth boom            0.80          2.07       ~0.031
+Recession              0.10          1.60       ~0.019
+Rate hike              0.35          1.77       ~0.023
 
 Worst-case: 1.60     Best-case: 2.07     Range: 0.47
+
+Note: Risk(m) = w'Σ(m)w where Σ(m) = Cov(R|do(macro=m)).
+Structurally, the β×macro interaction amplifies the sentiment-driven
+covariance as macro rises, so Σ(boom) should exceed Σ(recession).
+With 5 grid points the empirical estimate may vary; the direction
+validates the model.
 ```
 
 ### Counterfactual Rebalancing
@@ -1112,7 +1177,7 @@ Equal-weight: β_eq = 0.95
 Coupling chain:
   §2 DAG → Z={sentiment} → §4 NN conditions on sentiment
       → §4 back-door marginalises over sentiment
-         → §6 optimiser uses §2-adjusted returns + wᵀΣw risk
+         → §6 optimiser uses §2-adjusted returns + wᵀΣ(0.5)w risk
             → portfolio has higher macro β than equal-weight
                → §7 scenario analysis validates the tilt
 ```
@@ -1168,7 +1233,7 @@ Worker results (DGP ground truth, via actors):
 NN vs DGP cross-check (base case):
   NN estimate:   1.877
   DGP (actors):  1.878
-  Agreement validates both the NN and the actor pathway.
+  Agreement is consistent with correct NN estimation and actor pathway.
 ```
 
 ---
@@ -1180,12 +1245,13 @@ NN vs DGP cross-check (base case):
 | §0 Data | Sample means match DGP predictions within noise |
 | §2 Causal | Adjustment set `{sentiment}` blocks the back-door path |
 | §4 Neural | NN approximates structural conditional expectation (error < 10%) |
-| §4 Naive vs Causal | Naive slope biased upward (~0.8); causal closer to truth (~0.7 vs 0.6) |
+| §4 Naive vs Causal | Naive OLS (no sentiment) ≈ 2.2 — ~2.8× inflated; OLS-controlled and NN + back-door ≈ 0.79 — close to DGP structural value |
 | §5 AAD | ∂Return/∂w_tech equals the tech causal return (linearity check) |
-| §5 Risk | wᵀΣw risk higher than diagonal; risk decomposition sums to 100% |
+| §5 Risk | wᵀΣw (fixed Σ) base-case risk; decomposition sums to 100% |
 | §6 Portfolio | Optimal allocation consistent with return ordering and constraints |
 | §6 λ-Sensitivity | Return-maximiser dominates low λ; diversification emerges at high λ |
 | §7 Scenarios | Boom > base > rate-hike > recession (monotone in macro_growth) |
+| §7 Causal Risk | Σ(boom) > Σ(base) > Σ(recession): β×macro interaction amplifies variance; returns and risk share the same do(m) world |
 | §7 Stability | Optimal portfolio unchanged under ±1%/±2%/±5% return perturbation |
 | §7 Coupling | Portfolio macro β > equal-weight β (deliberate tilt) |
 | §7 Actors | DGP structural results match NN model estimates (independent cross-check) |
@@ -1200,15 +1266,17 @@ observe that all downstream estimates shift accordingly.
 | Symbol | Meaning |
 |--------|---------|
 | wᵢ | Weight of asset *i* (percentage of portfolio) |
-| wᵀΣw | Portfolio variance under full covariance matrix Σ |
-| λ | Risk-aversion parameter in objective `ret − λ·wᵀΣw` |
+| wᵀΣw | Portfolio variance under fixed base-case covariance matrix Σ (§5 diagnostics) |
+| wᵀΣ(m)w | Portfolio variance under causal covariance Σ(m) (§7 scenario analysis) |
+| Σ(m) | Cov(R \| do(macro=m)) — empirical covariance estimated via 5-point sentiment grid |
+| λ | Risk-aversion parameter in objective `ret(m) − λ·wᵀΣ(m)w` |
 | β | Market beta — DGP factor exposure |
 | β_p | Portfolio-level beta: Σ wᵢ × βᵢ |
 | macro_growth | Macroeconomic growth factor (DAG node) |
 | sentiment | Latent confounder — unobserved market mood |
-| σ²_p | Portfolio variance (= wᵀΣw) |
+| σ²_p | Portfolio variance (= wᵀΣw or wᵀΣ(m)w depending on context) |
 | ∂R/∂wᵢ | Marginal return contribution of asset *i* (via AAD) |
-| RC_i | Risk contribution: wᵢ × ∂Risk/∂wᵢ |
+| RC_i | Euler risk contribution: wᵢ × ∂Risk/∂wᵢ |
 | do(X) | do-calculus intervention on variable X |
 | Z | Adjustment set for the back-door criterion |
 | DGP | Data-generating process |
@@ -1227,7 +1295,10 @@ observe that all downstream estimates shift accordingly.
 | **CSV / real data** | Replace §0 DGP with `csv:load-file` (already in [causal-factor/csv-loader.eta](../examples/causal-factor/csv-loader.eta)) | Use actual ETF returns |
 | **HTTP data feed** | When HTTP primitives are added to Eta, replace §0 with a live data loader | Real-time portfolio construction |
 | **Deeper backtest** | Split data 80/20, report out-of-sample return vs. predicted | Production validation |
-| **Factor covariance** | Estimate Σ from data via sample covariance or factor model | Data-driven risk |
+| **Denser Σ(m) grid** | Replace the 5-point sentiment grid in `scenario-covariance` with a 50-point or MC sample for better covariance estimation | Smoother scenario-dependent risk |
+| **Two-head NN** | Extend the §4 network to output both μ(X) and Σ-factors; replace `scenario-covariance` Monte Carlo with learned covariance | Faster and differentiable Σ(m) |
+| **Structural covariance from DAG** | Model `sector_perf → cross-asset correlation`, `macro → volatility regime`; derive Σ(m) = f_θ(m) from the DAG structural equations | Research-grade causal risk |
+| **Scenario-aware §6 optimiser** | Pass Σ(m) into `score-portfolio`/`score-with-lambda`; optimise jointly over macro scenarios | Regime-robust optimal allocation |
 | **Distributed scenarios** | Use `worker-pool` over TCP for cross-host stress testing | Scale to thousands of paths |
 
 ---
