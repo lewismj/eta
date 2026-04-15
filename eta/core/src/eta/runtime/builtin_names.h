@@ -322,12 +322,12 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     // ====================================================================
     // stats_primitives.h  (must match registration order exactly)
     // ====================================================================
-    r("stats/mean-vec",     2, false);
-    r("stats/var-vec",      2, false);
-    r("stats/cov",          2, false);
-    r("stats/cor",          2, false);
-    r("stats/quantile-vec", 3, false);
-    r("stats/ols-multi",    3, false);
+    r("%stats-mean-vec",     1, true);
+    r("%stats-var-vec",      1, true);
+    r("%stats-cov-matrix",   1, true);
+    r("%stats-cor-matrix",   1, true);
+    r("%stats-quantile-vec", 2, true);
+    r("%stats-ols-multi",    2, true);
 
     // ====================================================================
     // nng_primitives.h  (must match registration order exactly)

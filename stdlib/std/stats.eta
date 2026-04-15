@@ -1,13 +1,16 @@
 ;;; std/stats.eta — Statistical functions for the Eta language.
 ;;;
 ;;; Provides descriptive statistics, confidence intervals, t-distribution,
-;;; two-sample Welch t-test, simple OLS regression, and a summary helper.
+;;; two-sample Welch t-test, simple and multivariate OLS regression,
+;;; covariance/correlation matrices, column-wise operations, and a summary
+;;; helper.
 ;;;
 ;;; All functions accept any numeric sequence: lists, vectors (#(...)),
-;;; or fact-table columns.  The underlying %stats-* primitives use
-;;; Eigen (via stats_math.h + stats_extract.h) for all computation.
+;;; or fact-table columns.  The multivariate functions also accept a
+;;; fact-table with column indices for direct columnar access.
 ;;;
-;;; Underlying primitives (%stats-*) are registered in core_primitives.h.
+;;; Underlying primitives (%stats-*) are registered in core_primitives.h
+;;; and stats_primitives.h.
 
 (module std.stats
   (import std.core)
@@ -24,9 +27,19 @@
     stats:ols-se-slope stats:ols-se-intercept
     stats:ols-t-slope stats:ols-t-intercept
     stats:ols-p-slope stats:ols-p-intercept
-    stats:summary)
+    stats:summary
+    ;; Multivariate / column-wise operations
+    stats:mean-vec stats:var-vec
+    stats:cov-matrix stats:cor-matrix
+    stats:quantile-vec
+    stats:ols-multi
+    stats:ols-multi-coefficients stats:ols-multi-std-errors
+    stats:ols-multi-t-stats stats:ols-multi-p-values
+    stats:ols-multi-r-squared stats:ols-multi-adj-r-squared
+    stats:ols-multi-residual-se)
   (begin
 
+    ;; ── Descriptive statistics ─────────────────────────────────────
 
     (defun stats:mean     (xs) (%stats-mean xs))
     (defun stats:variance (xs) (%stats-variance xs))
@@ -68,6 +81,56 @@
     (defun stats:ols-p-slope     (r)     (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr r)))))))))
     (defun stats:ols-p-intercept (r)     (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr r))))))))))
 
+    ;; ── Multivariate / column-wise operations ──────────────────────
+    ;; All accept either:
+    ;;   (fn (list seq1 seq2 ...))          — list of numeric sequences
+    ;;   (fn fact-table '(col1 col2 ...))   — fact-table + column indices
+
+    (defun stats:mean-vec (data . rest)
+      (if (null? rest)
+          (%stats-mean-vec data)
+          (%stats-mean-vec data (car rest))))
+
+    (defun stats:var-vec (data . rest)
+      (if (null? rest)
+          (%stats-var-vec data)
+          (%stats-var-vec data (car rest))))
+
+    (defun stats:cov-matrix (data . rest)
+      (if (null? rest)
+          (%stats-cov-matrix data)
+          (%stats-cov-matrix data (car rest))))
+
+    (defun stats:cor-matrix (data . rest)
+      (if (null? rest)
+          (%stats-cor-matrix data)
+          (%stats-cor-matrix data (car rest))))
+
+    ;; Column-wise quantiles:
+    ;;   (stats:quantile-vec (list seq1 seq2) p)
+    ;;   (stats:quantile-vec fact-table '(col1 col2) p)
+    (defun stats:quantile-vec (a b . rest)
+      (if (null? rest)
+          (%stats-quantile-vec a b)
+          (%stats-quantile-vec a b (car rest))))
+
+    ;; Multivariate OLS:
+    ;;   (stats:ols-multi y-seq (list x1 x2))
+    ;;   (stats:ols-multi fact-table y-col '(x1-col x2-col))
+    (defun stats:ols-multi (a b . rest)
+      (if (null? rest)
+          (%stats-ols-multi a b)
+          (%stats-ols-multi a b (car rest))))
+
+    ;; ── OLS-multi accessors (result is an alist) ───────────────────
+    (defun stats:ols-multi-coefficients (r) (cdr (assoc 'coefficients r)))
+    (defun stats:ols-multi-std-errors   (r) (cdr (assoc 'std-errors r)))
+    (defun stats:ols-multi-t-stats      (r) (cdr (assoc 't-stats r)))
+    (defun stats:ols-multi-p-values     (r) (cdr (assoc 'p-values r)))
+    (defun stats:ols-multi-r-squared    (r) (cdr (assoc 'r-squared r)))
+    (defun stats:ols-multi-adj-r-squared(r) (cdr (assoc 'adj-r-squared r)))
+    (defun stats:ols-multi-residual-se  (r) (cdr (assoc 'residual-se r)))
+
     ;; Returns an alist with key statistics for a numeric list.
     (defun stats:summary (xs)
       (list
@@ -81,4 +144,3 @@
         (list 'ci-95  (stats:ci xs 0.95))))
 
   ))
-

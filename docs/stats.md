@@ -8,40 +8,38 @@
 
 ## Overview
 
-Eta ships two complementary statistics layers — **both backed by Eigen**:
-
-| Layer | What it covers | Where it lives |
-|-------|---------------|----------------|
-| **`std.stats`** | Descriptive stats, CIs, t-tests, simple OLS — polymorphic over lists, vectors, and fact-table columns | `stdlib/std/stats.eta` + `stats_math.h` + `stats_extract.h` |
-| **`stats/` primitives** | Multivariate OLS, covariance/correlation matrices, column quantiles — over `FactTable` columns | `eta/stats/src/eta/stats/stats_primitives.h` |
-
-All statistical computation ultimately delegates to
-[Eigen](https://eigen.tuxfamily.org/) for vectorised operations and
-numerically stable decompositions (QR for OLS, etc.).
-
-The `std.stats` module is part of the prelude; the Eigen-backed `stats/`
-builtins are registered alongside it.
+Eta ships a single, unified statistics package — **`std.stats`** — backed
+entirely by [Eigen](https://eigen.tuxfamily.org/).  Every function operates
+**polymorphically** on lists, `#(…)` vectors, and
+[fact-table](fact-table.md) columns; there is no need for separate
+functions per data type.
 
 ```scheme
-(import std.stats)     ; descriptive stats on any numeric sequence
-; stats/ols-multi etc. are registered as global builtins (no extra import needed)
+(import std.stats)     ; one import — everything is included
 ```
+
+The package covers:
+
+| Area | Functions |
+|------|-----------|
+| Descriptive statistics | `stats:mean`, `stats:variance`, `stats:stddev`, `stats:sem`, `stats:percentile`, `stats:median` |
+| Bivariate | `stats:covariance`, `stats:correlation` |
+| Confidence intervals | `stats:ci`, `stats:ci-lower`, `stats:ci-upper` |
+| t-Distribution | `stats:t-cdf`, `stats:t-quantile` |
+| Welch t-test | `stats:t-test` + accessors |
+| Simple OLS | `stats:ols` + accessors |
+| Column-wise ops | `stats:mean-vec`, `stats:var-vec`, `stats:quantile-vec` |
+| Matrices | `stats:cov-matrix`, `stats:cor-matrix` |
+| Multivariate OLS | `stats:ols-multi` + accessors |
+
+> [!NOTE]
+> Eigen is a header-only C++ template library for linear algebra.  It is
+> fetched automatically at CMake configure time via `FetchEigen.cmake`.
+> No system installation is required.
 
 ---
 
-## The `std.stats` Module
-
-All functions in `std.stats` accept **any numeric sequence**: plain Eta
-lists, Scheme-style vectors (`#(...)`), or fact-table columns.  The
-underlying `%stats-*` primitives use the polymorphic `stats::to_eigen()`
-helper (defined in `stats_extract.h`) to convert the input into an
-`Eigen::VectorXd` before calling the Eigen-backed math in `stats_math.h`.
-
-```bash
-etai examples/stats.eta
-```
-
-### Descriptive Statistics
+## Descriptive Statistics
 
 | Function | Signature | Returns |
 |----------|-----------|---------|
@@ -63,7 +61,9 @@ etai examples/stats.eta
 (stats:percentile xs 0.25)  ; => -0.575
 ```
 
-### Bivariate Statistics
+---
+
+## Bivariate Statistics
 
 | Function | Signature | Returns |
 |----------|-----------|---------|
@@ -75,7 +75,9 @@ etai examples/stats.eta
 (stats:correlation xs ys)   ; => -0.287
 ```
 
-### Confidence Intervals
+---
+
+## Confidence Intervals
 
 `stats:ci` uses the t-distribution with N-1 degrees of freedom.  Returns a
 `(lower . upper)` pair.
@@ -92,7 +94,9 @@ etai examples/stats.eta
   (display (stats:ci-upper ci)))  ; e.g.  2.629
 ```
 
-### Two-Sample Welch t-Test
+---
+
+## Two-Sample Welch t-Test
 
 `stats:t-test` performs Welch's two-sample t-test (unequal variances).
 Returns a four-element list `(t-stat p-value df mean-diff)`.
@@ -114,17 +118,21 @@ Returns a four-element list `(t-stat p-value df mean-diff)`.
       (display "not significant")))
 ```
 
-### T-Distribution Utilities
+---
+
+## T-Distribution Utilities
 
 | Function | Signature | Returns |
 |----------|-----------|---------|
 | `stats:t-cdf` | `(t df)` | CDF of the t-distribution |
 | `stats:t-quantile` | `(p df)` | Inverse CDF (quantile function) |
 
-### Simple OLS Regression
+---
+
+## Simple OLS Regression
 
 `stats:ols` fits a univariate linear model `y = slope*x + intercept`.
-Returns a ten-element list with coefficients, standard errors, t-statistics,
+Returns a nine-element list with coefficients, standard errors, t-statistics,
 and p-values for both slope and intercept.
 
 | Function | Signature | Returns |
@@ -147,109 +155,69 @@ and p-values for both slope and intercept.
   (display (stats:ols-r2        r)))  ; R-squared
 ```
 
-### Summary Helper
+---
 
-`stats:summary` returns a labelled alist of key statistics:
+## Column-Wise Operations
+
+These functions compute a statistic **per column** across multiple data
+series.  Every function accepts either:
+
+- **a list of sequences** — each element is a list, vector, or fact-table
+  column; or
+- **a fact-table + column-index list** — columns are extracted automatically.
+
+| Function | Sequence form | Fact-table form | Returns |
+|----------|---------------|-----------------|---------|
+| `stats:mean-vec` | `(seqs)` | `(ft cols)` | list of means |
+| `stats:var-vec` | `(seqs)` | `(ft cols)` | list of variances (N-1) |
+| `stats:quantile-vec` | `(seqs p)` | `(ft cols p)` | list of p-th quantiles |
 
 ```scheme
-(stats:summary xs)
-; => ((n 10) (mean 1.29) (stddev 2.397) (sem 0.758)
-;     (median 1.9) (min -2.9) (max 4.2) (ci-95 (-0.42 . 3.0)))
+;; From plain lists:
+(stats:mean-vec (list xs ys zs))          ; => (mean-x mean-y mean-z)
+(stats:var-vec  (list xs ys))             ; => (var-x var-y)
+(stats:quantile-vec (list xs ys) 0.5)     ; => (median-x median-y)
+
+;; From a fact-table (columns 0, 1, 2):
+(stats:mean-vec ft '(0 1 2))             ; => (mean0 mean1 mean2)
+(stats:quantile-vec ft '(0 1) 0.95)      ; => (q95-col0 q95-col1)
 ```
 
 ---
 
-## Eigen-Backed Multivariate Primitives
+## Covariance & Correlation Matrices
 
-The `stats/` builtins operate on [`FactTable`](fact-table.md) objects
-and use **Eigen** for numerically stable linear algebra.
+| Function | Sequence form | Fact-table form | Returns |
+|----------|---------------|-----------------|---------|
+| `stats:cov-matrix` | `(seqs)` | `(ft cols)` | list-of-lists (N×N) |
+| `stats:cor-matrix` | `(seqs)` | `(ft cols)` | list-of-lists (N×N) |
 
-> [!NOTE]
-> Eigen is a header-only C++ template library for linear algebra.  It is
-> fetched automatically at CMake configure time via `FetchEigen.cmake`.
-> No system installation is required.
-
-### Column Selection
-
-All `stats/` primitives accept a **list of column indices** (0-based integers)
-to select which `FactTable` columns to operate on.
+Computed via `(X-μ)ᵀ(X-μ) / (n-1)` using Eigen dense matrices.
+Correlation is normalised so that diagonal entries are always 1.0.
 
 ```scheme
-;; columns 0 and 2 of a fact-table ft
-(stats/mean-vec ft '(0 2))
+;; Covariance matrix from lists:
+(stats:cov-matrix (list xs ys zs))
+;; => ((cov-xx cov-xy cov-xz)
+;;     (cov-yx cov-yy cov-yz)
+;;     (cov-zx cov-zy cov-zz))
+
+;; From a fact-table:
+(stats:cor-matrix ft '(0 1 2))
 ```
 
-### Column-Wise Means
+---
 
-```scheme
-(stats/mean-vec fact-table col-index-list)
-```
+## Multivariate OLS
 
-Returns a list of means — one value per selected column.
+`stats:ols-multi` fits the linear model `y = Xβ + ε` using
+**Eigen `ColPivHouseholderQR`** for numerical stability.
 
-```scheme
-(define ft (make-fact-table 3))
-;; ... populate ft with rows ...
-(stats/mean-vec ft '(0 1 2))   ; => (mean0 mean1 mean2)
-```
+| Sequence form | `(stats:ols-multi y-seq (list x1-seq x2-seq …))` |
+|:---|:---|
+| **Fact-table form** | `(stats:ols-multi ft y-col '(x1-col x2-col …))` |
 
-### Column-Wise Variances
-
-```scheme
-(stats/var-vec fact-table col-index-list)
-```
-
-Returns a list of sample variances (N-1 denominator).
-
-### Covariance Matrix
-
-```scheme
-(stats/cov fact-table col-index-list)
-```
-
-Returns the sample covariance matrix as a list-of-lists.
-Computed via `(X-mu)^T (X-mu) / (n-1)` using Eigen dense matrices.
-
-```scheme
-(let ((cov (stats/cov ft '(0 1 2))))
-  ;; cov is ((c00 c01 c02) (c10 c11 c12) (c20 c21 c22))
-  (display (caar cov)))   ; variance of column 0
-```
-
-### Correlation Matrix
-
-```scheme
-(stats/cor fact-table col-index-list)
-```
-
-Returns the Pearson correlation matrix as a list-of-lists.
-Diagonal entries are always 1.0.
-
-### Column Quantiles
-
-```scheme
-(stats/quantile-vec fact-table col-index-list p)
-```
-
-Returns the `p`-th quantile (0 ≤ p ≤ 1) for each selected column.
-
-```scheme
-(stats/quantile-vec ft '(0 1) 0.5)   ; medians of columns 0 and 1
-(stats/quantile-vec ft '(0 1) 0.95)  ; 95th percentiles
-```
-
-### Multivariate OLS
-
-```scheme
-(stats/ols-multi fact-table y-col x-col-index-list)
-```
-
-Fits the linear model `y = Xβ + ε` where `y` is column `y-col` and `X` is
-built from the columns in `x-col-index-list` (plus an implicit intercept
-column of 1s).
-
-Uses **Eigen `ColPivHouseholderQR`** for numerical stability.  Returns an
-alist with the following keys:
+Returns an alist:
 
 | Key | Value |
 |-----|-------|
@@ -261,12 +229,40 @@ alist with the following keys:
 | `adj-r-squared` | Adjusted R² |
 | `residual-se` | Residual standard error σ̂ |
 
+Accessor helpers:
+
+| Function | Returns |
+|----------|---------|
+| `stats:ols-multi-coefficients` | `(β₀ β₁ … βₖ)` |
+| `stats:ols-multi-std-errors` | `(se₀ se₁ … seₖ)` |
+| `stats:ols-multi-t-stats` | `(t₀ t₁ … tₖ)` |
+| `stats:ols-multi-p-values` | `(p₀ p₁ … pₖ)` |
+| `stats:ols-multi-r-squared` | R² |
+| `stats:ols-multi-adj-r-squared` | Adjusted R² |
+| `stats:ols-multi-residual-se` | σ̂ |
+
 ```scheme
-;; Regress column 3 on columns 0, 1, 2
-(let ((r (stats/ols-multi ft 3 '(0 1 2))))
-  (display (assoc 'coefficients r))
-  (display (assoc 'r-squared    r))
-  (display (assoc 'p-values     r)))
+;; From sequences:
+(let ((r (stats:ols-multi y-data (list x1 x2))))
+  (display (stats:ols-multi-coefficients r))
+  (display (stats:ols-multi-r-squared r)))
+
+;; From a fact-table — regress column 3 on columns 0, 1, 2:
+(let ((r (stats:ols-multi ft 3 '(0 1 2))))
+  (display (stats:ols-multi-coefficients r))
+  (display (stats:ols-multi-p-values r)))
+```
+
+---
+
+## Summary Helper
+
+`stats:summary` returns a labelled alist of key statistics:
+
+```scheme
+(stats:summary xs)
+; => ((n 10) (mean 1.29) (stddev 2.397) (sem 0.758)
+;     (median 1.9) (min -2.9) (max 4.2) (ci-95 (-0.42 . 3.0)))
 ```
 
 ---
@@ -275,46 +271,57 @@ alist with the following keys:
 
 ```mermaid
 flowchart TD
-    SL["std.stats\n(Eta library)"]
-    BP["%stats-* builtins\n(stats_math.h + stats_extract.h\n+ core_primitives.h)"]
-    SP["stats/ builtins\n(stats_primitives.h)"]
-    EG["Eigen\n(header-only, C++)"]
+    SL["std.stats\n(Eta library — stdlib/std/stats.eta)"]
+    CP["%stats-* builtins\n(core_primitives.h)"]
+    SP["%stats-*-vec / *-matrix / ols-multi\n(stats_primitives.h)"]
+    EX["stats::to_eigen\n(stats_extract.h)"]
+    SM["stats::mean, variance,\nols, t_test_2, …\n(stats_math.h)"]
+    EG["Eigen 3.4\n(header-only, C++)"]
     FT["FactTable\n(columnar storage)"]
 
-    SL --> BP
-    BP --> EG
-    SP --> EG
-    SP --> FT
-    BP -.->|"polymorphic:\nlists, vectors,\nfact-table cols"| FT
+    SL --> CP
+    SL --> SP
+    CP --> EX
+    CP --> SM
+    SP --> EX
+    SP --> SM
+    EX --> EG
+    SM --> EG
+    EX -.->|"polymorphic:\nlists, vectors,\nfact-table cols"| FT
 
     style SL  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style BP  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style CP  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
     style SP  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style EX  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
+    style SM  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
     style EG  fill:#0f3460,stroke:#56d364,color:#c9d1d9
     style FT  fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
-Both layers use **Eigen** for all vector/matrix operations:
+All statistics are exposed through the single **`std.stats`** Eta module,
+which wraps two sets of `%stats-*` C++ builtins:
 
-- **`std.stats` / `%stats-*`** — accept any numeric sequence (list, vector,
-  or fact-table column) via the polymorphic `stats::to_eigen()` helper;
-  delegate to Eigen-backed math in `stats_math.h` (mean, variance, QR-based
-  OLS, etc.).  The hand-rolled C++ accumulation loops and Lanczos
-  log-gamma that were here previously have been replaced by `Eigen::VectorXd`
-  operations and `std::lgamma`.
+- **Univariate / bivariate** (`core_primitives.h`) — `%stats-mean`,
+  `%stats-variance`, `%stats-covariance`, `%stats-ols`, `%stats-t-test-2`,
+  etc.  Each calls `stats::to_eigen()` (from `stats_extract.h`) to convert
+  any numeric sequence into an `Eigen::VectorXd`, then delegates to the
+  pure-math functions in `stats_math.h`.
 
-- **`stats/` / Eigen primitives** — operate on `FactTable` columns; use Eigen
-  for numerically stable linear algebra (covariance matrices via centred
-  dot-products, multivariate OLS via `ColPivHouseholderQR`).  Eigen is a
-  header-only library fetched automatically at configure time; no system
-  installation is needed.
+- **Multivariate / column-wise** (`stats_primitives.h`) — `%stats-mean-vec`,
+  `%stats-cov-matrix`, `%stats-ols-multi`, etc.  These accept either a
+  **list of sequences** or a **fact-table + column indices**, building an
+  Eigen data matrix for covariance/correlation matrices and QR-based OLS.
+
+Both layers use **Eigen** for all vector/matrix operations.  Eigen is a
+header-only library fetched automatically at CMake configure time; no
+system installation is needed.
 
 ---
 
 ## Example
 
-[`examples/stats.eta`](../examples/stats.eta) demonstrates all of
-`std.stats` using two simulated monthly return series (equity and bond):
+[`examples/stats.eta`](../examples/stats.eta) demonstrates `std.stats`
+using two simulated monthly return series (equity and bond):
 
 ```bash
 etai examples/stats.eta
@@ -354,10 +361,11 @@ Equity fund (monthly %):
 
 | Component | File |
 |-----------|------|
-| `%stats-mean`, `%stats-variance`, `%stats-t-test-2`, `%stats-ols`, … | [`eta/core/src/eta/runtime/stats_math.h`](../eta/core/src/eta/runtime/stats_math.h) |
-| Polymorphic input extraction (list / vector / fact-table → Eigen) | [`eta/core/src/eta/runtime/stats_extract.h`](../eta/core/src/eta/runtime/stats_extract.h) |
-| `stats:mean`, `stats:stddev`, `stats:ci`, `stats:t-test`, `stats:ols`, … | [`stdlib/std/stats.eta`](../stdlib/std/stats.eta) |
-| `stats/mean-vec`, `stats/cov`, `stats/cor`, `stats/ols-multi`, … | [`eta/stats/src/eta/stats/stats_primitives.h`](../eta/stats/src/eta/stats/stats_primitives.h) |
+| Pure math (mean, variance, OLS, t-CDF, betainc, …) | [`eta/core/src/eta/runtime/stats_math.h`](../eta/core/src/eta/runtime/stats_math.h) |
+| Polymorphic input extraction (list / vector / fact-table → `Eigen::VectorXd`) | [`eta/core/src/eta/runtime/stats_extract.h`](../eta/core/src/eta/runtime/stats_extract.h) |
+| `%stats-mean`, `%stats-ols`, `%stats-t-test-2`, … (univariate/bivariate) | [`eta/core/src/eta/runtime/core_primitives.h`](../eta/core/src/eta/runtime/core_primitives.h) |
+| `%stats-mean-vec`, `%stats-cov-matrix`, `%stats-ols-multi`, … (multivariate) | [`eta/stats/src/eta/stats/stats_primitives.h`](../eta/stats/src/eta/stats/stats_primitives.h) |
+| `stats:mean`, `stats:cov-matrix`, `stats:ols-multi`, … (Eta wrappers) | [`stdlib/std/stats.eta`](../stdlib/std/stats.eta) |
 | Eigen fetch | [`cmake/FetchEigen.cmake`](../cmake/FetchEigen.cmake) |
 | Example | [`examples/stats.eta`](../examples/stats.eta) |
 

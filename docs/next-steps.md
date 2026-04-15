@@ -164,7 +164,7 @@ tracked per-commit in CI:
 | `(sort < (iota 100000))` | Allocation-heavy higher-order code |
 | `SABR Hessian` | Tape-based AD throughput |
 | `unify / backtrack` | Logic variable creation and trail management |
-| `stats/ols-multi` on large FactTable | Eigen FFI round-trip overhead |
+| `stats:ols-multi` on large FactTable | Eigen FFI round-trip overhead |
 
 ### 3.3 · Coverage Expansion
 

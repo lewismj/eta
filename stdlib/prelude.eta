@@ -121,6 +121,14 @@
     stats:ols-t-slope stats:ols-t-intercept
     stats:ols-p-slope stats:ols-p-intercept
     stats:summary
+    stats:mean-vec stats:var-vec
+    stats:cov-matrix stats:cor-matrix
+    stats:quantile-vec
+    stats:ols-multi
+    stats:ols-multi-coefficients stats:ols-multi-std-errors
+    stats:ols-multi-t-stats stats:ols-multi-p-values
+    stats:ols-multi-r-squared stats:ols-multi-adj-r-squared
+    stats:ols-multi-residual-se
     ;; ── std.net ─────────────────────────────────────────────────────
     with-socket
     request-reply
