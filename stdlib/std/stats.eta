@@ -2,7 +2,10 @@
 ;;;
 ;;; Provides descriptive statistics, confidence intervals, t-distribution,
 ;;; two-sample Welch t-test, simple OLS regression, and a summary helper.
-;;; All functions operate on Eta lists of numbers.
+;;;
+;;; All functions accept any numeric sequence: lists, vectors (#(...)),
+;;; or fact-table columns.  The underlying %stats-* primitives use
+;;; Eigen (via stats_math.h + stats_extract.h) for all computation.
 ;;;
 ;;; Underlying primitives (%stats-*) are registered in core_primitives.h.
 

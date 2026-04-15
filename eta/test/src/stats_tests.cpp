@@ -7,6 +7,8 @@
 #include <eta/runtime/builtin_env.h>
 #include <eta/runtime/numeric_value.h>
 #include <eta/runtime/types/fact_table.h>
+#include <eta/runtime/stats_math.h>
+#include <eta/runtime/stats_extract.h>
 
 #include <eta/stats/stats_primitives.h>
 
@@ -334,6 +336,181 @@ BOOST_AUTO_TEST_CASE(ols_multi_two_predictors) {
     BOOST_TEST(std::abs(coeffs[0] - 1.0) < 1e-8);  // intercept
     BOOST_TEST(std::abs(coeffs[1] - 2.0) < 1e-8);  // x1 coefficient
     BOOST_TEST(std::abs(coeffs[2] - 3.0) < 1e-8);  // x2 coefficient
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Eigen-backed stats_math.h unit tests
+// ═══════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(eigen_mean_basic) {
+    Eigen::VectorXd v(5);
+    v << 1, 2, 3, 4, 5;
+    BOOST_TEST(std::abs(stats::mean(v) - 3.0) < 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_mean_empty) {
+    Eigen::VectorXd v(0);
+    BOOST_TEST(stats::mean(v) == 0.0);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_variance_basic) {
+    Eigen::VectorXd v(3);
+    v << 2, 4, 6;
+    // sample variance = ((2-4)^2 + (4-4)^2 + (6-4)^2) / 2 = 4.0
+    BOOST_TEST(std::abs(stats::variance(v) - 4.0) < 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_stddev_basic) {
+    Eigen::VectorXd v(3);
+    v << 2, 4, 6;
+    BOOST_TEST(std::abs(stats::stddev(v) - 2.0) < 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_sem_basic) {
+    Eigen::VectorXd v(4);
+    v << 2, 4, 6, 8;
+    // stddev = sqrt(20/3), sem = stddev / sqrt(4)
+    double expected_sem = std::sqrt(20.0 / 3.0) / 2.0;
+    BOOST_TEST(std::abs(stats::sem(v) - expected_sem) < 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_percentile_median) {
+    Eigen::VectorXd v(5);
+    v << 5, 1, 3, 2, 4;
+    BOOST_TEST(std::abs(stats::percentile(v, 0.5) - 3.0) < 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_covariance_perfect) {
+    Eigen::VectorXd x(5), y(5);
+    x << 1, 2, 3, 4, 5;
+    y << 2, 4, 6, 8, 10;
+    auto cov = stats::covariance(x, y);
+    BOOST_REQUIRE(cov.has_value());
+    BOOST_TEST(std::abs(*cov - 5.0) < 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_correlation_perfect) {
+    Eigen::VectorXd x(5), y(5);
+    x << 1, 2, 3, 4, 5;
+    y << 2, 4, 6, 8, 10;
+    auto cor = stats::correlation(x, y);
+    BOOST_REQUIRE(cor.has_value());
+    BOOST_TEST(std::abs(*cor - 1.0) < 1e-10);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_t_cdf_symmetry) {
+    // CDF at 0 should be 0.5 for any df
+    BOOST_TEST(std::abs(stats::t_cdf(0.0, 10.0) - 0.5) < 1e-10);
+    // CDF is monotonically increasing: cdf(2, 10) > cdf(0, 10)
+    BOOST_TEST(stats::t_cdf(2.0, 10.0) > 0.5);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_t_quantile_roundtrip) {
+    // quantile(cdf(t, df), df) ≈ t
+    double t = 1.5, df = 15.0;
+    double p = stats::t_cdf(t, df);
+    double t_back = stats::t_quantile(p, df);
+    BOOST_TEST(std::abs(t_back - t) < 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_ols_perfect_fit) {
+    Eigen::VectorXd x(5), y(5);
+    x << 1, 2, 3, 4, 5;
+    y << 3, 5, 7, 9, 11;  // y = 2x + 1
+    auto r = stats::ols(x, y);
+    BOOST_REQUIRE(r.has_value());
+    BOOST_TEST(std::abs(r->slope - 2.0) < 1e-8);
+    BOOST_TEST(std::abs(r->intercept - 1.0) < 1e-8);
+    BOOST_TEST(std::abs(r->r_squared - 1.0) < 1e-8);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_t_test_identical_samples) {
+    Eigen::VectorXd x(5), y(5);
+    x << 1, 2, 3, 4, 5;
+    y << 1, 2, 3, 4, 5;
+    auto r = stats::t_test_2(x, y);
+    BOOST_REQUIRE(r.has_value());
+    BOOST_TEST(std::abs(r->t_stat) < 1e-10);      // t ≈ 0
+    BOOST_TEST(std::abs(r->mean_diff) < 1e-10);    // no difference
+    BOOST_TEST(r->p_value > 0.99);                 // not significant
+}
+
+BOOST_AUTO_TEST_CASE(eigen_ci_mean_basic) {
+    Eigen::VectorXd v(5);
+    v << 1, 2, 3, 4, 5;
+    auto ci = stats::ci_mean(v, 0.95);
+    BOOST_REQUIRE(ci.has_value());
+    BOOST_TEST(ci->point_estimate == 3.0);
+    BOOST_TEST(ci->lower < 3.0);
+    BOOST_TEST(ci->upper > 3.0);
+    BOOST_TEST(ci->margin > 0.0);
+}
+
+// ─── std::vector<double> overload tests (backward compat) ────────────
+
+BOOST_AUTO_TEST_CASE(stdvec_overloads_work) {
+    std::vector<double> v = {1, 2, 3, 4, 5};
+    BOOST_TEST(std::abs(stats::mean(v) - 3.0) < 1e-12);
+    BOOST_TEST(std::abs(stats::variance(v) - 2.5) < 1e-12);
+    BOOST_TEST(std::abs(stats::stddev(v) - std::sqrt(2.5)) < 1e-12);
+    BOOST_TEST(std::abs(stats::percentile(v, 0.5) - 3.0) < 1e-12);
+
+    std::vector<double> y = {2, 4, 6, 8, 10};
+    auto cov = stats::covariance(v, y);
+    BOOST_REQUIRE(cov.has_value());
+    BOOST_TEST(std::abs(*cov - 5.0) < 1e-12);
+
+    auto r = stats::ols(v, y);
+    BOOST_REQUIRE(r.has_value());
+    BOOST_TEST(std::abs(r->slope - 2.0) < 1e-8);
+    BOOST_TEST(std::abs(r->intercept - 0.0) < 1e-8);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Polymorphic to_eigen extraction tests (stats_extract.h)
+// ═══════════════════════════════════════════════════════════════════════
+
+BOOST_AUTO_TEST_CASE(to_eigen_from_list) {
+    Heap heap(1ull << 22);
+    auto lst = doubles_to_list(heap, {10.0, 20.0, 30.0});
+    auto result = stats::to_eigen(heap, lst, "test");
+    BOOST_REQUIRE(result.has_value());
+    BOOST_REQUIRE_EQUAL(result->size(), 3);
+    BOOST_TEST(std::abs((*result)(0) - 10.0) < 1e-12);
+    BOOST_TEST(std::abs((*result)(1) - 20.0) < 1e-12);
+    BOOST_TEST(std::abs((*result)(2) - 30.0) < 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(to_eigen_from_empty_list) {
+    Heap heap(1ull << 22);
+    auto result = stats::to_eigen(heap, Nil, "test");
+    BOOST_REQUIRE(result.has_value());
+    BOOST_TEST(result->size() == 0);
+}
+
+BOOST_AUTO_TEST_CASE(to_eigen_from_vector) {
+    Heap heap(1ull << 22);
+    // Build a Vector of flonums
+    auto v1 = *ops::encode(1.5);
+    auto v2 = *ops::encode(2.5);
+    auto v3 = *ops::encode(3.5);
+    auto vec = make_vector(heap, {v1, v2, v3});
+    BOOST_REQUIRE(vec.has_value());
+
+    auto result = stats::to_eigen(heap, *vec, "test");
+    BOOST_REQUIRE(result.has_value());
+    BOOST_REQUIRE_EQUAL(result->size(), 3);
+    BOOST_TEST(std::abs((*result)(0) - 1.5) < 1e-12);
+    BOOST_TEST(std::abs((*result)(1) - 2.5) < 1e-12);
+    BOOST_TEST(std::abs((*result)(2) - 3.5) < 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(to_eigen_rejects_non_numeric) {
+    Heap heap(1ull << 22);
+    // A symbol is not a numeric sequence
+    auto sym = ops::box(Tag::Symbol, 42);
+    auto result = stats::to_eigen(heap, sym, "test");
+    BOOST_TEST(!result.has_value());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -1,83 +1,84 @@
 #pragma once
 
 /// @file stats_math.h
-/// @brief Pure C++ statistical math functions for the Eta runtime.
+/// @brief Eigen-backed statistical math functions for the Eta runtime.
 ///
 /// Provides:  mean, sample variance, std-dev, standard error,
 ///            percentile, covariance, correlation, OLS regression,
 ///            t-distribution CDF/quantile, and two-sample t-test.
 ///
-/// No external dependency — uses only <cmath> and <algorithm>.
-
-// M_PI is a POSIX extension; MSVC requires _USE_MATH_DEFINES before <cmath>.
-#ifdef _WIN32
-#define M_PI 3.14159265358979323846
-#endif
-
+/// All vector operations delegate to Eigen; scalar special functions
+/// (incomplete beta, t-CDF/quantile) use std::lgamma from <cmath>.
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <optional>
 #include <vector>
 
+#include <Eigen/Dense>
+
 namespace eta::runtime::stats {
 
-// ─── Descriptive statistics ──────────────────────────────────────────
+// ─── Helpers: map std::vector<double> into Eigen ─────────────────────
 
-inline double mean(const std::vector<double>& xs) {
-    if (xs.empty()) return 0.0;
-    double sum = 0.0;
-    for (double x : xs) sum += x;
-    return sum / static_cast<double>(xs.size());
+/// Zero-copy const view of a std::vector<double> as an Eigen column vector.
+inline Eigen::Map<const Eigen::VectorXd> as_eigen(const std::vector<double>& v) {
+    return {v.data(), static_cast<Eigen::Index>(v.size())};
+}
+
+// ─── Descriptive statistics (Eigen primary, std::vector overloads) ───
+
+inline double mean(const Eigen::Ref<const Eigen::VectorXd>& xs) {
+    if (xs.size() == 0) return 0.0;
+    return xs.mean();
 }
 
 /// Sample variance (Bessel-corrected, N-1 denominator).
-inline double variance(const std::vector<double>& xs) {
+inline double variance(const Eigen::Ref<const Eigen::VectorXd>& xs) {
     if (xs.size() < 2) return 0.0;
-    double m = mean(xs);
-    double ss = 0.0;
-    for (double x : xs) { double d = x - m; ss += d * d; }
-    return ss / static_cast<double>(xs.size() - 1);
+    double m = xs.mean();
+    return (xs.array() - m).square().sum()
+         / static_cast<double>(xs.size() - 1);
 }
 
-inline double stddev(const std::vector<double>& xs) {
+inline double stddev(const Eigen::Ref<const Eigen::VectorXd>& xs) {
     return std::sqrt(variance(xs));
 }
 
 /// Standard error of the mean  (s / √n).
-inline double sem(const std::vector<double>& xs) {
+inline double sem(const Eigen::Ref<const Eigen::VectorXd>& xs) {
     if (xs.size() < 2) return 0.0;
     return stddev(xs) / std::sqrt(static_cast<double>(xs.size()));
 }
 
 /// p-th percentile (0 ≤ p ≤ 1) using linear interpolation.
-inline double percentile(std::vector<double> xs, double p) {
-    if (xs.empty()) return 0.0;
-    std::sort(xs.begin(), xs.end());
-    if (p <= 0.0) return xs.front();
-    if (p >= 1.0) return xs.back();
+/// Takes a copy because we need to sort.
+inline double percentile(Eigen::VectorXd xs, double p) {
+    if (xs.size() == 0) return 0.0;
+    std::sort(xs.data(), xs.data() + xs.size());
+    if (p <= 0.0) return xs(0);
+    if (p >= 1.0) return xs(xs.size() - 1);
     double idx = p * static_cast<double>(xs.size() - 1);
-    auto lo = static_cast<std::size_t>(std::floor(idx));
-    auto hi = static_cast<std::size_t>(std::ceil(idx));
+    auto lo = static_cast<Eigen::Index>(std::floor(idx));
+    auto hi = static_cast<Eigen::Index>(std::ceil(idx));
     double frac = idx - static_cast<double>(lo);
-    return xs[lo] * (1.0 - frac) + xs[hi] * frac;
+    return xs(lo) * (1.0 - frac) + xs(hi) * frac;
 }
 
 /// Sample covariance (N-1 denominator).
-inline std::optional<double> covariance(const std::vector<double>& xs,
-                                         const std::vector<double>& ys) {
+inline std::optional<double> covariance(const Eigen::Ref<const Eigen::VectorXd>& xs,
+                                         const Eigen::Ref<const Eigen::VectorXd>& ys) {
     if (xs.size() != ys.size() || xs.size() < 2) return std::nullopt;
-    double mx = mean(xs), my = mean(ys);
-    double sum = 0.0;
-    for (std::size_t i = 0; i < xs.size(); ++i)
-        sum += (xs[i] - mx) * (ys[i] - my);
-    return sum / static_cast<double>(xs.size() - 1);
+    double mx = xs.mean(), my = ys.mean();
+    return ((xs.array() - mx) * (ys.array() - my)).sum()
+         / static_cast<double>(xs.size() - 1);
 }
 
 /// Pearson correlation coefficient.
-inline std::optional<double> correlation(const std::vector<double>& xs,
-                                          const std::vector<double>& ys) {
+inline std::optional<double> correlation(const Eigen::Ref<const Eigen::VectorXd>& xs,
+                                          const Eigen::Ref<const Eigen::VectorXd>& ys) {
     auto cov = covariance(xs, ys);
     if (!cov) return std::nullopt;
     double sx = stddev(xs), sy = stddev(ys);
@@ -85,32 +86,30 @@ inline std::optional<double> correlation(const std::vector<double>& xs,
     return *cov / (sx * sy);
 }
 
-// ─── Special functions: Regularized Incomplete Beta ──────────────────
+// ─── std::vector<double> convenience overloads ──────────────────────
+//     (zero-copy via Eigen::Map — keeps existing callers compiling)
 
-/// Log-Gamma via Lanczos approximation (g=7, n=9 coefficients).
-inline double lgamma_approx(double x) {
-    static const double c[9] = {
-         0.99999999999980993,
-       676.5203681218851,
-     -1259.1392167224028,
-       771.32342877765313,
-      -176.61502916214059,
-        12.507343278686905,
-        -0.13857109526572012,
-         9.9843695780195716e-6,
-         1.5056327351493116e-7
-    };
-    if (x < 0.5) {
-        // Reflection formula
-        return std::log(M_PI / std::sin(M_PI * x)) - lgamma_approx(1.0 - x);
-    }
-    x -= 1.0;
-    double a = c[0];
-    double t = x + 7.5;   // g + 0.5
-    for (int i = 1; i < 9; ++i)
-        a += c[i] / (x + static_cast<double>(i));
-    return 0.5 * std::log(2.0 * M_PI) + (x + 0.5) * std::log(t) - t + std::log(a);
+inline double mean(const std::vector<double>& v) { return mean(as_eigen(v)); }
+inline double variance(const std::vector<double>& v) { return variance(as_eigen(v)); }
+inline double stddev(const std::vector<double>& v) { return stddev(as_eigen(v)); }
+inline double sem(const std::vector<double>& v) { return sem(as_eigen(v)); }
+
+inline double percentile(std::vector<double> v, double p) {
+    Eigen::VectorXd ev = Eigen::Map<Eigen::VectorXd>(v.data(), static_cast<Eigen::Index>(v.size()));
+    return percentile(std::move(ev), p);
 }
+
+inline std::optional<double> covariance(const std::vector<double>& xs,
+                                         const std::vector<double>& ys) {
+    return covariance(as_eigen(xs), as_eigen(ys));
+}
+
+inline std::optional<double> correlation(const std::vector<double>& xs,
+                                          const std::vector<double>& ys) {
+    return correlation(as_eigen(xs), as_eigen(ys));
+}
+
+// ─── Special functions: Regularized Incomplete Beta ──────────────────
 
 /// Regularized incomplete beta function I_x(a, b) via continued fraction
 /// (modified Lentz algorithm).  Convergence is fast for most inputs.
@@ -123,7 +122,7 @@ inline double betainc(double x, double a, double b) {
         return 1.0 - betainc(1.0 - x, b, a);
 
     // Compute the log of the front factor:  x^a (1-x)^b / (a * Beta(a,b))
-    double lbeta = lgamma_approx(a) + lgamma_approx(b) - lgamma_approx(a + b);
+    double lbeta = std::lgamma(a) + std::lgamma(b) - std::lgamma(a + b);
     double front = std::exp(a * std::log(x) + b * std::log(1.0 - x) - lbeta) / a;
 
     // Continued fraction (Lentz's method)
@@ -132,13 +131,10 @@ inline double betainc(double x, double a, double b) {
     constexpr double tiny = 1.0e-30;
 
     double f = 1.0, C = 1.0, D = 0.0;
-    // The continued fraction for I_x(a,b) is 1/(1+ d1/(1+ d2/(1+ ...)))
-    // with d_{2m+1} = -(a+m)(a+b+m)x / ((a+2m)(a+2m+1))
-    //      d_{2m}   =  m(b-m)x / ((a+2m-1)(a+2m))
     for (int m = 0; m <= max_iter; ++m) {
         double d;
         if (m == 0) {
-            d = 1.0; // first term
+            d = 1.0;
         } else {
             int k = m;
             if (k % 2 == 0) {
@@ -168,10 +164,8 @@ inline double betainc(double x, double a, double b) {
 
 // ─── t-Distribution CDF / Quantile ──────────────────────────────────
 
-/// CDF of Student's t-distribution (two-tailed p-value is 2*(1 - cdf(|t|,df))).
+/// CDF of Student's t-distribution.
 inline double t_cdf(double t, double df) {
-    // F(t; ν) = I(ν/(ν+t²); ν/2, 1/2) * 0.5        if t < 0
-    //         = 1 - I(ν/(ν+t²); ν/2, 1/2) * 0.5     if t ≥ 0
     double x = df / (df + t * t);
     double ib = betainc(x, df / 2.0, 0.5);
     if (t >= 0.0)
@@ -186,13 +180,11 @@ inline double t_pvalue_two_tailed(double t, double df) {
 }
 
 /// Inverse CDF (quantile) of Student's t-distribution via bisection.
-/// Returns t such that P(T ≤ t) = p.
 inline double t_quantile(double p, double df) {
     if (p <= 0.0) return -1e30;
     if (p >= 1.0) return  1e30;
     if (std::abs(p - 0.5) < 1e-15) return 0.0;
 
-    // Bisection on [-1000, 1000] — more than enough for any practical df.
     double lo = -1000.0, hi = 1000.0;
     for (int i = 0; i < 100; ++i) {
         double mid = 0.5 * (lo + hi);
@@ -214,7 +206,7 @@ struct ConfidenceInterval {
 };
 
 /// Confidence interval for the mean at the given level (e.g. 0.95).
-inline std::optional<ConfidenceInterval> ci_mean(const std::vector<double>& xs, double level) {
+inline std::optional<ConfidenceInterval> ci_mean(const Eigen::Ref<const Eigen::VectorXd>& xs, double level) {
     if (xs.size() < 2 || level <= 0.0 || level >= 1.0) return std::nullopt;
     double m = mean(xs);
     double se = sem(xs);
@@ -223,6 +215,10 @@ inline std::optional<ConfidenceInterval> ci_mean(const std::vector<double>& xs, 
     double t_crit = t_quantile(1.0 - alpha / 2.0, df);
     double margin = t_crit * se;
     return ConfidenceInterval{m - margin, m + margin, m, margin};
+}
+
+inline std::optional<ConfidenceInterval> ci_mean(const std::vector<double>& v, double level) {
+    return ci_mean(as_eigen(v), level);
 }
 
 // ─── Two-Sample t-Test ───────────────────────────────────────────────
@@ -235,8 +231,8 @@ struct TTestResult {
 };
 
 /// Welch's two-sample t-test (unequal variances).
-inline std::optional<TTestResult> t_test_2(const std::vector<double>& xs,
-                                            const std::vector<double>& ys) {
+inline std::optional<TTestResult> t_test_2(const Eigen::Ref<const Eigen::VectorXd>& xs,
+                                            const Eigen::Ref<const Eigen::VectorXd>& ys) {
     if (xs.size() < 2 || ys.size() < 2) return std::nullopt;
     double mx = mean(xs), my = mean(ys);
     double vx = variance(xs), vy = variance(ys);
@@ -257,6 +253,11 @@ inline std::optional<TTestResult> t_test_2(const std::vector<double>& xs,
     return TTestResult{t, p, df, mx - my};
 }
 
+inline std::optional<TTestResult> t_test_2(const std::vector<double>& xs,
+                                            const std::vector<double>& ys) {
+    return t_test_2(as_eigen(xs), as_eigen(ys));
+}
+
 // ─── Ordinary Least Squares (Simple Linear Regression) ───────────────
 
 struct OLSResult {
@@ -271,41 +272,42 @@ struct OLSResult {
     double p_intercept;
 };
 
-/// Simple OLS:  y = β₀ + β₁·x
-inline std::optional<OLSResult> ols(const std::vector<double>& xs,
-                                     const std::vector<double>& ys) {
+/// Simple OLS:  y = β₀ + β₁·x  — via Eigen QR decomposition.
+inline std::optional<OLSResult> ols(const Eigen::Ref<const Eigen::VectorXd>& xs,
+                                     const Eigen::Ref<const Eigen::VectorXd>& ys) {
     if (xs.size() != ys.size() || xs.size() < 3) return std::nullopt;
 
-    double n = static_cast<double>(xs.size());
-    double mx = mean(xs), my = mean(ys);
-    double sxx = 0.0, sxy = 0.0, syy = 0.0;
-    for (std::size_t i = 0; i < xs.size(); ++i) {
-        double dx = xs[i] - mx;
-        double dy = ys[i] - my;
-        sxx += dx * dx;
-        sxy += dx * dy;
-        syy += dy * dy;
-    }
-    if (sxx == 0.0) return std::nullopt;
+    Eigen::Index n = xs.size();
 
-    double slope = sxy / sxx;
-    double intercept = my - slope * mx;
+    // Design matrix [1 | x]
+    Eigen::MatrixXd X(n, 2);
+    X.col(0).setOnes();
+    X.col(1) = xs;
 
-    // Residual sum of squares
-    double sse = 0.0;
-    for (std::size_t i = 0; i < xs.size(); ++i) {
-        double r = ys[i] - (intercept + slope * xs[i]);
-        sse += r * r;
-    }
+    // Solve via QR decomposition
+    Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr(X);
+    if (qr.rank() < 2) return std::nullopt;
+    Eigen::VectorXd beta = qr.solve(ys);
 
-    double r2 = (syy > 0.0) ? 1.0 - sse / syy : 0.0;
-    double mse = sse / (n - 2.0);   // mean squared error (residual)
+    double intercept = beta(0);
+    double slope     = beta(1);
 
-    // Standard errors
-    double se_slope     = std::sqrt(mse / sxx);
-    double se_intercept = std::sqrt(mse * (1.0 / n + mx * mx / sxx));
+    // Residuals
+    Eigen::VectorXd residuals = ys - X * beta;
+    double sse = residuals.squaredNorm();
+    double df  = static_cast<double>(n - 2);
+    double mse = sse / df;
 
-    double df = n - 2.0;
+    // R²
+    double y_mean = ys.mean();
+    double sst = (ys.array() - y_mean).square().sum();
+    double r2 = (sst > 0.0) ? 1.0 - sse / sst : 0.0;
+
+    // Standard errors via (XᵀX)⁻¹
+    Eigen::MatrixXd XtX_inv = (X.transpose() * X).inverse();
+    double se_intercept = std::sqrt(XtX_inv(0, 0) * mse);
+    double se_slope     = std::sqrt(XtX_inv(1, 1) * mse);
+
     double t_slope     = (se_slope     > 0.0) ? slope     / se_slope     : 0.0;
     double t_intercept = (se_intercept > 0.0) ? intercept / se_intercept : 0.0;
     double p_slope     = (se_slope     > 0.0) ? t_pvalue_two_tailed(t_slope,     df) : 1.0;
@@ -315,6 +317,11 @@ inline std::optional<OLSResult> ols(const std::vector<double>& xs,
                      se_slope, se_intercept,
                      t_slope, t_intercept,
                      p_slope, p_intercept};
+}
+
+inline std::optional<OLSResult> ols(const std::vector<double>& xs,
+                                     const std::vector<double>& ys) {
+    return ols(as_eigen(xs), as_eigen(ys));
 }
 
 } // namespace eta::runtime::stats

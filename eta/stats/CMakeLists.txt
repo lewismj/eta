@@ -9,7 +9,7 @@ target_include_directories(${PROJECT_NAME} INTERFACE
 
 target_link_libraries(${PROJECT_NAME} INTERFACE
     eta_core
-    Eigen3::Eigen
+    # Eigen3::Eigen is inherited transitively from eta_core (PUBLIC link).
 )
 
 # Suppress Eigen header warnings on MSVC (C4127 conditional expression is
