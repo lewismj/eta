@@ -3,8 +3,16 @@
 /// @file stats_primitives.h
 /// @brief Eigen-backed multi-variate statistical primitives for Eta.
 ///
-/// Provides multi-variate OLS (via QR decomposition), covariance/correlation
-/// matrices, and column-wise descriptive statistics that operate on FactTables.
+/// Provides polymorphic multi-variate statistics that operate on any
+/// combination of numeric sequences (lists, vectors, fact-table columns):
+///   - Column-wise means and variances
+///   - Covariance and correlation matrices
+///   - Column-wise quantiles
+///   - Multi-variate OLS regression (via QR decomposition)
+///
+/// Every primitive accepts either:
+///   (a) a list of numeric sequences (each a list, vector, etc.), or
+///   (b) a fact-table + a list of column indices.
 ///
 /// Registration order matters — slot indices must match builtin_names.h
 /// (stats section).  All primitives capture Heap& by reference for allocation.
@@ -54,16 +62,6 @@ get_fact_table(Heap& heap, LispVal v, const char* who) {
     return ft;
 }
 
-/// Walk an Eta list of numbers → std::vector<double>.
-inline std::expected<std::vector<double>, RuntimeError>
-list_to_doubles(Heap& heap, LispVal lst, const char* who) {
-    // Delegate to the polymorphic to_eigen, then copy back to vector.
-    // (Kept for local compat; new code should use stats::to_eigen directly.)
-    auto ev = stats::to_eigen(heap, lst, who);
-    if (!ev) return std::unexpected(ev.error());
-    return std::vector<double>(ev->data(), ev->data() + ev->size());
-}
-
 /// Walk an Eta list of integers (column indices) → std::vector<std::size_t>.
 inline std::expected<std::vector<std::size_t>, RuntimeError>
 list_to_col_indices(Heap& heap, LispVal lst, const char* who) {
@@ -111,7 +109,6 @@ inline std::expected<LispVal, RuntimeError>
 matrix_to_list(const Eigen::MatrixXd& m, Heap& heap) {
     LispVal result = Nil;
     for (Eigen::Index i = m.rows() - 1; i >= 0; --i) {
-        // Build row list
         LispVal row = Nil;
         for (Eigen::Index j = m.cols() - 1; j >= 0; --j) {
             auto enc = ops::encode(m(i, j));
@@ -136,6 +133,49 @@ make_alist_pair(Heap& heap, InternTable& intern_table, const char* key, LispVal 
     return make_cons(heap, sym_val, value);
 }
 
+/// Polymorphic column extraction.
+///   1-arg form: args[0] is a list of numeric sequences.
+///   2-arg form: args[0] is a fact-table, args[1] is a list of column indices.
+inline std::expected<std::vector<Eigen::VectorXd>, RuntimeError>
+extract_columns(Heap& heap, Args args, const char* who) {
+    std::vector<Eigen::VectorXd> columns;
+
+    if (args.size() == 2) {
+        // Two args → fact-table + column indices
+        auto ft_res = get_fact_table(heap, args[0], who);
+        if (!ft_res)
+            return std::unexpected(stats_error(
+                std::string(who) + ": with two arguments, first must be a fact-table"));
+        auto cols = list_to_col_indices(heap, args[1], who);
+        if (!cols) return std::unexpected(cols.error());
+        if (cols->empty())
+            return std::unexpected(stats_error(std::string(who) + ": need at least one column index"));
+        for (auto ci : *cols) {
+            auto col = column_to_eigen(**ft_res, ci, heap, who);
+            if (!col) return std::unexpected(col.error());
+            columns.push_back(std::move(*col));
+        }
+        return columns;
+    }
+
+    // 1 arg → list of sequences
+    LispVal cur = args[0];
+    if (cur == Nil)
+        return std::unexpected(stats_error(std::string(who) + ": need at least one data sequence"));
+    while (cur != Nil) {
+        if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+            return std::unexpected(stats_error(std::string(who) + ": expected a list of numeric sequences"));
+        auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+        if (!cons)
+            return std::unexpected(stats_error(std::string(who) + ": expected a list of numeric sequences"));
+        auto vec = stats::to_eigen(heap, cons->car, who);
+        if (!vec) return std::unexpected(vec.error());
+        columns.push_back(std::move(*vec));
+        cur = cons->cdr;
+    }
+    return columns;
+}
+
 // ─── Registration (live implementations) ─────────────────────────────
 
 inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
@@ -143,120 +183,90 @@ inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
                                        [[maybe_unused]] vm::VM* vm = nullptr) {
 
     // ────────────────────────────────────────────────────────────────
-    // stats/mean-vec : fact-table col-index-list → list
-    //   Column-wise means for the given columns of a fact-table.
+    // %stats-mean-vec : (seq-list) or (fact-table col-indices) → list
+    //   Column-wise means.
     // ────────────────────────────────────────────────────────────────
-    env.register_builtin("stats/mean-vec", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto ft_res = get_fact_table(heap, args[0], "stats/mean-vec");
-        if (!ft_res) return std::unexpected(ft_res.error());
-        auto cols = list_to_col_indices(heap, args[1], "stats/mean-vec");
+    env.register_builtin("%stats-mean-vec", 1, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto cols = extract_columns(heap, args, "%stats-mean-vec");
         if (!cols) return std::unexpected(cols.error());
-        if (cols->empty())
-            return std::unexpected(stats_error("stats/mean-vec: need at least one column index"));
 
-        auto& ft = **ft_res;
         Eigen::VectorXd means(static_cast<Eigen::Index>(cols->size()));
-        for (std::size_t i = 0; i < cols->size(); ++i) {
-            auto col = column_to_eigen(ft, (*cols)[i], heap, "stats/mean-vec");
-            if (!col) return std::unexpected(col.error());
-            means(static_cast<Eigen::Index>(i)) = col->mean();
-        }
+        for (std::size_t i = 0; i < cols->size(); ++i)
+            means(static_cast<Eigen::Index>(i)) = (*cols)[i].mean();
         return eigen_to_list(means, heap);
     });
 
     // ────────────────────────────────────────────────────────────────
-    // stats/var-vec : fact-table col-index-list → list
-    //   Column-wise sample variances (N-1) for the given columns.
+    // %stats-var-vec : (seq-list) or (fact-table col-indices) → list
+    //   Column-wise sample variances (N-1).
     // ────────────────────────────────────────────────────────────────
-    env.register_builtin("stats/var-vec", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto ft_res = get_fact_table(heap, args[0], "stats/var-vec");
-        if (!ft_res) return std::unexpected(ft_res.error());
-        auto cols = list_to_col_indices(heap, args[1], "stats/var-vec");
+    env.register_builtin("%stats-var-vec", 1, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto cols = extract_columns(heap, args, "%stats-var-vec");
         if (!cols) return std::unexpected(cols.error());
-        if (cols->empty())
-            return std::unexpected(stats_error("stats/var-vec: need at least one column index"));
-
-        auto& ft = **ft_res;
-        if (ft.row_count < 2)
-            return std::unexpected(stats_error("stats/var-vec: need at least 2 rows"));
 
         Eigen::VectorXd vars(static_cast<Eigen::Index>(cols->size()));
-        double n = static_cast<double>(ft.row_count);
         for (std::size_t i = 0; i < cols->size(); ++i) {
-            auto col = column_to_eigen(ft, (*cols)[i], heap, "stats/var-vec");
-            if (!col) return std::unexpected(col.error());
-            double m = col->mean();
-            double ss = (col->array() - m).square().sum();
-            vars(static_cast<Eigen::Index>(i)) = ss / (n - 1.0);
+            if ((*cols)[i].size() < 2)
+                return std::unexpected(stats_error("%stats-var-vec: each sequence needs at least 2 elements"));
+            vars(static_cast<Eigen::Index>(i)) = stats::variance((*cols)[i]);
         }
         return eigen_to_list(vars, heap);
     });
 
     // ────────────────────────────────────────────────────────────────
-    // stats/cov : fact-table col-index-list → list-of-lists
-    //   Sample covariance matrix (N-1) for the given columns.
+    // %stats-cov-matrix : (seq-list) or (fact-table col-indices) → list-of-lists
+    //   Sample covariance matrix (N-1).
     // ────────────────────────────────────────────────────────────────
-    env.register_builtin("stats/cov", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto ft_res = get_fact_table(heap, args[0], "stats/cov");
-        if (!ft_res) return std::unexpected(ft_res.error());
-        auto cols = list_to_col_indices(heap, args[1], "stats/cov");
+    env.register_builtin("%stats-cov-matrix", 1, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto cols = extract_columns(heap, args, "%stats-cov-matrix");
         if (!cols) return std::unexpected(cols.error());
-        if (cols->empty())
-            return std::unexpected(stats_error("stats/cov: need at least one column index"));
 
-        auto& ft = **ft_res;
-        auto n = static_cast<Eigen::Index>(ft.row_count);
         auto p = static_cast<Eigen::Index>(cols->size());
+        if (p == 0)
+            return std::unexpected(stats_error("%stats-cov-matrix: need at least one column"));
+        auto n = (*cols)[0].size();
+        for (auto& c : *cols)
+            if (c.size() != n)
+                return std::unexpected(stats_error("%stats-cov-matrix: all sequences must have the same length"));
         if (n < 2)
-            return std::unexpected(stats_error("stats/cov: need at least 2 rows"));
+            return std::unexpected(stats_error("%stats-cov-matrix: need at least 2 observations"));
 
-        // Build data matrix (n × p)
         Eigen::MatrixXd X(n, p);
-        for (Eigen::Index j = 0; j < p; ++j) {
-            auto col = column_to_eigen(ft, (*cols)[static_cast<std::size_t>(j)], heap, "stats/cov");
-            if (!col) return std::unexpected(col.error());
-            X.col(j) = *col;
-        }
+        for (Eigen::Index j = 0; j < p; ++j)
+            X.col(j) = (*cols)[static_cast<std::size_t>(j)];
 
-        // Center columns
         Eigen::VectorXd means = X.colwise().mean();
         Eigen::MatrixXd centered = X.rowwise() - means.transpose();
-
-        // Sample covariance: (X-μ)ᵀ(X-μ) / (n-1)
         Eigen::MatrixXd cov = (centered.transpose() * centered) / static_cast<double>(n - 1);
         return matrix_to_list(cov, heap);
     });
 
     // ────────────────────────────────────────────────────────────────
-    // stats/cor : fact-table col-index-list → list-of-lists
-    //   Pearson correlation matrix for the given columns.
+    // %stats-cor-matrix : (seq-list) or (fact-table col-indices) → list-of-lists
+    //   Pearson correlation matrix.
     // ────────────────────────────────────────────────────────────────
-    env.register_builtin("stats/cor", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto ft_res = get_fact_table(heap, args[0], "stats/cor");
-        if (!ft_res) return std::unexpected(ft_res.error());
-        auto cols = list_to_col_indices(heap, args[1], "stats/cor");
+    env.register_builtin("%stats-cor-matrix", 1, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto cols = extract_columns(heap, args, "%stats-cor-matrix");
         if (!cols) return std::unexpected(cols.error());
-        if (cols->empty())
-            return std::unexpected(stats_error("stats/cor: need at least one column index"));
 
-        auto& ft = **ft_res;
-        auto n = static_cast<Eigen::Index>(ft.row_count);
         auto p = static_cast<Eigen::Index>(cols->size());
+        if (p == 0)
+            return std::unexpected(stats_error("%stats-cor-matrix: need at least one column"));
+        auto n = (*cols)[0].size();
+        for (auto& c : *cols)
+            if (c.size() != n)
+                return std::unexpected(stats_error("%stats-cor-matrix: all sequences must have the same length"));
         if (n < 2)
-            return std::unexpected(stats_error("stats/cor: need at least 2 rows"));
+            return std::unexpected(stats_error("%stats-cor-matrix: need at least 2 observations"));
 
         Eigen::MatrixXd X(n, p);
-        for (Eigen::Index j = 0; j < p; ++j) {
-            auto col = column_to_eigen(ft, (*cols)[static_cast<std::size_t>(j)], heap, "stats/cor");
-            if (!col) return std::unexpected(col.error());
-            X.col(j) = *col;
-        }
+        for (Eigen::Index j = 0; j < p; ++j)
+            X.col(j) = (*cols)[static_cast<std::size_t>(j)];
 
         Eigen::VectorXd means = X.colwise().mean();
         Eigen::MatrixXd centered = X.rowwise() - means.transpose();
         Eigen::MatrixXd cov = (centered.transpose() * centered) / static_cast<double>(n - 1);
 
-        // Normalize: cor[i][j] = cov[i][j] / (σ_i * σ_j)
         Eigen::VectorXd stddevs = cov.diagonal().array().sqrt();
         Eigen::MatrixXd cor(p, p);
         for (Eigen::Index i = 0; i < p; ++i) {
@@ -271,33 +281,60 @@ inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
     });
 
     // ────────────────────────────────────────────────────────────────
-    // stats/quantile-vec : fact-table col-index p → list
-    //   p-th quantile (0 ≤ p ≤ 1) for each specified column.
+    // %stats-quantile-vec : (seq-list p) or (fact-table col-indices p) → list
+    //   p-th quantile (0 ≤ p ≤ 1) for each column.
     // ────────────────────────────────────────────────────────────────
-    env.register_builtin("stats/quantile-vec", 3, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto ft_res = get_fact_table(heap, args[0], "stats/quantile-vec");
-        if (!ft_res) return std::unexpected(ft_res.error());
-        auto cols = list_to_col_indices(heap, args[1], "stats/quantile-vec");
-        if (!cols) return std::unexpected(cols.error());
-        auto pv = classify_numeric(args[2], heap);
-        if (!pv.is_valid())
-            return std::unexpected(stats_error("stats/quantile-vec: p must be a number"));
-        double p = pv.as_double();
+    env.register_builtin("%stats-quantile-vec", 2, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        double p;
+        std::vector<Eigen::VectorXd> columns;
 
-        auto& ft = **ft_res;
-        Eigen::VectorXd result(static_cast<Eigen::Index>(cols->size()));
-        for (std::size_t i = 0; i < cols->size(); ++i) {
-            auto col = column_to_eigen(ft, (*cols)[i], heap, "stats/quantile-vec");
-            if (!col) return std::unexpected(col.error());
-            // Sort and interpolate
-            std::vector<double> sorted(col->data(), col->data() + col->size());
-            result(static_cast<Eigen::Index>(i)) = stats::percentile(std::move(sorted), p);
+        if (args.size() == 3) {
+            // fact-table + col-indices + p
+            auto ft_res = get_fact_table(heap, args[0], "%stats-quantile-vec");
+            if (!ft_res) return std::unexpected(ft_res.error());
+            auto col_indices = list_to_col_indices(heap, args[1], "%stats-quantile-vec");
+            if (!col_indices) return std::unexpected(col_indices.error());
+            if (col_indices->empty())
+                return std::unexpected(stats_error("%stats-quantile-vec: need at least one column index"));
+            for (auto ci : *col_indices) {
+                auto col = column_to_eigen(**ft_res, ci, heap, "%stats-quantile-vec");
+                if (!col) return std::unexpected(col.error());
+                columns.push_back(std::move(*col));
+            }
+            auto pv = classify_numeric(args[2], heap);
+            if (!pv.is_valid())
+                return std::unexpected(stats_error("%stats-quantile-vec: p must be a number"));
+            p = pv.as_double();
+        } else {
+            // seq-list + p
+            LispVal cur = args[0];
+            if (cur == Nil)
+                return std::unexpected(stats_error("%stats-quantile-vec: need at least one data sequence"));
+            while (cur != Nil) {
+                if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                    return std::unexpected(stats_error("%stats-quantile-vec: expected a list of numeric sequences"));
+                auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+                if (!cons)
+                    return std::unexpected(stats_error("%stats-quantile-vec: expected a list of numeric sequences"));
+                auto vec = stats::to_eigen(heap, cons->car, "%stats-quantile-vec");
+                if (!vec) return std::unexpected(vec.error());
+                columns.push_back(std::move(*vec));
+                cur = cons->cdr;
+            }
+            auto pv = classify_numeric(args[1], heap);
+            if (!pv.is_valid())
+                return std::unexpected(stats_error("%stats-quantile-vec: p must be a number"));
+            p = pv.as_double();
         }
+
+        Eigen::VectorXd result(static_cast<Eigen::Index>(columns.size()));
+        for (std::size_t i = 0; i < columns.size(); ++i)
+            result(static_cast<Eigen::Index>(i)) = stats::percentile(std::move(columns[i]), p);
         return eigen_to_list(result, heap);
     });
 
     // ────────────────────────────────────────────────────────────────
-    // stats/ols-multi : fact-table y-col x-col-index-list → alist
+    // %stats-ols-multi : (y-seq x-seq-list) or (ft y-col x-col-indices) → alist
     //   Multi-variate OLS:  y = Xβ + ε
     //   Uses Eigen ColPivHouseholderQR for numeric stability.
     //   Returns an alist:
@@ -309,47 +346,75 @@ inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
     //      (adj-r-squared . R²ₐ)
     //      (residual-se  . σ̂))
     // ────────────────────────────────────────────────────────────────
-    env.register_builtin("stats/ols-multi", 3, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto ft_res = get_fact_table(heap, args[0], "stats/ols-multi");
-        if (!ft_res) return std::unexpected(ft_res.error());
+    env.register_builtin("%stats-ols-multi", 2, true, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        Eigen::VectorXd y;
+        std::vector<Eigen::VectorXd> x_cols;
 
-        // y column index
-        auto yv = classify_numeric(args[1], heap);
-        if (!yv.is_valid() || !yv.is_fixnum() || yv.int_val < 0)
-            return std::unexpected(stats_error("stats/ols-multi: y-col must be a non-negative integer"));
-        auto y_col = static_cast<std::size_t>(yv.int_val);
+        if (args.size() == 3) {
+            // fact-table + y-col + x-col-indices
+            auto ft_res = get_fact_table(heap, args[0], "%stats-ols-multi");
+            if (!ft_res) return std::unexpected(ft_res.error());
 
-        // x column indices
-        auto x_cols = list_to_col_indices(heap, args[2], "stats/ols-multi");
-        if (!x_cols) return std::unexpected(x_cols.error());
-        if (x_cols->empty())
-            return std::unexpected(stats_error("stats/ols-multi: need at least one predictor column"));
+            auto yv = classify_numeric(args[1], heap);
+            if (!yv.is_valid() || !yv.is_fixnum() || yv.int_val < 0)
+                return std::unexpected(stats_error("%stats-ols-multi: y-col must be a non-negative integer"));
+            auto y_col_idx = static_cast<std::size_t>(yv.int_val);
 
-        auto& ft = **ft_res;
-        auto n = static_cast<Eigen::Index>(ft.row_count);
-        auto k = static_cast<Eigen::Index>(x_cols->size());
+            auto x_col_indices = list_to_col_indices(heap, args[2], "%stats-ols-multi");
+            if (!x_col_indices) return std::unexpected(x_col_indices.error());
+            if (x_col_indices->empty())
+                return std::unexpected(stats_error("%stats-ols-multi: need at least one predictor column"));
+
+            auto y_res = column_to_eigen(**ft_res, y_col_idx, heap, "%stats-ols-multi");
+            if (!y_res) return std::unexpected(y_res.error());
+            y = std::move(*y_res);
+
+            for (auto ci : *x_col_indices) {
+                auto col = column_to_eigen(**ft_res, ci, heap, "%stats-ols-multi");
+                if (!col) return std::unexpected(col.error());
+                x_cols.push_back(std::move(*col));
+            }
+        } else {
+            // y-sequence + list-of-x-sequences
+            auto y_res = stats::to_eigen(heap, args[0], "%stats-ols-multi");
+            if (!y_res) return std::unexpected(y_res.error());
+            y = std::move(*y_res);
+
+            LispVal cur = args[1];
+            if (cur == Nil)
+                return std::unexpected(stats_error("%stats-ols-multi: need at least one predictor sequence"));
+            while (cur != Nil) {
+                if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                    return std::unexpected(stats_error("%stats-ols-multi: expected a list of predictor sequences"));
+                auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+                if (!cons)
+                    return std::unexpected(stats_error("%stats-ols-multi: expected a list of predictor sequences"));
+                auto vec = stats::to_eigen(heap, cons->car, "%stats-ols-multi");
+                if (!vec) return std::unexpected(vec.error());
+                x_cols.push_back(std::move(*vec));
+                cur = cons->cdr;
+            }
+        }
+
+        auto n = y.size();
+        auto k = static_cast<Eigen::Index>(x_cols.size());
 
         if (n < k + 2)
-            return std::unexpected(stats_error("stats/ols-multi: need at least (k+2) rows for k predictors"));
-
-        // Extract y vector
-        auto y_res = column_to_eigen(ft, y_col, heap, "stats/ols-multi");
-        if (!y_res) return std::unexpected(y_res.error());
-        Eigen::VectorXd y = *y_res;
+            return std::unexpected(stats_error("%stats-ols-multi: need at least (k+2) observations for k predictors"));
 
         // Build design matrix X = [1 | x₁ | x₂ | ... | xₖ]  (n × (k+1))
         Eigen::MatrixXd X(n, k + 1);
         X.col(0).setOnes();  // intercept
         for (Eigen::Index j = 0; j < k; ++j) {
-            auto col = column_to_eigen(ft, (*x_cols)[static_cast<std::size_t>(j)], heap, "stats/ols-multi");
-            if (!col) return std::unexpected(col.error());
-            X.col(j + 1) = *col;
+            if (x_cols[static_cast<std::size_t>(j)].size() != n)
+                return std::unexpected(stats_error("%stats-ols-multi: all sequences must have the same length as y"));
+            X.col(j + 1) = x_cols[static_cast<std::size_t>(j)];
         }
 
         // Solve via QR decomposition:  β = (XᵀX)⁻¹ Xᵀy
         Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr(X);
         if (qr.rank() < k + 1)
-            return std::unexpected(stats_error("stats/ols-multi: design matrix is rank-deficient"));
+            return std::unexpected(stats_error("%stats-ols-multi: design matrix is rank-deficient"));
 
         Eigen::VectorXd beta = qr.solve(y);
 
@@ -382,7 +447,6 @@ inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
         }
 
         // Build the result alist
-        // We build from the bottom up (last pair first).
         auto coeff_list = eigen_to_list(beta, heap);
         if (!coeff_list) return std::unexpected(coeff_list.error());
         auto se_list = eigen_to_list(se_beta, heap);
@@ -393,11 +457,11 @@ inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
         if (!p_list) return std::unexpected(p_list.error());
 
         auto r2_enc = ops::encode(r_squared);
-        if (!r2_enc) return std::unexpected(stats_error("stats/ols-multi: encoding error"));
+        if (!r2_enc) return std::unexpected(stats_error("%stats-ols-multi: encoding error"));
         auto ar2_enc = ops::encode(adj_r_squared);
-        if (!ar2_enc) return std::unexpected(stats_error("stats/ols-multi: encoding error"));
+        if (!ar2_enc) return std::unexpected(stats_error("%stats-ols-multi: encoding error"));
         auto rse_enc = ops::encode(residual_se);
-        if (!rse_enc) return std::unexpected(stats_error("stats/ols-multi: encoding error"));
+        if (!rse_enc) return std::unexpected(stats_error("%stats-ols-multi: encoding error"));
 
         // Build alist pairs
         auto p7 = make_alist_pair(heap, intern_table, "residual-se",   *rse_enc);
@@ -415,7 +479,7 @@ inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
         auto p1 = make_alist_pair(heap, intern_table, "coefficients",  *coeff_list);
         if (!p1) return std::unexpected(p1.error());
 
-        // Chain into alist: ((coefficients . ...) (std-errors . ...) ... (residual-se . ...))
+        // Chain into alist
         auto l7 = make_cons(heap, *p7, Nil);    if (!l7) return std::unexpected(l7.error());
         auto l6 = make_cons(heap, *p6, *l7);    if (!l6) return std::unexpected(l6.error());
         auto l5 = make_cons(heap, *p5, *l6);    if (!l5) return std::unexpected(l5.error());

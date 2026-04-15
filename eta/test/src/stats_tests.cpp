@@ -109,6 +109,18 @@ namespace {
         }
         return result;
     }
+
+    /// Build an Eta list of Eta lists (list of sequences) from vectors of doubles.
+    LispVal make_seq_list(Heap& heap, const std::vector<std::vector<double>>& seqs) {
+        LispVal result = Nil;
+        for (auto it = seqs.rbegin(); it != seqs.rend(); ++it) {
+            auto lst = doubles_to_list(heap, *it);
+            auto cell = make_cons(heap, lst, result);
+            BOOST_REQUIRE(cell.has_value());
+            result = *cell;
+        }
+        return result;
+    }
 }
 
 BOOST_AUTO_TEST_SUITE(stats_tests)
@@ -121,17 +133,17 @@ BOOST_AUTO_TEST_CASE(builtin_names_smoke) {
     BuiltinEnvironment env;
     register_stats_primitives(env, heap, intern, nullptr);
 
-    BOOST_TEST(env.lookup("stats/mean-vec").has_value());
-    BOOST_TEST(env.lookup("stats/var-vec").has_value());
-    BOOST_TEST(env.lookup("stats/cov").has_value());
-    BOOST_TEST(env.lookup("stats/cor").has_value());
-    BOOST_TEST(env.lookup("stats/quantile-vec").has_value());
-    BOOST_TEST(env.lookup("stats/ols-multi").has_value());
+    BOOST_TEST(env.lookup("%stats-mean-vec").has_value());
+    BOOST_TEST(env.lookup("%stats-var-vec").has_value());
+    BOOST_TEST(env.lookup("%stats-cov-matrix").has_value());
+    BOOST_TEST(env.lookup("%stats-cor-matrix").has_value());
+    BOOST_TEST(env.lookup("%stats-quantile-vec").has_value());
+    BOOST_TEST(env.lookup("%stats-ols-multi").has_value());
 }
 
-// ─── stats/mean-vec ──────────────────────────────────────────────────
+// ─── %stats-mean-vec (fact-table form) ───────────────────────────────
 
-BOOST_AUTO_TEST_CASE(mean_vec_basic) {
+BOOST_AUTO_TEST_CASE(mean_vec_fact_table) {
     Heap heap(1ull << 22);
     InternTable intern;
     BuiltinEnvironment env;
@@ -141,7 +153,7 @@ BOOST_AUTO_TEST_CASE(mean_vec_basic) {
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{1,2,3}, {4,5,6}});
     auto cols = ints_to_list(heap, {0, 1});
 
-    auto idx = env.lookup("stats/mean-vec");
+    auto idx = env.lookup("%stats-mean-vec");
     BOOST_REQUIRE(idx.has_value());
     std::vector<LispVal> args = {ft, cols};
     auto result = env.specs()[*idx].func(args);
@@ -153,9 +165,31 @@ BOOST_AUTO_TEST_CASE(mean_vec_basic) {
     BOOST_TEST(std::abs(means[1] - 5.0) < 1e-10);
 }
 
-// ─── stats/var-vec ───────────────────────────────────────────────────
+// ─── %stats-mean-vec (list-of-sequences form) ───────────────────────
 
-BOOST_AUTO_TEST_CASE(var_vec_basic) {
+BOOST_AUTO_TEST_CASE(mean_vec_list_of_seqs) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_stats_primitives(env, heap, intern, nullptr);
+
+    auto seqs = make_seq_list(heap, {{1,2,3}, {4,5,6}});
+
+    auto idx = env.lookup("%stats-mean-vec");
+    BOOST_REQUIRE(idx.has_value());
+    std::vector<LispVal> args = {seqs};
+    auto result = env.specs()[*idx].func(args);
+    BOOST_REQUIRE(result.has_value());
+
+    auto means = list_to_vec(heap, *result);
+    BOOST_REQUIRE_EQUAL(means.size(), 2u);
+    BOOST_TEST(std::abs(means[0] - 2.0) < 1e-10);
+    BOOST_TEST(std::abs(means[1] - 5.0) < 1e-10);
+}
+
+// ─── %stats-var-vec ──────────────────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(var_vec_fact_table) {
     Heap heap(1ull << 22);
     InternTable intern;
     BuiltinEnvironment env;
@@ -165,7 +199,7 @@ BOOST_AUTO_TEST_CASE(var_vec_basic) {
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{2,4,6}, {1,1,1}});
     auto cols = ints_to_list(heap, {0, 1});
 
-    auto idx = env.lookup("stats/var-vec");
+    auto idx = env.lookup("%stats-var-vec");
     BOOST_REQUIRE(idx.has_value());
     std::vector<LispVal> args = {ft, cols};
     auto result = env.specs()[*idx].func(args);
@@ -177,9 +211,9 @@ BOOST_AUTO_TEST_CASE(var_vec_basic) {
     BOOST_TEST(std::abs(vars[1] - 0.0) < 1e-10);  // var([1,1,1]) = 0
 }
 
-// ─── stats/cov ───────────────────────────────────────────────────────
+// ─── %stats-cov-matrix ──────────────────────────────────────────────
 
-BOOST_AUTO_TEST_CASE(cov_2x2) {
+BOOST_AUTO_TEST_CASE(cov_matrix_fact_table) {
     Heap heap(1ull << 22);
     InternTable intern;
     BuiltinEnvironment env;
@@ -189,7 +223,7 @@ BOOST_AUTO_TEST_CASE(cov_2x2) {
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{1,2,3,4,5}, {2,4,6,8,10}});
     auto cols = ints_to_list(heap, {0, 1});
 
-    auto idx = env.lookup("stats/cov");
+    auto idx = env.lookup("%stats-cov-matrix");
     BOOST_REQUIRE(idx.has_value());
     std::vector<LispVal> args = {ft, cols};
     auto result = env.specs()[*idx].func(args);
@@ -205,9 +239,31 @@ BOOST_AUTO_TEST_CASE(cov_2x2) {
     BOOST_TEST(std::abs(mat[1][1] - 10.0) < 1e-10);
 }
 
-// ─── stats/cor ───────────────────────────────────────────────────────
+BOOST_AUTO_TEST_CASE(cov_matrix_list_of_seqs) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_stats_primitives(env, heap, intern, nullptr);
 
-BOOST_AUTO_TEST_CASE(cor_perfect) {
+    auto seqs = make_seq_list(heap, {{1,2,3,4,5}, {2,4,6,8,10}});
+
+    auto idx = env.lookup("%stats-cov-matrix");
+    BOOST_REQUIRE(idx.has_value());
+    std::vector<LispVal> args = {seqs};
+    auto result = env.specs()[*idx].func(args);
+    BOOST_REQUIRE(result.has_value());
+
+    auto mat = nested_list_to_matrix(heap, *result);
+    BOOST_REQUIRE_EQUAL(mat.size(), 2u);
+    BOOST_TEST(std::abs(mat[0][0] - 2.5) < 1e-10);
+    BOOST_TEST(std::abs(mat[0][1] - 5.0) < 1e-10);
+    BOOST_TEST(std::abs(mat[1][0] - 5.0) < 1e-10);
+    BOOST_TEST(std::abs(mat[1][1] - 10.0) < 1e-10);
+}
+
+// ─── %stats-cor-matrix ──────────────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(cor_matrix_perfect) {
     Heap heap(1ull << 22);
     InternTable intern;
     BuiltinEnvironment env;
@@ -217,7 +273,7 @@ BOOST_AUTO_TEST_CASE(cor_perfect) {
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{1,2,3,4,5}, {2,4,6,8,10}});
     auto cols = ints_to_list(heap, {0, 1});
 
-    auto idx = env.lookup("stats/cor");
+    auto idx = env.lookup("%stats-cor-matrix");
     BOOST_REQUIRE(idx.has_value());
     std::vector<LispVal> args = {ft, cols};
     auto result = env.specs()[*idx].func(args);
@@ -231,9 +287,9 @@ BOOST_AUTO_TEST_CASE(cor_perfect) {
     BOOST_TEST(std::abs(mat[1][1] - 1.0) < 1e-10);
 }
 
-// ─── stats/quantile-vec ──────────────────────────────────────────────
+// ─── %stats-quantile-vec ─────────────────────────────────────────────
 
-BOOST_AUTO_TEST_CASE(quantile_vec_median) {
+BOOST_AUTO_TEST_CASE(quantile_vec_median_ft) {
     Heap heap(1ull << 22);
     InternTable intern;
     BuiltinEnvironment env;
@@ -243,7 +299,7 @@ BOOST_AUTO_TEST_CASE(quantile_vec_median) {
     auto cols = ints_to_list(heap, {0});
     auto p = *ops::encode(0.5);
 
-    auto idx = env.lookup("stats/quantile-vec");
+    auto idx = env.lookup("%stats-quantile-vec");
     BOOST_REQUIRE(idx.has_value());
     std::vector<LispVal> args = {ft, cols, p};
     auto result = env.specs()[*idx].func(args);
@@ -254,44 +310,59 @@ BOOST_AUTO_TEST_CASE(quantile_vec_median) {
     BOOST_TEST(std::abs(qs[0] - 3.0) < 1e-10);  // median of [1,2,3,4,5]
 }
 
-// ─── stats/ols-multi ─────────────────────────────────────────────────
+BOOST_AUTO_TEST_CASE(quantile_vec_median_seqs) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_stats_primitives(env, heap, intern, nullptr);
 
-BOOST_AUTO_TEST_CASE(ols_multi_simple_linear) {
+    auto seqs = make_seq_list(heap, {{1,2,3,4,5}});
+    auto p = *ops::encode(0.5);
+
+    auto idx = env.lookup("%stats-quantile-vec");
+    BOOST_REQUIRE(idx.has_value());
+    std::vector<LispVal> args = {seqs, p};
+    auto result = env.specs()[*idx].func(args);
+    BOOST_REQUIRE(result.has_value());
+
+    auto qs = list_to_vec(heap, *result);
+    BOOST_REQUIRE_EQUAL(qs.size(), 1u);
+    BOOST_TEST(std::abs(qs[0] - 3.0) < 1e-10);
+}
+
+// ─── %stats-ols-multi ────────────────────────────────────────────────
+
+BOOST_AUTO_TEST_CASE(ols_multi_simple_linear_ft) {
     Heap heap(1ull << 22);
     InternTable intern;
     BuiltinEnvironment env;
     register_stats_primitives(env, heap, intern, nullptr);
 
     // y = 2x + 1 (exact fit: intercept=1, slope=2)
-    // x = [1, 2, 3, 4, 5]
-    // y = [3, 5, 7, 9, 11]
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{1,2,3,4,5}, {3,5,7,9,11}});
-    auto y_col = *ops::encode(static_cast<int64_t>(1));  // column 1 = y
-    auto x_cols = ints_to_list(heap, {0});                // column 0 = x
+    auto y_col = *ops::encode(static_cast<int64_t>(1));
+    auto x_cols = ints_to_list(heap, {0});
 
-    auto idx = env.lookup("stats/ols-multi");
+    auto idx = env.lookup("%stats-ols-multi");
     BOOST_REQUIRE(idx.has_value());
     std::vector<LispVal> args = {ft, y_col, x_cols};
     auto result = env.specs()[*idx].func(args);
     BOOST_REQUIRE(result.has_value());
 
     // Walk the alist and extract coefficients
-    // The result is ((coefficients . (β₀ β₁)) (std-errors . (...)) ...)
     LispVal cur = *result;
-    // First pair: (coefficients . (intercept slope))
     auto* first = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
     BOOST_REQUIRE(first != nullptr);
     auto* coeff_pair = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(first->car));
     BOOST_REQUIRE(coeff_pair != nullptr);
-    // coeff_pair->cdr is the list of coefficients
     auto coeffs = list_to_vec(heap, coeff_pair->cdr);
     BOOST_REQUIRE_EQUAL(coeffs.size(), 2u);
     BOOST_TEST(std::abs(coeffs[0] - 1.0) < 1e-8);  // intercept
     BOOST_TEST(std::abs(coeffs[1] - 2.0) < 1e-8);  // slope
 
     // Walk to r-squared (5th entry in alist)
-    cur = first->cdr;  // skip coefficients
-    for (int i = 0; i < 3; ++i) {  // skip std-errors, t-stats, p-values
+    cur = first->cdr;
+    for (int i = 0; i < 3; ++i) {
         auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
         BOOST_REQUIRE(c != nullptr);
         cur = c->cdr;
@@ -302,7 +373,33 @@ BOOST_AUTO_TEST_CASE(ols_multi_simple_linear) {
     BOOST_REQUIRE(r2_pair != nullptr);
     auto r2v = classify_numeric(r2_pair->cdr, heap);
     BOOST_REQUIRE(r2v.is_valid());
-    BOOST_TEST(std::abs(r2v.as_double() - 1.0) < 1e-8);  // perfect fit
+    BOOST_TEST(std::abs(r2v.as_double() - 1.0) < 1e-8);
+}
+
+BOOST_AUTO_TEST_CASE(ols_multi_simple_linear_seqs) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_stats_primitives(env, heap, intern, nullptr);
+
+    // y = 2x + 1
+    auto y_seq = doubles_to_list(heap, {3,5,7,9,11});
+    auto x_seqs = make_seq_list(heap, {{1,2,3,4,5}});
+
+    auto idx = env.lookup("%stats-ols-multi");
+    BOOST_REQUIRE(idx.has_value());
+    std::vector<LispVal> args = {y_seq, x_seqs};
+    auto result = env.specs()[*idx].func(args);
+    BOOST_REQUIRE(result.has_value());
+
+    auto* first = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(*result));
+    BOOST_REQUIRE(first != nullptr);
+    auto* coeff_pair = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(first->car));
+    BOOST_REQUIRE(coeff_pair != nullptr);
+    auto coeffs = list_to_vec(heap, coeff_pair->cdr);
+    BOOST_REQUIRE_EQUAL(coeffs.size(), 2u);
+    BOOST_TEST(std::abs(coeffs[0] - 1.0) < 1e-8);
+    BOOST_TEST(std::abs(coeffs[1] - 2.0) < 1e-8);
 }
 
 BOOST_AUTO_TEST_CASE(ols_multi_two_predictors) {
@@ -312,21 +409,17 @@ BOOST_AUTO_TEST_CASE(ols_multi_two_predictors) {
     register_stats_primitives(env, heap, intern, nullptr);
 
     // y = 1 + 2*x1 + 3*x2  (exact)
-    // x1 = [1, 0, 0, 1, 2]
-    // x2 = [0, 1, 0, 1, 1]
-    // y  = [3, 4, 1, 6, 8]
     auto ft = make_test_fact_table(heap, {"x1", "x2", "y"},
                                     {{1,0,0,1,2}, {0,1,0,1,1}, {3,4,1,6,8}});
     auto y_col = *ops::encode(static_cast<int64_t>(2));
     auto x_cols = ints_to_list(heap, {0, 1});
 
-    auto idx = env.lookup("stats/ols-multi");
+    auto idx = env.lookup("%stats-ols-multi");
     BOOST_REQUIRE(idx.has_value());
     std::vector<LispVal> args = {ft, y_col, x_cols};
     auto result = env.specs()[*idx].func(args);
     BOOST_REQUIRE(result.has_value());
 
-    // Extract coefficients
     auto* first = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(*result));
     BOOST_REQUIRE(first != nullptr);
     auto* coeff_pair = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(first->car));
@@ -514,4 +607,6 @@ BOOST_AUTO_TEST_CASE(to_eigen_rejects_non_numeric) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
+
 
