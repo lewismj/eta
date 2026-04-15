@@ -444,20 +444,6 @@ inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
     });
 }
 
-/// Analysis-only name registration (no Eigen dependency required at link time).
-/// Must be kept in sync with register_stats_primitives above.
-inline void register_stats_builtin_names(BuiltinEnvironment& env) {
-    auto r = [&env](const char* name, uint32_t arity, bool has_rest) {
-        env.register_builtin(name, arity, has_rest, PrimitiveFunc{});
-    };
-
-    r("stats/mean-vec",     2, false);
-    r("stats/var-vec",      2, false);
-    r("stats/cov",          2, false);
-    r("stats/cor",          2, false);
-    r("stats/quantile-vec", 3, false);
-    r("stats/ols-multi",    3, false);
-}
 
 } // namespace eta::stats_bindings
 

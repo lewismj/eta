@@ -1212,34 +1212,6 @@ inline void register_nng_primitives(
         });
 }
 
-/// Analysis-only name registration — no nng dependency required at link time.
-/// MUST be kept in sync with register_nng_primitives() above (same order).
-inline void register_nng_builtin_names(BuiltinEnvironment& env) {
-    auto r = [&env](const char* name, uint32_t arity, bool has_rest) {
-        env.register_builtin(name, arity, has_rest, PrimitiveFunc{});
-    };
-    r("nng-socket",          1, false);
-    r("nng-listen",          2, false);
-    r("nng-dial",            2, false);
-    r("nng-close",           1, false);
-    r("nng-socket?",         1, false);
-    r("send!",               2, true);
-    r("recv!",               1, true);
-    r("nng-poll",            2, false);
-    r("nng-subscribe",       2, false);
-    r("nng-set-option",      3, false);
-    r("spawn",               1, true);
-    r("spawn-kill",          1, false);
-    r("spawn-wait",          1, false);
-    r("current-mailbox",     0, false);
-    r("spawn-thread-with",   2, true);
-    r("spawn-thread",        1, false);
-    r("thread-join",         1, false);
-    r("thread-alive?",       1, false);
-    r("monitor",             1, false);
-    r("demonitor",           1, false);
-    r("enable-heartbeat",    2, false);
-}
 
 } // namespace eta::nng
 

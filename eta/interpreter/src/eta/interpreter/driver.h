@@ -25,6 +25,7 @@
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/disassembler.h"
 #include "eta/runtime/builtin_env.h"
+#include "eta/runtime/builtin_names.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/diagnostic/diagnostic.h"
 
@@ -78,6 +79,12 @@ public:
 
         // Register all core + port + io + torch + stats primitives.
         // NNG follows with driver-specific arguments.
+        // Step 1: Populate all slots with metadata (name/arity/has_rest) + null funcs.
+        //         builtin_names.h is the Single Source of Truth for slot order.
+        runtime::register_builtin_names(builtins_);
+        // Step 2: Switch to patch mode — subsequent register_builtin() calls
+        //         validate metadata and install the real func.
+        builtins_.begin_patching();
         register_all_primitives(builtins_, heap_, intern_table_, vm_);
 
 
@@ -225,6 +232,9 @@ public:
             &proc_mgr_, etai_path_, &mailbox_val_,
             module_search_path, std::move(thread_worker_fn),
             &registry_);
+
+        // Step 3: Verify every pre-registered slot now has a real implementation.
+        builtins_.verify_all_patched();
 
         proc_mgr_.set_closure_factory(std::move(closure_worker_fn));
 

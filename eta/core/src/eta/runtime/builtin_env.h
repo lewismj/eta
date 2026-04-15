@@ -6,6 +6,8 @@
 #include <optional>
 #include <cstdint>
 #include <functional>
+#include <iostream>
+#include <cstdlib>
 
 #include "eta/runtime/nanbox.h"
 #include "eta/runtime/error.h"
@@ -61,7 +63,68 @@ public:
      * @param func    The C++ implementation
      */
     void register_builtin(std::string name, uint32_t arity, bool has_rest, PrimitiveFunc func) {
-        specs_.push_back(BuiltinSpec{std::move(name), arity, has_rest, std::move(func)});
+        if (!patching_) {
+            // Append mode (default): push a new entry.
+            specs_.push_back(BuiltinSpec{std::move(name), arity, has_rest, std::move(func)});
+            return;
+        }
+
+        // Patch mode: validate metadata against the pre-registered slot and install func.
+        if (patch_cursor_ >= specs_.size()) {
+            std::cerr << "BuiltinEnvironment patch error: cursor "
+                      << patch_cursor_ << " exceeds pre-registered count "
+                      << specs_.size() << " (registering '" << name << "')\n";
+            std::abort();
+        }
+        auto& slot = specs_[patch_cursor_];
+        if (slot.name != name || slot.arity != arity || slot.has_rest != has_rest) {
+            std::cerr << "BuiltinEnvironment patch mismatch at slot "
+                      << patch_cursor_ << ": expected {\"" << slot.name
+                      << "\", arity=" << slot.arity
+                      << ", has_rest=" << slot.has_rest
+                      << "} but runtime registered {\"" << name
+                      << "\", arity=" << arity
+                      << ", has_rest=" << has_rest << "}\n";
+            std::abort();
+        }
+        slot.func = std::move(func);
+        ++patch_cursor_;
+    }
+
+    /**
+     * @brief Switch to patch mode.
+     *
+     * After calling register_builtin_names() (which fills every slot with
+     * metadata + null funcs), call begin_patching() so that subsequent
+     * register_builtin() calls **validate** against the pre-registered
+     * metadata and install the func rather than appending new entries.
+     */
+    void begin_patching() {
+        patching_ = true;
+        patch_cursor_ = 0;
+    }
+
+    /**
+     * @brief Verify every slot received a non-null func during patching.
+     *
+     * Call after all register_*_primitives() functions have run.
+     * Aborts with a clear message listing any unpatched builtin names.
+     */
+    void verify_all_patched() const {
+        std::vector<std::string> missing;
+        for (size_t i = 0; i < specs_.size(); ++i) {
+            if (!specs_[i].func) {
+                missing.push_back(specs_[i].name);
+            }
+        }
+        if (!missing.empty()) {
+            std::cerr << "BuiltinEnvironment: " << missing.size()
+                      << " builtin(s) have no runtime implementation:\n";
+            for (const auto& n : missing) {
+                std::cerr << "  - " << n << "\n";
+            }
+            std::abort();
+        }
     }
 
     /**
@@ -88,7 +151,11 @@ public:
     }
 
     /// Remove all registered builtins (used before re-registering with a different VM pointer).
-    void clear() { specs_.clear(); }
+    void clear() {
+        specs_.clear();
+        patching_ = false;
+        patch_cursor_ = 0;
+    }
 
     [[nodiscard]] const std::vector<BuiltinSpec>& specs() const { return specs_; }
     [[nodiscard]] size_t size() const { return specs_.size(); }
@@ -103,6 +170,8 @@ public:
 
 private:
     std::vector<BuiltinSpec> specs_;
+    bool patching_ = false;
+    size_t patch_cursor_ = 0;
 };
 
 } // namespace eta::runtime

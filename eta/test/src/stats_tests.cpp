@@ -111,11 +111,13 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(stats_tests)
 
-// ─── register_stats_builtin_names ────────────────────────────────────
+// ─── builtin names via register_stats_primitives ─────────────────────
 
 BOOST_AUTO_TEST_CASE(builtin_names_smoke) {
+    Heap heap(1ull << 22);
+    InternTable intern;
     BuiltinEnvironment env;
-    register_stats_builtin_names(env);
+    register_stats_primitives(env, heap, intern, nullptr);
 
     BOOST_TEST(env.lookup("stats/mean-vec").has_value());
     BOOST_TEST(env.lookup("stats/var-vec").has_value());

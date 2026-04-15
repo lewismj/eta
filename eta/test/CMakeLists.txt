@@ -30,7 +30,8 @@ set(SOURCES
         src/optimization_tests.cpp
         src/cons_pool_tests.cpp
         src/stats_tests.cpp
-        src/nng_tests.cpp)
+        src/nng_tests.cpp
+        src/builtin_sync_tests.cpp)
 
 # libtorch ships release binaries only (_ITERATOR_DEBUG_LEVEL=0).
 # MSVC Debug builds use _ITERATOR_DEBUG_LEVEL=2 which causes ABI mismatch and
