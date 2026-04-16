@@ -74,6 +74,27 @@ struct WindFrame {
     LispVal after;
 };
 
+/// A single undoable mutation recorded by the unification / CLP machinery.
+///
+/// Phase 1 of the logic/CLP roadmap generalises the per-VM trail from a raw
+/// `std::vector<LispVal>` (binding-only) to a tagged entry.  Attributed
+/// variables in Phase 3 will add a new `Attr` kind that records the previous
+/// attribute value so wakeup-induced bindings can be cleanly undone on
+/// backtracking; until then only `Bind` is produced.
+///
+/// Domain changes are still undone via `ConstraintStore::unwind` and are not
+/// stored here — their prev-state is kept in the store's private trail so we
+/// don't pay the cost of generic indirection for numeric intervals.
+struct TrailEntry {
+    enum class Kind : std::uint8_t {
+        Bind,   ///< LogicVar `var` was bound; on undo, reset binding to nullopt
+        Attr,   ///< Attributed var: `var` had module-attr written (Phase 3, reserved)
+    };
+    Kind    kind{Kind::Bind};
+    LispVal var{nanbox::Nil};       ///< HeapObject ref to the LogicVar / AttrVar
+    LispVal prev_value{nanbox::Nil}; ///< For Attr kind only; unused for Bind
+};
+
 /// A live exception catch frame installed by SetupCatch.
 struct CatchFrame {
     LispVal                     tag;          ///< symbol to match; Nil = catch-all
@@ -186,6 +207,24 @@ public:
     clp::ConstraintStore& constraint_store() { return constraint_store_; }
     const clp::ConstraintStore& constraint_store() const { return constraint_store_; }
 
+    // ---- Occurs-check policy (Phase 1 of the logic/CLP roadmap) ----
+    // Controls VM::unify behaviour when a binding would create a cyclic term:
+    //   Always → run occurs-check, fail unification on cycle (current default, safe).
+    //   Never  → skip occurs-check entirely (ISO-Prolog default; faster; may
+    //            produce cyclic terms that break subsequent traversal).
+    //   Error  → run occurs-check and raise a runtime error on cycle, so the
+    //            user sees the offending unification instead of silent failure.
+    enum class OccursCheckMode : uint8_t { Always, Never, Error };
+
+    [[nodiscard]] OccursCheckMode occurs_check_mode() const noexcept { return occurs_check_mode_; }
+    void set_occurs_check_mode(OccursCheckMode m) noexcept { occurs_check_mode_ = m; }
+
+    /// True iff the most recent unify() failed specifically because of an
+    /// occurs-check violation while the policy was Error. Primitive code
+    /// reads this to turn the failure into a runtime error.
+    [[nodiscard]] bool last_unify_cycle_error() const noexcept { return last_unify_cycle_error_; }
+    void clear_last_unify_cycle_error() noexcept { last_unify_cycle_error_ = false; }
+
     // AD Tape state
     /// Return the currently active tape (NaN-boxed HeapObject), or Nil if none.
     [[nodiscard]] LispVal active_tape() const noexcept {
@@ -218,9 +257,13 @@ private:
     std::vector<WindFrame> winding_stack_;
     std::vector<LispVal> temp_roots_;
     std::vector<CatchFrame> catch_stack_;  ///< live exception handlers
-    std::vector<LispVal> trail_stack_;     ///< logic-var trail for backtracking
+    std::vector<TrailEntry> trail_stack_;  ///< logic-var / CLP attribute trail for backtracking
     clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
     std::vector<LispVal> active_tapes_;    ///< Stack of active AD tapes (supports nesting)
+
+    // Occurs-check policy (Phase 1 — see set_occurs_check_mode).
+    OccursCheckMode occurs_check_mode_{OccursCheckMode::Always};
+    bool            last_unify_cycle_error_{false};
 
     // Current I/O ports
     LispVal current_input_{nanbox::Nil};

@@ -21,6 +21,7 @@ namespace eta::runtime::memory::heap {
         virtual R visit_tape(const eta::runtime::types::Tape& t) = 0;
         virtual R visit_primitive(const eta::runtime::types::Primitive& p) = 0;
         virtual R visit_fact_table(const eta::runtime::types::FactTable& ft) = 0;
+        virtual R visit_compound_term(const eta::runtime::types::CompoundTerm& ct) = 0;
 
         // Fallback for leaf/unknown kinds (no outward edges)
         virtual R visit_leaf(ObjectKind kind, const void* payload) = 0;
@@ -40,6 +41,7 @@ namespace eta::runtime::memory::heap {
             case Tape:         return v.visit_tape(*static_cast<const eta::runtime::types::Tape*>(payload));
             case Primitive:    return v.visit_primitive(*static_cast<const eta::runtime::types::Primitive*>(payload));
             case FactTable:    return v.visit_fact_table(*static_cast<const eta::runtime::types::FactTable*>(payload));
+            case CompoundTerm: return v.visit_compound_term(*static_cast<const eta::runtime::types::CompoundTerm*>(payload));
 
             case Fixnum:
             case ByteVector:

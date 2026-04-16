@@ -108,7 +108,10 @@ void VM::collect_garbage() {
         }
         // Mark logic-variable trail (prevents live unbound vars from being swept
         // during an active unification / backtracking context)
-        for (auto v : trail_stack_) visit(v);
+        for (const auto& e : trail_stack_) {
+            visit(e.var);
+            if (e.kind == TrailEntry::Kind::Attr) visit(e.prev_value);
+        }
         // Mark active AD tape stack
         for (auto v : active_tapes_) visit(v);
     });
@@ -187,7 +190,18 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
         roots.push_back({"Catch Stack", std::move(ids)});
     }
 
-    roots.push_back({"Trail Stack", collect(trail_stack_.begin(), trail_stack_.end())});
+    roots.push_back({"Trail Stack", [&]() {
+        std::vector<ObjectId> ids;
+        ids.reserve(trail_stack_.size());
+        for (const auto& e : trail_stack_) {
+            if (ops::is_boxed(e.var) && ops::tag(e.var) == Tag::HeapObject)
+                ids.push_back(static_cast<ObjectId>(ops::payload(e.var)));
+            if (e.kind == TrailEntry::Kind::Attr &&
+                ops::is_boxed(e.prev_value) && ops::tag(e.prev_value) == Tag::HeapObject)
+                ids.push_back(static_cast<ObjectId>(ops::payload(e.prev_value)));
+        }
+        return ids;
+    }()});
 
     {
         auto ids = collect(active_tapes_.begin(), active_tapes_.end());
@@ -928,7 +942,15 @@ std::expected<void, RuntimeError> VM::run_loop() {
             case OpCode::Unify: {
                 LispVal b = pop();
                 LispVal a = pop();
-                push(unify(a, b) ? True : False);
+                last_unify_cycle_error_ = false;
+                bool ok = unify(a, b);
+                if (!ok && last_unify_cycle_error_) {
+                    last_unify_cycle_error_ = false;
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::UserError,
+                        "unify: occurs-check violation (cyclic term)"}});
+                }
+                push(ok ? True : False);
                 break;
             }
             case OpCode::DerefLogicVar: {
@@ -965,10 +987,19 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 auto cmark = static_cast<std::size_t>((packed >> TRAIL_BITS) & TRAIL_MASK);
                 // Unwind binding trail
                 while (trail_stack_.size() > bmark) {
-                    LispVal lvar_val = trail_stack_.back();
+                    auto& entry = trail_stack_.back();
+                    switch (entry.kind) {
+                        case TrailEntry::Kind::Bind:
+                            if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(entry.var))
+                                lv->binding = std::nullopt;
+                            break;
+                        case TrailEntry::Kind::Attr:
+                            // Reserved for Phase 3 attributed variables.
+                            // When implemented, restore the module-attribute slot
+                            // to entry.prev_value on the AttrVar.
+                            break;
+                    }
                     trail_stack_.pop_back();
-                    if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(lvar_val))
-                        lv->binding = std::nullopt;
                 }
                 // Unwind constraint trail (undo domain changes made since mark)
                 constraint_store_.unwind(cmark);
@@ -1537,6 +1568,11 @@ bool VM::occurs_check(LispVal lvar, LispVal term) {
         for (auto elem : vec->elements)
             if (occurs_check(lvar, elem)) return true;
     }
+    if (auto* ct = try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(term)) {
+        // Functor is a symbol (immediate) — no recursion needed.
+        for (auto elem : ct->args)
+            if (occurs_check(lvar, elem)) return true;
+    }
     return false;
 }
 
@@ -1570,10 +1606,14 @@ bool VM::unify(LispVal a, LispVal b) {
     // a is an unbound logic variable
     if (auto* lva = try_get_as<ObjectKind::LogicVar, types::LogicVar>(a)) {
         if (!lva->binding.has_value()) {
-            if (occurs_check(a, b)) return false;   // would create cycle
+            if (occurs_check_mode_ != OccursCheckMode::Never && occurs_check(a, b)) {
+                if (occurs_check_mode_ == OccursCheckMode::Error)
+                    last_unify_cycle_error_ = true;
+                return false;   // would create cycle
+            }
             if (!check_domain(a, b)) return false;  // CLP domain violation
             lva->binding = b;
-            trail_stack_.push_back(a);
+            trail_stack_.push_back({TrailEntry::Kind::Bind, a, nanbox::Nil});
             return true;
         }
     }
@@ -1581,10 +1621,14 @@ bool VM::unify(LispVal a, LispVal b) {
     // b is an unbound logic variable
     if (auto* lvb = try_get_as<ObjectKind::LogicVar, types::LogicVar>(b)) {
         if (!lvb->binding.has_value()) {
-            if (occurs_check(b, a)) return false;   // would create cycle
+            if (occurs_check_mode_ != OccursCheckMode::Never && occurs_check(b, a)) {
+                if (occurs_check_mode_ == OccursCheckMode::Error)
+                    last_unify_cycle_error_ = true;
+                return false;   // would create cycle
+            }
             if (!check_domain(b, a)) return false;  // CLP domain violation
             lvb->binding = a;
-            trail_stack_.push_back(b);
+            trail_stack_.push_back({TrailEntry::Kind::Bind, b, nanbox::Nil});
             return true;
         }
     }
@@ -1603,6 +1647,18 @@ bool VM::unify(LispVal a, LispVal b) {
             if (va->elements.size() != vb->elements.size()) return false;
             for (std::size_t i = 0; i < va->elements.size(); ++i)
                 if (!unify(va->elements[i], vb->elements[i])) return false;
+            return true;
+        }
+        return false;
+    }
+
+    // Both are CompoundTerms — same functor, same arity, args unify pairwise.
+    if (auto* cta = try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(a)) {
+        if (auto* ctb = try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(b)) {
+            if (cta->functor != ctb->functor) return false;
+            if (cta->args.size() != ctb->args.size()) return false;
+            for (std::size_t i = 0; i < cta->args.size(); ++i)
+                if (!unify(cta->args[i], ctb->args[i])) return false;
             return true;
         }
         return false;
@@ -1667,6 +1723,18 @@ std::expected<LispVal, RuntimeError> VM::copy_term(LispVal term) {
                 elems.push_back(*elem_copy);
             }
             return make_vector(heap_, std::move(elems));
+        }
+
+        // CompoundTerm — preserve functor, recursively copy args
+        if (auto* ct = heap_.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(id)) {
+            std::vector<LispVal> args;
+            args.reserve(ct->args.size());
+            for (auto& a : ct->args) {
+                auto a_copy = walk(a);
+                if (!a_copy) return a_copy;
+                args.push_back(*a_copy);
+            }
+            return make_compound(heap_, ct->functor, std::move(args));
         }
 
         // All other heap objects (strings, closures, ports, etc.) — return as-is

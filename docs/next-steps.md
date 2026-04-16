@@ -153,42 +153,44 @@ tracked per-commit in CI:
 
 ## 4 · Logic Programming & CLP Upgrades
 
-### 4.1 · Logic Programming
+The full multi-phase roadmap for evolving the logic/CLP subsystem into a
+**WAM-class engine** — native choice-points, attributed variables, AC-3
+propagation, CLP(B)/CLP(R), first-argument indexing on `FactTable`, and
+a WAM-style bytecode layer inside the existing VM — now lives in its own
+document:
 
-The core unification engine and `std.logic` library are complete (see
-[Logic Programming](logic.md)).  The following features are not yet
-implemented:
+> 📘 **[Logic & CLP Next Steps](logic-next-steps.md)** — 8-phase roadmap,
+> file-level work items, API signatures, success criteria, cross-cutting
+> concerns (docs, examples, benchmarks, DAP/LSP, fuzzing).
 
-| Feature | Current Status | Notes |
-|---------|---------------|-------|
-| **Attributed variables** | Not supported | Required for full CLP wakeup semantics.  Would need a new `AttrVar` heap kind and a wakeup queue in the VM. |
-| **Tabling / memoisation** | Not supported | Standard SLG tabling requires a WAM-style call stack; a simplified memo-table for ground queries is a tractable first step. |
-| **`assert` / `retract`** | Encodeable via `set!` | A dedicated dynamic fact-database primitive would be more ergonomic and integrate with `findall` directly. |
-| **Cut (`!`)** | Not built-in | `run1` covers the most common use case; a proper cut would require a choicepoint stack in the VM. |
-| **DCG rules** | Not built-in | Definite-clause grammars can be encoded as difference lists today; native `-->` syntax would improve readability. |
+### Phase status (at a glance)
 
-### 4.2 · CLP Upgrades
+| # | Phase | Status |
+|---|-------|--------|
+| 1 | Core term model & trail API — occurs-check toggle, named logic vars, `CompoundTerm`, structured trail | ✅ **Complete** — all five work items landed, 19-test `compound-terms` group green |
+| 2 | Native choice-points, cut, if-then-else, catch/throw | ⏳ Planned |
+| 3 | Attributed variables + wakeup hooks | ⏳ Planned |
+| 4 | CLP(FD) with AC-3 propagation & labeling | ⏳ Planned |
+| 5 | CLP(B) boolean constraints | ⏳ Planned |
+| 6 | CLP(R/Q) linear arithmetic | ⏳ Planned |
+| 7 | Clause database on `FactTable`, first-arg indexing, tabling | ⏳ Planned |
+| 8 | WAM-style bytecode layer (inside the existing VM) | ⏳ Planned |
 
-The current CLP implementation uses forward checking with DFS labelling.
-Four enhancements are planned (see also [CLP — Current Limitations](clp.md)):
+### Guiding principles (see `logic-next-steps.md` for the full text)
 
-| Feature | Current Status | Description |
-|---------|---------------|-------------|
-| **Arc consistency (AC-3)** | Not yet | Propagate constraint narrowing transitively at each assignment.  Requires an arc queue and wakeup on domain change. |
-| **Attributed variables** | Not yet | Full AC-3 requires attributed variables to attach wakeup hooks.  The two features are co-dependent. |
-| **Non-integer domains** | Not yet | Real-interval `clp(R)` for float/rational constraints.  Requires a new `RDomain` type in `constraint_store.h`. |
-| **Optimisation goals** | Not yet | `(clp:minimize cost vars)` / `(clp:maximize cost vars)` via branch-and-bound.  Needed for scheduling and portfolio problems. |
-
-### Key Implementation Tasks
-
-| Task | Touches |
-|------|---------|
-| `AttrVar` heap kind + wakeup queue in VM | `heap.h`, `vm.cpp`, `core_primitives.h` |
-| AC-3 arc queue in `ConstraintStore` | `clp/constraint_store.h`, `vm.cpp` |
-| `RDomain` float-interval domain | `clp/domain.h`, `constraint_store.h` |
-| `clp:minimize` / `clp:maximize` in `std.clp` | `stdlib/std/clp.eta`, `clp/constraint_store.h` |
-| Simplified ground-query memo table | `std.logic`, `vm.cpp` |
-| Native DCG syntax (`-->`) in expander | `expander.cpp`, `semantic_analyzer.cpp` |
+1. **One VM, one heap, one GC, one bytecode stream.** All additions are
+   additive to the existing `eta/core/src/eta/runtime/vm` — no satellite
+   VM, no parallel dispatch loop.
+2. **Reuse existing heap types before inventing new ones.** In particular
+   the clause database in Phase 7 is built on the existing `FactTable`
+   columnar store (per-column hash indexes = first-argument indexing).
+3. **Logic values = Eta values.** Logic vars, compound terms, attributed
+   vars are ordinary `ObjectKind::…` objects visible to the GC,
+   nanboxing, serializer, DAP, LSP, and value-formatter.
+4. **Shared infrastructure for constraints** — one `PropagationQueue`,
+   one attributed-variable mechanism, one trail, reused by every solver.
+5. **No forked toolchains** — disassembler, serializer, DAP, LSP, fuzzer,
+   benchmark harness, and REPL all learn new opcodes in-place.
 
 ---
 

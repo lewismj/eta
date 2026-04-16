@@ -1206,6 +1206,81 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id) ? True : False;
     });
 
+    // ------------------------------------------------------------------
+    // logic-var/named : create a fresh unbound LogicVar with a debug name
+    // ------------------------------------------------------------------
+    // (logic-var/named 'x)           → a fresh unbound logic var labelled "x"
+    // (logic-var/named "my-var")     → same, name taken from a string
+    //
+    // The name has no effect on unification semantics — it is purely for
+    // `(var-name v)` introspection, tracing, and future error messages.
+    env.register_builtin("logic-var/named", 1, false,
+        [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+            std::string name;
+            const LispVal v = args[0];
+            if (ops::is_boxed(v) && ops::tag(v) == Tag::Symbol) {
+                auto s = get_symbol_name(v, intern_table);
+                if (s) name = std::string(*s);
+            } else if (auto sv = StringView::try_from(v, intern_table)) {
+                name = std::string(sv->view());
+            } else {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "logic-var/named: name must be a symbol or string"}});
+            }
+            return memory::factory::make_logic_var(heap, std::move(name));
+        });
+
+    // ------------------------------------------------------------------
+    // var-name : return the debug name of a LogicVar, or #f if none / not a var
+    // ------------------------------------------------------------------
+    env.register_builtin("var-name", 1, false,
+        [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+            const LispVal v = args[0];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
+            auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(ops::payload(v));
+            if (!lv || lv->name.empty()) return False;
+            return make_string(heap, intern_table, lv->name);
+        });
+
+    // ------------------------------------------------------------------
+    // Occurs-check policy (Phase 1 of the logic/CLP roadmap)
+    //
+    // (set-occurs-check! 'always)  ; run occurs-check, fail on cycle (default)
+    // (set-occurs-check! 'never)   ; skip occurs-check (ISO-Prolog default; faster)
+    // (set-occurs-check! 'error)   ; run occurs-check, raise error on cycle
+    // (occurs-check-mode)          ; → 'always / 'never / 'error
+    // ------------------------------------------------------------------
+    env.register_builtin("set-occurs-check!", 1, false,
+        [&intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "set-occurs-check!: requires a running VM"}});
+            const LispVal v = args[0];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::Symbol)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "set-occurs-check!: expected a symbol ('always / 'never / 'error)"}});
+            auto sname = get_symbol_name(v, intern_table);
+            if (!sname) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "set-occurs-check!: invalid symbol"}});
+            if (*sname == "always")      vm->set_occurs_check_mode(vm::VM::OccursCheckMode::Always);
+            else if (*sname == "never")  vm->set_occurs_check_mode(vm::VM::OccursCheckMode::Never);
+            else if (*sname == "error")  vm->set_occurs_check_mode(vm::VM::OccursCheckMode::Error);
+            else return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
+                "set-occurs-check!: mode must be 'always, 'never, or 'error"}});
+            return True;
+        });
+
+    env.register_builtin("occurs-check-mode", 0, false,
+        [&intern_table, vm](Args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "occurs-check-mode: requires a running VM"}});
+            switch (vm->occurs_check_mode()) {
+                case vm::VM::OccursCheckMode::Always: return make_symbol(intern_table, "always");
+                case vm::VM::OccursCheckMode::Never:  return make_symbol(intern_table, "never");
+                case vm::VM::OccursCheckMode::Error:  return make_symbol(intern_table, "error");
+            }
+            return make_symbol(intern_table, "always");
+        });
+
     // ========================================================================
     // Ground check: ground?
     // Returns #t iff the term contains no unbound logic variables.
@@ -1229,6 +1304,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     for (const auto& elem : vec->elements)
                         if (!is_ground(elem)) return false;
                     return true;
+                } else if (auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(id)) {
+                    for (const auto& a : ct->args)
+                        if (!is_ground(a)) return false;
+                    return true;
                 } else {
                     return true;  // string, closure, port, etc.
                 }
@@ -1236,6 +1315,83 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         };
         return is_ground(args[0]) ? True : False;
     });
+
+    // ========================================================================
+    // Compound terms: term / functor / arity / arg / compound?
+    //
+    // A `CompoundTerm` is a structured logic term with a symbol functor and
+    // zero or more argument values, e.g. (term 'f x 1) ≡ f(x, 1) in Prolog.
+    // Unifies structurally with other compound terms of the same functor+arity.
+    // See docs/logic.md and docs/logic-next-steps.md for the Phase 1 rationale.
+    // ========================================================================
+
+    env.register_builtin("compound?", 1, false,
+        [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+            const LispVal v = args[0];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
+            return heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(ops::payload(v))
+                ? True : False;
+        });
+
+    // (term functor . args) — allocate a CompoundTerm
+    env.register_builtin("term", 1, true,
+        [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+            const LispVal fn = args[0];
+            if (!ops::is_boxed(fn) || ops::tag(fn) != Tag::Symbol)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "term: functor must be a symbol"}});
+            std::vector<LispVal> targs;
+            targs.reserve(args.size() > 0 ? args.size() - 1 : 0);
+            for (std::size_t i = 1; i < args.size(); ++i) targs.push_back(args[i]);
+            return memory::factory::make_compound(heap, fn, std::move(targs));
+        });
+
+    // (functor t) — return the functor symbol of a compound term, or #f otherwise
+    env.register_builtin("functor", 1, false,
+        [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+            const LispVal v = args[0];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
+            auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(ops::payload(v));
+            if (!ct) return False;
+            return ct->functor;
+        });
+
+    // (arity t) — return the number of arguments of a compound term as a fixnum
+    env.register_builtin("arity", 1, false,
+        [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+            const LispVal v = args[0];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "arity: argument must be a compound term"}});
+            auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(ops::payload(v));
+            if (!ct) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "arity: argument must be a compound term"}});
+            auto enc = ops::encode<int64_t>(static_cast<int64_t>(ct->args.size()));
+            if (!enc) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "arity: arity does not fit in a fixnum"}});
+            return *enc;
+        });
+
+    // (arg i t) — 1-based argument access (Prolog convention).  Out of range → error.
+    env.register_builtin("arg", 2, false,
+        [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto idx_opt = ops::decode<int64_t>(args[0]);
+            if (!idx_opt || !ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::Fixnum)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "arg: first argument must be a fixnum index"}});
+            const LispVal v = args[1];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "arg: second argument must be a compound term"}});
+            auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(ops::payload(v));
+            if (!ct) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "arg: second argument must be a compound term"}});
+            int64_t i = *idx_opt;
+            if (i < 1 || static_cast<std::size_t>(i) > ct->args.size())
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
+                    "arg: index out of range"}});
+            return ct->args[static_cast<std::size_t>(i - 1)];
+        });
 
     // ========================================================================
     // AD Dual stubs (removed — kept as no-ops for slot stability)

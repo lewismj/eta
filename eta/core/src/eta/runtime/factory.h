@@ -123,6 +123,12 @@ namespace eta::runtime::memory::factory {
         return make_heap_object<types::LogicVar, ObjectKind::LogicVar>(heap, types::LogicVar{});
     }
 
+    inline_always
+    std::expected<LispVal, RuntimeError> make_logic_var(Heap& heap, std::string name) {
+        return make_heap_object<types::LogicVar, ObjectKind::LogicVar>(
+            heap, types::LogicVar{ .binding = std::nullopt, .name = std::move(name) });
+    }
+
 
     inline_always
     std::expected<LispVal, RuntimeError> make_tape(Heap& heap) {
@@ -137,6 +143,13 @@ namespace eta::runtime::memory::factory {
         ft.columns.resize(ncols);
         ft.indexes.resize(ncols);
         return make_heap_object<types::FactTable, ObjectKind::FactTable>(heap, std::move(ft));
+    }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_compound(Heap& heap, LispVal functor,
+                                                       std::vector<LispVal> args) {
+        return make_heap_object<types::CompoundTerm, ObjectKind::CompoundTerm>(
+            heap, types::CompoundTerm{ .functor = functor, .args = std::move(args) });
     }
 }
 

@@ -37,6 +37,7 @@ namespace eta::runtime::memory::heap {
         Optimizer,       // libtorch optimizer (wraps shared_ptr<torch::optim::Optimizer>)
         FactTable,       // Columnar fact table with per-column hash indexes
         NngSocket,       // nng socket (wraps NngSocketPtr from eta/nng/)
+        CompoundTerm,    // Structured logic term: functor symbol + argument list
     };
 
     ETA_ENUM_TO_STRING_BEGIN(ObjectKind)
@@ -57,6 +58,7 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(Optimizer)
         ETA_ENUM_CASE(FactTable)
         ETA_ENUM_CASE(NngSocket)
+        ETA_ENUM_CASE(CompoundTerm)
     ETA_ENUM_TO_STRING_END("Unknown")
 
     inline std::ostream& operator<<(std::ostream& os, const ObjectKind k) {

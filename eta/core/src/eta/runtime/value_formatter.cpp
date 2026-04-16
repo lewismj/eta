@@ -191,7 +191,20 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             if (lv->binding.has_value()) {
                 return format_value(*lv->binding, mode, heap, intern_table);
             }
+            if (!lv->name.empty()) return "_" + lv->name + "G" + std::to_string(id);
             return "_G" + std::to_string(id);
+        }
+
+        // Compound term: f(arg1, arg2, ...)
+        if (auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(id)) {
+            std::string out = format_value(ct->functor, mode, heap, intern_table);
+            out += "(";
+            for (std::size_t i = 0; i < ct->args.size(); ++i) {
+                if (i) out += ", ";
+                out += format_value(ct->args[i], mode, heap, intern_table);
+            }
+            out += ")";
+            return out;
         }
 
         // AD Tape

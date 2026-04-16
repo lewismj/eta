@@ -1,0 +1,72 @@
+;;; Smoke test for compound-term primitives (Phase 1 rest).
+(module compound-smoke
+  (begin
+    (display "compound smoke: start\n")
+
+    (define t (term 'f 1 2 3))
+    (display "t = ") (display t) (newline)
+    (display "compound? t = ") (display (compound? t)) (newline)
+    (display "compound? '(1 2 3) = ") (display (compound? '(1 2 3))) (newline)
+    (display "functor t = ") (display (functor t)) (newline)
+    (display "arity   t = ") (display (arity t)) (newline)
+    (display "arg 1 t = ") (display (arg 1 t)) (newline)
+    (display "arg 3 t = ") (display (arg 3 t)) (newline)
+
+    ;; 0-ary compound
+    (define z (term 'zero))
+    (display "z = ") (display z) (newline)
+    (display "arity z = ") (display (arity z)) (newline)
+
+    ;; unify two compound terms with variables
+    (let* ((x (logic-var))
+           (y (logic-var))
+           (a (term 'point x 1))
+           (b (term 'point 2 y))
+           (m (trail-mark))
+           (ok (unify a b)))
+      (display "unify point(X,1) point(2,Y) = ") (display ok) (newline)
+      (display "  X = ") (display (deref-lvar x)) (newline)
+      (display "  Y = ") (display (deref-lvar y)) (newline)
+      (unwind-trail m)
+      (display "  after unwind X unbound? ") (display (logic-var? x)) (newline))
+
+    ;; functor mismatch fails
+    (let* ((a (term 'f 1))
+           (b (term 'g 1))
+           (ok (unify a b)))
+      (display "unify f(1) g(1) = ") (display ok) (newline))
+
+    ;; arity mismatch fails
+    (let* ((a (term 'f 1))
+           (b (term 'f 1 2))
+           (ok (unify a b)))
+      (display "unify f(1) f(1,2) = ") (display ok) (newline))
+
+    ;; ground? sees into compound
+    (let* ((x (logic-var))
+           (a (term 'f 1 x)))
+      (display "ground? f(1,X) = ") (display (ground? a)) (newline)
+      (unify x 42)
+      (display "ground? f(1,X=42) = ") (display (ground? a)) (newline))
+
+    ;; copy-term preserves functor and freshens vars
+    (let* ((x (logic-var))
+           (a (term 'f x x))
+           (c (copy-term a)))
+      (display "orig = ") (display a) (newline)
+      (display "copy = ") (display c) (newline)
+      (display "copy compound? = ") (display (compound? c)) (newline)
+      (display "copy functor  = ") (display (functor c)) (newline)
+      (display "copy arg1 eq arg2 (sharing preserved)? = ")
+      (display (eq? (arg 1 c) (arg 2 c))) (newline))
+
+    ;; occurs-check still works through compound
+    (set-occurs-check! 'always)
+    (let* ((x (logic-var))
+           (m (trail-mark))
+           (ok (unify x (term 'f x))))
+      (unwind-trail m)
+      (display "cyclic compound unify (always) = ") (display ok) (newline))
+
+    (display "compound smoke: done\n")))
+

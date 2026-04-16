@@ -84,6 +84,11 @@ namespace eta::runtime::memory::gc {
                 for (auto v : col) callback(v);
         }
 
+        void visit_compound_term(const types::CompoundTerm& ct) override {
+            callback(ct.functor);
+            for (auto v : ct.args) callback(v);
+        }
+
         void visit_leaf(heap::ObjectKind, const void*) override { /* no edges */ }
     };
 

@@ -140,7 +140,18 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("error",      1, true);
     r("platform",   0, false);
     r("logic-var?", 1, false);
+    r("logic-var/named", 1, false);
+    r("var-name", 1, false);
+    r("set-occurs-check!", 1, false);
+    r("occurs-check-mode", 0, false);
     r("ground?",    1, false);
+
+    // Compound terms (Phase 1 of logic/CLP roadmap)
+    r("compound?", 1, false);
+    r("term",      1, true);
+    r("functor",   1, false);
+    r("arity",     1, false);
+    r("arg",       2, false);
 
     // AD Dual number primitives
     r("dual?",          1, false);
