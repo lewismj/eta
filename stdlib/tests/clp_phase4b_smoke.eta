@@ -1,0 +1,185 @@
+;;; clp_phase4b_smoke.eta — Phase 4b smoke test for native bounds-consistency
+;;; propagators (%clp-fd-plus!, %clp-fd-plus-offset!, %clp-fd-abs!) and the
+;;; generic 'clp.prop re-firing hook.
+
+(module clp-phase4b-smoke
+  (import std.core std.collections std.logic std.clp)
+  (begin
+
+    (define fail-count 0)
+
+    (defun chk (label expected actual)
+      (display label) (display " => ") (display actual)
+      (if (equal? actual expected)
+          (display "   [ok]")
+          (begin (display "   [FAIL expected ")
+                 (display expected) (display "]")
+                 (set! fail-count (+ fail-count 1))))
+      (newline))
+
+    (display "clp phase4b smoke: start") (newline)
+
+    ;; ── 1. clp:+ bounds narrowing on initial post ────────────────────
+    ;; x ∈ [1,5], y ∈ [1,5], z ∈ [0,20], post z = x + y
+    ;;   => z narrowed to [2,10]; x and y left at [1,5] (consistent).
+    (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
+      (clp:domain x 1 5)
+      (clp:domain y 1 5)
+      (clp:domain z 0 20)
+      (chk "clp:+ post succeeds" #t (clp:+ x y z))
+      (chk "clp:+ narrows z.lo to 2" 2 (clp:domain-lo (%clp-get-domain z)))
+      (chk "clp:+ narrows z.hi to 10" 10 (clp:domain-hi (%clp-get-domain z))))
+
+    ;; ── 2. clp:+ back-propagates onto x and y ────────────────────────
+    ;; z ∈ [3,3], y ∈ [1,5]  =>  x must be in [max(1, 3-5), min(5, 3-1)] = [1,2]
+    (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
+      (clp:domain x 1 5)
+      (clp:domain y 1 5)
+      (clp:domain z 3 3)
+      (chk "clp:+ back-prop post" #t (clp:+ x y z))
+      (chk "clp:+ narrows x.hi to 2" 2 (clp:domain-hi (%clp-get-domain x)))
+      (chk "clp:+ narrows y.hi to 2" 2 (clp:domain-hi (%clp-get-domain y))))
+
+    ;; ── 3. clp:+ re-fires on binding via 'clp.prop hook ──────────────
+    ;; Before bind: x ∈ [1,5], y ∈ [1,5], z ∈ [0,20].  Post clp:+, then
+    ;; unify x = 4.  The hook re-runs the propagator, which derefs x=4
+    ;; and narrows z to [5,9].
+    (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
+      (clp:domain x 1 5)
+      (clp:domain y 1 5)
+      (clp:domain z 0 20)
+      (clp:+ x y z)
+      (chk "pre-bind z.lo" 2 (clp:domain-lo (%clp-get-domain z)))
+      (unify x 4)
+      (chk "bind x=4 re-fires prop, z.lo=5" 5
+           (clp:domain-lo (%clp-get-domain z)))
+      (chk "bind x=4 re-fires prop, z.hi=9" 9
+           (clp:domain-hi (%clp-get-domain z))))
+
+    ;; ── 4. clp:+ detects inconsistency on bind and fails the unify ──
+    ;; x ∈ [1,5], y ∈ [1,5], z = 20 → x+y = 20 impossible.  Posting sets
+    ;; z to [2,10] which immediately conflicts with z=20.
+    (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
+      (clp:domain x 1 5)
+      (clp:domain y 1 5)
+      (unify z 20)
+      (chk "clp:+ infeasible post fails" #f (clp:+ x y z)))
+
+    ;; ── 5. clp:+ backtracking restores narrowed domains ──────────────
+    (let* ((x (logic-var)) (y (logic-var)) (z (logic-var))
+           (_ (clp:domain x 1 5))
+           (_ (clp:domain y 1 5))
+           (_ (clp:domain z 0 20))
+           (_ (clp:+ x y z))
+           (m (trail-mark)))
+      (unify x 4)
+      (chk "narrowed z.lo under mark" 5
+           (clp:domain-lo (%clp-get-domain z)))
+      (unwind-trail m)
+      (chk "post-unwind z.lo restored" 2
+           (clp:domain-lo (%clp-get-domain z)))
+      (chk "post-unwind x unbound" #t (logic-var? (deref-lvar x))))
+
+    ;; ── 6. clp:plus-offset: y = x + k ────────────────────────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:domain x 1 5)
+      (clp:domain y 0 20)
+      (chk "clp:plus-offset post" #t (clp:plus-offset y x 3))
+      (chk "y.lo narrowed to 4" 4 (clp:domain-lo (%clp-get-domain y)))
+      (chk "y.hi narrowed to 8" 8 (clp:domain-hi (%clp-get-domain y)))
+      (unify x 2)
+      (chk "bind x=2 → y narrows to [5,5]" 5
+           (clp:domain-lo (%clp-get-domain y)))
+      (chk "bind x=2 → y.hi=5" 5
+           (clp:domain-hi (%clp-get-domain y))))
+
+    ;; ── 7. clp:abs on strictly positive range (identity) ─────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:domain x 2 7)
+      (clp:domain y 0 100)
+      (chk "clp:abs positive post" #t (clp:abs y x))
+      (chk "y.lo=2" 2 (clp:domain-lo (%clp-get-domain y)))
+      (chk "y.hi=7" 7 (clp:domain-hi (%clp-get-domain y))))
+
+    ;; ── 8. clp:abs on strictly negative range (flip sign) ────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:domain x -7 -2)
+      (clp:domain y 0 100)
+      (chk "clp:abs negative post" #t (clp:abs y x))
+      (chk "y.lo=2" 2 (clp:domain-lo (%clp-get-domain y)))
+      (chk "y.hi=7" 7 (clp:domain-hi (%clp-get-domain y))))
+
+    ;; ── 9. clp:abs on straddling range: y ∈ [0, max(|lo|,|hi|)] ─────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:domain x -3 5)
+      (clp:domain y 0 100)
+      (chk "clp:abs straddle post" #t (clp:abs y x))
+      (chk "y.lo=0" 0 (clp:domain-lo (%clp-get-domain y)))
+      (chk "y.hi=5" 5 (clp:domain-hi (%clp-get-domain y))))
+
+    ;; ── 10. N-queens diagonal primitive: Qi + i vs Qj + j ────────────
+    ;; For queens at rows i=1, j=3 with column vars Q1 ∈ [1,4], Q3 ∈ [1,4]:
+    ;;   A1 = Q1 + 1,  A3 = Q3 + 3,  with all-different on [A1, A3].
+    ;; After bind Q1 = 2: A1 = 3.  A3 ∈ {4,5,6,7} ∩ (≠3) = {4,5,6,7}.
+    ;; After bind Q3 = 1: A3 = 4.  All-different holds (3 ≠ 4).  Solve OK.
+    (let ((q1 (logic-var)) (q3 (logic-var))
+          (a1 (logic-var)) (a3 (logic-var)))
+      (clp:domain q1 1 4)
+      (clp:domain q3 1 4)
+      (clp:domain a1 2 5)   ; Q+1 with Q in [1,4]
+      (clp:domain a3 4 7)   ; Q+3 with Q in [1,4]
+      (clp:plus-offset a1 q1 1)
+      (clp:plus-offset a3 q3 3)
+      (clp:all-different (list a1 a3))
+      (chk "q1=2 succeeds" #t (unify q1 2))
+      (chk "a1 = 3 via prop" 3 (deref-lvar a1))
+      (chk "q3=1 succeeds" #t (unify q3 1))
+      (chk "a3 = 4 via prop" 4 (deref-lvar a3)))
+
+    ;; ── 11. N-queens 4×4 full feasibility via diagonals ─────────────
+    ;; 4 queens, columns Q1..Q4 ∈ [1..4], all-different on columns,
+    ;; diagonals via Ai = Qi + i and Bi = Qi - i each all-different.
+    ;; There are 2 solutions for N=4; labelling 'ff must find one.
+    (let ((q1 (logic-var)) (q2 (logic-var))
+          (q3 (logic-var)) (q4 (logic-var))
+          (a1 (logic-var)) (a2 (logic-var))
+          (a3 (logic-var)) (a4 (logic-var))
+          (b1 (logic-var)) (b2 (logic-var))
+          (b3 (logic-var)) (b4 (logic-var)))
+      (clp:in-fd q1 1 2 3 4)
+      (clp:in-fd q2 1 2 3 4)
+      (clp:in-fd q3 1 2 3 4)
+      (clp:in-fd q4 1 2 3 4)
+      (clp:domain a1 2 5)   (clp:domain a2 3 6)
+      (clp:domain a3 4 7)   (clp:domain a4 5 8)
+      (clp:domain b1 0 3)   (clp:domain b2 -1 2)
+      (clp:domain b3 -2 1)  (clp:domain b4 -3 0)
+      (clp:plus-offset a1 q1 1)
+      (clp:plus-offset a2 q2 2)
+      (clp:plus-offset a3 q3 3)
+      (clp:plus-offset a4 q4 4)
+      (clp:plus-offset b1 q1 -1)
+      (clp:plus-offset b2 q2 -2)
+      (clp:plus-offset b3 q3 -3)
+      (clp:plus-offset b4 q4 -4)
+      (clp:all-different (list q1 q2 q3 q4))
+      (clp:all-different (list a1 a2 a3 a4))
+      (clp:all-different (list b1 b2 b3 b4))
+      (chk "4-queens has a solution" #t
+           (clp:labeling (list q1 q2 q3 q4) 'ff))
+      ;; The two 4-queens solutions are (2 4 1 3) and (3 1 4 2).
+      (let ((sol (list (deref-lvar q1) (deref-lvar q2)
+                       (deref-lvar q3) (deref-lvar q4))))
+        (chk "4-queens solution is one of the two known ones"
+             #t
+             (or (equal? sol '(2 4 1 3))
+                 (equal? sol '(3 1 4 2))))))
+
+    ;; ── Summary ──────────────────────────────────────────────────────
+    (newline)
+    (if (= fail-count 0)
+        (display "clp phase4b smoke: ALL PASS")
+        (begin (display "clp phase4b smoke: ")
+               (display fail-count) (display " FAILURE(S)")))
+    (newline)))
+

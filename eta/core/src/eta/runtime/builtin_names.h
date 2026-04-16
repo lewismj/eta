@@ -173,6 +173,13 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%clp-domain-fd!", 2, false);
     r("%clp-get-domain", 1, false);
 
+    // CLP(FD) native bounds propagators (Phase 4b).
+    // Must stay in the same order as the register_builtin calls in
+    // core_primitives.h immediately after %clp-get-domain.
+    r("%clp-fd-plus!",         3, false);
+    r("%clp-fd-plus-offset!",  3, false);
+    r("%clp-fd-abs!",          2, false);
+
     // AD Tape primitives (tape-based reverse-mode AD)
     r("tape-new",        0, false);
     r("tape-start!",     1, false);

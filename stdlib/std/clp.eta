@@ -54,6 +54,7 @@
     clp:domain-values clp:domain-empty?
     ;; Constraint propagators
     clp:= clp:+
+    clp:plus-offset clp:abs
     clp:<= clp:>= clp:<> clp:!=
     ;; Global constraint
     clp:all-different
@@ -140,25 +141,32 @@
             (== x y))))
 
     (defun clp:+ (x y z)
-      (let ((dx (%clp-get-domain x))
-            (dy (%clp-get-domain y))
-            (dz (%clp-get-domain z)))
-        (if (and dx dy dz
-                 (clp:domain-z? dx) (clp:domain-z? dy) (clp:domain-z? dz))
-            (let* ((xlo (clp:domain-lo dx)) (xhi (clp:domain-hi dx))
-                   (ylo (clp:domain-lo dy)) (yhi (clp:domain-hi dy))
-                   (zlo (clp:domain-lo dz)) (zhi (clp:domain-hi dz))
-                   (nzlo (max zlo (+ xlo ylo))) (nzhi (min zhi (+ xhi yhi)))
-                   (nxlo (max xlo (- zlo yhi))) (nxhi (min xhi (- zhi ylo)))
-                   (nylo (max ylo (- zlo xhi))) (nyhi (min yhi (- zhi xlo))))
-              (if (or (> nzlo nzhi) (> nxlo nxhi) (> nylo nyhi))
-                  #f
-                  (begin
-                    (%clp-domain-z! z nzlo nzhi)
-                    (%clp-domain-z! x nxlo nxhi)
-                    (%clp-domain-z! y nylo nyhi)
-                    #t)))
-            #t)))
+      ;; Phase 4b: native bounds-consistency propagator with re-firing on bind.
+      ;; Runs once immediately; attaches a re-propagator thunk to each var so
+      ;; subsequent bindings (of any of x/y/z) re-trigger narrowing.
+      (and (%clp-fd-plus! x y z)
+           (let ((thunk (lambda () (%clp-fd-plus! x y z))))
+             (%clp-prop-attach! x thunk)
+             (%clp-prop-attach! y thunk)
+             (%clp-prop-attach! z thunk)
+             #t)))
+
+    ;; (clp:plus-offset y x k)  — posts y = x + k  (k a ground integer).
+    ;; Useful for N-queens diagonal constraints: Ai = Qi + i, Bi = Qi − i.
+    (defun clp:plus-offset (y x k)
+      (and (%clp-fd-plus-offset! y x k)
+           (let ((thunk (lambda () (%clp-fd-plus-offset! y x k))))
+             (%clp-prop-attach! y thunk)
+             (%clp-prop-attach! x thunk)
+             #t)))
+
+    ;; (clp:abs y x)  — posts y = |x|.
+    (defun clp:abs (y x)
+      (and (%clp-fd-abs! y x)
+           (let ((thunk (lambda () (%clp-fd-abs! y x))))
+             (%clp-prop-attach! y thunk)
+             (%clp-prop-attach! x thunk)
+             #t)))
 
     (defun clp:<= (x y)
       (let ((dx (%clp-get-domain x))
@@ -236,6 +244,38 @@
             (%clp-adiff-prune attr-val g))))
 
     (register-attr-hook! 'clp.adiff %clp-adiff-hook)
+
+    ;; ── Generic propagator re-firing on variable binding (Phase 4b) ───────
+    ;;
+    ;; Each variable participating in a native propagator (clp:+, clp:plus-offset,
+    ;; clp:abs, …) carries a `'clp.prop` attribute whose value is a list of
+    ;; re-propagator thunks.  When unify binds any such var, %clp-prop-hook
+    ;; invokes every thunk; a thunk returning #f aborts the unify (trail unwinds).
+    ;;
+    ;; This is the Phase 4b synchronous substitute for a real VM-level
+    ;; PropagationQueue.  It is trail-safe because (a) thunk attachment is a
+    ;; trailed `put-attr`, and (b) each thunk's internal writes go through
+    ;; trailed `%clp-domain-*!` / `unify`.
+
+    (defun %clp-prop-hook (var bound-val attr-val)
+      (let loop ((ts attr-val))
+        (cond
+          ((null? ts) #t)
+          (else
+            (let ((r ((car ts))))
+              (if r (loop (cdr ts)) #f))))))
+
+    ;; Attach a re-propagator thunk to `v`'s `'clp.prop` attribute.
+    ;; No-op if `v` is already ground (ground values never fire hooks).
+    (defun %clp-prop-attach! (v thunk)
+      (cond
+        ((not (logic-var? (deref-lvar v))) #t)
+        (else
+          (let ((existing (get-attr v 'clp.prop)))
+            (put-attr v 'clp.prop (cons thunk (if existing existing '())))
+            #t))))
+
+    (register-attr-hook! 'clp.prop %clp-prop-hook)
 
     ;; Build a list of every element of `xs` except `v` (eq? test).
     (defun %clp-siblings (v xs)

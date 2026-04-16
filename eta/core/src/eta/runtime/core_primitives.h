@@ -1681,6 +1681,211 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         });
 
     // ========================================================================
+    // CLP(FD) native bounds-consistency propagators (Phase 4b)
+    //
+    //   %clp-fd-plus!        (x y z)    — posts z = x + y, narrows bounds
+    //   %clp-fd-plus-offset! (y x k)    — posts y = x + k (k a fixnum)
+    //   %clp-fd-abs!         (y x)      — posts y = |x|
+    //
+    // Each returns #t on success (including "nothing to do"), #f on detected
+    // inconsistency (empty domain).  Narrowing goes through the trailed
+    // ConstraintStore::set_domain so backtracking correctly restores state.
+    //
+    // These are the bounds kernel only; re-firing on variable binding is
+    // installed in Eta-level `std.clp` via a `clp.prop` attribute hook.
+    // ========================================================================
+    {
+        // Helper: deref a LispVal through any binding chain.
+        auto deref = [&heap](LispVal v) -> LispVal {
+            for (;;) {
+                if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return v;
+                auto id = ops::payload(v);
+                auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id);
+                if (!lv || !lv->binding.has_value()) return v;
+                v = *lv->binding;
+            }
+        };
+
+        // Bounds snapshot of a CLP(FD) argument: ground integer, unbound var
+        // with Z or FD domain, or unbound var with no domain (unbounded).
+        struct Bounds {
+            int64_t  lo     = 0;
+            int64_t  hi     = 0;
+            bool     finite = false;        // has finite [lo,hi]
+            bool     is_var = false;        // unbound logic var
+            ObjectId id     = 0;            // heap id when is_var
+            bool     is_fd  = false;        // FD domain (else Z or none)
+        };
+
+        // Extract a Bounds for arg. Returns std::nullopt on type error
+        // (e.g. a non-numeric ground value).  Empty FD/Z domain → finite=true
+        // with lo > hi so caller detects infeasibility uniformly.
+        auto extract_bounds = [&heap, vm, deref](LispVal v) -> std::optional<Bounds> {
+            LispVal d = deref(v);
+            if (ops::is_boxed(d) && ops::tag(d) == Tag::HeapObject) {
+                auto id = ops::payload(d);
+                auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id);
+                if (lv && !lv->binding.has_value()) {
+                    Bounds b;
+                    b.is_var = true;
+                    b.id     = id;
+                    if (vm) {
+                        const auto* dom = vm->constraint_store().get_domain(id);
+                        if (dom) {
+                            if (auto* z = std::get_if<clp::ZDomain>(dom)) {
+                                b.lo = z->lo; b.hi = z->hi; b.finite = true;
+                            } else if (auto* fd = std::get_if<clp::FDDomain>(dom)) {
+                                b.is_fd = true;
+                                if (fd->values.empty()) {
+                                    b.lo = 1; b.hi = 0; b.finite = true;  // empty sentinel
+                                } else {
+                                    b.lo = fd->values.front();
+                                    b.hi = fd->values.back();
+                                    b.finite = true;
+                                }
+                            }
+                        }
+                    }
+                    return b;
+                }
+            }
+            // Ground: must be an integer
+            auto n = classify_numeric(d, heap);
+            if (!n.is_valid() || n.is_flonum()) return std::nullopt;
+            Bounds b;
+            b.lo = n.int_val; b.hi = n.int_val; b.finite = true;
+            return b;
+        };
+
+        // Narrow a var's domain to [new_lo, new_hi]. Returns false on empty.
+        // Only writes through set_domain (trailed) when something actually changes.
+        // For FD domains, values outside [new_lo, new_hi] are filtered out.
+        auto narrow_var = [vm](ObjectId id, int64_t new_lo, int64_t new_hi) -> bool {
+            if (new_lo > new_hi) return false;
+            if (!vm) return true;
+            auto& store = vm->constraint_store();
+            const auto* dom = store.get_domain(id);
+            if (!dom) {
+                store.set_domain(id, clp::ZDomain{ new_lo, new_hi });
+                return true;
+            }
+            if (auto* z = std::get_if<clp::ZDomain>(dom)) {
+                int64_t lo = std::max(z->lo, new_lo);
+                int64_t hi = std::min(z->hi, new_hi);
+                if (lo > hi) return false;
+                if (lo == z->lo && hi == z->hi) return true;  // no change
+                store.set_domain(id, clp::ZDomain{ lo, hi });
+                return true;
+            }
+            // FD
+            const auto& fd = std::get<clp::FDDomain>(*dom);
+            clp::FDDomain nfd;
+            nfd.values.reserve(fd.values.size());
+            for (auto v : fd.values) {
+                if (v >= new_lo && v <= new_hi) nfd.values.push_back(v);
+            }
+            if (nfd.values.empty()) return false;
+            if (nfd.values.size() == fd.values.size()) return true;  // no change
+            store.set_domain(id, std::move(nfd));
+            return true;
+        };
+
+        // ── %clp-fd-plus! (x y z)  :  z = x + y ────────────────────────────
+        // Bounds consistency (interval form):
+        //   z.lo >= x.lo + y.lo   z.hi <= x.hi + y.hi
+        //   x.lo >= z.lo - y.hi   x.hi <= z.hi - y.lo
+        //   y.lo >= z.lo - x.hi   y.hi <= z.hi - x.lo
+        env.register_builtin("%clp-fd-plus!", 3, false,
+            [extract_bounds, narrow_var](Args args) -> std::expected<LispVal, RuntimeError> {
+                auto bx = extract_bounds(args[0]);
+                auto by = extract_bounds(args[1]);
+                auto bz = extract_bounds(args[2]);
+                if (!bx || !by || !bz)
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-plus!: arguments must be integers or logic variables"}});
+                // Any side without finite bounds contributes nothing — just
+                // succeed without narrowing (MVP: propagate only when all three
+                // are finite).
+                if (!bx->finite || !by->finite || !bz->finite) return True;
+                // Empty-domain short-circuit.
+                if (bx->lo > bx->hi || by->lo > by->hi || bz->lo > bz->hi) return False;
+                int64_t nz_lo = bx->lo + by->lo,  nz_hi = bx->hi + by->hi;
+                int64_t nx_lo = bz->lo - by->hi,  nx_hi = bz->hi - by->lo;
+                int64_t ny_lo = bz->lo - bx->hi,  ny_hi = bz->hi - bx->lo;
+                // Narrow each var (ignores ground operands).
+                if (bz->is_var && !narrow_var(bz->id, nz_lo, nz_hi)) return False;
+                if (bx->is_var && !narrow_var(bx->id, nx_lo, nx_hi)) return False;
+                if (by->is_var && !narrow_var(by->id, ny_lo, ny_hi)) return False;
+                // For ground operands, verify consistency (e.g. z=5 must satisfy
+                // 5 ∈ [x.lo+y.lo, x.hi+y.hi]).
+                if (!bz->is_var && (bz->lo < nz_lo || bz->hi > nz_hi)) return False;
+                if (!bx->is_var && (bx->lo < nx_lo || bx->hi > nx_hi)) return False;
+                if (!by->is_var && (by->lo < ny_lo || by->hi > ny_hi)) return False;
+                return True;
+            });
+
+        // ── %clp-fd-plus-offset! (y x k)  :  y = x + k, k ∈ ℤ ──────────────
+        env.register_builtin("%clp-fd-plus-offset!", 3, false,
+            [&heap, extract_bounds, narrow_var](Args args) -> std::expected<LispVal, RuntimeError> {
+                auto by = extract_bounds(args[0]);
+                auto bx = extract_bounds(args[1]);
+                auto nk = classify_numeric(args[2], heap);
+                if (!by || !bx)
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-plus-offset!: first two args must be integers or logic variables"}});
+                if (!nk.is_valid() || nk.is_flonum())
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-plus-offset!: offset must be an integer"}});
+                const int64_t k = nk.int_val;
+                if (!bx->finite || !by->finite) return True;
+                if (bx->lo > bx->hi || by->lo > by->hi) return False;
+                int64_t ny_lo = bx->lo + k, ny_hi = bx->hi + k;
+                int64_t nx_lo = by->lo - k, nx_hi = by->hi - k;
+                if (by->is_var && !narrow_var(by->id, ny_lo, ny_hi)) return False;
+                if (bx->is_var && !narrow_var(bx->id, nx_lo, nx_hi)) return False;
+                if (!by->is_var && (by->lo < ny_lo || by->hi > ny_hi)) return False;
+                if (!bx->is_var && (bx->lo < nx_lo || bx->hi > nx_hi)) return False;
+                return True;
+            });
+
+        // ── %clp-fd-abs! (y x)  :  y = |x| ────────────────────────────────
+        // Bounds:
+        //   y ∈ [0, max(|x.lo|, |x.hi|)]
+        //   if x.lo >= 0: y ∈ [x.lo, x.hi]; x ∈ [y.lo, y.hi]
+        //   if x.hi <= 0: y ∈ [-x.hi, -x.lo]; x ∈ [-y.hi, -y.lo]
+        //   if x straddles 0: y.lo stays 0; x ∈ [-y.hi, y.hi] (weak backward prop)
+        env.register_builtin("%clp-fd-abs!", 2, false,
+            [extract_bounds, narrow_var](Args args) -> std::expected<LispVal, RuntimeError> {
+                auto by = extract_bounds(args[0]);
+                auto bx = extract_bounds(args[1]);
+                if (!by || !bx)
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-abs!: arguments must be integers or logic variables"}});
+                if (!bx->finite || !by->finite) return True;
+                if (bx->lo > bx->hi || by->lo > by->hi) return False;
+                int64_t ny_lo, ny_hi;
+                if (bx->lo >= 0) { ny_lo = bx->lo;  ny_hi = bx->hi; }
+                else if (bx->hi <= 0) { ny_lo = -bx->hi; ny_hi = -bx->lo; }
+                else { ny_lo = 0; ny_hi = std::max(-bx->lo, bx->hi); }
+                // Forward: narrow y.
+                if (by->is_var && !narrow_var(by->id, ny_lo, ny_hi)) return False;
+                if (!by->is_var && (by->lo < ny_lo || by->hi > ny_hi)) return False;
+                // Backward: narrow x using (possibly updated) y bounds.
+                int64_t yl = std::max(by->lo, ny_lo);
+                int64_t yh = std::min(by->hi, ny_hi);
+                if (yl < 0) yl = 0;
+                if (yl > yh) return False;
+                int64_t nx_lo, nx_hi;
+                if (bx->lo >= 0)      { nx_lo = yl;   nx_hi = yh; }
+                else if (bx->hi <= 0) { nx_lo = -yh;  nx_hi = -yl; }
+                else                  { nx_lo = -yh;  nx_hi = yh; }
+                if (bx->is_var && !narrow_var(bx->id, nx_lo, nx_hi)) return False;
+                if (!bx->is_var && (bx->lo < nx_lo || bx->hi > nx_hi)) return False;
+                return True;
+            });
+    }
+
+    // ========================================================================
     // AD Tape primitives: tape-new tape-start! tape-stop! tape-var
     //                     tape-backward! tape-adjoint tape-primal
     //                     tape-ref? tape-ref-index tape-size
