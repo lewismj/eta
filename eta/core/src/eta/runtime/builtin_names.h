@@ -118,6 +118,15 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("string->number",  1, false);
     r("string-ref",      2, false);
     r("substring",       3, false);
+    r("string=?",        2, false);
+    r("string<?",        2, false);
+    r("string>?",        2, false);
+    r("string<=?",       2, false);
+    r("string>=?",       2, false);
+
+    // Char operations
+    r("char->integer",   1, false);
+    r("integer->char",   1, false);
 
     // Vector operations
     r("vector",        0, true);

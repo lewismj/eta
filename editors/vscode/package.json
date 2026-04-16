@@ -22,7 +22,8 @@
         "onCommand:eta.showDisassembly",
         "onView:etaGCRoots",
         "onView:etaDisassembly",
-        "onView:etaChildProcesses"
+        "onView:etaChildProcesses",
+        "workspaceContains:**/*.test.eta"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -95,6 +96,11 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Automatically show the Heap Inspector when a debug session starts."
+                },
+                "eta.test.runnerPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the eta_test executable OR the directory containing it. If empty, searches workspace build output directories and then PATH."
                 }
             }
         },

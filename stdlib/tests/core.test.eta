@@ -1,0 +1,154 @@
+;;; stdlib/tests/core.test.eta — Unit tests for builtins and std.core
+
+(module core.tests
+  (import std.test std.core std.math)
+  (begin
+
+    (define suite
+      (make-group "core"
+        (list
+
+          ;; ── Arithmetic builtins ──────────────────────────────────
+          (make-group "arithmetic"
+            (list
+              (make-test "addition"
+                (lambda () (assert-equal 4 (+ 2 2))))
+              (make-test "subtraction"
+                (lambda () (assert-equal 1 (- 3 2))))
+              (make-test "multiplication"
+                (lambda () (assert-equal 6 (* 2 3))))
+              (make-test "division"
+                (lambda () (assert-equal 2 (/ 6 3))))
+              (make-test "modulo"
+                (lambda () (assert-equal 1 (modulo 7 3))))
+              (make-test "negation"
+                (lambda () (assert-equal -5 (- 5))))
+              (make-test "abs positive"
+                (lambda () (assert-equal 3 (abs 3))))
+              (make-test "abs negative"
+                (lambda () (assert-equal 3 (abs -3))))))
+
+          ;; ── Comparison builtins ──────────────────────────────────
+          (make-group "comparison"
+            (list
+              (make-test "equal numbers"
+                (lambda () (assert-true (= 1 1))))
+              (make-test "not equal numbers"
+                (lambda () (assert-false (= 1 2))))
+              (make-test "less than"
+                (lambda () (assert-true (< 1 2))))
+              (make-test "greater than"
+                (lambda () (assert-true (> 2 1))))
+              (make-test "less-or-equal"
+                (lambda () (assert-true (<= 2 2))))
+              (make-test "greater-or-equal"
+                (lambda () (assert-true (>= 3 2))))))
+
+          ;; ── Boolean builtins ─────────────────────────────────────
+          (make-group "boolean"
+            (list
+              (make-test "and true"
+                (lambda () (assert-true (and #t #t))))
+              (make-test "and false"
+                (lambda () (assert-false (and #t #f))))
+              (make-test "or true"
+                (lambda () (assert-true (or #f #t))))
+              (make-test "or false"
+                (lambda () (assert-false (or #f #f))))
+              (make-test "not true"
+                (lambda () (assert-false (not #t))))
+              (make-test "not false"
+                (lambda () (assert-true (not #f))))))
+
+          ;; ── List builtins ────────────────────────────────────────
+          (make-group "lists"
+            (list
+              (make-test "cons and car"
+                (lambda () (assert-equal 1 (car (cons 1 2)))))
+              (make-test "cons and cdr"
+                (lambda () (assert-equal 2 (cdr (cons 1 2)))))
+              (make-test "null? empty"
+                (lambda () (assert-true (null? '()))))
+              (make-test "null? non-empty"
+                (lambda () (assert-false (null? '(1)))))
+              (make-test "list construction"
+                (lambda () (assert-equal '(1 2 3) (list 1 2 3))))
+              (make-test "length"
+                (lambda () (assert-equal 3 (length '(1 2 3)))))
+              (make-test "append"
+                (lambda () (assert-equal '(1 2 3 4) (append '(1 2) '(3 4)))))
+              (make-test "reverse"
+                (lambda () (assert-equal '(3 2 1) (reverse '(1 2 3)))))
+              (make-test "map builtin"
+                (lambda () (assert-equal '(2 4 6) (map (lambda (x) (* x 2)) '(1 2 3)))))
+              (make-test "for-each side effect"
+                (lambda ()
+                  (let ((sum 0))
+                    (for-each (lambda (x) (set! sum (+ sum x))) '(1 2 3))
+                    (assert-equal 6 sum))))))
+
+          ;; ── String builtins ──────────────────────────────────────
+          (make-group "strings"
+            (list
+              (make-test "string-length"
+                (lambda () (assert-equal 5 (string-length "hello"))))
+              (make-test "string-append"
+                (lambda () (assert-equal "hello world" (string-append "hello" " world"))))
+              (make-test "substring"
+                (lambda () (assert-equal "ell" (substring "hello" 1 4))))
+              (make-test "string=?"
+                (lambda () (assert-true (string=? "abc" "abc"))))
+              (make-test "string<?"
+                (lambda () (assert-true (string<? "abc" "abd"))))
+              (make-test "number->string"
+                (lambda () (assert-equal "42" (number->string 42))))
+              (make-test "string->number"
+                (lambda () (assert-equal 42 (string->number "42"))))))
+
+          ;; ── Type predicates ──────────────────────────────────────
+          (make-group "type-predicates"
+            (list
+              (make-test "number?"
+                (lambda () (assert-true (number? 42))))
+              (make-test "string?"
+                (lambda () (assert-true (string? "hi"))))
+              (make-test "symbol?"
+                (lambda () (assert-true (symbol? 'foo))))
+              (make-test "pair?"
+                (lambda () (assert-true (pair? '(1 2)))))
+              (make-test "boolean?"
+                (lambda () (assert-true (boolean? #t))))
+              (make-test "procedure?"
+                (lambda () (assert-true (procedure? car))))))
+
+          ;; ── std.core combinators ─────────────────────────────────
+          (make-group "std.core"
+            (list
+              (make-test "identity"
+                (lambda () (assert-equal 42 (identity 42))))
+              (make-test "compose"
+                (lambda ()
+                  (let ((double (lambda (x) (* x 2)))
+                        (inc    (lambda (x) (+ x 1))))
+                    (assert-equal 7 ((compose double inc) 3)))))
+              (make-test "constantly"
+                (lambda () (assert-equal 5 ((constantly 5) 1 2 3))))
+              (make-test "negate"
+                (lambda () (assert-true ((negate even?) 3))))
+              (make-test "flip"
+                (lambda ()
+                  (let ((div (flip /)))
+                    (assert-equal 2 (div 6 12)))))
+              (make-test "cadr"
+                (lambda () (assert-equal 2 (cadr '(1 2 3)))))
+              (make-test "caddr"
+                (lambda () (assert-equal 3 (caddr '(1 2 3)))))
+              (make-test "last"
+                (lambda () (assert-equal 3 (last '(1 2 3)))))
+              (make-test "iota"
+                (lambda () (assert-equal '(0 1 2 3 4) (iota 5))))
+              (make-test "apply builtin"
+                (lambda () (assert-equal 6 (apply + '(1 2 3)))))))))
+
+    (print-tap (run suite)))))
+

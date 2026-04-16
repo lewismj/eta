@@ -1043,6 +1043,63 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_string(heap, intern_table, std::string(view.substr(s, e - s)));
     });
 
+    env.register_builtin("string=?", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto a = StringView::try_from(args[0], intern_table);
+        auto b = StringView::try_from(args[1], intern_table);
+        if (!a) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string=?: first argument is not a string"}});
+        if (!b) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string=?: second argument is not a string"}});
+        return (a->view() == b->view()) ? nanbox::True : nanbox::False;
+    });
+
+    env.register_builtin("string<?", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto a = StringView::try_from(args[0], intern_table);
+        auto b = StringView::try_from(args[1], intern_table);
+        if (!a) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string<?: first argument is not a string"}});
+        if (!b) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string<?: second argument is not a string"}});
+        return (a->view() < b->view()) ? nanbox::True : nanbox::False;
+    });
+
+    env.register_builtin("string>?", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto a = StringView::try_from(args[0], intern_table);
+        auto b = StringView::try_from(args[1], intern_table);
+        if (!a) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string>?: first argument is not a string"}});
+        if (!b) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string>?: second argument is not a string"}});
+        return (a->view() > b->view()) ? nanbox::True : nanbox::False;
+    });
+
+    env.register_builtin("string<=?", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto a = StringView::try_from(args[0], intern_table);
+        auto b = StringView::try_from(args[1], intern_table);
+        if (!a) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string<=?: first argument is not a string"}});
+        if (!b) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string<=?: second argument is not a string"}});
+        return (a->view() <= b->view()) ? nanbox::True : nanbox::False;
+    });
+
+    env.register_builtin("string>=?", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto a = StringView::try_from(args[0], intern_table);
+        auto b = StringView::try_from(args[1], intern_table);
+        if (!a) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string>=?: first argument is not a string"}});
+        if (!b) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string>=?: second argument is not a string"}});
+        return (a->view() >= b->view()) ? nanbox::True : nanbox::False;
+    });
+
+    env.register_builtin("char->integer", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::Char)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "char->integer: not a character"}});
+        auto ch = ops::decode<char32_t>(args[0]);
+        if (!ch) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "char->integer: invalid character"}});
+        return make_fixnum(heap, static_cast<int64_t>(*ch));
+    });
+
+    env.register_builtin("integer->char", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto n = classify_numeric(args[0], heap);
+        if (!n.is_valid() || n.is_flonum() || n.int_val < 0)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "integer->char: not a non-negative integer"}});
+        auto v = ops::encode(static_cast<char32_t>(n.int_val));
+        if (!v) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "integer->char: encoding failed"}});
+        return *v;
+    });
+
     // ========================================================================
     // Vector operations: vector vector-length vector-ref vector-set!
     // ========================================================================

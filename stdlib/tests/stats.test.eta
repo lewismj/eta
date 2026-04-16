@@ -1,0 +1,113 @@
+;;; stdlib/tests/stats.test.eta — Unit tests for std.stats
+
+(module stats.tests
+  (import std.test std.stats std.core)
+  (begin
+
+    (define xs '(2.0 4.0 4.0 4.0 5.0 5.0 7.0 9.0))  ;; mean=5, var=4, sd=2
+
+    (define suite
+      (make-group "std.stats"
+        (list
+
+          ;; ── Descriptive statistics ────────────────────────────────
+          (make-group "descriptive"
+            (list
+              (make-test "mean"
+                (lambda ()
+                  (assert-approx-equal 5.0 (stats:mean xs) 1e-9)))
+              (make-test "variance (sample)"
+                (lambda ()
+                  (assert-approx-equal 4.0 (stats:variance xs) 1e-9)))
+              (make-test "stddev"
+                (lambda ()
+                  (assert-approx-equal 2.0 (stats:stddev xs) 1e-9)))
+              (make-test "sem"
+                (lambda ()
+                  ;; sem = stddev / sqrt(n) = 2 / sqrt(8) ≈ 0.7071
+                  (assert-approx-equal 0.7071 (stats:sem xs) 0.001)))
+              (make-test "median"
+                (lambda ()
+                  (assert-approx-equal 4.5 (stats:median xs) 0.01)))
+              (make-test "percentile 0 is min"
+                (lambda ()
+                  (assert-approx-equal 2.0 (stats:percentile xs 0.0) 1e-9)))
+              (make-test "percentile 1 is max"
+                (lambda ()
+                  (assert-approx-equal 9.0 (stats:percentile xs 1.0) 1e-9)))))
+
+          ;; ── Covariance / Correlation ──────────────────────────────
+          (make-group "covariance-correlation"
+            (list
+              (make-test "covariance of list with itself equals variance"
+                (lambda ()
+                  (assert-approx-equal
+                    (stats:variance xs)
+                    (stats:covariance xs xs)
+                    1e-9)))
+              (make-test "correlation of list with itself is 1.0"
+                (lambda ()
+                  (assert-approx-equal 1.0 (stats:correlation xs xs) 1e-9)))
+              (make-test "correlation of x and -x is -1.0"
+                (lambda ()
+                  (let ((neg (map (lambda (v) (- 0 v)) xs)))
+                    (assert-approx-equal -1.0
+                      (stats:correlation xs neg) 1e-9))))))
+
+          ;; ── Confidence interval ───────────────────────────────────
+          (make-group "confidence-interval"
+            (list
+              (make-test "ci-lower < mean < ci-upper"
+                (lambda ()
+                  (let* ((ci (stats:ci xs 0.95))
+                         (lo (stats:ci-lower ci))
+                         (hi (stats:ci-upper ci))
+                         (mu (stats:mean xs)))
+                    (assert-true (< lo mu))
+                    (assert-true (< mu hi)))))
+              (make-test "ci-lower and ci-upper are numbers"
+                (lambda ()
+                  (let ((ci (stats:ci xs 0.95)))
+                    (assert-true (number? (stats:ci-lower ci)))
+                    (assert-true (number? (stats:ci-upper ci))))))))
+
+          ;; ── OLS simple regression ─────────────────────────────────
+          (make-group "ols"
+            (list
+              (make-test "slope of y=2x is 2"
+                (lambda ()
+                  (let* ((x '(1.0 2.0 3.0 4.0 5.0))
+                         (y '(2.0 4.0 6.0 8.0 10.0))
+                         (r (stats:ols x y)))
+                    (assert-approx-equal 2.0 (stats:ols-slope r) 1e-6))))
+              (make-test "intercept of y=2x is 0"
+                (lambda ()
+                  (let* ((x '(1.0 2.0 3.0 4.0 5.0))
+                         (y '(2.0 4.0 6.0 8.0 10.0))
+                         (r (stats:ols x y)))
+                    (assert-approx-equal 0.0 (stats:ols-intercept r) 1e-6))))
+              (make-test "R-squared of perfect fit is 1.0"
+                (lambda ()
+                  (let* ((x '(1.0 2.0 3.0 4.0 5.0))
+                         (y '(2.0 4.0 6.0 8.0 10.0))
+                         (r (stats:ols x y)))
+                    (assert-approx-equal 1.0 (stats:ols-r2 r) 1e-6))))))
+
+          ;; ── stats:summary ─────────────────────────────────────────
+          (make-group "summary"
+            (list
+              (make-test "summary has n entry"
+                (lambda ()
+                  (let ((s (stats:summary xs)))
+                    (assert-equal 8 (cadr (assoc 'n s))))))
+              (make-test "summary has mean entry"
+                (lambda ()
+                  (let ((s (stats:summary xs)))
+                    (assert-approx-equal 5.0 (cadr (assoc 'mean s)) 1e-9))))
+              (make-test "summary has ci-95 entry"
+                (lambda ()
+                  (let ((s (stats:summary xs)))
+                    (assert-true (pair? (cadr (assoc 'ci-95 s)))))))))))
+
+    (print-tap (run suite)))))
+

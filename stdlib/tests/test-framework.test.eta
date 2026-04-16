@@ -1,0 +1,55 @@
+;;; stdlib/tests/test-framework.test.eta — Self-tests for std.test itself
+
+(module test-framework.tests
+  (import std.test)
+  (begin
+
+    (define suite
+      (make-group "std.test framework"
+        (list
+
+          ;; ── Assertions ──────────────────────────────────────────
+          (make-group "assertions"
+            (list
+              (make-test "assert-true passes on #t"
+                (lambda () (assert-true #t)))
+              (make-test "assert-false passes on #f"
+                (lambda () (assert-false #f)))
+              (make-test "assert-equal passes on equal values"
+                (lambda () (assert-equal 42 42)))
+              (make-test "assert-equal passes on equal strings"
+                (lambda () (assert-equal "hello" "hello")))
+              (make-test "assert-equal passes on equal lists"
+                (lambda () (assert-equal '(1 2 3) '(1 2 3))))
+              (make-test "assert-not-equal passes on different values"
+                (lambda () (assert-not-equal 1 2)))
+              (make-test "assert-approx-equal with tight tolerance"
+                (lambda () (assert-approx-equal 1.0 1.0 1e-12)))
+              (make-test "assert-approx-equal with loose tolerance"
+                (lambda () (assert-approx-equal 0.0 0.001 0.01)))))
+
+          ;; ── Summary counting ─────────────────────────────────────
+          (make-group "summary"
+            (list
+              (make-test "summary of a passing test has total=1 passed=1 failed=0"
+                (lambda ()
+                  (let* ((t  (make-test "dummy" (lambda () 'ok)))
+                         (r  (run t))
+                         (s  (summary r)))
+                    (assert-equal 1 (summary-total  s))
+                    (assert-equal 1 (summary-passed s))
+                    (assert-equal 0 (summary-failed s)))))
+              (make-test "summary of a group with 2 passing tests has total=2"
+                (lambda ()
+                  (let* ((g (make-group "g"
+                              (list
+                                (make-test "a" (lambda () 'ok))
+                                (make-test "b" (lambda () 'ok)))))
+                         (r (run g))
+                         (s (summary r)))
+                    (assert-equal 2 (summary-total  s))
+                    (assert-equal 2 (summary-passed s))
+                    (assert-equal 0 (summary-failed s)))))))))
+
+    (print-tap (run suite)))))
+

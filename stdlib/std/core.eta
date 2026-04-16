@@ -26,6 +26,7 @@
     ;; Returns '() — the canonical "no useful value" result.
     (defun void () '())
 
+
     ;; ── Combinators ─────────────────────────────────────────────────
 
     ;; Returns its argument unchanged.
