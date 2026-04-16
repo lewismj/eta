@@ -8,6 +8,12 @@
 ;;;         (make-test "addition" (lambda () (assert-equal 4 (+ 2 2))))
 ;;;         (make-test "truthy"  (lambda () (assert-true #t)))))))
 ;;;   (print-summary (summary results))
+;;;
+;;; TAP output:
+;;;   (print-tap results)    ; emits TAP 13 to stdout
+;;;
+;;; JUnit XML output:
+;;;   (print-junit results)  ; emits JUnit XML to stdout
 
 (module std.test
   (export
@@ -19,8 +25,9 @@
     summary-total summary-passed summary-failed
     ;; Assertions
     assert-true assert-false assert-equal assert-not-equal
+    assert-approx-equal
     ;; Output
-    print-summary)
+    print-summary print-tap print-junit)
   (begin
 
     ;; ── Data (tagged vectors via define-record-type) ────────────────
@@ -100,6 +107,21 @@
       (let ((msg (if (null? rest) "expected values to differ" (car rest))))
         (if (equal? a b) (error msg) 'ok)))
 
+    (defun assert-approx-equal (expected actual . rest)
+      (let ((tol (if (null? rest) 1e-9 (car rest))))
+        (let ((diff (if (> expected actual)
+                        (- expected actual)
+                        (- actual expected))))
+          (if (> diff tol)
+              (error (string-append "expected approx "
+                       (__val->string expected)
+                       " but got "
+                       (__val->string actual)
+                       " (diff="
+                       (__val->string diff)
+                       ")"))
+              'ok))))
+
     ;; ── Runner ──────────────────────────────────────────────────────
 
     (defun __run-test (t)
@@ -161,5 +183,133 @@
       (display " failed")
       (newline))
 
-  ))
+    ;; ── TAP 13 output ───────────────────────────────────────────────
+    ;;
+    ;; Emits TAP version 13 format that can be consumed by VS Code
+    ;; Test Explorer (via a TAP parser) and IntelliJ (via tap-junit).
+    ;;
+    ;; Format:
+    ;;   TAP version 13
+    ;;   1..N
+    ;;   ok 1 - test name
+    ;;   not ok 2 - test name
+    ;;     ---
+    ;;     message: error message
+    ;;     ...
 
+    (defun __tap-collect-results (res acc)
+      ;; Flatten all test-results from nested group-results into a list.
+      (if (test-result? res)
+          (cons res acc)
+          ;; group result — recurse children
+          (__foldl (lambda (a child) (__tap-collect-results child a))
+                   acc
+                   (gresult-children res))))
+
+    (defun __tap-print-result (idx r)
+      (if (eq? (result-status r) 'pass)
+          (begin
+            (display "ok ")
+            (display idx)
+            (display " - ")
+            (display (result-name r))
+            (newline))
+          (begin
+            (display "not ok ")
+            (display idx)
+            (display " - ")
+            (display (result-name r))
+            (newline)
+            (display "  ---")
+            (newline)
+            (display "  message: ")
+            (display (result-error r))
+            (newline)
+            (display "  ...")
+            (newline))))
+
+    (defun __tap-print-all (results idx)
+      (if (null? results)
+          'done
+          (begin
+            (__tap-print-result idx (car results))
+            (__tap-print-all (cdr results) (+ idx 1)))))
+
+    (defun print-tap (res)
+      ;; res is the result of (run ...).
+      (let ((flat (reverse (__tap-collect-results res '()))))
+        (let ((n (length flat)))
+          (display "TAP version 13")
+          (newline)
+          (display "1..")
+          (display n)
+          (newline)
+          (__tap-print-all flat 1))))
+
+    ;; ── JUnit XML output ────────────────────────────────────────────
+    ;;
+    ;; Emits JUnit XML that can be imported by IntelliJ / CI systems.
+
+    (defun __xml-escape (s)
+      ;; Minimal XML escaping for attribute/text values.
+      ;; Uses string-ref / string-length and eqv? to avoid char=? / string->list.
+      (let ((p (open-output-string))
+            (n (string-length s)))
+        (let loop ((i 0))
+          (if (= i n)
+              (get-output-string p)
+              (begin
+                (let ((c (string-ref s i)))
+                  (cond
+                    ((eqv? c #\&)  (display "&amp;"  p))
+                    ((eqv? c #\<)  (display "&lt;"   p))
+                    ((eqv? c #\>)  (display "&gt;"   p))
+                    ((eqv? c #\")  (display "&quot;" p))
+                    (else          (display c p))))
+                (loop (+ i 1)))))))
+
+    (defun __junit-print-result (r)
+      (if (eq? (result-status r) 'pass)
+          (begin
+            (display "    <testcase name=\"")
+            (display (__xml-escape (result-name r)))
+            (display "\"/>")
+            (newline))
+          (begin
+            (display "    <testcase name=\"")
+            (display (__xml-escape (result-name r)))
+            (display "\">")
+            (newline)
+            (display "      <failure message=\"")
+            (display (__xml-escape (__val->string (result-error r))))
+            (display "\"/>")
+            (newline)
+            (display "    </testcase>")
+            (newline))))
+
+    (defun __junit-print-all (results)
+      (if (null? results)
+          'done
+          (begin
+            (__junit-print-result (car results))
+            (__junit-print-all (cdr results)))))
+
+    (defun print-junit (res . suite-name-rest)
+      (let ((suite-name (if (null? suite-name-rest) "eta-tests" (car suite-name-rest))))
+        (let ((flat (reverse (__tap-collect-results res '()))))
+          (let ((s (summary res)))
+            (display "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+            (newline)
+            (display "<testsuite name=\"")
+            (display (__xml-escape suite-name))
+            (display "\" tests=\"")
+            (display (summary-total s))
+            (display "\" failures=\"")
+            (display (summary-failed s))
+            (display "\">")
+            (newline)
+            (__junit-print-all flat)
+            (display "</testsuite>")
+            (newline)))))
+
+  ))

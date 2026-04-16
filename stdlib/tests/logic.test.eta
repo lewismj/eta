@@ -1,0 +1,169 @@
+;;; stdlib/tests/logic.test.eta — Unit tests for std.logic
+
+(module logic.tests
+  (import std.test std.logic)
+  (begin
+
+    (define suite
+      (make-group "std.logic"
+        (list
+
+          ;; ── Basic unification ──────────────────────────────────────
+          (make-group "unification"
+            (list
+              (make-test "unify two equal constants"
+                (lambda ()
+                  (assert-true (unify 42 42))))
+              (make-test "unify unbound var with constant"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark))
+                         (ok (unify x 99)))
+                    (unwind-trail m)
+                    (assert-true ok))))
+              (make-test "unify two vars together"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (y (logic-var))
+                         (m (trail-mark))
+                         (ok (unify x y)))
+                    (unwind-trail m)
+                    (assert-true ok))))
+              (make-test "unify fails on different constants"
+                (lambda ()
+                  (assert-false (unify 1 2))))
+              (make-test "deref after unification"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark)))
+                    (unify x 7)
+                    (let ((v (deref-lvar x)))
+                      (unwind-trail m)
+                      (assert-equal 7 v)))))
+              (make-test "unwind-trail restores unbound state"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark)))
+                    (unify x 42)
+                    (unwind-trail m)
+                    (assert-true (logic-var? x)))))))
+
+          ;; ── == combinator ─────────────────────────────────────────
+          (make-group "=="
+            (list
+              (make-test "== succeeds on equal constants"
+                (lambda () (assert-true (== 1 1))))
+              (make-test "== fails on different constants"
+                (lambda () (assert-false (== 1 2))))
+              (make-test "== binds variable"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark))
+                         (ok (== x 5)))
+                    (let ((v (deref-lvar x)))
+                      (unwind-trail m)
+                      (assert-equal 5 v)))))))
+
+          ;; ── ground? ───────────────────────────────────────────────
+          (make-group "ground?"
+            (list
+              (make-test "ground? on number"
+                (lambda () (assert-true (ground? 42))))
+              (make-test "ground? on symbol"
+                (lambda () (assert-true (ground? 'foo))))
+              (make-test "ground? on list of constants"
+                (lambda () (assert-true (ground? '(1 2 3)))))
+              (make-test "ground? false for unbound var"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (assert-false (ground? x)))))))
+
+          ;; ── naf / succeeds? ───────────────────────────────────────
+          (make-group "naf-succeeds"
+            (list
+              (make-test "succeeds? on succeeding goal"
+                (lambda ()
+                  (assert-true (succeeds? (lambda () (== 1 1))))))
+              (make-test "succeeds? on failing goal"
+                (lambda ()
+                  (assert-false (succeeds? (lambda () (== 1 2))))))
+              (make-test "naf on failing goal returns true"
+                (lambda ()
+                  (assert-true (naf (lambda () (== 1 2))))))
+              (make-test "naf on succeeding goal returns false"
+                (lambda ()
+                  (assert-false (naf (lambda () (== 1 1))))))
+              (make-test "succeeds? unwinds bindings"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (succeeds? (lambda () (== x 99)))
+                    (assert-true (logic-var? x)))))))
+
+          ;; ── findall ───────────────────────────────────────────────
+          (make-group "findall"
+            (list
+              (make-test "findall collects all successes"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (let ((results
+                            (findall
+                              (lambda () (deref-lvar x))
+                              (list (lambda () (== x 1))
+                                    (lambda () (== x 2))
+                                    (lambda () (== x 3))))))
+                      (assert-equal '(1 2 3) results)))))
+              (make-test "findall skips failing branches"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (let ((results
+                            (findall
+                              (lambda () (deref-lvar x))
+                              (list (lambda () (== x 10))
+                                    (lambda () (== 1 2))
+                                    (lambda () (== x 30))))))
+                      (assert-equal '(10 30) results)))))
+              (make-test "findall on empty branches returns empty"
+                (lambda ()
+                  (assert-equal '()
+                    (findall (lambda () 'x) '()))))))
+
+          ;; ── run1 ──────────────────────────────────────────────────
+          (make-group "run1"
+            (list
+              (make-test "run1 returns first solution"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (let ((r (run1
+                               (lambda () (deref-lvar x))
+                               (list (lambda () (== x 'a))
+                                     (lambda () (== x 'b))))))
+                      (assert-equal 'a r)))))
+              (make-test "run1 returns #f on no solution"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (assert-false
+                      (run1
+                        (lambda () (deref-lvar x))
+                        (list (lambda () (== 1 2))))))))))
+
+          ;; ── membero ───────────────────────────────────────────────
+          (make-group "membero"
+            (list
+              (make-test "membero enumerates all members"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (assert-equal '(a b c)
+                      (findall
+                        (lambda () (deref-lvar x))
+                        (membero x '(a b c)))))))
+              (make-test "membero with bound var filters"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (unify x 'b)
+                    (let ((r (findall
+                               (lambda () (deref-lvar x))
+                               (membero x '(a b c)))))
+                      (assert-equal '(b) r)))))))))
+
+    (print-tap (run suite)))))
+

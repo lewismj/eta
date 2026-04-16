@@ -30,6 +30,7 @@ import { GCRootsTreeProvider } from './gcRootsTreeView';
 import { DisassemblyContentProvider, showDisassembly } from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
 import { ChildProcessTreeProvider } from './childProcessTreeView';
+import { registerTestController } from './testController';
 
 let client: LanguageClient | undefined;
 let outputChannel: OutputChannel;
@@ -263,6 +264,9 @@ export function activate(context: ExtensionContext) {
             HeapInspectorPanel.createOrShow(extensionCtx).inspectObject(objectId);
         }),
     );
+
+    // ── Test Explorer ───────────────────────────────────────────
+    registerTestController(context);
 
     // ── Watch for configuration changes ────────────────────────────
     context.subscriptions.push(

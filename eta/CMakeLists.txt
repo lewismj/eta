@@ -95,6 +95,7 @@ add_subdirectory(compiler)
 add_subdirectory(lsp)
 add_subdirectory(dap)
 add_subdirectory(test)
+add_subdirectory(test_runner)
 add_subdirectory(fuzz)
 
 # Install nng DLL on Windows

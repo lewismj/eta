@@ -1,0 +1,148 @@
+;;; stdlib/tests/clp.test.eta — Unit tests for std.clp
+
+(module clp.tests
+  (import std.test std.clp std.collections)
+  (begin
+
+    (define suite
+      (make-group "std.clp"
+        (list
+
+          ;; ── Domain construction ───────────────────────────────────
+          (make-group "domain-construction"
+            (list
+              (make-test "clp:domain attaches Z domain"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (clp:domain x 1 10)
+                    (let ((dom (%clp-get-domain x)))
+                      (assert-true (clp:domain-z? dom))))))
+              (make-test "clp:domain-lo reads lower bound"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (clp:domain x 3 9)
+                    (assert-equal 3 (clp:domain-lo (%clp-get-domain x))))))
+              (make-test "clp:domain-hi reads upper bound"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (clp:domain x 3 9)
+                    (assert-equal 9 (clp:domain-hi (%clp-get-domain x))))))
+              (make-test "clp:in-fd attaches FD domain"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (clp:in-fd x 2 4 6 8)
+                    (let ((dom (%clp-get-domain x)))
+                      (assert-true (clp:domain-fd? dom))))))
+              (make-test "clp:domain-values for Z domain"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (clp:domain x 1 4)
+                    (assert-equal '(1 2 3 4)
+                      (clp:domain-values (%clp-get-domain x))))))
+              (make-test "clp:domain-values for FD domain"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (clp:in-fd x 2 5 7)
+                    (assert-equal '(2 5 7)
+                      (clp:domain-values (%clp-get-domain x))))))))
+
+          ;; ── Forward checking (unify rejects out-of-domain) ────────
+          (make-group "forward-checking"
+            (list
+              (make-test "unify in-domain value succeeds"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark)))
+                    (clp:domain x 1 5)
+                    (let ((ok (unify x 3)))
+                      (unwind-trail m)
+                      (assert-true ok)))))
+              (make-test "unify out-of-domain value fails"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark)))
+                    (clp:domain x 1 5)
+                    (let ((ok (unify x 9)))
+                      (unwind-trail m)
+                      (assert-false ok)))))
+              (make-test "unify FD in-domain succeeds"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark)))
+                    (clp:in-fd x 1 3 5)
+                    (let ((ok (unify x 3)))
+                      (unwind-trail m)
+                      (assert-true ok)))))
+              (make-test "unify FD out-of-domain fails"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark)))
+                    (clp:in-fd x 1 3 5)
+                    (let ((ok (unify x 2)))
+                      (unwind-trail m)
+                      (assert-false ok)))))))
+
+          ;; ── clp:solve ─────────────────────────────────────────────
+          (make-group "solve"
+            (list
+              (make-test "solve single variable finds solution"
+                (lambda ()
+                  (let* ((x  (logic-var))
+                         (m  (trail-mark)))
+                    (clp:domain x 1 3)
+                    (let ((ok (clp:solve (list x))))
+                      (let ((v (deref-lvar x)))
+                        (unwind-trail m)
+                        (assert-true ok)
+                        (assert-true (and (>= v 1) (<= v 3))))))))
+              (make-test "solve two variables finds consistent assignment"
+                (lambda ()
+                  (let* ((x  (logic-var))
+                         (y  (logic-var))
+                         (m  (trail-mark)))
+                    (clp:domain x 1 2)
+                    (clp:domain y 1 2)
+                    (let ((ok (clp:solve (list x y))))
+                      (unwind-trail m)
+                      (assert-true ok)))))
+              (make-test "solve empty domain fails"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark)))
+                    (clp:in-fd x)   ;; empty FD
+                    (let ((ok (clp:solve (list x))))
+                      (unwind-trail m)
+                      (assert-false ok)))))
+              (make-test "solve already-ground variable passes through"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (m (trail-mark)))
+                    (unify x 42)
+                    (let ((ok (clp:solve (list x))))
+                      (unwind-trail m)
+                      (assert-true ok)))))))
+
+          ;; ── clp:<= / clp:>= propagation ───────────────────────────
+          (make-group "inequality-propagation"
+            (list
+              (make-test "clp:<= narrows upper bound of x"
+                (lambda ()
+                  (let ((x (logic-var))
+                        (y (logic-var)))
+                    (clp:domain x 1 10)
+                    (clp:domain y 1 5)
+                    (clp:<= x y)
+                    (assert-equal 5
+                      (clp:domain-hi (%clp-get-domain x))))))
+              (make-test "clp:>= narrows lower bound of x"
+                (lambda ()
+                  (let ((x (logic-var))
+                        (y (logic-var)))
+                    (clp:domain x 1 10)
+                    (clp:domain y 4 10)
+                    (clp:>= x y)
+                    (assert-equal 4
+                      (clp:domain-lo (%clp-get-domain x))))))))))
+
+    (print-tap (run suite)))))
+
