@@ -995,3 +995,45 @@ BOOST_AUTO_TEST_CASE(enclosing_sexp_ranges_nested) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
+// ── Framing robustness tests (bug fixes: stoull throw + memory DoS) ──────────
+
+BOOST_AUTO_TEST_SUITE(lsp_framing_robustness)
+
+// A non-numeric Content-Length must not throw; server exits cleanly.
+BOOST_AUTO_TEST_CASE(malformed_content_length_does_not_throw) {
+    std::string input = "Content-Length: not-a-number\r\n\r\n{}";
+    BOOST_CHECK_NO_THROW(run_server(input));
+}
+
+// An empty Content-Length value must not throw.
+BOOST_AUTO_TEST_CASE(empty_content_length_does_not_throw) {
+    std::string input = "Content-Length: \r\n\r\n{}";
+    BOOST_CHECK_NO_THROW(run_server(input));
+}
+
+// A Content-Length that exceeds MAX_MESSAGE_SIZE must not allocate / crash.
+// We use 4 GiB (well above the 64 MiB cap) with no actual body bytes following.
+BOOST_AUTO_TEST_CASE(overlimit_content_length_does_not_crash) {
+    std::string input = "Content-Length: 4294967295\r\n\r\n";
+    BOOST_CHECK_NO_THROW(run_server(input));
+}
+
+// Zero Content-Length silently returns nullopt (existing behaviour, regression guard).
+BOOST_AUTO_TEST_CASE(zero_content_length_no_throw) {
+    std::string input = "Content-Length: 0\r\n\r\n";
+    BOOST_CHECK_NO_THROW(run_server(input));
+}
+
+// A valid message following a malformed one is NOT processed (server stops after
+// the first nullopt from read_message), but no exception must escape.
+BOOST_AUTO_TEST_CASE(malformed_then_valid_no_throw) {
+    std::string body = R"({"jsonrpc":"2.0","id":1,"method":"shutdown","params":{}})";
+    std::string input = "Content-Length: bad\r\n\r\n"
+                      + frame(body);
+    BOOST_CHECK_NO_THROW(run_server(input));
+}
+
+BOOST_AUTO_TEST_SUITE_END() // lsp_framing_robustness
+
+
+

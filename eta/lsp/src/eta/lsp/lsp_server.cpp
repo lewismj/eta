@@ -209,27 +209,40 @@ void LspServer::preload_module_deps(
 // ============================================================================
 
 std::optional<std::string> LspServer::read_message() {
-    // Read headers until blank line
+    // 64 MiB ceiling — a realistic LSP message is well under 1 MiB.
+    static constexpr std::size_t MAX_MESSAGE_SIZE = 64u * 1024u * 1024u;
+
     std::size_t content_length = 0;
+    bool got_content_length = false;
     std::string header_line;
     while (std::getline(in_, header_line)) {
-        // Strip \r if present
         if (!header_line.empty() && header_line.back() == '\r')
             header_line.pop_back();
-        if (header_line.empty()) break; // end of headers
+        if (header_line.empty()) break;
 
-        // Parse Content-Length
         const std::string prefix = "Content-Length: ";
         if (header_line.substr(0, prefix.size()) == prefix) {
-            content_length = std::stoull(header_line.substr(prefix.size()));
+            try {
+                content_length = std::stoull(header_line.substr(prefix.size()));
+                got_content_length = true;
+            } catch (const std::exception&) {
+                std::cerr << "[eta-lsp] warning: malformed Content-Length header: "
+                          << header_line << "\n";
+            }
         }
         // Ignore other headers (Content-Type, etc.)
     }
 
     if (in_.eof() || in_.fail()) return std::nullopt;
-    if (content_length == 0) return std::nullopt;
+    if (!got_content_length || content_length == 0) return std::nullopt;
 
-    // Read exactly content_length bytes
+    // Guard against unbounded allocation from a crafted Content-Length value.
+    if (content_length > MAX_MESSAGE_SIZE) {
+        std::cerr << "[eta-lsp] warning: Content-Length " << content_length
+                  << " exceeds maximum (" << MAX_MESSAGE_SIZE << " bytes); dropping message\n";
+        return std::nullopt;
+    }
+
     std::string body(content_length, '\0');
     in_.read(body.data(), static_cast<std::streamsize>(content_length));
     if (in_.fail()) return std::nullopt;

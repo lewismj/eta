@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "eta/dap/dap_io.h"
 #include "eta/dap/dap_server.h"
 #include "eta/util/json.h"
 
@@ -867,3 +868,56 @@ BOOST_AUTO_TEST_CASE(scopes_refs_below_compound_base) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
+// ── DAP framing robustness tests (bug fix: memory DoS) ───────────────────────
+
+BOOST_AUTO_TEST_SUITE(dap_framing_robustness)
+
+// Malformed Content-Length must not throw; returns nullopt.
+BOOST_AUTO_TEST_CASE(malformed_content_length_returns_nullopt) {
+    std::istringstream in("Content-Length: not-a-number\r\n\r\n{}");
+    BOOST_CHECK_NO_THROW({
+        auto result = eta::dap::read_message(in);
+        BOOST_CHECK(!result.has_value());
+    });
+}
+
+// Empty Content-Length value must not throw.
+BOOST_AUTO_TEST_CASE(empty_content_length_returns_nullopt) {
+    std::istringstream in("Content-Length: \r\n\r\n{}");
+    BOOST_CHECK_NO_THROW({
+        auto result = eta::dap::read_message(in);
+        BOOST_CHECK(!result.has_value());
+    });
+}
+
+// Over-limit Content-Length must not allocate / crash; returns nullopt.
+BOOST_AUTO_TEST_CASE(overlimit_content_length_returns_nullopt) {
+    std::istringstream in("Content-Length: 4294967295\r\n\r\n");
+    BOOST_CHECK_NO_THROW({
+        auto result = eta::dap::read_message(in);
+        BOOST_CHECK(!result.has_value());
+    });
+}
+
+// Zero Content-Length skips and returns nullopt (existing behaviour).
+BOOST_AUTO_TEST_CASE(zero_content_length_returns_nullopt) {
+    std::istringstream in("Content-Length: 0\r\n\r\n");
+    auto result = eta::dap::read_message(in);
+    BOOST_CHECK(!result.has_value());
+}
+
+// A valid message is still read correctly after a skipped zero-length one.
+BOOST_AUTO_TEST_CASE(valid_message_after_skipped_zero_length) {
+    const std::string body = R"({"seq":1,"type":"request","command":"initialize","arguments":{}})";
+    std::istringstream in(
+        "Content-Length: 0\r\n\r\n"          // skipped
+      + frame(body));                          // valid — must be returned
+    auto result = eta::dap::read_message(in);
+    BOOST_REQUIRE(result.has_value());
+    BOOST_CHECK_EQUAL(*result, body);
+}
+
+BOOST_AUTO_TEST_SUITE_END() // dap_framing_robustness
+
+
