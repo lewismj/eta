@@ -1206,6 +1206,124 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id) ? True : False;
     });
 
+    // ========================================================================
+    // Attributed variables (Phase 3)
+    // ------------------------------------------------------------------------
+    // (put-attr v 'module value)  — install/overwrite attribute (trailed)
+    // (get-attr v 'module)        — returns value, or #f if missing
+    // (del-attr v 'module)        — remove attribute; #t if removed, #f if absent (trailed)
+    // (attr-var? v)               — #t iff v is an unbound LogicVar with
+    //                               at least one attribute
+    // (register-attr-hook! 'module proc)
+    //                             — register a hook called as
+    //                               (proc var bound-value attr-value)
+    //                               when `var` with attribute 'module is
+    //                               bound by unify.  Returns #f on failure
+    //                               (which unifies fails).  Hook registry
+    //                               is VM-lifetime and NOT trailed.
+    // ========================================================================
+
+    // Helper: extract the InternId from a symbol LispVal, or nullopt.
+    auto get_symbol_id = [](LispVal v) -> std::optional<memory::intern::InternId> {
+        if (!ops::is_boxed(v) || ops::tag(v) != Tag::Symbol) return std::nullopt;
+        return static_cast<memory::intern::InternId>(ops::payload(v));
+    };
+
+    env.register_builtin("put-attr", 3, false,
+        [&heap, get_symbol_id, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            const LispVal v   = args[0];
+            const LispVal mod = args[1];
+            const LispVal val = args[2];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "put-attr: first arg must be a logic variable"}});
+            auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(ops::payload(v));
+            if (!lv)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "put-attr: first arg must be a logic variable"}});
+            auto key = get_symbol_id(mod);
+            if (!key)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "put-attr: second arg must be a symbol (module name)"}});
+            // Trail the prior state so backtracking undoes the write.
+            auto it = lv->attrs.find(*key);
+            if (vm) {
+                vm::TrailEntry e{};
+                e.kind       = vm::TrailEntry::Kind::Attr;
+                e.var        = v;
+                e.module_key = *key;
+                if (it != lv->attrs.end()) { e.had_prev = true;  e.prev_value = it->second; }
+                else                       { e.had_prev = false; e.prev_value = nanbox::Nil; }
+                vm->trail_stack().push_back(e);
+            }
+            lv->attrs[*key] = val;
+            return True;
+        });
+
+    env.register_builtin("get-attr", 2, false,
+        [&heap, get_symbol_id](Args args) -> std::expected<LispVal, RuntimeError> {
+            const LispVal v   = args[0];
+            const LispVal mod = args[1];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
+            auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(ops::payload(v));
+            if (!lv) return False;
+            auto key = get_symbol_id(mod);
+            if (!key)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "get-attr: second arg must be a symbol (module name)"}});
+            auto it = lv->attrs.find(*key);
+            return (it == lv->attrs.end()) ? False : it->second;
+        });
+
+    env.register_builtin("del-attr", 2, false,
+        [&heap, get_symbol_id, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            const LispVal v   = args[0];
+            const LispVal mod = args[1];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
+            auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(ops::payload(v));
+            if (!lv) return False;
+            auto key = get_symbol_id(mod);
+            if (!key)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "del-attr: second arg must be a symbol (module name)"}});
+            auto it = lv->attrs.find(*key);
+            if (it == lv->attrs.end()) return False;
+            // Trail so backtracking re-installs the attribute.
+            if (vm) {
+                vm::TrailEntry e{};
+                e.kind       = vm::TrailEntry::Kind::Attr;
+                e.var        = v;
+                e.module_key = *key;
+                e.had_prev   = true;
+                e.prev_value = it->second;
+                vm->trail_stack().push_back(e);
+            }
+            lv->attrs.erase(it);
+            return True;
+        });
+
+    env.register_builtin("attr-var?", 1, false,
+        [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+            const LispVal v = args[0];
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
+            auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(ops::payload(v));
+            if (!lv) return False;
+            // An attributed variable must be unbound and have at least one attr.
+            return (!lv->binding.has_value() && !lv->attrs.empty()) ? True : False;
+        });
+
+    env.register_builtin("register-attr-hook!", 2, false,
+        [get_symbol_id, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "register-attr-hook!: requires a running VM"}});
+            auto key = get_symbol_id(args[0]);
+            if (!key)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "register-attr-hook!: first arg must be a symbol (module name)"}});
+            vm->attr_unify_hooks()[*key] = args[1];
+            return True;
+        });
+
     // ------------------------------------------------------------------
     // logic-var/named : create a fresh unbound LogicVar with a debug name
     // ------------------------------------------------------------------

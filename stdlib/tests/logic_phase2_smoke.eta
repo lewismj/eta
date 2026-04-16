@@ -1,0 +1,177 @@
+;;; logic_phase2_smoke.eta — Smoke test for Phase 2 miniKanren-style
+;;; combinators added to std.logic.
+;;;
+;;; Exercises (in order):
+;;;   goal / ==o / succeedo / failo
+;;;   disj, conj (incl. Cartesian product)
+;;;   conde
+;;;   onceo (commitment)
+;;;   conda / condu (soft cut)
+;;;   fresh / fresh-vars
+;;;   run* and run-n (laziness)
+;;;   logic-throw / logic-catch (with trail unwind)
+;;;
+;;; Run with:
+;;;   $env:ETA_MODULE_PATH="stdlib"
+;;;   etai stdlib/tests/logic_phase2_smoke.eta
+
+(module logic-phase2-smoke
+  (import std.core std.logic)
+  (begin
+
+    (define fail-count 0)
+
+    (defun chk (label expected actual)
+      (display label)
+      (display " => ")
+      (display actual)
+      (if (equal? actual expected)
+          (display "   [ok]")
+          (begin (display "   [FAIL expected ")
+                 (display expected)
+                 (display "]")
+                 (set! fail-count (+ fail-count 1))))
+      (newline))
+
+    (display "phase2 smoke: start") (newline)
+
+    ;; ── 1. Atomic goal constructors ──────────────────────────────────
+    (let* ((x  (logic-var))
+           (sols (run* (lambda () (deref-lvar x))
+                       (==o x 42))))
+      (chk "==o bind x=42" '(42) sols))
+
+    (chk "succeedo  run*" '(#t)
+         (run* (lambda () #t) (succeedo)))
+
+    (chk "failo     run*" '()
+         (run* (lambda () #t) (failo)))
+
+    ;; ── 2. disj ──────────────────────────────────────────────────────
+    (let* ((x  (logic-var))
+           (sols (run* (lambda () (deref-lvar x))
+                       (disj (==o x 'a) (==o x 'b) (==o x 'c)))))
+      (chk "disj 3-way" '(a b c) sols))
+
+    (let ((x  (logic-var)))
+      (chk "disj identity (empty) fails" '()
+           (run* (lambda () (deref-lvar x)) (disj))))
+
+    ;; ── 3. conj (Cartesian product) ──────────────────────────────────
+    (let* ((x  (logic-var))
+           (y  (logic-var))
+           (sols (run*
+                   (lambda () (list (deref-lvar x) (deref-lvar y)))
+                   (conj (disj (==o x 1) (==o x 2))
+                         (disj (==o y 'a) (==o y 'b))))))
+      (chk "conj 2x2 cartesian"
+           '((1 a) (1 b) (2 a) (2 b))
+           sols))
+
+    ;; Empty conj is identity (single succeeding branch).
+    (chk "conj empty == succeedo" '(#t)
+         (run* (lambda () #t) (conj)))
+
+    ;; conj with a failing branch eliminates all combinations.
+    (let* ((x  (logic-var))
+           (sols (run* (lambda () (deref-lvar x))
+                       (conj (==o x 1) (==o x 2)))))
+      (chk "conj contradiction fails" '() sols))
+
+    ;; ── 4. conde ─────────────────────────────────────────────────────
+    (let* ((x  (logic-var))
+           (y  (logic-var))
+           (sols (run*
+                   (lambda () (list (deref-lvar x) (deref-lvar y)))
+                   (conde (list (==o x 1))
+                          (list (==o x 2) (==o y 10))))))
+      (chk "conde two clauses"
+           '((1 _) (2 10))                ; first clause leaves y unbound
+           (list (list (car (car sols))
+                       (if (logic-var? (cadr (car sols))) '_ (cadr (car sols))))
+                 (cadr sols))))
+
+    ;; ── 5. onceo ─────────────────────────────────────────────────────
+    (let* ((x  (logic-var))
+           (sols (run* (lambda () (deref-lvar x))
+                       (onceo (disj (==o x 'first)
+                                    (==o x 'second)
+                                    (==o x 'third))))))
+      (chk "onceo commits to first" '(first) sols))
+
+    ;; onceo over all-failing disj returns no solutions.
+    (chk "onceo over failo" '()
+         (run* (lambda () #t) (onceo (failo))))
+
+    ;; ── 6. conda / condu ─────────────────────────────────────────────
+    (let* ((x  (logic-var))
+           (sols (run* (lambda () (deref-lvar x))
+                       (conda (==o x 'ok)        ; test
+                              (succeedo)         ; then
+                              (==o x 'else)))))  ; else (goalset)
+      (chk "conda test succeeds" '(ok) sols))
+
+    (let* ((x  (logic-var))
+           (sols (run* (lambda () (deref-lvar x))
+                       (conda (failo)            ; test
+                              (succeedo)         ; then
+                              (==o x 'else)))))  ; else
+      (chk "conda test fails -> else" '(else) sols))
+
+    (let* ((x  (logic-var))
+           (sols (run* (lambda () (deref-lvar x))
+                       (condu (disj (==o x 1) (==o x 2))
+                              (succeedo)
+                              (failo)))))
+      (chk "condu commits to first test" '(1) sols))
+
+    ;; ── 7. fresh / fresh-vars ────────────────────────────────────────
+    (chk "fresh-vars 3 count"   3 (length (fresh-vars 3)))
+    (chk "fresh-vars 0 empty"   '() (fresh-vars 0))
+
+    (let ((sols (run*
+                  (lambda () #t)
+                  (fresh 2 (lambda (a b)
+                             (conj (==o a 1)
+                                   (==o b 2)))))))
+      (chk "fresh 2 conj" '(#t) sols))
+
+    ;; ── 8. run-n laziness ────────────────────────────────────────────
+    (let* ((x  (logic-var))
+           (big (disj (==o x 1) (==o x 2) (==o x 3)
+                      (==o x 4) (==o x 5) (==o x 6))))
+      (chk "run-n 0" '() (run-n 0 (lambda () (deref-lvar x)) big))
+      (chk "run-n 1" '(1) (run-n 1 (lambda () (deref-lvar x)) big))
+      (chk "run-n 3" '(1 2 3) (run-n 3 (lambda () (deref-lvar x)) big))
+      (chk "run-n 100 caps at all" '(1 2 3 4 5 6)
+           (run-n 100 (lambda () (deref-lvar x)) big)))
+
+    ;; ── 9. logic-throw / logic-catch ─────────────────────────────────
+    (chk "logic-catch normal return" 42
+         (logic-catch 'esc
+           (lambda () 42)
+           (lambda (v) (list 'got v))))
+
+    (chk "logic-catch handler fires" '(got oops)
+         (logic-catch 'esc
+           (lambda () (logic-throw 'esc 'oops))
+           (lambda (v) (list 'got v))))
+
+    ;; Trail unwinds on escape: x should be unbound after catch.
+    (let ((x (logic-var)))
+      (logic-catch 'esc
+        (lambda () (unify x 'bound-inside)
+                   (logic-throw 'esc 'bye))
+        (lambda (v) v))
+      (chk "logic-catch unwinds trail" #t (logic-var? x)))
+
+    ;; ── Summary ──────────────────────────────────────────────────────
+    (newline)
+    (if (= fail-count 0)
+        (display "phase2 smoke: ALL PASS")
+        (begin (display "phase2 smoke: ")
+               (display fail-count)
+               (display " FAILURE(S)")))
+    (newline)))
+
+

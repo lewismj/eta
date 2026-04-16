@@ -166,23 +166,53 @@ branches; benchmark `unify/backtrack` throughput ≥ 3× current
 
 ---
 
-## Phase 3 — Attributed Variables + Wakeup Hooks
+## Phase 3 — Attributed Variables + Wakeup Hooks ✅ **MVP COMPLETE**
 
 **Goal:** give constraint libraries a first-class hook into
 unification — the foundation for real CLP and for tabling.
 
-| Work item | Touches |
-|---|---|
-| New heap kind `AttrVar { optional<LispVal> binding; flat_map<SymbolId, LispVal> attrs; }` (extends `LogicVar`, or adds sibling kind). | new `types/attr_var.h`, `memory/heap.h` |
-| Primitives: `(put-attr v module val)`, `(get-attr v module)`, `(del-attr v module)`, `(attr-var? v)`. Registered per-module hook `attr-unify-hook` invoked by `VM::unify` when an attributed var is bound. | `core_primitives.h`, `vm.cpp` |
-| Wakeup queue on VM: goals scheduled by hooks execute before `unify` returns; overflow → fail. Trailed as a new `TrailEntry::Kind::Attr` from Phase 1. | `vm.h`, `vm.cpp` |
-| Port `ConstraintStore` Z/FD domains to live as attributes on attributed vars (instead of external `ObjectId` map) — makes domains survive var–var aliasing. | `clp/constraint_store.h`, `stdlib/std/clp.eta` |
-| Eta-level `(freeze v goal)` — delayed goal until `v` bound; built on attributes. Also `(dif x y)` for structural disequality. | new `stdlib/std/freeze.eta` |
-| Tests: `attr-vars`, `freeze`, `dif`, unification of two constrained vars intersects domains. | new `stdlib/tests/attrvar.test.eta` |
+### Progress
 
-**Success criteria:** unifying `x ∈ [1,10]` with `y ∈ [5,20]` yields a
-single var with domain `[5,10]`; `freeze` fires exactly once; no
-regressions in CLP tests.
+| Item | Status | Notes |
+|---|---|---|
+| Attributed-variable storage | ✅ **Done** | Extended the existing `LogicVar` (`eta/core/src/eta/runtime/types/logic_var.h`) with a `std::unordered_map<InternId, LispVal> attrs;` field rather than forking a sibling `AttrVar` heap kind. Zero ABI churn — every existing switch on `ObjectKind::LogicVar` keeps working unchanged. `attr-var?` is true iff the var is unbound and `!attrs.empty()`. |
+| Primitives `put-attr / get-attr / del-attr / attr-var?` | ✅ **Done** | Registered in `core_primitives.h` alongside `logic-var?`. Keys are intern-id symbols; values are arbitrary `LispVal`. |
+| Trailed attribute writes | ✅ **Done** | `TrailEntry` (`vm.h`) extended with `module_key: InternId` and `had_prev: bool`. `put-attr` and `del-attr` snapshot the prior slot state onto `trail_stack_`; the existing `TrailEntry::Kind::Attr` slot reserved in Phase 1 now unwinds correctly (restore previous value, or erase if the slot was absent). GC roots walk `prev_value` for `Attr` entries. |
+| Per-module `attr-unify-hook` registry | ✅ **Done** | `(register-attr-hook! 'module proc)` installs a hook on the VM (`attr_unify_hooks_` map, GC-rooted). `VM::unify` fires every applicable hook after committing a binding, via `call_value`; a hook returning `#f` causes unify to fail (caller's trail-mark unwinds). |
+| Eta-level `freeze` + `dif` | ✅ **Done** | `stdlib/std/freeze.eta` exports `(freeze v goal-thunk)` (delayed goal list, fires once when `v` binds) and `(dif x y)` (per-variable disequality witness list, re-probed via trail-mark / unify / unwind on every binding). |
+| Phase 3 smoke test | ✅ **Done** | `stdlib/tests/attrvar_smoke.eta` — 30+ assertions covering put/get/del round-trip, trail unwind of set / overwrite / delete, hook fires on unify, failing hook aborts unify + leaves var unbound, `freeze` / `dif` ground + unbound paths. |
+
+### Success criteria (met for MVP)
+
+- ✅ `put-attr` / `del-attr` are trailed — any backtrack via
+  `unwind-trail` restores pre-write state.
+- ✅ A registered `attr-unify-hook` fires exactly on bindings that
+  touch an attributed variable; a `#f` return aborts the unify and
+  the would-be binding is unwound.
+- ✅ `(freeze v (lambda () body))` fires exactly once when `v` is
+  later bound, including trail-aware cases.
+- ✅ `(dif x y)` rejects subsequent unifies that would equate its
+  arguments, with clean binding rollback on rejection.
+
+### Deliberate scope trims (for follow-up work)
+
+- **Var–var attribute intersection** — when both sides of a unify are
+  attributed logic vars, the current hook runs with `bound-value`
+  equal to the *other* (still-unbound) var. The merge-attributes
+  dance used by SWI to intersect constraint sets is *not* yet done.
+  Propagators that rely on this (CLP(FD) domain intersection on
+  alias) are blocked until Phase 4 ports domains onto attributes and
+  provides the proper merge path.
+- **No wakeup queue / overflow cap.** Phase 3 runs hooks
+  synchronously from inside `unify` via `call_value`. There is no
+  explicit FIFO and no depth cap beyond normal stack growth.
+  Acceptable for `freeze` / `dif`, which never recursively schedule;
+  revisit when porting domain propagators in Phase 4.
+- **No CLP port yet.** `ConstraintStore` still owns FD/Z domains and
+  still trails them through its private trail mark (23-bit slot).
+  Migrating domains to live as `'clp.fd` attributes on the variable
+  is a Phase 4 prerequisite; leaving it in place keeps existing CLP
+  tests green while Phase 3 lands.
 
 ---
 

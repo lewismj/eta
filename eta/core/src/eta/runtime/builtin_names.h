@@ -140,6 +140,15 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("error",      1, true);
     r("platform",   0, false);
     r("logic-var?", 1, false);
+    // Phase 3 — attributed variables.  Must stay in the same order as the
+    // register_builtin calls in core_primitives.h immediately after
+    // `logic-var?` and before `logic-var/named` (patch-mode validates
+    // name/arity per slot).
+    r("put-attr",            3, false);
+    r("get-attr",            2, false);
+    r("del-attr",            2, false);
+    r("attr-var?",           1, false);
+    r("register-attr-hook!", 2, false);
     r("logic-var/named", 1, false);
     r("var-name", 1, false);
     r("set-occurs-check!", 1, false);

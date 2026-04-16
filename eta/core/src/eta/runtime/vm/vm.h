@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -76,11 +77,12 @@ struct WindFrame {
 
 /// A single undoable mutation recorded by the unification / CLP machinery.
 ///
-/// Phase 1 of the logic/CLP roadmap generalises the per-VM trail from a raw
-/// `std::vector<LispVal>` (binding-only) to a tagged entry.  Attributed
-/// variables in Phase 3 will add a new `Attr` kind that records the previous
-/// attribute value so wakeup-induced bindings can be cleanly undone on
-/// backtracking; until then only `Bind` is produced.
+/// Phase 1 of the logic/CLP roadmap generalised the per-VM trail from a raw
+/// `std::vector<LispVal>` (binding-only) to a tagged entry.  Phase 3 fills
+/// in the `Attr` case: attributed-variable writes record the InternId of
+/// the module key, the previous value, and a `had_prev` flag so unwind can
+/// distinguish "attribute previously unset" (erase) from "previously held
+/// a value, possibly Nil" (reinstate prev_value).
 ///
 /// Domain changes are still undone via `ConstraintStore::unwind` and are not
 /// stored here — their prev-state is kept in the store's private trail so we
@@ -88,11 +90,13 @@ struct WindFrame {
 struct TrailEntry {
     enum class Kind : std::uint8_t {
         Bind,   ///< LogicVar `var` was bound; on undo, reset binding to nullopt
-        Attr,   ///< Attributed var: `var` had module-attr written (Phase 3, reserved)
+        Attr,   ///< Attributed var: `var`'s attribute `module_key` was mutated
     };
-    Kind    kind{Kind::Bind};
-    LispVal var{nanbox::Nil};       ///< HeapObject ref to the LogicVar / AttrVar
-    LispVal prev_value{nanbox::Nil}; ///< For Attr kind only; unused for Bind
+    Kind                          kind{Kind::Bind};
+    LispVal                       var{nanbox::Nil};        ///< HeapObject ref to the LogicVar
+    LispVal                       prev_value{nanbox::Nil}; ///< Attr: previous attr value (only if had_prev)
+    memory::intern::InternId      module_key{0};           ///< Attr: which attribute slot
+    bool                          had_prev{false};         ///< Attr: was prev_value meaningful?
 };
 
 /// A live exception catch frame installed by SetupCatch.
@@ -207,6 +211,13 @@ public:
     clp::ConstraintStore& constraint_store() { return constraint_store_; }
     const clp::ConstraintStore& constraint_store() const { return constraint_store_; }
 
+    // Phase 3: expose trail + hook registry to builtins.
+    std::vector<TrailEntry>& trail_stack() { return trail_stack_; }
+    const std::vector<TrailEntry>& trail_stack() const { return trail_stack_; }
+
+    std::unordered_map<memory::intern::InternId, LispVal>& attr_unify_hooks() { return attr_unify_hooks_; }
+    const std::unordered_map<memory::intern::InternId, LispVal>& attr_unify_hooks() const { return attr_unify_hooks_; }
+
     // ---- Occurs-check policy (Phase 1 of the logic/CLP roadmap) ----
     // Controls VM::unify behaviour when a binding would create a cyclic term:
     //   Always → run occurs-check, fail unification on cycle (current default, safe).
@@ -260,6 +271,12 @@ private:
     std::vector<TrailEntry> trail_stack_;  ///< logic-var / CLP attribute trail for backtracking
     clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
     std::vector<LispVal> active_tapes_;    ///< Stack of active AD tapes (supports nesting)
+
+    // Phase 3: attributed-variable unify hooks, keyed by module symbol (InternId).
+    // Value is a callable LispVal (closure or primitive) invoked as
+    //   (hook var bound-value attr-value)  →  #t on success / #f on failure.
+    // Not trailed — hook registry is VM-lifetime, not backtrack-scoped.
+    std::unordered_map<memory::intern::InternId, LispVal> attr_unify_hooks_;
 
     // Occurs-check policy (Phase 1 — see set_occurs_check_mode).
     OccursCheckMode occurs_check_mode_{OccursCheckMode::Always};

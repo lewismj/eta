@@ -112,6 +112,8 @@ void VM::collect_garbage() {
             visit(e.var);
             if (e.kind == TrailEntry::Kind::Attr) visit(e.prev_value);
         }
+        // Phase 3: attr-unify-hook procedures are VM-lifetime roots.
+        for (const auto& [_k, hook] : attr_unify_hooks_) visit(hook);
         // Mark active AD tape stack
         for (auto v : active_tapes_) visit(v);
     });
@@ -994,9 +996,13 @@ std::expected<void, RuntimeError> VM::run_loop() {
                                 lv->binding = std::nullopt;
                             break;
                         case TrailEntry::Kind::Attr:
-                            // Reserved for Phase 3 attributed variables.
-                            // When implemented, restore the module-attribute slot
-                            // to entry.prev_value on the AttrVar.
+                            // Phase 3: restore the attribute slot on the LogicVar.
+                            // had_prev == false → the slot was absent, erase.
+                            // had_prev == true  → slot held prev_value, reinstall.
+                            if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(entry.var)) {
+                                if (entry.had_prev) lv->attrs[entry.module_key] = entry.prev_value;
+                                else                lv->attrs.erase(entry.module_key);
+                            }
                             break;
                     }
                     trail_stack_.pop_back();
@@ -1603,6 +1609,30 @@ bool VM::unify(LispVal a, LispVal b) {
         return clp::domain_contains_int(*dom, n.int_val);
     };
 
+    // Helper (Phase 3): fire attr-unify-hooks after a logic var has been bound.
+    // For each attribute whose module has a registered hook, invoke
+    //   (hook var bound-value attr-value)
+    // synchronously.  The hook must return #t on success or #f on failure.
+    // A failing hook causes unify to fail; the caller's trail-mark / unwind
+    // machinery restores both the binding and any attribute writes the hook
+    // may have made before returning.  Hook execution order is arbitrary.
+    auto fire_attr_hooks = [&](types::LogicVar* lv, LispVal var_ref,
+                               LispVal bound_val) -> bool {
+        if (!lv || lv->attrs.empty() || attr_unify_hooks_.empty()) return true;
+        // Snapshot keys so we are not iterating while the hook mutates attrs.
+        std::vector<std::pair<memory::intern::InternId, LispVal>> pairs;
+        pairs.reserve(lv->attrs.size());
+        for (const auto& kv : lv->attrs) pairs.emplace_back(kv.first, kv.second);
+        for (const auto& [key, attr_val] : pairs) {
+            auto it = attr_unify_hooks_.find(key);
+            if (it == attr_unify_hooks_.end()) continue;
+            auto res = call_value(it->second, {var_ref, bound_val, attr_val});
+            if (!res)                        return false;  // runtime error from hook
+            if (*res == nanbox::False)       return false;  // hook explicitly failed
+        }
+        return true;
+    };
+
     // a is an unbound logic variable
     if (auto* lva = try_get_as<ObjectKind::LogicVar, types::LogicVar>(a)) {
         if (!lva->binding.has_value()) {
@@ -1612,8 +1642,30 @@ bool VM::unify(LispVal a, LispVal b) {
                 return false;   // would create cycle
             }
             if (!check_domain(a, b)) return false;  // CLP domain violation
+            // Phase 3: snapshot trail before binding + hook dispatch so we
+            // can roll back atomically if any hook rejects.
+            const auto snap = trail_stack_.size();
             lva->binding = b;
             trail_stack_.push_back({TrailEntry::Kind::Bind, a, nanbox::Nil});
+            if (!fire_attr_hooks(lva, a, b)) {
+                // Unwind every trail entry made since snap — restores
+                // the binding AND any attribute / bind writes performed
+                // inside hooks — so unify is atomic on failure.
+                while (trail_stack_.size() > snap) {
+                    auto& e = trail_stack_.back();
+                    if (e.kind == TrailEntry::Kind::Bind) {
+                        if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(e.var))
+                            lv->binding = std::nullopt;
+                    } else { // Attr
+                        if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(e.var)) {
+                            if (e.had_prev) lv->attrs[e.module_key] = e.prev_value;
+                            else            lv->attrs.erase(e.module_key);
+                        }
+                    }
+                    trail_stack_.pop_back();
+                }
+                return false;
+            }
             return true;
         }
     }
@@ -1627,8 +1679,25 @@ bool VM::unify(LispVal a, LispVal b) {
                 return false;   // would create cycle
             }
             if (!check_domain(b, a)) return false;  // CLP domain violation
+            const auto snap = trail_stack_.size();
             lvb->binding = a;
             trail_stack_.push_back({TrailEntry::Kind::Bind, b, nanbox::Nil});
+            if (!fire_attr_hooks(lvb, b, a)) {
+                while (trail_stack_.size() > snap) {
+                    auto& e = trail_stack_.back();
+                    if (e.kind == TrailEntry::Kind::Bind) {
+                        if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(e.var))
+                            lv->binding = std::nullopt;
+                    } else { // Attr
+                        if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(e.var)) {
+                            if (e.had_prev) lv->attrs[e.module_key] = e.prev_value;
+                            else            lv->attrs.erase(e.module_key);
+                        }
+                    }
+                    trail_stack_.pop_back();
+                }
+                return false;
+            }
             return true;
         }
     }
