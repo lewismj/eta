@@ -243,7 +243,15 @@ private:
     std::expected<void, RuntimeError> run_loop();
     std::expected<void, RuntimeError> handle_return(LispVal result);
     void push(LispVal val) { stack_.push_back(val); }
-    LispVal pop() { LispVal v = stack_.back(); stack_.pop_back(); return v; }
+    LispVal pop() {
+        if (stack_.empty()) [[unlikely]] {
+            // This indicates corrupt bytecode; run_loop will catch the
+            // InvalidInstruction error returned by ops that call pop().
+            // Return Nil to avoid UB from stack_.back() on empty vector.
+            return nanbox::Nil;
+        }
+        LispVal v = stack_.back(); stack_.pop_back(); return v;
+    }
 
     void unpack_to_stack(LispVal value);
 

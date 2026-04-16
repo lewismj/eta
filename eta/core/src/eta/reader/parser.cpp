@@ -241,6 +241,10 @@ namespace eta::reader::parser {
                 else if (c >= 'A' && c <= 'F') d = 10u + unsigned(c - 'A');
                 else { err = "invalid digit"; return 0; }
                 if (d >= unsigned(base)) { err = "digit out of range"; return 0; }
+                // Guard against overflow before multiplying: if the next step would
+                // push value > 255, reject early.  This also prevents unsigned wrap-around
+                // on 32-bit systems where unsigned long is 32 bits.
+                if (value > (255u - d) / unsigned(base)) { err = "byte out of range"; return 0; }
                 value = value * unsigned(base) + d;
             }
         }
@@ -302,12 +306,24 @@ namespace eta::reader::parser {
                     try {
                         val = static_cast<int64_t>(std::stoll(num.text, nullptr, num.radix));
                     } catch (...) {
-                        // If it fails to parse as stoll (e.g. out of range), fallback to double or error
-                        // For now, let's just use stod as fallback if it's too large for int64
-                        val = std::stod(num.text);
+                        // stoll failed (e.g. out-of-range).  Only decimal literals can
+                        // meaningfully fall back to a double; non-decimal overflow is an
+                        // error because stod doesn't accept hex/octal/binary digit strings.
+                        if (num.radix != 10) {
+                            return std::unexpected(ParseError{ParseErrorKind::InvalidNumericLiteral, tok.span});
+                        }
+                        try {
+                            val = std::stod(num.text);
+                        } catch (...) {
+                            return std::unexpected(ParseError{ParseErrorKind::InvalidNumericLiteral, tok.span});
+                        }
                     }
                 } else {
-                    val = std::stod(num.text);
+                    try {
+                        val = std::stod(num.text);
+                    } catch (...) {
+                        return std::unexpected(ParseError{ParseErrorKind::InvalidNumericLiteral, tok.span});
+                    }
                 }
                 parser::Number n; n.span = tok.span; n.value = val;
                 return box(SExprValue{std::move(n)});

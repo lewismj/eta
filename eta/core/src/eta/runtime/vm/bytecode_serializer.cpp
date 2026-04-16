@@ -15,15 +15,44 @@ namespace eta::runtime::vm {
 using namespace nanbox;
 
 // ============================================================================
+// Little-endian conversion helpers
+// ============================================================================
+// All multi-byte values are stored in little-endian order on disk.
+// On little-endian hosts these are no-ops; on big-endian hosts they swap bytes.
+
+namespace {
+
+template<std::integral T>
+T host_to_le(T v) noexcept {
+    if constexpr (std::endian::native == std::endian::little)
+        return v;
+    return std::byteswap(v);
+}
+
+inline double host_to_le_f64(double v) noexcept {
+    if constexpr (std::endian::native == std::endian::little)
+        return v;
+    return std::bit_cast<double>(std::byteswap(std::bit_cast<uint64_t>(v)));
+}
+
+inline int64_t host_to_le_i64(int64_t v) noexcept {
+    if constexpr (std::endian::native == std::endian::little)
+        return v;
+    return static_cast<int64_t>(std::byteswap(static_cast<uint64_t>(v)));
+}
+
+} // anonymous namespace
+
+// ============================================================================
 // Binary I/O helpers (little-endian)
 // ============================================================================
 
 void BytecodeSerializer::write_u8 (std::ostream& os, uint8_t  v) { os.write(reinterpret_cast<const char*>(&v), 1); }
-void BytecodeSerializer::write_u16(std::ostream& os, uint16_t v) { os.write(reinterpret_cast<const char*>(&v), 2); }
-void BytecodeSerializer::write_u32(std::ostream& os, uint32_t v) { os.write(reinterpret_cast<const char*>(&v), 4); }
-void BytecodeSerializer::write_u64(std::ostream& os, uint64_t v) { os.write(reinterpret_cast<const char*>(&v), 8); }
-void BytecodeSerializer::write_i64(std::ostream& os, int64_t  v) { os.write(reinterpret_cast<const char*>(&v), 8); }
-void BytecodeSerializer::write_f64(std::ostream& os, double   v) { os.write(reinterpret_cast<const char*>(&v), 8); }
+void BytecodeSerializer::write_u16(std::ostream& os, uint16_t v) { v = host_to_le(v); os.write(reinterpret_cast<const char*>(&v), 2); }
+void BytecodeSerializer::write_u32(std::ostream& os, uint32_t v) { v = host_to_le(v); os.write(reinterpret_cast<const char*>(&v), 4); }
+void BytecodeSerializer::write_u64(std::ostream& os, uint64_t v) { v = host_to_le(v); os.write(reinterpret_cast<const char*>(&v), 8); }
+void BytecodeSerializer::write_i64(std::ostream& os, int64_t  v) { v = host_to_le_i64(v); os.write(reinterpret_cast<const char*>(&v), 8); }
+void BytecodeSerializer::write_f64(std::ostream& os, double   v) { v = host_to_le_f64(v); os.write(reinterpret_cast<const char*>(&v), 8); }
 
 void BytecodeSerializer::write_str(std::ostream& os, std::string_view s) {
     write_u32(os, static_cast<uint32_t>(s.size()));
@@ -31,15 +60,17 @@ void BytecodeSerializer::write_str(std::ostream& os, std::string_view s) {
 }
 
 bool BytecodeSerializer::read_u8 (std::istream& is, uint8_t&  v) { is.read(reinterpret_cast<char*>(&v), 1); return is.good(); }
-bool BytecodeSerializer::read_u16(std::istream& is, uint16_t& v) { is.read(reinterpret_cast<char*>(&v), 2); return is.good(); }
-bool BytecodeSerializer::read_u32(std::istream& is, uint32_t& v) { is.read(reinterpret_cast<char*>(&v), 4); return is.good(); }
-bool BytecodeSerializer::read_u64(std::istream& is, uint64_t& v) { is.read(reinterpret_cast<char*>(&v), 8); return is.good(); }
-bool BytecodeSerializer::read_i64(std::istream& is, int64_t&  v) { is.read(reinterpret_cast<char*>(&v), 8); return is.good(); }
-bool BytecodeSerializer::read_f64(std::istream& is, double&   v) { is.read(reinterpret_cast<char*>(&v), 8); return is.good(); }
+bool BytecodeSerializer::read_u16(std::istream& is, uint16_t& v) { is.read(reinterpret_cast<char*>(&v), 2); if (!is.good()) return false; v = host_to_le(v); return true; }
+bool BytecodeSerializer::read_u32(std::istream& is, uint32_t& v) { is.read(reinterpret_cast<char*>(&v), 4); if (!is.good()) return false; v = host_to_le(v); return true; }
+bool BytecodeSerializer::read_u64(std::istream& is, uint64_t& v) { is.read(reinterpret_cast<char*>(&v), 8); if (!is.good()) return false; v = host_to_le(v); return true; }
+bool BytecodeSerializer::read_i64(std::istream& is, int64_t&  v) { is.read(reinterpret_cast<char*>(&v), 8); if (!is.good()) return false; v = host_to_le_i64(v); return true; }
+bool BytecodeSerializer::read_f64(std::istream& is, double&   v) { is.read(reinterpret_cast<char*>(&v), 8); if (!is.good()) return false; v = host_to_le_f64(v); return true; }
 
 bool BytecodeSerializer::read_str(std::istream& is, std::string& s) {
     uint32_t len;
     if (!read_u32(is, len)) return false;
+    // Reject strings that would cause unbounded allocation (DoS guard).
+    if (len > MAX_STRING_LEN) return false;
     s.resize(len);
     is.read(s.data(), len);
     return is.good();
@@ -127,7 +158,10 @@ void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
             write_u8(os, CT_Nil);
             return;
         case Tag::TapeRef:
-            // TapeRef values are runtime-only (never serialized into bytecode)
+            // TapeRef values are runtime-only and should never appear in compiled
+            // bytecode.  Emit CT_Nil as a safe placeholder so the constant-count
+            // alignment in the file is preserved if one somehow slips through.
+            write_u8(os, CT_Nil);
             return;
     }
 }
@@ -224,6 +258,8 @@ BytecodeSerializer::read_constant(std::istream& is) const {
         case CT_HeapVec: {
             uint32_t len;
             if (!read_u32(is, len)) return std::unexpected(SerializerError::Truncated);
+            // Guard against unbounded vector allocation from crafted files.
+            if (len > MAX_VEC_LEN) return std::unexpected(SerializerError::CorruptConstant);
             std::vector<LispVal> elems;
             elems.reserve(len);
             auto roots = heap_.make_external_root_frame();
@@ -458,7 +494,63 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         result.registry.add(std::move(func));
     }
 
+    // Lightweight structural verification of every deserialized function.
+    for (uint32_t f = 0; f < result.registry.size(); ++f) {
+        const auto* fn = result.registry.get(f);
+        if (!fn) continue;
+        auto vr = verify_function(*fn);
+        if (!vr) return std::unexpected(vr.error());
+    }
+
     return result;
+}
+
+} // namespace eta::runtime::vm
+
+// ============================================================================
+// Bytecode verifier (lightweight structural check)
+// ============================================================================
+
+namespace eta::runtime::vm {
+
+std::expected<void, SerializerError>
+BytecodeSerializer::verify_function(const BytecodeFunction& func) {
+    // Largest opcode value we recognise as legitimate (_Reserved2 is the last
+    // entry in the enum and must remain serialisable even though the VM
+    // converts it to a NotImplemented error at runtime).
+    constexpr auto last_valid = static_cast<uint8_t>(OpCode::_Reserved2);
+
+    const auto nconsts    = static_cast<uint32_t>(func.constants.size());
+    const auto stack_size = func.stack_size;
+
+    for (const auto& instr : func.code) {
+        const uint8_t op = static_cast<uint8_t>(instr.opcode);
+
+        // Reject completely unknown opcode bytes.
+        if (op > last_valid)
+            return std::unexpected(SerializerError::InvalidBytecode);
+
+        // Constant-index instructions: arg is an index into constants[].
+        if (instr.opcode == OpCode::LoadConst) {
+            if (nconsts == 0 || instr.arg >= nconsts)
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        // Local-slot instructions: arg is a slot index in [0, stack_size).
+        else if (instr.opcode == OpCode::LoadLocal ||
+                 instr.opcode == OpCode::StoreLocal) {
+            if (stack_size > 0 && instr.arg >= stack_size)
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        // MakeClosure packs (const_idx << 16 | num_upvals) into arg.
+        else if (instr.opcode == OpCode::MakeClosure) {
+            const uint32_t const_idx = instr.arg >> 16;
+            if (nconsts == 0 || const_idx >= nconsts)
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        // All other opcodes: no index-based args requiring static validation.
+    }
+
+    return {};
 }
 
 } // namespace eta::runtime::vm

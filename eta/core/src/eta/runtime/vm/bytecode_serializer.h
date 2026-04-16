@@ -23,6 +23,7 @@ enum class SerializerError : std::uint8_t {
     HashMismatch,
     IOError,
     BuiltinCountMismatch,
+    InvalidBytecode,    ///< post-deserialization structure check failed
 };
 
 constexpr const char* to_string(SerializerError e) noexcept {
@@ -36,6 +37,7 @@ constexpr const char* to_string(SerializerError e) noexcept {
         case IOError:               return "I/O error";
         case BuiltinCountMismatch:  return ".etac was compiled with a different builtin set "
                                            "(e.g. torch-enabled vs non-torch); please recompile with etac";
+        case InvalidBytecode:       return "invalid bytecode (opcode or index out of range)";
     }
     return "unknown serializer error";
 }
@@ -96,8 +98,12 @@ public:
 
     // Format constants
     static constexpr char     MAGIC[4]       = {'E','T','A','C'};
-    static constexpr uint16_t FORMAT_VERSION = 2;
+    static constexpr uint16_t FORMAT_VERSION = 3;   // bumped: LE-canonical + TapeRef/CT_Nil
     static constexpr uint16_t FLAG_HAS_DEBUG = 0x0001;
+
+    // Sanity limits applied during deserialization (prevent DoS from crafted files)
+    static constexpr uint32_t MAX_STRING_LEN = 64u * 1024u;  ///< 64 KiB per string/symbol
+    static constexpr uint32_t MAX_VEC_LEN    = 65535u;       ///< max inline constant-vector len
 
 private:
     memory::heap::Heap& heap_;
@@ -142,6 +148,10 @@ private:
     std::expected<nanbox::LispVal, SerializerError> read_constant(std::istream& is) const;
 
     void write_heap_value(std::ostream& os, nanbox::LispVal v) const;
+
+    /// Lightweight structural verifier: checks that opcode bytes and index args
+    /// are in bounds.  Called after deserializing each BytecodeFunction.
+    static std::expected<void, SerializerError> verify_function(const BytecodeFunction& func);
 };
 
 } // namespace eta::runtime::vm

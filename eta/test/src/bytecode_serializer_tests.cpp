@@ -522,5 +522,113 @@ BOOST_AUTO_TEST_CASE(hash_source_differs) {
     BOOST_CHECK_NE(h1, h2);
 }
 
+// ============================================================================
+// Bytecode verifier tests (bug fix: untrusted bytecode)
+// ============================================================================
+
+// An opcode byte above _Reserved2 (0xFF) must be rejected with InvalidBytecode.
+BOOST_AUTO_TEST_CASE(verifier_invalid_opcode_byte) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name       = "bad_op";
+    func.stack_size = 2;
+    func.constants.push_back(Nil);
+    // 0xFF is above _Reserved2 — completely unknown opcode.
+    func.code.push_back({static_cast<OpCode>(0xFF), 0});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_CHECK(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+}
+
+// LoadConst with arg >= constants.size() must be rejected.
+BOOST_AUTO_TEST_CASE(verifier_loadconst_oob) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name       = "bad_lc";
+    func.stack_size = 2;
+    func.constants.push_back(Nil);   // only index 0 is valid
+    func.code.push_back({OpCode::LoadConst, 99u}); // 99 >= 1
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_CHECK(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+}
+
+// LoadLocal with arg >= stack_size must be rejected.
+BOOST_AUTO_TEST_CASE(verifier_loadlocal_oob) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name       = "bad_ll";
+    func.stack_size = 2;
+    func.constants.push_back(Nil);
+    func.code.push_back({OpCode::LoadLocal, 99u}); // 99 >= stack_size (2)
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_CHECK(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+}
+
+// StoreLocal with arg >= stack_size must be rejected.
+BOOST_AUTO_TEST_CASE(verifier_storelocal_oob) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name       = "bad_sl";
+    func.stack_size = 3;
+    func.constants.push_back(Nil);
+    func.code.push_back({OpCode::StoreLocal, 3u}); // 3 >= stack_size (3)
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_CHECK(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+}
+
+// MakeClosure const_idx (arg >> 16) out of bounds must be rejected.
+BOOST_AUTO_TEST_CASE(verifier_makeclosure_const_oob) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name       = "bad_mc";
+    func.stack_size = 2;
+    func.constants.push_back(Nil); // only index 0 valid
+    // const_idx = 5 (arg = 5 << 16 | 0), 5 >= constants.size() (1)
+    func.code.push_back({OpCode::MakeClosure, (5u << 16) | 0u});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_CHECK(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+}
+
+// ============================================================================
+// DoS guard: string/vector length cap (bug fix: unbounded allocation)
+// ============================================================================
+
+// A function name > MAX_STRING_LEN must be rejected during deserialization.
+BOOST_AUTO_TEST_CASE(deserialize_string_too_long) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    // Create a name longer than MAX_STRING_LEN (64 KiB)
+    func.name = std::string(BytecodeSerializer::MAX_STRING_LEN + 1, 'x');
+    func.stack_size = 0;
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    // Serialize succeeds (the writer has no length cap).
+    // Deserialize must fail with Truncated to signal the rejected oversized read.
+    auto result = roundtrip({}, reg);
+    BOOST_CHECK(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::Truncated);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 

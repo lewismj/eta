@@ -510,6 +510,8 @@ std::expected<void, RuntimeError> VM::run_loop() {
             case OpCode::Nop:
                 break;
             case OpCode::StoreLocal:
+                if (fp_ + instr.arg >= stack_.size()) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "StoreLocal: slot out of range"}});
                 stack_[fp_ + instr.arg] = pop();
                 break;
             case OpCode::Values: {
@@ -603,17 +605,23 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 break;
             }
             case OpCode::LoadLocal:
+                if (fp_ + instr.arg >= stack_.size()) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "LoadLocal: slot out of range"}});
                 push(stack_[fp_ + instr.arg]);
                 break;
             case OpCode::LoadUpval: {
                 auto closure = get_as_or_error<ObjectKind::Closure, Closure>(current_closure_, "LoadUpval outside of a closure");
                 if (!closure) return std::unexpected(closure.error());
+                if (instr.arg >= (*closure)->upvals.size()) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "LoadUpval: index out of range"}});
                 push((*closure)->upvals[instr.arg]);
                 break;
             }
             case OpCode::StoreUpval: {
                 auto closure = get_as_or_error<ObjectKind::Closure, Closure>(current_closure_, "StoreUpval outside of a closure");
                 if (!closure) return std::unexpected(closure.error());
+                if (instr.arg >= (*closure)->upvals.size()) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "StoreUpval: index out of range"}});
                 (*closure)->upvals[instr.arg] = pop();
                 break;
             }
@@ -666,7 +674,10 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 // arg is (const_idx << 16) | num_upvals
                 uint32_t const_idx = instr.arg >> 16;
                 uint32_t num_upvals = instr.arg & 0xFFFF;
-                
+
+                if (const_idx >= current_func_->constants.size()) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "MakeClosure: constant index out of range"}});
+
                 // The constant encodes a function index (high bit set) or legacy raw pointer
                 LispVal func_val = current_func_->constants[const_idx];
 

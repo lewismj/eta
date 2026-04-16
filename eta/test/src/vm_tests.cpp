@@ -2379,4 +2379,63 @@ BOOST_AUTO_TEST_CASE(fact_table_incremental_index_update) {
 
 BOOST_AUTO_TEST_SUITE_END() // fact_table_tests
 
+// ============================================================================
+// VM runtime bounds-check tests (bug fix: unchecked stack/upval ops, bug #1)
+// These tests directly construct BytecodeFunctions that bypass the deserializer
+// verifier to exercise the VM's own defense-in-depth guards.
+// ============================================================================
+
+BOOST_AUTO_TEST_SUITE(vm_bounds_check_tests)
+
+// Helper: build a VM with a resolved function registry.
+struct BoundsCheckFixture {
+    memory::heap::Heap heap{1024 * 1024};
+    memory::intern::InternTable intern_table;
+    BytecodeFunctionRegistry registry;
+    BuiltinEnvironment builtins;
+
+    BoundsCheckFixture() : heap(1024 * 1024) {
+        register_core_primitives(builtins, heap, intern_table);
+    }
+
+    std::expected<LispVal, RuntimeError> execute_func(BytecodeFunction& func) {
+        auto* fptr = &func;
+        VM vm(heap, intern_table);
+        vm.set_function_resolver([&](uint32_t) -> const BytecodeFunction* { return nullptr; });
+        vm.globals().resize(16, nanbox::Nil);
+        return vm.execute(*fptr);
+    }
+};
+
+BOOST_FIXTURE_TEST_CASE(loadlocal_oob_returns_error, BoundsCheckFixture) {
+    // stack_size = 2 but LoadLocal arg = 99 — must return InvalidInstruction,
+    // not crash with undefined behaviour.
+    BytecodeFunction func;
+    func.name       = "oob_loadlocal";
+    func.stack_size = 2;
+    func.constants.push_back(nanbox::Nil);
+    func.code.push_back({OpCode::LoadLocal, 99u});
+    func.code.push_back({OpCode::Return,    0u});
+
+    auto result = execute_func(func);
+    BOOST_CHECK(!result.has_value());
+}
+
+BOOST_FIXTURE_TEST_CASE(storelocal_oob_returns_error, BoundsCheckFixture) {
+    // Push a value then try to store it at an out-of-range slot.
+    BytecodeFunction func;
+    func.name       = "oob_storelocal";
+    func.stack_size = 2;
+    func.constants.push_back(nanbox::Nil);
+    func.code.push_back({OpCode::LoadConst,  0u});  // push Nil
+    func.code.push_back({OpCode::StoreLocal, 99u}); // slot 99 — out of range
+    func.code.push_back({OpCode::LoadConst,  0u});
+    func.code.push_back({OpCode::Return,     0u});
+
+    auto result = execute_func(func);
+    BOOST_CHECK(!result.has_value());
+}
+
+BOOST_AUTO_TEST_SUITE_END() // vm_bounds_check_tests
+
 BOOST_AUTO_TEST_SUITE_END() // vm_tests

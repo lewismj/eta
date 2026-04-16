@@ -682,6 +682,59 @@ BOOST_AUTO_TEST_CASE(parse_error_kind_to_string) {
     BOOST_CHECK_EQUAL(std::string(to_string(ParseErrorKind::UnexpectedEOF)), "ParseErrorKind::UnexpectedEOF");
     BOOST_CHECK_EQUAL(std::string(to_string(ParseErrorKind::UnclosedList)), "ParseErrorKind::UnclosedList");
     BOOST_CHECK_EQUAL(std::string(to_string(ParseErrorKind::DotInVector)), "ParseErrorKind::DotInVector");
+    BOOST_CHECK_EQUAL(std::string(to_string(ParseErrorKind::InvalidNumericLiteral)), "ParseErrorKind::InvalidNumericLiteral");
+}
+
+// ── Bug-fix regression: uncaught exceptions in numeric parsing (bug #2) ──────
+
+// A decimal fixnum that overflows int64 should fall back to double gracefully,
+// not let std::stod throw.  The value exceeds INT64_MAX but is representable
+// as a double, so we expect a successful parse yielding a Number.
+BOOST_AUTO_TEST_CASE(parse_huge_decimal_fixnum_falls_back_to_double) {
+    // 10^20 overflows int64_t but is exactly representable as a double.
+    const auto result = parse_one("100000000000000000000");
+    BOOST_REQUIRE_MESSAGE(result.has_value(), "huge decimal should not throw");
+    const auto* num = expect_type<Number>(*result);
+    BOOST_CHECK(std::holds_alternative<double>(num->value));
+}
+
+// A non-decimal fixnum that overflows its type should return
+// InvalidNumericLiteral — it must NOT throw std::invalid_argument through stod.
+BOOST_AUTO_TEST_CASE(parse_huge_hex_fixnum_returns_error_not_throw) {
+    // 33 hex digits: value >> UINT64_MAX, and stod cannot parse bare hex digits.
+    const auto result = parse_one("#xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+    BOOST_CHECK_MESSAGE(!result.has_value(),
+        "overflowing hex fixnum should yield an error, not throw");
+    if (!result.has_value()) {
+        BOOST_CHECK(std::holds_alternative<ParseError>(result.error()));
+    }
+}
+
+// ── Bug-fix regression: bytevector accumulation overflow (bug #5) ─────────────
+
+// #u8(#b111111111) = 511 in binary — must be rejected as > 255, not silently
+// wrapped around to a small value through unsigned overflow.
+BOOST_AUTO_TEST_CASE(bytevector_binary_overflow_rejected) {
+    // #b111111111 = 511 — 9 binary digits, overflows a byte
+    const auto result = parse_one("#u8(#b111111111)");
+    BOOST_CHECK_MESSAGE(!result.has_value(),
+        "binary literal 511 should be rejected as out-of-range byte");
+}
+
+// Octal overflow: #o400 = 256, just over the byte limit.
+BOOST_AUTO_TEST_CASE(bytevector_octal_overflow_rejected) {
+    const auto result = parse_one("#u8(#o400)");
+    BOOST_CHECK_MESSAGE(!result.has_value(),
+        "octal literal 256 should be rejected as out-of-range byte");
+}
+
+// Binary maximum valid byte: #b11111111 = 255 — must be accepted.
+BOOST_AUTO_TEST_CASE(bytevector_binary_max_valid_accepted) {
+    const auto result = parse_one("#u8(#b11111111)");
+    BOOST_REQUIRE_MESSAGE(result.has_value(), "#b11111111 = 255 is a valid byte");
+    const auto* bv = expect_type<ByteVector>(*result);
+    BOOST_REQUIRE_EQUAL(bv->bytes.size(), 1u);
+    BOOST_CHECK_EQUAL(bv->bytes[0], 255u);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

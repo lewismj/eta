@@ -45,6 +45,9 @@ namespace eta::reader::parser {
         ByteVectorNonInteger,
         InvalidByteLiteral,
 
+        // Numeric parsing
+        InvalidNumericLiteral,  ///< stoll/stod failed on a numeric token
+
         // Reader forms / quoting
         UnquoteOutsideQuasiquote,
 
@@ -76,6 +79,7 @@ namespace eta::reader::parser {
             case DotInVector:                return "ParseErrorKind::DotInVector";
             case ByteVectorNonInteger:       return "ParseErrorKind::ByteVectorNonInteger";
             case InvalidByteLiteral:         return "ParseErrorKind::InvalidByteLiteral";
+            case InvalidNumericLiteral:      return "ParseErrorKind::InvalidNumericLiteral";
             case UnquoteOutsideQuasiquote:   return "ParseErrorKind::UnquoteOutsideQuasiquote";
             case InternalNotAnAtom:          return "ParseErrorKind::InternalNotAnAtom";
             case InternalNotAReaderToken:    return "ParseErrorKind::InternalNotAReaderToken";
