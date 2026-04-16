@@ -231,7 +231,9 @@ int main(int argc, char* argv[]) {
     }
 
     // Create driver
-    eta::interpreter::Driver driver(std::move(resolver));
+    const std::size_t heap_bytes =
+        eta::interpreter::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
+    eta::interpreter::Driver driver(std::move(resolver), heap_bytes);
     auto resolve = driver.file_resolver();
 
     // Load prelude (if available in module path)

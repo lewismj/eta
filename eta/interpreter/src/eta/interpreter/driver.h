@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstdint>
+#include <cstdlib>
 #include <expected>
 #include <filesystem>
 #include <fstream>
@@ -58,6 +60,45 @@ namespace fs = std::filesystem;
  */
 class Driver {
 public:
+    /// Parse a human-readable heap size from an environment variable.
+    ///
+    /// Supported suffixes (case-insensitive): K (KiB), M (MiB), G (GiB).
+    /// Examples: "512K", "4M", "2G".
+    ///
+    /// @param env_var     Name of the environment variable to read.
+    /// @param default_val Returned when the variable is absent, empty, or invalid.
+    static std::size_t parse_heap_env_var(
+        const char*  env_var,
+        std::size_t  default_val = 4u * 1024u * 1024u) noexcept
+    {
+        const char* s = std::getenv(env_var);
+        if (!s || s[0] == '\0') return default_val;
+
+        char* end = nullptr;
+        errno = 0;
+        const unsigned long long raw = std::strtoull(s, &end, 10);
+        if (end == s || errno == ERANGE || raw == 0) return default_val;
+
+        std::uint64_t mult = 1;
+        if (end && *end != '\0') {
+            switch (*end) {
+                case 'K': case 'k': mult = 1024ULL;                  ++end; break;
+                case 'M': case 'm': mult = 1024ULL * 1024ULL;        ++end; break;
+                case 'G': case 'g': mult = 1024ULL * 1024ULL * 1024ULL; ++end; break;
+                default: break;
+            }
+            // Skip optional trailing whitespace, then require end-of-string.
+            while (*end && std::isspace(static_cast<unsigned char>(*end))) ++end;
+            if (*end != '\0') return default_val; // unexpected trailing characters
+        }
+
+        const std::uint64_t result = static_cast<std::uint64_t>(raw) * mult;
+        // Guard against overflow vs. std::size_t.
+        constexpr std::uint64_t SIZE_T_MAX = static_cast<std::uint64_t>(~std::size_t{0});
+        if (result > SIZE_T_MAX) return default_val;
+        return static_cast<std::size_t>(result);
+    }
+
     explicit Driver(ModulePathResolver resolver,
                     std::size_t heap_bytes = 4 * 1024 * 1024,
                     std::string etai_path  = {})
@@ -121,7 +162,10 @@ public:
         {
             try {
                 auto resolver = ModulePathResolver::from_path_string(module_search_path);
-                Driver child(std::move(resolver));
+                const auto child_heap =
+                    Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
+                        Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT"));
+                Driver child(std::move(resolver), child_heap);
                 child.load_prelude();
 
                 // Dial the parent's inproc:// listener → sets current-mailbox
@@ -159,7 +203,10 @@ public:
         {
             try {
                 auto resolver = ModulePathResolver::from_path_string(module_search_path);
-                Driver child(std::move(resolver));
+                const auto child_heap =
+                    Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
+                        Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT"));
+                Driver child(std::move(resolver), child_heap);
                 child.load_prelude();
 
                 // Dial the parent's inproc:// listener → sets current-mailbox

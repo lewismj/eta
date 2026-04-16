@@ -5,6 +5,14 @@
 #include <eta/runtime/factory.h>
 #include <eta/runtime/port.h>
 
+#include <eta/nng/nng_socket_ptr.h>
+#include <eta/nng/nng_factory.h>
+
+#ifndef ETA_TORCH_DEBUG_SKIP
+#include <eta/torch/tensor_ptr.h>
+#include <eta/torch/torch_factory.h>
+#endif
+
 using namespace eta::runtime::memory;
 using namespace eta::runtime::memory::heap;
 using namespace eta::runtime::memory::gc;
@@ -793,6 +801,254 @@ BOOST_AUTO_TEST_CASE(non_heap_roots_ignored) {
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     // Only the unreachable cons freed; immediate roots don't crash anything
     BOOST_TEST(stats.objects_freed == 1);
+}
+
+// ─── NngSocket GC tests ───────────────────────────────────────────────────────
+
+// Verifies that an unreachable NngSocket heap entry is swept by GC and its
+// type-erased destructor (which calls nng_close) is invoked.  closed=true
+// prevents nng_close from being called on an uninitialised socket handle.
+BOOST_AUTO_TEST_CASE(nng_socket_unreachable_swept) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    eta::nng::NngSocketPtr sp{};
+    sp.closed = true; // guard: do not call nng_close on an uninitialised fd
+    auto sock_val = expect_ok(eta::nng::factory::make_nng_socket(heap, std::move(sp)));
+    const auto sock_id = static_cast<ObjectId>(payload(sock_val));
+
+    // Not rooted — must be swept and its destructor invoked.
+    GCStats stats{};
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+    BOOST_TEST(stats.objects_freed == 1);
+
+    // The heap entry must be absent after the sweep.
+    HeapEntry e{};
+    BOOST_TEST(!heap.try_get(sock_id, e));
+}
+
+// Verifies that a rooted NngSocket survives GC while an unrooted one is freed.
+BOOST_AUTO_TEST_CASE(nng_socket_rooted_retained) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    auto make_closed_sp = []() {
+        eta::nng::NngSocketPtr sp{};
+        sp.closed = true;
+        return sp;
+    };
+
+    auto rooted_sock  = expect_ok(eta::nng::factory::make_nng_socket(heap, make_closed_sp()));
+    auto garbage_sock = expect_ok(eta::nng::factory::make_nng_socket(heap, make_closed_sp()));
+    (void)garbage_sock; // not rooted
+
+    roots.push_back(rooted_sock);
+
+    GCStats stats{};
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+    BOOST_TEST(stats.objects_freed == 1); // only garbage_sock freed
+
+    // Rooted socket is still accessible.
+    const auto id = static_cast<ObjectId>(payload(rooted_sock));
+    auto* retained_ptr = heap.try_get_as<ObjectKind::NngSocket, eta::nng::NngSocketPtr>(id);
+    BOOST_TEST(retained_ptr != nullptr);
+}
+
+// ─── ExternalRootFrame RAII tests ────────────────────────────────────────────
+
+// Verifies that objects pushed into an ExternalRootFrame survive GC while the
+// frame is live, and are swept after the frame goes out of scope.
+BOOST_AUTO_TEST_CASE(external_root_frame_roots_object) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+
+    auto cons1 = expect_ok(make_cons(heap, Nil));
+
+    {
+        auto frame = heap.make_external_root_frame();
+        frame.push(cons1);
+
+        // GC using heap.external_roots() as root set — cons1 must survive.
+        GCStats stats1{};
+        gc.collect(heap, heap.external_roots().begin(), heap.external_roots().end(), &stats1);
+        BOOST_TEST(stats1.objects_freed == 0);
+    } // frame destructor: external_roots resized back to 0
+
+    // cons1 is now unrooted — must be swept.
+    std::vector<LispVal> empty;
+    GCStats stats2{};
+    gc.collect(heap, empty.begin(), empty.end(), &stats2);
+    BOOST_TEST(stats2.objects_freed == 1);
+}
+
+// Verifies that nested ExternalRootFrames form a stack: the inner frame pops
+// only its own roots on destruction, leaving the outer frame's roots intact.
+BOOST_AUTO_TEST_CASE(external_root_frame_nested_frames) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+
+    auto cons1 = expect_ok(make_cons(heap, Nil));
+    auto cons2 = expect_ok(make_cons(heap, Nil));
+
+    {
+        auto outer = heap.make_external_root_frame();
+        outer.push(cons1);
+
+        {
+            auto inner = heap.make_external_root_frame();
+            inner.push(cons2);
+
+            // Both cons1 and cons2 are rooted: neither freed.
+            GCStats s1{};
+            gc.collect(heap, heap.external_roots().begin(), heap.external_roots().end(), &s1);
+            BOOST_TEST(s1.objects_freed == 0);
+        } // inner destructor: external_roots = [cons1]
+
+        // cons2 is now unrooted: freed.
+        GCStats s2{};
+        gc.collect(heap, heap.external_roots().begin(), heap.external_roots().end(), &s2);
+        BOOST_TEST(s2.objects_freed == 1);
+    } // outer destructor: external_roots = []
+
+    // cons1 is now unrooted: freed.
+    std::vector<LispVal> empty;
+    GCStats s3{};
+    gc.collect(heap, empty.begin(), empty.end(), &s3);
+    BOOST_TEST(s3.objects_freed == 1);
+}
+
+// Verifies ExternalRootFrame move semantics: the moved-from frame becomes
+// inactive and its destructor is a no-op; the moved-to frame retains
+// ownership and correctly unroots on destruction.
+BOOST_AUTO_TEST_CASE(external_root_frame_move_semantics) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+
+    auto cons1 = expect_ok(make_cons(heap, Nil));
+
+    {
+        auto frame1 = heap.make_external_root_frame();
+        frame1.push(cons1);
+
+        // Move-construct frame2: frame1 becomes inactive (active_ = false).
+        auto frame2 = std::move(frame1);
+
+        // frame1's destructor is now a no-op.  frame2 still guards cons1.
+        GCStats stats1{};
+        gc.collect(heap, heap.external_roots().begin(), heap.external_roots().end(), &stats1);
+        BOOST_TEST(stats1.objects_freed == 0);
+
+        // Destructors run in reverse declaration order:
+        //   frame2 (declared second) → active_=true  → external_roots.resize(0)
+        //   frame1 (declared first)  → active_=false → no-op
+    }
+
+    // external_roots is empty; cons1 must now be swept.
+    std::vector<LispVal> empty;
+    GCStats stats2{};
+    gc.collect(heap, empty.begin(), empty.end(), &stats2);
+    BOOST_TEST(stats2.objects_freed == 1);
+}
+
+// ─── Mixed type graph: Tensor and NngSocket as unreachable leaves ─────────────
+
+// Expands the mixed-type graph test to include NngSocket (always) and Tensor
+// (release builds only) as additional unreachable leaf objects alongside the
+// reachable vector→closure→cons→logic_var graph.  Verifies that leaf types
+// without child edges do not block traversal and are correctly swept.
+BOOST_AUTO_TEST_CASE(mixed_type_with_nng_and_tensor_leaves) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    // --- Reachable graph: vector -> closure -> cons_with_lv -> lv(bound to leaf_cons) ---
+    auto leaf_cons = expect_ok(make_cons(heap, Nil));
+
+    auto lv = expect_ok(make_logic_var(heap));
+    const auto lv_id = static_cast<ObjectId>(payload(lv));
+    auto* lv_ptr = heap.try_get_as<ObjectKind::LogicVar, eta::runtime::types::LogicVar>(lv_id);
+    BOOST_REQUIRE(lv_ptr != nullptr);
+    lv_ptr->binding = leaf_cons;
+
+    auto cons_with_lv = expect_ok(make_cons(heap, lv));
+    auto closure      = expect_ok(make_closure(heap, nullptr, {cons_with_lv}));
+    auto vec          = expect_ok(make_vector(heap, {closure}));
+    roots.push_back(vec);
+
+    // --- Unreachable NngSocket leaf (closed=true: avoid nng_close on uninitialised fd) ---
+    {
+        eta::nng::NngSocketPtr sp{};
+        sp.closed = true;
+        (void)expect_ok(eta::nng::factory::make_nng_socket(heap, std::move(sp)));
+    }
+
+    // --- Unreachable Tensor leaf (skipped in MSVC Debug due to ABI mismatch) ---
+#ifndef ETA_TORCH_DEBUG_SKIP
+    namespace tf = eta::torch_bindings::factory;
+    (void)expect_ok(tf::make_tensor(heap, torch::zeros({1})));
+    constexpr std::size_t GARBAGE_COUNT = 2; // NngSocket + Tensor
+#else
+    constexpr std::size_t GARBAGE_COUNT = 1; // NngSocket only
+#endif
+
+    GCStats stats{};
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+    // Reachable (retained): vec, closure, cons_with_lv, lv, leaf_cons
+    // Garbage  (freed):     NngSocket + Tensor (if available)
+    BOOST_TEST(stats.objects_freed == GARBAGE_COUNT);
+}
+
+// ─── Large ByteVector soft-limit stress ──────────────────────────────────────
+
+// Verifies that:
+//   (a) the GC callback fires when a succession of ByteVector allocations
+//       with large internal data payloads pushes past the soft limit;
+//   (b) the GC correctly invokes the type-erased ByteVector destructor, freeing
+//       the underlying std::vector<uint8_t> storage;
+//   (c) the single rooted ByteVector with a sentinel payload survives intact.
+BOOST_AUTO_TEST_CASE(large_bytevector_soft_limit_stress) {
+    // ByteVector's tracked heap footprint is sizeof(ByteVector) regardless of
+    // how many bytes its internal std::vector<uint8_t> actually holds.  We use
+    // a 1 KiB internal payload to exercise the destructor's cleanup path.
+    constexpr std::size_t INTERNAL_SZ = 1024;
+    const std::size_t bv_tracked = sizeof(eta::runtime::types::ByteVector);
+
+    // Soft limit: fits exactly 5 ByteVectors.  The 6th allocation triggers GC.
+    Heap heap(bv_tracked * 5);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    bool callback_fired = false;
+    heap.set_gc_callback([&]() {
+        callback_fired = true;
+        gc.collect(heap, roots.begin(), roots.end());
+    });
+
+    // Rooted ByteVector with a recognisable sentinel payload.
+    const std::vector<uint8_t> sentinel(INTERNAL_SZ, 0xCA);
+    auto rooted_bv = expect_ok(make_bytevector(heap, sentinel));
+    roots.push_back(rooted_bv);
+
+    // 4 unreachable ByteVectors — total tracked bytes reaches the limit exactly.
+    for (int i = 0; i < 4; ++i) {
+        (void)expect_ok(make_bytevector(heap,
+            std::vector<uint8_t>(INTERNAL_SZ, static_cast<uint8_t>(i))));
+    }
+    BOOST_TEST(!callback_fired); // exactly at the limit — not yet exceeded
+
+    // This 6th allocation exceeds the soft limit → GC callback fires, frees
+    // the 4 unreachable ByteVectors (and their 1 KiB buffers), then proceeds.
+    (void)expect_ok(make_bytevector(heap, std::vector<uint8_t>(INTERNAL_SZ, 0xFF)));
+    BOOST_TEST(callback_fired);
+
+    // Rooted ByteVector must still be accessible with its sentinel data intact.
+    const auto bv_id = static_cast<ObjectId>(payload(rooted_bv));
+    auto* bv_ptr = heap.try_get_as<ObjectKind::ByteVector,
+                                    eta::runtime::types::ByteVector>(bv_id);
+    BOOST_REQUIRE(bv_ptr != nullptr);
+    BOOST_TEST(bv_ptr->data == sentinel);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

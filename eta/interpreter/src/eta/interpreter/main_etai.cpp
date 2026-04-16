@@ -107,7 +107,9 @@ int main(int argc, char* argv[]) {
         if (!ec) self_path = resolved.string();
     }
 #endif
-    eta::interpreter::Driver driver(std::move(resolver), 4 * 1024 * 1024, self_path);
+    const std::size_t heap_bytes =
+        eta::interpreter::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
+    eta::interpreter::Driver driver(std::move(resolver), heap_bytes, self_path);
 
     auto resolve = driver.file_resolver();
 

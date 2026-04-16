@@ -6,6 +6,7 @@ set(SOURCES
         src/heap_tests.cpp
         src/factory_tests.cpp
         src/gc_tests.cpp
+        src/gc_stress_tests.cpp
         src/hazard_ptr_tests.cpp
         src/intern_table_tests.cpp
         src/nanbox_tests.cpp

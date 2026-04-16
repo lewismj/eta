@@ -141,13 +141,51 @@ The factory functions handle:
 
 ### Soft Heap Limit & GC Trigger
 
-The heap is initialized with a soft byte limit (default: 4 MB). When an
+The heap is initialized with a soft byte limit (default: 4 MiB). When an
 allocation would exceed the limit:
 
 1. The GC callback fires (`gc_callback_`)
 2. The GC runs a collection cycle
 3. If memory is reclaimed below the limit, the allocation proceeds
 4. Otherwise, `HeapError::SoftHeapLimitExceeded` is returned
+
+### Heap Size Configuration
+
+The soft-limit for each `Driver` instance is configurable at runtime via
+environment variables — no recompilation needed.
+
+| Variable | Effect |
+|----------|--------|
+| `ETA_HEAP_SOFT_LIMIT` | Soft-limit for the main interpreter process (`etai`, `eta_repl`). |
+| `ETA_HEAP_SOFT_LIMIT_CHILD_THREADS` | Soft-limit for actor threads spawned via `spawn` / `spawn-wait`. Inherits `ETA_HEAP_SOFT_LIMIT` if unset. |
+
+Both variables accept **human-readable sizes** with an optional suffix:
+
+| Suffix | Meaning | Example |
+|--------|---------|---------|
+| `K` / `k` | Kibibytes (× 1 024) | `512K` |
+| `M` / `m` | Mebibytes (× 1 048 576) | `4M` |
+| `G` / `g` | Gibibytes (× 1 073 741 824) | `2G` |
+| *(none)* | Bytes | `4194304` |
+
+```bash
+# Run with a 16 MiB heap
+ETA_HEAP_SOFT_LIMIT=16M etai my_program.eta
+
+# Give spawned actor threads 8 MiB each, main process 32 MiB
+ETA_HEAP_SOFT_LIMIT=32M ETA_HEAP_SOFT_LIMIT_CHILD_THREADS=8M etai my_program.eta
+```
+
+The parsing is handled by `Driver::parse_heap_env_var()`, a public static
+method that falls back to the 4 MiB default when the variable is absent,
+empty, or unparseable:
+
+```cpp
+// In driver.h
+static std::size_t parse_heap_env_var(
+    const char* env_var,
+    std::size_t default_val = 4u * 1024u * 1024u) noexcept;
+```
 
 ---
 

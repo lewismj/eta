@@ -92,20 +92,7 @@ main bottlenecks:
 | **Concurrent marking** | Run the mark phase on a background thread while the VM continues executing; stop only for the final remark and sweep.  Reduces worst-case pause from O(live-set) to O(dirty-set). |
 | **Compacting / copying collector** | Defragment the heap after mark-sweep to improve cache locality and reduce fragmentation in long-running actor workloads. |
 
-### 2.2 · Heap Size Configuration
-
-The heap soft-limit is currently fixed at 4 MiB per `Driver` instance.
-Making it configurable via environment variables enables tuning without
-recompilation:
-
-| Variable | Effect |
-|----------|--------|
-| `ETA_HEAP_SOFT_LIMIT` | Soft-limit for the main interpreter process. |
-| `ETA_HEAP_SOFT_LIMIT_CHILD_THREADS` | Soft-limit for spawned actor threads; inherits `ETA_HEAP_SOFT_LIMIT` if unset. |
-
-Both variables accept human-readable sizes: `512K`, `4M`, `2G`, etc.
-
-### 2.3 · Object Layout
+### 2.2 · Object Layout
 
 | Improvement | Description |
 |-------------|-------------|
@@ -118,7 +105,6 @@ Both variables accept human-readable sizes: `512K`, `4M`, `2G`, etc.
 |------|---------|
 | Generational GC prototype | `mark_sweep_gc.h`, `heap.h` |
 | Background mark thread | `mark_sweep_gc.cpp`, `vm.cpp` |
-| `ETA_HEAP_SOFT_LIMIT` env parsing in `Driver` | `driver.h`, `main_etai.cpp`, `main_repl.cpp` |
 | Object header compaction | `types/`, `heap.h` |
 | Adaptive GC trigger (allocation-rate based) | `heap.h`, `mark_sweep_gc.h` |
 
@@ -130,29 +116,10 @@ Both variables accept human-readable sizes: `512K`, `4M`, `2G`, etc.
 
 The current unit-test binary (`eta_core_test`) runs a broad suite of
 Boost.Test cases but several areas have limited deterministic coverage:
-GC correctness under pressure, actor-thread round-trips at scale, and
-regression for specific bytecode optimisation passes.
+actor-thread round-trips at scale, and regression for specific bytecode
+optimisation passes.
 
-### 3.1 · GC Stress Tests
-
-Deterministic GC-stress tests construct known live graphs with a deliberately
-small heap soft-limit, verify that all live objects survive collection, and
-assert that dead objects are reclaimed:
-
-```cpp
-Driver driver(resolver, 64 * 1024);  // 64 KB -- forces many collections
-// ... run a quoted-constant actor round-trip ...
-BOOST_CHECK_CLOSE(*dec, expected, 1e-9);
-```
-
-| Test Group | What to Cover |
-|------------|---------------|
-| `gc_stress_tests/quoted_constant_survives` | GC does not sweep bytecode-registry constants before spawn-thread serialisation. |
-| `gc_stress_tests/actor_round_trip_under_pressure` | List payloads through mailboxes survive GC in both parent and child heaps. |
-| `gc_stress_tests/recursive_cons_reconstruction` | Deep nested list reconstruction under allocation pressure. |
-| `gc_stress_tests/multithread_gc_isolation` | Two concurrent actor threads do not corrupt each other's heap. |
-
-### 3.2 · Benchmarking Suite
+### 3.1 · Benchmarking Suite
 
 Before optimising the compiler or GC, establish a repeatable benchmark suite
 tracked per-commit in CI:
@@ -166,7 +133,7 @@ tracked per-commit in CI:
 | `unify / backtrack` | Logic variable creation and trail management |
 | `stats:ols-multi` on large FactTable | Eigen FFI round-trip overhead |
 
-### 3.3 · Coverage Expansion
+### 3.2 · Coverage Expansion
 
 | Area | Current Gap |
 |------|-------------|
@@ -179,7 +146,6 @@ tracked per-commit in CI:
 
 | Task | Touches |
 |------|---------|
-| New `gc_stress_tests` Boost.Test suite | `eta/test/src/gc_stress_tests.cpp` |
 | Benchmark harness + CI integration | new `bench/`, `CMakeLists.txt` |
 | Property-based test helpers | `eta/test/src/` |
 
