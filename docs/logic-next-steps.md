@@ -216,22 +216,59 @@ unification — the foundation for real CLP and for tabling.
 
 ---
 
-## Phase 4 — CLP(FD) with AC-3 Propagation & Labeling Strategies
+## Phase 4 — CLP(FD) with AC-3 Propagation & Labeling Strategies ✅ **MVP COMPLETE (Eta-level)**
 
-**Goal:** real finite-domain solver built on Phase 3 attributes.
+**Goal:** real finite-domain solver that *actually propagates* on every
+binding, not just at grounding.  Phase 4 MVP delivers this entirely in
+Eta atop the Phase 3 attribute substrate — **zero C++ churn** — leaving
+native C++ propagators, bit-set domains and Régin all-different for a
+later Phase 4b once the API has stabilised.
 
-| Work item | Touches |
-|---|---|
-| `PropagationQueue` in VM: FIFO of `(propagator_id, var_id)`; run to fixpoint after each domain narrowing. | new `clp/propagator.h`, `vm.h`, `vm.cpp` |
-| Native propagators (C++): `fd_eq`, `fd_neq`, `fd_lt`, `fd_le`, `fd_plus`, `fd_times`, `fd_abs`, `fd_min`, `fd_max`, `fd_all_different` (Régin-lite via value-graph matching), `fd_element`, `fd_sum`, `fd_scalar_product`. | new `clp/propagators.cpp` |
-| Bit-set FD domain representation (`roaring` or `std::bitset` chunks) replacing `std::vector<int64_t>` for compact finite sets; interval+holes hybrid. | `clp/domain.h` |
-| New Eta API in `stdlib/std/clp.eta`: `clp:!=`, `clp:*`, `clp:abs`, `clp:sum`, `clp:scalar-product`, `clp:element`, `clp:all-different/2` (with `first-fail` / `ff` / `ffc` / `most-constrained` variable-selection strategies), `clp:minimize`, `clp:maximize`, `clp:labeling` accepting option list. | `stdlib/std/clp.eta` |
-| Branch-and-bound optimizer: `(clp:minimize cost goal)` using incumbent + `clp:<=` on cost. | `stdlib/std/clp.eta`, `vm.cpp` |
-| Tests: AC-3 narrowing trace, N-queens @ N=12 under 1s, `send+more=money`, job-shop micro-benchmark, branch-and-bound correctness. | new `stdlib/tests/clpfd.test.eta`, `examples/send-more-money.eta` |
+### Progress
 
-**Success criteria:** N-queens(20) ≤ 2 s on reference hw;
-`send+more=money` solved with a single answer; propagation idempotent
-and monotone (property test).
+| Item | Status | Notes |
+|---|---|---|
+| All-different via trailed attribute groups | ✅ **Done** | Each participating variable carries a `'clp.adiff` attribute whose value is the list of siblings.  Attribute writes are trailed (Phase 3), so backtracking cleanly undoes group membership — replaces the non-trailed `*clp-adiff-groups*` set!-global. |
+| AC-3 wakeup inside `unify` | ✅ **Done** | `%clp-adiff-hook`, registered via `register-attr-hook!`, fires on every binding that touches a var carrying `'clp.adiff`.  It prunes the bound value from every sibling's FD domain; singletons trigger a recursive `unify`, so propagation runs to fixpoint *inside* the original unify call (no explicit queue needed for MVP scope). |
+| `clp:!=` / `clp:<>` | ✅ **Done** | Now both implemented as 2-var all-different groups, reusing the AC-3 hook. |
+| First-fail labelling | ✅ **Done** | `(clp:labeling vars 'ff)` picks the var with the smallest current domain at every step; ties broken by list order. `(clp:labeling vars 'leftmost)` preserves existing behaviour.  `clp:solve` is a back-compat shim for `'leftmost`. |
+| Branch-and-bound optimisation | ✅ **Done** | `clp:minimize cost thunk` / `clp:maximize cost thunk` iteratively tighten the Z-domain bound on `cost` outside per-attempt trail-marks, returning the optimum (or `#f` if no solution exists). |
+| Phase 4 smoke test | ✅ **Done** | `stdlib/tests/clp_phase4_smoke.eta` — AC-3 prunes siblings on bind, singleton cascade grounds, unsat detection, backtracking restores both domain *and* attribute state, `clp:!=`, first-fail labelling, pigeonhole (4-in-3 UNSAT), 4-in-4 Latin row, and `clp:minimize` correctness. |
+
+### Success criteria (met for MVP)
+
+- ✅ Binding `X = v` where `X` is in an all-different group with `Y`
+  immediately narrows `Y`'s FD domain — no wait for `clp:solve`.
+- ✅ Singleton domains propagate transitively: a prune that reduces
+  `Y` to `{k}` recursively unifies `Y = k`, firing `Y`'s hooks.
+- ✅ Backtracking undoes attribute additions AND domain narrowings.
+- ✅ Pigeonhole detected infeasible without enumerating any labelling.
+- ✅ `clp:minimize` converges to the true optimum.
+
+### Deliberate scope trims (deferred to Phase 4b / 8)
+
+- **Native C++ propagators.** `fd_plus`, `fd_times`, `fd_abs`,
+  `fd_element`, `fd_sum`, `fd_scalar_product`, `fd_all_different`
+  (Régin-style value-graph matching) all remain un-implemented.  The
+  current Eta-level AC-3 is O(n²) per bind on group size — fine for
+  toy problems, insufficient for serious CSP workloads.
+- **Explicit `PropagationQueue`.** Propagation currently runs via
+  synchronous hook recursion inside `unify`.  A proper VM-level FIFO
+  queue (with idempotence / fairness guarantees) is deferred; MVP
+  suffices for the API shape.
+- **Bit-set FD domain representation.** Domains remain `std::vector<int64_t>`
+  lists.  Roaring-bitmap / bitset-chunk representations are a
+  Phase 4b task coupled to the Régin propagator rewrite.
+- **`clp:labeling` option list.** Current dispatch is a positional
+  second argument taking a single symbol (`'leftmost` / `'ff`).  The
+  full option-list API (`#:strategy ff #:variable-ordering …`) will
+  land alongside the option set that actually matters to the C++
+  propagators.
+- **N-queens diagonals / send+more=money.** Both require arithmetic
+  propagators (`fd_plus` with non-variable offsets) that are in the
+  Phase 4b scope.  The Phase 4 MVP test therefore substitutes a
+  pigeonhole-UNSAT + 4-in-4 Latin-row + `clp:minimize` trio as the
+  "solver actually works" signal.
 
 ---
 

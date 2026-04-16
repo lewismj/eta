@@ -1609,7 +1609,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             clp::FDDomain dom;
             LispVal lst = args[1];
             while (ops::is_boxed(lst) && ops::tag(lst) == Tag::HeapObject) {
-                auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(lst);
+                auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(lst));
                 if (!c) break;
                 auto n = classify_numeric(c->car, heap);
                 if (!n.is_valid() || n.is_flonum())

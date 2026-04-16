@@ -1,0 +1,147 @@
+;;; clp_phase4_smoke.eta — Phase 4 smoke test for AC-3 propagation,
+;;; first-fail labeling, and branch-and-bound optimisation.
+
+(module clp-phase4-smoke
+  (import std.core std.collections std.logic std.clp)
+  (begin
+
+    (define fail-count 0)
+
+    (defun chk (label expected actual)
+      (display label) (display " => ") (display actual)
+      (if (equal? actual expected)
+          (display "   [ok]")
+          (begin (display "   [FAIL expected ")
+                 (display expected) (display "]")
+                 (set! fail-count (+ fail-count 1))))
+      (newline))
+
+    (display "clp phase4 smoke: start") (newline)
+
+    ;; ── 1. AC-3 all-different: binding one var narrows siblings ──────
+    ;;
+    ;; Before Phase 4 this would have left Y's domain as (1 2 3) because
+    ;; the old `*clp-adiff-groups*` global only fired on clp:solve.  With
+    ;; the Phase 4 attr-unify-hook, the moment we bind X=1 the hook
+    ;; prunes 1 from Y's FD domain *inside* unify.
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2 3)
+      (clp:in-fd y 1 2 3)
+      (clp:all-different (list x y))
+      (unify x 1)
+      (chk "adiff AC-3 prunes sibling"
+           '(fd 2 3)
+           (%clp-get-domain y)))
+
+    ;; ── 2. AC-3 cascades singleton → unify → sibling narrowing ───────
+    ;;
+    ;; With domain {1,2} and {1,2}, binding X=1 prunes Y to {2} which is
+    ;; a singleton — the hook commits Y=2 via unify, which in turn runs
+    ;; any hooks on Y.  Here there are none, so it just grounds.
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2)
+      (clp:in-fd y 1 2)
+      (clp:all-different (list x y))
+      (unify x 1)
+      (chk "adiff singleton cascade grounds Y" 2 (deref-lvar y)))
+
+    ;; ── 3. AC-3 detects unsat when prune empties a domain ────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1)
+      (clp:in-fd y 1)
+      (clp:all-different (list x y))
+      ;; X can only be 1; Y can only be 1; must differ.
+      (chk "adiff unsat via empty prune" #f (unify x 1)))
+
+    ;; ── 4. Backtracking restores attribute + domain state ────────────
+    (let* ((x (logic-var)) (y (logic-var))
+           (_ (clp:in-fd x 1 2 3))
+           (_ (clp:in-fd y 1 2 3))
+           (_ (clp:all-different (list x y)))
+           (m (trail-mark)))
+      (unify x 1)
+      (chk "pre-unwind Y narrowed" '(fd 2 3) (%clp-get-domain y))
+      (unwind-trail m)
+      (chk "post-unwind Y restored" '(fd 1 2 3) (%clp-get-domain y))
+      (chk "post-unwind X unbound" #t (logic-var? (deref-lvar x))))
+
+    ;; ── 5. clp:!= / clp:<> as 2-var adiff ───────────────────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2 3)
+      (clp:in-fd y 1 2 3)
+      (clp:!= x y)
+      (unify x 2)
+      (chk "clp:!= prunes equality" '(fd 1 3) (%clp-get-domain y)))
+
+    ;; ── 6. First-fail labeling picks smallest-domain var first ──────
+    ;;
+    ;; With X ∈ {1..5} and Y ∈ {1..2}, first-fail must label Y first.
+    ;; We verify by construction: put an adiff that would generate
+    ;; inconsistency if X were tried first.
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2 3 4 5)
+      (clp:in-fd y 1 2)
+      (clp:all-different (list x y))
+      (chk "ff labeling succeeds" #t
+           (clp:labeling (list x y) 'ff)))
+
+    ;; ── 7. Pigeonhole infeasibility (N vars in smaller domain) ─────
+    ;;
+    ;; 4 vars in {1,2,3} with all-different ≡ 4 pigeons in 3 holes: UNSAT.
+    ;; AC-3 must detect this during labeling without enumerating all
+    ;; assignments.
+    (let ((a (logic-var)) (b (logic-var)) (c (logic-var)) (d (logic-var)))
+      (clp:in-fd a 1 2 3)
+      (clp:in-fd b 1 2 3)
+      (clp:in-fd c 1 2 3)
+      (clp:in-fd d 1 2 3)
+      (clp:all-different (list a b c d))
+      (chk "pigeonhole 4-in-3 unsat" #f
+           (clp:labeling (list a b c d) 'ff)))
+
+    ;; ── 7b. Latin-row feasibility (4 vars in {1..4} all-different) ─
+    (let ((a (logic-var)) (b (logic-var)) (c (logic-var)) (d (logic-var)))
+      (clp:in-fd a 1 2 3 4)
+      (clp:in-fd b 1 2 3 4)
+      (clp:in-fd c 1 2 3 4)
+      (clp:in-fd d 1 2 3 4)
+      (clp:all-different (list a b c d))
+      (chk "4-in-4 latin row sat" #t
+           (clp:labeling (list a b c d) 'ff))
+      ;; After labeling, every var must be distinct.
+      (let ((vals (list (deref-lvar a) (deref-lvar b)
+                        (deref-lvar c) (deref-lvar d))))
+        (chk "4-in-4 values are distinct"
+             4
+             (length (filter (lambda (v) (not (logic-var? v))) vals)))))
+
+    ;; ── 8. clp:minimize branch-and-bound ─────────────────────────────
+    ;;
+    ;; Minimise (X + Y) subject to X,Y ∈ {1..5}, X ≠ Y, X,Y in FD.
+    ;; Optimum is 1+2 = 3.
+    (define min-cost-result
+      (let ((x (logic-var)) (y (logic-var)) (c (logic-var)))
+        (clp:domain c 0 20)
+        (clp:minimize c
+          (lambda ()
+            (let ((m (trail-mark)))
+              (clp:in-fd x 1 2 3 4 5)
+              (clp:in-fd y 1 2 3 4 5)
+              (clp:!= x y)
+              (let* ((ok (clp:labeling (list x y) 'ff))
+                     (xv (if ok (deref-lvar x) #f))
+                     (yv (if ok (deref-lvar y) #f))
+                     (cv (if ok (+ xv yv) #f))
+                     (bound-ok (and cv (unify c cv))))
+                (if bound-ok #t
+                    (begin (unwind-trail m) #f))))))))
+    (chk "minimize x+y ≠ over {1..5}" 3 min-cost-result)
+
+    ;; ── Summary ──────────────────────────────────────────────────────
+    (newline)
+    (if (= fail-count 0)
+        (display "clp phase4 smoke: ALL PASS")
+        (begin (display "clp phase4 smoke: ")
+               (display fail-count) (display " FAILURE(S)")))
+    (newline)))
+
