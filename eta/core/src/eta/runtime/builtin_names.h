@@ -179,6 +179,10 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%clp-fd-plus!",         3, false);
     r("%clp-fd-plus-offset!",  3, false);
     r("%clp-fd-abs!",          2, false);
+    r("%clp-fd-times!",           3, false);
+    r("%clp-fd-sum!",             2, false);
+    r("%clp-fd-scalar-product!",  3, false);
+    r("%clp-fd-element!",         3, false);
 
     // AD Tape primitives (tape-based reverse-mode AD)
     r("tape-new",        0, false);

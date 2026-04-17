@@ -55,6 +55,7 @@
     ;; Constraint propagators
     clp:= clp:+
     clp:plus-offset clp:abs
+    clp:* clp:sum clp:scalar-product clp:element
     clp:<= clp:>= clp:<> clp:!=
     ;; Global constraint
     clp:all-different
@@ -167,6 +168,53 @@
              (%clp-prop-attach! y thunk)
              (%clp-prop-attach! x thunk)
              #t)))
+
+    ;; (clp:* z x y)  — posts z = x * y (bounds consistency).
+    (defun clp:* (z x y)
+      (and (%clp-fd-times! z x y)
+           (let ((thunk (lambda () (%clp-fd-times! z x y))))
+             (%clp-prop-attach! z thunk)
+             (%clp-prop-attach! x thunk)
+             (%clp-prop-attach! y thunk)
+             #t)))
+
+    ;; (clp:sum xs s)  — posts Σ xs = s.  `xs` is a list of logic vars
+    ;; and/or ground integers.
+    (defun clp:sum (xs s)
+      (and (%clp-fd-sum! xs s)
+           (let ((thunk (lambda () (%clp-fd-sum! xs s))))
+             (%clp-prop-attach! s thunk)
+             (let loop ((ys xs))
+               (cond
+                 ((null? ys) #t)
+                 (else
+                   (%clp-prop-attach! (car ys) thunk)
+                   (loop (cdr ys))))))))
+
+    ;; (clp:scalar-product cs xs s)  — posts Σ cᵢ·xᵢ = s.
+    (defun clp:scalar-product (cs xs s)
+      (and (%clp-fd-scalar-product! cs xs s)
+           (let ((thunk (lambda () (%clp-fd-scalar-product! cs xs s))))
+             (%clp-prop-attach! s thunk)
+             (let loop ((ys xs))
+               (cond
+                 ((null? ys) #t)
+                 (else
+                   (%clp-prop-attach! (car ys) thunk)
+                   (loop (cdr ys))))))))
+
+    ;; (clp:element i xs v)  — posts xs[i] = v, one-based index.
+    (defun clp:element (i xs v)
+      (and (%clp-fd-element! i xs v)
+           (let ((thunk (lambda () (%clp-fd-element! i xs v))))
+             (%clp-prop-attach! i thunk)
+             (%clp-prop-attach! v thunk)
+             (let loop ((ys xs))
+               (cond
+                 ((null? ys) #t)
+                 (else
+                   (%clp-prop-attach! (car ys) thunk)
+                   (loop (cdr ys))))))))
 
     (defun clp:<= (x y)
       (let ((dx (%clp-get-domain x))

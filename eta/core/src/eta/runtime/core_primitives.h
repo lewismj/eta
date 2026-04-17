@@ -1,8 +1,10 @@
  #pragma once
 
+#include <climits>
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -1881,6 +1883,294 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 else                  { nx_lo = -yh;  nx_hi = yh; }
                 if (bx->is_var && !narrow_var(bx->id, nx_lo, nx_hi)) return False;
                 if (!bx->is_var && (bx->lo < nx_lo || bx->hi > nx_hi)) return False;
+                return True;
+            });
+
+        // ── %clp-fd-times! (z x y)  :  z = x * y ──────────────────────────
+        // Bounds consistency via interval multiplication.  The product of
+        // two intervals is [min of corners, max of corners].  Division for
+        // back-propagation is implemented with explicit floor/ceil to keep
+        // results integral; divisors straddling zero leave the quotient
+        // variable unconstrained (weak propagation, consistent with SWI).
+        auto interval_mul = [](int64_t a, int64_t b, int64_t c, int64_t d,
+                               int64_t& out_lo, int64_t& out_hi) {
+            int64_t p1 = a * c, p2 = a * d, p3 = b * c, p4 = b * d;
+            out_lo = std::min(std::min(p1, p2), std::min(p3, p4));
+            out_hi = std::max(std::max(p1, p2), std::max(p3, p4));
+        };
+        auto idiv_floor = [](int64_t a, int64_t b) -> int64_t {
+            int64_t q = a / b, r = a % b;
+            if ((r != 0) && ((r < 0) != (b < 0))) --q;
+            return q;
+        };
+        auto idiv_ceil = [](int64_t a, int64_t b) -> int64_t {
+            int64_t q = a / b, r = a % b;
+            if ((r != 0) && ((r < 0) == (b < 0))) ++q;
+            return q;
+        };
+        env.register_builtin("%clp-fd-times!", 3, false,
+            [extract_bounds, narrow_var, interval_mul, idiv_floor, idiv_ceil]
+            (Args args) -> std::expected<LispVal, RuntimeError> {
+                auto bz = extract_bounds(args[0]);
+                auto bx = extract_bounds(args[1]);
+                auto by = extract_bounds(args[2]);
+                if (!bz || !bx || !by)
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-times!: arguments must be integers or logic variables"}});
+                if (!bx->finite || !by->finite || !bz->finite) return True;
+                if (bx->lo > bx->hi || by->lo > by->hi || bz->lo > bz->hi) return False;
+                // Forward: z = x * y
+                int64_t nz_lo, nz_hi;
+                interval_mul(bx->lo, bx->hi, by->lo, by->hi, nz_lo, nz_hi);
+                if (bz->is_var && !narrow_var(bz->id, nz_lo, nz_hi)) return False;
+                if (!bz->is_var && (bz->lo < nz_lo || bz->hi > nz_hi)) return False;
+                // Backward x = z / y (only when y does not straddle 0)
+                auto narrow_quot = [&](const Bounds& src, const Bounds& div) -> std::optional<std::pair<int64_t,int64_t>> {
+                    if (div.lo <= 0 && div.hi >= 0) return std::nullopt;  // straddles zero → skip
+                    int64_t q1 = idiv_floor(src.lo, div.lo);
+                    int64_t q2 = idiv_floor(src.lo, div.hi);
+                    int64_t q3 = idiv_floor(src.hi, div.lo);
+                    int64_t q4 = idiv_floor(src.hi, div.hi);
+                    int64_t q5 = idiv_ceil(src.lo, div.lo);
+                    int64_t q6 = idiv_ceil(src.lo, div.hi);
+                    int64_t q7 = idiv_ceil(src.hi, div.lo);
+                    int64_t q8 = idiv_ceil(src.hi, div.hi);
+                    int64_t lo = std::min({q5,q6,q7,q8});
+                    int64_t hi = std::max({q1,q2,q3,q4});
+                    return std::make_pair(lo, hi);
+                };
+                if (bx->is_var) {
+                    if (auto q = narrow_quot(*bz, *by))
+                        if (!narrow_var(bx->id, q->first, q->second)) return False;
+                }
+                if (by->is_var) {
+                    if (auto q = narrow_quot(*bz, *bx))
+                        if (!narrow_var(by->id, q->first, q->second)) return False;
+                }
+                return True;
+            });
+
+        // ── %clp-fd-sum! (xs s)  :  Σ xs = s ──────────────────────────────
+        // `xs` is an Eta list of logic vars and/or ground integers.  Bounds:
+        //   s ∈ [Σ xᵢ.lo, Σ xᵢ.hi]
+        //   xⱼ ∈ [s.lo − Σᵢ≠ⱼ xᵢ.hi,  s.hi − Σᵢ≠ⱼ xᵢ.lo]
+        auto walk_list = [&heap](LispVal lst, std::vector<LispVal>& out) -> bool {
+            while (ops::is_boxed(lst) && ops::tag(lst) == Tag::HeapObject) {
+                auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(lst));
+                if (!c) return false;
+                out.push_back(c->car);
+                lst = c->cdr;
+            }
+            return lst == Nil;
+        };
+        env.register_builtin("%clp-fd-sum!", 2, false,
+            [extract_bounds, narrow_var, walk_list](Args args) -> std::expected<LispVal, RuntimeError> {
+                std::vector<LispVal> elems;
+                if (!walk_list(args[0], elems))
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-sum!: first arg must be a proper list"}});
+                std::vector<Bounds> bs;
+                bs.reserve(elems.size());
+                for (auto v : elems) {
+                    auto b = extract_bounds(v);
+                    if (!b)
+                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                            "%clp-fd-sum!: each list element must be an integer or logic variable"}});
+                    if (!b->finite) return True;   // any unbounded ⇒ skip
+                    if (b->lo > b->hi) return False;
+                    bs.push_back(*b);
+                }
+                auto bs_b = extract_bounds(args[1]);
+                if (!bs_b)
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-sum!: sum must be an integer or logic variable"}});
+                if (!bs_b->finite) return True;
+                if (bs_b->lo > bs_b->hi) return False;
+                int64_t tot_lo = 0, tot_hi = 0;
+                for (auto& b : bs) { tot_lo += b.lo; tot_hi += b.hi; }
+                // Forward: narrow s
+                if (bs_b->is_var && !narrow_var(bs_b->id, tot_lo, tot_hi)) return False;
+                if (!bs_b->is_var && (bs_b->lo < tot_lo || bs_b->hi > tot_hi)) return False;
+                // Backward: for each var xⱼ narrow to [s.lo − (tot_hi − xⱼ.hi), s.hi − (tot_lo − xⱼ.lo)]
+                int64_t s_lo = std::max(bs_b->lo, tot_lo);
+                int64_t s_hi = std::min(bs_b->hi, tot_hi);
+                for (std::size_t j = 0; j < bs.size(); ++j) {
+                    if (!bs[j].is_var) continue;
+                    int64_t other_hi = tot_hi - bs[j].hi;
+                    int64_t other_lo = tot_lo - bs[j].lo;
+                    int64_t nj_lo = s_lo - other_hi;
+                    int64_t nj_hi = s_hi - other_lo;
+                    if (!narrow_var(bs[j].id, nj_lo, nj_hi)) return False;
+                }
+                return True;
+            });
+
+        // ── %clp-fd-scalar-product! (cs xs s)  :  Σ cᵢ·xᵢ = s ────────────
+        // `cs` is a list of ground integer coefficients of the same length
+        // as `xs`.  Bounds projection treats each cᵢ·xᵢ interval and uses
+        // the same subtractive back-propagation as fd_sum.
+        env.register_builtin("%clp-fd-scalar-product!", 3, false,
+            [&heap, extract_bounds, narrow_var, walk_list](Args args) -> std::expected<LispVal, RuntimeError> {
+                std::vector<LispVal> c_vals, x_vals;
+                if (!walk_list(args[0], c_vals) || !walk_list(args[1], x_vals))
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-scalar-product!: coeffs and vars must be proper lists"}});
+                if (c_vals.size() != x_vals.size())
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
+                        "%clp-fd-scalar-product!: coeffs and vars length mismatch"}});
+                std::vector<int64_t> cs;
+                cs.reserve(c_vals.size());
+                for (auto v : c_vals) {
+                    auto n = classify_numeric(v, heap);
+                    if (!n.is_valid() || n.is_flonum())
+                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                            "%clp-fd-scalar-product!: coefficients must be integers"}});
+                    cs.push_back(n.int_val);
+                }
+                std::vector<Bounds> bs;
+                bs.reserve(x_vals.size());
+                for (auto v : x_vals) {
+                    auto b = extract_bounds(v);
+                    if (!b)
+                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                            "%clp-fd-scalar-product!: vars must be integers or logic variables"}});
+                    if (!b->finite) return True;
+                    if (b->lo > b->hi) return False;
+                    bs.push_back(*b);
+                }
+                auto bs_s = extract_bounds(args[2]);
+                if (!bs_s)
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-scalar-product!: sum must be an integer or logic variable"}});
+                if (!bs_s->finite) return True;
+                if (bs_s->lo > bs_s->hi) return False;
+                // Per-term interval [cᵢ·xᵢ.lo, cᵢ·xᵢ.hi] — swap ends when cᵢ < 0.
+                auto term_bounds = [&](std::size_t i, int64_t& t_lo, int64_t& t_hi) {
+                    int64_t a = cs[i] * bs[i].lo, b = cs[i] * bs[i].hi;
+                    t_lo = std::min(a, b); t_hi = std::max(a, b);
+                };
+                int64_t tot_lo = 0, tot_hi = 0;
+                std::vector<std::pair<int64_t,int64_t>> term;
+                term.reserve(bs.size());
+                for (std::size_t i = 0; i < bs.size(); ++i) {
+                    int64_t tl, th; term_bounds(i, tl, th);
+                    term.emplace_back(tl, th);
+                    tot_lo += tl; tot_hi += th;
+                }
+                // Forward narrow s.
+                if (bs_s->is_var && !narrow_var(bs_s->id, tot_lo, tot_hi)) return False;
+                if (!bs_s->is_var && (bs_s->lo < tot_lo || bs_s->hi > tot_hi)) return False;
+                // Backward narrow each xⱼ
+                int64_t s_lo = std::max(bs_s->lo, tot_lo);
+                int64_t s_hi = std::min(bs_s->hi, tot_hi);
+                for (std::size_t j = 0; j < bs.size(); ++j) {
+                    if (!bs[j].is_var || cs[j] == 0) continue;
+                    int64_t other_lo = tot_lo - term[j].first;
+                    int64_t other_hi = tot_hi - term[j].second;
+                    // cⱼ·xⱼ ∈ [s_lo - other_hi, s_hi - other_lo]
+                    int64_t t_lo = s_lo - other_hi;
+                    int64_t t_hi = s_hi - other_lo;
+                    // xⱼ ∈ [⌈t_lo/cⱼ⌉, ⌊t_hi/cⱼ⌋] when cⱼ>0, else swapped and sign-flipped.
+                    auto idiv_floor = [](int64_t a, int64_t b)->int64_t{
+                        int64_t q=a/b,r=a%b;
+                        if((r!=0)&&((r<0)!=(b<0))) --q;
+                        return q;
+                    };
+                    auto idiv_ceil = [](int64_t a, int64_t b)->int64_t{
+                        int64_t q=a/b,r=a%b;
+                        if((r!=0)&&((r<0)==(b<0))) ++q;
+                        return q;
+                    };
+                    int64_t xj_lo, xj_hi;
+                    if (cs[j] > 0) {
+                        xj_lo = idiv_ceil(t_lo, cs[j]);
+                        xj_hi = idiv_floor(t_hi, cs[j]);
+                    } else {
+                        xj_lo = idiv_ceil(t_hi, cs[j]);
+                        xj_hi = idiv_floor(t_lo, cs[j]);
+                    }
+                    if (!narrow_var(bs[j].id, xj_lo, xj_hi)) return False;
+                }
+                return True;
+            });
+
+        // ── %clp-fd-element! (i xs v)  :  nth(xs, i) = v, i ∈ [1..|xs|] ──
+        // One-based index to match Prolog `element/3` convention.  When `i`
+        // is ground, degenerates to a single equality via narrowing.  When
+        // `i` is a logic var with an FD domain, we intersect `v`'s bounds
+        // with the union of the candidate xs[k]'s bounds, and prune `i`'s
+        // domain to values `k` whose xs[k] is consistent with `v`.
+        env.register_builtin("%clp-fd-element!", 3, false,
+            [&heap, vm, extract_bounds, narrow_var, walk_list]
+            (Args args) -> std::expected<LispVal, RuntimeError> {
+                std::vector<LispVal> elems;
+                if (!walk_list(args[1], elems))
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-element!: second arg must be a proper list"}});
+                if (elems.empty())
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
+                        "%clp-fd-element!: list must be non-empty"}});
+                auto bi = extract_bounds(args[0]);
+                auto bv = extract_bounds(args[2]);
+                if (!bi || !bv)
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-element!: index and value must be integers or logic variables"}});
+                const int64_t n = static_cast<int64_t>(elems.size());
+                // Force i ∈ [1..n]
+                if (bi->is_var && !narrow_var(bi->id, 1, n)) return False;
+                if (!bi->is_var && (bi->lo < 1 || bi->hi > n)) return False;
+                int64_t i_lo = bi->is_var ? std::max<int64_t>(1, bi->lo) : bi->lo;
+                int64_t i_hi = bi->is_var ? std::min<int64_t>(n, bi->hi) : bi->hi;
+                // For each candidate k ∈ [i_lo..i_hi], extract bounds of xs[k-1];
+                // its bounds union is the possible value for v.  Also collect
+                // the set of k's that are consistent with v's current bounds.
+                int64_t v_union_lo = INT64_MAX, v_union_hi = INT64_MIN;
+                std::vector<int64_t> compatible_ks;
+                bool any_infinite_candidate = false;
+                for (int64_t k = i_lo; k <= i_hi; ++k) {
+                    // If i is FD-domained, skip values not in its FD set.
+                    if (bi->is_var && vm) {
+                        const auto* dom = vm->constraint_store().get_domain(bi->id);
+                        if (dom) if (auto* fd = std::get_if<clp::FDDomain>(dom))
+                            if (!fd->contains(k)) continue;
+                    }
+                    auto bk = extract_bounds(elems[static_cast<std::size_t>(k - 1)]);
+                    if (!bk)
+                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                            "%clp-fd-element!: list element must be integer or logic variable"}});
+                    if (!bk->finite) { any_infinite_candidate = true; compatible_ks.push_back(k); continue; }
+                    if (bk->lo > bk->hi) continue;  // this candidate is infeasible
+                    // Is this candidate consistent with v?
+                    int64_t isect_lo = std::max(bv->lo, bk->lo);
+                    int64_t isect_hi = std::min(bv->hi, bk->hi);
+                    if (bv->finite && isect_lo > isect_hi) continue;
+                    compatible_ks.push_back(k);
+                    v_union_lo = std::min(v_union_lo, bk->lo);
+                    v_union_hi = std::max(v_union_hi, bk->hi);
+                }
+                if (compatible_ks.empty()) return False;
+                // Narrow v to the union of candidate bounds (skip when an
+                // unbounded candidate exists — weak propagation).
+                if (!any_infinite_candidate) {
+                    if (bv->is_var && !narrow_var(bv->id, v_union_lo, v_union_hi)) return False;
+                    if (!bv->is_var && (bv->lo < v_union_lo || bv->hi > v_union_hi)) return False;
+                }
+                // Narrow i to the compatible set.  Use an FD domain if the
+                // set is sparse relative to [i_lo..i_hi]; otherwise Z bounds.
+                if (bi->is_var && vm) {
+                    const int64_t first_k = compatible_ks.front();
+                    const int64_t last_k  = compatible_ks.back();
+                    bool dense = (static_cast<int64_t>(compatible_ks.size()) == (last_k - first_k + 1));
+                    if (dense) {
+                        if (!narrow_var(bi->id, first_k, last_k)) return False;
+                    } else {
+                        clp::FDDomain nd;
+                        nd.values.assign(compatible_ks.begin(), compatible_ks.end());
+                        std::sort(nd.values.begin(), nd.values.end());
+                        nd.values.erase(std::unique(nd.values.begin(), nd.values.end()), nd.values.end());
+                        vm->constraint_store().set_domain(bi->id, std::move(nd));
+                    }
+                }
                 return True;
             });
     }
