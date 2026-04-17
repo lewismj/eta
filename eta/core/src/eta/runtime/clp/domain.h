@@ -66,5 +66,18 @@ using Domain = std::variant<ZDomain, FDDomain>;
     return std::visit([v](const auto& x) { return x.contains(v); }, d);
 }
 
+// Intersect two domains, normalising the cross-kind case (Z ∩ FD).
+// Result is always the more-precise kind; empty on disjoint overlap.
+[[nodiscard]] inline Domain domain_intersect(const Domain& a, const Domain& b) {
+    if (auto* za = std::get_if<ZDomain>(&a)) {
+        if (auto* zb = std::get_if<ZDomain>(&b)) return za->intersect(*zb);
+        const auto& fb = std::get<FDDomain>(b);
+        return fb.intersect_z(za->lo, za->hi);
+    }
+    const auto& fa = std::get<FDDomain>(a);
+    if (auto* zb = std::get_if<ZDomain>(&b)) return fa.intersect_z(zb->lo, zb->hi);
+    return fa.intersect(std::get<FDDomain>(b));
+}
+
 } // namespace eta::runtime::clp
 

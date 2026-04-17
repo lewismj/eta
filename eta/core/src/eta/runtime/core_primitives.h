@@ -19,6 +19,7 @@
 #include "eta/runtime/types/tape.h"
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/clp/constraint_store.h"
+#include "eta/runtime/clp/alldiff_regin.h"
 #include "eta/runtime/stats_math.h"
 #include "eta/runtime/stats_extract.h"
 
@@ -1583,7 +1584,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             if (dom.empty())
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
                     "%clp-domain-z!: empty domain (lo > hi)"}});
-            vm->constraint_store().set_domain(id, std::move(dom));
+            vm->trail_set_domain(id, std::move(dom));
             return True;
         });
 
@@ -1625,7 +1626,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             if (dom.empty())
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
                     "%clp-domain-fd!: domain list is empty"}});
-            vm->constraint_store().set_domain(id, std::move(dom));
+            vm->trail_set_domain(id, std::move(dom));
             return True;
         });
 
@@ -1760,15 +1761,15 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         };
 
         // Narrow a var's domain to [new_lo, new_hi]. Returns false on empty.
-        // Only writes through set_domain (trailed) when something actually changes.
-        // For FD domains, values outside [new_lo, new_hi] are filtered out.
+        // Only writes through trail_set_domain (trailed) when something actually
+        // changes.  For FD domains, values outside [new_lo, new_hi] are filtered out.
         auto narrow_var = [vm](ObjectId id, int64_t new_lo, int64_t new_hi) -> bool {
             if (new_lo > new_hi) return false;
             if (!vm) return true;
             auto& store = vm->constraint_store();
             const auto* dom = store.get_domain(id);
             if (!dom) {
-                store.set_domain(id, clp::ZDomain{ new_lo, new_hi });
+                vm->trail_set_domain(id, clp::ZDomain{ new_lo, new_hi });
                 return true;
             }
             if (auto* z = std::get_if<clp::ZDomain>(dom)) {
@@ -1776,7 +1777,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 int64_t hi = std::min(z->hi, new_hi);
                 if (lo > hi) return false;
                 if (lo == z->lo && hi == z->hi) return true;  // no change
-                store.set_domain(id, clp::ZDomain{ lo, hi });
+                vm->trail_set_domain(id, clp::ZDomain{ lo, hi });
                 return true;
             }
             // FD
@@ -1788,7 +1789,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             }
             if (nfd.values.empty()) return false;
             if (nfd.values.size() == fd.values.size()) return true;  // no change
-            store.set_domain(id, std::move(nfd));
+            vm->trail_set_domain(id, std::move(nfd));
             return true;
         };
 
@@ -2168,10 +2169,91 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                         nd.values.assign(compatible_ks.begin(), compatible_ks.end());
                         std::sort(nd.values.begin(), nd.values.end());
                         nd.values.erase(std::unique(nd.values.begin(), nd.values.end()), nd.values.end());
-                        vm->constraint_store().set_domain(bi->id, std::move(nd));
+                        vm->trail_set_domain(bi->id, std::move(nd));
                     }
                 }
                 return True;
+            });
+
+        // ── %clp-fd-all-different! (vars)  :  Régin-matching all-different ─
+        // Domain-consistent pruning: removes every value v from D(x) that
+        // cannot participate in a valuation satisfying all_different(vars).
+        // Strictly stronger than the pairwise attribute-hook version.
+        env.register_builtin("%clp-fd-all-different!", 1, false,
+            [&heap, vm, deref, walk_list](Args args) -> std::expected<LispVal, RuntimeError> {
+                if (!vm) return True;
+                std::vector<LispVal> elems;
+                if (!walk_list(args[0], elems))
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%clp-fd-all-different!: argument must be a proper list"}});
+                if (elems.size() <= 1) return True;
+
+                // Build the algorithm's var table by dereffing each element.
+                std::vector<clp::AlldiffVar> avars;
+                avars.reserve(elems.size());
+                for (auto e : elems) {
+                    LispVal d = deref(e);
+                    clp::AlldiffVar av;
+                    if (ops::is_boxed(d) && ops::tag(d) == Tag::HeapObject) {
+                        auto id = ops::payload(d);
+                        auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id);
+                        if (lv && !lv->binding.has_value()) {
+                            av.id = id;
+                            const auto* dom = vm->constraint_store().get_domain(id);
+                            if (!dom) {
+                                av.is_free = true;
+                            } else if (auto* z = std::get_if<clp::ZDomain>(dom)) {
+                                // Materialise Z interval as FD values.
+                                // Cap at a reasonable ceiling to avoid runaway
+                                // allocation for unbounded-looking domains.
+                                constexpr int64_t MAX_SPAN = 1'000'000;
+                                if (z->hi - z->lo + 1 > MAX_SPAN) {
+                                    av.is_free = true;  // too wide — skip
+                                } else {
+                                    av.domain.reserve(static_cast<std::size_t>(z->hi - z->lo + 1));
+                                    for (int64_t v = z->lo; v <= z->hi; ++v) av.domain.push_back(v);
+                                }
+                            } else if (auto* fd = std::get_if<clp::FDDomain>(dom)) {
+                                av.domain = fd->values;  // already sorted/unique
+                                if (av.domain.empty()) return False;
+                            }
+                            avars.push_back(std::move(av));
+                            continue;
+                        }
+                    }
+                    // Ground case — expect integer.
+                    auto n = classify_numeric(d, heap);
+                    if (!n.is_valid() || n.is_flonum())
+                        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                            "%clp-fd-all-different!: values must be integers or logic variables"}});
+                    av.ground_val = n.int_val;
+                    av.is_ground = true;
+                    avars.push_back(std::move(av));
+                }
+
+                // Narrow callback: the algorithm invokes this for each var
+                // whose domain shrank.  We install the new domain via the
+                // trailed constraint store (preserves ZDomain narrowing if
+                // the new domain remains dense — else becomes a FD list).
+                auto narrow = [vm](uint64_t id, const std::vector<int64_t>& new_dom) -> bool {
+                    if (new_dom.empty()) return false;
+                    // If contiguous, collapse to a Z domain; else FD.
+                    bool contiguous = true;
+                    for (std::size_t i = 1; i < new_dom.size(); ++i) {
+                        if (new_dom[i] != new_dom[i - 1] + 1) { contiguous = false; break; }
+                    }
+                    if (contiguous) {
+                        vm->trail_set_domain(id,
+                            clp::ZDomain{ new_dom.front(), new_dom.back() });
+                    } else {
+                        clp::FDDomain fd;
+                        fd.values = new_dom;
+                        vm->trail_set_domain(id, std::move(fd));
+                    }
+                    return true;
+                };
+
+                return clp::run_regin_alldiff(avars, narrow) ? True : False;
             });
     }
 
@@ -2583,6 +2665,44 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto l1 = make_cons(heap, *v1, *l2);  if (!l1) return std::unexpected(l1.error());
         return *l1;
     });
+
+    // ========================================================================
+    // Phase 4b — propagation queue
+    // ------------------------------------------------------------------------
+    // (register-prop-attr! 'key)
+    //   Marks attribute key 'key as carrying a list of re-propagator thunks.
+    //   When `unify` later binds a logic var carrying this attribute, every
+    //   thunk in the attribute's value (a list) is *enqueued* on the VM's
+    //   FIFO propagation queue rather than invoked synchronously.  The queue
+    //   drains at the outer-`unify` boundary; thunk return values of #f
+    //   abort the unify and trigger the standard atomic rollback.
+    //   Idempotent on closure identity — the same thunk is never queued twice.
+    //
+    // (%clp-prop-queue-size)
+    //   Returns the current pending-thunk count — useful for tests / REPL
+    //   diagnostics; always 0 outside an active unify.
+    // ========================================================================
+
+    env.register_builtin("register-prop-attr!", 1, false,
+        [get_symbol_id, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "register-prop-attr!: requires a running VM"}});
+            auto key = get_symbol_id(args[0]);
+            if (!key)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "register-prop-attr!: arg must be a symbol (attribute key)"}});
+            vm->async_thunk_attrs().insert(*key);
+            return True;
+        });
+
+    env.register_builtin("%clp-prop-queue-size", 0, false,
+        [vm](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) return ops::encode<int64_t>(0).value_or(Nil);
+            auto enc = ops::encode<int64_t>(static_cast<int64_t>(vm->prop_queue_size()));
+            if (!enc) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "%clp-prop-queue-size: queue size out of fixnum range"}});
+            return *enc;
+        });
 }
 
 } // namespace eta::runtime

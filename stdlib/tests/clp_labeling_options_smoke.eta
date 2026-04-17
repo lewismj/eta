@@ -1,0 +1,113 @@
+;;; clp_labeling_options.eta — Phase 4b smoke test for the clp:labeling
+;;; option-list API: positional back-compat, plist parsing, value-ordering,
+;;; solution enumeration ('first / 'all / N), and on-solution callback.
+
+(module clp-labeling-options
+  (import std.core std.collections std.logic std.clp)
+  (begin
+
+    (define fail-count 0)
+
+    (defun chk (label expected actual)
+      (display label) (display " => ") (display actual)
+      (if (equal? actual expected)
+          (display "   [ok]")
+          (begin (display "   [FAIL expected ")
+                 (display expected) (display "]")
+                 (set! fail-count (+ fail-count 1))))
+      (newline))
+
+    (display "clp labeling options: start") (newline)
+
+    ;; ── 1. Positional back-compat: (clp:labeling vars 'ff) ──────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2 3)
+      (clp:in-fd y 1 2 3)
+      (clp:all-different (list x y))
+      (chk "positional 'ff still works" #t
+           (clp:labeling (list x y) 'ff)))
+
+    ;; ── 2. Plist: 'strategy 'leftmost, default ──────────────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2 3)
+      (clp:in-fd y 1 2 3)
+      (chk "plist strategy leftmost" #t
+           (clp:labeling (list x y) 'strategy 'leftmost))
+      (chk "leftmost picks x=1 first" 1 (deref-lvar x)))
+
+    ;; ── 3. Value ordering: 'down picks highest value first ─────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2 3)
+      (clp:in-fd y 1 2 3)
+      (clp:labeling (list x y) 'strategy 'leftmost 'value-ordering 'down)
+      (chk "value-ordering down → x=3" 3 (deref-lvar x)))
+
+    ;; ── 4. 'solutions 'all enumerates every complete assignment ────
+    ;; Two vars each ∈ {1,2,3} with x ≠ y: 6 solutions.
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2 3)
+      (clp:in-fd y 1 2 3)
+      (clp:!= x y)
+      (let ((all (clp:labeling (list x y) 'solutions 'all)))
+        (chk "'all yields 6 solutions" 6 (length all))
+        (chk "vars unbound after enumeration" #t
+             (and (logic-var? (deref-lvar x))
+                  (logic-var? (deref-lvar y))))))
+
+    ;; ── 5. 'solutions N limits enumeration count ──────────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2 3)
+      (clp:in-fd y 1 2 3)
+      (clp:!= x y)
+      (let ((two (clp:labeling (list x y) 'solutions 2)))
+        (chk "'solutions 2 yields 2" 2 (length two))))
+
+    ;; ── 6. 'on-solution callback can short-circuit ────────────────
+    (let ((x (logic-var)) (y (logic-var))
+          (count (cons 0 '())))
+      (clp:in-fd x 1 2 3)
+      (clp:in-fd y 1 2 3)
+      (clp:!= x y)
+      (clp:labeling (list x y)
+        'solutions 'all
+        'on-solution (lambda (snap)
+                       (set-car! count (+ (car count) 1))
+                       (< (car count) 3)))   ; stop after 3 calls
+      (chk "on-solution stops early" 3 (car count)))
+
+    ;; ── 7. 4-queens via new API: 'solutions 'all yields 2 solutions ─
+    (let ((q1 (logic-var)) (q2 (logic-var))
+          (q3 (logic-var)) (q4 (logic-var))
+          (a1 (logic-var)) (a2 (logic-var))
+          (a3 (logic-var)) (a4 (logic-var))
+          (b1 (logic-var)) (b2 (logic-var))
+          (b3 (logic-var)) (b4 (logic-var)))
+      (clp:in-fd q1 1 2 3 4) (clp:in-fd q2 1 2 3 4)
+      (clp:in-fd q3 1 2 3 4) (clp:in-fd q4 1 2 3 4)
+      (clp:domain a1 2 5)    (clp:domain a2 3 6)
+      (clp:domain a3 4 7)    (clp:domain a4 5 8)
+      (clp:domain b1 0 3)    (clp:domain b2 -1 2)
+      (clp:domain b3 -2 1)   (clp:domain b4 -3 0)
+      (clp:plus-offset a1 q1 1) (clp:plus-offset a2 q2 2)
+      (clp:plus-offset a3 q3 3) (clp:plus-offset a4 q4 4)
+      (clp:plus-offset b1 q1 -1) (clp:plus-offset b2 q2 -2)
+      (clp:plus-offset b3 q3 -3) (clp:plus-offset b4 q4 -4)
+      (clp:all-different (list q1 q2 q3 q4))
+      (clp:all-different (list a1 a2 a3 a4))
+      (clp:all-different (list b1 b2 b3 b4))
+      (let ((sols (clp:labeling (list q1 q2 q3 q4)
+                    'strategy 'ff 'solutions 'all)))
+        (chk "4-queens yields 2 solutions" 2 (length sols))
+        ;; Solutions are (2 4 1 3) and (3 1 4 2) in some order.
+        (chk "both known solutions present" #t
+             (and (member '(2 4 1 3) sols)
+                  (member '(3 1 4 2) sols)))))
+
+    ;; ── Summary ────────────────────────────────────────────────────
+    (newline)
+    (if (= fail-count 0)
+        (display "clp labeling options: ALL PASS")
+        (begin (display "clp labeling options: ")
+               (display fail-count) (display " FAILURE(S)")))
+    (newline)))
+

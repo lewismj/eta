@@ -1,0 +1,76 @@
+;;; examples/nqueens.eta — The classic N-queens constraint problem.
+;;;
+;;; Each queen Qi (1 ≤ i ≤ N) occupies row i of an N×N board; the
+;;; variable Qi names its column ∈ [1..N].  Constraints:
+;;;
+;;;   - all-different(Q1..QN)                   — no two queens share a column
+;;;   - all-different(Qi + i : i ∈ 1..N)        — no two on a ↘ diagonal
+;;;   - all-different(Qi − i : i ∈ 1..N)        — no two on a ↗ diagonal
+;;;
+;;; We post the diagonal constraints via `clp:plus-offset` (native
+;;; bounds-consistency propagator) to build the auxiliary sums/differences.
+;;; Labelling is first-fail (`#:strategy 'ff`) which picks the most
+;;; constrained queen each step.
+
+(module nqueens
+  (import std.core std.collections std.logic std.clp)
+  (begin
+
+    ;; Build a list of N fresh logic variables with domain [lo..hi].
+    (defun make-fd-vars (n lo hi)
+      (let loop ((i 0) (acc '()))
+        (if (>= i n) (reverse acc)
+            (let ((v (logic-var)))
+              (clp:domain v lo hi)
+              (loop (+ i 1) (cons v acc))))))
+
+    ;; Post qi + off = ai for each i, with ai fresh; returns the ai list.
+    (defun post-offsets (qs offs)
+      (let loop ((qs qs) (offs offs) (acc '()))
+        (cond
+          ((null? qs) (reverse acc))
+          (else
+            (let ((a (logic-var)))
+              (clp:domain a -1000 1000)
+              (clp:plus-offset a (car qs) (car offs))
+              (loop (cdr qs) (cdr offs) (cons a acc)))))))
+
+    ;; Solve N-queens, return the column assignment as a list of integers
+    ;; (or #f on UNSAT).
+    (defun solve-nqueens (n)
+      (let* ((qs    (make-fd-vars n 1 n))
+             (rows  (let loop ((i 1) (acc '()))
+                      (if (> i n) (reverse acc)
+                          (loop (+ i 1) (cons i acc)))))
+             (nrows (map (lambda (i) (- 0 i)) rows))
+             (as    (post-offsets qs rows))      ; Qi + i
+             (bs    (post-offsets qs nrows)))    ; Qi + (-i) = Qi - i
+        (clp:all-different qs)
+        (clp:all-different as)
+        (clp:all-different bs)
+        (if (clp:labeling qs 'strategy 'ff)
+            (map (lambda (v) (deref-lvar v)) qs)
+            #f)))
+
+    ;; Pretty-print the board.
+    (defun print-board (cols)
+      (let ((n (length cols)))
+        (for-each
+          (lambda (c)
+            (let loop ((i 1))
+              (cond
+                ((> i n) (newline))
+                ((= i c) (display "Q ") (loop (+ i 1)))
+                (else    (display ". ") (loop (+ i 1))))))
+          cols)))
+
+    ;; Demo: 8-queens.
+    (let ((sol (solve-nqueens 8)))
+      (cond
+        (sol
+         (display "8-queens solution (row → column): ")
+         (display sol) (newline) (newline)
+         (print-board sol))
+        (else
+         (display "8-queens UNSAT (impossible)") (newline))))))
+

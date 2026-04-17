@@ -1,0 +1,105 @@
+;;; clp_varvar_merge_smoke.eta — Phase 3 / 4b smoke test for var–var
+;;; CLP-domain intersection on unify.
+;;;
+;;; Before this fix, `(unify x y)` between two unbound logic vars each
+;;; carrying a CLP domain would silently discard one of the two domains
+;;; (the one belonging to the var being aliased away).  Future
+;;; ground-unify against the surviving var would then only check that
+;;; var's old domain — letting through values inconsistent with the
+;;; lost domain.  The fix intersects domains BEFORE binding, installing
+;;; the result on the surviving var via the trailed constraint store.
+
+(module clp-varvar-merge-smoke
+  (import std.core std.collections std.logic std.clp)
+  (begin
+
+    (define fail-count 0)
+
+    (defun chk (label expected actual)
+      (display label) (display " => ") (display actual)
+      (if (equal? actual expected)
+          (display "   [ok]")
+          (begin (display "   [FAIL expected ")
+                 (display expected) (display "]")
+                 (set! fail-count (+ fail-count 1))))
+      (newline))
+
+    (display "clp var-var merge smoke: start") (newline)
+
+    ;; ── 1. Z ∩ Z: unify aliases → intersected interval lives on `b` ──
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:domain x 1 5)
+      (clp:domain y 3 7)
+      (chk "unify x y succeeds" #t (unify x y))
+      ;; deref(x) = y. Domain on y should now be [3,5].
+      (chk "merged y.lo = 3" 3 (clp:domain-lo (%clp-get-domain y)))
+      (chk "merged y.hi = 5" 5 (clp:domain-hi (%clp-get-domain y))))
+
+    ;; ── 2. Disjoint Z domains → unify fails ─────────────────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:domain x 1 3)
+      (clp:domain y 5 7)
+      (chk "disjoint Z domains fail" #f (unify x y)))
+
+    ;; ── 3. Future ground unify respects merged domain ───────────────
+    ;; This is the bug the fix addresses: x ∈ [1,5], y ∈ [3,7], unify
+    ;; aliases x to y; later (unify y 6) must succeed (6 ∈ [3,7]) and
+    ;; later (unify y 4) must succeed for a fresh pair, but (unify y 6)
+    ;; on a freshly-aliased pair where intersect is [3,5] must FAIL.
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:domain x 1 5)
+      (clp:domain y 3 7)
+      (unify x y)
+      (chk "ground 4 ∈ [3,5] succeeds" #t (unify y 4))
+      (chk "x derefs to 4 too" 4 (deref-lvar x)))
+
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:domain x 1 5)
+      (clp:domain y 3 7)
+      (unify x y)
+      (chk "ground 6 ∉ merged [3,5] fails" #f (unify y 6)))
+
+    ;; ── 4. FD ∩ FD intersection ─────────────────────────────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 2 3 4)
+      (clp:in-fd y 3 4 5 6)
+      (unify x y)
+      (chk "FD ∩ FD on y" '(fd 3 4) (%clp-get-domain y)))
+
+    ;; ── 5. FD ∩ Z (cross-kind) intersection ─────────────────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:in-fd x 1 3 5 7 9)
+      (clp:domain y 3 7)
+      (unify x y)
+      (chk "FD ∩ Z on y" '(fd 3 5 7) (%clp-get-domain y)))
+
+    ;; ── 6. Asymmetric: only one side has a domain → moved onto y ────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:domain x 2 4)
+      ;; y has no domain.
+      (unify x y)
+      (chk "x's domain moves onto y" 2 (clp:domain-lo (%clp-get-domain y)))
+      (chk "x's hi moves onto y" 4 (clp:domain-hi (%clp-get-domain y))))
+
+    ;; ── 7. Backtracking restores original domains on both vars ──────
+    (let* ((x (logic-var)) (y (logic-var))
+           (_ (clp:domain x 1 5))
+           (_ (clp:domain y 3 7))
+           (m (trail-mark)))
+      (unify x y)
+      (chk "post-unify y.lo = 3" 3 (clp:domain-lo (%clp-get-domain y)))
+      (unwind-trail m)
+      (chk "after unwind, x.lo = 1 restored" 1
+           (clp:domain-lo (%clp-get-domain x)))
+      (chk "after unwind, y.hi = 7 restored" 7
+           (clp:domain-hi (%clp-get-domain y)))
+      (chk "after unwind, x unbound" #t (logic-var? (deref-lvar x))))
+
+    ;; ── Summary ─────────────────────────────────────────────────────
+    (newline)
+    (if (= fail-count 0)
+        (display "clp var-var merge smoke: ALL PASS")
+        (begin (display "clp var-var merge smoke: ")
+               (display fail-count) (display " FAILURE(S)")))
+    (newline)))
+

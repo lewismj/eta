@@ -233,85 +233,23 @@
 
     (defun clp:>= (x y) (clp:<= y x))
 
-    ;; ── All-different AC-3 propagator (Phase 4) ───────────────────────────
-    ;;
-    ;; Each variable in a group carries a `'clp.adiff` attribute whose
-    ;; value is the list of *other* participating variables (siblings).
-    ;; When unify binds a variable carrying this attribute, the hook fires
-    ;; BEFORE unify returns and prunes the bound value from every sibling's
-    ;; FD domain.  Singletons are unified immediately, so propagation
-    ;; runs to fixpoint *inside* the original unify.
-    ;;
-    ;; Domain writes go through trailed `%clp-domain-fd!`, so a failing
-    ;; branch's narrowing is rolled back when the labelling driver
-    ;; unwinds its trail-mark.  Attribute writes are also trailed
-    ;; (Phase 3), so group membership added inside `clp:all-different` is
-    ;; undone on backtracking.
-
-    (defun %clp-adiff-prune (siblings g)
-      ;; Remove ground value `g` from each sibling's FD domain.
-      (cond
-        ((null? siblings) #t)
-        (else
-          (let* ((sib   (car siblings))
-                 (sib-d (deref-lvar sib)))
-            (cond
-              ;; Ground sibling — must differ from g, else fail.
-              ((not (logic-var? sib-d))
-               (if (equal? sib-d g)
-                   #f
-                   (%clp-adiff-prune (cdr siblings) g)))
-              ;; Still a var — prune its FD domain.
-              (else
-                (let* ((dom    (%clp-get-domain sib))
-                       (vals   (if dom (clp:domain-values dom) '()))
-                       (pruned (filter (lambda (v) (not (equal? v g))) vals)))
-                  (cond
-                    ;; No domain attached: nothing to narrow.
-                    ((null? vals)
-                     (%clp-adiff-prune (cdr siblings) g))
-                    ;; g wasn't in the domain anyway.
-                    ((= (length pruned) (length vals))
-                     (%clp-adiff-prune (cdr siblings) g))
-                    ;; Pruned to empty: infeasible.
-                    ((null? pruned) #f)
-                    ;; Singleton: commit via unify (cascades hooks).
-                    ((null? (cdr pruned))
-                     (and (unify sib (car pruned))
-                          (%clp-adiff-prune (cdr siblings) g)))
-                    ;; Still multi-valued: narrow and continue.
-                    (else
-                      (%clp-domain-fd! sib pruned)
-                      (%clp-adiff-prune (cdr siblings) g))))))))))
-
-    (defun %clp-adiff-hook (var bound-val attr-val)
-      ;; `attr-val` is the sibling list recorded at clp:all-different time.
-      (let ((g (deref-lvar bound-val)))
-        (if (logic-var? g)
-            #t                                 ; aliased to another var — defer
-            (%clp-adiff-prune attr-val g))))
-
-    (register-attr-hook! 'clp.adiff %clp-adiff-hook)
-
     ;; ── Generic propagator re-firing on variable binding (Phase 4b) ───────
     ;;
-    ;; Each variable participating in a native propagator (clp:+, clp:plus-offset,
-    ;; clp:abs, …) carries a `'clp.prop` attribute whose value is a list of
-    ;; re-propagator thunks.  When unify binds any such var, %clp-prop-hook
-    ;; invokes every thunk; a thunk returning #f aborts the unify (trail unwinds).
+    ;; Each variable participating in a native propagator (clp:+, clp:*,
+    ;; clp:all-different, …) carries a `'clp.prop` attribute whose value
+    ;; is a list of re-propagator thunks.  The attribute key is registered
+    ;; with the VM as an *async-thunk attribute* (`register-prop-attr!`):
+    ;; when `unify` later binds any such var, every thunk in the list is
+    ;; *enqueued* on the VM-level FIFO propagation queue (idempotent on
+    ;; closure identity) and drained at the outer-`unify` boundary.  A
+    ;; thunk returning #f aborts the unify; the existing trail rollback
+    ;; restores all writes (binding, attribute, and domain).
     ;;
-    ;; This is the Phase 4b synchronous substitute for a real VM-level
-    ;; PropagationQueue.  It is trail-safe because (a) thunk attachment is a
-    ;; trailed `put-attr`, and (b) each thunk's internal writes go through
-    ;; trailed `%clp-domain-*!` / `unify`.
-
-    (defun %clp-prop-hook (var bound-val attr-val)
-      (let loop ((ts attr-val))
-        (cond
-          ((null? ts) #t)
-          (else
-            (let ((r ((car ts))))
-              (if r (loop (cdr ts)) #f))))))
+    ;; This replaces the Phase 4b "synchronous %clp-prop-hook" that ran
+    ;; every thunk recursively inside `unify` — the queue is fairer
+    ;; (FIFO), idempotent (no duplicate work when one bind cascades to
+    ;; many sibling re-fires), and bounded-stack (drains iteratively
+    ;; rather than via C++ recursion).
 
     ;; Attach a re-propagator thunk to `v`'s `'clp.prop` attribute.
     ;; No-op if `v` is already ground (ground values never fire hooks).
@@ -323,81 +261,148 @@
             (put-attr v 'clp.prop (cons thunk (if existing existing '())))
             #t))))
 
-    (register-attr-hook! 'clp.prop %clp-prop-hook)
+    (register-prop-attr! 'clp.prop)
 
-    ;; Build a list of every element of `xs` except `v` (eq? test).
-    (defun %clp-siblings (v xs)
-      (cond
-        ((null? xs)        '())
-        ((eq? (car xs) v)  (%clp-siblings v (cdr xs)))
-        (else              (cons (car xs) (%clp-siblings v (cdr xs))))))
-
+    ;; ── All-different (Phase 4b — native Régin matching) ─────────────────
+    ;;
     ;; (clp:all-different vars)
-    ;; Install pairwise inequality propagators across `vars`.  Each var's
-    ;; sibling list is stored as a trailed `'clp.adiff` attribute.
+    ;; Posts the global all-different constraint via Régin's value-graph
+    ;; matching: domain-consistent pruning that removes every value
+    ;; provably incompatible with any total assignment of `vars` to
+    ;; pairwise-distinct integers.  Strictly stronger than pairwise
+    ;; forward-checking.
+    ;;
+    ;; A re-propagator thunk is attached to every var under `'clp.prop`,
+    ;; so any subsequent binding re-runs the matching to fixpoint.
+
     (defun clp:all-different (vars)
-      (let outer ((xs vars) (ok #t))
-        (cond
-          ((or (not ok) (null? xs)) ok)
-          (else
-            (let* ((v        (car xs))
-                   (others   (%clp-siblings v vars))
-                   (existing (get-attr v 'clp.adiff))
-                   (merged   (append others (if existing existing '()))))
-              (cond
-                ;; Still a logic var — record siblings as an attribute.
-                ((logic-var? (deref-lvar v))
-                 (put-attr v 'clp.adiff merged)
-                 (outer (cdr xs) #t))
-                ;; Already ground — propagate the value across siblings now.
-                (else
-                  (let ((g (deref-lvar v)))
-                    (outer (cdr xs) (%clp-adiff-prune others g))))))))))
+      (and (%clp-fd-all-different! vars)
+           (let ((thunk (lambda () (%clp-fd-all-different! vars))))
+             (let loop ((ys vars))
+               (cond
+                 ((null? ys) #t)
+                 (else
+                   (%clp-prop-attach! (car ys) thunk)
+                   (loop (cdr ys))))))))
 
     (defun clp:<> (x y) (clp:all-different (list x y)))
     (defun clp:!= (x y) (clp:<> x y))
 
-    ;; ── Solver: DFS labelling with strategy dispatch ──────────────────────
+    ;; ── Solver: DFS labelling with option-plist dispatch (Phase 4b) ──────
+    ;;
+    ;; (clp:labeling vars)                                — first solution, leftmost, up
+    ;; (clp:labeling vars 'ff)                            — back-compat positional shim
+    ;; (clp:labeling vars 'strategy 'ff 'solutions 'all)  — keyword plist
+    ;;
+    ;; Recognised keys (even-length symbol plist):
+    ;;   strategy        'leftmost | 'ff | 'smallest (≡ ff) | 'largest
+    ;;   value-ordering  'up (default) | 'down
+    ;;   solutions       'first (default) | 'all | integer N  (collect up to N)
+    ;;   on-solution     proc  — called with the solution snapshot; returning
+    ;;                           #f stops enumeration early.
+    ;;
+    ;; Return values:
+    ;;   solutions = 'first  →  #t on success, #f on UNSAT (binds vars)
+    ;;   solutions = 'all    →  list of snapshots (each a list of deref'd
+    ;;                          values in the original `vars` order); vars
+    ;;                          are left unbound (trail unwinds between).
+    ;;   solutions = <int N> →  list of up to N snapshots.
+    ;;
+    ;; The positional back-compat form `(clp:labeling vars 'ff)` is detected
+    ;; when the rest args is a single symbol — interpreted as a strategy.
 
-    ;; Back-compat: (clp:solve vars) → leftmost DFS.
-    (defun clp:solve (vars) (clp:labeling vars 'leftmost))
+    ;; Back-compat: (clp:solve vars) → first solution, leftmost DFS.
+    (defun clp:solve (vars) (clp:labeling vars))
 
-    ;; (clp:labeling vars [strategy])
-    ;;   strategy: 'leftmost (default) — try vars in list order
-    ;;             'ff                 — first-fail: smallest domain first
-    (defun clp:labeling vars-and-strategy
-      (let* ((vars     (car vars-and-strategy))
-             (strategy (if (null? (cdr vars-and-strategy))
-                           'leftmost
-                           (car (cdr vars-and-strategy)))))
-        (cond
-          ((eq? strategy 'ff) (%clp-label-ff vars))
-          (else               (%clp-label-leftmost vars)))))
-
-    (defun %clp-label-leftmost (vars)
+    ;; plist lookup with default.
+    (defun %clp-opt (opts key default)
       (cond
-        ((null? vars) #t)
-        (else
-          (let* ((v  (car vars))
-                 (vd (deref-lvar v)))
-            (if (not (logic-var? vd))
-                (%clp-label-leftmost (cdr vars))
-                (let ((vals (%clp-domain-values-for-var v)))
-                  (if (null? vals) #f
-                      (%clp-try v vals (cdr vars) %clp-label-leftmost))))))))
+        ((null? opts) default)
+        ((null? (cdr opts)) default)       ; odd length — ignore dangling key
+        ((eq? (car opts) key) (car (cdr opts)))
+        (else (%clp-opt (cdr (cdr opts)) key default))))
 
-    (defun %clp-label-ff (vars)
+    ;; Normalise rest args into a plist.  The legacy single-symbol form
+    ;; `(clp:labeling vars 'ff)` is promoted to `(strategy ff)`.
+    (defun %clp-normalise-opts (rest)
+      (cond
+        ((null? rest) '())
+        ((and (null? (cdr rest))
+              (symbol? (car rest)))
+         (list 'strategy (car rest)))
+        (else rest)))
+
+    (defun clp:labeling vars-and-opts
+      (let* ((vars         (car vars-and-opts))
+             (opts         (%clp-normalise-opts (cdr vars-and-opts)))
+             (strategy     (%clp-opt opts 'strategy       'leftmost))
+             (value-order  (%clp-opt opts 'value-ordering 'up))
+             (solutions    (%clp-opt opts 'solutions      'first))
+             (on-solution  (%clp-opt opts 'on-solution    #f))
+             ;; Accumulator cell: a single mutable pair whose car is the
+             ;; current count, cdr is the reversed solution list.
+             (acc          (cons 0 '())))
+        ;; `found-fn` is called at each leaf of the DFS.  Its return value
+        ;; tells %clp-search whether to keep searching:
+        ;;   #t → keep going (find another solution)
+        ;;   #f → stop and propagate success up
+        (let ((found-fn
+                (lambda ()
+                  (let* ((snap    (map (lambda (v) (deref-lvar v)) vars))
+                         (user-ok (if on-solution (on-solution snap) #t)))
+                    (cond
+                      ((eq? solutions 'first) #f)                 ; always stop
+                      ((eq? solutions 'all)
+                       (set-car! acc (+ (car acc) 1))
+                       (set-cdr! acc (cons snap (cdr acc)))
+                       (if (eq? user-ok #f) #f #t))
+                      ((integer? solutions)
+                       (set-car! acc (+ (car acc) 1))
+                       (set-cdr! acc (cons snap (cdr acc)))
+                       (if (or (eq? user-ok #f)
+                               (>= (car acc) solutions)) #f #t))
+                      (else #f))))))
+          (cond
+            ;; 'first: keep the solution's bindings so the caller can
+            ;; inspect them (existing contract).
+            ((eq? solutions 'first)
+             (%clp-search vars strategy value-order found-fn))
+            ;; Enumeration modes: wrap in a trail mark and unwind after so
+            ;; that vars are left unbound when `clp:labeling` returns.
+            (else
+              (let ((outer-mark (trail-mark)))
+                (%clp-search vars strategy value-order found-fn)
+                (unwind-trail outer-mark)
+                (reverse (cdr acc))))))))
+
+    ;; Core DFS search.  Returns #t to mean "stop (enough solutions)" —
+    ;; which, for solutions='first, also means success.  Returns #f to
+    ;; mean "dead-end, backtrack".
+    (defun %clp-search (vars strategy value-order found-fn)
       (let ((unbound (filter (lambda (v) (logic-var? (deref-lvar v))) vars)))
         (cond
-          ((null? unbound) #t)
+          ((null? unbound)
+           ;; All ground → a solution.  found-fn decides whether to stop.
+           (let ((r (found-fn)))
+             (if r #f #t)))          ; #t-from-fn → keep searching (return #f from %clp-search)
           (else
-            (let* ((best (%clp-pick-smallest unbound))
-                   (rest (filter (lambda (v) (not (eq? v best))) unbound))
-                   (vals (%clp-domain-values-for-var best)))
-              (if (null? vals) #f
-                  (%clp-try best vals rest %clp-label-ff)))))))
+            (let* ((pick (%clp-pick unbound strategy))
+                   (rest (filter (lambda (v) (not (eq? v pick))) vars))
+                   (vals (%clp-order-values
+                           (%clp-domain-values-for-var pick)
+                           value-order)))
+              (%clp-try-values pick vals rest strategy value-order found-fn))))))
 
-    (defun %clp-pick-smallest (vars)
+    (defun %clp-pick (vars strategy)
+      (cond
+        ((eq? strategy 'leftmost)             (car vars))
+        ((or (eq? strategy 'ff)
+             (eq? strategy 'smallest))        (%clp-pick-by vars <))
+        ((eq? strategy 'largest)              (%clp-pick-by vars >))
+        (else                                 (car vars))))
+
+    ;; Pick the var whose domain size is extremal under `cmp` (< = smallest).
+    (defun %clp-pick-by (vars cmp)
       (let loop ((xs (cdr vars))
                  (best (car vars))
                  (best-sz (or (%clp-domain-size (car vars)) 999999999)))
@@ -405,22 +410,34 @@
           ((null? xs) best)
           (else
             (let ((sz (or (%clp-domain-size (car xs)) 999999999)))
-              (if (< sz best-sz)
+              (if (cmp sz best-sz)
                   (loop (cdr xs) (car xs) sz)
                   (loop (cdr xs) best best-sz)))))))
 
-    (defun %clp-try (var vals remaining continue)
+    (defun %clp-order-values (vals order)
+      (cond
+        ((null? vals) vals)
+        ((eq? order 'down) (reverse vals))
+        (else vals)))
+
+    (defun %clp-try-values (var vals rest strategy value-order found-fn)
       (cond
         ((null? vals) #f)
         (else
           (let* ((m  (trail-mark))
                  (ok (and (unify var (car vals))
-                          (continue remaining))))
-            (if ok
-                #t
-                (begin
-                  (unwind-trail m)
-                  (%clp-try var (cdr vals) remaining continue)))))))
+                          (%clp-search rest strategy value-order found-fn))))
+            (cond
+              (ok
+               ;; Either a deeper branch said "stop" (ok=#t from %clp-search
+               ;; means "enough, propagate success") — preserve bindings when
+               ;; solutions='first, otherwise we still need to unwind between
+               ;; enumerations.  The leaf has already recorded its snapshot;
+               ;; we bubble the stop signal up without unwinding here.
+               #t)
+              (else
+                (unwind-trail m)
+                (%clp-try-values var (cdr vals) rest strategy value-order found-fn)))))))
 
     ;; ── Branch-and-bound optimisation ─────────────────────────────────────
     ;;

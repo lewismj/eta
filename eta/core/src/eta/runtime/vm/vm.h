@@ -1,11 +1,13 @@
 #pragma once
 
 #include <vector>
+#include <deque>
 #include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -84,19 +86,22 @@ struct WindFrame {
 /// distinguish "attribute previously unset" (erase) from "previously held
 /// a value, possibly Nil" (reinstate prev_value).
 ///
-/// Domain changes are still undone via `ConstraintStore::unwind` and are not
-/// stored here — their prev-state is kept in the store's private trail so we
-/// don't pay the cost of generic indirection for numeric intervals.
+/// Phase 4b follow-up: domain changes are now trailed in the same stack via
+/// `Kind::Domain` entries (carrying an `std::optional<clp::Domain>` snapshot of
+/// the prior state).  This makes the binding trail the single source of truth
+/// for backtracking — the CLP store is now a pure value map.
 struct TrailEntry {
     enum class Kind : std::uint8_t {
-        Bind,   ///< LogicVar `var` was bound; on undo, reset binding to nullopt
-        Attr,   ///< Attributed var: `var`'s attribute `module_key` was mutated
+        Bind,    ///< LogicVar `var` was bound; on undo, reset binding to nullopt
+        Attr,    ///< Attributed var: `var`'s attribute `module_key` was mutated
+        Domain,  ///< CLP domain on the LogicVar `var` was installed/replaced/erased
     };
-    Kind                          kind{Kind::Bind};
-    LispVal                       var{nanbox::Nil};        ///< HeapObject ref to the LogicVar
-    LispVal                       prev_value{nanbox::Nil}; ///< Attr: previous attr value (only if had_prev)
-    memory::intern::InternId      module_key{0};           ///< Attr: which attribute slot
-    bool                          had_prev{false};         ///< Attr: was prev_value meaningful?
+    Kind                              kind{Kind::Bind};
+    LispVal                           var{nanbox::Nil};        ///< HeapObject ref to the LogicVar
+    LispVal                           prev_value{nanbox::Nil}; ///< Attr: previous attr value (only if had_prev)
+    memory::intern::InternId          module_key{0};           ///< Attr: which attribute slot
+    bool                              had_prev{false};         ///< Attr/Domain: was prev_* meaningful?
+    std::optional<clp::Domain>        prev_domain{};           ///< Domain: previous domain state (nullopt → had none)
 };
 
 /// A live exception catch frame installed by SetupCatch.
@@ -211,12 +216,36 @@ public:
     clp::ConstraintStore& constraint_store() { return constraint_store_; }
     const clp::ConstraintStore& constraint_store() const { return constraint_store_; }
 
+    /// Trailed domain write: snapshot any prior domain on `id` onto the
+    /// unified trail and install `dom` via the constraint store.  An
+    /// UnwindTrail past this entry restores (or removes) the prior domain.
+    void trail_set_domain(memory::heap::ObjectId id, clp::Domain dom);
+
+    /// Trailed domain erase: snapshot the prior domain (if any) and drop it.
+    void trail_erase_domain(memory::heap::ObjectId id);
+
     // Phase 3: expose trail + hook registry to builtins.
     std::vector<TrailEntry>& trail_stack() { return trail_stack_; }
     const std::vector<TrailEntry>& trail_stack() const { return trail_stack_; }
 
     std::unordered_map<memory::intern::InternId, LispVal>& attr_unify_hooks() { return attr_unify_hooks_; }
     const std::unordered_map<memory::intern::InternId, LispVal>& attr_unify_hooks() const { return attr_unify_hooks_; }
+
+    // Phase 4b: Propagation queue.  When a logic var with one of these
+    // attribute keys is bound, the attribute's value is treated as a list of
+    // re-propagator thunks; each thunk is enqueued for the outer-`unify` drain
+    // rather than invoked synchronously.  Provides idempotent FIFO firing,
+    // which generalises the synchronous Phase 3 hook path used by
+    // `freeze` / `dif` (which remain sync via `attr_unify_hooks_`).
+    std::unordered_set<memory::intern::InternId>& async_thunk_attrs() { return async_thunk_attrs_; }
+    const std::unordered_set<memory::intern::InternId>& async_thunk_attrs() const { return async_thunk_attrs_; }
+
+    /// Push a propagator thunk onto the back of the queue.  Idempotent on
+    /// closure ObjectId — a thunk already pending is not enqueued twice.
+    /// GC-rooted via the queue itself.
+    void enqueue_propagator(LispVal thunk);
+
+    [[nodiscard]] std::size_t prop_queue_size() const noexcept { return prop_queue_.size(); }
 
     // ---- Occurs-check policy (Phase 1 of the logic/CLP roadmap) ----
     // Controls VM::unify behaviour when a binding would create a cyclic term:
@@ -277,6 +306,17 @@ private:
     //   (hook var bound-value attr-value)  →  #t on success / #f on failure.
     // Not trailed — hook registry is VM-lifetime, not backtrack-scoped.
     std::unordered_map<memory::intern::InternId, LispVal> attr_unify_hooks_;
+
+    // Phase 4b: keys whose attribute value is a list of re-propagator
+    // thunks to be enqueued (rather than passed to a sync hook proc) when
+    // a participating logic var becomes bound.  Populated via the new
+    // `register-prop-attr!` builtin.
+    std::unordered_set<memory::intern::InternId> async_thunk_attrs_;
+
+    // Phase 4b: outer-unify FIFO of pending propagator thunks.
+    std::deque<LispVal>                            prop_queue_;
+    std::unordered_set<memory::heap::ObjectId>     prop_queued_set_;
+    int                                            unify_depth_{0};
 
     // Occurs-check policy (Phase 1 — see set_occurs_check_mode).
     OccursCheckMode occurs_check_mode_{OccursCheckMode::Always};
@@ -382,6 +422,17 @@ private:
     /// Robinson unification with occurs check on both binding branches.
     /// Binds variables and trails them; returns true on success.
     bool unify(LispVal a, LispVal b);
+
+    /// Inner unification step.  Used recursively by `unify` for compound
+    /// recursion; does NOT drain the propagation queue.  External callers
+    /// should always call `unify`.
+    bool unify_internal(LispVal a, LispVal b);
+
+    /// Drain any pending propagator thunks (Phase 4b queue).  Called by the
+    /// outer `unify` exactly once after the inner step succeeds.  Returns
+    /// false on the first thunk that returns #f or errors; queue and dedup
+    /// set are left empty either way.
+    bool drain_propagators();
 
     /// Deep-copy a term, replacing unbound logic variables with fresh copies.
     /// Shared variables map to the same fresh copy (identity preserved).

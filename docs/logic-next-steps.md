@@ -196,18 +196,27 @@ unification — the foundation for real CLP and for tabling.
 
 ### Deliberate scope trims (for follow-up work)
 
-- **Var–var attribute intersection** — when both sides of a unify are
-  attributed logic vars, the current hook runs with `bound-value`
-  equal to the *other* (still-unbound) var. The merge-attributes
-  dance used by SWI to intersect constraint sets is *not* yet done.
-  Propagators that rely on this (CLP(FD) domain intersection on
-  alias) are blocked until Phase 4 ports domains onto attributes and
-  provides the proper merge path.
-- **No wakeup queue / overflow cap.** Phase 3 runs hooks
-  synchronously from inside `unify` via `call_value`. There is no
-  explicit FIFO and no depth cap beyond normal stack growth.
-  Acceptable for `freeze` / `dif`, which never recursively schedule;
-  revisit when porting domain propagators in Phase 4.
+- **Var–var attribute / domain intersection** — ✅ **Resolved in Phase 4b.**
+  `VM::unify` (`vm.cpp`) now intersects CLP domains BEFORE binding two
+  unbound logic vars: `domain_intersect` (added to `clp/domain.h`,
+  handles every Z/FD cross-kind combination) is invoked, the result is
+  installed on the surviving var via the trailed `ConstraintStore::set_domain`,
+  and an empty intersection fails the unify cleanly.  Both trails are
+  snapshotted before the intersect / bind / hook chain so a hook
+  rejection rolls back atomically.  Smoke test
+  `stdlib/tests/clp_varvar_merge_smoke.eta` covers Z∩Z, FD∩FD, FD∩Z,
+  asymmetric (only one side has a domain), disjoint→fail, and trail
+  restoration.  *Module-level attribute merging* (e.g. `freeze` goal
+  list concatenation when both vars have `'freeze` attrs) is still the
+  responsibility of each module's registered `attr-unify-hook` — the
+  hook fires with `(var=A, bound-val=B, attr-val=A's value)` and can
+  read `(get-attr B key)` to merge as needed (matches SWI semantics).
+- **No wakeup queue / overflow cap.** ✅ **Resolved in Phase 4b.**  A
+  VM-level FIFO `PropagationQueue` with closure-identity dedup now
+  drains at the outer-`unify` boundary; `freeze` / `dif` keep their
+  inline call_value path (they never recursively schedule), while
+  domain propagators register their attribute key via the new
+  `register-prop-attr!` builtin and are queued.
 - **No CLP port yet.** `ConstraintStore` still owns FD/Z domains and
   still trails them through its private trail mark (23-bit slot).
   Migrating domains to live as `'clp.fd` attributes on the variable
@@ -252,10 +261,10 @@ later Phase 4b once the API has stabilised.
   (Régin-style value-graph matching) all remain un-implemented.  The
   current Eta-level AC-3 is O(n²) per bind on group size — fine for
   toy problems, insufficient for serious CSP workloads.
-- **Explicit `PropagationQueue`.** Propagation currently runs via
-  synchronous hook recursion inside `unify`.  A proper VM-level FIFO
-  queue (with idempotence / fairness guarantees) is deferred; MVP
-  suffices for the API shape.
+- **Explicit `PropagationQueue`.** ✅ **Resolved in Phase 4b.**  Propagation
+  now drains via a VM-level FIFO with idempotence on closure identity;
+  the outer `VM::unify` call drains exactly once before returning, so
+  cascades are bounded-stack and fair.  See the Phase 4b row for details.
 - **Bit-set FD domain representation.** Domains remain `std::vector<int64_t>`
   lists.  Roaring-bitmap / bitset-chunk representations are a
   Phase 4b task coupled to the Régin propagator rewrite.
@@ -269,6 +278,30 @@ later Phase 4b once the API has stabilised.
   Phase 4b scope.  The Phase 4 MVP test therefore substitutes a
   pigeonhole-UNSAT + 4-in-4 Latin-row + `clp:minimize` trio as the
   "solver actually works" signal.
+
+---
+
+## Phase 4b — Native Propagators & Search API 🚧 **IN PROGRESS**
+
+**Goal:** retire every Phase 4 scope-trim.  Native C++ bounds-consistency
+propagators replace the Eta-level arithmetic; Régin matching replaces
+the pairwise attribute-hook all-different; labeling grows a proper
+keyword-option API; bitset FD domains and an explicit VM-level
+propagation queue round out the substrate.
+
+### Progress
+
+| Item | Status | Notes |
+|---|---|---|
+| `%clp-fd-plus!` / `%clp-fd-plus-offset!` / `%clp-fd-abs!` | ✅ **Done** | Bounds-consistency propagators in `core_primitives.h`, mixed Z/FD/ground operands, trailed via the unified `VM::trail_set_domain`.  Eta wrappers `clp:+`, `clp:plus-offset`, `clp:abs` in `stdlib/std/clp.eta` install a re-propagator thunk per participating var under the `'clp.prop` attribute (now an *async-thunk attribute* — see queue row below); each binding enqueues every thunk for FIFO drain at the outer-`unify` boundary, so propagators re-narrow to fixpoint without recursive C++ stack growth and without duplicate work when one bind fires the same propagator from many siblings. |
+| `%clp-fd-times!` / `%clp-fd-sum!` / `%clp-fd-scalar-product!` / `%clp-fd-element!` | ✅ **Done** | Interval-multiplication with floor/ceil quotient back-propagation (skipped when divisor straddles zero); sum forward+back; signed-coefficient scalar-product; 1-based element constraint with both ground and FD-domained index. Eta wrappers `clp:*`, `clp:sum`, `clp:scalar-product`, `clp:element` attach `'clp.prop` thunks.  Smoke test `stdlib/tests/clp_phase4b_arith.eta` includes a full **SEND+MORE=MONEY** end-to-end solve. |
+| `clp:labeling` option-list API | ✅ **Done** | Plist-style keyword args — `(clp:labeling vars 'strategy 'ff 'value-ordering 'down 'solutions 'all 'on-solution proc)`.  Positional back-compat `(clp:labeling vars 'ff)` detected by single-symbol rest arg.  `'solutions 'all` / integer N enumerate with an outer trail mark so vars are left unbound after return.  `'on-solution` callback may return `#f` to short-circuit.  Regression test `stdlib/tests/clp_labeling_options.eta`. |
+| N-queens + SEND+MORE=MONEY examples | ✅ **Done** | `examples/nqueens.eta` (8-queens demo + `solve-nqueens n`), `examples/send-more-money.eta` (verified 9567+1085=10652).  Regression test `stdlib/tests/clp_nqueens.eta` asserts known solution counts for N ∈ {4, 5, 6}. |
+| Régin-style `fd_all_different` (value-graph matching + SCC elim) | ✅ **Done** | `eta/core/src/eta/runtime/clp/alldiff_regin.h` implements the textbook Régin algorithm: augmenting-path max-matching on the bipartite value graph → iterative Tarjan SCCs of the directed orientation → BFS reachability from free values → every non-vital edge becomes a domain prune.  Exposed as `%clp-fd-all-different!`; `clp:all-different` is now a thin wrapper that posts the native propagator and attaches a re-firing `'clp.prop` thunk.  **Deletes** the pairwise `'clp.adiff` attribute-hook plumbing entirely — no shim, no dead code.  Smoke test `stdlib/tests/clp_alldiff_regin_smoke.eta` verifies the canonical "X,Y∈{1,2}, Z∈{1,2,3} → Z=3" pruning that pairwise AC-3 cannot discover, plus pigeonhole UNSAT at post-time, ground-value propagation, re-firing on bind, trail restoration, and a 4×4 Latin square. |
+| Explicit VM-level `PropagationQueue` | ✅ **Done** | New `prop_queue_` (FIFO `std::deque<LispVal>`) + `prop_queued_set_` dedup on closure `ObjectId`, plus a `unify_depth_` counter on `VM` (`vm.h`/`vm.cpp`).  `VM::unify` is now an outer wrapper around `unify_internal`: nested calls (compound recursion, sync-hook re-entry, propagator-driven cascades) return straight through; the *outer* call snapshots the trail, runs the inner step, then drains the queue once before returning.  A drained thunk returning `#f` triggers the existing atomic rollback (binding + attr + Domain trail entries unwound) and clears any still-pending entries.  Hook routing: synchronous hooks (registered via `register-attr-hook!`, used by `freeze` / `dif`) keep their inline call_value path; *async-thunk attributes* registered via the new `register-prop-attr!` builtin (currently `'clp.prop`) instead enqueue every thunk in the attribute's list — replacing the old recursive `%clp-prop-hook` walker entirely.  GC-rooted via the queue itself; `enumerate_gc_roots` exposes a `Propagation Queue` category for DAP.  `(%clp-prop-queue-size)` introspection primitive added.  Smoke test `stdlib/tests/clp_prop_queue_smoke.eta` covers re-firing on bind, atomic rollback on drain failure, idempotent FIFO under all-different broadcast, queue quiescence at the user boundary, and Domain-trail unwind after both var-var intersection and propagator narrowing. |
+| Bit-set FD domain representation | ❌ |  |
+| Phase 3 var–var attribute merge path | ✅ **Done** | `VM::unify` now intersects CLP domains on var–var alias via the new `domain_intersect` helper in `clp/domain.h`; the surviving var receives the intersected domain through trailed `VM::trail_set_domain`, empty intersection fails the unify, and the outer-unify wrapper rolls back atomically (Bind + Attr + Domain trail entries) on hook rejection.  Smoke test `stdlib/tests/clp_varvar_merge_smoke.eta`. |
+| Phase 1 `TrailEntry::Kind::Domain` (unified domain trail) | ✅ **Done** | `ConstraintStore` no longer keeps a private trail — domain mutations are recorded as `TrailEntry::Kind::Domain` entries on the shared `VM::trail_stack_` via `VM::trail_set_domain` / `trail_erase_domain`, snapshotting the prior `std::optional<clp::Domain>`.  `OpCode::TrailMark` is now a single fixnum (binding-trail size); `OpCode::UnwindTrail` restores Bind / Attr / Domain entries through one switch.  Eliminates the packed 23+23-bit mark and makes the binding trail the single source of truth for backtracking, paving the way for bitset domains (which can now snapshot the bitset chunk into the same trail entry). |
 
 ---
 
