@@ -299,13 +299,78 @@ propagation queue round out the substrate.
 | N-queens + SEND+MORE=MONEY examples | ✅ **Done** | `examples/nqueens.eta` (8-queens demo + `solve-nqueens n`), `examples/send-more-money.eta` (verified 9567+1085=10652).  Regression test `stdlib/tests/clp_nqueens.eta` asserts known solution counts for N ∈ {4, 5, 6}. |
 | Régin-style `fd_all_different` (value-graph matching + SCC elim) | ✅ **Done** | `eta/core/src/eta/runtime/clp/alldiff_regin.h` implements the textbook Régin algorithm: augmenting-path max-matching on the bipartite value graph → iterative Tarjan SCCs of the directed orientation → BFS reachability from free values → every non-vital edge becomes a domain prune.  Exposed as `%clp-fd-all-different!`; `clp:all-different` is now a thin wrapper that posts the native propagator and attaches a re-firing `'clp.prop` thunk.  **Deletes** the pairwise `'clp.adiff` attribute-hook plumbing entirely — no shim, no dead code.  Smoke test `stdlib/tests/clp_alldiff_regin_smoke.eta` verifies the canonical "X,Y∈{1,2}, Z∈{1,2,3} → Z=3" pruning that pairwise AC-3 cannot discover, plus pigeonhole UNSAT at post-time, ground-value propagation, re-firing on bind, trail restoration, and a 4×4 Latin square. |
 | Explicit VM-level `PropagationQueue` | ✅ **Done** | New `prop_queue_` (FIFO `std::deque<LispVal>`) + `prop_queued_set_` dedup on closure `ObjectId`, plus a `unify_depth_` counter on `VM` (`vm.h`/`vm.cpp`).  `VM::unify` is now an outer wrapper around `unify_internal`: nested calls (compound recursion, sync-hook re-entry, propagator-driven cascades) return straight through; the *outer* call snapshots the trail, runs the inner step, then drains the queue once before returning.  A drained thunk returning `#f` triggers the existing atomic rollback (binding + attr + Domain trail entries unwound) and clears any still-pending entries.  Hook routing: synchronous hooks (registered via `register-attr-hook!`, used by `freeze` / `dif`) keep their inline call_value path; *async-thunk attributes* registered via the new `register-prop-attr!` builtin (currently `'clp.prop`) instead enqueue every thunk in the attribute's list — replacing the old recursive `%clp-prop-hook` walker entirely.  GC-rooted via the queue itself; `enumerate_gc_roots` exposes a `Propagation Queue` category for DAP.  `(%clp-prop-queue-size)` introspection primitive added.  Smoke test `stdlib/tests/clp_prop_queue_smoke.eta` covers re-firing on bind, atomic rollback on drain failure, idempotent FIFO under all-different broadcast, queue quiescence at the user boundary, and Domain-trail unwind after both var-var intersection and propagator narrowing. |
-| Bit-set FD domain representation | ❌ |  |
+| Bit-set FD domain representation | ✅ **Done** | `clp::FDDomain` (`eta/core/src/eta/runtime/clp/domain.h`) is now a chunked 64-bit bit-set `{ int64_t base; std::vector<uint64_t> bits; int64_t count; }` instead of a sorted `std::vector<int64_t>`.  `empty` / `size` / `contains` are O(1); `min` / `max` are one `countr_zero`/`countl_zero` per non-empty word; iteration streams bits via `for_each` in ascending order; `intersect` walks the smaller operand and probes the larger, `intersect_z` masks against a Z interval.  `shrink_to_fit` trims leading / trailing zero words after every narrowing so the stored chunks stay tight.  Builders `from_sorted_unique` / `from_unsorted` / `from_range` / `singleton` cover every construction site.  All 9 call sites in `core_primitives.h` (`%clp-domain-fd!`, `%clp-get-domain`, `extract_bounds`, `narrow_var`, `%clp-fd-element!`, `%clp-fd-all-different!` domain materialisation + narrow callback) migrated to the new API; `FDDomain::values` is gone.  Unified-trail `TrailEntry::Kind::Domain` snapshots the bit-set chunks directly — no extra allocation per trailed write.  Existing CLP smoke tests (`clp.test.eta`, `clp_phase4_smoke.eta`, `clp_phase4b_arith.eta`, `clp_alldiff_regin_smoke.eta`, `clp_labeling_options.eta`, `clp_nqueens.eta`, `clp_prop_queue_smoke.eta`, `clp_varvar_merge_smoke.eta`) remain the behavioural oracle — iteration order, domain-values list shape, and `clp:domain-values` output are all preserved. |
 | Phase 3 var–var attribute merge path | ✅ **Done** | `VM::unify` now intersects CLP domains on var–var alias via the new `domain_intersect` helper in `clp/domain.h`; the surviving var receives the intersected domain through trailed `VM::trail_set_domain`, empty intersection fails the unify, and the outer-unify wrapper rolls back atomically (Bind + Attr + Domain trail entries) on hook rejection.  Smoke test `stdlib/tests/clp_varvar_merge_smoke.eta`. |
 | Phase 1 `TrailEntry::Kind::Domain` (unified domain trail) | ✅ **Done** | `ConstraintStore` no longer keeps a private trail — domain mutations are recorded as `TrailEntry::Kind::Domain` entries on the shared `VM::trail_stack_` via `VM::trail_set_domain` / `trail_erase_domain`, snapshotting the prior `std::optional<clp::Domain>`.  `OpCode::TrailMark` is now a single fixnum (binding-trail size); `OpCode::UnwindTrail` restores Bind / Attr / Domain entries through one switch.  Eliminates the packed 23+23-bit mark and makes the binding trail the single source of truth for backtracking, paving the way for bitset domains (which can now snapshot the bitset chunk into the same trail entry). |
 
 ---
 
-## Phase 5 — CLP(B) Boolean Constraints
+## Phase 5 — CLP(B) Boolean Constraints ✅ **MVP COMPLETE (propagation-only)**
+
+**Goal:** Boolean constraint solver, sharing the propagation infra
+from Phase 4.
+
+Phase 5 delivers Option A from the recommendation table — pure
+support-based propagation, no BDD backend.  Boolean propagators are
+peers of the CLP(FD) propagators: same `'clp.prop` queue, same
+unified domain trail, same labelling story (Boolean vars carry a
+`Z[0,1]` domain so `clp:labeling` from `std.clp` already does the
+right thing).  Option B (BDD-backed `sat-count` / `taut?`) remains
+deferred behind a feature flag for a follow-up phase.
+
+### Progress
+
+| Item | Status | Notes |
+|---|---|---|
+| Boolean domain on existing FD/Z substrate | ✅ **Done** | A "Boolean" is just an integer drawn from {0, 1}: declared via `(clp:boolean v)` which installs `ZDomain{0,1}`.  No new `BDomain` heap kind — `bool_view` (`core_primitives.h`) folds the current domain into a 2-bit `mask` (bit 0 = may be 0, bit 1 = may be 1).  `narrow_bool` writes back via the unified trail (`VM::trail_set_domain`), preserving the FD-vs-Z kind of the prior domain so cross-domain narrowings stay consistent. |
+| Native Boolean propagators (`%clp-bool-and!` / `or!` / `xor!` / `imp!` / `eq!` / `not!`) | ✅ **Done** | Built on a generic `propagate_ternary` / `propagate_binary` truth-table walker — for each row of the constraint's 4-row truth table, mark the row alive iff every operand's mask permits its value, then narrow each operand to the OR of bits over alive rows.  Domain-consistent on 2-value vars and unifies all 5 ternary connectives behind one helper.  `narrow_bool` is **value-captured** (not by-reference) into the helpers — these helpers are then captured into the registered builtin closures which outlive `register_core_primitives()`; an earlier `[&narrow_bool]` capture caused a dangling-reference crash on first call (Phase 5 commit notes record the lifetime contract). |
+| Cardinality propagator `%clp-bool-card!` | ✅ **Done** | Standard 2-bound cardinality: count `forced_1` (mask = {1}) and `possible_1` (mask ∩ {1} ≠ ∅); fail if `forced_1 > k_hi` or `possible_1 < k_lo`; force every open var (mask = {0,1}) to 0 when `forced_1 == k_hi`, to 1 when `possible_1 == k_lo`.  Trailed through `narrow_bool`. |
+| Eta-level wrappers in `std.clpb` | ✅ **Done** | New module `stdlib/std/clpb.eta` exports `clp:boolean`, `clp:and`, `clp:or`, `clp:xor`, `clp:imp`, `clp:eq`, `clp:not`, `clp:card`, `clp:labeling-b`, `clp:sat?`, `clp:taut?`.  Each posting helper runs the native propagator once, then attaches a re-firing thunk under the same shared `'clp.prop` queue attribute used by CLP(FD) — so Boolean and FD constraints participate in the same FIFO drain, no parallel queue.  `clp:sat?` / `clp:taut?` wrap `clp:labeling` in a trail-mark / unwind so the vars are left unbound on return. |
+| Builtin registration order | ✅ **Done** | New `%clp-bool-*` names registered in `core_primitives.h` immediately after `%clp-fd-all-different!`, mirrored in `builtin_names.h` (analysis-only LSP env) in the exact same order — keeps the LSP slot indices aligned with the runtime registry per the file's invariant header. |
+| Phase 5 smoke test | ✅ **Done** | `stdlib/tests/clpb_smoke.eta` covers (1–6) every native propagator's forward & back-propagation paths, (7) cardinality saturation, (8) trailed Boolean-domain unwind, (9) `sat?` / `taut?` leaving vars unbound, (10) tautology detection of `(x ∨ ¬x)` via `clp:taut?`, (11) **pigeonhole 4 → 3 UNSAT** detected by labelling + propagation, (12) majority-of-3 enumerated to exactly 4 models.  Test 10 documents the propagator-queue semantics that `'clp.prop` re-firing happens on bindings (not on domain narrowings) — matching CLP(FD); singleton narrowings cascade through labelling rather than the unify queue. |
+
+### Success criteria (met for MVP)
+
+- ✅ `(clp:boolean v)` installs a `Z[0,1]` domain visible to all FD machinery.
+- ✅ Every Boolean connective enforces domain-consistent pruning on
+  initial post AND re-fires on later bindings via the shared `'clp.prop`
+  queue.
+- ✅ Cardinality saturates: `(clp:card xs k k)` pins every open var
+  once `forced_1` or `possible_1` reaches the bound.
+- ✅ Backtracking restores Boolean domains atomically through the
+  unified trail.
+- ✅ Pigeonhole 4 → 3 detected UNSAT by `clp:taut?` (labelling +
+  cardinality propagation, no manual hint).
+- ✅ Tautology / unsatisfiability of `¬(x ∨ ¬x)` detected by
+  `clp:taut?` after a single `unify` posts the negation.
+
+### Deliberate scope trims (deferred)
+
+- **BDD / ROBDD backend.**  No `clp:sat-count`, no `clp:taut?` via
+  variable-elimination — `clp:taut?` here is "labelling finds no
+  satisfying assignment", which is correct but exponential in the
+  worst case.  The roadmap's Option B (CUDD / `clp/bdd.h`) behind a
+  feature flag is the natural follow-up; pigeonhole(8 → 7) is the
+  benchmark gate before that lands.
+- **Tseitin / SAT-bridge.**  Option C (MiniSat) is not in scope.
+- **`labeling-b` keyword options.**  `clp:labeling-b` is a thin alias
+  for `clp:labeling` (which already sees `(0 1)` from `clp:domain-values`
+  on a Z domain) — Boolean-specific value/variable orderings can be
+  added when they have a measurable win on a real CLP(B) workload.
+
+### Cross-cutting
+
+- The roadmap principle "one VM, one queue, one trail" holds: Boolean
+  propagators reuse every piece of the Phase 3 / Phase 4 / Phase 4b
+  substrate.  No new opcode, no new `ObjectKind`, no new trail entry,
+  no new attribute key.
+- The capture-lifetime trap (`[&narrow_bool]` vs `[narrow_bool]`)
+  caught here is now documented inline at the helper definition so
+  future propagator additions don't regress.
+
+---
+
+## Phase 5 — Original Plan (preserved for reference)
 
 **Goal:** Boolean constraint solver, sharing the propagation infra
 from Phase 4.

@@ -1609,7 +1609,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             if (!heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id))
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
                     "%clp-domain-fd!: first argument must be an unbound logic variable"}});
-            clp::FDDomain dom;
+            std::vector<int64_t> raw;
             LispVal lst = args[1];
             while (ops::is_boxed(lst) && ops::tag(lst) == Tag::HeapObject) {
                 auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(lst));
@@ -1618,11 +1618,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 if (!n.is_valid() || n.is_flonum())
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
                         "%clp-domain-fd!: domain values must be integers"}});
-                dom.values.push_back(n.int_val);
+                raw.push_back(n.int_val);
                 lst = c->cdr;
             }
-            std::sort(dom.values.begin(), dom.values.end());
-            dom.values.erase(std::unique(dom.values.begin(), dom.values.end()), dom.values.end());
+            clp::FDDomain dom = clp::FDDomain::from_unsorted(std::move(raw));
             if (dom.empty())
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
                     "%clp-domain-fd!: domain list is empty"}});
@@ -1670,8 +1669,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 auto sym = make_symbol(intern_table, "fd");
                 if (!sym) return False;
                 LispVal lst = Nil;
-                for (int i = static_cast<int>(fd.values.size()) - 1; i >= 0; --i) {
-                    auto v = make_fixnum(heap, fd.values[static_cast<std::size_t>(i)]);
+                const auto vs = fd.to_vector();   // ascending
+                for (int i = static_cast<int>(vs.size()) - 1; i >= 0; --i) {
+                    auto v = make_fixnum(heap, vs[static_cast<std::size_t>(i)]);
                     if (!v) return False;
                     auto c = make_cons(heap, *v, lst);
                     if (!c) return False;
@@ -1739,11 +1739,11 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                                 b.lo = z->lo; b.hi = z->hi; b.finite = true;
                             } else if (auto* fd = std::get_if<clp::FDDomain>(dom)) {
                                 b.is_fd = true;
-                                if (fd->values.empty()) {
+                                if (fd->empty()) {
                                     b.lo = 1; b.hi = 0; b.finite = true;  // empty sentinel
                                 } else {
-                                    b.lo = fd->values.front();
-                                    b.hi = fd->values.back();
+                                    b.lo = fd->min();
+                                    b.hi = fd->max();
                                     b.finite = true;
                                 }
                             }
@@ -1782,13 +1782,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             }
             // FD
             const auto& fd = std::get<clp::FDDomain>(*dom);
-            clp::FDDomain nfd;
-            nfd.values.reserve(fd.values.size());
-            for (auto v : fd.values) {
-                if (v >= new_lo && v <= new_hi) nfd.values.push_back(v);
-            }
-            if (nfd.values.empty()) return false;
-            if (nfd.values.size() == fd.values.size()) return true;  // no change
+            const int64_t old_size = fd.size();
+            clp::FDDomain nfd = fd.intersect_z(new_lo, new_hi);
+            if (nfd.empty()) return false;
+            if (nfd.size() == old_size) return true;  // no change
             vm->trail_set_domain(id, std::move(nfd));
             return true;
         };
@@ -2165,10 +2162,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     if (dense) {
                         if (!narrow_var(bi->id, first_k, last_k)) return False;
                     } else {
-                        clp::FDDomain nd;
-                        nd.values.assign(compatible_ks.begin(), compatible_ks.end());
-                        std::sort(nd.values.begin(), nd.values.end());
-                        nd.values.erase(std::unique(nd.values.begin(), nd.values.end()), nd.values.end());
+                        // `compatible_ks` is built in ascending k-order and is
+                        // unique by construction; build the bit-set directly.
+                        clp::FDDomain nd =
+                            clp::FDDomain::from_sorted_unique(compatible_ks);
                         vm->trail_set_domain(bi->id, std::move(nd));
                     }
                 }
@@ -2214,7 +2211,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                                     for (int64_t v = z->lo; v <= z->hi; ++v) av.domain.push_back(v);
                                 }
                             } else if (auto* fd = std::get_if<clp::FDDomain>(dom)) {
-                                av.domain = fd->values;  // already sorted/unique
+                                av.domain = fd->to_vector();   // sorted ascending
                                 if (av.domain.empty()) return False;
                             }
                             avars.push_back(std::move(av));
@@ -2246,14 +2243,297 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                         vm->trail_set_domain(id,
                             clp::ZDomain{ new_dom.front(), new_dom.back() });
                     } else {
-                        clp::FDDomain fd;
-                        fd.values = new_dom;
+                        clp::FDDomain fd = clp::FDDomain::from_sorted_unique(new_dom);
                         vm->trail_set_domain(id, std::move(fd));
                     }
                     return true;
                 };
 
                 return clp::run_regin_alldiff(avars, narrow) ? True : False;
+            });
+    }
+
+    // ========================================================================
+    // CLP(B) native Boolean propagators (Phase 5)
+    //
+    //   %clp-bool-and!  (z x y)   — posts z ≡ x ∧ y
+    //   %clp-bool-or!   (z x y)   — posts z ≡ x ∨ y
+    //   %clp-bool-xor!  (z x y)   — posts z ≡ x ⊕ y
+    //   %clp-bool-not!  (z x)     — posts z ≡ ¬x
+    //   %clp-bool-imp!  (z x y)   — posts z ≡ (x → y)
+    //   %clp-bool-eq!   (z x y)   — posts z ≡ (x ⇔ y)
+    //   %clp-bool-card! (xs k-lo k-hi)
+    //                              — posts   k-lo ≤ Σ xs ≤ k-hi
+    //
+    // A "Boolean" is an integer drawn from {0, 1} — either a ground 0/1, or
+    // an unbound logic var constrained to a domain that intersects {0,1}.
+    // A 2-bit `mask` encodes the current allowed values: bit 0 = may be 0,
+    // bit 1 = may be 1; mask 3 = {0,1}, mask 0 = infeasible.
+    //
+    // Propagation uses exhaustive-support pruning: for each constraint we
+    // enumerate its truth table, keep only rows consistent with the current
+    // masks, and narrow each variable to the union of its rows.  This is
+    // exact (domain-consistent) on 2-value domains and is the cheapest
+    // thing that works.
+    //
+    // Each propagator returns #t on success (including "nothing to do"),
+    // #f on detected inconsistency.  Narrowing is trailed through the
+    // unified VM trail (`VM::trail_set_domain`).  Re-firing on later
+    // bindings is installed by the Eta-level `std.clpb` wrappers via
+    // `%clp-prop-attach!`, sharing the same `'clp.prop` queue attribute
+    // used by the CLP(FD) propagators — no new registration plumbing.
+    // ========================================================================
+    {
+        // Deref a LispVal through any binding chain.
+        auto deref = [&heap](LispVal v) -> LispVal {
+            for (;;) {
+                if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return v;
+                auto id = ops::payload(v);
+                auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id);
+                if (!lv || !lv->binding.has_value()) return v;
+                v = *lv->binding;
+            }
+        };
+
+        // Walk an Eta proper list into a std::vector<LispVal>.  Returns
+        // false if the list is improper (dotted tail / non-cons element).
+        auto walk_list = [&heap](LispVal lst, std::vector<LispVal>& out) -> bool {
+            while (ops::is_boxed(lst) && ops::tag(lst) == Tag::HeapObject) {
+                auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(lst));
+                if (!c) return false;
+                out.push_back(c->car);
+                lst = c->cdr;
+            }
+            return lst == Nil;
+        };
+
+        // Boolean view of a CLP(B) argument.
+        //   mask bit 0 = may be 0; mask bit 1 = may be 1.
+        //   mask == 0 means infeasible; mask == 3 means {0,1}.
+        struct BoolView {
+            uint8_t  mask   = 3;
+            bool     is_var = false;
+            ObjectId id     = 0;
+        };
+
+        // Extract a BoolView for `v`.  Returns std::nullopt on a type
+        // error (non-integer ground value, or integer outside {0,1}).
+        auto bool_view = [&heap, vm, deref](LispVal v) -> std::optional<BoolView> {
+            LispVal d = deref(v);
+            if (ops::is_boxed(d) && ops::tag(d) == Tag::HeapObject) {
+                auto id = ops::payload(d);
+                auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id);
+                if (lv && !lv->binding.has_value()) {
+                    BoolView bv;
+                    bv.is_var = true;
+                    bv.id     = id;
+                    bv.mask   = 3;
+                    if (vm) {
+                        const auto* dom = vm->constraint_store().get_domain(id);
+                        if (dom) {
+                            bv.mask = 0;
+                            if (clp::domain_contains_int(*dom, 0)) bv.mask |= 1;
+                            if (clp::domain_contains_int(*dom, 1)) bv.mask |= 2;
+                        }
+                    }
+                    return bv;
+                }
+            }
+            auto n = classify_numeric(d, heap);
+            if (!n.is_valid() || n.is_flonum()) return std::nullopt;
+            BoolView bv;
+            if (n.int_val == 0) { bv.mask = 1; return bv; }
+            if (n.int_val == 1) { bv.mask = 2; return bv; }
+            return std::nullopt;  // integer but not 0/1
+        };
+
+        // Narrow `bv` to the target mask.  Returns false if the intersection
+        // is empty, or if an already-ground bv is being forced to a value
+        // it is not (the caller should have caught that via bv.mask probing).
+        // Writes only happen when the mask actually shrinks; all writes are
+        // trailed.
+        auto narrow_bool = [vm](const BoolView& bv, uint8_t new_mask) -> bool {
+            const uint8_t m = static_cast<uint8_t>(bv.mask & new_mask);
+            if (m == 0) return false;
+            if (m == bv.mask) return true;       // no change
+            if (!bv.is_var) return true;         // ground and m != 0 → consistent
+            if (!vm)         return true;
+            // m ∈ {1, 2} — a singleton; m == 3 cannot reduce from 3 without
+            // also being no change, already handled above.
+            const int64_t lo = (m == 1) ? 0 : 1;
+            const int64_t hi = (m == 1) ? 0 : 1;
+            // Route through trailed write.  Preserve FD domain kind when the
+            // current domain is FD; else use a ZDomain.  Either way the
+            // singleton is exactly [lo,hi].
+            const auto& store = vm->constraint_store();
+            const auto* dom = store.get_domain(bv.id);
+            if (dom && std::holds_alternative<clp::FDDomain>(*dom)) {
+                vm->trail_set_domain(bv.id, clp::FDDomain::singleton(lo));
+            } else {
+                vm->trail_set_domain(bv.id, clp::ZDomain{ lo, hi });
+            }
+            return true;
+        };
+
+        // Generic 3-variable support propagator.
+        // `table[r]` encodes row r as bits: bit 0 = v0, bit 1 = v1, bit 2 = v2.
+        // For each row r in [0..7], the row is "alive" iff
+        //    masks[i] has bit `((r >> i) & 1)` set, for i = 0,1,2.
+        // New mask for variable i is the OR over all alive rows of
+        //    1 << ((r >> i) & 1).
+        //
+        // NB: `narrow_bool` is captured BY VALUE here (not by reference).
+        // This lambda is itself captured by value into the registered
+        // builtin closures, which outlive `register_core_primitives()`.
+        // Holding a `&narrow_bool` reference would dangle and crash on
+        // first invocation — see Phase 5 commit notes.
+        auto propagate_ternary = [narrow_bool](const uint8_t rows[], std::size_t n_rows,
+                                               BoolView& b0, BoolView& b1, BoolView& b2) -> bool {
+            uint8_t nm0 = 0, nm1 = 0, nm2 = 0;
+            for (std::size_t r = 0; r < n_rows; ++r) {
+                const uint8_t row = rows[r];
+                const uint8_t v0 = row & 1u;
+                const uint8_t v1 = (row >> 1) & 1u;
+                const uint8_t v2 = (row >> 2) & 1u;
+                if ((b0.mask & (1u << v0)) == 0) continue;
+                if ((b1.mask & (1u << v1)) == 0) continue;
+                if ((b2.mask & (1u << v2)) == 0) continue;
+                nm0 |= static_cast<uint8_t>(1u << v0);
+                nm1 |= static_cast<uint8_t>(1u << v1);
+                nm2 |= static_cast<uint8_t>(1u << v2);
+            }
+            if (nm0 == 0 || nm1 == 0 || nm2 == 0) return false;
+            return narrow_bool(b0, nm0)
+                && narrow_bool(b1, nm1)
+                && narrow_bool(b2, nm2);
+        };
+
+        // Generic 2-variable support propagator (same shape, 4 rows max).
+        // Same value-capture rule for `narrow_bool` as above.
+        auto propagate_binary = [narrow_bool](const uint8_t rows[], std::size_t n_rows,
+                                              BoolView& b0, BoolView& b1) -> bool {
+            uint8_t nm0 = 0, nm1 = 0;
+            for (std::size_t r = 0; r < n_rows; ++r) {
+                const uint8_t row = rows[r];
+                const uint8_t v0 = row & 1u;
+                const uint8_t v1 = (row >> 1) & 1u;
+                if ((b0.mask & (1u << v0)) == 0) continue;
+                if ((b1.mask & (1u << v1)) == 0) continue;
+                nm0 |= static_cast<uint8_t>(1u << v0);
+                nm1 |= static_cast<uint8_t>(1u << v1);
+            }
+            if (nm0 == 0 || nm1 == 0) return false;
+            return narrow_bool(b0, nm0) && narrow_bool(b1, nm1);
+        };
+
+        // ---- Truth tables.  Row encoding: bit i = variable i's value. ----
+        //
+        // For (z x y) we use the convention: bit 0 = z, bit 1 = x, bit 2 = y.
+        // So row `(z << 0) | (x << 1) | (y << 2)` means (z, x, y).
+
+        //   z = x AND y  :   {(0,0,0), (0,0,1), (0,1,0), (1,1,1)}
+        static constexpr uint8_t TT_AND[] = { 0b000, 0b100, 0b010, 0b111 };
+        //   z = x OR y   :   {(0,0,0), (1,0,1), (1,1,0), (1,1,1)}
+        static constexpr uint8_t TT_OR[]  = { 0b000, 0b101, 0b011, 0b111 };
+        //   z = x XOR y  :   {(0,0,0), (1,0,1), (1,1,0), (0,1,1)}
+        static constexpr uint8_t TT_XOR[] = { 0b000, 0b101, 0b011, 0b110 };
+        //   z = x IMP y  :  x=0 → z=1; x=1 → z=y.
+        //     (z,x,y): (1,0,0), (1,0,1), (0,1,0), (1,1,1)
+        static constexpr uint8_t TT_IMP[] = { 0b001, 0b101, 0b010, 0b111 };
+        //   z = x EQ y   :   (1,0,0), (0,0,1), (0,1,0), (1,1,1)
+        static constexpr uint8_t TT_EQ[]  = { 0b001, 0b100, 0b010, 0b111 };
+
+        //   For (z x): bit 0 = z, bit 1 = x.
+        //   z = NOT x    :   (1,0), (0,1)
+        static constexpr uint8_t TT_NOT[] = { 0b01, 0b10 };
+
+        auto register_ternary = [&env, bool_view, propagate_ternary]
+            (const char* name, const uint8_t* table, std::size_t n_rows) {
+            env.register_builtin(name, 3, false,
+                [bool_view, propagate_ternary, table, n_rows, name](Args args)
+                    -> std::expected<LispVal, RuntimeError> {
+                    auto bz = bool_view(args[0]);
+                    auto bx = bool_view(args[1]);
+                    auto by = bool_view(args[2]);
+                    if (!bz || !bx || !by)
+                        return std::unexpected(RuntimeError{VMError{
+                            RuntimeErrorCode::TypeError,
+                            std::string(name) + ": arguments must be booleans (0/1 or logic vars)"}});
+                    return propagate_ternary(table, n_rows, *bz, *bx, *by) ? True : False;
+                });
+        };
+
+        register_ternary("%clp-bool-and!", TT_AND, 4);
+        register_ternary("%clp-bool-or!",  TT_OR,  4);
+        register_ternary("%clp-bool-xor!", TT_XOR, 4);
+        register_ternary("%clp-bool-imp!", TT_IMP, 4);
+        register_ternary("%clp-bool-eq!",  TT_EQ,  4);
+
+        env.register_builtin("%clp-bool-not!", 2, false,
+            [bool_view, propagate_binary](Args args)
+                -> std::expected<LispVal, RuntimeError> {
+                auto bz = bool_view(args[0]);
+                auto bx = bool_view(args[1]);
+                if (!bz || !bx)
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::TypeError,
+                        "%clp-bool-not!: arguments must be booleans (0/1 or logic vars)"}});
+                return propagate_binary(TT_NOT, 2, *bz, *bx) ? True : False;
+            });
+
+        // ── %clp-bool-card! (xs k-lo k-hi)  :  k_lo ≤ Σ xs ≤ k_hi ──────────
+        //
+        // Classic cardinality propagation:
+        //   let forced_1 = |{ x : mask(x) = {1} }|
+        //       possible_1 = |{ x : mask(x) ∩ {1} ≠ ∅ }|   (= forced_1 + open)
+        //   fail   if forced_1   > k_hi  or  possible_1 < k_lo
+        //   force 0 on every open var if forced_1   == k_hi
+        //   force 1 on every open var if possible_1 == k_lo
+        env.register_builtin("%clp-bool-card!", 3, false,
+            [&heap, bool_view, narrow_bool, walk_list](Args args)
+                -> std::expected<LispVal, RuntimeError> {
+                auto nl = classify_numeric(args[1], heap);
+                auto nh = classify_numeric(args[2], heap);
+                if (!nl.is_valid() || nl.is_flonum() || !nh.is_valid() || nh.is_flonum())
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::TypeError,
+                        "%clp-bool-card!: k-lo and k-hi must be integers"}});
+                const int64_t k_lo = nl.int_val, k_hi = nh.int_val;
+                std::vector<LispVal> xs;
+                if (!walk_list(args[0], xs))
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::TypeError,
+                        "%clp-bool-card!: first argument must be a proper list"}});
+                std::vector<BoolView> bvs;
+                bvs.reserve(xs.size());
+                for (auto e : xs) {
+                    auto bv = bool_view(e);
+                    if (!bv)
+                        return std::unexpected(RuntimeError{VMError{
+                            RuntimeErrorCode::TypeError,
+                            "%clp-bool-card!: list elements must be booleans"}});
+                    bvs.push_back(*bv);
+                }
+                int64_t forced_1 = 0, possible_1 = 0;
+                for (const auto& bv : bvs) {
+                    if (bv.mask == 2) ++forced_1;       // must-be-1
+                    if (bv.mask & 2u) ++possible_1;     // could be 1
+                }
+                if (forced_1   > k_hi) return False;
+                if (possible_1 < k_lo) return False;
+                if (forced_1 == k_hi) {
+                    // Force every open var (mask == 3) to 0.
+                    for (auto& bv : bvs) {
+                        if (bv.mask == 3u && !narrow_bool(bv, 1u)) return False;
+                    }
+                }
+                if (possible_1 == k_lo) {
+                    // Force every open var (mask == 3) to 1.
+                    for (auto& bv : bvs) {
+                        if (bv.mask == 3u && !narrow_bool(bv, 2u)) return False;
+                    }
+                }
+                return True;
             });
     }
 

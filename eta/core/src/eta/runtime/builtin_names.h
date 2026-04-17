@@ -185,6 +185,17 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%clp-fd-element!",         3, false);
     r("%clp-fd-all-different!",   1, false);
 
+    // CLP(B) native Boolean propagators (Phase 5).
+    // Order must match the register_builtin calls in core_primitives.h
+    // immediately after %clp-fd-all-different!.
+    r("%clp-bool-and!",  3, false);
+    r("%clp-bool-or!",   3, false);
+    r("%clp-bool-xor!",  3, false);
+    r("%clp-bool-imp!",  3, false);
+    r("%clp-bool-eq!",   3, false);
+    r("%clp-bool-not!",  2, false);
+    r("%clp-bool-card!", 3, false);
+
     // AD Tape primitives (tape-based reverse-mode AD)
     r("tape-new",        0, false);
     r("tape-start!",     1, false);
