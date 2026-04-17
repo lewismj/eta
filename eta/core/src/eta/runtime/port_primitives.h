@@ -50,7 +50,7 @@ using namespace eta::runtime::error;
 inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& intern_table, vm::VM& vm) {
     using Args = const std::vector<LispVal>&;
 
-    // Helper to extract port from a LispVal
+    /// Helper to extract port from a LispVal
     auto get_port = [&heap](LispVal val) -> std::expected<types::PortObject*, RuntimeError> {
         if (!ops::is_boxed(val) || ops::tag(val) != Tag::HeapObject) {
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "not a port"}});
@@ -62,9 +62,9 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return port_obj;
     };
 
-    // ========================================================================
-    // Current port accessors
-    // ========================================================================
+    /**
+     * Current port accessors
+     */
 
     env.register_builtin("current-input-port", 0, false, [&vm](Args) -> std::expected<LispVal, RuntimeError> {
         return vm.current_input_port();
@@ -78,9 +78,9 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return vm.current_error_port();
     });
 
-    // ========================================================================
-    // Current port setters
-    // ========================================================================
+    /**
+     * Current port setters
+     */
 
     env.register_builtin("set-current-input-port!", 1, false, [&vm, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
         auto port_obj = get_port(args[0]);
@@ -118,9 +118,9 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return Nil;
     });
 
-    // ========================================================================
-    // String ports
-    // ========================================================================
+    /**
+     * String ports
+     */
 
     env.register_builtin("open-output-string", 0, false, [&heap](Args) -> std::expected<LispVal, RuntimeError> {
         auto port = std::make_shared<StringPort>(StringPort::Mode::Output);
@@ -131,7 +131,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto port_obj = get_port(args[0]);
         if (!port_obj) return std::unexpected(port_obj.error());
 
-        // Try to downcast to StringPort
+        /// Try to downcast to StringPort
         auto* string_port = dynamic_cast<StringPort*>((*port_obj)->port.get());
         if (!string_port) {
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "get-output-string: not a string port"}});
@@ -150,9 +150,9 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_port(heap, port);
     });
 
-    // ========================================================================
-    // Port I/O operations
-    // ========================================================================
+    /**
+     * Port I/O operations
+     */
 
     env.register_builtin("write-string", 1, true, [&vm, &intern_table, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
         if (args.empty()) {
@@ -164,7 +164,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "write-string: first argument must be a string"}});
         }
 
-        // Optional port argument (defaults to current-output-port)
+        /// Optional port argument (defaults to current-output-port)
         LispVal port_val = args.size() > 1 ? args[1] : vm.current_output_port();
 
         auto port_obj = get_port(port_val);
@@ -177,7 +177,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("read-char", 0, true, [&heap, &vm, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Optional port argument (defaults to current-input-port)
+        /// Optional port argument (defaults to current-input-port)
         LispVal port_val = args.empty() ? vm.current_input_port() : args[0];
 
         auto port_obj = get_port(port_val);
@@ -185,7 +185,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
         auto ch = (*port_obj)->port->read_char();
         if (!ch) {
-            // EOF - return a special EOF object (we'll use False for now, Scheme typically uses an eof-object)
+            /// EOF - return a special EOF object (we'll use False for now, Scheme typically uses an eof-object)
             return False;
         }
 
@@ -197,9 +197,9 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return *encoded;
     });
 
-    // ========================================================================
-    // Port predicates
-    // ========================================================================
+    /**
+     * Port predicates
+     */
 
     env.register_builtin("port?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject) {
@@ -221,9 +221,9 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return (*port_obj)->port->is_output() ? True : False;
     });
 
-    // ========================================================================
-    // Port management
-    // ========================================================================
+    /**
+     * Port management
+     */
 
     env.register_builtin("close-port", 1, false, [get_port](Args args) -> std::expected<LispVal, RuntimeError> {
         auto port_obj = get_port(args[0]);
@@ -235,7 +235,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return Nil;
     });
 
-    // Standard Scheme aliases for close-port
+    /// Standard Scheme aliases for close-port
     env.register_builtin("close-input-port", 1, false, [get_port](Args args) -> std::expected<LispVal, RuntimeError> {
         auto port_obj = get_port(args[0]);
         if (!port_obj) return std::unexpected(port_obj.error());
@@ -258,16 +258,16 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return Nil;
     });
 
-    // ========================================================================
-    // Character I/O
-    // ========================================================================
+    /**
+     * Character I/O
+     */
 
     env.register_builtin("write-char", 1, true, [&vm, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
         if (args.empty()) {
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "write-char: requires at least 1 argument"}});
         }
 
-        // First argument must be a character
+        /// First argument must be a character
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::Char) {
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "write-char: first argument must be a character"}});
         }
@@ -276,7 +276,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "write-char: invalid character"}});
         }
 
-        // Encode the character as UTF-8
+        /// Encode the character as UTF-8
         std::string utf8;
         char32_t c = *ch;
         if (c < 0x80) {
@@ -295,7 +295,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             utf8 += static_cast<char>(0x80 | (c & 0x3F));
         }
 
-        // Optional port argument (defaults to current-output-port)
+        /// Optional port argument (defaults to current-output-port)
         LispVal port_val = args.size() > 1 ? args[1] : vm.current_output_port();
 
         auto port_obj = get_port(port_val);
@@ -307,9 +307,9 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return Nil;
     });
 
-    // ========================================================================
-    // File port operations
-    // ========================================================================
+    /**
+     * File port operations
+     */
 
     env.register_builtin("open-input-file", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto sv = StringView::try_from(args[0], intern_table);
@@ -337,9 +337,9 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_port(heap, port);
     });
 
-    // ========================================================================
-    // Binary port operations
-    // ========================================================================
+    /**
+     * Binary port operations
+     */
 
     env.register_builtin("open-output-bytevector", 0, false, [&heap](Args) -> std::expected<LispVal, RuntimeError> {
         auto port = std::make_shared<BinaryPort>(BinaryPort::Mode::Output);
@@ -363,7 +363,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto port_obj = get_port(args[0]);
         if (!port_obj) return std::unexpected(port_obj.error());
 
-        // Try to downcast to BinaryPort
+        /// Try to downcast to BinaryPort
         auto* binary_port = dynamic_cast<BinaryPort*>((*port_obj)->port.get());
         if (!binary_port) {
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "get-output-bytevector: not a binary port"}});
@@ -373,7 +373,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("read-u8", 0, true, [&vm, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Optional port argument (defaults to current-input-port)
+        /// Optional port argument (defaults to current-input-port)
         LispVal port_val = args.empty() ? vm.current_input_port() : args[0];
 
         auto port_obj = get_port(port_val);
@@ -386,7 +386,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
         auto byte = binary_port->read_byte();
         if (!byte) {
-            return False;  // EOF
+            return False;  ///< EOF
         }
 
         return ops::encode(static_cast<int64_t>(*byte)).value();
@@ -402,7 +402,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "write-u8: argument must be a byte (0-255)"}});
         }
 
-        // Optional port argument (defaults to current-output-port)
+        /// Optional port argument (defaults to current-output-port)
         LispVal port_val = args.size() > 1 ? args[1] : vm.current_output_port();
 
         auto port_obj = get_port(port_val);
@@ -426,5 +426,5 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 }
 
-}  // namespace eta::runtime
+}  ///< namespace eta::runtime
 

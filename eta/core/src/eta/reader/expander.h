@@ -48,7 +48,7 @@ namespace eta::reader::expander {
         std::string message;
     };
 
-    // Enum printer and full formatter for ExpandError
+    /// Enum printer and full formatter for ExpandError
     constexpr const char* to_string(ExpandError::Kind k) noexcept {
         using enum ExpandError::Kind;
         switch (k) {
@@ -77,7 +77,7 @@ namespace eta::reader::expander {
         //! If true, rewrite leading internal defines in lambda bodies to letrec
         //! per Scheme internal-define semantics.
         bool enable_internal_defines_to_letrec{true};
-        // Expansion limits
+        /// Expansion limits
         std::size_t depth_limit{10000};
     };
 
@@ -87,22 +87,22 @@ namespace eta::reader::expander {
         Span span{};
     };
 
-    // ========================================================================
-    // syntax-rules data structures
-    // ========================================================================
+    /**
+     * syntax-rules data structures
+     */
 
     /// A single element in a syntax-rules pattern
     struct SyntaxPattern;
     using SyntaxPatternPtr = std::unique_ptr<SyntaxPattern>;
 
-    struct PatVar        { std::string name; };                       // pattern variable (binds)
-    struct PatUnderscore {};                                          // _ (matches anything, no binding)
-    struct PatLiteral    { std::string name; };                       // literal keyword (matches by name)
-    struct PatDatum      { SExprPtr datum; };                         // literal constant (number, bool, etc.)
+    struct PatVar        { std::string name; };                       ///< pattern variable (binds)
+    struct PatUnderscore {};                                          ///< _ (matches anything, no binding)
+    struct PatLiteral    { std::string name; };                       ///< literal keyword (matches by name)
+    struct PatDatum      { SExprPtr datum; };                         ///< literal constant (number, bool, etc.)
     struct PatList {
-        std::vector<SyntaxPatternPtr> elems;                         // fixed elements
-        std::optional<SyntaxPatternPtr> ellipsis_pat;                // sub-pattern before ...
-        std::size_t ellipsis_index{0};                               // index where ... appears
+        std::vector<SyntaxPatternPtr> elems;                         ///< fixed elements
+        std::optional<SyntaxPatternPtr> ellipsis_pat;                ///< sub-pattern before ...
+        std::size_t ellipsis_index{0};                               ///< index where ... appears
     };
 
     struct SyntaxPattern {
@@ -113,13 +113,13 @@ namespace eta::reader::expander {
     struct SyntaxTemplate;
     using SyntaxTemplatePtr = std::unique_ptr<SyntaxTemplate>;
 
-    struct TmplVar     { std::string name; };                        // substitute bound pattern variable
-    struct TmplDatum   { SExprPtr datum; };                          // literal constant copied verbatim
-    struct TmplSymbol  { std::string name; };                        // introduced identifier (subject to hygiene)
+    struct TmplVar     { std::string name; };                        ///< substitute bound pattern variable
+    struct TmplDatum   { SExprPtr datum; };                          ///< literal constant copied verbatim
+    struct TmplSymbol  { std::string name; };                        ///< introduced identifier (subject to hygiene)
     struct TmplList {
-        std::vector<SyntaxTemplatePtr> elems;                        // fixed elements
-        std::optional<SyntaxTemplatePtr> ellipsis_tmpl;              // sub-template before ...
-        std::size_t ellipsis_index{0};                               // index where ... appears
+        std::vector<SyntaxTemplatePtr> elems;                        ///< fixed elements
+        std::optional<SyntaxTemplatePtr> ellipsis_tmpl;              ///< sub-template before ...
+        std::size_t ellipsis_index{0};                               ///< index where ... appears
     };
 
     struct SyntaxTemplate {
@@ -135,15 +135,15 @@ namespace eta::reader::expander {
 
     /// A complete syntax-rules transformer
     struct SyntaxRulesTransformer {
-        std::vector<std::string> literals;                           // literal keywords
+        std::vector<std::string> literals;                           ///< literal keywords
         std::vector<SyntaxClause> clauses;
-        std::unordered_set<std::string> definition_scope;           // names visible at define-syntax time (for hygiene)
+        std::unordered_set<std::string> definition_scope;           ///< names visible at define-syntax time (for hygiene)
     };
 
     /// Result of pattern matching: pattern variable -> bound value(s)
     struct MatchBinding {
-        SExprPtr single;                                             // for non-ellipsis vars
-        std::vector<SExprPtr> repeated;                              // for ellipsis vars
+        SExprPtr single;                                             ///< for non-ellipsis vars
+        std::vector<SExprPtr> repeated;                              ///< for ellipsis vars
         bool is_ellipsis{false};
     };
     using MatchEnv = std::unordered_map<std::string, MatchBinding>;
@@ -204,31 +204,32 @@ namespace eta::reader::expander {
         //! Macro environment: maps macro name -> transformer (populated by define-syntax)
         std::unordered_map<std::string, SyntaxRulesTransformer> macro_env_;
 
-        //! Top-level defined names — captured into each transformer's definition_scope
         //! so that free references in macro templates are not hygienically renamed.
         std::unordered_set<std::string> defined_names_;
 
 
-        // Error helpers
+        /// Error helpers
         static ExpandError syntax_error(Span sp, std::string_view msg, std::string hint = {});
         static ExpandError arity_error(Span sp, std::string_view form, std::size_t expected, std::size_t got);
         static ExpandError invalid_syntax(Span sp, std::string_view form, std::string_view expected);
 
-        // Shared identifier validation helper
-        // Checks for reserved keywords and optional duplicate detection
-        // Returns error if validation fails, otherwise returns void
+        /**
+         * Shared identifier validation helper
+         * Checks for reserved keywords and optional duplicate detection
+         * Returns error if validation fails, otherwise returns void
+         */
         static ExpanderResult<void> validate_identifier(
             const std::string& name, Span span,
             std::unordered_set<std::string>* seen = nullptr,
             std::string_view context = "identifier");
 
-        // Shared expansion utilities
+        /// Shared expansion utilities
         ExpanderResult<std::vector<SExprPtr>> expand_list_elems(const std::vector<SExprPtr>& elems) const;
 
         ExpanderResult<SExprPtr> expand_application(const List& lst);
 
         //! Special forms.
-        ExpanderResult<SExprPtr> handle_quote_like(const List& lst); // (quote ...); ReaderForm passed through elsewhere
+        ExpanderResult<SExprPtr> handle_quote_like(const List& lst); ///< (quote ...); ReaderForm passed through elsewhere
         ExpanderResult<SExprPtr> handle_if(const List& lst);
         ExpanderResult<SExprPtr> handle_begin(const List& lst);
         ExpanderResult<SExprPtr> handle_define(const List& lst);
@@ -247,34 +248,34 @@ namespace eta::reader::expander {
         ExpanderResult<SExprPtr> handle_do(const List& lst);
         ExpanderResult<SExprPtr> handle_define_record_type(const List& lst);
         ExpanderResult<SExprPtr> handle_define_syntax(const List& lst);
-        ExpanderResult<SExprPtr> handle_catch(const List& lst);   // (catch ['tag] body)
-        ExpanderResult<SExprPtr> handle_raise(const List& lst);   // (raise ['tag] value)
+        ExpanderResult<SExprPtr> handle_catch(const List& lst);   ///< (catch ['tag] body)
+        ExpanderResult<SExprPtr> handle_raise(const List& lst);   ///< (raise ['tag] value)
 
-        // Logic variable / unification forms
-        ExpanderResult<SExprPtr> handle_logic_var(const List& lst);     // (logic-var)
-        ExpanderResult<SExprPtr> handle_unify(const List& lst);         // (unify a b)
-        ExpanderResult<SExprPtr> handle_deref_lvar(const List& lst);    // (deref-lvar x)
-        ExpanderResult<SExprPtr> handle_trail_mark(const List& lst);    // (trail-mark)
-        ExpanderResult<SExprPtr> handle_unwind_trail(const List& lst);  // (unwind-trail mark)
-        ExpanderResult<SExprPtr> handle_copy_term(const List& lst);     // (copy-term t)
+        /// Logic variable / unification forms
+        ExpanderResult<SExprPtr> handle_logic_var(const List& lst);     ///< (logic-var)
+        ExpanderResult<SExprPtr> handle_unify(const List& lst);         ///< (unify a b)
+        ExpanderResult<SExprPtr> handle_deref_lvar(const List& lst);    ///< (deref-lvar x)
+        ExpanderResult<SExprPtr> handle_trail_mark(const List& lst);    ///< (trail-mark)
+        ExpanderResult<SExprPtr> handle_unwind_trail(const List& lst);  ///< (unwind-trail mark)
+        ExpanderResult<SExprPtr> handle_copy_term(const List& lst);     ///< (copy-term t)
 
 
         //! Modules/directives
-        ExpanderResult<SExprPtr> handle_module_list(const List& lst);    // (module name ...)
+        ExpanderResult<SExprPtr> handle_module_list(const List& lst);    ///< (module name ...)
         ExpanderResult<SExprPtr> handle_export(const List& lst);
         ExpanderResult<SExprPtr> handle_import(const List& lst);
 
-        // Convenience sugars explicitly requested
-        ExpanderResult<SExprPtr> handle_def(const List& lst);   // (def ...) sugar → define
-        ExpanderResult<SExprPtr> handle_defun(const List& lst); // (defun name (args) body...)
+        /// Convenience sugars explicitly requested
+        ExpanderResult<SExprPtr> handle_def(const List& lst);
+        ExpanderResult<SExprPtr> handle_defun(const List& lst); ///< (defun name (args) body...)
 
-        // -- Helpers --
+        /// -- Helpers --
         static SExprPtr make_symbol(std::string name, Span s);
         static SExprPtr make_nil(Span s);
         static SExprPtr make_list(std::vector<SExprPtr> elems, Span s);
         static SExprPtr make_dotted_list(std::vector<SExprPtr> head, SExprPtr tail, Span s);
 
-        // Variadic helper to build lists more concisely
+        /// Variadic helper to build lists more concisely
         template<typename... Args>
         static SExprPtr build_list(Span s, Args&&... args) {
             std::vector<SExprPtr> v;
@@ -283,18 +284,18 @@ namespace eta::reader::expander {
             return make_list(std::move(v), s);
         }
 
-        // Convenience: build a form like (keyword arg1 arg2 ...)
+        /// Convenience: build a form like (keyword arg1 arg2 ...)
         template<typename... Args>
         static SExprPtr make_form(Span s, const char* keyword, Args&&... args) {
             return build_list(s, make_symbol(keyword, s), std::forward<Args>(args)...);
         }
 
-        // Build (if test conseq alt)
+        /// Build (if test conseq alt)
         static SExprPtr make_if(Span s, SExprPtr test, SExprPtr conseq, SExprPtr alt) {
             return make_form(s, "if", std::move(test), std::move(conseq), std::move(alt));
         }
 
-        // Build (begin body...)
+        /// Build (begin body...)
         static SExprPtr make_begin(Span s, std::vector<SExprPtr> body) {
             std::vector<SExprPtr> v;
             v.reserve(body.size() + 1);
@@ -303,7 +304,7 @@ namespace eta::reader::expander {
             return make_list(std::move(v), s);
         }
 
-        // Build (let ((name init) ...) body...)
+        /// Build (let ((name init) ...) body...)
         static SExprPtr make_let(Span s, std::vector<std::pair<SExprPtr, SExprPtr>> bindings, std::vector<SExprPtr> body) {
             auto bindingList = make_list({}, s);
             for (auto& [name, init] : bindings) {
@@ -318,7 +319,7 @@ namespace eta::reader::expander {
             return make_list(std::move(v), s);
         }
 
-        // Build (lambda formals body...)
+        /// Build (lambda formals body...)
         static SExprPtr make_lambda(Span s, SExprPtr formals, std::vector<SExprPtr> body) {
             std::vector<SExprPtr> v;
             v.reserve(body.size() + 2);
@@ -328,12 +329,12 @@ namespace eta::reader::expander {
             return make_list(std::move(v), s);
         }
 
-        // Build (set! name value)
+        /// Build (set! name value)
         static SExprPtr make_set(Span s, SExprPtr name, SExprPtr value) {
             return make_form(s, "set!", std::move(name), std::move(value));
         }
 
-        // Build (letrec ((name init) ...) body...)
+        /// Build (letrec ((name init) ...) body...)
         static SExprPtr make_letrec(Span s, std::vector<std::pair<SExprPtr, SExprPtr>> bindings, std::vector<SExprPtr> body) {
             auto bindingList = make_list({}, s);
             for (auto& [name, init] : bindings) {
@@ -365,11 +366,11 @@ namespace eta::reader::expander {
         //! Internal defines -> letrec in lambda bodies
         ExpanderResult<bool> rewrite_internal_defines_to_letrec(std::vector<SExprPtr>& body) const;
 
-        // Quasiquote expansion helpers
+        /// Quasiquote expansion helpers
         ExpanderResult<SExprPtr> expand_quasiquote(const SExprPtr& x, int depth, Span ctx);
         SExprPtr make_quote(SExprPtr datum, Span s);
 
-        // syntax-rules helpers
+        /// syntax-rules helpers
         ExpanderResult<SyntaxPatternPtr> parse_syntax_pattern(
             const SExprPtr& node,
             const std::unordered_set<std::string>& literals,

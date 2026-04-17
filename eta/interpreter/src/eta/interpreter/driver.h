@@ -31,11 +31,9 @@
 #include "eta/runtime/value_formatter.h"
 #include "eta/diagnostic/diagnostic.h"
 
-// Single source of truth for live primitive registration order:
-//   core → port → io → torch → stats → nng
+/// Single source of truth for live primitive registration order:
 #include "eta/interpreter/all_primitives.h"
 
-// NNG — registered separately (requires driver-specific arguments)
 #include <nng/nng.h>
 #include <nng/protocol/pair0/pair.h>
 #include <eta/nng/nng_socket_ptr.h>
@@ -53,20 +51,20 @@ namespace fs = std::filesystem;
  * @brief Compilation + execution driver for the eta language.
  *
  * Owns the full runtime state (Heap, InternTable, VM, etc.) and provides
- * incremental execution — successive calls to run_source() share the same
  * VM globals and linker state, so definitions persist across REPL inputs.
  *
- * Pipeline:  source → lex → parse → expand → link → analyze → emit → execute
  */
 class Driver {
 public:
-    /// Parse a human-readable heap size from an environment variable.
-    ///
-    /// Supported suffixes (case-insensitive): K (KiB), M (MiB), G (GiB).
-    /// Examples: "512K", "4M", "2G".
-    ///
-    /// @param env_var     Name of the environment variable to read.
-    /// @param default_val Returned when the variable is absent, empty, or invalid.
+    /**
+     * Parse a human-readable heap size from an environment variable.
+     *
+     * Supported suffixes (case-insensitive): K (KiB), M (MiB), G (GiB).
+     * Examples: "512K", "4M", "2G".
+     *
+     * @param env_var     Name of the environment variable to read.
+     * @param default_val Returned when the variable is absent, empty, or invalid.
+     */
     static std::size_t parse_heap_env_var(
         const char*  env_var,
         std::size_t  default_val = 4u * 1024u * 1024u) noexcept
@@ -87,13 +85,13 @@ public:
                 case 'G': case 'g': mult = 1024ULL * 1024ULL * 1024ULL; ++end; break;
                 default: break;
             }
-            // Skip optional trailing whitespace, then require end-of-string.
+            /// Skip optional trailing whitespace, then require end-of-string.
             while (*end && std::isspace(static_cast<unsigned char>(*end))) ++end;
-            if (*end != '\0') return default_val; // unexpected trailing characters
+            if (*end != '\0') return default_val; ///< unexpected trailing characters
         }
 
         const std::uint64_t result = static_cast<std::uint64_t>(raw) * mult;
-        // Guard against overflow vs. std::size_t.
+        /// Guard against overflow vs. std::size_t.
         constexpr std::uint64_t SIZE_T_MAX = static_cast<std::uint64_t>(~std::size_t{0});
         if (result > SIZE_T_MAX) return default_val;
         return static_cast<std::size_t>(result);
@@ -109,33 +107,38 @@ public:
           builtins_(),
           vm_(heap_, intern_table_),
           diag_engine_(),
-          next_file_id_(1) // 0 is reserved for REPL / anonymous input
+          next_file_id_(1) ///< 0 is reserved for REPL / anonymous input
     {
-        // The VM installs a default heap GC callback in its constructor, but at
-        // the Driver level we also need compiled bytecode constants in the
-        // function registry to act as GC roots. Large modules (e.g. portfolio)
-        // can emit quoted heap-backed constants long before they are executed or
-        // serialized for spawn-thread.
+        /**
+         * The VM installs a default heap GC callback in its constructor, but at
+         * the Driver level we also need compiled bytecode constants in the
+         * function registry to act as GC roots. Large modules (e.g. portfolio)
+         * can emit quoted heap-backed constants long before they are executed or
+         * serialized for spawn-thread.
+         */
         heap_.set_gc_callback([this]() { collect_garbage_with_registry_roots(); });
 
-        // Register all core + port + io + torch + stats primitives.
-        // NNG follows with driver-specific arguments.
-        // Step 1: Populate all slots with metadata (name/arity/has_rest) + null funcs.
-        //         builtin_names.h is the Single Source of Truth for slot order.
+        /**
+         * Register all core + port + io + torch + stats primitives.
+         * NNG follows with driver-specific arguments.
+         * Step 1: Populate all slots with metadata (name/arity/has_rest) + null funcs.
+         *         builtin_names.h is the Single Source of Truth for slot order.
+         */
         runtime::register_builtin_names(builtins_);
-        // Step 2: Switch to patch mode — subsequent register_builtin() calls
-        //         validate metadata and install the real func.
+        ///         validate metadata and install the real func.
         builtins_.begin_patching();
         register_all_primitives(builtins_, heap_, intern_table_, vm_);
 
 
-        // Detect etai binary path if not explicitly supplied
+        /// Detect etai binary path if not explicitly supplied
         if (etai_path.empty()) etai_path = detect_etai_path();
         etai_path_ = etai_path;
 
-        // Build colon-separated module search path to forward to child processes.
-        // Child receives this via ETA_MODULE_PATH only if ETA_MODULE_PATH is not
-        // already set in the environment (so user env overrides always win).
+        /**
+         * Build colon-separated module search path to forward to child processes.
+         * Child receives this via ETA_MODULE_PATH only if ETA_MODULE_PATH is not
+         * already set in the environment (so user env overrides always win).
+         */
         std::string module_search_path;
         {
 #ifdef _WIN32
@@ -149,9 +152,11 @@ public:
             }
         }
 
-        // The lambda captures only the module search path string (value, not ref),
-        // so it is safe to use from any thread. It creates a fresh Driver + VM
-        // for each actor thread.
+        /**
+         * The lambda captures only the module search path string (value, not ref),
+         * so it is safe to use from any thread. It creates a fresh Driver + VM
+         * for each actor thread.
+         */
         eta::nng::ProcessManager::ThreadWorkerFn thread_worker_fn =
             [module_search_path](
                 const std::string& th_module_path,
@@ -168,19 +173,18 @@ public:
                 Driver child(std::move(resolver), child_heap);
                 child.load_prelude();
 
-                // Dial the parent's inproc:// listener → sets current-mailbox
                 if (!child.install_mailbox(th_endpoint)) {
                     alive->store(false, std::memory_order_release);
                     return;
                 }
 
-                // Load the target module
+                /// Load the target module
                 if (!child.run_file(fs::path(th_module_path))) {
                     alive->store(false, std::memory_order_release);
                     return;
                 }
 
-                // Build and evaluate: (func-name arg1 arg2 ...)
+                /// Build and evaluate: (func-name arg1 arg2 ...)
                 std::string call_src = "(" + th_func_name;
                 for (const auto& a : th_text_args) {
                     call_src += " ";
@@ -192,9 +196,11 @@ public:
             alive->store(false, std::memory_order_release);
         };
 
-        // Receives a SerializedClosure, deserializes the bytecode into the child
-        // Driver's registry, reconstructs upvalues, creates the Closure heap
-        // object, and calls it via call_value().
+        /**
+         * Receives a SerializedClosure, deserializes the bytecode into the child
+         * Driver's registry, reconstructs upvalues, creates the Closure heap
+         * object, and calls it via call_value().
+         */
         eta::nng::ProcessManager::ClosureWorkerFn closure_worker_fn =
             [module_search_path](
                 const std::string& th_endpoint,
@@ -209,13 +215,12 @@ public:
                 Driver child(std::move(resolver), child_heap);
                 child.load_prelude();
 
-                // Dial the parent's inproc:// listener → sets current-mailbox
                 if (!child.install_mailbox(th_endpoint)) {
                     alive->store(false, std::memory_order_release);
                     return;
                 }
 
-                // Deserialize the function registry from the etac-format blob
+                /// Deserialize the function registry from the etac-format blob
                 runtime::vm::BytecodeSerializer ser(child.heap(), child.intern_table());
                 std::istringstream iss(std::string(sc.funcs_bytes.begin(),
                                                    sc.funcs_bytes.end()),
@@ -227,7 +232,7 @@ public:
                 }
                 auto& etac = *etac_res;
 
-                // Rebase and register the functions in the child's registry
+                /// Rebase and register the functions in the child's registry
                 uint32_t base_idx = static_cast<uint32_t>(child.registry().size());
                 for (const auto& func : etac.registry.all()) {
                     runtime::vm::BytecodeFunction copy = func;
@@ -235,7 +240,7 @@ public:
                     child.registry().add(std::move(copy));
                 }
 
-                // Deserialize upvalues
+                /// Deserialize upvalues
                 std::vector<runtime::nanbox::LispVal> upval_vals;
                 upval_vals.reserve(sc.upvals.size());
                 for (std::size_t uvi = 0; uvi < sc.upvals.size(); ++uvi) {
@@ -250,7 +255,7 @@ public:
                     upval_vals.push_back(*uv);
                 }
 
-                // Reconstruct the Closure heap object in the child's heap
+                /// Reconstruct the Closure heap object in the child's heap
                 const auto* entry_func = child.registry().get(base_idx);
                 if (!entry_func) {
                     alive->store(false, std::memory_order_release);
@@ -263,7 +268,7 @@ public:
                     return;
                 }
 
-                // Call the thunk with 0 arguments
+                /// Call the thunk with 0 arguments
                 auto result = child.vm().call_value(*closure_val, {});
                 if (!result) {
                 }
@@ -273,26 +278,26 @@ public:
             alive->store(false, std::memory_order_release);
         };
 
-        // nng networking + actor-model primitives
+        /// nng networking + actor-model primitives
         eta::nng::register_nng_primitives(
             builtins_, heap_, intern_table_,
             &proc_mgr_, etai_path_, &mailbox_val_,
             module_search_path, std::move(thread_worker_fn),
             &registry_);
 
-        // Step 3: Verify every pre-registered slot now has a real implementation.
+        /// Step 3: Verify every pre-registered slot now has a real implementation.
         builtins_.verify_all_patched();
 
         proc_mgr_.set_closure_factory(std::move(closure_worker_fn));
 
 
-        // Wire up function resolver
+        /// Wire up function resolver
         vm_.set_function_resolver([this](uint32_t idx) {
             return registry_.get(idx);
         });
     }
 
-    // Non-copyable, non-movable (owns references captured in lambdas)
+    /// Non-copyable, non-movable (owns references captured in lambdas)
     Driver(const Driver&) = delete;
     Driver& operator=(const Driver&) = delete;
     Driver(Driver&&) = delete;
@@ -305,7 +310,6 @@ public:
         fs::path path;        ///< Path to the prelude file (if found).
     };
 
-    /// Result of a compile_file() call — metadata for all newly emitted modules.
     struct CompileModuleEntry {
         std::string name;
         uint32_t init_func_index{0};        ///< index relative to base_func_idx
@@ -331,7 +335,7 @@ public:
         PreludeResult result;
         auto prelude_path = resolver_.find_file("prelude.eta");
         if (!prelude_path) {
-            return result; // not found
+            return result; ///< not found
         }
         result.found = true;
         result.path = *prelude_path;
@@ -366,7 +370,6 @@ public:
     /**
      * @brief Compile a .eta file without executing it.
      *
-     * Runs the full pipeline (lex → parse → expand → link → analyze → emit)
      * but skips VM execution.  The prelude and imported dependencies are still
      * executed normally (they must populate globals for semantic analysis).
      *
@@ -426,7 +429,6 @@ public:
     [[nodiscard]] diagnostic::DiagnosticEngine& diagnostics() noexcept { return diag_engine_; }
     [[nodiscard]] const diagnostic::DiagnosticEngine& diagnostics() const noexcept { return diag_engine_; }
 
-    /// Create a FileResolver that maps file_id → filename string.
     /// Suitable for passing to format_diagnostic / DiagnosticEngine::print_all.
     [[nodiscard]] diagnostic::FileResolver file_resolver() const {
         return [this](uint32_t id) -> std::string {
@@ -440,23 +442,22 @@ public:
     /// Access the module path resolver.
     [[nodiscard]] ModulePathResolver& resolver() noexcept { return resolver_; }
 
-    /// Direct access to the VM — required for DAP debug hooks.
     runtime::vm::VM& vm() noexcept { return vm_; }
     const runtime::vm::VM& vm() const noexcept { return vm_; }
 
-    /// Direct access to the bytecode registry — required for breakpoint line resolution.
     semantics::BytecodeFunctionRegistry& registry() noexcept { return registry_; }
     const semantics::BytecodeFunctionRegistry& registry() const noexcept { return registry_; }
 
-    /// Reverse-lookup: file_id → absolute path. Returns nullptr if not found.
     [[nodiscard]] const fs::path* path_for_file_id(uint32_t id) const noexcept {
         auto it = file_id_to_path_.find(id);
         return it != file_id_to_path_.end() ? &it->second : nullptr;
     }
 
-    /// Install a custom output port so that display/write/newline go through
-    /// the given port rather than falling back to std::cout.
-    /// Typical use in the DAP: pass a CallbackPort that fires send_event().
+    /**
+     * Install a custom output port so that display/write/newline go through
+     * the given port rather than falling back to std::cout.
+     * Typical use in the DAP: pass a CallbackPort that fires send_event().
+     */
     void set_output_port(std::shared_ptr<runtime::Port> port) {
         auto val = runtime::memory::factory::make_port(heap_, std::move(port));
         if (val) vm_.set_current_output_port(*val);
@@ -468,10 +469,12 @@ public:
         if (val) vm_.set_current_error_port(*val);
     }
 
-    /// Pre-register a file path so that its file_id is known before the file
-    /// is actually loaded.  The DAP uses this to install breakpoints BEFORE
-    /// the VM thread starts running.  If the path is already registered the
-    /// existing id is returned unchanged.
+    /**
+     * Pre-register a file path so that its file_id is known before the file
+     * is actually loaded.  The DAP uses this to install breakpoints BEFORE
+     * the VM thread starts running.  If the path is already registered the
+     * existing id is returned unchanged.
+     */
     uint32_t ensure_file_id(const fs::path& path) {
         auto canon = canon_path_key(path);
         auto it = path_to_file_id_.find(canon);
@@ -482,7 +485,6 @@ public:
         return id;
     }
 
-    /// Forward-lookup: canonical path string → file_id. Returns 0 if not found.
     /// Input is normalised before lookup so case differences on Windows are handled.
     [[nodiscard]] uint32_t file_id_for_path(const std::string& path) const {
         auto canon = canon_path_key(fs::path(path));
@@ -496,13 +498,15 @@ public:
         return runtime::format_value(v, mode, heap_, intern_table_);
     }
 
-    /// Install the `--mailbox` socket for a spawned child process.
-    ///
-    /// Called by main_etai.cpp when the `--mailbox <endpoint>` argument is
-    /// present.  Creates a PAIR socket, dials the endpoint (connecting to the
-    /// parent's listening socket), and stores the socket as `current-mailbox`.
-    ///
-    /// @return true on success, false if the dial fails.
+    /**
+     * Install the `--mailbox` socket for a spawned child process.
+     *
+     * Called by main_etai.cpp when the `--mailbox <endpoint>` argument is
+     * present.  Creates a PAIR socket, dials the endpoint (connecting to the
+     * parent's listening socket), and stores the socket as `current-mailbox`.
+     *
+     * @return true on success, false if the dial fails.
+     */
     bool install_mailbox(const std::string& endpoint) {
         eta::nng::NngSocketPtr sp;
         sp.protocol = eta::nng::NngProtocol::Pair;
@@ -535,20 +539,17 @@ public:
         return mailbox_val_;
     }
 
-    /// Named global variables: slot index → variable name.
     /// Populated during compilation for debugger display.
     [[nodiscard]] const std::unordered_map<uint32_t, std::string>& global_names() const noexcept {
         return global_names_;
     }
 
-    /// Direct access to the heap — used by the DAP heap inspector.
     runtime::memory::heap::Heap& heap() noexcept { return heap_; }
     const runtime::memory::heap::Heap& heap() const noexcept { return heap_; }
 
     /// Direct access to the intern table.
     runtime::memory::intern::InternTable& intern_table() noexcept { return intern_table_; }
 
-    /// Access the optimization pipeline — add passes before running files.
     semantics::OptimizationPipeline& optimization_pipeline() noexcept { return optimization_pipeline_; }
 
     /// Number of registered builtins (used to embed in .etac for mismatch detection).
@@ -578,7 +579,7 @@ public:
         }
         auto& etac = *etac_res;
 
-        // Auto-load non-prelude imports
+        /// Auto-load non-prelude imports
         for (const auto& imp : etac.imports) {
             if (executed_modules_.contains(imp)) continue;
             auto imp_path = resolver_.resolve(imp);
@@ -591,10 +592,12 @@ public:
             if (!run_file(*imp_path)) return false;
         }
 
-        // Move functions from the deserialized registry into ours,
-        // recording the base index so module init_func_index values can be offset.
-        // The .etac stores 0-based (file-relative) function indices; relocate
-        // them to the runner's absolute indices.
+        /**
+         * Move functions from the deserialized registry into ours,
+         * recording the base index so module init_func_index values can be offset.
+         * The .etac stores 0-based (file-relative) function indices; relocate
+         * them to the runner's absolute indices.
+         */
         uint32_t base_idx = static_cast<uint32_t>(registry_.size());
         for (const auto& func : etac.registry.all()) {
             runtime::vm::BytecodeFunction copy = func;
@@ -602,10 +605,12 @@ public:
             registry_.add(std::move(copy));
         }
 
-        // Wire up function resolver if not already done
-        // (constructor does this, but defensive)
+        /**
+         * Wire up function resolver if not already done
+         * (constructor does this, but defensive)
+         */
 
-        // Execute each module's _init function
+        /// Execute each module's _init function
         for (const auto& mod : etac.modules) {
             if (executed_modules_.contains(mod.name)) continue;
 
@@ -613,7 +618,7 @@ public:
             if (globals.size() < mod.total_globals)
                 globals.resize(mod.total_globals, runtime::nanbox::Nil);
 
-            // Re-install builtins
+            /// Re-install builtins
             if (!builtins_installed_) {
                 for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
                     const auto& spec = builtins_.specs()[i];
@@ -641,7 +646,7 @@ public:
 
             executed_modules_.insert(mod.name);
 
-            // Invoke optional main
+            /// Invoke optional main
             if (mod.main_func_slot) {
                 auto main_val = globals[*mod.main_func_slot];
                 if (main_val != runtime::nanbox::Nil) {
@@ -680,16 +685,18 @@ private:
 
     diagnostic::DiagnosticEngine diag_engine_;
 
-    // IR-level optimization pipeline (runs between analyze and emit)
+    /// IR-level optimization pipeline (runs between analyze and emit)
     semantics::OptimizationPipeline optimization_pipeline_;
 
     eta::nng::ProcessManager         proc_mgr_;
     runtime::nanbox::LispVal         mailbox_val_{runtime::nanbox::Nil};
     std::string                      etai_path_;
 
-    /// Auto-detect the path to the etai binary at startup.
-    /// Reads /proc/self/exe on Linux, then looks for "etai" in the same
-    /// directory.  Falls back to "etai" (searched on PATH).
+    /**
+     * Auto-detect the path to the etai binary at startup.
+     * Reads /proc/self/exe on Linux, then looks for "etai" in the same
+     * directory.  Falls back to "etai" (searched on PATH).
+     */
     static std::string detect_etai_path() {
         namespace fs = std::filesystem;
         std::error_code ec;
@@ -701,7 +708,7 @@ private:
                 return candidate.string();
         }
 #elif defined(__APPLE__)
-        // macOS: use _NSGetExecutablePath
+        /// macOS: use _NSGetExecutablePath
         char buf[4096] = {};
         uint32_t size = sizeof(buf);
         if (_NSGetExecutablePath(buf, &size) == 0) {
@@ -717,39 +724,41 @@ private:
                 return candidate.string();
         }
 #endif
-        return "etai"; // fallback to PATH
+        return "etai"; ///< fallback to PATH
     }
 
-    // Accumulated expanded forms from all prior run_source calls.
-    // The linker clears its state on each index_modules() call, so we must
-    // re-feed ALL modules each time for correct cross-module resolution.
+    /**
+     * Accumulated expanded forms from all prior run_source calls.
+     * The linker clears its state on each index_modules() call, so we must
+     * re-feed ALL modules each time for correct cross-module resolution.
+     */
     std::vector<reader::parser::SExprPtr> accumulated_forms_;
 
-    // Names of modules that have already been executed (to avoid re-running).
+    /// Names of modules that have already been executed (to avoid re-running).
     std::unordered_set<std::string> executed_modules_;
 
-    // Track which files we've already loaded (to avoid double-loading prelude etc.)
+    /// Track which files we've already loaded (to avoid double-loading prelude etc.)
     std::unordered_set<std::string> loaded_files_;
 
-    // File ID allocator for diagnostic spans
+    /// File ID allocator for diagnostic spans
     uint32_t next_file_id_;
 
-    // Bidirectional file-id ↔ path maps (for diagnostics and DAP span resolution)
     std::unordered_map<uint32_t, fs::path>    file_id_to_path_;
     std::unordered_map<std::string, uint32_t> path_to_file_id_;
 
-    // Whether builtins have been installed into VM globals yet
+    /// Whether builtins have been installed into VM globals yet
     bool builtins_installed_{false};
 
-    // Guard against recursive auto-loading cycles
+    /// Guard against recursive auto-loading cycles
     std::unordered_set<std::string> loading_modules_;
 
-    // Global slot → variable name mapping (for debugger display)
     std::unordered_map<uint32_t, std::string> global_names_;
 
-    /// Normalise a path to a stable lowercase key used in path_to_file_id_.
-    /// On Windows this lowercases and ensures backslashes; on POSIX it is
-    /// just fs::absolute + lexically_normal.
+    /**
+     * Normalise a path to a stable lowercase key used in path_to_file_id_.
+     * On Windows this lowercases and ensures backslashes; on POSIX it is
+     * just fs::absolute + lexically_normal.
+     */
     static std::string canon_path_key(const fs::path& p) {
         std::error_code ec;
         fs::path abs = fs::absolute(p, ec);
@@ -768,9 +777,11 @@ private:
         return ensure_file_id(fs::path(raw_path));
     }
 
-    /// Collect all module names referenced in (import ...) clauses within
-    /// a set of expanded forms.  Scans the top-level module lists for
-    /// (import <sym>) / (import (only <sym> ...) ...) etc.
+    /**
+     * Collect all module names referenced in (import ...) clauses within
+     * a set of expanded forms.  Scans the top-level module lists for
+     * (import <sym>) / (import (only <sym> ...) ...) etc.
+     */
     static std::vector<std::string> collect_imported_modules(
             std::span<const reader::parser::SExprPtr> forms) {
         std::vector<std::string> result;
@@ -778,9 +789,9 @@ private:
 
         auto extract_module_name = [](const reader::parser::SExprPtr& clause) -> std::string {
             namespace utils = reader::utils;
-            // Plain symbol:  std.core
+            /// Plain symbol:  std.core
             if (auto s = utils::as_symbol(clause)) return s->name;
-            // List form:  (only std.core ...) / (except ...) / (rename ...) / (prefix ...)
+            /// List form:  (only std.core ...) / (except ...) / (rename ...) / (prefix ...)
             if (auto l = utils::as_list(clause)) {
                 if (l->elems.size() >= 2) {
                     if (auto m = utils::as_symbol(l->elems[1])) return m->name;
@@ -793,7 +804,7 @@ private:
             auto* lst = form ? form->template as<reader::parser::List>() : nullptr;
             if (!lst || lst->elems.size() < 2) continue;
             if (!reader::utils::is_symbol_named(lst->elems[0], "module")) continue;
-            // Walk body for (import ...) forms
+            /// Walk body for (import ...) forms
             for (std::size_t i = 2; i < lst->elems.size(); ++i) {
                 auto* inner = lst->elems[i] ? lst->elems[i]->template as<reader::parser::List>() : nullptr;
                 if (!inner || inner->elems.empty()) continue;
@@ -809,20 +820,21 @@ private:
         return result;
     }
 
-    /// Auto-load module files from the module path for any import that
-    /// references a module not yet in the accumulated set.
-    /// When execute is false, only the top-level target skips execution;
-    /// auto-loaded dependencies are always executed (they must populate globals).
-    /// Returns false on failure; diagnostics are emitted.
+    /**
+     * Auto-load module files from the module path for any import that
+     * references a module not yet in the accumulated set.
+     * When execute is false, only the top-level target skips execution;
+     * auto-loaded dependencies are always executed (they must populate globals).
+     * Returns false on failure; diagnostics are emitted.
+     */
     bool auto_load_imports(std::span<const reader::parser::SExprPtr> new_forms) {
         auto needed = collect_imported_modules(new_forms);
         for (const auto& mod_name : needed) {
-            // Skip modules already loaded.
+            /// Skip modules already loaded.
             if (executed_modules_.contains(mod_name)) continue;
 
-            // Circular import detected — error immediately rather than silently skip.
             if (loading_modules_.contains(mod_name)) {
-                // Build the cycle description for a helpful error message.
+                /// Build the cycle description for a helpful error message.
                 std::string cycle;
                 for (const auto& m : loading_modules_) {
                     if (!cycle.empty()) cycle += " -> ";
@@ -836,7 +848,7 @@ private:
                 return false;
             }
 
-            // Check if it's already in the accumulated forms (defined but not yet executed)
+            /// Check if it's already in the accumulated forms (defined but not yet executed)
             bool already_accumulated = false;
             for (const auto& f : accumulated_forms_) {
                 auto* lst = f ? f->template as<reader::parser::List>() : nullptr;
@@ -845,7 +857,7 @@ private:
                 auto* nsym = lst->elems[1]->template as<reader::parser::Symbol>();
                 if (nsym && nsym->name == mod_name) { already_accumulated = true; break; }
             }
-            // Also check in the new forms themselves (peer modules in same source)
+            /// Also check in the new forms themselves (peer modules in same source)
             if (!already_accumulated) {
                 for (const auto& f : new_forms) {
                     auto* lst = f ? f->template as<reader::parser::List>() : nullptr;
@@ -857,9 +869,9 @@ private:
             }
             if (already_accumulated) continue;
 
-            // Try to resolve and load the module file
+            /// Try to resolve and load the module file
             auto path = resolver_.resolve(mod_name);
-            if (!path) continue; // Will fail later at link time with a clear error
+            if (!path) continue; ///< Will fail later at link time with a clear error
 
             auto canonical = path->string();
             if (loaded_files_.contains(canonical)) continue;
@@ -879,7 +891,6 @@ private:
      *
      * Accumulates expanded forms and re-links everything each time (the
      * ModuleLinker is non-incremental). Only newly-added modules are
-     * emitted and executed — previously-run modules are skipped.
      *
      * @param execute  When false, skip VM execution and main invocation.
      * @param out_cr   If non-null, filled with per-module compile metadata.
@@ -891,7 +902,7 @@ private:
                          CompileResult* out_cr = nullptr) {
         diag_engine_.clear();
 
-        // Lex + Parse
+        /// Lex + Parse
         reader::lexer::Lexer lex(file_id, source);
         reader::parser::Parser parser(lex);
 
@@ -905,11 +916,10 @@ private:
         }
         auto parsed = std::move(*parsed_res);
         if (parsed.empty()) {
-            // Empty input — not an error
             return true;
         }
 
-        // Expand
+        /// Expand
         reader::expander::Expander expander;
         auto expanded_res = expander.expand_many(parsed);
         if (!expanded_res) {
@@ -918,7 +928,7 @@ private:
         }
         auto new_expanded = std::move(*expanded_res);
 
-        // Remember which modules are new (not yet executed)
+        /// Remember which modules are new (not yet executed)
         std::vector<std::string> new_module_names;
         for (const auto& form : new_expanded) {
             if (auto* mf = form->template as<reader::parser::ModuleForm>()) {
@@ -936,15 +946,17 @@ private:
             }
         }
 
-        // Auto-load imported modules from the module path
+        /// Auto-load imported modules from the module path
         std::span<const reader::parser::SExprPtr> new_span(
             new_expanded.data(), new_expanded.size());
         if (!auto_load_imports(new_span)) {
             return false;
         }
 
-        // Record non-prelude imports in the compile result so the
-        // serializer can embed them in .etac files.
+        /**
+         * Record non-prelude imports in the compile result so the
+         * serializer can embed them in .etac files.
+         */
         if (out_cr) {
             auto needed = collect_imported_modules(new_span);
             for (const auto& mod_name : needed) {
@@ -958,16 +970,16 @@ private:
             }
         }
 
-        // Append new forms to the accumulated set
+        /// Append new forms to the accumulated set
         for (auto& f : new_expanded) {
             accumulated_forms_.push_back(reader::parser::deep_copy(f));
         }
 
-        // Link ALL accumulated forms
+        /// Link ALL accumulated forms
         reader::ModuleLinker linker;
         auto idx_res = linker.index_modules(accumulated_forms_);
         if (!idx_res) {
-            // Rollback: remove the forms we just added
+            /// Rollback: remove the forms we just added
             for (std::size_t i = 0; i < new_expanded.size(); ++i) {
                 accumulated_forms_.pop_back();
             }
@@ -983,7 +995,7 @@ private:
             return false;
         }
 
-        // Semantic analysis (all accumulated modules)
+        /// Semantic analysis (all accumulated modules)
         semantics::SemanticAnalyzer sa;
         auto sem_res = sa.analyze_all(accumulated_forms_, linker, builtins_);
         if (!sem_res) {
@@ -996,12 +1008,14 @@ private:
         auto sem_mods = std::move(*sem_res);
         if (sem_mods.empty()) return true;
 
-        // Run IR optimization passes
+        /// Run IR optimization passes
         optimization_pipeline_.run_all(sem_mods);
 
-        // Emit + Execute only NEW modules
-        // Grow globals vector if needed, preserving existing values.
-        // Re-install builtins in slots 0..N-1 (heap objects may have been GC'd).
+        /**
+         * Emit + Execute only NEW modules
+         * Grow globals vector if needed, preserving existing values.
+         * Re-install builtins in slots 0..N-1 (heap objects may have been GC'd).
+         */
         auto& globals = vm_.globals();
         auto needed = sem_mods[0].total_globals;
         if (globals.size() < needed) {
@@ -1009,7 +1023,7 @@ private:
         }
 
         if (execute) {
-            // Re-install builtin primitives at their fixed slots
+            /// Re-install builtin primitives at their fixed slots
             for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
                 const auto& spec = builtins_.specs()[i];
                 auto prim = runtime::memory::factory::make_primitive(
@@ -1023,30 +1037,29 @@ private:
             builtins_installed_ = true;
         }
 
-        // Track the registry range for newly emitted functions.
+        /// Track the registry range for newly emitted functions.
         uint32_t base_func_idx = static_cast<uint32_t>(registry_.size());
 
         for (auto& mod : sem_mods) {
             if (executed_modules_.contains(mod.name)) {
-                continue; // Already executed in a prior call
+                continue; ///< Already executed in a prior call
             }
 
             semantics::Emitter emitter(mod, heap_, intern_table_, registry_);
             auto* init_func = emitter.emit();
 
-            // Record global slot → name mapping for debugger display.
-            // Prefix with "module." so the UI can group by module.
+            /// Prefix with "module." so the UI can group by module.
             for (const auto& bi : mod.bindings) {
                 if (bi.kind == semantics::BindingInfo::Kind::Global && !bi.name.empty()) {
                     global_names_[bi.slot] = mod.name + "." + bi.name;
                 }
             }
 
-            // Record compile metadata for this module.
+            /// Record compile metadata for this module.
             if (out_cr) {
                 CompileModuleEntry cme;
                 cme.name = mod.name;
-                // init_func is the last function added by emitter.emit()
+                /// init_func is the last function added by emitter.emit()
                 cme.init_func_index = static_cast<uint32_t>(registry_.size()) - 1 - base_func_idx;
                 cme.total_globals = mod.total_globals;
                 cme.main_func_slot = mod.main_func_slot;
@@ -1062,7 +1075,7 @@ private:
 
                 executed_modules_.insert(mod.name);
 
-                // Invoke optional (defun main ...) entry point
+                /// Invoke optional (defun main ...) entry point
                 if (mod.main_func_slot) {
                     auto main_val = globals[*mod.main_func_slot];
                     if (main_val != runtime::nanbox::Nil) {
@@ -1074,9 +1087,9 @@ private:
                     }
                 }
 
-                // For REPL: capture result from the last NEW module
+                /// For REPL: capture result from the last NEW module
                 if (result && !result_binding.empty()) {
-                    // Check if this is the last new module
+                    /// Check if this is the last new module
                     bool is_last_new = (!new_module_names.empty() &&
                                         mod.name == new_module_names.back());
                     if (is_last_new) {
@@ -1113,5 +1126,5 @@ private:
     }
 };
 
-} // namespace eta::interpreter
+} ///< namespace eta::interpreter
 

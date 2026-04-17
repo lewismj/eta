@@ -8,7 +8,7 @@
 #include <thread>
 #include <unordered_set>
 
-// Eta interpreter
+/// Eta interpreter
 #include "eta/interpreter/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/port.h"
@@ -30,12 +30,14 @@ namespace eta::dap {
 namespace fs = std::filesystem;
 using namespace eta::json;
 
-// ---------------------------------------------------------------------------
-// Local helpers
-// ---------------------------------------------------------------------------
+/**
+ * Local helpers
+ */
 
-/// Normalise a source-file path to a stable key that matches the normalisation
-/// used by Driver::file_id_for_path / Driver::ensure_file_id.
+/**
+ * Normalise a source-file path to a stable key that matches the normalisation
+ * used by Driver::file_id_for_path / Driver::ensure_file_id.
+ */
 static std::string normalize_path(const std::string& raw) {
     std::error_code ec;
     fs::path abs = fs::absolute(fs::path(raw), ec);
@@ -50,23 +52,24 @@ static std::string normalize_path(const std::string& raw) {
     return s;
 }
 
-// ============================================================================
-// Construction
-// ============================================================================
+/**
+ * Construction
+ */
 
 DapServer::DapServer() : in_(std::cin), out_(std::cout) {}
 
 DapServer::DapServer(std::istream& in, std::ostream& out) : in_(in), out_(out) {}
 
-// ============================================================================
-// Destruction
-// ============================================================================
+/**
+ * Destruction
+ */
 
 DapServer::~DapServer() {
-    // If the VM thread is still running, wake it (in case it's blocked on
-    // debug_cv_ after a pause) so the thread can finish and be joined.
-    // NOTE: request_pause() alone would deadlock here — the VM is waiting on
-    // debug_cv_ for resume(), not for another pause request.
+    /**
+     * If the VM thread is still running, wake it (in case it's blocked on
+     * debug_cv_ after a pause) so the thread can finish and be joined.
+     * debug_cv_ for resume(), not for another pause request.
+     */
     if (driver_) {
         driver_->vm().resume();
     }
@@ -75,9 +78,9 @@ DapServer::~DapServer() {
     }
 }
 
-// ============================================================================
-// Transport
-// ============================================================================
+/**
+ * Transport
+ */
 
 void DapServer::send(const Value& msg) {
     std::lock_guard<std::mutex> lk(output_mutex_);
@@ -120,9 +123,9 @@ void DapServer::send_event(const std::string& event_name, const Value& body) {
     }));
 }
 
-// ============================================================================
-// Main loop
-// ============================================================================
+/**
+ * Main loop
+ */
 
 void DapServer::run() {
     while (running_) {
@@ -133,20 +136,19 @@ void DapServer::run() {
             auto msg = json::parse(*msg_str);
             dispatch(msg);
         } catch (const std::exception& e) {
-            // Malformed message – log to stderr and continue
             std::cerr << "[eta_dap] parse error: " << e.what() << "\n";
         }
     }
 
-    // Join the VM thread if still running
+    /// Join the VM thread if still running
     if (vm_thread_.joinable()) {
         vm_thread_.join();
     }
 }
 
-// ============================================================================
-// Dispatch
-// ============================================================================
+/**
+ * Dispatch
+ */
 
 void DapServer::dispatch(const Value& msg) {
     if (!msg.is_object()) return;
@@ -181,21 +183,22 @@ void DapServer::dispatch(const Value& msg) {
     else if (*cmd == "eta/disassemble")     handle_disassemble(id, args);
     else if (*cmd == "eta/childProcesses")  handle_child_processes(id, args);
     else {
-        // Unknown command – send empty success response to keep VS Code happy
         send_response(id, json::object({}));
     }
 }
 
-// ============================================================================
-// initialize
-// ============================================================================
+/**
+ * initialize
+ */
 
 void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({
         {"supportsConfigurationDoneRequest",    true},
-        // supportsSetBreakpoints is not an official DAP capability field (all
-        // adapters support setBreakpoints by default), but some host versions
-        // check for it so we advertise it explicitly for maximum compatibility.
+        /**
+         * supportsSetBreakpoints is not an official DAP capability field (all
+         * adapters support setBreakpoints by default), but some host versions
+         * check for it so we advertise it explicitly for maximum compatibility.
+         */
         {"supportsSetBreakpoints",              true},
         {"supportsFunctionBreakpoints",         false},
         {"supportsConditionalBreakpoints",      false},
@@ -208,22 +211,20 @@ void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
         {"supportsBreakpointLocationsRequest",  false},
         {"supportsCompletionsRequest",          true},
     }));
-    // IMPORTANT: "initialized" is intentionally NOT sent here.
-    // This adapter uses the "deferred-initialization" DAP flow:
-    //   1. IDE → initialize  → adapter responds (no initialized yet)
-    //   2. IDE → launch      → adapter responds + sends "initialized"
-    //   3. IDE → setBreakpoints  (triggered by "initialized" event)
-    //   4. IDE → configurationDone  → adapter starts the VM
-    // If we sent "initialized" here instead, VS Code would fire setBreakpoints
-    // and configurationDone BEFORE "launch" arrives.  handle_configuration_done
-    // guards on (launched_ == true), so it would return immediately, the VM
-    // would never start, and every breakpoint would be silently lost.
-    // See handle_launch() for where "initialized" is actually sent.
+    /**
+     * IMPORTANT: "initialized" is intentionally NOT sent here.
+     * This adapter uses the "deferred-initialization" DAP flow:
+     * If we sent "initialized" here instead, VS Code would fire setBreakpoints
+     * and configurationDone BEFORE "launch" arrives.  handle_configuration_done
+     * guards on (launched_ == true), so it would return immediately, the VM
+     * would never start, and every breakpoint would be silently lost.
+     * See handle_launch() for where "initialized" is actually sent.
+     */
 }
 
-// ============================================================================
-// launch
-// ============================================================================
+/**
+ * launch
+ */
 
 void DapServer::handle_launch(const Value& id, const Value& args) {
     auto program = args.get_string("program");
@@ -239,20 +240,22 @@ void DapServer::handle_launch(const Value& id, const Value& args) {
 
     send_response(id, json::object({}));
 
-    // Per DAP spec: send "initialized" AFTER the launch response so VS Code
-    // sends setBreakpoints and configurationDone AFTER script_path_ is set.
+    /**
+     * Per DAP spec: send "initialized" AFTER the launch response so VS Code
+     * sends setBreakpoints and configurationDone AFTER script_path_ is set.
+     */
     send_event("initialized", json::object({}));
 
     send_event("output", json::object({
         {"category", "console"},
         {"output", "[eta_dap] Launch: " + script_path_.string() + "\n"},
     }));
-    // The VM is actually started on configurationDone.
+    /// The VM is actually started on configurationDone.
 }
 
-// ============================================================================
-// setBreakpoints
-// ============================================================================
+/**
+ * setBreakpoints
+ */
 
 void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
     Array result_bps;
@@ -264,7 +267,7 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
         return;
     }
 
-    // Normalise so it matches the driver's canon_path_key lookup
+    /// Normalise so it matches the driver's canon_path_key lookup
     std::string canon_path = normalize_path(*path_val);
     pending_bps_.erase(canon_path);
 
@@ -278,14 +281,14 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
             pending_bps_[canon_path].push_back({line, bp_id});
 
             result_bps.push_back(json::object({
-                {"verified", false},   // updated via "breakpoint" event once installed
+                {"verified", false},   ///< updated via "breakpoint" event once installed
                 {"id",       Value(static_cast<int64_t>(bp_id))},
                 {"line",     Value(static_cast<int64_t>(line))},
             }));
         }
     }
 
-    // Diagnostic: always log what was received so path mismatches are visible
+    /// Diagnostic: always log what was received so path mismatches are visible
     {
         std::ostringstream msg;
         msg << "[eta_dap] setBreakpoints: " << result_bps.size()
@@ -293,17 +296,17 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
         send_event("output", json::object({{"category", "console"}, {"output", msg.str()}}));
     }
 
-    // If the VM is already running, push immediately and notify VS Code
+    /// If the VM is already running, push immediately and notify VS Code
     {
         std::lock_guard<std::mutex> lk(vm_mutex_);
         if (driver_) {
             install_pending_breakpoints();
         }
     }
-    // Check if we had a driver to decide whether to notify (no lock needed for reads)
+    /// Check if we had a driver to decide whether to notify (no lock needed for reads)
     if (driver_) {
         notify_breakpoints_verified();
-        // Mark returned breakpoints as verified in the response too
+        /// Mark returned breakpoints as verified in the response too
         for (auto& bp_val : result_bps) {
             if (bp_val.is_object()) bp_val.as_object()["verified"] = Value(true);
         }
@@ -312,12 +315,12 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
     send_response(id, json::object({{"breakpoints", Value(std::move(result_bps))}}));
 }
 
-// ============================================================================
-// setExceptionBreakpoints
-// ============================================================================
+/**
+ * setExceptionBreakpoints
+ */
 
 void DapServer::handle_set_exception_breakpoints(const Value& id, const Value& args) {
-    // Parse the filters array to determine whether exception breakpoints are enabled.
+    /// Parse the filters array to determine whether exception breakpoints are enabled.
     exception_breakpoints_enabled_ = false;
     if (args.is_object()) {
         const auto& filters_val = args["filters"];
@@ -333,27 +336,26 @@ void DapServer::handle_set_exception_breakpoints(const Value& id, const Value& a
     send_response(id, json::object({}));
 }
 
-// ============================================================================
-// configurationDone — start the VM
-// ============================================================================
+/**
+ */
 
 void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({}));
 
-    if (!launched_) return; // no launch request yet (shouldn't happen)
+    if (!launched_) return; ///< no launch request yet (shouldn't happen)
 
-    // Build the module search path using ModulePathResolver (same logic as etai / eta_lsp)
+    /// Build the module search path using ModulePathResolver (same logic as etai / eta_lsp)
     auto resolver = interpreter::ModulePathResolver::from_args_or_env("");
-    // Also search the directory containing the script being debugged.
+    /// Also search the directory containing the script being debugged.
     auto script_dir = script_path_.parent_path();
     if (!script_dir.empty()) resolver.add_dir(script_dir);
 
-    // Log the module search path so the user can diagnose "module not found"
+    /// Log the module search path so the user can diagnose "module not found"
     {
         std::ostringstream msg;
         msg << "[eta_dap] Module search dirs:\n";
         if (resolver.empty()) {
-            msg << "  (none — prelude will not load; set eta.lsp.modulePath in VS Code settings)\n";
+            msg << "  (none â€” prelude will not load; set eta.lsp.modulePath in VS Code settings)\n";
         } else {
             for (const auto& d : resolver.dirs()) msg << "  " << d.string() << "\n";
         }
@@ -361,14 +363,14 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
     }
 
 
-    // Build the driver on the DAP thread (it will be moved-to below)
+    /// Build the driver on the DAP thread (it will be moved-to below)
     auto drv = std::make_unique<interpreter::Driver>(std::move(resolver));
 
-    // Register stop callback BEFORE loading prelude so the hook is in place
+    /// Register stop callback BEFORE loading prelude so the hook is in place
     drv->vm().set_stop_callback([this](const runtime::vm::StopEvent& ev) {
         using runtime::vm::StopReason;
 
-        // Clear compound variable refs from the previous stop
+        /// Clear compound variable refs from the previous stop
         clear_compound_refs();
 
         std::string reason_str;
@@ -387,15 +389,17 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
         }));
     });
 
-    // Redirect script stdout/stderr away from the protocol pipe
-    // Do this on the LOCAL drv BEFORE making it visible via driver_.
-    // Without this, any script that calls (display ...) or (newline) would write
-    // to std::cout, corrupting the Content-Length framed DAP stream and causing
-    // VS Code to report a "read error".  We install CallbackPorts that forward
-    // the text as custom "eta-output" DAP events.  The VS Code extension's
-    // DebugAdapterTracker intercepts these and writes to a dedicated "Eta Output"
-    // OutputChannel, so script output appears in the Output panel rather than the
-    // Debug Console.
+    /**
+     * Redirect script stdout/stderr away from the protocol pipe
+     * Do this on the LOCAL drv BEFORE making it visible via driver_.
+     * Without this, any script that calls (display ...) or (newline) would write
+     * to std::cout, corrupting the Content-Length framed DAP stream and causing
+     * VS Code to report a "read error".  We install CallbackPorts that forward
+     * the text as custom "eta-output" DAP events.  The VS Code extension's
+     * DebugAdapterTracker intercepts these and writes to a dedicated "Eta Output"
+     * OutputChannel, so script output appears in the Output panel rather than the
+     * Debug Console.
+     */
     drv->set_output_port(std::make_shared<runtime::CallbackPort>(
         [this](const std::string& text) {
             send_event("eta-output", json::object({{"stream", "stdout"}, {"text", text}}));
@@ -405,23 +409,28 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
             send_event("eta-output", json::object({{"stream", "stderr"}, {"text", text}}));
         }));
 
-    // Pre-register the script file ID so breakpoints fire on first run
-    // We allocate the file_id NOW (before the VM thread starts loading any file).
-    // When run_file() is later called with the same (normalised) path, Driver
-    // reuses this id — so the breakpoints we install below will be active
-    // inside vm_.execute().
+    /**
+     * Pre-register the script file ID so breakpoints fire on first run
+     * We allocate the file_id NOW (before the VM thread starts loading any file).
+     * When run_file() is later called with the same (normalised) path, Driver
+     * inside vm_.execute().
+     */
     drv->ensure_file_id(script_path_);
 
-    // Atomically publish driver_ and install breakpoints under the lock
-    // All setup is done on the local drv above; only now do we make it visible
-    // to other DAP-thread handlers (evaluate, setBreakpoints, etc.).
+    /**
+     * Atomically publish driver_ and install breakpoints under the lock
+     * All setup is done on the local drv above; only now do we make it visible
+     * to other DAP-thread handlers (evaluate, setBreakpoints, etc.).
+     */
     {
         std::lock_guard<std::mutex> lk(vm_mutex_);
         driver_ = std::move(drv);
         install_pending_breakpoints();
     }
-    // Send "breakpoint" changed events for all newly-verified breakpoints.
-    // Must be called WITHOUT vm_mutex_ held (uses output_mutex_ internally).
+    /**
+     * Send "breakpoint" changed events for all newly-verified breakpoints.
+     * Must be called WITHOUT vm_mutex_ held (uses output_mutex_ internally).
+     */
     notify_breakpoints_verified();
 
     {
@@ -433,22 +442,22 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
         send_event("output", json::object({{"category", "console"}, {"output", msg.str()}}));
     }
 
-    // If stopOnEntry, request a pause immediately (before any code runs)
+    /// If stopOnEntry, request a pause immediately (before any code runs)
     if (stop_on_entry_) {
         driver_->vm().request_pause();
     }
 
-    // Launch the VM on a background thread
+    /// Launch the VM on a background thread
     vm_thread_ = std::thread([this]() {
         auto* drv = driver_.get();
 
-        // Load prelude
+        /// Load prelude
         auto pr = drv->load_prelude();
         if (!pr.found) {
             send_event("output", json::object({
                 {"category", "important"},
                 {"output",
-                    "[eta_dap] Warning: prelude.eta not found — std.core, std.io, std.prelude etc. unavailable.\n"
+                    "[eta_dap] Warning: prelude.eta not found â€” std.core, std.io, std.prelude etc. unavailable.\n"
                     "[eta_dap] Set 'eta.lsp.modulePath' in VS Code settings, or set ETA_MODULE_PATH.\n"},
             }));
         } else if (!pr.loaded) {
@@ -466,24 +475,25 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
             }));
         }
 
-        // Re-install now that prelude file IDs are known, so breakpoints in
-        // library files are active before the script starts executing.
+        /**
+         * Re-install now that prelude file IDs are known, so breakpoints in
+         * library files are active before the script starts executing.
+         */
         {
             std::lock_guard<std::mutex> lk(vm_mutex_);
             install_pending_breakpoints();
         }
-        // Notify VS Code about any breakpoints that became verified after prelude load
+        /// Notify VS Code about any breakpoints that became verified after prelude load
         notify_breakpoints_verified();
 
-        // Execute the script
+        /// Execute the script
         bool ok = drv->run_file(script_path_);
 
-        // Signal IDE
+        /// Signal IDE
         if (ok) {
             send_event("terminated", json::object({}));
         } else {
-            // Forward the real compiler/linker/runtime diagnostics — not just
-            // a generic "Script failed" message.
+            /// a generic "Script failed" message.
             const auto& diags = drv->diagnostics().diagnostics();
             if (diags.empty()) {
                 send_event("output", json::object({
@@ -503,9 +513,9 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
     });
 }
 
-// ============================================================================
-// threads
-// ============================================================================
+/**
+ * threads
+ */
 
 void DapServer::handle_threads(const Value& id, const Value& /*args*/) {
     Array threads;
@@ -528,9 +538,9 @@ void DapServer::handle_threads(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({{"threads", Value(std::move(threads))}}));
 }
 
-// ============================================================================
-// stackTrace
-// ============================================================================
+/**
+ * stackTrace
+ */
 
 void DapServer::handle_stack_trace(const Value& id, const Value& /*args*/) {
     std::lock_guard<std::mutex> lk(vm_mutex_);
@@ -571,12 +581,11 @@ void DapServer::handle_stack_trace(const Value& id, const Value& /*args*/) {
     }));
 }
 
-// ============================================================================
-// scopes
-// ============================================================================
+/**
+ * scopes
+ */
 
 void DapServer::handle_scopes(const Value& id, const Value& args) {
-    // frame_id comes from the request args, not from VM state — no lock needed.
     auto frame_id_opt = args.get_int("frameId");
     int frame_id = frame_id_opt ? static_cast<int>(*frame_id_opt) : 0;
 
@@ -607,9 +616,9 @@ void DapServer::handle_scopes(const Value& id, const Value& args) {
     }));
 }
 
-// ============================================================================
-// variables
-// ============================================================================
+/**
+ * variables
+ */
 
 void DapServer::handle_variables(const Value& id, const Value& args) {
     std::lock_guard<std::mutex> lk(vm_mutex_);
@@ -626,7 +635,7 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
 
     int ref = static_cast<int>(*ref_opt);
 
-    // Compound variable expansion (cons/vector/closure)
+    /// Compound variable expansion (cons/vector/closure)
     if (ref >= COMPOUND_REF_BASE) {
         auto cit = compound_refs_.find(ref);
         if (cit == compound_refs_.end()) {
@@ -638,14 +647,15 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
         return;
     }
 
-    // Frame scope variables (locals / upvalues / globals)
+    /// Frame scope variables (locals / upvalues / globals)
     int frame_idx  = decode_var_ref_frame(ref);
     int scope      = decode_var_ref_scope(ref);
 
     if (scope == 3) {
-        // Module scope: globals that belong to the currently-executing module
-        // Shows only the user's own defines (e.g. composition.top5 → "top5")
-        // so they are immediately visible without scrolling through all prelude/std.* entries.
+        /**
+         * Module scope: globals that belong to the currently-executing module
+         * so they are immediately visible without scrolling through all prelude/std.* entries.
+         */
         std::string cur_mod = current_module_from_frame(static_cast<std::size_t>(frame_idx));
         const auto& globals = driver_->vm().globals();
         const auto& names   = driver_->global_names();
@@ -664,7 +674,7 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
     }
 
     if (scope == 2) {
-        // Globals scope
+        /// Globals scope
         const auto& globals = driver_->vm().globals();
         const auto& names   = driver_->global_names();
         Array vars;
@@ -687,9 +697,10 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
 
     Array vars;
     for (const auto& e : entries) {
-        // Hide placeholder-named locals (%0, %1, …) that hold Nil — these are
-        // uninitialised scratch slots from module-init functions and just clutter
-        // the Variables panel.
+        /**
+         * uninitialised scratch slots from module-init functions and just clutter
+         * the Variables panel.
+         */
         if (!e.name.empty() && e.name[0] == '%' && e.value == runtime::nanbox::Nil)
             continue;
         vars.push_back(make_variable_json(e.name, e.value));
@@ -698,9 +709,9 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
     send_response(id, json::object({{"variables", Value(std::move(vars))}}));
 }
 
-// ============================================================================
-// continue / next / stepIn / stepOut / pause
-// ============================================================================
+/**
+ * continue / next / stepIn / stepOut / pause
+ */
 
 void DapServer::handle_continue(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({{"allThreadsContinued", true}}));
@@ -732,9 +743,9 @@ void DapServer::handle_pause(const Value& id, const Value& /*args*/) {
     if (driver_) driver_->vm().request_pause();
 }
 
-// ============================================================================
-// evaluate
-// ============================================================================
+/**
+ * evaluate
+ */
 
 void DapServer::handle_evaluate(const Value& id, const Value& args) {
     auto expr_opt = args.get_string("expression");
@@ -749,14 +760,16 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
         return;
     }
 
-    // When the VM is paused mid-execution, calling run_source() would invoke
-    // vm_.execute() on the live stack/frame state, corrupting it and breaking
-    // subsequent stepping.  Instead, do a safe name lookup in the current frames.
+    /**
+     * When the VM is paused mid-execution, calling run_source() would invoke
+     * vm_.execute() on the live stack/frame state, corrupting it and breaking
+     * subsequent stepping.  Instead, do a safe name lookup in the current frames.
+     */
     if (driver_->vm().is_paused()) {
         const std::string& expr = *expr_opt;
         auto frames = driver_->vm().get_frames();
 
-        // 1. Search locals and upvalues across all frames
+        /// 1. Search locals and upvalues across all frames
         for (std::size_t fi = 0; fi < frames.size(); ++fi) {
             for (const auto& e : driver_->vm().get_locals(fi)) {
                 if (e.name == expr) {
@@ -780,7 +793,7 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
             }
         }
 
-        // 2. Search globals: exact full name ("composition.top5") first
+        /// 2. Search globals: exact full name ("composition.top5") first
         const auto& gvals  = driver_->vm().globals();
         const auto& gnames = driver_->global_names();
         for (const auto& [slot, full_name] : gnames) {
@@ -795,7 +808,7 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
             }
         }
 
-        // 3. Search globals: short name ("top5" matches "composition.top5")
+        /// 3. Search globals: short name ("top5" matches "composition.top5")
         for (const auto& [slot, full_name] : gnames) {
             auto dot = full_name.rfind('.');
             if (dot == std::string::npos) continue;
@@ -814,7 +827,6 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
         return;
     }
 
-    // VM is running (REPL context) — compile and execute the expression normally.
     runtime::nanbox::LispVal result{};
     bool ok = driver_->run_source(*expr_opt, &result);
     std::string val_str = ok ? driver_->format_value(result) : "<eval error>";
@@ -825,38 +837,40 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
     }));
 }
 
-// ============================================================================
-// terminate
-// ============================================================================
+/**
+ * terminate
+ */
 
 void DapServer::handle_terminate(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({}));
-    // Resume the VM (in case it's paused) so the vm_thread can exit gracefully.
+    /// Resume the VM (in case it's paused) so the vm_thread can exit gracefully.
     std::lock_guard<std::mutex> lk(vm_mutex_);
     if (driver_) {
         driver_->vm().resume();
     }
 }
 
-// ============================================================================
-// disconnect
-// ============================================================================
+/**
+ * disconnect
+ */
 
 void DapServer::handle_disconnect(const Value& id, const Value& /*args*/) {
     send_response(id, json::object({}));
     running_ = false;
 
-    // Wake up the VM if it's paused so the vm_thread can exit.
-    // Lock vm_mutex_ so driver_ isn't torn out mid-access.
+    /**
+     * Wake up the VM if it's paused so the vm_thread can exit.
+     * Lock vm_mutex_ so driver_ isn't torn out mid-access.
+     */
     std::lock_guard<std::mutex> lk(vm_mutex_);
     if (driver_) {
         driver_->vm().resume();
     }
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
+/**
+ * Helpers
+ */
 
 void DapServer::install_pending_breakpoints() {
     if (!driver_) return;
@@ -865,7 +879,7 @@ void DapServer::install_pending_breakpoints() {
 
     for (const auto& [path, bps] : pending_bps_) {
         uint32_t file_id = driver_->file_id_for_path(path);
-        if (file_id == 0) continue; // file not loaded yet — will be re-applied after load
+        if (file_id == 0) continue;
 
         for (const auto& bp : bps) {
             all_locs.push_back({file_id, static_cast<uint32_t>(bp.line)});
@@ -876,8 +890,7 @@ void DapServer::install_pending_breakpoints() {
 }
 
 void DapServer::notify_breakpoints_verified() {
-    // Collect verified breakpoint data under the lock, then send events after.
-    // This avoids calling send_event (→ output_mutex_) while holding vm_mutex_.
+    /// Collect verified breakpoint data under the lock, then send events after.
     struct VerifiedBp { int id; int line; };
     std::vector<VerifiedBp> verified;
 
@@ -895,7 +908,7 @@ void DapServer::notify_breakpoints_verified() {
         }
     }
 
-    // Send "breakpoint" changed events so VS Code shows solid red dots.
+    /// Send "breakpoint" changed events so VS Code shows solid red dots.
     for (const auto& v : verified) {
         send_event("breakpoint", json::object({
             {"reason", "changed"},
@@ -908,9 +921,8 @@ void DapServer::notify_breakpoints_verified() {
     }
 }
 
-// ============================================================================
-// Heap Inspector — eta/heapSnapshot
-// ============================================================================
+/**
+ */
 
 void DapServer::handle_heap_inspector(const Value& id, const Value& /*args*/) {
     std::lock_guard<std::mutex> lk(vm_mutex_);
@@ -930,7 +942,7 @@ Value DapServer::build_heap_snapshot() {
 
     auto& heap = driver_->heap();
 
-    // Per-kind statistics
+    /// Per-kind statistics
     struct KindStat { int64_t count{0}; int64_t bytes{0}; };
     std::unordered_map<uint8_t, KindStat> kind_stats;
 
@@ -949,7 +961,7 @@ Value DapServer::build_heap_snapshot() {
         }));
     }
 
-    // GC roots
+    /// GC roots
     auto gc_roots = driver_->vm().enumerate_gc_roots();
     Array roots_arr;
     for (const auto& root : gc_roots) {
@@ -959,9 +971,10 @@ Value DapServer::build_heap_snapshot() {
             ids.push_back(Value(static_cast<int64_t>(root.object_ids[i])));
         }
 
-        // For the "Globals" root, resolve variable names from the Driver's
-        // global_names() map so the UI can show "varName → Object#id" instead
-        // of just "Object #id".
+        /**
+         * For the "Globals" root, resolve variable names from the Driver's
+         * of just "Object #id".
+         */
         if (root.name == "Globals") {
             auto& globals      = driver_->vm().globals();
             const auto& names  = driver_->global_names();
@@ -969,7 +982,7 @@ Value DapServer::build_heap_snapshot() {
             for (std::size_t i = 0; i < root.object_ids.size(); ++i) {
                 auto oid = root.object_ids[i];
                 std::string label;
-                // Walk globals to find which slot holds this object ID.
+                /// Walk globals to find which slot holds this object ID.
                 for (std::size_t slot = 0; slot < globals.size(); ++slot) {
                     auto v = globals[slot];
                     if (runtime::nanbox::ops::is_boxed(v) &&
@@ -1000,7 +1013,7 @@ Value DapServer::build_heap_snapshot() {
         }
     }
 
-    // Cons pool statistics
+    /// Cons pool statistics
     auto pool = heap.cons_pool().stats();
     auto cons_pool_obj = json::object({
         {"capacity", Value(static_cast<int64_t>(pool.capacity))},
@@ -1018,9 +1031,8 @@ Value DapServer::build_heap_snapshot() {
     });
 }
 
-// ============================================================================
-// Heap Inspector — eta/inspectObject
-// ============================================================================
+/**
+ */
 
 void DapServer::handle_inspect_object(const Value& id, const Value& args) {
     std::lock_guard<std::mutex> lk(vm_mutex_);
@@ -1047,11 +1059,11 @@ void DapServer::handle_inspect_object(const Value& id, const Value& args) {
         return;
     }
 
-    // Format a human-readable preview using the value formatter
+    /// Format a human-readable preview using the value formatter
     auto lisp_val = runtime::nanbox::ops::box(runtime::nanbox::Tag::HeapObject, object_id);
     std::string preview = driver_->format_value(lisp_val);
 
-    // Collect child references via the centralized heap visitor
+    /// Collect child references via the centralized heap visitor
     Array children;
     constexpr int MAX_CHILDREN = 50;
 
@@ -1083,9 +1095,8 @@ void DapServer::handle_inspect_object(const Value& id, const Value& args) {
     }));
 }
 
-// ============================================================================
-// Disassembly — eta/disassemble
-// ============================================================================
+/**
+ */
 
 void DapServer::handle_disassemble(const Value& id, const Value& args) {
     std::lock_guard<std::mutex> lk(vm_mutex_);
@@ -1108,16 +1119,16 @@ void DapServer::handle_disassemble(const Value& id, const Value& args) {
     int64_t current_pc = -1;
 
     if (scope == "all") {
-        // Disassemble all functions in the registry
+        /// Disassemble all functions in the registry
         disasm.disassemble_all(driver_->registry(), oss);
     } else {
-        // Disassemble the current frame's function
+        /// Disassemble the current frame's function
         auto frames = driver_->vm().get_frames();
         if (!frames.empty()) {
             const auto& top = frames[0];
             function_name = top.func_name;
 
-            // Find the function in the registry by name
+            /// Find the function in the registry by name
             bool found = false;
             for (const auto& func : driver_->registry().all()) {
                 if (func.name == top.func_name ||
@@ -1128,7 +1139,7 @@ void DapServer::handle_disassemble(const Value& id, const Value& args) {
                 }
             }
             if (!found) {
-                // Fall back to disassembling all
+                /// Fall back to disassembling all
                 disasm.disassemble_all(driver_->registry(), oss);
             }
         } else {
@@ -1143,9 +1154,9 @@ void DapServer::handle_disassemble(const Value& id, const Value& args) {
     }));
 }
 
-// ============================================================================
-// Compound variable expansion helpers
-// ============================================================================
+/**
+ * Compound variable expansion helpers
+ */
 
 int DapServer::alloc_compound_ref(uint64_t val) {
     int ref = next_compound_ref_++;
@@ -1198,7 +1209,6 @@ Array DapServer::expand_compound(uint64_t val) {
     Array children;
     auto& heap = driver_->heap();
 
-    // Cons pair → car / cdr
     if (auto* cons = heap.try_get_as<ObjectKind::Cons, Cons>(
             static_cast<ObjectId>(ops::payload(val)))) {
         children.push_back(make_variable_json("car", cons->car));
@@ -1206,7 +1216,6 @@ Array DapServer::expand_compound(uint64_t val) {
         return children;
     }
 
-    // Vector → indexed elements
     if (auto* vec = heap.try_get_as<ObjectKind::Vector, Vector>(
             static_cast<ObjectId>(ops::payload(val)))) {
         int limit = static_cast<int>((std::min)(vec->elements.size(), std::size_t{200}));
@@ -1224,7 +1233,6 @@ Array DapServer::expand_compound(uint64_t val) {
         return children;
     }
 
-    // Closure → function name + upvalues
     if (auto* cl = heap.try_get_as<ObjectKind::Closure, Closure>(
             static_cast<ObjectId>(ops::payload(val)))) {
         if (cl->func) {
@@ -1247,7 +1255,6 @@ Array DapServer::expand_compound(uint64_t val) {
     }
 
 #ifdef ETA_HAS_NNG
-    // NngSocket → protocol / listening / dialed fields
     if (auto* ns = heap.try_get_as<ObjectKind::NngSocket, eta::nng::NngSocketPtr>(
             static_cast<ObjectId>(ops::payload(val)))) {
         children.push_back(json::object({
@@ -1282,9 +1289,8 @@ Array DapServer::expand_compound(uint64_t val) {
     return children;
 }
 
-// ============================================================================
-// completions — tab completion in Debug Console
-// ============================================================================
+/**
+ */
 
 void DapServer::handle_completions(const Value& id, const Value& args) {
     std::lock_guard<std::mutex> lk(vm_mutex_);
@@ -1295,14 +1301,14 @@ void DapServer::handle_completions(const Value& id, const Value& args) {
 
     auto text_opt = args.get_string("text");
     std::string prefix = text_opt ? *text_opt : "";
-    // Strip leading whitespace and opening parens
+    /// Strip leading whitespace and opening parens
     while (!prefix.empty() && (prefix.front() == '(' || prefix.front() == ' '))
         prefix.erase(prefix.begin());
 
     Array targets;
     std::unordered_set<std::string> seen;
 
-    // Collect from all frames: locals + upvalues
+    /// Collect from all frames: locals + upvalues
     auto frames = driver_->vm().get_frames();
     for (std::size_t fi = 0; fi < frames.size(); ++fi) {
         for (const auto& e : driver_->vm().get_locals(fi)) {
@@ -1330,19 +1336,21 @@ void DapServer::handle_completions(const Value& id, const Value& args) {
     send_response(id, json::object({{"targets", Value(std::move(targets))}}));
 }
 
-// ============================================================================
-// current_module_from_frame
-// ============================================================================
+/**
+ * current_module_from_frame
+ */
 
 std::string DapServer::current_module_from_frame(std::size_t frame_idx) {
-    // Must be called with vm_mutex_ held.
-    // Returns the Eta module name (e.g. "composition", "std.io") that owns the
-    // function executing in the requested frame.
-    //
-    // Strategy: function names are "<mod_underscored>_init" or
-    // "<mod_underscored>_lambda<N>..." where dots in the module name are
-    // replaced by underscores.  We scan global_names_ to find the longest
-    // module prefix whose underscore form is a prefix of the function name.
+    /**
+     * Must be called with vm_mutex_ held.
+     * Returns the Eta module name (e.g. "composition", "std.io") that owns the
+     * function executing in the requested frame.
+     *
+     * Strategy: function names are "<mod_underscored>_init" or
+     * "<mod_underscored>_lambda<N>..." where dots in the module name are
+     * replaced by underscores.  We scan global_names_ to find the longest
+     * module prefix whose underscore form is a prefix of the function name.
+     */
     auto frames = driver_->vm().get_frames();
     if (frame_idx >= frames.size()) return "";
     const std::string& fn = frames[frame_idx].func_name;
@@ -1355,13 +1363,13 @@ std::string DapServer::current_module_from_frame(std::size_t frame_idx) {
         auto dot = full_name.rfind('.');
         if (dot == std::string::npos) continue;
         std::string mod = full_name.substr(0, dot);
-        if (mod.size() <= best_len) continue; // can't beat current best
+        if (mod.size() <= best_len) continue; ///< can't beat current best
 
-        // Build the underscore form of the module name for matching
+        /// Build the underscore form of the module name for matching
         std::string mod_ul = mod;
         for (char& c : mod_ul) if (c == '.') c = '_';
 
-        // Function name must start with mod_ul followed by '_' (or be exactly mod_ul)
+        /// Function name must start with mod_ul followed by '_' (or be exactly mod_ul)
         if (fn.size() >= mod_ul.size() &&
             fn.compare(0, mod_ul.size(), mod_ul) == 0 &&
             (fn.size() == mod_ul.size() || fn[mod_ul.size()] == '_')) {
@@ -1373,9 +1381,8 @@ std::string DapServer::current_module_from_frame(std::size_t frame_idx) {
 }
 
 
-// ============================================================================
-// eta/childProcesses — DAP custom request
-// ============================================================================
+/**
+ */
 
 void DapServer::handle_child_processes(const Value& id, const Value& /*args*/) {
     Array children;
@@ -1398,5 +1405,5 @@ void DapServer::handle_child_processes(const Value& id, const Value& /*args*/) {
 }
 
 
-} // namespace eta::dap
+} ///< namespace eta::dap
 

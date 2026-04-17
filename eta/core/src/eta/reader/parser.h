@@ -20,38 +20,38 @@ namespace eta::reader::parser {
     using lexer::NumericToken;
     using lexer::LexError;
 
-    // Forward declare the SExpr node and pointer alias
+    /// Forward declare the SExpr node and pointer alias
     struct SExpr;
     using SExprPtr = std::unique_ptr<SExpr>;
 
     enum class ParseErrorKind : std::uint8_t {
-        // Generic/propagation
+        /// Generic/propagation
         FromLexer,
 
-        // Token/stream conditions
+        /// Token/stream conditions
         UnexpectedEOF,
         UnexpectedClosingDelimiter,
         UnsupportedToken,
 
-        // List-specific
+        /// List-specific
         UnclosedList,
         MisplacedDot,
         MultipleDotsInDottedList,
         DotAtListStart,
 
-        // Vector/#u8()-specific
+        /// Vector/#u8()-specific
         UnclosedVector,
         DotInVector,
         ByteVectorNonInteger,
         InvalidByteLiteral,
 
-        // Numeric parsing
+        /// Numeric parsing
         InvalidNumericLiteral,  ///< stoll/stod failed on a numeric token
 
-        // Reader forms / quoting
+        /// Reader forms / quoting
         UnquoteOutsideQuasiquote,
 
-        // Internal consistency errors
+        /// Internal consistency errors
         InternalNotAnAtom,
         InternalNotAReaderToken
     };
@@ -103,11 +103,11 @@ namespace eta::reader::parser {
 
     struct Number : NodeBase { eta::Number value; };
 
-    // (a b c) or dotted (a b . c)
+    /// (a b c) or dotted (a b . c)
     struct List : NodeBase {
-        std::vector<SExprPtr> elems; // head elements
+        std::vector<SExprPtr> elems; ///< head elements
         bool dotted{false};
-        SExprPtr tail;               // valid if dotted==true
+        SExprPtr tail;               ///< valid if dotted==true
     };
 
     struct Vector : NodeBase {
@@ -125,14 +125,14 @@ namespace eta::reader::parser {
         SExprPtr expr;
     };
 
-    // Owns a normalized representation of a recognized module body
+    /// Owns a normalized representation of a recognized module body
     struct ModuleForm : NodeBase {
-        std::string name;                 // e.g. "std.collections"
-        std::vector<std::string> exports; // names only
-        std::vector<SExprPtr> body;       // owning copies of body forms
+        std::string name;                 ///< e.g. "std.collections"
+        std::vector<std::string> exports; ///< names only
+        std::vector<SExprPtr> body;       ///< owning copies of body forms
     };
 
-    // The S-expression variant
+    /// The S-expression variant
     using SExprValue = std::variant<
         Nil,
         Bool, Char, String, Symbol, Number,
@@ -168,10 +168,10 @@ namespace eta::reader::parser {
     public:
         explicit Parser(lexer::Lexer& lexer, bool strict_quasiquote = false);
 
-        // Zero or more top-level forms until EOF
+        /// Zero or more top-level forms until EOF
         std::expected<std::vector<SExprPtr>, ReaderError > parse_toplevel();
 
-        // One datum (useful for REPL/tests)
+        /// One datum (useful for REPL/tests)
         std::expected<SExprPtr, ReaderError> parse_datum();
 
     private:
@@ -180,24 +180,26 @@ namespace eta::reader::parser {
         int qq_depth_{0};
         bool qq_strict_{false};
 
-        // Token management
+        /// Token management
         std::expected<Token, ReaderError > peek();
         std::expected<Token, ReaderError > advance();
 
-        // Parsing routines
+        /// Parsing routines
         std::expected<SExprPtr, ReaderError> parse_list(Token::Kind close_kind, Span open_span);
         std::expected<SExprPtr, ReaderError> parse_vector(Span open_span);
         std::expected<SExprPtr, ReaderError> parse_byte_vector(Span open_span);
         std::expected<SExprPtr, ReaderError> parse_atom(const Token& tok);
         std::expected<SExprPtr, ReaderError> parse_abbreviation(const Token& tok);
 
-        // Post-parse recognition
-        // Note: May move elements out of the provided list when a module is recognized.
-        // The caller discards the original datum afterward, so this is safe.
+        /**
+         * Post-parse recognition
+         * Note: May move elements out of the provided list when a module is recognized.
+         * The caller discards the original datum afterward, so this is safe.
+         */
         std::optional<ModuleForm> try_parse_module(List& list);
 
-        // Span utility
+        /// Span utility
         static Span merge_spans(Span open, Span close);
     };
 
-} // namespace eta::reader
+} ///< namespace eta::reader

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <memory>
 #include <string>
@@ -59,5 +59,5 @@ private:
     std::vector<std::unique_ptr<OptimizationPass>> passes_;
 };
 
-} // namespace eta::semantics
+} ///< namespace eta::semantics
 

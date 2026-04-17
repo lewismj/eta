@@ -45,11 +45,11 @@ using SemResult = std::expected<T, SemanticError>;
  */
 struct BindingInfo {
     enum class Kind : std::uint8_t { Param, Local, Global, Import } kind{};
-    std::string name;                         // identifier text
-    bool mutable_flag{false};                 // globals true; lexicals false
-    std::uint16_t slot{0};                    // VM stack slot (for locals) or global ID
-    eta::reader::parser::Span def_span{};     // site of define/param/let
-    std::optional<eta::reader::linker::ImportOrigin> origin; // for imports
+    std::string name;                         ///< identifier text
+    bool mutable_flag{false};                 ///< globals true; lexicals false
+    std::uint16_t slot{0};                    ///< VM stack slot (for locals) or global ID
+    eta::reader::parser::Span def_span{};     ///< site of define/param/let
+    std::optional<eta::reader::linker::ImportOrigin> origin; ///< for imports
 };
 
 /**
@@ -57,10 +57,10 @@ struct BindingInfo {
  */
 struct Scope {
     Scope* parent{nullptr};
-    std::unordered_map<std::string, core::BindingId> table; // string keys by design
+    std::unordered_map<std::string, core::BindingId> table; ///< string keys by design
     bool is_lambda_boundary{false};
-    core::Lambda* lambda_node{nullptr}; // for upval tracking
-    std::uint16_t next_slot{0};         // Next available VM slot in this lambda's frame
+    core::Lambda* lambda_node{nullptr}; ///< for upval tracking
+    std::uint16_t next_slot{0};         ///< Next available VM slot in this lambda's frame
 };
 
 /**
@@ -78,15 +78,17 @@ struct Scope {
  */
 struct ModuleSemantics {
     std::string name;
-    core::Arena arena;                        // Arena allocator for IR nodes
-    std::vector<core::Node*> toplevel_inits;  // ordered module initializer forms
-    std::unordered_map<std::string, core::BindingId> exports; // export name -> binding
-    std::vector<BindingInfo> bindings;        // indexed by BindingId
-    std::uint32_t stack_size{0};              // stack size for module init function
-    std::uint32_t total_globals{0};           // unified global count (shared across all modules)
+    core::Arena arena;                        ///< Arena allocator for IR nodes
+    std::vector<core::Node*> toplevel_inits;  ///< ordered module initializer forms
+    std::unordered_map<std::string, core::BindingId> exports; ///< export name -> binding
+    std::vector<BindingInfo> bindings;        ///< indexed by BindingId
+    std::uint32_t stack_size{0};              ///< stack size for module init function
+    std::uint32_t total_globals{0};           ///< unified global count (shared across all modules)
 
-    /// If the module defines a `(defun main ...)`, this holds its global slot.
-    /// Used by the Driver and etac to invoke the designated entry point.
+    /**
+     * If the module defines a `(defun main ...)`, this holds its global slot.
+     * Used by the Driver and etac to invoke the designated entry point.
+     */
     std::optional<std::uint32_t> main_func_slot{};
 
 
@@ -100,7 +102,7 @@ struct ModuleSemantics {
      */
     template <class Alt, class... Args>
     core::Node* emplace(const eta::reader::parser::Span& span, Args&&... args) {
-        // Allocate in arena for stable pointer and better cache performance
+        /// Allocate in arena for stable pointer and better cache performance
         auto* node = arena.alloc<core::Node>(Alt{std::forward<Args>(args)...}, span);
         return node;
     }
@@ -127,11 +129,10 @@ public:
         const eta::reader::ModuleLinker& linker,
         const eta::runtime::BuiltinEnvironment& builtins);
 
-    /// Overload without builtins — uses an empty environment (for backward compatibility)
     SemResult<std::vector<ModuleSemantics>> analyze_all(
         std::span<const eta::reader::parser::SExprPtr> forms,
         const eta::reader::ModuleLinker& linker);
 };
 
-} // namespace eta::semantics
+} ///< namespace eta::semantics
 

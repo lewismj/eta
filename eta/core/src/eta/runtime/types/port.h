@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <memory>
 #include "eta/runtime/port.h"
@@ -12,5 +12,5 @@ struct PortObject {
     std::shared_ptr<Port> port;
 };
 
-}  // namespace eta::runtime::types
+}  ///< namespace eta::runtime::types
 

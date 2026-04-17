@@ -29,7 +29,6 @@ namespace eta::runtime {
 /**
  * @brief Register all core primitives into a BuiltinEnvironment
  *
- * Primitives registered (in order — determines global slot indices):
  *
  *  Arithmetic:   +  -  *  /
  *  Comparison:   =  <  >  <=  >=
@@ -53,7 +52,6 @@ namespace eta::runtime {
  * @param vm  Optional pointer to the running VM.  When provided, map and
  *            for-each use a VM trampoline so they work correctly with user
  *            closures.  When nullptr they fall back to primitive-only mode
- *            (closures will return an error — suitable for analysis-only usage).
  *
  * All primitives capture Heap& and/or InternTable& by reference where needed.
  */
@@ -61,8 +59,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                                      vm::VM* vm = nullptr) {
     using Args = const std::vector<LispVal>&;
 
-    // AD TapeRef helper
-    // Helper: check whether any element is a TapeRef
+    /**
+     * AD TapeRef helper
+     * Helper: check whether any element is a TapeRef
+     */
     auto has_tape_ref = [](Args args) -> bool {
         for (auto v : args) {
             if (ops::is_boxed(v) && ops::tag(v) == Tag::TapeRef)
@@ -71,14 +71,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return false;
     };
 
-    // ========================================================================
-    // Arithmetic: + - * /
-    //
-    // Each operator checks for TapeRef arguments.  When found, the operation
-    // is folded through VM::tape_binary_op() which delegates to
-    // do_binary_arithmetic() — the handler that transparently records tape
-    // operations for reverse-mode AD.
-    // ========================================================================
+    /**
+     * Arithmetic: + - * /
+     *
+     * Each operator checks for TapeRef arguments.  When found, the operation
+     * is folded through VM::tape_binary_op() which delegates to
+     * operations for reverse-mode AD.
+     */
 
     env.register_builtin("+", 0, true, [&heap, vm, has_tape_ref](Args args) -> std::expected<LispVal, RuntimeError> {
         if (vm && has_tape_ref(args)) {
@@ -101,7 +100,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 if (!use_float) { fsum = static_cast<double>(isum); use_float = true; }
                 fsum += n.as_double();
             } else {
-                // Overflow check: promote to double on overflow
+                /// Overflow check: promote to double on overflow
                 int64_t new_sum;
                 if (detail::add_overflow(isum, n.int_val, &new_sum)) {
                     use_float = true;
@@ -119,7 +118,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (args.empty()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "-: requires at least 1 argument"}});
         if (vm && has_tape_ref(args)) {
             if (args.size() == 1) {
-                // Unary negation: 0 - x
+                /// Unary negation: 0 - x
                 auto zero = make_fixnum(heap, int64_t(0));
                 if (!zero) return zero;
                 return vm->tape_binary_op(vm::OpCode::Sub, *zero, args[0]);
@@ -136,7 +135,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (!first.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "-: argument is not a number"}});
 
         if (args.size() == 1) {
-            // Unary negation
+            /// Unary negation
             if (first.is_flonum()) return make_flonum(-first.float_val);
             return make_fixnum(heap, -first.int_val);
         }
@@ -202,7 +201,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (args.empty()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "/: requires at least 1 argument"}});
         if (vm && has_tape_ref(args)) {
             if (args.size() == 1) {
-                // Unary reciprocal: 1 / x
+                /// Unary reciprocal: 1 / x
                 auto one = make_flonum(1.0);
                 if (!one) return one;
                 return vm->tape_binary_op(vm::OpCode::Div, *one, args[0]);
@@ -219,7 +218,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (!first.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "/: argument is not a number"}});
 
         if (args.size() == 1) {
-            // Unary: reciprocal
+            /// Unary: reciprocal
             double d = first.as_double();
             if (d == 0.0) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "/: division by zero"}});
             return make_flonum(1.0 / d);
@@ -237,7 +236,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 fnum /= n.as_double();
             } else {
                 if (inum % n.int_val != 0) {
-                    // Non-exact: promote to double
+                    /// Non-exact: promote to double
                     use_float = true;
                     fnum = static_cast<double>(inum) / static_cast<double>(n.int_val);
                 } else {
@@ -249,9 +248,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fixnum(heap, inum);
     });
 
-    // ========================================================================
-    // Comparison: = < > <= >=
-    // ========================================================================
+    /**
+     * Comparison: = < > <= >=
+     */
 
     auto make_comparison = [&heap](const char* name, auto cmp_int, auto cmp_float) {
         return [&heap, name, cmp_int, cmp_float](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -293,9 +292,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             [](int64_t a, int64_t b) { return a >= b; },
             [](double a, double b) { return a >= b; }));
 
-    // ========================================================================
-    // Equivalence: eq? eqv? not
-    // ========================================================================
+    /**
+     * Equivalence: eq? eqv? not
+     */
 
     env.register_builtin("eq?", 2, false, [](Args args) -> std::expected<LispVal, RuntimeError> {
         return (args[0] == args[1]) ? nanbox::True : nanbox::False;
@@ -319,9 +318,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return (args[0] == nanbox::False) ? nanbox::True : nanbox::False;
     });
 
-    // ========================================================================
-    // Pairs / Lists: cons car cdr pair? null? list
-    // ========================================================================
+    /**
+     * Pairs / Lists: cons car cdr pair? null? list
+     */
 
     env.register_builtin("cons", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         return make_cons(heap, args[0], args[1]);
@@ -369,9 +368,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return result;
     });
 
-    // ========================================================================
-    // Type predicates
-    // ========================================================================
+    /**
+     * Type predicates
+     */
 
     env.register_builtin("number?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         return classify_numeric(args[0], heap).is_valid() ? nanbox::True : nanbox::False;
@@ -414,15 +413,15 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return nanbox::False;
     });
 
-    // ========================================================================
-    // Note: I/O primitives (display, newline) have been moved to io_primitives.h
-    // They now support port-based output and require VM access.
-    // ========================================================================
+    /**
+     * Note: I/O primitives (display, newline) have been moved to io_primitives.h
+     * They now support port-based output and require VM access.
+     */
 
 
-    // ========================================================================
-    // Numeric predicates: zero? positive? negative?
-    // ========================================================================
+    /**
+     * Numeric predicates: zero? positive? negative?
+     */
 
     env.register_builtin("zero?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto n = classify_numeric(args[0], heap);
@@ -445,9 +444,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return (n.int_val < 0) ? nanbox::True : nanbox::False;
     });
 
-    // ========================================================================
-    // Numeric operations: abs min max modulo remainder
-    // ========================================================================
+    /**
+     * Numeric operations: abs min max modulo remainder
+     */
 
     env.register_builtin("abs", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto n = classify_numeric(args[0], heap);
@@ -498,7 +497,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (!a.is_valid() || !b.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "modulo: arguments must be numbers"}});
         if (a.is_flonum() || b.is_flonum()) return make_flonum(std::fmod(a.as_double(), b.as_double()));
         if (b.int_val == 0) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "modulo: division by zero"}});
-        // Scheme modulo: result has same sign as divisor
+        /// Scheme modulo: result has same sign as divisor
         int64_t r = a.int_val % b.int_val;
         if (r != 0 && ((r < 0) != (b.int_val < 0))) r += b.int_val;
         return make_fixnum(heap, r);
@@ -513,12 +512,12 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fixnum(heap, a.int_val % b.int_val);
     });
 
-    // ========================================================================
-    // Transcendental math: sin cos tan asin acos atan atan2 exp log sqrt
-    // ========================================================================
+    /**
+     * Transcendental math: sin cos tan asin acos atan atan2 exp log sqrt
+     */
 
     env.register_builtin("sin", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Tape-aware: record sin on active tape
+        /// Tape-aware: record sin on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
             auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
             if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sin: no active tape"}});
@@ -533,7 +532,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("cos", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Tape-aware: record cos on active tape
+        /// Tape-aware: record cos on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
             auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
             if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "cos: no active tape"}});
@@ -577,7 +576,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("exp", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Tape-aware: record exp on active tape
+        /// Tape-aware: record exp on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
             auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
             if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "exp: no active tape"}});
@@ -592,7 +591,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("log", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Tape-aware: record log on active tape
+        /// Tape-aware: record log on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
             auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
             if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "log: no active tape"}});
@@ -607,7 +606,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("sqrt", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Tape-aware: record sqrt on active tape
+        /// Tape-aware: record sqrt on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
             auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
             if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sqrt: no active tape"}});
@@ -621,9 +620,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(std::sqrt(n.as_double()));
     });
 
-    // ========================================================================
-    // List operations: length append reverse list-ref
-    // ========================================================================
+    /**
+     * List operations: length append reverse list-ref
+     */
 
     env.register_builtin("length", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         int64_t count = 0;
@@ -643,12 +642,12 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (args.empty()) return nanbox::Nil;
         if (args.size() == 1) return args[0];
 
-        // Start from the last argument (which doesn't need to be a list)
+        /// Start from the last argument (which doesn't need to be a list)
         LispVal result = args.back();
 
-        // Process arguments right-to-left (all but the last must be proper lists)
+        /// Process arguments right-to-left (all but the last must be proper lists)
         for (auto it = args.rbegin() + 1; it != args.rend(); ++it) {
-            // Collect elements of this list
+            /// Collect elements of this list
             std::vector<LispVal> elems;
             LispVal cur = *it;
             while (cur != nanbox::Nil) {
@@ -659,7 +658,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 elems.push_back(cons->car);
                 cur = cons->cdr;
             }
-            // Build from right to left
+            /// Build from right to left
             for (auto rit = elems.rbegin(); rit != elems.rend(); ++rit) {
                 auto cons = make_cons(heap, *rit, result);
                 if (!cons) return cons;
@@ -738,7 +737,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("assq", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (assq key alist) — identity (eq?) comparison on car of each pair
         LispVal key = args[0];
         LispVal cur = args[1];
         while (cur != nanbox::Nil) {
@@ -746,12 +744,12 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "assq: not a proper alist"}});
             auto* outer = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
             if (!outer) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "assq: not a proper alist"}});
-            // Each element must be a pair
+            /// Each element must be a pair
             LispVal pair = outer->car;
             if (ops::is_boxed(pair) && ops::tag(pair) == Tag::HeapObject) {
                 auto* inner = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(pair));
                 if (inner && inner->car == key) {
-                    return pair; // Return the whole pair
+                    return pair; ///< Return the whole pair
                 }
             }
             cur = outer->cdr;
@@ -760,7 +758,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("assoc", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (assoc key alist) — structural (equal?) comparison on car of each pair
         LispVal key = args[0];
         LispVal cur = args[1];
 
@@ -801,7 +798,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("member", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (member obj list) — eq? comparison, returns sublist starting at match or #f
         LispVal obj = args[0];
         LispVal cur = args[1];
         while (cur != nanbox::Nil) {
@@ -827,19 +823,18 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_symbol(intern_table, std::string(sv->view()));
     });
 
-    // ========================================================================
-    // Higher-order: apply map for-each
-    //
-    // NOTE: (apply proc arg1 ... list) is now a VM-level special form
-    // (OpCode::Apply / TailApply).  The SA intercepts calls to `apply` and
-    // emits the dedicated opcode, so this primitive is only reachable when
-    // `apply` is used as a first-class value (e.g. passed to another function).
-    // That case is not yet supported — it would require a VM trampoline.
-    //
-    // When a VM pointer is provided both map and for-each use call_value() to
-    // invoke any callable (primitive or closure).  Without a VM pointer they
-    // fall back to primitive-only mode.
-    // ========================================================================
+    /**
+     * Higher-order: apply map for-each
+     *
+     * NOTE: (apply proc arg1 ... list) is now a VM-level special form
+     * (OpCode::Apply / TailApply).  The SA intercepts calls to `apply` and
+     * emits the dedicated opcode, so this primitive is only reachable when
+     * `apply` is used as a first-class value (e.g. passed to another function).
+     *
+     * When a VM pointer is provided both map and for-each use call_value() to
+     * invoke any callable (primitive or closure).  Without a VM pointer they
+     * fall back to primitive-only mode.
+     */
 
     env.register_builtin("apply", 2, true, [](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
@@ -847,7 +842,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("map", 2, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (map proc list) — single-list version; works with any callable when vm != nullptr
         LispVal proc = args[0];
         if (!ops::is_boxed(proc) || ops::tag(proc) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "map: first argument must be a procedure"}});
@@ -867,7 +861,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
                 if (!prim)
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
-                        "map: closures require a VM context (internal error — VM not provided)"}});
+                        "map: closures require a VM context (internal error â€” VM not provided)"}});
                 std::vector<LispVal> call_args = {cons->car};
                 res = prim->func(call_args);
             }
@@ -875,7 +869,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             results.push_back(*res);
             cur = cons->cdr;
         }
-        // Build result list in order
+        /// Build result list in order
         LispVal result = nanbox::Nil;
         for (auto it = results.rbegin(); it != results.rend(); ++it) {
             auto cons_val = make_cons(heap, *it, result);
@@ -886,7 +880,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("for-each", 2, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (for-each proc list) — single-list version; works with any callable when vm != nullptr
         LispVal proc = args[0];
         if (!ops::is_boxed(proc) || ops::tag(proc) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "for-each: first argument must be a procedure"}});
@@ -905,7 +898,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
                 if (!prim)
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
-                        "for-each: closures require a VM context (internal error — VM not provided)"}});
+                        "for-each: closures require a VM context (internal error â€” VM not provided)"}});
                 std::vector<LispVal> call_args = {cons->car};
                 res = prim->func(call_args);
             }
@@ -915,17 +908,17 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return nanbox::Nil;
     });
 
-    // ========================================================================
-    // Deep equality: equal?
-    // ========================================================================
+    /**
+     * Deep equality: equal?
+     */
 
     env.register_builtin("equal?", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Recursive structural equality
+        /// Recursive structural equality
         std::function<bool(LispVal, LispVal)> equal_impl = [&](LispVal a, LispVal b) -> bool {
             if (a == b) return true;
             if (!ops::is_boxed(a) || !ops::is_boxed(b)) return false;
 
-            // Both are strings?
+            /// Both are strings?
             if (ops::tag(a) == Tag::String && ops::tag(b) == Tag::String) {
                 auto sa = StringView::try_from(a, intern_table);
                 auto sb = StringView::try_from(b, intern_table);
@@ -935,7 +928,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
             if (ops::tag(a) != Tag::HeapObject || ops::tag(b) != Tag::HeapObject) return false;
 
-            // Numeric equality
+            /// Numeric equality
             auto na = classify_numeric(a, heap);
             auto nb = classify_numeric(b, heap);
             if (na.is_valid() && nb.is_valid()) {
@@ -943,14 +936,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return na.int_val == nb.int_val;
             }
 
-            // Cons (pair) equality
+            /// Cons (pair) equality
             auto* ca = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(a));
             auto* cb = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(b));
             if (ca && cb) {
                 return equal_impl(ca->car, cb->car) && equal_impl(ca->cdr, cb->cdr);
             }
 
-            // Vector equality
+            /// Vector equality
             auto* va = heap.try_get_as<ObjectKind::Vector, types::Vector>(ops::payload(a));
             auto* vb = heap.try_get_as<ObjectKind::Vector, types::Vector>(ops::payload(b));
             if (va && vb) {
@@ -966,9 +959,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return equal_impl(args[0], args[1]) ? nanbox::True : nanbox::False;
     });
 
-    // ========================================================================
-    // String operations: string-length string-append string-ref number->string string->number
-    // ========================================================================
+    /**
+     * String operations: string-length string-append string-ref number->string string->number
+     */
 
     env.register_builtin("string-length", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto sv = StringView::try_from(args[0], intern_table);
@@ -1012,7 +1005,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             double d = std::stod(s, &pos);
             if (pos == s.size()) return make_flonum(d);
         } catch (...) {}
-        return nanbox::False; // Scheme convention: return #f on failure
+        return nanbox::False; ///< Scheme convention: return #f on failure
     });
 
     env.register_builtin("string-ref", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -1024,7 +1017,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto view = sv->view();
         if (static_cast<size_t>(idx.int_val) >= view.size())
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string-ref: index out of bounds"}});
-        // Return the byte at position as a character (treats string as byte-indexed)
+        /// Return the byte at position as a character (treats string as byte-indexed)
         char32_t ch = static_cast<unsigned char>(view[static_cast<size_t>(idx.int_val)]);
         return ops::encode(ch);
     });
@@ -1103,9 +1096,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return *v;
     });
 
-    // ========================================================================
-    // Vector operations: vector vector-length vector-ref vector-set!
-    // ========================================================================
+    /**
+     * Vector operations: vector vector-length vector-ref vector-set!
+     */
 
     env.register_builtin("vector", 0, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         std::vector<LispVal> elems(args.begin(), args.end());
@@ -1156,13 +1149,15 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_vector(heap, std::move(elems));
     });
 
-    // ========================================================================
-    // Error signaling: error
-    // ========================================================================
+    /**
+     * Error signaling: error
+     */
 
     env.register_builtin("error", 1, true, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
-        // (error message irritant ...)
-        // First arg should be a string message
+        /**
+         * (error message irritant ...)
+         * First arg should be a string message
+         */
         std::string msg;
         auto sv = StringView::try_from(args[0], intern_table);
         if (sv) {
@@ -1170,7 +1165,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         } else {
             msg = format_value(args[0], FormatMode::Write, heap, intern_table);
         }
-        // Append irritants
+        /// Append irritants
         for (size_t i = 1; i < args.size(); ++i) {
             msg += " ";
             msg += format_value(args[i], FormatMode::Write, heap, intern_table);
@@ -1178,13 +1173,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError, msg}});
     });
 
-    // ========================================================================
-    // Platform detection: platform
-    // Returns a symbol identifying the executing host OS at runtime.
-    // The #if selects which string is compiled into each platform's binary;
-    // the primitive is always invoked at VM execution time, so bytecode built
-    // on one platform and run on another correctly reports the executing host.
-    // ========================================================================
+    /**
+     * Platform detection: platform
+     * Returns a symbol identifying the executing host OS at runtime.
+     * The #if selects which string is compiled into each platform's binary;
+     * the primitive is always invoked at VM execution time, so bytecode built
+     * on one platform and run on another correctly reports the executing host.
+     */
 
     env.register_builtin("platform", 0, false, [&intern_table](Args) -> std::expected<LispVal, RuntimeError> {
 #if defined(_WIN32)
@@ -1198,9 +1193,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 #endif
     });
 
-    // ========================================================================
-    // Logic variable type predicate: logic-var?
-    // ========================================================================
+    /**
+     * Logic variable type predicate: logic-var?
+     */
 
     env.register_builtin("logic-var?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         const LispVal v = args[0];
@@ -1209,24 +1204,18 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id) ? True : False;
     });
 
-    // ========================================================================
-    // Attributed variables (Phase 3)
-    // ------------------------------------------------------------------------
-    // (put-attr v 'module value)  — install/overwrite attribute (trailed)
-    // (get-attr v 'module)        — returns value, or #f if missing
-    // (del-attr v 'module)        — remove attribute; #t if removed, #f if absent (trailed)
-    // (attr-var? v)               — #t iff v is an unbound LogicVar with
-    //                               at least one attribute
-    // (register-attr-hook! 'module proc)
-    //                             — register a hook called as
-    //                               (proc var bound-value attr-value)
-    //                               when `var` with attribute 'module is
-    //                               bound by unify.  Returns #f on failure
-    //                               (which unifies fails).  Hook registry
-    //                               is VM-lifetime and NOT trailed.
-    // ========================================================================
+    /**
+     * Attributed variables (Phase 3)
+     *                               at least one attribute
+     * (register-attr-hook! 'module proc)
+     *                               (proc var bound-value attr-value)
+     *                               when `var` with attribute 'module is
+     *                               bound by unify.  Returns #f on failure
+     *                               (which unifies fails).  Hook registry
+     *                               is VM-lifetime and NOT trailed.
+     */
 
-    // Helper: extract the InternId from a symbol LispVal, or nullopt.
+    /// Helper: extract the InternId from a symbol LispVal, or nullopt.
     auto get_symbol_id = [](LispVal v) -> std::optional<memory::intern::InternId> {
         if (!ops::is_boxed(v) || ops::tag(v) != Tag::Symbol) return std::nullopt;
         return static_cast<memory::intern::InternId>(ops::payload(v));
@@ -1248,7 +1237,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             if (!key)
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
                     "put-attr: second arg must be a symbol (module name)"}});
-            // Trail the prior state so backtracking undoes the write.
+            /// Trail the prior state so backtracking undoes the write.
             auto it = lv->attrs.find(*key);
             if (vm) {
                 vm::TrailEntry e{};
@@ -1291,7 +1280,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     "del-attr: second arg must be a symbol (module name)"}});
             auto it = lv->attrs.find(*key);
             if (it == lv->attrs.end()) return False;
-            // Trail so backtracking re-installs the attribute.
+            /// Trail so backtracking re-installs the attribute.
             if (vm) {
                 vm::TrailEntry e{};
                 e.kind       = vm::TrailEntry::Kind::Attr;
@@ -1311,7 +1300,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return False;
             auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(ops::payload(v));
             if (!lv) return False;
-            // An attributed variable must be unbound and have at least one attr.
+            /// An attributed variable must be unbound and have at least one attr.
             return (!lv->binding.has_value() && !lv->attrs.empty()) ? True : False;
         });
 
@@ -1327,14 +1316,11 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return True;
         });
 
-    // ------------------------------------------------------------------
-    // logic-var/named : create a fresh unbound LogicVar with a debug name
-    // ------------------------------------------------------------------
-    // (logic-var/named 'x)           → a fresh unbound logic var labelled "x"
-    // (logic-var/named "my-var")     → same, name taken from a string
-    //
-    // The name has no effect on unification semantics — it is purely for
-    // `(var-name v)` introspection, tracing, and future error messages.
+    /**
+     * logic-var/named : create a fresh unbound LogicVar with a debug name
+     *
+     * `(var-name v)` introspection, tracing, and future error messages.
+     */
     env.register_builtin("logic-var/named", 1, false,
         [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
             std::string name;
@@ -1351,9 +1337,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return memory::factory::make_logic_var(heap, std::move(name));
         });
 
-    // ------------------------------------------------------------------
-    // var-name : return the debug name of a LogicVar, or #f if none / not a var
-    // ------------------------------------------------------------------
+    /**
+     * var-name : return the debug name of a LogicVar, or #f if none / not a var
+     */
     env.register_builtin("var-name", 1, false,
         [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
             const LispVal v = args[0];
@@ -1363,14 +1349,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return make_string(heap, intern_table, lv->name);
         });
 
-    // ------------------------------------------------------------------
-    // Occurs-check policy (Phase 1 of the logic/CLP roadmap)
-    //
-    // (set-occurs-check! 'always)  ; run occurs-check, fail on cycle (default)
-    // (set-occurs-check! 'never)   ; skip occurs-check (ISO-Prolog default; faster)
-    // (set-occurs-check! 'error)   ; run occurs-check, raise error on cycle
-    // (occurs-check-mode)          ; → 'always / 'never / 'error
-    // ------------------------------------------------------------------
+    /**
+     * Occurs-check policy (Phase 1 of the logic/CLP roadmap)
+     *
+     * (set-occurs-check! 'always)  ; run occurs-check, fail on cycle (default)
+     * (set-occurs-check! 'never)   ; skip occurs-check (ISO-Prolog default; faster)
+     * (set-occurs-check! 'error)   ; run occurs-check, raise error on cycle
+     */
     env.register_builtin("set-occurs-check!", 1, false,
         [&intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
@@ -1402,23 +1387,22 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return make_symbol(intern_table, "always");
         });
 
-    // ========================================================================
-    // Ground check: ground?
-    // Returns #t iff the term contains no unbound logic variables.
-    // Recurses into Cons pairs and Vectors; treats all other heap objects
-    // (strings, closures, ports, …) as ground.
-    // ========================================================================
+    /**
+     * Ground check: ground?
+     * Returns #t iff the term contains no unbound logic variables.
+     * Recurses into Cons pairs and Vectors; treats all other heap objects
+     */
 
     env.register_builtin("ground?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         std::function<bool(LispVal)> is_ground = [&](LispVal v) -> bool {
             LispVal curr = v;
             for (;;) {
                 if (!ops::is_boxed(curr) || ops::tag(curr) != Tag::HeapObject)
-                    return true;  // inline primitive — always ground
+                    return true;
                 auto id = ops::payload(curr);
                 if (auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id)) {
-                    if (!lv->binding.has_value()) return false;  // unbound
-                    curr = *lv->binding;                          // follow chain
+                    if (!lv->binding.has_value()) return false;  ///< unbound
+                    curr = *lv->binding;                          ///< follow chain
                 } else if (auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
                     return is_ground(cons->car) && is_ground(cons->cdr);
                 } else if (auto* vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
@@ -1430,21 +1414,20 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                         if (!is_ground(a)) return false;
                     return true;
                 } else {
-                    return true;  // string, closure, port, etc.
+                    return true;  ///< string, closure, port, etc.
                 }
             }
         };
         return is_ground(args[0]) ? True : False;
     });
 
-    // ========================================================================
-    // Compound terms: term / functor / arity / arg / compound?
-    //
-    // A `CompoundTerm` is a structured logic term with a symbol functor and
-    // zero or more argument values, e.g. (term 'f x 1) ≡ f(x, 1) in Prolog.
-    // Unifies structurally with other compound terms of the same functor+arity.
-    // See docs/logic.md and docs/logic-next-steps.md for the Phase 1 rationale.
-    // ========================================================================
+    /**
+     * Compound terms: term / functor / arity / arg / compound?
+     *
+     * A `CompoundTerm` is a structured logic term with a symbol functor and
+     * Unifies structurally with other compound terms of the same functor+arity.
+     * See docs/logic.md and docs/logic-next-steps.md for the Phase 1 rationale.
+     */
 
     env.register_builtin("compound?", 1, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -1454,7 +1437,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 ? True : False;
         });
 
-    // (term functor . args) — allocate a CompoundTerm
     env.register_builtin("term", 1, true,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
             const LispVal fn = args[0];
@@ -1467,7 +1449,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return memory::factory::make_compound(heap, fn, std::move(targs));
         });
 
-    // (functor t) — return the functor symbol of a compound term, or #f otherwise
     env.register_builtin("functor", 1, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
             const LispVal v = args[0];
@@ -1477,7 +1458,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return ct->functor;
         });
 
-    // (arity t) — return the number of arguments of a compound term as a fixnum
     env.register_builtin("arity", 1, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
             const LispVal v = args[0];
@@ -1493,7 +1473,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return *enc;
         });
 
-    // (arg i t) — 1-based argument access (Prolog convention).  Out of range → error.
     env.register_builtin("arg", 2, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
             auto idx_opt = ops::decode<int64_t>(args[0]);
@@ -1514,24 +1493,23 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return ct->args[static_cast<std::size_t>(i - 1)];
         });
 
-    // ========================================================================
-    // AD Dual stubs (removed — kept as no-ops for slot stability)
-    //
-    // These builtins were removed along with the Dual heap type.
-    // They are retained as error stubs so that the global builtin slot indices
-    // remain stable (existing compiled bytecode references slots by index).
-    // ========================================================================
+    /**
+     *
+     * These builtins were removed along with the Dual heap type.
+     * They are retained as error stubs so that the global builtin slot indices
+     * remain stable (existing compiled bytecode references slots by index).
+     */
 
     env.register_builtin("dual?", 1, false, [](Args) -> std::expected<LispVal, RuntimeError> {
-        return False;  // Nothing is a Dual any more
+        return False;  ///< Nothing is a Dual any more
     });
 
     env.register_builtin("dual-primal", 1, false, [](Args args) -> std::expected<LispVal, RuntimeError> {
-        return args[0];  // pass-through
+        return args[0];  ///< pass-through
     });
 
     env.register_builtin("dual-backprop", 1, false, [&heap](Args) -> std::expected<LispVal, RuntimeError> {
-        // Return a no-op backpropagator
+        /// Return a no-op backpropagator
         return make_primitive(heap,
             [](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> { return Nil; },
             1, false);
@@ -1539,27 +1517,29 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     env.register_builtin("make-dual", 2, false, [](Args) -> std::expected<LispVal, RuntimeError> {
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
-            "make-dual: Dual AD has been removed — use tape-based AD instead"}});
+            "make-dual: Dual AD has been removed â€” use tape-based AD instead"}});
     });
 
-    // ========================================================================
-    // CLP domain primitives: %clp-domain-z!  %clp-domain-fd!  %clp-get-domain
-    //
-    // These are internal builtins consumed by std.clp.  They are prefixed with
-    // % to signal that user code should call the std.clp wrapper instead.
-    //
-    // Domain check at unification time is handled inside VM::unify() using
-    // the constraint_store_ field; these builtins only manage the store.
-    // ========================================================================
+    /**
+     * CLP domain primitives: %clp-domain-z!  %clp-domain-fd!  %clp-get-domain
+     *
+     * These are internal builtins consumed by std.clp.  They are prefixed with
+     * % to signal that user code should call the std.clp wrapper instead.
+     *
+     * Domain check at unification time is handled inside VM::unify() using
+     * the constraint_store_ field; these builtins only manage the store.
+     */
 
-    // (%clp-domain-z! var lo hi)
-    // Constrain `var` (unbound logic variable) to the integer interval [lo, hi].
-    // Adds the domain to the constraint store (trailed for backtracking).
+    /**
+     * (%clp-domain-z! var lo hi)
+     * Constrain `var` (unbound logic variable) to the integer interval [lo, hi].
+     * Adds the domain to the constraint store (trailed for backtracking).
+     */
     env.register_builtin("%clp-domain-z!", 3, false,
         [&heap, &intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
                 "%clp-domain-z!: requires a running VM"}});
-            // Resolve the variable through any binding chain
+            /// Resolve the variable through any binding chain
             LispVal var = args[0];
             for (;;) {
                 if (!ops::is_boxed(var) || ops::tag(var) != Tag::HeapObject) break;
@@ -1588,8 +1568,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return True;
         });
 
-    // (%clp-domain-fd! var values-list)
-    // Constrain `var` to the finite set of integers given as an Eta proper list.
+    /**
+     * (%clp-domain-fd! var values-list)
+     * Constrain `var` to the finite set of integers given as an Eta proper list.
+     */
     env.register_builtin("%clp-domain-fd!", 2, false,
         [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
@@ -1629,22 +1611,72 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return True;
         });
 
-    // (%clp-get-domain var)
-    // Returns the domain of `var` as an Eta value:
-    //   #f                    — no domain / var is already ground
-    //   (z lo hi)             — clp(Z) interval [lo, hi]
-    //   (fd v1 v2 ...)        — clp(FD) explicit value list
+    /**
+     * (%clp-domain-r! var lo hi lo-open? hi-open?)
+     * Phase 6.1: attach a real-valued interval domain to `var`.  Bounds
+     * are doubles (fixnum or flonum accepted, both promoted via
+     * classify_numeric).  The open/closed flags are #t / #f booleans.
+     * Empty intervals (lo > hi, or lo == hi with any open flag) are
+     * rejected at post time as a UserError.
+     */
+    env.register_builtin("%clp-domain-r!", 5, false,
+        [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "%clp-domain-r!: requires a running VM"}});
+            LispVal var = args[0];
+            for (;;) {
+                if (!ops::is_boxed(var) || ops::tag(var) != Tag::HeapObject) break;
+                auto id2 = ops::payload(var);
+                auto* lv2 = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id2);
+                if (!lv2 || !lv2->binding.has_value()) break;
+                var = *lv2->binding;
+            }
+            if (!ops::is_boxed(var) || ops::tag(var) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%clp-domain-r!: first argument must be a logic variable"}});
+            auto id = ops::payload(var);
+            if (!heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id))
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%clp-domain-r!: first argument must be an unbound logic variable"}});
+            auto nlo = classify_numeric(args[1], heap);
+            auto nhi = classify_numeric(args[2], heap);
+            if (!nlo.is_valid() || !nhi.is_valid())
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%clp-domain-r!: lo and hi must be numbers"}});
+            /// Booleans: accept #t / #f exactly.  Anything else is a type error.
+            auto bool_arg = [](LispVal v) -> std::optional<bool> {
+                if (v == True)  return true;
+                if (v == False) return false;
+                return std::nullopt;
+            };
+            auto blo = bool_arg(args[3]);
+            auto bhi = bool_arg(args[4]);
+            if (!blo || !bhi)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%clp-domain-r!: open-flag arguments must be #t or #f"}});
+            clp::RDomain dom{ nlo.as_double(), nhi.as_double(), *blo, *bhi };
+            if (dom.empty())
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
+                    "%clp-domain-r!: empty domain"}});
+            vm->trail_set_domain(id, std::move(dom));
+            return True;
+        });
+
+    /**
+     * (%clp-get-domain var)
+     * Returns the domain of `var` as an Eta value:
+     */
     env.register_builtin("%clp-get-domain", 1, false,
         [&heap, &intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!vm) return False;
-            // Deref the variable
+            /// Deref the variable
             LispVal var = args[0];
             for (;;) {
                 if (!ops::is_boxed(var) || ops::tag(var) != Tag::HeapObject) return False;
                 auto id2 = ops::payload(var);
                 auto* lv2 = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id2);
-                if (!lv2) return False;           // not a logic variable
-                if (!lv2->binding.has_value()) break; // found unbound variable
+                if (!lv2) return False;           ///< not a logic variable
+                if (!lv2->binding.has_value()) break; ///< found unbound variable
                 var = *lv2->binding;
             }
             auto id = ops::payload(var);
@@ -1653,7 +1685,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
             using namespace memory::factory;
             if (const auto* z = std::get_if<clp::ZDomain>(dom)) {
-                // Build (z lo hi)
+                /// Build (z lo hi)
                 auto sym = make_symbol(intern_table, "z");
                 auto lo  = make_fixnum(heap, z->lo);
                 auto hi  = make_fixnum(heap, z->hi);
@@ -1663,13 +1695,31 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 auto result= make_cons(heap, *sym, lo_c ? *lo_c  : Nil);
                 if (!hi_c || !lo_c || !result) return False;
                 return *result;
+            } else if (const auto* r = std::get_if<clp::RDomain>(dom)) {
+                /**
+                 * `hi` are flonums; the open-flag pair is appended so the
+                 * shape is unambiguous from the (z lo hi) / (fd vs) cases.
+                 */
+                auto sym   = make_symbol(intern_table, "r");
+                auto lo_e  = make_flonum(r->lo);
+                auto hi_e  = make_flonum(r->hi);
+                if (!sym || !lo_e || !hi_e) return False;
+                LispVal lo_open = r->lo_open ? True : False;
+                LispVal hi_open = r->hi_open ? True : False;
+                auto c4 = make_cons(heap, hi_open, Nil);
+                auto c3 = make_cons(heap, lo_open, c4 ? *c4 : Nil);
+                auto c2 = make_cons(heap, *hi_e,   c3 ? *c3 : Nil);
+                auto c1 = make_cons(heap, *lo_e,   c2 ? *c2 : Nil);
+                auto rs = make_cons(heap, *sym,    c1 ? *c1 : Nil);
+                if (!c4 || !c3 || !c2 || !c1 || !rs) return False;
+                return *rs;
             } else {
-                // FD: build (fd v1 v2 ...)
+                /// FD: build (fd v1 v2 ...)
                 const auto& fd = std::get<clp::FDDomain>(*dom);
                 auto sym = make_symbol(intern_table, "fd");
                 if (!sym) return False;
                 LispVal lst = Nil;
-                const auto vs = fd.to_vector();   // ascending
+                const auto vs = fd.to_vector();   ///< ascending
                 for (int i = static_cast<int>(vs.size()) - 1; i >= 0; --i) {
                     auto v = make_fixnum(heap, vs[static_cast<std::size_t>(i)]);
                     if (!v) return False;
@@ -1683,22 +1733,19 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             }
         });
 
-    // ========================================================================
-    // CLP(FD) native bounds-consistency propagators (Phase 4b)
-    //
-    //   %clp-fd-plus!        (x y z)    — posts z = x + y, narrows bounds
-    //   %clp-fd-plus-offset! (y x k)    — posts y = x + k (k a fixnum)
-    //   %clp-fd-abs!         (y x)      — posts y = |x|
-    //
-    // Each returns #t on success (including "nothing to do"), #f on detected
-    // inconsistency (empty domain).  Narrowing goes through the trailed
-    // ConstraintStore::set_domain so backtracking correctly restores state.
-    //
-    // These are the bounds kernel only; re-firing on variable binding is
-    // installed in Eta-level `std.clp` via a `clp.prop` attribute hook.
-    // ========================================================================
+    /**
+     * CLP(FD) native bounds-consistency propagators (Phase 4b)
+     *
+     *
+     * Each returns #t on success (including "nothing to do"), #f on detected
+     * inconsistency (empty domain).  Narrowing goes through the trailed
+     * ConstraintStore::set_domain so backtracking correctly restores state.
+     *
+     * These are the bounds kernel only; re-firing on variable binding is
+     * installed in Eta-level `std.clp` via a `clp.prop` attribute hook.
+     */
     {
-        // Helper: deref a LispVal through any binding chain.
+        /// Helper: deref a LispVal through any binding chain.
         auto deref = [&heap](LispVal v) -> LispVal {
             for (;;) {
                 if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return v;
@@ -1709,20 +1756,23 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             }
         };
 
-        // Bounds snapshot of a CLP(FD) argument: ground integer, unbound var
-        // with Z or FD domain, or unbound var with no domain (unbounded).
+        /**
+         * Bounds snapshot of a CLP(FD) argument: ground integer, unbound var
+         * with Z or FD domain, or unbound var with no domain (unbounded).
+         */
         struct Bounds {
             int64_t  lo     = 0;
             int64_t  hi     = 0;
-            bool     finite = false;        // has finite [lo,hi]
-            bool     is_var = false;        // unbound logic var
-            ObjectId id     = 0;            // heap id when is_var
-            bool     is_fd  = false;        // FD domain (else Z or none)
+            bool     finite = false;        ///< has finite [lo,hi]
+            bool     is_var = false;        ///< unbound logic var
+            ObjectId id     = 0;            ///< heap id when is_var
+            bool     is_fd  = false;        ///< FD domain (else Z or none)
         };
 
-        // Extract a Bounds for arg. Returns std::nullopt on type error
-        // (e.g. a non-numeric ground value).  Empty FD/Z domain → finite=true
-        // with lo > hi so caller detects infeasibility uniformly.
+        /**
+         * Extract a Bounds for arg. Returns std::nullopt on type error
+         * with lo > hi so caller detects infeasibility uniformly.
+         */
         auto extract_bounds = [&heap, vm, deref](LispVal v) -> std::optional<Bounds> {
             LispVal d = deref(v);
             if (ops::is_boxed(d) && ops::tag(d) == Tag::HeapObject) {
@@ -1740,19 +1790,28 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                             } else if (auto* fd = std::get_if<clp::FDDomain>(dom)) {
                                 b.is_fd = true;
                                 if (fd->empty()) {
-                                    b.lo = 1; b.hi = 0; b.finite = true;  // empty sentinel
+                                    b.lo = 1; b.hi = 0; b.finite = true;  ///< empty sentinel
                                 } else {
                                     b.lo = fd->min();
                                     b.hi = fd->max();
                                     b.finite = true;
                                 }
                             }
+                            /**
+                             * Phase 6.1: R-domained vars are intentionally
+                             * FD bounds-consistency is integer-only, so an
+                             * R-domained operand simply contributes no
+                             * narrowing (b.finite stays false).
+                             */
+                            else if (std::holds_alternative<clp::RDomain>(*dom)) {
+                                /* fall-through: keep finite=false */
+                            }
                         }
                     }
                     return b;
                 }
             }
-            // Ground: must be an integer
+            /// Ground: must be an integer
             auto n = classify_numeric(d, heap);
             if (!n.is_valid() || n.is_flonum()) return std::nullopt;
             Bounds b;
@@ -1760,9 +1819,11 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return b;
         };
 
-        // Narrow a var's domain to [new_lo, new_hi]. Returns false on empty.
-        // Only writes through trail_set_domain (trailed) when something actually
-        // changes.  For FD domains, values outside [new_lo, new_hi] are filtered out.
+        /**
+         * Narrow a var's domain to [new_lo, new_hi]. Returns false on empty.
+         * Only writes through trail_set_domain (trailed) when something actually
+         * changes.  For FD domains, values outside [new_lo, new_hi] are filtered out.
+         */
         auto narrow_var = [vm](ObjectId id, int64_t new_lo, int64_t new_hi) -> bool {
             if (new_lo > new_hi) return false;
             if (!vm) return true;
@@ -1776,25 +1837,32 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 int64_t lo = std::max(z->lo, new_lo);
                 int64_t hi = std::min(z->hi, new_hi);
                 if (lo > hi) return false;
-                if (lo == z->lo && hi == z->hi) return true;  // no change
+                if (lo == z->lo && hi == z->hi) return true;  ///< no change
                 vm->trail_set_domain(id, clp::ZDomain{ lo, hi });
                 return true;
             }
-            // FD
+            /**
+             * Phase 6.1: R-domained vars are not narrowed by FD bounds
+             * (extract_bounds reports !finite, so this branch is normally
+             * unreachable; defensive no-op preserves R domain unchanged).
+             */
+            if (std::holds_alternative<clp::RDomain>(*dom)) return true;
+            /// FD
             const auto& fd = std::get<clp::FDDomain>(*dom);
             const int64_t old_size = fd.size();
             clp::FDDomain nfd = fd.intersect_z(new_lo, new_hi);
             if (nfd.empty()) return false;
-            if (nfd.size() == old_size) return true;  // no change
+            if (nfd.size() == old_size) return true;  ///< no change
             vm->trail_set_domain(id, std::move(nfd));
             return true;
         };
 
-        // ── %clp-fd-plus! (x y z)  :  z = x + y ────────────────────────────
-        // Bounds consistency (interval form):
-        //   z.lo >= x.lo + y.lo   z.hi <= x.hi + y.hi
-        //   x.lo >= z.lo - y.hi   x.hi <= z.hi - y.lo
-        //   y.lo >= z.lo - x.hi   y.hi <= z.hi - x.lo
+        /**
+         * Bounds consistency (interval form):
+         *   z.lo >= x.lo + y.lo   z.hi <= x.hi + y.hi
+         *   x.lo >= z.lo - y.hi   x.hi <= z.hi - y.lo
+         *   y.lo >= z.lo - x.hi   y.hi <= z.hi - x.lo
+         */
         env.register_builtin("%clp-fd-plus!", 3, false,
             [extract_bounds, narrow_var](Args args) -> std::expected<LispVal, RuntimeError> {
                 auto bx = extract_bounds(args[0]);
@@ -1803,28 +1871,27 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 if (!bx || !by || !bz)
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
                         "%clp-fd-plus!: arguments must be integers or logic variables"}});
-                // Any side without finite bounds contributes nothing — just
-                // succeed without narrowing (MVP: propagate only when all three
-                // are finite).
+                /**
+                 * succeed without narrowing (MVP: propagate only when all three
+                 * are finite).
+                 */
                 if (!bx->finite || !by->finite || !bz->finite) return True;
-                // Empty-domain short-circuit.
+                /// Empty-domain short-circuit.
                 if (bx->lo > bx->hi || by->lo > by->hi || bz->lo > bz->hi) return False;
                 int64_t nz_lo = bx->lo + by->lo,  nz_hi = bx->hi + by->hi;
                 int64_t nx_lo = bz->lo - by->hi,  nx_hi = bz->hi - by->lo;
                 int64_t ny_lo = bz->lo - bx->hi,  ny_hi = bz->hi - bx->lo;
-                // Narrow each var (ignores ground operands).
+                /// Narrow each var (ignores ground operands).
                 if (bz->is_var && !narrow_var(bz->id, nz_lo, nz_hi)) return False;
                 if (bx->is_var && !narrow_var(bx->id, nx_lo, nx_hi)) return False;
                 if (by->is_var && !narrow_var(by->id, ny_lo, ny_hi)) return False;
-                // For ground operands, verify consistency (e.g. z=5 must satisfy
-                // 5 ∈ [x.lo+y.lo, x.hi+y.hi]).
+                /// For ground operands, verify consistency (e.g. z=5 must satisfy
                 if (!bz->is_var && (bz->lo < nz_lo || bz->hi > nz_hi)) return False;
                 if (!bx->is_var && (bx->lo < nx_lo || bx->hi > nx_hi)) return False;
                 if (!by->is_var && (by->lo < ny_lo || by->hi > ny_hi)) return False;
                 return True;
             });
 
-        // ── %clp-fd-plus-offset! (y x k)  :  y = x + k, k ∈ ℤ ──────────────
         env.register_builtin("%clp-fd-plus-offset!", 3, false,
             [&heap, extract_bounds, narrow_var](Args args) -> std::expected<LispVal, RuntimeError> {
                 auto by = extract_bounds(args[0]);
@@ -1848,12 +1915,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return True;
             });
 
-        // ── %clp-fd-abs! (y x)  :  y = |x| ────────────────────────────────
-        // Bounds:
-        //   y ∈ [0, max(|x.lo|, |x.hi|)]
-        //   if x.lo >= 0: y ∈ [x.lo, x.hi]; x ∈ [y.lo, y.hi]
-        //   if x.hi <= 0: y ∈ [-x.hi, -x.lo]; x ∈ [-y.hi, -y.lo]
-        //   if x straddles 0: y.lo stays 0; x ∈ [-y.hi, y.hi] (weak backward prop)
+        /// Bounds:
         env.register_builtin("%clp-fd-abs!", 2, false,
             [extract_bounds, narrow_var](Args args) -> std::expected<LispVal, RuntimeError> {
                 auto by = extract_bounds(args[0]);
@@ -1867,10 +1929,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 if (bx->lo >= 0) { ny_lo = bx->lo;  ny_hi = bx->hi; }
                 else if (bx->hi <= 0) { ny_lo = -bx->hi; ny_hi = -bx->lo; }
                 else { ny_lo = 0; ny_hi = std::max(-bx->lo, bx->hi); }
-                // Forward: narrow y.
+                /// Forward: narrow y.
                 if (by->is_var && !narrow_var(by->id, ny_lo, ny_hi)) return False;
                 if (!by->is_var && (by->lo < ny_lo || by->hi > ny_hi)) return False;
-                // Backward: narrow x using (possibly updated) y bounds.
+                /// Backward: narrow x using (possibly updated) y bounds.
                 int64_t yl = std::max(by->lo, ny_lo);
                 int64_t yh = std::min(by->hi, ny_hi);
                 if (yl < 0) yl = 0;
@@ -1884,12 +1946,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return True;
             });
 
-        // ── %clp-fd-times! (z x y)  :  z = x * y ──────────────────────────
-        // Bounds consistency via interval multiplication.  The product of
-        // two intervals is [min of corners, max of corners].  Division for
-        // back-propagation is implemented with explicit floor/ceil to keep
-        // results integral; divisors straddling zero leave the quotient
-        // variable unconstrained (weak propagation, consistent with SWI).
+        /**
+         * Bounds consistency via interval multiplication.  The product of
+         * two intervals is [min of corners, max of corners].  Division for
+         * back-propagation is implemented with explicit floor/ceil to keep
+         * results integral; divisors straddling zero leave the quotient
+         * variable unconstrained (weak propagation, consistent with SWI).
+         */
         auto interval_mul = [](int64_t a, int64_t b, int64_t c, int64_t d,
                                int64_t& out_lo, int64_t& out_hi) {
             int64_t p1 = a * c, p2 = a * d, p3 = b * c, p4 = b * d;
@@ -1917,14 +1980,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                         "%clp-fd-times!: arguments must be integers or logic variables"}});
                 if (!bx->finite || !by->finite || !bz->finite) return True;
                 if (bx->lo > bx->hi || by->lo > by->hi || bz->lo > bz->hi) return False;
-                // Forward: z = x * y
+                /// Forward: z = x * y
                 int64_t nz_lo, nz_hi;
                 interval_mul(bx->lo, bx->hi, by->lo, by->hi, nz_lo, nz_hi);
                 if (bz->is_var && !narrow_var(bz->id, nz_lo, nz_hi)) return False;
                 if (!bz->is_var && (bz->lo < nz_lo || bz->hi > nz_hi)) return False;
-                // Backward x = z / y (only when y does not straddle 0)
+                /// Backward x = z / y (only when y does not straddle 0)
                 auto narrow_quot = [&](const Bounds& src, const Bounds& div) -> std::optional<std::pair<int64_t,int64_t>> {
-                    if (div.lo <= 0 && div.hi >= 0) return std::nullopt;  // straddles zero → skip
+                    if (div.lo <= 0 && div.hi >= 0) return std::nullopt;
                     int64_t q1 = idiv_floor(src.lo, div.lo);
                     int64_t q2 = idiv_floor(src.lo, div.hi);
                     int64_t q3 = idiv_floor(src.hi, div.lo);
@@ -1948,10 +2011,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return True;
             });
 
-        // ── %clp-fd-sum! (xs s)  :  Σ xs = s ──────────────────────────────
-        // `xs` is an Eta list of logic vars and/or ground integers.  Bounds:
-        //   s ∈ [Σ xᵢ.lo, Σ xᵢ.hi]
-        //   xⱼ ∈ [s.lo − Σᵢ≠ⱼ xᵢ.hi,  s.hi − Σᵢ≠ⱼ xᵢ.lo]
+        /// `xs` is an Eta list of logic vars and/or ground integers.  Bounds:
         auto walk_list = [&heap](LispVal lst, std::vector<LispVal>& out) -> bool {
             while (ops::is_boxed(lst) && ops::tag(lst) == Tag::HeapObject) {
                 auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(lst));
@@ -1974,7 +2034,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     if (!b)
                         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
                             "%clp-fd-sum!: each list element must be an integer or logic variable"}});
-                    if (!b->finite) return True;   // any unbounded ⇒ skip
+                    if (!b->finite) return True;
                     if (b->lo > b->hi) return False;
                     bs.push_back(*b);
                 }
@@ -1986,10 +2046,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 if (bs_b->lo > bs_b->hi) return False;
                 int64_t tot_lo = 0, tot_hi = 0;
                 for (auto& b : bs) { tot_lo += b.lo; tot_hi += b.hi; }
-                // Forward: narrow s
+                /// Forward: narrow s
                 if (bs_b->is_var && !narrow_var(bs_b->id, tot_lo, tot_hi)) return False;
                 if (!bs_b->is_var && (bs_b->lo < tot_lo || bs_b->hi > tot_hi)) return False;
-                // Backward: for each var xⱼ narrow to [s.lo − (tot_hi − xⱼ.hi), s.hi − (tot_lo − xⱼ.lo)]
                 int64_t s_lo = std::max(bs_b->lo, tot_lo);
                 int64_t s_hi = std::min(bs_b->hi, tot_hi);
                 for (std::size_t j = 0; j < bs.size(); ++j) {
@@ -2003,10 +2062,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return True;
             });
 
-        // ── %clp-fd-scalar-product! (cs xs s)  :  Σ cᵢ·xᵢ = s ────────────
-        // `cs` is a list of ground integer coefficients of the same length
-        // as `xs`.  Bounds projection treats each cᵢ·xᵢ interval and uses
-        // the same subtractive back-propagation as fd_sum.
+        /**
+         * `cs` is a list of ground integer coefficients of the same length
+         * the same subtractive back-propagation as fd_sum.
+         */
         env.register_builtin("%clp-fd-scalar-product!", 3, false,
             [&heap, extract_bounds, narrow_var, walk_list](Args args) -> std::expected<LispVal, RuntimeError> {
                 std::vector<LispVal> c_vals, x_vals;
@@ -2042,7 +2101,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                         "%clp-fd-scalar-product!: sum must be an integer or logic variable"}});
                 if (!bs_s->finite) return True;
                 if (bs_s->lo > bs_s->hi) return False;
-                // Per-term interval [cᵢ·xᵢ.lo, cᵢ·xᵢ.hi] — swap ends when cᵢ < 0.
                 auto term_bounds = [&](std::size_t i, int64_t& t_lo, int64_t& t_hi) {
                     int64_t a = cs[i] * bs[i].lo, b = cs[i] * bs[i].hi;
                     t_lo = std::min(a, b); t_hi = std::max(a, b);
@@ -2055,20 +2113,17 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     term.emplace_back(tl, th);
                     tot_lo += tl; tot_hi += th;
                 }
-                // Forward narrow s.
+                /// Forward narrow s.
                 if (bs_s->is_var && !narrow_var(bs_s->id, tot_lo, tot_hi)) return False;
                 if (!bs_s->is_var && (bs_s->lo < tot_lo || bs_s->hi > tot_hi)) return False;
-                // Backward narrow each xⱼ
                 int64_t s_lo = std::max(bs_s->lo, tot_lo);
                 int64_t s_hi = std::min(bs_s->hi, tot_hi);
                 for (std::size_t j = 0; j < bs.size(); ++j) {
                     if (!bs[j].is_var || cs[j] == 0) continue;
                     int64_t other_lo = tot_lo - term[j].first;
                     int64_t other_hi = tot_hi - term[j].second;
-                    // cⱼ·xⱼ ∈ [s_lo - other_hi, s_hi - other_lo]
                     int64_t t_lo = s_lo - other_hi;
                     int64_t t_hi = s_hi - other_lo;
-                    // xⱼ ∈ [⌈t_lo/cⱼ⌉, ⌊t_hi/cⱼ⌋] when cⱼ>0, else swapped and sign-flipped.
                     auto idiv_floor = [](int64_t a, int64_t b)->int64_t{
                         int64_t q=a/b,r=a%b;
                         if((r!=0)&&((r<0)!=(b<0))) --q;
@@ -2092,12 +2147,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return True;
             });
 
-        // ── %clp-fd-element! (i xs v)  :  nth(xs, i) = v, i ∈ [1..|xs|] ──
-        // One-based index to match Prolog `element/3` convention.  When `i`
-        // is ground, degenerates to a single equality via narrowing.  When
-        // `i` is a logic var with an FD domain, we intersect `v`'s bounds
-        // with the union of the candidate xs[k]'s bounds, and prune `i`'s
-        // domain to values `k` whose xs[k] is consistent with `v`.
+        /**
+         * One-based index to match Prolog `element/3` convention.  When `i`
+         * is ground, degenerates to a single equality via narrowing.  When
+         * `i` is a logic var with an FD domain, we intersect `v`'s bounds
+         * with the union of the candidate xs[k]'s bounds, and prune `i`'s
+         * domain to values `k` whose xs[k] is consistent with `v`.
+         */
         env.register_builtin("%clp-fd-element!", 3, false,
             [&heap, vm, extract_bounds, narrow_var, walk_list]
             (Args args) -> std::expected<LispVal, RuntimeError> {
@@ -2114,19 +2170,19 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
                         "%clp-fd-element!: index and value must be integers or logic variables"}});
                 const int64_t n = static_cast<int64_t>(elems.size());
-                // Force i ∈ [1..n]
                 if (bi->is_var && !narrow_var(bi->id, 1, n)) return False;
                 if (!bi->is_var && (bi->lo < 1 || bi->hi > n)) return False;
                 int64_t i_lo = bi->is_var ? std::max<int64_t>(1, bi->lo) : bi->lo;
                 int64_t i_hi = bi->is_var ? std::min<int64_t>(n, bi->hi) : bi->hi;
-                // For each candidate k ∈ [i_lo..i_hi], extract bounds of xs[k-1];
-                // its bounds union is the possible value for v.  Also collect
-                // the set of k's that are consistent with v's current bounds.
+                /**
+                 * its bounds union is the possible value for v.  Also collect
+                 * the set of k's that are consistent with v's current bounds.
+                 */
                 int64_t v_union_lo = INT64_MAX, v_union_hi = INT64_MIN;
                 std::vector<int64_t> compatible_ks;
                 bool any_infinite_candidate = false;
                 for (int64_t k = i_lo; k <= i_hi; ++k) {
-                    // If i is FD-domained, skip values not in its FD set.
+                    /// If i is FD-domained, skip values not in its FD set.
                     if (bi->is_var && vm) {
                         const auto* dom = vm->constraint_store().get_domain(bi->id);
                         if (dom) if (auto* fd = std::get_if<clp::FDDomain>(dom))
@@ -2137,8 +2193,8 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
                             "%clp-fd-element!: list element must be integer or logic variable"}});
                     if (!bk->finite) { any_infinite_candidate = true; compatible_ks.push_back(k); continue; }
-                    if (bk->lo > bk->hi) continue;  // this candidate is infeasible
-                    // Is this candidate consistent with v?
+                    if (bk->lo > bk->hi) continue;  ///< this candidate is infeasible
+                    /// Is this candidate consistent with v?
                     int64_t isect_lo = std::max(bv->lo, bk->lo);
                     int64_t isect_hi = std::min(bv->hi, bk->hi);
                     if (bv->finite && isect_lo > isect_hi) continue;
@@ -2147,14 +2203,15 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     v_union_hi = std::max(v_union_hi, bk->hi);
                 }
                 if (compatible_ks.empty()) return False;
-                // Narrow v to the union of candidate bounds (skip when an
-                // unbounded candidate exists — weak propagation).
+                /// Narrow v to the union of candidate bounds (skip when an
                 if (!any_infinite_candidate) {
                     if (bv->is_var && !narrow_var(bv->id, v_union_lo, v_union_hi)) return False;
                     if (!bv->is_var && (bv->lo < v_union_lo || bv->hi > v_union_hi)) return False;
                 }
-                // Narrow i to the compatible set.  Use an FD domain if the
-                // set is sparse relative to [i_lo..i_hi]; otherwise Z bounds.
+                /**
+                 * Narrow i to the compatible set.  Use an FD domain if the
+                 * set is sparse relative to [i_lo..i_hi]; otherwise Z bounds.
+                 */
                 if (bi->is_var && vm) {
                     const int64_t first_k = compatible_ks.front();
                     const int64_t last_k  = compatible_ks.back();
@@ -2162,8 +2219,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     if (dense) {
                         if (!narrow_var(bi->id, first_k, last_k)) return False;
                     } else {
-                        // `compatible_ks` is built in ascending k-order and is
-                        // unique by construction; build the bit-set directly.
+                        /**
+                         * `compatible_ks` is built in ascending k-order and is
+                         * unique by construction; build the bit-set directly.
+                         */
                         clp::FDDomain nd =
                             clp::FDDomain::from_sorted_unique(compatible_ks);
                         vm->trail_set_domain(bi->id, std::move(nd));
@@ -2172,10 +2231,11 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return True;
             });
 
-        // ── %clp-fd-all-different! (vars)  :  Régin-matching all-different ─
-        // Domain-consistent pruning: removes every value v from D(x) that
-        // cannot participate in a valuation satisfying all_different(vars).
-        // Strictly stronger than the pairwise attribute-hook version.
+        /**
+         * Domain-consistent pruning: removes every value v from D(x) that
+         * cannot participate in a valuation satisfying all_different(vars).
+         * Strictly stronger than the pairwise attribute-hook version.
+         */
         env.register_builtin("%clp-fd-all-different!", 1, false,
             [&heap, vm, deref, walk_list](Args args) -> std::expected<LispVal, RuntimeError> {
                 if (!vm) return True;
@@ -2185,7 +2245,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                         "%clp-fd-all-different!: argument must be a proper list"}});
                 if (elems.size() <= 1) return True;
 
-                // Build the algorithm's var table by dereffing each element.
+                /// Build the algorithm's var table by dereffing each element.
                 std::vector<clp::AlldiffVar> avars;
                 avars.reserve(elems.size());
                 for (auto e : elems) {
@@ -2200,25 +2260,33 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                             if (!dom) {
                                 av.is_free = true;
                             } else if (auto* z = std::get_if<clp::ZDomain>(dom)) {
-                                // Materialise Z interval as FD values.
-                                // Cap at a reasonable ceiling to avoid runaway
-                                // allocation for unbounded-looking domains.
+                                /**
+                                 * Materialise Z interval as FD values.
+                                 * Cap at a reasonable ceiling to avoid runaway
+                                 * allocation for unbounded-looking domains.
+                                 */
                                 constexpr int64_t MAX_SPAN = 1'000'000;
                                 if (z->hi - z->lo + 1 > MAX_SPAN) {
-                                    av.is_free = true;  // too wide — skip
+                                    av.is_free = true;
                                 } else {
                                     av.domain.reserve(static_cast<std::size_t>(z->hi - z->lo + 1));
                                     for (int64_t v = z->lo; v <= z->hi; ++v) av.domain.push_back(v);
                                 }
                             } else if (auto* fd = std::get_if<clp::FDDomain>(dom)) {
-                                av.domain = fd->to_vector();   // sorted ascending
+                                av.domain = fd->to_vector();   ///< sorted ascending
                                 if (av.domain.empty()) return False;
+                            } else {
+                                /**
+                                 * Phase 6.1: RDomain (or any future kind)
+                                 * all-different.  Treat as free (no
+                                 * contribution to value-graph matching).
+                                 */
+                                av.is_free = true;
                             }
                             avars.push_back(std::move(av));
                             continue;
                         }
                     }
-                    // Ground case — expect integer.
                     auto n = classify_numeric(d, heap);
                     if (!n.is_valid() || n.is_flonum())
                         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
@@ -2228,13 +2296,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     avars.push_back(std::move(av));
                 }
 
-                // Narrow callback: the algorithm invokes this for each var
-                // whose domain shrank.  We install the new domain via the
-                // trailed constraint store (preserves ZDomain narrowing if
-                // the new domain remains dense — else becomes a FD list).
+                /**
+                 * Narrow callback: the algorithm invokes this for each var
+                 * whose domain shrank.  We install the new domain via the
+                 * trailed constraint store (preserves ZDomain narrowing if
+                 */
                 auto narrow = [vm](uint64_t id, const std::vector<int64_t>& new_dom) -> bool {
                     if (new_dom.empty()) return false;
-                    // If contiguous, collapse to a Z domain; else FD.
+                    /// If contiguous, collapse to a Z domain; else FD.
                     bool contiguous = true;
                     for (std::size_t i = 1; i < new_dom.size(); ++i) {
                         if (new_dom[i] != new_dom[i - 1] + 1) { contiguous = false; break; }
@@ -2253,38 +2322,29 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             });
     }
 
-    // ========================================================================
-    // CLP(B) native Boolean propagators (Phase 5)
-    //
-    //   %clp-bool-and!  (z x y)   — posts z ≡ x ∧ y
-    //   %clp-bool-or!   (z x y)   — posts z ≡ x ∨ y
-    //   %clp-bool-xor!  (z x y)   — posts z ≡ x ⊕ y
-    //   %clp-bool-not!  (z x)     — posts z ≡ ¬x
-    //   %clp-bool-imp!  (z x y)   — posts z ≡ (x → y)
-    //   %clp-bool-eq!   (z x y)   — posts z ≡ (x ⇔ y)
-    //   %clp-bool-card! (xs k-lo k-hi)
-    //                              — posts   k-lo ≤ Σ xs ≤ k-hi
-    //
-    // A "Boolean" is an integer drawn from {0, 1} — either a ground 0/1, or
-    // an unbound logic var constrained to a domain that intersects {0,1}.
-    // A 2-bit `mask` encodes the current allowed values: bit 0 = may be 0,
-    // bit 1 = may be 1; mask 3 = {0,1}, mask 0 = infeasible.
-    //
-    // Propagation uses exhaustive-support pruning: for each constraint we
-    // enumerate its truth table, keep only rows consistent with the current
-    // masks, and narrow each variable to the union of its rows.  This is
-    // exact (domain-consistent) on 2-value domains and is the cheapest
-    // thing that works.
-    //
-    // Each propagator returns #t on success (including "nothing to do"),
-    // #f on detected inconsistency.  Narrowing is trailed through the
-    // unified VM trail (`VM::trail_set_domain`).  Re-firing on later
-    // bindings is installed by the Eta-level `std.clpb` wrappers via
-    // `%clp-prop-attach!`, sharing the same `'clp.prop` queue attribute
-    // used by the CLP(FD) propagators — no new registration plumbing.
-    // ========================================================================
+    /**
+     * CLP(B) native Boolean propagators (Phase 5)
+     *
+     *   %clp-bool-card! (xs k-lo k-hi)
+     *
+     * an unbound logic var constrained to a domain that intersects {0,1}.
+     * A 2-bit `mask` encodes the current allowed values: bit 0 = may be 0,
+     * bit 1 = may be 1; mask 3 = {0,1}, mask 0 = infeasible.
+     *
+     * Propagation uses exhaustive-support pruning: for each constraint we
+     * enumerate its truth table, keep only rows consistent with the current
+     * masks, and narrow each variable to the union of its rows.  This is
+     * exact (domain-consistent) on 2-value domains and is the cheapest
+     * thing that works.
+     *
+     * Each propagator returns #t on success (including "nothing to do"),
+     * #f on detected inconsistency.  Narrowing is trailed through the
+     * unified VM trail (`VM::trail_set_domain`).  Re-firing on later
+     * bindings is installed by the Eta-level `std.clpb` wrappers via
+     * `%clp-prop-attach!`, sharing the same `'clp.prop` queue attribute
+     */
     {
-        // Deref a LispVal through any binding chain.
+        /// Deref a LispVal through any binding chain.
         auto deref = [&heap](LispVal v) -> LispVal {
             for (;;) {
                 if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return v;
@@ -2295,8 +2355,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             }
         };
 
-        // Walk an Eta proper list into a std::vector<LispVal>.  Returns
-        // false if the list is improper (dotted tail / non-cons element).
+        /**
+         * Walk an Eta proper list into a std::vector<LispVal>.  Returns
+         * false if the list is improper (dotted tail / non-cons element).
+         */
         auto walk_list = [&heap](LispVal lst, std::vector<LispVal>& out) -> bool {
             while (ops::is_boxed(lst) && ops::tag(lst) == Tag::HeapObject) {
                 auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(lst));
@@ -2307,17 +2369,21 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return lst == Nil;
         };
 
-        // Boolean view of a CLP(B) argument.
-        //   mask bit 0 = may be 0; mask bit 1 = may be 1.
-        //   mask == 0 means infeasible; mask == 3 means {0,1}.
+        /**
+         * Boolean view of a CLP(B) argument.
+         *   mask bit 0 = may be 0; mask bit 1 = may be 1.
+         *   mask == 0 means infeasible; mask == 3 means {0,1}.
+         */
         struct BoolView {
             uint8_t  mask   = 3;
             bool     is_var = false;
             ObjectId id     = 0;
         };
 
-        // Extract a BoolView for `v`.  Returns std::nullopt on a type
-        // error (non-integer ground value, or integer outside {0,1}).
+        /**
+         * Extract a BoolView for `v`.  Returns std::nullopt on a type
+         * error (non-integer ground value, or integer outside {0,1}).
+         */
         auto bool_view = [&heap, vm, deref](LispVal v) -> std::optional<BoolView> {
             LispVal d = deref(v);
             if (ops::is_boxed(d) && ops::tag(d) == Tag::HeapObject) {
@@ -2331,6 +2397,12 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     if (vm) {
                         const auto* dom = vm->constraint_store().get_domain(id);
                         if (dom) {
+                            /**
+                             * Phase 6.1: an R-domained var is not a valid
+                             * integer set {0,1}.  Reject explicitly.
+                             */
+                            if (std::holds_alternative<clp::RDomain>(*dom))
+                                return std::nullopt;
                             bv.mask = 0;
                             if (clp::domain_contains_int(*dom, 0)) bv.mask |= 1;
                             if (clp::domain_contains_int(*dom, 1)) bv.mask |= 2;
@@ -2344,27 +2416,30 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             BoolView bv;
             if (n.int_val == 0) { bv.mask = 1; return bv; }
             if (n.int_val == 1) { bv.mask = 2; return bv; }
-            return std::nullopt;  // integer but not 0/1
+            return std::nullopt;  ///< integer but not 0/1
         };
 
-        // Narrow `bv` to the target mask.  Returns false if the intersection
-        // is empty, or if an already-ground bv is being forced to a value
-        // it is not (the caller should have caught that via bv.mask probing).
-        // Writes only happen when the mask actually shrinks; all writes are
-        // trailed.
+        /**
+         * Narrow `bv` to the target mask.  Returns false if the intersection
+         * is empty, or if an already-ground bv is being forced to a value
+         * it is not (the caller should have caught that via bv.mask probing).
+         * Writes only happen when the mask actually shrinks; all writes are
+         * trailed.
+         */
         auto narrow_bool = [vm](const BoolView& bv, uint8_t new_mask) -> bool {
             const uint8_t m = static_cast<uint8_t>(bv.mask & new_mask);
             if (m == 0) return false;
-            if (m == bv.mask) return true;       // no change
-            if (!bv.is_var) return true;         // ground and m != 0 → consistent
+            if (m == bv.mask) return true;       ///< no change
+            if (!bv.is_var) return true;
             if (!vm)         return true;
-            // m ∈ {1, 2} — a singleton; m == 3 cannot reduce from 3 without
-            // also being no change, already handled above.
+            /// also being no change, already handled above.
             const int64_t lo = (m == 1) ? 0 : 1;
             const int64_t hi = (m == 1) ? 0 : 1;
-            // Route through trailed write.  Preserve FD domain kind when the
-            // current domain is FD; else use a ZDomain.  Either way the
-            // singleton is exactly [lo,hi].
+            /**
+             * Route through trailed write.  Preserve FD domain kind when the
+             * current domain is FD; else use a ZDomain.  Either way the
+             * singleton is exactly [lo,hi].
+             */
             const auto& store = vm->constraint_store();
             const auto* dom = store.get_domain(bv.id);
             if (dom && std::holds_alternative<clp::FDDomain>(*dom)) {
@@ -2375,18 +2450,19 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return true;
         };
 
-        // Generic 3-variable support propagator.
-        // `table[r]` encodes row r as bits: bit 0 = v0, bit 1 = v1, bit 2 = v2.
-        // For each row r in [0..7], the row is "alive" iff
-        //    masks[i] has bit `((r >> i) & 1)` set, for i = 0,1,2.
-        // New mask for variable i is the OR over all alive rows of
-        //    1 << ((r >> i) & 1).
-        //
-        // NB: `narrow_bool` is captured BY VALUE here (not by reference).
-        // This lambda is itself captured by value into the registered
-        // builtin closures, which outlive `register_core_primitives()`.
-        // Holding a `&narrow_bool` reference would dangle and crash on
-        // first invocation — see Phase 5 commit notes.
+        /**
+         * Generic 3-variable support propagator.
+         * `table[r]` encodes row r as bits: bit 0 = v0, bit 1 = v1, bit 2 = v2.
+         * For each row r in [0..7], the row is "alive" iff
+         *    masks[i] has bit `((r >> i) & 1)` set, for i = 0,1,2.
+         * New mask for variable i is the OR over all alive rows of
+         *    1 << ((r >> i) & 1).
+         *
+         * NB: `narrow_bool` is captured BY VALUE here (not by reference).
+         * This lambda is itself captured by value into the registered
+         * builtin closures, which outlive `register_core_primitives()`.
+         * Holding a `&narrow_bool` reference would dangle and crash on
+         */
         auto propagate_ternary = [narrow_bool](const uint8_t rows[], std::size_t n_rows,
                                                BoolView& b0, BoolView& b1, BoolView& b2) -> bool {
             uint8_t nm0 = 0, nm1 = 0, nm2 = 0;
@@ -2408,8 +2484,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 && narrow_bool(b2, nm2);
         };
 
-        // Generic 2-variable support propagator (same shape, 4 rows max).
-        // Same value-capture rule for `narrow_bool` as above.
+        /**
+         * Generic 2-variable support propagator (same shape, 4 rows max).
+         * Same value-capture rule for `narrow_bool` as above.
+         */
         auto propagate_binary = [narrow_bool](const uint8_t rows[], std::size_t n_rows,
                                               BoolView& b0, BoolView& b1) -> bool {
             uint8_t nm0 = 0, nm1 = 0;
@@ -2426,25 +2504,28 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return narrow_bool(b0, nm0) && narrow_bool(b1, nm1);
         };
 
-        // ---- Truth tables.  Row encoding: bit i = variable i's value. ----
-        //
-        // For (z x y) we use the convention: bit 0 = z, bit 1 = x, bit 2 = y.
-        // So row `(z << 0) | (x << 1) | (y << 2)` means (z, x, y).
+        /**
+         * ---- Truth tables.  Row encoding: bit i = variable i's value. ----
+         *
+         * For (z x y) we use the convention: bit 0 = z, bit 1 = x, bit 2 = y.
+         * So row `(z << 0) | (x << 1) | (y << 2)` means (z, x, y).
+         */
 
-        //   z = x AND y  :   {(0,0,0), (0,0,1), (0,1,0), (1,1,1)}
+        ///   z = x AND y  :   {(0,0,0), (0,0,1), (0,1,0), (1,1,1)}
         static constexpr uint8_t TT_AND[] = { 0b000, 0b100, 0b010, 0b111 };
-        //   z = x OR y   :   {(0,0,0), (1,0,1), (1,1,0), (1,1,1)}
+        ///   z = x OR y   :   {(0,0,0), (1,0,1), (1,1,0), (1,1,1)}
         static constexpr uint8_t TT_OR[]  = { 0b000, 0b101, 0b011, 0b111 };
-        //   z = x XOR y  :   {(0,0,0), (1,0,1), (1,1,0), (0,1,1)}
+        ///   z = x XOR y  :   {(0,0,0), (1,0,1), (1,1,0), (0,1,1)}
         static constexpr uint8_t TT_XOR[] = { 0b000, 0b101, 0b011, 0b110 };
-        //   z = x IMP y  :  x=0 → z=1; x=1 → z=y.
-        //     (z,x,y): (1,0,0), (1,0,1), (0,1,0), (1,1,1)
+        ///     (z,x,y): (1,0,0), (1,0,1), (0,1,0), (1,1,1)
         static constexpr uint8_t TT_IMP[] = { 0b001, 0b101, 0b010, 0b111 };
-        //   z = x EQ y   :   (1,0,0), (0,0,1), (0,1,0), (1,1,1)
+        ///   z = x EQ y   :   (1,0,0), (0,0,1), (0,1,0), (1,1,1)
         static constexpr uint8_t TT_EQ[]  = { 0b001, 0b100, 0b010, 0b111 };
 
-        //   For (z x): bit 0 = z, bit 1 = x.
-        //   z = NOT x    :   (1,0), (0,1)
+        /**
+         *   For (z x): bit 0 = z, bit 1 = x.
+         *   z = NOT x    :   (1,0), (0,1)
+         */
         static constexpr uint8_t TT_NOT[] = { 0b01, 0b10 };
 
         auto register_ternary = [&env, bool_view, propagate_ternary]
@@ -2481,14 +2562,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return propagate_binary(TT_NOT, 2, *bz, *bx) ? True : False;
             });
 
-        // ── %clp-bool-card! (xs k-lo k-hi)  :  k_lo ≤ Σ xs ≤ k_hi ──────────
-        //
-        // Classic cardinality propagation:
-        //   let forced_1 = |{ x : mask(x) = {1} }|
-        //       possible_1 = |{ x : mask(x) ∩ {1} ≠ ∅ }|   (= forced_1 + open)
-        //   fail   if forced_1   > k_hi  or  possible_1 < k_lo
-        //   force 0 on every open var if forced_1   == k_hi
-        //   force 1 on every open var if possible_1 == k_lo
+        /**
+         *
+         * Classic cardinality propagation:
+         *   let forced_1 = |{ x : mask(x) = {1} }|
+         *   fail   if forced_1   > k_hi  or  possible_1 < k_lo
+         *   force 0 on every open var if forced_1   == k_hi
+         *   force 1 on every open var if possible_1 == k_lo
+         */
         env.register_builtin("%clp-bool-card!", 3, false,
             [&heap, bool_view, narrow_bool, walk_list](Args args)
                 -> std::expected<LispVal, RuntimeError> {
@@ -2516,19 +2597,19 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 }
                 int64_t forced_1 = 0, possible_1 = 0;
                 for (const auto& bv : bvs) {
-                    if (bv.mask == 2) ++forced_1;       // must-be-1
-                    if (bv.mask & 2u) ++possible_1;     // could be 1
+                    if (bv.mask == 2) ++forced_1;       ///< must-be-1
+                    if (bv.mask & 2u) ++possible_1;     ///< could be 1
                 }
                 if (forced_1   > k_hi) return False;
                 if (possible_1 < k_lo) return False;
                 if (forced_1 == k_hi) {
-                    // Force every open var (mask == 3) to 0.
+                    /// Force every open var (mask == 3) to 0.
                     for (auto& bv : bvs) {
                         if (bv.mask == 3u && !narrow_bool(bv, 1u)) return False;
                     }
                 }
                 if (possible_1 == k_lo) {
-                    // Force every open var (mask == 3) to 1.
+                    /// Force every open var (mask == 3) to 1.
                     for (auto& bv : bvs) {
                         if (bv.mask == 3u && !narrow_bool(bv, 2u)) return False;
                     }
@@ -2537,15 +2618,15 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             });
     }
 
-    // ========================================================================
-    // AD Tape primitives: tape-new tape-start! tape-stop! tape-var
-    //                     tape-backward! tape-adjoint tape-primal
-    //                     tape-ref? tape-ref-index tape-size
-    //
-    // These expose the tape-based (Wengert list) reverse-mode AD to Eta code.
-    // Arithmetic +,-,*,/ and transcendentals sin,cos,exp,log,sqrt are
-    // automatically recorded when a TapeRef operand is detected.
-    // ========================================================================
+    /**
+     * AD Tape primitives: tape-new tape-start! tape-stop! tape-var
+     *                     tape-backward! tape-adjoint tape-primal
+     *                     tape-ref? tape-ref-index tape-size
+     *
+     * These expose the tape-based (Wengert list) reverse-mode AD to Eta code.
+     * Arithmetic +,-,*,/ and transcendentals sin,cos,exp,log,sqrt are
+     * automatically recorded when a TapeRef operand is detected.
+     */
 
     env.register_builtin("tape-new", 0, false, [&heap](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
         return make_tape(heap);
@@ -2553,7 +2634,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     env.register_builtin("tape-start!", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
         if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: requires a running VM"}});
-        // Verify argument is a tape
+        /// Verify argument is a tape
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: argument must be a tape"}});
         if (!heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0])))
@@ -2570,7 +2651,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     env.register_builtin("tape-var", 2, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
         if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: requires a running VM"}});
-        // args[0] = tape, args[1] = numeric value
+        /// args[0] = tape, args[1] = numeric value
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: first argument must be a tape"}});
         auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
@@ -2584,7 +2665,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("tape-backward!", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // args[0] = tape, args[1] = tape-ref (output node)
+        /// args[0] = tape, args[1] = tape-ref (output node)
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-backward!: first argument must be a tape"}});
         auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
@@ -2598,7 +2679,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("tape-adjoint", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // args[0] = tape, args[1] = tape-ref
+        /// args[0] = tape, args[1] = tape-ref
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-adjoint: first argument must be a tape"}});
         auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
@@ -2613,7 +2694,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     env.register_builtin("tape-primal", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        // args[0] = tape, args[1] = tape-ref
+        /// args[0] = tape, args[1] = tape-ref
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-primal: first argument must be a tape"}});
         auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
@@ -2646,12 +2727,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return ops::encode(static_cast<int64_t>(tape->entries.size()));
     });
 
-    // tape-ref-value: extract the forward (primal) value of a TapeRef from the
-    // active tape.  Returns the value as-is if it is not a TapeRef.  This is
-    // needed for non-differentiable comparisons (e.g. branch conditions).
+    /**
+     * tape-ref-value: extract the forward (primal) value of a TapeRef from the
+     * active tape.  Returns the value as-is if it is not a TapeRef.  This is
+     * needed for non-differentiable comparisons (e.g. branch conditions).
+     */
     env.register_builtin("tape-ref-value", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::TapeRef)
-            return args[0];  // pass-through for non-TapeRef
+            return args[0];  ///< pass-through for non-TapeRef
         if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-value: requires a running VM"}});
         auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
         if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-value: no active tape"}});
@@ -2661,9 +2744,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(tape->entries[idx].primal);
     });
 
-    // Fact-table builtins
+    /// Fact-table builtins
 
-    // Helper: extract FactTable* from a LispVal or return a type error.
+    /// Helper: extract FactTable* from a LispVal or return a type error.
     auto get_fact_table = [&heap](LispVal v, const char* who) -> std::expected<types::FactTable*, RuntimeError> {
         if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": argument must be a fact-table"}});
@@ -2673,7 +2756,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return ft;
     };
 
-    // fact-table? predicate
+    /// fact-table? predicate
     env.register_builtin("fact-table?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         if (ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
             if (heap.try_get_as<ObjectKind::FactTable, types::FactTable>(ops::payload(args[0])))
@@ -2682,10 +2765,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return False;
     });
 
-    // %make-fact-table : (col-name-list) → fact-table
-    //   col-name-list is an Eta list of symbols or strings.
+    ///   col-name-list is an Eta list of symbols or strings.
     env.register_builtin("%make-fact-table", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Walk the Eta list and collect column names
+        /// Walk the Eta list and collect column names
         std::vector<std::string> names;
         LispVal cur = args[0];
         while (cur != Nil) {
@@ -2711,12 +2793,11 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fact_table(heap, std::move(names));
     });
 
-    // %fact-table-insert! : (table row-list) → #t
     env.register_builtin("%fact-table-insert!", 2, false, [&heap, get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto ft_res = get_fact_table(args[0], "%fact-table-insert!");
         if (!ft_res) return std::unexpected(ft_res.error());
         auto* ft = *ft_res;
-        // Walk the Eta list to collect row values
+        /// Walk the Eta list to collect row values
         std::vector<LispVal> row;
         LispVal cur = args[1];
         while (cur != Nil) {
@@ -2733,7 +2814,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return True;
     });
 
-    // %fact-table-build-index! : (table col-index) → #t
     env.register_builtin("%fact-table-build-index!", 2, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto ft_res = get_fact_table(args[0], "%fact-table-build-index!");
         if (!ft_res) return std::unexpected(ft_res.error());
@@ -2744,7 +2824,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return True;
     });
 
-    // %fact-table-query : (table col-index key) → list of row-index fixnums
     env.register_builtin("%fact-table-query", 3, false, [&heap, get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto ft_res = get_fact_table(args[0], "%fact-table-query");
         if (!ft_res) return std::unexpected(ft_res.error());
@@ -2752,7 +2831,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (!col_opt)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-query: column index must be a fixnum"}});
         auto rows = (*ft_res)->query(static_cast<std::size_t>(*col_opt), args[2]);
-        // Build an Eta list of fixnums
+        /// Build an Eta list of fixnums
         LispVal result = Nil;
         for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
             auto enc = ops::encode(static_cast<int64_t>(*it));
@@ -2764,7 +2843,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return result;
     });
 
-    // %fact-table-ref : (table row-index col-index) → value
     env.register_builtin("%fact-table-ref", 3, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto ft_res = get_fact_table(args[0], "%fact-table-ref");
         if (!ft_res) return std::unexpected(ft_res.error());
@@ -2775,23 +2853,21 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return (*ft_res)->get_cell(static_cast<std::size_t>(*row_opt), static_cast<std::size_t>(*col_opt));
     });
 
-    // %fact-table-row-count : (table) → fixnum
     env.register_builtin("%fact-table-row-count", 1, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto ft_res = get_fact_table(args[0], "%fact-table-row-count");
         if (!ft_res) return std::unexpected(ft_res.error());
         return ops::encode(static_cast<int64_t>((*ft_res)->row_count));
     });
 
-    // ================================================================
-    // Statistics builtins (stats_math.h + stats_extract.h)
-    //
-    // All %stats-* primitives accept any numeric sequence (list, vector,
-    // or fact-table column) via the polymorphic stats::to_eigen() helper
-    // and return numeric results.  They provide the foundation for
-    // std.stats.
-    // ================================================================
+    /**
+     * Statistics builtins (stats_math.h + stats_extract.h)
+     *
+     * All %stats-* primitives accept any numeric sequence (list, vector,
+     * or fact-table column) via the polymorphic stats::to_eigen() helper
+     * and return numeric results.  They provide the foundation for
+     * std.stats.
+     */
 
-    // %stats-mean : sequence → number
     env.register_builtin("%stats-mean", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-mean");
         if (!xs) return std::unexpected(xs.error());
@@ -2799,7 +2875,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(stats::mean(*xs));
     });
 
-    // %stats-variance : sequence → number  (sample variance, N-1)
     env.register_builtin("%stats-variance", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-variance");
         if (!xs) return std::unexpected(xs.error());
@@ -2808,7 +2883,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(stats::variance(*xs));
     });
 
-    // %stats-stddev : sequence → number
     env.register_builtin("%stats-stddev", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-stddev");
         if (!xs) return std::unexpected(xs.error());
@@ -2817,7 +2891,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(stats::stddev(*xs));
     });
 
-    // %stats-sem : sequence → number  (standard error of mean)
     env.register_builtin("%stats-sem", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-sem");
         if (!xs) return std::unexpected(xs.error());
@@ -2826,7 +2899,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(stats::sem(*xs));
     });
 
-    // %stats-percentile : sequence p → number
     env.register_builtin("%stats-percentile", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-percentile");
         if (!xs) return std::unexpected(xs.error());
@@ -2836,29 +2908,26 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(stats::percentile(std::move(*xs), pv.as_double()));
     });
 
-    // %stats-covariance : sequence1 sequence2 → number
     env.register_builtin("%stats-covariance", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-covariance");
         if (!xs) return std::unexpected(xs.error());
         auto ys = stats::to_eigen(heap, args[1], "%stats-covariance");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::covariance(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-covariance: sequences must be same length (≥2)"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-covariance: sequences must be same length (â‰¥2)"}});
         return make_flonum(*r);
     });
 
-    // %stats-correlation : sequence1 sequence2 → number
     env.register_builtin("%stats-correlation", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-correlation");
         if (!xs) return std::unexpected(xs.error());
         auto ys = stats::to_eigen(heap, args[1], "%stats-correlation");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::correlation(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-correlation: sequences must be same length (≥2), non-constant"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-correlation: sequences must be same length (â‰¥2), non-constant"}});
         return make_flonum(*r);
     });
 
-    // %stats-t-cdf : t-statistic df → p-value (cumulative)
     env.register_builtin("%stats-t-cdf", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto tv = classify_numeric(args[0], heap);
         auto dv = classify_numeric(args[1], heap);
@@ -2867,7 +2936,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(stats::t_cdf(tv.as_double(), dv.as_double()));
     });
 
-    // %stats-t-quantile : p df → t-quantile
     env.register_builtin("%stats-t-quantile", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto pv = classify_numeric(args[0], heap);
         auto dv = classify_numeric(args[1], heap);
@@ -2876,7 +2944,6 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(stats::t_quantile(pv.as_double(), dv.as_double()));
     });
 
-    // %stats-ci : sequence confidence-level → (lower . upper)
     env.register_builtin("%stats-ci", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-ci");
         if (!xs) return std::unexpected(xs.error());
@@ -2892,16 +2959,15 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_cons(heap, *lo, *hi);
     });
 
-    // %stats-t-test-2 : sequence1 sequence2 → (t-stat p-value df mean-diff)
     env.register_builtin("%stats-t-test-2", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-t-test-2");
         if (!xs) return std::unexpected(xs.error());
         auto ys = stats::to_eigen(heap, args[1], "%stats-t-test-2");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::t_test_2(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-t-test-2: each sequence must have ≥2 elements"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-t-test-2: each sequence must have â‰¥2 elements"}});
 
-        // Build result list: (t-stat p-value df mean-diff)
+        /// Build result list: (t-stat p-value df mean-diff)
         auto v_md = make_flonum(r->mean_diff); if (!v_md) return std::unexpected(v_md.error());
         auto v_df = make_flonum(r->df);        if (!v_df) return std::unexpected(v_df.error());
         auto v_pv = make_flonum(r->p_value);   if (!v_pv) return std::unexpected(v_pv.error());
@@ -2914,16 +2980,14 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return *l1;
     });
 
-    // %stats-ols : x-sequence y-sequence → (slope intercept r² se-slope se-intercept t-slope t-intercept p-slope p-intercept)
     env.register_builtin("%stats-ols", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-ols");
         if (!xs) return std::unexpected(xs.error());
         auto ys = stats::to_eigen(heap, args[1], "%stats-ols");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::ols(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ols: sequences must be same length (≥3)"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ols: sequences must be same length (â‰¥3)"}});
 
-        // Build result list: (slope intercept r² se-slope se-intercept t-slope t-intercept p-slope p-intercept)
         auto v9 = make_flonum(r->p_intercept); if (!v9) return std::unexpected(v9.error());
         auto v8 = make_flonum(r->p_slope);     if (!v8) return std::unexpected(v8.error());
         auto v7 = make_flonum(r->t_intercept); if (!v7) return std::unexpected(v7.error());
@@ -2946,22 +3010,18 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return *l1;
     });
 
-    // ========================================================================
-    // Phase 4b — propagation queue
-    // ------------------------------------------------------------------------
-    // (register-prop-attr! 'key)
-    //   Marks attribute key 'key as carrying a list of re-propagator thunks.
-    //   When `unify` later binds a logic var carrying this attribute, every
-    //   thunk in the attribute's value (a list) is *enqueued* on the VM's
-    //   FIFO propagation queue rather than invoked synchronously.  The queue
-    //   drains at the outer-`unify` boundary; thunk return values of #f
-    //   abort the unify and trigger the standard atomic rollback.
-    //   Idempotent on closure identity — the same thunk is never queued twice.
-    //
-    // (%clp-prop-queue-size)
-    //   Returns the current pending-thunk count — useful for tests / REPL
-    //   diagnostics; always 0 outside an active unify.
-    // ========================================================================
+    /**
+     * (register-prop-attr! 'key)
+     *   Marks attribute key 'key as carrying a list of re-propagator thunks.
+     *   When `unify` later binds a logic var carrying this attribute, every
+     *   thunk in the attribute's value (a list) is *enqueued* on the VM's
+     *   FIFO propagation queue rather than invoked synchronously.  The queue
+     *   drains at the outer-`unify` boundary; thunk return values of #f
+     *   abort the unify and trigger the standard atomic rollback.
+     *
+     * (%clp-prop-queue-size)
+     *   diagnostics; always 0 outside an active unify.
+     */
 
     env.register_builtin("register-prop-attr!", 1, false,
         [get_symbol_id, vm](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -2985,5 +3045,5 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         });
 }
 
-} // namespace eta::runtime
+} ///< namespace eta::runtime
 

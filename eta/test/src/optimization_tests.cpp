@@ -9,7 +9,7 @@
 #include "eta/semantics/passes/constant_folding.h"
 #include "eta/semantics/passes/dead_code_elimination.h"
 
-// Full pipeline includes for end-to-end tests
+/// Full pipeline includes for end-to-end tests
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
@@ -28,9 +28,9 @@ using namespace eta::runtime;
 using namespace eta::runtime::vm;
 using namespace eta::runtime::nanbox;
 
-// ============================================================================
-// A no-op pass to verify the pipeline mechanics
-// ============================================================================
+/**
+ * A no-op pass to verify the pipeline mechanics
+ */
 
 struct NoOpPass : OptimizationPass {
     int run_count = 0;
@@ -42,7 +42,7 @@ struct NoOpPass : OptimizationPass {
     }
 };
 
-// A counting pass to verify ordering
+/// A counting pass to verify ordering
 struct CountingPass : OptimizationPass {
     std::string label;
     std::vector<std::string>* log;
@@ -57,9 +57,9 @@ struct CountingPass : OptimizationPass {
     }
 };
 
-// ============================================================================
-// Fixture for compile-and-run optimization tests
-// ============================================================================
+/**
+ * Fixture for compile-and-run optimization tests
+ */
 
 struct OptFixture {
     memory::heap::Heap heap;
@@ -71,8 +71,10 @@ struct OptFixture {
         register_core_primitives(builtins, heap, intern_table);
     }
 
-    /// Compile a module through the full pipeline with the given optimization
-    /// passes applied, then execute and return the 'result' binding.
+    /**
+     * Compile a module through the full pipeline with the given optimization
+     * passes applied, then execute and return the 'result' binding.
+     */
     LispVal run_with_passes(std::string_view source,
                             std::vector<std::unique_ptr<OptimizationPass>> passes) {
         eta::reader::lexer::Lexer lex(0, source);
@@ -89,7 +91,7 @@ struct OptFixture {
         SemanticAnalyzer sa;
         auto sem_mods = std::move(*sa.analyze_all(expanded, linker, builtins));
 
-        // Apply optimization passes
+        /// Apply optimization passes
         OptimizationPipeline pipeline;
         for (auto& pass : passes) pipeline.add_pass(std::move(pass));
         pipeline.run_all(sem_mods);
@@ -136,7 +138,7 @@ struct OptFixture {
 
         Emitter emitter(sem_mods[0], heap, intern_table, registry);
         emitter.emit();
-        return registry.all().back(); // module init is last
+        return registry.all().back(); ///< module init is last
     }
 
     int count_opcode(const BytecodeFunction& func, OpCode op) const {
@@ -160,9 +162,9 @@ struct OptFixture {
 
 BOOST_AUTO_TEST_SUITE(optimization_tests)
 
-// ============================================================================
-// Pipeline mechanics
-// ============================================================================
+/**
+ * Pipeline mechanics
+ */
 
 BOOST_AUTO_TEST_CASE(empty_pipeline_does_nothing) {
     OptimizationPipeline pipeline;
@@ -171,7 +173,7 @@ BOOST_AUTO_TEST_CASE(empty_pipeline_does_nothing) {
 
     ModuleSemantics mod;
     mod.name = "test";
-    pipeline.run(mod); // should not crash
+    pipeline.run(mod); ///< should not crash
 }
 
 BOOST_AUTO_TEST_CASE(single_pass_runs) {
@@ -237,9 +239,9 @@ BOOST_AUTO_TEST_CASE(pass_names_reported) {
     BOOST_CHECK_EQUAL(names[1], "beta");
 }
 
-// ============================================================================
-// IRVisitor smoke test
-// ============================================================================
+/**
+ * IRVisitor smoke test
+ */
 
 BOOST_AUTO_TEST_CASE(ir_visitor_walks_const_node) {
     ModuleSemantics mod;
@@ -273,15 +275,14 @@ BOOST_AUTO_TEST_CASE(ir_visitor_walks_if_children) {
 
     Visitor v;
     v.visit(if_node, false);
-    BOOST_CHECK_EQUAL(v.visited, 4); // if + test + conseq + alt
+    BOOST_CHECK_EQUAL(v.visited, 4); ///< if + test + conseq + alt
 }
 
-// ============================================================================
-// ConstantFolding pass — end-to-end
-// ============================================================================
+/**
+ */
 
 BOOST_FIXTURE_TEST_CASE(constant_fold_add_fixnums, OptFixture) {
-    // (+ 2 3) should fold to 5 at the IR level
+    /// (+ 2 3) should fold to 5 at the IR level
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::ConstantFolding>());
 
@@ -294,7 +295,7 @@ BOOST_FIXTURE_TEST_CASE(constant_fold_add_fixnums, OptFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(constant_fold_add_doubles, OptFixture) {
-    // (+ 1.5 2.5) should fold to 4.0
+    /// (+ 1.5 2.5) should fold to 4.0
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::ConstantFolding>());
 
@@ -346,7 +347,6 @@ BOOST_FIXTURE_TEST_CASE(constant_fold_div_exact, OptFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(no_fold_non_constant, OptFixture) {
-    // (+ x 1) must NOT be folded — x is a variable
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::ConstantFolding>());
 
@@ -355,39 +355,41 @@ BOOST_FIXTURE_TEST_CASE(no_fold_non_constant, OptFixture) {
 
     auto decoded = ops::decode<int64_t>(result);
     BOOST_REQUIRE(decoded.has_value());
-    BOOST_CHECK_EQUAL(*decoded, 11); // correct result, but via runtime computation
+    BOOST_CHECK_EQUAL(*decoded, 11); ///< correct result, but via runtime computation
 }
 
 BOOST_FIXTURE_TEST_CASE(constant_fold_reduces_instructions, OptFixture) {
-    // With folding, (+ 2 3) should emit fewer instructions (one LoadConst
-    // instead of LoadConst + LoadConst + LoadGlobal + Call)
+    /**
+     * With folding, (+ 2 3) should emit fewer instructions (one LoadConst
+     * instead of LoadConst + LoadConst + LoadGlobal + Call)
+     */
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::ConstantFolding>());
 
     auto& func = compile_with_passes(
         "(module m (define result (+ 2 3)))", std::move(passes));
 
-    // Should NOT contain a Call instruction (the call to + was folded away)
+    /// Should NOT contain a Call instruction (the call to + was folded away)
     BOOST_CHECK_EQUAL(count_opcode(func, OpCode::Call), 0);
 }
 
 BOOST_FIXTURE_TEST_CASE(no_fold_keeps_add, OptFixture) {
-    // Without folding, (+ x 1) must still have a Call (the emitter compiles
-    // arithmetic builtins as generic Call instructions, not the specialised
-    // Add opcode).
+    /**
+     * Without folding, (+ x 1) must still have a Call (the emitter compiles
+     * arithmetic builtins as generic Call instructions, not the specialised
+     * Add opcode).
+     */
     auto& func = compile_with_passes(
         "(module m (define x 10) (define result (+ x 1)))", {});
 
     BOOST_CHECK_GE(count_opcode_all(OpCode::Call), 1);
 }
 
-// ============================================================================
-// DeadCodeElimination pass — end-to-end
-// ============================================================================
+/**
+ */
 
 BOOST_FIXTURE_TEST_CASE(dead_code_elimination_begin, OptFixture) {
-    // (begin 42 99) — the 42 is dead (pure constant, result discarded).
-    // After dead-code elimination, only 99 remains.
+    /// After dead-code elimination, only 99 remains.
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::DeadCodeElimination>());
 
@@ -400,22 +402,25 @@ BOOST_FIXTURE_TEST_CASE(dead_code_elimination_begin, OptFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(dead_code_elimination_reduces_pop, OptFixture) {
-    // With dead-code elimination, (begin 42 99) should not emit a Pop
-    // for the dead constant 42.  One Pop remains: the module-init top-level
-    // Pop that the emitter adds after every toplevel form.
+    /**
+     * With dead-code elimination, (begin 42 99) should not emit a Pop
+     * for the dead constant 42.  One Pop remains: the module-init top-level
+     * Pop that the emitter adds after every toplevel form.
+     */
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::DeadCodeElimination>());
 
     auto& func = compile_with_passes(
         "(module m (define result (begin 42 99)))", std::move(passes));
 
-    // The dead constant + Pop pair inside the Begin is eliminated; only the
-    // structural module-init Pop remains.
+    /**
+     * The dead constant + Pop pair inside the Begin is eliminated; only the
+     * structural module-init Pop remains.
+     */
     BOOST_CHECK_EQUAL(count_opcode(func, OpCode::Pop), 1);
 }
 
 BOOST_FIXTURE_TEST_CASE(dead_code_keeps_side_effects, OptFixture) {
-    // (begin (set! x 1) x) — set! has a side effect, must not be eliminated
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::DeadCodeElimination>());
 
@@ -429,7 +434,6 @@ BOOST_FIXTURE_TEST_CASE(dead_code_keeps_side_effects, OptFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(dead_code_multiple_dead, OptFixture) {
-    // (begin 1 2 3 4 5) — only 5 survives
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::DeadCodeElimination>());
 
@@ -441,14 +445,15 @@ BOOST_FIXTURE_TEST_CASE(dead_code_multiple_dead, OptFixture) {
     BOOST_CHECK_EQUAL(*decoded, 5);
 }
 
-// ============================================================================
-// Pipeline ordering — both passes together
-// ============================================================================
+/**
+ */
 
 BOOST_FIXTURE_TEST_CASE(pipeline_fold_then_dce, OptFixture) {
-    // (begin (+ 1 2) (+ 3 4))
-    // After constant folding: (begin 3 7)
-    // After dead-code elimination: 7
+    /**
+     * (begin (+ 1 2) (+ 3 4))
+     * After constant folding: (begin 3 7)
+     * After dead-code elimination: 7
+     */
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::ConstantFolding>());
     passes.push_back(std::make_unique<passes::DeadCodeElimination>());

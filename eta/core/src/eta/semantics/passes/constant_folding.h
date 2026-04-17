@@ -10,10 +10,6 @@ namespace eta::semantics::passes {
  * @brief IR-level constant folding pass.
  *
  * Folds constant arithmetic expressions at the IR level:
- *   (+ 2 3)      → 5        (fixnum + fixnum)
- *   (+ 1.5 2.5)  → 4.0      (double + double)
- *   (- 10 3)     → 7
- *   (* 4 5)      → 20
  *
  * Only folds calls to builtin arithmetic primitives (+, -, *, /)
  * where both arguments are Const literal nodes with numeric payloads.
@@ -43,31 +39,32 @@ private:
             auto* call = std::get_if<core::Call>(&node->data);
             if (!call) return node;
 
-            // Must be a call to a global variable (builtin)
+            /// Must be a call to a global variable (builtin)
             auto* callee_var = std::get_if<core::Var>(&call->callee->data);
             if (!callee_var) return node;
             auto* global = std::get_if<core::Address::Global>(&callee_var->addr.where);
             if (!global) return node;
 
-            // Must be exactly 2 arguments
+            /// Must be exactly 2 arguments
             if (call->args.size() != 2) return node;
 
-            // Both args must be Const with numeric literals
+            /// Both args must be Const with numeric literals
             auto* lhs_const = std::get_if<core::Const>(&call->args[0]->data);
             auto* rhs_const = std::get_if<core::Const>(&call->args[1]->data);
             if (!lhs_const || !rhs_const) return node;
 
-            // Extract numeric values
+            /// Extract numeric values
             auto lhs_num = to_numeric(lhs_const->value);
             auto rhs_num = to_numeric(rhs_const->value);
             if (!lhs_num || !rhs_num) return node;
 
-            // We need to know which builtin the global slot refers to.
-            // Builtins are at fixed global slots. We identify them by slot number.
-            // The binding info for the callee tells us its name through the module.
-            // Since we can't resolve slot → name without the BuiltinEnvironment,
-            // we instead check if the callee's address matches a known arithmetic
-            // builtin by looking up the binding name in the module's bindings list.
+            /**
+             * We need to know which builtin the global slot refers to.
+             * Builtins are at fixed global slots. We identify them by slot number.
+             * The binding info for the callee tells us its name through the module.
+             * we instead check if the callee's address matches a known arithmetic
+             * builtin by looking up the binding name in the module's bindings list.
+             */
             std::string op_name;
             for (const auto& bi : mod.bindings) {
                 if (bi.kind == BindingInfo::Kind::Global && bi.slot == global->id) {
@@ -77,7 +74,7 @@ private:
             }
             if (op_name.empty()) return node;
 
-            // Fold the operation
+            /// Fold the operation
             std::optional<core::Literal> result;
             if (op_name == "+")      result = fold_add(*lhs_num, *rhs_num);
             else if (op_name == "-") result = fold_sub(*lhs_num, *rhs_num);
@@ -126,7 +123,7 @@ private:
         }
 
         static std::optional<core::Literal> fold_div(const NumVal& a, const NumVal& b) {
-            if (b.d == 0.0) return std::nullopt; // avoid division by zero
+            if (b.d == 0.0) return std::nullopt; ///< avoid division by zero
             if (a.is_int && b.is_int && b.i != 0 && a.i % b.i == 0) {
                 return core::Literal{a.i / b.i};
             }
@@ -135,5 +132,5 @@ private:
     };
 };
 
-} // namespace eta::semantics::passes
+} ///< namespace eta::semantics::passes
 

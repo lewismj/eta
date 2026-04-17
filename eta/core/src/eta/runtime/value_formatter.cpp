@@ -12,12 +12,12 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
     if (v == nanbox::False) return "#f";
 
     if (!ops::is_boxed(v)) {
-        // Raw double (unboxed flonum)
+        /// Raw double (unboxed flonum)
         std::ostringstream oss;
         double d = std::bit_cast<double>(v);
         oss << d;
         std::string s = oss.str();
-        // Ensure there's a decimal point for write mode
+        /// Ensure there's a decimal point for write mode
         if (mode == FormatMode::Write && s.find('.') == std::string::npos && s.find('e') == std::string::npos
             && s.find('E') == std::string::npos && s != "inf" && s != "-inf" && s != "nan" && s != "-nan") {
             s += ".0";
@@ -39,15 +39,17 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
         char32_t c = *val;
 
         if (mode == FormatMode::Display) {
-            // Display: raw UTF-8 character
+            /// Display: raw UTF-8 character
             if (c < 0x80) {
                 return std::string(1, static_cast<char>(c));
             }
             return utf8::encode(c);
         }
 
-        // Write mode: #\<name> or #\<char>
-        // Using if-else instead of switch to avoid MSVC optimizer issues
+        /**
+         * Write mode: #\<name> or #\<char>
+         * Using if-else instead of switch to avoid MSVC optimizer issues
+         */
         if (c == U' ')    return "#\\space";
         if (c == U'\n')   return "#\\newline";
         if (c == U'\r')   return "#\\return";
@@ -59,11 +61,11 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
         if (c == U'\b')   return "#\\backspace";
 
         if (c >= 0x21 && c <= 0x7E) {
-            // Printable ASCII - use array initialization to avoid potential issues
+            /// Printable ASCII - use array initialization to avoid potential issues
             char buf[4] = {'#', '\\', static_cast<char>(c), '\0'};
             return std::string(buf);
         }
-        // Non-printable or non-ASCII: #\xHEX
+        /// Non-printable or non-ASCII: #\xHEX
         std::ostringstream oss;
         oss << "#\\x" << std::hex << std::uppercase << static_cast<uint32_t>(c);
         return oss.str();
@@ -78,7 +80,7 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return std::string(raw);
         }
 
-        // Write mode: quote and escape
+        /// Write mode: quote and escape
         std::string out = "\"";
         for (char ch : raw) {
             switch (ch) {
@@ -109,7 +111,7 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
     if (t == Tag::HeapObject) {
         auto id = ops::payload(v);
 
-        // Numeric (heap-allocated fixnum or flonum)
+        /// Numeric (heap-allocated fixnum or flonum)
         auto n = classify_numeric(v, heap);
         if (n.is_fixnum()) {
             return std::to_string(n.int_val);
@@ -120,12 +122,12 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return oss.str();
         }
 
-        // Cons (pair / list)
+        /// Cons (pair / list)
         if (auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
             std::string out = "(";
             out += format_value(cons->car, mode, heap, intern_table);
             LispVal rest = cons->cdr;
-            // Walk the cdr chain
+            /// Walk the cdr chain
             while (rest != nanbox::Nil) {
                 if (ops::is_boxed(rest) && ops::tag(rest) == Tag::HeapObject) {
                     if (auto* next = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(rest))) {
@@ -135,7 +137,7 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
                         continue;
                     }
                 }
-                // Dotted pair
+                /// Dotted pair
                 out += " . ";
                 out += format_value(rest, mode, heap, intern_table);
                 break;
@@ -144,7 +146,7 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return out;
         }
 
-        // Vector
+        /// Vector
         if (auto* vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
             std::string out = "#(";
             for (size_t i = 0; i < vec->elements.size(); ++i) {
@@ -155,7 +157,7 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return out;
         }
 
-        // ByteVector
+        /// ByteVector
         if (auto* bv = heap.try_get_as<ObjectKind::ByteVector, types::ByteVector>(id)) {
             std::string out = "#u8(";
             for (size_t i = 0; i < bv->data.size(); ++i) {
@@ -166,27 +168,27 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return out;
         }
 
-        // Closure
+        /// Closure
         if (heap.try_get_as<ObjectKind::Closure, types::Closure>(id)) {
             return "#<closure>";
         }
 
-        // Primitive
+        /// Primitive
         if (heap.try_get_as<ObjectKind::Primitive, types::Primitive>(id)) {
             return "#<primitive>";
         }
 
-        // Continuation
+        /// Continuation
         if (heap.try_get_as<ObjectKind::Continuation, types::Continuation>(id)) {
             return "#<continuation>";
         }
 
-        // Port
+        /// Port
         if (heap.try_get_as<ObjectKind::Port, types::PortObject>(id)) {
             return "#<port>";
         }
 
-        // Logic variable
+        /// Logic variable
         if (auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id)) {
             if (lv->binding.has_value()) {
                 return format_value(*lv->binding, mode, heap, intern_table);
@@ -195,7 +197,7 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return "_G" + std::to_string(id);
         }
 
-        // Compound term: f(arg1, arg2, ...)
+        /// Compound term: f(arg1, arg2, ...)
         if (auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(id)) {
             std::string out = format_value(ct->functor, mode, heap, intern_table);
             out += "(";
@@ -207,30 +209,29 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return out;
         }
 
-        // AD Tape
+        /// AD Tape
         if (heap.try_get_as<ObjectKind::Tape, types::Tape>(id)) {
             return "#<tape>";
         }
 
-        // Torch tensor (opaque — libtorch manages storage)
         if (heap.try_get_as<ObjectKind::Tensor, void>(id)) {
             return "#<tensor>";
         }
 
-        // NN module (opaque)
+        /// NN module (opaque)
         if (heap.try_get_as<ObjectKind::NNModule, void>(id)) {
             return "#<nn-module>";
         }
 
-        // Optimizer (opaque)
+        /// Optimizer (opaque)
         if (heap.try_get_as<ObjectKind::Optimizer, void>(id)) {
             return "#<optimizer>";
         }
 
-        // Fact table
+        /// Fact table
         if (auto* ft = heap.try_get_as<ObjectKind::FactTable, types::FactTable>(id)) {
             return "#<fact-table " + std::to_string(ft->col_names.size())
-                   + "cols×" + std::to_string(ft->row_count) + "rows>";
+                   + "colsÃ—" + std::to_string(ft->row_count) + "rows>";
         }
 
         return "#<object>";
@@ -239,5 +240,5 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
     return "#<unknown>";
 }
 
-} // namespace eta::runtime
+} ///< namespace eta::runtime
 

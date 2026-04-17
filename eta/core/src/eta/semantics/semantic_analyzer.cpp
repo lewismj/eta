@@ -18,11 +18,11 @@ namespace {
 struct AnalysisContext {
     ModuleSemantics& mod;
     uint32_t next_binding_id{0};
-    uint32_t* shared_next_global{nullptr};  // Unified global slot counter (shared across modules)
+    uint32_t* shared_next_global{nullptr};  ///< Unified global slot counter (shared across modules)
 
     core::BindingId next_id() { return core::BindingId{next_binding_id++}; }
 
-    // Allocate the next unified global slot
+    /// Allocate the next unified global slot
     uint32_t alloc_global_slot() {
         return (*shared_next_global)++;
     }
@@ -33,12 +33,12 @@ struct AnalysisContext {
         
         std::uint16_t slot = 0;
         if (kind == BindingInfo::Kind::Param || kind == BindingInfo::Kind::Local) {
-            // Find the lambda frame this binding belongs to
+            /// Find the lambda frame this binding belongs to
             Scope* s = &scope;
             while (s && !s->is_lambda_boundary && s->parent) s = s->parent;
             if (s) slot = s->next_slot++;
         } else {
-            // Global: allocate from the unified counter
+            /// Global: allocate from the unified counter
             slot = static_cast<std::uint16_t>(alloc_global_slot());
         }
 
@@ -46,7 +46,7 @@ struct AnalysisContext {
         return id;
     }
 
-    // Add an import that reuses an existing global slot (from the exporting module)
+    /// Add an import that reuses an existing global slot (from the exporting module)
     core::BindingId add_import_at_slot(Scope& scope, const std::string& name,
                                        const eta::reader::linker::ImportOrigin& origin,
                                        Span span, uint32_t global_slot) {
@@ -57,7 +57,7 @@ struct AnalysisContext {
         return id;
     }
 
-    // Legacy: add an import with a fresh global slot (used when no export slot is known)
+    /// Legacy: add an import with a fresh global slot (used when no export slot is known)
     core::BindingId add_import(Scope& scope, const std::string& name,
                                const eta::reader::linker::ImportOrigin& origin, Span span) {
         return add_import_at_slot(scope, name, origin, span, alloc_global_slot());
@@ -153,7 +153,7 @@ core::Node* wrap_body(std::vector<core::Node*> body_exprs, Span span, ModuleSema
     }
 }
 
-// Special form handler signature
+/// Special form handler signature
 using SpecialFormHandler = SemResult<core::Node*>(*)(const List*, Scope&, AnalysisContext&);
 
 SemResult<LookupResult> lookup(const std::string& name, Scope* scope, AnalysisContext& ctx, Span span) {
@@ -171,10 +171,10 @@ SemResult<LookupResult> lookup(const std::string& name, Scope* scope, AnalysisCo
             }
 
             if (crosses_lambda > 0) {
-                // Lexical local or parameter from outer scope
+                /// Lexical local or parameter from outer scope
                 core::Address current_addr = core::Address{core::Address::Local{info.slot}};
 
-                // Trace through each lambda boundary
+                /// Trace through each lambda boundary
                 for (auto it_path = path.rbegin(); it_path != path.rend(); ++it_path) {
                     auto* lam = *it_path;
                     auto it_up = std::find(lam->upvals.begin(), lam->upvals.end(), id);
@@ -186,7 +186,7 @@ SemResult<LookupResult> lookup(const std::string& name, Scope* scope, AnalysisCo
                     } else {
                         slot = static_cast<uint16_t>(std::distance(lam->upvals.begin(), it_up));
                     }
-                    // The address for the next (inner) lambda is this lambda's upval
+                    /// The address for the next (inner) lambda is this lambda's upval
                     current_addr = core::Address{core::Address::Upval{slot}};
                 }
                 
@@ -204,9 +204,9 @@ SemResult<LookupResult> lookup(const std::string& name, Scope* scope, AnalysisCo
     return std::unexpected(SemanticError{SemanticError::Kind::UndefinedName, span, "Undefined symbol: " + name});
 }
 
-// ============================================================================
-// Special Form Handlers - Each handles a specific core or derived form
-// ============================================================================
+/**
+ * Special Form Handlers - Each handles a specific core or derived form
+ */
 
 SemResult<core::Node*> handle_if(const List* lst, Scope& scope, AnalysisContext& ctx) {
     if (lst->elems.size() != 4)
@@ -276,7 +276,7 @@ SemResult<core::Node*> handle_lambda(const List* lst, Scope& scope, AnalysisCont
     }
 
     lam->body = wrap_body(std::move(body_exprs), lst->span, ctx.mod);
-    lam->stack_size = lambda_scope.next_slot + 32; // Include some temporary space
+    lam->stack_size = lambda_scope.next_slot + 32; ///< Include some temporary space
     return lam_node;
 }
 
@@ -286,8 +286,10 @@ SemResult<core::Node*> handle_quote(const List* lst, Scope&, AnalysisContext& ct
     return ctx.mod.emplace<core::Quote>(lst->span, deep_copy(lst->elems[1]));
 }
 
-// Helper to analyze a fixed number of arguments from a form.
-// Returns analyzed nodes or error if arity mismatch or analysis fails.
+/**
+ * Helper to analyze a fixed number of arguments from a form.
+ * Returns analyzed nodes or error if arity mismatch or analysis fails.
+ */
 template<std::size_t N>
 SemResult<std::array<core::Node*, N>> analyze_n_args(
     const List* lst, Scope& scope, AnalysisContext& ctx, const char* form_name) {
@@ -333,7 +335,6 @@ SemResult<core::Node*> handle_call_cc(const List* lst, Scope& scope, AnalysisCon
 }
 
 SemResult<core::Node*> handle_apply(const List* lst, Scope& scope, AnalysisContext& ctx) {
-    // (apply proc arg1 ... argN list) — at least 2 args (proc + list)
     if (lst->elems.size() < 3)
         return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, lst->span, "apply requires at least 2 arguments"});
     auto proc = analyze(lst->elems[1], scope, ctx);
@@ -347,10 +348,12 @@ SemResult<core::Node*> handle_apply(const List* lst, Scope& scope, AnalysisConte
     return ctx.mod.emplace<core::Apply>(lst->span, *proc, std::move(args));
 }
 
-// Exception handlers
+/// Exception handlers
 
-// Helper: extract symbol name from a quoted symbol form '(quote tag).
-// Returns empty string if not a valid quoted symbol.
+/**
+ * Helper: extract symbol name from a quoted symbol form '(quote tag).
+ * Returns empty string if not a valid quoted symbol.
+ */
 static std::string extract_quoted_symbol(const SExprPtr& e) {
     if (!e) return {};
     if (const auto* lst = e->as<List>()) {
@@ -364,9 +367,9 @@ static std::string extract_quoted_symbol(const SExprPtr& e) {
     return {};
 }
 
-// (raise 'tag value)  or  (raise value)
+/// (raise 'tag value)  or  (raise value)
 SemResult<core::Node*> handle_raise(const List* lst, Scope& scope, AnalysisContext& ctx) {
-    // lst->elems: [raise, ('tag | value), (value)?]
+    /// lst->elems: [raise, ('tag | value), (value)?]
     if (lst->elems.size() < 2 || lst->elems.size() > 3)
         return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape,
             lst->span, "raise requires 1 or 2 arguments"});
@@ -389,7 +392,7 @@ SemResult<core::Node*> handle_raise(const List* lst, Scope& scope, AnalysisConte
     return ctx.mod.emplace<core::Raise>(lst->span, tag_name, *val);
 }
 
-// (catch 'tag body)  or  (catch body)
+/// (catch 'tag body)  or  (catch body)
 SemResult<core::Node*> handle_guard(const List* lst, Scope& scope, AnalysisContext& ctx) {
     if (lst->elems.size() < 2 || lst->elems.size() > 3)
         return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape,
@@ -413,25 +416,25 @@ SemResult<core::Node*> handle_guard(const List* lst, Scope& scope, AnalysisConte
     return ctx.mod.emplace<core::Guard>(lst->span, tag_name, *body);
 }
 
-// ============================================================================
-// NOTE: Derived form handlers (let, letrec, case, do) have been REMOVED.
-// These forms MUST be desugared by the Expander before semantic analysis.
-// The Expander desugars:
-//   let      -> ((lambda (x...) body...) init...)
-//   let*     -> nested let
-//   letrec   -> (let ((x '()) ...) (set! x e) ... body...)
-//   letrec*  -> nested letrec
-//   cond     -> nested if
-//   case     -> (let ((tmp key)) (if (or (eqv? tmp d1) ...) body ...))
-//   do       -> (letrec ((loop (lambda (x...) (if test result (begin body (loop step...)))))) (loop init...))
-//   and/or   -> nested if
-//   when/unless -> (if test (begin body...) (begin))
-// ============================================================================
+/**
+ * NOTE: Derived form handlers (let, letrec, case, do) have been REMOVED.
+ * These forms MUST be desugared by the Expander before semantic analysis.
+ * The Expander desugars:
+ *   let      -> ((lambda (x...) body...) init...)
+ *   let*     -> nested let
+ *   letrec   -> (let ((x '()) ...) (set! x e) ... body...)
+ *   letrec*  -> nested letrec
+ *   cond     -> nested if
+ *   case     -> (let ((tmp key)) (if (or (eqv? tmp d1) ...) body ...))
+ *   do       -> (letrec ((loop (lambda (x...) (if test result (begin body (loop step...)))))) (loop init...))
+ *   and/or   -> nested if
+ *   when/unless -> (if test (begin body...) (begin))
+ */
 
-// Handler registry - maps form names to handler functions
+/// Handler registry - maps form names to handler functions
 const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handlers() {
     static const std::unordered_map<std::string_view, SpecialFormHandler> handlers = {
-        // Core forms (required - these are the primitive forms that cannot be desugared)
+        /// Core forms (required - these are the primitive forms that cannot be desugared)
         {"if",                              handle_if},
         {"begin",                           handle_begin},
         {"set!",                            handle_set},
@@ -443,10 +446,10 @@ const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handler
         {"call/cc",                         handle_call_cc},
         {"call-with-current-continuation",  handle_call_cc},
         {"apply",                           handle_apply},
-        // Exception handling
+        /// Exception handling
         {"raise",                           handle_raise},
         {"catch",                           handle_guard},
-        // Logic variables / unification
+        /// Logic variables / unification
         {"logic-var",    [](const List* lst, Scope&, AnalysisContext& ctx) -> SemResult<core::Node*> {
             return ctx.mod.emplace<core::MakeLogicVar>(lst->span);
         }},
@@ -478,9 +481,11 @@ const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handler
             auto t = analyze(lst->elems[1], scope, ctx); if (!t) return t;
             return ctx.mod.emplace<core::CopyTerm>(lst->span, *t);
         }},
-        // NOTE: Derived forms (let, letrec, case, do) are no longer handled here.
-        // They MUST be desugared by the Expander. If encountered, they will be
-        // treated as function applications, which will produce a meaningful error.
+        /**
+         * NOTE: Derived forms (let, letrec, case, do) are no longer handled here.
+         * They MUST be desugared by the Expander. If encountered, they will be
+         * treated as function applications, which will produce a meaningful error.
+         */
     };
     return handlers;
 }
@@ -494,7 +499,7 @@ SemResult<core::Node*> analyze_list(const List* lst, Scope& scope, AnalysisConte
         return ctx.mod.emplace<core::Const>(lst->span, core::Literal{std::monostate{}});
     }
 
-    // Check for special forms
+    /// Check for special forms
     if (const auto* head = lst->elems[0]->as<Symbol>()) {
         const auto& handlers = get_form_handlers();
         auto it = handlers.find(head->name);
@@ -503,7 +508,7 @@ SemResult<core::Node*> analyze_list(const List* lst, Scope& scope, AnalysisConte
         }
     }
 
-    // Generic application
+    /// Generic application
     auto callee = analyze(lst->elems[0], scope, ctx);
     if (!callee) return callee;
     std::vector<core::Node*> args;
@@ -529,13 +534,15 @@ SemResult<core::Node*> analyze(const SExprPtr& expr, Scope& scope, AnalysisConte
     return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, expr->span(), "Unsupported expression type"});
 }
 
-// ============================================================================
-// Generic IR Visitor - Centralizes traversal over all IR node types
-// ============================================================================
+/**
+ * Generic IR Visitor - Centralizes traversal over all IR node types
+ */
 
-// The canonical IRVisitor CRTP base is defined in ir_visitor.h.
-// We reuse it here for the tail-position marker.
-} // close anonymous namespace
+/**
+ * The canonical IRVisitor CRTP base is defined in ir_visitor.h.
+ * We reuse it here for the tail-position marker.
+ */
+} ///< close anonymous namespace
 
 #include "eta/semantics/ir_visitor.h"
 
@@ -556,7 +563,7 @@ inline void mark_tail(core::Node* node, bool in_tail_context) {
     marker.visit(node, in_tail_context);
 }
 
-} // namespace
+} ///< namespace
 
 SemResult<std::vector<ModuleSemantics>>
 SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::reader::ModuleLinker& linker) {
@@ -569,13 +576,17 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::read
                               const ::eta::runtime::BuiltinEnvironment& builtins) {
     std::vector<ModuleSemantics> out;
 
-    // Unified global slot counter shared across all modules.
-    // Builtins occupy slots 0..N-1; subsequent modules share the rest.
+    /**
+     * Unified global slot counter shared across all modules.
+     * Builtins occupy slots 0..N-1; subsequent modules share the rest.
+     */
     uint32_t next_global = static_cast<uint32_t>(builtins.size());
 
 
-    // Map (module_name, export_name) -> unified global slot.
-    // Built incrementally as modules are analyzed.
+    /**
+     * Map (module_name, export_name) -> unified global slot.
+     * Built incrementally as modules are analyzed.
+     */
     std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> export_slots;
 
     for (const auto& f : forms) {
@@ -593,33 +604,36 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::read
         ModuleSemantics mod; mod.name = ns->name;
         Scope toplevel{}; AnalysisContext ctx{mod, 0, &next_global};
 
-        // Seed builtins as immutable globals at slots 0..N-1.
-        // These use fixed slots (not allocated from the counter, which already starts past them).
-        Span builtin_span{}; // synthetic zero span for builtins
+        /**
+         * Seed builtins as immutable globals at slots 0..N-1.
+         * These use fixed slots (not allocated from the counter, which already starts past them).
+         */
+        Span builtin_span{}; ///< synthetic zero span for builtins
         {
-            // Temporarily point the counter to a local that tracks builtin slots,
-            // so builtins always get slots 0..N-1 regardless of module order.
+            /**
+             * Temporarily point the counter to a local that tracks builtin slots,
+             * so builtins always get slots 0..N-1 regardless of module order.
+             */
             uint32_t builtin_slot = 0;
             ctx.shared_next_global = &builtin_slot;
             for (const auto& spec : builtins.specs()) {
                 ctx.add_binding(toplevel, spec.name, BindingInfo::Kind::Global, builtin_span, /*mutable_flag=*/false);
             }
-            ctx.shared_next_global = &next_global; // restore shared counter
+            ctx.shared_next_global = &next_global; ///< restore shared counter
         }
 
 
-        // Wire imports to the exporting module's unified slot
+        /// Wire imports to the exporting module's unified slot
         for (const auto& [ln, orign] : mtref->get().import_origins) {
             auto mod_it = export_slots.find(orign.from_module);
             if (mod_it != export_slots.end()) {
                 auto slot_it = mod_it->second.find(orign.remote_name);
                 if (slot_it != mod_it->second.end()) {
-                    // Reuse the exporting module's slot — this is the key to unified globals
                     ctx.add_import_at_slot(toplevel, ln, orign, orign.where, slot_it->second);
                     continue;
                 }
             }
-            // Fallback: allocate a fresh slot (should not happen if modules are in dependency order)
+            /// Fallback: allocate a fresh slot (should not happen if modules are in dependency order)
             ctx.add_import(toplevel, ln, orign, orign.where);
         }
 
@@ -660,13 +674,15 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::read
             mod.exports.emplace(ex, it->second);
         }
 
-        // Record this module's export slots for downstream modules
+        /// Record this module's export slots for downstream modules
         for (const auto& [export_name, binding_id] : mod.exports) {
             export_slots[ns->name][export_name] = mod.bindings[binding_id.id].slot;
         }
 
-        // Detect optional (defun main ...) entry point
-        // Look for a top-level global binding named "main"
+        /**
+         * Detect optional (defun main ...) entry point
+         * Look for a top-level global binding named "main"
+         */
         if (auto it = toplevel.table.find("main"); it != toplevel.table.end()) {
             const auto& bi = mod.bindings[it->second.id];
             if (bi.kind == BindingInfo::Kind::Global) {
@@ -677,7 +693,7 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::read
         out.push_back(std::move(mod));
     }
 
-    // Stamp every module with the unified global count so callers can size globals once
+    /// Stamp every module with the unified global count so callers can size globals once
     for (auto& m : out) {
         m.total_globals = next_global;
     }
@@ -686,4 +702,4 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::read
 }
 
 
-} // namespace eta::semantics
+} ///< namespace eta::semantics

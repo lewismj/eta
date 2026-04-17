@@ -28,16 +28,16 @@ namespace eta::runtime::memory::heap {
         Closure,
         Continuation,
         Primitive,
-        MultipleValues,  // For (values ...) return
+        MultipleValues,  ///< For (values ...) return
         Port,
-        LogicVar,        // Unification logic variable
-        Tape,            // AD tape (Wengert list for reverse-mode AD)
-        Tensor,          // libtorch tensor (wraps torch::Tensor)
-        NNModule,        // libtorch nn::Module (wraps shared_ptr<torch::nn::Module>)
-        Optimizer,       // libtorch optimizer (wraps shared_ptr<torch::optim::Optimizer>)
-        FactTable,       // Columnar fact table with per-column hash indexes
-        NngSocket,       // nng socket (wraps NngSocketPtr from eta/nng/)
-        CompoundTerm,    // Structured logic term: functor symbol + argument list
+        LogicVar,        ///< Unification logic variable
+        Tape,            ///< AD tape (Wengert list for reverse-mode AD)
+        Tensor,          ///< libtorch tensor (wraps torch::Tensor)
+        NNModule,        ///< libtorch nn::Module (wraps shared_ptr<torch::nn::Module>)
+        Optimizer,       ///< libtorch optimizer (wraps shared_ptr<torch::optim::Optimizer>)
+        FactTable,       ///< Columnar fact table with per-column hash indexes
+        NngSocket,       ///< nng socket (wraps NngSocketPtr from eta/nng/)
+        CompoundTerm,    ///< Structured logic term: functor symbol + argument list
     };
 
     ETA_ENUM_TO_STRING_BEGIN(ObjectKind)
@@ -73,7 +73,7 @@ namespace eta::runtime::memory::heap {
         NullPtrReference,
         SoftHeapLimitExceeded,
         UnexpectedObjectKind,
-        GCInProgress,  // Allocation rejected during GC
+        GCInProgress,  ///< Allocation rejected during GC
     };
 
     constexpr const char* to_string(const HeapError e) noexcept {
@@ -98,7 +98,7 @@ namespace eta::runtime::memory::heap {
     }
 
 
-    // In-heap GC mark bit lives in ObjectHeader.flags bit 0
+    /// In-heap GC mark bit lives in ObjectHeader.flags bit 0
     constexpr uint8_t MARK_BIT = 1u << 0;
 
     struct ObjectHeader {
@@ -110,10 +110,9 @@ namespace eta::runtime::memory::heap {
         ObjectHeader header{};
         void* ptr{};
         std::size_t size{};
-        void (*destructor)(void*){}; // type-erased destructor
+        void (*destructor)(void*){}; ///< type-erased destructor
     };
 
-    // Forward-declare — full definition in cons_pool.h
     class ConsPool;
 
     class Heap {
@@ -161,7 +160,7 @@ namespace eta::runtime::memory::heap {
         template<typename T, ObjectKind Kind, typename ... Args>
         std::expected<ObjectId, HeapError> allocate(Args&&... args) {
 
-            // Reject allocations during GC to prevent unmarked objects being swept
+            /// Reject allocations during GC to prevent unmarked objects being swept
             [[unlikely]] if (gc_in_progress_.load(std::memory_order_acquire)) {
                 return std::unexpected(HeapError::GCInProgress);
             }
@@ -175,7 +174,7 @@ namespace eta::runtime::memory::heap {
             const size_t shard_index = select_shard(id);
             auto& [heap_objects, stats] = shards[shard_index];
 
-            // Single atomic load instead of iterating all shards
+            /// Single atomic load instead of iterating all shards
             const auto current_total = total_heap_bytes.load(std::memory_order_relaxed);
             if (current_total + sizeof(T) > max_heap_soft_limit_) {
                 if (gc_callback_) {
@@ -231,32 +230,42 @@ namespace eta::runtime::memory::heap {
 
         std::expected<void, HeapError> deallocate(ObjectId id);
 
-        // Pool-accelerated cons cell allocation.
-        // Performs soft-limit check, then delegates to ConsPool.
+        /**
+         * Pool-accelerated cons cell allocation.
+         * Performs soft-limit check, then delegates to ConsPool.
+         */
         std::expected<ObjectId, HeapError> alloc_cons(LispVal car, LispVal cdr);
 
-        // Total bytes currently allocated across all shards.
-        // Exposes the aggregate atomic, useful for statistics (e.g., GC stats).
+        /**
+         * Total bytes currently allocated across all shards.
+         * Exposes the aggregate atomic, useful for statistics (e.g., GC stats).
+         */
         size_t total_bytes() const { return total_heap_bytes.load(std::memory_order_relaxed); }
 
-        // Soft heap size limit (bytes).
+        /// Soft heap size limit (bytes).
         size_t soft_limit() const { return max_heap_soft_limit_; }
 
-        // Visit all entries in the heap. The callback may ONLY mutate entry.header.flags.
-        // Other fields are considered read-only in the callback context.
+        /**
+         * Visit all entries in the heap. The callback may ONLY mutate entry.header.flags.
+         * Other fields are considered read-only in the callback context.
+         */
         void for_each_entry(const std::function<void(ObjectId, HeapEntry&)>& fn);
 
-        // Snapshot a HeapEntry for a given ObjectId. Returns false if not found.
+        /// Snapshot a HeapEntry for a given ObjectId. Returns false if not found.
         bool try_get(ObjectId id, HeapEntry& out) const;
 
-        // Provide limited, controlled mutable access to a single entry. The callable must
-        // only mutate entry.header.flags. Returns false if the id is not found.
+        /**
+         * Provide limited, controlled mutable access to a single entry. The callable must
+         * only mutate entry.header.flags. Returns false if the id is not found.
+         */
         bool with_entry(ObjectId id, const std::function<void(HeapEntry&)>& fn);
 
-        // Type-safe heap object accessor.
-        // Returns pointer to the object if ID exists and kind matches, nullptr otherwise.
-        // This is the canonical way to access typed heap objects - use instead of
-        // manually checking try_get + kind comparison.
+        /**
+         * Type-safe heap object accessor.
+         * Returns pointer to the object if ID exists and kind matches, nullptr otherwise.
+         * This is the canonical way to access typed heap objects - use instead of
+         * manually checking try_get + kind comparison.
+         */
         template<ObjectKind Kind, typename T>
         T* try_get_as(ObjectId id) {
             HeapEntry entry;
@@ -273,8 +282,10 @@ namespace eta::runtime::memory::heap {
             return static_cast<const T*>(entry.ptr);
         }
 
-        // GC pause mechanism - prevents new allocations during GC sweep
-        // Call pause_for_gc() before sweep, resume_after_gc() after sweep completes
+        /**
+         * GC pause mechanism - prevents new allocations during GC sweep
+         * Call pause_for_gc() before sweep, resume_after_gc() after sweep completes
+         */
         void pause_for_gc() { gc_in_progress_.store(true, std::memory_order_release); }
         void resume_after_gc() { gc_in_progress_.store(false, std::memory_order_release); }
         bool is_gc_paused() const { return gc_in_progress_.load(std::memory_order_acquire); }
@@ -284,11 +295,13 @@ namespace eta::runtime::memory::heap {
         ExternalRootFrame make_external_root_frame() { return ExternalRootFrame(*this); }
         const std::vector<LispVal>& external_roots() const { return external_roots_; }
 
-        // Sweep the cons pool and adjust total_heap_bytes.
-        // Returns the number of freed pool cells.
+        /**
+         * Sweep the cons pool and adjust total_heap_bytes.
+         * Returns the number of freed pool cells.
+         */
         std::size_t sweep_cons_pool();
 
-        // Access the dedicated cons-cell pool (for GC / DAP).
+        /// Access the dedicated cons-cell pool (for GC / DAP).
         ConsPool& cons_pool();
         const ConsPool& cons_pool() const;
 

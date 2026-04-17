@@ -1,16 +1,18 @@
 #pragma once
 
-/// @file stats_extract.h
-/// @brief Polymorphic numeric-sequence extraction for Eta stats primitives.
-///
-/// Provides a single `to_eigen()` helper that converts any of the following
-/// Eta runtime types into an Eigen::VectorXd:
-///   - Cons-list of numbers   (the common case from std.stats)
-///   - Vector of numbers      (Scheme-style #(...) vectors)
-///   - FactTable column       (when given a fact-table + column index pair)
-///
-/// This eliminates the duplicated list_to_doubles / column_to_eigen helpers
-/// that previously existed in core_primitives.h and stats_primitives.h.
+/**
+ * @file stats_extract.h
+ * @brief Polymorphic numeric-sequence extraction for Eta stats primitives.
+ *
+ * Provides a single `to_eigen()` helper that converts any of the following
+ * Eta runtime types into an Eigen::VectorXd:
+ *   - Cons-list of numbers   (the common case from std.stats)
+ *   - Vector of numbers      (Scheme-style #(...) vectors)
+ *   - FactTable column       (when given a fact-table + column index pair)
+ *
+ * This eliminates the duplicated list_to_doubles / column_to_eigen helpers
+ * that previously existed in core_primitives.h and stats_primitives.h.
+ */
 
 #include <expected>
 #include <string>
@@ -30,24 +32,23 @@ using namespace eta::runtime::nanbox;
 using namespace eta::runtime::memory::heap;
 using namespace eta::runtime::error;
 
-/// Extract an Eigen::VectorXd from a LispVal that is one of:
-///   (a) a Cons-list of numbers,
-///   (b) a Vector of numbers, or
-///   (c) a FactTable (caller must supply the column index separately).
-///
-/// Returns a type-error with `who` context on failure.
+/**
+ * Extract an Eigen::VectorXd from a LispVal that is one of:
+ *   (a) a Cons-list of numbers,
+ *   (b) a Vector of numbers, or
+ *   (c) a FactTable (caller must supply the column index separately).
+ *
+ * Returns a type-error with `who` context on failure.
+ */
 inline std::expected<Eigen::VectorXd, RuntimeError>
 to_eigen(Heap& heap, LispVal val, const char* who) {
-    // ── (a) Try Cons-list ────────────────────────────────────────────
     if (val == Nil) {
-        // Empty list → 0-length vector
         return Eigen::VectorXd{};
     }
 
     if (ops::is_boxed(val) && ops::tag(val) == Tag::HeapObject) {
         auto id = ops::payload(val);
 
-        // ── (b) Try Vector ───────────────────────────────────────────
         if (auto* vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
             Eigen::VectorXd result(static_cast<Eigen::Index>(vec->elements.size()));
             for (std::size_t i = 0; i < vec->elements.size(); ++i) {
@@ -61,7 +62,6 @@ to_eigen(Heap& heap, LispVal val, const char* who) {
             return result;
         }
 
-        // ── (a) Cons-list walk ───────────────────────────────────────
         if (auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
             std::vector<double> buf;
             auto* cur_cons = cons;
@@ -108,5 +108,5 @@ column_to_eigen(types::FactTable& ft, std::size_t col, Heap& heap, const char* w
     return v;
 }
 
-} // namespace eta::runtime::stats
+} ///< namespace eta::runtime::stats
 

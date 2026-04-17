@@ -14,11 +14,11 @@ namespace eta::runtime::vm {
 
 using namespace nanbox;
 
-// ============================================================================
-// Little-endian conversion helpers
-// ============================================================================
-// All multi-byte values are stored in little-endian order on disk.
-// On little-endian hosts these are no-ops; on big-endian hosts they swap bytes.
+/**
+ * Little-endian conversion helpers
+ * All multi-byte values are stored in little-endian order on disk.
+ * On little-endian hosts these are no-ops; on big-endian hosts they swap bytes.
+ */
 
 namespace {
 
@@ -41,11 +41,11 @@ inline int64_t host_to_le_i64(int64_t v) noexcept {
     return static_cast<int64_t>(std::byteswap(static_cast<uint64_t>(v)));
 }
 
-} // anonymous namespace
+} ///< anonymous namespace
 
-// ============================================================================
-// Binary I/O helpers (little-endian)
-// ============================================================================
+/**
+ * Binary I/O helpers (little-endian)
+ */
 
 void BytecodeSerializer::write_u8 (std::ostream& os, uint8_t  v) { os.write(reinterpret_cast<const char*>(&v), 1); }
 void BytecodeSerializer::write_u16(std::ostream& os, uint16_t v) { v = host_to_le(v); os.write(reinterpret_cast<const char*>(&v), 2); }
@@ -69,54 +69,55 @@ bool BytecodeSerializer::read_f64(std::istream& is, double&   v) { is.read(reint
 bool BytecodeSerializer::read_str(std::istream& is, std::string& s) {
     uint32_t len;
     if (!read_u32(is, len)) return false;
-    // Reject strings that would cause unbounded allocation (DoS guard).
+    /// Reject strings that would cause unbounded allocation (DoS guard).
     if (len > MAX_STRING_LEN) return false;
     s.resize(len);
     is.read(s.data(), len);
     return is.good();
 }
 
-// ============================================================================
-// Source hash (boost::hash)
-// ============================================================================
+/**
+ * Source hash (boost::hash)
+ */
 
 uint64_t BytecodeSerializer::hash_source(std::string_view source) {
     boost::hash<std::string_view> hasher;
     return static_cast<uint64_t>(hasher(source));
 }
 
-// ============================================================================
-// Constant serialization
-// ============================================================================
+/**
+ * Constant serialization
+ */
 
 void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
-    // Check special sentinels first
+    /// Check special sentinels first
     if (v == Nil) { write_u8(os, CT_Nil); return; }
     if (v == True) { write_u8(os, CT_True); return; }
     if (v == False) { write_u8(os, CT_False); return; }
 
-    // Boxed values: dispatch on tag below
+    /// Boxed values: dispatch on tag below
     if (ops::is_boxed(v)) {
-        // fall through to the switch below
+        /// fall through to the switch below
     }
-    // Unboxed: either a func_index sentinel or a raw double.
-    // IMPORTANT: is_func_index must be checked carefully because bit 63
-    // (FUNC_INDEX_TAG) is also the IEEE-754 sign bit of negative doubles.
-    // is_func_index additionally verifies bits 62-32 are zero, which is
-    // true for func_index values (uint32 payload) but not for neg doubles.
+    /**
+     * Unboxed: either a func_index sentinel or a raw double.
+     * IMPORTANT: is_func_index must be checked carefully because bit 63
+     * (FUNC_INDEX_TAG) is also the IEEE-754 sign bit of negative doubles.
+     * is_func_index additionally verifies bits 62-32 are zero, which is
+     * true for func_index values (uint32 payload) but not for neg doubles.
+     */
     else if (is_func_index(v)) {
         write_u8(os, CT_FuncIndex);
         write_u32(os, decode_func_index(v));
         return;
     }
     else {
-        // Raw double (including negative doubles)
+        /// Raw double (including negative doubles)
         write_u8(os, CT_Double);
         write_f64(os, std::bit_cast<double>(v));
         return;
     }
 
-    // Boxed values — dispatch on tag
     auto tag = ops::tag(v);
     switch (tag) {
         case Tag::Fixnum: {
@@ -153,14 +154,18 @@ void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
             return;
         }
         case Tag::Nil:
-            // Nil is handled above (sentinel check), but must be listed
-            // explicitly to satisfy -Wswitch-enum.
+            /**
+             * Nil is handled above (sentinel check), but must be listed
+             * explicitly to satisfy -Wswitch-enum.
+             */
             write_u8(os, CT_Nil);
             return;
         case Tag::TapeRef:
-            // TapeRef values are runtime-only and should never appear in compiled
-            // bytecode.  Emit CT_Nil as a safe placeholder so the constant-count
-            // alignment in the file is preserved if one somehow slips through.
+            /**
+             * TapeRef values are runtime-only and should never appear in compiled
+             * bytecode.  Emit CT_Nil as a safe placeholder so the constant-count
+             * alignment in the file is preserved if one somehow slips through.
+             */
             write_u8(os, CT_Nil);
             return;
     }
@@ -170,7 +175,6 @@ void BytecodeSerializer::write_heap_value(std::ostream& os, LispVal v) const {
     using namespace memory::heap;
     auto id = ops::payload(v);
 
-    // Cons cell → recursive
     if (auto* cons = heap_.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
         write_u8(os, CT_HeapCons);
         write_constant(os, cons->car);
@@ -178,7 +182,6 @@ void BytecodeSerializer::write_heap_value(std::ostream& os, LispVal v) const {
         return;
     }
 
-    // Vector → length + recursive elements
     if (auto* vec = heap_.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
         write_u8(os, CT_HeapVec);
         write_u32(os, static_cast<uint32_t>(vec->elements.size()));
@@ -188,7 +191,7 @@ void BytecodeSerializer::write_heap_value(std::ostream& os, LispVal v) const {
         return;
     }
 
-    // Fallback for other heap objects: raw bits
+    /// Fallback for other heap objects: raw bits
     write_u8(os, CT_RawBits);
     write_u64(os, v);
 }
@@ -258,7 +261,7 @@ BytecodeSerializer::read_constant(std::istream& is) const {
         case CT_HeapVec: {
             uint32_t len;
             if (!read_u32(is, len)) return std::unexpected(SerializerError::Truncated);
-            // Guard against unbounded vector allocation from crafted files.
+            /// Guard against unbounded vector allocation from crafted files.
             if (len > MAX_VEC_LEN) return std::unexpected(SerializerError::CorruptConstant);
             std::vector<LispVal> elems;
             elems.reserve(len);
@@ -284,9 +287,9 @@ BytecodeSerializer::read_constant(std::istream& is) const {
     }
 }
 
-// ============================================================================
-// Serialize
-// ============================================================================
+/**
+ * Serialize
+ */
 
 bool BytecodeSerializer::serialize(
         const std::vector<ModuleEntry>& modules,
@@ -297,7 +300,7 @@ bool BytecodeSerializer::serialize(
         const std::vector<std::string>& imports,
         uint32_t num_builtins) const
 {
-    // Header
+    /// Header
     os.write(MAGIC, 4);
     write_u16(os, FORMAT_VERSION);
 
@@ -311,13 +314,13 @@ bool BytecodeSerializer::serialize(
     write_u32(os, static_cast<uint32_t>(modules.size()));
     write_u32(os, static_cast<uint32_t>(registry.size()));
 
-    // Imports table
+    /// Imports table
     write_u32(os, static_cast<uint32_t>(imports.size()));
     for (const auto& imp : imports) {
         write_str(os, imp);
     }
 
-    // Module table
+    /// Module table
     for (const auto& mod : modules) {
         write_str(os, mod.name);
         write_u32(os, mod.init_func_index);
@@ -327,7 +330,7 @@ bool BytecodeSerializer::serialize(
         write_u32(os, mod.main_func_slot.value_or(0xFFFFFFFFu));
     }
 
-    // Function table
+    /// Function table
     const auto& funcs = registry.all();
     for (const auto& func : funcs) {
         write_str(os, func.name);
@@ -335,20 +338,20 @@ bool BytecodeSerializer::serialize(
         write_u8(os, func.has_rest ? 1 : 0);
         write_u32(os, func.stack_size);
 
-        // Constants
+        /// Constants
         write_u32(os, static_cast<uint32_t>(func.constants.size()));
         for (auto c : func.constants) {
             write_constant(os, c);
         }
 
-        // Instructions
+        /// Instructions
         write_u32(os, static_cast<uint32_t>(func.code.size()));
         for (const auto& instr : func.code) {
             write_u8(os, static_cast<uint8_t>(instr.opcode));
             write_u32(os, instr.arg);
         }
 
-        // Source map (optional)
+        /// Source map (optional)
         if (include_debug) {
             for (std::size_t i = 0; i < func.code.size(); ++i) {
                 auto span = func.span_at(static_cast<uint32_t>(i));
@@ -360,11 +363,11 @@ bool BytecodeSerializer::serialize(
             }
         }
 
-        // Local names
+        /// Local names
         write_u32(os, static_cast<uint32_t>(func.local_names.size()));
         for (const auto& n : func.local_names) write_str(os, n);
 
-        // Upval names
+        /// Upval names
         write_u32(os, static_cast<uint32_t>(func.upval_names.size()));
         for (const auto& n : func.upval_names) write_str(os, n);
     }
@@ -372,16 +375,16 @@ bool BytecodeSerializer::serialize(
     return os.good();
 }
 
-// ============================================================================
-// Deserialize
-// ============================================================================
+/**
+ * Deserialize
+ */
 
 std::expected<EtacFile, SerializerError>
 BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) const
 {
     EtacFile result;
 
-    // Header
+    /// Header
     char magic[4];
     is.read(magic, 4);
     if (!is.good() || std::memcmp(magic, MAGIC, 4) != 0)
@@ -406,7 +409,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     if (!read_u32(is, num_modules)) return std::unexpected(SerializerError::Truncated);
     if (!read_u32(is, num_functions)) return std::unexpected(SerializerError::Truncated);
 
-    // Imports table
+    /// Imports table
     uint32_t num_imports;
     if (!read_u32(is, num_imports)) return std::unexpected(SerializerError::Truncated);
     result.imports.resize(num_imports);
@@ -414,7 +417,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         if (!read_str(is, result.imports[i])) return std::unexpected(SerializerError::Truncated);
     }
 
-    // Module table
+    /// Module table
     result.modules.resize(num_modules);
     for (uint32_t m = 0; m < num_modules; ++m) {
         auto& mod = result.modules[m];
@@ -428,7 +431,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         if (has_main) mod.main_func_slot = main_slot;
     }
 
-    // Function table
+    /// Function table
     for (uint32_t f = 0; f < num_functions; ++f) {
         BytecodeFunction func;
 
@@ -439,7 +442,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         func.has_rest = (has_rest != 0);
         if (!read_u32(is, func.stack_size)) return std::unexpected(SerializerError::Truncated);
 
-        // Constants
+        /// Constants
         uint32_t num_consts;
         if (!read_u32(is, num_consts)) return std::unexpected(SerializerError::Truncated);
         func.constants.reserve(num_consts);
@@ -449,7 +452,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
             func.constants.push_back(*c);
         }
 
-        // Instructions
+        /// Instructions
         uint32_t num_instrs;
         if (!read_u32(is, num_instrs)) return std::unexpected(SerializerError::Truncated);
         func.code.reserve(num_instrs);
@@ -461,7 +464,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
             func.code.push_back({static_cast<OpCode>(op), arg});
         }
 
-        // Source map
+        /// Source map
         if (has_debug) {
             func.source_map.reserve(num_instrs);
             for (uint32_t i = 0; i < num_instrs; ++i) {
@@ -475,7 +478,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
             }
         }
 
-        // Local names
+        /// Local names
         uint32_t num_locals;
         if (!read_u32(is, num_locals)) return std::unexpected(SerializerError::Truncated);
         func.local_names.resize(num_locals);
@@ -483,7 +486,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
             if (!read_str(is, func.local_names[i])) return std::unexpected(SerializerError::Truncated);
         }
 
-        // Upval names
+        /// Upval names
         uint32_t num_upvals;
         if (!read_u32(is, num_upvals)) return std::unexpected(SerializerError::Truncated);
         func.upval_names.resize(num_upvals);
@@ -494,7 +497,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         result.registry.add(std::move(func));
     }
 
-    // Lightweight structural verification of every deserialized function.
+    /// Lightweight structural verification of every deserialized function.
     for (uint32_t f = 0; f < result.registry.size(); ++f) {
         const auto* fn = result.registry.get(f);
         if (!fn) continue;
@@ -505,19 +508,21 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     return result;
 }
 
-} // namespace eta::runtime::vm
+} ///< namespace eta::runtime::vm
 
-// ============================================================================
-// Bytecode verifier (lightweight structural check)
-// ============================================================================
+/**
+ * Bytecode verifier (lightweight structural check)
+ */
 
 namespace eta::runtime::vm {
 
 std::expected<void, SerializerError>
 BytecodeSerializer::verify_function(const BytecodeFunction& func) {
-    // Largest opcode value we recognise as legitimate (_Reserved2 is the last
-    // entry in the enum and must remain serialisable even though the VM
-    // converts it to a NotImplemented error at runtime).
+    /**
+     * Largest opcode value we recognise as legitimate (_Reserved2 is the last
+     * entry in the enum and must remain serialisable even though the VM
+     * converts it to a NotImplemented error at runtime).
+     */
     constexpr auto last_valid = static_cast<uint8_t>(OpCode::_Reserved2);
 
     const auto nconsts    = static_cast<uint32_t>(func.constants.size());
@@ -526,32 +531,32 @@ BytecodeSerializer::verify_function(const BytecodeFunction& func) {
     for (const auto& instr : func.code) {
         const uint8_t op = static_cast<uint8_t>(instr.opcode);
 
-        // Reject completely unknown opcode bytes.
+        /// Reject completely unknown opcode bytes.
         if (op > last_valid)
             return std::unexpected(SerializerError::InvalidBytecode);
 
-        // Constant-index instructions: arg is an index into constants[].
+        /// Constant-index instructions: arg is an index into constants[].
         if (instr.opcode == OpCode::LoadConst) {
             if (nconsts == 0 || instr.arg >= nconsts)
                 return std::unexpected(SerializerError::InvalidBytecode);
         }
-        // Local-slot instructions: arg is a slot index in [0, stack_size).
+        /// Local-slot instructions: arg is a slot index in [0, stack_size).
         else if (instr.opcode == OpCode::LoadLocal ||
                  instr.opcode == OpCode::StoreLocal) {
             if (stack_size > 0 && instr.arg >= stack_size)
                 return std::unexpected(SerializerError::InvalidBytecode);
         }
-        // MakeClosure packs (const_idx << 16 | num_upvals) into arg.
+        /// MakeClosure packs (const_idx << 16 | num_upvals) into arg.
         else if (instr.opcode == OpCode::MakeClosure) {
             const uint32_t const_idx = instr.arg >> 16;
             if (nconsts == 0 || const_idx >= nconsts)
                 return std::unexpected(SerializerError::InvalidBytecode);
         }
-        // All other opcodes: no index-based args requiring static validation.
+        /// All other opcodes: no index-based args requiring static validation.
     }
 
     return {};
 }
 
-} // namespace eta::runtime::vm
+} ///< namespace eta::runtime::vm
 

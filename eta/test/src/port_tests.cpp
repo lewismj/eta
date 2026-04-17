@@ -269,7 +269,7 @@ BOOST_AUTO_TEST_CASE(port_heap_allocation) {
 
 
 BOOST_AUTO_TEST_CASE(string_port_utf8_read) {
-    std::string utf8_content = "Hello é€𝄞";
+    std::string utf8_content = "Hello \xC3\xA9\xE2\x82\xAC\xF0\x9D\x84\x9E";
     auto port = std::make_shared<StringPort>(StringPort::Mode::Input, utf8_content);
 
     // Read ASCII character
@@ -282,11 +282,7 @@ BOOST_AUTO_TEST_CASE(string_port_utf8_read) {
 
     auto ch_utf = port->read_char();
     BOOST_CHECK(ch_utf.has_value());
-#ifdef _WIN32
     BOOST_CHECK_EQUAL(static_cast<uint32_t>(*ch_utf), static_cast<uint32_t>(0xE9));
-#else
-    BOOST_CHECK_EQUAL(static_cast<uint32_t>(*ch_utf), static_cast<uint32_t>(U'é'));
-#endif
 }
 
 // ============================================================================

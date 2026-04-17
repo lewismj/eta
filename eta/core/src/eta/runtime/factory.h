@@ -14,8 +14,10 @@ namespace eta::runtime::memory::factory {
     using namespace eta::runtime::error;
 
 
-    // Unified helper for heap allocation + boxing.
-    // Reduces repetitive pattern: allocate<T, Kind>(...) -> box(HeapObject, id)
+    /**
+     * Unified helper for heap allocation + boxing.
+     * Reduces repetitive pattern: allocate<T, Kind>(...) -> box(HeapObject, id)
+     */
     template<typename T, ObjectKind Kind, typename... Args>
     inline_always
     std::expected<LispVal, RuntimeError> make_heap_object(Heap& heap, Args&&... args) {
@@ -92,7 +94,6 @@ namespace eta::runtime::memory::factory {
         if (id.has_value()) {
             return ops::box(Tag::HeapObject, *id);
         }
-        // Pool slab allocation failed — fall back to general heap
         return make_heap_object<types::Cons, ObjectKind::Cons>(
             heap, types::Cons{.car = car, .cdr = cdr});
     }

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "eta/semantics/core_ir.h"
 #include <variant>
@@ -12,7 +12,6 @@ namespace eta::semantics {
  * traversal logic for every Core IR node type.
  *
  * Template parameters:
- *   Derived – CRTP derived class
  *
  * The `context` bool propagated through visit() is typically the
  * "tail position" flag but can carry any per-node boolean state.
@@ -76,12 +75,11 @@ struct IRVisitor {
             } else if constexpr (std::is_same_v<T, core::UnwindTrail>) {
                 val.mark = derived->visit(val.mark, false);
             }
-            // Const, Var, Quote, MakeLogicVar, TrailMark — leaf nodes
         }, node->data);
 
         return derived->post_visit(node, context);
     }
 };
 
-} // namespace eta::semantics
+} ///< namespace eta::semantics
 

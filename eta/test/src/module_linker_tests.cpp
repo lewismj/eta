@@ -7,9 +7,11 @@
 
 using namespace eta;
 
-/// Safely extract the error message from a LinkResult<void>.
-/// Returns "" if the result holds a value, avoiding UB from accessing
-/// the inactive union member of std::expected.
+/**
+ * Safely extract the error message from a LinkResult<void>.
+ * Returns "" if the result holds a value, avoiding UB from accessing
+ * the inactive union member of std::expected.
+ */
 static std::string link_error_msg(const reader::LinkResult<void>& r) {
     return r.has_value() ? std::string{} : r.error().message;
 }
@@ -146,10 +148,10 @@ BOOST_AUTO_TEST_CASE(linker_multi_clause_imports) {
     BOOST_CHECK(!M2.visible.contains("b"));
 }
 
-// Prefix import tests
+/// Prefix import tests
 
 BOOST_AUTO_TEST_CASE(linker_prefix_import_basic) {
-    // (prefix m1 m1:) should import all exports with "m1:" prefix
+    /// (prefix m1 m1:) should import all exports with "m1:" prefix
     auto forms = parse_and_expand(
         "(module m1 (define a 1) (define b 2) (export a b))\n"
         "(module m2 (import (prefix m1 m1:)) (define y m1:a))");
@@ -163,13 +165,13 @@ BOOST_AUTO_TEST_CASE(linker_prefix_import_basic) {
     BOOST_CHECK(M2.visible.contains("m1:a"));
     BOOST_CHECK(M2.visible.contains("m1:b"));
     BOOST_CHECK(M2.visible.contains("y"));
-    // Original unprefixed names should NOT be visible
+    /// Original unprefixed names should NOT be visible
     BOOST_CHECK(!M2.visible.contains("a"));
     BOOST_CHECK(!M2.visible.contains("b"));
 }
 
 BOOST_AUTO_TEST_CASE(linker_prefix_import_provenance) {
-    // Verify import_origins correctly maps prefixed names back to remote names
+    /// Verify import_origins correctly maps prefixed names back to remote names
     auto forms = parse_and_expand(
         "(module m1 (define foo 42) (export foo))\n"
         "(module m2 (import (prefix m1 m1.)))");
@@ -187,7 +189,7 @@ BOOST_AUTO_TEST_CASE(linker_prefix_import_provenance) {
 }
 
 BOOST_AUTO_TEST_CASE(linker_prefix_no_conflict_with_local) {
-    // Prefix avoids name conflict that would otherwise occur
+    /// Prefix avoids name conflict that would otherwise occur
     auto forms = parse_and_expand(
         "(module m1 (define a 1) (export a))\n"
         "(module m2 (define a 2) (import (prefix m1 m1:)))");
@@ -198,12 +200,12 @@ BOOST_AUTO_TEST_CASE(linker_prefix_no_conflict_with_local) {
     BOOST_REQUIRE_MESSAGE(lk.has_value(), link_error_msg(lk));
     auto m2 = L.get("m2"); BOOST_REQUIRE(m2.has_value());
     const auto& M2 = m2->get();
-    BOOST_CHECK(M2.visible.contains("a"));     // local
-    BOOST_CHECK(M2.visible.contains("m1:a"));  // prefixed import
+    BOOST_CHECK(M2.visible.contains("a"));     ///< local
+    BOOST_CHECK(M2.visible.contains("m1:a"));  ///< prefixed import
 }
 
 BOOST_AUTO_TEST_CASE(linker_prefix_conflict_with_local) {
-    // If the prefixed name still collides with a local define, error
+    /// If the prefixed name still collides with a local define, error
     auto forms = parse_and_expand(
         "(module m1 (define a 1) (export a))\n"
         "(module m2 (define m1:a 2) (import (prefix m1 m1:)))");
@@ -216,7 +218,7 @@ BOOST_AUTO_TEST_CASE(linker_prefix_conflict_with_local) {
 }
 
 BOOST_AUTO_TEST_CASE(linker_prefix_multi_module) {
-    // Two modules imported with different prefixes
+    /// Two modules imported with different prefixes
     auto forms = parse_and_expand(
         "(module m1 (define x 1) (export x))\n"
         "(module m2 (define x 2) (export x))\n"
@@ -234,7 +236,7 @@ BOOST_AUTO_TEST_CASE(linker_prefix_multi_module) {
 }
 
 BOOST_AUTO_TEST_CASE(linker_prefix_reexport) {
-    // A prefix-imported name can be re-exported
+    /// A prefix-imported name can be re-exported
     auto forms = parse_and_expand(
         "(module m1 (define a 1) (export a))\n"
         "(module m2 (import (prefix m1 m1:)) (export m1:a))");
@@ -250,7 +252,6 @@ BOOST_AUTO_TEST_CASE(linker_prefix_reexport) {
 }
 
 BOOST_AUTO_TEST_CASE(linker_prefix_bad_syntax) {
-    // (prefix) with wrong number of args — error during indexing
     auto forms = parse_and_expand(
         "(module m1 (define a 1) (export a))\n"
         "(module m2 (import (prefix m1)))");

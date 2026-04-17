@@ -9,14 +9,17 @@
 
 namespace eta::runtime::vm {
 
-// Tag used to distinguish function indices from raw pointers in constants.
-// When encoding a function index in MakeClosure, set this bit to mark it as an index.
+/**
+ * Tag used to distinguish function indices from raw pointers in constants.
+ * When encoding a function index in MakeClosure, set this bit to mark it as an index.
+ */
 constexpr uint64_t FUNC_INDEX_TAG = 1ULL << 63;
 
-// Mask for bits 62-32 — these are always zero in a valid func_index
-// (encode_func_index stores only a uint32_t in the lower 32 bits).
-// Negative IEEE-754 doubles also have bit 63 set but their exponent
-// field (bits 62-52) is non-zero, so this mask distinguishes them.
+/**
+ * (encode_func_index stores only a uint32_t in the lower 32 bits).
+ * Negative IEEE-754 doubles also have bit 63 set but their exponent
+ * field (bits 62-52) is non-zero, so this mask distinguishes them.
+ */
 constexpr uint64_t FUNC_INDEX_UPPER_ZERO_MASK = 0x7FFFFFFF00000000ULL;
 
 inline nanbox::LispVal encode_func_index(uint32_t index) {
@@ -32,31 +35,31 @@ inline uint32_t decode_func_index(nanbox::LispVal v) {
 }
 
 enum class OpCode : std::uint8_t {
-    // Basic operations
+    /// Basic operations
     Nop,
-    LoadConst,   // [const_idx] -> push(consts[const_idx])
-    LoadLocal,   // [slot] -> push(stack[fp + slot])
-    StoreLocal,  // [slot] -> stack[fp + slot] = pop()
-    LoadUpval,   // [index] -> push(closure->upvals[index])
-    StoreUpval,  // [index] -> closure->upvals[index] = pop()
-    LoadGlobal,  // [global_idx] -> push(globals[global_idx])
-    StoreGlobal, // [global_idx] -> globals[global_idx] = pop()
+    LoadConst,   ///< [const_idx] -> push(consts[const_idx])
+    LoadLocal,   ///< [slot] -> push(stack[fp + slot])
+    StoreLocal,  ///< [slot] -> stack[fp + slot] = pop()
+    LoadUpval,   ///< [index] -> push(closure->upvals[index])
+    StoreUpval,  ///< [index] -> closure->upvals[index] = pop()
+    LoadGlobal,  ///< [global_idx] -> push(globals[global_idx])
+    StoreGlobal, ///< [global_idx] -> globals[global_idx] = pop()
 
-    // Stack management
+    /// Stack management
     Pop,
     Dup,
 
-    // Control flow
-    Jump,        // [offset] -> pc += offset
-    JumpIfFalse, // [offset] -> if (pop() == #f) pc += offset
-    Call,        // [argc] -> call(pop(), argc)
-    TailCall,    // [argc] -> tail_call(pop(), argc)
-    Return,      // return pop()
+    /// Control flow
+    Jump,        ///< [offset] -> pc += offset
+    JumpIfFalse, ///< [offset] -> if (pop() == #f) pc += offset
+    Call,        ///< [argc] -> call(pop(), argc)
+    TailCall,    ///< [argc] -> tail_call(pop(), argc)
+    Return,      ///< return pop()
 
-    // Closures
-    MakeClosure, // [const_idx, num_upvals] -> push(make_closure(consts[const_idx], pop_n(num_upvals)))
+    /// Closures
+    MakeClosure, ///< [const_idx, num_upvals] -> push(make_closure(consts[const_idx], pop_n(num_upvals)))
 
-    // Primitives (Specialized instructions for speed)
+    /// Primitives (Specialized instructions for speed)
     Cons,
     Car,
     Cdr,
@@ -66,40 +69,41 @@ enum class OpCode : std::uint8_t {
     Div,
     Eq,
     
-    // Values
-    Values,      // [n] -> return n values from stack
+    /// Values
+    Values,      ///< [n] -> return n values from stack
     CallWithValues,
 
-    // Control flow specialized
+    /// Control flow specialized
     DynamicWind,
     CallCC,
 
-    // Closure fixup (for letrec self-reference)
-    PatchClosureUpval,  // [upval_idx] -> pops value, pops closure, patches closure->upvals[upval_idx] = value
+    /// Closure fixup (for letrec self-reference)
+    PatchClosureUpval,  ///< [upval_idx] -> pops value, pops closure, patches closure->upvals[upval_idx] = value
 
-    // Apply: unpack last arg (list) and call procedure
-    Apply,      // [argc] -> apply(pop(), argc) — last arg is unpacked list
-    TailApply,  // [argc] -> tail_apply(pop(), argc) — tail-position apply
+    /// Apply: unpack last arg (list) and call procedure
+    Apply,
+    TailApply,
 
-    // Exception handling
-    // SetupCatch: arg = (tag_const_idx << 16) | pc_offset_to_handler
-    //   Pushes a CatchFrame; handler_pc = pc_after_this_instr + (arg & 0xFFFF)
-    //   constants[arg >> 16] is the tag symbol (Nil = catch-all)
-    SetupCatch,  // [tag_const_idx:16 | offset:16]
-    PopCatch,    // [] -> pop top catch frame (normal exit from protected body)
-    Throw,       // [] -> pop value, pop tag; find matching catch frame or RuntimeError
+    /**
+     * Exception handling
+     * SetupCatch: arg = (tag_const_idx << 16) | pc_offset_to_handler
+     *   Pushes a CatchFrame; handler_pc = pc_after_this_instr + (arg & 0xFFFF)
+     *   constants[arg >> 16] is the tag symbol (Nil = catch-all)
+     */
+    SetupCatch,  ///< [tag_const_idx:16 | offset:16]
+    PopCatch,    ///< [] -> pop top catch frame (normal exit from protected body)
+    Throw,       ///< [] -> pop value, pop tag; find matching catch frame or RuntimeError
 
-    // Unification / logic variables
-    MakeLogicVar,   // [] -> push fresh unbound LogicVar
-    Unify,          // [a b ->] pop b, pop a; unify(a,b); push #t or #f
-    DerefLogicVar,  // [lvar ->] pop lvar; push fully dereferenced value
-    TrailMark,      // [] -> push current trail size as fixnum (backtrack point)
-    UnwindTrail,    // [mark ->] pop mark fixnum; undo all bindings since mark
+    /// Unification / logic variables
+    MakeLogicVar,   ///< [] -> push fresh unbound LogicVar
+    Unify,          ///< [a b ->] pop b, pop a; unify(a,b); push #t or #f
+    DerefLogicVar,  ///< [lvar ->] pop lvar; push fully dereferenced value
+    TrailMark,      ///< [] -> push current trail size as fixnum (backtrack point)
+    UnwindTrail,    ///< [mark ->] pop mark fixnum; undo all bindings since mark
 
-    // Reserved slots — keep enum values stable for serialised bytecode
-    CopyTerm,       // [term ->] pop term; push deep copy with fresh logic vars
-    _Reserved1,     // was DualVal  (removed)
-    _Reserved2,     // was DualBp   (removed)
+    CopyTerm,       ///< [term ->] pop term; push deep copy with fresh logic vars
+    _Reserved1,     ///< was DualVal  (removed)
+    _Reserved2,     ///< was DualBp   (removed)
 };
 
 /// Human-readable mnemonic for an OpCode (e.g. "LoadConst").
@@ -163,25 +167,29 @@ struct Instruction {
 
 struct BytecodeFunction {
     std::vector<Instruction>          code;
-    std::vector<reader::lexer::Span>  source_map;  // parallel to code; same length
+    std::vector<reader::lexer::Span>  source_map;  ///< parallel to code; same length
     std::vector<nanbox::LispVal>      constants;
     std::uint32_t arity{0};
     bool has_rest{false};
     std::uint32_t stack_size{0};
     std::string name;
 
-    /// Slot-indexed parameter/local names (populated by Emitter).
-    /// local_names[slot] is the Scheme identifier for that stack slot.
-    /// Slots without a name are empty strings (fall back to "%N" in debugger).
+    /**
+     * Slot-indexed parameter/local names (populated by Emitter).
+     * local_names[slot] is the Scheme identifier for that stack slot.
+     * Slots without a name are empty strings (fall back to "%N" in debugger).
+     */
     std::vector<std::string> local_names;
 
     /// Upvalue names parallel to closure->upvals (populated by Emitter).
     std::vector<std::string> upval_names;
 
-    /// Adjust every function-index constant by @p offset.
-    /// Used to rebase indices to file-relative (0-based) before serialization
-    /// (offset = -base_func_idx) and to relocate them to the runner's registry
-    /// after deserialization (offset = +runner_base_idx).
+    /**
+     * Adjust every function-index constant by @p offset.
+     * Used to rebase indices to file-relative (0-based) before serialization
+     * (offset = -base_func_idx) and to relocate them to the runner's registry
+     * after deserialization (offset = +runner_base_idx).
+     */
     void rebase_func_indices(int32_t offset) {
         for (auto& c : constants) {
             if (is_func_index(c)) {
@@ -191,13 +199,15 @@ struct BytecodeFunction {
         }
     }
 
-    /// Return the source span for the instruction at index @p pc.
-    /// Returns a zeroed Span if @p pc is out of range or the source_map
-    /// was not populated (synthetic instructions have file_id == 0).
+    /**
+     * Return the source span for the instruction at index @p pc.
+     * Returns a zeroed Span if @p pc is out of range or the source_map
+     * was not populated (synthetic instructions have file_id == 0).
+     */
     [[nodiscard]] reader::lexer::Span span_at(std::uint32_t pc) const noexcept {
         if (pc < source_map.size()) return source_map[pc];
         return {};
     }
 };
 
-} // namespace eta::runtime::vm
+} ///< namespace eta::runtime::vm

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #ifdef _MSC_VER
     #define cache_align __declspec(align(64))
@@ -43,9 +43,9 @@
 #endif
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    #include <emmintrin.h>  // SSE2
-    #include <xmmintrin.h>  // SSE
+    #include <emmintrin.h>  ///< SSE2
+    #include <xmmintrin.h>  ///< SSE
     #if defined(__SSE4_2__)
-        #include <nmmintrin.h>  // SSE4.2
+        #include <nmmintrin.h>  ///< SSE4.2
     #endif
 #endif

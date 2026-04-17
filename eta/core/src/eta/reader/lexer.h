@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cassert>
 #include <cctype>
@@ -41,13 +41,13 @@ namespace eta::reader::lexer {
 
     struct NumericToken {
         enum class Kind : std::uint8_t {
-            Fixnum,   // Integer in any radix
-            Flonum,   // Floating-point decimal
+            Fixnum,   ///< Integer in any radix
+            Flonum,   ///< Floating-point decimal
         };
 
         Kind kind;
-        std::string text;        // Original text representation
-        std::uint8_t radix{10};  // 2, 8, 10, or 16 (only for Fixnum)
+        std::string text;        ///< Original text representation
+        std::uint8_t radix{10};  ///< 2, 8, 10, or 16 (only for Fixnum)
 
         explicit NumericToken(Kind k) : kind(k) {}
         NumericToken(Kind k, std::string txt, std::uint8_t rad = 10)
@@ -83,8 +83,8 @@ namespace eta::reader::lexer {
             Symbol,
             Number,
             Dot,
-            VectorStart,    // #(
-            ByteVectorStart, // #u8(
+            VectorStart,    ///< #(
+            ByteVectorStart, ///< #u8(
             EOF_,
         };
 
@@ -224,7 +224,7 @@ namespace eta::reader::lexer {
 
         [[nodiscard]] static bool is_eof_char(char c) noexcept;
 
-        // Hard delimiters that always end a token
+        /// Hard delimiters that always end a token
         [[nodiscard]] static bool is_hard_delimiter(char c) noexcept;
 
         [[nodiscard]] static bool is_token_boundary(char c) noexcept;
@@ -239,7 +239,7 @@ namespace eta::reader::lexer {
 
         void consume_directive_or_shebang();
 
-        // Decode a single UTF-8 sequence from input without advancing on failure
+        /// Decode a single UTF-8 sequence from input without advancing on failure
         std::expected<char32_t, LexError> decode_utf8(Position start);
 
         std::expected<std::string, LexError> consume_string();

@@ -31,7 +31,7 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(torch_tests)
 
-// TensorPtr heap lifecycle
+/// TensorPtr heap lifecycle
 
 BOOST_AUTO_TEST_CASE(tensor_allocate_and_retrieve) {
     Heap heap(1ull << 22);
@@ -51,7 +51,7 @@ BOOST_AUTO_TEST_CASE(tensor_gc_collects_unreferenced) {
     Heap heap(1ull << 22);
     MarkSweepGC gc;
 
-    // Allocate tensors but don't root them
+    /// Allocate tensors but don't root them
     for (int i = 0; i < 5; ++i) {
         expect_ok(tf::make_tensor(heap, torch::randn({10})));
     }
@@ -67,15 +67,15 @@ BOOST_AUTO_TEST_CASE(tensor_gc_retains_rooted) {
     MarkSweepGC gc;
 
     auto val = expect_ok(tf::make_tensor(heap, torch::ones({2, 2})));
-    // Also allocate an unreferenced tensor
+    /// Also allocate an unreferenced tensor
     expect_ok(tf::make_tensor(heap, torch::zeros({3})));
 
     std::vector<LispVal> roots = {val};
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    BOOST_TEST(stats.objects_freed == 1);  // only the unreferenced one
+    BOOST_TEST(stats.objects_freed == 1);  ///< only the unreferenced one
 
-    // Rooted tensor is still valid
+    /// Rooted tensor is still valid
     auto* tp = heap.try_get_as<ObjectKind::Tensor, TensorPtr>(ops::payload(val));
     BOOST_REQUIRE(tp != nullptr);
     BOOST_TEST(tp->tensor.numel() == 4);
@@ -88,18 +88,18 @@ BOOST_AUTO_TEST_CASE(tensor_deallocate) {
     auto r = heap.deallocate(id);
     BOOST_REQUIRE(r.has_value());
 
-    // Should be gone
+    /// Should be gone
     HeapEntry entry;
     BOOST_TEST(!heap.try_get(id, entry));
 }
 
-// Tensor creation primitives
+/// Tensor creation primitives
 
 BOOST_AUTO_TEST_CASE(torch_ones_creates_correct_shape) {
     Heap heap(1ull << 22);
     InternTable intern;
 
-    // Build shape list (3 4) as Eta cons-list
+    /// Build shape list (3 4) as Eta cons-list
     auto four = expect_ok(ops::encode(int64_t(4)));
     auto three = expect_ok(ops::encode(int64_t(3)));
     auto tail = expect_ok(make_cons(heap, four, Nil));
@@ -118,7 +118,7 @@ BOOST_AUTO_TEST_CASE(torch_ones_creates_correct_shape) {
 BOOST_AUTO_TEST_CASE(torch_from_list_roundtrip) {
     Heap heap(1ull << 22);
 
-    // Build list (1.0 2.0 3.0)
+    /// Build list (1.0 2.0 3.0)
     auto v3 = expect_ok(ops::encode(3.0));
     auto v2 = expect_ok(ops::encode(2.0));
     auto v1 = expect_ok(ops::encode(1.0));
@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(torch_from_list_roundtrip) {
     BOOST_TEST(t[1].item<double>() == 2.0);
     BOOST_TEST(t[2].item<double>() == 3.0);
 
-    // Convert back
+    /// Convert back
     auto back = tensor_to_list(t, heap);
     BOOST_TEST(back != Nil);
     auto* c1 = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(back));
@@ -140,7 +140,7 @@ BOOST_AUTO_TEST_CASE(torch_from_list_roundtrip) {
     BOOST_TEST(std::bit_cast<double>(c1->car) == 1.0);
 }
 
-// Tensor arithmetic
+/// Tensor arithmetic
 
 BOOST_AUTO_TEST_CASE(tensor_add) {
     auto a = torch::ones({3}, torch::kFloat64);
@@ -170,18 +170,18 @@ BOOST_AUTO_TEST_CASE(tensor_unary_ops) {
     BOOST_TEST(std::abs(e[0].item<double>() - 1.0) < 1e-10);
 }
 
-// Autograd
+/// Autograd
 
 BOOST_AUTO_TEST_CASE(autograd_basic_grad) {
     auto x = torch::tensor(2.0, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
-    auto y = x * x;  // y = x^2
+    auto y = x * x;  ///< y = x^2
     y.backward();
-    BOOST_TEST(std::abs(x.grad().item<double>() - 4.0) < 1e-10);  // dy/dx = 2x = 4
+    BOOST_TEST(std::abs(x.grad().item<double>() - 4.0) < 1e-10);  ///< dy/dx = 2x = 4
 }
 
 BOOST_AUTO_TEST_CASE(autograd_chain_rule) {
     auto x = torch::tensor(3.0, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
-    auto y = torch::sin(x);  // y = sin(x)
+    auto y = torch::sin(x);  ///< y = sin(x)
     y.backward();
     auto expected = std::cos(3.0);
     BOOST_TEST(std::abs(x.grad().item<double>() - expected) < 1e-10);
@@ -196,7 +196,7 @@ BOOST_AUTO_TEST_CASE(autograd_requires_grad_heap) {
     BOOST_TEST(tp->tensor.requires_grad());
 }
 
-// NN Modules
+/// NN Modules
 
 BOOST_AUTO_TEST_CASE(nn_linear_creates_module) {
     Heap heap(1ull << 22);
@@ -207,7 +207,7 @@ BOOST_AUTO_TEST_CASE(nn_linear_creates_module) {
     auto* mp = heap.try_get_as<ObjectKind::NNModule, NNModulePtr>(ops::payload(val));
     BOOST_REQUIRE(mp);
     BOOST_TEST(mp->name == "Linear(4, 2)");
-    BOOST_TEST(mp->module->parameters().size() == 2);  // weight + bias
+    BOOST_TEST(mp->module->parameters().size() == 2);  ///< weight + bias
 }
 
 BOOST_AUTO_TEST_CASE(nn_linear_forward) {
@@ -243,7 +243,7 @@ BOOST_AUTO_TEST_CASE(nn_module_gc_collects) {
     BOOST_TEST(stats.objects_freed == 1);
 }
 
-// Optimizers
+/// Optimizers
 
 BOOST_AUTO_TEST_CASE(optimizer_sgd_step) {
     auto model = torch::nn::Linear(torch::nn::LinearOptions(2, 1));
@@ -256,12 +256,12 @@ BOOST_AUTO_TEST_CASE(optimizer_sgd_step) {
     auto loss = torch::mse_loss(pred, target);
     loss.backward();
 
-    // Capture weight before step
+    /// Capture weight before step
     auto w_before = model->parameters()[0].clone();
     opt.step();
     auto w_after = model->parameters()[0];
 
-    // Weights should have changed
+    /// Weights should have changed
     BOOST_TEST(!torch::allclose(w_before, w_after));
 }
 
@@ -279,7 +279,7 @@ BOOST_AUTO_TEST_CASE(optimizer_adam_heap) {
     BOOST_TEST(op->name == "Adam");
 }
 
-// Loss functions
+/// Loss functions
 
 BOOST_AUTO_TEST_CASE(mse_loss_correct) {
     auto pred = torch::tensor({1.0, 2.0, 3.0}, torch::kFloat64);
@@ -292,21 +292,21 @@ BOOST_AUTO_TEST_CASE(mse_loss_nonzero) {
     auto pred = torch::tensor({1.0, 2.0, 3.0}, torch::kFloat64);
     auto target = torch::tensor({2.0, 2.0, 2.0}, torch::kFloat64);
     auto loss = torch::mse_loss(pred, target);
-    // MSE = ((1-2)^2 + (2-2)^2 + (3-2)^2) / 3 = 2/3
+    /// MSE = ((1-2)^2 + (2-2)^2 + (3-2)^2) / 3 = 2/3
     BOOST_TEST(std::abs(loss.item<double>() - 2.0/3.0) < 1e-10);
 }
 
-// Primitive registration (smoke test)
+/// Primitive registration (smoke test)
 
 BOOST_AUTO_TEST_CASE(register_torch_primitives_smoke) {
     Heap heap(1ull << 22);
     InternTable intern;
     BuiltinEnvironment env;
 
-    // Should not throw
+    /// Should not throw
     register_torch_primitives(env, heap, intern, nullptr);
 
-    // Check some names are registered
+    /// Check some names are registered
     auto idx = env.lookup("torch/ones");
     BOOST_TEST(idx.has_value());
     idx = env.lookup("nn/linear");
@@ -329,7 +329,7 @@ BOOST_AUTO_TEST_CASE(register_torch_builtin_names_smoke) {
     BOOST_TEST(idx.has_value());
 }
 
-// Device management
+/// Device management
 
 BOOST_AUTO_TEST_CASE(cuda_available_returns_bool) {
     Heap heap(1ull << 22);
@@ -343,11 +343,10 @@ BOOST_AUTO_TEST_CASE(cuda_available_returns_bool) {
     BOOST_TEST(spec.arity == 0);
     BOOST_TEST(!spec.has_rest);
 
-    // Call the primitive
+    /// Call the primitive
     std::vector<LispVal> args;
     auto result = spec.func(args);
     BOOST_REQUIRE(result.has_value());
-    // Result must be #t or #f — we can't know which, but it must be one of them
     BOOST_TEST((*result == True || *result == False));
 }
 
@@ -363,7 +362,7 @@ BOOST_AUTO_TEST_CASE(cuda_device_count_returns_fixnum) {
     std::vector<LispVal> args;
     auto result = env.specs()[*idx].func(args);
     BOOST_REQUIRE(result.has_value());
-    // Should be a non-negative fixnum
+    /// Should be a non-negative fixnum
     auto decoded = ops::decode<int64_t>(*result);
     BOOST_REQUIRE(decoded.has_value());
     BOOST_TEST(*decoded >= 0);
@@ -375,7 +374,7 @@ BOOST_AUTO_TEST_CASE(device_returns_cpu_string) {
     BuiltinEnvironment env;
     register_torch_primitives(env, heap, intern, nullptr);
 
-    // Create a tensor on CPU
+    /// Create a tensor on CPU
     auto t_val = expect_ok(tf::make_tensor(heap, torch::ones({2}, torch::kFloat64)));
 
     auto idx = env.lookup("torch/device");
@@ -384,10 +383,9 @@ BOOST_AUTO_TEST_CASE(device_returns_cpu_string) {
     std::vector<LispVal> args = {t_val};
     auto result = env.specs()[*idx].func(args);
     BOOST_REQUIRE(result.has_value());
-    // Should be a string tagged value
+    /// Should be a string tagged value
     BOOST_TEST(ops::is_boxed(*result));
     BOOST_TEST(ops::tag(*result) == Tag::String);
-    // Resolve the string — should contain "cpu"
     auto sv = intern.get_string(ops::payload(*result));
     BOOST_REQUIRE(sv.has_value());
     BOOST_TEST(std::string(*sv).find("cpu") != std::string::npos);
@@ -399,9 +397,9 @@ BOOST_AUTO_TEST_CASE(to_device_cpu_roundtrip) {
     BuiltinEnvironment env;
     register_torch_primitives(env, heap, intern, nullptr);
 
-    // Create a tensor
+    /// Create a tensor
     auto t_val = expect_ok(tf::make_tensor(heap, torch::ones({3}, torch::kFloat64)));
-    // Intern the device string "cpu"
+    /// Intern the device string "cpu"
     auto cpu_id = expect_ok(intern.intern("cpu"));
     auto cpu_str = ops::box(Tag::String, cpu_id);
 
@@ -411,7 +409,7 @@ BOOST_AUTO_TEST_CASE(to_device_cpu_roundtrip) {
     std::vector<LispVal> args = {t_val, cpu_str};
     auto result = env.specs()[*idx].func(args);
     BOOST_REQUIRE(result.has_value());
-    // Result should be a new tensor on CPU
+    /// Result should be a new tensor on CPU
     auto* tp = heap.try_get_as<ObjectKind::Tensor, TensorPtr>(ops::payload(*result));
     BOOST_REQUIRE(tp != nullptr);
     BOOST_TEST(tp->tensor.device().is_cpu());
@@ -433,7 +431,7 @@ BOOST_AUTO_TEST_CASE(to_device_invalid_device_returns_error) {
 
     std::vector<LispVal> args = {t_val, bad_str};
     auto result = env.specs()[*idx].func(args);
-    // Should fail gracefully with an error
+    /// Should fail gracefully with an error
     BOOST_TEST(!result.has_value());
 }
 
@@ -443,7 +441,7 @@ BOOST_AUTO_TEST_CASE(nn_to_device_cpu) {
     BuiltinEnvironment env;
     register_torch_primitives(env, heap, intern, nullptr);
 
-    // Create an nn module on CPU
+    /// Create an nn module on CPU
     auto mod = torch::nn::Linear(torch::nn::LinearOptions(3, 2));
     mod->to(torch::kFloat64);
     auto mod_val = expect_ok(tf::make_nn_module(heap, mod.ptr(), "Linear(3,2)"));
@@ -457,15 +455,15 @@ BOOST_AUTO_TEST_CASE(nn_to_device_cpu) {
     std::vector<LispVal> args = {mod_val, cpu_str};
     auto result = env.specs()[*idx].func(args);
     BOOST_REQUIRE(result.has_value());
-    // nn/to-device returns the same module handle
+    /// nn/to-device returns the same module handle
     BOOST_TEST(*result == mod_val);
-    // Parameters should still be on CPU
+    /// Parameters should still be on CPU
     auto* mp = heap.try_get_as<ObjectKind::NNModule, NNModulePtr>(ops::payload(*result));
     BOOST_REQUIRE(mp);
     BOOST_TEST(mp->module->parameters()[0].device().is_cpu());
 }
 
-// Device management builtin names
+/// Device management builtin names
 
 BOOST_AUTO_TEST_CASE(device_builtin_names_registered) {
     Heap heap(1ull << 22);
@@ -480,7 +478,7 @@ BOOST_AUTO_TEST_CASE(device_builtin_names_registered) {
     BOOST_TEST(env.lookup("nn/to-device").has_value());
 }
 
-// Primitive invocation through BuiltinSpec (integration smoke tests)
+/// Primitive invocation through BuiltinSpec (integration smoke tests)
 
 BOOST_AUTO_TEST_CASE(prim_torch_ones_via_env) {
     Heap heap(1ull << 22);
@@ -488,7 +486,7 @@ BOOST_AUTO_TEST_CASE(prim_torch_ones_via_env) {
     BuiltinEnvironment env;
     register_torch_primitives(env, heap, intern, nullptr);
 
-    // Build shape list (2 3)
+    /// Build shape list (2 3)
     auto three = expect_ok(ops::encode(int64_t(3)));
     auto two   = expect_ok(ops::encode(int64_t(2)));
     auto tail  = expect_ok(make_cons(heap, three, Nil));
@@ -542,7 +540,6 @@ BOOST_AUTO_TEST_CASE(prim_torch_item_via_env) {
     std::vector<LispVal> args = {t_val};
     auto result = env.specs()[*idx].func(args);
     BOOST_REQUIRE(result.has_value());
-    // Should be a raw double (not boxed) — 42.0
     BOOST_TEST(std::bit_cast<double>(*result) == 42.0);
 }
 
@@ -552,23 +549,23 @@ BOOST_AUTO_TEST_CASE(prim_torch_backward_and_grad_via_env) {
     BuiltinEnvironment env;
     register_torch_primitives(env, heap, intern, nullptr);
 
-    // x = 3.0 with requires_grad
+    /// x = 3.0 with requires_grad
     auto x_t = torch::tensor(3.0, torch::TensorOptions().dtype(torch::kFloat64).requires_grad(true));
     auto x_val = expect_ok(tf::make_tensor(heap, x_t));
 
-    // y = x * x  (done in C++ since torch ops aren't Eta primitives for this)
+    /// y = x * x  (done in C++ since torch ops aren't Eta primitives for this)
     auto* xp = heap.try_get_as<ObjectKind::Tensor, TensorPtr>(ops::payload(x_val));
     auto y_t = xp->tensor * xp->tensor;
     auto y_val = expect_ok(tf::make_tensor(heap, y_t));
 
-    // backward(y)
+    /// backward(y)
     auto bw_idx = env.lookup("torch/backward");
     BOOST_REQUIRE(bw_idx.has_value());
     std::vector<LispVal> bw_args = {y_val};
     auto bw_res = env.specs()[*bw_idx].func(bw_args);
     BOOST_REQUIRE(bw_res.has_value());
 
-    // grad(x) should be 2*3 = 6
+    /// grad(x) should be 2*3 = 6
     auto gr_idx = env.lookup("torch/grad");
     BOOST_REQUIRE(gr_idx.has_value());
     std::vector<LispVal> gr_args = {x_val};
@@ -581,23 +578,31 @@ BOOST_AUTO_TEST_CASE(prim_torch_backward_and_grad_via_env) {
 }
 
 BOOST_AUTO_TEST_CASE(builtin_names_and_primitives_count_match) {
-    // Verify that register_builtin_names() metadata matches
-    // register_torch_primitives() via patch mode (no abort = success).
+    /**
+     * Verify that register_builtin_names() metadata matches
+     * register_torch_primitives() via patch mode (no abort = success).
+     */
     Heap heap(1ull << 22);
     InternTable intern;
 
-    // Build a names-only env, then register torch primitives via append
-    // to get the runtime count.
+    /**
+     * Build a names-only env, then register torch primitives via append
+     * to get the runtime count.
+     */
     BuiltinEnvironment prim_env;
     register_torch_primitives(prim_env, heap, intern, nullptr);
 
-    // Build another names-only env with just torch names, via the SSoT
-    // helper: register all names then compare the torch range.
+    /**
+     * Build another names-only env with just torch names, via the SSoT
+     * helper: register all names then compare the torch range.
+     */
     BuiltinEnvironment names_env;
     eta::runtime::register_builtin_names(names_env);
 
-    // The torch range starts after core+port+io and ends before stats.
-    // Just verify overall count and that every torch name appears.
+    /**
+     * The torch range starts after core+port+io and ends before stats.
+     * Just verify overall count and that every torch name appears.
+     */
     for (size_t i = 0; i < prim_env.size(); ++i) {
         auto idx = names_env.lookup(prim_env.specs()[i].name);
         BOOST_TEST(idx.has_value());
@@ -608,10 +613,10 @@ BOOST_AUTO_TEST_CASE(builtin_names_and_primitives_count_match) {
     }
 }
 
-// End-to-end: training loop
+/// End-to-end: training loop
 
 BOOST_AUTO_TEST_CASE(training_loop_converges) {
-    // Simple regression: y = 2x + 1
+    /// Simple regression: y = 2x + 1
     auto model = torch::nn::Linear(torch::nn::LinearOptions(1, 1));
     model->to(torch::kFloat64);
     auto opt = torch::optim::SGD(model->parameters(), torch::optim::SGDOptions(0.01));
@@ -631,13 +636,13 @@ BOOST_AUTO_TEST_CASE(training_loop_converges) {
     }
 
     BOOST_TEST(final_loss < initial_loss);
-    BOOST_TEST(final_loss < 0.2);  // Should converge reasonably well
+    BOOST_TEST(final_loss < 0.2);  ///< Should converge reasonably well
 }
 
-// nn/sequential via Eta primitive (the gap that caused the sequential bug)
+/// nn/sequential via Eta primitive (the gap that caused the sequential bug)
 
 namespace {
-    // Helper: count elements in an Eta cons-list
+    /// Helper: count elements in an Eta cons-list
     int count_list(Heap& heap, LispVal lst) {
         int n = 0;
         while (lst != Nil) {
@@ -657,7 +662,7 @@ BOOST_AUTO_TEST_CASE(prim_nn_sequential_forward_via_env) {
     BuiltinEnvironment env;
     register_torch_primitives(env, heap, intern, nullptr);
 
-    // Lookup all needed primitives
+    /// Lookup all needed primitives
     auto lin_idx  = env.lookup("nn/linear");
     auto relu_idx = env.lookup("nn/relu-layer");
     auto seq_idx  = env.lookup("nn/sequential");
@@ -668,26 +673,25 @@ BOOST_AUTO_TEST_CASE(prim_nn_sequential_forward_via_env) {
 
     auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
 
-    // Create: Linear(4, 8), ReLU, Linear(8, 2)
+    /// Create: Linear(4, 8), ReLU, Linear(8, 2)
     auto lin1 = expect_ok(env.specs()[*lin_idx].func({mk(4), mk(8)}));
     auto relu = expect_ok(env.specs()[*relu_idx].func({}));
     auto lin2 = expect_ok(env.specs()[*lin_idx].func({mk(8), mk(2)}));
 
-    // Build sequential through the Eta primitive — this is the exact path the VM takes
     auto seq = expect_ok(env.specs()[*seq_idx].func({lin1, relu, lin2}));
 
-    // Verify it's a module
+    /// Verify it's a module
     auto is_mod = expect_ok(env.specs()[*mod_idx].func({seq}));
     BOOST_TEST(is_mod == True);
 
-    // Forward pass
+    /// Forward pass
     auto input = expect_ok(tf::make_tensor(heap, torch::randn({1, 4}, torch::kFloat64)));
     auto output = expect_ok(env.specs()[*fwd_idx].func({seq, input}));
     auto* tp = heap.try_get_as<ObjectKind::Tensor, TensorPtr>(ops::payload(output));
     BOOST_REQUIRE(tp);
     BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({1, 2}));
 
-    // Verify parameters are accessible (weight+bias from both linears = 4 tensors)
+    /// Verify parameters are accessible (weight+bias from both linears = 4 tensors)
     auto params = expect_ok(env.specs()[*par_idx].func({seq}));
     BOOST_TEST(count_list(heap, params) == 4);
 }
@@ -714,7 +718,6 @@ BOOST_AUTO_TEST_CASE(prim_nn_sequential_single_layer) {
 }
 
 BOOST_AUTO_TEST_CASE(prim_nn_sequential_deep_network) {
-    // 5-layer network mirroring causal_demo: 2 → 32 → ReLU → 16 → ReLU → 1
     Heap heap(1ull << 22);
     InternTable intern;
     BuiltinEnvironment env;
@@ -735,14 +738,13 @@ BOOST_AUTO_TEST_CASE(prim_nn_sequential_deep_network) {
 
     auto seq = expect_ok(env.specs()[seq_idx].func({l1, r1, l2, r2, l3}));
 
-    // Forward with batch of 5
+    /// Forward with batch of 5
     auto input  = expect_ok(tf::make_tensor(heap, torch::randn({5, 2}, torch::kFloat64)));
     auto output = expect_ok(env.specs()[fwd_idx].func({seq, input}));
     auto* tp = get_tensor(heap, output);
     BOOST_REQUIRE(tp);
     BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({5, 1}));
 
-    // 3 linear layers × (weight + bias) = 6 parameter tensors
     auto params = expect_ok(env.specs()[par_idx].func({seq}));
     BOOST_TEST(count_list(heap, params) == 6);
 }
@@ -767,7 +769,7 @@ BOOST_AUTO_TEST_CASE(prim_nn_sequential_with_sigmoid) {
     auto output = expect_ok(env.specs()[fwd_idx].func({seq, input}));
     auto* tp = get_tensor(heap, output);
     BOOST_REQUIRE(tp);
-    // Sigmoid outputs are in (0, 1)
+    /// Sigmoid outputs are in (0, 1)
     BOOST_TEST(tp->tensor.min().item<double>() >= 0.0);
     BOOST_TEST(tp->tensor.max().item<double>() <= 1.0);
 }
@@ -791,19 +793,18 @@ BOOST_AUTO_TEST_CASE(prim_nn_sequential_with_dropout) {
     auto l2   = expect_ok(env.specs()[lin_idx].func({mk(4), mk(1)}));
     auto seq  = expect_ok(env.specs()[seq_idx].func({l1, drop, l2}));
 
-    // Forward pass should work — just verify it produces valid output
     auto input = expect_ok(tf::make_tensor(heap, torch::ones({1, 4}, torch::kFloat64)));
     auto out = expect_ok(env.specs()[fwd_idx].func({seq, input}));
     auto* tp = get_tensor(heap, out);
     BOOST_REQUIRE(tp);
     BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({1, 1}));
 
-    // Parameters should come from the two linear layers (dropout has none)
+    /// Parameters should come from the two linear layers (dropout has none)
     auto params = expect_ok(env.specs()[par_idx].func({seq}));
-    BOOST_TEST(count_list(heap, params) == 4);  // l1 weight+bias + l2 weight+bias
+    BOOST_TEST(count_list(heap, params) == 4);  ///< l1 weight+bias + l2 weight+bias
 }
 
-// nn/train! and nn/eval! via primitives
+/// nn/train! and nn/eval! via primitives
 
 BOOST_AUTO_TEST_CASE(prim_nn_train_eval_mode) {
     Heap heap(1ull << 22);
@@ -819,7 +820,7 @@ BOOST_AUTO_TEST_CASE(prim_nn_train_eval_mode) {
 
     auto drop = expect_ok(env.specs()[drop_idx].func({mk_dbl(0.5)}));
 
-    // In eval mode, dropout should be identity
+    /// In eval mode, dropout should be identity
     (void) env.specs()[eval_idx].func({drop});
     auto input = expect_ok(tf::make_tensor(heap, torch::ones({100}, torch::kFloat64)));
     auto out_eval = expect_ok(env.specs()[fwd_idx].func({drop, input}));
@@ -827,15 +828,16 @@ BOOST_AUTO_TEST_CASE(prim_nn_train_eval_mode) {
     BOOST_REQUIRE(tp);
     BOOST_TEST(std::abs(tp->tensor.sum().item<double>() - 100.0) < 1e-10);
 
-    // Switch back to train mode — output should differ from identity
-    // (statistically, with p=0.5 on 100 elements, sum should be ~100 after
-    //  scaling but individual elements are zeroed; just verify it runs)
+    /**
+     * (statistically, with p=0.5 on 100 elements, sum should be ~100 after
+     *  scaling but individual elements are zeroed; just verify it runs)
+     */
     (void) env.specs()[train_idx].func({drop});
     auto out_train = expect_ok(env.specs()[fwd_idx].func({drop, input}));
     BOOST_REQUIRE(get_tensor(heap, out_train));
 }
 
-// Tensor creation primitives via env (arange, linspace, zeros, randn)
+/// Tensor creation primitives via env (arange, linspace, zeros, randn)
 
 BOOST_AUTO_TEST_CASE(prim_torch_zeros_via_env) {
     Heap heap(1ull << 22);
@@ -888,7 +890,7 @@ BOOST_AUTO_TEST_CASE(prim_torch_linspace_via_env) {
     BOOST_TEST(std::abs(tp->tensor[4].item<double>() - 1.0) < 1e-10);
 }
 
-// Arithmetic primitives via env (sub, mul, div, dot)
+/// Arithmetic primitives via env (sub, mul, div, dot)
 
 BOOST_AUTO_TEST_CASE(prim_torch_sub_via_env) {
     Heap heap(1ull << 22);
@@ -961,10 +963,10 @@ BOOST_AUTO_TEST_CASE(prim_torch_dot_via_env) {
     auto result = expect_ok(env.specs()[*env.lookup("torch/dot")].func({a, b}));
     auto* tp = get_tensor(heap, result);
     BOOST_REQUIRE(tp);
-    BOOST_TEST(tp->tensor.item<double>() == 32.0);  // 1*4 + 2*5 + 3*6
+    BOOST_TEST(tp->tensor.item<double>() == 32.0);  ///< 1*4 + 2*5 + 3*6
 }
 
-// Unary ops via env
+/// Unary ops via env
 
 BOOST_AUTO_TEST_CASE(prim_unary_ops_via_env) {
     Heap heap(1ull << 22);
@@ -974,20 +976,19 @@ BOOST_AUTO_TEST_CASE(prim_unary_ops_via_env) {
 
     auto t_val = expect_ok(tf::make_tensor(heap, torch::tensor({-2.0, 0.0, 3.0}, torch::kFloat64)));
 
-    // neg
+    /// neg
     auto neg_r = expect_ok(env.specs()[*env.lookup("torch/neg")].func({t_val}));
     BOOST_TEST(get_tensor(heap, neg_r)->tensor[0].item<double>() == 2.0);
 
-    // abs
+    /// abs
     auto abs_r = expect_ok(env.specs()[*env.lookup("torch/abs")].func({t_val}));
     BOOST_TEST(get_tensor(heap, abs_r)->tensor[0].item<double>() == 2.0);
 
-    // relu
+    /// relu
     auto relu_r = expect_ok(env.specs()[*env.lookup("torch/relu")].func({t_val}));
     BOOST_TEST(get_tensor(heap, relu_r)->tensor[0].item<double>() == 0.0);
     BOOST_TEST(get_tensor(heap, relu_r)->tensor[2].item<double>() == 3.0);
 
-    // sigmoid — output in (0, 1)
     auto sig_r = expect_ok(env.specs()[*env.lookup("torch/sigmoid")].func({t_val}));
     auto* sig_tp = get_tensor(heap, sig_r);
     for (int i = 0; i < 3; ++i) {
@@ -995,7 +996,6 @@ BOOST_AUTO_TEST_CASE(prim_unary_ops_via_env) {
         BOOST_TEST(sig_tp->tensor[i].item<double>() < 1.0);
     }
 
-    // tanh — output in (-1, 1)
     auto tanh_r = expect_ok(env.specs()[*env.lookup("torch/tanh")].func({t_val}));
     auto* tanh_tp = get_tensor(heap, tanh_r);
     for (int i = 0; i < 3; ++i) {
@@ -1003,17 +1003,17 @@ BOOST_AUTO_TEST_CASE(prim_unary_ops_via_env) {
         BOOST_TEST(tanh_tp->tensor[i].item<double>() < 1.0);
     }
 
-    // exp
+    /// exp
     auto z = expect_ok(tf::make_tensor(heap, torch::zeros({2}, torch::kFloat64)));
     auto exp_r = expect_ok(env.specs()[*env.lookup("torch/exp")].func({z}));
     BOOST_TEST(std::abs(get_tensor(heap, exp_r)->tensor[0].item<double>() - 1.0) < 1e-10);
 
-    // log
+    /// log
     auto ones_val = expect_ok(tf::make_tensor(heap, torch::ones({2}, torch::kFloat64)));
     auto log_r = expect_ok(env.specs()[*env.lookup("torch/log")].func({ones_val}));
     BOOST_TEST(std::abs(get_tensor(heap, log_r)->tensor[0].item<double>()) < 1e-10);
 
-    // sqrt
+    /// sqrt
     auto sq_val = expect_ok(tf::make_tensor(heap, torch::tensor({4.0, 9.0}, torch::kFloat64)));
     auto sqrt_r = expect_ok(env.specs()[*env.lookup("torch/sqrt")].func({sq_val}));
     BOOST_TEST(std::abs(get_tensor(heap, sqrt_r)->tensor[0].item<double>() - 2.0) < 1e-10);
@@ -1031,13 +1031,13 @@ BOOST_AUTO_TEST_CASE(prim_softmax_via_env) {
     auto result = expect_ok(env.specs()[*env.lookup("torch/softmax")].func({t_val, dim}));
     auto* tp = get_tensor(heap, result);
     BOOST_REQUIRE(tp);
-    // Softmax sums to 1.0
+    /// Softmax sums to 1.0
     BOOST_TEST(std::abs(tp->tensor.sum().item<double>() - 1.0) < 1e-10);
-    // All elements positive
+    /// All elements positive
     BOOST_TEST(tp->tensor.min().item<double>() > 0.0);
 }
 
-// Shape ops via env
+/// Shape ops via env
 
 BOOST_AUTO_TEST_CASE(prim_shape_ops_via_env) {
     Heap heap(1ull << 22);
@@ -1047,17 +1047,17 @@ BOOST_AUTO_TEST_CASE(prim_shape_ops_via_env) {
 
     auto mk_i = [](int64_t v) { return expect_ok(ops::encode(v)); };
 
-    // Create a (2, 3) tensor
+    /// Create a (2, 3) tensor
     auto t_val = expect_ok(tf::make_tensor(heap, torch::ones({2, 3}, torch::kFloat64)));
 
-    // shape
+    /// shape
     auto shape_r = expect_ok(env.specs()[*env.lookup("torch/shape")].func({t_val}));
     auto shape_vec = list_to_shape(shape_r, heap);
     BOOST_TEST(shape_vec.size() == 2);
     BOOST_TEST(shape_vec[0] == 2);
     BOOST_TEST(shape_vec[1] == 3);
 
-    // reshape to (3, 2)
+    /// reshape to (3, 2)
     auto new_shape = expect_ok(make_cons(heap, mk_i(2), Nil));
     new_shape = expect_ok(make_cons(heap, mk_i(3), new_shape));
     auto reshaped = expect_ok(env.specs()[*env.lookup("torch/reshape")].func({t_val, new_shape}));
@@ -1065,20 +1065,20 @@ BOOST_AUTO_TEST_CASE(prim_shape_ops_via_env) {
     BOOST_REQUIRE(rp);
     BOOST_TEST(rp->tensor.sizes() == std::vector<int64_t>({3, 2}));
 
-    // transpose
+    /// transpose
     auto transposed = expect_ok(env.specs()[*env.lookup("torch/transpose")].func(
         {t_val, mk_i(0), mk_i(1)}));
     auto* trp = get_tensor(heap, transposed);
     BOOST_REQUIRE(trp);
     BOOST_TEST(trp->tensor.sizes() == std::vector<int64_t>({3, 2}));
 
-    // unsqueeze
+    /// unsqueeze
     auto unsq = expect_ok(env.specs()[*env.lookup("torch/unsqueeze")].func({t_val, mk_i(0)}));
     auto* up = get_tensor(heap, unsq);
     BOOST_REQUIRE(up);
     BOOST_TEST(up->tensor.sizes() == std::vector<int64_t>({1, 2, 3}));
 
-    // squeeze
+    /// squeeze
     auto squeezed = expect_ok(env.specs()[*env.lookup("torch/squeeze")].func({unsq}));
     auto* sp = get_tensor(heap, squeezed);
     BOOST_REQUIRE(sp);
@@ -1093,7 +1093,7 @@ BOOST_AUTO_TEST_CASE(prim_torch_cat_via_env) {
 
     auto a = expect_ok(tf::make_tensor(heap, torch::ones({2, 3}, torch::kFloat64)));
     auto b = expect_ok(tf::make_tensor(heap, torch::zeros({2, 3}, torch::kFloat64)));
-    // Build list (a b)
+    /// Build list (a b)
     auto lst = expect_ok(make_cons(heap, b, Nil));
     lst = expect_ok(make_cons(heap, a, lst));
     auto dim = expect_ok(ops::encode(int64_t(0)));
@@ -1101,10 +1101,10 @@ BOOST_AUTO_TEST_CASE(prim_torch_cat_via_env) {
     auto* tp = get_tensor(heap, result);
     BOOST_REQUIRE(tp);
     BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({4, 3}));
-    BOOST_TEST(tp->tensor.sum().item<double>() == 6.0);  // 2*3 ones + 2*3 zeros
+    BOOST_TEST(tp->tensor.sum().item<double>() == 6.0);  ///< 2*3 ones + 2*3 zeros
 }
 
-// Reduction primitives via env
+/// Reduction primitives via env
 
 BOOST_AUTO_TEST_CASE(prim_reductions_via_env) {
     Heap heap(1ull << 22);
@@ -1114,32 +1114,30 @@ BOOST_AUTO_TEST_CASE(prim_reductions_via_env) {
 
     auto t_val = expect_ok(tf::make_tensor(heap, torch::tensor({1.0, 5.0, 3.0, 2.0}, torch::kFloat64)));
 
-    // sum
+    /// sum
     auto sum_r = expect_ok(env.specs()[*env.lookup("torch/sum")].func({t_val}));
     BOOST_TEST(get_tensor(heap, sum_r)->tensor.item<double>() == 11.0);
 
-    // mean
+    /// mean
     auto mean_r = expect_ok(env.specs()[*env.lookup("torch/mean")].func({t_val}));
     BOOST_TEST(std::abs(get_tensor(heap, mean_r)->tensor.item<double>() - 2.75) < 1e-10);
 
-    // max
+    /// max
     auto max_r = expect_ok(env.specs()[*env.lookup("torch/max")].func({t_val}));
     BOOST_TEST(get_tensor(heap, max_r)->tensor.item<double>() == 5.0);
 
-    // min
+    /// min
     auto min_r = expect_ok(env.specs()[*env.lookup("torch/min")].func({t_val}));
     BOOST_TEST(get_tensor(heap, min_r)->tensor.item<double>() == 1.0);
 
-    // argmax → index 1 (value 5.0)
     auto amax_r = expect_ok(env.specs()[*env.lookup("torch/argmax")].func({t_val}));
     BOOST_TEST(get_tensor(heap, amax_r)->tensor.item<int64_t>() == 1);
 
-    // argmin → index 0 (value 1.0)
     auto amin_r = expect_ok(env.specs()[*env.lookup("torch/argmin")].func({t_val}));
     BOOST_TEST(get_tensor(heap, amin_r)->tensor.item<int64_t>() == 0);
 }
 
-// Conversion primitives via env (numel, to-list)
+/// Conversion primitives via env (numel, to-list)
 
 BOOST_AUTO_TEST_CASE(prim_torch_numel_via_env) {
     Heap heap(1ull << 22);
@@ -1165,7 +1163,7 @@ BOOST_AUTO_TEST_CASE(prim_torch_to_list_via_env) {
     BOOST_TEST(count_list(heap, result) == 3);
 }
 
-// Autograd primitives via env (requires-grad!, requires-grad?, detach, zero-grad!)
+/// Autograd primitives via env (requires-grad!, requires-grad?, detach, zero-grad!)
 
 BOOST_AUTO_TEST_CASE(prim_autograd_full_cycle_via_env) {
     Heap heap(1ull << 22);
@@ -1173,16 +1171,16 @@ BOOST_AUTO_TEST_CASE(prim_autograd_full_cycle_via_env) {
     BuiltinEnvironment env;
     register_torch_primitives(env, heap, intern, nullptr);
 
-    // Create a tensor and enable grad tracking
+    /// Create a tensor and enable grad tracking
     auto t_val = expect_ok(tf::make_tensor(heap, torch::tensor(4.0, torch::kFloat64)));
     auto rg_set = expect_ok(env.specs()[*env.lookup("torch/requires-grad!")].func({t_val, True}));
-    BOOST_TEST(rg_set == t_val);  // returns same handle
+    BOOST_TEST(rg_set == t_val);  ///< returns same handle
 
-    // requires-grad? should be true
+    /// requires-grad? should be true
     auto rg_q = expect_ok(env.specs()[*env.lookup("torch/requires-grad?")].func({t_val}));
     BOOST_TEST(rg_q == True);
 
-    // y = x * x, backward, check grad = 2*4 = 8
+    /// y = x * x, backward, check grad = 2*4 = 8
     auto* xp = get_tensor(heap, t_val);
     auto y_t = xp->tensor * xp->tensor;
     auto y_val = expect_ok(tf::make_tensor(heap, y_t));
@@ -1190,18 +1188,18 @@ BOOST_AUTO_TEST_CASE(prim_autograd_full_cycle_via_env) {
     auto gr = expect_ok(env.specs()[*env.lookup("torch/grad")].func({t_val}));
     BOOST_TEST(std::abs(get_tensor(heap, gr)->tensor.item<double>() - 8.0) < 1e-10);
 
-    // zero-grad!
+    /// zero-grad!
     (void) env.specs()[*env.lookup("torch/zero-grad!")].func({t_val});
     auto gr2 = expect_ok(env.specs()[*env.lookup("torch/grad")].func({t_val}));
     BOOST_TEST(std::abs(get_tensor(heap, gr2)->tensor.item<double>()) < 1e-10);
 
-    // detach
+    /// detach
     auto det = expect_ok(env.specs()[*env.lookup("torch/detach")].func({t_val}));
     auto rg_det = expect_ok(env.specs()[*env.lookup("torch/requires-grad?")].func({det}));
     BOOST_TEST(rg_det == False);
 }
 
-// Loss functions via env (L1, cross-entropy)
+/// Loss functions via env (L1, cross-entropy)
 
 BOOST_AUTO_TEST_CASE(prim_l1_loss_via_env) {
     Heap heap(1ull << 22);
@@ -1214,7 +1212,7 @@ BOOST_AUTO_TEST_CASE(prim_l1_loss_via_env) {
     auto result = expect_ok(env.specs()[*env.lookup("nn/l1-loss")].func({pred, target}));
     auto* tp = get_tensor(heap, result);
     BOOST_REQUIRE(tp);
-    // L1 = (|1-2| + |2-2| + |3-2|) / 3 = 2/3
+    /// L1 = (|1-2| + |2-2| + |3-2|) / 3 = 2/3
     BOOST_TEST(std::abs(tp->tensor.item<double>() - 2.0/3.0) < 1e-10);
 }
 
@@ -1236,16 +1234,16 @@ BOOST_AUTO_TEST_CASE(prim_cross_entropy_loss_via_env) {
     BuiltinEnvironment env;
     register_torch_primitives(env, heap, intern, nullptr);
 
-    // logits for 2-sample, 3-class classification
+    /// logits for 2-sample, 3-class classification
     auto logits  = expect_ok(tf::make_tensor(heap, torch::tensor({{2.0, 1.0, 0.1}, {0.1, 0.2, 3.0}}, torch::kFloat64)));
     auto targets = expect_ok(tf::make_tensor(heap, torch::tensor({0, 2}, torch::kLong)));
     auto result  = expect_ok(env.specs()[*env.lookup("nn/cross-entropy-loss")].func({logits, targets}));
     auto* tp = get_tensor(heap, result);
     BOOST_REQUIRE(tp);
-    BOOST_TEST(tp->tensor.item<double>() > 0.0);  // loss should be positive
+    BOOST_TEST(tp->tensor.item<double>() > 0.0);  ///< loss should be positive
 }
 
-// Optimizer primitives via env (sgd, adam, step!, zero-grad!, optimizer?)
+/// Optimizer primitives via env (sgd, adam, step!, zero-grad!, optimizer?)
 
 BOOST_AUTO_TEST_CASE(prim_optimizer_full_cycle_via_env) {
     Heap heap(1ull << 22);
@@ -1256,7 +1254,7 @@ BOOST_AUTO_TEST_CASE(prim_optimizer_full_cycle_via_env) {
     auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
     auto mk_dbl = [](double v) { return expect_ok(ops::encode(v)); };
 
-    // Create a linear layer and both optimizer types
+    /// Create a linear layer and both optimizer types
     auto lin = expect_ok(env.specs()[*env.lookup("nn/linear")].func({mk(2), mk(1)}));
 
     auto sgd_opt = expect_ok(env.specs()[*env.lookup("optim/sgd")].func({lin, mk_dbl(0.01)}));
@@ -1266,14 +1264,14 @@ BOOST_AUTO_TEST_CASE(prim_optimizer_full_cycle_via_env) {
     auto adam_opt = expect_ok(env.specs()[*env.lookup("optim/adam")].func({lin, mk_dbl(0.001)}));
     BOOST_TEST(expect_ok(env.specs()[*env.lookup("optim/optimizer?")].func({adam_opt})) == True);
 
-    // zero-grad! and step! should not crash
+    /// zero-grad! and step! should not crash
     auto zg = env.specs()[*env.lookup("optim/zero-grad!")].func({sgd_opt});
     BOOST_TEST(zg.has_value());
     auto st = env.specs()[*env.lookup("optim/step!")].func({sgd_opt});
     BOOST_TEST(st.has_value());
 }
 
-// nn/linear via env
+/// nn/linear via env
 
 BOOST_AUTO_TEST_CASE(prim_nn_linear_forward_via_env) {
     Heap heap(1ull << 22);
@@ -1284,14 +1282,13 @@ BOOST_AUTO_TEST_CASE(prim_nn_linear_forward_via_env) {
     auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
     auto lin = expect_ok(env.specs()[*env.lookup("nn/linear")].func({mk(4), mk(2)}));
 
-    // module? should be true
+    /// module? should be true
     BOOST_TEST(expect_ok(env.specs()[*env.lookup("nn/module?")].func({lin})) == True);
 
-    // parameters: weight (4×2) + bias (2) = 2 tensors
     auto params = expect_ok(env.specs()[*env.lookup("nn/parameters")].func({lin}));
     BOOST_TEST(count_list(heap, params) == 2);
 
-    // forward
+    /// forward
     auto input  = expect_ok(tf::make_tensor(heap, torch::randn({1, 4}, torch::kFloat64)));
     auto output = expect_ok(env.specs()[*env.lookup("nn/forward")].func({lin, input}));
     auto* tp = get_tensor(heap, output);
@@ -1299,7 +1296,7 @@ BOOST_AUTO_TEST_CASE(prim_nn_linear_forward_via_env) {
     BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({1, 2}));
 }
 
-// Tensor predicate via env
+/// Tensor predicate via env
 
 BOOST_AUTO_TEST_CASE(prim_tensor_predicate_via_env) {
     Heap heap(1ull << 22);
@@ -1311,20 +1308,22 @@ BOOST_AUTO_TEST_CASE(prim_tensor_predicate_via_env) {
     auto r1 = expect_ok(env.specs()[*env.lookup("torch/tensor?")].func({t_val}));
     BOOST_TEST(r1 == True);
 
-    // A non-tensor (fixnum) should return false
+    /// A non-tensor (fixnum) should return false
     auto fixnum = expect_ok(ops::encode(int64_t(42)));
     auto r2 = expect_ok(env.specs()[*env.lookup("torch/tensor?")].func({fixnum}));
     BOOST_TEST(r2 == False);
 }
 
-// End-to-end: sequential training loop via Eta primitives
+/// End-to-end: sequential training loop via Eta primitives
 
 BOOST_AUTO_TEST_CASE(prim_sequential_training_converges_via_env) {
-    // Pin random seed so weight initialisation is deterministic and training
-    // reliably converges within the epoch budget.
+    /**
+     * Pin random seed so weight initialisation is deterministic and training
+     * reliably converges within the epoch budget.
+     */
     ::torch::manual_seed(42);
 
-    Heap heap(1ull << 24);  // 16 MB — training allocates many tensors
+    Heap heap(1ull << 24);
     InternTable intern;
     BuiltinEnvironment env;
     register_torch_primitives(env, heap, intern, nullptr);
@@ -1343,7 +1342,6 @@ BOOST_AUTO_TEST_CASE(prim_sequential_training_converges_via_env) {
     auto bw_idx   = *env.lookup("torch/backward");
     auto item_idx = *env.lookup("torch/item");
 
-    // Network: 1 → 8 → ReLU → 1
     auto l1  = expect_ok(env.specs()[lin_idx].func({mk(1), mk(8)}));
     auto r1  = expect_ok(env.specs()[relu_idx].func({}));
     auto l2  = expect_ok(env.specs()[lin_idx].func({mk(8), mk(1)}));
@@ -1372,7 +1370,6 @@ BOOST_AUTO_TEST_CASE(prim_sequential_training_converges_via_env) {
     BOOST_TEST(last_loss < 1.0);
 }
 
-// Error paths — wrong argument types should return errors, not crash
 
 BOOST_AUTO_TEST_CASE(prim_error_paths) {
     Heap heap(1ull << 22);
@@ -1382,31 +1379,31 @@ BOOST_AUTO_TEST_CASE(prim_error_paths) {
 
     auto fixnum = expect_ok(ops::encode(int64_t(42)));
 
-    // torch/add with non-tensor args
+    /// torch/add with non-tensor args
     auto r1 = env.specs()[*env.lookup("torch/add")].func({fixnum, fixnum});
     BOOST_TEST(!r1.has_value());
 
-    // nn/forward with non-module first arg
+    /// nn/forward with non-module first arg
     auto t_val = expect_ok(tf::make_tensor(heap, torch::ones({2}, torch::kFloat64)));
     auto r2 = env.specs()[*env.lookup("nn/forward")].func({fixnum, t_val});
     BOOST_TEST(!r2.has_value());
 
-    // nn/forward with non-tensor second arg
+    /// nn/forward with non-tensor second arg
     auto mk = [](int64_t v) { return expect_ok(ops::encode(v)); };
     auto lin = expect_ok(env.specs()[*env.lookup("nn/linear")].func({mk(2), mk(1)}));
     auto r3 = env.specs()[*env.lookup("nn/forward")].func({lin, fixnum});
     BOOST_TEST(!r3.has_value());
 
-    // torch/item on non-scalar tensor
+    /// torch/item on non-scalar tensor
     auto multi = expect_ok(tf::make_tensor(heap, torch::ones({3}, torch::kFloat64)));
     auto r4 = env.specs()[*env.lookup("torch/item")].func({multi});
     BOOST_TEST(!r4.has_value());
 
-    // optim/sgd with non-module
+    /// optim/sgd with non-module
     auto r5 = env.specs()[*env.lookup("optim/sgd")].func({fixnum, expect_ok(ops::encode(0.01))});
     BOOST_TEST(!r5.has_value());
 
-    // nn/sequential with non-module arg
+    /// nn/sequential with non-module arg
     auto r6 = env.specs()[*env.lookup("nn/sequential")].func({fixnum});
     BOOST_TEST(!r6.has_value());
 }

@@ -16,9 +16,9 @@ using namespace eta::semantics;
 using namespace eta::runtime;
 using namespace eta::runtime::vm;
 
-// ============================================================================
-// Helper fixture for emitter tests
-// ============================================================================
+/**
+ * Helper fixture for emitter tests
+ */
 
 struct EmitterFixture {
     memory::heap::Heap heap;
@@ -30,7 +30,7 @@ struct EmitterFixture {
         register_core_primitives(builtins, heap, intern_table);
     }
 
-    // Compile module source through full pipeline, return main function pointer
+    /// Compile module source through full pipeline, return main function pointer
     BytecodeFunction* compile(const std::string& src) {
         reader::lexer::Lexer lex(0, src);
         reader::parser::Parser p(lex);
@@ -56,7 +56,7 @@ struct EmitterFixture {
         return emitter.emit();
     }
 
-    // Check if any function in the registry contains the given opcode
+    /// Check if any function in the registry contains the given opcode
     bool has_opcode(OpCode op) const {
         for (const auto& func : registry.all()) {
             for (const auto& instr : func.code) {
@@ -66,7 +66,7 @@ struct EmitterFixture {
         return false;
     }
 
-    // Count occurrences of an opcode across all functions
+    /// Count occurrences of an opcode across all functions
     int count_opcode(OpCode op) const {
         int count = 0;
         for (const auto& func : registry.all()) {
@@ -77,7 +77,7 @@ struct EmitterFixture {
         return count;
     }
 
-    // Find opcodes in a specific function (by index in registry)
+    /// Find opcodes in a specific function (by index in registry)
     bool func_has_opcode(size_t func_idx, OpCode op) const {
         const auto& funcs = registry.all();
         if (func_idx >= funcs.size()) return false;
@@ -87,7 +87,7 @@ struct EmitterFixture {
         return false;
     }
 
-    // Get the main function (first registered, index 0 after compile)
+    /// Get the main function (first registered, index 0 after compile)
     const BytecodeFunction& main_func() const {
         return registry.all().back();
     }
@@ -95,9 +95,9 @@ struct EmitterFixture {
 
 BOOST_FIXTURE_TEST_SUITE(emitter_tests, EmitterFixture)
 
-// ============================================================================
-// Basic emission structure
-// ============================================================================
+/**
+ * Basic emission structure
+ */
 
 BOOST_AUTO_TEST_CASE(emit_returns_non_null) {
     auto* f = compile("(module m (define x 42))");
@@ -114,16 +114,16 @@ BOOST_AUTO_TEST_CASE(emit_main_ends_with_return) {
 BOOST_AUTO_TEST_CASE(emit_main_loads_nil_before_return) {
     auto* f = compile("(module m (define x 1))");
     BOOST_REQUIRE(f);
-    // Module init returns Nil: LoadConst(Nil) then Return
+    /// Module init returns Nil: LoadConst(Nil) then Return
     auto sz = f->code.size();
     BOOST_REQUIRE(sz >= 2);
     BOOST_CHECK(f->code[sz - 2].opcode == OpCode::LoadConst);
     BOOST_CHECK(f->code[sz - 1].opcode == OpCode::Return);
 }
 
-// ============================================================================
-// LoadConst - constants
-// ============================================================================
+/**
+ * LoadConst - constants
+ */
 
 BOOST_AUTO_TEST_CASE(emit_integer_constant) {
     compile("(module m (define x 42))");
@@ -155,9 +155,9 @@ BOOST_AUTO_TEST_CASE(emit_float_constant) {
     BOOST_CHECK(has_opcode(OpCode::LoadConst));
 }
 
-// ============================================================================
-// Global load/store
-// ============================================================================
+/**
+ * Global load/store
+ */
 
 BOOST_AUTO_TEST_CASE(emit_store_global) {
     compile("(module m (define x 42))");
@@ -169,9 +169,9 @@ BOOST_AUTO_TEST_CASE(emit_load_global) {
     BOOST_CHECK(has_opcode(OpCode::LoadGlobal));
 }
 
-// ============================================================================
-// Lambda / MakeClosure
-// ============================================================================
+/**
+ * Lambda / MakeClosure
+ */
 
 BOOST_AUTO_TEST_CASE(emit_lambda_makes_closure) {
     compile("(module m (define f (lambda (x) x)))");
@@ -180,9 +180,9 @@ BOOST_AUTO_TEST_CASE(emit_lambda_makes_closure) {
 
 BOOST_AUTO_TEST_CASE(emit_lambda_body_has_return) {
     compile("(module m (define f (lambda (x) x)))");
-    // The lambda body (second function in registry) should end with Return
+    /// The lambda body (second function in registry) should end with Return
     BOOST_REQUIRE(registry.size() >= 2);
-    // Lambda func should be added first, main func last
+    /// Lambda func should be added first, main func last
     const auto& funcs = registry.all();
     bool found_lambda_return = false;
     for (size_t i = 0; i < funcs.size() - 1; ++i) {
@@ -196,7 +196,7 @@ BOOST_AUTO_TEST_CASE(emit_lambda_body_has_return) {
 
 BOOST_AUTO_TEST_CASE(emit_lambda_arity_set) {
     compile("(module m (define f (lambda (a b c) a)))");
-    // Find the lambda function (not main)
+    /// Find the lambda function (not main)
     const auto& funcs = registry.all();
     bool found = false;
     for (const auto& func : funcs) {
@@ -222,19 +222,19 @@ BOOST_AUTO_TEST_CASE(emit_lambda_rest_param) {
     BOOST_CHECK(found);
 }
 
-// ============================================================================
-// Local load/store
-// ============================================================================
+/**
+ * Local load/store
+ */
 
 BOOST_AUTO_TEST_CASE(emit_load_local) {
     compile("(module m (define f (lambda (x) x)))");
-    // Lambda body should load x from local slot
+    /// Lambda body should load x from local slot
     BOOST_CHECK(has_opcode(OpCode::LoadLocal));
 }
 
-// ============================================================================
-// Upvalues (closures capturing variables)
-// ============================================================================
+/**
+ * Upvalues (closures capturing variables)
+ */
 
 BOOST_AUTO_TEST_CASE(emit_load_upval) {
     compile("(module m (define f (lambda (x) (lambda () x))))");
@@ -246,9 +246,9 @@ BOOST_AUTO_TEST_CASE(emit_store_upval) {
     BOOST_CHECK(has_opcode(OpCode::StoreUpval));
 }
 
-// ============================================================================
-// Call / TailCall
-// ============================================================================
+/**
+ * Call / TailCall
+ */
 
 BOOST_AUTO_TEST_CASE(emit_call) {
     compile("(module m (define (f x) x) (define y (f 1)))");
@@ -268,13 +268,13 @@ BOOST_AUTO_TEST_CASE(emit_tail_call) {
 
 BOOST_AUTO_TEST_CASE(emit_non_tail_position_uses_call) {
     compile("(module m (define (f x) x) (define (g x) (+ (f x) 1)))");
-    // (f x) is in non-tail position due to (+ ... 1)
+    /// (f x) is in non-tail position due to (+ ... 1)
     BOOST_CHECK(has_opcode(OpCode::Call));
 }
 
-// ============================================================================
-// If (JumpIfFalse + Jump)
-// ============================================================================
+/**
+ * If (JumpIfFalse + Jump)
+ */
 
 BOOST_AUTO_TEST_CASE(emit_if_has_jump_if_false) {
     compile("(module m (define x (if #t 1 2)))");
@@ -288,24 +288,24 @@ BOOST_AUTO_TEST_CASE(emit_if_has_jump) {
 
 BOOST_AUTO_TEST_CASE(emit_if_both_branches) {
     compile("(module m (define x (if #t 1 2)))");
-    // Should have at least 1 JumpIfFalse and 1 Jump
+    /// Should have at least 1 JumpIfFalse and 1 Jump
     BOOST_CHECK_GE(count_opcode(OpCode::JumpIfFalse), 1);
     BOOST_CHECK_GE(count_opcode(OpCode::Jump), 1);
 }
 
-// ============================================================================
-// Begin (with Pop between expressions)
-// ============================================================================
+/**
+ * Begin (with Pop between expressions)
+ */
 
 BOOST_AUTO_TEST_CASE(emit_begin_pops_intermediate) {
     compile("(module m (define x (begin 1 2 3)))");
-    // (begin 1 2 3): emit 1, Pop, emit 2, Pop, emit 3
+    /// (begin 1 2 3): emit 1, Pop, emit 2, Pop, emit 3
     BOOST_CHECK(has_opcode(OpCode::Pop));
 }
 
-// ============================================================================
-// Set!
-// ============================================================================
+/**
+ * Set!
+ */
 
 BOOST_AUTO_TEST_CASE(emit_set_stores_global) {
     compile("(module m (define x 1) (set! x 2))");
@@ -313,16 +313,16 @@ BOOST_AUTO_TEST_CASE(emit_set_stores_global) {
 }
 
 BOOST_AUTO_TEST_CASE(emit_set_pushes_nil) {
-    // set! returns unspecified (nil)
+    /// set! returns unspecified (nil)
     compile("(module m (define x 1) (define y (set! x 2)))");
-    // After StoreGlobal, a LoadConst(Nil) is emitted
+    /// After StoreGlobal, a LoadConst(Nil) is emitted
     BOOST_CHECK(has_opcode(OpCode::StoreGlobal));
     BOOST_CHECK(has_opcode(OpCode::LoadConst));
 }
 
-// ============================================================================
-// Quote
-// ============================================================================
+/**
+ * Quote
+ */
 
 BOOST_AUTO_TEST_CASE(emit_quote_number) {
     compile("(module m (define x (quote 42)))");
@@ -336,7 +336,7 @@ BOOST_AUTO_TEST_CASE(emit_quote_symbol) {
 
 BOOST_AUTO_TEST_CASE(emit_quote_list) {
     compile("(module m (define x (quote (1 2 3))))");
-    // Quoted list builds cons chain via LoadConst + Cons or just constants
+    /// Quoted list builds cons chain via LoadConst + Cons or just constants
     BOOST_CHECK(has_opcode(OpCode::LoadConst));
 }
 
@@ -360,9 +360,9 @@ BOOST_AUTO_TEST_CASE(emit_quote_string) {
     BOOST_CHECK(has_opcode(OpCode::LoadConst));
 }
 
-// ============================================================================
-// Values
-// ============================================================================
+/**
+ * Values
+ */
 
 BOOST_AUTO_TEST_CASE(emit_values_opcode) {
     compile("(module m (define x (values 1 2 3)))");
@@ -371,7 +371,7 @@ BOOST_AUTO_TEST_CASE(emit_values_opcode) {
 
 BOOST_AUTO_TEST_CASE(emit_values_arg_count) {
     compile("(module m (define x (values 1 2 3)))");
-    // Find the Values instruction and check arg == 3
+    /// Find the Values instruction and check arg == 3
     for (const auto& func : registry.all()) {
         for (const auto& instr : func.code) {
             if (instr.opcode == OpCode::Values) {
@@ -383,61 +383,61 @@ BOOST_AUTO_TEST_CASE(emit_values_arg_count) {
     BOOST_FAIL("Values opcode not found");
 }
 
-// ============================================================================
-// call-with-values
-// ============================================================================
+/**
+ * call-with-values
+ */
 
 BOOST_AUTO_TEST_CASE(emit_call_with_values) {
     compile("(module m (define x (call-with-values (lambda () (values 1 2)) (lambda (a b) (+ a b)))))");
     BOOST_CHECK(has_opcode(OpCode::CallWithValues));
 }
 
-// ============================================================================
-// dynamic-wind
-// ============================================================================
+/**
+ * dynamic-wind
+ */
 
 BOOST_AUTO_TEST_CASE(emit_dynamic_wind) {
     compile("(module m (define x (dynamic-wind (lambda () 0) (lambda () 42) (lambda () 0))))");
     BOOST_CHECK(has_opcode(OpCode::DynamicWind));
 }
 
-// ============================================================================
-// call/cc
-// ============================================================================
+/**
+ * call/cc
+ */
 
 BOOST_AUTO_TEST_CASE(emit_call_cc) {
     compile("(module m (define x (call/cc (lambda (k) 42))))");
     BOOST_CHECK(has_opcode(OpCode::CallCC));
 }
 
-// ============================================================================
-// PatchClosureUpval (letrec self-reference)
-// ============================================================================
+/**
+ * PatchClosureUpval (letrec self-reference)
+ */
 
 BOOST_AUTO_TEST_CASE(emit_patch_closure_upval) {
     compile("(module m (define x (letrec ((f (lambda () (f)))) (f))))");
     BOOST_CHECK(has_opcode(OpCode::PatchClosureUpval));
 }
 
-// ============================================================================
-// Multiple functions in registry
-// ============================================================================
+/**
+ * Multiple functions in registry
+ */
 
 BOOST_AUTO_TEST_CASE(emit_multiple_lambdas) {
     compile("(module m (define f (lambda (x) x)) (define g (lambda (y) y)))");
-    // Should have main func + 2 lambda funcs = 3 total
+    /// Should have main func + 2 lambda funcs = 3 total
     BOOST_CHECK_GE(registry.size(), 3u);
 }
 
 BOOST_AUTO_TEST_CASE(emit_nested_lambda) {
     compile("(module m (define f (lambda (x) (lambda (y) (+ x y)))))");
-    // Should have main + outer lambda + inner lambda = 3
+    /// Should have main + outer lambda + inner lambda = 3
     BOOST_CHECK_GE(registry.size(), 3u);
 }
 
-// ============================================================================
-// BytecodeFunctionRegistry
-// ============================================================================
+/**
+ * BytecodeFunctionRegistry
+ */
 
 BOOST_AUTO_TEST_CASE(registry_add_and_get) {
     BytecodeFunctionRegistry reg;
@@ -478,7 +478,7 @@ BOOST_AUTO_TEST_CASE(registry_stable_pointers) {
     uint32_t idx1 = reg.add(std::move(f1));
     auto* ptr1 = reg.get(idx1);
 
-    // Add more functions - pointer should remain stable (deque)
+    /// Add more functions - pointer should remain stable (deque)
     for (int i = 0; i < 100; ++i) {
         BytecodeFunction f; f.name = "func" + std::to_string(i);
         reg.add(std::move(f));
@@ -501,9 +501,9 @@ BOOST_AUTO_TEST_CASE(registry_get_mut) {
     BOOST_CHECK_EQUAL(reg.get(idx)->name, "modified");
 }
 
-// ============================================================================
-// Bytecode encoding helpers
-// ============================================================================
+/**
+ * Bytecode encoding helpers
+ */
 
 BOOST_AUTO_TEST_CASE(encode_decode_func_index) {
     uint32_t original = 42;
@@ -518,23 +518,25 @@ BOOST_AUTO_TEST_CASE(func_index_not_regular_value) {
     BOOST_CHECK(!is_func_index(nanbox::Nil));
 }
 
-// ============================================================================
-// String constant caching
-// ============================================================================
+/**
+ * String constant caching
+ */
 
 BOOST_AUTO_TEST_CASE(emit_duplicate_strings_share_constant) {
     auto* f = compile("(module m (define x \"hello\") (define y \"hello\"))");
     BOOST_REQUIRE(f);
-    // Count LoadConst instructions that reference string constants
-    // Due to caching, "hello" should be loaded from the same constant index
-    // We can't easily inspect this without more infrastructure,
-    // but at minimum the emission should succeed
+    /**
+     * Count LoadConst instructions that reference string constants
+     * Due to caching, "hello" should be loaded from the same constant index
+     * We can't easily inspect this without more infrastructure,
+     * but at minimum the emission should succeed
+     */
     BOOST_CHECK(has_opcode(OpCode::LoadConst));
 }
 
-// ============================================================================
-// Complex emission patterns
-// ============================================================================
+/**
+ * Complex emission patterns
+ */
 
 BOOST_AUTO_TEST_CASE(emit_letrec_mutual_recursion) {
     compile("(module m "
@@ -555,14 +557,14 @@ BOOST_AUTO_TEST_CASE(emit_closure_with_multiple_upvals) {
 
 BOOST_AUTO_TEST_CASE(emit_deeply_nested_if) {
     compile("(module m (define x (if #t (if #f 1 2) (if #t 3 4))))");
-    // Should have multiple JumpIfFalse/Jump pairs
+    /// Should have multiple JumpIfFalse/Jump pairs
     BOOST_CHECK_GE(count_opcode(OpCode::JumpIfFalse), 3);
     BOOST_CHECK_GE(count_opcode(OpCode::Jump), 3);
 }
 
 BOOST_AUTO_TEST_CASE(emit_complex_begin) {
     compile("(module m (define x (begin 1 2 3 4 5)))");
-    // 4 Pop instructions between 5 expressions
+    /// 4 Pop instructions between 5 expressions
     BOOST_CHECK_GE(count_opcode(OpCode::Pop), 4);
 }
 

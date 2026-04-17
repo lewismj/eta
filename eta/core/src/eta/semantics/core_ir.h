@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <compare>
 #include <cstdint>
@@ -44,7 +44,7 @@ struct Address {
  */
 struct Arity { std::uint16_t required{}; std::uint16_t optional{}; bool has_rest{}; };
 
-struct Node; // fwd
+struct Node; ///< fwd
 
 /**
  * @brief Variable reference node
@@ -72,7 +72,7 @@ struct Const { Literal value;
  */
 struct Quote { std::shared_ptr<eta::reader::parser::SExpr> datum; };
 
-// Core IR node types
+/// Core IR node types
 struct If    { Node* test; Node* conseq; Node* alt; };
 struct Begin { std::vector<Node*> exprs; };
 struct Set   { Address target; Node* value; };
@@ -98,24 +98,18 @@ struct Raise { std::string tag_name; Node* value; };
  */
 struct Guard { std::string tag_name; Node* body; };
 
-// Unification / logic variable IR nodes
+/// Unification / logic variable IR nodes
 
-/// (logic-var) — allocate a fresh unbound logic variable
 struct MakeLogicVar {};
 
-/// (unify a b) — structural unification; evaluates to #t or #f
 struct Unify { Node* a; Node* b; };
 
-/// (deref-lvar x) — walk the substitution chain; returns the ground term
 struct DerefLogicVar { Node* lvar; };
 
-/// (trail-mark) — push current trail depth as a backtrack point
 struct TrailMark {};
 
-/// (unwind-trail mark) — undo all bindings made since mark
 struct UnwindTrail { Node* mark; };
 
-/// (copy-term t) — deep copy term replacing unbound vars with fresh copies
 struct CopyTerm { Node* term; };
 
 /**
@@ -126,9 +120,9 @@ struct CopyTerm { Node* term; };
 struct Lambda {
     std::vector<BindingId> params;
     std::optional<BindingId> rest;
-    std::vector<BindingId> locals;         // for frame layout
-    std::vector<BindingId> upvals;         // ordered captures (internal IDs)
-    std::vector<Address>   upval_sources;  // source addresses in parent scope
+    std::vector<BindingId> locals;         ///< for frame layout
+    std::vector<BindingId> upvals;         ///< ordered captures (internal IDs)
+    std::vector<Address>   upval_sources;  ///< source addresses in parent scope
     Arity arity{};
     std::uint32_t stack_size{0};
     Node* body{};
@@ -181,7 +175,7 @@ struct Node {
     Node() = default;
 };
 
-// Re-export Ref for convenience
+/// Re-export Ref for convenience
 using NodeRef = Ref<Node>;
 
-} // namespace eta::semantics::core
+} ///< namespace eta::semantics::core

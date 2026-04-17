@@ -13,7 +13,7 @@
 #include <variant>
 
 
-// Eta compiler includes
+/// Eta compiler includes
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
@@ -27,9 +27,9 @@ namespace eta::lsp {
 
 using namespace eta::json;
 
-// ============================================================================
-// Construction
-// ============================================================================
+/**
+ * Construction
+ */
 
 LspServer::LspServer()
     : in_(std::cin), out_(std::cout)
@@ -43,9 +43,9 @@ LspServer::LspServer(std::istream& in, std::ostream& out)
     init_module_path();
 }
 
-// ============================================================================
-// Module path resolution
-// ============================================================================
+/**
+ * Module path resolution
+ */
 
 void LspServer::init_module_path() {
     resolver_ = interpreter::ModulePathResolver::from_args_or_env("");
@@ -65,14 +65,15 @@ void LspServer::preload_prelude(
         std::unordered_set<std::string>& seen_modules) {
     using namespace reader::utils;
 
-    // Search for "prelude.eta" directly — this single file defines all the
-    // std.* modules inline (std.core, std.math, std.io, std.collections,
-    // std.test, std.prelude).  We must load it before preload_module_deps so
-    // that (import std.prelude) in user code resolves to a known module.
+    /**
+     * std.* modules inline (std.core, std.math, std.io, std.collections,
+     * std.test, std.prelude).  We must load it before preload_module_deps so
+     * that (import std.prelude) in user code resolves to a known module.
+     */
     static const std::string prelude_uri = "eta://stdlib/prelude.eta";
 
     auto prelude_path = resolver_.find_file("prelude.eta");
-    if (!prelude_path) return; // not found — nothing to report
+    if (!prelude_path) return;
 
     std::ifstream f(*prelude_path);
     if (!f.is_open()) return;
@@ -83,7 +84,7 @@ void LspServer::preload_prelude(
     reader::parser::Parser parser(lex);
     auto parsed = parser.parse_toplevel();
     if (!parsed) {
-        // Report parse error via publishDiagnostics so the user knows the stdlib is broken.
+        /// Report parse error via publishDiagnostics so the user knows the stdlib is broken.
         std::vector<LspDiagnostic> diags;
         std::visit([&](auto&& e) {
             using T = std::decay_t<decltype(e)>;
@@ -110,7 +111,7 @@ void LspServer::preload_prelude(
     reader::expander::Expander expander;
     auto expanded = expander.expand_many(*parsed);
     if (!expanded) {
-        // Report expansion error.
+        /// Report expansion error.
         const auto& err = expanded.error();
         LspDiagnostic d;
         d.severity = 1;
@@ -125,12 +126,12 @@ void LspServer::preload_prelude(
     }
 
     for (auto& form : *expanded) {
-        // Track module names so preload_module_deps won't try to re-load them
+        /// Track module names so preload_module_deps won't try to re-load them
         const auto* mod = as_list(form);
         if (mod && mod->elems.size() >= 2 &&
             is_symbol_named(mod->elems[0], "module")) {
             if (const auto* name_sym = as_symbol(mod->elems[1])) {
-                if (seen_modules.count(name_sym->name)) continue; // already present
+                if (seen_modules.count(name_sym->name)) continue; ///< already present
                 seen_modules.insert(name_sym->name);
             }
         }
@@ -143,7 +144,7 @@ void LspServer::preload_module_deps(
         std::unordered_set<std::string>& seen_modules) {
     using namespace reader::utils;
 
-    // Collect imported module names from a form list
+    /// Collect imported module names from a form list
     auto collect_imports = [&](const std::vector<eta::reader::parser::SExprPtr>& forms,
                                 std::vector<std::string>& out) {
         for (const auto& f : forms) {
@@ -162,7 +163,7 @@ void LspServer::preload_module_deps(
                     if (const auto* s = as_symbol(clause)) {
                         mod_name = s->name;
                     } else if (const auto* lst = as_list(clause)) {
-                        // (only mod ...) / (except mod ...) / (rename mod ...) / (prefix mod pfx)
+                        /// (only mod ...) / (except mod ...) / (rename mod ...) / (prefix mod pfx)
                         if (lst->elems.size() >= 2) {
                             if (const auto* mod_sym = as_symbol(lst->elems[1])) mod_name = mod_sym->name;
                         }
@@ -184,7 +185,7 @@ void LspServer::preload_module_deps(
             seen_modules.insert(mod_name);
 
             auto src = resolve_module_source(mod_name);
-            if (!src) continue; // not on disk — let linker emit the diagnostic
+            if (!src) continue;
 
             reader::lexer::Lexer lex(0, *src);
             reader::parser::Parser parser(lex);
@@ -195,7 +196,7 @@ void LspServer::preload_module_deps(
             auto expanded = expander.expand_many(*parsed);
             if (!expanded) continue;
 
-            // Collect transitive imports before moving forms
+            /// Collect transitive imports before moving forms
             collect_imports(*expanded, next_load);
 
             for (auto& f : *expanded) all_forms.push_back(std::move(f));
@@ -204,12 +205,11 @@ void LspServer::preload_module_deps(
     }
 }
 
-// ============================================================================
-// Transport: Header-Content framing over stdio
-// ============================================================================
+/**
+ * Transport: Header-Content framing over stdio
+ */
 
 std::optional<std::string> LspServer::read_message() {
-    // 64 MiB ceiling — a realistic LSP message is well under 1 MiB.
     static constexpr std::size_t MAX_MESSAGE_SIZE = 64u * 1024u * 1024u;
 
     std::size_t content_length = 0;
@@ -230,13 +230,13 @@ std::optional<std::string> LspServer::read_message() {
                           << header_line << "\n";
             }
         }
-        // Ignore other headers (Content-Type, etc.)
+        /// Ignore other headers (Content-Type, etc.)
     }
 
     if (in_.eof() || in_.fail()) return std::nullopt;
     if (!got_content_length || content_length == 0) return std::nullopt;
 
-    // Guard against unbounded allocation from a crafted Content-Length value.
+    /// Guard against unbounded allocation from a crafted Content-Length value.
     if (content_length > MAX_MESSAGE_SIZE) {
         std::cerr << "[eta-lsp] warning: Content-Length " << content_length
                   << " exceeds maximum (" << MAX_MESSAGE_SIZE << " bytes); dropping message\n";
@@ -283,9 +283,9 @@ void LspServer::send_notification(const std::string& method, const Value& params
     }));
 }
 
-// ============================================================================
-// Main loop
-// ============================================================================
+/**
+ * Main loop
+ */
 
 void LspServer::run() {
     while (running_) {
@@ -305,14 +305,14 @@ void LspServer::run() {
     }
 }
 
-// ============================================================================
-// Dispatch
-// ============================================================================
+/**
+ * Dispatch
+ */
 
 void LspServer::dispatch(const Value& msg) {
     auto method_opt = msg.get_string("method");
     if (!method_opt) {
-        return; // Possibly a response — ignore
+        return;
     }
     const auto& method = *method_opt;
     const auto& params = msg["params"];
@@ -380,9 +380,9 @@ void LspServer::dispatch(const Value& msg) {
     }
 }
 
-// ============================================================================
-// LSP: initialize / shutdown
-// ============================================================================
+/**
+ * LSP: initialize / shutdown
+ */
 
 Value LspServer::handle_initialize(const Value& /*params*/) {
     initialized_ = true;
@@ -391,7 +391,7 @@ Value LspServer::handle_initialize(const Value& /*params*/) {
         {"capabilities", json::object({
             {"textDocumentSync", json::object({
                 {"openClose", true},
-                {"change", 1},  // 1 = Full sync
+                {"change", 1},  ///< 1 = Full sync
                 {"save", json::object({{"includeText", true}})},
             })},
             {"hoverProvider", true},
@@ -432,7 +432,7 @@ Value LspServer::handle_initialize(const Value& /*params*/) {
 }
 
 void LspServer::handle_initialized(const Value& /*params*/) {
-    // Client is ready
+    /// Client is ready
 }
 
 void LspServer::handle_shutdown() {
@@ -443,9 +443,9 @@ void LspServer::handle_exit() {
     running_ = false;
 }
 
-// ============================================================================
-// Text document synchronization
-// ============================================================================
+/**
+ * Text document synchronization
+ */
 
 void LspServer::handle_did_open(const Value& params) {
     const auto& td = params["textDocument"];
@@ -467,7 +467,7 @@ void LspServer::handle_did_change(const Value& params) {
 
     it->second.version = td.get_int("version").value_or(it->second.version);
 
-    // Full sync: replace content with last change
+    /// Full sync: replace content with last change
     const auto& changes = params["contentChanges"];
     if (changes.is_array() && !changes.as_array().empty()) {
         const auto& last = changes.as_array().back();
@@ -483,14 +483,14 @@ void LspServer::handle_did_change(const Value& params) {
 void LspServer::handle_did_close(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
     documents_.erase(uri);
-    last_validated_content_.erase(uri); // clean up cache entry
-    // Clear diagnostics for closed document
+    last_validated_content_.erase(uri); ///< clean up cache entry
+    /// Clear diagnostics for closed document
     publish_diagnostics(uri, {});
 }
 
 void LspServer::handle_did_save(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
-    // Re-validate on save; update stored content if the server sent it back
+    /// Re-validate on save; update stored content if the server sent it back
     auto text = params.get_string("text");
     if (text) {
         auto it = documents_.find(uri);
@@ -498,15 +498,15 @@ void LspServer::handle_did_save(const Value& params) {
             it->second.content = *text;
         }
     }
-    // Invalidate validation and completion caches so file changes are reflected
+    /// Invalidate validation and completion caches so file changes are reflected
     last_validated_content_.erase(uri);
     completion_cache_loaded_ = false;
     validate_document(uri);
 }
 
-// ============================================================================
-// Diagnostics: Run the eta pipeline and collect errors
-// ============================================================================
+/**
+ * Diagnostics: Run the eta pipeline and collect errors
+ */
 
 void LspServer::validate_document(const std::string& uri) {
     auto it = documents_.find(uri);
@@ -514,14 +514,16 @@ void LspServer::validate_document(const std::string& uri) {
 
     const auto& source = it->second.content;
 
-    // Skip if the content hasn't changed since the last successful validation run
-    // (avoids re-running the full 4-phase pipeline on every keystroke for no-op edits).
+    /**
+     * Skip if the content hasn't changed since the last successful validation run
+     * (avoids re-running the full 4-phase pipeline on every keystroke for no-op edits).
+     */
     auto& cached = last_validated_content_[uri];
     if (cached == source) return;
     cached = source;
     std::vector<LspDiagnostic> diags;
 
-    // Phase 1: Lex + Parse
+    /// Phase 1: Lex + Parse
     reader::lexer::Lexer lex(0, source);
     reader::parser::Parser parser(lex);
 
@@ -531,7 +533,7 @@ void LspServer::validate_document(const std::string& uri) {
         std::visit([&](auto&& e) {
             using T = std::decay_t<decltype(e)>;
             LspDiagnostic d;
-            d.severity = 1; // Error
+            d.severity = 1; ///< Error
             if constexpr (std::is_same_v<T, reader::lexer::LexError>) {
                 d.range = span_to_range(e.span.start.line, e.span.start.column,
                                         e.span.end.line, e.span.end.column);
@@ -555,7 +557,7 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    // Phase 2: Expand
+    /// Phase 2: Expand
     reader::expander::Expander expander;
     auto expanded_res = expander.expand_many(parsed);
     if (!expanded_res) {
@@ -572,10 +574,12 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    // Phase 3: Link
-    // Move expanded forms out (SExprPtr = unique_ptr, not copyable).
-    // Load any external modules required by (import ...) forms so the
-    // linker can resolve cross-module references without false diagnostics.
+    /**
+     * Phase 3: Link
+     * Move expanded forms out (SExprPtr = unique_ptr, not copyable).
+     * Load any external modules required by (import ...) forms so the
+     * linker can resolve cross-module references without false diagnostics.
+     */
     auto all_forms = std::move(*expanded_res);
     {
         using namespace reader::utils;
@@ -618,7 +622,7 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    // Phase 4: Semantic Analysis
+    /// Phase 4: Semantic Analysis
     semantics::SemanticAnalyzer sa;
     runtime::BuiltinEnvironment builtins;
     runtime::register_builtin_names(builtins);
@@ -635,7 +639,6 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    // All phases passed — clear diagnostics
     publish_diagnostics(uri, {});
 }
 
@@ -653,9 +656,8 @@ void LspServer::publish_diagnostics(const std::string& uri,
     }));
 }
 
-// ============================================================================
-// Step 6: Semantic features — Hover
-// ============================================================================
+/**
+ */
 
 Value LspServer::handle_hover(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
@@ -669,93 +671,93 @@ Value LspServer::handle_hover(const Value& params) {
     auto word = word_at_position(source, line, character);
     if (word.empty()) return Value(nullptr);
 
-    // Known keywords/special forms
+    /// Known keywords/special forms
     static const std::unordered_map<std::string, std::string> keyword_docs = {
-        {"define",       "**define** — Define a variable or function.\n\n`(define name expr)`\n\n`(define (name args...) body...)`"},
-        {"lambda",       "**lambda** — Create an anonymous function.\n\n`(lambda (args...) body...)`"},
-        {"if",           "**if** — Conditional expression.\n\n`(if test consequent alternate)`"},
-        {"begin",        "**begin** — Sequence expressions.\n\n`(begin expr...)`"},
-        {"set!",         "**set!** — Mutate a variable binding.\n\n`(set! name expr)`"},
-        {"quote",        "**quote** — Return datum without evaluation.\n\n`(quote datum)` or `'datum`"},
-        {"let",          "**let** — Parallel local bindings.\n\n`(let ((var init)...) body...)`"},
-        {"let*",         "**let*** — Sequential local bindings.\n\n`(let* ((var init)...) body...)`"},
-        {"letrec",       "**letrec** — Recursive local bindings.\n\n`(letrec ((var init)...) body...)`"},
-        {"letrec*",      "**letrec*** — Sequential recursive bindings.\n\n`(letrec* ((var init)...) body...)`"},
-        {"cond",         "**cond** — Multi-way conditional.\n\n`(cond (test expr...)... (else expr...))`"},
-        {"case",         "**case** — Dispatch on datum equality.\n\n`(case key ((datum...) expr...)... (else expr...))`"},
-        {"and",          "**and** — Short-circuit logical and.\n\n`(and expr...)` → last truthy or `#f`"},
-        {"or",           "**or** — Short-circuit logical or.\n\n`(or expr...)` → first truthy or `#f`"},
-        {"when",         "**when** — One-armed conditional.\n\n`(when test body...)`"},
-        {"unless",       "**unless** — Negated one-armed conditional.\n\n`(unless test body...)`"},
-        {"do",           "**do** — Iteration construct.\n\n`(do ((var init step)...) (test result...) body...)`"},
-        {"module",       "**module** — Declare a module.\n\n`(module name body...)`"},
-        {"import",       "**import** — Import bindings from a module.\n\n`(import module-name)`"},
-        {"export",       "**export** — Export bindings.\n\n`(export name...)`"},
-        {"define-syntax","**define-syntax** — Define a hygienic macro.\n\n`(define-syntax name (syntax-rules (literals...) clause...))`"},
-        {"syntax-rules", "**syntax-rules** — Hygienic macro transformer.\n\n`(syntax-rules (literals...) (pattern template)...)`"},
-        {"define-record-type", "**define-record-type** — Define a record type.\n\n`(define-record-type name (ctor field...) pred (field accessor [mutator])...)`"},
-        {"def",          "**def** — Alias for `define`.\n\n`(def name expr)` or `(def (name args...) body...)`"},
-        {"defun",        "**defun** — Alias for function definition.\n\n`(defun name (args...) body...)`"},
-        {"progn",        "**progn** — Alias for `begin`.\n\n`(progn expr...)`"},
-        {"quasiquote",   "**quasiquote** — Template with unquote.\n\n`` `(datum ,expr ,@splice) ``"},
-        {"call/cc",      "**call/cc** — Call with current continuation.\n\n`(call/cc proc)`"},
-        {"call-with-current-continuation", "**call-with-current-continuation** — Full name for `call/cc`.\n\n`(call-with-current-continuation proc)`"},
-        {"dynamic-wind", "**dynamic-wind** — Guard entry/exit of a continuation.\n\n`(dynamic-wind before thunk after)`"},
-        {"values",       "**values** — Return multiple values.\n\n`(values expr...)`"},
-        {"call-with-values", "**call-with-values** — Receive multiple values.\n\n`(call-with-values producer consumer)`"},
-        {"apply",        "**apply** — Apply procedure to argument list.\n\n`(apply proc arg... arg-list)`"},
-        // Exception handling
-        {"raise",        "**raise** — Raise an exception.\n\n`(raise tag value)`"},
-        {"catch",        "**catch** — Catch an exception by tag.\n\n`(catch 'tag body ...)`"},
-        // Logic / unification
-        {"logic-var",    "**logic-var** — Create a fresh logic variable.\n\n`(logic-var)`"},
-        {"unify",        "**unify** — Unify two terms, extending the substitution.\n\n`(unify term1 term2)`"},
-        {"deref-lvar",   "**deref-lvar** — Walk the substitution chain for a logic variable.\n\n`(deref-lvar lvar)`"},
-        {"trail-mark",   "**trail-mark** — Record the current trail position.\n\n`(trail-mark)`"},
-        {"unwind-trail", "**unwind-trail** — Undo bindings back to a saved trail mark.\n\n`(unwind-trail mark)`"},
-        {"copy-term",    "**copy-term** — Deep-copy a term, freshening logic variables.\n\n`(copy-term term)`"},
-        // AD / tape
-        {"make-dual",        "**make-dual** — Construct a dual number for forward-mode AD.\n\n`(make-dual primal tangent)`"},
-        {"dual?",            "**dual?** — Predicate: is the value a dual number?\n\n`(dual? val)`"},
-        {"dual-primal",      "**dual-primal** — Extract the primal from a dual number.\n\n`(dual-primal dual)`"},
-        {"dual-backprop",    "**dual-backprop** — Extract the backprop closure from a dual.\n\n`(dual-backprop dual)`"},
-        {"tape-new",         "**tape-new** — Create a new AD tape.\n\n`(tape-new)`"},
-        {"tape-start!",      "**tape-start!** — Activate a tape for recording.\n\n`(tape-start! tape)`"},
-        {"tape-stop!",       "**tape-stop!** — Deactivate the current tape (pops the most recent).\n\n`(tape-stop!)`"},
-        {"tape-var",         "**tape-var** — Create a tracked tape variable.\n\n`(tape-var tape value)`"},
-        {"tape-backward!",   "**tape-backward!** — Run reverse-mode backpropagation.\n\n`(tape-backward! tape root-ref)`"},
-        {"tape-adjoint",     "**tape-adjoint** — Read the adjoint of a tape ref.\n\n`(tape-adjoint tape ref)`"},
-        {"tape-primal",      "**tape-primal** — Read the primal value of a tape ref.\n\n`(tape-primal tape ref)`"},
-        {"tape-ref?",        "**tape-ref?** — Predicate: is the value a tape reference?\n\n`(tape-ref? val)`"},
-        {"tape-ref-index",   "**tape-ref-index** — Get the integer index of a tape ref.\n\n`(tape-ref-index ref)`"},
-        {"tape-size",        "**tape-size** — Number of recorded nodes on the tape.\n\n`(tape-size tape)`"},
-        {"tape-ref-value",   "**tape-ref-value** — Get the primal value stored in a tape ref.\n\n`(tape-ref-value ref)`"},
-        // CLP
-        {"%clp-domain-z!",  "**%clp-domain-z!** — Set an integer domain constraint.\n\n`(%clp-domain-z! lvar lo hi)`"},
-        {"%clp-domain-fd!",  "**%clp-domain-fd!** — Set a finite-domain constraint.\n\n`(%clp-domain-fd! lvar domain)`"},
-        {"%clp-get-domain",  "**%clp-get-domain** — Query the current domain of a constrained variable.\n\n`(%clp-get-domain lvar)`"},
+        {"define",       "**define** â€” Define a variable or function.\n\n`(define name expr)`\n\n`(define (name args...) body...)`"},
+        {"lambda",       "**lambda** â€” Create an anonymous function.\n\n`(lambda (args...) body...)`"},
+        {"if",           "**if** â€” Conditional expression.\n\n`(if test consequent alternate)`"},
+        {"begin",        "**begin** â€” Sequence expressions.\n\n`(begin expr...)`"},
+        {"set!",         "**set!** â€” Mutate a variable binding.\n\n`(set! name expr)`"},
+        {"quote",        "**quote** â€” Return datum without evaluation.\n\n`(quote datum)` or `'datum`"},
+        {"let",          "**let** â€” Parallel local bindings.\n\n`(let ((var init)...) body...)`"},
+        {"let*",         "**let*** â€” Sequential local bindings.\n\n`(let* ((var init)...) body...)`"},
+        {"letrec",       "**letrec** â€” Recursive local bindings.\n\n`(letrec ((var init)...) body...)`"},
+        {"letrec*",      "**letrec*** â€” Sequential recursive bindings.\n\n`(letrec* ((var init)...) body...)`"},
+        {"cond",         "**cond** â€” Multi-way conditional.\n\n`(cond (test expr...)... (else expr...))`"},
+        {"case",         "**case** â€” Dispatch on datum equality.\n\n`(case key ((datum...) expr...)... (else expr...))`"},
+        {"and",          "**and** â€” Short-circuit logical and.\n\n`(and expr...)` â†’ last truthy or `#f`"},
+        {"or",           "**or** â€” Short-circuit logical or.\n\n`(or expr...)` â†’ first truthy or `#f`"},
+        {"when",         "**when** â€” One-armed conditional.\n\n`(when test body...)`"},
+        {"unless",       "**unless** â€” Negated one-armed conditional.\n\n`(unless test body...)`"},
+        {"do",           "**do** â€” Iteration construct.\n\n`(do ((var init step)...) (test result...) body...)`"},
+        {"module",       "**module** â€” Declare a module.\n\n`(module name body...)`"},
+        {"import",       "**import** â€” Import bindings from a module.\n\n`(import module-name)`"},
+        {"export",       "**export** â€” Export bindings.\n\n`(export name...)`"},
+        {"define-syntax","**define-syntax** â€” Define a hygienic macro.\n\n`(define-syntax name (syntax-rules (literals...) clause...))`"},
+        {"syntax-rules", "**syntax-rules** â€” Hygienic macro transformer.\n\n`(syntax-rules (literals...) (pattern template)...)`"},
+        {"define-record-type", "**define-record-type** â€” Define a record type.\n\n`(define-record-type name (ctor field...) pred (field accessor [mutator])...)`"},
+        {"def",          "**def** â€” Alias for `define`.\n\n`(def name expr)` or `(def (name args...) body...)`"},
+        {"defun",        "**defun** â€” Alias for function definition.\n\n`(defun name (args...) body...)`"},
+        {"progn",        "**progn** â€” Alias for `begin`.\n\n`(progn expr...)`"},
+        {"quasiquote",   "**quasiquote** â€” Template with unquote.\n\n`` `(datum ,expr ,@splice) ``"},
+        {"call/cc",      "**call/cc** â€” Call with current continuation.\n\n`(call/cc proc)`"},
+        {"call-with-current-continuation", "**call-with-current-continuation** â€” Full name for `call/cc`.\n\n`(call-with-current-continuation proc)`"},
+        {"dynamic-wind", "**dynamic-wind** â€” Guard entry/exit of a continuation.\n\n`(dynamic-wind before thunk after)`"},
+        {"values",       "**values** â€” Return multiple values.\n\n`(values expr...)`"},
+        {"call-with-values", "**call-with-values** â€” Receive multiple values.\n\n`(call-with-values producer consumer)`"},
+        {"apply",        "**apply** â€” Apply procedure to argument list.\n\n`(apply proc arg... arg-list)`"},
+        /// Exception handling
+        {"raise",        "**raise** â€” Raise an exception.\n\n`(raise tag value)`"},
+        {"catch",        "**catch** â€” Catch an exception by tag.\n\n`(catch 'tag body ...)`"},
+        /// Logic / unification
+        {"logic-var",    "**logic-var** â€” Create a fresh logic variable.\n\n`(logic-var)`"},
+        {"unify",        "**unify** â€” Unify two terms, extending the substitution.\n\n`(unify term1 term2)`"},
+        {"deref-lvar",   "**deref-lvar** â€” Walk the substitution chain for a logic variable.\n\n`(deref-lvar lvar)`"},
+        {"trail-mark",   "**trail-mark** â€” Record the current trail position.\n\n`(trail-mark)`"},
+        {"unwind-trail", "**unwind-trail** â€” Undo bindings back to a saved trail mark.\n\n`(unwind-trail mark)`"},
+        {"copy-term",    "**copy-term** â€” Deep-copy a term, freshening logic variables.\n\n`(copy-term term)`"},
+        /// AD / tape
+        {"make-dual",        "**make-dual** â€” Construct a dual number for forward-mode AD.\n\n`(make-dual primal tangent)`"},
+        {"dual?",            "**dual?** â€” Predicate: is the value a dual number?\n\n`(dual? val)`"},
+        {"dual-primal",      "**dual-primal** â€” Extract the primal from a dual number.\n\n`(dual-primal dual)`"},
+        {"dual-backprop",    "**dual-backprop** â€” Extract the backprop closure from a dual.\n\n`(dual-backprop dual)`"},
+        {"tape-new",         "**tape-new** â€” Create a new AD tape.\n\n`(tape-new)`"},
+        {"tape-start!",      "**tape-start!** â€” Activate a tape for recording.\n\n`(tape-start! tape)`"},
+        {"tape-stop!",       "**tape-stop!** â€” Deactivate the current tape (pops the most recent).\n\n`(tape-stop!)`"},
+        {"tape-var",         "**tape-var** â€” Create a tracked tape variable.\n\n`(tape-var tape value)`"},
+        {"tape-backward!",   "**tape-backward!** â€” Run reverse-mode backpropagation.\n\n`(tape-backward! tape root-ref)`"},
+        {"tape-adjoint",     "**tape-adjoint** â€” Read the adjoint of a tape ref.\n\n`(tape-adjoint tape ref)`"},
+        {"tape-primal",      "**tape-primal** â€” Read the primal value of a tape ref.\n\n`(tape-primal tape ref)`"},
+        {"tape-ref?",        "**tape-ref?** â€” Predicate: is the value a tape reference?\n\n`(tape-ref? val)`"},
+        {"tape-ref-index",   "**tape-ref-index** â€” Get the integer index of a tape ref.\n\n`(tape-ref-index ref)`"},
+        {"tape-size",        "**tape-size** â€” Number of recorded nodes on the tape.\n\n`(tape-size tape)`"},
+        {"tape-ref-value",   "**tape-ref-value** â€” Get the primal value stored in a tape ref.\n\n`(tape-ref-value ref)`"},
+        /// CLP
+        {"%clp-domain-z!",  "**%clp-domain-z!** â€” Set an integer domain constraint.\n\n`(%clp-domain-z! lvar lo hi)`"},
+        {"%clp-domain-fd!",  "**%clp-domain-fd!** â€” Set a finite-domain constraint.\n\n`(%clp-domain-fd! lvar domain)`"},
+        {"%clp-get-domain",  "**%clp-get-domain** â€” Query the current domain of a constrained variable.\n\n`(%clp-get-domain lvar)`"},
 #ifdef ETA_HAS_NNG
-        // nng / message-passing builtins
-        {"nng-socket",     "**nng-socket** — Create an nng socket.\n\n`(nng-socket type-sym)` where type-sym is one of: `'pair` `'pub` `'sub` `'push` `'pull` `'req` `'rep` `'surveyor` `'respondent` `'bus`"},
-        {"nng-listen",     "**nng-listen** — Listen on an endpoint.\n\n`(nng-listen sock endpoint)` — e.g. `\"tcp://*:5555\"`, `\"ipc:///tmp/eta.sock\"`, `\"inproc://workers\"`"},
-        {"nng-dial",       "**nng-dial** — Dial (connect to) an endpoint.\n\n`(nng-dial sock endpoint)`"},
-        {"nng-close",      "**nng-close** — Close the socket (idempotent).\n\n`(nng-close sock)`"},
-        {"nng-socket?",    "**nng-socket?** — Socket predicate.\n\n`(nng-socket? x)` → `#t` if x is an nng socket"},
-        {"send!",          "**send!** — Serialize a value and send it over a socket.\n\n`(send! sock value [flag])` — flag: `'noblock` or `'wait`"},
-        {"recv!",          "**recv!** — Receive a value from a socket.\n\n`(recv! sock [flag])` — returns value or `#f` on timeout; flag: `'noblock` or `'wait`"},
-        {"nng-poll",       "**nng-poll** — Poll multiple sockets for readiness.\n\n`(nng-poll items timeout-ms)` — items is a list of `(socket . events)` pairs; returns list of ready sockets"},
-        {"nng-subscribe",  "**nng-subscribe** — Set SUB topic filter.\n\n`(nng-subscribe sock topic)` — topic is a string prefix"},
-        {"nng-set-option", "**nng-set-option** — Set a socket option.\n\n`(nng-set-option sock option value)` — option: `'recv-timeout` `'send-timeout` `'recv-buf-size` `'survey-time`"},
-        // actor model
-        {"spawn",           "**spawn** — Spawn a child Eta process.\n\n`(spawn module-path)` — launches `etai <module-path>` as a child process and returns the parent-side PAIR socket for communication"},
-        {"spawn-kill",      "**spawn-kill** — Forcibly terminate a spawned child.\n\n`(spawn-kill sock)` — sends SIGTERM; returns `#t` on success"},
-        {"spawn-wait",      "**spawn-wait** — Wait for a spawned child to exit.\n\n`(spawn-wait sock)` — blocks until child exits; returns the exit code as a fixnum"},
-        {"current-mailbox", "**current-mailbox** — The PAIR socket to the parent process.\n\n`(current-mailbox)` — returns the socket established by `--mailbox` at startup, or `()` if not a spawned child"},
-        // in-process actor threads
-        {"spawn-thread-with", "**spawn-thread-with** — Spawn an in-process actor thread.\n\n`(spawn-thread-with module-path func-name args...)` — launches a new OS thread with its own VM, loads the module, calls `(func-name args...)`, communicates via `inproc://` PAIR socket"},
-        {"spawn-thread",      "**spawn-thread** — Spawn an actor thread from a closure.\n\n`(spawn-thread thunk)` — use `spawn-thread-with` instead for named functions"},
-        {"thread-join",       "**thread-join** — Wait for an actor thread to complete.\n\n`(thread-join sock)` — blocks until the thread exits; returns `0` on success, `#f` if not found"},
-        {"thread-alive?",     "**thread-alive?** — Check if an actor thread is still running.\n\n`(thread-alive? sock)` — returns `#t` while the thread is executing, `#f` after it exits"},
+        /// nng / message-passing builtins
+        {"nng-socket",     "**nng-socket** â€” Create an nng socket.\n\n`(nng-socket type-sym)` where type-sym is one of: `'pair` `'pub` `'sub` `'push` `'pull` `'req` `'rep` `'surveyor` `'respondent` `'bus`"},
+        {"nng-listen",     "**nng-listen** â€” Listen on an endpoint.\n\n`(nng-listen sock endpoint)` â€” e.g. `\"tcp:///<*:5555\"`, `\"ipc:///tmp/eta.sock\"`, `\"inproc://workers\"`"},
+        {"nng-dial",       "**nng-dial** â€” Dial (connect to) an endpoint.\n\n`(nng-dial sock endpoint)`"},
+        {"nng-close",      "**nng-close** â€” Close the socket (idempotent).\n\n`(nng-close sock)`"},
+        {"nng-socket?",    "**nng-socket?** â€” Socket predicate.\n\n`(nng-socket? x)` â†’ `#t` if x is an nng socket"},
+        {"send!",          "**send!** â€” Serialize a value and send it over a socket.\n\n`(send! sock value [flag])` â€” flag: `'noblock` or `'wait`"},
+        {"recv!",          "**recv!** â€” Receive a value from a socket.\n\n`(recv! sock [flag])` â€” returns value or `#f` on timeout; flag: `'noblock` or `'wait`"},
+        {"nng-poll",       "**nng-poll** â€” Poll multiple sockets for readiness.\n\n`(nng-poll items timeout-ms)` â€” items is a list of `(socket . events)` pairs; returns list of ready sockets"},
+        {"nng-subscribe",  "**nng-subscribe** â€” Set SUB topic filter.\n\n`(nng-subscribe sock topic)` â€” topic is a string prefix"},
+        {"nng-set-option", "**nng-set-option** â€” Set a socket option.\n\n`(nng-set-option sock option value)` â€” option: `'recv-timeout` `'send-timeout` `'recv-buf-size` `'survey-time`"},
+        /// actor model
+        {"spawn",           "**spawn** â€” Spawn a child Eta process.\n\n`(spawn module-path)` â€” launches `etai <module-path>` as a child process and returns the parent-side PAIR socket for communication"},
+        {"spawn-kill",      "**spawn-kill** â€” Forcibly terminate a spawned child.\n\n`(spawn-kill sock)` â€” sends SIGTERM; returns `#t` on success"},
+        {"spawn-wait",      "**spawn-wait** â€” Wait for a spawned child to exit.\n\n`(spawn-wait sock)` â€” blocks until child exits; returns the exit code as a fixnum"},
+        {"current-mailbox", "**current-mailbox** â€” The PAIR socket to the parent process.\n\n`(current-mailbox)` â€” returns the socket established by `--mailbox` at startup, or `()` if not a spawned child"},
+        /// in-process actor threads
+        {"spawn-thread-with", "**spawn-thread-with** â€” Spawn an in-process actor thread.\n\n`(spawn-thread-with module-path func-name args...)` â€” launches a new OS thread with its own VM, loads the module, calls `(func-name args...)`, communicates via `inproc://` PAIR socket"},
+        {"spawn-thread",      "**spawn-thread** â€” Spawn an actor thread from a closure.\n\n`(spawn-thread thunk)` â€” use `spawn-thread-with` instead for named functions"},
+        {"thread-join",       "**thread-join** â€” Wait for an actor thread to complete.\n\n`(thread-join sock)` â€” blocks until the thread exits; returns `0` on success, `#f` if not found"},
+        {"thread-alive?",     "**thread-alive?** â€” Check if an actor thread is still running.\n\n`(thread-alive? sock)` â€” returns `#t` while the thread is executing, `#f` after it exits"},
 #endif
     };
 
@@ -769,11 +771,11 @@ Value LspServer::handle_hover(const Value& params) {
         });
     }
 
-    // Check document-local definitions
+    /// Check document-local definitions
     auto symbols = collect_symbols(source);
     for (const auto& sym : symbols) {
         if (sym.name == word) {
-            std::string doc = "**" + sym.name + "** — " + sym.kind +
+            std::string doc = "**" + sym.name + "** â€” " + sym.kind +
                               " (line " + std::to_string(sym.line + 1) + ")";
             return json::object({
                 {"contents", json::object({
@@ -787,9 +789,8 @@ Value LspServer::handle_hover(const Value& params) {
     return Value(nullptr);
 }
 
-// ============================================================================
-// Step 6: Semantic features — Go to Definition
-// ============================================================================
+/**
+ */
 
 Value LspServer::handle_definition(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
@@ -803,7 +804,7 @@ Value LspServer::handle_definition(const Value& params) {
     auto word = word_at_position(source, line, character);
     if (word.empty()) return Value(nullptr);
 
-    // 1. Search document-local symbols first
+    /// 1. Search document-local symbols first
     auto symbols = collect_symbols(source);
     for (const auto& sym : symbols) {
         if (sym.name == word) {
@@ -817,12 +818,12 @@ Value LspServer::handle_definition(const Value& params) {
         }
     }
 
-    // 2. Lazily load the completion cache so prelude/module symbols are available
+    /// 2. Lazily load the completion cache so prelude/module symbols are available
     if (!completion_cache_loaded_) {
         load_completion_cache();
     }
 
-    // 3. Search prelude symbols
+    /// 3. Search prelude symbols
     for (const auto& sym : prelude_symbols_) {
         if (sym.name == word && !sym.file_path.empty()) {
             return json::object({
@@ -835,7 +836,7 @@ Value LspServer::handle_definition(const Value& params) {
         }
     }
 
-    // 4. Search module-path symbols
+    /// 4. Search module-path symbols
     for (const auto& sym : module_path_symbols_) {
         if (sym.name == word && !sym.file_path.empty()) {
             return json::object({
@@ -851,23 +852,22 @@ Value LspServer::handle_definition(const Value& params) {
     return Value(nullptr);
 }
 
-// ============================================================================
-// Step 6: Semantic features — Completion
-// ============================================================================
+/**
+ */
 
 Value LspServer::handle_completion(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
     auto it = documents_.find(uri);
 
-    // Lazily load the completion cache on first completion request
+    /// Lazily load the completion cache on first completion request
     if (!completion_cache_loaded_) {
         load_completion_cache();
     }
 
     Array items;
-    std::unordered_set<std::string> seen; // dedup across all tiers
+    std::unordered_set<std::string> seen; ///< dedup across all tiers
 
-    // Tier 0: Keywords (special forms)
+    /// Tier 0: Keywords (special forms)
     static const std::vector<std::pair<std::string, std::string>> keywords = {
         {"define",       "Core: define a variable or function"},
         {"lambda",       "Core: anonymous function"},
@@ -915,78 +915,80 @@ Value LspServer::handle_completion(const Value& params) {
         seen.insert(kw);
         items.push_back(json::object({
             {"label", kw},
-            {"kind", 14}, // Keyword
+            {"kind", 14}, ///< Keyword
             {"detail", detail},
         }));
     }
 
-    // Tier 1: Static builtins (from builtin_names.h)
-    // name, arity, has_rest, category
+    /**
+     * Tier 1: Static builtins (from builtin_names.h)
+     * name, arity, has_rest, category
+     */
     struct BuiltinDesc { const char* name; int arity; bool has_rest; const char* category; };
     static const std::vector<BuiltinDesc> builtins = {
-        // Arithmetic
+        /// Arithmetic
         {"+", 0, true, "Arithmetic"}, {"-", 1, true, "Arithmetic"},
         {"*", 0, true, "Arithmetic"}, {"/", 1, true, "Arithmetic"},
-        // Numeric comparison
+        /// Numeric comparison
         {"=", 2, true, "Comparison"}, {"<", 2, true, "Comparison"},
         {">", 2, true, "Comparison"}, {"<=", 2, true, "Comparison"},
         {">=", 2, true, "Comparison"},
-        // Equivalence
+        /// Equivalence
         {"eq?", 2, false, "Equivalence"}, {"eqv?", 2, false, "Equivalence"},
         {"not", 1, false, "Equivalence"},
-        // Pairs / lists
+        /// Pairs / lists
         {"cons", 2, false, "List"}, {"car", 1, false, "List"},
         {"cdr", 1, false, "List"}, {"pair?", 1, false, "List"},
         {"null?", 1, false, "List"}, {"list", 0, true, "List"},
-        // Type predicates
+        /// Type predicates
         {"number?", 1, false, "Predicate"}, {"boolean?", 1, false, "Predicate"},
         {"string?", 1, false, "Predicate"}, {"char?", 1, false, "Predicate"},
         {"symbol?", 1, false, "Predicate"}, {"procedure?", 1, false, "Predicate"},
         {"integer?", 1, false, "Predicate"},
-        // Numeric predicates
+        /// Numeric predicates
         {"zero?", 1, false, "Predicate"}, {"positive?", 1, false, "Predicate"},
         {"negative?", 1, false, "Predicate"},
-        // Numeric operations
+        /// Numeric operations
         {"abs", 1, false, "Math"}, {"min", 2, true, "Math"},
         {"max", 2, true, "Math"}, {"modulo", 2, false, "Math"},
         {"remainder", 2, false, "Math"},
-        // Transcendentals
+        /// Transcendentals
         {"sin", 1, false, "Math"}, {"cos", 1, false, "Math"},
         {"tan", 1, false, "Math"}, {"asin", 1, false, "Math"},
         {"acos", 1, false, "Math"}, {"atan", 1, true, "Math"},
         {"exp", 1, false, "Math"}, {"log", 1, false, "Math"},
         {"sqrt", 1, false, "Math"},
-        // List operations
+        /// List operations
         {"length", 1, false, "List"}, {"append", 0, true, "List"},
         {"reverse", 1, false, "List"}, {"list-ref", 2, false, "List"},
-        // Higher-order
+        /// Higher-order
         {"map", 2, false, "Higher-order"}, {"for-each", 2, false, "Higher-order"},
-        // Deep equality
+        /// Deep equality
         {"equal?", 2, false, "Equivalence"},
-        // String operations
+        /// String operations
         {"string-length", 1, false, "String"}, {"string-append", 0, true, "String"},
         {"number->string", 1, false, "String"}, {"string->number", 1, false, "String"},
-        // Vector operations
+        /// Vector operations
         {"vector", 0, true, "Vector"}, {"vector-length", 1, false, "Vector"},
         {"vector-ref", 2, false, "Vector"}, {"vector-set!", 3, false, "Vector"},
         {"vector?", 1, false, "Vector"}, {"make-vector", 2, false, "Vector"},
-        // Misc
+        /// Misc
         {"error", 1, true, "Misc"}, {"platform", 0, false, "Misc"},
         {"logic-var?", 1, false, "Logic"}, {"ground?", 1, false, "Logic"},
-        // AD Dual
+        /// AD Dual
         {"dual?", 1, false, "AD"}, {"dual-primal", 1, false, "AD"},
         {"dual-backprop", 1, false, "AD"}, {"make-dual", 2, false, "AD"},
-        // CLP
+        /// CLP
         {"%clp-domain-z!", 3, false, "CLP"}, {"%clp-domain-fd!", 2, false, "CLP"},
         {"%clp-get-domain", 1, false, "CLP"},
-        // AD Tape
+        /// AD Tape
         {"tape-new", 0, false, "AD"}, {"tape-start!", 1, false, "AD"},
         {"tape-stop!", 0, false, "AD"}, {"tape-var", 2, false, "AD"},
         {"tape-backward!", 2, false, "AD"}, {"tape-adjoint", 2, false, "AD"},
         {"tape-primal", 2, false, "AD"}, {"tape-ref?", 1, false, "AD"},
         {"tape-ref-index", 1, false, "AD"}, {"tape-size", 1, false, "AD"},
         {"tape-ref-value", 1, false, "AD"},
-        // Port primitives
+        /// Port primitives
         {"current-input-port", 0, false, "Port"}, {"current-output-port", 0, false, "Port"},
         {"current-error-port", 0, false, "Port"},
         {"set-current-input-port!", 1, false, "Port"}, {"set-current-output-port!", 1, false, "Port"},
@@ -1001,44 +1003,44 @@ Value LspServer::handle_completion(const Value& params) {
         {"open-output-bytevector", 0, false, "Port"}, {"open-input-bytevector", 1, false, "Port"},
         {"get-output-bytevector", 1, false, "Port"}, {"read-u8", 0, true, "Port"},
         {"write-u8", 1, true, "Port"}, {"binary-port?", 1, false, "Port"},
-        // I/O
+        /// I/O
         {"display", 1, true, "I/O"}, {"write", 1, true, "I/O"},
         {"newline", 0, true, "I/O"},
 #ifdef ETA_HAS_NNG
-        // nng / message-passing
+        /// nng / message-passing
         {"nng-socket",     1, false, "NNG"}, {"nng-listen",     2, false, "NNG"},
         {"nng-dial",       2, false, "NNG"}, {"nng-close",      1, false, "NNG"},
         {"nng-socket?",    1, false, "NNG"}, {"send!",          2, true,  "NNG"},
         {"recv!",          1, true,  "NNG"}, {"nng-poll",       2, false, "NNG"},
         {"nng-subscribe",  2, false, "NNG"}, {"nng-set-option", 3, false, "NNG"},
-        // actor model
+        /// actor model
         {"spawn",           1, true,  "NNG"}, {"spawn-kill",      1, false, "NNG"},
         {"spawn-wait",      1, false, "NNG"}, {"current-mailbox", 0, false, "NNG"},
-        // in-process actor threads
+        /// in-process actor threads
         {"spawn-thread-with", 2, true,  "NNG"}, {"spawn-thread",  1, false, "NNG"},
         {"thread-join",       1, false, "NNG"}, {"thread-alive?", 1, false, "NNG"},
 #endif
     };
 
     for (const auto& b : builtins) {
-        if (!seen.insert(b.name).second) continue; // already added (e.g. apply is a keyword)
+        if (!seen.insert(b.name).second) continue; ///< already added (e.g. apply is a keyword)
         std::string detail = std::string(b.category) + " (arity " + std::to_string(b.arity);
         if (b.has_rest) detail += "+";
         detail += ")";
         items.push_back(json::object({
             {"label", b.name},
-            {"kind", 3}, // Function
+            {"kind", 3}, ///< Function
             {"detail", detail},
         }));
     }
 
-    // Tier 2: Prelude symbols (std.core, std.math, etc.)
+    /// Tier 2: Prelude symbols (std.core, std.math, etc.)
     for (const auto& sym : prelude_symbols_) {
         if (!seen.insert(sym.name).second) continue;
-        int kind = 3; // Function
+        int kind = 3; ///< Function
         if (sym.kind == "macro") kind = 15;
         if (sym.kind == "module") kind = 9;
-        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + " — " + sym.kind);
+        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + " â€” " + sym.kind);
         if (!sym.signature.empty()) detail += " " + sym.signature;
         items.push_back(json::object({
             {"label", sym.name},
@@ -1047,13 +1049,13 @@ Value LspServer::handle_completion(const Value& params) {
         }));
     }
 
-    // Tier 3: Module-path symbols
+    /// Tier 3: Module-path symbols
     for (const auto& sym : module_path_symbols_) {
         if (!seen.insert(sym.name).second) continue;
         int kind = 3;
         if (sym.kind == "macro") kind = 15;
         if (sym.kind == "module") kind = 9;
-        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + " — " + sym.kind);
+        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + " â€” " + sym.kind);
         if (!sym.signature.empty()) detail += " " + sym.signature;
         items.push_back(json::object({
             {"label", sym.name},
@@ -1062,12 +1064,12 @@ Value LspServer::handle_completion(const Value& params) {
         }));
     }
 
-    // Tier 4: Document-local symbols
+    /// Tier 4: Document-local symbols
     if (it != documents_.end()) {
         auto symbols = collect_symbols(it->second.content, true);
         for (const auto& sym : symbols) {
             if (!seen.insert(sym.name).second) continue;
-            int kind = 6; // Variable
+            int kind = 6; ///< Variable
             if (sym.kind == "defun" || sym.kind == "function") kind = 3;
             if (sym.kind == "macro") kind = 15;
             if (sym.kind == "module") kind = 9;
@@ -1087,9 +1089,9 @@ Value LspServer::handle_completion(const Value& params) {
     });
 }
 
-// ============================================================================
-// textDocument/documentSymbol
-// ============================================================================
+/**
+ * textDocument/documentSymbol
+ */
 
 Value LspServer::handle_document_symbol(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
@@ -1099,7 +1101,7 @@ Value LspServer::handle_document_symbol(const Value& params) {
     const auto& source = it->second.content;
     auto symbols = collect_symbols(source, /*capture_signature=*/true);
 
-    // Pre-split source into lines to find the opening '(' of each form.
+    /// Pre-split source into lines to find the opening '(' of each form.
     std::vector<std::string> lines;
     {
         std::istringstream iss(source);
@@ -1110,11 +1112,11 @@ Value LspServer::handle_document_symbol(const Value& params) {
         }
     }
 
-    // LSP SymbolKind values
+    /// LSP SymbolKind values
     constexpr int SK_Module   = 2;
     constexpr int SK_Function = 12;
     constexpr int SK_Variable = 13;
-    constexpr int SK_Class    = 5;  // for record types
+    constexpr int SK_Class    = 5;  ///< for record types
 
     Array result;
     for (const auto& sym : symbols) {
@@ -1127,15 +1129,17 @@ Value LspServer::handle_document_symbol(const Value& params) {
         std::string detail = sym.kind;
         if (!sym.signature.empty()) detail += " " + sym.signature;
 
-        // Selection range = just the symbol name
+        /// Selection range = just the symbol name
         auto name_end_char = sym.character + static_cast<int64_t>(sym.name.size());
         auto sel_range = Range{
             Position{sym.line, sym.character},
             Position{sym.line, name_end_char},
         };
 
-        // Full range: scan backward from the symbol name to find the '(' that opens
-        // this form, then use sexp_end to find the matching ')'.
+        /**
+         * Full range: scan backward from the symbol name to find the '(' that opens
+         * this form, then use sexp_end to find the matching ')'.
+         */
         int64_t form_col = sym.character;
         if (sym.line < static_cast<int64_t>(lines.size())) {
             const auto& ln = lines[static_cast<std::size_t>(sym.line)];
@@ -1148,7 +1152,7 @@ Value LspServer::handle_document_symbol(const Value& params) {
             Position{sym.line, form_col},
             Position{end_line, end_col},
         };
-        // Fallback: if sexp_end didn't advance, use the selection range
+        /// Fallback: if sexp_end didn't advance, use the selection range
         if (end_line == sym.line && end_col == form_col) {
             full_range = sel_range;
         }
@@ -1165,9 +1169,9 @@ Value LspServer::handle_document_symbol(const Value& params) {
     return Value(std::move(result));
 }
 
-// ============================================================================
-// textDocument/references
-// ============================================================================
+/**
+ * textDocument/references
+ */
 
 std::vector<Range> LspServer::find_all_occurrences(
         const std::string& source, const std::string& symbol) {
@@ -1191,7 +1195,7 @@ std::vector<Range> LspServer::find_all_occurrences(
             auto found = line.find(symbol, pos);
             if (found == std::string::npos) break;
 
-            // Check word boundaries
+            /// Check word boundaries
             bool left_ok = (found == 0) || !is_sym_char(line[found - 1]);
             auto end_pos = found + symbol.size();
             bool right_ok = (end_pos >= line.size()) || !is_sym_char(line[end_pos]);
@@ -1223,7 +1227,7 @@ Value LspServer::handle_references(const Value& params) {
 
     Array result;
 
-    // 1. Current document
+    /// 1. Current document
     auto occurrences = find_all_occurrences(source, word);
     for (const auto& r : occurrences) {
         result.push_back(json::object({
@@ -1232,7 +1236,7 @@ Value LspServer::handle_references(const Value& params) {
         }));
     }
 
-    // 2. Other open documents
+    /// 2. Other open documents
     for (const auto& [doc_uri, doc] : documents_) {
         if (doc_uri == uri) continue;
         auto occ = find_all_occurrences(doc.content, word);
@@ -1244,23 +1248,24 @@ Value LspServer::handle_references(const Value& params) {
         }
     }
 
-    // 3. Module-path files (prelude + module path)
+    /// 3. Module-path files (prelude + module path)
     if (!completion_cache_loaded_) {
         load_completion_cache();
     }
 
-    // Collect unique file paths from cached symbols that match the word
+    /// Collect unique file paths from cached symbols that match the word
     std::unordered_set<std::string> scanned_files;
-    // Track URIs we've already added results for
+    /// Track URIs we've already added results for
     scanned_files.insert(uri);
     for (const auto& [doc_uri, doc] : documents_) {
         scanned_files.insert(doc_uri);
     }
 
     auto scan_cached = [&](const std::vector<SymbolInfo>& syms) {
-        // Only scan files that actually define the searched symbol — this
-        // prevents false-positive matches in prelude/stdlib files for symbols
-        // (e.g. a local variable "x") that are not defined there.
+        /**
+         * prevents false-positive matches in prelude/stdlib files for symbols
+         * (e.g. a local variable "x") that are not defined there.
+         */
         std::unordered_set<std::string> files_with_symbol;
         for (const auto& sym : syms) {
             if (sym.name == word && !sym.file_path.empty())
@@ -1273,7 +1278,7 @@ Value LspServer::handle_references(const Value& params) {
             if (!files_with_symbol.count(sym.file_path)) continue;
             auto file_uri = path_to_uri(sym.file_path);
             if (!scanned_files.insert(file_uri).second) continue;
-            // Read and scan the file
+            /// Read and scan the file
             std::ifstream f(sym.file_path);
             if (!f.is_open()) continue;
             std::string src(std::istreambuf_iterator<char>(f),
@@ -1294,9 +1299,9 @@ Value LspServer::handle_references(const Value& params) {
     return Value(std::move(result));
 }
 
-// ============================================================================
-// textDocument/rename
-// ============================================================================
+/**
+ * textDocument/rename
+ */
 
 Value LspServer::handle_rename(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
@@ -1323,7 +1328,7 @@ Value LspServer::handle_rename(const Value& params) {
         }));
     }
 
-    // WorkspaceEdit with changes map
+    /// WorkspaceEdit with changes map
     return json::object({
         {"changes", json::object({
             {uri, Value(std::move(edits))},
@@ -1331,16 +1336,15 @@ Value LspServer::handle_rename(const Value& params) {
     });
 }
 
-// ============================================================================
-// Completion cache — prelude + module path scanning
-// ============================================================================
+/**
+ */
 
 void LspServer::load_completion_cache() {
     completion_cache_loaded_ = true;
     prelude_symbols_.clear();
     module_path_symbols_.clear();
 
-    // Scan prelude
+    /// Scan prelude
     auto prelude_path = resolver_.find_file("prelude.eta");
     if (prelude_path) {
         std::ifstream f(*prelude_path);
@@ -1349,8 +1353,10 @@ void LspServer::load_completion_cache() {
                             std::istreambuf_iterator<char>{});
             auto syms = collect_symbols(src, /*capture_signature=*/true);
 
-            // Determine which module each symbol belongs to by tracking
-            // (module <name> ...) boundaries in the source.
+            /**
+             * Determine which module each symbol belongs to by tracking
+             * (module <name> ...) boundaries in the source.
+             */
             std::string current_module;
             std::istringstream lines(src);
             std::string line;
@@ -1371,9 +1377,9 @@ void LspServer::load_completion_cache() {
             }
 
             for (auto& sym : syms) {
-                if (sym.kind == "module") continue; // skip module declarations
+                if (sym.kind == "module") continue; ///< skip module declarations
                 sym.file_path = prelude_path->string();
-                // Find which module this symbol belongs to
+                /// Find which module this symbol belongs to
                 for (auto rit = module_starts.rbegin(); rit != module_starts.rend(); ++rit) {
                     if (sym.line >= rit->first) {
                         sym.module_name = rit->second;
@@ -1385,7 +1391,7 @@ void LspServer::load_completion_cache() {
         }
     }
 
-    // Scan module path
+    /// Scan module path
     scan_module_path_symbols();
 }
 
@@ -1402,7 +1408,6 @@ void LspServer::scan_module_path_symbols() {
             auto canonical = entry.path().string();
             if (!scanned_files.insert(canonical).second) continue;
 
-            // Skip prelude.eta — already handled above
             if (entry.path().filename() == "prelude.eta") continue;
 
             std::ifstream f(entry.path());
@@ -1423,9 +1428,9 @@ void LspServer::scan_module_path_symbols() {
     }
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
+/**
+ * Helpers
+ */
 
 Value LspServer::position_to_json(const Position& p) {
     return json::object({
@@ -1452,7 +1457,7 @@ Value LspServer::diagnostic_to_json(const LspDiagnostic& d) {
 
 Range LspServer::span_to_range(uint32_t start_line, uint32_t start_col,
                                             uint32_t end_line, uint32_t end_col) {
-    // eta uses 1-based line/column; LSP uses 0-based
+    /// eta uses 1-based line/column; LSP uses 0-based
     return Range{
         Position{
             static_cast<int64_t>(start_line > 0 ? start_line - 1 : 0),
@@ -1494,9 +1499,8 @@ std::string LspServer::word_at_position(const std::string& text,
     return current_line.substr(start, end - start);
 }
 
-// ============================================================================
-// sexp_end — find the closing ')' of an S-expression
-// ============================================================================
+/**
+ */
 
 std::pair<int64_t, int64_t> LspServer::sexp_end(
         const std::string& source, int64_t start_line, int64_t start_col) {
@@ -1518,7 +1522,7 @@ std::pair<int64_t, int64_t> LspServer::sexp_end(
             char c = ln[col];
             if (in_line_comment) break;
             if (in_string) {
-                if (c == '\\') { ++col; continue; } // skip escape
+                if (c == '\\') { ++col; continue; } ///< skip escape
                 if (c == '"')  { in_string = false; }
                 continue;
             }
@@ -1528,20 +1532,19 @@ std::pair<int64_t, int64_t> LspServer::sexp_end(
             else if (c == ')') {
                 --depth;
                 if (depth == 0) {
-                    // Return position just after the closing ')'
+                    /// Return position just after the closing ')'
                     return {row, static_cast<int64_t>(col) + 1};
                 }
             }
         }
         ++row;
     }
-    // Not found — return the start position as a sentinel
     return {start_line, start_col};
 }
 
-// ============================================================================
-// textDocument/signatureHelp
-// ============================================================================
+/**
+ * textDocument/signatureHelp
+ */
 
 Value LspServer::handle_signature_help(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
@@ -1553,7 +1556,7 @@ Value LspServer::handle_signature_help(const Value& params) {
 
     const auto& source = it->second.content;
 
-    // Build a flat string of all text up to the cursor
+    /// Build a flat string of all text up to the cursor
     std::string prefix;
     {
         std::istringstream iss(source);
@@ -1572,9 +1575,10 @@ Value LspServer::handle_signature_help(const Value& params) {
         }
     }
 
-    // Walk backwards to find the innermost unclosed '(' — that is our call site.
-    // We track paren depth; skip strings; ignore line comments (scanning backwards
-    // so we just skip everything after a ';' on each line when going forward).
+    /**
+     * We track paren depth; skip strings; ignore line comments (scanning backwards
+     * so we just skip everything after a ';' on each line when going forward).
+     */
     int paren_depth = 0;
     int func_start  = -1;
 
@@ -1585,20 +1589,22 @@ Value LspServer::handle_signature_help(const Value& params) {
             if (paren_depth == 0) { func_start = i + 1; break; }
             --paren_depth;
         }
-        // Note: string / comment handling when scanning backwards is complex;
-        // for the common case this simple scan is sufficient.
+        /**
+         * Note: string / comment handling when scanning backwards is complex;
+         * for the common case this simple scan is sufficient.
+         */
     }
 
     if (func_start < 0) return Value(nullptr);
 
-    // Skip whitespace between '(' and function name
+    /// Skip whitespace between '(' and function name
     while (func_start < static_cast<int>(prefix.size()) &&
            (prefix[static_cast<std::size_t>(func_start)] == ' ' ||
             prefix[static_cast<std::size_t>(func_start)] == '\t' ||
             prefix[static_cast<std::size_t>(func_start)] == '\n'))
         ++func_start;
 
-    // Extract function name (up to whitespace / paren)
+    /// Extract function name (up to whitespace / paren)
     int func_end = func_start;
     while (func_end < static_cast<int>(prefix.size())) {
         char c = prefix[static_cast<std::size_t>(func_end)];
@@ -1611,7 +1617,7 @@ Value LspServer::handle_signature_help(const Value& params) {
         static_cast<std::size_t>(func_start),
         static_cast<std::size_t>(func_end - func_start));
 
-    // Count complete top-level arguments after the function name (= active param index)
+    /// Count complete top-level arguments after the function name (= active param index)
     int active_param = 0;
     {
         int pos      = func_end;
@@ -1623,7 +1629,7 @@ Value LspServer::handle_signature_help(const Value& params) {
             else if (c == ')') {
                 if (depth2 == 0) break;
                 --depth2;
-                if (depth2 == 0) in_tok = true; // closing a nested sexp counts as a token
+                if (depth2 == 0) in_tok = true; ///< closing a nested sexp counts as a token
             } else if (depth2 == 0) {
                 if (c == ' ' || c == '\t' || c == '\n') {
                     if (in_tok) { ++active_param; in_tok = false; }
@@ -1635,9 +1641,9 @@ Value LspServer::handle_signature_help(const Value& params) {
         }
     }
 
-    // Signature lookup
+    /// Signature lookup
 
-    // Static table of builtin signatures
+    /// Static table of builtin signatures
     static const std::vector<std::pair<std::string, std::string>> builtin_sigs = {
         {"+",              "(+ z ...)"}, {"-",  "(- z1 z2 ...)"}, {"*", "(* z ...)"}, {"/", "(/ z1 z2 ...)"},
         {"=",              "(= z1 z2 ...)"}, {"<",  "(< x1 x2 ...)"}, {">",  "(> x1 x2 ...)"},
@@ -1697,7 +1703,7 @@ Value LspServer::handle_signature_help(const Value& params) {
         {"case",           "(case key ((datum ...) expr ...) ... (else expr ...))"},
         {"set!",           "(set! name value)"},
 #ifdef ETA_HAS_NNG
-        // nng / message-passing
+        /// nng / message-passing
         {"nng-socket",    "(nng-socket type-symbol)"},
         {"nng-listen",    "(nng-listen sock endpoint)"},
         {"nng-dial",      "(nng-dial sock endpoint)"},
@@ -1708,12 +1714,12 @@ Value LspServer::handle_signature_help(const Value& params) {
         {"nng-poll",      "(nng-poll items timeout-ms)"},
         {"nng-subscribe", "(nng-subscribe sock topic)"},
         {"nng-set-option","(nng-set-option sock option value)"},
-        // actor model
+        /// actor model
         {"spawn",           "(spawn module-path)"},
         {"spawn-kill",      "(spawn-kill sock)"},
         {"spawn-wait",      "(spawn-wait sock)"},
         {"current-mailbox", "(current-mailbox)"},
-        // in-process actor threads
+        /// in-process actor threads
         {"spawn-thread-with", "(spawn-thread-with module-path func-name args...)"},
         {"spawn-thread",      "(spawn-thread thunk)"},
         {"thread-join",       "(thread-join sock)"},
@@ -1726,7 +1732,7 @@ Value LspServer::handle_signature_help(const Value& params) {
         if (name == func_name) { label = sig; break; }
     }
 
-    // Check document-local symbols
+    /// Check document-local symbols
     if (label.empty()) {
         auto syms = collect_symbols(source, true);
         for (const auto& sym : syms) {
@@ -1738,7 +1744,7 @@ Value LspServer::handle_signature_help(const Value& params) {
         }
     }
 
-    // Check cached prelude / module-path symbols
+    /// Check cached prelude / module-path symbols
     if (label.empty() && completion_cache_loaded_) {
         for (const auto& sym : prelude_symbols_) {
             if (sym.name == func_name && !sym.signature.empty()) {
@@ -1771,9 +1777,8 @@ Value LspServer::handle_signature_help(const Value& params) {
     });
 }
 
-// ============================================================================
-// textDocument/foldingRange — fold S-expressions and comment blocks
-// ============================================================================
+/**
+ */
 
 Value LspServer::handle_folding_range(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
@@ -1782,7 +1787,7 @@ Value LspServer::handle_folding_range(const Value& params) {
 
     const auto& source = it->second.content;
 
-    // Split into lines
+    /// Split into lines
     std::vector<std::string> lines;
     {
         std::istringstream iss(source);
@@ -1795,7 +1800,7 @@ Value LspServer::handle_folding_range(const Value& params) {
 
     Array result;
 
-    // Track paren-based folding: stack of (line, col) for each opening '('
+    /// Track paren-based folding: stack of (line, col) for each opening '('
     struct OpenParen { int64_t line; int64_t col; };
     std::vector<OpenParen> paren_stack;
     bool in_string = false;
@@ -1807,7 +1812,7 @@ Value LspServer::handle_folding_range(const Value& params) {
         for (std::size_t col = 0; col < ln.size(); ++col) {
             char c = ln[col];
 
-            // Block comment tracking
+            /// Block comment tracking
             if (in_block_comment) {
                 if (c == '|' && col + 1 < ln.size() && ln[col + 1] == '#') {
                     in_block_comment = false;
@@ -1818,7 +1823,7 @@ Value LspServer::handle_folding_range(const Value& params) {
                             {"kind",           "comment"},
                         }));
                     }
-                    ++col; // skip '#'
+                    ++col; ///< skip '#'
                 }
                 continue;
             }
@@ -1829,7 +1834,7 @@ Value LspServer::handle_folding_range(const Value& params) {
                 continue;
             }
 
-            // Block comment start
+            /// Block comment start
             if (c == '#' && col + 1 < ln.size() && ln[col + 1] == '|') {
                 in_block_comment = true;
                 block_comment_start = row;
@@ -1838,7 +1843,7 @@ Value LspServer::handle_folding_range(const Value& params) {
             }
 
             if (c == '"') { in_string = true; continue; }
-            if (c == ';') break; // rest of line is a comment
+            if (c == ';') break; ///< rest of line is a comment
 
             if (c == '(') {
                 paren_stack.push_back({row, static_cast<int64_t>(col)});
@@ -1846,7 +1851,7 @@ Value LspServer::handle_folding_range(const Value& params) {
                 if (!paren_stack.empty()) {
                     auto open = paren_stack.back();
                     paren_stack.pop_back();
-                    // Only fold if the form spans multiple lines
+                    /// Only fold if the form spans multiple lines
                     if (row > open.line) {
                         result.push_back(json::object({
                             {"startLine",      Value(open.line)},
@@ -1861,7 +1866,7 @@ Value LspServer::handle_folding_range(const Value& params) {
         }
     }
 
-    // Fold consecutive line-comment blocks
+    /// Fold consecutive line-comment blocks
     {
         int64_t comment_start = -1;
         for (int64_t row = 0; row < static_cast<int64_t>(lines.size()); ++row) {
@@ -1881,7 +1886,7 @@ Value LspServer::handle_folding_range(const Value& params) {
                 comment_start = -1;
             }
         }
-        // Handle trailing comment block
+        /// Handle trailing comment block
         if (comment_start >= 0 && static_cast<int64_t>(lines.size()) - 1 > comment_start) {
             result.push_back(json::object({
                 {"startLine", Value(comment_start)},
@@ -1894,9 +1899,8 @@ Value LspServer::handle_folding_range(const Value& params) {
     return Value(std::move(result));
 }
 
-// ============================================================================
-// workspace/symbol — search across all cached symbols
-// ============================================================================
+/**
+ */
 
 Value LspServer::handle_workspace_symbol(const Value& params) {
     auto query_opt = params.get_string("query");
@@ -1906,7 +1910,7 @@ Value LspServer::handle_workspace_symbol(const Value& params) {
         load_completion_cache();
     }
 
-    // LSP SymbolKind values
+    /// LSP SymbolKind values
     constexpr int SK_Module   = 2;
     constexpr int SK_Function = 12;
     constexpr int SK_Variable = 13;
@@ -1922,7 +1926,7 @@ Value LspServer::handle_workspace_symbol(const Value& params) {
 
     auto matches = [&](const std::string& name) -> bool {
         if (query.empty()) return true;
-        // Case-insensitive substring match
+        /// Case-insensitive substring match
         auto it = std::search(name.begin(), name.end(), query.begin(), query.end(),
             [](char a, char b) {
                 return std::tolower(static_cast<unsigned char>(a)) ==
@@ -1934,7 +1938,7 @@ Value LspServer::handle_workspace_symbol(const Value& params) {
     Array result;
     constexpr std::size_t MAX_RESULTS = 200;
 
-    // Search open documents
+    /// Search open documents
     for (const auto& [doc_uri, doc] : documents_) {
         if (result.size() >= MAX_RESULTS) break;
         auto syms = collect_symbols(doc.content, true);
@@ -1956,7 +1960,7 @@ Value LspServer::handle_workspace_symbol(const Value& params) {
         }
     }
 
-    // Search prelude symbols
+    /// Search prelude symbols
     for (const auto& sym : prelude_symbols_) {
         if (result.size() >= MAX_RESULTS) break;
         if (!matches(sym.name)) continue;
@@ -1975,7 +1979,7 @@ Value LspServer::handle_workspace_symbol(const Value& params) {
         }));
     }
 
-    // Search module-path symbols
+    /// Search module-path symbols
     for (const auto& sym : module_path_symbols_) {
         if (result.size() >= MAX_RESULTS) break;
         if (!matches(sym.name)) continue;
@@ -1997,9 +2001,8 @@ Value LspServer::handle_workspace_symbol(const Value& params) {
     return Value(std::move(result));
 }
 
-// ============================================================================
-// textDocument/selectionRange — expand to enclosing S-expression
-// ============================================================================
+/**
+ */
 
 Value LspServer::handle_selection_range(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
@@ -2018,7 +2021,6 @@ Value LspServer::handle_selection_range(const Value& params) {
         auto ranges = enclosing_sexp_ranges(source, line, character);
 
         if (ranges.empty()) {
-            // No enclosing S-expression — return the word range
             auto word = word_at_position(source, line, character);
             Range wr{Position{line, character},
                      Position{line, character + static_cast<int64_t>(word.size())}};
@@ -2028,8 +2030,10 @@ Value LspServer::handle_selection_range(const Value& params) {
             continue;
         }
 
-        // Build nested selectionRange from innermost to outermost
-        // The protocol wants innermost.parent = next outer, etc.
+        /**
+         * Build nested selectionRange from innermost to outermost
+         * The protocol wants innermost.parent = next outer, etc.
+         */
         Value current(nullptr);
         for (auto rit = ranges.rbegin(); rit != ranges.rend(); ++rit) {
             if (current.is_null()) {
@@ -2047,13 +2051,12 @@ Value LspServer::handle_selection_range(const Value& params) {
     return Value(std::move(result));
 }
 
-// ============================================================================
-// enclosing_sexp_ranges — find nested S-expression ranges at a position
-// ============================================================================
+/**
+ */
 
 std::vector<Range> LspServer::enclosing_sexp_ranges(
         const std::string& source, int64_t target_line, int64_t target_char) {
-    // Convert target position to a flat offset
+    /// Convert target position to a flat offset
     std::size_t target_offset = 0;
     {
         std::istringstream iss(source);
@@ -2066,16 +2069,18 @@ std::vector<Range> LspServer::enclosing_sexp_ranges(
                     static_cast<int64_t>(ln.size())));
                 break;
             }
-            target_offset += ln.size() + 1; // +1 for newline
+            target_offset += ln.size() + 1; ///< +1 for newline
             ++row;
         }
     }
 
-    // Scan source tracking parentheses; record open-paren offsets on a stack.
-    // When we find a close-paren, if the range includes target_offset, record it.
+    /**
+     * Scan source tracking parentheses; record open-paren offsets on a stack.
+     * When we find a close-paren, if the range includes target_offset, record it.
+     */
     struct OpenInfo { std::size_t offset; int64_t line; int64_t col; };
     std::vector<OpenInfo> stack;
-    std::vector<Range> result; // innermost first
+    std::vector<Range> result; ///< innermost first
 
     bool in_string = false;
     int64_t row = 0;
@@ -2096,7 +2101,7 @@ std::vector<Range> LspServer::enclosing_sexp_ranges(
 
         if (c == '"') { in_string = true; ++col; continue; }
         if (c == ';') {
-            // Skip to end of line
+            /// Skip to end of line
             while (i + 1 < source.size() && source[i + 1] != '\n') ++i;
             ++col;
             continue;
@@ -2108,7 +2113,7 @@ std::vector<Range> LspServer::enclosing_sexp_ranges(
             if (!stack.empty()) {
                 auto open = stack.back();
                 stack.pop_back();
-                // Check if target_offset falls within [open.offset, i]
+                /// Check if target_offset falls within [open.offset, i]
                 if (target_offset >= open.offset && target_offset <= i) {
                     result.push_back(Range{
                         Position{open.line, open.col},
@@ -2120,7 +2125,7 @@ std::vector<Range> LspServer::enclosing_sexp_ranges(
         ++col;
     }
 
-    // Sort innermost first (smallest range first)
+    /// Sort innermost first (smallest range first)
     std::sort(result.begin(), result.end(), [](const Range& a, const Range& b) {
         auto a_size = (a.end.line - a.start.line) * 10000 + (a.end.character - a.start.character);
         auto b_size = (b.end.line - b.start.line) * 10000 + (b.end.character - b.start.character);
@@ -2130,18 +2135,17 @@ std::vector<Range> LspServer::enclosing_sexp_ranges(
     return result;
 }
 
-// ============================================================================
-// path_to_uri — convert filesystem path to file:// URI
-// ============================================================================
+/**
+ */
 
 std::string LspServer::path_to_uri(const std::string& path) {
     namespace fs = std::filesystem;
-    // Normalise to absolute path
+    /// Normalise to absolute path
     std::error_code ec;
     std::string abs_path = fs::absolute(fs::path(path), ec).string();
     if (ec) abs_path = path;
 
-    // Replace backslashes with forward slashes
+    /// Replace backslashes with forward slashes
     std::string uri = "file:///";
     for (char c : abs_path) {
         if (c == '\\') {
@@ -2152,17 +2156,18 @@ std::string LspServer::path_to_uri(const std::string& path) {
             uri += c;
         }
     }
-    // On Unix, absolute paths start with '/', so we'd get file:////
-    // Normalise to file:///
+    /**
+     * On Unix, absolute paths start with '/', so we'd get file:////
+     * Normalise to file:///
+     */
     while (uri.size() > 8 && uri[7] == '/' && uri[8] == '/') {
         uri.erase(7, 1);
     }
     return uri;
 }
 
-// ============================================================================
-// textDocument/semanticTokens/full — lexer-based semantic highlighting
-// ============================================================================
+/**
+ */
 
 Value LspServer::handle_semantic_tokens_full(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
@@ -2171,9 +2176,11 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
 
     const auto& source = it->second.content;
 
-    // Token type indices (must match the legend in handle_initialize):
-    // 0=keyword, 1=function, 2=variable, 3=string, 4=number,
-    // 5=comment, 6=operator, 7=type, 8=macro, 9=parameter
+    /**
+     * Token type indices (must match the legend in handle_initialize):
+     * 0=keyword, 1=function, 2=variable, 3=string, 4=number,
+     * 5=comment, 6=operator, 7=type, 8=macro, 9=parameter
+     */
     constexpr int TT_KEYWORD  = 0;
     constexpr int TT_FUNCTION = 1;
     constexpr int TT_VARIABLE = 2;
@@ -2184,10 +2191,10 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
     constexpr int TT_TYPE     = 7;
     constexpr int TT_MACRO    = 8;
 
-    // Token modifier bits: 0x1=declaration, 0x2=definition
+    /// Token modifier bits: 0x1=declaration, 0x2=definition
     constexpr int TM_DEFINITION = 2;
 
-    // Collect defined symbols for classification
+    /// Collect defined symbols for classification
     auto symbols = collect_symbols(source, true);
     std::unordered_set<std::string> defun_names;
     std::unordered_set<std::string> macro_names;
@@ -2200,7 +2207,7 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
         defined_names.insert(sym.name);
     }
 
-    // Also include prelude/module-path symbols
+    /// Also include prelude/module-path symbols
     if (!completion_cache_loaded_) load_completion_cache();
     for (const auto& sym : prelude_symbols_) {
         if (sym.kind == "defun" || sym.kind == "function") defun_names.insert(sym.name);
@@ -2228,20 +2235,22 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
         "eq?", "eqv?", "equal?", "not",
     };
 
-    // Process source line-by-line to handle comments, then use lexer for code
-    // We'll scan manually to also capture comments (lexer skips them)
+    /**
+     * Process source line-by-line to handle comments, then use lexer for code
+     * We'll scan manually to also capture comments (lexer skips them)
+     */
 
-    // First pass: collect comment token positions
+    /// First pass: collect comment token positions
     struct SemanticToken {
-        int64_t line;     // 0-based
-        int64_t col;      // 0-based
+        int64_t line;     ///< 0-based
+        int64_t col;      ///< 0-based
         int64_t length;
         int type;
         int modifiers;
     };
     std::vector<SemanticToken> tokens;
 
-    // Scan for comments
+    /// Scan for comments
     {
         std::istringstream iss(source);
         std::string ln;
@@ -2254,9 +2263,8 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
             for (std::size_t col = 0; col < ln.size(); ++col) {
                 if (in_block_comment) {
                     if (ln[col] == '|' && col + 1 < ln.size() && ln[col + 1] == '#') {
-                        // End of block comment — emit token for each line of the block
                         in_block_comment = false;
-                        ++col; // skip '#'
+                        ++col; ///< skip '#'
                     }
                     continue;
                 }
@@ -2268,7 +2276,7 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
                     continue;
                 }
                 if (c == '"') {
-                    // Skip strings
+                    /// Skip strings
                     ++col;
                     while (col < ln.size()) {
                         if (ln[col] == '\\') { ++col; }
@@ -2278,7 +2286,7 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
                     continue;
                 }
                 if (c == ';') {
-                    // Line comment from ';' to end of line
+                    /// Line comment from ';' to end of line
                     tokens.push_back({row, static_cast<int64_t>(col),
                                       static_cast<int64_t>(ln.size() - col),
                                       TT_COMMENT, 0});
@@ -2289,7 +2297,7 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
         }
     }
 
-    // Lexer pass for code tokens
+    /// Lexer pass for code tokens
     {
         reader::lexer::Lexer lex(0, source);
         while (true) {
@@ -2298,7 +2306,7 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
             auto& tok = *result;
             if (tok.kind == reader::lexer::Token::Kind::EOF_) break;
 
-            // Lexer uses 1-based lines/columns; LSP uses 0-based
+            /// Lexer uses 1-based lines/columns; LSP uses 0-based
             int64_t tok_line = static_cast<int64_t>(tok.span.start.line) - 1;
             int64_t tok_col  = static_cast<int64_t>(tok.span.start.column) - 1;
             int64_t tok_end_col = static_cast<int64_t>(tok.span.end.column) - 1;
@@ -2337,7 +2345,7 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
                         type = TT_VARIABLE;
                     }
 
-                    // Mark definitions
+                    /// Mark definitions
                     for (const auto& sym : symbols) {
                         if (sym.name == name && sym.line == tok_line &&
                             sym.character == tok_col) {
@@ -2357,12 +2365,12 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
         }
     }
 
-    // Sort by position
+    /// Sort by position
     std::sort(tokens.begin(), tokens.end(), [](const SemanticToken& a, const SemanticToken& b) {
         return a.line < b.line || (a.line == b.line && a.col < b.col);
     });
 
-    // Encode as delta format
+    /// Encode as delta format
     Array data;
     int64_t prev_line = 0;
     int64_t prev_col = 0;
@@ -2381,16 +2389,15 @@ Value LspServer::handle_semantic_tokens_full(const Value& params) {
     return json::object({{"data", Value(std::move(data))}});
 }
 
-// ============================================================================
-// textDocument/formatting — basic Lisp indentation
-// ============================================================================
+/**
+ */
 
 Value LspServer::handle_formatting(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
     auto it = documents_.find(uri);
     if (it == documents_.end()) return Value(Array{});
 
-    // Read tab size (default 2)
+    /// Read tab size (default 2)
     int64_t tab_size = 2;
     if (params.has("options")) {
         tab_size = params["options"].get_int("tabSize").value_or(2);
@@ -2398,7 +2405,7 @@ Value LspServer::handle_formatting(const Value& params) {
 
     const auto& source = it->second.content;
 
-    // Split into lines
+    /// Split into lines
     std::vector<std::string> lines;
     {
         std::istringstream iss(source);
@@ -2411,7 +2418,7 @@ Value LspServer::handle_formatting(const Value& params) {
 
     if (lines.empty()) return Value(Array{});
 
-    // Rebuild with correct indentation based on paren depth
+    /// Rebuild with correct indentation based on paren depth
     std::string formatted;
     int depth = 0;
     bool in_string = false;
@@ -2419,15 +2426,15 @@ Value LspServer::handle_formatting(const Value& params) {
     for (std::size_t i = 0; i < lines.size(); ++i) {
         const auto& raw_line = lines[i];
 
-        // Strip leading whitespace to get content
+        /// Strip leading whitespace to get content
         auto first = raw_line.find_first_not_of(" \t");
         std::string content = (first == std::string::npos) ? "" : raw_line.substr(first);
 
-        // Trim trailing whitespace
+        /// Trim trailing whitespace
         auto last = content.find_last_not_of(" \t");
         if (last != std::string::npos) content = content.substr(0, last + 1);
 
-        // If line starts with ')', decrease depth before indenting
+        /// If line starts with ')', decrease depth before indenting
         int pre_adjust = 0;
         if (!content.empty() && !in_string) {
             for (std::size_t c = 0; c < content.size(); ++c) {
@@ -2442,13 +2449,13 @@ Value LspServer::handle_formatting(const Value& params) {
         if (content.empty()) {
             formatted += "\n";
         } else if (in_string) {
-            // Inside a multi-line string, preserve as-is
+            /// Inside a multi-line string, preserve as-is
             formatted += raw_line + "\n";
         } else {
             formatted += indent + content + "\n";
         }
 
-        // Update depth for next line by scanning this line
+        /// Update depth for next line by scanning this line
         for (std::size_t c = 0; c < content.size(); ++c) {
             char ch = content[c];
             if (in_string) {
@@ -2457,20 +2464,20 @@ Value LspServer::handle_formatting(const Value& params) {
                 continue;
             }
             if (ch == '"') { in_string = true; continue; }
-            if (ch == ';') break; // rest is comment
+            if (ch == ';') break; ///< rest is comment
             if (ch == '(') ++depth;
             else if (ch == ')') --depth;
         }
         if (depth < 0) depth = 0;
     }
 
-    // Remove trailing newline if original didn't have one
+    /// Remove trailing newline if original didn't have one
     bool orig_trailing_newline = !source.empty() && source.back() == '\n';
     if (!orig_trailing_newline && !formatted.empty() && formatted.back() == '\n') {
         formatted.pop_back();
     }
 
-    // Return a single TextEdit replacing the entire document
+    /// Return a single TextEdit replacing the entire document
     return json::array({
         json::object({
             {"range", range_to_json(Range{
@@ -2482,20 +2489,20 @@ Value LspServer::handle_formatting(const Value& params) {
     });
 }
 
-// ============================================================================
-// collect_symbols
-// ============================================================================
+/**
+ * collect_symbols
+ */
 
 std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string& source, bool capture_signature) {
     std::vector<SymbolInfo> result;
 
-    // Quick scan for definition forms
+    /// Quick scan for definition forms
     std::istringstream iss(source);
     std::string line;
     int64_t line_num = 0;
 
     while (std::getline(iss, line)) {
-        // Skip comment-only lines
+        /// Skip comment-only lines
         auto first_non_ws = line.find_first_not_of(" \t");
         if (first_non_ws != std::string::npos && line[first_non_ws] == ';') {
             ++line_num;
@@ -2509,14 +2516,14 @@ std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string&
             if (pos == std::string::npos) pos = line.find(pat2);
             if (pos == std::string::npos) return;
 
-            auto name_start = pos + 1 + keyword.size() + 1; // skip '(' + keyword + space
-            // Skip whitespace
+            auto name_start = pos + 1 + keyword.size() + 1; ///< skip '(' + keyword + space
+            /// Skip whitespace
             while (name_start < line.size() &&
                    (line[name_start] == ' ' || line[name_start] == '\t'))
                 ++name_start;
             if (name_start >= line.size()) return;
 
-            // If the name starts with '(', extract first symbol inside
+            /// If the name starts with '(', extract first symbol inside
             auto actual_start = name_start;
             bool had_paren = false;
             if (line[actual_start] == '(') {
@@ -2543,10 +2550,12 @@ std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string&
                 sym.line = line_num;
                 sym.character = static_cast<int64_t>(actual_start);
 
-                // Capture signature: for defun/define with (name args...) form
+                /// Capture signature: for defun/define with (name args...) form
                 if (capture_signature && (kind == "defun" || kind == "define")) {
-                    // For defun: (defun name (args...) body...)
-                    // Signature is the next (...) after name
+                    /**
+                     * For defun: (defun name (args...) body...)
+                     * Signature is the next (...) after name
+                     */
                     if (kind == "defun" && !had_paren) {
                         auto sig_start = name_end;
                         while (sig_start < line.size() && line[sig_start] == ' ') ++sig_start;
@@ -2560,10 +2569,9 @@ std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string&
                             sym.signature = line.substr(sig_start, sig_end - sig_start);
                         }
                     }
-                    // For define: (define (name args...) body...) — args follow name in same parens
                     if (kind == "define" && had_paren) {
                         auto sig_start = name_end;
-                        // Capture everything up to the closing ')'
+                        /// Capture everything up to the closing ')'
                         auto sig_end = sig_start;
                         while (sig_end < line.size() && line[sig_end] != ')') ++sig_end;
                         if (sig_end > sig_start) {
@@ -2589,5 +2597,5 @@ std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string&
     return result;
 }
 
-} // namespace eta::lsp
+} ///< namespace eta::lsp
 

@@ -6,9 +6,9 @@ using namespace eta::diagnostic;
 
 BOOST_AUTO_TEST_SUITE(diagnostic_tests)
 
-// ============================================================================
-// Severity to_string
-// ============================================================================
+/**
+ * Severity to_string
+ */
 
 BOOST_AUTO_TEST_CASE(severity_to_string_error) {
     BOOST_CHECK_EQUAL(std::string(to_string(Severity::Error)), "error");
@@ -26,9 +26,9 @@ BOOST_AUTO_TEST_CASE(severity_to_string_hint) {
     BOOST_CHECK_EQUAL(std::string(to_string(Severity::Hint)), "hint");
 }
 
-// ============================================================================
-// phase_for_code
-// ============================================================================
+/**
+ * phase_for_code
+ */
 
 BOOST_AUTO_TEST_CASE(phase_lexer_codes) {
     BOOST_CHECK_EQUAL(std::string(phase_for_code(DiagnosticCode::UnterminatedString)), "lexer");
@@ -62,9 +62,9 @@ BOOST_AUTO_TEST_CASE(phase_runtime_codes) {
     BOOST_CHECK_EQUAL(std::string(phase_for_code(DiagnosticCode::TypeError)), "runtime");
 }
 
-// ============================================================================
-// Diagnostic construction and builder
-// ============================================================================
+/**
+ * Diagnostic construction and builder
+ */
 
 BOOST_AUTO_TEST_CASE(diagnostic_default_construction) {
     Diagnostic d;
@@ -104,9 +104,9 @@ BOOST_AUTO_TEST_CASE(diagnostic_builder_chaining) {
     BOOST_CHECK_EQUAL(d.related.size(), 2u);
 }
 
-// ============================================================================
-// DiagnosticEngine
-// ============================================================================
+/**
+ * DiagnosticEngine
+ */
 
 BOOST_AUTO_TEST_CASE(engine_empty) {
     DiagnosticEngine eng;
@@ -173,9 +173,9 @@ BOOST_AUTO_TEST_CASE(engine_emit_non_error_severity) {
     BOOST_CHECK_EQUAL(eng.diagnostics().size(), 1u);
 }
 
-// ============================================================================
-// format_diagnostic
-// ============================================================================
+/**
+ * format_diagnostic
+ */
 
 BOOST_AUTO_TEST_CASE(format_diagnostic_plain) {
     Diagnostic d;
@@ -214,9 +214,9 @@ BOOST_AUTO_TEST_CASE(format_diagnostic_with_color) {
     std::ostringstream os;
     format_diagnostic(os, d, /*use_color=*/true);
     std::string out = os.str();
-    // Should contain ANSI escape codes
-    BOOST_CHECK(out.find("\033[1;31m") != std::string::npos);  // red for error
-    BOOST_CHECK(out.find("\033[0m") != std::string::npos);     // reset
+    /// Should contain ANSI escape codes
+    BOOST_CHECK(out.find("\033[1;31m") != std::string::npos);  ///< red for error
+    BOOST_CHECK(out.find("\033[0m") != std::string::npos);     ///< reset
 }
 
 BOOST_AUTO_TEST_CASE(format_diagnostic_warning_color) {
@@ -228,7 +228,7 @@ BOOST_AUTO_TEST_CASE(format_diagnostic_warning_color) {
     std::ostringstream os;
     format_diagnostic(os, d, true);
     std::string out = os.str();
-    BOOST_CHECK(out.find("\033[1;33m") != std::string::npos);  // yellow for warning
+    BOOST_CHECK(out.find("\033[1;33m") != std::string::npos);  ///< yellow for warning
 }
 
 BOOST_AUTO_TEST_CASE(format_diagnostic_note_color) {
@@ -240,7 +240,7 @@ BOOST_AUTO_TEST_CASE(format_diagnostic_note_color) {
     std::ostringstream os;
     format_diagnostic(os, d, true);
     std::string out = os.str();
-    BOOST_CHECK(out.find("\033[1;36m") != std::string::npos);  // cyan for note
+    BOOST_CHECK(out.find("\033[1;36m") != std::string::npos);  ///< cyan for note
 }
 
 BOOST_AUTO_TEST_CASE(format_diagnostic_hint_color) {
@@ -252,12 +252,12 @@ BOOST_AUTO_TEST_CASE(format_diagnostic_hint_color) {
     std::ostringstream os;
     format_diagnostic(os, d, true);
     std::string out = os.str();
-    BOOST_CHECK(out.find("\033[1;32m") != std::string::npos);  // green for hint
+    BOOST_CHECK(out.find("\033[1;32m") != std::string::npos);  ///< green for hint
 }
 
-// ============================================================================
-// operator<< for Diagnostic
-// ============================================================================
+/**
+ * operator<< for Diagnostic
+ */
 
 BOOST_AUTO_TEST_CASE(diagnostic_ostream_operator) {
     Diagnostic d;
@@ -272,9 +272,9 @@ BOOST_AUTO_TEST_CASE(diagnostic_ostream_operator) {
     BOOST_CHECK(out.find("type mismatch") != std::string::npos);
 }
 
-// ============================================================================
-// print_all
-// ============================================================================
+/**
+ * print_all
+ */
 
 BOOST_AUTO_TEST_CASE(engine_print_all) {
     DiagnosticEngine eng;
@@ -288,9 +288,9 @@ BOOST_AUTO_TEST_CASE(engine_print_all) {
     BOOST_CHECK(out.find("warn1") != std::string::npos);
 }
 
-// ============================================================================
-// to_diagnostic<LexError>
-// ============================================================================
+/**
+ * to_diagnostic<LexError>
+ */
 
 BOOST_AUTO_TEST_CASE(to_diagnostic_lex_error_unterminated_string) {
     eta::reader::lexer::LexError e(
@@ -335,9 +335,9 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_lex_error_all_kinds) {
     }
 }
 
-// ============================================================================
-// to_diagnostic<ExpandError>
-// ============================================================================
+/**
+ * to_diagnostic<ExpandError>
+ */
 
 BOOST_AUTO_TEST_CASE(to_diagnostic_expand_error) {
     using EK = eta::reader::expander::ExpandError::Kind;
@@ -360,9 +360,9 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_expand_error) {
     }
 }
 
-// ============================================================================
-// to_diagnostic<SemanticError>
-// ============================================================================
+/**
+ * to_diagnostic<SemanticError>
+ */
 
 BOOST_AUTO_TEST_CASE(to_diagnostic_semantic_error) {
     using SK = eta::semantics::SemanticError::Kind;
@@ -387,9 +387,9 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_semantic_error) {
     }
 }
 
-// ============================================================================
-// to_diagnostic<ParseError>
-// ============================================================================
+/**
+ * to_diagnostic<ParseError>
+ */
 
 BOOST_AUTO_TEST_CASE(to_diagnostic_parse_error) {
     using PK = eta::reader::parser::ParseErrorKind;
@@ -420,9 +420,9 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_parse_error) {
     }
 }
 
-// ============================================================================
-// to_diagnostic<LinkError>
-// ============================================================================
+/**
+ * to_diagnostic<LinkError>
+ */
 
 BOOST_AUTO_TEST_CASE(to_diagnostic_link_error) {
     using LK = eta::reader::linker::LinkError::Kind;
@@ -446,9 +446,9 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_link_error) {
     }
 }
 
-// ============================================================================
-// to_diagnostic<VMError>
-// ============================================================================
+/**
+ * to_diagnostic<VMError>
+ */
 
 BOOST_AUTO_TEST_CASE(to_diagnostic_vm_error) {
     using EC = eta::runtime::error::RuntimeErrorCode;
@@ -474,9 +474,9 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_vm_error) {
     }
 }
 
-// ============================================================================
-// to_diagnostic<NaNBoxError>
-// ============================================================================
+/**
+ * to_diagnostic<NaNBoxError>
+ */
 
 BOOST_AUTO_TEST_CASE(to_diagnostic_nanbox_error) {
     auto d = to_diagnostic(eta::runtime::nanbox::NaNBoxError::InvalidTag);
@@ -485,9 +485,9 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_nanbox_error) {
     BOOST_CHECK(d.message.find("NaNBox error") != std::string::npos);
 }
 
-// ============================================================================
-// to_diagnostic<HeapError>
-// ============================================================================
+/**
+ * to_diagnostic<HeapError>
+ */
 
 BOOST_AUTO_TEST_CASE(to_diagnostic_heap_error) {
     auto d = to_diagnostic(eta::runtime::memory::heap::HeapError::FailedToAllocateMemory);
@@ -496,9 +496,9 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_heap_error) {
     BOOST_CHECK(d.message.find("heap error") != std::string::npos);
 }
 
-// ============================================================================
-// to_diagnostic<InternTableError>
-// ============================================================================
+/**
+ * to_diagnostic<InternTableError>
+ */
 
 BOOST_AUTO_TEST_CASE(to_diagnostic_intern_table_error) {
     auto d = to_diagnostic(eta::runtime::memory::intern::InternTableError::MissingId);
@@ -507,9 +507,9 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_intern_table_error) {
     BOOST_CHECK(d.message.find("intern table error") != std::string::npos);
 }
 
-// ============================================================================
-// write_span
-// ============================================================================
+/**
+ * write_span
+ */
 
 BOOST_AUTO_TEST_CASE(write_span_format) {
     Span sp{42, {0, 10, 5}, {15, 10, 15}};

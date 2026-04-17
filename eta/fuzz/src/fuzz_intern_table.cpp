@@ -14,11 +14,11 @@
 using namespace eta::runtime::memory::intern;
 using namespace eta::runtime::nanbox;
 
-// Fuzzer limits to prevent resource exhaustion
-constexpr size_t MAX_INPUT_SIZE = 64 * 1024;  // 64KB max
-constexpr size_t MAX_STRINGS = 1000;          // max strings to generate
-constexpr size_t MAX_STRING_LENGTH = 4096;    // max individual string length
-constexpr size_t MAX_THREADS = 16;            // max concurrent threads
+/// Fuzzer limits to prevent resource exhaustion
+constexpr size_t MAX_INPUT_SIZE = 64 * 1024;  ///< 64KB max
+constexpr size_t MAX_STRINGS = 1000;          ///< max strings to generate
+constexpr size_t MAX_STRING_LENGTH = 4096;    ///< max individual string length
+constexpr size_t MAX_THREADS = 16;            ///< max concurrent threads
 
 //! Test concurrent interning from multiple threads
 void concurrent_intern_test(InternTable& table, const std::vector<std::string>& strings,
@@ -67,22 +67,22 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
     //! Use second byte to determine operation mode
     const uint8_t mode = data[1] % 5;
 
-    // Remaining data for string generation
+    /// Remaining data for string generation
     const uint8_t* payload = data + 2;
     const size_t payload_size = sz - 2;
 
-    // Generate strings from fuzzer input with bounds checking
+    /// Generate strings from fuzzer input with bounds checking
     std::vector<std::string> strings;
-    strings.reserve(std::min<size_t>(100, MAX_STRINGS));  // reasonable initial capacity
+    strings.reserve(std::min<size_t>(100, MAX_STRINGS));  ///< reasonable initial capacity
 
-    // Split input by null bytes or fixed chunks
+    /// Split input by null bytes or fixed chunks
     if (payload_size > 0) {
         size_t pos = 0;
         for (size_t i = 0; i < payload_size && strings.size() < MAX_STRINGS; ++i) {
             if (payload[i] == 0 || i == payload_size - 1) {
                 size_t len = (i == payload_size - 1 && payload[i] != 0) ? i - pos + 1 : i - pos;
 
-                // Limit string length to prevent excessive memory allocation
+                /// Limit string length to prevent excessive memory allocation
                 len = std::min(len, MAX_STRING_LENGTH);
 
                 if (len > 0 && strings.size() < MAX_STRINGS) {
@@ -92,7 +92,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
             }
         }
 
-        // If no null bytes found, create chunks
+        /// If no null bytes found, create chunks
         if (strings.empty()) {
             size_t chunk_size = std::min<size_t>(payload_size / 10, MAX_STRING_LENGTH);
             chunk_size = std::max<size_t>(1, chunk_size);
@@ -106,11 +106,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
         }
     }
 
-    // Add some edge case strings (with total count check)
-    if (strings.size() < MAX_STRINGS) strings.push_back("");  // Empty string
-    if (strings.size() < MAX_STRINGS) strings.push_back("a"); // Single char
-    if (strings.size() < MAX_STRINGS) strings.push_back(std::string(100, 'x')); // Long string
-    if (strings.size() < MAX_STRINGS) strings.push_back(std::string(1, '\0')); // Null byte
+    /// Add some edge case strings (with total count check)
+    if (strings.size() < MAX_STRINGS) strings.push_back("");  ///< Empty string
+    if (strings.size() < MAX_STRINGS) strings.push_back("a"); ///< Single char
+    if (strings.size() < MAX_STRINGS) strings.push_back(std::string(100, 'x')); ///< Long string
+    if (strings.size() < MAX_STRINGS) strings.push_back(std::string(1, '\0')); ///< Null byte
 
     if (strings.empty()) {
         return 0;
@@ -121,20 +121,20 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
 
     switch (mode) {
         case 0: {
-            // Mode 0: Concurrent interning of different strings
+            /// Mode 0: Concurrent interning of different strings
             const size_t strings_per_thread = std::max<size_t>(1, strings.size() / thread_count);
 
             for (size_t t = 0; t < thread_count; ++t) {
                 size_t start = t * strings_per_thread;
                 size_t end = (t == thread_count - 1) ? strings.size() : start + strings_per_thread;
 
-                // Bounds check
+                /// Bounds check
                 if (start >= strings.size()) {
                     break;
                 }
                 end = std::min(end, strings.size());
 
-                // Create subvector safely
+                /// Create subvector safely
                 std::vector<std::string> thread_strings;
                 thread_strings.reserve(end - start);
                 for (size_t i = start; i < end; ++i) {
@@ -148,7 +148,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
         }
 
         case 1: {
-            // Mode 1: Idempotency test - all threads intern the same strings
+            /// Mode 1: Idempotency test - all threads intern the same strings
             for (size_t t = 0; t < thread_count; ++t) {
                 threads.emplace_back(concurrent_intern_test, std::ref(table),
                                     std::cref(strings), std::ref(error_count));
@@ -157,7 +157,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
         }
 
         case 2: {
-            // Mode 2: Verify same string returns same ID from multiple threads
+            /// Mode 2: Verify same string returns same ID from multiple threads
             if (!strings.empty()) {
                 std::vector<InternId> ids(thread_count, 0);
                 for (size_t t = 0; t < thread_count; ++t) {
@@ -170,7 +170,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
                 }
                 threads.clear();
 
-                // Verify all IDs are the same (non-zero)
+                /// Verify all IDs are the same (non-zero)
                 if (ids[0] != 0) {
                     for (size_t i = 1; i < ids.size(); ++i) {
                         assert(ids[i] == ids[0]);
@@ -181,13 +181,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
         }
 
         case 3: {
-            // Mode 3: Intern then lookup concurrently
-            // First, intern all strings
+            /**
+             * Mode 3: Intern then lookup concurrently
+             * First, intern all strings
+             */
             for (const auto& str : strings) {
                 table.intern(str);
             }
 
-            // Then lookup from multiple threads
+            /// Then lookup from multiple threads
             for (size_t t = 0; t < thread_count; ++t) {
                 threads.emplace_back(concurrent_lookup_test, std::ref(table),
                                     std::cref(strings), std::ref(error_count));
@@ -196,8 +198,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
         }
 
         case 4: {
-            // Mode 4: Mixed operations - some threads intern, some lookup.
-            // Intern half the strings first.
+            /**
+             * Mode 4: Mixed operations - some threads intern, some lookup.
+             * Intern half the strings first.
+             */
             for (size_t i = 0; i < strings.size() / 2; ++i) {
                 table.intern(strings[i]);
             }
@@ -217,19 +221,19 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, const size_t sz) {
             break;
     }
 
-    // Wait for all threads to complete.
+    /// Wait for all threads to complete.
     for (auto& thread : threads) {
         if (thread.joinable()) {
             thread.join();
         }
     }
 
-    // Verify integrity after concurrent operations.
+    /// Verify integrity after concurrent operations.
     for (const auto& str : strings) {
         auto id_result = table.get_id(str);
         if (id_result.has_value()) {
             auto str_result = table.get_string(id_result.value());
-            // Verify bidirectional consistency.
+            /// Verify bidirectional consistency.
             assert(str_result.has_value());
             assert(str_result.value() == str);
         }

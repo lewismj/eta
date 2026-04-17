@@ -1,8 +1,6 @@
-/**
+﻿/**
  * @file example_runner_tests.cpp
  * @brief Integration tests that run every .eta file in the examples/ directory
- *        through the full Driver pipeline (lex → parse → expand → link → analyze
- *        → emit → execute) and verify they complete without runtime errors.
  *
  * The test discovers example files relative to the project root, loads the
  * prelude, and runs each example.  A per-file Boost test case is registered
@@ -27,8 +25,10 @@
 
 namespace fs = std::filesystem;
 
-// Path discovery
-// Compile definitions set by CMake; fall back to source-relative paths.
+/**
+ * Path discovery
+ * Compile definitions set by CMake; fall back to source-relative paths.
+ */
 
 #ifndef ETA_EXAMPLES_DIR
 #define ETA_EXAMPLES_DIR ""
@@ -41,10 +41,12 @@ namespace fs = std::filesystem;
 static fs::path examples_dir() {
     fs::path p(ETA_EXAMPLES_DIR);
     if (!p.empty() && fs::is_directory(p)) return p;
-    // Fall back: guess based on common build layout
-    // Project root is typically 3 levels above the test binary
+    /**
+     * Fall back: guess based on common build layout
+     * Project root is typically 3 levels above the test binary
+     */
     auto cwd = fs::current_path();
-    // Try a few common relative paths
+    /// Try a few common relative paths
     for (auto& candidate : {
         cwd / "examples",
         cwd / ".." / "examples",
@@ -73,7 +75,7 @@ static fs::path stdlib_dir() {
     return {};
 }
 
-// Collect all .eta example files
+/// Collect all .eta example files
 
 static std::vector<fs::path> collect_examples() {
     std::vector<fs::path> files;
@@ -85,29 +87,28 @@ static std::vector<fs::path> collect_examples() {
             files.push_back(entry.path());
         }
     }
-    // Sort for deterministic order
+    /// Sort for deterministic order
     std::sort(files.begin(), files.end());
     return files;
 }
 
-// Networking example filtering
-// Three kinds of files need to be skipped:
-//   1. Spawned-worker files  — call (current-mailbox) to receive tasks from a
-//      parent.  Running standalone returns Nil and the first recv! errors out.
-//   2. Parent/orchestrator files — call (spawn ...) or (worker-pool ...) via
-//      (import std.net).  Without a real etai binary as the process manager the
-//      spawn call blocks forever waiting for the child to connect.
-//   3. Raw-NNG files — call (nng-socket ...) / (nng-dial ...) / (nng-listen ...)
-//      directly without importing std.net (e.g. distributed-compute.eta,
-//      echo-server.eta).  These need a live peer and cannot run standalone.
-//
-// We scan only non-comment lines so that files whose doc-comment *mentions*
-// these symbols (e.g. message-passing.eta) are not falsely excluded.
+/**
+ * Networking example filtering
+ * Three kinds of files need to be skipped:
+ *      parent.  Running standalone returns Nil and the first recv! errors out.
+ *      (import std.net).  Without a real etai binary as the process manager the
+ *      spawn call blocks forever waiting for the child to connect.
+ *      directly without importing std.net (e.g. distributed-compute.eta,
+ *      echo-server.eta).  These need a live peer and cannot run standalone.
+ *
+ * We scan only non-comment lines so that files whose doc-comment *mentions*
+ * these symbols (e.g. message-passing.eta) are not falsely excluded.
+ */
 static bool requires_net(const fs::path& file) {
     std::ifstream ifs(file);
     std::string line;
     while (std::getline(ifs, line)) {
-        // Treat any line whose first non-whitespace character is ';' as a comment
+        /// Treat any line whose first non-whitespace character is ';' as a comment
         auto pos = line.find_first_not_of(" \t");
         if (pos != std::string::npos && line[pos] == ';') continue;
         if (line.find("current-mailbox") != std::string::npos) return true;
@@ -119,13 +120,13 @@ static bool requires_net(const fs::path& file) {
     return false;
 }
 
-// Torch-dependent example filtering
-// When the interpreter is built without -DETA_BUILD_TORCH=ON the torch/*
-// builtins are absent, so examples that `(import std.torch)` cannot run.
+/**
+ * Torch-dependent example filtering
+ */
 static bool requires_torch([[maybe_unused]] const fs::path& file) {
     auto stem = file.stem().string();
     if (stem == "torch") return true;
-    // Scan for (import std.torch) in case of indirect usage
+    /// Scan for (import std.torch) in case of indirect usage
     std::ifstream ifs(file);
     std::string line;
     while (std::getline(ifs, line)) {
@@ -134,7 +135,7 @@ static bool requires_torch([[maybe_unused]] const fs::path& file) {
     return false;
 }
 
-// Test fixture
+/// Test fixture
 
 struct ExampleRunnerFixture {
     fs::path stdlib;
@@ -151,16 +152,16 @@ struct ExampleRunnerFixture {
      */
     bool run_example(const fs::path& file) {
         if (stdlib.empty()) {
-            BOOST_TEST_MESSAGE("stdlib directory not found — skipping");
+            BOOST_TEST_MESSAGE("stdlib directory not found â€” skipping");
             return false;
         }
 
         eta::interpreter::ModulePathResolver resolver({stdlib});
-        // Also add the example's own directory so sibling imports work
+        /// Also add the example's own directory so sibling imports work
         resolver.add_dir(file.parent_path());
         eta::interpreter::Driver driver(std::move(resolver), 8 * 1024 * 1024);
 
-        // Suppress stdout from examples: redirect to a string port
+        /// Suppress stdout from examples: redirect to a string port
         auto null_port = std::make_shared<eta::runtime::StringPort>(
             eta::runtime::StringPort::Mode::Output);
         driver.set_output_port(null_port);
@@ -174,7 +175,7 @@ struct ExampleRunnerFixture {
 
         bool ok = driver.run_file(file);
         if (!ok) {
-            // Emit diagnostics for debugging
+            /// Emit diagnostics for debugging
             for (const auto& diag : driver.diagnostics().diagnostics()) {
                 BOOST_TEST_MESSAGE("  " << diag.message);
             }
@@ -183,14 +184,14 @@ struct ExampleRunnerFixture {
     }
 };
 
-// Test suite
+/// Test suite
 
 BOOST_FIXTURE_TEST_SUITE(example_runner_tests, ExampleRunnerFixture)
 
 BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
     auto files = collect_examples();
     if (files.empty()) {
-        BOOST_TEST_MESSAGE("No example files found — skipping. "
+        BOOST_TEST_MESSAGE("No example files found â€” skipping. "
                            "Set ETA_EXAMPLES_DIR and ETA_STDLIB_DIR compile definitions.");
         return;
     }
@@ -207,15 +208,15 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
 #if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
         if (requires_torch(file)) {
 #ifdef ETA_TORCH_DEBUG_SKIP
-            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped in MSVC Debug)");
+            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires torch â€” skipped in MSVC Debug)");
 #else
-            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped)");
+            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires torch â€” skipped)");
 #endif
             continue;
         }
 #endif
         if (requires_net(file)) {
-            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires networking runtime — skipped)");
+            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires networking runtime â€” skipped)");
             continue;
         }
 
@@ -223,11 +224,11 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
             bool ok = run_example(file);
             if (ok) {
                 ++passed;
-                BOOST_TEST_MESSAGE("  ✓ " << rel.string());
+                BOOST_TEST_MESSAGE("  âœ“ " << rel.string());
             } else {
                 ++failed;
                 failures.push_back(rel.string());
-                BOOST_TEST_MESSAGE("  ✗ " << rel.string());
+                BOOST_TEST_MESSAGE("  âœ— " << rel.string());
             }
             BOOST_CHECK_MESSAGE(ok, "Example " << rel.string() << " failed");
         }

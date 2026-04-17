@@ -8,7 +8,7 @@
 #include "eta/runtime/factory.h"
 #include "eta/semantics/emitter.h"
 
-// Reuse the emitter fixture for full round-trip tests
+/// Reuse the emitter fixture for full round-trip tests
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
@@ -22,16 +22,16 @@ using namespace eta::runtime;
 using namespace eta::runtime::vm;
 using namespace eta::runtime::nanbox;
 
-// ============================================================================
-// Fixture
-// ============================================================================
+/**
+ * Fixture
+ */
 
 struct SerializerFixture {
     memory::heap::Heap heap{1024 * 1024};
     memory::intern::InternTable intern_table;
     BytecodeSerializer serializer{heap, intern_table};
 
-    // Round-trip helper: serialize then deserialize
+    /// Round-trip helper: serialize then deserialize
     std::expected<EtacFile, SerializerError>
     roundtrip(const std::vector<ModuleEntry>& mods,
               const semantics::BytecodeFunctionRegistry& reg,
@@ -48,9 +48,9 @@ struct SerializerFixture {
 
 BOOST_FIXTURE_TEST_SUITE(bytecode_serializer_tests, SerializerFixture)
 
-// ============================================================================
-// Basic round-trips
-// ============================================================================
+/**
+ * Basic round-trips
+ */
 
 BOOST_AUTO_TEST_CASE(roundtrip_empty_registry) {
     semantics::BytecodeFunctionRegistry reg;
@@ -100,26 +100,26 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_constant_types) {
     func.arity = 0;
     func.stack_size = 4;
 
-    // Nil
+    /// Nil
     func.constants.push_back(Nil);
-    // True
+    /// True
     func.constants.push_back(True);
-    // Fixnum
+    /// Fixnum
     auto fix = ops::encode(int64_t{12345}).value();
     func.constants.push_back(fix);
-    // Double
+    /// Double
     auto dbl = ops::encode(3.14).value();
     func.constants.push_back(dbl);
-    // Char
+    /// Char
     auto ch = ops::encode(char32_t{0x41}).value();
     func.constants.push_back(ch);
-    // String
+    /// String
     auto str_id = intern_table.intern("hello").value();
     func.constants.push_back(ops::box(Tag::String, str_id));
-    // Symbol
+    /// Symbol
     auto sym_id = intern_table.intern("foo").value();
     func.constants.push_back(ops::box(Tag::Symbol, sym_id));
-    // FuncIndex
+    /// FuncIndex
     func.constants.push_back(encode_func_index(99));
 
     func.code.push_back({OpCode::Return, 0});
@@ -132,34 +132,34 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_constant_types) {
     BOOST_REQUIRE(f);
     BOOST_CHECK_EQUAL(f->constants.size(), 8u);
 
-    // Nil
+    /// Nil
     BOOST_CHECK_EQUAL(f->constants[0], Nil);
-    // True
+    /// True
     BOOST_CHECK_EQUAL(f->constants[1], True);
-    // Fixnum
+    /// Fixnum
     auto decoded_fix = ops::decode<int64_t>(f->constants[2]);
     BOOST_CHECK(decoded_fix.has_value());
     BOOST_CHECK_EQUAL(*decoded_fix, 12345);
-    // Double
+    /// Double
     auto decoded_dbl = ops::decode<double>(f->constants[3]);
     BOOST_CHECK(decoded_dbl.has_value());
     BOOST_CHECK_CLOSE(*decoded_dbl, 3.14, 0.001);
-    // Char
+    /// Char
     auto decoded_ch = ops::decode<char32_t>(f->constants[4]);
     BOOST_CHECK(decoded_ch.has_value());
     BOOST_CHECK_EQUAL(static_cast<uint32_t>(*decoded_ch), uint32_t{0x41});
-    // String
+    /// String
     BOOST_CHECK(ops::is_boxed(f->constants[5]));
     BOOST_CHECK(ops::tag(f->constants[5]) == Tag::String);
     auto sv5 = intern_table.get_string(ops::payload(f->constants[5]));
     BOOST_CHECK(sv5.has_value());
     BOOST_CHECK_EQUAL(std::string(*sv5), "hello");
-    // Symbol
+    /// Symbol
     BOOST_CHECK(ops::tag(f->constants[6]) == Tag::Symbol);
     auto sv6 = intern_table.get_string(ops::payload(f->constants[6]));
     BOOST_CHECK(sv6.has_value());
     BOOST_CHECK_EQUAL(std::string(*sv6), "foo");
-    // FuncIndex
+    /// FuncIndex
     BOOST_CHECK(is_func_index(f->constants[7]));
     BOOST_CHECK_EQUAL(decode_func_index(f->constants[7]), 99u);
 }
@@ -171,7 +171,7 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     func.arity = 0;
     func.stack_size = 4;
 
-    // Add one of each opcode
+    /// Add one of each opcode
     func.code.push_back({OpCode::Nop, 0});
     func.code.push_back({OpCode::LoadConst, 0});
     func.code.push_back({OpCode::LoadLocal, 1});
@@ -225,7 +225,7 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     auto* f = result->registry.get(0);
     BOOST_REQUIRE(f);
     BOOST_CHECK_EQUAL(f->code.size(), 42u);
-    // Spot-check some opcodes
+    /// Spot-check some opcodes
     BOOST_CHECK(f->code[0].opcode == OpCode::Nop);
     BOOST_CHECK(f->code[12].opcode == OpCode::Call);
     BOOST_CHECK_EQUAL(f->code[12].arg, 2u);
@@ -347,7 +347,7 @@ BOOST_AUTO_TEST_CASE(roundtrip_source_hash) {
 }
 
 BOOST_AUTO_TEST_CASE(roundtrip_heap_cons_constant) {
-    // Quoted list '(1 2) materializes as heap cons cells
+    /// Quoted list '(1 2) materializes as heap cons cells
     auto two = ops::encode(int64_t{2}).value();
     auto cons2 = memory::factory::make_cons(heap, two, Nil);
     BOOST_REQUIRE(cons2.has_value());
@@ -371,7 +371,7 @@ BOOST_AUTO_TEST_CASE(roundtrip_heap_cons_constant) {
     BOOST_REQUIRE(f);
     BOOST_CHECK_EQUAL(f->constants.size(), 1u);
 
-    // The deserialized constant should be a heap cons
+    /// The deserialized constant should be a heap cons
     auto val = f->constants[0];
     BOOST_CHECK(ops::is_boxed(val));
     BOOST_CHECK(ops::tag(val) == Tag::HeapObject);
@@ -382,9 +382,9 @@ BOOST_AUTO_TEST_CASE(roundtrip_heap_cons_constant) {
     BOOST_CHECK_EQUAL(*car_val, 1);
 }
 
-// ============================================================================
-// Error cases
-// ============================================================================
+/**
+ * Error cases
+ */
 
 BOOST_AUTO_TEST_CASE(deserialize_bad_magic) {
     std::stringstream ss("JUNK", std::ios::in | std::ios::binary);
@@ -405,7 +405,7 @@ BOOST_AUTO_TEST_CASE(deserialize_version_mismatch) {
     ss.write("ETAC", 4);
     uint16_t bad_ver = 999;
     ss.write(reinterpret_cast<const char*>(&bad_ver), 2);
-    // Pad enough to not truncate on version read
+    /// Pad enough to not truncate on version read
     uint16_t flags = 0;
     ss.write(reinterpret_cast<const char*>(&flags), 2);
     ss.seekg(0);
@@ -414,9 +414,9 @@ BOOST_AUTO_TEST_CASE(deserialize_version_mismatch) {
     BOOST_CHECK(result.error() == SerializerError::VersionMismatch);
 }
 
-// ============================================================================
-// Negative double constants (regression: bit-63 collision with FUNC_INDEX_TAG)
-// ============================================================================
+/**
+ * Negative double constants (regression: bit-63 collision with FUNC_INDEX_TAG)
+ */
 
 BOOST_AUTO_TEST_CASE(roundtrip_negative_double_constants) {
     semantics::BytecodeFunctionRegistry reg;
@@ -425,10 +425,10 @@ BOOST_AUTO_TEST_CASE(roundtrip_negative_double_constants) {
     func.arity = 0;
     func.stack_size = 4;
 
-    // Negative doubles that previously collided with FUNC_INDEX_TAG (bit 63 = sign bit)
+    /// Negative doubles that previously collided with FUNC_INDEX_TAG (bit 63 = sign bit)
     std::vector<double> test_values = {
         -0.5, -1.0, -0.356563782, -1.821255978, -3.14159,
-        0.0, 1.0, -0.0  // include edge cases
+        0.0, 1.0, -0.0  ///< include edge cases
     };
     for (double d : test_values) {
         auto enc = ops::encode(d);
@@ -467,13 +467,13 @@ BOOST_AUTO_TEST_CASE(roundtrip_func_index_not_confused_with_negative_double) {
     func.arity = 0;
     func.stack_size = 4;
 
-    // Mix func_index values with negative doubles in the same function
-    func.constants.push_back(encode_func_index(42));   // func_index
+    /// Mix func_index values with negative doubles in the same function
+    func.constants.push_back(encode_func_index(42));   ///< func_index
     auto neg = ops::encode(-0.5).value();
-    func.constants.push_back(neg);                       // negative double
-    func.constants.push_back(encode_func_index(100));   // func_index
+    func.constants.push_back(neg);                       ///< negative double
+    func.constants.push_back(encode_func_index(100));   ///< func_index
     auto neg2 = ops::encode(-3.14).value();
-    func.constants.push_back(neg2);                      // negative double
+    func.constants.push_back(neg2);                      ///< negative double
 
     func.code.push_back({OpCode::Return, 0});
     func.source_map.push_back({});
@@ -485,30 +485,30 @@ BOOST_AUTO_TEST_CASE(roundtrip_func_index_not_confused_with_negative_double) {
     BOOST_REQUIRE(f);
     BOOST_REQUIRE_EQUAL(f->constants.size(), 4u);
 
-    // func_index(42)
+    /// func_index(42)
     BOOST_CHECK(is_func_index(f->constants[0]));
     BOOST_CHECK_EQUAL(decode_func_index(f->constants[0]), 42u);
 
-    // -0.5
+    /// -0.5
     BOOST_CHECK(!is_func_index(f->constants[1]));
     auto d1 = ops::decode<double>(f->constants[1]);
     BOOST_CHECK(d1.has_value());
     BOOST_CHECK_CLOSE(*d1, -0.5, 1e-10);
 
-    // func_index(100)
+    /// func_index(100)
     BOOST_CHECK(is_func_index(f->constants[2]));
     BOOST_CHECK_EQUAL(decode_func_index(f->constants[2]), 100u);
 
-    // -3.14
+    /// -3.14
     BOOST_CHECK(!is_func_index(f->constants[3]));
     auto d2 = ops::decode<double>(f->constants[3]);
     BOOST_CHECK(d2.has_value());
     BOOST_CHECK_CLOSE(*d2, -3.14, 1e-10);
 }
 
-// ============================================================================
-// hash_source
-// ============================================================================
+/**
+ * hash_source
+ */
 
 BOOST_AUTO_TEST_CASE(hash_source_deterministic) {
     auto h1 = BytecodeSerializer::hash_source("(module hello)");
@@ -522,18 +522,17 @@ BOOST_AUTO_TEST_CASE(hash_source_differs) {
     BOOST_CHECK_NE(h1, h2);
 }
 
-// ============================================================================
-// Bytecode verifier tests (bug fix: untrusted bytecode)
-// ============================================================================
+/**
+ * Bytecode verifier tests (bug fix: untrusted bytecode)
+ */
 
-// An opcode byte above _Reserved2 (0xFF) must be rejected with InvalidBytecode.
+/// An opcode byte above _Reserved2 (0xFF) must be rejected with InvalidBytecode.
 BOOST_AUTO_TEST_CASE(verifier_invalid_opcode_byte) {
     semantics::BytecodeFunctionRegistry reg;
     BytecodeFunction func;
     func.name       = "bad_op";
     func.stack_size = 2;
     func.constants.push_back(Nil);
-    // 0xFF is above _Reserved2 — completely unknown opcode.
     func.code.push_back({static_cast<OpCode>(0xFF), 0});
     func.source_map.push_back({});
     reg.add(std::move(func));
@@ -543,14 +542,14 @@ BOOST_AUTO_TEST_CASE(verifier_invalid_opcode_byte) {
     BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
 }
 
-// LoadConst with arg >= constants.size() must be rejected.
+/// LoadConst with arg >= constants.size() must be rejected.
 BOOST_AUTO_TEST_CASE(verifier_loadconst_oob) {
     semantics::BytecodeFunctionRegistry reg;
     BytecodeFunction func;
     func.name       = "bad_lc";
     func.stack_size = 2;
-    func.constants.push_back(Nil);   // only index 0 is valid
-    func.code.push_back({OpCode::LoadConst, 99u}); // 99 >= 1
+    func.constants.push_back(Nil);   ///< only index 0 is valid
+    func.code.push_back({OpCode::LoadConst, 99u}); ///< 99 >= 1
     func.source_map.push_back({});
     reg.add(std::move(func));
 
@@ -559,14 +558,14 @@ BOOST_AUTO_TEST_CASE(verifier_loadconst_oob) {
     BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
 }
 
-// LoadLocal with arg >= stack_size must be rejected.
+/// LoadLocal with arg >= stack_size must be rejected.
 BOOST_AUTO_TEST_CASE(verifier_loadlocal_oob) {
     semantics::BytecodeFunctionRegistry reg;
     BytecodeFunction func;
     func.name       = "bad_ll";
     func.stack_size = 2;
     func.constants.push_back(Nil);
-    func.code.push_back({OpCode::LoadLocal, 99u}); // 99 >= stack_size (2)
+    func.code.push_back({OpCode::LoadLocal, 99u}); ///< 99 >= stack_size (2)
     func.source_map.push_back({});
     reg.add(std::move(func));
 
@@ -575,14 +574,14 @@ BOOST_AUTO_TEST_CASE(verifier_loadlocal_oob) {
     BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
 }
 
-// StoreLocal with arg >= stack_size must be rejected.
+/// StoreLocal with arg >= stack_size must be rejected.
 BOOST_AUTO_TEST_CASE(verifier_storelocal_oob) {
     semantics::BytecodeFunctionRegistry reg;
     BytecodeFunction func;
     func.name       = "bad_sl";
     func.stack_size = 3;
     func.constants.push_back(Nil);
-    func.code.push_back({OpCode::StoreLocal, 3u}); // 3 >= stack_size (3)
+    func.code.push_back({OpCode::StoreLocal, 3u}); ///< 3 >= stack_size (3)
     func.source_map.push_back({});
     reg.add(std::move(func));
 
@@ -591,14 +590,14 @@ BOOST_AUTO_TEST_CASE(verifier_storelocal_oob) {
     BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
 }
 
-// MakeClosure const_idx (arg >> 16) out of bounds must be rejected.
+/// MakeClosure const_idx (arg >> 16) out of bounds must be rejected.
 BOOST_AUTO_TEST_CASE(verifier_makeclosure_const_oob) {
     semantics::BytecodeFunctionRegistry reg;
     BytecodeFunction func;
     func.name       = "bad_mc";
     func.stack_size = 2;
-    func.constants.push_back(Nil); // only index 0 valid
-    // const_idx = 5 (arg = 5 << 16 | 0), 5 >= constants.size() (1)
+    func.constants.push_back(Nil); ///< only index 0 valid
+    /// const_idx = 5 (arg = 5 << 16 | 0), 5 >= constants.size() (1)
     func.code.push_back({OpCode::MakeClosure, (5u << 16) | 0u});
     func.source_map.push_back({});
     reg.add(std::move(func));
@@ -608,23 +607,25 @@ BOOST_AUTO_TEST_CASE(verifier_makeclosure_const_oob) {
     BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
 }
 
-// ============================================================================
-// DoS guard: string/vector length cap (bug fix: unbounded allocation)
-// ============================================================================
+/**
+ * DoS guard: string/vector length cap (bug fix: unbounded allocation)
+ */
 
-// A function name > MAX_STRING_LEN must be rejected during deserialization.
+/// A function name > MAX_STRING_LEN must be rejected during deserialization.
 BOOST_AUTO_TEST_CASE(deserialize_string_too_long) {
     semantics::BytecodeFunctionRegistry reg;
     BytecodeFunction func;
-    // Create a name longer than MAX_STRING_LEN (64 KiB)
+    /// Create a name longer than MAX_STRING_LEN (64 KiB)
     func.name = std::string(BytecodeSerializer::MAX_STRING_LEN + 1, 'x');
     func.stack_size = 0;
     func.code.push_back({OpCode::Return, 0});
     func.source_map.push_back({});
     reg.add(std::move(func));
 
-    // Serialize succeeds (the writer has no length cap).
-    // Deserialize must fail with Truncated to signal the rejected oversized read.
+    /**
+     * Serialize succeeds (the writer has no length cap).
+     * Deserialize must fail with Truncated to signal the rejected oversized read.
+     */
     auto result = roundtrip({}, reg);
     BOOST_CHECK(!result.has_value());
     BOOST_CHECK(result.error() == SerializerError::Truncated);

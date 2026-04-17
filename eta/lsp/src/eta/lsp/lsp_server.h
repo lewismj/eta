@@ -19,9 +19,9 @@ using eta::json::Value;
 using eta::json::Object;
 using eta::json::Array;
 
-// ============================================================================
-// Document store
-// ============================================================================
+/**
+ * Document store
+ */
 
 struct TextDocument {
     std::string uri;
@@ -30,9 +30,9 @@ struct TextDocument {
     std::string content;
 };
 
-// ============================================================================
-// LSP Diagnostic (subset)
-// ============================================================================
+/**
+ * LSP Diagnostic (subset)
+ */
 
 struct Position {
     int64_t line{0};
@@ -46,14 +46,14 @@ struct Range {
 
 struct LspDiagnostic {
     Range range;
-    int severity{1}; // 1=Error, 2=Warning, 3=Info, 4=Hint
+    int severity{1}; ///< 1=Error, 2=Warning, 3=Info, 4=Hint
     std::string source{"eta"};
     std::string message;
 };
 
-// ============================================================================
-// LSP Server
-// ============================================================================
+/**
+ * LSP Server
+ */
 
 class LspServer {
 public:
@@ -66,27 +66,33 @@ public:
     /// Main loop: reads JSON-RPC from stdin, writes to stdout. Blocks until exit.
     void run();
 
-    /// Collect all defined symbols from source (for completion / hover / documentSymbol).
-    /// When capture_signature is true, also captures the parameter list text
-    /// for defun/define forms (e.g. "(f g)" from "(defun compose (f g) ...)").
+    /**
+     * Collect all defined symbols from source (for completion / hover / documentSymbol).
+     * When capture_signature is true, also captures the parameter list text
+     * for defun/define forms (e.g. "(f g)" from "(defun compose (f g) ...)").
+     */
     struct SymbolInfo {
         std::string name;
-        std::string kind; // "define", "defun", "macro", "module", etc.
-        std::string signature; // e.g. "(f g)" — only populated when capture_signature is true
-        std::string module_name; // originating module (empty for document-local)
-        std::string file_path; // filesystem path of the originating file (empty for current doc)
+        std::string kind; ///< "define", "defun", "macro", "module", etc.
+        std::string signature;
+        std::string module_name; ///< originating module (empty for document-local)
+        std::string file_path; ///< filesystem path of the originating file (empty for current doc)
         int64_t line{0};
         int64_t character{0};
     };
     static std::vector<SymbolInfo> collect_symbols(const std::string& source, bool capture_signature = false);
 
-    /// Find all occurrences of a symbol name in the given source text.
-    /// Returns a vector of Range for each occurrence.
+    /**
+     * Find all occurrences of a symbol name in the given source text.
+     * Returns a vector of Range for each occurrence.
+     */
     static std::vector<Range> find_all_occurrences(const std::string& source,
                                                     const std::string& symbol);
 
-    /// Find nested S-expression ranges enclosing the given position.
-    /// Returns ranges from innermost to outermost (each is a balanced parenthesized form).
+    /**
+     * Find nested S-expression ranges enclosing the given position.
+     * Returns ranges from innermost to outermost (each is a balanced parenthesized form).
+     */
     static std::vector<Range> enclosing_sexp_ranges(
         const std::string& source, int64_t line, int64_t character);
 
@@ -101,35 +107,34 @@ private:
     bool initialized_{false};
     bool shutdown_requested_{false};
 
-    // Document store: uri -> document
+    /// Document store: uri -> document
     std::unordered_map<std::string, TextDocument> documents_;
 
-    // Module resolver — populated from ETA_MODULE_PATH + bundled stdlib
     interpreter::ModulePathResolver resolver_;
 
-    // Transport
+    /// Transport
     std::optional<std::string> read_message();
     void send_message(const Value& msg);
     void send_response(const Value& id, const Value& result);
     void send_error(const Value& id, int code, const std::string& message);
     void send_notification(const std::string& method, const Value& params);
 
-    // Dispatch
+    /// Dispatch
     void dispatch(const Value& msg);
 
-    // LSP Methods
+    /// LSP Methods
     Value handle_initialize(const Value& params);
     void handle_initialized(const Value& params);
     void handle_shutdown();
     void handle_exit();
 
-    // Text document sync
+    /// Text document sync
     void handle_did_open(const Value& params);
     void handle_did_change(const Value& params);
     void handle_did_close(const Value& params);
     void handle_did_save(const Value& params);
 
-    // Language features
+    /// Language features
     Value handle_hover(const Value& params);
     Value handle_definition(const Value& params);
     Value handle_completion(const Value& params);
@@ -143,11 +148,11 @@ private:
     Value handle_semantic_tokens_full(const Value& params);
     Value handle_formatting(const Value& params);
 
-    // Diagnostics
+    /// Diagnostics
     void validate_document(const std::string& uri);
     void publish_diagnostics(const std::string& uri, const std::vector<LspDiagnostic>& diags);
 
-    // Helpers
+    /// Helpers
     static Value position_to_json(const Position& p);
     static Value range_to_json(const Range& r);
     static Value diagnostic_to_json(const LspDiagnostic& d);
@@ -159,9 +164,10 @@ private:
     /// Find word at position in source text
     static std::string word_at_position(const std::string& text, int64_t line, int64_t character);
 
-    /// Find the end position {line, col} of the S-expression that begins at
-    /// (start_line, start_col) — i.e., the position just after the matching ')'.
-    /// Returns {start_line, start_col} when no balanced close is found.
+    /**
+     * Find the end position {line, col} of the S-expression that begins at
+     * Returns {start_line, start_col} when no balanced close is found.
+     */
     static std::pair<int64_t, int64_t> sexp_end(
         const std::string& source, int64_t start_line, int64_t start_col);
 
@@ -170,27 +176,35 @@ private:
     /// Initialise resolver_ from ETA_MODULE_PATH env var + bundled stdlib.
     void init_module_path();
 
-    /// Read the source of a module (e.g. "std.core") from the search path.
-    /// Returns nullopt if the module file cannot be found or opened.
+    /**
+     * Read the source of a module (e.g. "std.core") from the search path.
+     * Returns nullopt if the module file cannot be found or opened.
+     */
     std::optional<std::string> resolve_module_source(const std::string& module_name);
 
-    /// Load prelude.eta from the module search path and add all its module
-    /// forms to all_forms, registering their names in seen_modules.
-    /// This provides std.core, std.math, std.io, std.prelude etc. to the
-    /// linker so that (import std.prelude) in user code resolves correctly.
+    /**
+     * Load prelude.eta from the module search path and add all its module
+     * forms to all_forms, registering their names in seen_modules.
+     * This provides std.core, std.math, std.io, std.prelude etc. to the
+     * linker so that (import std.prelude) in user code resolves correctly.
+     */
     void preload_prelude(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
         std::unordered_set<std::string>& seen_modules);
 
-    /// Recursively load all imported module files into all_forms so the linker
-    /// can resolve cross-module references.  seen_modules must already contain
-    /// the names of every module already present in all_forms.
+    /**
+     * Recursively load all imported module files into all_forms so the linker
+     * can resolve cross-module references.  seen_modules must already contain
+     * the names of every module already present in all_forms.
+     */
     void preload_module_deps(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
         std::unordered_set<std::string>& seen_modules);
 
-    // Completion caches
-    /// Cached symbols from prelude + module-path .eta files (populated lazily).
+    /**
+     * Completion caches
+     * Cached symbols from prelude + module-path .eta files (populated lazily).
+     */
     bool completion_cache_loaded_{false};
     std::vector<SymbolInfo> prelude_symbols_;
     std::vector<SymbolInfo> module_path_symbols_;
@@ -201,10 +215,9 @@ private:
     /// Scan all .eta files in the module search path and collect their symbols.
     void scan_module_path_symbols();
 
-    // Validation content cache
-    /// Last content validated per URI — skip redundant full-pipeline runs.
+    /// Validation content cache
     std::unordered_map<std::string, std::string> last_validated_content_;
 };
 
-} // namespace eta::lsp
+} ///< namespace eta::lsp
 

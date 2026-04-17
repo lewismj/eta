@@ -69,7 +69,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t sz) {
         std::memcpy(&i32, data, sizeof(i32));
 
         const auto encoded = ops::encode(i32);
-        assert(encoded.has_value()); // int32 always fits
+        assert(encoded.has_value()); ///< int32 always fits
 
         const auto decoded = ops::decode<int32_t>(encoded.value());
         assert(decoded.has_value());
@@ -105,7 +105,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t sz) {
         uint8_t byte_value;
         std::memcpy(&byte_value, data, sizeof(byte_value));
         
-        // Normalize to valid bool values (0 or 1)
+        /// Normalize to valid bool values (0 or 1)
         bool b = byte_value != 0;
 
         const auto encoded = ops::encode(b);
@@ -122,7 +122,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t sz) {
         std::memcpy(&d, data, sizeof(d));
 
         const auto encoded = ops::encode(d);
-        assert(encoded.has_value()); // double encoding always succeeds
+        assert(encoded.has_value()); ///< double encoding always succeeds
 
         const auto decoded = ops::decode<double>(encoded.value());
         assert(decoded.has_value());
@@ -133,7 +133,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t sz) {
         } else if (std::isinf(d)) {
             //! Test infinity preservation
             assert(std::isinf(decoded.value()));
-            assert((d > 0) == (decoded.value() > 0)); // sign matches
+            assert((d > 0) == (decoded.value() > 0)); ///< sign matches
         } else {
             assert(decoded.value() == d);
         }
@@ -186,8 +186,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t sz) {
 
             //! Test surrogate pair detection (0xD800-0xDFFF are invalid)
             if (c32 >= 0xD800 && c32 <= 0xDFFF) {
-                // These are technically valid in the payload but invalid Unicode
-                // Current implementation doesn't check for surrogates
+                /**
+                 * These are technically valid in the payload but invalid Unicode
+                 * Current implementation doesn't check for surrogates
+                 */
             }
         } else {
             //! Must be out of range
@@ -201,11 +203,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t sz) {
         std::memcpy(&raw1, data, sizeof(raw1));
         std::memcpy(&raw2, data + sizeof(raw1), sizeof(raw2));
 
-        // Try to decode raw bits as wrong types
+        /// Try to decode raw bits as wrong types
         if (ops::is_boxed(raw1)) {
             Tag t = ops::tag(raw1);
 
-            // Attempt decode with wrong tag
+            /// Attempt decode with wrong tag
             if (t == Tag::Fixnum) {
                 const auto wrong = ops::decode<char32_t>(raw1);
                 assert(!wrong.has_value());

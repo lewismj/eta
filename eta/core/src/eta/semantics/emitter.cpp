@@ -12,9 +12,9 @@ using namespace runtime::memory::factory;
 using namespace runtime::nanbox;
 using namespace runtime::types;
 
-// ============================================================================
-// Top-level emit
-// ============================================================================
+/**
+ * Top-level emit
+ */
 
 BytecodeFunction* Emitter::emit() {
     Context ctx;
@@ -26,12 +26,14 @@ BytecodeFunction* Emitter::emit() {
     Span empty{};
     for (const auto* node : sem_.toplevel_inits) {
         emit_node(node, ctx);
-        // Pop the value every top-level form leaves on the stack.
+        /// Pop the value every top-level form leaves on the stack.
         ctx.emit_instr(OpCode::Pop, 0, node->span);
     }
 
-    // Module init returns Nil (single LoadConst + Return).
-    // Fixed: the original code had a double-push of LoadConst here.
+    /**
+     * Module init returns Nil (single LoadConst + Return).
+     * Fixed: the original code had a double-push of LoadConst here.
+     */
     emit_load_const(Nil, ctx, empty);
     ctx.emit_instr(OpCode::Return, 0, empty);
 
@@ -39,9 +41,9 @@ BytecodeFunction* Emitter::emit() {
     return registry_.get_mut(idx);
 }
 
-// ============================================================================
-// Node dispatch
-// ============================================================================
+/**
+ * Node dispatch
+ */
 
 void Emitter::emit_node(const core::Node* node, Context& ctx) {
     const Span& span = node->span;
@@ -92,9 +94,9 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
     }, node->data);
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
+/**
+ * Helpers
+ */
 
 uint32_t Emitter::add_const(LispVal val, Context& ctx) {
     uint32_t idx = static_cast<uint32_t>(ctx.func.constants.size());
@@ -132,9 +134,9 @@ void Emitter::emit_address_store(const core::Address& addr, Context& ctx, const 
     }, addr.where);
 }
 
-// ============================================================================
-// Leaf emitters
-// ============================================================================
+/**
+ * Leaf emitters
+ */
 
 void Emitter::emit_const(const core::Const& n, Context& ctx, const Span& span) {
     if (const auto* s = std::get_if<std::string>(&n.value.payload)) {
@@ -176,11 +178,11 @@ void Emitter::emit_call(const core::Call& n, bool tail, Context& ctx, const Span
 void Emitter::emit_if(const core::If& n, Context& ctx, const Span& span) {
     emit_node(n.test, ctx);
     uint32_t jump_if_false_idx = static_cast<uint32_t>(ctx.func.code.size());
-    ctx.emit_instr(OpCode::JumpIfFalse, 0, span);  // placeholder
+    ctx.emit_instr(OpCode::JumpIfFalse, 0, span);  ///< placeholder
 
     emit_node(n.conseq, ctx);
     uint32_t jump_idx = static_cast<uint32_t>(ctx.func.code.size());
-    ctx.emit_instr(OpCode::Jump, 0, span);          // placeholder
+    ctx.emit_instr(OpCode::Jump, 0, span);          ///< placeholder
 
     ctx.func.code[jump_if_false_idx].arg =
         static_cast<uint32_t>(ctx.func.code.size() - jump_if_false_idx - 1);
@@ -190,9 +192,11 @@ void Emitter::emit_if(const core::If& n, Context& ctx, const Span& span) {
 }
 
 void Emitter::emit_begin(const core::Begin& n, Context& ctx, const Span& span) {
-    // Detect letrec-expanded pattern: a leading run of Set{Local} nodes whose
-    // values are Lambdas.  After all closures are created, earlier closures may
-    // have captured placeholder ('()) values for later-assigned locals.
+    /**
+     * Detect letrec-expanded pattern: a leading run of Set{Local} nodes whose
+     * values are Lambdas.  After all closures are created, earlier closures may
+     * have captured placeholder ('()) values for later-assigned locals.
+     */
     struct LetrecInit { uint32_t slot; const core::Lambda* lam; };
     std::vector<LetrecInit> letrec_inits;
     for (const auto* expr : n.exprs) {
@@ -211,7 +215,7 @@ void Emitter::emit_begin(const core::Begin& n, Context& ctx, const Span& span) {
         if (i < n.exprs.size() - 1)
             ctx.emit_instr(OpCode::Pop, 0, n.exprs[i]->span);
 
-        // After the last letrec initializer, patch cross-references.
+        /// After the last letrec initializer, patch cross-references.
         if (ninits > 1 && i + 1 == ninits) {
             for (size_t later = 1; later < ninits; ++later) {
                 uint32_t later_slot = letrec_inits[later].slot;
@@ -250,7 +254,7 @@ void Emitter::emit_set(const core::Set& n, Context& ctx, const Span& span) {
     emit_node(n.value, ctx);
     emit_address_store(n.target, ctx, span);
 
-    // Fixup for letrec self-reference
+    /// Fixup for letrec self-reference
     if (const auto* lam = std::get_if<core::Lambda>(&n.value->data)) {
         if (const auto* target_local = std::get_if<core::Address::Local>(&n.target.where)) {
             for (size_t i = 0; i < lam->upval_sources.size(); ++i) {
@@ -267,7 +271,7 @@ void Emitter::emit_set(const core::Set& n, Context& ctx, const Span& span) {
         }
     }
 
-    // set! returns unspecified value (we push nil)
+    /// set! returns unspecified value (we push nil)
     emit_load_const(Nil, ctx, span);
 }
 
@@ -405,7 +409,7 @@ uint32_t Emitter::emit_lambda(const core::Lambda& lambda,
     ctx.func.has_rest   = lambda.arity.has_rest;
     ctx.func.stack_size = lambda.stack_size;
 
-    // Populate local_names from params, rest param, and locals
+    /// Populate local_names from params, rest param, and locals
     auto record_local = [&](const core::BindingId& id) {
         if (id.id >= sem_.bindings.size()) return;
         const auto& info = sem_.bindings[id.id];
@@ -421,7 +425,7 @@ uint32_t Emitter::emit_lambda(const core::Lambda& lambda,
     if (lambda.rest) record_local(*lambda.rest);
     for (const auto& lid : lambda.locals) record_local(lid);
 
-    // Populate upval_names from captured bindings
+    /// Populate upval_names from captured bindings
     ctx.func.upval_names.resize(lambda.upvals.size());
     for (std::size_t i = 0; i < lambda.upvals.size(); ++i) {
         const auto& uid = lambda.upvals[i];
@@ -435,24 +439,24 @@ uint32_t Emitter::emit_lambda(const core::Lambda& lambda,
     return registry_.add(std::move(ctx.func));
 }
 
-// ============================================================================
-// Exception emit helpers
-// ============================================================================
+/**
+ * Exception emit helpers
+ */
 
 void Emitter::emit_raise(const core::Raise& n, Context& ctx, const Span& span) {
-    // Stack layout before Throw: tag (bottom), value (top).
+    /// Stack layout before Throw: tag (bottom), value (top).
     LispVal tag_val = Nil;
     if (!n.tag_name.empty()) {
         auto res = intern_table_.intern(n.tag_name);
         if (res) tag_val = ops::box(Tag::Symbol, *res);
     }
-    emit_load_const(tag_val, ctx, span);  // push tag
-    emit_node(n.value, ctx);              // push value
+    emit_load_const(tag_val, ctx, span);  ///< push tag
+    emit_node(n.value, ctx);              ///< push value
     ctx.emit_instr(OpCode::Throw, 0, span);
 }
 
 void Emitter::emit_guard(const core::Guard& n, Context& ctx, const Span& span) {
-    // Intern the tag symbol (Nil = catch-all).
+    /// Intern the tag symbol (Nil = catch-all).
     LispVal tag_val = Nil;
     if (!n.tag_name.empty()) {
         auto res = intern_table_.intern(n.tag_name);
@@ -460,38 +464,40 @@ void Emitter::emit_guard(const core::Guard& n, Context& ctx, const Span& span) {
     }
     uint32_t tag_const_idx = add_const(tag_val, ctx);
 
-    // SetupCatch with placeholder arg; patched below.
+    /// SetupCatch with placeholder arg; patched below.
     uint32_t setup_idx = static_cast<uint32_t>(ctx.func.code.size());
     ctx.emit_instr(OpCode::SetupCatch, 0, span);
 
-    // Protected body.
+    /// Protected body.
     emit_node(n.body, ctx);
 
-    // PopCatch on the normal (no-exception) path.
+    /// PopCatch on the normal (no-exception) path.
     ctx.emit_instr(OpCode::PopCatch, 0, span);
 
-    // handler_pc = instruction after PopCatch.
-    // Both paths converge here:
-    //   Normal:    body result on stack; catch frame removed by PopCatch.
-    //   Exception: do_throw restores stack to stack_top and pushes caught value.
+    /**
+     * handler_pc = instruction after PopCatch.
+     * Both paths converge here:
+     *   Normal:    body result on stack; catch frame removed by PopCatch.
+     *   Exception: do_throw restores stack to stack_top and pushes caught value.
+     */
     uint32_t handler_pc = static_cast<uint32_t>(ctx.func.code.size());
 
-    // Patch SetupCatch: arg = (tag_const_idx << 16) | offset_to_handler
+    /// Patch SetupCatch: arg = (tag_const_idx << 16) | offset_to_handler
     uint32_t offset = handler_pc - (setup_idx + 1);
     ctx.func.code[setup_idx].arg = (tag_const_idx << 16) | (offset & 0xFFFFu);
 }
 
-// ============================================================================
-// Logic variable / unification emit helpers
-// ============================================================================
+/**
+ * Logic variable / unification emit helpers
+ */
 
 void Emitter::emit_make_logic_var(const core::MakeLogicVar&, Context& ctx, const Span& span) {
     ctx.emit_instr(OpCode::MakeLogicVar, 0, span);
 }
 
 void Emitter::emit_unify(const core::Unify& n, Context& ctx, const Span& span) {
-    emit_node(n.a, ctx);   // push a
-    emit_node(n.b, ctx);   // push b
+    emit_node(n.a, ctx);   ///< push a
+    emit_node(n.b, ctx);   ///< push b
     ctx.emit_instr(OpCode::Unify, 0, span);
 }
 
@@ -514,4 +520,4 @@ void Emitter::emit_copy_term(const core::CopyTerm& n, Context& ctx, const Span& 
     ctx.emit_instr(OpCode::CopyTerm, 0, span);
 }
 
-} // namespace eta::semantics
+} ///< namespace eta::semantics

@@ -12,28 +12,28 @@ using namespace eta::reader::lexer;
 namespace {
 
 
-// Helper to parse a single datum from source
+/// Helper to parse a single datum from source
 std::expected<SExprPtr, ReaderError> parse_one(const std::string& src, FileId fid = 0) {
     Lexer lexer(fid, src);
     Parser parser(lexer);
     return parser.parse_datum();
 }
 
-// Helper to parse all top-level forms from source
+/// Helper to parse all top-level forms from source
 std::expected<std::vector<SExprPtr>, ReaderError> parse_all(const std::string& src, FileId fid = 0) {
     Lexer lexer(fid, src);
     Parser parser(lexer);
     return parser.parse_toplevel();
 }
 
-// Helper to parse with strict quasiquote mode
+/// Helper to parse with strict quasiquote mode
 std::expected<SExprPtr, ReaderError> parse_one_strict_qq(const std::string& src, FileId fid = 0) {
     Lexer lexer(fid, src);
     Parser parser(lexer, true);
     return parser.parse_datum();
 }
 
-// Verify an SExpr is a specific type and extract it
+/// Verify an SExpr is a specific type and extract it
 template<typename T>
 const T* expect_type(const SExprPtr& expr) {
     BOOST_REQUIRE(expr != nullptr);
@@ -54,7 +54,7 @@ void expect_error_toplevel(const std::expected<std::vector<SExprPtr>, ReaderErro
     BOOST_CHECK_EQUAL(to_string(std::get<ParseError>(result.error()).kind), to_string(expected_kind));
 }
 
-} // anonymous namespace
+} ///< anonymous namespace
 
 BOOST_AUTO_TEST_SUITE(parser_tests)
 
@@ -147,7 +147,6 @@ BOOST_AUTO_TEST_CASE(parse_string_with_unicode) {
     auto result = parse_one("\"hello \\x3BB;\"");
     BOOST_REQUIRE(result.has_value());
     const auto* s = expect_type<String>(*result);
-    // λ is U+03BB
     BOOST_CHECK(s->value.find("\xCE\xBB") != std::string::npos);
 }
 
@@ -301,7 +300,7 @@ BOOST_AUTO_TEST_CASE(parse_list_with_brackets) {
 }
 
 BOOST_AUTO_TEST_CASE(parse_list_mixed_brackets) {
-    // Square brackets should work like parens
+    /// Square brackets should work like parens
     const auto result = parse_one("(a [b c] d)");
     BOOST_REQUIRE(result.has_value());
     const auto* list = expect_type<List>(*result);
@@ -476,13 +475,13 @@ BOOST_AUTO_TEST_CASE(error_multiple_dots) {
 
 BOOST_AUTO_TEST_CASE(error_dot_without_tail) {
     const auto result = parse_one("(a b .)");
-    // Should be unclosed or misplaced dot
+    /// Should be unclosed or misplaced dot
     BOOST_CHECK(!result.has_value());
 }
 
 BOOST_AUTO_TEST_CASE(error_dot_with_multiple_tail) {
     const auto result = parse_one("(a . b c)");
-    // After dot, only one element allowed before closing
+    /// After dot, only one element allowed before closing
     expect_error(result, ParseErrorKind::MisplacedDot);
 }
 
@@ -526,7 +525,7 @@ BOOST_AUTO_TEST_CASE(error_unquote_splicing_outside_quasiquote_strict) {
     expect_error(result, ParseErrorKind::UnquoteOutsideQuasiquote);
 }
 
-// In non-strict mode, unquote outside quasiquote should still work
+/// In non-strict mode, unquote outside quasiquote should still work
 BOOST_AUTO_TEST_CASE(unquote_outside_quasiquote_non_strict) {
     const auto result = parse_one(",x");
     BOOST_REQUIRE(result.has_value());
@@ -600,11 +599,11 @@ BOOST_AUTO_TEST_CASE(parse_comment_only) {
 }
 
 BOOST_AUTO_TEST_CASE(parse_datum_returns_null_on_empty) {
-    // parse_datum on empty input should return error or empty
+    /// parse_datum on empty input should return error or empty
     Lexer lexer(0, "");
     Parser parser(lexer);
     const auto result = parser.parse_datum();
-    // Empty input means EOF, should return error
+    /// Empty input means EOF, should return error
     BOOST_CHECK(!result.has_value());
 }
 
@@ -645,7 +644,7 @@ BOOST_AUTO_TEST_CASE(parse_complex_s_expression) {
     const auto* list = expect_type<List>(*result);
     BOOST_CHECK_EQUAL(list->elems.size(), 3);
 
-    // First element should be 'define' symbol
+    /// First element should be 'define' symbol
     const auto* define_sym = list->elems[0]->as<Symbol>();
     BOOST_REQUIRE(define_sym != nullptr);
     BOOST_CHECK_EQUAL(define_sym->name, "define");
@@ -673,7 +672,7 @@ BOOST_AUTO_TEST_CASE(sexpr_as_method_mutable) {
     BOOST_REQUIRE(result.has_value());
     Symbol* sym = (*result)->as<Symbol>();
     BOOST_REQUIRE(sym != nullptr);
-    sym->name = "bar"; // Should be mutable
+    sym->name = "bar"; ///< Should be mutable
     BOOST_CHECK_EQUAL((*result)->as<Symbol>()->name, "bar");
 }
 
@@ -685,23 +684,23 @@ BOOST_AUTO_TEST_CASE(parse_error_kind_to_string) {
     BOOST_CHECK_EQUAL(std::string(to_string(ParseErrorKind::InvalidNumericLiteral)), "ParseErrorKind::InvalidNumericLiteral");
 }
 
-// ── Bug-fix regression: uncaught exceptions in numeric parsing (bug #2) ──────
 
-// A decimal fixnum that overflows int64 should fall back to double gracefully,
-// not let std::stod throw.  The value exceeds INT64_MAX but is representable
-// as a double, so we expect a successful parse yielding a Number.
+/**
+ * A decimal fixnum that overflows int64 should fall back to double gracefully,
+ * not let std::stod throw.  The value exceeds INT64_MAX but is representable
+ * as a double, so we expect a successful parse yielding a Number.
+ */
 BOOST_AUTO_TEST_CASE(parse_huge_decimal_fixnum_falls_back_to_double) {
-    // 10^20 overflows int64_t but is exactly representable as a double.
+    /// 10^20 overflows int64_t but is exactly representable as a double.
     const auto result = parse_one("100000000000000000000");
     BOOST_REQUIRE_MESSAGE(result.has_value(), "huge decimal should not throw");
     const auto* num = expect_type<Number>(*result);
     BOOST_CHECK(std::holds_alternative<double>(num->value));
 }
 
-// A non-decimal fixnum that overflows its type should return
-// InvalidNumericLiteral — it must NOT throw std::invalid_argument through stod.
+/// A non-decimal fixnum that overflows its type should return
 BOOST_AUTO_TEST_CASE(parse_huge_hex_fixnum_returns_error_not_throw) {
-    // 33 hex digits: value >> UINT64_MAX, and stod cannot parse bare hex digits.
+    /// 33 hex digits: value >> UINT64_MAX, and stod cannot parse bare hex digits.
     const auto result = parse_one("#xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
     BOOST_CHECK_MESSAGE(!result.has_value(),
         "overflowing hex fixnum should yield an error, not throw");
@@ -710,25 +709,21 @@ BOOST_AUTO_TEST_CASE(parse_huge_hex_fixnum_returns_error_not_throw) {
     }
 }
 
-// ── Bug-fix regression: bytevector accumulation overflow (bug #5) ─────────────
 
-// #u8(#b111111111) = 511 in binary — must be rejected as > 255, not silently
-// wrapped around to a small value through unsigned overflow.
+/// wrapped around to a small value through unsigned overflow.
 BOOST_AUTO_TEST_CASE(bytevector_binary_overflow_rejected) {
-    // #b111111111 = 511 — 9 binary digits, overflows a byte
     const auto result = parse_one("#u8(#b111111111)");
     BOOST_CHECK_MESSAGE(!result.has_value(),
         "binary literal 511 should be rejected as out-of-range byte");
 }
 
-// Octal overflow: #o400 = 256, just over the byte limit.
+/// Octal overflow: #o400 = 256, just over the byte limit.
 BOOST_AUTO_TEST_CASE(bytevector_octal_overflow_rejected) {
     const auto result = parse_one("#u8(#o400)");
     BOOST_CHECK_MESSAGE(!result.has_value(),
         "octal literal 256 should be rejected as out-of-range byte");
 }
 
-// Binary maximum valid byte: #b11111111 = 255 — must be accepted.
 BOOST_AUTO_TEST_CASE(bytevector_binary_max_valid_accepted) {
     const auto result = parse_one("#u8(#b11111111)");
     BOOST_REQUIRE_MESSAGE(result.has_value(), "#b11111111 = 255 is a valid byte");

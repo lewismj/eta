@@ -391,6 +391,10 @@ propagation + labeling; `sat-count` on 20-var formula via BDD
 
 ## Phase 6 — CLP(R/Q) Linear Arithmetic
 
+> **Implementation breakdown:** see [`phase6_implementation.md`](phase6_implementation.md)
+> for the seven-stage delivery plan (6.1 – 6.7) with per-stage smoke
+> tests, success criteria, and dependency arrows.
+
 **Goal:** linear constraint solving over reals (and rationals), so
 quant-finance / causal code can express continuous constraints.
 

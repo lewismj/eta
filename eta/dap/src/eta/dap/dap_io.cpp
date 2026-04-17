@@ -1,4 +1,4 @@
-#include "dap_io.h"
+﻿#include "dap_io.h"
 
 #include <iostream>
 #include <string>
@@ -6,7 +6,6 @@
 namespace eta::dap {
 
 std::optional<std::string> read_message(std::istream& in) {
-    // 64 MiB ceiling — same limit as the LSP layer.
     static constexpr std::size_t MAX_MESSAGE_SIZE = 64u * 1024u * 1024u;
 
     while (true) {
@@ -39,7 +38,7 @@ std::optional<std::string> read_message(std::istream& in) {
             continue;
         }
 
-        // Guard against unbounded allocation from a crafted Content-Length value.
+        /// Guard against unbounded allocation from a crafted Content-Length value.
         if (content_length > MAX_MESSAGE_SIZE) {
             std::cerr << "[eta_dap] warning: Content-Length " << content_length
                       << " exceeds maximum (" << MAX_MESSAGE_SIZE << " bytes); skipping\n";
@@ -59,7 +58,7 @@ void write_message(std::ostream& out, const std::string& body) {
     out.flush();
 }
 
-// Convenience wrappers using the process stdin/stdout
+/// Convenience wrappers using the process stdin/stdout
 
 std::optional<std::string> read_message() {
     return read_message(std::cin);
@@ -69,5 +68,5 @@ void write_message(const std::string& body) {
     write_message(std::cout, body);
 }
 
-} // namespace eta::dap
+} ///< namespace eta::dap
 

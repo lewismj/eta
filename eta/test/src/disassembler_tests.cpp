@@ -1,4 +1,4 @@
-#include <boost/test/unit_test.hpp>
+﻿#include <boost/test/unit_test.hpp>
 #include <sstream>
 
 #include "eta/runtime/vm/disassembler.h"
@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(disasm_empty_function) {
 }
 
 BOOST_AUTO_TEST_CASE(disasm_all_opcodes_have_names) {
-    // Verify that to_string covers every opcode we might encounter
+    /// Verify that to_string covers every opcode we might encounter
     auto check = [](OpCode op) {
         const char* name = to_string(op);
         BOOST_CHECK(name != nullptr);
@@ -100,7 +100,7 @@ BOOST_AUTO_TEST_CASE(disasm_constant_annotation) {
     std::ostringstream out;
     disasm.disassemble(func, out);
     std::string text = out.str();
-    // Should contain the constant value annotation
+    /// Should contain the constant value annotation
     BOOST_CHECK(text.find("42") != std::string::npos);
 }
 
@@ -137,7 +137,7 @@ BOOST_AUTO_TEST_CASE(disasm_instruction_count_matches) {
     std::ostringstream out;
     disasm.disassemble(func, out);
     std::string text = out.str();
-    // Should mention 6 instructions
+    /// Should mention 6 instructions
     BOOST_CHECK(text.find("6 instructions") != std::string::npos);
 }
 

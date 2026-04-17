@@ -23,13 +23,17 @@ namespace eta::torch_bindings::factory {
         return id;
     }
 
-    /// T must be a concrete Module impl (e.g. LinearImpl, SequentialImpl).
-    /// Callers typically pass `holder.ptr()` which yields `shared_ptr<ConcreteImpl>`.
+    /**
+     * T must be a concrete Module impl (e.g. LinearImpl, SequentialImpl).
+     * Callers typically pass `holder.ptr()` which yields `shared_ptr<ConcreteImpl>`.
+     */
     template <typename T>
     inline std::expected<LispVal, RuntimeError>
     make_nn_module(Heap& heap, std::shared_ptr<T> mod, std::string name = "") {
-        // Capture the concrete type's forward(Tensor)->Tensor before we
-        // erase the type to shared_ptr<Module>.
+        /**
+         * Capture the concrete type's forward(Tensor)->Tensor before we
+         * erase the type to shared_ptr<Module>.
+         */
         auto fwd = [mod](::torch::Tensor input) -> ::torch::Tensor {
             return mod->forward(std::move(input));
         };
@@ -47,5 +51,5 @@ namespace eta::torch_bindings::factory {
         return id;
     }
 
-} // namespace eta::torch_bindings::factory
+} ///< namespace eta::torch_bindings::factory
 

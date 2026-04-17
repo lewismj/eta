@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <atomic>
 #include <functional>
@@ -80,7 +80,7 @@ namespace eta::runtime::memory::hazard {
 
             auto& retire_list = retire_lists[this];
 
-            // Separate nodes into two lists: safe to delete and still protected
+            /// Separate nodes into two lists: safe to delete and still protected
             std::vector<RetireNode> still_protected;
             std::vector<RetireNode> to_delete;
 
@@ -92,18 +92,18 @@ namespace eta::runtime::memory::hazard {
                 }
             }
 
-            // Delete the safe ones
+            /// Delete the safe ones
             for (auto& node : to_delete) {
                 node.deleter(node.ptr);
             }
 
-            // Keep only the protected ones
+            /// Keep only the protected ones
             retire_list = std::move(still_protected);
         }
 
     public:
         ~HazardPointerDomain() {
-            // Final reclaim for this domain before cleanup
+            /// Final reclaim for this domain before cleanup
             auto it = retire_lists.find(this);
             if (it != retire_lists.end()) {
                 scan_and_reclaim();
@@ -142,7 +142,7 @@ namespace eta::runtime::memory::hazard {
             void acquire(T* ptr) noexcept {
                 if (record_) {
                     record_->hazard[slot_].store(ptr, std::memory_order_release);
-                    // Ensure the hazard pointer write is visible before any subsequent operations
+                    /// Ensure the hazard pointer write is visible before any subsequent operations
                     std::atomic_thread_fence(std::memory_order_seq_cst);
                 }
             }
@@ -159,7 +159,7 @@ namespace eta::runtime::memory::hazard {
             }
 
             void retire(T* ptr, std::move_only_function<void(T*)> deleter = [](T* p) { delete p; }) {
-                if (!ptr) return; // Guard against null pointer retirement
+                if (!ptr) return; ///< Guard against null pointer retirement
                 domain_->acquire_record();
                 auto& retire_list = retire_lists[domain_];
                 retire_list.emplace_back(ptr, std::move(deleter));
@@ -183,7 +183,7 @@ namespace eta::runtime::memory::hazard {
             int slot_;
         };
 
-        // Public API to create a handle
+        /// Public API to create a handle
         Handle make_handle(int slot = 0) {
             return Handle(this, acquire_record(), slot);
         }

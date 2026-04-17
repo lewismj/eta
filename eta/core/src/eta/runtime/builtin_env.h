@@ -37,7 +37,6 @@ struct BuiltinSpec {
 };
 
 /**
- * @brief Shared builtin environment — the compiler↔runtime contract
  *
  * Builtins are registered once, and the ordering determines their global slot
  * indices. The SemanticAnalyzer seeds these as immutable globals (slots 0..N-1),
@@ -45,12 +44,12 @@ struct BuiltinSpec {
  *
  * Usage:
  *   BuiltinEnvironment builtins;
- *   register_core_primitives(builtins, heap);  // from core_primitives.h
+ *   register_core_primitives(builtins, heap);  ///< from core_primitives.h
  *
- *   // Compiler side:
+ *   ///< Compiler side:
  *   sa.analyze_all(forms, linker, builtins);
  *
- *   // Runtime side:
+ *   ///< Runtime side:
  *   builtins.install(heap, vm.globals(), total_global_count);
  */
 class BuiltinEnvironment {
@@ -64,12 +63,12 @@ public:
      */
     void register_builtin(std::string name, uint32_t arity, bool has_rest, PrimitiveFunc func) {
         if (!patching_) {
-            // Append mode (default): push a new entry.
+            /// Append mode (default): push a new entry.
             specs_.push_back(BuiltinSpec{std::move(name), arity, has_rest, std::move(func)});
             return;
         }
 
-        // Patch mode: validate metadata against the pre-registered slot and install func.
+        /// Patch mode: validate metadata against the pre-registered slot and install func.
         if (patch_cursor_ >= specs_.size()) {
             std::cerr << "BuiltinEnvironment patch error: cursor "
                       << patch_cursor_ << " exceeds pre-registered count "
@@ -174,5 +173,5 @@ private:
     size_t patch_cursor_ = 0;
 };
 
-} // namespace eta::runtime
+} ///< namespace eta::runtime
 

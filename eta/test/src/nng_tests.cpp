@@ -174,8 +174,10 @@ namespace {
         return "inproc://nng-test-" + std::to_string(n.fetch_add(1));
     }
 
-    /// Return the path to the etai binary injected at compile time,
-    /// or an empty string if not available.
+    /**
+     * Return the path to the etai binary injected at compile time,
+     * or an empty string if not available.
+     */
     static std::string etai_binary_path() {
 #ifdef ETA_ETAI_PATH
         return ETA_ETAI_PATH;
@@ -187,7 +189,7 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(nng_tests)
 
-// Basic nng library integration
+/// Basic nng library integration
 
 BOOST_AUTO_TEST_CASE(pair_socket_open_close) {
     nng_socket sock;
@@ -199,14 +201,13 @@ BOOST_AUTO_TEST_CASE(pair_socket_open_close) {
 }
 
 BOOST_AUTO_TEST_CASE(nng_socket_ptr_raii) {
-    // Verify our RAII wrapper opens and auto-closes without leaking.
+    /// Verify our RAII wrapper opens and auto-closes without leaking.
     {
         NngSocketPtr sp;
         int rv = nng_pair0_open(&sp.socket);
         BOOST_REQUIRE_EQUAL(rv, 0);
         sp.protocol = NngProtocol::Pair;
     }
-    // Destructor called — no leak.
     BOOST_TEST(true);
 }
 
@@ -220,12 +221,12 @@ BOOST_AUTO_TEST_CASE(nng_socket_ptr_move) {
     NngSocketPtr b(std::move(a));
     BOOST_TEST(static_cast<int>(b.protocol) == static_cast<int>(NngProtocol::Pair));
     BOOST_TEST(b.listening == true);
-    // 'a' should be in moved-from state (NNG_SOCKET_INITIALIZER)
+    /// 'a' should be in moved-from state (NNG_SOCKET_INITIALIZER)
 }
 
-// Wire format: round-trip serialization tests
+/// Wire format: round-trip serialization tests
 
-// Helper: serialize then deserialize, check the re-serialized string matches.
+/// Helper: serialize then deserialize, check the re-serialized string matches.
 static void round_trip(LispVal v, Heap& heap, InternTable& intern, const std::string& expected_text) {
     std::string serialized = serialize_value(v, heap, intern);
     BOOST_TEST_MESSAGE("serialized: " << serialized);
@@ -238,7 +239,7 @@ static void round_trip(LispVal v, Heap& heap, InternTable& intern, const std::st
     BOOST_TEST(re_serialized == expected_text);
 }
 
-// ------ Nil ------
+/// ------ Nil ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_nil) {
     Heap heap(1ull << 20);
@@ -246,7 +247,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_nil) {
     round_trip(nanbox::Nil, heap, intern, "()");
 }
 
-// ------ Booleans ------
+/// ------ Booleans ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_true) {
     Heap heap(1ull << 20);
@@ -260,7 +261,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_false) {
     round_trip(nanbox::False, heap, intern, "#f");
 }
 
-// ------ Fixnums ------
+/// ------ Fixnums ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_fixnum_zero) {
     Heap heap(1ull << 20);
@@ -286,21 +287,20 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_fixnum_negative) {
 BOOST_AUTO_TEST_CASE(wire_round_trip_fixnum_large) {
     Heap heap(1ull << 20);
     InternTable intern;
-    // Value within 47-bit range
-    auto v = require_ok(make_fixnum(heap, static_cast<int64_t>(70368744177663LL))); // FIXNUM_MAX
+    /// Value within 47-bit range
+    auto v = require_ok(make_fixnum(heap, static_cast<int64_t>(70368744177663LL))); ///< FIXNUM_MAX
     round_trip(v, heap, intern, "70368744177663");
 }
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_fixnum_heap_allocated) {
     Heap heap(1ull << 20);
     InternTable intern;
-    // Value outside 47-bit range → heap-allocated fixnum
     constexpr int64_t big = 1000000000000000LL;
     auto v = require_ok(make_fixnum(heap, big));
     round_trip(v, heap, intern, "1000000000000000");
 }
 
-// ------ Flonums ------
+/// ------ Flonums ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_flonum_positive) {
     Heap heap(1ull << 20);
@@ -312,7 +312,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_flonum_positive) {
     auto deserialized = deserialize_value(serialized, heap, intern);
     BOOST_REQUIRE(deserialized.has_value());
 
-    // Compare as double (text round-trip might not be bitwise identical)
+    /// Compare as double (text round-trip might not be bitwise identical)
     auto re_serialized = serialize_value(*deserialized, heap, intern);
     BOOST_TEST(re_serialized == serialized);
 }
@@ -335,32 +335,32 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_flonum_zero) {
     round_trip(v, heap, intern, "0.0");
 }
 
-// ------ Characters ------
+/// ------ Characters ------
 
 BOOST_AUTO_TEST_CASE(wire_char_serialize_only) {
     Heap heap(1ull << 20);
     InternTable intern;
 
-    // First: does format_value work at all with this heap/intern?
+    /// First: does format_value work at all with this heap/intern?
     auto fixval = require_ok(make_fixnum(heap, static_cast<int64_t>(99)));
     std::string fix_str = format_value(fixval, FormatMode::Write, heap, intern);
     BOOST_TEST(fix_str == "99");
     BOOST_TEST_MESSAGE("format_value works for fixnum: " << fix_str);
 
-    // Now test char encoding
+    /// Now test char encoding
     auto enc = encode<char32_t>(U'a');
     BOOST_REQUIRE(enc.has_value());
     LispVal v = *enc;
     BOOST_TEST_MESSAGE("char LispVal = " << v);
 
-    // Check NaN-box properties manually
+    /// Check NaN-box properties manually
     BOOST_TEST(ops::is_boxed(v));
     BOOST_TEST(ops::tag(v) == Tag::Char);
     auto decoded = ops::decode<char32_t>(v);
     BOOST_REQUIRE(decoded.has_value());
     BOOST_TEST(static_cast<uint32_t>(*decoded) == static_cast<uint32_t>(U'a'));
 
-    // Now try format_value for the char
+    /// Now try format_value for the char
     BOOST_TEST_MESSAGE("about to call format_value for char...");
     std::string serialized = format_value(v, FormatMode::Write, heap, intern);
     BOOST_TEST_MESSAGE("serialized char = " << serialized);
@@ -395,7 +395,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_char_tab) {
     round_trip(v, heap, intern, "#\\tab");
 }
 
-// ------ Strings ------
+/// ------ Strings ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_string_simple) {
     Heap heap(1ull << 20);
@@ -425,7 +425,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_string_with_quotes) {
     round_trip(v, heap, intern, "\"say \\\"hi\\\"\"");
 }
 
-// ------ Symbols ------
+/// ------ Symbols ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_symbol) {
     Heap heap(1ull << 20);
@@ -441,7 +441,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_symbol_with_special) {
     round_trip(v, heap, intern, "my-var!");
 }
 
-// ------ Pairs (dotted) ------
+/// ------ Pairs (dotted) ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_dotted_pair) {
     Heap heap(1ull << 20);
@@ -452,7 +452,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_dotted_pair) {
     round_trip(pair, heap, intern, "(1 . 2)");
 }
 
-// ------ Lists ------
+/// ------ Lists ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_proper_list) {
     Heap heap(1ull << 20);
@@ -473,14 +473,14 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_nested_list) {
     auto b = require_ok(make_fixnum(heap, static_cast<int64_t>(2)));
     auto inner = require_ok(make_cons(heap, b, nanbox::Nil));
     inner = require_ok(make_cons(heap, a, inner));
-    // outer = (inner 3) = ((1 2) 3)
+    /// outer = (inner 3) = ((1 2) 3)
     auto three = require_ok(make_fixnum(heap, static_cast<int64_t>(3)));
     auto outer_tail = require_ok(make_cons(heap, three, nanbox::Nil));
     auto outer = require_ok(make_cons(heap, inner, outer_tail));
     round_trip(outer, heap, intern, "((1 2) 3)");
 }
 
-// ------ Vectors ------
+/// ------ Vectors ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_vector) {
     Heap heap(1ull << 20);
@@ -499,7 +499,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_empty_vector) {
     round_trip(v, heap, intern, "#()");
 }
 
-// ------ Bytevectors ------
+/// ------ Bytevectors ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_bytevector) {
     Heap heap(1ull << 20);
@@ -515,10 +515,10 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_empty_bytevector) {
     round_trip(v, heap, intern, "#u8()");
 }
 
-// ------ Mixed/nested structures ------
+/// ------ Mixed/nested structures ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_mixed_list) {
-    // (1 "hello" #t #(a b))
+    /// (1 "hello" #t #(a b))
     Heap heap(1ull << 20);
     InternTable intern;
 
@@ -528,7 +528,7 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_mixed_list) {
     auto sym_b = require_ok(make_symbol(intern, "b"));
     auto vec = require_ok(make_vector(heap, {sym_a, sym_b}));
 
-    // Build list from back
+    /// Build list from back
     auto l4 = require_ok(make_cons(heap, vec, nanbox::Nil));
     auto l3 = require_ok(make_cons(heap, nanbox::True, l4));
     auto l2 = require_ok(make_cons(heap, hello, l3));
@@ -537,10 +537,10 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_mixed_list) {
     round_trip(l1, heap, intern, "(1 \"hello\" #t #(a b))");
 }
 
-// ------ Quoted form ------
+/// ------ Quoted form ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_quoted_symbol) {
-    // Serialize (quote hello) which displays as (quote hello)
+    /// Serialize (quote hello) which displays as (quote hello)
     Heap heap(1ull << 20);
     InternTable intern;
 
@@ -552,13 +552,13 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_quoted_symbol) {
     round_trip(quoted, heap, intern, "(quote hello)");
 }
 
-// ------ Error handling ------
+/// ------ Error handling ------
 
 BOOST_AUTO_TEST_CASE(wire_deserialize_malformed_input) {
     Heap heap(1ull << 20);
     InternTable intern;
 
-    // Unbalanced parentheses
+    /// Unbalanced parentheses
     auto res = deserialize_value("(1 2", heap, intern);
     BOOST_TEST(!res.has_value());
 }
@@ -571,18 +571,20 @@ BOOST_AUTO_TEST_CASE(wire_deserialize_empty_input) {
     BOOST_TEST(!res.has_value());
 }
 
-// ------ Non-serializable value error handling ------
-// Closures, continuations, ports, and tensors produce
-// opaque strings like "#<closure>" that cannot be deserialized.
+/**
+ * ------ Non-serializable value error handling ------
+ * Closures, continuations, ports, and tensors produce
+ * opaque strings like "#<closure>" that cannot be deserialized.
+ */
 
 BOOST_AUTO_TEST_CASE(wire_deserialize_rejects_closure) {
     Heap heap(1ull << 20);
     InternTable intern;
 
-    // Attempting to deserialize an opaque closure representation should fail
+    /// Attempting to deserialize an opaque closure representation should fail
     auto res = deserialize_value("#<closure>", heap, intern);
     BOOST_TEST(!res.has_value());
-    // The error should indicate that this is not valid input
+    /// The error should indicate that this is not valid input
     BOOST_TEST_MESSAGE("closure rejection error (expected)");
 }
 
@@ -626,16 +628,16 @@ BOOST_AUTO_TEST_CASE(wire_deserialize_rejects_embedded_non_serializable) {
     Heap heap(1ull << 20);
     InternTable intern;
 
-    // A list containing a non-serializable value should also fail
+    /// A list containing a non-serializable value should also fail
     auto res = deserialize_value("(1 2 #<closure> 4)", heap, intern);
     BOOST_TEST(!res.has_value());
     BOOST_TEST_MESSAGE("embedded non-serializable rejection error (expected)");
 }
 
-// ------ Symbols as list elements ------
+/// ------ Symbols as list elements ------
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_symbol_list) {
-    // (hello world)
+    /// (hello world)
     Heap heap(1ull << 20);
     InternTable intern;
 
@@ -647,36 +649,36 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_symbol_list) {
     round_trip(l1, heap, intern, "(hello world)");
 }
 
-// Performance tests
+/// Performance tests
 
 BOOST_AUTO_TEST_CASE(wire_round_trip_large_list_performance) {
-    // NOTE: We benchmark with a *vector*, not a linked list.
-    //
-    // Building a 10,000-element linked list via make_cons requires 10,000
-    // individual heap allocations and is not representative of how large
-    // collections are normally passed over the wire.  Even with cons pooling,
-    // the sequential pointer-chasing during serialisation dominates.  Real
-    // code sends large collections as vectors (#(...)) — one heap allocation,
-    // cache-friendly, and O(1) random access.
-    //
-    // Acceptance criterion: serialize + deserialize of a 10,000-element
-    // vector completes in under 10 ms on a modern machine.
-    Heap heap(1ull << 24);  // 16 MB heap
+    /**
+     * NOTE: We benchmark with a *vector*, not a linked list.
+     *
+     * Building a 10,000-element linked list via make_cons requires 10,000
+     * individual heap allocations and is not representative of how large
+     * collections are normally passed over the wire.  Even with cons pooling,
+     * the sequential pointer-chasing during serialisation dominates.  Real
+     * cache-friendly, and O(1) random access.
+     *
+     * Acceptance criterion: serialize + deserialize of a 10,000-element
+     * vector completes in under 10 ms on a modern machine.
+     */
+    Heap heap(1ull << 24);  ///< 16 MB heap
     InternTable intern;
 
-    // Build a 10,000-element vector: #(0 1 2 ... 9999)
-    // Small fixnums (< 2^47) are NaN-boxed inline — no heap allocation per element.
+    /// Build a 10,000-element vector: #(0 1 2 ... 9999)
     constexpr size_t VEC_SIZE = 10000;
     std::vector<LispVal> elems;
     elems.reserve(VEC_SIZE);
     for (int64_t i = 0; i < static_cast<int64_t>(VEC_SIZE); ++i) {
-        elems.push_back(*make_fixnum(heap, i));   // inline fixnum, no heap alloc
+        elems.push_back(*make_fixnum(heap, i));   ///< inline fixnum, no heap alloc
     }
-    auto vec = require_ok(make_vector(heap, std::move(elems)));  // one allocation
+    auto vec = require_ok(make_vector(heap, std::move(elems)));  ///< one allocation
 
     BOOST_TEST_MESSAGE("Built 10,000-element vector, starting serialization...");
 
-    // Time only the serialize + deserialize round-trip
+    /// Time only the serialize + deserialize round-trip
     auto start = std::chrono::high_resolution_clock::now();
 
     std::string serialized = serialize_value(vec, heap, intern);
@@ -690,15 +692,17 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_large_list_performance) {
     BOOST_TEST_MESSAGE("10,000-element vector round-trip completed in " << duration_ms << " ms");
     BOOST_TEST_MESSAGE("Serialized size: " << serialized.size() << " bytes");
 
-    // Performance acceptance criterion: < 10 ms (somewhat arbitrary... this test
-    // probably should be re-written).
+    /**
+     * Performance acceptance criterion: < 10 ms (somewhat arbitrary... this test
+     * probably should be re-written).
+     */
 #if defined(_DEBUG) || !defined(NDEBUG)
     BOOST_TEST(duration_ms < 200);
 #else
     BOOST_TEST(duration_ms < 20);
 #endif
 
-    // Verify the deserialized structure: should be a vector whose first element is 0
+    /// Verify the deserialized structure: should be a vector whose first element is 0
     auto* result_vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(ops::payload(*deserialized));
     BOOST_REQUIRE(result_vec != nullptr);
     BOOST_REQUIRE_EQUAL(result_vec->elements.size(), VEC_SIZE);
@@ -707,9 +711,9 @@ BOOST_AUTO_TEST_CASE(wire_round_trip_large_list_performance) {
     BOOST_TEST(*first_val == 0);
 }
 
-// nng Socket Primitives
+/// nng Socket Primitives
 
-// nng-socket: creation and heap storage
+/// nng-socket: creation and heap storage
 
 BOOST_AUTO_TEST_CASE(nng_socket_create_pair) {
     NngEnv e;
@@ -759,7 +763,7 @@ BOOST_AUTO_TEST_CASE(nng_socket_wrong_arg_type) {
     BOOST_TEST(!res.has_value());
 }
 
-// nng-socket? predicate
+/// nng-socket? predicate
 
 BOOST_AUTO_TEST_CASE(nng_socket_predicate_true) {
     NngEnv e;
@@ -787,7 +791,7 @@ BOOST_AUTO_TEST_CASE(nng_socket_predicate_false_for_bool) {
     BOOST_TEST(result == nanbox::False);
 }
 
-// Heap allocation via make_nng_socket factory
+/// Heap allocation via make_nng_socket factory
 
 BOOST_AUTO_TEST_CASE(make_nng_socket_factory) {
     Heap heap(1 << 20);
@@ -804,7 +808,7 @@ BOOST_AUTO_TEST_CASE(make_nng_socket_factory) {
     BOOST_TEST(ptr->protocol == NngProtocol::Pair);
 }
 
-// nng-close
+/// nng-close
 
 BOOST_AUTO_TEST_CASE(nng_close_basic) {
     NngEnv e;
@@ -820,7 +824,6 @@ BOOST_AUTO_TEST_CASE(nng_close_basic) {
 BOOST_AUTO_TEST_CASE(nng_close_idempotent) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
-    // Close twice — must not crash or return error
     e.call("nng-close", {sock});
     auto second = e.try_call("nng-close", {sock});
     BOOST_REQUIRE(second.has_value());
@@ -833,7 +836,7 @@ BOOST_AUTO_TEST_CASE(nng_close_wrong_type) {
     BOOST_TEST(!res.has_value());
 }
 
-// Default recv timeout set at creation
+/// Default recv timeout set at creation
 
 BOOST_AUTO_TEST_CASE(default_recv_timeout_is_1000ms) {
     NngEnv e;
@@ -848,7 +851,7 @@ BOOST_AUTO_TEST_CASE(default_recv_timeout_is_1000ms) {
     e.call("nng-close", {sock});
 }
 
-// nng-set-option
+/// nng-set-option
 
 BOOST_AUTO_TEST_CASE(nng_set_option_recv_timeout) {
     NngEnv e;
@@ -884,7 +887,7 @@ BOOST_AUTO_TEST_CASE(nng_set_option_recv_buf_size) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("push")});
     auto result = e.try_call("nng-set-option", {sock, e.sym("recv-buf-size"), e.fixnum(16)});
-    // Some protocols may not support this; just check it doesn't crash badly
+    /// Some protocols may not support this; just check it doesn't crash badly
     BOOST_TEST_MESSAGE("recv-buf-size result: " << result.has_value());
     e.call("nng-close", {sock});
 }
@@ -911,7 +914,7 @@ BOOST_AUTO_TEST_CASE(nng_set_option_non_number_value) {
     e.call("nng-close", {sock});
 }
 
-// nng-listen and nng-dial
+/// nng-listen and nng-dial
 
 BOOST_AUTO_TEST_CASE(nng_listen_and_dial_tcp) {
     NngEnv e;
@@ -966,7 +969,6 @@ BOOST_AUTO_TEST_CASE(nng_dial_on_closed_socket_error) {
     BOOST_TEST(!res.has_value());
 }
 
-// send! and recv! — full PAIR round-trip
 
 BOOST_AUTO_TEST_CASE(send_recv_pair_fixnum) {
     NngEnv e;
@@ -978,7 +980,6 @@ BOOST_AUTO_TEST_CASE(send_recv_pair_fixnum) {
     e.call("nng-listen", {server, e.str(addr)});
     e.call("nng-dial",   {client, e.str(addr)});
 
-    // client → server: fixnum 42
     auto send_res = e.call("send!", {client, e.fixnum(42)});
     BOOST_TEST(send_res == nanbox::True);
 
@@ -986,7 +987,7 @@ BOOST_AUTO_TEST_CASE(send_recv_pair_fixnum) {
     BOOST_REQUIRE(recv_res != nanbox::False);
     BOOST_TEST_MESSAGE("recv! result: " << recv_res);
 
-    // Decode the fixnum
+    /// Decode the fixnum
     auto dec = ops::decode<int64_t>(recv_res);
     BOOST_REQUIRE(dec.has_value());
     BOOST_TEST(*dec == 42);
@@ -1029,7 +1030,7 @@ BOOST_AUTO_TEST_CASE(send_recv_pair_list) {
     e.call("nng-listen", {server, e.str(addr)});
     e.call("nng-dial",   {client, e.str(addr)});
 
-    // Build (1 2 3)
+    /// Build (1 2 3)
     auto a = e.fixnum(1);
     auto b = e.fixnum(2);
     auto c = e.fixnum(3);
@@ -1041,7 +1042,7 @@ BOOST_AUTO_TEST_CASE(send_recv_pair_list) {
     auto recv_res = e.call("recv!", {server});
     BOOST_REQUIRE(recv_res != nanbox::False);
 
-    // Verify it's a proper list starting with 1
+    /// Verify it's a proper list starting with 1
     auto* cons = e.heap.try_get_as<ObjectKind::Cons, Cons>(ops::payload(recv_res));
     BOOST_REQUIRE(cons != nullptr);
     auto first = ops::decode<int64_t>(cons->car);
@@ -1085,12 +1086,10 @@ BOOST_AUTO_TEST_CASE(send_recv_bidirectional) {
     e.call("nng-listen", {server, e.str(addr)});
     e.call("nng-dial",   {client, e.str(addr)});
 
-    // client → server
     e.call("send!", {client, e.fixnum(100)});
     auto r1 = e.call("recv!", {server});
     BOOST_TEST(ops::decode<int64_t>(r1).value_or(-1) == 100);
 
-    // server → client
     e.call("send!", {server, e.fixnum(200)});
     auto r2 = e.call("recv!", {client});
     BOOST_TEST(ops::decode<int64_t>(r2).value_or(-1) == 200);
@@ -1101,10 +1100,9 @@ BOOST_AUTO_TEST_CASE(send_recv_bidirectional) {
 
 BOOST_AUTO_TEST_CASE(recv_timeout_returns_false) {
     NngEnv e;
-    // Set a very short timeout, recv on an unconnected socket should time out
+    /// Set a very short timeout, recv on an unconnected socket should time out
     auto sock = e.call("nng-socket", {e.sym("pull")});
     e.call("nng-set-option", {sock, e.sym("recv-timeout"), e.fixnum(50)});
-    // Don't connect — recv should timeout quickly and return #f
     auto result = e.call("recv!", {sock});
     BOOST_TEST(result == nanbox::False);
     e.call("nng-close", {sock});
@@ -1113,7 +1111,6 @@ BOOST_AUTO_TEST_CASE(recv_timeout_returns_false) {
 BOOST_AUTO_TEST_CASE(send_noblock_no_peer_returns_false) {
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("push")});
-    // Not connected → noblock send should return #f (EAGAIN)
     auto result = e.call("send!", {sock, e.fixnum(1), e.sym("noblock")});
     BOOST_TEST(result == nanbox::False);
     e.call("nng-close", {sock});
@@ -1124,7 +1121,7 @@ BOOST_AUTO_TEST_CASE(recv_noblock_empty_returns_false) {
     std::string addr = inproc_addr();
     auto server = e.call("nng-socket", {e.sym("pair")});
     e.call("nng-listen", {server, e.str(addr)});
-    // Non-blocking recv with no message should return #f
+    /// Non-blocking recv with no message should return #f
     auto result = e.call("recv!", {server, e.sym("noblock")});
     BOOST_TEST(result == nanbox::False);
     e.call("nng-close", {server});
@@ -1142,7 +1139,7 @@ BOOST_AUTO_TEST_CASE(send_recv_on_closed_socket_error) {
     BOOST_TEST(!recv_res.has_value());
 }
 
-// REQ/REP round-trip
+/// REQ/REP round-trip
 
 BOOST_AUTO_TEST_CASE(send_recv_req_rep) {
     NngEnv e;
@@ -1153,17 +1150,17 @@ BOOST_AUTO_TEST_CASE(send_recv_req_rep) {
     e.call("nng-listen", {rep, e.str(addr)});
     e.call("nng-dial",   {req, e.str(addr)});
 
-    // REQ sends a request
+    /// REQ sends a request
     e.call("send!", {req, e.fixnum(7)});
 
-    // REP receives it
+    /// REP receives it
     auto request = e.call("recv!", {rep});
     BOOST_TEST(ops::decode<int64_t>(request).value_or(-1) == 7);
 
-    // REP sends a reply
+    /// REP sends a reply
     e.call("send!", {rep, e.fixnum(49)});
 
-    // REQ receives the reply
+    /// REQ receives the reply
     auto reply = e.call("recv!", {req});
     BOOST_TEST(ops::decode<int64_t>(reply).value_or(-1) == 49);
 
@@ -1171,22 +1168,23 @@ BOOST_AUTO_TEST_CASE(send_recv_req_rep) {
     e.call("nng-close", {req});
 }
 
-// PUSH/PULL fan-out
+/// PUSH/PULL fan-out
 
 BOOST_AUTO_TEST_CASE(push_pull_fanout) {
     NngEnv e;
-    // Use TCP transport: with inproc:// and default buffering (SENDBUF=0),
-    // multiple sends before any recv can block. This is not because recv()
-    // hasn't been called yet, but because the inproc transport provides
-    // little or no buffering, so the pipe has no capacity to accept more
-    // messages. After the available slots are filled, further nng_send calls
-    // block indefinitely (no send timeout is set).
-    //
-    // With TCP, the kernel socket buffers absorb the messages, so sends
-    // typically complete immediately even if the receiver hasn't called recv().
-    //
-    // Alternative fix (not used here): set NNG_OPT_SENDBUF > 0 on the pusher,
-    // or run sends and recvs on separate threads — then inproc would also work.
+    /**
+     * Use TCP transport: with inproc:// and default buffering (SENDBUF=0),
+     * multiple sends before any recv can block. This is not because recv()
+     * hasn't been called yet, but because the inproc transport provides
+     * little or no buffering, so the pipe has no capacity to accept more
+     * messages. After the available slots are filled, further nng_send calls
+     * block indefinitely (no send timeout is set).
+     *
+     * With TCP, the kernel socket buffers absorb the messages, so sends
+     * typically complete immediately even if the receiver hasn't called recv().
+     *
+     * Alternative fix (not used here): set NNG_OPT_SENDBUF > 0 on the pusher,
+     */
     std::string addr = tcp_addr();
 
     auto pusher = e.call("nng-socket", {e.sym("push")});
@@ -1195,13 +1193,13 @@ BOOST_AUTO_TEST_CASE(push_pull_fanout) {
     e.call("nng-listen", {puller, e.str(addr)});
     e.call("nng-dial",   {pusher, e.str(addr)});
 
-    // Push three messages
+    /// Push three messages
     for (int i = 1; i <= 3; ++i) {
         auto sr = e.call("send!", {pusher, e.fixnum(i)});
         BOOST_TEST(sr == nanbox::True);
     }
 
-    // Pull three messages
+    /// Pull three messages
     for (int i = 1; i <= 3; ++i) {
         auto r = e.call("recv!", {puller});
         BOOST_REQUIRE(r != nanbox::False);
@@ -1212,7 +1210,7 @@ BOOST_AUTO_TEST_CASE(push_pull_fanout) {
     e.call("nng-close", {puller});
 }
 
-// PUB/SUB with topic filtering
+/// PUB/SUB with topic filtering
 
 BOOST_AUTO_TEST_CASE(pub_sub_basic) {
     NngEnv e;
@@ -1224,11 +1222,11 @@ BOOST_AUTO_TEST_CASE(pub_sub_basic) {
     e.call("nng-listen", {pub, e.str(addr)});
     e.call("nng-dial",   {sub, e.str(addr)});
 
-    // Subscribe to all messages (empty prefix)
+    /// Subscribe to all messages (empty prefix)
     auto sub_res = e.call("nng-subscribe", {sub, e.str("")});
     BOOST_TEST(sub_res == nanbox::True);
 
-    // Brief delay to let subscription propagate
+    /// Brief delay to let subscription propagate
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     e.call("send!", {pub, e.fixnum(42)});
@@ -1236,7 +1234,7 @@ BOOST_AUTO_TEST_CASE(pub_sub_basic) {
     e.call("nng-set-option", {sub, e.sym("recv-timeout"), e.fixnum(500)});
     auto r = e.call("recv!", {sub});
     BOOST_TEST_MESSAGE("pub-sub recv result: " << (r == nanbox::False ? "timeout" : "got msg"));
-    // Message may or may not arrive depending on timing; if it arrives it should be 42
+    /// Message may or may not arrive depending on timing; if it arrives it should be 42
     if (r != nanbox::False) {
         BOOST_TEST(ops::decode<int64_t>(r).value_or(-1) == 42);
     }
@@ -1259,7 +1257,7 @@ BOOST_AUTO_TEST_CASE(nng_subscribe_wrong_first_arg) {
     BOOST_TEST(!res.has_value());
 }
 
-// SURVEYOR/RESPONDENT scatter-gather
+/// SURVEYOR/RESPONDENT scatter-gather
 
 BOOST_AUTO_TEST_CASE(surveyor_respondent_basic) {
     NngEnv e;
@@ -1271,21 +1269,21 @@ BOOST_AUTO_TEST_CASE(surveyor_respondent_basic) {
     e.call("nng-listen", {surveyor,   e.str(addr)});
     e.call("nng-dial",   {respondent, e.str(addr)});
 
-    // Set survey time
+    /// Set survey time
     e.call("nng-set-option", {surveyor, e.sym("survey-time"), e.fixnum(500)});
     e.call("nng-set-option", {surveyor, e.sym("recv-timeout"), e.fixnum(600)});
 
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
-    // Surveyor broadcasts a question
+    /// Surveyor broadcasts a question
     auto sr = e.call("send!", {surveyor, e.sym("ping")});
     BOOST_TEST(sr == nanbox::True);
 
-    // Respondent receives it and replies
+    /// Respondent receives it and replies
     auto q = e.call("recv!", {respondent});
     if (q != nanbox::False) {
         e.call("send!", {respondent, e.sym("pong")});
-        // Surveyor collects reply
+        /// Surveyor collects reply
         auto reply = e.call("recv!", {surveyor});
         BOOST_TEST_MESSAGE("surveyor got: " << (reply == nanbox::False ? "#f" : "pong"));
     }
@@ -1294,7 +1292,7 @@ BOOST_AUTO_TEST_CASE(surveyor_respondent_basic) {
     e.call("nng-close", {respondent});
 }
 
-// BUS many-to-many
+/// BUS many-to-many
 
 BOOST_AUTO_TEST_CASE(bus_many_to_many) {
     NngEnv e;
@@ -1318,7 +1316,7 @@ BOOST_AUTO_TEST_CASE(bus_many_to_many) {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    // bus1 sends to the bus
+    /// bus1 sends to the bus
     e.call("nng-set-option", {bus2, e.sym("recv-timeout"), e.fixnum(300)});
     e.call("nng-set-option", {bus3, e.sym("recv-timeout"), e.fixnum(300)});
 
@@ -1334,7 +1332,7 @@ BOOST_AUTO_TEST_CASE(bus_many_to_many) {
     e.call("nng-close", {bus3});
 }
 
-// nng-poll
+/// nng-poll
 
 BOOST_AUTO_TEST_CASE(nng_poll_detects_ready_socket) {
     NngEnv e;
@@ -1345,23 +1343,23 @@ BOOST_AUTO_TEST_CASE(nng_poll_detects_ready_socket) {
     e.call("nng-listen", {server, e.str(addr)});
     e.call("nng-dial",   {client, e.str(addr)});
 
-    // Send a message so server has data ready
+    /// Send a message so server has data ready
     e.call("send!", {client, e.fixnum(7)});
 
-    // Small wait for message delivery
+    /// Small wait for message delivery
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
-    // Build items list: ((server . 0))
+    /// Build items list: ((server . 0))
     auto zero = e.fixnum(0);
     auto item = require_ok(make_cons(e.heap, server, zero));
     auto items = require_ok(make_cons(e.heap, item, nanbox::Nil));
 
     auto ready = e.call("nng-poll", {items, e.fixnum(100)});
 
-    // If server received the message, it should be in the ready list
+    /// If server received the message, it should be in the ready list
     if (ready != nanbox::Nil) {
         BOOST_TEST_MESSAGE("nng-poll: server is ready");
-        // Drain the pending message via recv!
+        /// Drain the pending message via recv!
         auto msg = e.call("recv!", {server});
         BOOST_TEST(ops::decode<int64_t>(msg).value_or(-1) == 7);
     } else {
@@ -1387,17 +1385,17 @@ BOOST_AUTO_TEST_CASE(nng_poll_pending_msg_returned_immediately) {
     e.call("nng-listen", {server, e.str(addr)});
     e.call("nng-dial",   {client, e.str(addr)});
 
-    // Inject a message directly into pending_msgs to simulate a polled message
+    /// Inject a message directly into pending_msgs to simulate a polled message
     auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(server));
     BOOST_REQUIRE(sp != nullptr);
 
-    // Manually add a pending message: the serialised form of fixnum 55
+    /// Manually add a pending message: the serialised form of fixnum 55
     Heap tmp_heap(1 << 20); InternTable tmp_intern;
     auto v55 = require_ok(make_fixnum(tmp_heap, int64_t(55)));
     std::string text = serialize_value(v55, tmp_heap, tmp_intern);
     sp->pending_msgs.push_back(std::vector<uint8_t>(text.begin(), text.end()));
 
-    // recv! should drain from pending_msgs without touching the wire
+    /// recv! should drain from pending_msgs without touching the wire
     auto msg = e.call("recv!", {server});
     BOOST_REQUIRE(msg != nanbox::False);
     BOOST_TEST(ops::decode<int64_t>(msg).value_or(-1) == 55);
@@ -1407,7 +1405,7 @@ BOOST_AUTO_TEST_CASE(nng_poll_pending_msg_returned_immediately) {
     e.call("nng-close", {client});
 }
 
-// GC integration: NngSocket heap object
+/// GC integration: NngSocket heap object
 
 BOOST_AUTO_TEST_CASE(nng_socket_heap_object_kind) {
     Heap heap(1 << 20);
@@ -1424,7 +1422,7 @@ BOOST_AUTO_TEST_CASE(nng_socket_heap_object_kind) {
     BOOST_TEST(to_string(entry.header.kind) == std::string("NngSocket"));
 }
 
-// protocol_name helper
+/// protocol_name helper
 
 BOOST_AUTO_TEST_CASE(protocol_name_all) {
     BOOST_TEST(std::string(protocol_name(NngProtocol::Pair))       == "pair");
@@ -1439,7 +1437,7 @@ BOOST_AUTO_TEST_CASE(protocol_name_all) {
     BOOST_TEST(std::string(protocol_name(NngProtocol::Bus))        == "bus");
 }
 
-// send!/recv! wrong-type errors
+/// send!/recv! wrong-type errors
 
 BOOST_AUTO_TEST_CASE(send_wrong_socket_type) {
     NngEnv e;
@@ -1455,14 +1453,16 @@ BOOST_AUTO_TEST_CASE(recv_wrong_socket_type) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// Binary Wire Format
+/// Binary Wire Format
 
 BOOST_AUTO_TEST_SUITE(nng_binary_wire_format_tests)
 
-// Helpers
+/// Helpers
 
-/// Binary round-trip helper: serialize_binary then deserialize_binary,
-/// verify the re-serialized text string matches expected.
+/**
+ * Binary round-trip helper: serialize_binary then deserialize_binary,
+ * verify the re-serialized text string matches expected.
+ */
 static void binary_round_trip(LispVal v, Heap& heap, InternTable& intern,
                                const std::string& expected_text)
 {
@@ -1477,7 +1477,7 @@ static void binary_round_trip(LispVal v, Heap& heap, InternTable& intern,
     BOOST_TEST(re_text == expected_text);
 }
 
-// is_binary_format
+/// is_binary_format
 
 BOOST_AUTO_TEST_CASE(is_binary_format_detects_version_byte) {
     std::vector<uint8_t> bin{0xEA, 0x00};
@@ -1494,7 +1494,7 @@ BOOST_AUTO_TEST_CASE(is_binary_format_empty_returns_false) {
     BOOST_TEST(is_binary_format(nullptr, 0) == false);
 }
 
-// Binary round-trips: all types
+/// Binary round-trips: all types
 
 BOOST_AUTO_TEST_CASE(binary_nil) {
     Heap heap(1ull << 20); InternTable intern;
@@ -1671,7 +1671,7 @@ BOOST_AUTO_TEST_CASE(binary_empty_bytevector) {
 }
 
 BOOST_AUTO_TEST_CASE(binary_mixed_list) {
-    // (1 "hi" #t #(a b))
+    /// (1 "hi" #t #(a b))
     Heap heap(1ull << 20); InternTable intern;
     auto one   = require_ok(make_fixnum(heap, int64_t{1}));
     auto hi    = require_ok(make_string(heap, intern, "hi"));
@@ -1685,11 +1685,11 @@ BOOST_AUTO_TEST_CASE(binary_mixed_list) {
     binary_round_trip(l1, heap, intern, "(1 \"hi\" #t #(a b))");
 }
 
-// Error handling
+/// Error handling
 
 BOOST_AUTO_TEST_CASE(binary_deserialize_missing_version_byte) {
     Heap heap(1ull << 20); InternTable intern;
-    std::vector<uint8_t> bad{0x00};   // wrong version byte
+    std::vector<uint8_t> bad{0x00};   ///< wrong version byte
     auto res = deserialize_binary(std::span<const uint8_t>(bad), heap, intern);
     BOOST_TEST(!res.has_value());
 }
@@ -1703,17 +1703,19 @@ BOOST_AUTO_TEST_CASE(binary_deserialize_empty_buffer) {
 
 BOOST_AUTO_TEST_CASE(binary_deserialize_truncated) {
     Heap heap(1ull << 20); InternTable intern;
-    // Version byte + BT_Fixnum tag, but no payload
+    /// Version byte + BT_Fixnum tag, but no payload
     std::vector<uint8_t> trunc{0xEA, 0x02};
     auto res = deserialize_binary(std::span<const uint8_t>(trunc), heap, intern);
     BOOST_TEST(!res.has_value());
 }
 
-// Performance: binary vs text
+/// Performance: binary vs text
 
 BOOST_AUTO_TEST_CASE(binary_large_vector_performance) {
-    // Binary serialize+deserialize of a 10,000-element vector.
-    // Acceptance criterion: < 10 ms in release builds (half the text threshold).
+    /**
+     * Binary serialize+deserialize of a 10,000-element vector.
+     * Acceptance criterion: < 10 ms in release builds (half the text threshold).
+     */
     Heap heap(1ull << 24); InternTable intern;
 
     constexpr size_t VEC_SIZE = 10000;
@@ -1747,7 +1749,7 @@ BOOST_AUTO_TEST_CASE(binary_large_vector_performance) {
     BOOST_TEST(duration_ms < 10);
 #endif
 
-    // Structural check
+    /// Structural check
     auto* result_vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(
         ops::payload(*result));
     BOOST_REQUIRE(result_vec != nullptr);
@@ -1757,10 +1759,10 @@ BOOST_AUTO_TEST_CASE(binary_large_vector_performance) {
                static_cast<int64_t>(VEC_SIZE - 1));
 }
 
-// auto-detection via send!/recv! over inproc://
+/// auto-detection via send!/recv! over inproc://
 
 BOOST_AUTO_TEST_CASE(send_default_binary_recv_autodetects) {
-    // Default send! uses binary; recv! should auto-detect and return the value.
+    /// Default send! uses binary; recv! should auto-detect and return the value.
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1769,7 +1771,7 @@ BOOST_AUTO_TEST_CASE(send_default_binary_recv_autodetects) {
     e.call("nng-listen", {server, e.str(addr)});
     e.call("nng-dial",   {client, e.str(addr)});
 
-    // Send a list in binary (default)
+    /// Send a list in binary (default)
     auto a = e.fixnum(10);
     auto b = e.fixnum(20);
     auto lst = require_ok(make_cons(e.heap, b, nanbox::Nil));
@@ -1781,7 +1783,7 @@ BOOST_AUTO_TEST_CASE(send_default_binary_recv_autodetects) {
     auto recv_res = e.call("recv!", {server});
     BOOST_REQUIRE(recv_res != nanbox::False);
 
-    // Should be (10 20)
+    /// Should be (10 20)
     auto* cons = e.heap.try_get_as<ObjectKind::Cons, Cons>(ops::payload(recv_res));
     BOOST_REQUIRE(cons != nullptr);
     BOOST_TEST(*ops::decode<int64_t>(cons->car) == 10);
@@ -1791,7 +1793,6 @@ BOOST_AUTO_TEST_CASE(send_default_binary_recv_autodetects) {
 }
 
 BOOST_AUTO_TEST_CASE(send_text_flag_recv_autodetects) {
-    // 'text flag on send! → s-expression; recv! should still auto-detect and parse.
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1813,7 +1814,7 @@ BOOST_AUTO_TEST_CASE(send_text_flag_recv_autodetects) {
 }
 
 BOOST_AUTO_TEST_CASE(binary_round_trip_over_socket_all_types) {
-    // Binary round-trip through a real nng socket for a heterogeneous structure.
+    /// Binary round-trip through a real nng socket for a heterogeneous structure.
     NngEnv e;
     std::string addr = inproc_addr();
 
@@ -1822,7 +1823,7 @@ BOOST_AUTO_TEST_CASE(binary_round_trip_over_socket_all_types) {
     e.call("nng-listen", {server, e.str(addr)});
     e.call("nng-dial",   {client, e.str(addr)});
 
-    // Build (#t "binary" 42 #\x #(1 2) #u8(0 1 2))
+    /// Build (#t "binary" 42 #\x #(1 2) #u8(0 1 2))
     auto flag   = nanbox::True;
     auto str    = require_ok(make_string(e.heap, e.intern, "binary"));
     auto num    = require_ok(make_fixnum(e.heap, int64_t{42}));
@@ -1839,16 +1840,16 @@ BOOST_AUTO_TEST_CASE(binary_round_trip_over_socket_all_types) {
     auto tail1  = require_ok(make_cons(e.heap, str, tail2));
     auto msg    = require_ok(make_cons(e.heap, flag, tail1));
 
-    e.call("send!", {client, msg});   // binary by default
+    e.call("send!", {client, msg});   ///< binary by default
     auto recv_res = e.call("recv!", {server});
     BOOST_REQUIRE(recv_res != nanbox::False);
 
-    // Verify it's a list starting with #t
+    /// Verify it's a list starting with #t
     auto* hd = e.heap.try_get_as<ObjectKind::Cons, Cons>(ops::payload(recv_res));
     BOOST_REQUIRE(hd != nullptr);
     BOOST_TEST(hd->car == nanbox::True);
 
-    // Second element should be the string "binary"
+    /// Second element should be the string "binary"
     auto* tl = e.heap.try_get_as<ObjectKind::Cons, Cons>(ops::payload(hd->cdr));
     BOOST_REQUIRE(tl != nullptr);
     BOOST_TEST(ops::tag(tl->car) == Tag::String);
@@ -1862,11 +1863,11 @@ BOOST_AUTO_TEST_CASE(binary_round_trip_over_socket_all_types) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// Process Spawning & Actor Model
+/// Process Spawning & Actor Model
 
 BOOST_AUTO_TEST_SUITE(nng_process_actor_model_tests)
 
-// ProcessManager: basic construction
+/// ProcessManager: basic construction
 
 BOOST_AUTO_TEST_CASE(process_manager_default_construct) {
     ProcessManager pm;
@@ -1876,7 +1877,6 @@ BOOST_AUTO_TEST_CASE(process_manager_default_construct) {
 
 BOOST_AUTO_TEST_CASE(process_manager_kill_unknown_socket_returns_false) {
     ProcessManager pm;
-    // An unregistered socket returns false — doesn't crash.
     bool ok = pm.kill_child(nanbox::Nil);
     BOOST_TEST(ok == false);
 }
@@ -1887,18 +1887,17 @@ BOOST_AUTO_TEST_CASE(process_manager_wait_unknown_socket_returns_minus_one) {
     BOOST_TEST(code == -1);
 }
 
-// current-mailbox returns Nil when no mailbox installed
+/// current-mailbox returns Nil when no mailbox installed
 
 BOOST_AUTO_TEST_CASE(current_mailbox_no_mailbox_returns_nil) {
-    NngEnvWithSpawn e;  // no etai_path, no mailbox installed
+    NngEnvWithSpawn e;  ///< no etai_path, no mailbox installed
     auto result = e.call("current-mailbox", {});
     BOOST_TEST(result == nanbox::Nil);
 }
 
-// spawn without process manager returns clear error
+/// spawn without process manager returns clear error
 
 BOOST_AUTO_TEST_CASE(spawn_no_proc_mgr_returns_error) {
-    // NngEnv (socket-only) has no ProcessManager — spawn should error
     NngEnv e;
     auto res = e.try_call("spawn", {e.str("worker.eta")});
     BOOST_TEST(!res.has_value());
@@ -1922,26 +1921,26 @@ BOOST_AUTO_TEST_CASE(spawn_wait_no_proc_mgr_returns_error) {
     e.call("nng-close", {sock});
 }
 
-// spawn with empty etai_path returns clear error
+/// spawn with empty etai_path returns clear error
 
 BOOST_AUTO_TEST_CASE(spawn_empty_etai_path_returns_error) {
-    NngEnvWithSpawn e("");  // proc_mgr present but empty etai_path
+    NngEnvWithSpawn e("");  ///< proc_mgr present but empty etai_path
     auto res = e.try_call("spawn", {e.str("worker.eta")});
     BOOST_TEST(!res.has_value());
     BOOST_TEST_MESSAGE("spawn error (expected): " +
         runtime_error_msg(res.error()));
 }
 
-// spawn with wrong module path returns error
+/// spawn with wrong module path returns error
 
 BOOST_AUTO_TEST_CASE(spawn_wrong_arg_type_returns_error) {
     NngEnvWithSpawn e(etai_binary_path());
-    // Pass a symbol instead of a string
+    /// Pass a symbol instead of a string
     auto res = e.try_call("spawn", {e.sym("worker")});
     BOOST_TEST(!res.has_value());
 }
 
-// spawn-kill on non-socket returns type error
+/// spawn-kill on non-socket returns type error
 
 BOOST_AUTO_TEST_CASE(spawn_kill_wrong_type_returns_error) {
     NngEnvWithSpawn e(etai_binary_path());
@@ -1955,19 +1954,19 @@ BOOST_AUTO_TEST_CASE(spawn_wait_wrong_type_returns_error) {
     BOOST_TEST(!res.has_value());
 }
 
-// current-mailbox with installed mailbox returns the socket
+/// current-mailbox with installed mailbox returns the socket
 
 BOOST_AUTO_TEST_CASE(current_mailbox_with_mailbox_returns_socket) {
-    // Simulate what install_mailbox does: connect a PAIR socket over inproc.
+    /// Simulate what install_mailbox does: connect a PAIR socket over inproc.
     NngEnvWithSpawn e;
     std::string addr = "inproc://p4-mailbox-test";
 
-    // Set up a "parent" listener in a separate env
+    /// Set up a "parent" listener in a separate env
     NngEnv parent;
     auto parent_sock = parent.call("nng-socket", {parent.sym("pair")});
     parent.call("nng-listen", {parent_sock, parent.str(addr)});
 
-    // Create the child-side socket and store it as the mailbox
+    /// Create the child-side socket and store it as the mailbox
     NngSocketPtr sp;
     sp.protocol = NngProtocol::Pair;
     nng_socket_set_ms(sp.socket, NNG_OPT_RECVTIMEO, 500);
@@ -1980,26 +1979,27 @@ BOOST_AUTO_TEST_CASE(current_mailbox_with_mailbox_returns_socket) {
     auto mailbox_lv = require_ok(make_nng_socket(e.heap, std::move(sp)));
     e.mailbox_val = mailbox_lv;
 
-    // current-mailbox should now return the installed socket
+    /// current-mailbox should now return the installed socket
     auto result = e.call("current-mailbox", {});
     BOOST_TEST(result == mailbox_lv);
 
     parent.call("nng-close", {parent_sock});
 }
 
-// Integration test: spawn/send/recv round-trip
+/// Integration test: spawn/send/recv round-trip
 
 BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
-    // We need a simple worker script that:
-    //   1. Receives a message on (current-mailbox)
-    //   2. Sends back the message incremented by 1
-    // We create a temporary .eta file for this test.
+    /**
+     * We need a simple worker script that:
+     *   1. Receives a message on (current-mailbox)
+     *   2. Sends back the message incremented by 1
+     * We create a temporary .eta file for this test.
+     */
 
     namespace fs = std::filesystem;
     auto tmp_dir  = fs::temp_directory_path();
     auto worker   = tmp_dir / "eta_worker_test.eta";
 
-    // Worker: no stdlib import needed — recv!, send!, current-mailbox, + are builtins.
     {
         std::ofstream f(worker);
         BOOST_REQUIRE(f.is_open());
@@ -2011,7 +2011,6 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
 
     std::string etai_path = etai_binary_path();
     if (etai_path.empty()) {
-        BOOST_TEST_MESSAGE("ETA_ETAI_PATH not configured — skipping integration test");
         fs::remove(worker);
         return;
     }
@@ -2024,14 +2023,14 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
     if (!sock_res.has_value()) {
         BOOST_TEST_MESSAGE("spawn failed: " + runtime_error_msg(sock_res.error()));
         fs::remove(worker);
-        return; // not a hard failure during bring-up
+        return; ///< not a hard failure during bring-up
     }
     auto sock = *sock_res;
 
-    // Give child a moment to start, dial, and reach recv!
+    /// Give child a moment to start, dial, and reach recv!
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    // Set finite send + recv timeouts on the parent socket.
+    /// Set finite send + recv timeouts on the parent socket.
     {
         auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(sock));
         BOOST_REQUIRE(sp != nullptr);
@@ -2041,13 +2040,11 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
 
     BOOST_TEST_MESSAGE("Child spawned, sending message 41...");
 
-    // send! fixnum 41 — no 'wait; uses SENDTIMEO (5 s)
     auto send_res = e.try_call("send!", {sock, e.fixnum(41)});
     BOOST_REQUIRE_MESSAGE(send_res.has_value(), "send! error: " +
         (send_res.has_value() ? "" : runtime_error_msg(send_res.error())));
     BOOST_REQUIRE_MESSAGE(*send_res != nanbox::False, "send! timed out (child may not have connected)");
 
-    // recv! — no 'wait; uses RECVTIMEO (5 s)
     auto recv_res = e.try_call("recv!", {sock});
     BOOST_REQUIRE_MESSAGE(recv_res.has_value(), "recv! error: " +
         (recv_res.has_value() ? "" : runtime_error_msg(recv_res.error())));
@@ -2057,7 +2054,7 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
     BOOST_TEST(*dec == 42);
     BOOST_TEST_MESSAGE("Round-trip OK: sent 41, received " << *dec);
 
-    // Wait for child to exit
+    /// Wait for child to exit
     auto wait_res = e.try_call("spawn-wait", {sock});
     BOOST_REQUIRE_MESSAGE(wait_res.has_value(), "spawn-wait failed");
     BOOST_TEST_MESSAGE("Child exit code: " << ops::decode<int64_t>(*wait_res).value_or(-1));
@@ -2067,7 +2064,7 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
 }
 
 BOOST_AUTO_TEST_CASE(spawn_kill_terminates_child) {
-    // Spawn a child that loops forever (sleep)
+    /// Spawn a child that loops forever (sleep)
     namespace fs = std::filesystem;
     auto tmp_dir = fs::temp_directory_path();
     auto worker  = tmp_dir / "eta_sleep_worker.eta";
@@ -2075,13 +2072,11 @@ BOOST_AUTO_TEST_CASE(spawn_kill_terminates_child) {
     {
         std::ofstream f(worker);
         BOOST_REQUIRE(f.is_open());
-        // Worker waits forever on its mailbox — builtins only, no stdlib import needed.
         f << "(module eta-p4-sleep\n"
           << "  (recv! (current-mailbox) 'wait))\n";
     }
 
     std::string etai_path = etai_binary_path();
-    if (etai_path.empty()) { BOOST_TEST_MESSAGE("etai path not configured — skip"); fs::remove(worker); return; }
     BOOST_REQUIRE_MESSAGE(fs::exists(etai_path), "etai binary not found at: " + etai_path);
 
     NngEnvWithSpawn e(etai_path);
@@ -2094,16 +2089,16 @@ BOOST_AUTO_TEST_CASE(spawn_kill_terminates_child) {
     }
     auto sock = *spawn_res;
 
-    // Brief delay to let child start up
+    /// Brief delay to let child start up
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-    // Check process is alive
+    /// Check process is alive
     auto children = e.proc_mgr.list_children();
     BOOST_REQUIRE(!children.empty());
     BOOST_TEST_MESSAGE("Child PID: " << children[0].pid
                        << " alive=" << children[0].alive);
 
-    // Kill the child
+    /// Kill the child
     auto kill_res = e.try_call("spawn-kill", {sock});
     BOOST_REQUIRE_MESSAGE(kill_res.has_value(), "spawn-kill failed");
     BOOST_TEST(*kill_res == nanbox::True);
@@ -2114,7 +2109,7 @@ BOOST_AUTO_TEST_CASE(spawn_kill_terminates_child) {
 }
 
 BOOST_AUTO_TEST_CASE(spawn_multiple_children) {
-    // Spawn two workers, send each a distinct value, collect replies.
+    /// Spawn two workers, send each a distinct value, collect replies.
     namespace fs = std::filesystem;
     auto tmp_dir = fs::temp_directory_path();
     auto worker  = tmp_dir / "eta_echo_worker.eta";
@@ -2128,7 +2123,6 @@ BOOST_AUTO_TEST_CASE(spawn_multiple_children) {
     }
 
     std::string etai_path = etai_binary_path();
-    if (etai_path.empty()) { BOOST_TEST_MESSAGE("etai path not configured — skip"); fs::remove(worker); return; }
     BOOST_REQUIRE_MESSAGE(fs::exists(etai_path), "etai binary not found at: " + etai_path);
 
     NngEnvWithSpawn e(etai_path);
@@ -2151,7 +2145,6 @@ BOOST_AUTO_TEST_CASE(spawn_multiple_children) {
 
     BOOST_TEST(e.proc_mgr.list_children().size() == 2u);
 
-    // Set generous send + recv timeouts (don't use 'wait — it overrides to infinite)
     for (auto sv : {s1, s2}) {
         auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(sv));
         if (sp) {
@@ -2160,7 +2153,6 @@ BOOST_AUTO_TEST_CASE(spawn_multiple_children) {
         }
     }
 
-    // Send distinct values — no 'wait; uses SENDTIMEO (5 s)
     auto sr1 = e.try_call("send!", {s1, e.fixnum(100)});
     auto sr2 = e.try_call("send!", {s2, e.fixnum(200)});
     BOOST_REQUIRE_MESSAGE(sr1.has_value() && *sr1 != nanbox::False, "send! to child 1 failed");
@@ -2185,11 +2177,11 @@ BOOST_AUTO_TEST_CASE(spawn_multiple_children) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// In-Process Actor Threads
+/// In-Process Actor Threads
 
 BOOST_AUTO_TEST_SUITE(nng_actor_thread_tests)
 
-// Helper: simple worker factory that uses raw nng (no Driver needed)
+/// Helper: simple worker factory that uses raw nng (no Driver needed)
 
 namespace {
 
@@ -2259,9 +2251,9 @@ struct NngEnvWithThread {
     LispVal fixnum(int64_t n)         { return require_ok(make_fixnum(heap, n)); }
 };
 
-} // anonymous namespace
+} ///< anonymous namespace
 
-// ProcessManager thread infrastructure
+/// ProcessManager thread infrastructure
 
 BOOST_AUTO_TEST_CASE(process_manager_list_threads_empty) {
     ProcessManager pm;
@@ -2279,20 +2271,19 @@ BOOST_AUTO_TEST_CASE(process_manager_join_thread_unknown_socket) {
     BOOST_TEST(rc == -1);
 }
 
-// spawn-thread-with: no process manager returns clear error
+/// spawn-thread-with: no process manager returns clear error
 
 BOOST_AUTO_TEST_CASE(spawn_thread_with_no_proc_mgr_error) {
-    NngEnv e;  // socket-only env — no process manager
+    NngEnv e;
     auto res = e.try_call("spawn-thread-with",
                           {e.str("worker.eta"), e.sym("my-fn")});
     BOOST_TEST(!res.has_value());
     BOOST_TEST_MESSAGE("error (expected): " + runtime_error_msg(res.error()));
 }
 
-// spawn-thread: type errors without proc_mgr
+/// spawn-thread: type errors without proc_mgr
 
 BOOST_AUTO_TEST_CASE(spawn_thread_no_proc_mgr_error) {
-    // NngEnv has no proc_mgr — should get "not configured" error
     NngEnv e;
     auto res = e.try_call("spawn-thread", {nanbox::False});
     BOOST_TEST(!res.has_value());
@@ -2300,14 +2291,14 @@ BOOST_AUTO_TEST_CASE(spawn_thread_no_proc_mgr_error) {
 }
 
 BOOST_AUTO_TEST_CASE(spawn_thread_type_error_non_closure) {
-    // Wrong argument type: a fixnum is not a closure
+    /// Wrong argument type: a fixnum is not a closure
     NngEnvWithThread e;
     auto res = e.try_call("spawn-thread", {e.fixnum(42)});
     BOOST_TEST(!res.has_value());
     BOOST_TEST_MESSAGE("spawn-thread type error (expected): " + runtime_error_msg(res.error()));
 }
 
-// spawn-thread-with: wrong arg types
+/// spawn-thread-with: wrong arg types
 
 BOOST_AUTO_TEST_CASE(spawn_thread_with_wrong_first_arg_type) {
     NngEnvWithThread e;
@@ -2323,7 +2314,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_with_wrong_second_arg_type) {
     BOOST_TEST(!res.has_value());
 }
 
-// spawn-thread-with: creates socket
+/// spawn-thread-with: creates socket
 
 BOOST_AUTO_TEST_CASE(spawn_thread_with_returns_socket) {
     NngEnvWithThread e;
@@ -2345,7 +2336,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_with_returns_socket) {
     e.call("nng-close", {sock});
 }
 
-// thread-alive?
+/// thread-alive?
 
 BOOST_AUTO_TEST_CASE(thread_alive_while_running) {
     NngEnvWithThread e;
@@ -2373,7 +2364,7 @@ BOOST_AUTO_TEST_CASE(thread_alive_while_running) {
     e.call("nng-close", {sock});
 }
 
-// thread-join: blocks until thread completes
+/// thread-join: blocks until thread completes
 
 BOOST_AUTO_TEST_CASE(thread_join_waits_for_completion) {
     NngEnvWithThread e;
@@ -2410,7 +2401,7 @@ BOOST_AUTO_TEST_CASE(thread_join_waits_for_completion) {
     e.call("nng-close", {sock});
 }
 
-// thread-join / thread-alive? wrong type errors
+/// thread-join / thread-alive? wrong type errors
 
 BOOST_AUTO_TEST_CASE(thread_join_wrong_type_error) {
     NngEnvWithThread e;
@@ -2424,12 +2415,12 @@ BOOST_AUTO_TEST_CASE(thread_alive_wrong_type_error) {
     BOOST_TEST(!res.has_value());
 }
 
-// send!/recv! round-trip over inproc://
+/// send!/recv! round-trip over inproc://
 
 BOOST_AUTO_TEST_CASE(spawn_thread_send_recv_round_trip) {
     NngEnvWithThread e;
 
-    // Echo worker: recv one message, send it back
+    /// Echo worker: recv one message, send it back
     e.proc_mgr.set_worker_factory(
         make_simple_worker([](nng_socket s) {
             void* buf = nullptr; size_t sz = 0;
@@ -2459,13 +2450,13 @@ BOOST_AUTO_TEST_CASE(spawn_thread_send_recv_round_trip) {
     BOOST_REQUIRE_MESSAGE(recv_res.has_value() && *recv_res != nanbox::False,
         "recv! failed or timed out");
     BOOST_TEST(ops::decode<int64_t>(*recv_res).value_or(-1) == 99);
-    BOOST_TEST_MESSAGE("Thread echo round-trip OK: 99 → 99");
+    BOOST_TEST_MESSAGE("Thread echo round-trip OK: 99 â†’ 99");
 
     e.call("thread-join", {sock});
     e.call("nng-close", {sock});
 }
 
-// list_threads() returns thread metadata
+/// list_threads() returns thread metadata
 
 BOOST_AUTO_TEST_CASE(list_threads_returns_metadata) {
     NngEnvWithThread e;
@@ -2493,7 +2484,7 @@ BOOST_AUTO_TEST_CASE(list_threads_returns_metadata) {
     e.call("nng-close", {*res});
 }
 
-// Stress test: 20 threads, each echoes a distinct value
+/// Stress test: 20 threads, each echoes a distinct value
 
 BOOST_AUTO_TEST_CASE(stress_test_multiple_threads) {
     constexpr int N = 20;
@@ -2546,14 +2537,16 @@ BOOST_AUTO_TEST_CASE(stress_test_multiple_threads) {
     BOOST_TEST(ok_count == N);
 }
 
-// spawn-thread integration: full Driver round-trip
-//
-// Uses the real Driver so that:
-//  1. A thunk lambda is compiled into the function registry.
-//  2. spawn-thread serializes it and launches a real in-process thread.
-//  3. The thread's VM reconstructs the closure, dials the socket, executes
-//     the thunk (which reads from the mailbox and echoes back).
-//  4. Parent sends a value, receives the echo, thread-join confirms completion.
+/**
+ * spawn-thread integration: full Driver round-trip
+ *
+ * Uses the real Driver so that:
+ *  1. A thunk lambda is compiled into the function registry.
+ *  2. spawn-thread serializes it and launches a real in-process thread.
+ *  3. The thread's VM reconstructs the closure, dials the socket, executes
+ *     the thunk (which reads from the mailbox and echoes back).
+ *  4. Parent sends a value, receives the echo, thread-join confirms completion.
+ */
 
 BOOST_AUTO_TEST_CASE(spawn_thread_full_driver_round_trip) {
     std::string etai_path = etai_binary_path();
@@ -2562,20 +2555,22 @@ BOOST_AUTO_TEST_CASE(spawn_thread_full_driver_round_trip) {
     stdlib_path = ETA_STDLIB_DIR;
 #endif
     if (stdlib_path.empty()) {
-        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set — skipping spawn-thread Driver test");
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set â€” skipping spawn-thread Driver test");
         return;
     }
 
     namespace fs = std::filesystem;
     using namespace eta::interpreter;
 
-    // Build a Driver with the stdlib path
+    /// Build a Driver with the stdlib path
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
     driver.load_prelude();
 
-    // The thunk: receives a value from the mailbox, adds the captured
-    // constant (7), and sends the result back.
+    /**
+     * The thunk: receives a value from the mailbox, adds the captured
+     * constant (7), and sends the result back.
+     */
     const char* src = R"eta(
 (module spawn-thread-test
   (begin
@@ -2603,7 +2598,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_full_driver_round_trip) {
     BOOST_TEST_MESSAGE("spawn-thread round-trip OK: 35 + 7 = " << *dec);
 }
 
-// spawn-thread: 3 concurrent threads, each with a distinct upvalue
+/// spawn-thread: 3 concurrent threads, each with a distinct upvalue
 
 BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
     std::string stdlib_path;
@@ -2611,7 +2606,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
     stdlib_path = ETA_STDLIB_DIR;
 #endif
     if (stdlib_path.empty()) {
-        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set — skipping spawn-thread multi test");
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set â€” skipping spawn-thread multi test");
         return;
     }
 
@@ -2622,8 +2617,10 @@ BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
     Driver driver(std::move(resolver));
     driver.load_prelude();
 
-    // Each thunk captures a different offset (10, 20, 30) as an upvalue.
-    // Parent sends 1 to each; expects 11, 21, 31 back.
+    /**
+     * Each thunk captures a different offset (10, 20, 30) as an upvalue.
+     * Parent sends 1 to each; expects 11, 21, 31 back.
+     */
     const char* src = R"eta(
 (module spawn-thread-multi
   (begin
@@ -2657,7 +2654,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
     bool ok = driver.run_source(src, &result_val, "result");
     BOOST_REQUIRE_MESSAGE(ok, "Driver::run_source failed for multi-upvalue test");
 
-    // result should be (11 21 31)
+    /// result should be (11 21 31)
     auto* cons1 = driver.heap().try_get_as<ObjectKind::Cons, Cons>(
         ops::payload(result_val));
     BOOST_REQUIRE_MESSAGE(cons1 != nullptr, "result is not a list");
@@ -2679,7 +2676,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_list_payload_and_quoted_constant_regression) {
     stdlib_path = ETA_STDLIB_DIR;
 #endif
     if (stdlib_path.empty()) {
-        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set — skipping spawn-thread list/quote regression test");
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set â€” skipping spawn-thread list/quote regression test");
         return;
     }
 
@@ -2724,7 +2721,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_portfolio_worker_shape_regression) {
     stdlib_path = ETA_STDLIB_DIR;
 #endif
     if (stdlib_path.empty()) {
-        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set — skipping portfolio worker-shape regression test");
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set â€” skipping portfolio worker-shape regression test");
         return;
     }
 
@@ -2788,15 +2785,14 @@ BOOST_AUTO_TEST_CASE(spawn_thread_portfolio_worker_shape_regression) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// Monitoring, Heartbeats & Supervision
+/// Monitoring, Heartbeats & Supervision
 
 BOOST_AUTO_TEST_SUITE(nng_monitoring_supervision_tests)
 
-// Primitive registration checks
+/// Primitive registration checks
 
 BOOST_AUTO_TEST_CASE(monitor_primitive_registered) {
     NngEnv e;
-    // Just calling with wrong arg type → type error (primitive exists)
     auto res = e.try_call("monitor", {e.fixnum(1)});
     BOOST_TEST(!res.has_value());
     BOOST_TEST_MESSAGE("monitor error (expected): " + runtime_error_msg(res.error()));
@@ -2816,7 +2812,7 @@ BOOST_AUTO_TEST_CASE(enable_heartbeat_registered) {
     BOOST_TEST_MESSAGE("enable-heartbeat error (expected): " + runtime_error_msg(res.error()));
 }
 
-// monitor: basic error handling
+/// monitor: basic error handling
 
 BOOST_AUTO_TEST_CASE(monitor_closed_socket_error) {
     NngEnv e;
@@ -2827,7 +2823,7 @@ BOOST_AUTO_TEST_CASE(monitor_closed_socket_error) {
 }
 
 BOOST_AUTO_TEST_CASE(demonitor_ok_without_monitor) {
-    // demonitor on a socket that was never monitored should succeed
+    /// demonitor on a socket that was never monitored should succeed
     NngEnv e;
     auto sock = e.call("nng-socket", {e.sym("pair")});
     auto res = e.try_call("demonitor", {sock});
@@ -2852,7 +2848,7 @@ BOOST_AUTO_TEST_CASE(enable_heartbeat_zero_interval_error) {
     e.call("nng-close", {sock});
 }
 
-// endpoint_hint is set by nng-listen and nng-dial
+/// endpoint_hint is set by nng-listen and nng-dial
 
 BOOST_AUTO_TEST_CASE(endpoint_hint_set_on_listen) {
     NngEnv e;
@@ -2879,7 +2875,7 @@ BOOST_AUTO_TEST_CASE(endpoint_hint_set_on_dial) {
     e.call("nng-close", {client});
 }
 
-// monitor: MonitorState created on monitor() call
+/// monitor: MonitorState created on monitor() call
 
 BOOST_AUTO_TEST_CASE(monitor_creates_monitor_state) {
     NngEnv e;
@@ -2889,7 +2885,7 @@ BOOST_AUTO_TEST_CASE(monitor_creates_monitor_state) {
 
     auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(sock));
     BOOST_REQUIRE(sp != nullptr);
-    BOOST_TEST(sp->monitor_state == nullptr);  // not yet created
+    BOOST_TEST(sp->monitor_state == nullptr);  ///< not yet created
 
     auto res = e.call("monitor", {sock});
     BOOST_TEST(res == nanbox::True);
@@ -2900,7 +2896,7 @@ BOOST_AUTO_TEST_CASE(monitor_creates_monitor_state) {
     e.call("nng-close", {sock});
 }
 
-// demonitor: clears monitored flag
+/// demonitor: clears monitored flag
 
 BOOST_AUTO_TEST_CASE(demonitor_clears_state) {
     NngEnv e;
@@ -2920,40 +2916,39 @@ BOOST_AUTO_TEST_CASE(demonitor_clears_state) {
     e.call("nng-close", {sock});
 }
 
-// monitor: detects peer disconnect
+/// monitor: detects peer disconnect
 
 BOOST_AUTO_TEST_CASE(monitor_detects_disconnect) {
     NngEnv e;
-    std::string addr = tcp_addr();  // TCP gives cleaner disconnect semantics
+    std::string addr = tcp_addr();  ///< TCP gives cleaner disconnect semantics
 
     auto server = e.call("nng-socket", {e.sym("pair")});
     auto client = e.call("nng-socket", {e.sym("pair")});
     e.call("nng-listen", {server, e.str(addr)});
     e.call("nng-dial",   {client, e.str(addr)});
 
-    // Allow connection to establish
+    /// Allow connection to establish
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    // Start monitoring the server side
+    /// Start monitoring the server side
     auto mon_res = e.call("monitor", {server});
     BOOST_TEST(mon_res == nanbox::True);
 
-    // Close the client — this should trigger NNG_PIPE_EV_REM_POST on server
     e.call("nng-close", {client});
 
-    // Wait for pipe removal event to propagate
+    /// Wait for pipe removal event to propagate
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-    // Check that a notification was queued
+    /// Check that a notification was queued
     auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(server));
     BOOST_REQUIRE(sp && sp->monitor_state);
 
-    // recv! should return the (down ...) notification
+    /// recv! should return the (down ...) notification
     e.call("nng-set-option", {server, e.sym("recv-timeout"), e.fixnum(200)});
     auto msg = e.call("recv!", {server});
-    BOOST_REQUIRE_MESSAGE(msg != nanbox::False, "recv! timed out — no down notification");
+    BOOST_REQUIRE_MESSAGE(msg != nanbox::False, "recv! timed out â€” no down notification");
 
-    // Verify it's (down endpoint "disconnected")
+    /// Verify it's (down endpoint "disconnected")
     BOOST_REQUIRE(ops::is_boxed(msg) && ops::tag(msg) == Tag::HeapObject);
     auto* cons = e.heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(msg));
     BOOST_REQUIRE(cons != nullptr);
@@ -2961,12 +2956,12 @@ BOOST_AUTO_TEST_CASE(monitor_detects_disconnect) {
     auto sym_sv = e.intern.get_string(ops::payload(cons->car));
     BOOST_REQUIRE(sym_sv.has_value());
     BOOST_TEST(*sym_sv == "down");
-    BOOST_TEST_MESSAGE("monitor disconnect: got '" << *sym_sv << "' notification ✓");
+    BOOST_TEST_MESSAGE("monitor disconnect: got '" << *sym_sv << "' notification âœ“");
 
     e.call("nng-close", {server});
 }
 
-// demonitor: suppresses disconnect notification
+/// demonitor: suppresses disconnect notification
 
 BOOST_AUTO_TEST_CASE(demonitor_suppresses_notification) {
     NngEnv e;
@@ -2979,7 +2974,7 @@ BOOST_AUTO_TEST_CASE(demonitor_suppresses_notification) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     e.call("monitor",   {server});
-    e.call("demonitor", {server});  // cancel immediately
+    e.call("demonitor", {server});  ///< cancel immediately
 
     e.call("nng-close", {client});
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -2987,19 +2982,18 @@ BOOST_AUTO_TEST_CASE(demonitor_suppresses_notification) {
     auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(server));
     BOOST_REQUIRE(sp);
 
-    // After demonitor, no notification should be queued
+    /// After demonitor, no notification should be queued
     e.call("nng-set-option", {server, e.sym("recv-timeout"), e.fixnum(100)});
     auto msg = e.call("recv!", {server});
     BOOST_TEST_MESSAGE("after demonitor, recv! = " <<
         (msg == nanbox::False ? "#f (correct)" : "got msg (unexpected)"));
-    // It's acceptable if the callback still fired before demonitor — so we
-    // don't REQUIRE #f, but log the result.
-    BOOST_TEST(true);  // test passes regardless (race window is tiny)
+    /// don't REQUIRE #f, but log the result.
+    BOOST_TEST(true);  ///< test passes regardless (race window is tiny)
 
     e.call("nng-close", {server});
 }
 
-// normal nng-close does NOT fire a down notification
+/// normal nng-close does NOT fire a down notification
 
 BOOST_AUTO_TEST_CASE(closing_normally_suppresses_down) {
     NngEnv e;
@@ -3011,11 +3005,11 @@ BOOST_AUTO_TEST_CASE(closing_normally_suppresses_down) {
     e.call("nng-dial",   {client, e.str(addr)});
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
-    // Monitor server, then close the SERVER itself (not the client)
+    /// Monitor server, then close the SERVER itself (not the client)
     e.call("monitor", {server});
-    e.call("nng-close", {server});  // closing_normally should suppress callback
+    e.call("nng-close", {server});  ///< closing_normally should suppress callback
 
-    // There should be NO notification since WE closed the socket
+    /// There should be NO notification since WE closed the socket
     auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(server));
     BOOST_REQUIRE(sp);
     BOOST_REQUIRE(sp->monitor_state);
@@ -3023,12 +3017,12 @@ BOOST_AUTO_TEST_CASE(closing_normally_suppresses_down) {
         std::lock_guard<std::mutex> lk(sp->monitor_state->mu);
         BOOST_TEST(sp->monitor_state->notif_msgs.empty());
     }
-    BOOST_TEST_MESSAGE("closing_normally suppresses down notification ✓");
+    BOOST_TEST_MESSAGE("closing_normally suppresses down notification âœ“");
 
     e.call("nng-close", {client});
 }
 
-// enable-heartbeat: monitor state created, heartbeat field set
+/// enable-heartbeat: monitor state created, heartbeat field set
 
 BOOST_AUTO_TEST_CASE(enable_heartbeat_creates_state) {
     NngEnv e;
@@ -3043,15 +3037,16 @@ BOOST_AUTO_TEST_CASE(enable_heartbeat_creates_state) {
     BOOST_REQUIRE(sp && sp->monitor_state);
     BOOST_REQUIRE(sp->monitor_state->heartbeat != nullptr);
     BOOST_TEST(sp->monitor_state->heartbeat->interval_ms == 500);
-    BOOST_TEST_MESSAGE("enable-heartbeat created HeartbeatState ✓");
+    BOOST_TEST_MESSAGE("enable-heartbeat created HeartbeatState âœ“");
 
     e.call("nng-close", {server});
 }
 
-// heartbeat: detects hung peer (no pong response)
-// The test sets up two connected sockets.  Side A enables heartbeat with a
-// very short interval.  Side B never calls recv! (so it never replies with
-// pong).  After 3 intervals, side A should receive a (down … "heartbeat-timeout").
+/**
+ * heartbeat: detects hung peer (no pong response)
+ * The test sets up two connected sockets.  Side A enables heartbeat with a
+ * very short interval.  Side B never calls recv! (so it never replies with
+ */
 
 BOOST_AUTO_TEST_CASE(heartbeat_detects_hung_peer) {
     NngEnv e;
@@ -3063,33 +3058,33 @@ BOOST_AUTO_TEST_CASE(heartbeat_detects_hung_peer) {
     e.call("nng-dial",   {srvB, e.str(addr)});
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    // Enable heartbeat with 80 ms interval on A; B never replies
+    /// Enable heartbeat with 80 ms interval on A; B never replies
     constexpr int interval = 80;
     e.call("enable-heartbeat", {srvA, e.fixnum(interval)});
 
-    // Wait 3+ intervals for heartbeat to fire and detect no pong
+    /// Wait 3+ intervals for heartbeat to fire and detect no pong
     std::this_thread::sleep_for(std::chrono::milliseconds(interval * 4));
 
-    // recv! on A should return a down/heartbeat-timeout notification
+    /// recv! on A should return a down/heartbeat-timeout notification
     e.call("nng-set-option", {srvA, e.sym("recv-timeout"), e.fixnum(interval)});
     auto msg = e.call("recv!", {srvA});
     BOOST_REQUIRE_MESSAGE(msg != nanbox::False,
-        "recv! timed out — heartbeat did not detect hung peer");
+        "recv! timed out â€” heartbeat did not detect hung peer");
 
-    // Verify first element is symbol 'down
+    /// Verify first element is symbol 'down
     auto* cons = e.heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(msg));
     BOOST_REQUIRE(cons != nullptr);
     auto sym_sv = e.intern.get_string(ops::payload(cons->car));
     BOOST_REQUIRE(sym_sv.has_value());
     BOOST_TEST(*sym_sv == "down");
 
-    // Third element should be string "heartbeat-timeout"
+    /// Third element should be string "heartbeat-timeout"
     if (auto* t1 = e.heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cons->cdr))) {
         if (auto* t2 = e.heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(t1->cdr))) {
             auto rsv = e.intern.get_string(ops::payload(t2->car));
             if (rsv) {
                 BOOST_TEST(*rsv == "heartbeat-timeout");
-                BOOST_TEST_MESSAGE("heartbeat-timeout received ✓: " << *rsv);
+                BOOST_TEST_MESSAGE("heartbeat-timeout received âœ“: " << *rsv);
             }
         }
     }
@@ -3098,9 +3093,11 @@ BOOST_AUTO_TEST_CASE(heartbeat_detects_hung_peer) {
     e.call("nng-close", {srvB});
 }
 
-// heartbeat: ping/pong transparent (both sides call recv!)
-// When both sides call recv!, heartbeat pings/pongs are filtered and normal
-// messages still flow through unaffected.
+/**
+ * heartbeat: ping/pong transparent (both sides call recv!)
+ * When both sides call recv!, heartbeat pings/pongs are filtered and normal
+ * messages still flow through unaffected.
+ */
 
 BOOST_AUTO_TEST_CASE(heartbeat_ping_pong_transparent) {
     NngEnv e;
@@ -3112,33 +3109,31 @@ BOOST_AUTO_TEST_CASE(heartbeat_ping_pong_transparent) {
     e.call("nng-dial",   {srvB, e.str(addr)});
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
-    // Enable heartbeat on A with 100 ms interval
+    /// Enable heartbeat on A with 100 ms interval
     e.call("enable-heartbeat", {srvA, e.fixnum(100)});
 
-    // Set 2 s timeouts so the test doesn't hang
+    /// Set 2 s timeouts so the test doesn't hang
     e.call("nng-set-option", {srvA, e.sym("recv-timeout"), e.fixnum(2000)});
     e.call("nng-set-option", {srvB, e.sym("recv-timeout"), e.fixnum(2000)});
 
-    // Send a normal data message from A to B
+    /// Send a normal data message from A to B
     e.call("send!", {srvA, e.fixnum(42)});
 
-    // B receives and echoes back — recv! on B should skip any heartbeat pings
     auto msg_b = e.call("recv!", {srvB});
     BOOST_REQUIRE_MESSAGE(msg_b != nanbox::False, "B recv! timed out");
     BOOST_TEST(ops::decode<int64_t>(msg_b).value_or(-1) == 42);
     e.call("send!", {srvB, e.fixnum(43)});
 
-    // A receives the echo — recv! on A should skip any pong responses
     auto msg_a = e.call("recv!", {srvA});
     BOOST_REQUIRE_MESSAGE(msg_a != nanbox::False, "A recv! timed out");
     BOOST_TEST(ops::decode<int64_t>(msg_a).value_or(-1) == 43);
-    BOOST_TEST_MESSAGE("normal messages flow through heartbeat correctly ✓");
+    BOOST_TEST_MESSAGE("normal messages flow through heartbeat correctly âœ“");
 
     e.call("nng-close", {srvA});
     e.call("nng-close", {srvB});
 }
 
-// down message binary format is well-formed
+/// down message binary format is well-formed
 
 BOOST_AUTO_TEST_CASE(monitor_down_msg_well_formed) {
     NngEnv e;
@@ -3151,10 +3146,10 @@ BOOST_AUTO_TEST_CASE(monitor_down_msg_well_formed) {
     BOOST_REQUIRE(sp && sp->monitor_state);
     const auto& dmsg = sp->monitor_state->monitor_down_msg;
     BOOST_REQUIRE(!dmsg.empty());
-    // Must start with binary version byte
+    /// Must start with binary version byte
     BOOST_TEST(dmsg[0] == eta::nng::BINARY_VERSION_BYTE);
 
-    // Must deserialize to (down endpoint "disconnected")
+    /// Must deserialize to (down endpoint "disconnected")
     Heap h2(1 << 20); InternTable i2;
     auto val = deserialize_binary(std::span<const uint8_t>(dmsg), h2, i2);
     BOOST_REQUIRE(val.has_value());
@@ -3163,7 +3158,7 @@ BOOST_AUTO_TEST_CASE(monitor_down_msg_well_formed) {
     auto sym_sv = i2.get_string(ops::payload(cons->car));
     BOOST_REQUIRE(sym_sv.has_value());
     BOOST_TEST(*sym_sv == "down");
-    BOOST_TEST_MESSAGE("monitor down message is well-formed binary ✓");
+    BOOST_TEST_MESSAGE("monitor down message is well-formed binary âœ“");
 
     e.call("nng-close", {sock});
 }

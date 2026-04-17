@@ -15,15 +15,17 @@
 
 namespace eta::semantics {
 
-// Registry to own BytecodeFunction objects with stable addresses.
-// Solves the dangling pointer issue when storing BytecodeFunction* in Closures.
-// Functions are accessed by index (uint32_t) rather than raw pointers for type safety.
-// Thread-safe for concurrent add/get operations.
+/**
+ * Registry to own BytecodeFunction objects with stable addresses.
+ * Solves the dangling pointer issue when storing BytecodeFunction* in Closures.
+ * Functions are accessed by index (uint32_t) rather than raw pointers for type safety.
+ * Thread-safe for concurrent add/get operations.
+ */
 class BytecodeFunctionRegistry {
 public:
     BytecodeFunctionRegistry() = default;
 
-    // Move-only (shared_mutex is not movable, so we transfer the data manually).
+    /// Move-only (shared_mutex is not movable, so we transfer the data manually).
     BytecodeFunctionRegistry(BytecodeFunctionRegistry&& other) noexcept
         : functions_(std::move(other.functions_)) {}
 
@@ -35,8 +37,10 @@ public:
     BytecodeFunctionRegistry(const BytecodeFunctionRegistry&) = delete;
     BytecodeFunctionRegistry& operator=(const BytecodeFunctionRegistry&) = delete;
 
-    // Adds a BytecodeFunction and returns its index in the registry.
-    // Thread-safe: uses exclusive lock.
+    /**
+     * Adds a BytecodeFunction and returns its index in the registry.
+     * Thread-safe: uses exclusive lock.
+     */
     uint32_t add(runtime::vm::BytecodeFunction&& func) {
         std::unique_lock lock(mutex_);
         uint32_t idx = static_cast<uint32_t>(functions_.size());
@@ -44,8 +48,10 @@ public:
         return idx;
     }
 
-    // Get a function by index. Returns nullptr if index is out of bounds.
-    // Thread-safe: uses shared lock (allows concurrent reads).
+    /**
+     * Get a function by index. Returns nullptr if index is out of bounds.
+     * Thread-safe: uses shared lock (allows concurrent reads).
+     */
     const runtime::vm::BytecodeFunction* get(uint32_t index) const {
         std::shared_lock lock(mutex_);
         if (index < functions_.size()) {
@@ -54,8 +60,10 @@ public:
         return nullptr;
     }
 
-    // Get a mutable function by index.
-    // Thread-safe: uses exclusive lock.
+    /**
+     * Get a mutable function by index.
+     * Thread-safe: uses exclusive lock.
+     */
     runtime::vm::BytecodeFunction* get_mut(uint32_t index) {
         std::unique_lock lock(mutex_);
         if (index < functions_.size()) {
@@ -64,11 +72,13 @@ public:
         return nullptr;
     }
 
-    // Get all functions (for iteration). Caller must ensure no concurrent modifications.
-    // Note: Returns reference - caller should not hold while other threads might modify.
+    /**
+     * Get all functions (for iteration). Caller must ensure no concurrent modifications.
+     * Note: Returns reference - caller should not hold while other threads might modify.
+     */
     const std::deque<runtime::vm::BytecodeFunction>& all() const { return functions_; }
 
-    // Thread-safe size query
+    /// Thread-safe size query
     std::size_t size() const {
         std::shared_lock lock(mutex_);
         return functions_.size();
@@ -96,14 +106,16 @@ private:
     runtime::memory::heap::Heap& heap_;
     runtime::memory::intern::InternTable& intern_table_;
     BytecodeFunctionRegistry& registry_;
-    uint32_t lambda_count_{0};  // instance counter (replaces former static in emit_lambda)
+    uint32_t lambda_count_{0};  ///< instance counter (replaces former static in emit_lambda)
 
     struct Context {
         runtime::vm::BytecodeFunction func;
         std::unordered_map<std::string, uint32_t> string_constant_cache;
 
-        /// Emit one instruction and record its source span.
-        /// Maintains the invariant source_map.size() == code.size().
+        /**
+         * Emit one instruction and record its source span.
+         * Maintains the invariant source_map.size() == code.size().
+         */
         void emit_instr(runtime::vm::OpCode op, std::uint32_t arg, const Span& span) {
             func.code.push_back({op, arg});
             func.source_map.push_back(span);
@@ -113,11 +125,11 @@ private:
     void emit_node(const core::Node* node, Context& ctx);
     uint32_t emit_lambda(const core::Lambda& lambda, const std::string& parent_name, const Span& span);
 
-    // Helper to emit load/store operations for different address types
+    /// Helper to emit load/store operations for different address types
     void emit_address_load(const core::Address& addr, Context& ctx, const Span& span);
     void emit_address_store(const core::Address& addr, Context& ctx, const Span& span);
 
-    // Dedicated emit methods for each IR node type
+    /// Dedicated emit methods for each IR node type
     uint32_t add_const(runtime::nanbox::LispVal val, Context& ctx);
     uint32_t emit_load_const(runtime::nanbox::LispVal val, Context& ctx, const Span& span);
     void emit_const(const core::Const& n, Context& ctx, const Span& span);
@@ -143,4 +155,4 @@ private:
     void emit_copy_term(const core::CopyTerm& n, Context& ctx, const Span& span);
 };
 
-} // namespace eta::semantics
+} ///< namespace eta::semantics

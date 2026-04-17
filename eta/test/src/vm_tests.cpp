@@ -60,18 +60,18 @@ struct VMTestFixture {
         auto sem_mods = std::move(*sem_res);
         BOOST_REQUIRE(!sem_mods.empty());
 
-        // Emit bytecode for all modules
+        /// Emit bytecode for all modules
         std::vector<BytecodeFunction*> main_funcs;
         for (auto& mod : sem_mods) {
             Emitter emitter(mod, heap, intern_table, registry);
             main_funcs.push_back(emitter.emit());
         }
 
-        // Execute each module in order on the same VM with unified globals
+        /// Execute each module in order on the same VM with unified globals
         VM vm(heap, intern_table);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
 
-        // Install builtins ONCE with the unified total_globals count
+        /// Install builtins ONCE with the unified total_globals count
         auto install_res = builtins.install(heap, vm.globals(), sem_mods[0].total_globals);
         if (!install_res) throw std::runtime_error("Failed to install builtins");
 
@@ -96,7 +96,7 @@ struct VMTestFixture {
             }
         }
 
-        // Find 'result' in the last module
+        /// Find 'result' in the last module
         auto& last_mod = sem_mods.back();
         for (size_t i = 0; i < last_mod.bindings.size(); ++i) {
             if (last_mod.bindings[i].name == "result") {
@@ -136,7 +136,7 @@ struct VMTestFixture {
         VM vm(heap, intern_table);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
 
-        // Install builtins and size globals to accommodate all module bindings
+        /// Install builtins and size globals to accommodate all module bindings
         auto install_res = builtins.install(heap, vm.globals(), sem_mod.total_globals);
         if (!install_res) throw std::runtime_error("Failed to install builtins");
 
@@ -158,7 +158,7 @@ struct VMTestFixture {
             throw std::runtime_error(msg);
         }
 
-        // Find 'result' global
+        /// Find 'result' global
         for (size_t i = 0; i < sem_mod.bindings.size(); ++i) {
             if (sem_mod.bindings[i].name == "result") {
                 return vm.globals()[sem_mod.bindings[i].slot];
@@ -214,9 +214,9 @@ struct VMTestFixture {
 
 BOOST_FIXTURE_TEST_SUITE(vm_tests, VMTestFixture)
 
-// ============================================================================
-// Basic arithmetic
-// ============================================================================
+/**
+ * Basic arithmetic
+ */
 
 BOOST_AUTO_TEST_CASE(test_add_simple) {
     LispVal res = run("(module m (define result (+ 1 2)))");
@@ -253,9 +253,9 @@ BOOST_AUTO_TEST_CASE(test_div_exact) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 5);
 }
 
-// ============================================================================
-// Comparison
-// ============================================================================
+/**
+ * Comparison
+ */
 
 BOOST_AUTO_TEST_CASE(test_equal_true) {
     LispVal res = run("(module m (define result (= 42 42)))");
@@ -277,9 +277,9 @@ BOOST_AUTO_TEST_CASE(test_greater_than) {
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
-// ============================================================================
-// Equivalence
-// ============================================================================
+/**
+ * Equivalence
+ */
 
 BOOST_AUTO_TEST_CASE(test_eq_same) {
     LispVal res = run("(module m (define result (eq? 42 42)))");
@@ -296,15 +296,14 @@ BOOST_AUTO_TEST_CASE(test_not_false) {
     BOOST_CHECK_EQUAL(res, nanbox::False);
 }
 
-// ============================================================================
-// eqv? — identity + numeric value equivalence (R7RS §6.1)
-//
-// eqv? differs from eq? in that it unwraps heap-allocated numbers and
-// compares by value.  For inline fixnums, symbols, booleans, and chars
-// the two are identical; for separately-constructed heap-boxed fixnums
-// (values exceeding the 47-bit NaN-box range) eqv? returns #t where
-// eq? returns #f.
-// ============================================================================
+/**
+ *
+ * eqv? differs from eq? in that it unwraps heap-allocated numbers and
+ * compares by value.  For inline fixnums, symbols, booleans, and chars
+ * the two are identical; for separately-constructed heap-boxed fixnums
+ * (values exceeding the 47-bit NaN-box range) eqv? returns #t where
+ * eq? returns #f.
+ */
 
 BOOST_AUTO_TEST_CASE(test_eqv_same_fixnum) {
     LispVal res = run("(module m (define result (eqv? 42 42)))");
@@ -337,7 +336,7 @@ BOOST_AUTO_TEST_CASE(test_eqv_chars_different) {
 }
 
 BOOST_AUTO_TEST_CASE(test_eqv_symbols_same) {
-    // Symbols are interned so eqv? on the same symbol is #t
+    /// Symbols are interned so eqv? on the same symbol is #t
     LispVal res = run("(module m (define result (eqv? 'foo 'foo)))");
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
@@ -348,13 +347,12 @@ BOOST_AUTO_TEST_CASE(test_eqv_symbols_different) {
 }
 
 BOOST_AUTO_TEST_CASE(test_eqv_nil) {
-    // Both are the Nil singleton
+    /// Both are the Nil singleton
     LispVal res = run("(module m (define result (eqv? '() '())))");
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
 BOOST_AUTO_TEST_CASE(test_eqv_lists_not_structural) {
-    // eqv? is NOT structural — two separately-constructed lists are not eqv?
     LispVal res = run("(module m (define result (eqv? (list 1 2) (list 1 2))))");
     BOOST_CHECK_EQUAL(res, nanbox::False);
 }
@@ -365,22 +363,21 @@ BOOST_AUTO_TEST_CASE(test_eqv_mixed_types) {
 }
 
 BOOST_AUTO_TEST_CASE(test_eqv_heap_boxed_fixnums) {
-    // Key divergence from eq?: two separately-computed large fixnums
-    // that exceed the 47-bit inline NaN-box range (>2^46-1 ≈ 7×10¹³)
-    // get heap-allocated at different addresses.
-    // eq? compares addresses → #f;  eqv? unwraps and compares values → #t
+    /**
+     * Key divergence from eq?: two separately-computed large fixnums
+     * get heap-allocated at different addresses.
+     */
     std::string src =
         "(module m"
-        "  (define a (* 100000000 100000000))"   // 10^16, heap-boxed
-        "  (define b (* 100000000 100000000))"   // same value, different heap object
+        "  (define a (* 100000000 100000000))"   ///< 10^16, heap-boxed
+        "  (define b (* 100000000 100000000))"   ///< same value, different heap object
         "  (define result (eqv? a b)))";
     LispVal res = run(src);
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
 BOOST_AUTO_TEST_CASE(test_eq_heap_boxed_fixnums_false) {
-    // Same scenario as above but with eq? — should be #f because the two
-    // heap-allocated fixnums occupy different addresses.
+    /// heap-allocated fixnums occupy different addresses.
     std::string src =
         "(module m"
         "  (define a (* 100000000 100000000))"
@@ -391,19 +388,19 @@ BOOST_AUTO_TEST_CASE(test_eq_heap_boxed_fixnums_false) {
 }
 
 BOOST_AUTO_TEST_CASE(test_eqv_heap_boxed_fixnums_different_values) {
-    // Two large heap-boxed fixnums with different values
+    /// Two large heap-boxed fixnums with different values
     std::string src =
         "(module m"
-        "  (define a (* 100000000 100000000))"   // 10^16
-        "  (define b (* 100000000 200000000))"   // 2×10^16
+        "  (define a (* 100000000 100000000))"   ///< 10^16
+        "  (define b (* 100000000 200000000))"
         "  (define result (eqv? a b)))";
     LispVal res = run(src);
     BOOST_CHECK_EQUAL(res, nanbox::False);
 }
 
-// ============================================================================
-// Pairs / Lists
-// ============================================================================
+/**
+ * Pairs / Lists
+ */
 
 BOOST_AUTO_TEST_CASE(test_cons_car) {
     LispVal res = run("(module m (define result (car (cons 1 2))))");
@@ -440,9 +437,9 @@ BOOST_AUTO_TEST_CASE(test_list_construction) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 2);
 }
 
-// ============================================================================
-// Type predicates
-// ============================================================================
+/**
+ * Type predicates
+ */
 
 BOOST_AUTO_TEST_CASE(test_number_pred) {
     LispVal res = run("(module m (define result (number? 42)))");
@@ -469,9 +466,9 @@ BOOST_AUTO_TEST_CASE(test_procedure_pred_builtin) {
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
-// ============================================================================
-// Call/cc and control flow
-// ============================================================================
+/**
+ * Call/cc and control flow
+ */
 
 BOOST_AUTO_TEST_CASE(test_call_cc_basic) {
     std::string src = "(module m (define result (call/cc (lambda (k) (k 42) 99))))";
@@ -519,9 +516,9 @@ BOOST_AUTO_TEST_CASE(test_dynamic_wind_with_call_cc_clean) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 22);
 }
 
-// ============================================================================
-// Closures and higher-order functions
-// ============================================================================
+/**
+ * Closures and higher-order functions
+ */
 
 BOOST_AUTO_TEST_CASE(test_closure_captures) {
     std::string src =
@@ -553,9 +550,9 @@ BOOST_AUTO_TEST_CASE(test_mutual_recursion) {
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
-// ============================================================================
-// Arity checking
-// ============================================================================
+/**
+ * Arity checking
+ */
 
 BOOST_AUTO_TEST_CASE(test_arity_error_too_few) {
     BOOST_CHECK_THROW(run("(module m (define result (cons 1)))"), std::runtime_error);
@@ -565,17 +562,17 @@ BOOST_AUTO_TEST_CASE(test_arity_error_too_many) {
     BOOST_CHECK_THROW(run("(module m (define result (car 1 2)))"), std::runtime_error);
 }
 
-// ============================================================================
-// Immutable builtins
-// ============================================================================
+/**
+ * Immutable builtins
+ */
 
 BOOST_AUTO_TEST_CASE(test_builtin_immutable) {
     BOOST_CHECK_THROW(run("(module m (set! + 42))"), std::runtime_error);
 }
 
-// ============================================================================
-// and / or / when / unless
-// ============================================================================
+/**
+ * and / or / when / unless
+ */
 
 BOOST_AUTO_TEST_CASE(test_and_empty) {
     LispVal res = run("(module m (define result (and)))");
@@ -637,9 +634,9 @@ BOOST_AUTO_TEST_CASE(test_unless_true) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 0);
 }
 
-// ============================================================================
-// do loop
-// ============================================================================
+/**
+ * do loop
+ */
 
 BOOST_AUTO_TEST_CASE(test_do_loop_factorial) {
     std::string src =
@@ -663,9 +660,9 @@ BOOST_AUTO_TEST_CASE(test_do_loop_sum) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 45);
 }
 
-// ============================================================================
-// Quote
-// ============================================================================
+/**
+ * Quote
+ */
 
 BOOST_AUTO_TEST_CASE(test_quote_number) {
     LispVal res = run("(module m (define result (quote 42)))");
@@ -673,7 +670,7 @@ BOOST_AUTO_TEST_CASE(test_quote_number) {
 }
 
 BOOST_AUTO_TEST_CASE(test_quote_list) {
-    // (quote (1 2 3)) -> list, check car
+    /// (quote (1 2 3)) -> list, check car
     LispVal res = run("(module m (define result (car (quote (1 2 3)))))");
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1);
 }
@@ -683,9 +680,9 @@ BOOST_AUTO_TEST_CASE(test_quote_nil) {
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
-// ============================================================================
-// New primitives: numeric predicates
-// ============================================================================
+/**
+ * New primitives: numeric predicates
+ */
 
 BOOST_AUTO_TEST_CASE(test_zero_pred) {
     LispVal res = run("(module m (define result (zero? 0)))");
@@ -732,9 +729,9 @@ BOOST_AUTO_TEST_CASE(test_remainder) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1);
 }
 
-// ============================================================================
-// New primitives: list operations
-// ============================================================================
+/**
+ * New primitives: list operations
+ */
 
 BOOST_AUTO_TEST_CASE(test_length) {
     LispVal res = run("(module m (define result (length (list 1 2 3))))");
@@ -766,9 +763,9 @@ BOOST_AUTO_TEST_CASE(test_list_ref) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 20);
 }
 
-// ============================================================================
-// New primitives: equal?
-// ============================================================================
+/**
+ * New primitives: equal?
+ */
 
 BOOST_AUTO_TEST_CASE(test_equal_lists) {
     LispVal res = run("(module m (define result (equal? (list 1 2 3) (list 1 2 3))))");
@@ -780,9 +777,9 @@ BOOST_AUTO_TEST_CASE(test_equal_lists_different) {
     BOOST_CHECK_EQUAL(res, nanbox::False);
 }
 
-// ============================================================================
-// New primitives: vector operations
-// ============================================================================
+/**
+ * New primitives: vector operations
+ */
 
 BOOST_AUTO_TEST_CASE(test_vector_construction) {
     LispVal res = run("(module m (define result (vector-ref (vector 10 20 30) 1)))");
@@ -804,12 +801,12 @@ BOOST_AUTO_TEST_CASE(test_vector_pred_false) {
     BOOST_CHECK_EQUAL(res, nanbox::False);
 }
 
-// ============================================================================
-// Multi-module execution tests (unified global allocation)
-// ============================================================================
+/**
+ * Multi-module execution tests (unified global allocation)
+ */
 
 BOOST_AUTO_TEST_CASE(test_multi_module_analyze_proDUCES_multiple) {
-    // Verify that the pipeline at least produces multiple ModuleSemantics
+    /// Verify that the pipeline at least produces multiple ModuleSemantics
     std::string_view source =
         "(module lib (export answer) (define answer 42))\n"
         "(module main (import lib) (define result answer))";
@@ -834,7 +831,7 @@ BOOST_AUTO_TEST_CASE(test_multi_module_analyze_proDUCES_multiple) {
     BOOST_CHECK_EQUAL((*sem_res)[0].name, "lib");
     BOOST_CHECK_EQUAL((*sem_res)[1].name, "main");
 
-    // Verify the import binding exists in module 'main'
+    /// Verify the import binding exists in module 'main'
     const auto& main_mod = (*sem_res)[1];
     bool found_import = false;
     for (const auto& b : main_mod.bindings) {
@@ -847,7 +844,7 @@ BOOST_AUTO_TEST_CASE(test_multi_module_analyze_proDUCES_multiple) {
 }
 
 BOOST_AUTO_TEST_CASE(test_multi_module_each_emits_bytecode) {
-    // Verify that each module produces valid bytecode
+    /// Verify that each module produces valid bytecode
     std::string_view source =
         "(module lib (export answer) (define answer 42))\n"
         "(module main (import lib) (define result answer))";
@@ -876,7 +873,7 @@ BOOST_AUTO_TEST_CASE(test_multi_module_each_emits_bytecode) {
 }
 
 BOOST_AUTO_TEST_CASE(test_multi_module_unified_global_slots) {
-    // Verify that imported bindings share the same global slot as the export
+    /// Verify that imported bindings share the same global slot as the export
     std::string_view source =
         "(module lib (export answer) (define answer 42))\n"
         "(module main (import lib) (define result answer))";
@@ -900,7 +897,7 @@ BOOST_AUTO_TEST_CASE(test_multi_module_unified_global_slots) {
     const auto& lib_mod = (*sem_res)[0];
     const auto& main_mod = (*sem_res)[1];
 
-    // Find the slot where lib defines 'answer'
+    /// Find the slot where lib defines 'answer'
     uint16_t lib_answer_slot = 0;
     for (const auto& b : lib_mod.bindings) {
         if (b.name == "answer" && b.kind == BindingInfo::Kind::Global) {
@@ -909,7 +906,7 @@ BOOST_AUTO_TEST_CASE(test_multi_module_unified_global_slots) {
         }
     }
 
-    // Find the slot where main imports 'answer'
+    /// Find the slot where main imports 'answer'
     uint16_t main_answer_slot = 0;
     for (const auto& b : main_mod.bindings) {
         if (b.name == "answer" && b.kind == BindingInfo::Kind::Import) {
@@ -918,15 +915,15 @@ BOOST_AUTO_TEST_CASE(test_multi_module_unified_global_slots) {
         }
     }
 
-    // Both must reference the same unified global slot
+    /// Both must reference the same unified global slot
     BOOST_CHECK_EQUAL(lib_answer_slot, main_answer_slot);
 
-    // total_globals should be the same on both modules
+    /// total_globals should be the same on both modules
     BOOST_CHECK_EQUAL(lib_mod.total_globals, main_mod.total_globals);
 }
 
 BOOST_AUTO_TEST_CASE(test_multi_module_import_constant) {
-    // Module lib exports a constant; module main imports and uses it
+    /// Module lib exports a constant; module main imports and uses it
     LispVal res = run_multi(
         "(module lib (export answer) (define answer 42))\n"
         "(module main (import lib) (define result answer))");
@@ -934,7 +931,7 @@ BOOST_AUTO_TEST_CASE(test_multi_module_import_constant) {
 }
 
 BOOST_AUTO_TEST_CASE(test_multi_module_import_function) {
-    // Module lib exports a function; module main calls it
+    /// Module lib exports a function; module main calls it
     LispVal res = run_multi(
         "(module lib (export double) (define (double x) (* x 2)))\n"
         "(module main (import lib) (define result (double 21)))");
@@ -942,7 +939,7 @@ BOOST_AUTO_TEST_CASE(test_multi_module_import_function) {
 }
 
 BOOST_AUTO_TEST_CASE(test_multi_module_chain) {
-    // Linear chain: A -> B -> C, each adds 1
+    /// Linear chain: A -> B -> C, each adds 1
     LispVal res = run_multi(
         "(module A (export x) (define x 1))\n"
         "(module B (import A) (export y) (define y (+ x 1)))\n"
@@ -951,19 +948,21 @@ BOOST_AUTO_TEST_CASE(test_multi_module_chain) {
 }
 
 BOOST_AUTO_TEST_CASE(test_multi_module_diamond_dependency) {
-    // A exports a; B and C both import from A; D imports from B and C
+    /// A exports a; B and C both import from A; D imports from B and C
     LispVal res = run_multi(
         "(module A (export a) (define a 10))\n"
         "(module B (import A) (export b) (define b (+ a 5)))\n"
         "(module C (import A) (export c) (define c (+ a 20)))\n"
         "(module D (import B) (import C) (define result (+ b c)))");
-    // b = 15, c = 30, result = 45
+    /// b = 15, c = 30, result = 45
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 45);
 }
 
 BOOST_AUTO_TEST_CASE(test_multi_module_export_function_closure) {
-    // Module lib exports a closure (function capturing a local);
-    // module main calls it
+    /**
+     * Module lib exports a closure (function capturing a local);
+     * module main calls it
+     */
     LispVal res = run_multi(
         "(module lib (export make-adder)\n"
         "  (define (make-adder n) (lambda (x) (+ n x))))\n"
@@ -973,9 +972,9 @@ BOOST_AUTO_TEST_CASE(test_multi_module_export_function_closure) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
 }
 
-// ============================================================================
-// VM Error-Path Tests
-// ============================================================================
+/**
+ * VM Error-Path Tests
+ */
 
 BOOST_AUTO_TEST_CASE(test_error_car_on_non_pair) {
     auto err = run_expect_error("(module m (define result (car 42)))");
@@ -1085,9 +1084,9 @@ BOOST_AUTO_TEST_CASE(test_error_cons_wrong_arg_count) {
     BOOST_CHECK(vm_err->code == RuntimeErrorCode::InvalidArity);
 }
 
-// ============================================================================
-// make-vector primitive
-// ============================================================================
+/**
+ * make-vector primitive
+ */
 
 BOOST_AUTO_TEST_CASE(test_make_vector_basic) {
     LispVal res = run(
@@ -1114,9 +1113,9 @@ BOOST_AUTO_TEST_CASE(test_make_vector_set_and_ref) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 99);
 }
 
-// ============================================================================
-// define-record-type end-to-end
-// ============================================================================
+/**
+ * define-record-type end-to-end
+ */
 
 BOOST_AUTO_TEST_CASE(test_record_type_construct_and_access) {
     LispVal res = run(
@@ -1183,7 +1182,7 @@ BOOST_AUTO_TEST_CASE(test_record_type_mutator) {
 }
 
 BOOST_AUTO_TEST_CASE(test_record_type_generative_identity) {
-    // Two record types with the same name should NOT be interchangeable (gensym tags)
+    /// Two record types with the same name should NOT be interchangeable (gensym tags)
     LispVal res = run(
         "(module m"
         "  (define-record-type point"
@@ -1211,7 +1210,7 @@ BOOST_AUTO_TEST_CASE(test_record_type_no_fields) {
 }
 
 BOOST_AUTO_TEST_CASE(test_record_type_mixed_readonly_mutable) {
-    // x is read-only, y is mutable
+    /// x is read-only, y is mutable
     LispVal res = run(
         "(module m"
         "  (define-record-type rec"
@@ -1225,12 +1224,12 @@ BOOST_AUTO_TEST_CASE(test_record_type_mixed_readonly_mutable) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1099);
 }
 
-// ============================================================================
-// Apply tests (VM-level)
-// ============================================================================
+/**
+ * Apply tests (VM-level)
+ */
 
 BOOST_AUTO_TEST_CASE(test_apply_primitive) {
-    // apply with a primitive procedure
+    /// apply with a primitive procedure
     LispVal res = run(
         "(module m"
         "  (define result (apply + '(1 2 3))))");
@@ -1238,7 +1237,6 @@ BOOST_AUTO_TEST_CASE(test_apply_primitive) {
 }
 
 BOOST_AUTO_TEST_CASE(test_apply_closure) {
-    // apply with a closure — this was impossible before VM-level apply
     LispVal res = run(
         "(module m"
         "  (define (add a b) (+ a b))"
@@ -1247,7 +1245,6 @@ BOOST_AUTO_TEST_CASE(test_apply_closure) {
 }
 
 BOOST_AUTO_TEST_CASE(test_apply_with_leading_args) {
-    // (apply proc arg1 arg2 list) — prepend explicit args
     LispVal res = run(
         "(module m"
         "  (define result (apply + 1 2 '(3 4))))");
@@ -1255,7 +1252,7 @@ BOOST_AUTO_TEST_CASE(test_apply_with_leading_args) {
 }
 
 BOOST_AUTO_TEST_CASE(test_apply_empty_list) {
-    // apply with an empty tail list
+    /// apply with an empty tail list
     LispVal res = run(
         "(module m"
         "  (define (f x) (* x x))"
@@ -1264,7 +1261,6 @@ BOOST_AUTO_TEST_CASE(test_apply_empty_list) {
 }
 
 BOOST_AUTO_TEST_CASE(test_apply_tail_position) {
-    // apply in tail position — tests TailApply opcode
     LispVal res = run(
         "(module m"
         "  (define (sum-list lst acc)"
@@ -1276,7 +1272,7 @@ BOOST_AUTO_TEST_CASE(test_apply_tail_position) {
 }
 
 BOOST_AUTO_TEST_CASE(test_apply_closure_rest_args) {
-    // apply a closure that has rest args
+    /// apply a closure that has rest args
     LispVal res = run(
         "(module m"
         "  (define (f a . rest) (apply + a rest))"
@@ -1284,12 +1280,11 @@ BOOST_AUTO_TEST_CASE(test_apply_closure_rest_args) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 60);
 }
 
-// ============================================================================
-// Lambda rest parameter tests
-// ============================================================================
+/**
+ * Lambda rest parameter tests
+ */
 
 BOOST_AUTO_TEST_CASE(test_lambda_rest_basic) {
-    // Basic rest parameter — collects all args into a list
     LispVal res = run(
         "(module m"
         "  (define (f . args) (apply + args))"
@@ -1298,7 +1293,7 @@ BOOST_AUTO_TEST_CASE(test_lambda_rest_basic) {
 }
 
 BOOST_AUTO_TEST_CASE(test_lambda_rest_with_required) {
-    // Rest param with required params
+    /// Rest param with required params
     LispVal res = run(
         "(module m"
         "  (define (f a b . rest) (+ a b (apply + rest)))"
@@ -1307,7 +1302,6 @@ BOOST_AUTO_TEST_CASE(test_lambda_rest_with_required) {
 }
 
 BOOST_AUTO_TEST_CASE(test_lambda_rest_empty) {
-    // Rest param with no extra args — rest should be empty list
     LispVal res = run(
         "(module m"
         "  (define (f a . rest) (null? rest))"
@@ -1315,12 +1309,12 @@ BOOST_AUTO_TEST_CASE(test_lambda_rest_empty) {
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
-// ============================================================================
-// Error primitive tests
-// ============================================================================
+/**
+ * Error primitive tests
+ */
 
 BOOST_AUTO_TEST_CASE(test_error_basic) {
-    // error should throw a runtime error
+    /// error should throw a runtime error
     BOOST_CHECK_THROW(
         run("(module m"
             "  (define result (error \"something went wrong\")))"),
@@ -1328,7 +1322,7 @@ BOOST_AUTO_TEST_CASE(test_error_basic) {
 }
 
 BOOST_AUTO_TEST_CASE(test_error_with_irritants) {
-    // error with irritants should include them in the message
+    /// error with irritants should include them in the message
     try {
         run("(module m"
             "  (define result (error \"bad value\" 42)))");
@@ -1341,7 +1335,7 @@ BOOST_AUTO_TEST_CASE(test_error_with_irritants) {
 }
 
 BOOST_AUTO_TEST_CASE(test_error_conditional) {
-    // error only triggers on the failing path
+    /// error only triggers on the failing path
     LispVal res = run(
         "(module m"
         "  (define (safe-div a b)"
@@ -1352,31 +1346,27 @@ BOOST_AUTO_TEST_CASE(test_error_conditional) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 5);
 }
 
-// ============================================================================
-// Boolean simplifier integration test
-//
-// A non-trivial symbolic computation: simplify boolean expression trees
-// represented as nested lists.  Exercises: defun, cond, let, and/or,
-// recursion, quoted symbols, eq?, equal?, list, car/cdr, pair?.
-//
-// Expression language:
-//   atom        — a symbol (variable) or boolean constant (#t / #f)
-//   (not e)     — logical negation
-//   (and e1 e2) — logical conjunction (binary)
-//   (or  e1 e2) — logical disjunction (binary)
-//
-// Simplification rules implemented:
-//   identity / annihilator   (and x #t)=x, (and x #f)=#f, etc.
-//   double negation          (not (not y))=y
-//   idempotence              (and x x)=x, (or x x)=x
-//   De Morgan                (not (and a b))=(or (not a) (not b))
-//   fixed-point iteration    keep simplifying until stable
-// ============================================================================
+/**
+ * Boolean simplifier integration test
+ *
+ * A non-trivial symbolic computation: simplify boolean expression trees
+ * represented as nested lists.  Exercises: defun, cond, let, and/or,
+ * recursion, quoted symbols, eq?, equal?, list, car/cdr, pair?.
+ *
+ * Expression language:
+ *
+ * Simplification rules implemented:
+ *   identity / annihilator   (and x #t)=x, (and x #f)=#f, etc.
+ *   double negation          (not (not y))=y
+ *   idempotence              (and x x)=x, (or x x)=x
+ *   De Morgan                (not (and a b))=(or (not a) (not b))
+ *   fixed-point iteration    keep simplifying until stable
+ */
 
 BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
     std::string src = R"(
         (module m
-          ;; atom? — true for anything that is not a pair (symbols, bools, nil, numbers…)
+          ;; atom? â€” true for anything that is not a pair (symbols, bools, nil, numbersâ€¦)
           ;; This is a natural prelude candidate.
           (defun atom? (x) (not (pair? x)))
 
@@ -1440,15 +1430,15 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
               (if (equal? s e) s (simplify-bool* s))))
 
           ;; Test cases
-          ;; x ∧ ⊤ = x
+          ;; x âˆ§ âŠ¤ = x
           (define t1 (simplify-bool* '(and x #t)))
-          ;; x ∧ ⊥ = ⊥
+          ;; x âˆ§ âŠ¥ = âŠ¥
           (define t2 (simplify-bool* '(and x #f)))
-          ;; (⊤ ∧ x) ∨ ⊥ = x
+          ;; (âŠ¤ âˆ§ x) âˆ¨ âŠ¥ = x
           (define t3 (simplify-bool* '(or (and #t x) #f)))
-          ;; ¬(¬y) = y
+          ;; Â¬(Â¬y) = y
           (define t4 (simplify-bool* '(not (not y))))
-          ;; ¬(a ∧ b) = (¬a) ∨ (¬b)   (De Morgan)
+          ;; Â¬(a âˆ§ b) = (Â¬a) âˆ¨ (Â¬b)   (De Morgan)
           (define t5 (simplify-bool* '(not (and a b))))
 
           ;; Verify each result
@@ -1463,13 +1453,14 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
     )";
 
     LispVal res = run(src);
-    // (and r1 r2 r3 r4 r5) returns the last truthy value when all pass,
-    // or #f if any check fails.
+    /**
+     * (and r1 r2 r3 r4 r5) returns the last truthy value when all pass,
+     * or #f if any check fails.
+     */
     BOOST_CHECK(res != nanbox::False);
 }
 
 BOOST_AUTO_TEST_CASE(test_boolean_simplifier_identity_and) {
-    // x ∧ ⊤ = x
     LispVal res = run(
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1494,7 +1485,6 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier_identity_and) {
 }
 
 BOOST_AUTO_TEST_CASE(test_boolean_simplifier_double_negation) {
-    // ¬(¬y) = y
     LispVal res = run(
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1516,7 +1506,6 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier_double_negation) {
 }
 
 BOOST_AUTO_TEST_CASE(test_boolean_simplifier_de_morgan) {
-    // ¬(a ∧ b) = (¬a) ∨ (¬b)
     LispVal res = run(
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1543,47 +1532,38 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier_de_morgan) {
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
-// ============================================================================
-// Symbolic differentiation integration test
-//
-// A symbolic algebra system that computes derivatives of expression trees
-// and simplifies the result.  Exercises: defun, cond, let, recursion,
-// quoted symbols, eq?, equal?, =, list, car/cdr, pair?, number?, symbol?,
-// and arithmetic on both runtime values and symbolic trees.
-//
-// Expression language (binary operators):
-//   number      — numeric constant
-//   symbol      — variable name
-//   (+ a b)     — addition
-//   (* a b)     — multiplication
-//   (^ u n)     — power (numeric exponent)
-//   (sin u)     — sine
-//   (cos u)     — cosine
-//   (exp u)     — exponential
-//   (log u)     — natural log
-//
-// Differentiation rules:
-//   d(c)/dv = 0                       (constant)
-//   d(v)/dv = 1                       (identity)
-//   d(a+b)/dv = da/dv + db/dv         (sum rule)
-//   d(a*b)/dv = da*b + a*db           (product rule)
-//   d(u^n)/dv = n*u^(n-1)*du/dv       (power rule, numeric n)
-//   d(sin u)/dv = cos(u)*du/dv        (chain rule)
-//   d(cos u)/dv = -sin(u)*du/dv       (chain rule)
-//   d(exp u)/dv = exp(u)*du/dv        (chain rule)
-//   d(log u)/dv = (1/u)*du/dv         (chain rule)
-//
-// Simplification rules:
-//   0+b = b,  a+0 = a                 (additive identity)
-//   0*b = 0,  a*0 = 0                 (multiplicative annihilator)
-//   1*b = b,  a*1 = a                 (multiplicative identity)
-//   constant folding for + and *
-//   x+x = 2*x                         (combine like terms)
-//   fixed-point iteration
-// ============================================================================
+/**
+ * Symbolic differentiation integration test
+ *
+ * A symbolic algebra system that computes derivatives of expression trees
+ * and simplifies the result.  Exercises: defun, cond, let, recursion,
+ * quoted symbols, eq?, equal?, =, list, car/cdr, pair?, number?, symbol?,
+ * and arithmetic on both runtime values and symbolic trees.
+ *
+ * Expression language (binary operators):
+ *
+ * Differentiation rules:
+ *   d(c)/dv = 0                       (constant)
+ *   d(v)/dv = 1                       (identity)
+ *   d(a+b)/dv = da/dv + db/dv         (sum rule)
+ *   d(a*b)/dv = da*b + a*db           (product rule)
+ *   d(u^n)/dv = n*u^(n-1)*du/dv       (power rule, numeric n)
+ *   d(sin u)/dv = cos(u)*du/dv        (chain rule)
+ *   d(cos u)/dv = -sin(u)*du/dv       (chain rule)
+ *   d(exp u)/dv = exp(u)*du/dv        (chain rule)
+ *   d(log u)/dv = (1/u)*du/dv         (chain rule)
+ *
+ * Simplification rules:
+ *   0+b = b,  a+0 = a                 (additive identity)
+ *   0*b = 0,  a*0 = 0                 (multiplicative annihilator)
+ *   1*b = b,  a*1 = a                 (multiplicative identity)
+ *   constant folding for + and *
+ *   x+x = 2*x                         (combine like terms)
+ *   fixed-point iteration
+ */
 
 BOOST_AUTO_TEST_CASE(test_symbolic_diff_comprehensive) {
-    // Full diff + simplify system with all rules, tested against 4 examples
+    /// Full diff + simplify system with all rules, tested against 4 examples
     std::string src = R"(
         (module m
           ;; Prelude helpers
@@ -1669,16 +1649,16 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_comprehensive) {
 
           ;; Test cases
 
-          ;; 1) d/dx (x² + 3) = 2x
+          ;; 1) d/dx (xÂ² + 3) = 2x
           (define t1 (simplify* (diff '(+ (* x x) 3) 'x)))
 
           ;; 2) d/dx (x(x+3)) = (+ (+ x 3) x)
           (define t2 (simplify* (diff '(* x (+ x 3)) 'x)))
 
-          ;; 3) d/dx sin(x²) = (* (cos (* x x)) (* 2 x))
+          ;; 3) d/dx sin(xÂ²) = (* (cos (* x x)) (* 2 x))
           (define t3 (simplify* (diff '(sin (* x x)) 'x)))
 
-          ;; 4) d/dx (x+1)³ = (* 3 (^ (+ x 1) 2))
+          ;; 4) d/dx (x+1)Â³ = (* 3 (^ (+ x 1) 2))
           (define t4 (simplify* (diff '(^ (+ x 1) 3) 'x)))
 
           ;; Verify each
@@ -1695,7 +1675,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_comprehensive) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_diff_constant) {
-    // d/dx(5) = 0
+    /// d/dx(5) = 0
     LispVal res = run(
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1709,7 +1689,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_constant) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_diff_identity_variable) {
-    // d/dx(x) = 1
+    /// d/dx(x) = 1
     LispVal res = run(
         "(module m"
         "  (defun diff (e v)"
@@ -1722,7 +1702,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_identity_variable) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_diff_other_variable) {
-    // d/dx(y) = 0
+    /// d/dx(y) = 0
     LispVal res = run(
         "(module m"
         "  (defun diff (e v)"
@@ -1735,7 +1715,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_other_variable) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_diff_sum_rule) {
-    // d/dx(x + 3) = (+ 1 0)  (raw, unsimplified)
+    /// d/dx(x + 3) = (+ 1 0)  (raw, unsimplified)
     LispVal res = run(
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1755,7 +1735,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_sum_rule) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_diff_product_rule) {
-    // d/dx(x*x) = (+ (* 1 x) (* x 1))  (raw)
+    /// d/dx(x*x) = (+ (* 1 x) (* x 1))  (raw)
     LispVal res = run(
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1778,7 +1758,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_product_rule) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_diff_power_rule) {
-    // d/dx(x^3) = (* 3 (* (^ x 2) 1))  (raw, before simplification)
+    /// d/dx(x^3) = (* 3 (* (^ x 2) 1))  (raw, before simplification)
     LispVal res = run(
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1801,7 +1781,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_power_rule) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_diff_chain_rule_sin) {
-    // d/dx(sin(x)) = (* (cos x) 1)
+    /// d/dx(sin(x)) = (* (cos x) 1)
     LispVal res = run(
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1821,7 +1801,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_chain_rule_sin) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_simplify_additive_identity) {
-    // 0 + x => x,  x + 0 => x
+    /// 0 + x => x,  x + 0 => x
     std::string src =
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1847,7 +1827,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_simplify_additive_identity) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_simplify_multiplicative_rules) {
-    // 0*x => 0,  1*x => x,  x*1 => x
+    /// 0*x => 0,  1*x => x,  x*1 => x
     std::string src =
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1877,7 +1857,7 @@ BOOST_AUTO_TEST_CASE(test_symbolic_simplify_multiplicative_rules) {
 }
 
 BOOST_AUTO_TEST_CASE(test_symbolic_simplify_constant_folding) {
-    // (+ 2 3) => 5,  (* 4 5) => 20
+    /// (+ 2 3) => 5,  (* 4 5) => 20
     std::string src =
         "(module m"
         "  (defun atom? (x) (not (pair? x)))"
@@ -1913,9 +1893,9 @@ BOOST_AUTO_TEST_CASE(test_symbolic_simplify_constant_folding) {
     BOOST_CHECK(res != nanbox::False);
 }
 
-// ============================================================================
-// syntax-rules macro tests (end-to-end)
-// ============================================================================
+/**
+ * syntax-rules macro tests (end-to-end)
+ */
 
 BOOST_AUTO_TEST_CASE(test_syntax_rules_basic) {
     LispVal res = run(
@@ -2010,8 +1990,10 @@ BOOST_AUTO_TEST_CASE(test_syntax_rules_with_literal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_syntax_rules_hygiene) {
-    // The macro introduces a 'tmp' binding. The user also has a 'tmp' variable.
-    // Hygiene should prevent the macro's 'tmp' from capturing the user's 'tmp'.
+    /**
+     * The macro introduces a 'tmp' binding. The user also has a 'tmp' variable.
+     * Hygiene should prevent the macro's 'tmp' from capturing the user's 'tmp'.
+     */
     LispVal res = run(
         "(module m"
         "  (define-syntax my-or2"
@@ -2022,15 +2004,17 @@ BOOST_AUTO_TEST_CASE(test_syntax_rules_hygiene) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
 }
 
-// ============================================================================
-// Unification tests
-// ============================================================================
+/**
+ * Unification tests
+ */
 
 BOOST_FIXTURE_TEST_SUITE(unification_tests, VMTestFixture)
 
 BOOST_AUTO_TEST_CASE(logic_var_is_unbound_after_creation) {
-    // A freshly created logic variable should display as _G<id>
-    // and logic-var? should return #t
+    /**
+     * A freshly created logic variable should display as _G<id>
+     * and logic-var? should return #t
+     */
     LispVal res = run(
         "(module m"
         "  (define x (logic-var))"
@@ -2084,8 +2068,10 @@ BOOST_AUTO_TEST_CASE(unify_two_vars_then_deref) {
 }
 
 BOOST_AUTO_TEST_CASE(unify_list_patterns) {
-    // (unify '(x 2 3) '(1 y 3)) should bind x=1, y=2
-    // Build lists with cons to avoid requiring std.core
+    /**
+     * (unify '(x 2 3) '(1 y 3)) should bind x=1, y=2
+     * Build lists with cons to avoid requiring std.core
+     */
     LispVal res = run(
         "(module m"
         "  (define x (logic-var))"
@@ -2096,11 +2082,11 @@ BOOST_AUTO_TEST_CASE(unify_list_patterns) {
         "  (define result (+ (deref-lvar x) (deref-lvar y))))");
     auto v = nanbox::ops::decode<int64_t>(res);
     BOOST_REQUIRE(v.has_value());
-    BOOST_CHECK_EQUAL(*v, 3);  // x=1, y=2, sum=3
+    BOOST_CHECK_EQUAL(*v, 3);  ///< x=1, y=2, sum=3
 }
 
 BOOST_AUTO_TEST_CASE(unify_occurs_check_rejects_cycle) {
-    // (unify x (cons x '())) must fail due to the occurs check
+    /// (unify x (cons x '())) must fail due to the occurs check
     LispVal res = run(
         "(module m"
         "  (define x (logic-var))"
@@ -2109,16 +2095,18 @@ BOOST_AUTO_TEST_CASE(unify_occurs_check_rejects_cycle) {
 }
 
 BOOST_AUTO_TEST_CASE(trail_mark_and_unwind) {
-    // Bind a variable, record the mark, unwind, and verify the variable is unbound again
+    /// Bind a variable, record the mark, unwind, and verify the variable is unbound again
     LispVal res = run(
         "(module m"
         "  (define x (logic-var))"
         "  (define mark (trail-mark))"
-        "  (unify x 77)"                         // x = 77
-        "  (unwind-trail mark)"                  // undo — x is unbound again
+        "  (unify x 77)"                         ///< x = 77
+        "  (unwind-trail mark)"
         "  (define result (logic-var? (deref-lvar x))))");
-    // After unwinding, deref-lvar x returns x itself (still a LogicVar)
-    // so logic-var? should be #t
+    /**
+     * After unwinding, deref-lvar x returns x itself (still a LogicVar)
+     * so logic-var? should be #t
+     */
     BOOST_CHECK_EQUAL(res, nanbox::True);
 }
 
@@ -2142,14 +2130,14 @@ BOOST_AUTO_TEST_CASE(backtrack_restores_multiple_bindings) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ============================================================================
-// copy-term opcode tests
-// ============================================================================
+/**
+ * copy-term opcode tests
+ */
 
 BOOST_FIXTURE_TEST_SUITE(copy_term_tests, VMTestFixture)
 
 BOOST_AUTO_TEST_CASE(copy_term_ground_value_unchanged) {
-    // Copying a ground integer returns the same integer
+    /// Copying a ground integer returns the same integer
     LispVal res = run(
         "(module m"
         "  (define result (copy-term 42)))");
@@ -2159,7 +2147,7 @@ BOOST_AUTO_TEST_CASE(copy_term_ground_value_unchanged) {
 }
 
 BOOST_AUTO_TEST_CASE(copy_term_ground_list_unchanged) {
-    // Copying a ground list returns an equal list
+    /// Copying a ground list returns an equal list
     LispVal res = run(
         "(module m"
         "  (define lst (cons 1 (cons 2 (cons 3 '()))))"
@@ -2167,11 +2155,11 @@ BOOST_AUTO_TEST_CASE(copy_term_ground_list_unchanged) {
         "  (define result (+ (car c) (+ (car (cdr c)) (car (cdr (cdr c)))))))");
     auto v = nanbox::ops::decode<int64_t>(res);
     BOOST_REQUIRE(v.has_value());
-    BOOST_CHECK_EQUAL(*v, 6);  // 1 + 2 + 3
+    BOOST_CHECK_EQUAL(*v, 6);  ///< 1 + 2 + 3
 }
 
 BOOST_AUTO_TEST_CASE(copy_term_unbound_var_creates_fresh) {
-    // Copying an unbound variable yields a different unbound variable
+    /// Copying an unbound variable yields a different unbound variable
     LispVal res = run(
         "(module m"
         "  (define x (logic-var))"
@@ -2182,7 +2170,7 @@ BOOST_AUTO_TEST_CASE(copy_term_unbound_var_creates_fresh) {
 }
 
 BOOST_AUTO_TEST_CASE(copy_term_preserves_sharing) {
-    // The same unbound variable appearing twice maps to the same fresh copy
+    /// The same unbound variable appearing twice maps to the same fresh copy
     LispVal res = run(
         "(module m"
         "  (define x (logic-var))"
@@ -2192,11 +2180,11 @@ BOOST_AUTO_TEST_CASE(copy_term_preserves_sharing) {
         "  (define result (deref-lvar (cdr c))))");
     auto v = nanbox::ops::decode<int64_t>(res);
     BOOST_REQUIRE(v.has_value());
-    BOOST_CHECK_EQUAL(*v, 99);  // cdr(c) is the same fresh var as car(c)
+    BOOST_CHECK_EQUAL(*v, 99);  ///< cdr(c) is the same fresh var as car(c)
 }
 
 BOOST_AUTO_TEST_CASE(copy_term_does_not_affect_original) {
-    // Binding the copy does not affect the original template
+    /// Binding the copy does not affect the original template
     LispVal res = run(
         "(module m"
         "  (define x (logic-var))"
@@ -2208,7 +2196,7 @@ BOOST_AUTO_TEST_CASE(copy_term_does_not_affect_original) {
 }
 
 BOOST_AUTO_TEST_CASE(copy_term_mixed_ground_and_vars) {
-    // A list with both ground values and unbound vars copies correctly
+    /// A list with both ground values and unbound vars copies correctly
     LispVal res = run(
         "(module m"
         "  (define x (logic-var))"
@@ -2219,11 +2207,11 @@ BOOST_AUTO_TEST_CASE(copy_term_mixed_ground_and_vars) {
         "                                (car (cdr (cdr c)))))))");
     auto v = nanbox::ops::decode<int64_t>(res);
     BOOST_REQUIRE(v.has_value());
-    BOOST_CHECK_EQUAL(*v, 6);  // 1 + 2 + 3
+    BOOST_CHECK_EQUAL(*v, 6);  ///< 1 + 2 + 3
 }
 
 BOOST_AUTO_TEST_CASE(copy_term_bound_var_copies_value) {
-    // A bound variable is dereferenced; the copy contains the ground value
+    /// A bound variable is dereferenced; the copy contains the ground value
     LispVal res = run(
         "(module m"
         "  (define x (logic-var))"
@@ -2236,7 +2224,7 @@ BOOST_AUTO_TEST_CASE(copy_term_bound_var_copies_value) {
 }
 
 BOOST_AUTO_TEST_CASE(copy_term_nested_pairs) {
-    // Deep nested structure with variables at various depths
+    /// Deep nested structure with variables at various depths
     LispVal res = run(
         "(module m"
         "  (define a (logic-var))"
@@ -2247,14 +2235,14 @@ BOOST_AUTO_TEST_CASE(copy_term_nested_pairs) {
         "  (define result (deref-lvar (cdr (cdr c)))))");
     auto v = nanbox::ops::decode<int64_t>(res);
     BOOST_REQUIRE(v.has_value());
-    BOOST_CHECK_EQUAL(*v, 10);  // sharing preserved across nesting
+    BOOST_CHECK_EQUAL(*v, 10);  ///< sharing preserved across nesting
 }
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ============================================================================
-// fact-table builtin tests
-// ============================================================================
+/**
+ * fact-table builtin tests
+ */
 
 BOOST_FIXTURE_TEST_SUITE(fact_table_tests, VMTestFixture)
 
@@ -2296,7 +2284,7 @@ BOOST_AUTO_TEST_CASE(fact_table_ref_cell) {
         "                    (%fact-table-ref ft 1 1))))");
     auto v = nanbox::ops::decode<int64_t>(res);
     BOOST_REQUIRE(v.has_value());
-    BOOST_CHECK_EQUAL(*v, 50);  // 10 + 40
+    BOOST_CHECK_EQUAL(*v, 50);  ///< 10 + 40
 }
 
 BOOST_AUTO_TEST_CASE(fact_table_query_linear_scan) {
@@ -2342,7 +2330,7 @@ BOOST_AUTO_TEST_CASE(fact_table_query_returns_correct_row_ids) {
         "  (define result (+ v1 v2)))");
     auto v = nanbox::ops::decode<int64_t>(res);
     BOOST_REQUIRE(v.has_value());
-    BOOST_CHECK_EQUAL(*v, 40);  // 10 + 30
+    BOOST_CHECK_EQUAL(*v, 40);  ///< 10 + 30
 }
 
 BOOST_AUTO_TEST_CASE(fact_table_query_no_match) {
@@ -2377,17 +2365,17 @@ BOOST_AUTO_TEST_CASE(fact_table_incremental_index_update) {
     BOOST_CHECK_EQUAL(*v, 2);
 }
 
-BOOST_AUTO_TEST_SUITE_END() // fact_table_tests
+BOOST_AUTO_TEST_SUITE_END() ///< fact_table_tests
 
-// ============================================================================
-// VM runtime bounds-check tests (bug fix: unchecked stack/upval ops, bug #1)
-// These tests directly construct BytecodeFunctions that bypass the deserializer
-// verifier to exercise the VM's own defense-in-depth guards.
-// ============================================================================
+/**
+ * VM runtime bounds-check tests (bug fix: unchecked stack/upval ops, bug #1)
+ * These tests directly construct BytecodeFunctions that bypass the deserializer
+ * verifier to exercise the VM's own defense-in-depth guards.
+ */
 
 BOOST_AUTO_TEST_SUITE(vm_bounds_check_tests)
 
-// Helper: build a VM with a resolved function registry.
+/// Helper: build a VM with a resolved function registry.
 struct BoundsCheckFixture {
     memory::heap::Heap heap{1024 * 1024};
     memory::intern::InternTable intern_table;
@@ -2408,8 +2396,7 @@ struct BoundsCheckFixture {
 };
 
 BOOST_FIXTURE_TEST_CASE(loadlocal_oob_returns_error, BoundsCheckFixture) {
-    // stack_size = 2 but LoadLocal arg = 99 — must return InvalidInstruction,
-    // not crash with undefined behaviour.
+    /// not crash with undefined behaviour.
     BytecodeFunction func;
     func.name       = "oob_loadlocal";
     func.stack_size = 2;
@@ -2422,13 +2409,13 @@ BOOST_FIXTURE_TEST_CASE(loadlocal_oob_returns_error, BoundsCheckFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(storelocal_oob_returns_error, BoundsCheckFixture) {
-    // Push a value then try to store it at an out-of-range slot.
+    /// Push a value then try to store it at an out-of-range slot.
     BytecodeFunction func;
     func.name       = "oob_storelocal";
     func.stack_size = 2;
     func.constants.push_back(nanbox::Nil);
-    func.code.push_back({OpCode::LoadConst,  0u});  // push Nil
-    func.code.push_back({OpCode::StoreLocal, 99u}); // slot 99 — out of range
+    func.code.push_back({OpCode::LoadConst,  0u});  ///< push Nil
+    func.code.push_back({OpCode::StoreLocal, 99u});
     func.code.push_back({OpCode::LoadConst,  0u});
     func.code.push_back({OpCode::Return,     0u});
 
@@ -2436,6 +2423,6 @@ BOOST_FIXTURE_TEST_CASE(storelocal_oob_returns_error, BoundsCheckFixture) {
     BOOST_CHECK(!result.has_value());
 }
 
-BOOST_AUTO_TEST_SUITE_END() // vm_bounds_check_tests
+BOOST_AUTO_TEST_SUITE_END() ///< vm_bounds_check_tests
 
-BOOST_AUTO_TEST_SUITE_END() // vm_tests
+BOOST_AUTO_TEST_SUITE_END() ///< vm_tests

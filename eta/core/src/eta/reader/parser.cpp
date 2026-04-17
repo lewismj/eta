@@ -73,7 +73,7 @@ namespace eta::reader::parser {
         }, expr.value);
     }
 
-    // (no local cloning utilities needed)
+    /// (no local cloning utilities needed)
 
     std::expected<std::vector<SExprPtr>, ReaderError > Parser::parse_toplevel() {
         std::vector<SExprPtr> out;
@@ -85,13 +85,13 @@ namespace eta::reader::parser {
             auto datum = parse_datum();
             if (!datum) return std::unexpected(datum.error());
 
-            // Recognize (module ...)
+            /// Recognize (module ...)
             if ((*datum) && (*datum)->is<List>()) {
                 auto* lst = (*datum)->as<List>();
                 if (lst) {
                     if (auto mod = try_parse_module(*lst)) {
                         ModuleForm mf = std::move(*mod);
-                        mf.span = lst->span; // cover whole list
+                        mf.span = lst->span; ///< cover whole list
                         out.push_back(box(SExprValue{std::move(mf)}));
                         continue;
                     }
@@ -157,7 +157,7 @@ namespace eta::reader::parser {
     }
 
     std::expected<SExprPtr, ReaderError> Parser::parse_list(Token::Kind close_kind, Span open_span) {
-        List lst; lst.span = open_span; // temp; finalize with closer
+        List lst; lst.span = open_span; ///< temp; finalize with closer
 
         while (true) {
             auto t = peek();
@@ -171,8 +171,10 @@ namespace eta::reader::parser {
                 lst.span = merge_spans(open_span, close->span);
                 return box(SExprValue{std::move(lst)});
             }
-            // If we see a closing delimiter that doesn't match the expected one,
-            // treat it as an unclosed list for the current opener, as tests expect.
+            /**
+             * If we see a closing delimiter that doesn't match the expected one,
+             * treat it as an unclosed list for the current opener, as tests expect.
+             */
             if (t->kind == RParen || t->kind == RBracket) {
                 return std::unexpected(ParseError{ParseErrorKind::UnclosedList, open_span});
             }
@@ -183,12 +185,12 @@ namespace eta::reader::parser {
                 if (lst.elems.empty()) {
                     return std::unexpected(ParseError{ParseErrorKind::DotAtListStart, t->span});
                 }
-                (void)advance(); // consume '.'
+                (void)advance(); ///< consume '.'
                 auto tail = parse_datum();
                 if (!tail) return std::unexpected(tail.error());
                 lst.dotted = true;
                 lst.tail = std::move(*tail);
-                continue; // expect the closer next; loop handles it
+                continue; ///< expect the closer next; loop handles it
             }
             auto item = parse_datum();
             if (!item) return std::unexpected(item.error());
@@ -241,9 +243,11 @@ namespace eta::reader::parser {
                 else if (c >= 'A' && c <= 'F') d = 10u + unsigned(c - 'A');
                 else { err = "invalid digit"; return 0; }
                 if (d >= unsigned(base)) { err = "digit out of range"; return 0; }
-                // Guard against overflow before multiplying: if the next step would
-                // push value > 255, reject early.  This also prevents unsigned wrap-around
-                // on 32-bit systems where unsigned long is 32 bits.
+                /**
+                 * Guard against overflow before multiplying: if the next step would
+                 * push value > 255, reject early.  This also prevents unsigned wrap-around
+                 * on 32-bit systems where unsigned long is 32 bits.
+                 */
                 if (value > (255u - d) / unsigned(base)) { err = "byte out of range"; return 0; }
                 value = value * unsigned(base) + d;
             }
@@ -306,9 +310,11 @@ namespace eta::reader::parser {
                     try {
                         val = static_cast<int64_t>(std::stoll(num.text, nullptr, num.radix));
                     } catch (...) {
-                        // stoll failed (e.g. out-of-range).  Only decimal literals can
-                        // meaningfully fall back to a double; non-decimal overflow is an
-                        // error because stod doesn't accept hex/octal/binary digit strings.
+                        /**
+                         * stoll failed (e.g. out-of-range).  Only decimal literals can
+                         * meaningfully fall back to a double; non-decimal overflow is an
+                         * error because stod doesn't accept hex/octal/binary digit strings.
+                         */
                         if (num.radix != 10) {
                             return std::unexpected(ParseError{ParseErrorKind::InvalidNumericLiteral, tok.span});
                         }
@@ -328,7 +334,7 @@ namespace eta::reader::parser {
                 parser::Number n; n.span = tok.span; n.value = val;
                 return box(SExprValue{std::move(n)});
             }
-            // Not atoms - these are structural tokens handled by parse_datum
+            /// Not atoms - these are structural tokens handled by parse_datum
             case LParen:
             case RParen:
             case LBracket:
@@ -343,7 +349,7 @@ namespace eta::reader::parser {
             case EOF_:
                 return std::unexpected(ParseError{ParseErrorKind::InternalNotAnAtom, tok.span});
         }
-        // Unreachable but satisfies compilers that don't understand exhaustive switches
+        /// Unreachable but satisfies compilers that don't understand exhaustive switches
         return std::unexpected(ParseError{ParseErrorKind::InternalNotAnAtom, tok.span});
     }
 
@@ -367,7 +373,7 @@ namespace eta::reader::parser {
             case Backtick: return parse_in_ctx(QuoteKind::Quasiquote);
             case Comma:    return parse_in_ctx(QuoteKind::Unquote);
             case CommaAt:  return parse_in_ctx(QuoteKind::UnquoteSplicing);
-            // Not abbreviation tokens - these should never reach this function
+            /// Not abbreviation tokens - these should never reach this function
             case LParen:
             case RParen:
             case LBracket:
@@ -383,7 +389,7 @@ namespace eta::reader::parser {
             case EOF_:
                 return std::unexpected(ParseError{ParseErrorKind::InternalNotAReaderToken, tok.span});
         }
-        // Unreachable but satisfies compilers that don't understand exhaustive switches
+        /// Unreachable but satisfies compilers that don't understand exhaustive switches
         return std::unexpected(ParseError{ParseErrorKind::InternalNotAReaderToken, tok.span});
     }
 
@@ -415,7 +421,7 @@ namespace eta::reader::parser {
                     mod.body.push_back(std::move(sub->elems[j]));
                 }
             } else {
-                // Preserve other top-level forms (e.g., define, import)
+                /// Preserve other top-level forms (e.g., define, import)
                 mod.body.push_back(std::move(list.elems[i]));
             }
         }
@@ -423,4 +429,4 @@ namespace eta::reader::parser {
         return mod;
     }
 
-} // namespace eta::reader
+} ///< namespace eta::reader

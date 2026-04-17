@@ -28,7 +28,7 @@ using namespace eta::runtime::memory::intern;
  *   auto sv = StringView::from(val, intern_table, heap);
  *   if (sv) {
  *       std::string_view str = sv->view();
- *       // use str...
+ *       ///< use str...
  *   }
  */
 class StringView {
@@ -80,7 +80,7 @@ public:
         LispVal a, LispVal b,
         InternTable& intern_table
     ) {
-        // Fast path: if both are the same value, they're equal
+        /// Fast path: if both are the same value, they're equal
         if (a == b) return true;
 
         auto sv_a = from(a, intern_table);
@@ -92,13 +92,13 @@ public:
         return sv_a->view() == sv_b->view();
     }
 
-    // Accessors
+    /// Accessors
     [[nodiscard]] std::string_view view() const noexcept { return view_; }
 
-    // Implicit conversion to string_view
+    /// Implicit conversion to string_view
     operator std::string_view() const noexcept { return view_; }
 
-    // String operations (delegated to string_view)
+    /// String operations (delegated to string_view)
     [[nodiscard]] std::size_t size() const noexcept { return view_.size(); }
     [[nodiscard]] bool empty() const noexcept { return view_.empty(); }
     [[nodiscard]] const char* data() const noexcept { return view_.data(); }
@@ -135,5 +135,5 @@ inline std::expected<std::string_view, RuntimeError> get_symbol_name(
     return std::unexpected(VMError{RuntimeErrorCode::TypeError, "Invalid symbol ID"});
 }
 
-} // namespace eta::runtime
+} ///< namespace eta::runtime
 

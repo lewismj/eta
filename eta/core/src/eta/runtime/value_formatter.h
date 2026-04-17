@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <bit>
 #include <iomanip>
@@ -36,5 +36,5 @@ enum class FormatMode { Display, Write };
  */
 std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& intern_table);
 
-} // namespace eta::runtime
+} ///< namespace eta::runtime
 

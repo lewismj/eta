@@ -31,9 +31,11 @@ namespace eta::runtime::types {
         double   adjoint {};    ///< Accumulated adjoint (filled during backward)
     };
 
-    /// The tape: a flat vector of TapeEntry nodes.
-    /// Forward pass appends entries; backward pass sweeps in reverse
-    /// accumulating adjoints via the chain rule.
+    /**
+     * The tape: a flat vector of TapeEntry nodes.
+     * Forward pass appends entries; backward pass sweeps in reverse
+     * accumulating adjoints via the chain rule.
+     */
     struct Tape {
         std::vector<TapeEntry> entries;
 
@@ -58,13 +60,13 @@ namespace eta::runtime::types {
         void backward(uint32_t output_idx) {
             if (output_idx >= entries.size()) return;
 
-            // Zero all adjoints first
+            /// Zero all adjoints first
             for (auto& e : entries) e.adjoint = 0.0;
 
-            // Seed the output
+            /// Seed the output
             entries[output_idx].adjoint = 1.0;
 
-            // Reverse sweep from output_idx down to 0
+            /// Reverse sweep from output_idx down to 0
             for (int64_t i = static_cast<int64_t>(output_idx); i >= 0; --i) {
                 auto& e = entries[static_cast<std::size_t>(i)];
                 double adj = e.adjoint;
@@ -73,56 +75,54 @@ namespace eta::runtime::types {
                 switch (e.op) {
                     case TapeOp::Const:
                     case TapeOp::Var:
-                        // Leaf nodes — nothing to propagate
                         break;
 
                     case TapeOp::Add:
-                        // z = a + b;  dz/da = 1, dz/db = 1
+                        /// z = a + b;  dz/da = 1, dz/db = 1
                         entries[e.left].adjoint  += adj;
                         entries[e.right].adjoint += adj;
                         break;
 
                     case TapeOp::Sub:
-                        // z = a - b;  dz/da = 1, dz/db = -1
+                        /// z = a - b;  dz/da = 1, dz/db = -1
                         entries[e.left].adjoint  += adj;
                         entries[e.right].adjoint -= adj;
                         break;
 
                     case TapeOp::Mul:
-                        // z = a * b;  dz/da = b, dz/db = a
+                        /// z = a * b;  dz/da = b, dz/db = a
                         entries[e.left].adjoint  += adj * entries[e.right].primal;
                         entries[e.right].adjoint += adj * entries[e.left].primal;
                         break;
 
                     case TapeOp::Div:
-                        // z = a / b;  dz/da = 1/b, dz/db = -a/b²
                         entries[e.left].adjoint  += adj / entries[e.right].primal;
                         entries[e.right].adjoint -= adj * entries[e.left].primal
                                                       / (entries[e.right].primal * entries[e.right].primal);
                         break;
 
                     case TapeOp::Exp:
-                        // z = exp(a);  dz/da = exp(a) = z
+                        /// z = exp(a);  dz/da = exp(a) = z
                         entries[e.left].adjoint += adj * e.primal;
                         break;
 
                     case TapeOp::Log:
-                        // z = log(a);  dz/da = 1/a
+                        /// z = log(a);  dz/da = 1/a
                         entries[e.left].adjoint += adj / entries[e.left].primal;
                         break;
 
                     case TapeOp::Sqrt:
-                        // z = sqrt(a);  dz/da = 1/(2*sqrt(a)) = 1/(2*z)
+                        /// z = sqrt(a);  dz/da = 1/(2*sqrt(a)) = 1/(2*z)
                         entries[e.left].adjoint += adj / (2.0 * e.primal);
                         break;
 
                     case TapeOp::Sin:
-                        // z = sin(a);  dz/da = cos(a)
+                        /// z = sin(a);  dz/da = cos(a)
                         entries[e.left].adjoint += adj * std::cos(entries[e.left].primal);
                         break;
 
                     case TapeOp::Cos:
-                        // z = cos(a);  dz/da = -sin(a)
+                        /// z = cos(a);  dz/da = -sin(a)
                         entries[e.left].adjoint -= adj * std::sin(entries[e.left].primal);
                         break;
                 }
@@ -130,5 +130,5 @@ namespace eta::runtime::types {
         }
     };
 
-} // namespace eta::runtime::types
+} ///< namespace eta::runtime::types
 

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <iomanip>
@@ -29,7 +29,7 @@ public:
 
     /// Disassemble a single BytecodeFunction.
     void disassemble(const BytecodeFunction& func, std::ostream& os) const {
-        // Header
+        /// Header
         os << "=== " << (func.name.empty() ? "<anonymous>" : func.name) << " ===\n";
         os << "  arity:      " << func.arity
            << (func.has_rest ? " + rest" : "") << '\n';
@@ -54,7 +54,7 @@ public:
             os << "]\n";
         }
 
-        // Constant pool
+        /// Constant pool
         if (!func.constants.empty()) {
             os << "  -- constant pool --\n";
             for (std::size_t i = 0; i < func.constants.size(); ++i) {
@@ -62,14 +62,14 @@ public:
             }
         }
 
-        // Instructions
+        /// Instructions
         os << "  -- code --\n";
         for (std::size_t i = 0; i < func.code.size(); ++i) {
             const auto& instr = func.code[i];
             os << "    " << std::setw(4) << i << ": "
                << std::left << std::setw(20) << to_string(instr.opcode);
 
-            // Decode meaningful arg for opcodes that use it
+            /// Decode meaningful arg for opcodes that use it
             switch (instr.opcode) {
                 case OpCode::LoadConst:
                     os << instr.arg;
@@ -113,15 +113,15 @@ public:
                 case OpCode::CopyTerm:
                 case OpCode::_Reserved1:
                 case OpCode::_Reserved2:
-                    // No arg to display
+                    /// No arg to display
                     break;
                 default:
-                    // Generic arg display for Load/Store/Call/Jump etc.
+                    /// Generic arg display for Load/Store/Call/Jump etc.
                     os << instr.arg;
                     break;
             }
 
-            // Append source span if available
+            /// Append source span if available
             if (i < func.source_map.size()) {
                 const auto& sp = func.source_map[i];
                 if (sp.file_id != 0 || sp.start.line != 0) {
@@ -199,5 +199,5 @@ private:
     }
 };
 
-} // namespace eta::runtime::vm
+} ///< namespace eta::runtime::vm
 

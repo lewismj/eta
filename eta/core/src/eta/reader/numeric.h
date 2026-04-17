@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cctype>
 #include <cstdint>
@@ -23,15 +23,15 @@ namespace numeric {
 struct NumericParseResult {
     enum class Kind : std::uint8_t {
         Invalid,
-        Fixnum,      // Integer (any radix)
-        Flonum,      // Floating-point (decimal only)
-        SpecialFloat // +inf.0, -inf.0, +nan.0, -nan.0
+        Fixnum,      ///< Integer (any radix)
+        Flonum,      ///< Floating-point (decimal only)
+        SpecialFloat ///< +inf.0, -inf.0, +nan.0, -nan.0
     };
 
     Kind kind{Kind::Invalid};
-    std::string text;           // Original text representation
-    std::uint8_t radix{10};     // 2, 8, 10, or 16
-    std::string error_message;  // Non-empty if kind == Invalid
+    std::string text;           ///< Original text representation
+    std::uint8_t radix{10};     ///< 2, 8, 10, or 16
+    std::string error_message;  ///< Non-empty if kind == Invalid
 };
 
 /**
@@ -61,13 +61,13 @@ inline bool is_sign(char c) noexcept {
 inline bool is_special_float(std::string_view s) noexcept {
     if (s.size() < 5) return false;
 
-    // Normalize: skip optional sign
+    /// Normalize: skip optional sign
     std::size_t start = 0;
     if (s[0] == '+' || s[0] == '-') start = 1;
 
     if (s.size() - start != 5) return false;
 
-    // Case-insensitive comparison
+    /// Case-insensitive comparison
     std::string lower;
     for (std::size_t i = start; i < s.size(); ++i) {
         lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(s[i]))));
@@ -100,14 +100,14 @@ public:
             return result;
         }
 
-        // Check for special IEEE literals first (decimal only)
+        /// Check for special IEEE literals first (decimal only)
         if (radix_ == 10 && is_special_float(input_)) {
             result.kind = NumericParseResult::Kind::SpecialFloat;
             result.text = std::string(input_);
             return result;
         }
 
-        // Parse optional sign
+        /// Parse optional sign
         std::string text;
         if (pos_ < input_.size() && is_sign(input_[pos_])) {
             text.push_back(input_[pos_++]);
@@ -119,7 +119,7 @@ public:
             return result;
         }
 
-        // Collect digits based on radix
+        /// Collect digits based on radix
         if (radix_ == 10) {
             return parse_decimal(std::move(text));
         } else {
@@ -136,13 +136,13 @@ private:
         bool has_dot = false;
         bool has_exponent = false;
 
-        // Integer part
+        /// Integer part
         while (pos_ < input_.size() && std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
             text.push_back(input_[pos_++]);
             has_digits = true;
         }
 
-        // Fractional part
+        /// Fractional part
         if (pos_ < input_.size() && input_[pos_] == '.') {
             text.push_back(input_[pos_++]);
             has_dot = true;
@@ -153,17 +153,17 @@ private:
             }
         }
 
-        // Exponent part
+        /// Exponent part
         if (pos_ < input_.size() && (input_[pos_] == 'e' || input_[pos_] == 'E')) {
             text.push_back(input_[pos_++]);
             has_exponent = true;
 
-            // Optional exponent sign
+            /// Optional exponent sign
             if (pos_ < input_.size() && is_sign(input_[pos_])) {
                 text.push_back(input_[pos_++]);
             }
 
-            // Exponent digits (required)
+            /// Exponent digits (required)
             bool has_exp_digits = false;
             while (pos_ < input_.size() && std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
                 text.push_back(input_[pos_++]);
@@ -183,7 +183,7 @@ private:
             return result;
         }
 
-        // Check for trailing invalid characters
+        /// Check for trailing invalid characters
         if (pos_ < input_.size()) {
             result.kind = NumericParseResult::Kind::Invalid;
             result.error_message = "invalid character in number";
@@ -214,7 +214,7 @@ private:
             return result;
         }
 
-        // Check for trailing invalid characters
+        /// Check for trailing invalid characters
         if (pos_ < input_.size()) {
             result.kind = NumericParseResult::Kind::Invalid;
             result.error_message = "invalid digit for radix";
@@ -262,6 +262,6 @@ inline bool is_valid_decimal(std::string_view s) noexcept {
     return result.kind != NumericParseResult::Kind::Invalid;
 }
 
-} // namespace numeric
-} // namespace eta::reader::lexer
+} ///< namespace numeric
+} ///< namespace eta::reader::lexer
 

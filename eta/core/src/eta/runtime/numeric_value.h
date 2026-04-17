@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <limits>
@@ -27,8 +27,8 @@ enum class NumType : uint8_t { Fixnum, Flonum, Invalid };
 
 struct NumericValue {
     NumType type;
-    int64_t int_val;    // Valid when type == Fixnum
-    double  float_val;  // Valid when type == Flonum
+    int64_t int_val;    ///< Valid when type == Fixnum
+    double  float_val;  ///< Valid when type == Flonum
 
     [[nodiscard]] bool is_valid()  const noexcept { return type != NumType::Invalid; }
     [[nodiscard]] bool is_fixnum() const noexcept { return type == NumType::Fixnum;  }
@@ -57,7 +57,7 @@ struct NumericClassifier final : ValueVisitor<NumericValue> {
         return {NumType::Flonum, 0, v};
     }
     NumericValue visit_heapref(uint64_t obj_id) override {
-        // Heap-allocated fixnum (64-bit integers that don't fit in 47-bit immediate)
+        /// Heap-allocated fixnum (64-bit integers that don't fit in 47-bit immediate)
         HeapEntry entry;
         if (heap.try_get(obj_id, entry) && entry.header.kind == ObjectKind::Fixnum) {
             return {NumType::Fixnum, *static_cast<int64_t*>(entry.ptr), 0.0};
@@ -77,5 +77,5 @@ inline NumericValue classify_numeric(LispVal v, Heap& heap) {
     return visit_value(v, c);
 }
 
-} // namespace eta::runtime
+} ///< namespace eta::runtime
 

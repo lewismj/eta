@@ -15,7 +15,7 @@
 
 namespace eta::runtime {
 
-namespace dr = eta::reader::parser;    // alias to avoid pulling in conflicting names
+namespace dr = eta::reader::parser;    ///< alias to avoid pulling in conflicting names
 
 using namespace eta::runtime::nanbox;
 using namespace eta::runtime::error;
@@ -55,7 +55,7 @@ sexpr_to_value(const dr::SExpr& expr, Heap& heap, InternTable& intern) {
                 if constexpr (std::is_same_v<N, int64_t>) {
                     return make_fixnum(heap, n);
                 } else {
-                    // double
+                    /// double
                     auto enc = make_flonum(n);
                     if (!enc.has_value()) {
                         return std::unexpected(VMError{
@@ -77,8 +77,10 @@ sexpr_to_value(const dr::SExpr& expr, Heap& heap, InternTable& intern) {
             return *res;
         }
         else if constexpr (std::is_same_v<T, dr::List>) {
-            // Build the list from back to front.
-            // Start with the tail (Nil for proper lists, converted tail for dotted).
+            /**
+             * Build the list from back to front.
+             * Start with the tail (Nil for proper lists, converted tail for dotted).
+             */
             LispVal tail = nanbox::Nil;
             if (node.dotted && node.tail) {
                 auto tail_res = sexpr_to_value(*node.tail, heap, intern);
@@ -86,7 +88,7 @@ sexpr_to_value(const dr::SExpr& expr, Heap& heap, InternTable& intern) {
                 tail = *tail_res;
             }
 
-            // Walk elements in reverse, consing each onto the tail.
+            /// Walk elements in reverse, consing each onto the tail.
             for (auto it = node.elems.rbegin(); it != node.elems.rend(); ++it) {
                 auto elem_res = sexpr_to_value(**it, heap, intern);
                 if (!elem_res.has_value()) return std::unexpected(elem_res.error());
@@ -110,11 +112,7 @@ sexpr_to_value(const dr::SExpr& expr, Heap& heap, InternTable& intern) {
             return make_bytevector(heap, std::vector<uint8_t>(node.bytes));
         }
         else if constexpr (std::is_same_v<T, dr::ReaderForm>) {
-            // Convert reader abbreviations to their list form:
-            //   'x      → (quote x)
-            //   `x      → (quasiquote x)
-            //   ,x      → (unquote x)
-            //   ,@x     → (unquote-splicing x)
+            /// Convert reader abbreviations to their list form:
             const char* keyword = nullptr;
             switch (node.kind) {
                 case dr::QuoteKind::Quote:           keyword = "quote"; break;
@@ -130,13 +128,13 @@ sexpr_to_value(const dr::SExpr& expr, Heap& heap, InternTable& intern) {
             auto inner_res = sexpr_to_value(*node.expr, heap, intern);
             if (!inner_res.has_value()) return std::unexpected(inner_res.error());
 
-            // Build (keyword inner) as two-element list
+            /// Build (keyword inner) as two-element list
             auto inner_cons = make_cons(heap, *inner_res, nanbox::Nil);
             if (!inner_cons.has_value()) return std::unexpected(inner_cons.error());
             return make_cons(heap, *sym_res, *inner_cons);
         }
         else if constexpr (std::is_same_v<T, dr::ModuleForm>) {
-            // Module forms are not expected in wire-format data.
+            /// Module forms are not expected in wire-format data.
             return std::unexpected(VMError{
                 RuntimeErrorCode::InternalError,
                 "datum_reader: cannot convert module form to runtime value"});
@@ -167,17 +165,17 @@ parse_datum_string(std::string_view source, Heap& heap, InternTable& intern) {
 
     auto datum_res = parser.parse_datum();
     if (!datum_res.has_value()) {
-        // Map ReaderError to RuntimeError (VMError)
+        /// Map ReaderError to RuntimeError (VMError)
         std::string msg = "datum_reader: parse error: ";
         std::visit([&](const auto& err) {
             using E = std::decay_t<decltype(err)>;
             if constexpr (std::is_same_v<E, reader::parser::ParseError>) {
                 msg += reader::parser::to_string(err.kind);
             } else {
-                // LexError
+                /// LexError
                 msg += reader::lexer::to_string(err.kind);
                 if (!err.message.empty()) {
-                    msg += " — ";
+                    msg += " â€” ";
                     msg += err.message;
                 }
             }
@@ -195,5 +193,5 @@ parse_datum_string(std::string_view source, Heap& heap, InternTable& intern) {
     return sexpr_to_value(**datum_res, heap, intern);
 }
 
-} // namespace eta::runtime
+} ///< namespace eta::runtime
 

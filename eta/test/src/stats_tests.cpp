@@ -1,4 +1,4 @@
-#include <boost/test/unit_test.hpp>
+﻿#include <boost/test/unit_test.hpp>
 
 #include <eta/runtime/memory/heap.h>
 #include <eta/runtime/memory/intern_table.h>
@@ -125,7 +125,6 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(stats_tests)
 
-// ─── builtin names via register_stats_primitives ─────────────────────
 
 BOOST_AUTO_TEST_CASE(builtin_names_smoke) {
     Heap heap(1ull << 22);
@@ -141,7 +140,6 @@ BOOST_AUTO_TEST_CASE(builtin_names_smoke) {
     BOOST_TEST(env.lookup("%stats-ols-multi").has_value());
 }
 
-// ─── %stats-mean-vec (fact-table form) ───────────────────────────────
 
 BOOST_AUTO_TEST_CASE(mean_vec_fact_table) {
     Heap heap(1ull << 22);
@@ -149,7 +147,7 @@ BOOST_AUTO_TEST_CASE(mean_vec_fact_table) {
     BuiltinEnvironment env;
     register_stats_primitives(env, heap, intern, nullptr);
 
-    // 3 rows, 2 columns: x=[1,2,3], y=[4,5,6]
+    /// 3 rows, 2 columns: x=[1,2,3], y=[4,5,6]
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{1,2,3}, {4,5,6}});
     auto cols = ints_to_list(heap, {0, 1});
 
@@ -165,7 +163,6 @@ BOOST_AUTO_TEST_CASE(mean_vec_fact_table) {
     BOOST_TEST(std::abs(means[1] - 5.0) < 1e-10);
 }
 
-// ─── %stats-mean-vec (list-of-sequences form) ───────────────────────
 
 BOOST_AUTO_TEST_CASE(mean_vec_list_of_seqs) {
     Heap heap(1ull << 22);
@@ -187,7 +184,6 @@ BOOST_AUTO_TEST_CASE(mean_vec_list_of_seqs) {
     BOOST_TEST(std::abs(means[1] - 5.0) < 1e-10);
 }
 
-// ─── %stats-var-vec ──────────────────────────────────────────────────
 
 BOOST_AUTO_TEST_CASE(var_vec_fact_table) {
     Heap heap(1ull << 22);
@@ -195,7 +191,7 @@ BOOST_AUTO_TEST_CASE(var_vec_fact_table) {
     BuiltinEnvironment env;
     register_stats_primitives(env, heap, intern, nullptr);
 
-    // x=[2,4,6], y=[1,1,1]
+    /// x=[2,4,6], y=[1,1,1]
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{2,4,6}, {1,1,1}});
     auto cols = ints_to_list(heap, {0, 1});
 
@@ -207,11 +203,10 @@ BOOST_AUTO_TEST_CASE(var_vec_fact_table) {
 
     auto vars = list_to_vec(heap, *result);
     BOOST_REQUIRE_EQUAL(vars.size(), 2u);
-    BOOST_TEST(std::abs(vars[0] - 4.0) < 1e-10);  // var([2,4,6]) = 4
-    BOOST_TEST(std::abs(vars[1] - 0.0) < 1e-10);  // var([1,1,1]) = 0
+    BOOST_TEST(std::abs(vars[0] - 4.0) < 1e-10);  ///< var([2,4,6]) = 4
+    BOOST_TEST(std::abs(vars[1] - 0.0) < 1e-10);  ///< var([1,1,1]) = 0
 }
 
-// ─── %stats-cov-matrix ──────────────────────────────────────────────
 
 BOOST_AUTO_TEST_CASE(cov_matrix_fact_table) {
     Heap heap(1ull << 22);
@@ -219,7 +214,7 @@ BOOST_AUTO_TEST_CASE(cov_matrix_fact_table) {
     BuiltinEnvironment env;
     register_stats_primitives(env, heap, intern, nullptr);
 
-    // x=[1,2,3,4,5], y=[2,4,6,8,10]  (y = 2x, perfect correlation)
+    /// x=[1,2,3,4,5], y=[2,4,6,8,10]  (y = 2x, perfect correlation)
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{1,2,3,4,5}, {2,4,6,8,10}});
     auto cols = ints_to_list(heap, {0, 1});
 
@@ -232,7 +227,7 @@ BOOST_AUTO_TEST_CASE(cov_matrix_fact_table) {
     auto mat = nested_list_to_matrix(heap, *result);
     BOOST_REQUIRE_EQUAL(mat.size(), 2u);
     BOOST_REQUIRE_EQUAL(mat[0].size(), 2u);
-    // cov(x,x) = 2.5, cov(x,y) = 5.0, cov(y,y) = 10.0
+    /// cov(x,x) = 2.5, cov(x,y) = 5.0, cov(y,y) = 10.0
     BOOST_TEST(std::abs(mat[0][0] - 2.5) < 1e-10);
     BOOST_TEST(std::abs(mat[0][1] - 5.0) < 1e-10);
     BOOST_TEST(std::abs(mat[1][0] - 5.0) < 1e-10);
@@ -261,7 +256,6 @@ BOOST_AUTO_TEST_CASE(cov_matrix_list_of_seqs) {
     BOOST_TEST(std::abs(mat[1][1] - 10.0) < 1e-10);
 }
 
-// ─── %stats-cor-matrix ──────────────────────────────────────────────
 
 BOOST_AUTO_TEST_CASE(cor_matrix_perfect) {
     Heap heap(1ull << 22);
@@ -269,7 +263,6 @@ BOOST_AUTO_TEST_CASE(cor_matrix_perfect) {
     BuiltinEnvironment env;
     register_stats_primitives(env, heap, intern, nullptr);
 
-    // y = 2x → perfect correlation
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{1,2,3,4,5}, {2,4,6,8,10}});
     auto cols = ints_to_list(heap, {0, 1});
 
@@ -287,7 +280,6 @@ BOOST_AUTO_TEST_CASE(cor_matrix_perfect) {
     BOOST_TEST(std::abs(mat[1][1] - 1.0) < 1e-10);
 }
 
-// ─── %stats-quantile-vec ─────────────────────────────────────────────
 
 BOOST_AUTO_TEST_CASE(quantile_vec_median_ft) {
     Heap heap(1ull << 22);
@@ -307,7 +299,7 @@ BOOST_AUTO_TEST_CASE(quantile_vec_median_ft) {
 
     auto qs = list_to_vec(heap, *result);
     BOOST_REQUIRE_EQUAL(qs.size(), 1u);
-    BOOST_TEST(std::abs(qs[0] - 3.0) < 1e-10);  // median of [1,2,3,4,5]
+    BOOST_TEST(std::abs(qs[0] - 3.0) < 1e-10);  ///< median of [1,2,3,4,5]
 }
 
 BOOST_AUTO_TEST_CASE(quantile_vec_median_seqs) {
@@ -330,7 +322,6 @@ BOOST_AUTO_TEST_CASE(quantile_vec_median_seqs) {
     BOOST_TEST(std::abs(qs[0] - 3.0) < 1e-10);
 }
 
-// ─── %stats-ols-multi ────────────────────────────────────────────────
 
 BOOST_AUTO_TEST_CASE(ols_multi_simple_linear_ft) {
     Heap heap(1ull << 22);
@@ -338,7 +329,7 @@ BOOST_AUTO_TEST_CASE(ols_multi_simple_linear_ft) {
     BuiltinEnvironment env;
     register_stats_primitives(env, heap, intern, nullptr);
 
-    // y = 2x + 1 (exact fit: intercept=1, slope=2)
+    /// y = 2x + 1 (exact fit: intercept=1, slope=2)
     auto ft = make_test_fact_table(heap, {"x", "y"}, {{1,2,3,4,5}, {3,5,7,9,11}});
     auto y_col = *ops::encode(static_cast<int64_t>(1));
     auto x_cols = ints_to_list(heap, {0});
@@ -349,7 +340,7 @@ BOOST_AUTO_TEST_CASE(ols_multi_simple_linear_ft) {
     auto result = env.specs()[*idx].func(args);
     BOOST_REQUIRE(result.has_value());
 
-    // Walk the alist and extract coefficients
+    /// Walk the alist and extract coefficients
     LispVal cur = *result;
     auto* first = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
     BOOST_REQUIRE(first != nullptr);
@@ -357,10 +348,10 @@ BOOST_AUTO_TEST_CASE(ols_multi_simple_linear_ft) {
     BOOST_REQUIRE(coeff_pair != nullptr);
     auto coeffs = list_to_vec(heap, coeff_pair->cdr);
     BOOST_REQUIRE_EQUAL(coeffs.size(), 2u);
-    BOOST_TEST(std::abs(coeffs[0] - 1.0) < 1e-8);  // intercept
-    BOOST_TEST(std::abs(coeffs[1] - 2.0) < 1e-8);  // slope
+    BOOST_TEST(std::abs(coeffs[0] - 1.0) < 1e-8);  ///< intercept
+    BOOST_TEST(std::abs(coeffs[1] - 2.0) < 1e-8);  ///< slope
 
-    // Walk to r-squared (5th entry in alist)
+    /// Walk to r-squared (5th entry in alist)
     cur = first->cdr;
     for (int i = 0; i < 3; ++i) {
         auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
@@ -382,7 +373,7 @@ BOOST_AUTO_TEST_CASE(ols_multi_simple_linear_seqs) {
     BuiltinEnvironment env;
     register_stats_primitives(env, heap, intern, nullptr);
 
-    // y = 2x + 1
+    /// y = 2x + 1
     auto y_seq = doubles_to_list(heap, {3,5,7,9,11});
     auto x_seqs = make_seq_list(heap, {{1,2,3,4,5}});
 
@@ -408,7 +399,7 @@ BOOST_AUTO_TEST_CASE(ols_multi_two_predictors) {
     BuiltinEnvironment env;
     register_stats_primitives(env, heap, intern, nullptr);
 
-    // y = 1 + 2*x1 + 3*x2  (exact)
+    /// y = 1 + 2*x1 + 3*x2  (exact)
     auto ft = make_test_fact_table(heap, {"x1", "x2", "y"},
                                     {{1,0,0,1,2}, {0,1,0,1,1}, {3,4,1,6,8}});
     auto y_col = *ops::encode(static_cast<int64_t>(2));
@@ -426,14 +417,12 @@ BOOST_AUTO_TEST_CASE(ols_multi_two_predictors) {
     BOOST_REQUIRE(coeff_pair != nullptr);
     auto coeffs = list_to_vec(heap, coeff_pair->cdr);
     BOOST_REQUIRE_EQUAL(coeffs.size(), 3u);
-    BOOST_TEST(std::abs(coeffs[0] - 1.0) < 1e-8);  // intercept
-    BOOST_TEST(std::abs(coeffs[1] - 2.0) < 1e-8);  // x1 coefficient
-    BOOST_TEST(std::abs(coeffs[2] - 3.0) < 1e-8);  // x2 coefficient
+    BOOST_TEST(std::abs(coeffs[0] - 1.0) < 1e-8);  ///< intercept
+    BOOST_TEST(std::abs(coeffs[1] - 2.0) < 1e-8);  ///< x1 coefficient
+    BOOST_TEST(std::abs(coeffs[2] - 3.0) < 1e-8);  ///< x2 coefficient
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Eigen-backed stats_math.h unit tests
-// ═══════════════════════════════════════════════════════════════════════
+/// Eigen-backed stats_math.h unit tests
 
 BOOST_AUTO_TEST_CASE(eigen_mean_basic) {
     Eigen::VectorXd v(5);
@@ -449,7 +438,7 @@ BOOST_AUTO_TEST_CASE(eigen_mean_empty) {
 BOOST_AUTO_TEST_CASE(eigen_variance_basic) {
     Eigen::VectorXd v(3);
     v << 2, 4, 6;
-    // sample variance = ((2-4)^2 + (4-4)^2 + (6-4)^2) / 2 = 4.0
+    /// sample variance = ((2-4)^2 + (4-4)^2 + (6-4)^2) / 2 = 4.0
     BOOST_TEST(std::abs(stats::variance(v) - 4.0) < 1e-12);
 }
 
@@ -462,7 +451,7 @@ BOOST_AUTO_TEST_CASE(eigen_stddev_basic) {
 BOOST_AUTO_TEST_CASE(eigen_sem_basic) {
     Eigen::VectorXd v(4);
     v << 2, 4, 6, 8;
-    // stddev = sqrt(20/3), sem = stddev / sqrt(4)
+    /// stddev = sqrt(20/3), sem = stddev / sqrt(4)
     double expected_sem = std::sqrt(20.0 / 3.0) / 2.0;
     BOOST_TEST(std::abs(stats::sem(v) - expected_sem) < 1e-12);
 }
@@ -492,14 +481,13 @@ BOOST_AUTO_TEST_CASE(eigen_correlation_perfect) {
 }
 
 BOOST_AUTO_TEST_CASE(eigen_t_cdf_symmetry) {
-    // CDF at 0 should be 0.5 for any df
+    /// CDF at 0 should be 0.5 for any df
     BOOST_TEST(std::abs(stats::t_cdf(0.0, 10.0) - 0.5) < 1e-10);
-    // CDF is monotonically increasing: cdf(2, 10) > cdf(0, 10)
+    /// CDF is monotonically increasing: cdf(2, 10) > cdf(0, 10)
     BOOST_TEST(stats::t_cdf(2.0, 10.0) > 0.5);
 }
 
 BOOST_AUTO_TEST_CASE(eigen_t_quantile_roundtrip) {
-    // quantile(cdf(t, df), df) ≈ t
     double t = 1.5, df = 15.0;
     double p = stats::t_cdf(t, df);
     double t_back = stats::t_quantile(p, df);
@@ -509,7 +497,7 @@ BOOST_AUTO_TEST_CASE(eigen_t_quantile_roundtrip) {
 BOOST_AUTO_TEST_CASE(eigen_ols_perfect_fit) {
     Eigen::VectorXd x(5), y(5);
     x << 1, 2, 3, 4, 5;
-    y << 3, 5, 7, 9, 11;  // y = 2x + 1
+    y << 3, 5, 7, 9, 11;  ///< y = 2x + 1
     auto r = stats::ols(x, y);
     BOOST_REQUIRE(r.has_value());
     BOOST_TEST(std::abs(r->slope - 2.0) < 1e-8);
@@ -523,9 +511,9 @@ BOOST_AUTO_TEST_CASE(eigen_t_test_identical_samples) {
     y << 1, 2, 3, 4, 5;
     auto r = stats::t_test_2(x, y);
     BOOST_REQUIRE(r.has_value());
-    BOOST_TEST(std::abs(r->t_stat) < 1e-10);      // t ≈ 0
-    BOOST_TEST(std::abs(r->mean_diff) < 1e-10);    // no difference
-    BOOST_TEST(r->p_value > 0.99);                 // not significant
+    BOOST_TEST(std::abs(r->t_stat) < 1e-10);
+    BOOST_TEST(std::abs(r->mean_diff) < 1e-10);    ///< no difference
+    BOOST_TEST(r->p_value > 0.99);                 ///< not significant
 }
 
 BOOST_AUTO_TEST_CASE(eigen_ci_mean_basic) {
@@ -539,7 +527,6 @@ BOOST_AUTO_TEST_CASE(eigen_ci_mean_basic) {
     BOOST_TEST(ci->margin > 0.0);
 }
 
-// ─── std::vector<double> overload tests (backward compat) ────────────
 
 BOOST_AUTO_TEST_CASE(stdvec_overloads_work) {
     std::vector<double> v = {1, 2, 3, 4, 5};
@@ -559,9 +546,7 @@ BOOST_AUTO_TEST_CASE(stdvec_overloads_work) {
     BOOST_TEST(std::abs(r->intercept - 0.0) < 1e-8);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Polymorphic to_eigen extraction tests (stats_extract.h)
-// ═══════════════════════════════════════════════════════════════════════
+/// Polymorphic to_eigen extraction tests (stats_extract.h)
 
 BOOST_AUTO_TEST_CASE(to_eigen_from_list) {
     Heap heap(1ull << 22);
@@ -583,7 +568,7 @@ BOOST_AUTO_TEST_CASE(to_eigen_from_empty_list) {
 
 BOOST_AUTO_TEST_CASE(to_eigen_from_vector) {
     Heap heap(1ull << 22);
-    // Build a Vector of flonums
+    /// Build a Vector of flonums
     auto v1 = *ops::encode(1.5);
     auto v2 = *ops::encode(2.5);
     auto v3 = *ops::encode(3.5);
@@ -600,7 +585,7 @@ BOOST_AUTO_TEST_CASE(to_eigen_from_vector) {
 
 BOOST_AUTO_TEST_CASE(to_eigen_rejects_non_numeric) {
     Heap heap(1ull << 22);
-    // A symbol is not a numeric sequence
+    /// A symbol is not a numeric sequence
     auto sym = ops::box(Tag::Symbol, 42);
     auto result = stats::to_eigen(heap, sym, "test");
     BOOST_TEST(!result.has_value());

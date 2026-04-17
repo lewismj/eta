@@ -1,0 +1,76 @@
+;;; std/clpr.eta — Constraint Logic Programming over Real intervals.
+;;;
+;;; Phase 6.1 stub:  introduces the `RDomain` substrate (real-interval
+;;; domain attached to a logic variable) and the bare-minimum accessors
+;;; needed for the stage-6.1 smoke tests.  No constraint propagation
+;;; engine yet — Fourier–Motzkin (Stage 6.3) and incremental Simplex
+;;; (Stage 6.5) layer on top of this in later stages.
+;;;
+;;; Built-in C++ primitives (registered by core_primitives.h):
+;;;   (%clp-domain-r! var lo hi lo-open? hi-open?)
+;;;       — attach a real-interval domain to `var`.  Bounds are doubles
+;;;         (fixnum or flonum); the open/closed flags are booleans.
+;;;   (%clp-get-domain var)
+;;;       — retrieves the domain as `(r lo hi lo-open? hi-open?)` for
+;;;         R-domained vars (alongside `(z …)` and `(fd …)`).
+;;;
+;;; The unify-time forward check (`VM::check_domain`) accepts any
+;;; numeric (fixnum or flonum) ground value lying within the interval
+;;; for an R-domained var; var–var unify intersects two domains, with
+;;; R∩Z and R∩FD promoted to R (the integer-only constraint of Z/FD is
+;;; deliberately relaxed — see docs/phase6_implementation.md §6.1).
+;;;
+;;; Backtracking restores R-domain writes via the unified
+;;; `TrailEntry::Kind::Domain` already used by Z/FD.
+
+(module std.clpr
+  (import std.collections)
+  (import std.logic)
+  (export
+    ;; Domain constructors
+    clp:real clp:real-open clp:real-half-open
+    ;; Domain accessors / predicates
+    clp:domain-r? clp:domain-r-lo clp:domain-r-hi
+    clp:domain-r-lo-open? clp:domain-r-hi-open?
+    ;; Convenience
+    clp:domain-r)
+  (begin
+
+    ;; ── Domain constructors ────────────────────────────────────────────────
+
+    ;; Closed real interval [lo, hi].
+    (defun clp:real (var lo hi)
+      (%clp-domain-r! var lo hi #f #f))
+
+    ;; Fully-open real interval (lo, hi).
+    (defun clp:real-open (var lo hi)
+      (%clp-domain-r! var lo hi #t #t))
+
+    ;; Half-open [lo, hi).
+    (defun clp:real-half-open (var lo hi)
+      (%clp-domain-r! var lo hi #f #t))
+
+    ;; ── Domain accessors ───────────────────────────────────────────────────
+
+    (defun clp:domain-r? (dom)
+      (and (pair? dom) (eq? (car dom) 'r)))
+
+    (defun clp:domain-r-lo (dom)
+      ;; (r lo hi lo-open? hi-open?)
+      (car (cdr dom)))
+
+    (defun clp:domain-r-hi (dom)
+      (car (cdr (cdr dom))))
+
+    (defun clp:domain-r-lo-open? (dom)
+      (car (cdr (cdr (cdr dom)))))
+
+    (defun clp:domain-r-hi-open? (dom)
+      (car (cdr (cdr (cdr (cdr dom))))))
+
+    ;; Convenience: get the R-domain attached to a logic var directly,
+    ;; or #f if the var has no R-domain (or no domain at all).
+    (defun clp:domain-r (var)
+      (let ((d (%clp-get-domain var)))
+        (if (clp:domain-r? d) d #f)))))
+

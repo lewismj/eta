@@ -35,7 +35,7 @@ using namespace eta::runtime::error;
 inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& intern_table, vm::VM& vm) {
     using Args = const std::vector<LispVal>&;
 
-    // Helper to extract port from a LispVal
+    /// Helper to extract port from a LispVal
     auto get_port = [&heap](LispVal val) -> std::expected<types::PortObject*, RuntimeError> {
         if (!ops::is_boxed(val) || ops::tag(val) != Tag::HeapObject) {
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "not a port"}});
@@ -47,13 +47,13 @@ inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTa
         return port_obj;
     };
 
-    // Helper to write a formatted value to a port (or stdout fallback)
+    /// Helper to write a formatted value to a port (or stdout fallback)
     auto write_to_port = [&vm, get_port](const std::string& output, const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
         LispVal port_val = args.size() > 1 ? args[1] : vm.current_output_port();
 
         auto port_obj = get_port(port_val);
         if (!port_obj) {
-            // Fallback to stdout if port is invalid
+            /// Fallback to stdout if port is invalid
             std::cout << output;
             return nanbox::Nil;
         }
@@ -63,9 +63,9 @@ inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTa
         return nanbox::Nil;
     };
 
-    // ========================================================================
-    // Port-aware I/O: display write newline
-    // ========================================================================
+    /**
+     * Port-aware I/O: display write newline
+     */
 
     env.register_builtin("display", 1, true, [&heap, &intern_table, write_to_port](Args args) -> std::expected<LispVal, RuntimeError> {
         if (args.empty()) {
@@ -84,12 +84,12 @@ inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTa
     });
 
     env.register_builtin("newline", 0, true, [&vm, get_port](Args args) -> std::expected<LispVal, RuntimeError> {
-        // Optional port argument (defaults to current-output-port)
+        /// Optional port argument (defaults to current-output-port)
         LispVal port_val = args.empty() ? vm.current_output_port() : args[0];
 
         auto port_obj = get_port(port_val);
         if (!port_obj) {
-            // Fallback to stdout if port is invalid
+            /// Fallback to stdout if port is invalid
             std::cout << '\n';
             return nanbox::Nil;
         }
@@ -101,5 +101,5 @@ inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTa
     });
 }
 
-}  // namespace eta::runtime
+}  ///< namespace eta::runtime
 
