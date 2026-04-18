@@ -1,0 +1,135 @@
+;;; clpr_optimize_smoke.eta -- Stage 6.6 smoke tests for CLP(R) optimization.
+
+(module clpr-optimize-smoke
+  (import std.test std.logic std.clpr)
+  (begin
+
+    (defun lo (bounds) (car bounds))
+    (defun hi (bounds) (cdr bounds))
+
+    (defun make-vars (n)
+      (if (= n 0)
+          '()
+          (cons (logic-var) (make-vars (- n 1)))))
+
+    (defun dot (coeffs vars)
+      (if (null? coeffs)
+          0.0
+          (clp:r+ (clp:r*scalar (car coeffs) (car vars))
+                  (dot (cdr coeffs) (cdr vars)))))
+
+    (defun apply-witness! (witness)
+      (if (null? witness)
+          #t
+          (and (unify (car (car witness)) (cdr (car witness)))
+               (apply-witness! (cdr witness)))))
+
+    (defun optimize->pair (thunk)
+      (call-with-values thunk
+        (lambda (opt witness)
+          (cons opt witness))))
+
+    (defun post-lower-bounds! (xs lo)
+      (if (null? xs)
+          #t
+          (and (clp:r>= (car xs) lo)
+               (post-lower-bounds! (cdr xs) lo))))
+
+    (defun post-upper-bounds! (xs hi)
+      (if (null? xs)
+          #t
+          (and (clp:r<= (car xs) hi)
+               (post-upper-bounds! (cdr xs) hi))))
+
+    (define suite
+      (make-group "clpr-optimize-smoke"
+        (list
+          (make-test "bounded objective returns optimum and witness"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var))
+                      (y (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #t (clp:r>= y 0))
+                  (assert-equal #t (clp:r<= (clp:r+ x y) 3))
+                  (let* ((res (optimize->pair
+                                (lambda ()
+                                  (clp:r-maximize
+                                    (clp:r+ (clp:r*scalar 2 x) y)))))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 6.0 opt 1e-8)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 3.0 (deref-lvar x) 1e-8)
+                    (assert-approx-equal 0.0 (deref-lvar y) 1e-8)))
+                (unwind-trail m))))
+
+          (make-test "unbounded objective reports clp.r.unbounded"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal 'clp.r.unbounded (%clp-r-maximize x)))
+                (unwind-trail m))))
+
+          (make-test "conflicting post is rejected before optimization"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #f (clp:r<= x -1))
+                  (let ((res (optimize->pair (lambda () (clp:r-minimize x)))))
+                    (assert-approx-equal 0.0 (car res) 1e-8)))
+                (unwind-trail m))))
+
+          (make-test "10-asset LP matches hand-computed optimum"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let* ((ws (make-vars 10))
+                       (returns '(0.15 0.12 0.11 0.10 0.09 0.08 0.07 0.06 0.05 0.04))
+                       (risks   '(0.60 0.30 0.20 0.25 0.20 0.35 0.40 0.15 0.10 0.05))
+                       (w1 (car ws))
+                       (w2 (car (cdr ws))))
+                  (assert-equal #t (post-lower-bounds! ws 0.0))
+                  (assert-equal #t (post-upper-bounds! ws 1.0))
+                  (assert-equal #t (clp:r= (dot '(1 1 1 1 1 1 1 1 1 1) ws) 1.0))
+                  (assert-equal #t (clp:r<= (dot risks ws) 0.45))
+                  (let* ((res (optimize->pair (lambda () (clp:r-maximize (dot returns ws)))))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    ;; Hand solution: w1 = 0.5, w2 = 0.5, others = 0 -> return 0.135.
+                    (assert-approx-equal 0.135 opt 1e-6)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-equal #t (clp:r-feasible?))
+                    (assert-approx-equal 0.5 (deref-lvar w1) 1e-6)
+                    (assert-approx-equal 0.5 (deref-lvar w2) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "optimize then backtrack leaves prior bounds intact"
+            (lambda ()
+              (let ((m0 (trail-mark)))
+                (let ((x (logic-var))
+                      (y (logic-var)))
+                  (assert-equal #t (clp:r>= x 2))
+                  (assert-equal #t (clp:r>= y 3))
+                  (assert-equal #t (clp:r= (clp:r+ x y) 10))
+                  (let ((before-x (clp:r-bounds x))
+                        (before-y (clp:r-bounds y))
+                        (m (trail-mark)))
+                    (let* ((res (optimize->pair (lambda () (clp:r-maximize x))))
+                           (opt (car res))
+                           (witness (cdr res)))
+                      (assert-approx-equal 7.0 opt 1e-8)
+                      (assert-equal #t (apply-witness! witness))
+                      (assert-approx-equal 7.0 (deref-lvar x) 1e-8)
+                      (assert-approx-equal 3.0 (deref-lvar y) 1e-8))
+                    (unwind-trail m)
+                    (let ((after-x (clp:r-bounds x))
+                          (after-y (clp:r-bounds y)))
+                      (assert-approx-equal (lo before-x) (lo after-x) 1e-8)
+                      (assert-approx-equal (hi before-x) (hi after-x) 1e-8)
+                      (assert-approx-equal (lo before-y) (lo after-y) 1e-8)
+                      (assert-approx-equal (hi before-y) (hi after-y) 1e-8))))
+                (unwind-trail m0)))))))
+
+    (print-tap (run suite))))

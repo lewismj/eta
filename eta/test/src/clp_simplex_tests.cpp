@@ -119,6 +119,15 @@ void expect_bounds(const SimplexBoundsResult& res, double lo, double hi) {
     expect_bound(res.bounds->hi, hi);
 }
 
+bool witness_value(const SimplexOptResult& res, ObjectId var_id, double& out) {
+    for (const auto& [id, value] : res.witness) {
+        if (id != var_id) continue;
+        out = value;
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(clp_simplex_tests, SimplexFixture)
@@ -202,6 +211,62 @@ BOOST_AUTO_TEST_CASE(strict_bound_conflict_is_infeasible) {
     simplex.assert_upper(xid, Bound{.value = 1.0, .strict = false});
 
     BOOST_TEST(static_cast<int>(simplex.check()) == static_cast<int>(SimplexStatus::Infeasible));
+}
+
+BOOST_AUTO_TEST_CASE(optimize_max_finds_corner_witness) {
+    const LispVal x = lvar();
+    const LispVal y = lvar();
+    const ObjectId xid = id_of(x);
+    const ObjectId yid = id_of(y);
+
+    Simplex simplex;
+    add_geq(simplex, x, fx(0));
+    add_geq(simplex, y, fx(0));
+    add_leq(simplex, call("+", {x, y}), fx(3));
+
+    auto objective = linearize(call("+", {call("*", {fx(2), x}), y}), heap, intern);
+    BOOST_REQUIRE(objective.has_value());
+    const auto result = simplex.optimize(*objective, SimplexDirection::Maximize);
+
+    BOOST_REQUIRE(static_cast<int>(result.status) ==
+                  static_cast<int>(SimplexOptResult::Status::Optimal));
+    BOOST_TEST(result.value == 6.0, boost::test_tools::tolerance(kTol));
+
+    double x_val = 0.0;
+    double y_val = 0.0;
+    BOOST_REQUIRE(witness_value(result, xid, x_val));
+    BOOST_REQUIRE(witness_value(result, yid, y_val));
+    BOOST_TEST(x_val == 3.0, boost::test_tools::tolerance(kTol));
+    BOOST_TEST(y_val == 0.0, boost::test_tools::tolerance(kTol));
+}
+
+BOOST_AUTO_TEST_CASE(optimize_unbounded_status_is_reported) {
+    const LispVal x = lvar();
+
+    Simplex simplex;
+    add_geq(simplex, x, fx(0));
+
+    auto objective = linearize(x, heap, intern);
+    BOOST_REQUIRE(objective.has_value());
+    const auto result = simplex.optimize(*objective, SimplexDirection::Maximize);
+
+    BOOST_TEST(static_cast<int>(result.status) ==
+               static_cast<int>(SimplexOptResult::Status::Unbounded));
+}
+
+BOOST_AUTO_TEST_CASE(optimize_infeasible_status_is_reported) {
+    const LispVal x = lvar();
+
+    Simplex simplex;
+    add_geq(simplex, x, fx(0));
+    add_leq(simplex, x, fx(-1));
+
+    auto objective = linearize(call("+", {x, fx(5)}), heap, intern);
+    BOOST_REQUIRE(objective.has_value());
+    const auto result = simplex.optimize(*objective, SimplexDirection::Minimize);
+
+    BOOST_TEST(static_cast<int>(result.status) ==
+               static_cast<int>(SimplexOptResult::Status::Infeasible));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

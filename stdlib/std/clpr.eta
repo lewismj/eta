@@ -6,6 +6,8 @@
 ;;;   (%clp-r-post-leq! lhs rhs)   -> post lhs <= rhs
 ;;;   (%clp-r-post-eq!  lhs rhs)   -> post lhs  = rhs
 ;;;   (%clp-r-propagate!)          -> re-run feasibility + bound tightening
+;;;   (%clp-r-minimize objective)  -> #f | clp.r.unbounded | (opt . witness)
+;;;   (%clp-r-maximize objective)  -> #f | clp.r.unbounded | (opt . witness)
 ;;;
 ;;; Re-firing uses the existing Phase 4b async propagation queue by attaching
 ;;; thunks under the shared 'clp.prop attribute key.
@@ -24,6 +26,8 @@
     clp:r+ clp:r- clp:r*scalar
     ;; Real-constraint posting API
     clp:r= clp:r<= clp:r< clp:r>= clp:r>
+    ;; Optimization API
+    clp:r-minimize clp:r-maximize
     ;; Queries
     clp:r-bounds clp:r-feasible?)
   (begin
@@ -173,6 +177,23 @@
     (defun clp:r> (lhs rhs)
       (clp:r< rhs lhs))
 
+    ;; -- Optimization --------------------------------------------------------
+
+    (defun %clpr-opt-unpack (res)
+      (cond
+        ((eq? res #f) #f)
+        ((eq? res 'clp.r.unbounded) (error "clp.r.unbounded"))
+        ((pair? res) (values (car res) (cdr res)))
+        (#t (error "clp.r.optimize.invalid-result"))))
+
+    ;; Returns (values optimum witness) on success, #f on infeasible.
+    (defun clp:r-minimize (objective)
+      (%clpr-opt-unpack (%clp-r-minimize objective)))
+
+    ;; Returns (values optimum witness) on success, #f on infeasible.
+    (defun clp:r-maximize (objective)
+      (%clpr-opt-unpack (%clp-r-maximize objective)))
+
     ;; -- Queries -------------------------------------------------------------
 
     (defun clp:r-feasible? ()
@@ -188,4 +209,3 @@
           #f))
 
   ))
-

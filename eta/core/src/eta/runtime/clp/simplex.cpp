@@ -260,7 +260,7 @@ double Simplex::strict_adjust(double value, bool is_lower, bool strict, double e
     return is_lower ? (value + eps) : (value - eps);
 }
 
-Simplex::PreparedProblem Simplex::prepare_problem(std::optional<ObjectId> objective_var,
+Simplex::PreparedProblem Simplex::prepare_problem(const LinearExpr* objective,
                                                   bool maximize_objective,
                                                   double eps) const {
     PreparedProblem out;
@@ -272,7 +272,9 @@ Simplex::PreparedProblem Simplex::prepare_problem(std::optional<ObjectId> object
         for (const auto& t : row.terms) out.vars.push_back(t.var_id);
     }
     for (const auto& [id, _] : bounds_) out.vars.push_back(id);
-    if (objective_var.has_value()) out.vars.push_back(*objective_var);
+    if (objective) {
+        for (const auto& t : objective->terms) out.vars.push_back(t.var_id);
+    }
 
     std::sort(out.vars.begin(), out.vars.end());
     out.vars.erase(std::unique(out.vars.begin(), out.vars.end()), out.vars.end());
@@ -284,12 +286,22 @@ Simplex::PreparedProblem Simplex::prepare_problem(std::optional<ObjectId> object
 
     const std::size_t n = out.vars.size() * 2;
     out.c.assign(n, 0.0);
-    if (objective_var.has_value()) {
-        const auto it = out.index_of.find(*objective_var);
-        if (it != out.index_of.end()) {
+    if (objective) {
+        const double sign = maximize_objective ? 1.0 : -1.0;
+        for (const auto& t : objective->terms) {
+            if (!std::isfinite(t.coef)) {
+                out.numeric_failure = true;
+                continue;
+            }
+            const auto it = out.index_of.find(t.var_id);
+            if (it == out.index_of.end()) {
+                out.numeric_failure = true;
+                continue;
+            }
             const std::size_t base = 2 * it->second;
-            out.c[base] = maximize_objective ? 1.0 : -1.0;
-            out.c[base + 1] = maximize_objective ? -1.0 : 1.0;
+            const double coef = t.coef * sign;
+            out.c[base] += coef;
+            out.c[base + 1] -= coef;
         }
     }
 
@@ -395,7 +407,7 @@ Simplex::PreparedProblem Simplex::prepare_problem(std::optional<ObjectId> object
 SimplexStatus Simplex::check(double eps) const {
     if (!std::isfinite(eps) || eps <= 0.0) eps = 1e-9;
 
-    auto prep = prepare_problem(std::nullopt, true, eps);
+    auto prep = prepare_problem(nullptr, true, eps);
     if (prep.numeric_failure) return SimplexStatus::NumericFailure;
     if (prep.contradiction) return SimplexStatus::Infeasible;
 
@@ -417,7 +429,15 @@ SimplexStatus Simplex::check(double eps) const {
 SimplexBoundsResult Simplex::bounds_for(ObjectId var_id, double eps) const {
     if (!std::isfinite(eps) || eps <= 0.0) eps = 1e-9;
 
-    const auto max_prep = prepare_problem(var_id, true, eps);
+    LinearExpr objective;
+    objective.terms.push_back(LinearTerm{
+        .var_id = var_id,
+        .coef = 1.0,
+    });
+    objective.constant = 0.0;
+    objective.canonicalize();
+
+    const auto max_prep = prepare_problem(&objective, true, eps);
     if (max_prep.numeric_failure) {
         return SimplexBoundsResult{.status = SimplexStatus::NumericFailure, .bounds = std::nullopt};
     }
@@ -434,7 +454,7 @@ SimplexBoundsResult Simplex::bounds_for(ObjectId var_id, double eps) const {
         return SimplexBoundsResult{.status = SimplexStatus::NumericFailure, .bounds = std::nullopt};
     }
 
-    const auto min_prep = prepare_problem(var_id, false, eps);
+    const auto min_prep = prepare_problem(&objective, false, eps);
     if (min_prep.numeric_failure) {
         return SimplexBoundsResult{.status = SimplexStatus::NumericFailure, .bounds = std::nullopt};
     }
@@ -473,6 +493,84 @@ SimplexBoundsResult Simplex::bounds_for(ObjectId var_id, double eps) const {
             .hi_open = false,
         },
     };
+}
+
+SimplexOptResult Simplex::optimize(LinearExpr objective,
+                                   SimplexDirection direction,
+                                   double eps) const {
+    if (!std::isfinite(eps) || eps <= 0.0) eps = 1e-9;
+    objective.canonicalize();
+    if (!std::isfinite(objective.constant)) {
+        return SimplexOptResult{
+            .status = SimplexOptResult::Status::NumericFailure,
+        };
+    }
+
+    const bool maximize = (direction == SimplexDirection::Maximize);
+    const auto prep = prepare_problem(&objective, maximize, eps);
+    if (prep.numeric_failure) {
+        return SimplexOptResult{
+            .status = SimplexOptResult::Status::NumericFailure,
+        };
+    }
+    if (prep.contradiction) {
+        return SimplexOptResult{
+            .status = SimplexOptResult::Status::Infeasible,
+        };
+    }
+
+    TableauLP solver(prep.A, prep.b, prep.c, eps);
+    const auto result = solver.solve();
+    switch (result.status) {
+        case TableauLP::Status::Optimal:
+            break;
+        case TableauLP::Status::Unbounded:
+            return SimplexOptResult{
+                .status = SimplexOptResult::Status::Unbounded,
+            };
+        case TableauLP::Status::Infeasible:
+            return SimplexOptResult{
+                .status = SimplexOptResult::Status::Infeasible,
+            };
+        case TableauLP::Status::NumericFailure:
+            return SimplexOptResult{
+                .status = SimplexOptResult::Status::NumericFailure,
+            };
+    }
+
+    const double objective_sign = maximize ? 1.0 : -1.0;
+    if (!std::isfinite(result.value)) {
+        return SimplexOptResult{
+            .status = SimplexOptResult::Status::NumericFailure,
+        };
+    }
+
+    SimplexOptResult out;
+    out.status = SimplexOptResult::Status::Optimal;
+    out.value = (result.value * objective_sign) + objective.constant;
+    if (!std::isfinite(out.value)) {
+        return SimplexOptResult{
+            .status = SimplexOptResult::Status::NumericFailure,
+        };
+    }
+    out.witness.reserve(prep.vars.size());
+    for (std::size_t i = 0; i < prep.vars.size(); ++i) {
+        const std::size_t base = 2 * i;
+        if (base + 1 >= result.solution.size()) {
+            return SimplexOptResult{
+                .status = SimplexOptResult::Status::NumericFailure,
+            };
+        }
+        double value = result.solution[base] - result.solution[base + 1];
+        if (!std::isfinite(value)) {
+            return SimplexOptResult{
+                .status = SimplexOptResult::Status::NumericFailure,
+            };
+        }
+        if (std::abs(value) <= eps) value = 0.0;
+        out.witness.emplace_back(prep.vars[i], value);
+    }
+    return out;
 }
 
 } // namespace eta::runtime::clp

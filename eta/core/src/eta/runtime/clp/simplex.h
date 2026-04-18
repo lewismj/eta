@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "eta/runtime/clp/domain.h"
@@ -34,11 +35,35 @@ enum class SimplexStatus : std::uint8_t {
 };
 
 /**
+ * @brief Objective direction used by @ref Simplex::optimize.
+ */
+enum class SimplexDirection : std::uint8_t {
+    Minimize,
+    Maximize,
+};
+
+/**
  * @brief Bounds query result for one projected variable.
  */
 struct SimplexBoundsResult {
     SimplexStatus status = SimplexStatus::Feasible;
     std::optional<RDomain> bounds;
+};
+
+/**
+ * @brief Optimization result returned by @ref Simplex::optimize.
+ */
+struct SimplexOptResult {
+    enum class Status : std::uint8_t {
+        Optimal,
+        Unbounded,
+        Infeasible,
+        NumericFailure,
+    };
+
+    Status status = Status::Infeasible;
+    double value = 0.0;
+    std::vector<std::pair<memory::heap::ObjectId, double>> witness;
 };
 
 /**
@@ -91,6 +116,18 @@ public:
     /// Project best lower/upper bounds for one variable.
     [[nodiscard]] SimplexBoundsResult bounds_for(ObjectId var_id, double eps = 1e-9) const;
 
+    /**
+     * @brief Optimize one linear objective over the current constraint state.
+     *
+     * @param objective Linear objective expression.
+     * @param direction Objective direction (min/max).
+     * @param eps Numeric tolerance.
+     * @return Optimization status, objective value, and witness assignment.
+     */
+    [[nodiscard]] SimplexOptResult optimize(LinearExpr objective,
+                                            SimplexDirection direction,
+                                            double eps = 1e-9) const;
+
 private:
     struct PreparedProblem {
         std::vector<ObjectId> vars;
@@ -102,7 +139,7 @@ private:
         bool numeric_failure = false;
     };
 
-    [[nodiscard]] PreparedProblem prepare_problem(std::optional<ObjectId> objective_var,
+    [[nodiscard]] PreparedProblem prepare_problem(const LinearExpr* objective,
                                                   bool maximize_objective,
                                                   double eps) const;
     [[nodiscard]] static double strict_adjust(double value,
@@ -116,4 +153,3 @@ private:
 };
 
 } // namespace eta::runtime::clp
-

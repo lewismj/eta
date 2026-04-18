@@ -2085,11 +2085,19 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
      *   (%clp-r-post-leq! lhs rhs)
      *   (%clp-r-post-eq!  lhs rhs)
      *   (%clp-r-propagate!)
+     *   (%clp-r-minimize objective)
+     *   (%clp-r-maximize objective)
      *
      * Posting appends one relation row to the per-VM RealStore, checks
      * simplex feasibility, then tightens R bounds for every participating
      * variable. On failure, all effects since the local trail snapshot are
      * rolled back atomically (including the RealStore append).
+     *
+     * Optimization returns:
+     *   - `#f` on infeasible objective,
+     *   - symbol `clp.r.unbounded` on unbounded objective,
+     *   - `(opt . witness)` on optimum where `witness` is
+     *     `((var . value) ...)`.
      */
     {
         auto r_user_error = [](std::string msg) -> RuntimeError {
@@ -2239,6 +2247,28 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             std::sort(vars.begin(), vars.end());
             vars.erase(std::unique(vars.begin(), vars.end()), vars.end());
             return std::make_pair(std::move(sys), std::move(vars));
+        };
+
+        auto materialize_linear_expr =
+            [deref_real_var](clp::LinearExpr expr)
+            -> std::expected<clp::LinearExpr, RuntimeError> {
+            clp::LinearExpr out;
+            out.constant = expr.constant;
+            out.terms.reserve(expr.terms.size());
+            for (const auto& t : expr.terms) {
+                auto resolved = deref_real_var(t.var_id);
+                if (!resolved) return std::unexpected(resolved.error());
+                if (std::holds_alternative<double>(*resolved)) {
+                    out.constant += t.coef * std::get<double>(*resolved);
+                } else {
+                    out.terms.push_back(clp::LinearTerm{
+                        .var_id = std::get<ObjectId>(*resolved),
+                        .coef = t.coef,
+                    });
+                }
+            }
+            out.canonicalize();
+            return out;
         };
 
         auto tighten_real_bounds =
@@ -2463,6 +2493,96 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     return False;
                 }
                 return True;
+            });
+
+        auto optimize_real_objective =
+            [&heap, &intern_table, vm, r_user_error, format_linearize_error,
+             mixed_domain_error, materialize_system, materialize_linear_expr]
+            (LispVal objective, clp::SimplexDirection direction)
+            -> std::expected<LispVal, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "clp.r.optimize: requires a running VM"}});
+            }
+
+            auto raw_objective = clp::linearize(objective, heap, intern_table);
+            if (!raw_objective) {
+                return std::unexpected(r_user_error(format_linearize_error(raw_objective.error())));
+            }
+            auto objective_expr = materialize_linear_expr(std::move(*raw_objective));
+            if (!objective_expr) return std::unexpected(objective_expr.error());
+
+            auto materialized = materialize_system();
+            if (!materialized) return std::unexpected(materialized.error());
+            const auto& sys = materialized->first;
+            auto vars = materialized->second;
+            vars.reserve(vars.size() + objective_expr->terms.size());
+            for (const auto& t : objective_expr->terms) vars.push_back(t.var_id);
+            std::sort(vars.begin(), vars.end());
+            vars.erase(std::unique(vars.begin(), vars.end()), vars.end());
+
+            clp::Simplex simplex;
+            for (const auto& row : sys.leq) simplex.add_leq(row);
+            for (const auto& row : sys.eq) simplex.add_eq(row);
+            for (auto id : vars) {
+                const auto* dom = vm->constraint_store().get_domain(id);
+                if (dom && !std::holds_alternative<clp::RDomain>(*dom)) {
+                    return std::unexpected(mixed_domain_error(id));
+                }
+                if (const auto* sb = vm->real_store().simplex_bounds(id)) {
+                    if (sb->lo.has_value()) simplex.assert_lower(id, *sb->lo);
+                    if (sb->hi.has_value()) simplex.assert_upper(id, *sb->hi);
+                }
+            }
+
+            const auto result = simplex.optimize(*objective_expr, direction, kRealSimplexEps);
+            switch (result.status) {
+                case clp::SimplexOptResult::Status::Optimal:
+                    break;
+                case clp::SimplexOptResult::Status::Infeasible:
+                    return False;
+                case clp::SimplexOptResult::Status::Unbounded:
+                    return make_symbol(intern_table, "clp.r.unbounded");
+                case clp::SimplexOptResult::Status::NumericFailure:
+                    return std::unexpected(r_user_error(
+                        "clp.r.simplex.numeric-failure: simplex numeric failure"));
+            }
+
+            auto roots = heap.make_external_root_frame();
+            LispVal witness = Nil;
+            roots.push(witness);
+
+            for (auto it = result.witness.rbegin(); it != result.witness.rend(); ++it) {
+                const LispVal var = ops::box(Tag::HeapObject, static_cast<int64_t>(it->first));
+                auto value = make_flonum(it->second);
+                if (!value) return std::unexpected(value.error());
+                roots.push(*value);
+
+                auto pair = make_cons(heap, var, *value);
+                if (!pair) return std::unexpected(pair.error());
+                roots.push(*pair);
+
+                auto cell = make_cons(heap, *pair, witness);
+                if (!cell) return std::unexpected(cell.error());
+                witness = *cell;
+                roots.push(witness);
+            }
+
+            auto opt_value = make_flonum(result.value);
+            if (!opt_value) return std::unexpected(opt_value.error());
+            roots.push(*opt_value);
+            return make_cons(heap, *opt_value, witness);
+        };
+
+        env.register_builtin("%clp-r-minimize", 1, false,
+            [optimize_real_objective](Args args) -> std::expected<LispVal, RuntimeError> {
+                return optimize_real_objective(args[0], clp::SimplexDirection::Minimize);
+            });
+
+        env.register_builtin("%clp-r-maximize", 1, false,
+            [optimize_real_objective](Args args) -> std::expected<LispVal, RuntimeError> {
+                return optimize_real_objective(args[0], clp::SimplexDirection::Maximize);
             });
     }
 
