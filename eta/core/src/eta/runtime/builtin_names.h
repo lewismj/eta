@@ -173,11 +173,14 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%clp-linearize",  1, false);
     r("%clp-fm-feasible?", 1, true);
     r("%clp-fm-bounds",    2, true);
+    r("%clp-r-post-leq!",  2, false);
+    r("%clp-r-post-eq!",   2, false);
+    r("%clp-r-propagate!", 0, false);
 
     /**
      * CLP(FD) native bounds propagators (Phase 4b).
      * Must stay in the same order as the register_builtin calls in
-     * core_primitives.h immediately after %clp-fm-bounds.
+     * core_primitives.h immediately after %clp-r-propagate!.
      */
     r("%clp-fd-plus!",         3, false);
     r("%clp-fd-plus-offset!",  3, false);

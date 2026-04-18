@@ -114,6 +114,10 @@ void VM::collect_garbage() {
             visit(e.var);
             if (e.kind == TrailEntry::Kind::Attr) visit(e.prev_value);
         }
+        /// Stage 6.4: posted CLP(R) constraints keep participating vars alive.
+        for (auto id : real_store_.participating_vars()) {
+            visit(ops::box(Tag::HeapObject, static_cast<int64_t>(id)));
+        }
         /// Phase 3: attr-unify-hook procedures are VM-lifetime roots.
         for (const auto& [_k, hook] : attr_unify_hooks_) visit(hook);
         /// Phase 4b: pending propagator thunks.
@@ -208,6 +212,11 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
         }
         return ids;
     }()});
+
+    {
+        auto ids = real_store_.participating_vars();
+        if (!ids.empty()) roots.push_back({"Real Store", std::move(ids)});
+    }
 
     {
         auto ids = collect(active_tapes_.begin(), active_tapes_.end());
@@ -1009,8 +1018,8 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 /**
                  * Phase 1 follow-up: with the unified domain trail, a mark
                  * is just the binding-trail depth.  Domain entries live in
-                 * `trail_stack_` and are unwound by the Bind/Attr/Domain
-                 * switch in UnwindTrail.
+                 * `trail_stack_` and are unwound alongside Bind/Attr and
+                 * Stage 6.4 RealStore snapshots by UnwindTrail.
                  */
                 auto bsize = static_cast<int64_t>(trail_stack_.size());
                 auto enc = ops::encode<int64_t>(bsize);
@@ -1026,31 +1035,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 if (!mark_opt)
                     return std::unexpected(make_type_error("unwind-trail: invalid mark"));
                 auto bmark = static_cast<std::size_t>(*mark_opt);
-                while (trail_stack_.size() > bmark) {
-                    auto& entry = trail_stack_.back();
-                    switch (entry.kind) {
-                        case TrailEntry::Kind::Bind:
-                            if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(entry.var))
-                                lv->binding = std::nullopt;
-                            break;
-                        case TrailEntry::Kind::Attr:
-                            if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(entry.var)) {
-                                if (entry.had_prev) lv->attrs[entry.module_key] = entry.prev_value;
-                                else                lv->attrs.erase(entry.module_key);
-                            }
-                            break;
-                        case TrailEntry::Kind::Domain: {
-                            auto id = static_cast<memory::heap::ObjectId>(ops::payload(entry.var));
-                            if (entry.had_prev && entry.prev_domain.has_value()) {
-                                constraint_store_.set_domain_no_trail(id, *entry.prev_domain);
-                            } else {
-                                constraint_store_.erase_domain_no_trail(id);
-                            }
-                            break;
-                        }
-                    }
-                    trail_stack_.pop_back();
-                }
+                rollback_trail_to(bmark);
                 push(Nil);
                 break;
             }
@@ -1886,6 +1871,13 @@ void VM::trail_erase_domain(memory::heap::ObjectId id) {
     constraint_store_.erase_domain_no_trail(id);
 }
 
+void VM::trail_mark_real_store() {
+    TrailEntry e{};
+    e.kind = TrailEntry::Kind::RealStore;
+    e.prev_real_store_size = real_store_.size();
+    trail_stack_.push_back(std::move(e));
+}
+
 /**
  * Helper: restore trail entries created since `mark` to their pre-write
  * state.  Used by both the outer-`unify` wrapper rollback and the inner
@@ -1894,7 +1886,8 @@ void VM::trail_erase_domain(memory::heap::ObjectId id) {
 namespace {
     inline void rollback_one(VM& /*vm*/, TrailEntry& e,
                              memory::heap::Heap& heap_ref,
-                             clp::ConstraintStore& cstore) {
+                             clp::ConstraintStore& cstore,
+                             clp::RealStore& rstore) {
         switch (e.kind) {
             case TrailEntry::Kind::Bind:
                 if (ops::is_boxed(e.var) && ops::tag(e.var) == Tag::HeapObject) {
@@ -1919,7 +1912,18 @@ namespace {
                     cstore.erase_domain_no_trail(id);
                 break;
             }
+            case TrailEntry::Kind::RealStore:
+                rstore.truncate(e.prev_real_store_size);
+                break;
         }
+    }
+}
+
+void VM::rollback_trail_to(std::size_t mark) {
+    while (trail_stack_.size() > mark) {
+        auto& e = trail_stack_.back();
+        rollback_one(*this, e, heap_, constraint_store_, real_store_);
+        trail_stack_.pop_back();
     }
 }
 
@@ -1937,7 +1941,7 @@ bool VM::unify(LispVal a, LispVal b) {
         /// and drop pending propagators that were enqueued under this unify.
         while (trail_stack_.size() > t_snap) {
             auto& e = trail_stack_.back();
-            rollback_one(*this, e, heap_, constraint_store_);
+            rollback_one(*this, e, heap_, constraint_store_, real_store_);
             trail_stack_.pop_back();
         }
         prop_queue_.clear();
@@ -2078,7 +2082,7 @@ bool VM::unify_internal(LispVal a, LispVal b) {
             auto rollback = [&]{
                 while (trail_stack_.size() > trail_snap) {
                     auto& e = trail_stack_.back();
-                    rollback_one(*this, e, heap_, constraint_store_);
+                    rollback_one(*this, e, heap_, constraint_store_, real_store_);
                     trail_stack_.pop_back();
                 }
             };
@@ -2133,7 +2137,7 @@ bool VM::unify_internal(LispVal a, LispVal b) {
             if (!fire_attr_hooks(lvb, b, a)) {
                 while (trail_stack_.size() > trail_snap) {
                     auto& e = trail_stack_.back();
-                    rollback_one(*this, e, heap_, constraint_store_);
+                    rollback_one(*this, e, heap_, constraint_store_, real_store_);
                     trail_stack_.pop_back();
                 }
                 return false;

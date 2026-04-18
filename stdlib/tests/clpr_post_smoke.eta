@@ -1,0 +1,58 @@
+;;; clpr_post_smoke.eta -- Stage 6.4 smoke tests for std.clpr posting.
+
+(module clpr-post-smoke
+  (import std.test std.logic std.clpr)
+  (begin
+
+    (defun lo (bounds) (car bounds))
+    (defun hi (bounds) (cdr bounds))
+
+    (define suite
+      (make-group "clpr-post-smoke"
+        (list
+          (make-test "post + bind narrows; unwind restores"
+            (lambda ()
+              (let* ((x (logic-var))
+                     (y (logic-var))
+                     (m (trail-mark)))
+                (assert-equal #t (clp:r<= (clp:r+ x y) 10))
+                (assert-equal #t (unify y 4))
+                (let ((bx (clp:r-bounds x)))
+                  (assert-true (pair? bx))
+                  (assert-true (< (lo bx) -1e100))
+                  (assert-approx-equal 6.0 (hi bx) 1e-9))
+                (unwind-trail m)
+                (assert-true (logic-var? (deref-lvar x)))
+                (assert-true (logic-var? (deref-lvar y)))
+                (assert-equal #f (clp:domain-r x))
+                (assert-equal #f (clp:domain-r y)))))
+
+          (make-test "infeasible post is rejected atomically"
+            (lambda ()
+              (let ((x (logic-var)))
+                (assert-equal #t (clp:r<= x 5))
+                (let ((before (clp:r-bounds x)))
+                  (assert-true (< (lo before) -1e100))
+                  (assert-approx-equal 5.0 (hi before) 1e-9))
+                (assert-equal #f (clp:r>= x 10))
+                (let ((after (clp:r-bounds x)))
+                  (assert-true (< (lo after) -1e100))
+                  (assert-approx-equal 5.0 (hi after) 1e-9)))))
+
+          (make-test "infeasible re-propagation fails unify and rolls back bind"
+            (lambda ()
+              (let ((x (logic-var))
+                    (y (logic-var)))
+                (assert-equal #t (clp:r<= (clp:r+ x y) 10))
+                (assert-equal #t (clp:r>= x 0))
+                (let ((bx0 (clp:r-bounds x)))
+                  (assert-approx-equal 0.0 (lo bx0) 1e-9)
+                  (assert-true (> (hi bx0) 1e100)))
+                (assert-equal #f (unify y 20))
+                (assert-true (logic-var? (deref-lvar y)))
+                (let ((bx1 (clp:r-bounds x)))
+                  (assert-approx-equal 0.0 (lo bx1) 1e-9)
+                  (assert-true (> (hi bx1) 1e100)))))))))
+
+    (print-tap (run suite))))
+

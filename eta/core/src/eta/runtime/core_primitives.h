@@ -8,6 +8,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/numeric_value.h"
@@ -2074,6 +2075,300 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                         return cap_symbol();
                 }
                 return False;
+            });
+    }
+
+    /**
+     * Stage 6.4 CLP(R) posting primitives:
+     *
+     *   (%clp-r-post-leq! lhs rhs)
+     *   (%clp-r-post-eq!  lhs rhs)
+     *   (%clp-r-propagate!)
+     *
+     * Posting appends one relation row to the per-VM RealStore, checks FM
+     * feasibility, then tightens R bounds for every participating variable.
+     * On failure, all effects since the local trail snapshot are rolled back
+     * atomically (including the RealStore append).
+     */
+    {
+        auto r_user_error = [](std::string msg) -> RuntimeError {
+            return RuntimeError{VMError{RuntimeErrorCode::UserError, std::move(msg)}};
+        };
+
+        auto format_linearize_error = [](const clp::LinearizeErrorInfo& err) -> std::string {
+            std::string suffix = err.tag;
+            const std::string prefix = "clp.linearize.";
+            if (suffix.rfind(prefix, 0) == 0) {
+                suffix = suffix.substr(prefix.size());
+            }
+            std::ostringstream oss;
+            oss << "clp.r.linearize." << suffix << ": " << err.message;
+            if (!err.offending_vars.empty()) {
+                oss << " [vars:";
+                for (std::size_t i = 0; i < err.offending_vars.size(); ++i) {
+                    if (i > 0) oss << ",";
+                    oss << err.offending_vars[i];
+                }
+                oss << "]";
+            }
+            return oss.str();
+        };
+
+        auto linear_diff = [&heap, &intern_table, r_user_error, format_linearize_error]
+            (LispVal lhs, LispVal rhs) -> std::expected<clp::LinearExpr, RuntimeError> {
+            auto l = clp::linearize(lhs, heap, intern_table);
+            if (!l) return std::unexpected(r_user_error(format_linearize_error(l.error())));
+            auto r = clp::linearize(rhs, heap, intern_table);
+            if (!r) return std::unexpected(r_user_error(format_linearize_error(r.error())));
+
+            clp::LinearExpr out;
+            out.constant = l->constant - r->constant;
+            out.terms = l->terms;
+            out.terms.reserve(l->terms.size() + r->terms.size());
+            for (const auto& t : r->terms) {
+                out.terms.push_back(clp::LinearTerm{
+                    .var_id = t.var_id,
+                    .coef = -t.coef,
+                });
+            }
+            out.canonicalize();
+            return out;
+        };
+
+        constexpr clp::FMConfig kRealCfg{
+            .row_cap = 4096,
+            .eps = 1e-12,
+        };
+
+        auto same_rdomain = [](const clp::RDomain& a, const clp::RDomain& b) -> bool {
+            return a.lo == b.lo && a.hi == b.hi &&
+                   a.lo_open == b.lo_open && a.hi_open == b.hi_open;
+        };
+
+        auto is_unbounded = [](const clp::RDomain& b) -> bool {
+            return std::isinf(b.lo) && b.lo < 0.0 &&
+                   std::isinf(b.hi) && b.hi > 0.0;
+        };
+
+        auto mixed_domain_error = [r_user_error](ObjectId id) -> RuntimeError {
+            std::ostringstream oss;
+            oss << "clp.r.fd-mixing-not-supported: variable " << id
+                << " has a non-real CLP domain";
+            return r_user_error(oss.str());
+        };
+
+        auto non_numeric_binding_error = [r_user_error](ObjectId id) -> RuntimeError {
+            std::ostringstream oss;
+            oss << "clp.r.non-numeric-binding: variable " << id
+                << " is bound to a non-numeric value";
+            return r_user_error(oss.str());
+        };
+
+        auto deref_real_var =
+            [&heap, r_user_error, non_numeric_binding_error](ObjectId id)
+            -> std::expected<std::variant<ObjectId, double>, RuntimeError> {
+            constexpr std::size_t kMaxDerefDepth = 1024;
+            LispVal cur = ops::box(Tag::HeapObject, static_cast<int64_t>(id));
+            for (std::size_t depth = 0; depth < kMaxDerefDepth; ++depth) {
+                if (ops::is_boxed(cur) && ops::tag(cur) == Tag::HeapObject) {
+                    const auto cid = ops::payload(cur);
+                    auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(cid);
+                    if (lv) {
+                        if (!lv->binding.has_value()) return cid;
+                        cur = *lv->binding;
+                        continue;
+                    }
+                }
+                auto n = classify_numeric(cur, heap);
+                if (!n.is_valid()) {
+                    return std::unexpected(non_numeric_binding_error(id));
+                }
+                return n.as_double();
+            }
+            return std::unexpected(r_user_error(
+                "clp.r.deref-depth-exceeded: logic variable dereference depth exceeded"));
+        };
+
+        auto materialize_system =
+            [vm, deref_real_var]()
+            -> std::expected<std::pair<clp::FMSystem, std::vector<ObjectId>>, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "clp.r.internal: requires a running VM"}});
+            }
+
+            clp::FMSystem sys;
+            std::vector<ObjectId> vars;
+            const auto& entries = vm->real_store().entries();
+            sys.leq.reserve(entries.size());
+            sys.eq.reserve(entries.size());
+
+            for (const auto& entry : entries) {
+                clp::LinearExpr row;
+                row.constant = entry.expr.constant;
+                row.terms.reserve(entry.expr.terms.size());
+
+                for (const auto& t : entry.expr.terms) {
+                    auto resolved = deref_real_var(t.var_id);
+                    if (!resolved) return std::unexpected(resolved.error());
+                    if (std::holds_alternative<double>(*resolved)) {
+                        row.constant += t.coef * std::get<double>(*resolved);
+                    } else {
+                        const auto vid = std::get<ObjectId>(*resolved);
+                        row.terms.push_back(clp::LinearTerm{
+                            .var_id = vid,
+                            .coef = t.coef,
+                        });
+                        vars.push_back(vid);
+                    }
+                }
+
+                row.canonicalize();
+                if (entry.relation == clp::RealRelation::Leq) {
+                    sys.leq.push_back(std::move(row));
+                } else {
+                    sys.eq.push_back(std::move(row));
+                }
+            }
+
+            std::sort(vars.begin(), vars.end());
+            vars.erase(std::unique(vars.begin(), vars.end()), vars.end());
+            return std::make_pair(std::move(sys), std::move(vars));
+        };
+
+        auto tighten_real_bounds =
+            [vm, kRealCfg, same_rdomain, is_unbounded, mixed_domain_error, r_user_error, materialize_system]()
+            -> std::expected<bool, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "clp.r.internal: requires a running VM"}});
+            }
+
+            auto materialized = materialize_system();
+            if (!materialized) return std::unexpected(materialized.error());
+            const auto& sys  = materialized->first;
+            const auto& vars = materialized->second;
+
+            for (auto id : vars) {
+                const auto* dom = vm->constraint_store().get_domain(id);
+                if (dom && !std::holds_alternative<clp::RDomain>(*dom)) {
+                    return std::unexpected(mixed_domain_error(id));
+                }
+            }
+
+            const auto feasible = clp::fm_feasible(sys, kRealCfg);
+            switch (feasible.status) {
+                case clp::FMStatus::Feasible:
+                    break;
+                case clp::FMStatus::Infeasible:
+                    return false;
+                case clp::FMStatus::CapExceeded:
+                    return std::unexpected(r_user_error(
+                        "clp.r.fm-cap-exceeded: Fourier-Motzkin row cap exceeded"));
+            }
+
+            for (auto id : vars) {
+                const auto bounds_res = clp::fm_bounds_for(sys, id, kRealCfg);
+                switch (bounds_res.status) {
+                    case clp::FMStatus::Feasible:
+                        break;
+                    case clp::FMStatus::Infeasible:
+                        return false;
+                    case clp::FMStatus::CapExceeded:
+                        return std::unexpected(r_user_error(
+                            "clp.r.fm-cap-exceeded: Fourier-Motzkin row cap exceeded"));
+                }
+                if (!bounds_res.bounds.has_value()) {
+                    return std::unexpected(r_user_error(
+                        "clp.r.internal: feasible projection missing bounds"));
+                }
+
+                const auto projected = *bounds_res.bounds;
+                const auto* cur_dom = vm->constraint_store().get_domain(id);
+                if (!cur_dom) {
+                    if (!projected.empty() && !is_unbounded(projected)) {
+                        vm->trail_set_domain(id, projected);
+                    }
+                    continue;
+                }
+
+                if (!std::holds_alternative<clp::RDomain>(*cur_dom)) {
+                    return std::unexpected(mixed_domain_error(id));
+                }
+
+                const auto current = std::get<clp::RDomain>(*cur_dom);
+                const auto narrowed = current.intersect(projected);
+                if (narrowed.empty()) return false;
+                if (!same_rdomain(current, narrowed)) {
+                    vm->trail_set_domain(id, narrowed);
+                }
+            }
+
+            return true;
+        };
+
+        auto post_relation =
+            [vm, tighten_real_bounds](clp::RealRelation rel, clp::LinearExpr expr)
+            -> std::expected<LispVal, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "clp.r.post: requires a running VM"}});
+            }
+            const auto mark = vm->trail_stack().size();
+            vm->trail_mark_real_store();
+            if (rel == clp::RealRelation::Leq) {
+                vm->real_store().append_leq(std::move(expr));
+            } else {
+                vm->real_store().append_eq(std::move(expr));
+            }
+
+            auto ok = tighten_real_bounds();
+            if (!ok) {
+                vm->rollback_trail_to(mark);
+                return std::unexpected(ok.error());
+            }
+            if (!*ok) {
+                vm->rollback_trail_to(mark);
+                return False;
+            }
+            return True;
+        };
+
+        env.register_builtin("%clp-r-post-leq!", 2, false,
+            [linear_diff, post_relation](Args args) -> std::expected<LispVal, RuntimeError> {
+                auto diff = linear_diff(args[0], args[1]);
+                if (!diff) return std::unexpected(diff.error());
+                return post_relation(clp::RealRelation::Leq, std::move(*diff));
+            });
+
+        env.register_builtin("%clp-r-post-eq!", 2, false,
+            [linear_diff, post_relation](Args args) -> std::expected<LispVal, RuntimeError> {
+                auto diff = linear_diff(args[0], args[1]);
+                if (!diff) return std::unexpected(diff.error());
+                return post_relation(clp::RealRelation::Eq, std::move(*diff));
+            });
+
+        env.register_builtin("%clp-r-propagate!", 0, false,
+            [vm, tighten_real_bounds](Args) -> std::expected<LispVal, RuntimeError> {
+                if (!vm) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::TypeError,
+                        "clp.r.propagate: requires a running VM"}});
+                }
+                const auto mark = vm->trail_stack().size();
+                auto ok = tighten_real_bounds();
+                if (!ok) {
+                    vm->rollback_trail_to(mark);
+                    return std::unexpected(ok.error());
+                }
+                if (!*ok) {
+                    vm->rollback_trail_to(mark);
+                    return False;
+                }
+                return True;
             });
     }
 

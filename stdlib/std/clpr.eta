@@ -1,27 +1,14 @@
-;;; std/clpr.eta — Constraint Logic Programming over Real intervals.
+;;; std/clpr.eta -- Constraint Logic Programming over real intervals.
 ;;;
-;;; Phase 6.1 stub:  introduces the `RDomain` substrate (real-interval
-;;; domain attached to a logic variable) and the bare-minimum accessors
-;;; needed for the stage-6.1 smoke tests.  No constraint propagation
-;;; engine yet — Fourier–Motzkin (Stage 6.3) and incremental Simplex
-;;; (Stage 6.5) layer on top of this in later stages.
+;;; Stage 6.4 promotes the Phase 6.1 domain substrate into a posting API
+;;; backed by the FM oracle:
 ;;;
-;;; Built-in C++ primitives (registered by core_primitives.h):
-;;;   (%clp-domain-r! var lo hi lo-open? hi-open?)
-;;;       — attach a real-interval domain to `var`.  Bounds are doubles
-;;;         (fixnum or flonum); the open/closed flags are booleans.
-;;;   (%clp-get-domain var)
-;;;       — retrieves the domain as `(r lo hi lo-open? hi-open?)` for
-;;;         R-domained vars (alongside `(z …)` and `(fd …)`).
+;;;   (%clp-r-post-leq! lhs rhs)   -> post lhs <= rhs
+;;;   (%clp-r-post-eq!  lhs rhs)   -> post lhs  = rhs
+;;;   (%clp-r-propagate!)          -> re-run feasibility + bound tightening
 ;;;
-;;; The unify-time forward check (`VM::check_domain`) accepts any
-;;; numeric (fixnum or flonum) ground value lying within the interval
-;;; for an R-domained var; var–var unify intersects two domains, with
-;;; R∩Z and R∩FD promoted to R (the integer-only constraint of Z/FD is
-;;; deliberately relaxed — see docs/phase6_implementation.md §6.1).
-;;;
-;;; Backtracking restores R-domain writes via the unified
-;;; `TrailEntry::Kind::Domain` already used by Z/FD.
+;;; Re-firing uses the existing Phase 4b async propagation queue by attaching
+;;; thunks under the shared 'clp.prop attribute key.
 
 (module std.clpr
   (import std.collections)
@@ -32,25 +19,30 @@
     ;; Domain accessors / predicates
     clp:domain-r? clp:domain-r-lo clp:domain-r-hi
     clp:domain-r-lo-open? clp:domain-r-hi-open?
-    ;; Convenience
-    clp:domain-r)
+    clp:domain-r
+    ;; Linear-expression constructors
+    clp:r+ clp:r- clp:r*scalar
+    ;; Real-constraint posting API
+    clp:r= clp:r<= clp:r< clp:r>= clp:r>
+    ;; Queries
+    clp:r-bounds clp:r-feasible?)
   (begin
 
-    ;; ── Domain constructors ────────────────────────────────────────────────
+    ;; -- Domain constructors -------------------------------------------------
 
-    ;; Closed real interval [lo, hi].
+    ;; Closed interval [lo, hi].
     (defun clp:real (var lo hi)
       (%clp-domain-r! var lo hi #f #f))
 
-    ;; Fully-open real interval (lo, hi).
+    ;; Fully-open interval (lo, hi).
     (defun clp:real-open (var lo hi)
       (%clp-domain-r! var lo hi #t #t))
 
-    ;; Half-open [lo, hi).
+    ;; Half-open interval [lo, hi).
     (defun clp:real-half-open (var lo hi)
       (%clp-domain-r! var lo hi #f #t))
 
-    ;; ── Domain accessors ───────────────────────────────────────────────────
+    ;; -- Domain accessors ----------------------------------------------------
 
     (defun clp:domain-r? (dom)
       (and (pair? dom) (eq? (car dom) 'r)))
@@ -68,9 +60,132 @@
     (defun clp:domain-r-hi-open? (dom)
       (car (cdr (cdr (cdr (cdr dom))))))
 
-    ;; Convenience: get the R-domain attached to a logic var directly,
-    ;; or #f if the var has no R-domain (or no domain at all).
     (defun clp:domain-r (var)
       (let ((d (%clp-get-domain var)))
-        (if (clp:domain-r? d) d #f)))))
+        (if (clp:domain-r? d) d #f)))
+
+    ;; -- Internal helpers ----------------------------------------------------
+
+    ;; Attach a re-propagator thunk to v's 'clp.prop attribute.
+    (defun %clpr-prop-attach! (v thunk)
+      (cond
+        ((not (logic-var? (deref-lvar v))) #t)
+        (else
+          (let ((existing (get-attr v 'clp.prop)))
+            (put-attr v 'clp.prop (cons thunk (if existing existing '())))
+            #t))))
+
+    ;; Register 'clp.prop as an async-thunk attribute key (idempotent).
+    (register-prop-attr! 'clp.prop)
+
+    (defun %clpr-member-eq? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((eq? x (car xs)) #t)
+        (#t (%clpr-member-eq? x (cdr xs)))))
+
+    ;; Merge ys into xs, preserving set semantics (eq? identity).
+    (defun %clpr-merge-vars (xs ys)
+      (if (null? ys)
+          xs
+          (let ((y (car ys)))
+            (if (%clpr-member-eq? y xs)
+                (%clpr-merge-vars xs (cdr ys))
+                (%clpr-merge-vars (cons y xs) (cdr ys))))))
+
+    (defun %clpr-expr-vars-list (xs)
+      (cond
+        ((null? xs) '())
+        ((pair? xs)
+         (%clpr-merge-vars (%clpr-expr-vars (car xs))
+                           (%clpr-expr-vars-list (cdr xs))))
+        (#t (%clpr-expr-vars xs))))
+
+    ;; Collect all unbound logic vars that participate in expr.
+    (defun %clpr-expr-vars (expr)
+      (let ((v (deref-lvar expr)))
+        (cond
+          ((logic-var? v) (list v))
+          ((pair? v) (%clpr-expr-vars-list v))
+          ((compound? v)
+           (let ((n (arity v)))
+             (let loop ((i 1) (acc '()))
+               (if (> i n)
+                   acc
+                   (loop (+ i 1)
+                         (%clpr-merge-vars acc
+                                           (%clpr-expr-vars (arg i v))))))))
+          (#t '()))))
+
+    (defun %clpr-attach-vars! (vars thunk)
+      (let loop ((xs vars))
+        (cond
+          ((null? xs) #t)
+          (else
+            (%clpr-prop-attach! (car xs) thunk)
+            (loop (cdr xs))))))
+
+    ;; -- Linear-expression constructors -------------------------------------
+
+    (defun clp:r+ args
+      (cond
+        ((null? args) 0.0)
+        ((null? (cdr args)) (car args))
+        (#t (cons '+ args))))
+
+    (defun clp:r- args
+      (cond
+        ((null? args) 0.0)
+        ((null? (cdr args)) (list '- (car args)))
+        (#t (cons '- args))))
+
+    ;; Scalar multiplication only (non-linear var*var is rejected in C++).
+    (defun clp:r*scalar (k expr)
+      (list '* k expr))
+
+    ;; -- Posting API ---------------------------------------------------------
+
+    (defun clp:r<= (lhs rhs)
+      (and (%clp-r-post-leq! lhs rhs)
+           (let* ((thunk (lambda () (%clp-r-propagate!)))
+                  (vars (%clpr-merge-vars (%clpr-expr-vars lhs)
+                                          (%clpr-expr-vars rhs))))
+             (%clpr-attach-vars! vars thunk)
+             #t)))
+
+    (defun clp:r= (lhs rhs)
+      (and (%clp-r-post-eq! lhs rhs)
+           (let* ((thunk (lambda () (%clp-r-propagate!)))
+                  (vars (%clpr-merge-vars (%clpr-expr-vars lhs)
+                                          (%clpr-expr-vars rhs))))
+             (%clpr-attach-vars! vars thunk)
+             #t)))
+
+    ;; Strict relations are encoded via a small epsilon margin.
+    (define *clpr-strict-eps* 1e-9)
+
+    (defun clp:r< (lhs rhs)
+      (clp:r<= lhs (clp:r- rhs *clpr-strict-eps*)))
+
+    (defun clp:r>= (lhs rhs)
+      (clp:r<= rhs lhs))
+
+    (defun clp:r> (lhs rhs)
+      (clp:r< rhs lhs))
+
+    ;; -- Queries -------------------------------------------------------------
+
+    (defun clp:r-feasible? ()
+      (%clp-r-propagate!))
+
+    ;; Returns (lo . hi) for an R-domained var, else #f.
+    (defun clp:r-bounds (var)
+      (if (%clp-r-propagate!)
+          (let ((d (%clp-get-domain var)))
+            (if (clp:domain-r? d)
+                (cons (clp:domain-r-lo d) (clp:domain-r-hi d))
+                #f))
+          #f))
+
+  ))
 

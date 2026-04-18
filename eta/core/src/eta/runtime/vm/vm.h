@@ -17,6 +17,7 @@
 #include "eta/runtime/error.h"
 #include "eta/reader/lexer.h"
 #include "eta/runtime/clp/constraint_store.h"
+#include "eta/runtime/clp/real_store.h"
 #include "bytecode.h"
 #include "debug_state.h"   ///< DebugState, BreakLocation, StopEvent, StopReason
 
@@ -92,12 +93,17 @@ struct WindFrame {
  * Phase 4b follow-up: domain changes are now trailed in the same stack via
  * `Kind::Domain` entries (carrying an `std::optional<clp::Domain>` snapshot of
  * the prior state).  This makes the binding trail the single source of truth
+ *
+ * Stage 6.4 adds `Kind::RealStore`: snapshots the append-only CLP(R)
+ * real-constraint log length.  Unwinding to this entry truncates the VM's
+ * `RealStore` back to the prior length.
  */
 struct TrailEntry {
     enum class Kind : std::uint8_t {
         Bind,    ///< LogicVar `var` was bound; on undo, reset binding to nullopt
         Attr,    ///< Attributed var: `var`'s attribute `module_key` was mutated
         Domain,  ///< CLP domain on the LogicVar `var` was installed/replaced/erased
+        RealStore, ///< CLP(R) real-constraint log size snapshot
     };
     Kind                              kind{Kind::Bind};
     LispVal                           var{nanbox::Nil};        ///< HeapObject ref to the LogicVar
@@ -105,6 +111,7 @@ struct TrailEntry {
     memory::intern::InternId          module_key{0};           ///< Attr: which attribute slot
     bool                              had_prev{false};         ///< Attr/Domain: was prev_* meaningful?
     std::optional<clp::Domain>        prev_domain{};
+    std::size_t                       prev_real_store_size{0};
 };
 
 /// A live exception catch frame installed by SetupCatch.
@@ -221,6 +228,10 @@ public:
     clp::ConstraintStore& constraint_store() { return constraint_store_; }
     const clp::ConstraintStore& constraint_store() const { return constraint_store_; }
 
+    /// CLP(R) real-constraint store (Stage 6.4).
+    clp::RealStore& real_store() { return real_store_; }
+    const clp::RealStore& real_store() const { return real_store_; }
+
     /**
      * Trailed domain write: snapshot any prior domain on `id` onto the
      * unified trail and install `dom` via the constraint store.  An
@@ -230,6 +241,15 @@ public:
 
     /// Trailed domain erase: snapshot the prior domain (if any) and drop it.
     void trail_erase_domain(memory::heap::ObjectId id);
+
+    /// Trailed real-store mark: snapshot current append-log length.
+    void trail_mark_real_store();
+
+    /**
+     * Roll back every trail entry with index >= `mark`.
+     * Restores Bind/Attr/Domain/RealStore side effects atomically.
+     */
+    void rollback_trail_to(std::size_t mark);
 
     /// Phase 3: expose trail + hook registry to builtins.
     std::vector<TrailEntry>& trail_stack() { return trail_stack_; }
@@ -312,6 +332,7 @@ private:
     std::vector<CatchFrame> catch_stack_;  ///< live exception handlers
     std::vector<TrailEntry> trail_stack_;  ///< logic-var / CLP attribute trail for backtracking
     clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
+    clp::RealStore real_store_;             ///< CLP(R) posted constraint log (Stage 6.4)
     std::vector<LispVal> active_tapes_;    ///< Stack of active AD tapes (supports nesting)
 
     /**
