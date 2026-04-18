@@ -45,7 +45,7 @@ Stage 6.7 is optional — feature-flagged and may slip without blocking
 
 ---
 
-## Stage 6.1 — `RDomain` (closed/open real intervals) ⏳
+## Stage 6.1 — `RDomain` (closed/open real intervals) ✅
 
 **Goal:** introduce a third arm of `clp::Domain` so the existing trail
 and propagation substrate can carry real-valued narrowings — *before*

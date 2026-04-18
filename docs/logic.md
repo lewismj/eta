@@ -187,6 +187,14 @@ Since Phase 1 of the
 | `'never`  | Binding succeeds; `z` becomes a cyclic term | Maximum speed, ISO-Prolog parity. Caller must ensure no cycle-walking traversals run afterwards. |
 | `'error`  | `(unify …)` aborts with `unify: occurs-check violation (cyclic term)` | Debugging — catches accidentally cyclic goals that would otherwise just fail silently. |
 
+When mode is `'error`, the runtime failure is catchable:
+
+```scheme
+(catch 'runtime.error (unify z (cons z '())))
+;; or with catch-all:
+(catch (unify z (cons z '())))
+```
+
 The flag is stored on the VM (`VM::occurs_check_mode_`) and is intentionally
 *not* on the trail: it is a policy knob, not a backtrackable binding.
 

@@ -1085,6 +1085,95 @@ BOOST_AUTO_TEST_CASE(test_error_cons_wrong_arg_count) {
 }
 
 /**
+ * Runtime-error catchability
+ */
+
+BOOST_AUTO_TEST_CASE(test_runtime_catch_super_tag_returns_payload_with_span_and_trace) {
+    LispVal res = run(
+        "(module m"
+        "  (define p (catch 'runtime.error (car 42)))"
+        "  (define tag   (car (cdr p)))"
+        "  (define msg   (car (cdr (cdr p))))"
+        "  (define spn   (car (cdr (cdr (cdr p)))))"
+        "  (define trace (car (cdr (cdr (cdr (cdr p))))))"
+        "  (define span-ok"
+        "    (and (pair? spn)"
+        "         (eq? (car spn) 'span)"
+        "         (number? (car (cdr spn)))"
+        "         (number? (car (cdr (cdr spn))))"
+        "         (number? (car (cdr (cdr (cdr spn)))))"
+        "         (number? (car (cdr (cdr (cdr (cdr spn))))))"
+        "         (number? (car (cdr (cdr (cdr (cdr (cdr spn)))))))))"
+        "  (define top-frame (car trace))"
+        "  (define frame-span (car (cdr (cdr top-frame))))"
+        "  (define trace-ok"
+        "    (and (pair? trace)"
+        "         (pair? top-frame)"
+        "         (eq? (car top-frame) 'frame)"
+        "         (string? (car (cdr top-frame)))"
+        "         (pair? frame-span)"
+        "         (eq? (car frame-span) 'span)))"
+        "  (define result"
+        "    (and (pair? p)"
+        "         (eq? (car p) 'runtime-error)"
+        "         (eq? tag 'runtime.type-error)"
+        "         (string? msg)"
+        "         span-ok"
+        "         trace-ok)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_runtime_catch_specific_subtype_invalid_arity) {
+    LispVal res = run(
+        "(module m"
+        "  (define p (catch 'runtime.invalid-arity (car 1 2)))"
+        "  (define result"
+        "    (and (pair? p)"
+        "         (eq? (car p) 'runtime-error)"
+        "         (eq? (car (cdr p)) 'runtime.invalid-arity)"
+        "         (string? (car (cdr (cdr p)))))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_runtime_catch_mismatched_subtype_propagates) {
+    auto err = run_expect_error("(module m (define result (catch 'runtime.type-error (car 1 2))))");
+    auto* vm_err = std::get_if<VMError>(&err);
+    BOOST_REQUIRE(vm_err);
+    BOOST_CHECK(vm_err->code == RuntimeErrorCode::InvalidArity);
+}
+
+BOOST_AUTO_TEST_CASE(test_runtime_catch_tagless_catch_body_catches_runtime_errors) {
+    LispVal res = run(
+        "(module m"
+        "  (define p (catch (car 42)))"
+        "  (define result"
+        "    (and (pair? p)"
+        "         (eq? (car p) 'runtime-error)"
+        "         (eq? (car (cdr p)) 'runtime.type-error))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_runtime_catch_explicit_raise_semantics_unchanged) {
+    LispVal res = run(
+        "(module m"
+        "  (define a (catch 'boom (raise 'boom 7)))"
+        "  (define b (catch (raise 'x 9)))"
+        "  (define result (and (= a 7) (= b 9))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(test_runtime_catch_nested_inner_matching_handler_wins) {
+    LispVal res = run(
+        "(module m"
+        "  (define p"
+        "    (catch 'runtime.error"
+        "      (catch 'runtime.type-error"
+        "        (car 42))))"
+        "  (define result (eq? (car (cdr p)) 'runtime.type-error)))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+/**
  * make-vector primitive
  */
 

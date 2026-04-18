@@ -45,7 +45,7 @@ VM::VM(Heap& heap, InternTable& intern_table)
 
 VM::~VM() = default;
 
-bool VM::values_eqv(LispVal a, LispVal b) {
+bool VM::values_eqv(LispVal a, LispVal b) const {
     /// Fast path: bit-identical values are always equal (handles Nil, True, False, small Fixnums, same heap IDs)
     if (a == b) return true;
     
@@ -367,23 +367,29 @@ std::expected<LispVal, RuntimeError> VM::tape_binary_op(OpCode op, LispVal a, Li
 
 
 /// Unified helper to dispatch a callee (Closure, Continuation, or Primitive)
-std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, uint32_t argc, bool is_tail) {
+std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
+    LispVal callee, uint32_t argc, bool is_tail, reader::lexer::Span call_span) {
     /// Use try_get_as for consistent heap access pattern
+    auto route_runtime_error = [&](RuntimeError err) -> std::expected<DispatchResult, RuntimeError> {
+        auto handled = do_runtime_error(err, call_span);
+        if (!handled) return std::unexpected(handled.error());
+        return DispatchResult{DispatchAction::NonLocalTransfer, nullptr, 0};
+    };
 
     if (!ops::is_boxed(callee)) {
-        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not boxed"}});
+        return route_runtime_error(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not boxed"}});
     }
     
     if (auto* closure = try_get_as<ObjectKind::Closure, Closure>(callee)) {
         /// Arity check early (fail fast)
         if (closure->func->has_rest) {
             if (argc < closure->func->arity) {
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                return route_runtime_error(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
                     "Wrong number of arguments: expected at least " + std::to_string(closure->func->arity) + ", got " + std::to_string(argc)}});
             }
         } else {
             if (argc != closure->func->arity) {
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                return route_runtime_error(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
                     "Wrong number of arguments: expected " + std::to_string(closure->func->arity) + ", got " + std::to_string(argc)}});
             }
         }
@@ -396,7 +402,7 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
 
     if (auto* cont = try_get_as<ObjectKind::Continuation, Continuation>(callee)) {
         if (argc != 1) {
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "Continuation expects 1 argument"}});
+            return route_runtime_error(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "Continuation expects 1 argument"}});
         }
 
         LispVal v = pop(); ///< The argument
@@ -479,6 +485,8 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
             if (!dispatch) return std::unexpected(dispatch.error());
             if (dispatch->action == DispatchAction::SetupFrame) {
                 setup_frame(dispatch->func, dispatch->closure, 0, FrameKind::ContinuationJump, *state_vec);
+            } else if (dispatch->action == DispatchAction::NonLocalTransfer) {
+                return DispatchResult{DispatchAction::NonLocalTransfer, nullptr, 0};
             } else {
                 /// Primitive thunk: push ContinuationJump frame for handle_return to process.
                 frames_.push_back({current_func_, pc_, fp_, current_closure_, FrameKind::ContinuationJump, *state_vec});
@@ -496,12 +504,12 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
         /// Arity check for primitives
         if (prim->has_rest) {
             if (argc < prim->arity) {
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                return route_runtime_error(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
                     "Primitive expects at least " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
             }
         } else {
             if (argc != prim->arity) {
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                return route_runtime_error(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
                     "Primitive expects " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
             }
         }
@@ -513,12 +521,16 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(LispVal callee, 
         stack_.resize(stack_.size() - argc);
 
         auto res = prim->func(args);
-        if (!res) return std::unexpected(res.error());
+        if (!res) {
+            auto handled = do_runtime_error(res.error(), call_span);
+            if (!handled) return std::unexpected(handled.error());
+            return DispatchResult{DispatchAction::NonLocalTransfer, nullptr, 0};
+        }
         push(*res);
         return DispatchResult{DispatchAction::Continue, nullptr, 0};
     }
 
-    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not a function"}});
+    return route_runtime_error(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not a function"}});
 }
 
 void VM::unpack_to_stack(LispVal value) {
@@ -542,6 +554,8 @@ std::expected<void, RuntimeError> VM::run_loop() {
             debug_->check_and_wait(sp, frames_.size());
         }
         const auto& instr = current_func_->code[pc_++];
+        const auto instr_span = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0)
+                                              : reader::lexer::Span{};
         switch (instr.opcode) {
             case OpCode::Nop:
                 break;
@@ -575,11 +589,13 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 LispVal producer = pop();
 
                 /// Call producer with 0 arguments. Return to consumer afterwards.
-                auto prod_dispatch = dispatch_callee(producer, 0, /*is_tail=*/false);
+                auto prod_dispatch = dispatch_callee(producer, 0, /*is_tail=*/false, instr_span);
                 if (!prod_dispatch) return std::unexpected(prod_dispatch.error());
 
                 if (prod_dispatch->action == DispatchAction::SetupFrame) {
                     setup_frame(prod_dispatch->func, prod_dispatch->closure, 0, FrameKind::CallWithValuesConsumer, consumer);
+                } else if (prod_dispatch->action == DispatchAction::NonLocalTransfer) {
+                    break;
                 } else {
                     /**
                      * Producer was a primitive - result already pushed.
@@ -588,10 +604,12 @@ std::expected<void, RuntimeError> VM::run_loop() {
                     uint32_t old_size = static_cast<uint32_t>(stack_.size());
                     unpack_to_stack(pop());
                     uint32_t argc = static_cast<uint32_t>(stack_.size() - old_size);
-                    auto cons_dispatch = dispatch_callee(consumer, argc, false);
+                    auto cons_dispatch = dispatch_callee(consumer, argc, false, instr_span);
                     if (!cons_dispatch) return std::unexpected(cons_dispatch.error());
                     if (cons_dispatch->action == DispatchAction::SetupFrame) {
                         setup_frame(cons_dispatch->func, cons_dispatch->closure, argc);
+                    } else if (cons_dispatch->action == DispatchAction::NonLocalTransfer) {
+                        break;
                     }
                 }
                 break;
@@ -606,25 +624,31 @@ std::expected<void, RuntimeError> VM::run_loop() {
 
                 /// Call before() with 0 arguments. Return to body() afterwards.
                 temp_roots_.push_back(before_thunk);
-                auto before_dispatch = dispatch_callee(before_thunk, 0, /*is_tail=*/false);
+                auto before_dispatch = dispatch_callee(before_thunk, 0, /*is_tail=*/false, instr_span);
                 temp_roots_.pop_back();
                 if (!before_dispatch) return std::unexpected(before_dispatch.error());
 
                 if (before_dispatch->action == DispatchAction::SetupFrame) {
                     setup_frame(before_dispatch->func, before_dispatch->closure, 0, FrameKind::DynamicWindBody);
+                } else if (before_dispatch->action == DispatchAction::NonLocalTransfer) {
+                    break;
                 } else {
                     /// before was primitive. Call body() now.
-                    auto body_dispatch = dispatch_callee(body_thunk, 0, false);
+                    auto body_dispatch = dispatch_callee(body_thunk, 0, false, instr_span);
                     if (!body_dispatch) return std::unexpected(body_dispatch.error());
                     if (body_dispatch->action == DispatchAction::SetupFrame) {
                         setup_frame(body_dispatch->func, body_dispatch->closure, 0, FrameKind::DynamicWindAfter, after_thunk);
+                    } else if (body_dispatch->action == DispatchAction::NonLocalTransfer) {
+                        break;
                     } else {
                         /// body was primitive. Call after() now.
                         LispVal body_res = pop();
-                        auto after_dispatch = dispatch_callee(after_thunk, 0, false);
+                        auto after_dispatch = dispatch_callee(after_thunk, 0, false, instr_span);
                         if (!after_dispatch) return std::unexpected(after_dispatch.error());
                         if (after_dispatch->action == DispatchAction::SetupFrame) {
                             setup_frame(after_dispatch->func, after_dispatch->closure, 0, FrameKind::DynamicWindCleanup, body_res);
+                        } else if (after_dispatch->action == DispatchAction::NonLocalTransfer) {
+                            break;
                         } else {
                             pop(); ///< ignore after() result
                             winding_stack_.pop_back();
@@ -695,7 +719,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 LispVal callee = pop();
 
                 temp_roots_.push_back(callee);
-                auto dispatch_res = dispatch_callee(callee, argc, /*is_tail=*/false);
+                auto dispatch_res = dispatch_callee(callee, argc, /*is_tail=*/false, instr_span);
                 temp_roots_.pop_back();
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
@@ -793,7 +817,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 LispVal callee = pop();
 
                 temp_roots_.push_back(callee);
-                auto dispatch_res = dispatch_callee(callee, argc, /*is_tail=*/true);
+                auto dispatch_res = dispatch_callee(callee, argc, /*is_tail=*/true, instr_span);
                 temp_roots_.pop_back();
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
@@ -815,7 +839,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                         auto r = pack_rest_args(argc, current_func_->arity);
                         if (!r) return std::unexpected(r.error());
                     }
-                } else {
+                } else if (dispatch_res->action == DispatchAction::Continue) {
                     /**
                      * TailCall to primitive or continuation - result already pushed.
                      * Now we MUST return that result from the current frame.
@@ -838,7 +862,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 
                 push(*cont_res);
                 
-                auto dispatch_res = dispatch_callee(consumer, 1, /*is_tail=*/false);
+                auto dispatch_res = dispatch_callee(consumer, 1, /*is_tail=*/false, instr_span);
                 temp_roots_.pop_back();
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
@@ -882,7 +906,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 uint32_t final_argc = static_cast<uint32_t>(explicit_args.size());
 
                 bool is_tail = (instr.opcode == OpCode::TailApply);
-                auto dispatch_res = dispatch_callee(proc, final_argc, is_tail);
+                auto dispatch_res = dispatch_callee(proc, final_argc, is_tail, instr_span);
                 temp_roots_.pop_back();
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
@@ -908,7 +932,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                         auto r = pack_rest_args(final_argc, current_func_->arity);
                         if (!r) return std::unexpected(r.error());
                     }
-                } else {
+                } else if (dispatch_res->action == DispatchAction::Continue) {
                     if (is_tail) {
                         auto res = handle_return(pop());
                         if (!res) return std::unexpected(res.error());
@@ -1100,6 +1124,8 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
                  * continues the chain via handle_return's ContinuationJump handler.
                  */
                 setup_frame(dispatch->func, dispatch->closure, 0, FrameKind::ContinuationJump, return_frame.extra);
+            } else if (dispatch->action == DispatchAction::NonLocalTransfer) {
+                return {};
             } else {
                 /// Primitive thunk: re-push ContinuationJump frame and recurse
                 frames_.push_back(return_frame);
@@ -1161,6 +1187,8 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
         
         if (dispatch_res->action == DispatchAction::SetupFrame) {
             setup_frame(dispatch_res->func, dispatch_res->closure, argc);
+        } else if (dispatch_res->action == DispatchAction::NonLocalTransfer) {
+            return {};
         }
         return {};
     } else if (return_frame.kind == FrameKind::DynamicWindBody) {
@@ -1175,6 +1203,8 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
         
         if (body_dispatch->action == DispatchAction::SetupFrame) {
             setup_frame(body_dispatch->func, body_dispatch->closure, 0, FrameKind::DynamicWindAfter, wind.after);
+        } else if (body_dispatch->action == DispatchAction::NonLocalTransfer) {
+            return {};
         } else {
             /// body was primitive
             LispVal body_result = pop();
@@ -1182,6 +1212,8 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
             if (!after_dispatch) return std::unexpected(after_dispatch.error());
             if (after_dispatch->action == DispatchAction::SetupFrame) {
                 setup_frame(after_dispatch->func, after_dispatch->closure, 0, FrameKind::DynamicWindCleanup, body_result);
+            } else if (after_dispatch->action == DispatchAction::NonLocalTransfer) {
+                return {};
             } else {
                 pop(); ///< ignore after() result
                 push(body_result);
@@ -1202,6 +1234,8 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
 
         if (after_dispatch->action == DispatchAction::SetupFrame) {
             setup_frame(after_dispatch->func, after_dispatch->closure, 0, FrameKind::DynamicWindCleanup, body_result);
+        } else if (after_dispatch->action == DispatchAction::NonLocalTransfer) {
+            return {};
         } else {
             /// after thunk was primitive
             winding_stack_.pop_back();
@@ -1522,6 +1556,223 @@ std::vector<VarEntry> VM::get_upvalues(std::size_t frame_index) const {
         }
     }
     return result;
+}
+
+std::expected<LispVal, RuntimeError> VM::make_list_payload(const std::vector<LispVal>& elements) {
+    LispVal out = Nil;
+    for (auto it = elements.rbegin(); it != elements.rend(); ++it) {
+        temp_roots_.push_back(out);
+        temp_roots_.push_back(*it);
+        auto cell = make_cons(heap_, *it, out);
+        temp_roots_.pop_back();
+        temp_roots_.pop_back();
+        if (!cell) return std::unexpected(cell.error());
+        out = *cell;
+    }
+    return out;
+}
+
+std::expected<LispVal, RuntimeError> VM::runtime_error_tag(const RuntimeError& err) {
+    const char* tag_name = "runtime.internal-error";
+    std::visit([&](auto&& e) {
+        using T = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<T, VMError>) {
+            switch (e.code) {
+                case RuntimeErrorCode::TypeError:       tag_name = "runtime.type-error"; break;
+                case RuntimeErrorCode::InvalidArity:    tag_name = "runtime.invalid-arity"; break;
+                case RuntimeErrorCode::UserError:       tag_name = "runtime.user-error"; break;
+                case RuntimeErrorCode::UndefinedGlobal: tag_name = "runtime.undefined-global"; break;
+                case RuntimeErrorCode::NotImplemented:
+                case RuntimeErrorCode::InternalError:
+                case RuntimeErrorCode::StackOverflow:
+                case RuntimeErrorCode::StackUnderflow:
+                case RuntimeErrorCode::FrameOverflow:
+                case RuntimeErrorCode::InvalidInstruction:
+                case RuntimeErrorCode::UserThrow:
+                default:
+                    tag_name = "runtime.internal-error";
+                    break;
+            }
+        } else if constexpr (std::is_same_v<T, NaNBoxError>) {
+            tag_name = "runtime.nanbox-error";
+        } else if constexpr (std::is_same_v<T, HeapError>) {
+            tag_name = "runtime.heap-error";
+        } else if constexpr (std::is_same_v<T, InternTableError>) {
+            tag_name = "runtime.intern-error";
+        }
+    }, err);
+    return make_symbol(intern_table_, tag_name);
+}
+
+std::string VM::runtime_error_message(const RuntimeError& err) const {
+    return std::visit([](auto&& e) -> std::string {
+        using T = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<T, VMError>) {
+            return e.message;
+        } else if constexpr (std::is_same_v<T, NaNBoxError>) {
+            return std::string("nanbox error: ") + eta::runtime::nanbox::to_string(e);
+        } else if constexpr (std::is_same_v<T, HeapError>) {
+            return std::string("heap error: ") + eta::runtime::memory::heap::to_string(e);
+        } else if constexpr (std::is_same_v<T, InternTableError>) {
+            return std::string("intern error: ") + eta::runtime::memory::intern::to_string(e);
+        }
+        return std::string("runtime error");
+    }, err);
+}
+
+std::vector<FrameInfo> VM::capture_runtime_stack_trace(reader::lexer::Span span) const {
+    auto trace = get_frames();
+    if (!trace.empty()) trace[0].span = span;
+    return trace;
+}
+
+bool VM::runtime_catch_matches(LispVal catch_tag, LispVal specific_tag, LispVal super_tag) const {
+    /// Runtime catch-all (tagless catch) and explicit runtime tags both match.
+    if (catch_tag == Nil) return true;
+    return values_eqv(catch_tag, specific_tag) || values_eqv(catch_tag, super_tag);
+}
+
+std::expected<LispVal, RuntimeError> VM::build_runtime_error_payload(
+    const RuntimeError& err, LispVal tag, reader::lexer::Span span) {
+    const auto roots_base = temp_roots_.size();
+    auto restore_roots = [&] { temp_roots_.resize(roots_base); };
+
+    auto runtime_error_sym = make_symbol(intern_table_, "runtime-error");
+    if (!runtime_error_sym) return std::unexpected(runtime_error_sym.error());
+    temp_roots_.push_back(*runtime_error_sym);
+
+    auto span_sym = make_symbol(intern_table_, "span");
+    if (!span_sym) {
+        restore_roots();
+        return std::unexpected(span_sym.error());
+    }
+    temp_roots_.push_back(*span_sym);
+
+    auto frame_sym = make_symbol(intern_table_, "frame");
+    if (!frame_sym) {
+        restore_roots();
+        return std::unexpected(frame_sym.error());
+    }
+    temp_roots_.push_back(*frame_sym);
+
+    auto to_fixnum = [&](std::uint32_t v) -> std::expected<LispVal, RuntimeError> {
+        auto enc = ops::encode<int64_t>(static_cast<int64_t>(v));
+        if (enc) return *enc;
+        return make_fixnum(heap_, static_cast<int64_t>(v));
+    };
+
+    auto build_span_record = [&](const reader::lexer::Span& s) -> std::expected<LispVal, RuntimeError> {
+        auto file_id = to_fixnum(s.file_id);
+        if (!file_id) return std::unexpected(file_id.error());
+        auto start_line = to_fixnum(s.start.line);
+        if (!start_line) return std::unexpected(start_line.error());
+        auto start_col = to_fixnum(s.start.column);
+        if (!start_col) return std::unexpected(start_col.error());
+        auto end_line = to_fixnum(s.end.line);
+        if (!end_line) return std::unexpected(end_line.error());
+        auto end_col = to_fixnum(s.end.column);
+        if (!end_col) return std::unexpected(end_col.error());
+
+        std::vector<LispVal> fields{*span_sym, *file_id, *start_line, *start_col, *end_line, *end_col};
+        return make_list_payload(fields);
+    };
+
+    auto msg_val = make_string(heap_, intern_table_, runtime_error_message(err));
+    if (!msg_val) {
+        restore_roots();
+        return std::unexpected(msg_val.error());
+    }
+    temp_roots_.push_back(*msg_val);
+
+    auto span_val = build_span_record(span);
+    if (!span_val) {
+        restore_roots();
+        return std::unexpected(span_val.error());
+    }
+    temp_roots_.push_back(*span_val);
+
+    std::vector<LispVal> frame_rows;
+    auto trace = capture_runtime_stack_trace(span);
+    frame_rows.reserve(trace.size());
+    for (const auto& fr : trace) {
+        auto fn = make_string(heap_, intern_table_, fr.func_name);
+        if (!fn) {
+            restore_roots();
+            return std::unexpected(fn.error());
+        }
+        temp_roots_.push_back(*fn);
+
+        auto frame_span = build_span_record(fr.span);
+        if (!frame_span) {
+            restore_roots();
+            return std::unexpected(frame_span.error());
+        }
+        temp_roots_.push_back(*frame_span);
+
+        auto frame_row = make_list_payload({*frame_sym, *fn, *frame_span});
+        if (!frame_row) {
+            restore_roots();
+            return std::unexpected(frame_row.error());
+        }
+        frame_rows.push_back(*frame_row);
+        temp_roots_.push_back(*frame_row);
+    }
+
+    auto stack_trace = make_list_payload(frame_rows);
+    if (!stack_trace) {
+        restore_roots();
+        return std::unexpected(stack_trace.error());
+    }
+    temp_roots_.push_back(*stack_trace);
+
+    auto payload = make_list_payload(
+        {*runtime_error_sym, tag, *msg_val, *span_val, *stack_trace});
+    if (!payload) {
+        restore_roots();
+        return std::unexpected(payload.error());
+    }
+
+    restore_roots();
+    return *payload;
+}
+
+std::expected<void, RuntimeError> VM::do_runtime_error(const RuntimeError& err, reader::lexer::Span span) {
+    auto specific_tag = runtime_error_tag(err);
+    if (!specific_tag) return std::unexpected(err);
+
+    auto super_tag = make_symbol(intern_table_, "runtime.error");
+    if (!super_tag) return std::unexpected(err);
+
+    for (int i = static_cast<int>(catch_stack_.size()) - 1; i >= 0; --i) {
+        const CatchFrame& cf = catch_stack_[static_cast<std::size_t>(i)];
+        if (!runtime_catch_matches(cf.tag, *specific_tag, *super_tag)) continue;
+
+        auto payload = build_runtime_error_payload(err, *specific_tag, span);
+        if (!payload) return std::unexpected(err);
+
+        /// Pop all catch frames from this one upward.
+        catch_stack_.resize(static_cast<std::size_t>(i));
+
+        /// Restore VM frame state.
+        frames_.resize(cf.frame_count);
+        winding_stack_.resize(cf.wind_count);
+        active_tapes_.resize(cf.tape_count);
+
+        /// Restore stack to the saved top, then push the caught payload.
+        stack_.resize(cf.stack_top);
+        push(*payload);
+
+        /// Restore execution context to the function containing SetupCatch.
+        current_func_    = cf.func;
+        fp_              = cf.fp;
+        current_closure_ = cf.closure;
+        pc_              = cf.handler_pc;
+
+        return {};
+    }
+
+    if (debug_) debug_->notify_exception(runtime_error_message(err), span);
+    return std::unexpected(err);
 }
 
 /**

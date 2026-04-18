@@ -125,6 +125,7 @@ enum class DispatchAction {
     Continue,       ///< Callee was primitive or continuation; result already pushed
     SetupFrame,     ///< Caller should set up a new frame (for Call)
     TailReuse,      ///< Caller should reuse current frame (for TailCall)
+    NonLocalTransfer, ///< Control transferred to a catch handler; caller must not post-process result
 };
 
 struct DispatchResult {
@@ -371,7 +372,8 @@ private:
     void unpack_to_stack(LispVal value);
 
     /// Unified call dispatch helper
-    std::expected<DispatchResult, RuntimeError> dispatch_callee(LispVal callee, uint32_t argc, bool is_tail);
+    std::expected<DispatchResult, RuntimeError> dispatch_callee(
+        LispVal callee, uint32_t argc, bool is_tail, reader::lexer::Span call_span = {});
 
     /// Type-checked heap object accessor
     template<ObjectKind Kind, typename T>
@@ -418,7 +420,35 @@ private:
         return RuntimeError{VMError{RuntimeErrorCode::TypeError, msg}};
     }
 
-    bool values_eqv(LispVal a, LispVal b);
+    /// Build a proper list from `elements` in order.
+    std::expected<LispVal, RuntimeError> make_list_payload(const std::vector<LispVal>& elements);
+
+    /// Map RuntimeError variant/code to the reserved runtime.* catch tag symbol.
+    std::expected<LispVal, RuntimeError> runtime_error_tag(const RuntimeError& err);
+
+    /// Human-readable message extracted from any RuntimeError variant.
+    [[nodiscard]] std::string runtime_error_message(const RuntimeError& err) const;
+
+    /**
+     * Build caught runtime payload:
+     *   (runtime-error <tag> <message> <span> <stack-trace>)
+     */
+    std::expected<LispVal, RuntimeError> build_runtime_error_payload(
+        const RuntimeError& err, LispVal tag, reader::lexer::Span span);
+
+    /// True iff a catch frame tag should catch this runtime error tag.
+    [[nodiscard]] bool runtime_catch_matches(LispVal catch_tag, LispVal specific_tag, LispVal super_tag) const;
+
+    /// Snapshot stack trace frames at the runtime-error site.
+    [[nodiscard]] std::vector<FrameInfo> capture_runtime_stack_trace(reader::lexer::Span span) const;
+
+    /**
+     * Attempt to route RuntimeError through catch frames.
+     * Returns success if handled, or the original RuntimeError if uncaught.
+     */
+    std::expected<void, RuntimeError> do_runtime_error(const RuntimeError& err, reader::lexer::Span span);
+
+    bool values_eqv(LispVal a, LispVal b) const;
     std::expected<void, RuntimeError> do_binary_arithmetic(OpCode op);
     std::expected<void, RuntimeError> pack_rest_args(uint32_t argc, uint32_t required);
 

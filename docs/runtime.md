@@ -346,6 +346,43 @@ objects from a prior cycle.
 
 ---
 
+## Catchable Runtime Errors
+
+Builtin/runtime failures can be intercepted from Eta code with `catch`.
+
+Supported reserved tags:
+
+- `runtime.error` (super-tag for all runtime failures)
+- `runtime.type-error`
+- `runtime.invalid-arity`
+- `runtime.user-error`
+- `runtime.undefined-global`
+- `runtime.internal-error`
+- `runtime.nanbox-error`
+- `runtime.heap-error`
+- `runtime.intern-error`
+
+Matching behavior:
+
+- `(catch 'runtime.error body)` catches all runtime errors.
+- `(catch 'runtime.type-error body)` catches only that subtype.
+- `(catch body)` is a catch-all for both explicit `raise` and runtime errors.
+
+Caught runtime payload contract:
+
+```scheme
+(runtime-error <tag-symbol> <message-string> <span-record> <stack-trace>)
+```
+
+```scheme
+<span-record> ::= (span file-id start-line start-column end-line end-column)
+<stack-trace> ::= ((frame function-name <span-record>) ...)
+```
+
+Uncaught runtime errors still propagate through the host `RuntimeError` channel.
+
+---
+
 ## Object Ownership Diagram
 
 ```mermaid
