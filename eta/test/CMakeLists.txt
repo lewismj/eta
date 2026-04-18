@@ -34,6 +34,7 @@ set(SOURCES
         src/nng_tests.cpp
         src/clp_linear_tests.cpp
         src/clp_fm_tests.cpp
+        src/clp_simplex_tests.cpp
         src/builtin_sync_tests.cpp)
 
 # libtorch ships release binaries only (_ITERATOR_DEBUG_LEVEL=0).

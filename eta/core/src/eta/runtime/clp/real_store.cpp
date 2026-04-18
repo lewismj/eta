@@ -54,6 +54,38 @@ std::vector<memory::heap::ObjectId> RealStore::participating_vars() const {
     return out;
 }
 
+const SimplexBoundState* RealStore::simplex_bounds(memory::heap::ObjectId id) const noexcept {
+    const auto it = simplex_bounds_.find(id);
+    if (it == simplex_bounds_.end()) return nullptr;
+    return &it->second;
+}
+
+void RealStore::set_simplex_bounds_no_trail(memory::heap::ObjectId id,
+                                            std::optional<Bound> lo,
+                                            std::optional<Bound> hi) {
+    if (!lo.has_value() && !hi.has_value()) {
+        simplex_bounds_.erase(id);
+        return;
+    }
+    simplex_bounds_[id] = SimplexBoundState{
+        .lo = std::move(lo),
+        .hi = std::move(hi),
+    };
+}
+
+void RealStore::erase_simplex_bounds_no_trail(memory::heap::ObjectId id) noexcept {
+    simplex_bounds_.erase(id);
+}
+
+std::vector<memory::heap::ObjectId> RealStore::simplex_bound_vars() const {
+    std::vector<memory::heap::ObjectId> out;
+    out.reserve(simplex_bounds_.size());
+    for (const auto& [id, _] : simplex_bounds_) out.push_back(id);
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
 std::vector<memory::heap::ObjectId> RealStore::collect_vars(const LinearExpr& expr) {
     std::vector<memory::heap::ObjectId> vars;
     vars.reserve(expr.terms.size());

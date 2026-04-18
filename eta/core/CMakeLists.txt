@@ -31,8 +31,14 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/value_formatter.cpp
         src/eta/runtime/clp/linear.cpp
         src/eta/runtime/clp/fm.cpp
+        src/eta/runtime/clp/simplex.cpp
         src/eta/runtime/clp/real_store.cpp
 )
+
+option(ETA_CLP_FM_ORACLE "Enable FM-vs-Simplex oracle checks for CLP(R)" OFF)
+if(ETA_CLP_FM_ORACLE)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_CLP_FM_ORACLE=1)
+endif()
 
 # BMI2/PEXT support check
 if(NOT MSVC)

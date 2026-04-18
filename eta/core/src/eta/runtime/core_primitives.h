@@ -24,6 +24,7 @@
 #include "eta/runtime/clp/alldiff_regin.h"
 #include "eta/runtime/clp/linear.h"
 #include "eta/runtime/clp/fm.h"
+#include "eta/runtime/clp/simplex.h"
 #include "eta/runtime/stats_math.h"
 #include "eta/runtime/stats_extract.h"
 
@@ -2085,10 +2086,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
      *   (%clp-r-post-eq!  lhs rhs)
      *   (%clp-r-propagate!)
      *
-     * Posting appends one relation row to the per-VM RealStore, checks FM
-     * feasibility, then tightens R bounds for every participating variable.
-     * On failure, all effects since the local trail snapshot are rolled back
-     * atomically (including the RealStore append).
+     * Posting appends one relation row to the per-VM RealStore, checks
+     * simplex feasibility, then tightens R bounds for every participating
+     * variable. On failure, all effects since the local trail snapshot are
+     * rolled back atomically (including the RealStore append).
      */
     {
         auto r_user_error = [](std::string msg) -> RuntimeError {
@@ -2135,10 +2136,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return out;
         };
 
-        constexpr clp::FMConfig kRealCfg{
+        constexpr double kRealSimplexEps = 1e-9;
+#ifdef ETA_CLP_FM_ORACLE
+        constexpr clp::FMConfig kRealOracleCfg{
             .row_cap = 4096,
             .eps = 1e-12,
         };
+#endif
 
         auto same_rdomain = [](const clp::RDomain& a, const clp::RDomain& b) -> bool {
             return a.lo == b.lo && a.hi == b.hi &&
@@ -2238,7 +2242,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         };
 
         auto tighten_real_bounds =
-            [vm, kRealCfg, same_rdomain, is_unbounded, mixed_domain_error, r_user_error, materialize_system]()
+            [vm, same_rdomain, is_unbounded, mixed_domain_error, r_user_error, materialize_system]()
             -> std::expected<bool, RuntimeError> {
             if (!vm) {
                 return std::unexpected(RuntimeError{VMError{
@@ -2251,34 +2255,83 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             const auto& sys  = materialized->first;
             const auto& vars = materialized->second;
 
+            clp::Simplex simplex;
+            for (const auto& row : sys.leq) simplex.add_leq(row);
+            for (const auto& row : sys.eq)  simplex.add_eq(row);
+
             for (auto id : vars) {
                 const auto* dom = vm->constraint_store().get_domain(id);
                 if (dom && !std::holds_alternative<clp::RDomain>(*dom)) {
                     return std::unexpected(mixed_domain_error(id));
                 }
+                if (const auto* sb = vm->real_store().simplex_bounds(id)) {
+                    if (sb->lo.has_value()) simplex.assert_lower(id, *sb->lo);
+                    if (sb->hi.has_value()) simplex.assert_upper(id, *sb->hi);
+                }
             }
 
-            const auto feasible = clp::fm_feasible(sys, kRealCfg);
-            switch (feasible.status) {
-                case clp::FMStatus::Feasible:
+            const auto feasible = simplex.check(kRealSimplexEps);
+            switch (feasible) {
+                case clp::SimplexStatus::Feasible:
+                case clp::SimplexStatus::Unbounded:
                     break;
-                case clp::FMStatus::Infeasible:
+                case clp::SimplexStatus::Infeasible:
                     return false;
-                case clp::FMStatus::CapExceeded:
+                case clp::SimplexStatus::NumericFailure:
                     return std::unexpected(r_user_error(
-                        "clp.r.fm-cap-exceeded: Fourier-Motzkin row cap exceeded"));
+                        "clp.r.simplex.numeric-failure: simplex numeric failure"));
             }
+
+#ifdef ETA_CLP_FM_ORACLE
+            clp::FMSystem oracle_sys = sys;
+            for (auto id : vars) {
+                if (const auto* sb = vm->real_store().simplex_bounds(id)) {
+                    if (sb->lo.has_value() && std::isfinite(sb->lo->value)) {
+                        clp::LinearExpr lo_row;
+                        lo_row.terms.push_back(clp::LinearTerm{
+                            .var_id = id,
+                            .coef = -1.0,
+                        });
+                        lo_row.constant = sb->lo->value +
+                            (sb->lo->strict ? kRealOracleCfg.eps : 0.0);
+                        lo_row.canonicalize();
+                        oracle_sys.leq.push_back(std::move(lo_row));
+                    }
+                    if (sb->hi.has_value() && std::isfinite(sb->hi->value)) {
+                        clp::LinearExpr hi_row;
+                        hi_row.terms.push_back(clp::LinearTerm{
+                            .var_id = id,
+                            .coef = 1.0,
+                        });
+                        hi_row.constant = -sb->hi->value +
+                            (sb->hi->strict ? kRealOracleCfg.eps : 0.0);
+                        hi_row.canonicalize();
+                        oracle_sys.leq.push_back(std::move(hi_row));
+                    }
+                }
+            }
+
+            const auto oracle_feasible = clp::fm_feasible(oracle_sys, kRealOracleCfg);
+            const bool simplex_is_feasible =
+                (feasible == clp::SimplexStatus::Feasible || feasible == clp::SimplexStatus::Unbounded);
+            const bool fm_is_feasible = (oracle_feasible.status == clp::FMStatus::Feasible);
+            if (simplex_is_feasible != fm_is_feasible) {
+                return std::unexpected(r_user_error(
+                    "clp.r.oracle-mismatch: simplex/fm feasibility divergence"));
+            }
+#endif
 
             for (auto id : vars) {
-                const auto bounds_res = clp::fm_bounds_for(sys, id, kRealCfg);
+                const auto bounds_res = simplex.bounds_for(id, kRealSimplexEps);
                 switch (bounds_res.status) {
-                    case clp::FMStatus::Feasible:
+                    case clp::SimplexStatus::Feasible:
+                    case clp::SimplexStatus::Unbounded:
                         break;
-                    case clp::FMStatus::Infeasible:
+                    case clp::SimplexStatus::Infeasible:
                         return false;
-                    case clp::FMStatus::CapExceeded:
+                    case clp::SimplexStatus::NumericFailure:
                         return std::unexpected(r_user_error(
-                            "clp.r.fm-cap-exceeded: Fourier-Motzkin row cap exceeded"));
+                            "clp.r.simplex.numeric-failure: simplex numeric failure"));
                 }
                 if (!bounds_res.bounds.has_value()) {
                     return std::unexpected(r_user_error(
@@ -2286,6 +2339,47 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 }
 
                 const auto projected = *bounds_res.bounds;
+
+                std::optional<clp::Bound> asserted_lo;
+                if (std::isfinite(projected.lo)) {
+                    asserted_lo = clp::Bound{
+                        .value = projected.lo,
+                        .strict = projected.lo_open,
+                    };
+                }
+                std::optional<clp::Bound> asserted_hi;
+                if (std::isfinite(projected.hi)) {
+                    asserted_hi = clp::Bound{
+                        .value = projected.hi,
+                        .strict = projected.hi_open,
+                    };
+                }
+                vm->trail_assert_simplex_bound(id, asserted_lo, asserted_hi);
+
+#ifdef ETA_CLP_FM_ORACLE
+                const auto fm_bounds = clp::fm_bounds_for(oracle_sys, id, kRealOracleCfg);
+                if (fm_bounds.status == clp::FMStatus::Infeasible) {
+                    return false;
+                }
+                if (fm_bounds.status == clp::FMStatus::CapExceeded) {
+                    return std::unexpected(r_user_error(
+                        "clp.r.oracle-mismatch: fm oracle cap exceeded"));
+                }
+                if (!fm_bounds.bounds.has_value()) {
+                    return std::unexpected(r_user_error(
+                        "clp.r.oracle-mismatch: fm oracle missing bounds"));
+                }
+                auto approx = [](double a, double b) -> bool {
+                    if (std::isinf(a) || std::isinf(b)) return a == b;
+                    return std::abs(a - b) <= 1e-7;
+                };
+                if (!approx(projected.lo, fm_bounds.bounds->lo) ||
+                    !approx(projected.hi, fm_bounds.bounds->hi)) {
+                    return std::unexpected(r_user_error(
+                        "clp.r.oracle-mismatch: simplex/fm bound divergence"));
+                }
+#endif
+
                 const auto* cur_dom = vm->constraint_store().get_domain(id);
                 if (!cur_dom) {
                     if (!projected.empty() && !is_unbounded(projected)) {

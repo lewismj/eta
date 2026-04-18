@@ -97,6 +97,10 @@ struct WindFrame {
  * Stage 6.4 adds `Kind::RealStore`: snapshots the append-only CLP(R)
  * real-constraint log length.  Unwinding to this entry truncates the VM's
  * `RealStore` back to the prior length.
+ *
+ * Stage 6.5 adds `Kind::SimplexBound`: snapshots one variable's asserted
+ * simplex lower/upper bounds (`std::optional<clp::Bound>` pair). Unwinding
+ * restores the prior pair without snapshotting the full tableau.
  */
 struct TrailEntry {
     enum class Kind : std::uint8_t {
@@ -104,14 +108,17 @@ struct TrailEntry {
         Attr,    ///< Attributed var: `var`'s attribute `module_key` was mutated
         Domain,  ///< CLP domain on the LogicVar `var` was installed/replaced/erased
         RealStore, ///< CLP(R) real-constraint log size snapshot
+        SimplexBound, ///< CLP(R) simplex bound snapshot for one logic var id
     };
     Kind                              kind{Kind::Bind};
     LispVal                           var{nanbox::Nil};        ///< HeapObject ref to the LogicVar
     LispVal                           prev_value{nanbox::Nil}; ///< Attr: previous attr value (only if had_prev)
     memory::intern::InternId          module_key{0};           ///< Attr: which attribute slot
-    bool                              had_prev{false};         ///< Attr/Domain: was prev_* meaningful?
+    bool                              had_prev{false};         ///< Attr/Domain/SimplexBound: was prev_* meaningful?
     std::optional<clp::Domain>        prev_domain{};
     std::size_t                       prev_real_store_size{0};
+    std::optional<clp::Bound>         prev_simplex_lo{};
+    std::optional<clp::Bound>         prev_simplex_hi{};
 };
 
 /// A live exception catch frame installed by SetupCatch.
@@ -246,8 +253,16 @@ public:
     void trail_mark_real_store();
 
     /**
+     * Trailed simplex-bound write: snapshot prior `(lo, hi)` for `id` and
+     * install the new pair in `RealStore`.
+     */
+    void trail_assert_simplex_bound(memory::heap::ObjectId id,
+                                    std::optional<clp::Bound> lo,
+                                    std::optional<clp::Bound> hi);
+
+    /**
      * Roll back every trail entry with index >= `mark`.
-     * Restores Bind/Attr/Domain/RealStore side effects atomically.
+     * Restores Bind/Attr/Domain/RealStore/SimplexBound side effects atomically.
      */
     void rollback_trail_to(std::size_t mark);
 

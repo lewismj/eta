@@ -118,6 +118,10 @@ void VM::collect_garbage() {
         for (auto id : real_store_.participating_vars()) {
             visit(ops::box(Tag::HeapObject, static_cast<int64_t>(id)));
         }
+        /// Stage 6.5: asserted simplex-bound snapshots also pin logic vars.
+        for (auto id : real_store_.simplex_bound_vars()) {
+            visit(ops::box(Tag::HeapObject, static_cast<int64_t>(id)));
+        }
         /// Phase 3: attr-unify-hook procedures are VM-lifetime roots.
         for (const auto& [_k, hook] : attr_unify_hooks_) visit(hook);
         /// Phase 4b: pending propagator thunks.
@@ -216,6 +220,11 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
     {
         auto ids = real_store_.participating_vars();
         if (!ids.empty()) roots.push_back({"Real Store", std::move(ids)});
+    }
+
+    {
+        auto ids = real_store_.simplex_bound_vars();
+        if (!ids.empty()) roots.push_back({"Simplex Bounds", std::move(ids)});
     }
 
     {
@@ -1878,6 +1887,34 @@ void VM::trail_mark_real_store() {
     trail_stack_.push_back(std::move(e));
 }
 
+void VM::trail_assert_simplex_bound(memory::heap::ObjectId id,
+                                    std::optional<clp::Bound> lo,
+                                    std::optional<clp::Bound> hi) {
+    const auto* prev = real_store_.simplex_bounds(id);
+    if (prev && prev->lo == lo && prev->hi == hi) return;
+    if (!prev && !lo.has_value() && !hi.has_value()) return;
+
+    TrailEntry e{};
+    e.kind = TrailEntry::Kind::SimplexBound;
+    e.var = ops::box(Tag::HeapObject, static_cast<int64_t>(id));
+    if (prev) {
+        e.had_prev = true;
+        e.prev_simplex_lo = prev->lo;
+        e.prev_simplex_hi = prev->hi;
+    } else {
+        e.had_prev = false;
+        e.prev_simplex_lo = std::nullopt;
+        e.prev_simplex_hi = std::nullopt;
+    }
+    trail_stack_.push_back(std::move(e));
+
+    if (!lo.has_value() && !hi.has_value()) {
+        real_store_.erase_simplex_bounds_no_trail(id);
+    } else {
+        real_store_.set_simplex_bounds_no_trail(id, std::move(lo), std::move(hi));
+    }
+}
+
 /**
  * Helper: restore trail entries created since `mark` to their pre-write
  * state.  Used by both the outer-`unify` wrapper rollback and the inner
@@ -1915,6 +1952,15 @@ namespace {
             case TrailEntry::Kind::RealStore:
                 rstore.truncate(e.prev_real_store_size);
                 break;
+            case TrailEntry::Kind::SimplexBound: {
+                auto id = static_cast<memory::heap::ObjectId>(ops::payload(e.var));
+                if (e.had_prev) {
+                    rstore.set_simplex_bounds_no_trail(id, e.prev_simplex_lo, e.prev_simplex_hi);
+                } else {
+                    rstore.erase_simplex_bounds_no_trail(id);
+                }
+                break;
+            }
         }
     }
 }
