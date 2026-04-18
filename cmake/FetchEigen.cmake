@@ -24,7 +24,14 @@ set(EIGEN_BUILD_TESTING   OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING         OFF CACHE BOOL "" FORCE)
 set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "" FORCE)
 
+# Silence deprecated-policy noise from Eigen's own CMake while fetching.
+set(_eta_prev_cmake_warn_deprecated "${CMAKE_WARN_DEPRECATED}")
+set(CMAKE_WARN_DEPRECATED OFF)
+
 FetchContent_MakeAvailable(eigen)
+
+set(CMAKE_WARN_DEPRECATED "${_eta_prev_cmake_warn_deprecated}")
+unset(_eta_prev_cmake_warn_deprecated)
 
 message(STATUS "Eigen 3.4.0 fetched — Eigen3::Eigen target available")
 

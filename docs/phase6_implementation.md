@@ -90,7 +90,7 @@ plumbing and a `std::variant` arm extension.
 
 ---
 
-## Stage 6.2 — Linear-expression normaliser ⏳
+## Stage 6.2 — Linear-expression normaliser ✅
 
 **Goal:** pure C++ helper that walks a `CompoundTerm` tree and produces
 a canonical sum-of-products `LinearExpr`.  Decoupled from the VM so it
@@ -126,7 +126,7 @@ is unit-testable without any solver state.
 
 ---
 
-## Stage 6.3 — Fourier–Motzkin fallback (oracle) ⏳
+## Stage 6.3 — Fourier–Motzkin fallback (oracle) ✅
 
 **Goal:** small-systems-only feasibility + bound-tightening engine that
 serves dual purposes: (a) runtime backend before Stage 6.5 ships, and

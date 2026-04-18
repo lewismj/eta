@@ -4,6 +4,7 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -20,6 +21,8 @@
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/clp/constraint_store.h"
 #include "eta/runtime/clp/alldiff_regin.h"
+#include "eta/runtime/clp/linear.h"
+#include "eta/runtime/clp/fm.h"
 #include "eta/runtime/stats_math.h"
 #include "eta/runtime/stats_extract.h"
 
@@ -1522,6 +1525,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     /**
      * CLP domain primitives: %clp-domain-z!  %clp-domain-fd!  %clp-get-domain
+     * plus Stage 6.x test primitives (%clp-linearize, %clp-fm-*).
      *
      * These are internal builtins consumed by std.clp.  They are prefixed with
      * % to signal that user code should call the std.clp wrapper instead.
@@ -1732,6 +1736,346 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return *result;
             }
         });
+
+    /**
+     * (%clp-linearize term)
+     * Stage 6.2 test-only primitive.  Returns a dotted pair:
+     *
+     *   (pairs . constant)
+     *
+     * where `pairs` is a proper list of `(coef . var-id)` pairs in
+     * canonical var-id order.
+     */
+    env.register_builtin("%clp-linearize", 1, false,
+        [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto linear = clp::linearize(args[0], heap, intern_table);
+            if (!linear) {
+                std::ostringstream oss;
+                oss << linear.error().tag << ": " << linear.error().message;
+                if (!linear.error().offending_vars.empty()) {
+                    oss << " [vars:";
+                    for (std::size_t i = 0; i < linear.error().offending_vars.size(); ++i) {
+                        if (i > 0) oss << ",";
+                        oss << linear.error().offending_vars[i];
+                    }
+                    oss << "]";
+                }
+                return std::unexpected(RuntimeError{
+                    VMError{RuntimeErrorCode::UserError, oss.str()}});
+            }
+
+            auto roots = heap.make_external_root_frame();
+            LispVal pairs = Nil;
+            roots.push(pairs);
+
+            for (auto it = linear->terms.rbegin(); it != linear->terms.rend(); ++it) {
+                auto coef_val = make_flonum(it->coef);
+                if (!coef_val) return std::unexpected(coef_val.error());
+                auto var_val = make_fixnum(heap, static_cast<int64_t>(it->var_id));
+                if (!var_val) return std::unexpected(var_val.error());
+                roots.push(*coef_val);
+                roots.push(*var_val);
+
+                auto pair_val = make_cons(heap, *coef_val, *var_val);
+                if (!pair_val) return std::unexpected(pair_val.error());
+                roots.push(*pair_val);
+
+                auto cell = make_cons(heap, *pair_val, pairs);
+                if (!cell) return std::unexpected(cell.error());
+                pairs = *cell;
+                roots.push(pairs);
+            }
+
+            auto constant = make_flonum(linear->constant);
+            if (!constant) return std::unexpected(constant.error());
+            roots.push(*constant);
+
+            return make_cons(heap, pairs, *constant);
+        });
+
+    /**
+     * Stage 6.3 test-only Fourier-Motzkin primitives:
+     *
+     *   (%clp-fm-feasible? constraints [row-cap])
+     *   (%clp-fm-bounds var constraints [row-cap])
+     *
+     * `constraints` is a proper list of relation terms:
+     *   (<= lhs rhs), (>= lhs rhs), (= lhs rhs)
+     */
+    {
+        struct ParsedRelation {
+            std::string op;
+            LispVal lhs{Nil};
+            LispVal rhs{Nil};
+        };
+
+        auto fm_user_error = [](std::string msg) -> RuntimeError {
+            return RuntimeError{VMError{RuntimeErrorCode::UserError, std::move(msg)}};
+        };
+
+        auto symbol_text = [&intern_table](LispVal v) -> std::optional<std::string> {
+            if (!ops::is_boxed(v) || ops::tag(v) != Tag::Symbol) return std::nullopt;
+            auto s = intern_table.get_string(ops::payload(v));
+            if (!s) return std::nullopt;
+            return std::string(*s);
+        };
+
+        auto parse_relation = [&heap, symbol_text, fm_user_error](LispVal term)
+            -> std::expected<ParsedRelation, RuntimeError> {
+            if (!ops::is_boxed(term) || ops::tag(term) != Tag::HeapObject) {
+                return std::unexpected(fm_user_error(
+                    "clp.fm.parse.relation: each constraint must be a relation term"));
+            }
+
+            const auto id = ops::payload(term);
+            if (auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(id)) {
+                if (ct->args.size() != 2) {
+                    return std::unexpected(fm_user_error(
+                        "clp.fm.parse.relation: relation term must have exactly 2 arguments"));
+                }
+                auto op = symbol_text(ct->functor);
+                if (!op) {
+                    return std::unexpected(fm_user_error(
+                        "clp.fm.parse.relation: relation operator must be a symbol"));
+                }
+                return ParsedRelation{
+                    .op = std::move(*op),
+                    .lhs = ct->args[0],
+                    .rhs = ct->args[1],
+                };
+            }
+
+            auto* rel_cell = heap.try_get_as<ObjectKind::Cons, types::Cons>(id);
+            if (!rel_cell) {
+                return std::unexpected(fm_user_error(
+                    "clp.fm.parse.relation: each constraint must be a relation term"));
+            }
+            auto op = symbol_text(rel_cell->car);
+            if (!op) {
+                return std::unexpected(fm_user_error(
+                    "clp.fm.parse.relation: relation operator must be a symbol"));
+            }
+
+            std::vector<LispVal> rel_args;
+            LispVal cursor = rel_cell->cdr;
+            while (ops::is_boxed(cursor) && ops::tag(cursor) == Tag::HeapObject) {
+                auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cursor));
+                if (!c) break;
+                rel_args.push_back(c->car);
+                cursor = c->cdr;
+            }
+            if (cursor != Nil || rel_args.size() != 2) {
+                return std::unexpected(fm_user_error(
+                    "clp.fm.parse.relation: relation term must have exactly 2 arguments"));
+            }
+
+            return ParsedRelation{
+                .op = std::move(*op),
+                .lhs = rel_args[0],
+                .rhs = rel_args[1],
+            };
+        };
+
+        auto format_linearize_error = [](const clp::LinearizeErrorInfo& err) -> std::string {
+            std::string suffix = err.tag;
+            const std::string prefix = "clp.linearize.";
+            if (suffix.rfind(prefix, 0) == 0) {
+                suffix = suffix.substr(prefix.size());
+            }
+            std::ostringstream oss;
+            oss << "clp.fm.linearize." << suffix << ": " << err.message;
+            if (!err.offending_vars.empty()) {
+                oss << " [vars:";
+                for (std::size_t i = 0; i < err.offending_vars.size(); ++i) {
+                    if (i > 0) oss << ",";
+                    oss << err.offending_vars[i];
+                }
+                oss << "]";
+            }
+            return oss.str();
+        };
+
+        auto linear_diff = [&heap, &intern_table, fm_user_error, format_linearize_error]
+            (LispVal lhs, LispVal rhs) -> std::expected<clp::LinearExpr, RuntimeError> {
+            auto l = clp::linearize(lhs, heap, intern_table);
+            if (!l) {
+                return std::unexpected(fm_user_error(format_linearize_error(l.error())));
+            }
+            auto r = clp::linearize(rhs, heap, intern_table);
+            if (!r) {
+                return std::unexpected(fm_user_error(format_linearize_error(r.error())));
+            }
+
+            clp::LinearExpr out;
+            out.constant = l->constant - r->constant;
+            out.terms = l->terms;
+            out.terms.reserve(l->terms.size() + r->terms.size());
+            for (const auto& t : r->terms) {
+                out.terms.push_back(clp::LinearTerm{
+                    .var_id = t.var_id,
+                    .coef = -t.coef,
+                });
+            }
+            out.canonicalize();
+            return out;
+        };
+
+        auto parse_constraints = [&heap, parse_relation, linear_diff, fm_user_error](LispVal raw_constraints)
+            -> std::expected<clp::FMSystem, RuntimeError> {
+            clp::FMSystem sys;
+            LispVal cursor = raw_constraints;
+            while (ops::is_boxed(cursor) && ops::tag(cursor) == Tag::HeapObject) {
+                auto* c = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cursor));
+                if (!c) break;
+
+                auto rel = parse_relation(c->car);
+                if (!rel) return std::unexpected(rel.error());
+
+                auto diff = linear_diff(rel->lhs, rel->rhs);
+                if (!diff) return std::unexpected(diff.error());
+
+                if (rel->op == "<=") {
+                    sys.leq.push_back(*diff);
+                } else if (rel->op == ">=") {
+                    clp::LinearExpr flipped = *diff;
+                    flipped.constant = -flipped.constant;
+                    for (auto& t : flipped.terms) t.coef = -t.coef;
+                    sys.leq.push_back(std::move(flipped));
+                } else if (rel->op == "=") {
+                    sys.eq.push_back(*diff);
+                } else {
+                    return std::unexpected(fm_user_error(
+                        "clp.fm.parse.relation-op: relation operator must be one of <=, >=, ="));
+                }
+
+                cursor = c->cdr;
+            }
+            if (cursor != Nil) {
+                return std::unexpected(fm_user_error(
+                    "clp.fm.parse.constraints: constraints must be a proper list"));
+            }
+            return sys;
+        };
+
+        auto parse_row_cap = [&heap, fm_user_error](LispVal arg)
+            -> std::expected<std::size_t, RuntimeError> {
+            auto n = classify_numeric(arg, heap);
+            if (!n.is_valid() || n.is_flonum()) {
+                return std::unexpected(fm_user_error(
+                    "clp.fm.parse.row-cap: row-cap must be an integer"));
+            }
+            if (n.int_val <= 0) {
+                return std::unexpected(fm_user_error(
+                    "clp.fm.parse.row-cap: row-cap must be > 0"));
+            }
+            if (static_cast<unsigned long long>(n.int_val) >
+                static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max())) {
+                return std::unexpected(fm_user_error(
+                    "clp.fm.parse.row-cap: row-cap is too large"));
+            }
+            return static_cast<std::size_t>(n.int_val);
+        };
+
+        auto cap_symbol = [&intern_table]() -> std::expected<LispVal, RuntimeError> {
+            return make_symbol(intern_table, "clp.fm.cap-exceeded");
+        };
+
+        auto deref_unbound_lvar = [&heap, fm_user_error](LispVal v)
+            -> std::expected<ObjectId, RuntimeError> {
+            LispVal cur = v;
+            for (;;) {
+                if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject) {
+                    return std::unexpected(fm_user_error(
+                        "clp.fm.parse.var: first argument must be an unbound logic variable"));
+                }
+                auto id = ops::payload(cur);
+                auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id);
+                if (!lv) {
+                    return std::unexpected(fm_user_error(
+                        "clp.fm.parse.var: first argument must be an unbound logic variable"));
+                }
+                if (!lv->binding.has_value()) return id;
+                cur = *lv->binding;
+            }
+        };
+
+        env.register_builtin("%clp-fm-feasible?", 1, true,
+            [parse_constraints, parse_row_cap, cap_symbol, fm_user_error](Args args)
+                -> std::expected<LispVal, RuntimeError> {
+                if (args.size() > 2) {
+                    return std::unexpected(fm_user_error(
+                        "clp.fm.parse.arity: %clp-fm-feasible? expects 1 or 2 arguments"));
+                }
+                auto sys = parse_constraints(args[0]);
+                if (!sys) return std::unexpected(sys.error());
+
+                std::size_t row_cap = 4096;
+                if (args.size() == 2) {
+                    auto cap = parse_row_cap(args[1]);
+                    if (!cap) return std::unexpected(cap.error());
+                    row_cap = *cap;
+                }
+
+                const auto result = clp::fm_feasible(*sys, clp::FMConfig{
+                    .row_cap = row_cap,
+                    .eps = 1e-12,
+                });
+                switch (result.status) {
+                    case clp::FMStatus::Feasible:
+                        return True;
+                    case clp::FMStatus::Infeasible:
+                        return False;
+                    case clp::FMStatus::CapExceeded:
+                        return cap_symbol();
+                }
+                return False;
+            });
+
+        env.register_builtin("%clp-fm-bounds", 2, true,
+            [&heap, deref_unbound_lvar, parse_constraints, parse_row_cap, cap_symbol, fm_user_error](Args args)
+                -> std::expected<LispVal, RuntimeError> {
+                if (args.size() > 3) {
+                    return std::unexpected(fm_user_error(
+                        "clp.fm.parse.arity: %clp-fm-bounds expects 2 or 3 arguments"));
+                }
+
+                auto var_id = deref_unbound_lvar(args[0]);
+                if (!var_id) return std::unexpected(var_id.error());
+
+                auto sys = parse_constraints(args[1]);
+                if (!sys) return std::unexpected(sys.error());
+
+                std::size_t row_cap = 4096;
+                if (args.size() == 3) {
+                    auto cap = parse_row_cap(args[2]);
+                    if (!cap) return std::unexpected(cap.error());
+                    row_cap = *cap;
+                }
+
+                const auto result = clp::fm_bounds_for(*sys, *var_id, clp::FMConfig{
+                    .row_cap = row_cap,
+                    .eps = 1e-12,
+                });
+                switch (result.status) {
+                    case clp::FMStatus::Feasible: {
+                        if (!result.bounds.has_value()) {
+                            return std::unexpected(fm_user_error(
+                                "clp.fm.internal: feasible result missing bounds"));
+                        }
+                        auto lo = make_flonum(result.bounds->lo);
+                        if (!lo) return std::unexpected(lo.error());
+                        auto hi = make_flonum(result.bounds->hi);
+                        if (!hi) return std::unexpected(hi.error());
+                        return make_cons(heap, *lo, *hi);
+                    }
+                    case clp::FMStatus::Infeasible:
+                        return False;
+                    case clp::FMStatus::CapExceeded:
+                        return cap_symbol();
+                }
+                return False;
+            });
+    }
 
     /**
      * CLP(FD) native bounds-consistency propagators (Phase 4b)

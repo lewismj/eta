@@ -29,6 +29,8 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/vm/vm.cpp
         src/eta/runtime/vm/bytecode_serializer.cpp
         src/eta/runtime/value_formatter.cpp
+        src/eta/runtime/clp/linear.cpp
+        src/eta/runtime/clp/fm.cpp
 )
 
 # BMI2/PEXT support check
