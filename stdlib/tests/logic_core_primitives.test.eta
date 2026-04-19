@@ -1,4 +1,4 @@
-;;; Smoke test for Phase 1 primitives. Run with:
+;;; Smoke test for core logic primitives. Run with:
 ;;;   eta_test stdlib/tests/logic_phase1_smoke.eta
 (module logic-phase1-smoke
   (begin

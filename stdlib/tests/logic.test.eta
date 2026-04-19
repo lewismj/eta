@@ -165,7 +165,7 @@
                                (membero x '(a b c)))))
                       (assert-equal '(b) r)))))))
 
-          ;; ── named logic vars (Phase 1) ────────────────────────────
+          ;; ── named logic vars ───────────────────────────────────────
           (make-group "named-logic-vars"
             (list
               (make-test "logic-var/named returns an unbound var"
@@ -196,7 +196,7 @@
                     (unwind-trail m)
                     (assert-equal 7 v))))))
 
-          ;; ── occurs-check toggle (Phase 1) ─────────────────────────
+          ;; ── occurs-check toggle ────────────────────────────────────
           (make-group "occurs-check-toggle"
             (list
               (make-test "default mode is 'always"
@@ -233,7 +233,7 @@
                     (set-occurs-check! 'always)  ; restore default
                     (assert-true ok))))))
 
-          ;; ── compound terms (Phase 1) ──────────────────────────────
+          ;; ── compound terms ─────────────────────────────────────────
           (make-group "compound-terms"
             (list
               (make-test "compound? is #t for (term …)"

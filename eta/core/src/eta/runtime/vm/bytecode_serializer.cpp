@@ -525,7 +525,7 @@ BytecodeSerializer::verify_function(const BytecodeFunction& func) {
         /**
          * Reject completely unknown opcode bytes.
          *
-         * Stage 8 reserves an opcode block at 0x80-0xBF, which means the enum
+         * WAM opcodes reserve a block at 0x80-0xBF, which means the enum
          * is intentionally non-contiguous.  String-dispatch via to_string() is
          * the canonical "known opcode" check.
          */

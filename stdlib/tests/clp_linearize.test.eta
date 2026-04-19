@@ -1,4 +1,4 @@
-;;; clp_linearize_smoke.eta -- Phase 6.2 smoke tests for %clp-linearize.
+;;; clp_linearize_smoke.eta -- Smoke tests for %clp-linearize.
 
 (module clp-linearize-smoke
   (import std.test std.logic std.core)

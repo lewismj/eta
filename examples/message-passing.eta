@@ -1,6 +1,6 @@
 ;;; examples/message-passing.eta — Erlang-style parent/child messaging.
 ;;;
-;;; Demonstrates Phase 5 std.net module:
+;;; Demonstrates the std.net module:
 ;;;   - (spawn module-path)        → parent-side socket
 ;;;   - (send! sock value)         → send a serialised value
 ;;;   - (recv! sock 'wait)         → blocking receive

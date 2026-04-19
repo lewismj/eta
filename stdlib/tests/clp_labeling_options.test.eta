@@ -1,4 +1,4 @@
-;;; clp_labeling_options.eta — Phase 4b smoke test for the clp:labeling
+;;; clp_labeling_options.eta — Smoke test for the clp:labeling
 ;;; option-list API: positional back-compat, plist parsing, value-ordering,
 ;;; solution enumeration ('first / 'all / N), and on-solution callback.
 

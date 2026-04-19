@@ -41,7 +41,7 @@ struct SimplexBoundState {
 /**
  * @brief Per-VM append-only log of posted CLP(R) constraints.
  *
- * Stage 6.4 keeps the posting history as an append log so trail unwind can
+ * Posting history is kept as an append log so trail unwind can
  * restore an earlier state by truncating to a prior size snapshot.
  */
 class RealStore {

@@ -523,7 +523,7 @@ void LspServer::validate_document(const std::string& uri) {
     cached = source;
     std::vector<LspDiagnostic> diags;
 
-    /// Phase 1: Lex + Parse
+    /// Lex + Parse
     reader::lexer::Lexer lex(0, source);
     reader::parser::Parser parser(lex);
 
@@ -557,7 +557,7 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    /// Phase 2: Expand
+    /// Expand
     reader::expander::Expander expander;
     auto expanded_res = expander.expand_many(parsed);
     if (!expanded_res) {
@@ -575,7 +575,7 @@ void LspServer::validate_document(const std::string& uri) {
     }
 
     /**
-     * Phase 3: Link
+     * Link
      * Move expanded forms out (SExprPtr = unique_ptr, not copyable).
      * Load any external modules required by (import ...) forms so the
      * linker can resolve cross-module references without false diagnostics.
@@ -622,7 +622,7 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    /// Phase 4: Semantic Analysis
+    /// Semantic Analysis
     semantics::SemanticAnalyzer sa;
     runtime::BuiltinEnvironment builtins;
     runtime::register_builtin_names(builtins);

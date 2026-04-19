@@ -1,6 +1,6 @@
-;;; std/freeze.eta — Phase 3 attributed-variable combinators.
+;;; std/freeze.eta — attributed-variable combinators.
 ;;;
-;;; Builds on the Phase 3 primitives
+;;; Builds on the attributed-variable primitives
 ;;;   (put-attr v 'mod val)
 ;;;   (get-attr v 'mod)
 ;;;   (del-attr v 'mod)

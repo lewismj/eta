@@ -1,16 +1,16 @@
 /**
  * finite sets.  Pure C++ value types with no Eta/GC dependencies.
  *
- * Phase 4b: `FDDomain` is now a chunked bit-set rather than a sorted
+ * `FDDomain` is a chunked bit-set rather than a sorted
  * `std::vector<int64_t>`.  Membership / cardinality / min / max all run
  * in O(words) instead of O(|values|), and the representation shares its
- * lifetime model with the Phase 4b unified `TrailEntry::Kind::Domain`
+ * lifetime model with the unified `TrailEntry::Kind::Domain`
  * snapshot (the bitset chunks are copied straight into the trail entry,
  * no extra allocation per write).
  *
  * External invariants preserved:
- *   - `Domain` is `std::variant<ZDomain, FDDomain, RDomain>` (Phase 6.1
- *     added `RDomain` for clp(R) real-interval bounds).
+ *   - `Domain` is `std::variant<ZDomain, FDDomain, RDomain>` (`RDomain`
+ *     covers clp(R) real-interval bounds).
  *   - `domain_intersect` still normalises across the Z/FD cross-kind
  *     promote the result to `RDomain` (the Z/FD integrality constraint
  *   - Empty intersection is reported as `empty() == true` on the result

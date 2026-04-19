@@ -1,4 +1,4 @@
-;;; clp_phase4_smoke.eta — Phase 4 smoke test for AC-3 propagation,
+;;; clp_phase4_smoke.eta — Smoke test for AC-3 propagation,
 ;;; first-fail labeling, and branch-and-bound optimisation.
 
 (module clp-phase4-smoke
@@ -20,9 +20,9 @@
 
     ;; ── 1. AC-3 all-different: binding one var narrows siblings ──────
     ;;
-    ;; Before Phase 4 this would have left Y's domain as (1 2 3) because
+    ;; Previously this would have left Y's domain as (1 2 3) because
     ;; the old `*clp-adiff-groups*` global only fired on clp:solve.  With
-    ;; the Phase 4 attr-unify-hook, the moment we bind X=1 the hook
+    ;; the attr-unify-hook, the moment we bind X=1 the hook
     ;; prunes 1 from Y's FD domain *inside* unify.
     (let ((x (logic-var)) (y (logic-var)))
       (clp:in-fd x 1 2 3)

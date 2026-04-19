@@ -1,6 +1,6 @@
 ;;; std/clpb.eta — CLP(B) Boolean constraint solver.
 ;;;
-;;; Phase 5 (propagation-only backend — "Option A" per the roadmap).
+;;; CLP(B) propagation-only backend.
 ;;; Sits on the same attributed-variable / propagation-queue substrate
 ;;; as `std.clp`: Boolean vars carry a Z domain {0,1}; every posting
 ;;; helper runs its native bounds / support propagator once, then
@@ -32,14 +32,14 @@
 ;;;                                 posted constraints (i.e. UNSAT)
 ;;;
 ;;; `clp:sat-count` (model counting) requires the optional BDD backend
-;;; and is deferred to a later iteration (scope-trimmed from the Phase 5
-;;; MVP per the roadmap's "Option A + B behind a flag" recommendation).
+;;; and is deferred to a later iteration (scope-trimmed from the
+;;; MVP with the optional BDD backend kept behind a flag).
 
 (module std.clpb
   (import std.collections)
   (import std.logic)
   (import std.clp)
-  ;; Note: `put-attr`, `get-attr`, `register-prop-attr!` are Phase 3 VM
+  ;; Note: `put-attr`, `get-attr`, `register-prop-attr!` are core VM
   ;; built-ins registered globally — the `'clp.prop` attribute is
   ;; registered once by `std.clp` at module load, shared here.
   (export

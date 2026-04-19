@@ -1,4 +1,4 @@
-;;; clp_phase4b_smoke.eta — Phase 4b smoke test for native bounds-consistency
+;;; clp_phase4b_smoke.eta — Smoke test for native bounds-consistency
 ;;; propagators (%clp-fd-plus!, %clp-fd-plus-offset!, %clp-fd-abs!) and the
 ;;; generic 'clp.prop re-firing hook.
 

@@ -13,7 +13,7 @@
 namespace eta::runtime::clp {
 
 /**
- * @brief One numeric bound used by the Stage 6.5 simplex backend.
+ * @brief One numeric bound used by the simplex backend.
  *
  * `strict = true` means `<` / `>`; `strict = false` means `<=` / `>=`.
  */

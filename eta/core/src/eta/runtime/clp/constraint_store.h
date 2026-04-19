@@ -2,7 +2,7 @@
  *
  * Maps each logic-variable ObjectId to a Domain (ZDomain or FDDomain).
  *
- * Phase 1 follow-up: the store no longer keeps a private undo trail.
+ * The store no longer keeps a private undo trail.
  * All domain mutations are trailed by the VM through a unified
  * `TrailEntry::Kind::Domain` entry on `VM::trail_stack_`, which is the
  * single source of truth for backtracking.  The store therefore offers

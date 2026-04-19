@@ -1,4 +1,4 @@
-;;; clp_nqueens.eta — Phase 4b regression test: N-queens correctness
+;;; clp_nqueens.eta — Regression test: N-queens correctness
 ;;; across small N using native diagonal propagators.  Asserts known
 ;;; solution counts for N = 4, 5, 6.
 ;;;

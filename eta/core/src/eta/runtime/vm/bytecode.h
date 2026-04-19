@@ -106,7 +106,7 @@ enum class OpCode : std::uint8_t {
     _Reserved2,     ///< was DualBp   (removed)
 
     /**
-     * Stage 8 scaffold: WAM-style logic opcodes in the shared VM opcode table.
+     * WAM-style logic opcodes in the shared VM opcode table.
      *
      * Values are assigned in the 0x80-0xBF range so future WAM expansion
      * can remain contiguous without renumbering existing non-logic opcodes.

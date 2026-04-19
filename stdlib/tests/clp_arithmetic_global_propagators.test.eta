@@ -1,4 +1,4 @@
-;;; clp_phase4b_arith.eta — Phase 4b smoke tests for the native arithmetic /
+;;; clp_phase4b_arith.eta — Smoke tests for the native arithmetic /
 ;;; global propagators clp:*, clp:sum, clp:scalar-product, clp:element.
 
 (module clp-phase4b-arith

@@ -1,4 +1,4 @@
-;;; std/db.eta - Stage 7 relation database on top of FactTable.
+;;; std/db.eta - Relation database on top of FactTable.
 ;;;
 ;;; This module provides a lightweight relation layer using existing
 ;;; FactTable builtins. It preserves the current list-of-thunks logic API:
@@ -121,7 +121,7 @@
             found
             (let ((ft (apply make-fact-table (make-col-names arity))))
               (%fact-table-set-predicate! ft name arity)
-              ;; First-arg indexing is the default fast path from the roadmap.
+              ;; First-arg indexing is the default fast path.
               (when (> arity 0) (fact-table-build-index! ft 0))
               (registry-put! key ft)))))
 

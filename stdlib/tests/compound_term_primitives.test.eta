@@ -1,4 +1,4 @@
-;;; Smoke test for compound-term primitives (Phase 1 rest).
+;;; Smoke test for compound-term primitives.
 (module compound-smoke
   (begin
     (display "compound smoke: start\n")

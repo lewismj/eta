@@ -1,4 +1,4 @@
-;;; clp_prop_queue_smoke.eta — Phase 4b dedicated smoke tests for the
+;;; clp_prop_queue_smoke.eta — Dedicated smoke tests for the
 ;;; VM-level PropagationQueue and the unified `TrailEntry::Kind::Domain`
 ;;; trail entry that landed alongside it.
 ;;;
@@ -15,7 +15,7 @@
 ;;;      `clp:all-different` var prunes the bound value from every
 ;;;      sibling's FD domain via the queue, with no duplicate work.
 ;;;   4. Var–var domain intersection on unbound unify — surviving var
-;;;      receives the intersection (Phase 3 follow-up).
+;;;      receives the intersection.
 ;;;   5. Unified-trail Domain unwind — `trail-mark` / write-domain /
 ;;;      `unwind-trail` restores both the binding AND the domain state
 ;;;      that existed at mark time (i.e. post-time narrowings BEFORE the

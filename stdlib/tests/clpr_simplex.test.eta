@@ -1,4 +1,4 @@
-;;; clpr_simplex_smoke.eta -- Stage 6.5 smoke tests for simplex-backed std.clpr.
+;;; clpr_simplex_smoke.eta -- Smoke tests for simplex-backed std.clpr.
 
 (module clpr-simplex-smoke
   (import std.test std.logic std.clpr)
@@ -85,4 +85,3 @@
                 (assert-equal #f (clp:domain-r y))))))))
 
     (print-tap (run suite))))
-

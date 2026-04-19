@@ -34,7 +34,7 @@ namespace eta::runtime::types {
          * @brief Optional compiled rule payload per row.
          *
          * Ground facts store `Nil` here. Rule rows store a closure / callable
-         * value used by the Stage-7 relation layer.
+         * value used by the relation layer.
          */
         std::vector<LispVal> rule_column;
 

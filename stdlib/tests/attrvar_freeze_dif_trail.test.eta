@@ -1,4 +1,4 @@
-;;; attrvar_smoke.eta — Phase 3 smoke test for attributed variables +
+;;; attrvar_smoke.eta — Smoke test for attributed variables +
 ;;; freeze / dif, exercising the trail-unwind semantics.
 ;;;
 ;;; Run with:

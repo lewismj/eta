@@ -1,4 +1,4 @@
-;;; clpb_smoke.eta — Phase 5 smoke test for CLP(B) propagation-only.
+;;; clpb_smoke.eta — Smoke test for CLP(B) propagation-only.
 ;;;
 ;;; Coverage:
 ;;;   1. Basic propagators (and / or / xor / not / imp / eq) — forward &

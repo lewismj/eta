@@ -1,4 +1,4 @@
-;;; clpr_optimize_smoke.eta -- Stage 6.6 smoke tests for CLP(R) optimization.
+;;; clpr_optimize_smoke.eta -- Smoke tests for CLP(R) optimization.
 
 (module clpr-optimize-smoke
   (import std.test std.logic std.clpr)

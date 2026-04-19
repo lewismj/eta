@@ -1,4 +1,4 @@
-;;; portfolio-lp.eta -- Stage 6.6 CLP(R) optimization example.
+;;; portfolio-lp.eta -- CLP(R) optimization example.
 ;;;
 ;;; Solve a small 10-asset linear portfolio model:
 ;;;   maximize   return . w
@@ -79,4 +79,3 @@
           (display "portfolio-lp risk: ")
           (display (dot-values risks weights))
           (newline))))))
-

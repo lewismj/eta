@@ -153,7 +153,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("occurs-check-mode", 0, false);
     r("ground?",    1, false);
 
-    /// Compound terms (Phase 1 of logic/CLP roadmap)
+    /// Compound terms
     r("compound?", 1, false);
     r("term",      1, true);
     r("functor",   1, false);
@@ -180,7 +180,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%clp-r-maximize",   1, false);
 
     /**
-     * CLP(FD) native bounds propagators (Phase 4b).
+     * CLP(FD) native bounds propagators.
      * Must stay in the same order as the register_builtin calls in
      * core_primitives.h immediately after %clp-r-maximize.
      */
@@ -194,7 +194,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%clp-fd-all-different!",   1, false);
 
     /**
-     * CLP(B) native Boolean propagators (Phase 5).
+     * CLP(B) native Boolean propagators.
      * Order must match the register_builtin calls in core_primitives.h
      * immediately after %clp-fd-all-different!.
      */

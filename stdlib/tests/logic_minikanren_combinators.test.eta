@@ -1,4 +1,4 @@
-;;; logic_phase2_smoke.eta — Smoke test for Phase 2 miniKanren-style
+;;; logic_phase2_smoke.eta — Smoke test for miniKanren-style
 ;;; combinators added to std.logic.
 ;;;
 ;;; Exercises (in order):

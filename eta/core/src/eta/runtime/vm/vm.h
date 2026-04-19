@@ -83,22 +83,21 @@ struct WindFrame {
 /**
  * A single undoable mutation recorded by the unification / CLP machinery.
  *
- * Phase 1 of the logic/CLP roadmap generalised the per-VM trail from a raw
- * `std::vector<LispVal>` (binding-only) to a tagged entry.  Phase 3 fills
- * in the `Attr` case: attributed-variable writes record the InternId of
+ * The per-VM trail was generalised from a raw `std::vector<LispVal>`
+ * (binding-only) to a tagged entry.  The `Attr` case records the InternId of
  * the module key, the previous value, and a `had_prev` flag so unwind can
  * distinguish "attribute previously unset" (erase) from "previously held
  * a value, possibly Nil" (reinstate prev_value).
  *
- * Phase 4b follow-up: domain changes are now trailed in the same stack via
+ * Domain changes are now trailed in the same stack via
  * `Kind::Domain` entries (carrying an `std::optional<clp::Domain>` snapshot of
  * the prior state).  This makes the binding trail the single source of truth
  *
- * Stage 6.4 adds `Kind::RealStore`: snapshots the append-only CLP(R)
+ * `Kind::RealStore` snapshots the append-only CLP(R)
  * real-constraint log length.  Unwinding to this entry truncates the VM's
  * `RealStore` back to the prior length.
  *
- * Stage 6.5 adds `Kind::SimplexBound`: snapshots one variable's asserted
+ * `Kind::SimplexBound` snapshots one variable's asserted
  * simplex lower/upper bounds (`std::optional<clp::Bound>` pair). Unwinding
  * restores the prior pair without snapshotting the full tableau.
  */
@@ -235,7 +234,7 @@ public:
     clp::ConstraintStore& constraint_store() { return constraint_store_; }
     const clp::ConstraintStore& constraint_store() const { return constraint_store_; }
 
-    /// CLP(R) real-constraint store (Stage 6.4).
+    /// CLP(R) real-constraint store.
     clp::RealStore& real_store() { return real_store_; }
     const clp::RealStore& real_store() const { return real_store_; }
 
@@ -266,7 +265,7 @@ public:
      */
     void rollback_trail_to(std::size_t mark);
 
-    /// Phase 3: expose trail + hook registry to builtins.
+    /// Expose trail + hook registry to builtins.
     std::vector<TrailEntry>& trail_stack() { return trail_stack_; }
     const std::vector<TrailEntry>& trail_stack() const { return trail_stack_; }
 
@@ -274,11 +273,11 @@ public:
     const std::unordered_map<memory::intern::InternId, LispVal>& attr_unify_hooks() const { return attr_unify_hooks_; }
 
     /**
-     * Phase 4b: Propagation queue.  When a logic var with one of these
+     * Propagation queue.  When a logic var with one of these
      * attribute keys is bound, the attribute's value is treated as a list of
      * re-propagator thunks; each thunk is enqueued for the outer-`unify` drain
      * rather than invoked synchronously.  Provides idempotent FIFO firing,
-     * which generalises the synchronous Phase 3 hook path used by
+     * which generalises the synchronous hook path used by
      * `freeze` / `dif` (which remain sync via `attr_unify_hooks_`).
      */
     std::unordered_set<memory::intern::InternId>& async_thunk_attrs() { return async_thunk_attrs_; }
@@ -293,7 +292,7 @@ public:
     [[nodiscard]] std::size_t prop_queue_size() const noexcept { return prop_queue_.size(); }
 
     /**
-     * ---- Occurs-check policy (Phase 1 of the logic/CLP roadmap) ----
+     * ---- Occurs-check policy ----
      * Controls VM::unify behaviour when a binding would create a cyclic term:
      *            produce cyclic terms that break subsequent traversal).
      *            user sees the offending unification instead of silent failure.
@@ -347,26 +346,26 @@ private:
     std::vector<CatchFrame> catch_stack_;  ///< live exception handlers
     std::vector<TrailEntry> trail_stack_;  ///< logic-var / CLP attribute trail for backtracking
     clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
-    clp::RealStore real_store_;             ///< CLP(R) posted constraint log (Stage 6.4)
+    clp::RealStore real_store_;             ///< CLP(R) posted constraint log
     std::vector<LispVal> active_tapes_;    ///< Stack of active AD tapes (supports nesting)
-    std::vector<LispVal> wam_x_regs_;      ///< Stage 8 scaffold: WAM X argument/temp registers
-    std::vector<LispVal> wam_y_regs_;      ///< Stage 8 scaffold: WAM Y environment registers
+    std::vector<LispVal> wam_x_regs_;      ///< WAM X argument/temp registers
+    std::vector<LispVal> wam_y_regs_;      ///< WAM Y environment registers
 
     /**
-     * Phase 3: attributed-variable unify hooks, keyed by module symbol (InternId).
+     * Attributed-variable unify hooks, keyed by module symbol (InternId).
      * Value is a callable LispVal (closure or primitive) invoked as
      */
     std::unordered_map<memory::intern::InternId, LispVal> attr_unify_hooks_;
 
     /**
-     * Phase 4b: keys whose attribute value is a list of re-propagator
+     * Keys whose attribute value is a list of re-propagator
      * thunks to be enqueued (rather than passed to a sync hook proc) when
      * a participating logic var becomes bound.  Populated via the new
      * `register-prop-attr!` builtin.
      */
     std::unordered_set<memory::intern::InternId> async_thunk_attrs_;
 
-    /// Phase 4b: outer-unify FIFO of pending propagator thunks.
+    /// Outer-unify FIFO of pending propagator thunks.
     std::deque<LispVal>                            prop_queue_;
     std::unordered_set<memory::heap::ObjectId>     prop_queued_set_;
     int                                            unify_depth_{0};
@@ -520,7 +519,7 @@ private:
     bool unify_internal(LispVal a, LispVal b);
 
     /**
-     * Drain any pending propagator thunks (Phase 4b queue).  Called by the
+     * Drain any pending propagator thunks (queue).  Called by the
      * outer `unify` exactly once after the inner step succeeds.  Returns
      * false on the first thunk that returns #f or errors; queue and dedup
      * set are left empty either way.

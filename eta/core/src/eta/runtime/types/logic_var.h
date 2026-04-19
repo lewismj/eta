@@ -15,7 +15,7 @@ namespace eta::runtime::types {
      * `name` is an optional debug label (empty string when unset).
      * `(var-name v)`, and error messages.
      *
-     * `attrs` is the attributed-variable map introduced in Phase 3.
+     * `attrs` is the attributed-variable map.
      * Each key is an interned symbol (the "attribute module" identifier
      * chosen by the library author, e.g., `clp.fd`, `freeze`, `dif`),
      * and the value is an arbitrary LispVal payload the library keeps

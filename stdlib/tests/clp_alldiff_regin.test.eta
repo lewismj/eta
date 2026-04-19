@@ -1,4 +1,4 @@
-;;; clp_alldiff_regin_smoke.eta — Phase 4b smoke test for the native
+;;; clp_alldiff_regin_smoke.eta — Smoke test for the native
 ;;; Régin value-graph matching all-different propagator.
 ;;;
 ;;; Verifies that the native `clp:all-different` (now backed by

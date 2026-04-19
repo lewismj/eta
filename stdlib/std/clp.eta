@@ -1,5 +1,5 @@
 ;;; std/clp.eta — Constraint Logic Programming over Eta's native unification
-;;;               and the Phase 3 attributed-variable substrate.
+;;;               and the attributed-variable substrate.
 ;;;
 ;;; Two domains are supported:
 ;;;
@@ -11,8 +11,8 @@
 ;;;   (%clp-domain-fd! var vals)    — attach FD domain (list) to var
 ;;;   (%clp-get-domain var)         — retrieve domain as Eta value or #f
 ;;;
-;;; Phase 4 adds real arc-consistency (AC-3) propagation for `all-different`
-;;; on top of the Phase 3 attributed-variable / attr-unify-hook mechanism:
+;;; Adds real arc-consistency (AC-3) propagation for `all-different`
+;;; on top of the attributed-variable / attr-unify-hook mechanism:
 ;;;
 ;;;   - All-different group membership now lives on each participating
 ;;;     variable as a `'clp.adiff` attribute whose value is the list of
@@ -29,7 +29,7 @@
 ;;;   - Domain narrowing uses the existing trailed `%clp-domain-fd!`
 ;;;     primitive, so backtracking restores every narrowed domain.
 ;;;
-;;; Phase 4 also adds:
+;;; Also adds:
 ;;;
 ;;;   - `clp:labeling vars [strategy]` — DFS solver with pluggable variable-
 ;;;     selection strategies.  `'leftmost` (default) tries vars in list order;
@@ -43,7 +43,7 @@
 (module std.clp
   (import std.collections)
   (import std.logic)
-  ;; Note: `register-attr-hook!`, `put-attr`, `get-attr` are Phase 3 VM
+  ;; Note: `register-attr-hook!`, `put-attr`, `get-attr` are core VM
   ;; built-ins registered globally by core_primitives.cc — no import needed.
   (export
     ;; Domain constructors
@@ -142,7 +142,7 @@
             (== x y))))
 
     (defun clp:+ (x y z)
-      ;; Phase 4b: native bounds-consistency propagator with re-firing on bind.
+      ;; Native bounds-consistency propagator with re-firing on bind.
       ;; Runs once immediately; attaches a re-propagator thunk to each var so
       ;; subsequent bindings (of any of x/y/z) re-trigger narrowing.
       (and (%clp-fd-plus! x y z)
@@ -233,7 +233,7 @@
 
     (defun clp:>= (x y) (clp:<= y x))
 
-    ;; ── Generic propagator re-firing on variable binding (Phase 4b) ───────
+    ;; ── Generic propagator re-firing on variable binding ───────────────────
     ;;
     ;; Each variable participating in a native propagator (clp:+, clp:*,
     ;; clp:all-different, …) carries a `'clp.prop` attribute whose value
@@ -245,7 +245,7 @@
     ;; thunk returning #f aborts the unify; the existing trail rollback
     ;; restores all writes (binding, attribute, and domain).
     ;;
-    ;; This replaces the Phase 4b "synchronous %clp-prop-hook" that ran
+    ;; This replaces the old "synchronous %clp-prop-hook" that ran
     ;; every thunk recursively inside `unify` — the queue is fairer
     ;; (FIFO), idempotent (no duplicate work when one bind cascades to
     ;; many sibling re-fires), and bounded-stack (drains iteratively
@@ -263,7 +263,7 @@
 
     (register-prop-attr! 'clp.prop)
 
-    ;; ── All-different (Phase 4b — native Régin matching) ─────────────────
+    ;; ── All-different (native Régin matching) ─────────────────────────────
     ;;
     ;; (clp:all-different vars)
     ;; Posts the global all-different constraint via Régin's value-graph
@@ -288,7 +288,7 @@
     (defun clp:<> (x y) (clp:all-different (list x y)))
     (defun clp:!= (x y) (clp:<> x y))
 
-    ;; ── Solver: DFS labelling with option-plist dispatch (Phase 4b) ──────
+    ;; ── Solver: DFS labelling with option-plist dispatch ──────────────────
     ;;
     ;; (clp:labeling vars)                                — first solution, leftmost, up
     ;; (clp:labeling vars 'ff)                            — back-compat positional shim

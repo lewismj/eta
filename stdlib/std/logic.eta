@@ -29,7 +29,7 @@
     run1
     ;; Relational building blocks
     membero
-    ;; ── Phase 2: miniKanren-style goal combinators ─────────────────────
+    ;; ── miniKanren-style goal combinators ──────────────────────────────
     ;; A "goalset" is a list of zero-arg branch thunks.  Each branch thunk
     ;; returns #t when the branch's goals succeeded (with bindings live on
     ;; the trail) or #f when it failed.  This is the same shape accepted
@@ -135,7 +135,7 @@
       (map* (lambda (elem) (lambda () (== x elem))) lst))
 
     ;; ══════════════════════════════════════════════════════════════════
-    ;;  Phase 2 — miniKanren-style goal combinators
+    ;;  miniKanren-style goal combinators
     ;; ══════════════════════════════════════════════════════════════════
     ;;
     ;; A GOALSET is a list of branch thunks.  Each branch thunk installs
@@ -157,7 +157,7 @@
     ;;   variants (`conda`/`condu`/`onceo`) build a *single* branch that
     ;;   iterates internally, giving cut-like commitment.
     ;; * No native choice-point stack or WAM opcodes; those remain
-    ;;   reserved for Phase 8 and are not required for the visible API.
+    ;;   reserved for future WAM opcodes and are not required for the visible API.
 
     ;; ── Atomic goal constructors ──────────────────────────────────────
 

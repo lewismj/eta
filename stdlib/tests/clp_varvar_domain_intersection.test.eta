@@ -1,4 +1,4 @@
-;;; clp_varvar_merge_smoke.eta — Phase 3 / 4b smoke test for var–var
+;;; clp_varvar_merge_smoke.eta — Smoke test for var–var
 ;;; CLP-domain intersection on unify.
 ;;;
 ;;; Before this fix, `(unify x y)` between two unbound logic vars each

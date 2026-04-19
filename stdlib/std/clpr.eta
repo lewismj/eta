@@ -1,6 +1,6 @@
 ;;; std/clpr.eta -- Constraint Logic Programming over real intervals.
 ;;;
-;;; Stage 6.4 promotes the Phase 6.1 domain substrate into a posting API
+;;; Builds the real-domain substrate into a posting API
 ;;; backed by the FM oracle:
 ;;;
 ;;;   (%clp-r-post-leq! lhs rhs)   -> post lhs <= rhs
@@ -9,7 +9,7 @@
 ;;;   (%clp-r-minimize objective)  -> #f | clp.r.unbounded | (opt . witness)
 ;;;   (%clp-r-maximize objective)  -> #f | clp.r.unbounded | (opt . witness)
 ;;;
-;;; Re-firing uses the existing Phase 4b async propagation queue by attaching
+;;; Re-firing uses the existing async propagation queue by attaching
 ;;; thunks under the shared 'clp.prop attribute key.
 
 (module std.clpr

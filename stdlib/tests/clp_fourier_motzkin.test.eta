@@ -1,4 +1,4 @@
-;;; clp_fm_smoke.eta -- Stage 6.3 smoke tests for %clp-fm-* builtins.
+;;; clp_fm_smoke.eta -- Smoke tests for %clp-fm-* builtins.
 
 (module clp-fm-smoke
   (import std.test std.logic std.core)

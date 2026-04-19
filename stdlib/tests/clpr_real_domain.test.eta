@@ -1,4 +1,4 @@
-;;; clpr_domain_smoke.eta — Phase 6.1 smoke test for the RDomain
+;;; clpr_domain_smoke.eta — Smoke test for the RDomain
 ;;; substrate (real-interval CLP domains).
 ;;;
 ;;; Verifies:

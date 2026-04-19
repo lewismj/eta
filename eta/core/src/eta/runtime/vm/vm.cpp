@@ -116,19 +116,19 @@ void VM::collect_garbage() {
             visit(e.var);
             if (e.kind == TrailEntry::Kind::Attr) visit(e.prev_value);
         }
-        /// Stage 6.4: posted CLP(R) constraints keep participating vars alive.
+        /// Posted CLP(R) constraints keep participating vars alive.
         for (auto id : real_store_.participating_vars()) {
             visit(ops::box(Tag::HeapObject, static_cast<int64_t>(id)));
         }
-        /// Stage 6.5: asserted simplex-bound snapshots also pin logic vars.
+        /// Asserted simplex-bound snapshots also pin logic vars.
         for (auto id : real_store_.simplex_bound_vars()) {
             visit(ops::box(Tag::HeapObject, static_cast<int64_t>(id)));
         }
-        /// Phase 3: attr-unify-hook procedures are VM-lifetime roots.
+        /// Attr-unify-hook procedures are VM-lifetime roots.
         for (const auto& [_k, hook] : attr_unify_hooks_) visit(hook);
-        /// Phase 4b: pending propagator thunks.
+        /// Pending propagator thunks.
         for (auto v : prop_queue_) visit(v);
-        /// Stage 8 scaffold: WAM register files live in the same GC root set.
+        /// WAM register files live in the same GC root set.
         for (auto v : wam_x_regs_) visit(v);
         for (auto v : wam_y_regs_) visit(v);
         /// Mark active AD tape stack
@@ -1040,10 +1040,10 @@ std::expected<void, RuntimeError> VM::run_loop() {
             }
             case OpCode::TrailMark: {
                 /**
-                 * Phase 1 follow-up: with the unified domain trail, a mark
+                 * With the unified domain trail, a mark
                  * is just the binding-trail depth.  Domain entries live in
                  * `trail_stack_` and are unwound alongside Bind/Attr and
-                 * Stage 6.4 RealStore snapshots by UnwindTrail.
+                 * RealStore snapshots by UnwindTrail.
                  */
                 auto bsize = static_cast<int64_t>(trail_stack_.size());
                 auto enc = ops::encode<int64_t>(bsize);
@@ -1889,7 +1889,7 @@ bool VM::occurs_check(LispVal lvar, LispVal term) {
 }
 
 /**
- * Outer wrapper (Phase 4b): exactly the original unify semantics for nested
+ * Outer wrapper: exactly the original unify semantics for nested
  * (recursive) calls; for top-level calls, takes a trail snapshot, runs the
  * inner step, then drains the propagation queue.  On any failure the outer
  * snapshot is restored and the queue + dedup set are cleared.
@@ -2103,7 +2103,7 @@ bool VM::unify_internal(LispVal a, LispVal b) {
         auto n = classify_numeric(ground, heap_);
         if (!n.is_valid()) return false;
         /**
-         * Phase 6.1: real-valued domain accepts any in-range numeric
+         * Real-valued domains accept any in-range numeric
          * (fixnum or flonum); Z/FD domains reject non-integers.
          */
         if (std::holds_alternative<clp::RDomain>(*dom))
@@ -2113,7 +2113,7 @@ bool VM::unify_internal(LispVal a, LispVal b) {
     };
 
     /**
-     * Helper (Phase 3): fire attr-unify-hooks after a logic var has been bound.
+     * Helper: fire attr-unify-hooks after a logic var has been bound.
      * For each attribute whose module has a registered hook, invoke
      *   (hook var bound-value attr-value)
      * synchronously.  The hook must return #t on success or #f on failure.
@@ -2175,7 +2175,7 @@ bool VM::unify_internal(LispVal a, LispVal b) {
                 }
             };
             /**
-             * Phase 4b: when both sides are unbound domained logic vars,
+             * When both sides are unbound domained logic vars,
              * intersect their CLP domains onto `b` (the surviving var)
              * BEFORE binding, so future ground-unify domain checks see the
              * merged constraint.  Install via trailed `trail_set_domain`;

@@ -559,7 +559,7 @@ BOOST_AUTO_TEST_CASE(verifier_invalid_opcode_byte) {
     func.name       = "bad_op";
     func.stack_size = 2;
     func.constants.push_back(Nil);
-    /// 0x7F is currently an unmapped hole between legacy and Stage-8 WAM opcodes.
+    /// 0x7F is currently an unmapped hole between legacy and WAM opcodes.
     func.code.push_back({static_cast<OpCode>(0x7F), 0});
     func.source_map.push_back({});
     reg.add(std::move(func));

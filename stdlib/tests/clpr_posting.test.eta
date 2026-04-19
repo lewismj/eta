@@ -1,4 +1,4 @@
-;;; clpr_post_smoke.eta -- Stage 6.4 smoke tests for std.clpr posting.
+;;; clpr_post_smoke.eta -- Smoke tests for std.clpr posting.
 
 (module clpr-post-smoke
   (import std.test std.logic std.clpr)
@@ -55,4 +55,3 @@
                   (assert-true (> (hi bx1) 1e100)))))))))
 
     (print-tap (run suite))))
-

@@ -1212,7 +1212,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     /**
-     * Attributed variables (Phase 3)
+     * Attributed variables
      *                               at least one attribute
      * (register-attr-hook! 'module proc)
      *                               (proc var bound-value attr-value)
@@ -1357,7 +1357,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         });
 
     /**
-     * Occurs-check policy (Phase 1 of the logic/CLP roadmap)
+     * Occurs-check policy
      *
      * (set-occurs-check! 'always)  ; run occurs-check, fail on cycle (default)
      * (set-occurs-check! 'never)   ; skip occurs-check (ISO-Prolog default; faster)
@@ -1433,7 +1433,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
      *
      * A `CompoundTerm` is a structured logic term with a symbol functor and
      * Unifies structurally with other compound terms of the same functor+arity.
-     * See docs/logic.md and docs/logic-next-steps.md for the Phase 1 rationale.
+     * See docs/logic.md and docs/logic-next-steps.md for the rationale.
      */
 
     env.register_builtin("compound?", 1, false,
@@ -1529,7 +1529,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     /**
      * CLP domain primitives: %clp-domain-z!  %clp-domain-fd!  %clp-get-domain
-     * plus Stage 6.x test primitives (%clp-linearize, %clp-fm-*).
+     * plus test primitives (%clp-linearize, %clp-fm-*).
      *
      * These are internal builtins consumed by std.clp.  They are prefixed with
      * % to signal that user code should call the std.clp wrapper instead.
@@ -1621,7 +1621,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     /**
      * (%clp-domain-r! var lo hi lo-open? hi-open?)
-     * Phase 6.1: attach a real-valued interval domain to `var`.  Bounds
+     * Attach a real-valued interval domain to `var`.  Bounds
      * are doubles (fixnum or flonum accepted, both promoted via
      * classify_numeric).  The open/closed flags are #t / #f booleans.
      * Empty intervals (lo > hi, or lo == hi with any open flag) are
@@ -1743,7 +1743,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     /**
      * (%clp-linearize term)
-     * Stage 6.2 test-only primitive.  Returns a dotted pair:
+     * Test-only primitive.  Returns a dotted pair:
      *
      *   (pairs . constant)
      *
@@ -1798,7 +1798,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         });
 
     /**
-     * Stage 6.3 test-only Fourier-Motzkin primitives:
+     * Test-only Fourier-Motzkin primitives:
      *
      *   (%clp-fm-feasible? constraints [row-cap])
      *   (%clp-fm-bounds var constraints [row-cap])
@@ -2082,7 +2082,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     }
 
     /**
-     * Stage 6.4 CLP(R) posting primitives:
+     * CLP(R) posting primitives:
      *
      *   (%clp-r-post-leq! lhs rhs)
      *   (%clp-r-post-eq!  lhs rhs)
@@ -2589,7 +2589,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     }
 
     /**
-     * CLP(FD) native bounds-consistency propagators (Phase 4b)
+     * CLP(FD) native bounds-consistency propagators
      *
      *
      * Each returns #t on success (including "nothing to do"), #f on detected
@@ -2653,7 +2653,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                                 }
                             }
                             /**
-                             * Phase 6.1: R-domained vars are intentionally
+                             * R-domained vars are intentionally
                              * FD bounds-consistency is integer-only, so an
                              * R-domained operand simply contributes no
                              * narrowing (b.finite stays false).
@@ -2697,7 +2697,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return true;
             }
             /**
-             * Phase 6.1: R-domained vars are not narrowed by FD bounds
+             * R-domained vars are not narrowed by FD bounds
              * (extract_bounds reports !finite, so this branch is normally
              * unreachable; defensive no-op preserves R domain unchanged).
              */
@@ -3132,7 +3132,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                                 if (av.domain.empty()) return False;
                             } else {
                                 /**
-                                 * Phase 6.1: RDomain (or any future kind)
+                                 * RDomain (or any future kind)
                                  * all-different.  Treat as free (no
                                  * contribution to value-graph matching).
                                  */
@@ -3178,7 +3178,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     }
 
     /**
-     * CLP(B) native Boolean propagators (Phase 5)
+     * CLP(B) native Boolean propagators
      *
      *   %clp-bool-card! (xs k-lo k-hi)
      *
@@ -3253,7 +3253,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                         const auto* dom = vm->constraint_store().get_domain(id);
                         if (dom) {
                             /**
-                             * Phase 6.1: an R-domained var is not a valid
+                             * An R-domained var is not a valid
                              * integer set {0,1}.  Reject explicitly.
                              */
                             if (std::holds_alternative<clp::RDomain>(*dom))
@@ -3614,7 +3614,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     /**
      * @brief Decode a proper Eta list into a flat vector.
      *
-     * Used by `%fact-table-insert!` and Stage-7 clause insertion builtins.
+     * Used by `%fact-table-insert!` and clause insertion builtins.
      */
     auto list_to_vector = [&heap](LispVal list, const char* who) -> std::expected<std::vector<LispVal>, RuntimeError> {
         std::vector<LispVal> out;
@@ -3697,7 +3697,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     });
 
     /**
-     * Stage 7 clause insert path.
+     * Clause insert path.
      * (table row-list rule-or-false ground?)
      */
     env.register_builtin("%fact-table-insert-clause!", 4, false,
@@ -3835,7 +3835,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     /**
      * (term-hash term depth)
      *
-     * Computes a depth-limited structural hash used by Stage-7 relation
+     * Computes a depth-limited structural hash used by relation
      * indexing/tabling helpers. Cycles are handled by depth truncation.
      */
     auto mix_hash = [](std::uint64_t seed, std::uint64_t value) -> std::uint64_t {
@@ -3937,7 +3937,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
      *
      * Like `term-hash`, but unbound logic variables are normalized by first
      * occurrence order rather than by raw object id.  This gives stable keys
-     * across alpha-renamed call patterns, which is required by Stage-7 tabling.
+     * across alpha-renamed call patterns, which is required by tabling.
      */
     auto term_variant_hash_impl =
         [&heap, mix_hash](auto&& self, LispVal v, int depth,

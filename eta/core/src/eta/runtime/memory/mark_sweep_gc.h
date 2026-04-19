@@ -68,7 +68,7 @@ namespace eta::runtime::memory::gc {
 
         void visit_logic_var(const types::LogicVar& lv) override {
             if (lv.binding.has_value()) callback(*lv.binding);
-            /// Phase 3: attribute values are reachable through the var.
+            /// Attribute values are reachable through the var.
             for (const auto& [_k, v] : lv.attrs) callback(v);
         }
 
