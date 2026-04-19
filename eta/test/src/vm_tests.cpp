@@ -2454,6 +2454,89 @@ BOOST_AUTO_TEST_CASE(fact_table_incremental_index_update) {
     BOOST_CHECK_EQUAL(*v, 2);
 }
 
+BOOST_AUTO_TEST_CASE(fact_table_delete_row_updates_visibility_and_count) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(k v)))"
+        "  (%fact-table-insert! ft '(a 1))"
+        "  (%fact-table-insert! ft '(a 2))"
+        "  (%fact-table-insert! ft '(b 3))"
+        "  (%fact-table-build-index! ft 0)"
+        "  (%fact-table-delete-row! ft 1)"
+        "  (define rows (%fact-table-query ft 0 'a))"
+        "  (define result (+ (* 100 (%fact-table-row-count ft))"
+        "                    (* 10 (length rows))"
+        "                    (if (%fact-table-row-live? ft 1) 1 0))))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 210);  ///< row-count=2, query-len=1, deleted row not live.
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_predicate_header_round_trip) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(x y)))"
+        "  (%fact-table-set-predicate! ft 'edge 2)"
+        "  (define hdr (%fact-table-predicate ft))"
+        "  (define result (and (eq? (car hdr) 'edge)"
+        "                      (= (car (cdr hdr)) 2))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_clause_metadata_and_rule_column) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(x y)))"
+        "  (%fact-table-insert-clause! ft '(a b) #f #t)"
+        "  (%fact-table-insert-clause! ft '(?x ?y) (lambda (x y) #t) #f)"
+        "  (define result (and (%fact-table-row-ground? ft 0)"
+        "                      (not (%fact-table-row-ground? ft 1))"
+        "                      (procedure? (%fact-table-row-rule ft 1)))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_live_row_ids_excludes_tombstones) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(k)))"
+        "  (%fact-table-insert! ft '(a))"
+        "  (%fact-table-insert! ft '(b))"
+        "  (%fact-table-insert! ft '(c))"
+        "  (%fact-table-delete-row! ft 1)"
+        "  (define ids (%fact-table-live-row-ids ft))"
+        "  (define result (+ (car ids) (car (cdr ids)))))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 2);  ///< ids are (0 2)
+}
+
+BOOST_AUTO_TEST_CASE(term_hash_structural_consistency) {
+    LispVal res = run(
+        "(module m"
+        "  (define t1 (term 'pair 1 (list 2 3)))"
+        "  (define t2 (term 'pair 1 (list 2 3)))"
+        "  (define t3 (term 'pair 1 (list 2 4)))"
+        "  (define h1 (term-hash t1 8))"
+        "  (define h2 (term-hash t2 8))"
+        "  (define h3 (term-hash t3 8))"
+        "  (define result (and (= h1 h2) (not (= h1 h3)))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(term_variant_hash_ignores_logic_var_identity) {
+    LispVal res = run(
+        "(module m"
+        "  (define x1 (logic-var))"
+        "  (define y1 (logic-var))"
+        "  (define x2 (logic-var))"
+        "  (define y2 (logic-var))"
+        "  (define h1 (term-variant-hash (list x1 x1 y1) 8))"
+        "  (define h2 (term-variant-hash (list x2 x2 y2) 8))"
+        "  (define h3 (term-variant-hash (list x2 y2 y2) 8))"
+        "  (define result (and (= h1 h2) (not (= h1 h3)))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
 BOOST_AUTO_TEST_SUITE_END() ///< fact_table_tests
 
 /**

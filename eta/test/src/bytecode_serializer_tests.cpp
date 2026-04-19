@@ -214,6 +214,31 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     func.code.push_back({OpCode::CopyTerm, 0});
     func.code.push_back({OpCode::_Reserved1, 0});
     func.code.push_back({OpCode::_Reserved2, 0});
+    func.code.push_back({OpCode::WamGetVar, 1});
+    func.code.push_back({OpCode::WamGetVal, 2});
+    func.code.push_back({OpCode::WamGetConst, 3});
+    func.code.push_back({OpCode::WamGetStruct, 4});
+    func.code.push_back({OpCode::WamGetList, 5});
+    func.code.push_back({OpCode::WamPutVar, 6});
+    func.code.push_back({OpCode::WamPutVal, 7});
+    func.code.push_back({OpCode::WamPutConst, 8});
+    func.code.push_back({OpCode::WamPutStruct, 9});
+    func.code.push_back({OpCode::WamPutList, 10});
+    func.code.push_back({OpCode::WamUnifyVar, 11});
+    func.code.push_back({OpCode::WamUnifyVal, 12});
+    func.code.push_back({OpCode::WamUnifyConst, 13});
+    func.code.push_back({OpCode::WamUnifyVoid, 14});
+    func.code.push_back({OpCode::WamAllocate, 15});
+    func.code.push_back({OpCode::WamDeallocate, 16});
+    func.code.push_back({OpCode::WamCall, 17});
+    func.code.push_back({OpCode::WamExecute, 18});
+    func.code.push_back({OpCode::WamProceed, 19});
+    func.code.push_back({OpCode::WamTryMeElse, 20});
+    func.code.push_back({OpCode::WamRetryMeElse, 21});
+    func.code.push_back({OpCode::WamTrustMe, 22});
+    func.code.push_back({OpCode::WamSwitchOnTerm, 23});
+    func.code.push_back({OpCode::WamSwitchOnConst, 24});
+    func.code.push_back({OpCode::WamSwitchOnStruct, 25});
 
     func.constants.push_back(Nil);
     for (size_t i = 0; i < func.code.size(); ++i)
@@ -224,13 +249,14 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     BOOST_REQUIRE(result.has_value());
     auto* f = result->registry.get(0);
     BOOST_REQUIRE(f);
-    BOOST_CHECK_EQUAL(f->code.size(), 42u);
+    BOOST_CHECK_EQUAL(f->code.size(), 67u);
     /// Spot-check some opcodes
     BOOST_CHECK(f->code[0].opcode == OpCode::Nop);
     BOOST_CHECK(f->code[12].opcode == OpCode::Call);
     BOOST_CHECK_EQUAL(f->code[12].arg, 2u);
     BOOST_CHECK(f->code[14].opcode == OpCode::Return);
     BOOST_CHECK(f->code[41].opcode == OpCode::_Reserved2);
+    BOOST_CHECK(f->code[66].opcode == OpCode::WamSwitchOnStruct);
 }
 
 BOOST_AUTO_TEST_CASE(roundtrip_source_map) {
@@ -526,14 +552,15 @@ BOOST_AUTO_TEST_CASE(hash_source_differs) {
  * Bytecode verifier tests (bug fix: untrusted bytecode)
  */
 
-/// An opcode byte above _Reserved2 (0xFF) must be rejected with InvalidBytecode.
+/// An opcode byte that is not mapped by OpCode::to_string must be rejected.
 BOOST_AUTO_TEST_CASE(verifier_invalid_opcode_byte) {
     semantics::BytecodeFunctionRegistry reg;
     BytecodeFunction func;
     func.name       = "bad_op";
     func.stack_size = 2;
     func.constants.push_back(Nil);
-    func.code.push_back({static_cast<OpCode>(0xFF), 0});
+    /// 0x7F is currently an unmapped hole between legacy and Stage-8 WAM opcodes.
+    func.code.push_back({static_cast<OpCode>(0x7F), 0});
     func.source_map.push_back({});
     reg.add(std::move(func));
 

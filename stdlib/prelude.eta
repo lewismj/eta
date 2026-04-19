@@ -12,17 +12,17 @@
 ;;; Individual modules live in std/ alongside this file.
 ;;; Dependency order (modules listed before their dependents):
 ;;;
-;;;   std.core        — no dependencies
-;;;   std.math        — no dependencies
-;;;   std.io          — no dependencies
-;;;   std.collections — no dependencies
-;;;   std.logic       — std.collections
-;;;   std.clp         — std.collections, std.logic
-;;;   std.causal      — std.core, std.collections, std.io
-;;;   std.fact_table  — no dependencies
-;;;   std.stats       — no dependencies
-;;;   std.net         — no dependencies
-
+;;;   std.core        - no dependencies
+;;;   std.math        - no dependencies
+;;;   std.io          - no dependencies
+;;;   std.collections - no dependencies
+;;;   std.logic       - std.collections
+;;;   std.clp         - std.collections, std.logic
+;;;   std.causal      - std.core, std.collections, std.io
+;;;   std.fact_table  - no dependencies
+;;;   std.db          - std.collections, std.fact_table, std.logic
+;;;   std.stats       - no dependencies
+;;;   std.net         - no dependencies
 (module std.prelude
   (import std.core)
   (import std.math)
@@ -32,6 +32,7 @@
   (import std.clp)
   (import std.causal)
   (import std.fact_table)
+  (import std.db)
   (import std.stats)
   (import std.net)
   (export
@@ -108,6 +109,15 @@
     fact-table-for-each
     fact-table-filter
     fact-table-fold
+    ;; -- std.db ---------------------------------------------------------
+    defrel
+    assert
+    retract
+    retract-all
+    call-rel
+    call-rel?
+    index-rel!
+    tabled
     ;; ── std.stats ───────────────────────────────────────────────────
     stats:mean stats:variance stats:stddev stats:sem
     stats:percentile stats:median

@@ -223,10 +223,20 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("fact-table?",             1, false);
     r("%make-fact-table",        1, false);
     r("%fact-table-insert!",     2, false);
+    r("%fact-table-insert-clause!", 4, false);
+    r("%fact-table-delete-row!", 2, false);
+    r("%fact-table-row-live?",   2, false);
+    r("%fact-table-row-ground?", 2, false);
+    r("%fact-table-row-rule",    2, false);
+    r("%fact-table-set-predicate!", 3, false);
+    r("%fact-table-predicate",   1, false);
     r("%fact-table-build-index!", 2, false);
     r("%fact-table-query",       3, false);
+    r("%fact-table-live-row-ids", 1, false);
     r("%fact-table-ref",         3, false);
     r("%fact-table-row-count",   1, false);
+    r("term-hash",               2, false);
+    r("term-variant-hash",       2, false);
 
     /// Statistics builtins (must match core_primitives.h registration order)
     r("%stats-mean",             1, false);

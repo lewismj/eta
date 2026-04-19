@@ -104,6 +104,38 @@ enum class OpCode : std::uint8_t {
     CopyTerm,       ///< [term ->] pop term; push deep copy with fresh logic vars
     _Reserved1,     ///< was DualVal  (removed)
     _Reserved2,     ///< was DualBp   (removed)
+
+    /**
+     * Stage 8 scaffold: WAM-style logic opcodes in the shared VM opcode table.
+     *
+     * Values are assigned in the 0x80-0xBF range so future WAM expansion
+     * can remain contiguous without renumbering existing non-logic opcodes.
+     */
+    WamGetVar = 0x80,
+    WamGetVal,
+    WamGetConst,
+    WamGetStruct,
+    WamGetList,
+    WamPutVar,
+    WamPutVal,
+    WamPutConst,
+    WamPutStruct,
+    WamPutList,
+    WamUnifyVar,
+    WamUnifyVal,
+    WamUnifyConst,
+    WamUnifyVoid,
+    WamAllocate,
+    WamDeallocate,
+    WamCall,
+    WamExecute,
+    WamProceed,
+    WamTryMeElse,
+    WamRetryMeElse,
+    WamTrustMe,
+    WamSwitchOnTerm,
+    WamSwitchOnConst,
+    WamSwitchOnStruct,
 };
 
 /// Human-readable mnemonic for an OpCode (e.g. "LoadConst").
@@ -152,6 +184,31 @@ constexpr const char* to_string(OpCode op) noexcept {
         case CopyTerm:          return "CopyTerm";
         case _Reserved1:        return "_Reserved1";
         case _Reserved2:        return "_Reserved2";
+        case WamGetVar:         return "WamGetVar";
+        case WamGetVal:         return "WamGetVal";
+        case WamGetConst:       return "WamGetConst";
+        case WamGetStruct:      return "WamGetStruct";
+        case WamGetList:        return "WamGetList";
+        case WamPutVar:         return "WamPutVar";
+        case WamPutVal:         return "WamPutVal";
+        case WamPutConst:       return "WamPutConst";
+        case WamPutStruct:      return "WamPutStruct";
+        case WamPutList:        return "WamPutList";
+        case WamUnifyVar:       return "WamUnifyVar";
+        case WamUnifyVal:       return "WamUnifyVal";
+        case WamUnifyConst:     return "WamUnifyConst";
+        case WamUnifyVoid:      return "WamUnifyVoid";
+        case WamAllocate:       return "WamAllocate";
+        case WamDeallocate:     return "WamDeallocate";
+        case WamCall:           return "WamCall";
+        case WamExecute:        return "WamExecute";
+        case WamProceed:        return "WamProceed";
+        case WamTryMeElse:      return "WamTryMeElse";
+        case WamRetryMeElse:    return "WamRetryMeElse";
+        case WamTrustMe:        return "WamTrustMe";
+        case WamSwitchOnTerm:   return "WamSwitchOnTerm";
+        case WamSwitchOnConst:  return "WamSwitchOnConst";
+        case WamSwitchOnStruct: return "WamSwitchOnStruct";
     }
     return "Unknown";
 }

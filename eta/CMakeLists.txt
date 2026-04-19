@@ -98,6 +98,24 @@ add_subdirectory(test)
 add_subdirectory(test_runner)
 add_subdirectory(fuzz)
 
+# Keep the common local workflow target aligned with test/runtime dependencies:
+# building eta_core_test should also rebuild etai + eta_test_runner.
+if(TARGET eta_core_test AND TARGET etai AND TARGET eta_test)
+    add_dependencies(eta_core_test etai eta_test)
+endif()
+
+# Convenience target: rebuild core binaries and run the two canonical test suites.
+add_custom_target(eta_rebuild_and_test
+    COMMAND $<TARGET_FILE:eta_core_test>
+    COMMAND $<TARGET_FILE:eta_test>
+        --path "${CMAKE_CURRENT_SOURCE_DIR}/../stdlib"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../stdlib/tests"
+    DEPENDS etai eta_test eta_core_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Rebuild etai + eta_test + eta_core_test, then run runtime + stdlib tests"
+    USES_TERMINAL
+)
+
 # Install nng DLL on Windows
 if(WIN32 AND TARGET nng)
     install(FILES $<TARGET_FILE:nng> DESTINATION bin)

@@ -26,6 +26,8 @@ VM::VM(Heap& heap, InternTable& intern_table)
     : heap_(heap), intern_table_(intern_table), gc_(std::make_unique<memory::gc::MarkSweepGC>()) {
     stack_.reserve(1024);
     frames_.reserve(64);
+    wam_x_regs_.assign(64, Nil);
+    wam_y_regs_.assign(64, Nil);
     heap_.set_gc_callback([this]() { collect_garbage(); });
 
     /// Initialize default console ports
@@ -126,6 +128,9 @@ void VM::collect_garbage() {
         for (const auto& [_k, hook] : attr_unify_hooks_) visit(hook);
         /// Phase 4b: pending propagator thunks.
         for (auto v : prop_queue_) visit(v);
+        /// Stage 8 scaffold: WAM register files live in the same GC root set.
+        for (auto v : wam_x_regs_) visit(v);
+        for (auto v : wam_y_regs_) visit(v);
         /// Mark active AD tape stack
         for (auto v : active_tapes_) visit(v);
     });
@@ -235,6 +240,16 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
     {
         auto ids = collect(prop_queue_.begin(), prop_queue_.end());
         if (!ids.empty()) roots.push_back({"Propagation Queue", std::move(ids)});
+    }
+
+    {
+        auto ids = collect(wam_x_regs_.begin(), wam_x_regs_.end());
+        if (!ids.empty()) roots.push_back({"WAM X Registers", std::move(ids)});
+    }
+
+    {
+        auto ids = collect(wam_y_regs_.begin(), wam_y_regs_.end());
+        if (!ids.empty()) roots.push_back({"WAM Y Registers", std::move(ids)});
     }
 
     return roots;
@@ -1060,8 +1075,35 @@ std::expected<void, RuntimeError> VM::run_loop() {
 
             case OpCode::_Reserved1:
             case OpCode::_Reserved2:
+            case OpCode::WamGetVar:
+            case OpCode::WamGetVal:
+            case OpCode::WamGetConst:
+            case OpCode::WamGetStruct:
+            case OpCode::WamGetList:
+            case OpCode::WamPutVar:
+            case OpCode::WamPutVal:
+            case OpCode::WamPutConst:
+            case OpCode::WamPutStruct:
+            case OpCode::WamPutList:
+            case OpCode::WamUnifyVar:
+            case OpCode::WamUnifyVal:
+            case OpCode::WamUnifyConst:
+            case OpCode::WamUnifyVoid:
+            case OpCode::WamAllocate:
+            case OpCode::WamDeallocate:
+            case OpCode::WamCall:
+            case OpCode::WamExecute:
+            case OpCode::WamProceed:
+            case OpCode::WamTryMeElse:
+            case OpCode::WamRetryMeElse:
+            case OpCode::WamTrustMe:
+            case OpCode::WamSwitchOnTerm:
+            case OpCode::WamSwitchOnConst:
+            case OpCode::WamSwitchOnStruct:
             default:
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::NotImplemented, "OpCode not implemented"}});
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::NotImplemented,
+                    std::string("OpCode not implemented: ") + to_string(instr.opcode)}});
         }
     }
     return {};

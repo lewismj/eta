@@ -231,7 +231,7 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
         /// Fact table
         if (auto* ft = heap.try_get_as<ObjectKind::FactTable, types::FactTable>(id)) {
             return "#<fact-table " + std::to_string(ft->col_names.size())
-                   + "colsÃ—" + std::to_string(ft->row_count) + "rows>";
+                   + "colsÃ—" + std::to_string(ft->active_row_count()) + "rows>";
         }
 
         return "#<object>";

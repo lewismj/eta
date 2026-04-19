@@ -518,21 +518,18 @@ namespace eta::runtime::vm {
 
 std::expected<void, SerializerError>
 BytecodeSerializer::verify_function(const BytecodeFunction& func) {
-    /**
-     * Largest opcode value we recognise as legitimate (_Reserved2 is the last
-     * entry in the enum and must remain serialisable even though the VM
-     * converts it to a NotImplemented error at runtime).
-     */
-    constexpr auto last_valid = static_cast<uint8_t>(OpCode::_Reserved2);
-
     const auto nconsts    = static_cast<uint32_t>(func.constants.size());
     const auto stack_size = func.stack_size;
 
     for (const auto& instr : func.code) {
-        const uint8_t op = static_cast<uint8_t>(instr.opcode);
-
-        /// Reject completely unknown opcode bytes.
-        if (op > last_valid)
+        /**
+         * Reject completely unknown opcode bytes.
+         *
+         * Stage 8 reserves an opcode block at 0x80-0xBF, which means the enum
+         * is intentionally non-contiguous.  String-dispatch via to_string() is
+         * the canonical "known opcode" check.
+         */
+        if (std::strcmp(to_string(instr.opcode), "Unknown") == 0)
             return std::unexpected(SerializerError::InvalidBytecode);
 
         /// Constant-index instructions: arg is an index into constants[].

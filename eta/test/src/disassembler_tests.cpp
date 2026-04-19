@@ -84,6 +84,31 @@ BOOST_AUTO_TEST_CASE(disasm_all_opcodes_have_names) {
     check(OpCode::CopyTerm);
     check(OpCode::_Reserved1);
     check(OpCode::_Reserved2);
+    check(OpCode::WamGetVar);
+    check(OpCode::WamGetVal);
+    check(OpCode::WamGetConst);
+    check(OpCode::WamGetStruct);
+    check(OpCode::WamGetList);
+    check(OpCode::WamPutVar);
+    check(OpCode::WamPutVal);
+    check(OpCode::WamPutConst);
+    check(OpCode::WamPutStruct);
+    check(OpCode::WamPutList);
+    check(OpCode::WamUnifyVar);
+    check(OpCode::WamUnifyVal);
+    check(OpCode::WamUnifyConst);
+    check(OpCode::WamUnifyVoid);
+    check(OpCode::WamAllocate);
+    check(OpCode::WamDeallocate);
+    check(OpCode::WamCall);
+    check(OpCode::WamExecute);
+    check(OpCode::WamProceed);
+    check(OpCode::WamTryMeElse);
+    check(OpCode::WamRetryMeElse);
+    check(OpCode::WamTrustMe);
+    check(OpCode::WamSwitchOnTerm);
+    check(OpCode::WamSwitchOnConst);
+    check(OpCode::WamSwitchOnStruct);
 }
 
 BOOST_AUTO_TEST_CASE(disasm_constant_annotation) {

@@ -349,6 +349,8 @@ private:
     clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
     clp::RealStore real_store_;             ///< CLP(R) posted constraint log (Stage 6.4)
     std::vector<LispVal> active_tapes_;    ///< Stack of active AD tapes (supports nesting)
+    std::vector<LispVal> wam_x_regs_;      ///< Stage 8 scaffold: WAM X argument/temp registers
+    std::vector<LispVal> wam_y_regs_;      ///< Stage 8 scaffold: WAM Y environment registers
 
     /**
      * Phase 3: attributed-variable unify hooks, keyed by module symbol (InternId).

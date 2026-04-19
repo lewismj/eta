@@ -1,7 +1,9 @@
- #pragma once
+#pragma once
 
+#include <bit>
 #include <climits>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -3609,6 +3611,44 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return ft;
     };
 
+    /**
+     * @brief Decode a proper Eta list into a flat vector.
+     *
+     * Used by `%fact-table-insert!` and Stage-7 clause insertion builtins.
+     */
+    auto list_to_vector = [&heap](LispVal list, const char* who) -> std::expected<std::vector<LispVal>, RuntimeError> {
+        std::vector<LispVal> out;
+        LispVal cur = list;
+        while (cur != Nil) {
+            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": expected a proper list"}});
+            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+            if (!cons)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(who) + ": expected a proper list"}});
+            out.push_back(cons->car);
+            cur = cons->cdr;
+        }
+        return out;
+    };
+
+    /**
+     * @brief Encode a row-id vector as an Eta list of fixnums.
+     */
+    auto row_ids_to_list = [&heap](const std::vector<std::size_t>& rows,
+                                   const char* who) -> std::expected<LispVal, RuntimeError> {
+        LispVal result = Nil;
+        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+            auto enc = ops::encode(static_cast<int64_t>(*it));
+            if (!enc)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    std::string(who) + ": row index too large"}});
+            auto cell = make_cons(heap, *enc, result);
+            if (!cell) return std::unexpected(cell.error());
+            result = *cell;
+        }
+        return result;
+    };
+
     /// fact-table? predicate
     env.register_builtin("fact-table?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         if (ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
@@ -3646,25 +3686,107 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_fact_table(heap, std::move(names));
     });
 
-    env.register_builtin("%fact-table-insert!", 2, false, [&heap, get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("%fact-table-insert!", 2, false, [get_fact_table, list_to_vector](Args args) -> std::expected<LispVal, RuntimeError> {
         auto ft_res = get_fact_table(args[0], "%fact-table-insert!");
         if (!ft_res) return std::unexpected(ft_res.error());
-        auto* ft = *ft_res;
-        /// Walk the Eta list to collect row values
-        std::vector<LispVal> row;
-        LispVal cur = args[1];
-        while (cur != Nil) {
-            if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-insert!: second arg must be a list"}});
-            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
-            if (!cons)
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-insert!: second arg must be a list"}});
-            row.push_back(cons->car);
-            cur = cons->cdr;
-        }
-        if (!ft->add_row(row))
+        auto row_res = list_to_vector(args[1], "%fact-table-insert!: second arg");
+        if (!row_res) return std::unexpected(row_res.error());
+        if (!(*ft_res)->add_row(*row_res))
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-insert!: row arity mismatch"}});
         return True;
+    });
+
+    /**
+     * Stage 7 clause insert path.
+     * (table row-list rule-or-false ground?)
+     */
+    env.register_builtin("%fact-table-insert-clause!", 4, false,
+        [get_fact_table, list_to_vector](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto ft_res = get_fact_table(args[0], "%fact-table-insert-clause!");
+            if (!ft_res) return std::unexpected(ft_res.error());
+            auto row_res = list_to_vector(args[1], "%fact-table-insert-clause!: second arg");
+            if (!row_res) return std::unexpected(row_res.error());
+            if (args[3] != True && args[3] != False) {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%fact-table-insert-clause!: fourth arg must be #t or #f (ground?)"}});
+            }
+            const bool is_ground = (args[3] == True);
+            if (!(*ft_res)->add_row(*row_res, args[2], is_ground))
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%fact-table-insert-clause!: row arity mismatch"}});
+            return True;
+        });
+
+    env.register_builtin("%fact-table-delete-row!", 2, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-delete-row!");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        auto row_opt = ops::decode<int64_t>(args[1]);
+        if (!row_opt)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-delete-row!: row index must be a fixnum"}});
+        if (*row_opt < 0) return False;
+        return (*ft_res)->delete_row(static_cast<std::size_t>(*row_opt)) ? True : False;
+    });
+
+    env.register_builtin("%fact-table-row-live?", 2, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-row-live?");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        auto row_opt = ops::decode<int64_t>(args[1]);
+        if (!row_opt)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-row-live?: row index must be a fixnum"}});
+        if (*row_opt < 0) return False;
+        return (*ft_res)->is_live_row(static_cast<std::size_t>(*row_opt)) ? True : False;
+    });
+
+    env.register_builtin("%fact-table-row-ground?", 2, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-row-ground?");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        auto row_opt = ops::decode<int64_t>(args[1]);
+        if (!row_opt)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-row-ground?: row index must be a fixnum"}});
+        if (*row_opt < 0) return False;
+        return (*ft_res)->is_ground_row(static_cast<std::size_t>(*row_opt)) ? True : False;
+    });
+
+    env.register_builtin("%fact-table-row-rule", 2, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-row-rule");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        auto row_opt = ops::decode<int64_t>(args[1]);
+        if (!row_opt)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-row-rule: row index must be a fixnum"}});
+        if (*row_opt < 0) return False;
+        return (*ft_res)->get_rule(static_cast<std::size_t>(*row_opt));
+    });
+
+    env.register_builtin("%fact-table-set-predicate!", 3, false,
+        [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto ft_res = get_fact_table(args[0], "%fact-table-set-predicate!");
+            if (!ft_res) return std::unexpected(ft_res.error());
+            if (!ops::is_boxed(args[1]) || ops::tag(args[1]) != Tag::Symbol)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%fact-table-set-predicate!: second arg must be a symbol functor"}});
+            auto arity_opt = ops::decode<int64_t>(args[2]);
+            if (!arity_opt || *arity_opt < 0 || *arity_opt > 255)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%fact-table-set-predicate!: third arg must be a fixnum in [0,255]"}});
+            (*ft_res)->set_predicate_header(
+                static_cast<std::uint64_t>(ops::payload(args[1])),
+                static_cast<std::uint8_t>(*arity_opt));
+            return True;
+        });
+
+    env.register_builtin("%fact-table-predicate", 1, false, [&heap, get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-predicate");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        const auto& ft = **ft_res;
+        if (!ft.predicate_functor.has_value()) return False;
+        const LispVal sym = ops::box(Tag::Symbol, *ft.predicate_functor);
+        auto ar = ops::encode(static_cast<int64_t>(ft.predicate_arity));
+        if (!ar) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-predicate: arity encoding failed"}});
+        auto tail = make_cons(heap, *ar, Nil);
+        if (!tail) return std::unexpected(tail.error());
+        auto head = make_cons(heap, sym, *tail);
+        if (!head) return std::unexpected(head.error());
+        return *head;
     });
 
     env.register_builtin("%fact-table-build-index!", 2, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -3677,23 +3799,20 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return True;
     });
 
-    env.register_builtin("%fact-table-query", 3, false, [&heap, get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("%fact-table-query", 3, false, [get_fact_table, row_ids_to_list](Args args) -> std::expected<LispVal, RuntimeError> {
         auto ft_res = get_fact_table(args[0], "%fact-table-query");
         if (!ft_res) return std::unexpected(ft_res.error());
         auto col_opt = ops::decode<int64_t>(args[1]);
         if (!col_opt)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-query: column index must be a fixnum"}});
         auto rows = (*ft_res)->query(static_cast<std::size_t>(*col_opt), args[2]);
-        /// Build an Eta list of fixnums
-        LispVal result = Nil;
-        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
-            auto enc = ops::encode(static_cast<int64_t>(*it));
-            if (!enc) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-query: row index too large"}});
-            auto cell = make_cons(heap, *enc, result);
-            if (!cell) return std::unexpected(cell.error());
-            result = *cell;
-        }
-        return result;
+        return row_ids_to_list(rows, "%fact-table-query");
+    });
+
+    env.register_builtin("%fact-table-live-row-ids", 1, false, [get_fact_table, row_ids_to_list](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-live-row-ids");
+        if (!ft_res) return std::unexpected(ft_res.error());
+        return row_ids_to_list((*ft_res)->live_rows(), "%fact-table-live-row-ids");
     });
 
     env.register_builtin("%fact-table-ref", 3, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -3703,13 +3822,223 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto col_opt = ops::decode<int64_t>(args[2]);
         if (!row_opt || !col_opt)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-ref: indices must be fixnums"}});
+        if (*row_opt < 0 || *col_opt < 0) return Nil;
         return (*ft_res)->get_cell(static_cast<std::size_t>(*row_opt), static_cast<std::size_t>(*col_opt));
     });
 
     env.register_builtin("%fact-table-row-count", 1, false, [get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto ft_res = get_fact_table(args[0], "%fact-table-row-count");
         if (!ft_res) return std::unexpected(ft_res.error());
-        return ops::encode(static_cast<int64_t>((*ft_res)->row_count));
+        return ops::encode(static_cast<int64_t>((*ft_res)->active_row_count()));
+    });
+
+    /**
+     * (term-hash term depth)
+     *
+     * Computes a depth-limited structural hash used by Stage-7 relation
+     * indexing/tabling helpers. Cycles are handled by depth truncation.
+     */
+    auto mix_hash = [](std::uint64_t seed, std::uint64_t value) -> std::uint64_t {
+        constexpr std::uint64_t kMul = 0x9E3779B97F4A7C15ULL;
+        seed ^= value + kMul + (seed << 6) + (seed >> 2);
+        return seed;
+    };
+
+    auto term_hash_impl = [&heap, mix_hash](auto&& self, LispVal v, int depth) -> std::uint64_t {
+        if (depth <= 0) {
+            return mix_hash(0x6A09E667F3BCC909ULL, static_cast<std::uint64_t>(v));
+        }
+
+        if (v == Nil)   return 0xA54FF53A5F1D36F1ULL;
+        if (v == True)  return 0x510E527FADE682D1ULL;
+        if (v == False) return 0x9B05688C2B3E6C1FULL;
+
+        if (!ops::is_boxed(v)) {
+            return mix_hash(0x1F83D9ABFB41BD6BULL, static_cast<std::uint64_t>(v));
+        }
+
+        const Tag t = ops::tag(v);
+        std::uint64_t h = mix_hash(0x5BE0CD19137E2179ULL, static_cast<std::uint64_t>(t));
+
+        if (t == Tag::Fixnum) {
+            auto x = ops::decode<int64_t>(v).value_or(0);
+            return mix_hash(h, static_cast<std::uint64_t>(x));
+        }
+        if (t == Tag::Char) {
+            auto x = ops::decode<char32_t>(v).value_or(U'\0');
+            return mix_hash(h, static_cast<std::uint64_t>(x));
+        }
+        if (t == Tag::String || t == Tag::Symbol || t == Tag::TapeRef) {
+            return mix_hash(h, static_cast<std::uint64_t>(ops::payload(v)));
+        }
+        if (t != Tag::HeapObject) {
+            return mix_hash(h, static_cast<std::uint64_t>(ops::payload(v)));
+        }
+
+        const auto id = ops::payload(v);
+
+        auto num = classify_numeric(v, heap);
+        if (num.is_fixnum()) return mix_hash(h, static_cast<std::uint64_t>(num.int_val));
+        if (num.is_flonum()) return mix_hash(h, static_cast<std::uint64_t>(std::bit_cast<std::uint64_t>(num.float_val)));
+
+        if (auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
+            h = mix_hash(h, 0xC1059ED8U);
+            h = mix_hash(h, self(self, cons->car, depth - 1));
+            h = mix_hash(h, self(self, cons->cdr, depth - 1));
+            return h;
+        }
+        if (auto* vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
+            h = mix_hash(h, 0x1EAFBEEF);
+            h = mix_hash(h, static_cast<std::uint64_t>(vec->elements.size()));
+            for (auto e : vec->elements) h = mix_hash(h, self(self, e, depth - 1));
+            return h;
+        }
+        if (auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(id)) {
+            h = mix_hash(h, 0xCCAA5511U);
+            h = mix_hash(h, self(self, ct->functor, depth - 1));
+            h = mix_hash(h, static_cast<std::uint64_t>(ct->args.size()));
+            for (auto a : ct->args) h = mix_hash(h, self(self, a, depth - 1));
+            return h;
+        }
+        if (auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id)) {
+            h = mix_hash(h, 0xBADC0DEULL);
+            if (lv->binding.has_value())
+                return mix_hash(h, self(self, *lv->binding, depth - 1));
+            return mix_hash(h, static_cast<std::uint64_t>(id));
+        }
+        if (auto* ft = heap.try_get_as<ObjectKind::FactTable, types::FactTable>(id)) {
+            h = mix_hash(h, 0xFA17AB1EULL);
+            h = mix_hash(h, static_cast<std::uint64_t>(ft->active_row_count()));
+            h = mix_hash(h, static_cast<std::uint64_t>(ft->col_names.size()));
+            if (ft->predicate_functor.has_value()) {
+                h = mix_hash(h, *ft->predicate_functor);
+                h = mix_hash(h, static_cast<std::uint64_t>(ft->predicate_arity));
+            }
+            return h;
+        }
+        return mix_hash(h, static_cast<std::uint64_t>(id));
+    };
+
+    env.register_builtin("term-hash", 2, false, [&heap, term_hash_impl](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto depth_opt = ops::decode<int64_t>(args[1]);
+        if (!depth_opt || *depth_opt < 0)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "term-hash: second arg must be a non-negative fixnum depth"}});
+        auto h = term_hash_impl(term_hash_impl, args[0], static_cast<int>(*depth_opt));
+        constexpr std::uint64_t kMask = (1ULL << 46) - 1ULL; ///< always fixnum-encodable.
+        const auto narrowed = static_cast<int64_t>(h & kMask);
+        auto enc = ops::encode(narrowed);
+        if (enc) return *enc;
+        return make_fixnum(heap, narrowed);
+    });
+
+    /**
+     * (term-variant-hash term depth)
+     *
+     * Like `term-hash`, but unbound logic variables are normalized by first
+     * occurrence order rather than by raw object id.  This gives stable keys
+     * across alpha-renamed call patterns, which is required by Stage-7 tabling.
+     */
+    auto term_variant_hash_impl =
+        [&heap, mix_hash](auto&& self, LispVal v, int depth,
+                          std::unordered_map<memory::heap::ObjectId, std::uint64_t>& lvar_slots,
+                          std::uint64_t& next_lvar_slot) -> std::uint64_t {
+            if (depth <= 0) {
+                return mix_hash(0x6A09E667F3BCC909ULL, static_cast<std::uint64_t>(v));
+            }
+
+            if (v == Nil)   return 0xA54FF53A5F1D36F1ULL;
+            if (v == True)  return 0x510E527FADE682D1ULL;
+            if (v == False) return 0x9B05688C2B3E6C1FULL;
+
+            if (!ops::is_boxed(v)) {
+                return mix_hash(0x1F83D9ABFB41BD6BULL, static_cast<std::uint64_t>(v));
+            }
+
+            const Tag t = ops::tag(v);
+            std::uint64_t h = mix_hash(0x5BE0CD19137E2179ULL, static_cast<std::uint64_t>(t));
+
+            if (t == Tag::Fixnum) {
+                auto x = ops::decode<int64_t>(v).value_or(0);
+                return mix_hash(h, static_cast<std::uint64_t>(x));
+            }
+            if (t == Tag::Char) {
+                auto x = ops::decode<char32_t>(v).value_or(U'\0');
+                return mix_hash(h, static_cast<std::uint64_t>(x));
+            }
+            if (t == Tag::String || t == Tag::Symbol || t == Tag::TapeRef) {
+                return mix_hash(h, static_cast<std::uint64_t>(ops::payload(v)));
+            }
+            if (t != Tag::HeapObject) {
+                return mix_hash(h, static_cast<std::uint64_t>(ops::payload(v)));
+            }
+
+            const auto id = static_cast<memory::heap::ObjectId>(ops::payload(v));
+
+            auto num = classify_numeric(v, heap);
+            if (num.is_fixnum()) return mix_hash(h, static_cast<std::uint64_t>(num.int_val));
+            if (num.is_flonum()) return mix_hash(h, static_cast<std::uint64_t>(std::bit_cast<std::uint64_t>(num.float_val)));
+
+            if (auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
+                h = mix_hash(h, 0xC1059ED8U);
+                h = mix_hash(h, self(self, cons->car, depth - 1, lvar_slots, next_lvar_slot));
+                h = mix_hash(h, self(self, cons->cdr, depth - 1, lvar_slots, next_lvar_slot));
+                return h;
+            }
+            if (auto* vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
+                h = mix_hash(h, 0x1EAFBEEF);
+                h = mix_hash(h, static_cast<std::uint64_t>(vec->elements.size()));
+                for (auto e : vec->elements)
+                    h = mix_hash(h, self(self, e, depth - 1, lvar_slots, next_lvar_slot));
+                return h;
+            }
+            if (auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, types::CompoundTerm>(id)) {
+                h = mix_hash(h, 0xCCAA5511U);
+                h = mix_hash(h, self(self, ct->functor, depth - 1, lvar_slots, next_lvar_slot));
+                h = mix_hash(h, static_cast<std::uint64_t>(ct->args.size()));
+                for (auto a : ct->args)
+                    h = mix_hash(h, self(self, a, depth - 1, lvar_slots, next_lvar_slot));
+                return h;
+            }
+            if (auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id)) {
+                h = mix_hash(h, 0xBADC0DEULL);
+                if (lv->binding.has_value()) {
+                    return mix_hash(h, self(self, *lv->binding, depth - 1, lvar_slots, next_lvar_slot));
+                }
+                auto it = lvar_slots.find(id);
+                if (it == lvar_slots.end()) {
+                    it = lvar_slots.emplace(id, next_lvar_slot++).first;
+                }
+                return mix_hash(h, it->second);
+            }
+            if (auto* ft = heap.try_get_as<ObjectKind::FactTable, types::FactTable>(id)) {
+                h = mix_hash(h, 0xFA17AB1EULL);
+                h = mix_hash(h, static_cast<std::uint64_t>(ft->active_row_count()));
+                h = mix_hash(h, static_cast<std::uint64_t>(ft->col_names.size()));
+                if (ft->predicate_functor.has_value()) {
+                    h = mix_hash(h, *ft->predicate_functor);
+                    h = mix_hash(h, static_cast<std::uint64_t>(ft->predicate_arity));
+                }
+                return h;
+            }
+            return mix_hash(h, static_cast<std::uint64_t>(id));
+        };
+
+    env.register_builtin("term-variant-hash", 2, false, [&heap, term_variant_hash_impl](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto depth_opt = ops::decode<int64_t>(args[1]);
+        if (!depth_opt || *depth_opt < 0)
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "term-variant-hash: second arg must be a non-negative fixnum depth"}});
+        std::unordered_map<memory::heap::ObjectId, std::uint64_t> lvar_slots;
+        lvar_slots.reserve(32);
+        std::uint64_t next_lvar_slot = 1;
+        auto h = term_variant_hash_impl(
+            term_variant_hash_impl, args[0], static_cast<int>(*depth_opt), lvar_slots, next_lvar_slot);
+        constexpr std::uint64_t kMask = (1ULL << 46) - 1ULL; ///< always fixnum-encodable.
+        const auto narrowed = static_cast<int64_t>(h & kMask);
+        auto enc = ops::encode(narrowed);
+        if (enc) return *enc;
+        return make_fixnum(heap, narrowed);
     });
 
     /**

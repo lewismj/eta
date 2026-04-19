@@ -83,6 +83,7 @@ namespace eta::runtime::memory::gc {
         void visit_fact_table(const types::FactTable& ft) override {
             for (const auto& col : ft.columns)
                 for (auto v : col) callback(v);
+            for (auto v : ft.rule_column) callback(v);
         }
 
         void visit_compound_term(const types::CompoundTerm& ct) override {

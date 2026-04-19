@@ -1,0 +1,417 @@
+;;; std/db.eta - Stage 7 relation database on top of FactTable.
+;;;
+;;; This module provides a lightweight relation layer using existing
+;;; FactTable builtins. It preserves the current list-of-thunks logic API:
+;;; `call-rel` returns a goalset (list of zero-arg branch thunks) suitable
+;;; for `findall`, `run1`, and `run*` from std.logic.
+
+(module std.db
+  (import std.collections std.fact_table std.logic)
+  (export
+    defrel
+    assert
+    retract
+    retract-all
+    call-rel
+    call-rel?
+    index-rel!
+    tabled)
+  (begin
+
+    ;; Relation registry: (((name . arity) . fact-table) ...)
+    (define *db-registry* '())
+
+    ;; Tabled relation declarations: ((name . arity) ...)
+    (define *db-tabled* '())
+
+    ;; Variant-table cache:
+    ;;   status  : ((key . 'working/'done) ...)
+    ;;   answers : ((key . (answer1 answer2 ...)) ...)
+    ;; where each answer is a copied argument vector (proper list).
+    (define *db-table-status* '())
+    (define *db-table-answers* '())
+
+    (define (rel-key name arity) (cons name arity))
+
+    (define (registry-lookup key entries)
+      (cond
+        ((null? entries) #f)
+        ((equal? key (car (car entries))) (cdr (car entries)))
+        (#t (registry-lookup key (cdr entries)))))
+
+    (define (registry-put! key ft)
+      (set! *db-registry* (cons (cons key ft) *db-registry*))
+      ft)
+
+    (define (alist-get entries key default)
+      (cond
+        ((null? entries) default)
+        ((equal? key (car (car entries))) (cdr (car entries)))
+        (#t (alist-get (cdr entries) key default))))
+
+    (define (alist-set entries key value)
+      (cond
+        ((null? entries) (list (cons key value)))
+        ((equal? key (car (car entries)))
+         (cons (cons key value) (cdr entries)))
+        (#t
+         (cons (car entries)
+               (alist-set (cdr entries) key value)))))
+
+    (define (table-status key)
+      (alist-get *db-table-status* key 'new))
+
+    (define (set-table-status! key status)
+      (set! *db-table-status* (alist-set *db-table-status* key status))
+      status)
+
+    (define (table-answers key)
+      (alist-get *db-table-answers* key '()))
+
+    (define (set-table-answers! key answers)
+      (set! *db-table-answers* (alist-set *db-table-answers* key answers))
+      answers)
+
+    (define (table-answer-member? answer answers)
+      (cond
+        ((null? answers) #f)
+        ((equal? answer (car answers)) #t)
+        (#t (table-answer-member? answer (cdr answers)))))
+
+    (define (table-add-answer! key answer)
+      (let ((answers (table-answers key)))
+        (if (table-answer-member? answer answers)
+            #f
+            (begin
+              (set-table-answers! key (cons answer answers))
+              #t))))
+
+    (define (invalidate-table-cache!)
+      ;; Conservatively flush all tabled answers on any DB mutation.
+      (set! *db-table-status* '())
+      (set! *db-table-answers* '())
+      #t)
+
+    (define (tabled-rel? name arity)
+      (let ((k (rel-key name arity)))
+        (let loop ((entries *db-tabled*))
+          (cond
+            ((null? entries) #f)
+            ((equal? k (car entries)) #t)
+            (#t (loop (cdr entries)))))))
+
+    (define (table-key name args)
+      ;; Variant key: stable under alpha-renaming of logic vars.
+      (term-variant-hash (cons name args) 16))
+
+    (define (make-col-names arity)
+      (letrec ((loop (lambda (i acc)
+                       (if (= i arity)
+                           (reverse acc)
+                           (loop (+ i 1)
+                                 (cons (string->symbol
+                                         (string-append "c" (number->string i)))
+                                       acc))))))
+        (loop 0 '())))
+
+    (define (ensure-rel-table name arity)
+      (let* ((key   (rel-key name arity))
+             (found (registry-lookup key *db-registry*)))
+        (if found
+            found
+            (let ((ft (apply make-fact-table (make-col-names arity))))
+              (%fact-table-set-predicate! ft name arity)
+              ;; First-arg indexing is the default fast path from the roadmap.
+              (when (> arity 0) (fact-table-build-index! ft 0))
+              (registry-put! key ft)))))
+
+    (define (normalize-quoted x)
+      ;; Macro-quoted head terms may appear as (quote <atom>).
+      (if (and (pair? x)
+               (eq? (car x) 'quote)
+               (pair? (cdr x))
+               (null? (cdr (cdr x))))
+          (car (cdr x))
+          x))
+
+    (define (normalize-head-args xs)
+      (map* normalize-quoted xs))
+
+    (define (var-marker? x)
+      ;; Convention: symbols starting with '?' are relation head variables.
+      (if (symbol? x)
+          (let ((s (symbol->string x)))
+            (and (> (string-length s) 0)
+                 (eqv? (string-ref s 0) #\?)))
+          #f))
+
+    (define (contains-var-marker? xs)
+      (cond
+        ((null? xs) #f)
+        ((var-marker? (car xs)) #t)
+        (#t (contains-var-marker? (cdr xs)))))
+
+    (define (head-match? template-args actual-args)
+      ;; Unifies template with actual args. Repeated ?vars must unify.
+      (letrec ((loop (lambda (ts as env)
+                       (cond
+                         ((and (null? ts) (null? as)) #t)
+                         ((or  (null? ts) (null? as)) #f)
+                         (else
+                           (let ((t (car ts))
+                                 (a (car as)))
+                             (if (var-marker? t)
+                                 (let ((bound (assoc t env)))
+                                   (if bound
+                                       (and (unify (cdr bound) a)
+                                            (loop (cdr ts) (cdr as) env))
+                                       (loop (cdr ts) (cdr as)
+                                             (cons (cons t a) env))))
+                                 (and (unify t a)
+                                      (loop (cdr ts) (cdr as) env)))))))))
+        (loop template-args actual-args '())))
+
+    (define (row-args ft row-id arity)
+      (letrec ((loop (lambda (i acc)
+                       (if (= i arity)
+                           (reverse acc)
+                           (loop (+ i 1)
+                                 (cons (%fact-table-ref ft row-id i) acc))))))
+        (loop 0 '())))
+
+    (define (goalset-like? v)
+      (and (pair? v) (procedure? (car v))))
+
+    (define (run-goalset-first! goalset)
+      ;; Run branches left-to-right; keep bindings from the first success.
+      (let loop ((branches goalset))
+        (if (null? branches)
+            #f
+            (let ((m (trail-mark)))
+              (if ((car branches))
+                  #t
+                  (begin
+                    (unwind-trail m)
+                    (loop (cdr branches))))))))
+
+    (define (%defrel-fact! name raw-args)
+      (let* ((args  (normalize-head-args raw-args))
+             (arity (length args))
+             (ft    (ensure-rel-table name arity))
+             (is-ground (and (ground? args) (not (contains-var-marker? args))))
+             (inserted (if is-ground
+                           (%fact-table-insert! ft args)
+                           (%fact-table-insert-clause! ft args #f #f))))
+        (invalidate-table-cache!)
+        inserted))
+
+    (define (%defrel-rule! name raw-args rule-proc)
+      (let* ((args  (normalize-head-args raw-args))
+             (arity (length args))
+             (ft    (ensure-rel-table name arity)))
+        (if (procedure? rule-proc)
+            (let ((inserted (%fact-table-insert-clause! ft args rule-proc #f)))
+              (invalidate-table-cache!)
+              inserted)
+            (error "defrel: rule body must compile to a procedure"))))
+
+    ;; (defrel '(name a1 ... aN))
+    ;; (defrel '(name a1 ... aN) rule-proc)
+    ;;
+    ;; Runtime (not syntax) form so it can be exported cleanly through the
+    ;; module system. Rule rows expect a procedure that receives the call args.
+    (define (defrel head . rest)
+      (let ((name (car head))
+            (args (cdr head)))
+        (if (null? rest)
+            (%defrel-fact! name args)
+            (let ((rule-proc (car rest)))
+              (%defrel-rule! name args rule-proc)))))
+
+    (define (assert clause)
+      ;; (assert '(name a1 ... aN))
+      (let* ((name (car clause))
+             (args (normalize-head-args (cdr clause)))
+             (arity (length args))
+             (ft (ensure-rel-table name arity))
+             (is-ground (and (ground? args) (not (contains-var-marker? args))))
+             (inserted (if is-ground
+                           (%fact-table-insert! ft args)
+                           (%fact-table-insert-clause! ft args #f #f))))
+        (invalidate-table-cache!)
+        inserted))
+
+    (define (candidate-row-ids ft args)
+      (if (null? args)
+          (%fact-table-live-row-ids ft)
+          (let ((a0 (car args)))
+            (if (and (ground? a0) (not (var-marker? a0)))
+                (let ((matched (%fact-table-query ft 0 a0))
+                      (live (%fact-table-live-row-ids ft)))
+                  ;; Include wildcard head rows (?x ...) alongside exact index hits.
+                  (append matched
+                          (let loop ((rows live) (acc '()))
+                            (if (null? rows)
+                                (reverse acc)
+                                (let* ((row-id (car rows))
+                                       (head0 (%fact-table-ref ft row-id 0)))
+                                  (if (var-marker? head0)
+                                      (loop (cdr rows) (cons row-id acc))
+                                      (loop (cdr rows) acc)))))))
+                (%fact-table-live-row-ids ft)))))
+
+    (define (call-row-goal ft row-id args arity)
+      (lambda ()
+        (let ((head (row-args ft row-id arity)))
+          (if (head-match? head args)
+              (if (%fact-table-row-ground? ft row-id)
+                  #t
+                  (let ((rule (%fact-table-row-rule ft row-id)))
+                    (if (procedure? rule)
+                        (let ((result (apply rule args)))
+                          (cond
+                            ((eq? result #f) #f)
+                            ((null? result) #f)
+                            ((goalset-like? result) (run-goalset-first! result))
+                            (#t #t)))
+                        #t)))
+              #f))))
+
+    (define (table-goalset key args)
+      ;; Replay cached answers as ordinary goal thunks.
+      (map* (lambda (answer)
+              (lambda ()
+                (head-match? (copy-term* answer) args)))
+            (reverse (table-answers key))))
+
+    (define (scan-table-rows ft rows work-args arity key changed)
+      (if (null? rows)
+          changed
+          (let* ((row-id (car rows))
+                 (m (trail-mark))
+                 (ok ((call-row-goal ft row-id work-args arity))))
+            (if ok
+                (let* ((answer (copy-term* work-args))
+                       (added (table-add-answer! key answer)))
+                  (unwind-trail m)
+                  (scan-table-rows ft (cdr rows) work-args arity key
+                                   (or changed added)))
+                (begin
+                  (unwind-trail m)
+                  (scan-table-rows ft (cdr rows) work-args arity key changed))))))
+
+    (define (populate-table! args arity ft key)
+      ;; SLG-lite: iterate relation clauses to a local fixpoint.
+      (let loop ((changed #t))
+        (if (not changed)
+            #t
+            (let* ((work-args (copy-term* args))
+                   (rows (candidate-row-ids ft work-args))
+                   (changed2 (scan-table-rows ft rows work-args arity key #f)))
+              (loop changed2)))))
+
+    (define (call-rel-tabled name args arity ft)
+      (let* ((key (table-key name args))
+             (status (table-status key)))
+        (cond
+          ((eq? status 'done)
+           (table-goalset key args))
+          ((eq? status 'working)
+           ;; Recursive consumer: read answers accumulated so far.
+           (table-goalset key args))
+          (#t
+           (set-table-status! key 'working)
+           (set-table-answers! key '())
+           (populate-table! args arity ft key)
+           (set-table-status! key 'done)
+           (table-goalset key args)))))
+
+    (define (call-rel name . args)
+      ;; Returns a goalset: list of branch thunks.
+      (let* ((arity (length args))
+             (ft (registry-lookup (rel-key name arity) *db-registry*)))
+        (if (not ft)
+            '()
+            (if (tabled-rel? name arity)
+                (call-rel-tabled name args arity ft)
+                (let ((rows (candidate-row-ids ft args)))
+                  (map* (lambda (row-id)
+                          (call-row-goal ft row-id args arity))
+                        rows))))))
+
+    (define (call-rel? name . args)
+      ;; Convenience predicate: true iff at least one branch succeeds.
+      (let ((goalset (apply call-rel (cons name args))))
+        (if (run1 (lambda () #t) goalset) #t #f)))
+
+    (define (retract clause)
+      ;; Removes the first row matching `(name pattern...)`.
+      (let* ((name (car clause))
+             (args (normalize-head-args (cdr clause)))
+             (arity (length args))
+             (ft (registry-lookup (rel-key name arity) *db-registry*)))
+        (if (not ft)
+            #f
+            (let loop ((rows (candidate-row-ids ft args)))
+              (if (null? rows)
+                  #f
+                  (let* ((row-id (car rows))
+                         (m (trail-mark))
+                         (ok (head-match? args (row-args ft row-id arity))))
+                    (unwind-trail m)
+                    (if ok
+                        (begin
+                          (invalidate-table-cache!)
+                          (%fact-table-delete-row! ft row-id))
+                        (loop (cdr rows)))))))))
+
+    (define (retract-all clause)
+      ;; Removes all rows matching `(name pattern...)`.
+      (let* ((name (car clause))
+             (args (normalize-head-args (cdr clause)))
+             (arity (length args))
+             (ft (registry-lookup (rel-key name arity) *db-registry*)))
+        (if (not ft)
+            #f
+            (let ((deleted?
+                    (let loop ((rows (candidate-row-ids ft args))
+                               (deleted #f))
+                      (if (null? rows)
+                          deleted
+                          (let* ((row-id (car rows))
+                                 (m (trail-mark))
+                                 (ok (head-match? args (row-args ft row-id arity))))
+                            (unwind-trail m)
+                            (if ok
+                                (begin
+                                  (%fact-table-delete-row! ft row-id)
+                                  (loop (cdr rows) #t))
+                                (loop (cdr rows) deleted)))))))
+              (if deleted? (invalidate-table-cache!) #f)
+              deleted?))))
+
+    (define (index-rel! name col-spec)
+      ;; Rebuild index `col-spec` for every arity currently registered for name.
+      (letrec ((loop (lambda (entries changed)
+                       (if (null? entries)
+                           changed
+                           (let* ((entry (car entries))
+                                  (key   (car entry))
+                                  (ft    (cdr entry)))
+                             (if (eq? (car key) name)
+                                 (begin
+                                   (%fact-table-build-index! ft col-spec)
+                                   (loop (cdr entries) #t))
+                                 (loop (cdr entries) changed)))))))
+        (loop *db-registry* #f)))
+
+    (define (tabled name arity)
+      (let ((k (rel-key name arity)))
+        (if (tabled-rel? name arity)
+            #t
+            (begin
+              (set! *db-tabled* (cons k *db-tabled*))
+              (invalidate-table-cache!)
+              #t))))
+
+  ))
