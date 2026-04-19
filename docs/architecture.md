@@ -6,7 +6,7 @@
 
 ## Overview
 
-Eta's compiler is structured as a **six-phase pipeline** that transforms
+Eta's compiler is structured as a **six-stage pipeline** that transforms
 UTF-8 source text into stack-based bytecode and executes it on a virtual
 machine. All phases are orchestrated by the
 [`Driver`](../eta/interpreter/src/eta/interpreter/driver.h) class, which
@@ -78,7 +78,7 @@ flowchart TD
 
 ---
 
-## Phase-by-Phase Walkthrough
+## Stage-by-Stage Walkthrough
 
 ### 1. Lexer
 
@@ -269,7 +269,7 @@ Each error carries:
 - A **`Span`** for source location
 - Optional **related spans** with labels for multi-span errors
 
-Phase-specific error types (`LexError`, `ParseError`, `ExpandError`,
+Stage-specific error types (`LexError`, `ParseError`, `ExpandError`,
 `LinkError`, `SemanticError`, `VMError`) are converted via
 `to_diagnostic<T>()` template specializations.
 

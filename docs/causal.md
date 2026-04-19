@@ -1,7 +1,7 @@
 # Causal Inference — Do-Calculus & Factor Analysis
 
 [← Back to README](../README.md) · [Logic Programming](logic.md) ·
-[CLP](clp.md) · [AAD](aad.md) · [xVA](xva.md) · [Next Steps](next-steps.md)
+[CLP](clp.md) · [AAD](aad.md) · [xVA](xva.md) · [Project Status](next-steps.md)
 
 ---
 
@@ -288,10 +288,9 @@ analysis:
 > - Regression-based adjustment for continuous confounders
 >
 > These methods require BLAS/LAPACK matrix operations or a library such
-> as **libtorch** or **Eigen**.  The planned FFI extension
-> ([`docs/next-steps.md §2`](next-steps.md)) will provide the necessary
-> bridge.  At that point `do:estimate-effect` will be backed by
-> vectorised regression rather than the current loop-based accumulator.
+> as **libtorch** or **Eigen**.  In Eta, they are implemented through the
+> native runtime integration layer so `do:estimate-effect` can use
+> vectorised regression instead of loop-based accumulators.
 
 ---
 

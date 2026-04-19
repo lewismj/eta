@@ -4,7 +4,7 @@
 [Architecture](architecture.md) ·
 [NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
 [Optimization](optimization.md) · [Runtime & GC](runtime.md) ·
-[Modules & Stdlib](modules.md) · [Next Steps](next-steps.md)
+[Modules & Stdlib](modules.md) · [Project Status](next-steps.md)
 
 ---
 
@@ -16,7 +16,7 @@ compilation pipeline (lex → parse → expand → link → analyze → emit) an
 instead of executing it.
 
 The interpreter (`etai`) can then load `.etac` files directly, **skipping
-every front-end phase** and jumping straight to VM execution. This is
+every front-end stage** and jumping straight to VM execution. This is
 useful for:
 
 - **Faster startup** — large programs and library modules that rarely
@@ -68,7 +68,7 @@ Usage: etac [options] <file.eta> [-o <file.etac>]
 
 ## Compilation Pipeline
 
-`etac` reuses the same six-phase pipeline as the interpreter, but
+`etac` reuses the same six-stage pipeline as the interpreter, but
 replaces the final VM execution step with binary serialization:
 
 ```mermaid

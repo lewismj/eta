@@ -77,7 +77,7 @@ Hello, world!
 ```
 
 `etai` also accepts pre-compiled `.etac` bytecode files. When given a
-`.etac` file it **skips every front-end phase** and jumps straight to VM
+`.etac` file it **skips every front-end stage** and jumps straight to VM
 execution for faster startup:
 
 ```bash

@@ -556,7 +556,7 @@ Change the default timeout per socket:
 ## See Also
 
 - [Networking Primitives](networking.md) — Complete nng primitive reference
-- [Network & Message Passing Design](network-message-passing.md) — Architecture and implementation roadmap
+- [Network & Message Passing Design](network-message-passing.md) — Architecture and current behavior details
 - [`std.net` module](modules.md#stdnet--networking--message-passing) — High-level helpers
 - [Examples](examples.md#networking--message-passing) — Runnable demos
 

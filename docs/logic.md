@@ -48,11 +48,9 @@ each compiles to a single dedicated opcode (except `ground?` which is a builtin)
 `ground?` is registered as a **builtin function** (not a special form) so it
 appears in the global slot table alongside `car`, `cons`, etc.
 
-### Phase 1 additions (runtime builtins)
+### Additional Runtime Builtins
 
-These were added as part of the
-[Logic & CLP roadmap Phase 1](logic-next-steps.md) — they are ordinary
-runtime builtins, not special forms:
+These are ordinary runtime builtins, not special forms:
 
 | Form | Description |
 |------|-------------|
@@ -85,7 +83,7 @@ A logic variable is a heap-allocated object of kind `ObjectKind::LogicVar`:
 ```cpp
 struct LogicVar {
     std::optional<LispVal> binding;   // nullopt → unbound
-    std::string            name;      // optional debug label (Phase 1; empty = anonymous)
+    std::string            name;      // optional debug label (empty = anonymous)
 };
 ```
 
@@ -165,11 +163,10 @@ This prevents the creation of infinite (cyclic) terms:
 Without the occurs check, `z` would be bound to a circular list, causing any
 subsequent traversal (e.g., `ground?`, `display`) to loop forever.
 
-#### Occurs-Check Policy (configurable, Phase 1)
+#### Occurs-Check Policy (configurable)
 
-Since Phase 1 of the
-[Logic & CLP roadmap](logic-next-steps.md), the occurs-check behaviour is
-**runtime-configurable** via two built-in primitives:
+The occurs-check behaviour is **runtime-configurable** via two built-in
+primitives:
 
 ```scheme
 (set-occurs-check! 'always)   ; run occurs-check, fail on cycle (DEFAULT — safe)
@@ -198,7 +195,7 @@ When mode is `'error`, the runtime failure is catchable:
 The flag is stored on the VM (`VM::occurs_check_mode_`) and is intentionally
 *not* on the trail: it is a policy knob, not a backtrackable binding.
 
-### Named Logic Variables (Phase 1)
+### Named Logic Variables
 
 Logic variables may carry an **optional debug label** with no effect on
 unification semantics:
@@ -220,7 +217,7 @@ useful for traces, debugger displays, and future CLP / WAM tooling. Two
 named vars with the same label are still distinct objects and still unify
 as independent variables — the name is purely for humans.
 
-### Compound Terms (Phase 1)
+### Compound Terms
 
 `(term 'f a1 … aN)` allocates a **structured logic term** — a dedicated
 heap kind `CompoundTerm` with a symbol functor and a vector of argument
@@ -257,59 +254,56 @@ Prolog-style goals visually distinct from Scheme lists in the printer
 same functor symbol, the same arity, and their arguments unify pairwise.
 Compound vs cons, compound vs vector, and mismatched functor / arity all
 fail. `VM::unify`, `VM::occurs_check`, `VM::copy_term`, and `ground?` were
-extended in Phase 1 to recurse through compound args; `copy_term`
+implemented to recurse through compound args; `copy_term`
 additionally preserves sharing of repeated variables.
 
-### Structured Trail Entries (Phase 1)
+### Structured Trail Entries
 
 The per-VM trail is now a `std::vector<TrailEntry>`:
 
 ```cpp
 struct TrailEntry {
-    enum class Kind : std::uint8_t { Bind, Attr };
-    Kind    kind;                 // Bind (current) or Attr (reserved, Phase 3)
-    LispVal var;                  // HeapObject ref to the LogicVar / AttrVar
+    enum class Kind : std::uint8_t { Bind, Attr, Domain };
+    Kind    kind;                 // Bind, Attr, or Domain
+    LispVal var;                  // HeapObject ref to the LogicVar
     LispVal prev_value;           // Attr only: previous module-attribute value
 };
 ```
 
-Previously the trail was a `std::vector<LispVal>` and unwinding always
-meant "clear `binding` to `std::nullopt`". The tagged entry reserves a
-second kind, `Attr`, for Phase 3 attributed-variable writes — when an
-`AttrVar` has a module attribute rewritten during unification, the old
-value is recorded in `prev_value` so backtracking can restore it cleanly.
-Until Phase 3 lands, only `Bind` entries are produced.
+The trail is a tagged log of undoable VM state changes.  `Bind` entries
+undo logic-variable bindings, `Attr` entries restore prior attribute slots,
+and `Domain` entries restore prior CLP domain state.  This keeps logic and
+constraint backtracking on one unified trail.
 
-The packed `TrailMark` fixnum layout (23 bits binding trail + 23 bits
-constraint trail) is unchanged — the binding trail's depth still fits in
-a fixnum, so trail-mark / unwind-trail semantics are identical from the
-user's perspective.
+`TrailMark` stores the current trail depth and `UnwindTrail` restores every
+entry above that mark.  The mark remains an opaque fixnum cookie from user
+code's perspective.
 
 ### The Trail Stack
 
-Every successful binding made inside `unify` is recorded in
-`VM::trail_stack_`, a `std::vector<LispVal>` that stores the **boxed reference**
-to the logic variable that was bound (not a raw pointer — raw pointers are not
-stable across GC cycles in a concurrent heap):
+Every undoable logic/CLP change is recorded in `VM::trail_stack_`, a
+`std::vector<TrailEntry>`:
 
 ```cpp
-std::vector<LispVal> trail_stack_;   // per-VM, not shared
+std::vector<TrailEntry> trail_stack_;   // per-VM, not shared
 ```
 
 `TrailMark` reads `trail_stack_.size()` and pushes it as a fixnum.
 
 `UnwindTrail` pops the mark fixnum, then pops entries from the trail down to
-that mark, resetting each variable's binding to `std::nullopt`:
+that mark, restoring each entry by `TrailEntry::Kind`:
 
 ```cpp
 case OpCode::UnwindTrail: {
     int64_t mark = ops::decode<int64_t>(pop()).value();
     while ((int64_t)trail_stack_.size() > mark) {
-        auto var_ref = trail_stack_.back();
+        auto e = trail_stack_.back();
         trail_stack_.pop_back();
-        auto id = ops::payload(var_ref);
-        if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(id))
-            lv->binding = std::nullopt;
+        switch (e.kind) {
+          case TrailEntry::Kind::Bind:   /* restore binding */ break;
+          case TrailEntry::Kind::Attr:   /* restore attr */    break;
+          case TrailEntry::Kind::Domain: /* restore domain */  break;
+        }
     }
     break;
 }
@@ -783,7 +777,7 @@ closure), `copy-term` lets you instantiate it freshly for each invocation:
 
 | Feature | Status |
 |---------|--------|
-| Attributed variables | Not supported |
+| Attributed variables | Supported (`put-attr`, `get-attr`, `del-attr`, `attr-var?`, `freeze`, `dif`) |
 | Tabling / memoisation | Not supported; would require a WAM-style call stack |
 
 ---

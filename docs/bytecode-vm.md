@@ -207,7 +207,7 @@ Let's trace the compilation and execution of a small program:
     (add1 41)))
 ```
 
-### Phase 1 — Expand
+### Stage 1 — Expand
 
 `defun` is desugared to `define` + `lambda`:
 
@@ -218,7 +218,7 @@ Let's trace the compilation and execution of a small program:
     (add1 41)))
 ```
 
-### Phase 2 — Semantic Analysis (Core IR)
+### Stage 2 — Semantic Analysis (Core IR)
 
 The analyzer produces these IR nodes for the module init function:
 
@@ -236,7 +236,7 @@ Lambda "add1":
   tail: true  (the call is in tail position of the lambda body)
 ```
 
-### Phase 3 — Emit Bytecode
+### Stage 3 — Emit Bytecode
 
 **`add1` lambda → `example_init_lambda0`:**
 
@@ -277,7 +277,7 @@ Lambda "add1":
   8: Return
 ```
 
-### Phase 4 — VM Execution Trace
+### Stage 4 — VM Execution Trace
 
 ```
 Executing: example_init

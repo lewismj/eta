@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md) · [Fact Tables](fact-table.md) ·
 [AAD – Finance Examples](aad.md) · [Modules & Stdlib](modules.md) ·
-[Runtime & GC](runtime.md) · [Next Steps](next-steps.md)
+[Runtime & GC](runtime.md) · [Project Status](next-steps.md)
 
 ---
 

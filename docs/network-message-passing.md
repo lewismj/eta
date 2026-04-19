@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md) · [Networking Primitives](networking.md) ·
 [Message Passing & Actors](message-passing.md) · [Modules & Stdlib](modules.md) ·
-[Next Steps](next-steps.md)
+[Project Status](next-steps.md)
 
 ---
 
@@ -288,15 +288,15 @@ Eta code on both sides is identical.
   `worker-pool`, `pub-sub`, `survey`
 - VS Code extension: syntax highlighting, snippets, and DAP child process tree view
 
-### Out of scope (post-v1)
+### Not Included in the Current Baseline
 
 | Feature | Rationale |
 |---------|-----------|
-| **Remote `spawn-remote`** | Requires SSH integration or a distributed node agent.  V1 supports cross-host messaging via raw `tcp://`; remote processes are started independently. |
-| **Actor name registry** | Erlang's `register/2` and `whereis/1` provide process lookup by name.  V1 requires knowing the endpoint or holding the socket handle directly. |
-| **Monitoring & supervision trees** | `monitor`, `demonitor`, and OTP-style `one-for-one` supervisors are the next actor-model milestone — see [Next Steps](next-steps.md#5--actor-model-enhancements). |
-| **Distributed GC** | Not planned. Lifecycle is managed explicitly via `nng-close` / `spawn-wait`. |
-| **WebSocket / TLS transports** | nng supports these; they can be enabled post-v1. |
+| **Remote `spawn-remote`** | Requires SSH integration or a distributed node agent.  The current baseline supports cross-host messaging via raw `tcp://`; remote processes are started independently. |
+| **Actor name registry** | Erlang's `register/2` and `whereis/1` provide process lookup by name.  The current baseline requires knowing the endpoint or holding the socket handle directly. |
+| **Monitoring & supervision trees** | `monitor`, `demonitor`, and OTP-style `one-for-one` supervisors are not part of this baseline API. |
+| **Distributed GC** | Lifecycle is managed explicitly via `nng-close` / `spawn-wait`; distributed GC is not part of this model. |
+| **WebSocket / TLS transports** | nng supports these transports, but they are not covered by this baseline API layer. |
 
 ---
 
@@ -306,4 +306,4 @@ Eta code on both sides is identical.
 - **[Message Passing & Actors](message-passing.md)** — Actor patterns, worked examples, timeouts
 - **[Modules & Stdlib — std.net](modules.md#stdnet--networking--message-passing)** — High-level helper reference
 - **[Examples — Networking](examples.md#networking--message-passing)** — All runnable demos
-- **[Next Steps](next-steps.md)** — Future FFI and actor model roadmap
+- **[Project Status](next-steps.md)** — Current subsystem status overview
