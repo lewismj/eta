@@ -21,9 +21,8 @@ using namespace eta::runtime;
 using namespace eta::runtime::vm;
 using namespace eta::runtime::memory::factory;
 
-// ============================================================================
-// Fixture — reuses the same compile-and-run pipeline as vm_tests
-// ============================================================================
+/**
+ */
 
 struct FunctionalTestFixture {
     memory::heap::Heap heap;
@@ -69,7 +68,7 @@ struct FunctionalTestFixture {
         VM vm(heap, intern_table);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
 
-        // Re-register primitives with VM pointer so tape/CLP builtins work
+        /// Re-register primitives with VM pointer so tape/CLP builtins work
         builtins.clear();
         register_core_primitives(builtins, heap, intern_table, &vm);
         auto install_res = builtins.install(heap, vm.globals(), sem_mods[0].total_globals);
@@ -133,7 +132,7 @@ struct FunctionalTestFixture {
 
         VM vm(heap, intern_table);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
-        // Re-register primitives with VM pointer so tape/CLP builtins work
+        /// Re-register primitives with VM pointer so tape/CLP builtins work
         builtins.clear();
         register_core_primitives(builtins, heap, intern_table, &vm);
         auto install_res = builtins.install(heap, vm.globals(), sem_mod.total_globals);
@@ -167,11 +166,11 @@ struct FunctionalTestFixture {
 
     /// Helper: extract a double from a LispVal (handles both flonums and fixnums).
     double to_double(LispVal v) {
-        // Try flonum first (unboxed double)
+        /// Try flonum first (unboxed double)
         if (!nanbox::ops::is_boxed(v)) {
             return std::bit_cast<double>(v);
         }
-        // Boxed fixnum
+        /// Boxed fixnum
         auto fixnum_res = nanbox::ops::decode<int64_t>(v);
         if (fixnum_res) {
             return static_cast<double>(*fixnum_res);
@@ -185,10 +184,10 @@ struct FunctionalTestFixture {
     }
 };
 
-// ============================================================================
-// The AAD library, inlined as a string so each test can compose it into a
-// single-module program without needing multi-module import / export of macros.
-// ============================================================================
+/**
+ * The AAD library, inlined as a string so each test can compose it into a
+ * single-module program without needing multi-module import / export of macros.
+ */
 
 static const char* AAD_LIB = R"(
     ;; Dual representation
@@ -375,16 +374,15 @@ static const char* AAD_LIB = R"(
               (list primal (collect-adjoints (length vals) adjoints)))))))
 )";
 
-// Helper: wrap AAD_LIB + test body in a single module
+/// Helper: wrap AAD_LIB + test body in a single module
 static std::string aad_module(const std::string& body) {
     return std::string("(module m\n") + AAD_LIB + "\n" + body + "\n)";
 }
 
-// ============================================================================
-// The xVA library: financial building blocks for CVA/FVA using tape-based AD.
-// Plain arithmetic — the VM transparently records onto a tape when TapeRef
-// operands are present.  Inlined so each test is self-contained.
-// ============================================================================
+/**
+ * The xVA library: financial building blocks for CVA/FVA using tape-based AD.
+ * operands are present.  Inlined so each test is self-contained.
+ */
 
 static const char* TAPE_GRAD = R"(
     ;; Tape-based AD gradient driver
@@ -488,12 +486,12 @@ static const char* XVA_LIB = R"(
          (compute-fva notional sigma r funding-spread)))
 )";
 
-// Helper: wrap TAPE_GRAD + XVA_LIB + test body in a single module
+/// Helper: wrap TAPE_GRAD + XVA_LIB + test body in a single module
 static std::string xva_module(const std::string& body) {
     return std::string("(module m\n") + TAPE_GRAD + "\n" + XVA_LIB + "\n" + body + "\n)";
 }
 
-// C++ reference implementations for expected values
+/// C++ reference implementations for expected values
 
 static double cpp_expected_cva(double N, double sigma, double r, double lam, double lgd) {
     double times[] = {0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0};
@@ -523,7 +521,7 @@ static double cpp_expected_fva(double N, double sigma, double r, double sf) {
     return fva;
 }
 
-// First-bucket CVA: bucket [0, 0.5]
+/// First-bucket CVA: bucket [0, 0.5]
 static double cpp_expected_cva_first_bucket(double N, double sigma, double r, double lam, double lgd) {
     double t_prev = 0.0, t_curr = 0.5;
     double t_mid = 0.5 * (t_prev + t_curr);
@@ -535,9 +533,9 @@ static double cpp_expected_cva_first_bucket(double N, double sigma, double r, do
 
 BOOST_FIXTURE_TEST_SUITE(functional_tests, FunctionalTestFixture)
 
-// ============================================================================
-// Transcendental math builtins
-// ============================================================================
+/**
+ * Transcendental math builtins
+ */
 
 BOOST_AUTO_TEST_CASE(test_sin_builtin) {
     LispVal res = run("(module m (define result (sin 0)))");
@@ -564,13 +562,14 @@ BOOST_AUTO_TEST_CASE(test_sqrt_builtin) {
     BOOST_CHECK_CLOSE(to_double(res), 2.0, 1e-10);
 }
 
-// ============================================================================
-// AAD — Core dual-number operations (no macro)
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_aad_dual_val_and_bp) {
-    // Verify that make-var produces a dual whose car is the primal
-    // and whose backprop returns the correct index-adjoint pair.
+    /**
+     * Verify that make-var produces a dual whose car is the primal
+     * and whose backprop returns the correct index-adjoint pair.
+     */
     LispVal res = run(aad_module(R"(
         (define result
           (let ((x (make-var 5 0)))
@@ -580,7 +579,7 @@ BOOST_AUTO_TEST_CASE(test_aad_dual_val_and_bp) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_add_primal) {
-    // d+ should compute the correct primal: 3 + 4 = 7
+    /// d+ should compute the correct primal: 3 + 4 = 7
     LispVal res = run(aad_module(R"(
         (define result
           (let ((x (make-var 3 0))
@@ -591,7 +590,7 @@ BOOST_AUTO_TEST_CASE(test_aad_add_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_mul_primal) {
-    // d* should compute the correct primal: 3 * 4 = 12
+    /// d* should compute the correct primal: 3 * 4 = 12
     LispVal res = run(aad_module(R"(
         (define result
           (let ((x (make-var 3 0))
@@ -601,15 +600,16 @@ BOOST_AUTO_TEST_CASE(test_aad_mul_primal) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 12);
 }
 
-// ============================================================================
-// AAD — Gradient computation (manual d-prefixed calls)
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_aad_grad_multiply) {
-    // f(x,y) = x * y at (3,4)
-    // df/dx = y = 4,  df/dy = x = 3
-    // grad returns (primal gradient-vector)
-    // result = primal (car of the grad output)
+    /**
+     * f(x,y) = x * y at (3,4)
+     * df/dx = y = 4,  df/dy = x = 3
+     * grad returns (primal gradient-vector)
+     * result = primal (car of the grad output)
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x y) (d* x y)) '(3 4)))
         (define result (car g))
@@ -618,9 +618,11 @@ BOOST_AUTO_TEST_CASE(test_aad_grad_multiply) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_grad_multiply_partials) {
-    // f(x,y) = x * y at (3,4)
-    // gradient vector should be #(4 3)
-    // Check df/dx = 4
+    /**
+     * f(x,y) = x * y at (3,4)
+     * gradient vector should be #(4 3)
+     * Check df/dx = 4
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x y) (d* x y)) '(3 4)))
         (define gv (car (cdr g)))
@@ -630,7 +632,7 @@ BOOST_AUTO_TEST_CASE(test_aad_grad_multiply_partials) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_grad_multiply_partial_dy) {
-    // df/dy = x = 3
+    /// df/dy = x = 3
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x y) (d* x y)) '(3 4)))
         (define gv (car (cdr g)))
@@ -639,13 +641,14 @@ BOOST_AUTO_TEST_CASE(test_aad_grad_multiply_partial_dy) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 3);
 }
 
-// ============================================================================
-// AAD — Polynomial gradient
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_aad_polynomial_grad) {
-    // g(x) = x^2 + 3x + 1 at x=4
-    // dg/dx = 2x + 3 = 11
+    /**
+     * g(x) = x^2 + 3x + 1 at x=4
+     * dg/dx = 2x + 3 = 11
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x) (d+ (d+ (d* x x) (d* (make-const 3) x))
                                         (make-const 1)))
@@ -656,13 +659,14 @@ BOOST_AUTO_TEST_CASE(test_aad_polynomial_grad) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 11);
 }
 
-// ============================================================================
-// AAD — Transcendental functions gradient
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_aad_sin_gradient) {
-    // f(x) = sin(x) at x=0
-    // df/dx = cos(0) = 1.0
+    /**
+     * f(x) = sin(x) at x=0
+     * df/dx = cos(0) = 1.0
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x) (dsin x)) '(0)))
         (define gv (car (cdr g)))
@@ -672,8 +676,10 @@ BOOST_AUTO_TEST_CASE(test_aad_sin_gradient) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_exp_gradient) {
-    // f(x) = exp(x) at x=0
-    // df/dx = exp(0) = 1.0
+    /**
+     * f(x) = exp(x) at x=0
+     * df/dx = exp(0) = 1.0
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x) (dexp x)) '(0)))
         (define gv (car (cdr g)))
@@ -683,8 +689,7 @@ BOOST_AUTO_TEST_CASE(test_aad_exp_gradient) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_exp_chain_rule) {
-    // f(x) = exp(2x) at x=1
-    // df/dx = 2·exp(2) ≈ 14.7781
+    /// f(x) = exp(2x) at x=1
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x) (dexp (d* (make-const 2) x))) '(1)))
         (define gv (car (cdr g)))
@@ -694,8 +699,10 @@ BOOST_AUTO_TEST_CASE(test_aad_exp_chain_rule) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_log_gradient) {
-    // f(x) = log(x) at x=2
-    // df/dx = 1/x = 0.5
+    /**
+     * f(x) = log(x) at x=2
+     * df/dx = 1/x = 0.5
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x) (dlog x)) '(2)))
         (define gv (car (cdr g)))
@@ -704,13 +711,14 @@ BOOST_AUTO_TEST_CASE(test_aad_log_gradient) {
     BOOST_CHECK_CLOSE(to_double(res), 0.5, 1e-10);
 }
 
-// ============================================================================
-// AAD — Rosenbrock at the minimum
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_aad_rosenbrock_minimum) {
-    // f(x,y) = (1-x)^2 + 100*(y-x^2)^2  at (1,1)
-    // Both partials should be 0.
+    /**
+     * f(x,y) = (1-x)^2 + 100*(y-x^2)^2  at (1,1)
+     * Both partials should be 0.
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x y)
                           (d+ (d* (d- (make-const 1) x) (d- (make-const 1) x))
@@ -722,7 +730,7 @@ BOOST_AUTO_TEST_CASE(test_aad_rosenbrock_minimum) {
         ;; df/dx should be 0
         (define result (vector-ref gv 0))
     )"));
-    BOOST_CHECK_CLOSE(to_double(res) + 1.0, 1.0, 1e-10); // +1 avoids division by zero in BOOST_CHECK_CLOSE
+    BOOST_CHECK_CLOSE(to_double(res) + 1.0, 1.0, 1e-10); ///< +1 avoids division by zero in BOOST_CHECK_CLOSE
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_rosenbrock_minimum_dy) {
@@ -739,12 +747,11 @@ BOOST_AUTO_TEST_CASE(test_aad_rosenbrock_minimum_dy) {
     BOOST_CHECK_CLOSE(to_double(res) + 1.0, 1.0, 1e-10);
 }
 
-// ============================================================================
-// AAD — The `ad` syntax-rules macro
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_aad_macro_add) {
-    // (ad (+ x y)) should expand to (d+ x y)
+    /// (ad (+ x y)) should expand to (d+ x y)
     LispVal res = run(aad_module(R"(
         (define result
           (let ((x (make-var 10 0))
@@ -755,8 +762,10 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_add) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_macro_nested) {
-    // (ad (+ (* x y) x)) should expand to (d+ (d* x y) x)
-    // f(x,y) = x*y + x at (3,4) => primal = 15
+    /**
+     * (ad (+ (* x y) x)) should expand to (d+ (d* x y) x)
+     * f(x,y) = x*y + x at (3,4) => primal = 15
+     */
     LispVal res = run(aad_module(R"(
         (define result
           (let ((x (make-var 3 0))
@@ -767,8 +776,10 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_nested) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_macro_sin) {
-    // (ad (sin x)) should expand to (dsin x)
-    // sin(0) = 0
+    /**
+     * (ad (sin x)) should expand to (dsin x)
+     * sin(0) = 0
+     */
     LispVal res = run(aad_module(R"(
         (define result
           (let ((x (make-var 0 0)))
@@ -778,8 +789,10 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_sin) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_macro_grad_polynomial) {
-    // g(x) = x^2 + 3x + 1 at x=4, using the ad macro
-    // dg/dx = 2*4 + 3 = 11
+    /**
+     * g(x) = x^2 + 3x + 1 at x=4, using the ad macro
+     * dg/dx = 2*4 + 3 = 11
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x) (ad (+ (+ (* x x) (* 3 x)) 1)))
                         '(4)))
@@ -790,8 +803,10 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_grad_polynomial) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_macro_grad_sin_plus_product) {
-    // f(x,y) = x*y + sin(x) at (2,3)
-    // df/dx = y + cos(x) = 3 + cos(2)
+    /**
+     * f(x,y) = x*y + sin(x) at (2,3)
+     * df/dx = y + cos(x) = 3 + cos(2)
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x y) (ad (+ (* x y) (sin x))))
                         '(2 3)))
@@ -803,7 +818,7 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_grad_sin_plus_product) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_macro_grad_sin_plus_product_dy) {
-    // df/dy = x = 2
+    /// df/dy = x = 2
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x y) (ad (+ (* x y) (sin x))))
                         '(2 3)))
@@ -814,7 +829,7 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_grad_sin_plus_product_dy) {
 }
 
 BOOST_AUTO_TEST_CASE(test_aad_macro_grad_exp_chain) {
-    // f(x) = exp(2x) at x=1,  df/dx = 2*exp(2)
+    /// f(x) = exp(2x) at x=1,  df/dx = 2*exp(2)
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x) (ad (exp (* 2 x))))
                         '(1)))
@@ -824,13 +839,14 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_grad_exp_chain) {
     BOOST_CHECK_CLOSE(to_double(res), 2.0 * std::exp(2.0), 1e-6);
 }
 
-// ============================================================================
-// AAD — Rosenbrock via ad macro
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_aad_macro_rosenbrock) {
-    // f(x,y) = (1-x)^2 + 100*(y-x^2)^2  at (1,1)
-    // Primal = 0, gradient = (0, 0)
+    /**
+     * f(x,y) = (1-x)^2 + 100*(y-x^2)^2  at (1,1)
+     * Primal = 0, gradient = (0, 0)
+     */
     LispVal res = run(aad_module(R"(
         (define g (grad (lambda (x y)
                           (ad (+ (* (- 1 x) (- 1 x))
@@ -842,12 +858,11 @@ BOOST_AUTO_TEST_CASE(test_aad_macro_rosenbrock) {
     BOOST_CHECK_CLOSE(to_double(res) + 1.0, 1.0, 1e-10);
 }
 
-// ============================================================================
-// xVA — sqrt / pow via tape-based AD
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_xva_sqrt_primal_4) {
-    // sqrt(4) = 2.0
+    /// sqrt(4) = 2.0
     LispVal res = run(xva_module(R"(
         (define result (sqrt 4.0))
     )"));
@@ -855,7 +870,7 @@ BOOST_AUTO_TEST_CASE(test_xva_sqrt_primal_4) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_sqrt_primal_9) {
-    // sqrt(9) = 3.0
+    /// sqrt(9) = 3.0
     LispVal res = run(xva_module(R"(
         (define result (sqrt 9.0))
     )"));
@@ -863,8 +878,10 @@ BOOST_AUTO_TEST_CASE(test_xva_sqrt_primal_9) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_sqrt_gradient) {
-    // f(x) = sqrt(x) at x=4
-    // df/dx = 1 / (2*sqrt(4)) = 0.25
+    /**
+     * f(x) = sqrt(x) at x=4
+     * df/dx = 1 / (2*sqrt(4)) = 0.25
+     */
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (x) (sqrt x)) '(4.0)))
         (define gv (car (cdr g)))
@@ -874,7 +891,7 @@ BOOST_AUTO_TEST_CASE(test_xva_sqrt_gradient) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_pow_primal) {
-    // exp(3 * log(2)) = 2^3 = 8.0
+    /// exp(3 * log(2)) = 2^3 = 8.0
     LispVal res = run(xva_module(R"(
         (define result (exp (* 3.0 (log 2.0))))
     )"));
@@ -882,8 +899,10 @@ BOOST_AUTO_TEST_CASE(test_xva_pow_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_pow_gradient_base) {
-    // f(x) = x^3 = exp(3*log(x)) at x=2.0
-    // df/dx = 3 * x^2 = 12.0
+    /**
+     * f(x) = x^3 = exp(3*log(x)) at x=2.0
+     * df/dx = 3 * x^2 = 12.0
+     */
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (x) (exp (* 3.0 (log x)))) '(2.0)))
         (define gv (car (cdr g)))
@@ -892,12 +911,11 @@ BOOST_AUTO_TEST_CASE(test_xva_pow_gradient_base) {
     BOOST_CHECK_CLOSE(to_double(res), 12.0, 1e-4);
 }
 
-// ============================================================================
-// xVA — Financial building block primal values
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal) {
-    // DF(r=0.05, t=1.0) = exp(-0.05)
+    /// DF(r=0.05, t=1.0) = exp(-0.05)
     LispVal res = run(xva_module(R"(
         (define result (discount-factor 0.05 1.0))
     )"));
@@ -905,7 +923,7 @@ BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal_2y) {
-    // DF(r=0.05, t=2.0) = exp(-0.10)
+    /// DF(r=0.05, t=2.0) = exp(-0.10)
     LispVal res = run(xva_module(R"(
         (define result (discount-factor 0.05 2.0))
     )"));
@@ -913,7 +931,7 @@ BOOST_AUTO_TEST_CASE(test_xva_discount_factor_primal_2y) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_survival_prob_primal) {
-    // Q(lambda=0.02, t=1.0) = exp(-0.02)
+    /// Q(lambda=0.02, t=1.0) = exp(-0.02)
     LispVal res = run(xva_module(R"(
         (define result (survival-prob 0.02 1.0))
     )"));
@@ -921,7 +939,7 @@ BOOST_AUTO_TEST_CASE(test_xva_survival_prob_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_default_prob_primal) {
-    // PD(lambda=0.02, t=1.0) = 1 - exp(-0.02)
+    /// PD(lambda=0.02, t=1.0) = 1 - exp(-0.02)
     LispVal res = run(xva_module(R"(
         (define result (default-prob 0.02 1.0))
     )"));
@@ -929,7 +947,6 @@ BOOST_AUTO_TEST_CASE(test_xva_default_prob_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_marginal_pd_primal) {
-    // ΔPD(lambda=0.02, 0, 0.5) = PD(0.5) - PD(0) = (1-exp(-0.01)) - 0
     LispVal res = run(xva_module(R"(
         (define result (marginal-pd 0.02 0.0 0.5))
     )"));
@@ -937,8 +954,7 @@ BOOST_AUTO_TEST_CASE(test_xva_marginal_pd_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_marginal_pd_mid_bucket) {
-    // ΔPD(lambda=0.02, 0.5, 1.0) = PD(1.0) - PD(0.5)
-    //   = (1-exp(-0.02)) - (1-exp(-0.01)) = exp(-0.01) - exp(-0.02)
+    ///   = (1-exp(-0.02)) - (1-exp(-0.01)) = exp(-0.01) - exp(-0.02)
     LispVal res = run(xva_module(R"(
         (define result (marginal-pd 0.02 0.5 1.0))
     )"));
@@ -947,7 +963,7 @@ BOOST_AUTO_TEST_CASE(test_xva_marginal_pd_mid_bucket) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_primal) {
-    // EE(N=1e6, sigma=0.20, t=0.25) = 1e6 * 0.20 * sqrt(0.25) = 100000
+    /// EE(N=1e6, sigma=0.20, t=0.25) = 1e6 * 0.20 * sqrt(0.25) = 100000
     LispVal res = run(xva_module(R"(
         (define result (expected-exposure 1000000 0.20 0.25))
     )"));
@@ -955,20 +971,18 @@ BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_primal_1y) {
-    // EE(N=1e6, sigma=0.20, t=1.0) = 1e6 * 0.20 * sqrt(1.0) = 200000
+    /// EE(N=1e6, sigma=0.20, t=1.0) = 1e6 * 0.20 * sqrt(1.0) = 200000
     LispVal res = run(xva_module(R"(
         (define result (expected-exposure 1000000 0.20 1.0))
     )"));
     BOOST_CHECK_CLOSE(to_double(res), 200000.0, 1e-6);
 }
 
-// ============================================================================
-// xVA — Financial building block gradients
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_xva_discount_factor_gradient) {
-    // ∂/∂r [exp(-r*t)] = -t * exp(-r*t)
-    // At r=0.05, t=1.0:  -1.0 * exp(-0.05)
+    /// At r=0.05, t=1.0:  -1.0 * exp(-0.05)
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (r) (discount-factor r 1.0)) '(0.05)))
         (define gv (car (cdr g)))
@@ -978,8 +992,6 @@ BOOST_AUTO_TEST_CASE(test_xva_discount_factor_gradient) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_survival_prob_gradient) {
-    // ∂/∂λ [exp(-λ*t)] = -t * exp(-λ*t)
-    // At λ=0.02, t=1.0:  -exp(-0.02)
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (h) (survival-prob h 1.0)) '(0.02)))
         (define gv (car (cdr g)))
@@ -989,8 +1001,6 @@ BOOST_AUTO_TEST_CASE(test_xva_survival_prob_gradient) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_default_prob_gradient) {
-    // ∂/∂λ [1 - exp(-λ*t)] = t * exp(-λ*t)
-    // At λ=0.02, t=1.0:  exp(-0.02)
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (h) (default-prob h 1.0)) '(0.02)))
         (define gv (car (cdr g)))
@@ -1000,7 +1010,6 @@ BOOST_AUTO_TEST_CASE(test_xva_default_prob_gradient) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_grad_sigma) {
-    // ∂EE/∂σ = N * sqrt(t) = 1e6 * sqrt(0.25) = 500000
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (notional sigma)
                           (expected-exposure notional sigma 0.25))
@@ -1012,7 +1021,6 @@ BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_grad_sigma) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_grad_notional) {
-    // ∂EE/∂N = σ * sqrt(t) = 0.20 * sqrt(0.25) = 0.10
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (notional sigma)
                           (expected-exposure notional sigma 0.25))
@@ -1023,12 +1031,11 @@ BOOST_AUTO_TEST_CASE(test_xva_expected_exposure_grad_notional) {
     BOOST_CHECK_CLOSE(to_double(res), 0.10, 1e-6);
 }
 
-// ============================================================================
-// xVA — CVA single bucket
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_xva_cva_single_bucket) {
-    // First bucket [0, 0.5] with standard parameters
+    /// First bucket [0, 0.5] with standard parameters
     double expected = cpp_expected_cva_first_bucket(1e6, 0.20, 0.05, 0.02, 0.60);
     LispVal res = run(xva_module(R"(
         (define result
@@ -1037,12 +1044,11 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_single_bucket) {
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
 }
 
-// ============================================================================
-// xVA — Full CVA computation
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_xva_cva_full_primal) {
-    // Full CVA across 10 semi-annual buckets, verified against C++ reference
+    /// Full CVA across 10 semi-annual buckets, verified against C++ reference
     double expected = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (notional sigma r hazard-rate lgd)
@@ -1054,7 +1060,6 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_full_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_cva_notional_linearity) {
-    // CVA is linear in notional: ∂CVA/∂N = CVA / N
     double cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
     double expected_dN = cva / 1e6;
     LispVal res = run(xva_module(R"(
@@ -1068,7 +1073,6 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_notional_linearity) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_cva_lgd_linearity) {
-    // CVA is linear in LGD: ∂CVA/∂LGD = CVA / LGD
     double cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
     double expected_dLGD = cva / 0.60;
     LispVal res = run(xva_module(R"(
@@ -1082,7 +1086,6 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_lgd_linearity) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_cva_sigma_linearity) {
-    // CVA is linear in sigma: ∂CVA/∂σ = CVA / σ
     double cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
     double expected_dSigma = cva / 0.20;
     LispVal res = run(xva_module(R"(
@@ -1096,7 +1099,6 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_sigma_linearity) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_cva_rate_sensitivity) {
-    // ∂CVA/∂r — non-trivial (non-linear), verify with finite difference
     double r0 = 0.05, dr = 1e-7;
     double cva_up   = cpp_expected_cva(1e6, 0.20, r0 + dr, 0.02, 0.60);
     double cva_down = cpp_expected_cva(1e6, 0.20, r0 - dr, 0.02, 0.60);
@@ -1108,11 +1110,10 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_rate_sensitivity) {
         (define gv (car (cdr g)))
         (define result (vector-ref gv 2))
     )"));
-    BOOST_CHECK_CLOSE(to_double(res), fd_dCVA_dr, 0.01);  // 0.01% tolerance for FD
+    BOOST_CHECK_CLOSE(to_double(res), fd_dCVA_dr, 0.01);  ///< 0.01% tolerance for FD
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_cva_hazard_sensitivity) {
-    // ∂CVA/∂λ — non-trivial, verify with finite difference
     double lam = 0.02, dl = 1e-7;
     double cva_up   = cpp_expected_cva(1e6, 0.20, 0.05, lam + dl, 0.60);
     double cva_down = cpp_expected_cva(1e6, 0.20, 0.05, lam - dl, 0.60);
@@ -1127,12 +1128,11 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_hazard_sensitivity) {
     BOOST_CHECK_CLOSE(to_double(res), fd_dCVA_dlam, 0.01);
 }
 
-// ============================================================================
-// xVA — Full FVA computation
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_xva_fva_full_primal) {
-    // Full FVA across 10 semi-annual buckets, verified against C++ reference
+    /// Full FVA across 10 semi-annual buckets, verified against C++ reference
     double expected = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (notional sigma r funding-spread)
@@ -1144,7 +1144,6 @@ BOOST_AUTO_TEST_CASE(test_xva_fva_full_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_fva_notional_linearity) {
-    // FVA is linear in notional: ∂FVA/∂N = FVA / N
     double fva = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
     double expected_dN = fva / 1e6;
     LispVal res = run(xva_module(R"(
@@ -1158,7 +1157,6 @@ BOOST_AUTO_TEST_CASE(test_xva_fva_notional_linearity) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_fva_spread_linearity) {
-    // FVA is linear in funding spread: ∂FVA/∂s_f = FVA / s_f
     double fva = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
     double expected_dSf = fva / 0.012;
     LispVal res = run(xva_module(R"(
@@ -1172,7 +1170,6 @@ BOOST_AUTO_TEST_CASE(test_xva_fva_spread_linearity) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_fva_rate_sensitivity) {
-    // ∂FVA/∂r — non-linear, verify with finite difference
     double r0 = 0.05, dr = 1e-7;
     double fva_up   = cpp_expected_fva(1e6, 0.20, r0 + dr, 0.012);
     double fva_down = cpp_expected_fva(1e6, 0.20, r0 - dr, 0.012);
@@ -1187,12 +1184,11 @@ BOOST_AUTO_TEST_CASE(test_xva_fva_rate_sensitivity) {
     BOOST_CHECK_CLOSE(to_double(res), fd_dFVA_dr, 0.01);
 }
 
-// ============================================================================
-// xVA — Total xVA = CVA + FVA
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_xva_total_primal) {
-    // Total xVA should equal CVA + FVA
+    /// Total xVA should equal CVA + FVA
     double expected_cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60)
                + cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
     double expected_total = expected_cva;
@@ -1206,8 +1202,7 @@ BOOST_AUTO_TEST_CASE(test_xva_total_primal) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_total_notional_linearity) {
-    // Both CVA and FVA are linear in N, so total xVA is too:
-    // ∂xVA/∂N = xVA / N
+    /// Both CVA and FVA are linear in N, so total xVA is too:
     double xva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60)
                + cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
     double expected_dN = xva / 1e6;
@@ -1222,10 +1217,11 @@ BOOST_AUTO_TEST_CASE(test_xva_total_notional_linearity) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_total_gradient_six_params) {
-    // Verify all 6 sensitivities are computed and the gradient vector has
-    // length 6.  We check that vector-ref gv 5 (the last element) is the
-    // funding-spread sensitivity: ∂xVA/∂s_f = ∂FVA/∂s_f = FVA / s_f
-    // (CVA does not depend on funding-spread, so only FVA contributes.)
+    /**
+     * Verify all 6 sensitivities are computed and the gradient vector has
+     * length 6.  We check that vector-ref gv 5 (the last element) is the
+     * (CVA does not depend on funding-spread, so only FVA contributes.)
+     */
     double fva = cpp_expected_fva(1e6, 0.20, 0.05, 0.012);
     double expected_dSf = fva / 0.012;
     LispVal res = run(xva_module(R"(
@@ -1239,8 +1235,7 @@ BOOST_AUTO_TEST_CASE(test_xva_total_gradient_six_params) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_total_lgd_sensitivity) {
-    // ∂xVA/∂LGD = ∂CVA/∂LGD  (FVA does not depend on LGD)
-    // Verify with finite difference
+    /// Verify with finite difference
     double cva = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
     double expected_dLGD = cva / 0.60;
     LispVal res = run(xva_module(R"(
@@ -1254,8 +1249,7 @@ BOOST_AUTO_TEST_CASE(test_xva_total_lgd_sensitivity) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_total_hazard_sensitivity) {
-    // ∂xVA/∂λ = ∂CVA/∂λ  (FVA does not depend on hazard rate)
-    // Verify with finite difference
+    /// Verify with finite difference
     double lam = 0.02, dl = 1e-7;
     double cva_up   = cpp_expected_cva(1e6, 0.20, 0.05, lam + dl, 0.60);
     double cva_down = cpp_expected_cva(1e6, 0.20, 0.05, lam - dl, 0.60);
@@ -1270,15 +1264,14 @@ BOOST_AUTO_TEST_CASE(test_xva_total_hazard_sensitivity) {
     BOOST_CHECK_CLOSE(to_double(res), fd, 0.01);
 }
 
-// ============================================================================
-// xVA — Different market scenarios
-// ============================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_CASE(test_xva_cva_high_hazard) {
-    // Higher hazard rate (5%) should give a larger CVA
+    /// Higher hazard rate (5%) should give a larger CVA
     double cva_high = cpp_expected_cva(1e6, 0.20, 0.05, 0.05, 0.60);
     double cva_low  = cpp_expected_cva(1e6, 0.20, 0.05, 0.02, 0.60);
-    BOOST_CHECK_GT(cva_high, cva_low);  // sanity: higher default intensity → larger CVA
+    BOOST_CHECK_GT(cva_high, cva_low);
 
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (notional sigma r hazard-rate lgd)
@@ -1290,7 +1283,7 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_high_hazard) {
 }
 
 BOOST_AUTO_TEST_CASE(test_xva_cva_zero_lgd) {
-    // LGD = 0 implies CVA = 0 (full recovery, no credit loss)
+    /// LGD = 0 implies CVA = 0 (full recovery, no credit loss)
     LispVal res = run(xva_module(R"(
         (define g (grad (lambda (notional sigma r hazard-rate lgd)
                           (compute-cva notional sigma r hazard-rate lgd))
@@ -1302,16 +1295,17 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_zero_lgd) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ============================================================================
-// Main entry-point tests — verify that (defun main ...) is detected and
-// invoked by the Driver after module initialization.
-// ============================================================================
+/**
+ * invoked by the Driver after module initialization.
+ */
 
 BOOST_AUTO_TEST_SUITE(main_entry_tests)
 
 BOOST_FIXTURE_TEST_CASE(module_with_main_detects_main_slot, FunctionalTestFixture) {
-    // Verify that the semantic analyzer populates main_func_slot
-    // when a module defines (defun main ...).
+    /**
+     * Verify that the semantic analyzer populates main_func_slot
+     * when a module defines (defun main ...).
+     */
     auto source = R"(
         (module m
           (define result 0)
@@ -1340,7 +1334,7 @@ BOOST_FIXTURE_TEST_CASE(module_with_main_detects_main_slot, FunctionalTestFixtur
 }
 
 BOOST_FIXTURE_TEST_CASE(module_without_main_has_no_slot, FunctionalTestFixture) {
-    // A module without (defun main ...) should have no main_func_slot
+    /// A module without (defun main ...) should have no main_func_slot
     auto source = "(module m (define result 42))";
 
     reader::lexer::Lexer lex(0, source);
@@ -1364,7 +1358,7 @@ BOOST_FIXTURE_TEST_CASE(module_without_main_has_no_slot, FunctionalTestFixture) 
 }
 
 BOOST_FIXTURE_TEST_CASE(module_without_main_runs_begin, FunctionalTestFixture) {
-    // Existing behaviour: modules without main still execute their top-level forms
+    /// Existing behaviour: modules without main still execute their top-level forms
     auto result = run("(module m (define result (+ 10 20)))");
     auto decoded = nanbox::ops::decode<int64_t>(result);
     BOOST_REQUIRE(decoded.has_value());
@@ -1373,12 +1367,11 @@ BOOST_FIXTURE_TEST_CASE(module_without_main_runs_begin, FunctionalTestFixture) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ============================================================================
-// SABR — Native Dual AD tests for SABR Hagan implied vol approximation.
-// Validates primal values and gradients against C++ reference implementations.
-// ============================================================================
+/**
+ * Validates primal values and gradients against C++ reference implementations.
+ */
 
-// C++ reference: SABR ATM implied vol
+/// C++ reference: SABR ATM implied vol
 static double cpp_sabr_atm_vol(double F, double T, double alpha, double beta,
                                 double rho, double nu) {
     double omb = 1.0 - beta;
@@ -1390,7 +1383,7 @@ static double cpp_sabr_atm_vol(double F, double T, double alpha, double beta,
     return base * (1.0 + (t1 + t2 + t3) * T);
 }
 
-// C++ reference: SABR general implied vol
+/// C++ reference: SABR general implied vol
 static double cpp_sabr_general_vol(double F, double K, double T, double alpha,
                                     double beta, double rho, double nu) {
     double omb = 1.0 - beta;
@@ -1428,7 +1421,7 @@ static double cpp_sabr_implied_vol(double F, double K, double T, double alpha,
     return cpp_sabr_general_vol(F, K, T, alpha, beta, rho, nu);
 }
 
-// SABR library string for embedding in test modules (tape-based AD)
+/// SABR library string for embedding in test modules (tape-based AD)
 static const char* SABR_LIB = R"(
     ;; Tape-based AD gradient driver
     (defun native-grad (f vals)
@@ -1527,10 +1520,10 @@ static std::string sabr_module(const std::string& body) {
 
 BOOST_AUTO_TEST_SUITE(sabr_tests)
 
-// SABR ATM primal value
+/// SABR ATM primal value
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_atm_primal, FunctionalTestFixture) {
-    // ATM implied vol at F=0.03, T=1, alpha=0.035, beta=0.5, rho=-0.25, nu=0.40
+    /// ATM implied vol at F=0.03, T=1, alpha=0.035, beta=0.5, rho=-0.25, nu=0.40
     double expected = cpp_sabr_atm_vol(0.03, 1.0, 0.035, 0.5, -0.25, 0.40);
     LispVal res = run(sabr_module(R"(
         (define result (nd-val (sabr-atm-vol 0.03 1.0 0.035 0.5 -0.25 0.40)))
@@ -1538,10 +1531,10 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_atm_primal, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-6);
 }
 
-// SABR general (OTM) primal value
+/// SABR general (OTM) primal value
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_general_primal_otm, FunctionalTestFixture) {
-    // OTM: K=0.024 (80% of F=0.03), T=1
+    /// OTM: K=0.024 (80% of F=0.03), T=1
     double expected = cpp_sabr_general_vol(0.03, 0.024, 1.0, 0.035, 0.5, -0.25, 0.40);
     LispVal res = run(sabr_module(R"(
         (define result (nd-val (sabr-general-vol 0.03 0.024 1.0 0.035 0.5 -0.25 0.40)))
@@ -1549,7 +1542,7 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_general_primal_otm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
 }
 
-// SABR unified: ATM path
+/// SABR unified: ATM path
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_unified_atm, FunctionalTestFixture) {
     double expected = cpp_sabr_implied_vol(0.03, 0.03, 1.0, 0.035, 0.5, -0.25, 0.40);
@@ -1559,10 +1552,10 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_unified_atm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-6);
 }
 
-// SABR unified: OTM path
+/// SABR unified: OTM path
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_unified_otm, FunctionalTestFixture) {
-    double K = 0.03 * 1.20;  // 120% moneyness
+    double K = 0.03 * 1.20;  ///< 120% moneyness
     double expected = cpp_sabr_implied_vol(0.03, K, 1.0, 0.035, 0.5, -0.25, 0.40);
     LispVal res = run(sabr_module(R"(
         (define result (nd-val (sabr-implied-vol 0.03 0.036 1.0 0.035 0.5 -0.25 0.40)))
@@ -1570,10 +1563,9 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_unified_otm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), expected, 1e-4);
 }
 
-// SABR gradient: ∂σ/∂α via native-grad (ATM)
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_atm, FunctionalTestFixture) {
-    // Finite-difference reference: bump alpha by h, compute (f(a+h)-f(a-h))/(2h)
+    /// Finite-difference reference: bump alpha by h, compute (f(a+h)-f(a-h))/(2h)
     double h = 1e-7;
     double vp = cpp_sabr_atm_vol(0.03, 1.0, 0.035 + h, 0.5, -0.25, 0.40);
     double vm = cpp_sabr_atm_vol(0.03, 1.0, 0.035 - h, 0.5, -0.25, 0.40);
@@ -1586,10 +1578,9 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_atm, FunctionalTestFixture) {
                                '(0.035 0.5 -0.25 0.40)))
         (define result (vector-ref (car (cdr g)) 0))
     )"));
-    BOOST_CHECK_CLOSE(to_double(res), fd_dalpha, 0.01); // 0.01% tolerance
+    BOOST_CHECK_CLOSE(to_double(res), fd_dalpha, 0.01); ///< 0.01% tolerance
 }
 
-// SABR gradient: ∂σ/∂ρ via native-grad (ATM)
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_grad_drho_atm, FunctionalTestFixture) {
     double h = 1e-7;
@@ -1607,7 +1598,6 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_grad_drho_atm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), fd_drho, 0.01);
 }
 
-// SABR gradient: ∂σ/∂ν via native-grad (ATM)
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dnu_atm, FunctionalTestFixture) {
     double h = 1e-7;
@@ -1625,10 +1615,9 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dnu_atm, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), fd_dnu, 0.01);
 }
 
-// SABR gradient: OTM point ∂σ/∂α
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_otm, FunctionalTestFixture) {
-    double K = 0.024; // 80% moneyness
+    double K = 0.024; ///< 80% moneyness
     double h = 1e-7;
     double vp = cpp_sabr_general_vol(0.03, K, 1.0, 0.035 + h, 0.5, -0.25, 0.40);
     double vm = cpp_sabr_general_vol(0.03, K, 1.0, 0.035 - h, 0.5, -0.25, 0.40);
@@ -1641,13 +1630,13 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_grad_dalpha_otm, FunctionalTestFixture) {
                                '(0.035 0.5 -0.25 0.40)))
         (define result (vector-ref (car (cdr g)) 0))
     )"));
-    BOOST_CHECK_CLOSE(to_double(res), fd_dalpha, 0.1); // slightly wider tolerance for OTM
+    BOOST_CHECK_CLOSE(to_double(res), fd_dalpha, 0.1); ///< slightly wider tolerance for OTM
 }
 
-// SABR negative skew: low-strike vol > high-strike vol
+/// SABR negative skew: low-strike vol > high-strike vol
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_skew_direction, FunctionalTestFixture) {
-    // With rho < 0, vol at K=80%F should be > vol at K=120%F
+    /// With rho < 0, vol at K=80%F should be > vol at K=120%F
     LispVal res = run(sabr_module(R"(
         (define vol-low  (nd-val (sabr-implied-vol 0.03 0.024 1.0 0.035 0.5 0.0 0.80)))
         (define vol-high (nd-val (sabr-implied-vol 0.03 0.036 1.0 0.035 0.5 0.0 0.80)))
@@ -1656,12 +1645,14 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_skew_direction, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), 1.0, 1e-10);
 }
 
-// SABR smile: OTM vols > ATM vol on both sides (rho=0)
+/// SABR smile: OTM vols > ATM vol on both sides (rho=0)
 
 BOOST_FIXTURE_TEST_CASE(test_sabr_smile_shape, FunctionalTestFixture) {
-    // With rho=0 and high enough nu, both OTM vols should be >= ATM vol (smile shape).
-    // nu must be large enough for the z/x(z) curvature to dominate the backbone
-    // asymmetry introduced by beta=0.5.
+    /**
+     * With rho=0 and high enough nu, both OTM vols should be >= ATM vol (smile shape).
+     * nu must be large enough for the z/x(z) curvature to dominate the backbone
+     * asymmetry introduced by beta=0.5.
+     */
     LispVal res = run(sabr_module(R"(
         (define vol-atm  (nd-val (sabr-implied-vol 0.03 0.03  1.0 0.035 0.5 0.0 0.80)))
         (define vol-low  (nd-val (sabr-implied-vol 0.03 0.024 1.0 0.035 0.5 0.0 0.80)))
@@ -1673,9 +1664,9 @@ BOOST_FIXTURE_TEST_CASE(test_sabr_smile_shape, FunctionalTestFixture) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ============================================================================
-// AD Tape (Wengert list) tests
-// ============================================================================
+/**
+ * AD Tape (Wengert list) tests
+ */
 BOOST_AUTO_TEST_SUITE(tape_aad_tests)
 
 BOOST_FIXTURE_TEST_CASE(tape_creation, FunctionalTestFixture) {
@@ -1711,7 +1702,7 @@ BOOST_FIXTURE_TEST_CASE(tape_ref_predicate, FunctionalTestFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_add_gradient, FunctionalTestFixture) {
-    // f(x,y) = x + y at (3,5) => df/dx=1, df/dy=1
+    /// f(x,y) = x + y at (3,5) => df/dx=1, df/dy=1
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1724,11 +1715,11 @@ BOOST_FIXTURE_TEST_CASE(tape_add_gradient, FunctionalTestFixture) {
             (define result (+ (tape-adjoint t x) (tape-adjoint t y)))
         )
     )");
-    BOOST_CHECK_CLOSE(to_double(res), 2.0, 1e-10);  // 1 + 1
+    BOOST_CHECK_CLOSE(to_double(res), 2.0, 1e-10);  ///< 1 + 1
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_mul_gradient, FunctionalTestFixture) {
-    // f(x,y) = x * y at (3,5) => df/dx=5, df/dy=3
+    /// f(x,y) = x * y at (3,5) => df/dx=5, df/dy=3
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1741,11 +1732,11 @@ BOOST_FIXTURE_TEST_CASE(tape_mul_gradient, FunctionalTestFixture) {
             (define result (+ (tape-adjoint t x) (tape-adjoint t y)))
         )
     )");
-    BOOST_CHECK_CLOSE(to_double(res), 8.0, 1e-10);  // 5 + 3
+    BOOST_CHECK_CLOSE(to_double(res), 8.0, 1e-10);  ///< 5 + 3
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_x_squared, FunctionalTestFixture) {
-    // f(x) = x^2 at x=4 => df/dx = 2x = 8
+    /// f(x) = x^2 at x=4 => df/dx = 2x = 8
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1761,7 +1752,7 @@ BOOST_FIXTURE_TEST_CASE(tape_x_squared, FunctionalTestFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_polynomial, FunctionalTestFixture) {
-    // f(x) = x^2 + 3x + 1 at x=4 => df/dx = 2x + 3 = 11
+    /// f(x) = x^2 + 3x + 1 at x=4 => df/dx = 2x + 3 = 11
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1777,7 +1768,7 @@ BOOST_FIXTURE_TEST_CASE(tape_polynomial, FunctionalTestFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_exp, FunctionalTestFixture) {
-    // f(x) = exp(2x) at x=1 => df/dx = 2*exp(2)
+    /// f(x) = exp(2x) at x=1 => df/dx = 2*exp(2)
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1793,7 +1784,7 @@ BOOST_FIXTURE_TEST_CASE(tape_exp, FunctionalTestFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_sin_cos, FunctionalTestFixture) {
-    // f(x) = sin(x) at x=1 => df/dx = cos(1)
+    /// f(x) = sin(x) at x=1 => df/dx = cos(1)
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1809,7 +1800,7 @@ BOOST_FIXTURE_TEST_CASE(tape_sin_cos, FunctionalTestFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_log, FunctionalTestFixture) {
-    // f(x) = log(x) at x=2 => df/dx = 1/x = 0.5
+    /// f(x) = log(x) at x=2 => df/dx = 1/x = 0.5
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1825,8 +1816,10 @@ BOOST_FIXTURE_TEST_CASE(tape_log, FunctionalTestFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_mixed_tape_and_plain, FunctionalTestFixture) {
-    // f(x) = 3*x + 1 at x=5 => df/dx = 3
-    // Tests auto-promotion of plain numbers to tape constants
+    /**
+     * f(x) = 3*x + 1 at x=5 => df/dx = 3
+     * Tests auto-promotion of plain numbers to tape constants
+     */
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1842,7 +1835,7 @@ BOOST_FIXTURE_TEST_CASE(tape_mixed_tape_and_plain, FunctionalTestFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_rosenbrock, FunctionalTestFixture) {
-    // f(x,y) = (1-x)^2 + 100*(y-x^2)^2 at (1,1) => grad = (0, 0)
+    /// f(x,y) = (1-x)^2 + 100*(y-x^2)^2 at (1,1) => grad = (0, 0)
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1861,9 +1854,10 @@ BOOST_FIXTURE_TEST_CASE(tape_rosenbrock, FunctionalTestFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_multivar_with_sin, FunctionalTestFixture) {
-    // f(x,y) = x*y + sin(x) at (2,3)
-    // df/dx = y + cos(x) = 3 + cos(2) ≈ 2.5839
-    // df/dy = x = 2
+    /**
+     * f(x,y) = x*y + sin(x) at (2,3)
+     * df/dy = x = 2
+     */
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1879,16 +1873,17 @@ BOOST_FIXTURE_TEST_CASE(tape_multivar_with_sin, FunctionalTestFixture) {
     BOOST_CHECK_CLOSE(to_double(res), 3.0 + std::cos(2.0), 0.01);
 }
 
-// ============================================================================
-// Nested tape tests — verify the stack-based active-tape design
-// ============================================================================
+/**
+ */
 
 BOOST_FIXTURE_TEST_CASE(tape_nested_independent, FunctionalTestFixture) {
-    // Start tape1, then start tape2 inside, stop tape2, continue recording
-    // on tape1.  Both tapes should produce correct, independent gradients.
-    //
-    // tape1: f(x) = x^2  at x=3  => df/dx = 6
-    // tape2: g(y) = y*2  at y=5  => dg/dy = 2
+    /**
+     * Start tape1, then start tape2 inside, stop tape2, continue recording
+     * on tape1.  Both tapes should produce correct, independent gradients.
+     *
+     * tape1: f(x) = x^2  at x=3  => df/dx = 6
+     * tape2: g(y) = y*2  at y=5  => dg/dy = 2
+     */
     LispVal res = run(R"(
         (module test
             (define t1 (tape-new))
@@ -1916,9 +1911,10 @@ BOOST_FIXTURE_TEST_CASE(tape_nested_independent, FunctionalTestFixture) {
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_nested_start_stop_balancing, FunctionalTestFixture) {
-    // After starting and stopping two nested tapes, the active-tape stack
-    // should be empty — subsequent arithmetic should NOT record.
-    // Verify by computing a plain addition that returns a number, not a TapeRef.
+    /**
+     * After starting and stopping two nested tapes, the active-tape stack
+     * Verify by computing a plain addition that returns a number, not a TapeRef.
+     */
     LispVal res = run(R"(
         (module test
             (define t1 (tape-new))
@@ -1927,7 +1923,7 @@ BOOST_FIXTURE_TEST_CASE(tape_nested_start_stop_balancing, FunctionalTestFixture)
             (tape-start! t2)
             (tape-stop!)
             (tape-stop!)
-            ;; No tape active — plain arithmetic
+            ;; No tape active â€” plain arithmetic
             (define result (+ 10 20))
         )
     )");
@@ -1935,8 +1931,7 @@ BOOST_FIXTURE_TEST_CASE(tape_nested_start_stop_balancing, FunctionalTestFixture)
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_exception_unwinds_tape_stack, FunctionalTestFixture) {
-    // Start a tape, throw an exception, catch it — the tape stack should be
-    // unwound so subsequent arithmetic is plain (not tape-recorded).
+    /// unwound so subsequent arithmetic is plain (not tape-recorded).
     LispVal res = run(R"(
         (module test
             (define t (tape-new))
@@ -1954,17 +1949,19 @@ BOOST_FIXTURE_TEST_CASE(tape_exception_unwinds_tape_stack, FunctionalTestFixture
 }
 
 BOOST_FIXTURE_TEST_CASE(tape_exception_preserves_outer_tape, FunctionalTestFixture) {
-    // Outer tape is active, inner tape is started then an exception fires.
-    // After the catch the outer tape should still be active and recording.
-    //
-    // outer: f(x) = x * 3  at x=4  => df/dx = 3
+    /**
+     * Outer tape is active, inner tape is started then an exception fires.
+     * After the catch the outer tape should still be active and recording.
+     *
+     * outer: f(x) = x * 3  at x=4  => df/dx = 3
+     */
     LispVal res = run(R"(
         (module test
             (define t-outer (tape-new))
             (define x (tape-var t-outer 4.0))
             (tape-start! t-outer)
 
-            ;; Inner block that throws — its tape-start! should be unwound
+            ;; Inner block that throws â€” its tape-start! should be unwound
             (define t-inner (tape-new))
             (define caught
                 (catch 'fail

@@ -38,7 +38,7 @@ constexpr const char* to_string(Severity s) noexcept {
  * @brief Unified error code enumeration across all compiler phases
  */
 enum class DiagnosticCode : std::uint16_t {
-    // Lexer errors (0-99)
+    /// Lexer errors (0-99)
     UnterminatedString = 0,
     UnterminatedComment,
     InvalidChar,
@@ -50,7 +50,7 @@ enum class DiagnosticCode : std::uint16_t {
     UnexpectedEOF,
     InvalidDatum,
 
-    // Parser errors (100-199)
+    /// Parser errors (100-199)
     UnexpectedToken = 100,
     UnmatchedParen,
     InvalidList,
@@ -58,7 +58,7 @@ enum class DiagnosticCode : std::uint16_t {
     InvalidDottedList,
     UnquoteOutsideQuasiquote,
 
-    // Expander errors (200-299)
+    /// Expander errors (200-299)
     InvalidSyntax = 200,
     DuplicateIdentifier,
     InvalidLetBindings,
@@ -66,7 +66,7 @@ enum class DiagnosticCode : std::uint16_t {
     ArityError,
     ExpansionDepthExceeded,
 
-    // Linker errors (300-399)
+    /// Linker errors (300-399)
     ModuleNotFound = 300,
     CircularDependency,
     DuplicateExport,
@@ -75,7 +75,7 @@ enum class DiagnosticCode : std::uint16_t {
     ExportOfUnknownName,
     DuplicateModule,
 
-    // Semantic errors (400-499)
+    /// Semantic errors (400-499)
     UndefinedName = 400,
     DuplicateDefinition,
     NonFunctionCall,
@@ -85,7 +85,7 @@ enum class DiagnosticCode : std::uint16_t {
     InvalidLetrecInit,
     ExportOfUnknownBinding,
 
-    // Runtime errors (500-599)
+    /// Runtime errors (500-599)
     NotImplemented = 500,
     StackOverflow,
     FrameOverflow,
@@ -122,14 +122,14 @@ struct Diagnostic {
     Span span{};
     std::string message;
 
-    // Optional secondary spans with labels (for multi-span errors)
+    /// Optional secondary spans with labels (for multi-span errors)
     struct RelatedSpan {
         Span span;
         std::string label;
     };
     std::vector<RelatedSpan> related;
 
-    // Builder methods for fluent construction
+    /// Builder methods for fluent construction
     Diagnostic& with_severity(Severity s) { severity = s; return *this; }
     Diagnostic& with_related(Span s, std::string label) {
         related.push_back({s, std::move(label)});
@@ -252,12 +252,12 @@ Diagnostic to_diagnostic(const E& error);
 template<typename T>
 using DiagResult = std::expected<T, Diagnostic>;
 
-} // namespace eta::diagnostic
+} ///< namespace eta::diagnostic
 
-// ============================================================================
-// Specializations: convert phase-specific errors into Diagnostic.
-// Include this header and call to_diagnostic() on any supported error type.
-// ============================================================================
+/**
+ * Specializations: convert phase-specific errors into Diagnostic.
+ * Include this header and call to_diagnostic() on any supported error type.
+ */
 
 #include "eta/reader/lexer.h"
 
@@ -311,9 +311,9 @@ inline Diagnostic to_diagnostic<eta::reader::lexer::LexError>(const eta::reader:
     return Diagnostic{code, Severity::Error, e.span, e.message};
 }
 
-} // namespace eta::diagnostic
+} ///< namespace eta::diagnostic
 
-// parser.h is already included at the top of this header.
+/// parser.h is already included at the top of this header.
 namespace eta::diagnostic {
 
 /**
@@ -395,7 +395,7 @@ inline Diagnostic to_diagnostic<eta::reader::parser::ParseError>(const eta::read
     return Diagnostic{code, Severity::Error, e.span, msg};
 }
 
-} // namespace eta::diagnostic
+} ///< namespace eta::diagnostic
 
 #include "eta/reader/expander.h"
 
@@ -434,7 +434,7 @@ inline Diagnostic to_diagnostic<eta::reader::expander::ExpandError>(const eta::r
     return Diagnostic{code, Severity::Error, e.span, e.message};
 }
 
-} // namespace eta::diagnostic
+} ///< namespace eta::diagnostic
 
 #include "eta/reader/module_linker.h"
 
@@ -459,7 +459,7 @@ inline Diagnostic to_diagnostic<eta::reader::linker::LinkError>(const eta::reade
     return Diagnostic{code, Severity::Error, e.span, e.message};
 }
 
-} // namespace eta::diagnostic
+} ///< namespace eta::diagnostic
 
 #include "eta/semantics/semantic_analyzer.h"
 
@@ -504,7 +504,7 @@ inline Diagnostic to_diagnostic<eta::semantics::SemanticError>(const eta::semant
     return Diagnostic{code, Severity::Error, e.span, e.message};
 }
 
-} // namespace eta::diagnostic
+} ///< namespace eta::diagnostic
 
 #include "eta/runtime/error.h"
 
@@ -560,4 +560,4 @@ inline Diagnostic to_diagnostic<eta::runtime::memory::intern::InternTableError>(
         std::string("intern table error: ") + eta::runtime::memory::intern::to_string(e)};
 }
 
-} // namespace eta::diagnostic
+} ///< namespace eta::diagnostic

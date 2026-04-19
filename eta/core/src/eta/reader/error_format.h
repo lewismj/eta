@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "eta/reader/parser.h"
 #include <functional>
@@ -25,5 +25,5 @@ namespace eta::reader {
            << "-" << sp.end.line << ":" << sp.end.column << "]";
     }
 
-} // namespace eta::reader
+} ///< namespace eta::reader
 

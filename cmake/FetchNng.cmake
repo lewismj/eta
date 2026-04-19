@@ -45,4 +45,11 @@ if(WIN32)
     set(BUILD_SHARED_LIBS "${_eta_old_BUILD_SHARED_LIBS}")
 endif()
 
+if(MSVC AND TARGET nng)
+    # nng v1.9.0 triggers C4022 in win_tcpconn.c on CancelIoEx calls.
+    # Keep suppression local to third-party nng sources.
+    target_compile_options(nng PRIVATE
+        $<$<COMPILE_LANGUAGE:C>:/wd4022>)
+endif()
+
 message(STATUS "nng fetched — nng target available")

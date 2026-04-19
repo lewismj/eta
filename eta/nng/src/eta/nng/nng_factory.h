@@ -1,7 +1,9 @@
 #pragma once
 
-/// @file nng_factory.h
-/// @brief Factory functions for creating NngSocket heap objects.
+/**
+ * @file nng_factory.h
+ * @brief Factory functions for creating NngSocket heap objects.
+ */
 
 #include <expected>
 
@@ -25,5 +27,5 @@ make_nng_socket(Heap& heap, NngSocketPtr sp) {
     return std::unexpected(id.error());
 }
 
-} // namespace eta::nng::factory
+} ///< namespace eta::nng::factory
 

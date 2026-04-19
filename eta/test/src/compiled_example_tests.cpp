@@ -5,7 +5,6 @@
  *        output matches the interpreted (direct) execution.
  *
  * This is the round-trip test for the bytecode serializer: it exercises the
- * full etac→etai pipeline programmatically.
  *
  * Paths are injected via CMake compile definitions:
  *   -DETA_EXAMPLES_DIR="..."
@@ -30,7 +29,7 @@
 
 namespace fs = std::filesystem;
 
-// Path discovery (same as example_runner_tests.cpp)
+/// Path discovery (same as example_runner_tests.cpp)
 
 #ifndef ETA_EXAMPLES_DIR
 #define ETA_EXAMPLES_DIR ""
@@ -86,11 +85,12 @@ static std::vector<fs::path> collect_examples() {
     return files;
 }
 
-// Output normalization
-// Logic variables print as _G<heap_id>.  Heap IDs differ between interpreted
-// and compiled runs because the two Drivers allocate objects independently.
-// Normalize by replacing each distinct _G<N> with _G0, _G1, … in order of
-// first appearance so that structural equality is preserved.
+/**
+ * Output normalization
+ * Logic variables print as _G<heap_id>.  Heap IDs differ between interpreted
+ * and compiled runs because the two Drivers allocate objects independently.
+ * first appearance so that structural equality is preserved.
+ */
 
 static std::string normalize_logic_vars(const std::string& s) {
     static const std::regex re(R"(_G\d+)");
@@ -114,7 +114,7 @@ static std::string normalize_logic_vars(const std::string& s) {
     return result;
 }
 
-// Torch-dependent example filtering
+/// Torch-dependent example filtering
 
 static bool requires_torch([[maybe_unused]] const fs::path& file) {
     auto stem = file.stem().string();
@@ -127,19 +127,18 @@ static bool requires_torch([[maybe_unused]] const fs::path& file) {
     return false;
 }
 
-// Networking example filtering
-// Three kinds of files need to be skipped:
-//   1. Spawned-worker files  — call (current-mailbox) to receive tasks from a
-//      parent.  Running standalone returns Nil and the first recv! errors out.
-//   2. Parent/orchestrator files — call (spawn ...) or (worker-pool ...) via
-//      (import std.net).  Without a real etai binary the spawn blocks forever
-//      waiting for the child to connect.
-//   3. Raw-NNG files — call (nng-socket ...) / (nng-dial ...) / (nng-listen ...)
-//      directly without importing std.net (e.g. distributed-compute.eta,
-//      echo-server.eta).  These need a live peer and cannot run standalone.
-//
-// Only non-comment lines are scanned so doc-comment mentions of these symbols
-// (e.g. message-passing.eta header) do not falsely trigger the filter.
+/**
+ * Networking example filtering
+ * Three kinds of files need to be skipped:
+ *      parent.  Running standalone returns Nil and the first recv! errors out.
+ *      (import std.net).  Without a real etai binary the spawn blocks forever
+ *      waiting for the child to connect.
+ *      directly without importing std.net (e.g. distributed-compute.eta,
+ *      echo-server.eta).  These need a live peer and cannot run standalone.
+ *
+ * Only non-comment lines are scanned so doc-comment mentions of these symbols
+ * (e.g. message-passing.eta header) do not falsely trigger the filter.
+ */
 static bool requires_net(const fs::path& file) {
     std::ifstream ifs(file);
     std::string line;
@@ -155,7 +154,7 @@ static bool requires_net(const fs::path& file) {
     return false;
 }
 
-// Test fixture
+/// Test fixture
 
 struct CompiledExampleFixture {
     fs::path stdlib;
@@ -201,7 +200,6 @@ struct CompiledExampleFixture {
     std::pair<bool, std::string> run_compiled(const fs::path& file) {
         if (stdlib.empty()) return {false, ""};
 
-        // Step 1: Compile (compile-only — no execution)
         eta::interpreter::ModulePathResolver comp_resolver({stdlib});
         comp_resolver.add_dir(file.parent_path());
         eta::interpreter::Driver compiler(std::move(comp_resolver), 8 * 1024 * 1024);
@@ -214,7 +212,7 @@ struct CompiledExampleFixture {
 
         auto& cr = *compile_result;
 
-        // Build sub-registry and module entries from CompileResult
+        /// Build sub-registry and module entries from CompileResult
         eta::semantics::BytecodeFunctionRegistry file_registry;
         std::vector<eta::runtime::vm::ModuleEntry> module_entries;
 
@@ -236,14 +234,14 @@ struct CompiledExampleFixture {
 
         if (module_entries.empty()) return {false, ""};
 
-        // Compute source hash
+        /// Compute source hash
         std::ifstream src_in(file, std::ios::in | std::ios::binary);
         if (!src_in) return {false, ""};
         std::ostringstream src_buf;
         src_buf << src_in.rdbuf();
         uint64_t source_hash = eta::runtime::vm::BytecodeSerializer::hash_source(src_buf.str());
 
-        // Serialize to a temp file
+        /// Serialize to a temp file
         auto temp_etac = fs::temp_directory_path() / "eta_roundtrip_test.etac";
         {
             eta::runtime::vm::BytecodeSerializer serializer(
@@ -258,7 +256,7 @@ struct CompiledExampleFixture {
             }
         }
 
-        // Step 2: Load and run the .etac (replicating etai logic)
+        /// Step 2: Load and run the .etac (replicating etai logic)
         eta::interpreter::ModulePathResolver run_resolver({stdlib});
         run_resolver.add_dir(file.parent_path());
         eta::interpreter::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
@@ -280,7 +278,7 @@ struct CompiledExampleFixture {
         fs::remove(temp_etac);
 
         if (!ok) {
-            // Collect diagnostic messages for debugging
+            /// Collect diagnostic messages for debugging
             std::string diag_msg;
             for (const auto& diag : runner.diagnostics().diagnostics()) {
                 diag_msg += diag.message + "\n";
@@ -292,14 +290,14 @@ struct CompiledExampleFixture {
     }
 };
 
-// Test suite
+/// Test suite
 
 BOOST_FIXTURE_TEST_SUITE(compiled_example_tests, CompiledExampleFixture)
 
 BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
     auto files = collect_examples();
     if (files.empty()) {
-        BOOST_TEST_MESSAGE("No example files found — skipping. "
+        BOOST_TEST_MESSAGE("No example files found â€” skipping. "
                            "Set ETA_EXAMPLES_DIR and ETA_STDLIB_DIR compile definitions.");
         return;
     }
@@ -315,29 +313,29 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
         auto rel = fs::relative(file, examples);
 #if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
         if (requires_torch(file)) {
-            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires torch — skipped)");
+            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires torch â€” skipped)");
             continue;
         }
 #endif
         if (requires_net(file)) {
-            BOOST_TEST_MESSAGE("  ⊘ " << rel.string() << " (requires networking runtime — skipped)");
+            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires networking runtime â€” skipped)");
             continue;
         }
         BOOST_TEST_CONTEXT("Compiled round-trip: " << rel.string()) {
-            // Run interpreted
+            /// Run interpreted
             auto [interp_ok, interp_output] = run_interpreted(file);
             if (!interp_ok) {
-                BOOST_TEST_MESSAGE("  ⚠ interpreted run failed — skipping: " << rel.string());
+                BOOST_TEST_MESSAGE("  âš  interpreted run failed â€” skipping: " << rel.string());
                 continue;
             }
 
-            // Compile and run
+            /// Compile and run
             auto [comp_ok, comp_output] = run_compiled(file);
 
             if (!comp_ok) {
                 ++failed;
                 failures.push_back(rel.string() + " (compiled run failed)");
-                BOOST_TEST_MESSAGE("  ✗ " << rel.string() << " — compiled run failed");
+                BOOST_TEST_MESSAGE("  âœ— " << rel.string() << " â€” compiled run failed");
                 BOOST_TEST_MESSAGE("  partial output (" << comp_output.size() << " bytes): ["
                     << comp_output.substr(0, 500) << "]");
                 BOOST_TEST_MESSAGE("  interp output (" << interp_output.size() << " bytes): ["
@@ -346,25 +344,29 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
                 continue;
             }
 
-            // Compare output (normalize logic variable names which have
-            // non-deterministic heap IDs)
+            /**
+             * Compare output (normalize logic variable names which have
+             * non-deterministic heap IDs)
+             */
             auto norm_interp = normalize_logic_vars(interp_output);
             auto norm_comp   = normalize_logic_vars(comp_output);
 
-            // Torch examples involve random weight initialization so
-            // training loss values differ between runs.  For those files
-            // we only verify the compiled run succeeds without crashing.
+            /**
+             * Torch examples involve random weight initialization so
+             * training loss values differ between runs.  For those files
+             * we only verify the compiled run succeeds without crashing.
+             */
             bool skip_output_compare = requires_torch(file);
             bool output_matches = skip_output_compare || (norm_interp == norm_comp);
             if (output_matches) {
                 ++passed;
-                BOOST_TEST_MESSAGE("  ✓ " << rel.string());
+                BOOST_TEST_MESSAGE("  âœ“ " << rel.string());
             } else {
                 ++failed;
                 failures.push_back(rel.string() + " (output mismatch)");
-                BOOST_TEST_MESSAGE("  ✗ " << rel.string() << " — output mismatch");
+                BOOST_TEST_MESSAGE("  âœ— " << rel.string() << " â€” output mismatch");
 
-                // Show first difference for debugging
+                /// Show first difference for debugging
                 size_t diff_pos = 0;
                 while (diff_pos < norm_interp.size() &&
                        diff_pos < norm_comp.size() &&

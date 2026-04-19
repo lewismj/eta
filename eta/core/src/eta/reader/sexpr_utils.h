@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "eta/reader/parser.h"
 #include <string_view>
@@ -29,5 +29,5 @@ namespace eta::reader::utils {
         return false;
     }
 
-} // namespace eta::reader::utils
+} ///< namespace eta::reader::utils
 

@@ -13,7 +13,7 @@
 using namespace eta::runtime::memory::hazard;
 
 namespace {
-    // Test node for linked data structures
+    /// Test node for linked data structures
     struct Node {
         std::atomic<int> value;
         std::atomic<Node*> next;
@@ -21,7 +21,7 @@ namespace {
         explicit Node(int v) : value(v), next(nullptr) {}
     };
 
-    // Track allocations/deallocations for verification
+    /// Track allocations/deallocations for verification
     struct TrackedNode {
         int value;
         inline static std::atomic<int> live_count{0};
@@ -53,11 +53,11 @@ BOOST_AUTO_TEST_CASE(handle_creation_and_destruction) {
 
     {
         auto handle = domain.make_handle();
-        // Handle should be valid
+        /// Handle should be valid
         BOOST_TEST(true);
     }
 
-    // Handle destroyed without issues
+    /// Handle destroyed without issues
     BOOST_TEST(true);
 }
 
@@ -67,10 +67,10 @@ BOOST_AUTO_TEST_CASE(acquire_and_release_single_pointer) {
 
     Node* node = new Node(42);
 
-    // Acquire protection
+    /// Acquire protection
     handle.acquire(node);
 
-    // Release protection
+    /// Release protection
     handle.release();
 
     delete node;
@@ -86,16 +86,16 @@ BOOST_AUTO_TEST_CASE(retire_immediately_reclaims_unprotected) {
     auto* node = new TrackedNode(100);
     BOOST_TEST(TrackedNode::live_count.load() == 1);
 
-    // Retire without protection - should be reclaimed after threshold
+    /// Retire without protection - should be reclaimed after threshold
     for (int i = 0; i < 400; ++i) {
         auto* temp = new TrackedNode(i);
         handle.retire(temp);
     }
 
-    // Force flush
+    /// Force flush
     handle.flush();
 
-    // All retired nodes should be deleted
+    /// All retired nodes should be deleted
     BOOST_TEST(TrackedNode::total_deleted.load() == 400);
 
     delete node;
@@ -109,13 +109,13 @@ BOOST_AUTO_TEST_CASE(protected_pointer_not_reclaimed) {
 
     auto* protected_node = new TrackedNode(999);
 
-    // Protect the node
+    /// Protect the node
     handle.acquire(protected_node);
 
-    // Retire it (but it's protected)
+    /// Retire it (but it's protected)
     handle.retire(protected_node);
 
-    // Add more nodes to trigger reclamation
+    /// Add more nodes to trigger reclamation
     for (int i = 0; i < 400; ++i) {
         auto* temp = new TrackedNode(i);
         handle.retire(temp);
@@ -123,14 +123,14 @@ BOOST_AUTO_TEST_CASE(protected_pointer_not_reclaimed) {
 
     handle.flush();
 
-    // The protected node should NOT be deleted yet
+    /// The protected node should NOT be deleted yet
     BOOST_TEST(TrackedNode::live_count.load() >= 1);
 
-    // Release protection
+    /// Release protection
     handle.release();
     handle.flush();
 
-    // Now it should be reclaimed
+    /// Now it should be reclaimed
     BOOST_TEST(TrackedNode::live_count.load() == 0);
 }
 
@@ -182,7 +182,7 @@ BOOST_AUTO_TEST_CASE(function_pointer_deleter) {
     };
 
     auto* node = new Node(42);
-    handle.retire(node, +deleter); // Convert to function pointer
+    handle.retire(node, +deleter); ///< Convert to function pointer
 
     handle.flush();
 
@@ -196,10 +196,10 @@ BOOST_AUTO_TEST_CASE(handle_move_constructor) {
     Node* node = new Node(42);
     handle1.acquire(node);
 
-    // Move construct
+    /// Move construct
     auto handle2 = std::move(handle1);
 
-    // handle2 should now own the protection
+    /// handle2 should now own the protection
     handle2.release();
     delete node;
     BOOST_TEST(true);
@@ -213,7 +213,7 @@ BOOST_AUTO_TEST_CASE(handle_move_assignment) {
     Node* node = new Node(42);
     handle1.acquire(node);
 
-    // Move assign
+    /// Move assign
     handle2 = std::move(handle1);
 
     handle2.release();
@@ -221,9 +221,9 @@ BOOST_AUTO_TEST_CASE(handle_move_assignment) {
     BOOST_TEST(true);
 }
 
-// ============================================================================
-// Concurrent Access Tests
-// ============================================================================
+/**
+ * Concurrent Access Tests
+ */
 
 BOOST_AUTO_TEST_CASE(concurrent_acquire_release) {
     HazardPointerDomain<Node> domain;
@@ -244,7 +244,7 @@ BOOST_AUTO_TEST_CASE(concurrent_acquire_release) {
             for (int i = 0; i < iterations; ++i) {
                 handle.acquire(shared_node);
 
-                // Simulate some work
+                /// Simulate some work
                 std::this_thread::yield();
 
                 handle.release();
@@ -280,7 +280,7 @@ BOOST_AUTO_TEST_CASE(concurrent_retire_with_protection) {
             for (int i = 0; i < nodes_per_thread; ++i) {
                 auto* node = new TrackedNode(i);
 
-                // Randomly protect some nodes briefly
+                /// Randomly protect some nodes briefly
                 if (i % 3 == 0) {
                     handle.acquire(node);
                     std::this_thread::yield();
@@ -298,7 +298,7 @@ BOOST_AUTO_TEST_CASE(concurrent_retire_with_protection) {
         t.join();
     }
 
-    // All nodes should eventually be deleted
+    /// All nodes should eventually be deleted
     BOOST_TEST(TrackedNode::total_allocated.load() == num_threads * nodes_per_thread);
     BOOST_TEST(TrackedNode::total_deleted.load() == num_threads * nodes_per_thread);
 }
@@ -315,23 +315,23 @@ BOOST_AUTO_TEST_CASE(reader_writer_scenario) {
 
     std::vector<std::thread> threads;
 
-    // Boost.Test macros are NOT thread-safe; collect errors for main-thread validation.
+    /// Boost.Test macros are NOT thread-safe; collect errors for main-thread validation.
     std::atomic<bool> any_negative_value{false};
 
-    // Reader threads
+    /// Reader threads
     for (int r = 0; r < num_readers; ++r) {
         threads.emplace_back([&] {
             auto handle = domain.make_handle();
 
             while (!stop.load(std::memory_order_relaxed)) {
-                // Protect and read
+                /// Protect and read
                 TrackedNode* node = shared_ptr.load(std::memory_order_acquire);
                 handle.acquire(node);
 
-                // Re-check after protection
+                /// Re-check after protection
                 TrackedNode* current = shared_ptr.load(std::memory_order_acquire);
                 if (current == node) {
-                    // Safe to access
+                    /// Safe to access
                     int value = node->value;
                     if (value < 0) {
                         any_negative_value.store(true, std::memory_order_relaxed);
@@ -344,7 +344,7 @@ BOOST_AUTO_TEST_CASE(reader_writer_scenario) {
         });
     }
 
-    // Writer threads
+    /// Writer threads
     for (int w = 0; w < num_writers; ++w) {
         threads.emplace_back([&] {
             auto handle = domain.make_handle();
@@ -353,7 +353,7 @@ BOOST_AUTO_TEST_CASE(reader_writer_scenario) {
                 auto* new_node = new TrackedNode(i);
                 TrackedNode* old_node = shared_ptr.exchange(new_node, std::memory_order_acq_rel);
 
-                // Retire the old node
+                /// Retire the old node
                 handle.retire(old_node);
 
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
@@ -361,7 +361,7 @@ BOOST_AUTO_TEST_CASE(reader_writer_scenario) {
         });
     }
 
-    // Let it run for a bit
+    /// Let it run for a bit
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     stop.store(true, std::memory_order_relaxed);
 
@@ -369,16 +369,16 @@ BOOST_AUTO_TEST_CASE(reader_writer_scenario) {
         t.join();
     }
 
-    // Clean up the last node
+    /// Clean up the last node
     delete shared_ptr.load();
 
     BOOST_TEST(!any_negative_value.load());
     BOOST_TEST(TrackedNode::live_count.load() >= 0);
 }
 
-// ============================================================================
-// Stress Tests
-// ============================================================================
+/**
+ * Stress Tests
+ */
 
 BOOST_AUTO_TEST_CASE(batch_retirement_threshold) {
     TrackedNode::reset_counters();
@@ -386,7 +386,7 @@ BOOST_AUTO_TEST_CASE(batch_retirement_threshold) {
     HazardPointerDomain<TrackedNode> domain;
     auto handle = domain.make_handle();
 
-    // Retire just below threshold (R = K * 128 = 384)
+    /// Retire just below threshold (R = K * 128 = 384)
     constexpr int below_threshold = 383;
 
     for (int i = 0; i < below_threshold; ++i) {
@@ -394,14 +394,14 @@ BOOST_AUTO_TEST_CASE(batch_retirement_threshold) {
         handle.retire(node);
     }
 
-    // Should not have triggered automatic scan yet
+    /// Should not have triggered automatic scan yet
     int deleted_before = TrackedNode::total_deleted.load();
 
-    // One more should trigger
+    /// One more should trigger
     auto* trigger_node = new TrackedNode(9999);
     handle.retire(trigger_node);
 
-    // Should have triggered reclamation
+    /// Should have triggered reclamation
     int deleted_after = TrackedNode::total_deleted.load();
 
     BOOST_TEST(deleted_after > deleted_before);
@@ -421,12 +421,12 @@ BOOST_AUTO_TEST_CASE(memory_reclamation_completeness) {
             handle.retire(node);
         }
 
-        // Final flush
+        /// Final flush
         handle.flush();
-        handle.flush(); // Double flush to ensure everything is cleaned
+        handle.flush(); ///< Double flush to ensure everything is cleaned
     }
 
-    // All nodes should be reclaimed
+    /// All nodes should be reclaimed
     BOOST_TEST(TrackedNode::total_allocated.load() == 1000);
     BOOST_TEST(TrackedNode::total_deleted.load() == 1000);
     BOOST_TEST(TrackedNode::live_count.load() == 0);

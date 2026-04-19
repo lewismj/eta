@@ -51,6 +51,7 @@
   (import std.causal)
   (import std.logic)
   (import std.clp)
+  (import std.clpr)
   (import (except std.torch grad))
   (import std.stats)
   (begin
@@ -391,72 +392,52 @@
     (display "  On real data, DAG must be justified from domain knowledge.\n")
 
     ;; ════════════════════════════════════════════════════════════════
-    ;; §3  Portfolio Constraints (CLP-validated grid search)
+    ;; §3  Portfolio Constraints (Continuous CLP(R))
     ;; ════════════════════════════════════════════════════════════════
 
     (display "\n")
     (sep)
-    (display " S3. Portfolio Constraints (CLP-validated grid search)\n")
+    (display " S3. Portfolio Constraints (Continuous CLP(R))\n")
     (sep)
     (display "\n")
 
-    ;; Portfolio weights at 5% granularity as integer percentages.
-    ;; Using clp:in-fd for finite domains: {0, 5, 10, ..., 100}
-    (define steps '(0 5 10 15 20 25 30 35 40 45 50 55 60 65 70 75 80 85 90 95 100))
-
-    ;; Enumerate all feasible portfolios by brute-force over the
-    ;; constrained domain.  We use a manual search loop rather than
-    ;; clp:solve because the sum-to-100 constraint across 4 variables
-    ;; is best expressed as arithmetic filtering on a compact grid.
+    ;; Continuous weight constraints (fractions in [0,1]).
+    (define tech-cap 0.30)
+    (define energy-cap 0.20)
+    (define healthcare-min 0.10)
 
     (display "  Constraints (hard, exact):\n")
-    (display "    w_tech + w_energy + w_finance + w_healthcare = 100%\n")
-    (display "    w_tech     <= 30%\n")
-    (display "    w_energy   <= 20%\n")
-    (display "    w_healthcare >= 10%\n")
-    (display "    All weights in {0, 5, 10, ..., 100}\n\n")
+    (display "    w_tech + w_energy + w_finance + w_healthcare = 1.0\n")
+    (display "    w_tech     <= 0.30\n")
+    (display "    w_energy   <= 0.20\n")
+    (display "    w_healthcare >= 0.10\n")
+    (display "    0.0 <= w_i <= 1.0 (continuous real-valued weights)\n\n")
 
-    ;; Generate feasible set
-    (define tech-vals    (filter (lambda (v) (<= v 30)) steps))
-    (define energy-vals  (filter (lambda (v) (<= v 20)) steps))
-    (define health-vals  (filter (lambda (v) (>= v 10)) steps))
-
-    (define feasible-portfolios '())
-
-    (for-each (lambda (wt)
-      (for-each (lambda (we)
-        (for-each (lambda (wh)
-          (let ((wf (- 100 (+ wt (+ we wh)))))
-            (when (and (>= wf 0) (<= wf 100))
-              (set! feasible-portfolios
-                (cons (list wt we wf wh) feasible-portfolios)))))
-          health-vals))
-        energy-vals))
-      tech-vals)
-
-    (define n-feasible (length feasible-portfolios))
-    (display "  Feasible portfolios found: ") (println n-feasible)
-    (display "  Method: discrete grid search over simplex (step 5%),\n")
-    (display "  filtered by CLP domain constraints on each weight.\n")
-
-    ;; CLP validation: verify a sample portfolio satisfies all constraints
-    (let* ((wt (logic-var))
+    ;; CLP(R) validation: verify a sample continuous allocation.
+    (let* ((m (trail-mark))
+           (wt (logic-var))
            (we (logic-var))
            (wf (logic-var))
            (wh (logic-var)))
-      (clp:domain wt 0 30)
-      (clp:domain we 0 20)
-      (clp:domain wf 0 100)
-      (clp:domain wh 10 100)
-      (if (and (unify wt 30) (unify we 10) (unify wf 40) (unify wh 20))
-          (display "  CLP validation: sample (30,10,40,20) satisfies all domains\n")
-          (display "  CLP validation: FAIL\n")))
+      (clp:real wt 0.0 1.0)
+      (clp:real we 0.0 1.0)
+      (clp:real wf 0.0 1.0)
+      (clp:real wh 0.0 1.0)
+      (clp:r>= wt 0.0) (clp:r<= wt 1.0)
+      (clp:r>= we 0.0) (clp:r<= we 1.0)
+      (clp:r>= wf 0.0) (clp:r<= wf 1.0)
+      (clp:r>= wh 0.0) (clp:r<= wh 1.0)
+      (clp:r<= wt tech-cap)
+      (clp:r<= we energy-cap)
+      (clp:r>= wh healthcare-min)
+      (clp:r= (clp:r+ wt we wf wh) 1.0)
+      (if (clp:r-feasible?)
+          (display "  CLP(R) validation: posted constraints are feasible\n")
+          (display "  CLP(R) validation: FAIL\n"))
+      (unwind-trail m))
 
-    (display "\n  All portfolios are filtered post-generation to satisfy constraints exactly.\n")
-    (display "  Unlike traditional optimisers:\n")
-    (display "    - no soft penalty terms; constraints enforced as hard feasibility filters\n")
-    (display "    - no post-hoc projection\n")
-    (display "    - no infeasible intermediate states\n")
+    (display "\n  Constraints are posted declaratively to CLP(R), then solved directly.\n")
+    (display "  Unlike discrete grid search, optimization is over the continuous simplex.\n")
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §4  Neural Conditional Return Model
@@ -852,6 +833,108 @@
     ;; causal world do(macro=0.5) for the base optimisation objective.
     (define sigma-base-opt (scenario-covariance 0.5))
 
+    ;; CLP(R) helpers for continuous portfolio optimization.
+    ;; Objective used for optimization is linear:
+    ;;   ret . w - lambda * (risk-linear . w)
+    ;; while quadratic w'Sigma w is still reported as the risk metric.
+    (defun make-vars (n)
+      (if (= n 0)
+          '()
+          (cons (logic-var) (make-vars (- n 1)))))
+
+    (defun dot-expr (coeffs vars)
+      (if (null? coeffs)
+          0.0
+          (clp:r+ (clp:r*scalar (car coeffs) (car vars))
+                  (dot-expr (cdr coeffs) (cdr vars)))))
+
+    (defun apply-witness! (witness)
+      (if (null? witness)
+          #t
+          (and (unify (car (car witness)) (cdr (car witness)))
+               (apply-witness! (cdr witness)))))
+
+    (defun witness-entry-number (entry)
+      (let ((a (deref-lvar (car entry)))
+            (b (deref-lvar (cdr entry))))
+        (cond
+          ((number? b) b)
+          ((number? a) a)
+          (#t #f))))
+
+    (defun witness-numbers (witness)
+      (if (null? witness)
+          '()
+          (cons (witness-entry-number (car witness))
+                (witness-numbers (cdr witness)))))
+
+    (defun pick-weight (var witness-val tag)
+      (let ((dv (deref-lvar var)))
+        (cond
+          ((number? dv) dv)
+          ((number? witness-val) witness-val)
+          (#t (error tag)))))
+
+    (defun solve-allocation-lp (returns lam risk-linear tech-limit energy-limit health-min risk-cap)
+      (let ((m (trail-mark)))
+        (let* ((ws (make-vars 4))
+               (wt (car ws))
+               (we (car (cdr ws)))
+               (wf (car (cdr (cdr ws))))
+               (wh (car (cdr (cdr (cdr ws)))))
+               (ones '(1 1 1 1)))
+          (clp:real wt 0.0 1.0)
+          (clp:real we 0.0 1.0)
+          (clp:real wf 0.0 1.0)
+          (clp:real wh 0.0 1.0)
+          (clp:r>= wt 0.0) (clp:r<= wt 1.0)
+          (clp:r>= we 0.0) (clp:r<= we 1.0)
+          (clp:r>= wf 0.0) (clp:r<= wf 1.0)
+          (clp:r>= wh 0.0) (clp:r<= wh 1.0)
+          (clp:r= (dot-expr ones ws) 1.0)
+          (clp:r<= wt tech-limit)
+          (clp:r<= we energy-limit)
+          (clp:r>= wh health-min)
+          (when risk-cap
+            (clp:r<= (dot-expr risk-linear ws) risk-cap))
+          (let* ((objective (clp:r+ (dot-expr returns ws)
+                                    (clp:r*scalar (- 0 lam)
+                                                  (dot-expr risk-linear ws))))
+                 (raw (%clp-r-maximize objective))
+                 (res (cond
+                        ((eq? raw #f) (error "clp.r.infeasible"))
+                        ((eq? raw 'clp.r.unbounded) (error "clp.r.unbounded"))
+                        (#t
+                          (let* ((opt (car raw))
+                                 (witness (cdr raw))
+                                 (_ (apply-witness! witness))
+                                 (wnums (witness-numbers witness))
+                                 (w0 (if (null? wnums) #f (car wnums)))
+                                 (w1 (if (null? (cdr wnums)) #f (car (cdr wnums))))
+                                 (w2 (if (null? (cdr (cdr wnums))) #f (car (cdr (cdr wnums)))))
+                                 (w3 (if (null? (cdr (cdr (cdr wnums)))) #f (car (cdr (cdr (cdr wnums)))))))
+                            (list opt
+                                  (pick-weight wt w0 "portfolio.solve.weight-tech")
+                                  (pick-weight we w1 "portfolio.solve.weight-energy")
+                                  (pick-weight wf w2 "portfolio.solve.weight-finance")
+                                  (pick-weight wh w3 "portfolio.solve.weight-healthcare")))))))
+            (unwind-trail m)
+            res))))
+
+    ;; Use diagonal terms of Sigma(m) as a simple linear risk proxy for LP.
+    (defun sigma-risk-linear (S)
+      (list (car S)
+            (car (cdr S))
+            (car (cdr (cdr S)))
+            (car (cdr (cdr (cdr S))))))
+
+    (defun solve-portfolio-for-lambda (lam returns sigma tech-limit)
+      (solve-allocation-lp returns lam (sigma-risk-linear sigma)
+                           tech-limit energy-cap healthcare-min #f))
+
+    (defun weights-f->pct (wt we wf wh)
+      (list (* wt 100.0) (* we 100.0) (* wf 100.0) (* wh 100.0)))
+
     ;; Compute sensitivities at a representative portfolio (30/10/40/20)
     (define sample-weights '(0.30 0.10 0.40 0.20))
 
@@ -935,118 +1018,71 @@
     (sep)
     (display "\n")
 
-    ;; Score each feasible portfolio:
-    ;;   score = expected_return - lambda * risk
+    ;; Solve directly in CLP(R) using a linear risk proxy objective:
+    ;;   ret . w - lambda * (risk-linear . w)
+    ;; and report quadratic causal risk w'Sigma(0.5)w for diagnostics.
     (define lambda-risk 2.0)
-
-    (defun score-portfolio (p)
-      (let ((wt (/ (car p) 100.0))
-            (we (/ (car (cdr p)) 100.0))
-            (wf (/ (car (cdr (cdr p))) 100.0))
-            (wh (/ (car (cdr (cdr (cdr p)))) 100.0)))
-        (- (portfolio-return-fn wt we wf wh)
-           (* lambda-risk (portfolio-risk-from-sigma wt we wf wh sigma-base-opt)))))
-
-    ;; Find top 3 portfolios
-    (define top1-score -999999) (define top1-port '(0 0 0 0))
-    (define top2-score -999999) (define top2-port '(0 0 0 0))
-    (define top3-score -999999) (define top3-port '(0 0 0 0))
-
-    (for-each (lambda (p)
-      (let ((s (score-portfolio p)))
-        (cond
-          ((> s top1-score)
-           (set! top3-score top2-score) (set! top3-port top2-port)
-           (set! top2-score top1-score) (set! top2-port top1-port)
-           (set! top1-score s) (set! top1-port p))
-          ((> s top2-score)
-           (set! top3-score top2-score) (set! top3-port top2-port)
-           (set! top2-score s) (set! top2-port p))
-          ((> s top3-score)
-           (set! top3-score s) (set! top3-port p)))))
-      feasible-portfolios)
-
-    (define best-score top1-score)
-    (define best-portfolio top1-port)
+    (define base-returns (list ret-tech ret-energy ret-fin ret-health))
+    (define base-solve (solve-portfolio-for-lambda lambda-risk base-returns sigma-base-opt tech-cap))
+    (define lp-best-score (car base-solve))
+    (define opt-wt-f (car (cdr base-solve)))
+    (define opt-we-f (car (cdr (cdr base-solve))))
+    (define opt-wf-f (car (cdr (cdr (cdr base-solve)))))
+    (define opt-wh-f (car (cdr (cdr (cdr (cdr base-solve))))))
+    (define best-portfolio (weights-f->pct opt-wt-f opt-we-f opt-wf-f opt-wh-f))
 
     (define opt-wt (car best-portfolio))
     (define opt-we (car (cdr best-portfolio)))
     (define opt-wf (car (cdr (cdr best-portfolio))))
     (define opt-wh (car (cdr (cdr (cdr best-portfolio)))))
 
-    ;; Compute return and risk for optimal
-    (define opt-ret (+ (* (/ opt-wt 100.0) ret-tech)
-                       (+ (* (/ opt-we 100.0) ret-energy)
-                          (+ (* (/ opt-wf 100.0) ret-fin)
-                             (* (/ opt-wh 100.0) ret-health)))))
-    (define opt-risk (portfolio-risk-from-sigma (/ opt-wt 100.0) (/ opt-we 100.0)
-                                                (/ opt-wf 100.0) (/ opt-wh 100.0)
-                                                sigma-base-opt))
+    ;; Report quadratic risk score for comparability with existing sections.
+    (define opt-ret (portfolio-return-fn opt-wt-f opt-we-f opt-wf-f opt-wh-f))
+    (define opt-risk (portfolio-risk-from-sigma opt-wt-f opt-we-f opt-wf-f opt-wh-f sigma-base-opt))
+    (define best-score (- opt-ret (* lambda-risk opt-risk)))
 
-    ;; Display top 3
-    (display "  Top 3 Portfolios (from ") (display n-feasible)
-    (display " feasible candidates):\n\n")
-
-    (defun show-ranked (rank port score)
-      (display "    ") (display rank) (display ". (")
-      (display (car port)) (display ", ")
-      (display (car (cdr port))) (display ", ")
-      (display (car (cdr (cdr port)))) (display ", ")
-      (display (car (cdr (cdr (cdr port))))) (display ")  score=")
-      (println score))
-
-    (show-ranked 1 top1-port top1-score)
-    (show-ranked 2 top2-port top2-score)
-    (show-ranked 3 top3-port top3-score)
-
-    (display "\n  Optimal (grid search, 5% resolution) (#1):\n")
+    (display "  Optimization method: continuous CLP(R) solve (no discrete grid).\n")
+    (display (if win "  LP objective: ret - lambda * linear-risk-proxy\n"
+                     "  LP objective: ret - lambda * linear-risk-proxy\n"))
+    (display "  Continuous optimum from CLP(R):\n")
     (display "    Tech        ") (display opt-wt) (display "%\n")
     (display "    Energy      ") (display opt-we) (display "%\n")
     (display "    Finance     ") (display opt-wf) (display "%\n")
     (display "    Healthcare  ") (display opt-wh) (display "%\n")
     (display "\n")
     (display "    Expected Return (causal): ") (println opt-ret)
-    (display (if win "    Risk (w'S(0.5)w):         " "    Risk (wᵀΣ(0.5)w):         ")) (println opt-risk)
-    (display (if win "    Score (ret - 2*w'S(0.5)w):  " "    Score (ret − 2·wᵀΣ(0.5)w):  ")) (println best-score)
+    (display (if win "    Risk (w'S(0.5)w):         " "    Risk (w'S(0.5)w):         ")) (println opt-risk)
+    (display (if win "    Score (ret - 2*w'S(0.5)w):  " "    Score (ret - 2*w'S(0.5)w):  ")) (println best-score)
+    (display "    LP objective value:          ") (println lp-best-score)
 
     ;; Why this portfolio?
     (display "\n  Why this portfolio?\n")
     (display "    + Tech: highest causal return sensitivity to macro growth\n")
-    (when (= opt-wt 30)
+    (when (<= (abs (- opt-wt (* tech-cap 100.0))) 1e-6)
       (display "      (capped at 30% -- constraint binding)\n"))
     (display "    + Finance: strong return with moderate volatility\n")
     (display "    - Energy: limited by 20% cap and lower return/risk ratio\n")
-    (when (= opt-wh 10)
+    (when (<= (abs (- opt-wh (* healthcare-min 100.0))) 1e-6)
       (display "    * Healthcare: at 10% minimum (constraint binding)\n"))
 
     ;; Binding constraints
     (display "\n  Binding Constraints:\n")
-    (when (= opt-wt 30)
+    (when (<= (abs (- opt-wt (* tech-cap 100.0))) 1e-6)
       (display "    - Tech capped at 30% (limit reached)\n"))
-    (when (= opt-wh 10)
+    (when (<= (abs (- opt-wh (* healthcare-min 100.0))) 1e-6)
       (display "    - Healthcare >= 10% constraint active\n"))
-    (when (<= opt-we 20)
+    (when (<= opt-we (* energy-cap 100.0))
       (display "    - Energy underweight: return/risk tradeoff\n"))
     (display "    These constraints directly shape the optimal allocation.\n")
 
     ;; Counterfactual: relax tech cap to 40%
     (display "\n  Counterfactual: if tech cap relaxed to 40%?\n")
-    (define tech-vals-relaxed (filter (lambda (v) (<= v 40)) steps))
-    (define cf-best-score -999999)
-    (define cf-best-portfolio '(0 0 0 0))
-
-    (for-each (lambda (wt)
-      (for-each (lambda (we)
-        (for-each (lambda (wh)
-          (let ((wf (- 100 (+ wt (+ we wh)))))
-            (when (and (>= wf 0) (<= wf 100))
-              (let ((s (score-portfolio (list wt we wf wh))))
-                (when (> s cf-best-score)
-                  (set! cf-best-score s)
-                  (set! cf-best-portfolio (list wt we wf wh)))))))
-          health-vals))
-        energy-vals))
-      tech-vals-relaxed)
+    (define cf-solve (solve-portfolio-for-lambda lambda-risk base-returns sigma-base-opt 0.40))
+    (define cf-wt-f (car (cdr cf-solve)))
+    (define cf-we-f (car (cdr (cdr cf-solve))))
+    (define cf-wf-f (car (cdr (cdr (cdr cf-solve)))))
+    (define cf-wh-f (car (cdr (cdr (cdr (cdr cf-solve))))))
+    (define cf-best-portfolio (weights-f->pct cf-wt-f cf-we-f cf-wf-f cf-wh-f))
 
     (display "    Relaxed optimal: Tech ")
     (display (car cf-best-portfolio)) (display "%, ")
@@ -1054,43 +1090,29 @@
     (display "Finance ") (display (car (cdr (cdr cf-best-portfolio)))) (display "%, ")
     (display "Healthcare ") (display (car (cdr (cdr (cdr cf-best-portfolio))))) (display "%\n")
     (display "    Return improvement: +")
-    (let ((cf-ret (+ (* (/ (car cf-best-portfolio) 100.0) ret-tech)
-                     (+ (* (/ (car (cdr cf-best-portfolio)) 100.0) ret-energy)
-                        (+ (* (/ (car (cdr (cdr cf-best-portfolio))) 100.0) ret-fin)
-                           (* (/ (car (cdr (cdr (cdr cf-best-portfolio)))) 100.0) ret-health))))))
+    (let ((cf-ret (portfolio-return-fn cf-wt-f cf-we-f cf-wf-f cf-wh-f)))
       (println (- cf-ret opt-ret)))
 
-    ;; ── Decision Sensitivity to λ ─────────────────────────────────
-
+    ;; Decision sensitivity to lambda.
     (display "\n  Decision Sensitivity to Risk Aversion (lambda):\n\n")
 
-    (defun score-with-lambda (p lam)
-      (let ((wt (/ (car p) 100.0))
-            (we (/ (car (cdr p)) 100.0))
-            (wf (/ (car (cdr (cdr p))) 100.0))
-            (wh (/ (car (cdr (cdr (cdr p)))) 100.0)))
-        (- (portfolio-return-fn wt we wf wh)
-           (* lam (portfolio-risk-from-sigma wt we wf wh sigma-base-opt)))))
-
-    (define lam-best-score -999999)
-    (define lam-best-port '(0 0 0 0))
-
     (defun find-best-for-lambda (lam)
-      (set! lam-best-score -999999)
-      (set! lam-best-port '(0 0 0 0))
-      (for-each (lambda (p)
-        (let ((s (score-with-lambda p lam)))
-          (when (> s lam-best-score)
-            (set! lam-best-score s)
-            (set! lam-best-port p))))
-        feasible-portfolios)
-      (list lam-best-port lam-best-score))
+      (let* ((sol (solve-portfolio-for-lambda lam base-returns sigma-base-opt tech-cap))
+             (wt (car (cdr sol)))
+             (we (car (cdr (cdr sol))))
+             (wf (car (cdr (cdr (cdr sol)))))
+             (wh (car (cdr (cdr (cdr (cdr sol))))))
+             (ret (portfolio-return-fn wt we wf wh))
+             (risk (portfolio-risk-from-sigma wt we wf wh sigma-base-opt))
+             (score (- ret (* lam risk)))
+             (port (weights-f->pct wt we wf wh)))
+        (list port score)))
 
     (defun show-lambda-row (lam label)
       (let* ((result (find-best-for-lambda lam))
              (port (car result))
              (score (cadr result)))
-        (display (if win "    lambda=" "    λ="))
+        (display (if win "    lambda=" "    lambda="))
         (display lam) (display "  ")
         (display (car port)) (display "/")
         (display (car (cdr port))) (display "/")
@@ -1099,8 +1121,7 @@
         (display "score=") (display score)
         (display "  (") (display label) (display ")\n")))
 
-    (display (if win "    lambda  Allocation          Score    Style\n"
-                     "    λ       Allocation          Score    Style\n"))
+    (display "    lambda  Allocation          Score    Style\n")
     (display "    ------  -----------------   ------   -----------\n")
     (show-lambda-row 0.5 "risk-seeking")
     (show-lambda-row 1.0 "aggressive")
@@ -1193,10 +1214,7 @@
     ;; display table and the counterfactual rebalancing loop below.
     ;; sigma-base-opt was already computed in §5 (shared with §6 optimizer).
     ;; Returns and risk now live in the same causal world: do(macro=m).
-    (define opt-wt-f (/ opt-wt 100.0))
-    (define opt-we-f (/ opt-we 100.0))
-    (define opt-wf-f (/ opt-wf 100.0))
-    (define opt-wh-f (/ opt-wh 100.0))
+    ;; opt-w*-f were already produced by the CLP(R) solve in §6.
     (define sigma-base   sigma-base-opt)      ; reuse §5 precomputed value
     (define sigma-boom   (scenario-covariance 0.8))
     (define sigma-recess (scenario-covariance 0.1))
@@ -1226,21 +1244,19 @@
 
     ;; Counterfactual rebalancing: what if macro +1σ?
     (display "\n  Counterfactual rebalancing (macro = 0.8, growth boom):\n")
-    (define cf-boom-best-score -999999)
-    (define cf-boom-best '(0 0 0 0))
+    (defun scenario-return-coeffs (macro-val)
+      (list (scenario-return 100 0 0 0 macro-val)
+            (scenario-return 0 100 0 0 macro-val)
+            (scenario-return 0 0 100 0 macro-val)
+            (scenario-return 0 0 0 100 macro-val)))
 
-    (for-each (lambda (p)
-      (let* ((wt (car p)) (we (car (cdr p)))
-             (wf (car (cdr (cdr p)))) (wh (car (cdr (cdr (cdr p)))))
-             (ret (scenario-return wt we wf wh 0.8))
-             (risk (portfolio-risk-from-sigma (/ wt 100.0) (/ we 100.0)
-                                              (/ wf 100.0) (/ wh 100.0)
-                                              sigma-boom))
-             (s (- ret (* lambda-risk risk))))
-        (when (> s cf-boom-best-score)
-          (set! cf-boom-best-score s)
-          (set! cf-boom-best p))))
-      feasible-portfolios)
+    (define boom-returns (scenario-return-coeffs 0.8))
+    (define cf-boom-solve (solve-portfolio-for-lambda lambda-risk boom-returns sigma-boom tech-cap))
+    (define cf-boom-best (weights-f->pct
+                           (car (cdr cf-boom-solve))
+                           (car (cdr (cdr cf-boom-solve)))
+                           (car (cdr (cdr (cdr cf-boom-solve))))
+                           (car (cdr (cdr (cdr (cdr cf-boom-solve)))))))
 
     (display "    Rebalanced: Tech ")
     (display (car cf-boom-best)) (display "%, ")
@@ -1258,31 +1274,29 @@
     (display "  Perturbing expected returns (tech up, healthcare down)\n")
     (display "  at multiple levels to test robustness...\n\n")
 
-    ;; Parameterised perturbation scorer
-    (define pert-best-score -999999)
-    (define pert-best-port '(0 0 0 0))
-
-    (defun score-perturbed-at (p pct)
-      (let ((wt (/ (car p) 100.0))
-            (we (/ (car (cdr p)) 100.0))
-            (wf (/ (car (cdr (cdr p))) 100.0))
-            (wh (/ (car (cdr (cdr (cdr p)))) 100.0)))
-        (- (+ (* wt (+ ret-tech (* ret-tech pct)))
-              (+ (* we ret-energy)
-                 (+ (* wf ret-fin)
-                    (* wh (- ret-health (* ret-health pct))))))
-           (* lambda-risk (portfolio-risk-from-sigma wt we wf wh sigma-base-opt)))))
+    ;; Parameterised perturbation solve.
+    (defun perturbed-returns (pct)
+      (list (+ ret-tech (* ret-tech pct))
+            ret-energy
+            ret-fin
+            (- ret-health (* ret-health pct))))
 
     (defun find-perturbed-optimal (pct)
-      (set! pert-best-score -999999)
-      (set! pert-best-port '(0 0 0 0))
-      (for-each (lambda (p)
-        (let ((s (score-perturbed-at p pct)))
-          (when (> s pert-best-score)
-            (set! pert-best-score s)
-            (set! pert-best-port p))))
-        feasible-portfolios)
-      pert-best-port)
+      (let* ((sol (solve-portfolio-for-lambda lambda-risk
+                                              (perturbed-returns pct)
+                                              sigma-base-opt tech-cap))
+             (wt (car (cdr sol)))
+             (we (car (cdr (cdr sol))))
+             (wf (car (cdr (cdr (cdr sol)))))
+             (wh (car (cdr (cdr (cdr (cdr sol)))))))
+        (weights-f->pct wt we wf wh)))
+
+    (defun alloc-close? (a b)
+      (and (<= (abs (- (car a) (car b))) 1e-6)
+           (<= (abs (- (car (cdr a)) (car (cdr b)))) 1e-6)
+           (<= (abs (- (car (cdr (cdr a))) (car (cdr (cdr b))))) 1e-6)
+           (<= (abs (- (car (cdr (cdr (cdr a))))
+                         (car (cdr (cdr (cdr b)))))) 1e-6)))
 
     (display "    Perturbation  Optimal After       Changed?\n")
     (display "    ------------  ------------------  --------\n")
@@ -1294,7 +1308,7 @@
         (display (car (cdr result))) (display ", ")
         (display (car (cdr (cdr result)))) (display ", ")
         (display (car (cdr (cdr (cdr result))))) (display ")  ")
-        (if (equal? result best-portfolio)
+        (if (alloc-close? result best-portfolio)
             (display "no\n")
             (display "YES\n"))))
 
@@ -1447,8 +1461,8 @@
 
     (defun run-pipeline (universe dag constraints lam scenario-macros)
       ;; §0–§4: universe, dag, constraints drive the pipeline setup
-      ;;        (NN trained, causal returns computed, feasible set built)
-      ;; §6:    lam selects the optimal portfolio from the feasible set
+      ;;        (NN trained, causal returns computed, CLP(R) solver ready)
+      ;; §6:    lam selects the optimal portfolio via continuous CLP(R)
       ;; §7:    scenario-macros stress-tests under do(macro=m)
       (let* ((result (find-best-for-lambda lam))
              (port   (car result))
@@ -1466,13 +1480,14 @@
                                     (mv       (car (cdr sm)))
                                     (scen-ret (scenario-return wt we wf wh mv))
                                     (scen-sig (scenario-covariance mv))
-                                    (scen-rsk (portfolio-risk-from-sigma
-                                                (/ wt 100.0) (/ we 100.0)
-                                                (/ wf 100.0) (/ wh 100.0)
-                                                scen-sig)))
-                               (list name scen-ret scen-rsk)))
-                           scenario-macros)))
-        (list (cons 'allocation port)
+                                     (scen-rsk (portfolio-risk-from-sigma
+                                                 (/ wt 100.0) (/ we 100.0)
+                                                 (/ wf 100.0) (/ wh 100.0)
+                                                 scen-sig)))
+                                (list name scen-ret scen-rsk)))
+                            scenario-macros)))
+        (list (cons 'allocation (list (/ wt 100.0) (/ we 100.0)
+                                      (/ wf 100.0) (/ wh 100.0)))
               (cons 'return ret)
               (cons 'risk risk)
               (cons 'score score)

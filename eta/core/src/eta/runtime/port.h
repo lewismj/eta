@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <expected>
 #include <functional>
@@ -52,12 +52,12 @@ namespace utf8 {
 
         unsigned char b1 = input[pos++];
 
-        // 1-byte sequence (ASCII)
+        /// 1-byte sequence (ASCII)
         if ((b1 & 0x80) == 0) {
             return static_cast<char32_t>(b1);
         }
 
-        // 2-byte sequence
+        /// 2-byte sequence
         if ((b1 & 0xE0) == 0xC0) {
             if (pos >= input.size()) return std::nullopt;
             unsigned char b2 = input[pos++];
@@ -65,7 +65,7 @@ namespace utf8 {
             return static_cast<char32_t>(((b1 & 0x1F) << 6) | (b2 & 0x3F));
         }
 
-        // 3-byte sequence
+        /// 3-byte sequence
         if ((b1 & 0xF0) == 0xE0) {
             if (pos + 1 >= input.size()) return std::nullopt;
             unsigned char b2 = input[pos++];
@@ -74,7 +74,7 @@ namespace utf8 {
             return static_cast<char32_t>(((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F));
         }
 
-        // 4-byte sequence
+        /// 4-byte sequence
         if ((b1 & 0xF8) == 0xF0) {
             if (pos + 2 >= input.size()) return std::nullopt;
             unsigned char b2 = input[pos++];
@@ -84,7 +84,7 @@ namespace utf8 {
             return static_cast<char32_t>(((b1 & 0x07) << 18) | ((b2 & 0x3F) << 12) | ((b3 & 0x3F) << 6) | (b4 & 0x3F));
         }
 
-        return std::nullopt; // Invalid UTF-8
+        return std::nullopt; ///< Invalid UTF-8
     }
 }
 
@@ -92,18 +92,18 @@ namespace utf8 {
  * @brief Port buffering mode
  */
 enum class BufferMode {
-    None,      // Unbuffered
-    Line,      // Line buffered (flush on newline)
-    Block      // Block buffered (flush on buffer full or explicit flush)
+    None,      ///< Unbuffered
+    Line,      ///< Line buffered (flush on newline)
+    Block      ///< Block buffered (flush on buffer full or explicit flush)
 };
 
 /**
  * @brief Port encoding type
  */
 enum class Encoding {
-    UTF8,      // UTF-8 encoding (default)
-    ASCII,     // ASCII only (7-bit)
-    Binary     // Raw bytes (no encoding)
+    UTF8,      ///< UTF-8 encoding (default)
+    ASCII,     ///< ASCII only (7-bit)
+    Binary     ///< Raw bytes (no encoding)
 };
 
 /**
@@ -121,7 +121,7 @@ public:
      * @return The character read, or std::nullopt if EOF is reached.
      */
     virtual std::optional<char32_t> read_char() {
-        return std::nullopt;  // Default: not readable
+        return std::nullopt;  ///< Default: not readable
     }
 
     /**
@@ -140,7 +140,7 @@ public:
      * @return An error if the flush failed.
      */
     virtual std::expected<void, error::RuntimeError> flush() {
-        return {};  // Default: no-op for ports without buffering
+        return {};  ///< Default: no-op for ports without buffering
     }
 
     /**
@@ -148,7 +148,7 @@ public:
      * @return An error if closing failed.
      */
     virtual std::expected<void, error::RuntimeError> close() {
-        return {};  // Default: no-op
+        return {};  ///< Default: no-op
     }
 
     /**
@@ -156,7 +156,7 @@ public:
      * @return true if the port is open, false otherwise.
      */
     virtual bool is_open() const {
-        return true;  // Default: always open
+        return true;  ///< Default: always open
     }
 
     /**
@@ -201,9 +201,9 @@ public:
 class ConsolePort : public Port {
 public:
     enum class StreamType {
-        Input,   // stdin
-        Output,  // stdout
-        Error    // stderr
+        Input,   ///< stdin
+        Output,  ///< stdout
+        Error    ///< stderr
     };
 
     explicit ConsolePort(StreamType type) : stream_type_(type) {}
@@ -213,7 +213,7 @@ public:
             return std::nullopt;
         }
 
-        // Read UTF-8 encoded character from stdin
+        /// Read UTF-8 encoded character from stdin
         std::string utf8_bytes;
         int ch = std::cin.get();
         if (ch == EOF) {
@@ -222,12 +222,12 @@ public:
 
         utf8_bytes += static_cast<char>(ch);
 
-        // Check if this is a multi-byte UTF-8 sequence
+        /// Check if this is a multi-byte UTF-8 sequence
         unsigned char first_byte = static_cast<unsigned char>(ch);
         int expected_bytes = 0;
 
         if ((first_byte & 0x80) == 0) {
-            // ASCII (1 byte)
+            /// ASCII (1 byte)
             expected_bytes = 0;
         } else if ((first_byte & 0xE0) == 0xC0) {
             expected_bytes = 1;
@@ -237,14 +237,14 @@ public:
             expected_bytes = 3;
         }
 
-        // Read continuation bytes
+        /// Read continuation bytes
         for (int i = 0; i < expected_bytes; ++i) {
             ch = std::cin.get();
             if (ch == EOF) return std::nullopt;
             utf8_bytes += static_cast<char>(ch);
         }
 
-        // Decode UTF-8
+        /// Decode UTF-8
         size_t pos = 0;
         return utf8::decode(utf8_bytes, pos);
     }
@@ -282,7 +282,7 @@ public:
     }
 
     BufferMode buffer_mode() const override {
-        // stdout is typically line-buffered, stderr is unbuffered
+        /// stdout is typically line-buffered, stderr is unbuffered
         return stream_type_ == StreamType::Error ? BufferMode::None : BufferMode::Line;
     }
 
@@ -308,13 +308,13 @@ public:
             return std::nullopt;
         }
         if (read_pos_ >= content_.size()) {
-            return std::nullopt;  // EOF
+            return std::nullopt;  ///< EOF
         }
 
         if (encoding_ == Encoding::UTF8) {
             return utf8::decode(content_, read_pos_);
         } else {
-            // ASCII: just read single byte
+            /// ASCII: just read single byte
             char ch = content_[read_pos_++];
             return static_cast<char32_t>(ch);
         }
@@ -370,7 +370,7 @@ public:
     explicit FilePort(const std::string& filename, Mode mode, Encoding enc = Encoding::UTF8)
         : filename_(filename), mode_(mode), encoding_(enc), is_open_(false) {
 
-        std::ios_base::openmode flags = std::ios::binary;  // Always binary for UTF-8 control
+        std::ios_base::openmode flags = std::ios::binary;  ///< Always binary for UTF-8 control
 
         if (mode == Mode::Read) {
             flags |= std::ios::in;
@@ -378,7 +378,7 @@ public:
         } else if (mode == Mode::Write) {
             flags |= std::ios::out | std::ios::trunc;
             file_.open(filename, flags);
-        } else {  // Append
+        } else {  ///< Append
             flags |= std::ios::out | std::ios::app;
             file_.open(filename, flags);
         }
@@ -398,7 +398,7 @@ public:
         }
 
         if (encoding_ == Encoding::UTF8) {
-            // Read UTF-8 encoded character
+            /// Read UTF-8 encoded character
             std::string utf8_bytes;
             int ch = file_.get();
             if (ch == EOF) {
@@ -428,7 +428,7 @@ public:
             size_t pos = 0;
             return utf8::decode(utf8_bytes, pos);
         } else {
-            // ASCII
+            /// ASCII
             int ch = file_.get();
             if (ch == EOF) {
                 return std::nullopt;
@@ -601,5 +601,5 @@ private:
     Callback cb_;
 };
 
-}  // namespace eta::runtime
+}  ///< namespace eta::runtime
 

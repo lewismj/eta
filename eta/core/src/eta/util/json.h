@@ -1,7 +1,9 @@
 #pragma once
-// Minimal JSON value type + parser/serialiser.
-// Shared by the LSP and DAP servers; lives in eta_core so both can
-// include it without duplicating code.
+/**
+ * Minimal JSON value type + parser/serialiser.
+ * Shared by the LSP and DAP servers; lives in eta_core so both can
+ * include it without duplicating code.
+ */
 
 #include <cstdint>
 #include <cstdio>
@@ -53,7 +55,7 @@ public:
     const Object&      as_object() const { return std::get<Object>(data); }
     Object&            as_object()       { return std::get<Object>(data); }
 
-    // Convenience accessors for objects
+    /// Convenience accessors for objects
     const Value& operator[](const std::string& key) const {
         static const Value null_val{};
         if (!is_object()) return null_val;
@@ -322,5 +324,5 @@ inline Value array(std::initializer_list<Value> elems) {
     return Value(Array(elems));
 }
 
-} // namespace eta::json
+} ///< namespace eta::json
 

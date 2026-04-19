@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md) · [Logic Programming](logic.md) ·
 [Bytecode & VM](bytecode-vm.md) · [Runtime & GC](runtime.md) ·
-[Causal Inference](causal.md) · [Next Steps](next-steps.md)
+[Causal Inference](causal.md) · [Project Status](next-steps.md)
 
 ---
 
@@ -261,13 +261,10 @@ The classic N-Queens puzzle demonstrates `clp:all-different`:
 
 | Feature | Status |
 |---------|--------|
-| Arc consistency (AC-3) | Not yet — propagation fires only at bind time (forward checking) |
-| Attributed variables | Not yet — needed for full wakeup on var-var unification |
-| Non-integer domains | Not yet — float/real intervals not supported |
-| Optimisation (`minimize`/`maximize`) | Not yet — only satisfaction supported |
-
-Full arc consistency propagation is the next planned enhancement; see
-[`docs/next-steps.md §3`](next-steps.md).
+| Arc consistency (AC-3) | Not in the current baseline of this document; propagation is described here as bind-time forward checking |
+| Attributed variables | Not described in this baseline CLP overview |
+| Non-integer domains | Not described in this baseline CLP overview |
+| Optimisation (`minimize`/`maximize`) | Not described in this baseline CLP overview |
 
 ---
 

@@ -1,10 +1,11 @@
 #pragma once
 
-/// @file torch_primitives.h
-/// @brief Register libtorch tensor/autograd/nn/optim primitives into an Eta BuiltinEnvironment.
-///
-/// Registration order matters — slot indices must match builtin_names.h (torch section).
-/// All primitives capture Heap& by reference for allocation.
+/**
+ * @file torch_primitives.h
+ * @brief Register libtorch tensor/autograd/nn/optim primitives into an Eta BuiltinEnvironment.
+ *
+ * All primitives capture Heap& by reference for allocation.
+ */
 
 #include <cmath>
 #include <sstream>
@@ -35,7 +36,7 @@ using namespace eta::runtime::memory::intern;
 using namespace eta::runtime::error;
 using Args = const std::vector<LispVal>&;
 
-// Helpers
+/// Helpers
 
 inline TensorPtr* get_tensor(Heap& heap, LispVal v) {
     if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return nullptr;
@@ -103,7 +104,7 @@ inline LispVal tensor_to_list(const ::torch::Tensor& t, Heap& heap) {
     auto* data = flat.data_ptr<double>();
     int64_t n = flat.numel();
     LispVal result = Nil;
-    // Build list in reverse
+    /// Build list in reverse
     for (int64_t i = n - 1; i >= 0; --i) {
         auto enc = ops::encode(data[i]);
         if (!enc) continue;
@@ -118,65 +119,62 @@ inline RuntimeError torch_error(const std::string& msg) {
     return RuntimeError{VMError{RuntimeErrorCode::TypeError, msg}};
 }
 
-// Registration
+/// Registration
 
 inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
                                        [[maybe_unused]] InternTable& intern_table,
                                        [[maybe_unused]] vm::VM* vm = nullptr) {
 
-    // Tensor creation
+    /// Tensor creation
 
-    // (torch/tensor val)  — scalar double → 0-d tensor, or list → 1-D tensor
     env.register_builtin("torch/tensor", 1, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         if (args.empty()) return std::unexpected(torch_error("torch/tensor: requires at least one argument"));
         auto d = to_double(args[0], heap);
         if (d) {
             auto opts = ::torch::TensorOptions().dtype(::torch::kFloat64);
             bool requires_grad = false;
-            // Check for :requires-grad keyword (passed as extra args by convention)
+            /// Check for :requires-grad keyword (passed as extra args by convention)
             if (args.size() >= 2) {
-                // If second arg is True, enable requires_grad
+                /// If second arg is True, enable requires_grad
                 if (args[1] == True) requires_grad = true;
             }
             auto t = ::torch::tensor(*d, opts);
             if (requires_grad) t.set_requires_grad(true);
             return factory::make_tensor(heap, std::move(t));
         }
-        // List → 1D tensor
         auto t = list_to_tensor(args[0], heap);
         if (args.size() >= 2 && args[1] == True) t.set_requires_grad(true);
         return factory::make_tensor(heap, std::move(t));
     });
 
-    // (torch/ones shape-list) → tensor filled with 1.0
     env.register_builtin("torch/ones", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto shape = list_to_shape(args[0], heap);
         if (shape.empty()) return std::unexpected(torch_error("torch/ones: invalid shape"));
         return factory::make_tensor(heap, ::torch::ones(shape, ::torch::kFloat64));
     });
 
-    // (torch/zeros shape-list)
+    /// (torch/zeros shape-list)
     env.register_builtin("torch/zeros", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto shape = list_to_shape(args[0], heap);
         if (shape.empty()) return std::unexpected(torch_error("torch/zeros: invalid shape"));
         return factory::make_tensor(heap, ::torch::zeros(shape, ::torch::kFloat64));
     });
 
-    // (torch/randn shape-list)
+    /// (torch/randn shape-list)
     env.register_builtin("torch/randn", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto shape = list_to_shape(args[0], heap);
         if (shape.empty()) return std::unexpected(torch_error("torch/randn: invalid shape"));
         return factory::make_tensor(heap, ::torch::randn(shape, ::torch::kFloat64));
     });
 
-    // (torch/arange start end step)
+    /// (torch/arange start end step)
     env.register_builtin("torch/arange", 3, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto s = to_double(args[0], heap), e = to_double(args[1], heap), st = to_double(args[2], heap);
         if (!s || !e || !st) return std::unexpected(torch_error("torch/arange: numeric args required"));
         return factory::make_tensor(heap, ::torch::arange(*s, *e, *st, ::torch::kFloat64));
     });
 
-    // (torch/linspace start end steps)
+    /// (torch/linspace start end steps)
     env.register_builtin("torch/linspace", 3, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto s = to_double(args[0], heap), e = to_double(args[1], heap);
         auto n = to_int64(args[2], heap);
@@ -184,21 +182,20 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::linspace(*s, *e, *n, ::torch::kFloat64));
     });
 
-    // (torch/from-list list) → 1D float64 tensor
     env.register_builtin("torch/from-list", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         return factory::make_tensor(heap, list_to_tensor(args[0], heap));
     });
 
-    // Tensor predicates
+    /// Tensor predicates
 
-    // (torch/tensor? x)
+    /// (torch/tensor? x)
     env.register_builtin("torch/tensor?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         return get_tensor(heap, args[0]) ? True : False;
     });
 
-    // Arithmetic
+    /// Arithmetic
 
-    // (torch/add a b)
+    /// (torch/add a b)
     env.register_builtin("torch/add", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* a = get_tensor(heap, args[0]);
         auto* b = get_tensor(heap, args[1]);
@@ -206,7 +203,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, a->tensor + b->tensor);
     });
 
-    // (torch/sub a b)
+    /// (torch/sub a b)
     env.register_builtin("torch/sub", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* a = get_tensor(heap, args[0]);
         auto* b = get_tensor(heap, args[1]);
@@ -214,7 +211,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, a->tensor - b->tensor);
     });
 
-    // (torch/mul a b)
+    /// (torch/mul a b)
     env.register_builtin("torch/mul", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* a = get_tensor(heap, args[0]);
         auto* b = get_tensor(heap, args[1]);
@@ -222,7 +219,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, a->tensor * b->tensor);
     });
 
-    // (torch/div a b)
+    /// (torch/div a b)
     env.register_builtin("torch/div", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* a = get_tensor(heap, args[0]);
         auto* b = get_tensor(heap, args[1]);
@@ -230,7 +227,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, a->tensor / b->tensor);
     });
 
-    // (torch/matmul a b)
+    /// (torch/matmul a b)
     env.register_builtin("torch/matmul", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* a = get_tensor(heap, args[0]);
         auto* b = get_tensor(heap, args[1]);
@@ -238,7 +235,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::matmul(a->tensor, b->tensor));
     });
 
-    // (torch/dot a b)
+    /// (torch/dot a b)
     env.register_builtin("torch/dot", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* a = get_tensor(heap, args[0]);
         auto* b = get_tensor(heap, args[1]);
@@ -246,65 +243,65 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::dot(a->tensor.flatten(), b->tensor.flatten()));
     });
 
-    // Unary ops
+    /// Unary ops
 
-    // (torch/neg t)
+    /// (torch/neg t)
     env.register_builtin("torch/neg", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/neg: tensor required"));
         return factory::make_tensor(heap, -t->tensor);
     });
 
-    // (torch/abs t)
+    /// (torch/abs t)
     env.register_builtin("torch/abs", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/abs: tensor required"));
         return factory::make_tensor(heap, ::torch::abs(t->tensor));
     });
 
-    // (torch/exp t)
+    /// (torch/exp t)
     env.register_builtin("torch/exp", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/exp: tensor required"));
         return factory::make_tensor(heap, ::torch::exp(t->tensor));
     });
 
-    // (torch/log t)
+    /// (torch/log t)
     env.register_builtin("torch/log", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/log: tensor required"));
         return factory::make_tensor(heap, ::torch::log(t->tensor));
     });
 
-    // (torch/sqrt t)
+    /// (torch/sqrt t)
     env.register_builtin("torch/sqrt", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/sqrt: tensor required"));
         return factory::make_tensor(heap, ::torch::sqrt(t->tensor));
     });
 
-    // (torch/relu t)
+    /// (torch/relu t)
     env.register_builtin("torch/relu", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/relu: tensor required"));
         return factory::make_tensor(heap, ::torch::relu(t->tensor));
     });
 
-    // (torch/sigmoid t)
+    /// (torch/sigmoid t)
     env.register_builtin("torch/sigmoid", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/sigmoid: tensor required"));
         return factory::make_tensor(heap, ::torch::sigmoid(t->tensor));
     });
 
-    // (torch/tanh t)
+    /// (torch/tanh t)
     env.register_builtin("torch/tanh", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/tanh: tensor required"));
         return factory::make_tensor(heap, ::torch::tanh(t->tensor));
     });
 
-    // (torch/softmax t dim)
+    /// (torch/softmax t dim)
     env.register_builtin("torch/softmax", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         auto dim = to_int64(args[1], heap);
@@ -312,9 +309,8 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::softmax(t->tensor, *dim));
     });
 
-    // Shape ops
+    /// Shape ops
 
-    // (torch/shape t) → Eta list of fixnums
     env.register_builtin("torch/shape", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/shape: tensor required"));
@@ -330,7 +326,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return result;
     });
 
-    // (torch/reshape t shape-list)
+    /// (torch/reshape t shape-list)
     env.register_builtin("torch/reshape", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/reshape: tensor required"));
@@ -338,7 +334,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, t->tensor.reshape(shape));
     });
 
-    // (torch/transpose t dim0 dim1)
+    /// (torch/transpose t dim0 dim1)
     env.register_builtin("torch/transpose", 3, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         auto d0 = to_int64(args[1], heap), d1 = to_int64(args[2], heap);
@@ -346,14 +342,14 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, t->tensor.transpose(*d0, *d1));
     });
 
-    // (torch/squeeze t)
+    /// (torch/squeeze t)
     env.register_builtin("torch/squeeze", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/squeeze: tensor required"));
         return factory::make_tensor(heap, t->tensor.squeeze());
     });
 
-    // (torch/unsqueeze t dim)
+    /// (torch/unsqueeze t dim)
     env.register_builtin("torch/unsqueeze", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         auto d = to_int64(args[1], heap);
@@ -361,7 +357,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, t->tensor.unsqueeze(*d));
     });
 
-    // (torch/cat tensor-list dim)
+    /// (torch/cat tensor-list dim)
     env.register_builtin("torch/cat", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         std::vector<::torch::Tensor> tensors;
         LispVal lst = args[0];
@@ -379,53 +375,52 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::cat(tensors, *dim));
     });
 
-    // Reductions
+    /// Reductions
 
-    // (torch/sum t)
+    /// (torch/sum t)
     env.register_builtin("torch/sum", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/sum: tensor required"));
         return factory::make_tensor(heap, t->tensor.sum());
     });
 
-    // (torch/mean t)
+    /// (torch/mean t)
     env.register_builtin("torch/mean", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/mean: tensor required"));
         return factory::make_tensor(heap, t->tensor.mean());
     });
 
-    // (torch/max t)
+    /// (torch/max t)
     env.register_builtin("torch/max", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/max: tensor required"));
         return factory::make_tensor(heap, t->tensor.max());
     });
 
-    // (torch/min t)
+    /// (torch/min t)
     env.register_builtin("torch/min", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/min: tensor required"));
         return factory::make_tensor(heap, t->tensor.min());
     });
 
-    // (torch/argmax t)
+    /// (torch/argmax t)
     env.register_builtin("torch/argmax", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/argmax: tensor required"));
         return factory::make_tensor(heap, t->tensor.argmax());
     });
 
-    // (torch/argmin t)
+    /// (torch/argmin t)
     env.register_builtin("torch/argmin", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/argmin: tensor required"));
         return factory::make_tensor(heap, t->tensor.argmin());
     });
 
-    // Conversion
+    /// Conversion
 
-    // (torch/item t) → Eta flonum (scalar tensor only)
     env.register_builtin("torch/item", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/item: tensor required"));
@@ -434,23 +429,20 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return ops::encode(t->tensor.item<double>());
     });
 
-    // (torch/to-list t) → flat Eta list
     env.register_builtin("torch/to-list", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/to-list: tensor required"));
         return tensor_to_list(t->tensor, heap);
     });
 
-    // (torch/numel t) → fixnum
     env.register_builtin("torch/numel", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/numel: tensor required"));
         return ops::encode(t->tensor.numel());
     });
 
-    // Autograd
+    /// Autograd
 
-    // (torch/requires-grad! t bool) → t  (mutates in-place)
     env.register_builtin("torch/requires-grad!", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/requires-grad!: tensor required"));
@@ -458,21 +450,18 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return args[0];
     });
 
-    // (torch/requires-grad? t) → bool
     env.register_builtin("torch/requires-grad?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/requires-grad?: tensor required"));
         return t->tensor.requires_grad() ? True : False;
     });
 
-    // (torch/detach t) → new tensor
     env.register_builtin("torch/detach", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/detach: tensor required"));
         return factory::make_tensor(heap, t->tensor.detach());
     });
 
-    // (torch/backward t) → void (calls backward on scalar loss)
     env.register_builtin("torch/backward", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/backward: tensor required"));
@@ -480,7 +469,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return Nil;
     });
 
-    // (torch/grad t) → new tensor (the .grad attribute)
     env.register_builtin("torch/grad", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/grad: tensor required"));
@@ -489,7 +477,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, g);
     });
 
-    // (torch/zero-grad! t) → void
     env.register_builtin("torch/zero-grad!", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/zero-grad!: tensor required"));
@@ -497,34 +484,36 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return Nil;
     });
 
-    // NN Layer constructors
+    /// NN Layer constructors
 
-    // (nn/linear in-features out-features) → nn-module
     env.register_builtin("nn/linear", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto in_f = to_int64(args[0], heap), out_f = to_int64(args[1], heap);
         if (!in_f || !out_f) return std::unexpected(torch_error("nn/linear: (in, out) required"));
         auto mod = ::torch::nn::Linear(::torch::nn::LinearOptions(*in_f, *out_f));
-        // Force to float64 to match Eta's default
+        /// Force to float64 to match Eta's default
         mod->to(::torch::kFloat64);
         auto name = "Linear(" + std::to_string(*in_f) + ", " + std::to_string(*out_f) + ")";
         return factory::make_nn_module(heap, mod.ptr(), std::move(name));
     });
 
-    // (nn/sequential module ...) → nn-module wrapping a Sequential container
     env.register_builtin("nn/sequential", 0, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto seq = ::torch::nn::Sequential();
         for (size_t i = 0; i < args.size(); ++i) {
             auto* m = get_nn_module(heap, args[i]);
             if (!m) return std::unexpected(torch_error("nn/sequential: nn-module arguments required"));
             if (!m->forward_fn) return std::unexpected(torch_error("nn/sequential: module has no forward function"));
-            // Wrap each sub-module's type-erased forward in a Functional node
-            // because Sequential requires concrete module types with forward().
+            /**
+             * Wrap each sub-module's type-erased forward in a Functional node
+             * because Sequential requires concrete module types with forward().
+             */
             auto fn = m->forward_fn;
             seq->push_back("layer" + std::to_string(i),
                 ::torch::nn::Functional([fn](::torch::Tensor t) { return fn(std::move(t)); }));
-            // Also register the original module so its learnable parameters
-            // (e.g. Linear weight/bias) are visible via parameters().
-            // Functional wrappers are stateless and have no parameters.
+            /**
+             * Also register the original module so its learnable parameters
+             * (e.g. Linear weight/bias) are visible via parameters().
+             * Functional wrappers are stateless and have no parameters.
+             */
             if (!m->module->parameters().empty()) {
                 seq->register_module("params" + std::to_string(i), m->module);
             }
@@ -533,19 +522,18 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_nn_module(heap, seq.ptr(), "Sequential");
     });
 
-    // (nn/relu-layer) → functional relu as a module
     env.register_builtin("nn/relu-layer", 0, false, [&heap]([[maybe_unused]] Args args) -> std::expected<LispVal, RuntimeError> {
         auto mod = ::torch::nn::Functional(::torch::relu);
         return factory::make_nn_module(heap, mod.ptr(), "ReLU");
     });
 
-    // (nn/sigmoid-layer)
+    /// (nn/sigmoid-layer)
     env.register_builtin("nn/sigmoid-layer", 0, false, [&heap]([[maybe_unused]] Args args) -> std::expected<LispVal, RuntimeError> {
         auto mod = ::torch::nn::Sigmoid();
         return factory::make_nn_module(heap, mod.ptr(), "Sigmoid");
     });
 
-    // (nn/dropout rate)
+    /// (nn/dropout rate)
     env.register_builtin("nn/dropout", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto rate = to_double(args[0], heap);
         if (!rate) return std::unexpected(torch_error("nn/dropout: rate required"));
@@ -553,9 +541,8 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_nn_module(heap, mod.ptr(), "Dropout(" + std::to_string(*rate) + ")");
     });
 
-    // NN forward / parameters
+    /// NN forward / parameters
 
-    // (nn/forward module input-tensor) → output tensor
     env.register_builtin("nn/forward", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* m = get_nn_module(heap, args[0]);
         auto* t = get_tensor(heap, args[1]);
@@ -565,7 +552,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, output);
     });
 
-    // (nn/parameters module) → list of tensors
     env.register_builtin("nn/parameters", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* m = get_nn_module(heap, args[0]);
         if (!m) return std::unexpected(torch_error("nn/parameters: nn-module required"));
@@ -581,7 +567,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return result;
     });
 
-    // (nn/train! module) → module (sets training mode)
     env.register_builtin("nn/train!", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* m = get_nn_module(heap, args[0]);
         if (!m) return std::unexpected(torch_error("nn/train!: nn-module required"));
@@ -589,7 +574,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return args[0];
     });
 
-    // (nn/eval! module) → module (sets eval mode)
     env.register_builtin("nn/eval!", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* m = get_nn_module(heap, args[0]);
         if (!m) return std::unexpected(torch_error("nn/eval!: nn-module required"));
@@ -597,14 +581,12 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return args[0];
     });
 
-    // (nn/module? x) → bool
     env.register_builtin("nn/module?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         return get_nn_module(heap, args[0]) ? True : False;
     });
 
-    // Loss functions
+    /// Loss functions
 
-    // (nn/mse-loss pred target) → scalar tensor
     env.register_builtin("nn/mse-loss", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* p = get_tensor(heap, args[0]);
         auto* t = get_tensor(heap, args[1]);
@@ -612,7 +594,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::mse_loss(p->tensor, t->tensor));
     });
 
-    // (nn/l1-loss pred target) → scalar tensor
     env.register_builtin("nn/l1-loss", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* p = get_tensor(heap, args[0]);
         auto* t = get_tensor(heap, args[1]);
@@ -620,7 +601,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::l1_loss(p->tensor, t->tensor));
     });
 
-    // (nn/cross-entropy-loss input target) → scalar tensor
     env.register_builtin("nn/cross-entropy-loss", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* p = get_tensor(heap, args[0]);
         auto* t = get_tensor(heap, args[1]);
@@ -628,9 +608,8 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::cross_entropy_loss(p->tensor, t->tensor));
     });
 
-    // Optimizers
+    /// Optimizers
 
-    // (optim/sgd module lr) → optimizer
     env.register_builtin("optim/sgd", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* m = get_nn_module(heap, args[0]);
         auto lr = to_double(args[1], heap);
@@ -640,7 +619,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_optimizer(heap, std::move(opt), "SGD(lr=" + std::to_string(*lr) + ")");
     });
 
-    // (optim/adam module lr) → optimizer
     env.register_builtin("optim/adam", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* m = get_nn_module(heap, args[0]);
         auto lr = to_double(args[1], heap);
@@ -650,7 +628,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_optimizer(heap, std::move(opt), "Adam(lr=" + std::to_string(*lr) + ")");
     });
 
-    // (optim/step! optimizer) → void
     env.register_builtin("optim/step!", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* o = get_optimizer(heap, args[0]);
         if (!o) return std::unexpected(torch_error("optim/step!: optimizer required"));
@@ -658,7 +635,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return Nil;
     });
 
-    // (optim/zero-grad! optimizer) → void
     env.register_builtin("optim/zero-grad!", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* o = get_optimizer(heap, args[0]);
         if (!o) return std::unexpected(torch_error("optim/zero-grad!: optimizer required"));
@@ -666,14 +642,13 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return Nil;
     });
 
-    // (optim/optimizer? x) → bool
     env.register_builtin("optim/optimizer?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         return get_optimizer(heap, args[0]) ? True : False;
     });
 
-    // Serialization
+    /// Serialization
 
-    // (torch/save t path)
+    /// (torch/save t path)
     env.register_builtin("torch/save", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/save: tensor required"));
@@ -685,7 +660,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return Nil;
     });
 
-    // (torch/load path) → tensor
     env.register_builtin("torch/load", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::String)
             return std::unexpected(torch_error("torch/load: path string required"));
@@ -696,7 +670,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, std::move(t));
     });
 
-    // (torch/print t) → void (display tensor to stdout)
     env.register_builtin("torch/print", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/print: tensor required"));
@@ -704,19 +677,16 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return Nil;
     });
 
-    // Device management
+    /// Device management
 
-    // (torch/cuda-available?) → #t or #f
     env.register_builtin("torch/cuda-available?", 0, false, []([[maybe_unused]] Args args) -> std::expected<LispVal, RuntimeError> {
         return ::torch::cuda::is_available() ? True : False;
     });
 
-    // (torch/cuda-device-count) → fixnum
     env.register_builtin("torch/cuda-device-count", 0, false, []([[maybe_unused]] Args args) -> std::expected<LispVal, RuntimeError> {
         return ops::encode(static_cast<int64_t>(::torch::cuda::device_count()));
     });
 
-    // (torch/device t) → string name of the device the tensor lives on
     env.register_builtin("torch/device", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/device: tensor required"));
@@ -727,8 +697,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return ops::box(Tag::String, *id);
     });
 
-    // (torch/to-device t device-string) → new tensor on the given device
-    //   device-string is e.g. "cpu", "cuda", "cuda:0", "cuda:1"
+    ///   device-string is e.g. "cpu", "cuda", "cuda:0", "cuda:1"
     env.register_builtin("torch/to-device", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/to-device: tensor required as first arg"));
@@ -744,7 +713,6 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         }
     });
 
-    // (nn/to-device module device-string) → module (mutates in-place, returns same module)
     env.register_builtin("nn/to-device", 2, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* m = get_nn_module(heap, args[0]);
         if (!m) return std::unexpected(torch_error("nn/to-device: nn-module required as first arg"));
@@ -763,5 +731,5 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
 }
 
 
-} // namespace eta::torch_bindings
+} ///< namespace eta::torch_bindings
 

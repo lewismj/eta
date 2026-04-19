@@ -30,8 +30,10 @@ public:
     explicit ModulePathResolver(std::vector<fs::path> dirs = {})
         : dirs_(std::move(dirs)) {}
 
-    /// Construct from a PATH-style string (semicolon-delimited on Windows,
-    /// colon-delimited on POSIX).
+    /**
+     * Construct from a PATH-style string (semicolon-delimited on Windows,
+     * colon-delimited on POSIX).
+     */
     static ModulePathResolver from_path_string(std::string_view path_str) {
         std::vector<fs::path> dirs;
         if (path_str.empty()) return ModulePathResolver{dirs};
@@ -55,9 +57,11 @@ public:
         return ModulePathResolver{std::move(dirs)};
     }
 
-    /// Construct from CLI --path argument, falling back to ETA_MODULE_PATH env var.
-    /// Always appends the bundled stdlib directory (<exe>/../stdlib/) as a
-    /// last-resort search path so the prelude is found automatically.
+    /**
+     * Construct from CLI --path argument, falling back to ETA_MODULE_PATH env var.
+     * Always appends the bundled stdlib directory (<exe>/../stdlib/) as a
+     * last-resort search path so the prelude is found automatically.
+     */
     static ModulePathResolver from_args_or_env(const std::string& cli_path) {
         ModulePathResolver resolver{{}};
         if (!cli_path.empty()) {
@@ -68,8 +72,7 @@ public:
                 resolver = from_path_string(env);
             }
         }
-        // Append the bundled stdlib directory relative to the executable.
-        // Layout: <prefix>/bin/etai  →  <prefix>/stdlib/
+        /// Append the bundled stdlib directory relative to the executable.
         auto stdlib = bundled_stdlib_dir();
         if (stdlib) {
             resolver.add_dir(*stdlib);
@@ -77,22 +80,23 @@ public:
         return resolver;
     }
 
-    /// Locate the bundled stdlib directory relative to the running executable.
-    /// Returns nullopt if the directory does not exist on disk.
+    /**
+     * Locate the bundled stdlib directory relative to the running executable.
+     * Returns nullopt if the directory does not exist on disk.
+     */
     static std::optional<fs::path> bundled_stdlib_dir() {
         std::error_code ec;
 #ifdef _WIN32
-        // Windows: use GetModuleFileName
+        /// Windows: use GetModuleFileName
         wchar_t buf[4096];
         DWORD len = GetModuleFileNameW(nullptr, buf, sizeof(buf) / sizeof(buf[0]));
         if (len == 0 || len >= sizeof(buf) / sizeof(buf[0])) return std::nullopt;
         fs::path exe_path(buf);
 #else
-        // POSIX: /proc/self/exe (Linux), or argv[0] fallback
+        /// POSIX: /proc/self/exe (Linux), or argv[0] fallback
         fs::path exe_path = fs::read_symlink("/proc/self/exe", ec);
         if (ec) return std::nullopt;
 #endif
-        // <prefix>/bin/etai  →  <prefix>/stdlib
         auto prefix = exe_path.parent_path().parent_path();
         auto stdlib = prefix / "stdlib";
         if (fs::is_directory(stdlib, ec)) {
@@ -150,5 +154,5 @@ private:
     std::vector<fs::path> dirs_;
 };
 
-} // namespace eta::interpreter
+} ///< namespace eta::interpreter
 

@@ -48,6 +48,30 @@ each compiles to a single dedicated opcode (except `ground?` which is a builtin)
 `ground?` is registered as a **builtin function** (not a special form) so it
 appears in the global slot table alongside `car`, `cons`, etc.
 
+### Additional Runtime Builtins
+
+These are ordinary runtime builtins, not special forms:
+
+| Form | Description |
+|------|-------------|
+| `(logic-var/named 'name)` | Fresh unbound logic variable with a debug label (symbol or string) |
+| `(var-name v)` | Debug label of a logic variable, or `#f` if anonymous / not a var |
+| `(set-occurs-check! mode)` | Set the VM's occurs-check policy: `'always` / `'never` / `'error` |
+| `(occurs-check-mode)` | Current occurs-check policy symbol |
+| `(term 'functor a1 …)` | Allocate a structured term (heap kind `CompoundTerm`); functor must be a symbol |
+| `(compound? t)` | `#t` iff `t` is a compound term |
+| `(functor t)` | The functor symbol of a compound term, or `#f` |
+| `(arity t)` | Arity of a compound term (fixnum) |
+| `(arg i t)` | 1-based argument access — `(arg 1 (term 'f 'a 'b)) ⇒ 'a` |
+
+```scheme
+(define x (logic-var/named 'x))
+(define y (logic-var/named 'y))
+(unify (term 'point x 1) (term 'point 2 y))
+(deref-lvar x)   ; => 2
+(deref-lvar y)   ; => 1
+```
+
 ---
 
 ## How It Is Implemented
@@ -59,6 +83,7 @@ A logic variable is a heap-allocated object of kind `ObjectKind::LogicVar`:
 ```cpp
 struct LogicVar {
     std::optional<LispVal> binding;   // nullopt → unbound
+    std::string            name;      // optional debug label (empty = anonymous)
 };
 ```
 
@@ -138,31 +163,147 @@ This prevents the creation of infinite (cyclic) terms:
 Without the occurs check, `z` would be bound to a circular list, causing any
 subsequent traversal (e.g., `ground?`, `display`) to loop forever.
 
-### The Trail Stack
+#### Occurs-Check Policy (configurable)
 
-Every successful binding made inside `unify` is recorded in
-`VM::trail_stack_`, a `std::vector<LispVal>` that stores the **boxed reference**
-to the logic variable that was bound (not a raw pointer — raw pointers are not
-stable across GC cycles in a concurrent heap):
+The occurs-check behaviour is **runtime-configurable** via two built-in
+primitives:
+
+```scheme
+(set-occurs-check! 'always)   ; run occurs-check, fail on cycle (DEFAULT — safe)
+(set-occurs-check! 'never)    ; skip occurs-check (ISO-Prolog default; faster;
+                              ;   may silently produce cyclic terms)
+(set-occurs-check! 'error)    ; run occurs-check, raise a runtime error on cycle
+                              ;   (surfaces the offending unification instead
+                              ;    of silently failing)
+(occurs-check-mode)           ; => 'always / 'never / 'error
+```
+
+| Mode | Behaviour on cyclic binding | When to use |
+|------|-----------------------------|-------------|
+| `'always` | `(unify z (cons z '()))` → `#f` (silent failure) | Default. Safe for all downstream consumers (`display`, `ground?`, `copy-term`). |
+| `'never`  | Binding succeeds; `z` becomes a cyclic term | Maximum speed, ISO-Prolog parity. Caller must ensure no cycle-walking traversals run afterwards. |
+| `'error`  | `(unify …)` aborts with `unify: occurs-check violation (cyclic term)` | Debugging — catches accidentally cyclic goals that would otherwise just fail silently. |
+
+When mode is `'error`, the runtime failure is catchable:
+
+```scheme
+(catch 'runtime.error (unify z (cons z '())))
+;; or with catch-all:
+(catch (unify z (cons z '())))
+```
+
+The flag is stored on the VM (`VM::occurs_check_mode_`) and is intentionally
+*not* on the trail: it is a policy knob, not a backtrackable binding.
+
+### Named Logic Variables
+
+Logic variables may carry an **optional debug label** with no effect on
+unification semantics:
+
+```scheme
+(define x (logic-var/named 'alpha))   ; fresh unbound var, labelled "alpha"
+(define y (logic-var/named "beta"))   ; strings are accepted too
+(define z (logic-var))                ; anonymous
+
+(var-name x)    ; => "alpha"
+(var-name z)    ; => #f
+(var-name 42)   ; => #f   (not a logic var)
+
+(logic-var? x)  ; => #t   (named vars are ordinary logic vars)
+```
+
+Named vars print as `_alphaG1234` (label + id) instead of `_G1234`, which is
+useful for traces, debugger displays, and future CLP / WAM tooling. Two
+named vars with the same label are still distinct objects and still unify
+as independent variables — the name is purely for humans.
+
+### Compound Terms
+
+`(term 'f a1 … aN)` allocates a **structured logic term** — a dedicated
+heap kind `CompoundTerm` with a symbol functor and a vector of argument
+`LispVal`s:
 
 ```cpp
-std::vector<LispVal> trail_stack_;   // per-VM, not shared
+struct CompoundTerm {
+    LispVal              functor;   // must be Tag::Symbol
+    std::vector<LispVal> args;
+};
+```
+
+Using a first-class heap type (rather than encoding `f(a,b)` as a dotted
+`(f a b)` cons spine) gives O(1) functor / arity access, a place to hang
+future per-term metadata (hash cache, WAM register tag, etc.), and keeps
+Prolog-style goals visually distinct from Scheme lists in the printer
+(`f(1, X)` vs `(f 1 X)`).
+
+```scheme
+(define t (term 'point 1 2))
+(compound? t)               ; => #t
+(functor t)                 ; => point
+(arity t)                   ; => 2
+(arg 1 t)                   ; => 1
+
+(define x (logic-var/named 'x))
+(define y (logic-var/named 'y))
+(unify (term 'point x 1) (term 'point 2 y))   ; => #t
+(deref-lvar x)              ; => 2
+(deref-lvar y)              ; => 1
+```
+
+**Unification semantics** — two compound terms unify iff they have the
+same functor symbol, the same arity, and their arguments unify pairwise.
+Compound vs cons, compound vs vector, and mismatched functor / arity all
+fail. `VM::unify`, `VM::occurs_check`, `VM::copy_term`, and `ground?` were
+implemented to recurse through compound args; `copy_term`
+additionally preserves sharing of repeated variables.
+
+### Structured Trail Entries
+
+The per-VM trail is now a `std::vector<TrailEntry>`:
+
+```cpp
+struct TrailEntry {
+    enum class Kind : std::uint8_t { Bind, Attr, Domain };
+    Kind    kind;                 // Bind, Attr, or Domain
+    LispVal var;                  // HeapObject ref to the LogicVar
+    LispVal prev_value;           // Attr only: previous module-attribute value
+};
+```
+
+The trail is a tagged log of undoable VM state changes.  `Bind` entries
+undo logic-variable bindings, `Attr` entries restore prior attribute slots,
+and `Domain` entries restore prior CLP domain state.  This keeps logic and
+constraint backtracking on one unified trail.
+
+`TrailMark` stores the current trail depth and `UnwindTrail` restores every
+entry above that mark.  The mark remains an opaque fixnum cookie from user
+code's perspective.
+
+### The Trail Stack
+
+Every undoable logic/CLP change is recorded in `VM::trail_stack_`, a
+`std::vector<TrailEntry>`:
+
+```cpp
+std::vector<TrailEntry> trail_stack_;   // per-VM, not shared
 ```
 
 `TrailMark` reads `trail_stack_.size()` and pushes it as a fixnum.
 
 `UnwindTrail` pops the mark fixnum, then pops entries from the trail down to
-that mark, resetting each variable's binding to `std::nullopt`:
+that mark, restoring each entry by `TrailEntry::Kind`:
 
 ```cpp
 case OpCode::UnwindTrail: {
     int64_t mark = ops::decode<int64_t>(pop()).value();
     while ((int64_t)trail_stack_.size() > mark) {
-        auto var_ref = trail_stack_.back();
+        auto e = trail_stack_.back();
         trail_stack_.pop_back();
-        auto id = ops::payload(var_ref);
-        if (auto* lv = try_get_as<ObjectKind::LogicVar, types::LogicVar>(id))
-            lv->binding = std::nullopt;
+        switch (e.kind) {
+          case TrailEntry::Kind::Bind:   /* restore binding */ break;
+          case TrailEntry::Kind::Attr:   /* restore attr */    break;
+          case TrailEntry::Kind::Domain: /* restore domain */  break;
+        }
     }
     break;
 }
@@ -636,7 +777,7 @@ closure), `copy-term` lets you instantiate it freshly for each invocation:
 
 | Feature | Status |
 |---------|--------|
-| Attributed variables | Not supported |
+| Attributed variables | Supported (`put-attr`, `get-attr`, `del-attr`, `attr-var?`, `freeze`, `dif`) |
 | Tabling / memoisation | Not supported; would require a WAM-style call stack |
 
 ---

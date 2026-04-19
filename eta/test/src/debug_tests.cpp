@@ -1,7 +1,8 @@
-// debug_tests.cpp — Tests for the VM debug API (source maps, breakpoints, stepping)
-//
-// Uses the same fixture pattern as vm_tests.cpp / emitter_tests.cpp.
-// NOTE: BOOST_TEST_MODULE is defined once in eta_test.cpp for the whole binary.
+/**
+ *
+ * Uses the same fixture pattern as vm_tests.cpp / emitter_tests.cpp.
+ * NOTE: BOOST_TEST_MODULE is defined once in eta_test.cpp for the whole binary.
+ */
 
 #include <boost/test/unit_test.hpp>
 
@@ -30,16 +31,15 @@ using namespace eta::runtime;
 using namespace eta::runtime::vm;
 using namespace eta::reader::lexer;
 
-// ---------------------------------------------------------------------------
-// Shared fixture — same structure as VMTestFixture
-// ---------------------------------------------------------------------------
+/**
+ */
 
 struct DebugFixture {
     memory::heap::Heap          heap;
     memory::intern::InternTable intern_table;
     BytecodeFunctionRegistry    registry;
     BuiltinEnvironment          builtins;
-    std::size_t                 last_total_globals_{256}; // updated by compile()
+    std::size_t                 last_total_globals_{256}; ///< updated by compile()
 
     explicit DebugFixture(std::size_t heap_bytes = 2 * 1024 * 1024)
         : heap(heap_bytes)
@@ -47,8 +47,10 @@ struct DebugFixture {
         register_core_primitives(builtins, heap, intern_table);
     }
 
-    /// Compile module source through full pipeline.
-    /// Returns the main BytecodeFunction* (owned by registry).
+    /**
+     * Compile module source through full pipeline.
+     * Returns the main BytecodeFunction* (owned by registry).
+     */
     BytecodeFunction* compile(const std::string& src, uint32_t file_id = 1) {
         reader::lexer::Lexer lex(file_id, src);
         reader::parser::Parser p(lex);
@@ -71,7 +73,7 @@ struct DebugFixture {
         if (sem_res->empty()) throw std::runtime_error("No modules produced");
 
         auto& sem_mod = (*sem_res)[0];
-        // Remember total_globals so callers can pass the right count to install()
+        /// Remember total_globals so callers can pass the right count to install()
         last_total_globals_ = sem_mod.total_globals;
 
         Emitter emitter(sem_mod, heap, intern_table, registry);
@@ -85,9 +87,11 @@ struct DebugFixture {
         return vm;
     }
 
-    /// Run @p fn on a background thread; waits for at most @p timeout for a
-    /// single stop event, then resumes and joins.  Returns the stop event
-    /// (StopReason::Pause if timeout fired without stopping).
+    /**
+     * Run @p fn on a background thread; waits for at most @p timeout for a
+     * single stop event, then resumes and joins.  Returns the stop event
+     * (StopReason::Pause if timeout fired without stopping).
+     */
     StopEvent run_until_stop(VM& vm, std::function<void()> run_fn,
                              std::chrono::milliseconds timeout = std::chrono::milliseconds(5000))
     {
@@ -96,8 +100,10 @@ struct DebugFixture {
         StopEvent captured{StopReason::Pause, {}, {}};
         bool stopped = false;
 
-        // The callback is invoked WITHOUT debug_mutex_ held (see run_loop() fix),
-        // so it is safe to call vm.resume() from within.
+        /**
+         * The callback is invoked WITHOUT debug_mutex_ held (see run_loop() fix),
+         * so it is safe to call vm.resume() from within.
+         */
         vm.set_stop_callback([&](const StopEvent& ev) {
             bool is_first;
             {
@@ -109,10 +115,12 @@ struct DebugFixture {
                     cv.notify_one();
                 }
             }
-            // Multiple instructions can share the same source line (e.g. LoadConst +
-            // StoreGlobal both tagged line 2). The second hit must be auto-resumed;
-            // otherwise t.join() below would hang forever because the main thread has
-            // already called its single resume().
+            /**
+             * Multiple instructions can share the same source line (e.g. LoadConst +
+             * StoreGlobal both tagged line 2). The second hit must be auto-resumed;
+             * otherwise t.join() below would hang forever because the main thread has
+             * already called its single resume().
+             */
             if (!is_first) {
                 vm.resume();
             }
@@ -125,15 +133,14 @@ struct DebugFixture {
             cv.wait_for(lk, timeout, [&] { return stopped; });
         }
 
-        vm.resume();   // resume the first (captured) stop – no-op if never stopped
+        vm.resume();
         t.join();
         return captured;
     }
 };
 
-// ===========================================================================
-// SUITE 1 — Source map: every emitted instruction has a span
-// ===========================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_SUITE(source_map_suite)
 
@@ -146,7 +153,7 @@ BOOST_AUTO_TEST_CASE(source_map_size_equals_code_size) {
     for (std::size_t i = 0; i < f.registry.size(); ++i) {
         const auto* fn = f.registry.get(static_cast<uint32_t>(i));
         BOOST_REQUIRE(fn != nullptr);
-        // Core invariant: source_map is always the same length as code.
+        /// Core invariant: source_map is always the same length as code.
         BOOST_CHECK_EQUAL(fn->code.size(), fn->source_map.size());
     }
 }
@@ -171,7 +178,7 @@ BOOST_AUTO_TEST_CASE(source_map_lambda) {
     f.compile("(module test (define (add x y) (+ x y)) (define result (add 3 4)))",
               /*file_id=*/3);
 
-    // Should produce at least 2 functions: module init + 'add' lambda
+    /// Should produce at least 2 functions: module init + 'add' lambda
     BOOST_CHECK_GE(f.registry.size(), 2u);
 
     for (std::size_t i = 0; i < f.registry.size(); ++i) {
@@ -189,10 +196,10 @@ BOOST_AUTO_TEST_CASE(span_at_in_range) {
     BOOST_REQUIRE(fn);
     BOOST_REQUIRE_GT(fn->code.size(), 0u);
 
-    // Every in-range pc should return without crashing
+    /// Every in-range pc should return without crashing
     for (uint32_t pc = 0; pc < static_cast<uint32_t>(fn->code.size()); ++pc) {
         auto sp = fn->span_at(pc);
-        (void)sp; // just verify no crash / assertion
+        (void)sp; ///< just verify no crash / assertion
     }
 }
 
@@ -210,9 +217,8 @@ BOOST_AUTO_TEST_CASE(span_at_out_of_range_returns_zero) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ===========================================================================
-// SUITE 2 — Breakpoints: set_breakpoints API and async pause
-// ===========================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_SUITE(breakpoints_suite)
 
@@ -234,7 +240,7 @@ BOOST_AUTO_TEST_CASE(request_pause_stops_vm) {
     auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);
     BOOST_REQUIRE(install.has_value());
 
-    vm->request_pause(); // fire before execution starts
+    vm->request_pause(); ///< fire before execution starts
 
     StopEvent ev = f.run_until_stop(*vm, [&] {
         (void)vm->execute(*main_fn);
@@ -247,15 +253,15 @@ BOOST_AUTO_TEST_CASE(request_pause_stops_vm) {
 
 BOOST_AUTO_TEST_CASE(breakpoint_by_file_and_line) {
     DebugFixture f;
-    // Multi-line source: the breakpoint targets line 2
+    /// Multi-line source: the breakpoint targets line 2
     const std::string src =
-        "(module test\n"         // line 1
-        "  (define x 10)\n"      // line 2  ← breakpoint here
-        "  (define result x))";  // line 3
+        "(module test\n"         ///< line 1
+        "  (define x 10)\n"
+        "  (define result x))";  ///< line 3
 
     auto* main_fn = f.compile(src, /*file_id=*/11);
 
-    // Find which instructions are on line 2
+    /// Find which instructions are on line 2
     bool found_line2 = false;
     for (std::size_t i = 0; i < f.registry.size(); ++i) {
         const auto* fn = f.registry.get(static_cast<uint32_t>(i));
@@ -264,7 +270,7 @@ BOOST_AUTO_TEST_CASE(breakpoint_by_file_and_line) {
             if (sp.file_id == 11 && sp.start.line == 2) { found_line2 = true; break; }
         }
     }
-    BOOST_REQUIRE_MESSAGE(found_line2, "No instructions on line 2 — can't test breakpoint");
+    BOOST_REQUIRE_MESSAGE(found_line2, "No instructions on line 2 â€” can't test breakpoint");
 
     auto vm = f.make_vm();
     auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);
@@ -285,9 +291,8 @@ BOOST_AUTO_TEST_CASE(breakpoint_by_file_and_line) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ===========================================================================
-// SUITE 3 — Stepping
-// ===========================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_SUITE(stepping_suite)
 
@@ -312,11 +317,13 @@ BOOST_AUTO_TEST_CASE(step_in_produces_step_stop) {
         std::lock_guard<std::mutex> lk(mu);
         stops.push_back(ev);
         cv.notify_one();
-        // Note: we do NOT auto-resume here; the test explicitly calls step_in()
-        // or resume() after checking stops.size().
+        /**
+         * Note: we do NOT auto-resume here; the test explicitly calls step_in()
+         * or resume() after checking stops.size().
+         */
     });
 
-    // Trigger first stop via pause, then do a step_in
+    /// Trigger first stop via pause, then do a step_in
     vm->request_pause();
 
     std::thread t([&] { (void)vm->execute(*main_fn); });
@@ -327,10 +334,10 @@ BOOST_AUTO_TEST_CASE(step_in_produces_step_stop) {
     };
 
     BOOST_REQUIRE_MESSAGE(wait(1), "Timed out waiting for initial pause");
-    vm->step_in(); // resumes AND sets step mode; will stop on the next different source line
+    vm->step_in(); ///< resumes AND sets step mode; will stop on the next different source line
     BOOST_CHECK_MESSAGE(wait(2), "Timed out waiting for step_in stop");
 
-    vm->resume(); // clear step mode, let VM finish
+    vm->resume(); ///< clear step mode, let VM finish
     t.join();
 
     BOOST_REQUIRE_GE(stops.size(), 2u);
@@ -359,7 +366,7 @@ BOOST_AUTO_TEST_CASE(step_over_stays_in_caller) {
         std::lock_guard<std::mutex> lk(mu);
         stops.push_back(ev);
         cv.notify_one();
-        // Test manages resumes explicitly via step_over() and resume().
+        /// Test manages resumes explicitly via step_over() and resume().
     });
 
     vm->request_pause();
@@ -423,9 +430,8 @@ BOOST_AUTO_TEST_CASE(resume_lets_script_complete) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ===========================================================================
-// SUITE 4 — Introspection: get_frames / get_locals / get_upvalues
-// ===========================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_SUITE(introspection_suite)
 
@@ -461,7 +467,7 @@ BOOST_AUTO_TEST_CASE(get_frames_while_paused_nonempty) {
         BOOST_CHECK(cv.wait_for(lk, std::chrono::seconds(5), [&] { return stopped; }));
     }
     BOOST_CHECK_GE(frames.size(), 1u);
-    // Frame 0 should be the innermost (module init or a called function)
+    /// Frame 0 should be the innermost (module init or a called function)
     BOOST_CHECK(!frames.empty());
 
     vm->resume();
@@ -483,7 +489,7 @@ BOOST_AUTO_TEST_CASE(get_locals_does_not_crash) {
     bool stopped = false;
 
     vm->set_stop_callback([&](const StopEvent&) {
-        // Must not crash; result size depends on where we stopped
+        /// Must not crash; result size depends on where we stopped
         auto locals = vm->get_locals(0);
         (void)locals;
         auto upvals = vm->get_upvalues(0);
@@ -506,28 +512,28 @@ BOOST_AUTO_TEST_CASE(get_locals_does_not_crash) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ===========================================================================
-// SUITE 6 — stopped_span correctness (Bug 1 / Bug 8 fix)
-// ===========================================================================
+/**
+ */
 
 BOOST_AUTO_TEST_SUITE(stopped_span_suite)
 
-// The first-breakpoint off-by-one bug: get_frames() used span_at(pc_ - 1)
-// for the current frame, but the debug hook fires *before* pc_++, so pc_
-// already points to the correct instruction.  After the fix, DebugState
-// stores stopped_span_ and get_frames() uses it for the innermost frame.
+/**
+ * The first-breakpoint off-by-one bug: get_frames() used span_at(pc_ - 1)
+ * for the current frame, but the debug hook fires *before* pc_++, so pc_
+ * already points to the correct instruction.  After the fix, DebugState
+ * stores stopped_span_ and get_frames() uses it for the innermost frame.
+ */
 BOOST_AUTO_TEST_CASE(breakpoint_stopped_span_correct_line) {
     DebugFixture f;
-    // Multi-line source — breakpoint on line 3
     const std::string src =
-        "(module test\n"           // line 1
-        "  (define x 10)\n"        // line 2
-        "  (define y (+ x 1))\n"   // line 3  ← breakpoint
-        "  (define result y))";    // line 4
+        "(module test\n"           ///< line 1
+        "  (define x 10)\n"        ///< line 2
+        "  (define y (+ x 1))\n"
+        "  (define result y))";    ///< line 4
 
     auto* main_fn = f.compile(src, /*file_id=*/50);
 
-    // Verify that line 3 has instructions (same check as breakpoint_by_file_and_line)
+    /// Verify that line 3 has instructions (same check as breakpoint_by_file_and_line)
     bool found_line3 = false;
     for (std::size_t i = 0; i < f.registry.size(); ++i) {
         const auto* fn = f.registry.get(static_cast<uint32_t>(i));
@@ -537,13 +543,13 @@ BOOST_AUTO_TEST_CASE(breakpoint_stopped_span_correct_line) {
         }
         if (found_line3) break;
     }
-    BOOST_REQUIRE_MESSAGE(found_line3, "No instructions on line 3 — can't test breakpoint");
+    BOOST_REQUIRE_MESSAGE(found_line3, "No instructions on line 3 â€” can't test breakpoint");
 
     auto vm = f.make_vm();
     auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);
     BOOST_REQUIRE(install.has_value());
 
-    // Set breakpoint on line 3
+    /// Set breakpoint on line 3
     vm->set_breakpoints({{50u, 3u}});
 
     std::mutex mu;
@@ -557,13 +563,13 @@ BOOST_AUTO_TEST_CASE(breakpoint_stopped_span_correct_line) {
             std::lock_guard<std::mutex> lk(mu);
             is_first = !first_stop;
             if (!first_stop) {
-                // Capture frames on the FIRST stop only
+                /// Capture frames on the FIRST stop only
                 captured_frames = vm->get_frames();
                 first_stop = true;
                 cv.notify_one();
             }
         }
-        // Auto-resume on subsequent stops to prevent deadlock
+        /// Auto-resume on subsequent stops to prevent deadlock
         if (!is_first) {
             vm->resume();
         }
@@ -578,22 +584,22 @@ BOOST_AUTO_TEST_CASE(breakpoint_stopped_span_correct_line) {
             "Timed out waiting for breakpoint hit");
     }
 
-    // The innermost frame should report line 3 (not line 2, which was the bug)
+    /// The innermost frame should report line 3 (not line 2, which was the bug)
     BOOST_REQUIRE(!captured_frames.empty());
     BOOST_CHECK_EQUAL(captured_frames[0].span.file_id, 50u);
     BOOST_CHECK_EQUAL(captured_frames[0].span.start.line, 3u);
 
-    vm->resume();   // resume the first stop
+    vm->resume();   ///< resume the first stop
     t.join();
 }
 
 BOOST_AUTO_TEST_CASE(step_over_uses_stopped_span) {
     DebugFixture f;
     const std::string src =
-        "(module test\n"           // line 1
-        "  (define x 10)\n"        // line 2
-        "  (define y 20)\n"        // line 3
-        "  (define result y))";    // line 4
+        "(module test\n"           ///< line 1
+        "  (define x 10)\n"        ///< line 2
+        "  (define y 20)\n"        ///< line 3
+        "  (define result y))";    ///< line 4
 
     auto* main_fn = f.compile(src, /*file_id=*/51);
 
@@ -606,7 +612,6 @@ BOOST_AUTO_TEST_CASE(step_over_uses_stopped_span) {
     std::mutex mu;
     std::condition_variable cv;
     std::vector<StopEvent> stops;
-    // How many stops the test is waiting for — auto-resume beyond this count
     std::atomic<std::size_t> expected_stops{1};
 
     vm->set_stop_callback([&](const StopEvent& ev) {
@@ -617,7 +622,7 @@ BOOST_AUTO_TEST_CASE(step_over_uses_stopped_span) {
             stops.push_back(ev);
             cv.notify_one();
         }
-        // Auto-resume stops beyond what the test is currently waiting for
+        /// Auto-resume stops beyond what the test is currently waiting for
         if (idx >= expected_stops.load()) {
             vm->resume();
         }
@@ -634,12 +639,11 @@ BOOST_AUTO_TEST_CASE(step_over_uses_stopped_span) {
     BOOST_CHECK(stops[0].reason == StopReason::Breakpoint);
     BOOST_CHECK_EQUAL(stops[0].span.start.line, 2u);
 
-    // Now we expect 2 stops — update before issuing step_over
     expected_stops.store(2);
     vm->step_over();
     BOOST_REQUIRE_MESSAGE(wait(2), "Timed out waiting for step_over stop");
     BOOST_CHECK(stops[1].reason == StopReason::Step);
-    // The step should land on a line > 2 (line 3 or 4)
+    /// The step should land on a line > 2 (line 3 or 4)
     BOOST_CHECK_GT(stops[1].span.start.line, 2u);
 
     vm->resume();
@@ -647,8 +651,10 @@ BOOST_AUTO_TEST_CASE(step_over_uses_stopped_span) {
 }
 
 BOOST_AUTO_TEST_CASE(get_locals_nonempty_for_module_init) {
-    // Bug 2 fix: module-init functions have empty local_names but non-zero
-    // stack_size.  get_locals() should return some variables, not an empty list.
+    /**
+     * Bug 2 fix: module-init functions have empty local_names but non-zero
+     * stack_size.  get_locals() should return some variables, not an empty list.
+     */
     DebugFixture f;
     const std::string src =
         "(module test\n"
@@ -678,14 +684,13 @@ BOOST_AUTO_TEST_CASE(get_locals_nonempty_for_module_init) {
                 cv.notify_one();
             }
         }
-        // Auto-resume subsequent stops
+        /// Auto-resume subsequent stops
         if (!is_first) {
             vm->resume();
         }
     });
 
-    // Pause on first instruction — must be AFTER set_stop_callback so
-    // request_pause() sets should_pause_ on the live DebugState.
+    /// request_pause() sets should_pause_ on the live DebugState.
     vm->request_pause();
 
     std::thread t([&] { (void)vm->execute(*main_fn); });
@@ -697,12 +702,12 @@ BOOST_AUTO_TEST_CASE(get_locals_nonempty_for_module_init) {
             "Timed out waiting for pause");
     }
 
-    // After Bug 2 fix, module-init frames should expose local variables
-    // (even if named %0, %1, etc.) — not be completely empty.
-    // Note: the exact count depends on stack_size minus headroom; we just
-    // check it's not zero if there are any define forms.
-    // (This may still be 0 for trivially small modules — that's OK.)
-    // The important thing is no crash.
+    /**
+     * After Bug 2 fix, module-init frames should expose local variables
+     * Note: the exact count depends on stack_size minus headroom; we just
+     * check it's not zero if there are any define forms.
+     * The important thing is no crash.
+     */
     BOOST_CHECK_NO_THROW((void)locals.size());
 
     vm->resume();
@@ -721,7 +726,6 @@ BOOST_AUTO_TEST_CASE(vm_runs_without_callback) {
     auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);
     BOOST_REQUIRE(install.has_value());
 
-    // No set_stop_callback — VM must NOT pause.
     auto res = vm->execute(*main_fn);
     BOOST_CHECK(res.has_value());
     BOOST_CHECK(!vm->is_paused());
@@ -735,7 +739,6 @@ BOOST_AUTO_TEST_CASE(set_breakpoints_without_callback_no_pause) {
     auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);
     BOOST_REQUIRE(install.has_value());
 
-    // Breakpoints installed but no stop callback → must not pause
     vm->set_breakpoints({{41u, 1u}});
     auto res = vm->execute(*main_fn);
     BOOST_CHECK(res.has_value());

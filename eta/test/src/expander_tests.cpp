@@ -7,13 +7,13 @@ using namespace eta::reader;
 using namespace eta::reader::expander;
 using namespace eta::reader::parser;
 
-// ============================================================================
-// Helpers
-// ============================================================================
+/**
+ * Helpers
+ */
 
 namespace {
 
-// Parse a single datum from source
+/// Parse a single datum from source
 SExprPtr parse_one(const std::string& src) {
     lexer::Lexer lex(0, src);
     Parser p(lex);
@@ -22,7 +22,7 @@ SExprPtr parse_one(const std::string& src) {
     return std::move(*r);
 }
 
-// Parse all top-level forms
+/// Parse all top-level forms
 std::vector<SExprPtr> parse_all(const std::string& src) {
     lexer::Lexer lex(0, src);
     Parser p(lex);
@@ -31,21 +31,21 @@ std::vector<SExprPtr> parse_all(const std::string& src) {
     return std::move(*r);
 }
 
-// Expand a single form
+/// Expand a single form
 ExpanderResult<SExprPtr> expand_one(const std::string& src, ExpanderConfig cfg = {}) {
     auto datum = parse_one(src);
     Expander ex(cfg);
     return ex.expand_form(datum);
 }
 
-// Expand all forms
+/// Expand all forms
 ExpanderResult<std::vector<SExprPtr>> expand_all(const std::string& src, ExpanderConfig cfg = {}) {
     auto forms = parse_all(src);
     Expander ex(cfg);
     return ex.expand_many(forms);
 }
 
-// Check that the expanded output is a list whose head is a symbol with the given name
+/// Check that the expanded output is a list whose head is a symbol with the given name
 bool head_is(const SExprPtr& p, const std::string& name) {
     if (!p || !p->is<List>()) return false;
     const auto& lst = *p->as<List>();
@@ -54,36 +54,36 @@ bool head_is(const SExprPtr& p, const std::string& name) {
     return lst.elems[0]->as<Symbol>()->name == name;
 }
 
-// Get the list size (number of elements)
+/// Get the list size (number of elements)
 std::size_t list_size(const SExprPtr& p) {
     if (!p || !p->is<List>()) return 0;
     return p->as<List>()->elems.size();
 }
 
-// Get list element at index
+/// Get list element at index
 const SExprPtr& elem(const SExprPtr& p, std::size_t idx) {
     return p->as<List>()->elems.at(idx);
 }
 
-// Check if node is a symbol with given name
+/// Check if node is a symbol with given name
 bool is_sym(const SExprPtr& p, const std::string& name) {
     return p && p->is<Symbol>() && p->as<Symbol>()->name == name;
 }
 
-// Check if node is a boolean with given value
+/// Check if node is a boolean with given value
 bool is_bool(const SExprPtr& p, bool val) {
     return p && p->is<Bool>() && p->as<Bool>()->value == val;
 }
 
-} // anonymous namespace
+} ///< anonymous namespace
 
-// ============================================================================
-// Test suite
-// ============================================================================
+/**
+ * Test suite
+ */
 
 BOOST_AUTO_TEST_SUITE(expander_tests)
 
-// ---------- Atoms pass through ----------
+/// ---------- Atoms pass through ----------
 
 BOOST_AUTO_TEST_CASE(atom_number) {
     auto r = expand_one("42");
@@ -115,7 +115,7 @@ BOOST_AUTO_TEST_CASE(atom_char) {
     BOOST_CHECK(r.value()->is<Char>());
 }
 
-// ---------- quote ----------
+/// ---------- quote ----------
 
 BOOST_AUTO_TEST_CASE(quote_passes_through) {
     auto r = expand_one("(quote (a b c))");
@@ -142,13 +142,13 @@ BOOST_AUTO_TEST_CASE(unquote_splicing_outside_quasiquote) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- if ----------
+/// ---------- if ----------
 
 BOOST_AUTO_TEST_CASE(if_two_branch) {
     auto r = expand_one("(if #t 1 2)");
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "if"));
-    BOOST_CHECK_EQUAL(list_size(*r), 4u); // (if test cons alt)
+    BOOST_CHECK_EQUAL(list_size(*r), 4u); ///< (if test cons alt)
 }
 
 BOOST_AUTO_TEST_CASE(if_one_branch_adds_begin) {
@@ -156,7 +156,7 @@ BOOST_AUTO_TEST_CASE(if_one_branch_adds_begin) {
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "if"));
     BOOST_CHECK_EQUAL(list_size(*r), 4u);
-    // Alt should be (begin)
+    /// Alt should be (begin)
     BOOST_CHECK(head_is(elem(*r, 3), "begin"));
 }
 
@@ -172,7 +172,7 @@ BOOST_AUTO_TEST_CASE(if_too_many_args) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- begin ----------
+/// ---------- begin ----------
 
 BOOST_AUTO_TEST_CASE(begin_empty) {
     auto r = expand_one("(begin)");
@@ -184,10 +184,10 @@ BOOST_AUTO_TEST_CASE(begin_multiple) {
     auto r = expand_one("(begin 1 2 3)");
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "begin"));
-    BOOST_CHECK_EQUAL(list_size(*r), 4u); // begin + 3 body
+    BOOST_CHECK_EQUAL(list_size(*r), 4u); ///< begin + 3 body
 }
 
-// ---------- define ----------
+/// ---------- define ----------
 
 BOOST_AUTO_TEST_CASE(define_simple) {
     auto r = expand_one("(define x 42)");
@@ -197,12 +197,12 @@ BOOST_AUTO_TEST_CASE(define_simple) {
 }
 
 BOOST_AUTO_TEST_CASE(define_function) {
-    // (define (f x) x) -> (define f (lambda (x) x))
+    /// (define (f x) x) -> (define f (lambda (x) x))
     auto r = expand_one("(define (f x) x)");
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "define"));
     BOOST_CHECK(is_sym(elem(*r, 1), "f"));
-    // RHS should be a lambda
+    /// RHS should be a lambda
     BOOST_CHECK(head_is(elem(*r, 2), "lambda"));
 }
 
@@ -218,7 +218,7 @@ BOOST_AUTO_TEST_CASE(define_too_few_args) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- set! ----------
+/// ---------- set! ----------
 
 BOOST_AUTO_TEST_CASE(set_bang_valid) {
     auto r = expand_one("(set! x 42)");
@@ -239,20 +239,20 @@ BOOST_AUTO_TEST_CASE(set_bang_wrong_arity) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- lambda ----------
+/// ---------- lambda ----------
 
 BOOST_AUTO_TEST_CASE(lambda_basic) {
     auto r = expand_one("(lambda (x) x)");
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "lambda"));
-    BOOST_CHECK_EQUAL(list_size(*r), 3u); // lambda formals body
+    BOOST_CHECK_EQUAL(list_size(*r), 3u); ///< lambda formals body
 }
 
 BOOST_AUTO_TEST_CASE(lambda_multi_body) {
     auto r = expand_one("(lambda (x) 1 2 x)");
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "lambda"));
-    BOOST_CHECK_EQUAL(list_size(*r), 5u); // lambda formals b1 b2 b3
+    BOOST_CHECK_EQUAL(list_size(*r), 5u); ///< lambda formals b1 b2 b3
 }
 
 BOOST_AUTO_TEST_CASE(lambda_rest_param) {
@@ -285,24 +285,24 @@ BOOST_AUTO_TEST_CASE(lambda_duplicate_params) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::DuplicateIdentifier);
 }
 
-// ---------- let ----------
+/// ---------- let ----------
 
 BOOST_AUTO_TEST_CASE(let_basic) {
-    // (let ((x 1)) x) -> ((lambda (x) x) 1)
+    /// (let ((x 1)) x) -> ((lambda (x) x) 1)
     auto r = expand_one("(let ((x 1)) x)");
     BOOST_REQUIRE(r.has_value());
-    // Result is a function call: ((lambda ...) 1)
+    /// Result is a function call: ((lambda ...) 1)
     BOOST_CHECK(r.value()->is<List>());
-    // The head should be a lambda
+    /// The head should be a lambda
     BOOST_CHECK(head_is(elem(*r, 0), "lambda"));
 }
 
 BOOST_AUTO_TEST_CASE(let_multiple_bindings) {
     auto r = expand_one("(let ((x 1) (y 2)) (+ x y))");
     BOOST_REQUIRE(r.has_value());
-    // Should be a lambda call with 2 arguments
+    /// Should be a lambda call with 2 arguments
     auto& lst = *r.value()->as<List>();
-    BOOST_CHECK_EQUAL(lst.elems.size(), 3u); // (lambda ...) + 2 args
+    BOOST_CHECK_EQUAL(lst.elems.size(), 3u); ///< (lambda ...) + 2 args
 }
 
 BOOST_AUTO_TEST_CASE(let_duplicate_bindings) {
@@ -334,14 +334,16 @@ BOOST_AUTO_TEST_CASE(let_empty_bindings) {
     BOOST_REQUIRE(r.has_value());
 }
 
-// ---------- named let ----------
+/// ---------- named let ----------
 
 BOOST_AUTO_TEST_CASE(named_let_basic) {
-    // (let loop ((i 0)) (loop (+ i 1)))
-    // -> (letrec ((loop (lambda (i) (loop (+ i 1))))) (loop 0))
+    /**
+     * (let loop ((i 0)) (loop (+ i 1)))
+     * -> (letrec ((loop (lambda (i) (loop (+ i 1))))) (loop 0))
+     */
     auto r = expand_one("(let loop ((i 0)) (loop (+ i 1)))");
     BOOST_REQUIRE(r.has_value());
-    // After expansion, the outermost should be a lambda call pattern
+    /// After expansion, the outermost should be a lambda call pattern
     BOOST_CHECK(r.value()->is<List>());
 }
 
@@ -351,12 +353,12 @@ BOOST_AUTO_TEST_CASE(named_let_param_shadows_name) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidLetBindings);
 }
 
-// ---------- let* ----------
+/// ---------- let* ----------
 
 BOOST_AUTO_TEST_CASE(let_star_basic) {
     auto r = expand_one("(let* ((x 1) (y x)) y)");
     BOOST_REQUIRE(r.has_value());
-    // let* nests: outer let for x, inner let for y
+    /// let* nests: outer let for x, inner let for y
 }
 
 BOOST_AUTO_TEST_CASE(let_star_empty_bindings) {
@@ -369,12 +371,12 @@ BOOST_AUTO_TEST_CASE(let_star_missing_body) {
     BOOST_REQUIRE(!r.has_value());
 }
 
-// ---------- letrec ----------
+/// ---------- letrec ----------
 
 BOOST_AUTO_TEST_CASE(letrec_basic) {
     auto r = expand_one("(letrec ((x 1)) x)");
     BOOST_REQUIRE(r.has_value());
-    // letrec -> let with placeholders + set! + body
+    /// letrec -> let with placeholders + set! + body
 }
 
 BOOST_AUTO_TEST_CASE(letrec_mutual_recursion) {
@@ -395,7 +397,7 @@ BOOST_AUTO_TEST_CASE(letrec_missing_body) {
     BOOST_REQUIRE(!r.has_value());
 }
 
-// ---------- letrec* ----------
+/// ---------- letrec* ----------
 
 BOOST_AUTO_TEST_CASE(letrec_star_basic) {
     auto r = expand_one("(letrec* ((x 1) (y x)) y)");
@@ -407,12 +409,12 @@ BOOST_AUTO_TEST_CASE(letrec_star_empty_bindings) {
     BOOST_REQUIRE(r.has_value());
 }
 
-// ---------- cond ----------
+/// ---------- cond ----------
 
 BOOST_AUTO_TEST_CASE(cond_basic) {
     auto r = expand_one("(cond (#t 1))");
     BOOST_REQUIRE(r.has_value());
-    // cond -> nested if
+    /// cond -> nested if
     BOOST_CHECK(head_is(*r, "if"));
 }
 
@@ -429,13 +431,13 @@ BOOST_AUTO_TEST_CASE(cond_multiple_clauses) {
 }
 
 BOOST_AUTO_TEST_CASE(cond_arrow) {
-    // (cond (x => proc)) -> (let ((t x)) (if t (proc t) ...))
+    /// (cond (x => proc)) -> (let ((t x)) (if t (proc t) ...))
     auto r = expand_one("(cond (x => display))");
     BOOST_REQUIRE(r.has_value());
 }
 
 BOOST_AUTO_TEST_CASE(cond_test_only_clause) {
-    // (cond (x)) -> (if x x ...)
+    /// (cond (x)) -> (if x x ...)
     auto r = expand_one("(cond (x))");
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "if"));
@@ -459,12 +461,12 @@ BOOST_AUTO_TEST_CASE(cond_empty_clause) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- case ----------
+/// ---------- case ----------
 
 BOOST_AUTO_TEST_CASE(case_basic) {
     auto r = expand_one("(case x ((1) 10) ((2) 20))");
     BOOST_REQUIRE(r.has_value());
-    // case -> let + nested if with eqv?
+    /// case -> let + nested if with eqv?
 }
 
 BOOST_AUTO_TEST_CASE(case_with_else) {
@@ -484,62 +486,64 @@ BOOST_AUTO_TEST_CASE(case_else_not_last) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- and ----------
+/// ---------- and ----------
 
 BOOST_AUTO_TEST_CASE(and_empty) {
     auto r = expand_one("(and)");
     BOOST_REQUIRE(r.has_value());
-    // (and) -> #t
+    /// (and) -> #t
     BOOST_CHECK(is_bool(*r, true));
 }
 
 BOOST_AUTO_TEST_CASE(and_single) {
     auto r = expand_one("(and 42)");
     BOOST_REQUIRE(r.has_value());
-    // (and e) -> e
+    /// (and e) -> e
     BOOST_CHECK(r.value()->is<Number>());
 }
 
 BOOST_AUTO_TEST_CASE(and_multiple) {
     auto r = expand_one("(and 1 2 3)");
     BOOST_REQUIRE(r.has_value());
-    // (and 1 2 3) -> (if 1 (if 2 3 #f) #f)
+    /// (and 1 2 3) -> (if 1 (if 2 3 #f) #f)
     BOOST_CHECK(head_is(*r, "if"));
 }
 
-// ---------- or ----------
+/// ---------- or ----------
 
 BOOST_AUTO_TEST_CASE(or_empty) {
     auto r = expand_one("(or)");
     BOOST_REQUIRE(r.has_value());
-    // (or) -> #f
+    /// (or) -> #f
     BOOST_CHECK(is_bool(*r, false));
 }
 
 BOOST_AUTO_TEST_CASE(or_single) {
     auto r = expand_one("(or 42)");
     BOOST_REQUIRE(r.has_value());
-    // (or e) -> e
+    /// (or e) -> e
     BOOST_CHECK(r.value()->is<Number>());
 }
 
 BOOST_AUTO_TEST_CASE(or_multiple) {
     auto r = expand_one("(or 1 2)");
     BOOST_REQUIRE(r.has_value());
-    // (or 1 2) -> (let ((t 1)) (if t t 2))
-    // After expansion, outermost is a lambda call
+    /**
+     * (or 1 2) -> (let ((t 1)) (if t t 2))
+     * After expansion, outermost is a lambda call
+     */
     BOOST_CHECK(r.value()->is<List>());
 }
 
-// ---------- when ----------
+/// ---------- when ----------
 
 BOOST_AUTO_TEST_CASE(when_basic) {
     auto r = expand_one("(when #t 1 2)");
     BOOST_REQUIRE(r.has_value());
-    // -> (if #t (begin 1 2) (begin))
+    /// -> (if #t (begin 1 2) (begin))
     BOOST_CHECK(head_is(*r, "if"));
-    BOOST_CHECK(head_is(elem(*r, 2), "begin")); // consequent
-    BOOST_CHECK(head_is(elem(*r, 3), "begin")); // alternate
+    BOOST_CHECK(head_is(elem(*r, 2), "begin")); ///< consequent
+    BOOST_CHECK(head_is(elem(*r, 3), "begin")); ///< alternate
 }
 
 BOOST_AUTO_TEST_CASE(when_no_test) {
@@ -548,15 +552,15 @@ BOOST_AUTO_TEST_CASE(when_no_test) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- unless ----------
+/// ---------- unless ----------
 
 BOOST_AUTO_TEST_CASE(unless_basic) {
     auto r = expand_one("(unless #f 1 2)");
     BOOST_REQUIRE(r.has_value());
-    // -> (if #f (begin) (begin 1 2))
+    /// -> (if #f (begin) (begin 1 2))
     BOOST_CHECK(head_is(*r, "if"));
-    BOOST_CHECK(head_is(elem(*r, 2), "begin")); // empty consequent
-    BOOST_CHECK(head_is(elem(*r, 3), "begin")); // alternate with body
+    BOOST_CHECK(head_is(elem(*r, 2), "begin")); ///< empty consequent
+    BOOST_CHECK(head_is(elem(*r, 3), "begin")); ///< alternate with body
 }
 
 BOOST_AUTO_TEST_CASE(unless_no_test) {
@@ -565,13 +569,13 @@ BOOST_AUTO_TEST_CASE(unless_no_test) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- do ----------
+/// ---------- do ----------
 
 BOOST_AUTO_TEST_CASE(do_basic) {
-    // (do ((i 0 (+ i 1))) ((= i 5) i))
+    /// (do ((i 0 (+ i 1))) ((= i 5) i))
     auto r = expand_one("(do ((i 0 (+ i 1))) ((= i 5) i))");
     BOOST_REQUIRE(r.has_value());
-    // Result is a letrec expansion (lambda call pattern)
+    /// Result is a letrec expansion (lambda call pattern)
 }
 
 BOOST_AUTO_TEST_CASE(do_with_body) {
@@ -580,7 +584,7 @@ BOOST_AUTO_TEST_CASE(do_with_body) {
 }
 
 BOOST_AUTO_TEST_CASE(do_implicit_step) {
-    // When step is omitted, variable is its own step
+    /// When step is omitted, variable is its own step
     auto r = expand_one("(do ((i 0)) ((= i 0) i))");
     BOOST_REQUIRE(r.has_value());
 }
@@ -614,24 +618,24 @@ BOOST_AUTO_TEST_CASE(do_empty_test_clause) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- quasiquote ----------
+/// ---------- quasiquote ----------
 
 BOOST_AUTO_TEST_CASE(quasiquote_no_unquote) {
     auto r = expand_one("`(a b c)");
     BOOST_REQUIRE(r.has_value());
-    // All atoms quoted: becomes cons chain
+    /// All atoms quoted: becomes cons chain
 }
 
 BOOST_AUTO_TEST_CASE(quasiquote_with_unquote) {
     auto r = expand_one("`(a ,x c)");
     BOOST_REQUIRE(r.has_value());
-    // Should contain a reference to x somewhere
+    /// Should contain a reference to x somewhere
 }
 
 BOOST_AUTO_TEST_CASE(quasiquote_splicing) {
     auto r = expand_one("`(a ,@xs b)");
     BOOST_REQUIRE(r.has_value());
-    // Should contain an append call
+    /// Should contain an append call
 }
 
 BOOST_AUTO_TEST_CASE(quasiquote_nested) {
@@ -642,11 +646,11 @@ BOOST_AUTO_TEST_CASE(quasiquote_nested) {
 BOOST_AUTO_TEST_CASE(quasiquote_atom) {
     auto r = expand_one("`42");
     BOOST_REQUIRE(r.has_value());
-    // `42 -> (quote 42)
+    /// `42 -> (quote 42)
     BOOST_CHECK(head_is(*r, "quote"));
 }
 
-// ---------- def (convenience sugar) ----------
+/// ---------- def (convenience sugar) ----------
 
 BOOST_AUTO_TEST_CASE(def_simple) {
     auto r = expand_one("(def x 42)");
@@ -668,7 +672,7 @@ BOOST_AUTO_TEST_CASE(def_reserved) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::ReservedKeyword);
 }
 
-// ---------- defun ----------
+/// ---------- defun ----------
 
 BOOST_AUTO_TEST_CASE(defun_basic) {
     auto r = expand_one("(defun f (x y) (+ x y))");
@@ -696,18 +700,18 @@ BOOST_AUTO_TEST_CASE(defun_too_few_args) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- progn and step (aliases for begin) ----------
+/// ---------- progn and step (aliases for begin) ----------
 
 BOOST_AUTO_TEST_CASE(progn_is_begin) {
     auto r = expand_one("(progn 1 2 3)");
     BOOST_REQUIRE(r.has_value());
-    // handle_begin preserves the original keyword
+    /// handle_begin preserves the original keyword
     BOOST_CHECK(head_is(*r, "progn"));
-    BOOST_CHECK_EQUAL(list_size(*r), 4u); // progn + 3 body
+    BOOST_CHECK_EQUAL(list_size(*r), 4u); ///< progn + 3 body
 }
 
 
-// ---------- module directives ----------
+/// ---------- module directives ----------
 
 BOOST_AUTO_TEST_CASE(module_basic) {
     auto r = expand_one("(module m (define x 1))");
@@ -734,7 +738,7 @@ BOOST_AUTO_TEST_CASE(import_basic) {
     BOOST_CHECK(head_is(*r, "import"));
 }
 
-// ---------- Module form (parsed as ModuleForm) ----------
+/// ---------- Module form (parsed as ModuleForm) ----------
 
 BOOST_AUTO_TEST_CASE(module_form_with_exports) {
     auto forms = parse_all("(module m (export x) (define x 42))");
@@ -746,7 +750,7 @@ BOOST_AUTO_TEST_CASE(module_form_with_exports) {
     BOOST_CHECK(head_is(*r, "module"));
 }
 
-// ---------- Application ----------
+/// ---------- Application ----------
 
 BOOST_AUTO_TEST_CASE(application_basic) {
     auto r = expand_one("(f x y)");
@@ -762,40 +766,44 @@ BOOST_AUTO_TEST_CASE(application_empty_list) {
     BOOST_CHECK_EQUAL(list_size(*r), 0u);
 }
 
-// ---------- Depth limit ----------
+/// ---------- Depth limit ----------
 
 BOOST_AUTO_TEST_CASE(expansion_depth_exceeded) {
-    // Use a very low depth limit and a deeply nesting form
+    /// Use a very low depth limit and a deeply nesting form
     ExpanderConfig cfg;
     cfg.depth_limit = 5;
-    // Deeply nested begin forms
+    /// Deeply nested begin forms
     auto r = expand_one("(begin (begin (begin (begin (begin (begin 1))))))", cfg);
     BOOST_REQUIRE(!r.has_value());
     BOOST_CHECK(r.error().kind == ExpandError::Kind::ExpansionDepthExceeded);
 }
 
-// ---------- Internal defines -> letrec ----------
+/// ---------- Internal defines -> letrec ----------
 
 BOOST_AUTO_TEST_CASE(internal_defines_to_letrec) {
-    // (lambda () (define a 1) (define b 2) (+ a b))
-    // -> (lambda () (letrec ((a 1) (b 2)) (+ a b)))
+    /**
+     * (lambda () (define a 1) (define b 2) (+ a b))
+     * -> (lambda () (letrec ((a 1) (b 2)) (+ a b)))
+     */
     auto r = expand_one("(lambda () (define a 1) (define b 2) (+ a b))");
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "lambda"));
-    // Body should be a single letrec expansion (which itself gets expanded)
+    /// Body should be a single letrec expansion (which itself gets expanded)
 }
 
 BOOST_AUTO_TEST_CASE(internal_defines_disabled) {
     ExpanderConfig cfg;
     cfg.enable_internal_defines_to_letrec = false;
-    // Without the rewrite, internal defines remain as-is
-    // But they get passed to handle_define individually
+    /**
+     * Without the rewrite, internal defines remain as-is
+     * But they get passed to handle_define individually
+     */
     auto r = expand_one("(lambda () (define a 1) a)", cfg);
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "lambda"));
 }
 
-// ---------- expand_many ----------
+/// ---------- expand_many ----------
 
 BOOST_AUTO_TEST_CASE(expand_many_basic) {
     auto r = expand_all("42 (if #t 1 2) (begin 3)");
@@ -812,10 +820,10 @@ BOOST_AUTO_TEST_CASE(expand_many_propagates_error) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- dotted application rejected ----------
+/// ---------- dotted application rejected ----------
 
 BOOST_AUTO_TEST_CASE(dotted_application_error) {
-    // We parse a dotted list outside of a special form
+    /// We parse a dotted list outside of a special form
     auto datum = parse_one("(f x . y)");
     BOOST_REQUIRE(datum->is<List>());
     BOOST_CHECK(datum->as<List>()->dotted);
@@ -825,7 +833,7 @@ BOOST_AUTO_TEST_CASE(dotted_application_error) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
-// ---------- Validator: reserved keyword as identifier ----------
+/// ---------- Validator: reserved keyword as identifier ----------
 
 BOOST_AUTO_TEST_CASE(let_with_reserved_keyword_param) {
     auto r = expand_one("(let ((lambda 1)) lambda)");
@@ -833,42 +841,41 @@ BOOST_AUTO_TEST_CASE(let_with_reserved_keyword_param) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidLetBindings);
 }
 
-// ---------- Combined: let desugars into lambda application ----------
+/// ---------- Combined: let desugars into lambda application ----------
 
 BOOST_AUTO_TEST_CASE(let_desugars_to_lambda_call) {
     auto r = expand_one("(let ((a 1) (b 2)) (+ a b))");
     BOOST_REQUIRE(r.has_value());
-    // Top level should be a function application
+    /// Top level should be a function application
     auto& lst = *r.value()->as<List>();
-    // First element should be a lambda
+    /// First element should be a lambda
     BOOST_CHECK(head_is(lst.elems[0], "lambda"));
-    // Args follow
-    BOOST_CHECK_EQUAL(lst.elems.size(), 3u); // lambda + 2 init args
+    /// Args follow
+    BOOST_CHECK_EQUAL(lst.elems.size(), 3u); ///< lambda + 2 init args
 }
 
-// ---------- letrec desugars to let + set! ----------
+/// ---------- letrec desugars to let + set! ----------
 
 BOOST_AUTO_TEST_CASE(letrec_desugars_to_let_set_body) {
     auto r = expand_one("(letrec ((x 1)) x)");
     BOOST_REQUIRE(r.has_value());
-    // Top-level is a lambda call (from the let)
+    /// Top-level is a lambda call (from the let)
     auto& lst = *r.value()->as<List>();
     BOOST_CHECK(head_is(lst.elems[0], "lambda"));
-    // Lambda body should contain begin with set! and then x
+    /// Lambda body should contain begin with set! and then x
     const auto& lam = *lst.elems[0]->as<List>();
-    // Body is the 3rd element (index 2)
+    /// Body is the 3rd element (index 2)
     BOOST_CHECK(head_is(lam.elems[2], "begin"));
-    // Inside begin: first should be set!
+    /// Inside begin: first should be set!
     const auto& body = *lam.elems[2]->as<List>();
     BOOST_CHECK(head_is(body.elems[1], "set!"));
 }
 
-// ============================================================================
-// define-record-type
-// ============================================================================
+/**
+ * define-record-type
+ */
 
 BOOST_AUTO_TEST_CASE(record_type_basic_expand) {
-    // 2 fields, both read-only → begin with 4 defines (ctor, pred, 2 accessors)
     auto r = expand_one(
         "(define-record-type point"
         "  (make-point x y)"
@@ -877,18 +884,17 @@ BOOST_AUTO_TEST_CASE(record_type_basic_expand) {
         "  (y point-y))");
     BOOST_REQUIRE(r.has_value());
     BOOST_CHECK(head_is(*r, "begin"));
-    // begin + 4 defines = 5 elements
+    /// begin + 4 defines = 5 elements
     auto& lst = *r.value()->as<List>();
-    // Each child after "begin" should be a define
+    /// Each child after "begin" should be a define
     std::size_t define_count = 0;
     for (std::size_t i = 1; i < lst.elems.size(); ++i) {
         if (head_is(lst.elems[i], "define")) ++define_count;
     }
-    BOOST_CHECK_EQUAL(define_count, 4u); // ctor + pred + 2 accessors
+    BOOST_CHECK_EQUAL(define_count, 4u); ///< ctor + pred + 2 accessors
 }
 
 BOOST_AUTO_TEST_CASE(record_type_with_mutator) {
-    // 2 fields, one mutable → 5 defines (ctor, pred, 2 accessors, 1 mutator)
     auto r = expand_one(
         "(define-record-type pair"
         "  (make-pair a b)"
@@ -902,11 +908,11 @@ BOOST_AUTO_TEST_CASE(record_type_with_mutator) {
     for (std::size_t i = 1; i < lst.elems.size(); ++i) {
         if (head_is(lst.elems[i], "define")) ++define_count;
     }
-    BOOST_CHECK_EQUAL(define_count, 5u); // ctor + pred + 2 accessors + 1 mutator
+    BOOST_CHECK_EQUAL(define_count, 5u); ///< ctor + pred + 2 accessors + 1 mutator
 }
 
 BOOST_AUTO_TEST_CASE(record_type_readonly_no_mutator) {
-    // All read-only: no mutator defines should appear
+    /// All read-only: no mutator defines should appear
     auto r = expand_one(
         "(define-record-type color"
         "  (make-color r g b)"
@@ -920,11 +926,11 @@ BOOST_AUTO_TEST_CASE(record_type_readonly_no_mutator) {
     for (std::size_t i = 1; i < lst.elems.size(); ++i) {
         if (head_is(lst.elems[i], "define")) ++define_count;
     }
-    BOOST_CHECK_EQUAL(define_count, 5u); // ctor + pred + 3 accessors, 0 mutators
+    BOOST_CHECK_EQUAL(define_count, 5u); ///< ctor + pred + 3 accessors, 0 mutators
 }
 
 BOOST_AUTO_TEST_CASE(record_type_error_too_few_subforms) {
-    // Missing predicate
+    /// Missing predicate
     auto r = expand_one(
         "(define-record-type point"
         "  (make-point x y))");
@@ -947,7 +953,7 @@ BOOST_AUTO_TEST_CASE(record_type_error_unknown_field_in_spec) {
         "(define-record-type point"
         "  (make-point x y)"
         "  point?"
-        "  (z point-z))");  // 'z' not in constructor
+        "  (z point-z))");  ///< 'z' not in constructor
     BOOST_REQUIRE(!r.has_value());
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
@@ -1003,7 +1009,6 @@ BOOST_AUTO_TEST_CASE(record_type_error_non_symbol_predicate) {
 }
 
 BOOST_AUTO_TEST_CASE(record_type_no_fields) {
-    // Zero fields → just ctor + pred = 2 defines
     auto r = expand_one(
         "(define-record-type unit"
         "  (make-unit)"
@@ -1015,7 +1020,7 @@ BOOST_AUTO_TEST_CASE(record_type_no_fields) {
     for (std::size_t i = 1; i < lst.elems.size(); ++i) {
         if (head_is(lst.elems[i], "define")) ++define_count;
     }
-    BOOST_CHECK_EQUAL(define_count, 2u); // ctor + pred
+    BOOST_CHECK_EQUAL(define_count, 2u); ///< ctor + pred
 }
 
 BOOST_AUTO_TEST_CASE(record_type_error_duplicate_field_spec) {
@@ -1029,26 +1034,26 @@ BOOST_AUTO_TEST_CASE(record_type_error_duplicate_field_spec) {
     BOOST_CHECK(r.error().kind == ExpandError::Kind::DuplicateIdentifier);
 }
 
-// ============================================================================
-// define-syntax / syntax-rules
-// ============================================================================
+/**
+ * define-syntax / syntax-rules
+ */
 
 BOOST_AUTO_TEST_CASE(syntax_rules_basic_expansion) {
-    // Define a simple macro that rewrites (my-if t c a) -> (if t c a)
+    /// Define a simple macro that rewrites (my-if t c a) -> (if t c a)
     auto r = expand_all(
         "(define-syntax my-if (syntax-rules () ((_ t c a) (if t c a))))"
         "(my-if #t 1 2)");
     BOOST_REQUIRE(r.has_value());
     BOOST_REQUIRE_EQUAL(r->size(), 2u);
-    // First form is the empty (begin) from define-syntax
+    /// First form is the empty (begin) from define-syntax
     BOOST_CHECK(head_is((*r)[0], "begin"));
-    // Second form should be expanded to (if #t 1 2)
+    /// Second form should be expanded to (if #t 1 2)
     BOOST_CHECK(head_is((*r)[1], "if"));
     BOOST_CHECK_EQUAL(list_size((*r)[1]), 4u);
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_multiple_clauses) {
-    // Macro with two clauses: unary and binary
+    /// Macro with two clauses: unary and binary
     auto r = expand_all(
         "(define-syntax my-add (syntax-rules ()"
         "  ((_ x) x)"
@@ -1057,36 +1062,36 @@ BOOST_AUTO_TEST_CASE(syntax_rules_multiple_clauses) {
         "(my-add 3 4)");
     BOOST_REQUIRE(r.has_value());
     BOOST_REQUIRE_EQUAL(r->size(), 3u);
-    // (my-add 5) -> 5
+    /// (my-add 5) -> 5
     BOOST_CHECK((*r)[1]->is<parser::Number>());
-    // (my-add 3 4) -> (+ 3 4)
+    /// (my-add 3 4) -> (+ 3 4)
     BOOST_CHECK(head_is((*r)[2], "+"));
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_ellipsis) {
-    // Macro with ellipsis: (my-list x ...) -> (list x ...)
+    /// Macro with ellipsis: (my-list x ...) -> (list x ...)
     auto r = expand_all(
         "(define-syntax my-list (syntax-rules () ((_ x ...) (list x ...))))"
         "(my-list 1 2 3)");
     BOOST_REQUIRE(r.has_value());
     BOOST_REQUIRE_EQUAL(r->size(), 2u);
     BOOST_CHECK(head_is((*r)[1], "list"));
-    BOOST_CHECK_EQUAL(list_size((*r)[1]), 4u); // list + 3 args
+    BOOST_CHECK_EQUAL(list_size((*r)[1]), 4u); ///< list + 3 args
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_ellipsis_empty) {
-    // Ellipsis matching zero elements
+    /// Ellipsis matching zero elements
     auto r = expand_all(
         "(define-syntax my-list (syntax-rules () ((_ x ...) (list x ...))))"
         "(my-list)");
     BOOST_REQUIRE(r.has_value());
     BOOST_REQUIRE_EQUAL(r->size(), 2u);
     BOOST_CHECK(head_is((*r)[1], "list"));
-    BOOST_CHECK_EQUAL(list_size((*r)[1]), 1u); // just "list", no args
+    BOOST_CHECK_EQUAL(list_size((*r)[1]), 1u); ///< just "list", no args
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_literal_keyword) {
-    // Macro with literal keyword matching
+    /// Macro with literal keyword matching
     auto r = expand_all(
         "(define-syntax my-cond (syntax-rules (else)"
         "  ((_ (else e)) e)"
@@ -1095,21 +1100,20 @@ BOOST_AUTO_TEST_CASE(syntax_rules_literal_keyword) {
         "(my-cond (#t 99))");
     BOOST_REQUIRE(r.has_value());
     BOOST_REQUIRE_EQUAL(r->size(), 3u);
-    // (my-cond (else 42)) -> 42
+    /// (my-cond (else 42)) -> 42
     BOOST_CHECK((*r)[1]->is<parser::Number>());
-    // (my-cond (#t 99)) -> (if #t 99)
+    /// (my-cond (#t 99)) -> (if #t 99)
     BOOST_CHECK(head_is((*r)[2], "if"));
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_nested_output) {
-    // Macro output contains derived forms that get re-expanded
+    /// Macro output contains derived forms that get re-expanded
     auto r = expand_all(
         "(define-syntax my-let1 (syntax-rules ()"
         "  ((_ var val body) (let ((var val)) body))))"
         "(my-let1 x 10 x)");
     BOOST_REQUIRE(r.has_value());
     BOOST_REQUIRE_EQUAL(r->size(), 2u);
-    // let desugars to ((lambda ...) ...) — head should be a lambda application
     const auto& expanded = (*r)[1];
     BOOST_CHECK(expanded->is<List>());
 }
@@ -1123,21 +1127,21 @@ BOOST_AUTO_TEST_CASE(syntax_rules_no_matching_clause) {
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_malformed_define_syntax) {
-    // Missing transformer
+    /// Missing transformer
     auto r = expand_one("(define-syntax foo)");
     BOOST_REQUIRE(!r.has_value());
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_malformed_not_syntax_rules) {
-    // Transformer is not syntax-rules
+    /// Transformer is not syntax-rules
     auto r = expand_one("(define-syntax foo (lambda (x) x))");
     BOOST_REQUIRE(!r.has_value());
     BOOST_CHECK(r.error().kind == ExpandError::Kind::InvalidSyntax);
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_wildcard_pattern) {
-    // _ matches anything but doesn't bind
+    /// _ matches anything but doesn't bind
     auto r = expand_all(
         "(define-syntax ignore-first (syntax-rules () ((_ _ x) x)))"
         "(ignore-first 999 42)");
@@ -1147,26 +1151,26 @@ BOOST_AUTO_TEST_CASE(syntax_rules_wildcard_pattern) {
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_swap_macro) {
-    // Classic swap! macro using begin+let+set!
+    /// Classic swap! macro using begin+let+set!
     auto r = expand_all(
         "(define-syntax swap! (syntax-rules ()"
         "  ((_ a b) (let ((tmp a)) (set! a b) (set! b tmp)))))"
         "(swap! x y)");
     BOOST_REQUIRE(r.has_value());
     BOOST_REQUIRE_EQUAL(r->size(), 2u);
-    // The output should be expanded (let desugars to lambda application)
+    /// The output should be expanded (let desugars to lambda application)
     BOOST_CHECK((*r)[1]->is<List>());
 }
 
 BOOST_AUTO_TEST_CASE(syntax_rules_chained_macros) {
-    // One macro's output invokes another macro
+    /// One macro's output invokes another macro
     auto r = expand_all(
         "(define-syntax double (syntax-rules () ((_ x) (+ x x))))"
         "(define-syntax quadruple (syntax-rules () ((_ x) (double (double x)))))"
         "(quadruple 3)");
     BOOST_REQUIRE(r.has_value());
     BOOST_REQUIRE_EQUAL(r->size(), 3u);
-    // Should fully expand: (+ (+ 3 3) (+ 3 3))
+    /// Should fully expand: (+ (+ 3 3) (+ 3 3))
     BOOST_CHECK(head_is((*r)[2], "+"));
 }
 

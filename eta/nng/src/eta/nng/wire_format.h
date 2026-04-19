@@ -53,10 +53,12 @@ deserialize_value(std::string_view data, Heap& heap, InternTable& intern) {
     return parse_datum_string(data, heap, intern);
 }
 
-// Heartbeat wire format
+/// Heartbeat wire format
 
-/// Magic byte that marks a heartbeat control message (ping/pong).
-/// Distinct from the binary format version byte (0xEA) and all printable ASCII.
+/**
+ * Magic byte that marks a heartbeat control message (ping/pong).
+ * Distinct from the binary format version byte (0xEA) and all printable ASCII.
+ */
 constexpr uint8_t HEARTBEAT_VERSION_BYTE = 0xEB;
 constexpr uint8_t HB_PING = 0x00;  ///< second byte for ping
 constexpr uint8_t HB_PONG = 0x01;  ///< second byte for pong
@@ -78,16 +80,20 @@ inline std::vector<uint8_t> make_heartbeat_pong() {
     return {HEARTBEAT_VERSION_BYTE, HB_PONG};
 }
 
-// Binary wire format
+/// Binary wire format
 
-/// Magic version byte that marks a binary-format nng message.
-/// S-expression messages always start with a printable ASCII character,
-/// so 0xEA (outside ASCII printable range) is unambiguous.
+/**
+ * Magic version byte that marks a binary-format nng message.
+ * S-expression messages always start with a printable ASCII character,
+ * so 0xEA (outside ASCII printable range) is unambiguous.
+ */
 constexpr uint8_t BINARY_VERSION_BYTE = 0xEA;
 
-/// Tag bytes used in the binary format.
-/// Values 0-12 intentionally match BytecodeSerializer::ConstTag for
-/// symmetry; CT_ByteVec (13) is an extension for bytevectors.
+/**
+ * Tag bytes used in the binary format.
+ * Values 0-12 intentionally match BytecodeSerializer::ConstTag for
+ * symmetry; CT_ByteVec (13) is an extension for bytevectors.
+ */
 enum BinaryTag : uint8_t {
     BT_Nil      =  0,
     BT_True     =  1,
@@ -96,16 +102,13 @@ enum BinaryTag : uint8_t {
     BT_Char     =  4,   ///< followed by u32 LE codepoint
     BT_String   =  5,   ///< followed by u32 len + UTF-8 bytes
     BT_Symbol   =  6,   ///< followed by u32 len + UTF-8 bytes
-    // 7 = FuncIndex — not used in wire format
     BT_HeapCons =  8,   ///< car (recursive) + cdr (recursive)
     BT_HeapVec  =  9,   ///< u32 len + elements (recursive)
-    // 10 = RawBits — not used in wire format
-    // 11 = HeapNil — not used in wire format
     BT_False    = 12,
     BT_ByteVec  = 13,   ///< u32 len + raw bytes
 };
 
-// Internal: buffered binary writer
+/// Internal: buffered binary writer
 
 namespace detail {
 
@@ -147,20 +150,20 @@ struct BinaryWriter {
         using namespace eta::runtime::memory::heap;
         auto id = ops::payload(v);
 
-        // Heap-allocated big fixnum (int64_t that didn't fit in 47-bit nanbox)
+        /// Heap-allocated big fixnum (int64_t that didn't fit in 47-bit nanbox)
         if (auto* big = heap.try_get_as<ObjectKind::Fixnum, int64_t>(id)) {
             write_u8(BT_Fixnum);
             write_i64(*big);
             return;
         }
-        // Cons cell
+        /// Cons cell
         if (auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
             write_u8(BT_HeapCons);
             write_value(cons->car);
             write_value(cons->cdr);
             return;
         }
-        // Vector
+        /// Vector
         if (auto* vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
             write_u8(BT_HeapVec);
             write_u32(static_cast<uint32_t>(vec->elements.size()));
@@ -168,26 +171,24 @@ struct BinaryWriter {
                 write_value(elem);
             return;
         }
-        // ByteVector
+        /// ByteVector
         if (auto* bv = heap.try_get_as<ObjectKind::ByteVector, types::ByteVector>(id)) {
             write_u8(BT_ByteVec);
             write_u32(static_cast<uint32_t>(bv->data.size()));
             buf.insert(buf.end(), bv->data.begin(), bv->data.end());
             return;
         }
-        // Non-serializable heap object (closure, continuation, port, tensor, …)
-        // → encode as Nil so the message is well-formed rather than corrupt.
         write_u8(BT_Nil);
     }
 
     void write_value(LispVal v) {
-        // Sentinel values
+        /// Sentinel values
         if (v == Nil)   { write_u8(BT_Nil);   return; }
         if (v == True)  { write_u8(BT_True);  return; }
         if (v == False) { write_u8(BT_False); return; }
 
         if (!ops::is_boxed(v)) {
-            // Raw double (including negative doubles)
+            /// Raw double (including negative doubles)
             write_u8(BT_Double);
             write_f64(std::bit_cast<double>(v));
             return;
@@ -232,7 +233,7 @@ struct BinaryWriter {
     }
 };
 
-// Internal: buffered binary reader
+/// Internal: buffered binary reader
 
 struct BinaryReader {
     std::span<const uint8_t> data;
@@ -377,9 +378,9 @@ struct BinaryReader {
     }
 };
 
-} // namespace detail
+} ///< namespace detail
 
-// Public API
+/// Public API
 
 /**
  * @brief Check whether a raw byte buffer starts with the binary wire-format
@@ -439,5 +440,5 @@ deserialize_binary(std::span<const uint8_t> data, Heap& heap, InternTable& inter
     return r.read_value();
 }
 
-} // namespace eta::nng
+} ///< namespace eta::nng
 

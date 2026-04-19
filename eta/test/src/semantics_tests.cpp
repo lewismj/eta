@@ -45,11 +45,11 @@ BOOST_AUTO_TEST_CASE(test_basic_global_define) {
     BOOST_CHECK_EQUAL(mod.bindings[0].name, "x");
     BOOST_CHECK(mod.bindings[0].kind == BindingInfo::Kind::Global);
     
-    // Check export
+    /// Check export
     BOOST_REQUIRE(mod.exports.contains("x"));
     BOOST_CHECK_EQUAL(mod.exports.at("x").id, 0);
     
-    // Check toplevel inits: (set! x 1)
+    /// Check toplevel inits: (set! x 1)
     BOOST_REQUIRE_EQUAL(mod.toplevel_inits.size(), 1);
     auto* set_node = std::get_if<core::Set>(&mod.toplevel_inits[0]->data);
     BOOST_REQUIRE(set_node != nullptr);
@@ -67,11 +67,13 @@ BOOST_AUTO_TEST_CASE(test_local_let_shadowing) {
     BOOST_REQUIRE(res.has_value());
     const auto& mod = (*res)[0];
     
-    // bindings: x (global), f (global), x (param for f), x (param for let-lambda)
-    // The expander transforms (let ((x 2)) x) into ((lambda (x) x) 2)
+    /**
+     * bindings: x (global), f (global), x (param for f), x (param for let-lambda)
+     * The expander transforms (let ((x 2)) x) into ((lambda (x) x) 2)
+     */
     BOOST_REQUIRE_GE(mod.bindings.size(), 4);
     
-    // Find (define (f x) ...) which is (set! f (lambda (x) ...))
+    /// Find (define (f x) ...) which is (set! f (lambda (x) ...))
     BOOST_REQUIRE_EQUAL(mod.toplevel_inits.size(), 2);
     auto* set_f = std::get_if<core::Set>(&mod.toplevel_inits[1]->data);
     BOOST_REQUIRE(set_f != nullptr);
@@ -79,26 +81,28 @@ BOOST_AUTO_TEST_CASE(test_local_let_shadowing) {
     auto* lam = std::get_if<core::Lambda>(&set_f->value->data);
     BOOST_REQUIRE(lam != nullptr);
     
-    // After expansion, (let ((x 2)) x) becomes ((lambda (x) x) 2)
-    // So lam->body is a Call node
+    /**
+     * After expansion, (let ((x 2)) x) becomes ((lambda (x) x) 2)
+     * So lam->body is a Call node
+     */
     auto* call_node = std::get_if<core::Call>(&lam->body->data);
     BOOST_REQUIRE(call_node != nullptr);
 
-    // The callee of the call is a lambda
+    /// The callee of the call is a lambda
     auto* inner_lam = std::get_if<core::Lambda>(&call_node->callee->data);
     BOOST_REQUIRE(inner_lam != nullptr);
 
-    // The body of the inner lambda is the variable x referring to its param
+    /// The body of the inner lambda is the variable x referring to its param
     auto* var_node = std::get_if<core::Var>(&inner_lam->body->data);
     BOOST_REQUIRE(var_node != nullptr);
     
     auto* local_addr = std::get_if<core::Address::Local>(&var_node->addr.where);
     BOOST_REQUIRE(local_addr != nullptr);
     
-    // The VM slot for this local x (should be 0 as it's the only param)
+    /// The VM slot for this local x (should be 0 as it's the only param)
     BOOST_CHECK_EQUAL(local_addr->slot, 0);
 
-    // Verify it refers to the correct binding by name
+    /// Verify it refers to the correct binding by name
     BOOST_REQUIRE_LT(local_addr->slot, inner_lam->params.size());
     core::BindingId bid = inner_lam->params[local_addr->slot];
     BOOST_REQUIRE_LT(bid.id, mod.bindings.size());
@@ -114,11 +118,13 @@ BOOST_AUTO_TEST_CASE(test_undefined_symbol) {
 }
 
 BOOST_AUTO_TEST_CASE(test_immutable_lambda_param) {
-    // Lambda params are mutable to support letrec expansion (which uses set! on params).
-    // This test verifies that set! on params is allowed.
+    /**
+     * Lambda params are mutable to support letrec expansion (which uses set! on params).
+     * This test verifies that set! on params is allowed.
+     */
     std::string src = "(module m1 (define (f x) (set! x 1)))";
     auto res = analyze_src(src);
-    // Params are now mutable, so this should succeed
+    /// Params are now mutable, so this should succeed
     BOOST_CHECK(res.has_value());
 }
 
@@ -154,7 +160,7 @@ BOOST_AUTO_TEST_CASE(test_upvals) {
     auto* lam_inner = std::get_if<core::Lambda>(&lam_f->body->data);
     BOOST_REQUIRE(lam_inner != nullptr);
     
-    // Inner lambda should have 'x' as an upval
+    /// Inner lambda should have 'x' as an upval
     BOOST_REQUIRE_EQUAL(lam_inner->upvals.size(), 1);
     auto upval_bid = lam_inner->upvals[0];
     BOOST_CHECK_EQUAL(mod.bindings[upval_bid.id].name, "x");
@@ -178,25 +184,27 @@ BOOST_AUTO_TEST_CASE(test_upval_sources_nested) {
     auto* lam_z = std::get_if<core::Lambda>(&lam_y->body->data);
     BOOST_REQUIRE(lam_z != nullptr);
     
-    // lam_y should have source for x (Local in lam_f)
+    /// lam_y should have source for x (Local in lam_f)
     BOOST_REQUIRE_EQUAL(lam_y->upval_sources.size(), 1);
     auto* src_y = std::get_if<core::Address::Local>(&lam_y->upval_sources[0].where);
     BOOST_REQUIRE(src_y != nullptr);
     BOOST_CHECK_EQUAL(src_y->slot, 0);
     
-    // lam_z should have source for x (Upval in lam_y)
+    /// lam_z should have source for x (Upval in lam_y)
     BOOST_REQUIRE_EQUAL(lam_z->upval_sources.size(), 1);
     auto* src_z = std::get_if<core::Address::Upval>(&lam_z->upval_sources[0].where);
     BOOST_REQUIRE(src_z != nullptr);
-    BOOST_CHECK_EQUAL(src_z->slot, 0); // 0th upval of lam_y
+    BOOST_CHECK_EQUAL(src_z->slot, 0); ///< 0th upval of lam_y
 }
 
 BOOST_AUTO_TEST_CASE(test_letrec) {
-    // After expansion, letrec becomes:
-    // ((lambda (a b)
-    //    (begin (set! a ...) (set! b ...) body))
-    //  Nil Nil)
-    // Using simpler mutually-referential lambdas that don't require external functions
+    /**
+     * After expansion, letrec becomes:
+     * ((lambda (a b)
+     *    (begin (set! a ...) (set! b ...) body))
+     *  Nil Nil)
+     * Using simpler mutually-referential lambdas that don't require external functions
+     */
     std::string src = "(module m1 (define (f x) (letrec ((a (lambda () b)) (b (lambda () a))) (a))))";
     auto res = analyze_src(src);
     if (!res.has_value()) {
@@ -210,20 +218,20 @@ BOOST_AUTO_TEST_CASE(test_letrec) {
     auto* lam_f = std::get_if<core::Lambda>(&set_f->value->data);
     BOOST_REQUIRE(lam_f != nullptr);
 
-    // After expansion, letrec becomes a lambda call: ((lambda (a b) ...) Nil Nil)
+    /// After expansion, letrec becomes a lambda call: ((lambda (a b) ...) Nil Nil)
     auto* call_node = std::get_if<core::Call>(&lam_f->body->data);
     BOOST_REQUIRE(call_node != nullptr);
 
     auto* letrec_lam = std::get_if<core::Lambda>(&call_node->callee->data);
     BOOST_REQUIRE(letrec_lam != nullptr);
 
-    // The lambda should have 2 params (a and b)
+    /// The lambda should have 2 params (a and b)
     BOOST_CHECK_EQUAL(letrec_lam->params.size(), 2);
 
-    // The body is a begin with set! initializers followed by the actual body
+    /// The body is a begin with set! initializers followed by the actual body
     auto* body_begin = std::get_if<core::Begin>(&letrec_lam->body->data);
     BOOST_REQUIRE(body_begin != nullptr);
-    BOOST_REQUIRE_GE(body_begin->exprs.size(), 3); // set! a, set! b, (a)
+    BOOST_REQUIRE_GE(body_begin->exprs.size(), 3); ///< set! a, set! b, (a)
 }
 
 BOOST_AUTO_TEST_CASE(test_module_imports) {
@@ -235,7 +243,7 @@ BOOST_AUTO_TEST_CASE(test_module_imports) {
     const auto& m2 = (*res)[1];
     BOOST_CHECK_EQUAL(m2.name, "m2");
     
-    // 'a' in 'm2' should be an import
+    /// 'a' in 'm2' should be an import
     bool found_a = false;
     for (const auto& b : m2.bindings) {
         if (b.name == "a" && b.kind == BindingInfo::Kind::Import) {
@@ -247,7 +255,7 @@ BOOST_AUTO_TEST_CASE(test_module_imports) {
 }
 
 BOOST_AUTO_TEST_CASE(test_if_arity_error) {
-    std::string src = "(module m1 (define x (if 1 2 3 4)))"; // too many args
+    std::string src = "(module m1 (define x (if 1 2 3 4)))"; ///< too many args
     auto res = analyze_src(src);
     BOOST_REQUIRE(!res.has_value());
     BOOST_CHECK(res.error().kind == SemanticError::Kind::InvalidFormShape);

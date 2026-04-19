@@ -1,15 +1,17 @@
 #pragma once
 
-/// @file nng_primitives.h
-/// @brief Register nng socket primitives into an Eta BuiltinEnvironment.
-///
-/// Provides:  nng-socket  nng-listen  nng-dial  nng-close  nng-socket?
-///            send!  recv!  nng-poll  nng-subscribe  nng-set-option
-///            spawn  spawn-kill  spawn-wait  current-mailbox
-///            monitor  demonitor  enable-heartbeat
-///
-/// Registration order MUST match builtin_names.h (ETA_HAS_NNG section).
-/// All primitives capture Heap& and InternTable& by reference.
+/**
+ * @file nng_primitives.h
+ * @brief Register nng socket primitives into an Eta BuiltinEnvironment.
+ *
+ * Provides:  nng-socket  nng-listen  nng-dial  nng-close  nng-socket?
+ *            send!  recv!  nng-poll  nng-subscribe  nng-set-option
+ *            spawn  spawn-kill  spawn-wait  current-mailbox
+ *            monitor  demonitor  enable-heartbeat
+ *
+ * Registration order MUST match builtin_names.h (ETA_HAS_NNG section).
+ * All primitives capture Heap& and InternTable& by reference.
+ */
 
 #include <algorithm>
 #include <chrono>
@@ -62,7 +64,7 @@ using namespace eta::runtime::error;
 using namespace eta::runtime::memory::factory;
 using Args = const std::vector<LispVal>&;
 
-// Helpers
+/// Helpers
 
 /// Build a nng-error runtime error from an nng return code.
 inline std::unexpected<RuntimeError> nng_error(int rv) {
@@ -134,7 +136,7 @@ inline std::optional<NngProtocol> parse_protocol(const std::string& name) {
     return std::nullopt;
 }
 
-// Monitoring helpers
+/// Monitoring helpers
 
 /// Return current time as milliseconds since the steady_clock epoch.
 inline int64_t current_epoch_ms() noexcept {
@@ -143,9 +145,11 @@ inline int64_t current_epoch_ms() noexcept {
             std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-/// Static pipe-removal callback registered by `monitor`.
-/// arg == raw NngSocketPtr* (stable heap address).
-/// Called from nng's internal I/O thread on peer disconnect.
+/**
+ * Static pipe-removal callback registered by `monitor`.
+ * arg == raw NngSocketPtr* (stable heap address).
+ * Called from nng's internal I/O thread on peer disconnect.
+ */
 static void monitor_pipe_cb(nng_pipe /*pipe*/, nng_pipe_ev /*ev*/, void* arg) noexcept {
     auto* sp = static_cast<NngSocketPtr*>(arg);
     if (!sp || !sp->monitor_state) return;
@@ -156,12 +160,14 @@ static void monitor_pipe_cb(nng_pipe /*pipe*/, nng_pipe_ev /*ev*/, void* arg) no
     ms.push_notification(ms.monitor_down_msg);
 }
 
-// register_nng_primitives
+/// register_nng_primitives
 
-// Thread closure serialization helpers
+/// Thread closure serialization helpers
 
-/// Collect all function indices reachable from @p entry_idx via MakeClosure
-/// constants (BFS).  The entry function is always first in the returned list.
+/**
+ * Collect all function indices reachable from @p entry_idx via MakeClosure
+ * constants (BFS).  The entry function is always first in the returned list.
+ */
 inline std::vector<uint32_t> collect_closure_deps(
     uint32_t entry_idx,
     const semantics::BytecodeFunctionRegistry& reg)
@@ -184,13 +190,14 @@ inline std::vector<uint32_t> collect_closure_deps(
     return order;
 }
 
-/// Build a SerializedClosure from a closure object's entry function and upvalues.
-///
-/// Collects all reachable function bytecode (entry first), remaps function-index
-/// constants to a 0-based mini-registry, serializes via BytecodeSerializer, and
-/// serializes each upvalue via the binary wire format.
-///
-/// Returns nullopt if any upvalue is non-serializable (closure, port, socket…).
+/**
+ * Build a SerializedClosure from a closure object's entry function and upvalues.
+ *
+ * Collects all reachable function bytecode (entry first), remaps function-index
+ * constants to a 0-based mini-registry, serializes via BytecodeSerializer, and
+ * serializes each upvalue via the binary wire format.
+ *
+ */
 inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure(
     uint32_t entry_idx,
     const std::vector<LispVal>& upvals,
@@ -198,15 +205,14 @@ inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure
     Heap& heap,
     InternTable& intern)
 {
-    // 1. Collect reachable functions (entry at index 0)
+    /// 1. Collect reachable functions (entry at index 0)
     auto order = collect_closure_deps(entry_idx, src_reg);
 
-    // 2. Build index remap: old_global → new_0based
     std::unordered_map<uint32_t, uint32_t> remap;
     for (uint32_t i = 0; i < static_cast<uint32_t>(order.size()); ++i)
         remap[order[i]] = i;
 
-    // 3. Build new registry with rebased function-index constants
+    /// 3. Build new registry with rebased function-index constants
     semantics::BytecodeFunctionRegistry new_reg;
     for (uint32_t old_idx : order) {
         const auto* f = src_reg.get(old_idx);
@@ -226,15 +232,15 @@ inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure
         new_reg.add(std::move(copy));
     }
 
-    // 4. Serialize the mini-registry as etac bytes
+    /// 4. Serialize the mini-registry as etac bytes
     runtime::vm::BytecodeSerializer ser(heap, intern);
     runtime::vm::ModuleEntry mod;
     mod.name             = "__spawn_thread__";
-    mod.init_func_index  = 0; // entry is always index 0
+    mod.init_func_index  = 0; ///< entry is always index 0
     mod.total_globals    = 0;
 
     std::ostringstream oss(std::ios::binary);
-    // Pass num_builtins=0 to skip builtin-count validation on deserialization
+    /// Pass num_builtins=0 to skip builtin-count validation on deserialization
     if (!ser.serialize({mod}, new_reg, 0, false, oss, {}, 0)) {
         return std::nullopt;
     }
@@ -243,7 +249,7 @@ inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure
     auto str = oss.str();
     sc.funcs_bytes = std::vector<uint8_t>(str.begin(), str.end());
 
-    // 5. Serialize upvalues via binary wire format
+    /// 5. Serialize upvalues via binary wire format
     for (std::size_t i = 0; i < upvals.size(); ++i) {
         const auto& uv = upvals[i];
         auto bin = serialize_binary(uv, heap, intern);
@@ -255,23 +261,25 @@ inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure
     return sc;
 }
 
-/// Register all nng primitives into the given BuiltinEnvironment.
-///
-/// Process-manager parameters are optional; omitting them leaves spawn/mailbox
-/// primitives registered (so arity checking still works in the LSP/analyzer)
-/// but they return a clear error when actually called without a process manager.
-///
-/// @param proc_mgr          ProcessManager owned by the Driver. nullptr = no spawning.
-/// @param etai_path         Full path to the etai executable. Empty = no spawning.
-/// @param mailbox_val       Pointer to the Driver's mailbox_val_ field (child only).
-/// @param module_search_path Colon/semicolon-separated module search path to
-///                           propagate to spawned children via ETA_MODULE_PATH
-///                           (only if ETA_MODULE_PATH is not already set in env).
-/// @param thread_worker_fn  Factory for in-process actor threads.
-/// @param func_registry     Pointer to the Driver's function registry, required
-///                           for spawn-thread. nullptr disables it.
-///
-/// Registration order MUST match the ETA_HAS_NNG section in builtin_names.h.
+/**
+ * Register all nng primitives into the given BuiltinEnvironment.
+ *
+ * Process-manager parameters are optional; omitting them leaves spawn/mailbox
+ * primitives registered (so arity checking still works in the LSP/analyzer)
+ * but they return a clear error when actually called without a process manager.
+ *
+ * @param proc_mgr          ProcessManager owned by the Driver. nullptr = no spawning.
+ * @param etai_path         Full path to the etai executable. Empty = no spawning.
+ * @param mailbox_val       Pointer to the Driver's mailbox_val_ field (child only).
+ * @param module_search_path Colon/semicolon-separated module search path to
+ *                           propagate to spawned children via ETA_MODULE_PATH
+ *                           (only if ETA_MODULE_PATH is not already set in env).
+ * @param thread_worker_fn  Factory for in-process actor threads.
+ * @param func_registry     Pointer to the Driver's function registry, required
+ *                           for spawn-thread. nullptr disables it.
+ *
+ * Registration order MUST match the ETA_HAS_NNG section in builtin_names.h.
+ */
 inline void register_nng_primitives(
     BuiltinEnvironment& env, Heap& heap, InternTable& intern,
     ProcessManager* proc_mgr           = nullptr,
@@ -281,8 +289,7 @@ inline void register_nng_primitives(
     ProcessManager::ThreadWorkerFn thread_worker_fn = {},
     semantics::BytecodeFunctionRegistry* func_registry = nullptr)
 {
-    // nng-socket
-    // (nng-socket type-symbol) → socket
+    /// nng-socket
     env.register_builtin("nng-socket", 1, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto sym = symbol_to_string(args[0], intern);
@@ -304,14 +311,13 @@ inline void register_nng_primitives(
             int rv = open_socket(sp.socket, *proto);
             if (rv != 0) return nng_error(rv);
 
-            // Set default recv timeout of 1000 ms to avoid blocking the VM forever.
+            /// Set default recv timeout of 1000 ms to avoid blocking the VM forever.
             nng_socket_set_ms(sp.socket, NNG_OPT_RECVTIMEO, 1000);
 
             return factory::make_nng_socket(heap, std::move(sp));
         });
 
-    // nng-listen
-    // (nng-listen sock endpoint) → sock
+    /// nng-listen
     env.register_builtin("nng-listen", 2, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -337,12 +343,11 @@ inline void register_nng_primitives(
             int rv = nng_listen(sp->socket, endpoint.c_str(), nullptr, 0);
             if (rv != 0) return nng_error(rv);
             sp->listening = true;
-            sp->endpoint_hint = endpoint;  // store endpoint for supervision down-messages
-            return args[0]; // return the socket itself
+            sp->endpoint_hint = endpoint;  ///< store endpoint for supervision down-messages
+            return args[0]; ///< return the socket itself
         });
 
-    // nng-dial
-    // (nng-dial sock endpoint) → sock
+    /// nng-dial
     env.register_builtin("nng-dial", 2, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -368,12 +373,11 @@ inline void register_nng_primitives(
             int rv = nng_dial(sp->socket, endpoint.c_str(), nullptr, 0);
             if (rv != 0) return nng_error(rv);
             sp->dialed = true;
-            if (sp->endpoint_hint.empty()) sp->endpoint_hint = endpoint;  // store endpoint for supervision down-messages
-            return args[0]; // return the socket itself
+            if (sp->endpoint_hint.empty()) sp->endpoint_hint = endpoint;  ///< store endpoint for supervision down-messages
+            return args[0]; ///< return the socket itself
         });
 
-    // nng-close
-    // (nng-close sock) → #t (idempotent)
+    /// nng-close
     env.register_builtin("nng-close", 1, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -382,8 +386,10 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::TypeError, "nng-close: expected an nng-socket"}});
             }
             if (!sp->closed) {
-                // Signal closing_normally before nng_close to suppress
-                // spurious disconnect notifications via monitor_pipe_cb.
+                /**
+                 * Signal closing_normally before nng_close to suppress
+                 * spurious disconnect notifications via monitor_pipe_cb.
+                 */
                 if (sp->monitor_state) {
                     sp->monitor_state->closing_normally.store(true, std::memory_order_release);
                     if (sp->monitor_state->heartbeat)
@@ -396,20 +402,17 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // nng-socket?
-    // (nng-socket? x) → #t/#f
+    /// nng-socket?
     env.register_builtin("nng-socket?", 1, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
             return sp ? nanbox::True : nanbox::False;
         });
 
-    // send!
-    // (send! sock value [flag]) → #t on success, #f if EAGAIN (noblock)
-    // flag: 'noblock → NNG_FLAG_NONBLOCK
-    //       'wait    → blocking (no timeout change)
-    //       'text    → use s-expression text format instead of binary
-    // Default serialisation format: binary.
+    /**
+     * send!
+     * Default serialisation format: binary.
+     */
     env.register_builtin("send!", 2, true,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -422,7 +425,7 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::InternalError, "send!: socket is closed"}});
             }
 
-            // Parse optional flag argument
+            /// Parse optional flag argument
             int flags = 0;
             bool wait_mode = false;
             bool use_text  = false;
@@ -435,7 +438,7 @@ inline void register_nng_primitives(
                 }
             }
 
-            // Serialize: binary by default, text when 'text flag given
+            /// Serialize: binary by default, text when 'text flag given
             std::vector<uint8_t> bin_buf;
             std::string          text_buf;
             const void*  msg_ptr;
@@ -450,7 +453,7 @@ inline void register_nng_primitives(
                 msg_size = bin_buf.size();
             }
 
-            // Optionally override timeout for 'wait
+            /// Optionally override timeout for 'wait
             nng_duration saved_timeout = 0;
             if (wait_mode) {
                 nng_socket_get_ms(sp->socket, NNG_OPT_SENDTIMEO, &saved_timeout);
@@ -471,15 +474,15 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // recv!
-    // (recv! sock [flag]) → LispVal or #f on timeout/EAGAIN
-    // flag: 'noblock → NNG_FLAG_NONBLOCK; 'wait → blocking
-    //
-    // Checks monitor/heartbeat notifications first.
-    // Heartbeat ping/pong control messages (0xEB prefix) are handled
-    // transparently: pings receive an auto-reply pong, pongs update the
-    // heartbeat timestamp.  Up to 16 consecutive heartbeat messages are
-    // filtered before returning #f.
+    /**
+     * recv!
+     *
+     * Checks monitor/heartbeat notifications first.
+     * Heartbeat ping/pong control messages (0xEB prefix) are handled
+     * transparently: pings receive an auto-reply pong, pongs update the
+     * heartbeat timestamp.  Up to 16 consecutive heartbeat messages are
+     * filtered before returning #f.
+     */
     env.register_builtin("recv!", 1, true,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -492,7 +495,7 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::InternalError, "recv!: socket is closed"}});
             }
 
-            // Check monitor/heartbeat notifications first (thread-safe).
+            /// Check monitor/heartbeat notifications first (thread-safe).
             if (sp->monitor_state) {
                 auto notif = sp->monitor_state->pop_notification();
                 if (notif) {
@@ -509,15 +512,14 @@ inline void register_nng_primitives(
                 }
             }
 
-            // Check the pending message queue (messages saved by nng-poll).
+            /// Check the pending message queue (messages saved by nng-poll).
             if (!sp->pending_msgs.empty()) {
                 auto data = std::move(sp->pending_msgs.front());
                 sp->pending_msgs.pop_front();
-                // Heartbeat check on buffered messages
+                /// Heartbeat check on buffered messages
                 if (is_heartbeat_ping(data.data(), data.size())) {
                     auto pong = make_heartbeat_pong();
                     nng_send(sp->socket, pong.data(), pong.size(), NNG_FLAG_NONBLOCK);
-                    // Return #f — caller can retry; this avoids infinite recursion
                     return nanbox::False;
                 }
                 if (is_heartbeat_pong(data.data(), data.size())) {
@@ -536,7 +538,7 @@ inline void register_nng_primitives(
                 return *result;
             }
 
-            // Parse optional flag argument
+            /// Parse optional flag argument
             int flags = 0;
             bool wait_mode = false;
             if (args.size() >= 2) {
@@ -547,14 +549,14 @@ inline void register_nng_primitives(
                 }
             }
 
-            // Override timeout for 'wait mode
+            /// Override timeout for 'wait mode
             nng_duration saved_timeout = 0;
             if (wait_mode) {
                 nng_socket_get_ms(sp->socket, NNG_OPT_RECVTIMEO, &saved_timeout);
                 nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, NNG_DURATION_INFINITE);
             }
 
-            // Inner recv loop: filter up to 16 heartbeat messages transparently.
+            /// Inner recv loop: filter up to 16 heartbeat messages transparently.
             constexpr int MAX_HB_SKIP = 16;
             int hb_skipped = 0;
         recv_loop:
@@ -572,7 +574,7 @@ inline void register_nng_primitives(
                 return nng_error(rv);
             }
 
-            // Transparent heartbeat handling
+            /// Transparent heartbeat handling
             if (is_heartbeat_ping(static_cast<const uint8_t*>(buf), sz)) {
                 nng_free(buf, sz);
                 auto pong = make_heartbeat_pong();
@@ -595,7 +597,7 @@ inline void register_nng_primitives(
             }
 
 
-            // Auto-detect binary vs text format
+            /// Auto-detect binary vs text format
             std::expected<LispVal, RuntimeError> result;
             if (is_binary_format(static_cast<const uint8_t*>(buf), sz)) {
                 std::span<const uint8_t> sp_data(static_cast<const uint8_t*>(buf), sz);
@@ -611,14 +613,15 @@ inline void register_nng_primitives(
             return *result;
         });
 
-    // nng-poll
-    // (nng-poll items timeout-ms) → list of ready sockets
-    // items: list of (socket . events) pairs  (events ignored for now)
-    // Checks each socket with non-blocking recv; buffers any received
-    // message into the socket's pending_msgs queue and marks it as ready.
+    /**
+     * nng-poll
+     * items: list of (socket . events) pairs  (events ignored for now)
+     * Checks each socket with non-blocking recv; buffers any received
+     * message into the socket's pending_msgs queue and marks it as ready.
+     */
     env.register_builtin("nng-poll", 2, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-            // Parse timeout-ms
+            /// Parse timeout-ms
             int64_t timeout_ms = 0;
             {
                 auto n = classify_numeric(args[1], heap);
@@ -626,21 +629,21 @@ inline void register_nng_primitives(
                 else if (n.is_flonum()) timeout_ms = static_cast<int64_t>(n.float_val);
             }
 
-            // Collect sockets from the items list
+            /// Collect sockets from the items list
             std::vector<LispVal> sockets;
             LispVal lst = args[0];
             while (lst != nanbox::Nil && ops::is_boxed(lst) && ops::tag(lst) == Tag::HeapObject) {
                 auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(lst));
                 if (!cons) break;
-                // Each element is (socket . events)
+                /// Each element is (socket . events)
                 LispVal item = cons->car;
                 LispVal sock_val;
                 if (ops::is_boxed(item) && ops::tag(item) == Tag::HeapObject) {
                     auto* pair = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(item));
                     if (pair) {
-                        sock_val = pair->car; // (socket . events) → socket
+                        sock_val = pair->car;
                     } else {
-                        sock_val = item; // bare socket
+                        sock_val = item; ///< bare socket
                     }
                 } else {
                     sock_val = item;
@@ -649,11 +652,11 @@ inline void register_nng_primitives(
                 lst = cons->cdr;
             }
 
-            // Deadline for the poll
+            /// Deadline for the poll
             auto deadline = std::chrono::steady_clock::now() +
                             std::chrono::milliseconds(timeout_ms);
 
-            // Check each socket non-blocking; retry until timeout_ms elapses
+            /// Check each socket non-blocking; retry until timeout_ms elapses
             std::vector<LispVal> ready;
             bool checked_once = false;
 
@@ -662,21 +665,19 @@ inline void register_nng_primitives(
                     auto* sp = get_socket(heap, sv);
                     if (!sp || sp->closed) continue;
 
-                    // Already has pending data → ready immediately
                     if (!sp->pending_msgs.empty()) {
-                        // Only add once
+                        /// Only add once
                         bool already = false;
                         for (auto& r : ready) if (r == sv) { already = true; break; }
                         if (!already) ready.push_back(sv);
                         continue;
                     }
 
-                    // Try non-blocking recv
+                    /// Try non-blocking recv
                     void* buf = nullptr;
                     size_t sz = 0;
                     int rv = nng_recv(sp->socket, &buf, &sz, NNG_FLAG_NONBLOCK | NNG_FLAG_ALLOC);
                     if (rv == 0) {
-                        // Got a message — buffer it
                         std::vector<uint8_t> data(static_cast<uint8_t*>(buf),
                                                    static_cast<uint8_t*>(buf) + sz);
                         nng_free(buf, sz);
@@ -686,19 +687,18 @@ inline void register_nng_primitives(
                         for (auto& r : ready) if (r == sv) { already = true; break; }
                         if (!already) ready.push_back(sv);
                     }
-                    // NNG_EAGAIN → not ready, skip
                 }
 
                 checked_once = true;
                 if (!ready.empty() || timeout_ms == 0) break;
                 if (std::chrono::steady_clock::now() >= deadline) break;
 
-                // Small sleep to avoid spinning
+                /// Small sleep to avoid spinning
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             (void)checked_once;
 
-            // Build the result list from back to front
+            /// Build the result list from back to front
             LispVal result = nanbox::Nil;
             for (int i = static_cast<int>(ready.size()) - 1; i >= 0; --i) {
                 auto cons_res = make_cons(heap, ready[static_cast<size_t>(i)], result);
@@ -708,9 +708,10 @@ inline void register_nng_primitives(
             return result;
         });
 
-    // nng-subscribe
-    // (nng-subscribe sock topic) → #t
-    // topic is a string prefix filter for SUB sockets
+    /**
+     * nng-subscribe
+     * topic is a string prefix filter for SUB sockets
+     */
     env.register_builtin("nng-subscribe", 2, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -728,7 +729,7 @@ inline void register_nng_primitives(
                     "nng-subscribe: socket must be a 'sub socket"}});
             }
 
-            // Get the topic string
+            /// Get the topic string
             std::string topic;
             if (ops::is_boxed(args[1]) && ops::tag(args[1]) == Tag::String) {
                 auto sv = intern.get_string(ops::payload(args[1]));
@@ -744,9 +745,10 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // nng-set-option
-    // (nng-set-option sock option value) → #t
-    // option symbols: 'recv-timeout 'send-timeout 'recv-buf-size 'survey-time
+    /**
+     * nng-set-option
+     * option symbols: 'recv-timeout 'send-timeout 'recv-buf-size 'survey-time
+     */
     env.register_builtin("nng-set-option", 3, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -796,7 +798,7 @@ inline void register_nng_primitives(
             return nanbox::True;
         });
 
-    // spawn
+    /// spawn
     env.register_builtin("spawn", 1, true,
         [&heap, &intern, proc_mgr, etai_path, module_search_path](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!proc_mgr || etai_path.empty()) {
@@ -820,8 +822,7 @@ inline void register_nng_primitives(
                                    etai_path, module_search_path);
         });
 
-    // spawn-kill
-    // (spawn-kill sock) → #t if signal sent, #f if not found
+    /// spawn-kill
     env.register_builtin("spawn-kill", 1, false,
         [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!proc_mgr) {
@@ -838,8 +839,7 @@ inline void register_nng_primitives(
             return proc_mgr->kill_child(args[0]) ? nanbox::True : nanbox::False;
         });
 
-    // spawn-wait
-    // (spawn-wait sock) → exit-code (fixnum) or #f if not found
+    /// spawn-wait
     env.register_builtin("spawn-wait", 1, false,
         [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!proc_mgr) {
@@ -858,19 +858,19 @@ inline void register_nng_primitives(
             return make_fixnum(heap, static_cast<int64_t>(code));
         });
 
-    // current-mailbox
-    // (current-mailbox) → the PAIR socket to the parent, or () if not a child
+    /// current-mailbox
     env.register_builtin("current-mailbox", 0, false,
         [mailbox_val](Args) -> std::expected<LispVal, RuntimeError> {
             if (!mailbox_val) return nanbox::Nil;
             return *mailbox_val;
         });
 
-    // spawn-thread-with
-    // (spawn-thread-with module-path func-name args...) → socket
-    // Creates a new in-process actor thread with an independent VM.
-    // Install the worker factory in proc_mgr now (if provided at registration time);
-    // tests may also call proc_mgr->set_worker_factory() before calling this primitive.
+    /**
+     * spawn-thread-with
+     * Creates a new in-process actor thread with an independent VM.
+     * Install the worker factory in proc_mgr now (if provided at registration time);
+     * tests may also call proc_mgr->set_worker_factory() before calling this primitive.
+     */
     if (proc_mgr && thread_worker_fn) {
         proc_mgr->set_worker_factory(std::move(thread_worker_fn));
     }
@@ -885,7 +885,7 @@ inline void register_nng_primitives(
                     "spawn-thread-with: process manager not configured"}});
             }
 
-            // arg0: module path string
+            /// arg0: module path string
             if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::String) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError,
@@ -898,7 +898,7 @@ inline void register_nng_primitives(
                     "spawn-thread-with: failed to resolve module-path string"}});
             }
 
-            // arg1: function name symbol
+            /// arg1: function name symbol
             auto func_sym = symbol_to_string(args[1], intern);
             if (!func_sym) {
                 return std::unexpected(RuntimeError{VMError{
@@ -906,7 +906,7 @@ inline void register_nng_primitives(
                     "spawn-thread-with: second argument must be a symbol (function name)"}});
             }
 
-            // remaining args: serialize each as s-expression text
+            /// remaining args: serialize each as s-expression text
             std::vector<std::string> text_args;
             text_args.reserve(args.size() - 2);
             for (std::size_t i = 2; i < args.size(); ++i) {
@@ -918,10 +918,11 @@ inline void register_nng_primitives(
                 std::move(text_args), heap, intern);
         });
 
-    // spawn-thread
-    // (spawn-thread thunk) → socket
-    // Serialize the thunk's bytecode + upvalues, then launch a
-    // fresh in-process thread that reconstructs and calls the closure.
+    /**
+     * spawn-thread
+     * Serialize the thunk's bytecode + upvalues, then launch a
+     * fresh in-process thread that reconstructs and calls the closure.
+     */
     env.register_builtin("spawn-thread", 1, false,
         [&heap, &intern, proc_mgr, func_registry](Args args)
             -> std::expected<LispVal, RuntimeError>
@@ -938,7 +939,7 @@ inline void register_nng_primitives(
                     "(use spawn-thread-with for file-based workers)"}});
             }
 
-            // Validate: must be a Closure heap object
+            /// Validate: must be a Closure heap object
             if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError,
@@ -958,7 +959,6 @@ inline void register_nng_primitives(
                     std::to_string(cl->func->arity) + ")"}});
             }
 
-            // Reverse-lookup: closure function pointer → registry index
             uint32_t entry_idx = UINT32_MAX;
             {
                 auto n = static_cast<uint32_t>(func_registry->size());
@@ -972,13 +972,13 @@ inline void register_nng_primitives(
                     "spawn-thread: closure function not found in registry"}});
             }
 
-            // Serialize the closure (bytecode + upvalues)
+            /// Serialize the closure (bytecode + upvalues)
             auto sc_opt = build_serialized_closure(
                 entry_idx, cl->upvals, *func_registry, heap, intern);
             if (!sc_opt) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::InternalError,
-                    "spawn-thread: failed to serialize closure — upvalues must "
+                    "spawn-thread: failed to serialize closure â€” upvalues must "
                     "be serializable (numbers, strings, symbols, lists, vectors; "
                     "not closures, ports, or sockets)"}});
             }
@@ -986,8 +986,7 @@ inline void register_nng_primitives(
             return proc_mgr->spawn_thread(std::move(*sc_opt), heap, intern);
         });
 
-    // thread-join
-    // (thread-join sock) → 0 on success, #f if not found
+    /// thread-join
     env.register_builtin("thread-join", 1, false,
         [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!proc_mgr) {
@@ -1006,8 +1005,7 @@ inline void register_nng_primitives(
             return make_fixnum(heap, static_cast<int64_t>(rc));
         });
 
-    // thread-alive?
-    // (thread-alive? sock) → #t if the actor thread is still running
+    /// thread-alive?
     env.register_builtin("thread-alive?", 1, false,
         [&heap, proc_mgr](Args args) -> std::expected<LispVal, RuntimeError> {
             if (!proc_mgr) {
@@ -1024,10 +1022,11 @@ inline void register_nng_primitives(
             return proc_mgr->is_thread_alive(args[0]) ? nanbox::True : nanbox::False;
         });
 
-    // monitor
-    // (monitor sock) → #t
-    // Registers a pipe-disconnect callback.  When the remote peer closes the
-    // connection, recv! on sock will return '(down endpoint "disconnected").
+    /**
+     * monitor
+     * Registers a pipe-disconnect callback.  When the remote peer closes the
+     * connection, recv! on sock will return '(down endpoint "disconnected").
+     */
     env.register_builtin("monitor", 1, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -1040,10 +1039,10 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::InternalError, "monitor: socket is already closed"}});
             }
 
-            // Create monitor state on first use
+            /// Create monitor state on first use
             if (!sp->monitor_state) sp->monitor_state = std::make_shared<MonitorState>();
 
-            // Pre-serialise the down message: (down endpoint "disconnected")
+            /// Pre-serialise the down message: (down endpoint "disconnected")
             auto endpoint_str = sp->endpoint_hint.empty() ? "<unknown>" : sp->endpoint_hint;
             auto sym_down   = make_symbol(intern, "down");
             auto str_ep     = make_string(heap, intern, endpoint_str);
@@ -1062,16 +1061,19 @@ inline void register_nng_primitives(
             sp->monitor_state->monitor_down_msg = serialize_binary(*down_list, heap, intern);
             sp->monitor_state->monitored = true;
 
-            // Register the pipe-removal callback.
-            // nng_pipe_notify replaces any previous registration for this event.
+            /**
+             * Register the pipe-removal callback.
+             * nng_pipe_notify replaces any previous registration for this event.
+             */
             nng_pipe_notify(sp->socket, NNG_PIPE_EV_REM_POST,
                             monitor_pipe_cb, static_cast<void*>(sp));
             return nanbox::True;
         });
 
-    // demonitor
-    // (demonitor sock) → #t
-    // Cancels monitoring on sock.
+    /**
+     * demonitor
+     * Cancels monitoring on sock.
+     */
     env.register_builtin("demonitor", 1, false,
         [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -1084,23 +1086,24 @@ inline void register_nng_primitives(
                 sp->monitor_state->monitor_down_msg.clear();
             }
             if (!sp->closed) {
-                // Unregister the callback by passing nullptr
+                /// Unregister the callback by passing nullptr
                 nng_pipe_notify(sp->socket, NNG_PIPE_EV_REM_POST, nullptr, nullptr);
             }
             return nanbox::True;
         });
 
-    // enable-heartbeat
-    // (enable-heartbeat sock interval-ms) → #t
-    //
-    // Starts a background thread that sends a heartbeat ping every interval-ms
-    // milliseconds.  If no pong is received within interval-ms after the ping,
-    // a (down endpoint "heartbeat-timeout") message is pushed into the socket's
-    // notification queue (returned by the next recv! call).
-    //
-    // recv! handles pong messages transparently, updating the heartbeat
-    // timestamp.  recv! also transparently replies to any incoming pings with
-    // a pong (so the remote side can detect liveness too).
+    /**
+     * enable-heartbeat
+     *
+     * Starts a background thread that sends a heartbeat ping every interval-ms
+     * milliseconds.  If no pong is received within interval-ms after the ping,
+     * a (down endpoint "heartbeat-timeout") message is pushed into the socket's
+     * notification queue (returned by the next recv! call).
+     *
+     * recv! handles pong messages transparently, updating the heartbeat
+     * timestamp.  recv! also transparently replies to any incoming pings with
+     * a pong (so the remote side can detect liveness too).
+     */
     env.register_builtin("enable-heartbeat", 2, false,
         [&heap, &intern](Args args) -> std::expected<LispVal, RuntimeError> {
             auto* sp = get_socket(heap, args[0]);
@@ -1115,7 +1118,7 @@ inline void register_nng_primitives(
                     "enable-heartbeat: socket is already closed"}});
             }
 
-            // Parse interval
+            /// Parse interval
             int64_t interval_ms = 1000;
             {
                 auto n = classify_numeric(args[1], heap);
@@ -1128,17 +1131,17 @@ inline void register_nng_primitives(
                     "enable-heartbeat: interval-ms must be positive"}});
             }
 
-            // Create monitor state on first use
+            /// Create monitor state on first use
             if (!sp->monitor_state) sp->monitor_state = std::make_shared<MonitorState>();
 
-            // Stop any existing heartbeat
+            /// Stop any existing heartbeat
             if (sp->monitor_state->heartbeat) {
                 sp->monitor_state->heartbeat->stop.store(true, std::memory_order_release);
                 if (sp->monitor_state->heartbeat->thread.joinable())
                     sp->monitor_state->heartbeat->thread.detach();
             }
 
-            // Pre-serialise the heartbeat-timeout down message
+            /// Pre-serialise the heartbeat-timeout down message
             auto endpoint_str = sp->endpoint_hint.empty() ? "<unknown>" : sp->endpoint_hint;
             auto sym_down   = make_symbol(intern, "down");
             auto str_ep     = make_string(heap, intern, endpoint_str);
@@ -1158,15 +1161,17 @@ inline void register_nng_primitives(
             }
             auto down_msg_binary = serialize_binary(*down_list, heap, intern);
 
-            // Build HeartbeatState
+            /// Build HeartbeatState
             auto hb = std::make_shared<HeartbeatState>();
             hb->interval_ms = interval_ms;
             hb->last_pong_epoch_ms.store(current_epoch_ms());
             sp->monitor_state->heartbeat = hb;
 
-            // Capture everything the thread needs by value.
-            // The thread holds shared_ptr ownership of monitor_state and hb so they stay
-            // alive until the thread exits.
+            /**
+             * Capture everything the thread needs by value.
+             * The thread holds shared_ptr ownership of monitor_state and hb so they stay
+             * alive until the thread exits.
+             */
             nng_socket sock_copy = sp->socket;
             auto monitor_shared = sp->monitor_state;
 
@@ -1181,24 +1186,23 @@ inline void register_nng_primitives(
                     }
                 };
 
-                // Wait one interval before the first ping
+                /// Wait one interval before the first ping
                 sleep_ms(interval_ms);
 
                 while (!hb->stop.load(std::memory_order_acquire)) {
-                    // Send ping
+                    /// Send ping
                     auto ping = make_heartbeat_ping();
                     nng_send(sock_copy, ping.data(), ping.size(), NNG_FLAG_NONBLOCK);
                     int64_t ping_time = current_epoch_ms();
                     hb->last_ping_epoch_ms.store(ping_time, std::memory_order_release);
 
-                    // Wait one interval for pong
+                    /// Wait one interval for pong
                     sleep_ms(interval_ms);
                     if (hb->stop.load(std::memory_order_acquire)) break;
 
-                    // Check if a pong arrived since the ping was sent
+                    /// Check if a pong arrived since the ping was sent
                     int64_t last_pong = hb->last_pong_epoch_ms.load(std::memory_order_acquire);
                     if (last_pong < ping_time) {
-                        // No pong within the interval → timeout
                         if (!monitor_shared->closing_normally.load(std::memory_order_acquire)) {
                             monitor_shared->push_notification(down_msg_binary);
                         }
@@ -1213,7 +1217,7 @@ inline void register_nng_primitives(
 }
 
 
-} // namespace eta::nng
+} ///< namespace eta::nng
 
 
 

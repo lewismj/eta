@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstddef>
 #include <memory>
@@ -28,7 +28,7 @@ namespace eta::semantics::core {
  */
 class Arena {
 public:
-    static constexpr std::size_t DEFAULT_BLOCK_SIZE = 16 * 1024; // 16KB
+    static constexpr std::size_t DEFAULT_BLOCK_SIZE = 16 * 1024; ///< 16KB
 
     explicit Arena(std::size_t block_size = DEFAULT_BLOCK_SIZE)
         : block_size_(block_size) {
@@ -39,7 +39,7 @@ public:
         call_destructors();
     }
 
-    // Non-copyable, movable
+    /// Non-copyable, movable
     Arena(const Arena&) = delete;
     Arena& operator=(const Arena&) = delete;
 
@@ -80,7 +80,7 @@ public:
         void* ptr = allocate(sizeof(T), alignof(T));
         T* obj = new (ptr) T(std::forward<Args>(args)...);
 
-        // Register destructor for non-trivial types
+        /// Register destructor for non-trivial types
         if constexpr (!std::is_trivially_destructible_v<T>) {
             destructors_.push_back([obj]() { obj->~T(); });
         }
@@ -92,13 +92,13 @@ public:
      * @brief Allocate raw bytes with given alignment
      */
     void* allocate(std::size_t size, std::size_t alignment) {
-        // Align current position
+        /// Align current position
         std::size_t aligned_pos = (current_pos_ + alignment - 1) & ~(alignment - 1);
 
         if (aligned_pos + size > block_size_) {
-            // Need new block
+            /// Need new block
             if (size > block_size_) {
-                // Oversized allocation: create dedicated block
+                /// Oversized allocation: create dedicated block
                 blocks_.push_back(std::make_unique<std::byte[]>(size));
                 return blocks_.back().get();
             }
@@ -137,7 +137,7 @@ private:
     }
 
     void call_destructors() {
-        // Call destructors in reverse order (LIFO)
+        /// Call destructors in reverse order (LIFO)
         for (auto it = destructors_.rbegin(); it != destructors_.rend(); ++it) {
             (*it)();
         }
@@ -175,7 +175,7 @@ public:
     explicit operator bool() const noexcept { return ptr_ != nullptr; }
     bool operator==(const Ref&) const noexcept = default;
 
-    // Allow implicit conversion to T* for compatibility
+    /// Allow implicit conversion to T* for compatibility
     operator T*() const noexcept { return ptr_; }
 
 private:
@@ -188,5 +188,5 @@ private:
 template<typename T>
 Ref(T*) -> Ref<T>;
 
-} // namespace eta::semantics::core
+} ///< namespace eta::semantics::core
 

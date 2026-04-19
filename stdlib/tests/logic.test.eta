@@ -163,7 +163,174 @@
                     (let ((r (findall
                                (lambda () (deref-lvar x))
                                (membero x '(a b c)))))
-                      (assert-equal '(b) r)))))))))
+                      (assert-equal '(b) r)))))))
+
+          ;; ── named logic vars ───────────────────────────────────────
+          (make-group "named-logic-vars"
+            (list
+              (make-test "logic-var/named returns an unbound var"
+                (lambda ()
+                  (let ((x (logic-var/named 'x)))
+                    (assert-true (logic-var? x)))))
+              (make-test "var-name returns the label string"
+                (lambda ()
+                  (let ((x (logic-var/named 'alpha)))
+                    (assert-equal "alpha" (var-name x)))))
+              (make-test "var-name is #f for anonymous vars"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (assert-false (var-name x)))))
+              (make-test "var-name is #f for non-vars"
+                (lambda ()
+                  (assert-false (var-name 42))))
+              (make-test "logic-var/named accepts strings too"
+                (lambda ()
+                  (let ((x (logic-var/named "beta")))
+                    (assert-equal "beta" (var-name x)))))
+              (make-test "named vars unify like anonymous ones"
+                (lambda ()
+                  (let* ((x (logic-var/named 'x))
+                         (m (trail-mark))
+                         (ok (unify x 7))
+                         (v (deref-lvar x)))
+                    (unwind-trail m)
+                    (assert-equal 7 v))))))
+
+          ;; ── occurs-check toggle ────────────────────────────────────
+          (make-group "occurs-check-toggle"
+            (list
+              (make-test "default mode is 'always"
+                (lambda ()
+                  (set-occurs-check! 'always)
+                  (assert-equal 'always (occurs-check-mode))))
+              (make-test "set to 'never is reported"
+                (lambda ()
+                  (set-occurs-check! 'never)
+                  (let ((m (occurs-check-mode)))
+                    (set-occurs-check! 'always)  ; restore default
+                    (assert-equal 'never m))))
+              (make-test "set to 'error is reported"
+                (lambda ()
+                  (set-occurs-check! 'error)
+                  (let ((m (occurs-check-mode)))
+                    (set-occurs-check! 'always)  ; restore default
+                    (assert-equal 'error m))))
+              (make-test "'always rejects cyclic binding"
+                (lambda ()
+                  (set-occurs-check! 'always)
+                  (let* ((x (logic-var))
+                         (m (trail-mark))
+                         (ok (unify x (cons 1 x))))
+                    (unwind-trail m)
+                    (assert-false ok))))
+              (make-test "'never admits cyclic binding"
+                (lambda ()
+                  (set-occurs-check! 'never)
+                  (let* ((x (logic-var))
+                         (m (trail-mark))
+                         (ok (unify x (cons 1 x))))
+                    (unwind-trail m)
+                    (set-occurs-check! 'always)  ; restore default
+                    (assert-true ok))))))
+
+          ;; ── compound terms ─────────────────────────────────────────
+          (make-group "compound-terms"
+            (list
+              (make-test "compound? is #t for (term …)"
+                (lambda ()
+                  (assert-true (compound? (term 'f 1 2)))))
+              (make-test "compound? is #f for a list"
+                (lambda ()
+                  (assert-false (compound? '(f 1 2)))))
+              (make-test "compound? is #f for a symbol"
+                (lambda ()
+                  (assert-false (compound? 'f))))
+              (make-test "functor returns the functor symbol"
+                (lambda ()
+                  (assert-equal 'point (functor (term 'point 1 2)))))
+              (make-test "arity returns argument count"
+                (lambda ()
+                  (assert-equal 3 (arity (term 'f 10 20 30)))))
+              (make-test "arity is 0 for nullary compound"
+                (lambda ()
+                  (assert-equal 0 (arity (term 'nil)))))
+              (make-test "arg is 1-based"
+                (lambda ()
+                  (let ((t (term 'f 'a 'b 'c)))
+                    (assert-equal 'a (arg 1 t)))))
+              (make-test "arg picks the right slot"
+                (lambda ()
+                  (let ((t (term 'f 'a 'b 'c)))
+                    (assert-equal 'c (arg 3 t)))))
+              (make-test "unify succeeds on matching functor+arity+args"
+                (lambda ()
+                  (let* ((m (trail-mark))
+                         (ok (unify (term 'f 1 2) (term 'f 1 2))))
+                    (unwind-trail m)
+                    (assert-true ok))))
+              (make-test "unify fails on functor mismatch"
+                (lambda ()
+                  (assert-false (unify (term 'f 1) (term 'g 1)))))
+              (make-test "unify fails on arity mismatch"
+                (lambda ()
+                  (assert-false (unify (term 'f 1) (term 'f 1 2)))))
+              (make-test "unify binds variables inside compound terms"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (y (logic-var))
+                         (m (trail-mark))
+                         (ok (unify (term 'point x 1) (term 'point 2 y)))
+                         (vx (deref-lvar x))
+                         (vy (deref-lvar y)))
+                    (unwind-trail m)
+                    (assert-equal (list #t 2 1) (list ok vx vy)))))
+              (make-test "compound vs cons do not unify"
+                (lambda ()
+                  (assert-false (unify (term 'f 1 2) (cons 1 (cons 2 '()))))))
+              (make-test "ground? recurses into compound args"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (assert-false (ground? (term 'f 1 x))))))
+              (make-test "ground? sees bound compound as ground"
+                (lambda ()
+                  (let ((x (logic-var)))
+                    (unify x 42)
+                    (assert-true (ground? (term 'f 1 x))))))
+              (make-test "copy-term preserves functor"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (c (copy-term (term 'f x))))
+                    (assert-equal 'f (functor c)))))
+              (make-test "copy-term preserves arity"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (c (copy-term (term 'f x x x))))
+                    (assert-equal 3 (arity c)))))
+              (make-test "copy-term freshens variables"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (c (copy-term (term 'f x))))
+                    (assert-true (logic-var? (arg 1 c))))))
+              (make-test "copy-term preserves sharing"
+                (lambda ()
+                  (let* ((x (logic-var))
+                         (c (copy-term (term 'f x x))))
+                    (assert-true (eq? (arg 1 c) (arg 2 c))))))
+              (make-test "occurs-check fires through compound"
+                (lambda ()
+                  (set-occurs-check! 'always)
+                  (let* ((x (logic-var))
+                         (m (trail-mark))
+                         (ok (unify x (term 'f x))))
+                    (unwind-trail m)
+                    (assert-false ok))))
+              (make-test "term rejects non-symbol functor"
+                (lambda ()
+                  ;; (term 42 …) should raise a type error; succeeds? treats errors as fail.
+                  (assert-false
+                    (succeeds? (lambda ()
+                      (let ((t (term 42 1)))
+                        (if t (== 1 1) (== 1 2))))))))))))
 
     (print-tap (run suite)))))
 

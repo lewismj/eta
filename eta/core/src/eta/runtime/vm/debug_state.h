@@ -1,7 +1,6 @@
 #pragma once
 
-// debug_state.h — All VM debug state (breakpoints, stepping, pause) extracted
-// from VM so the hot run_loop path only pays a single null-pointer test.
+/// from VM so the hot run_loop path only pays a single null-pointer test.
 
 #include <atomic>
 #include <condition_variable>
@@ -15,13 +14,13 @@
 
 namespace eta::runtime::vm {
 
-// Forward decls
+/// Forward decls
 struct BreakLocation;
 struct StopEvent;
 enum class StopReason;
 using StopCallback = std::function<void(const StopEvent&)>;
 
-// BreakLocation
+/// BreakLocation
 struct BreakLocation {
     uint32_t file_id{0};
     uint32_t line{0};
@@ -33,7 +32,7 @@ struct BreakLocation {
     }
 };
 
-// Stop event
+/// Stop event
 enum class StopReason { Breakpoint, Step, Pause, Exception };
 
 struct StopEvent {
@@ -42,14 +41,13 @@ struct StopEvent {
     std::string          exception_text;
 };
 
-// DebugState
+/// DebugState
 
 /**
  * @brief All debug machinery extracted from VM.
  *
  * The VM holds a std::unique_ptr<DebugState> (null when not debugging).
  * In production / non-debug runs the entire debug path is a single null
- * pointer check at the top of run_loop — zero additional cost.
  *
  * Thread safety:
  *  - check_and_wait() is called on the VM thread.
@@ -61,14 +59,14 @@ public:
     explicit DebugState(StopCallback cb)
         : stop_callback_(std::move(cb)) {}
 
-    // Breakpoints
+    /// Breakpoints
     void set_breakpoints(std::vector<BreakLocation> locs) {
         std::sort(locs.begin(), locs.end());
         std::lock_guard<std::mutex> lk(bp_mutex_);
         breakpoints_ = std::move(locs);
     }
 
-    // Stepping / resume
+    /// Stepping / resume
     void resume() {
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_mode_  = StepMode::None;
@@ -118,13 +116,13 @@ public:
         return is_paused_;
     }
 
-    // Called from VM when a call/cc context switch happens
+    /// Called from VM when a call/cc context switch happens
     void notify_continuation_jump() {
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_current_epoch_++;
     }
 
-    // Called from VM when an unhandled exception is about to propagate
+    /// Called from VM when an unhandled exception is about to propagate
     void notify_exception(const std::string& msg, reader::lexer::Span sp) {
         StopEvent ev{StopReason::Exception, sp, msg};
         {
@@ -139,14 +137,15 @@ public:
         }
     }
 
-    /// Return the source span that triggered the most recent stop.
-    /// Only meaningful while is_paused() is true.
+    /**
+     * Return the source span that triggered the most recent stop.
+     * Only meaningful while is_paused() is true.
+     */
     [[nodiscard]] reader::lexer::Span stopped_span() const noexcept {
         std::lock_guard<std::mutex> lk(debug_mutex_);
         return stopped_span_;
     }
 
-    // Main poll — called at the top of each VM instruction loop
     /**
      * @brief Check whether the VM should pause at the current instruction.
      *
@@ -165,7 +164,7 @@ public:
             is_paused_ = true;
             stopped_span_ = sp;
         }
-        stop_callback_(*ev);   // called WITHOUT lock held
+        stop_callback_(*ev);   ///< called WITHOUT lock held
         {
             std::unique_lock<std::mutex> lk(debug_mutex_);
             debug_cv_.wait(lk, [this] { return !is_paused_; });
@@ -192,32 +191,35 @@ private:
     uint32_t    step_epoch_{0};         ///< epoch when step was armed
     uint32_t    step_current_epoch_{0}; ///< incremented on call/cc
 
-    // Track last breakpoint hit to avoid re-firing on consecutive instructions
-    // with the same source location (fixes first-breakpoint off-by-one).
+    /**
+     * Track last breakpoint hit to avoid re-firing on consecutive instructions
+     * with the same source location (fixes first-breakpoint off-by-one).
+     */
     uint32_t    last_bp_file_{0};
     uint32_t    last_bp_line_{0};
 
     std::atomic<bool> should_pause_{false};
 
-    // Internal check (no waiting)
+    /// Internal check (no waiting)
     std::optional<StopEvent> check_stop(reader::lexer::Span sp, std::size_t depth) {
-        // 1. Async pause request
+        /// 1. Async pause request
         if (should_pause_.load(std::memory_order_relaxed)) {
             should_pause_.store(false, std::memory_order_relaxed);
             return StopEvent{StopReason::Pause, sp, {}};
         }
 
-        // 2. Breakpoint
+        /// 2. Breakpoint
         if (sp.file_id != 0) {
             BreakLocation loc{sp.file_id, sp.start.line};
             std::lock_guard<std::mutex> lk(bp_mutex_);
             if (std::binary_search(breakpoints_.begin(), breakpoints_.end(), loc)) {
-                // Skip if this is the same location as the last breakpoint hit.
-                // This prevents the first breakpoint from firing on the instruction
-                // before the actual breakpoint line when consecutive bytecodes
-                // share the same source span.
+                /**
+                 * Skip if this is the same location as the last breakpoint hit.
+                 * This prevents the first breakpoint from firing on the instruction
+                 * before the actual breakpoint line when consecutive bytecodes
+                 * share the same source span.
+                 */
                 if (sp.file_id == last_bp_file_ && sp.start.line == last_bp_line_) {
-                    // Already stopped here — do not re-fire
                 } else {
                     std::lock_guard<std::mutex> dlk(debug_mutex_);
                     step_mode_ = StepMode::None;
@@ -226,18 +228,17 @@ private:
                     return StopEvent{StopReason::Breakpoint, sp, {}};
                 }
             } else {
-                // Moved past the last breakpoint location — clear dedup state
                 last_bp_file_ = 0;
                 last_bp_line_ = 0;
             }
         }
 
-        // 3. Step mode
+        /// 3. Step mode
         {
             std::lock_guard<std::mutex> lk(debug_mutex_);
             if (step_mode_ == StepMode::None) return std::nullopt;
 
-            // Stale step from before a call/cc context switch
+            /// Stale step from before a call/cc context switch
             if (step_epoch_ != step_current_epoch_) {
                 step_mode_ = StepMode::None;
                 return std::nullopt;
@@ -269,5 +270,5 @@ private:
     }
 };
 
-} // namespace eta::runtime::vm
+} ///< namespace eta::runtime::vm
 

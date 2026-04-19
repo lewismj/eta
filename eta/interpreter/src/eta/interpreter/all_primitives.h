@@ -17,7 +17,6 @@
  *   6. nng_primitives.h  (registered separately by the Driver)
  *
  * For analysis-only tools (LSP), builtin_names.h provides null-func
- * registrations in the same order — keep the two files in sync.
  */
 
 #include "eta/runtime/core_primitives.h"
@@ -25,9 +24,10 @@
 #include "eta/runtime/io_primitives.h"
 #include <eta/torch/torch_primitives.h>
 #include <eta/stats/stats_primitives.h>
-// NNG is intentionally excluded here — register_nng_primitives() needs
-// driver-specific arguments (ProcessManager, etai path, mailbox, etc.)
-// and must be called by the Driver after register_all_primitives().
+/**
+ * driver-specific arguments (ProcessManager, etai path, mailbox, etc.)
+ * and must be called by the Driver after register_all_primitives().
+ */
 
 namespace eta::interpreter {
 
@@ -43,14 +43,13 @@ inline void register_all_primitives(
     runtime::memory::intern::InternTable& intern,
     runtime::vm::VM& vm)
 {
-    // Order MUST match builtin_names.h  (see canonical order above)
+    /// Order MUST match builtin_names.h  (see canonical order above)
     runtime::register_core_primitives(env, heap, intern, &vm);
     runtime::register_port_primitives(env, heap, intern, vm);
     runtime::register_io_primitives(env, heap, intern, vm);
     torch_bindings::register_torch_primitives(env, heap, intern, &vm);
     stats_bindings::register_stats_primitives(env, heap, intern, &vm);
-    // nng follows — registered by the caller.
 }
 
-} // namespace eta::interpreter
+} ///< namespace eta::interpreter
 

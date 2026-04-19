@@ -1,0 +1,90 @@
+;;; stdlib/tests/db.test.eta - Unit tests for std.db
+
+(module db.tests
+  (import std.test std.logic std.db)
+  (begin
+
+    (define suite
+      (make-group "std.db"
+        (list
+
+          (make-group "defrel-ground"
+            (list
+              (make-test "defrel inserts ground rows and call-rel enumerates"
+                (lambda ()
+                  (defrel '(edge1 a b))
+                  (defrel '(edge1 a c))
+                  (defrel '(edge1 d e))
+                  (let ((y (logic-var)))
+                    (let ((vals (findall (lambda () (deref-lvar y))
+                                         (call-rel 'edge1 'a y))))
+                      (assert-equal 2 (length vals))
+                      (assert-true (member 'b vals))
+                      (assert-true (member 'c vals))))))))
+
+          (make-group "assert-retract"
+            (list
+              (make-test "assert + retract remove first matching row"
+                (lambda ()
+                  (assert '(edge2 a b))
+                  (assert '(edge2 a c))
+                  (retract '(edge2 a b))
+                  (let ((y (logic-var)))
+                    (assert-equal '(c)
+                      (findall (lambda () (deref-lvar y))
+                               (call-rel 'edge2 'a y))))))
+              (make-test "retract-all handles ?var markers in pattern"
+                (lambda ()
+                  (assert '(edge3 a b))
+                  (assert '(edge3 a c))
+                  (assert '(edge3 d e))
+                  (retract-all '(edge3 a ?x))
+                  (assert-false (call-rel? 'edge3 'a 'b))
+                  (assert-false (call-rel? 'edge3 'a 'c))
+                  (assert-true  (call-rel? 'edge3 'd 'e))))))
+
+          (make-group "non-ground"
+            (list
+              (make-test "assert supports non-ground head markers"
+                (lambda ()
+                  (assert '(edge4 ?x z))
+                  (assert-true  (call-rel? 'edge4 'a 'z))
+                  (assert-true  (call-rel? 'edge4 'b 'z))
+                  (assert-false (call-rel? 'edge4 'a 'q))))))
+
+          (make-group "rule-rows"
+            (list
+              (make-test "defrel rule row executes stored closure"
+                (lambda ()
+                  (defrel '(edge5 a b))
+                  (defrel '(parent5 ?x ?y)
+                          (lambda (?x ?y)
+                            (let ((branches (call-rel 'edge5 ?x ?y)))
+                              (if (null? branches) #f ((car branches))))))
+                  (let ((y (logic-var)))
+                    (assert-equal '(b)
+                      (findall (lambda () (deref-lvar y))
+                               (call-rel 'parent5 'a y))))))))
+
+          (make-group "indexing-and-tabling"
+            (list
+              (make-test "index-rel! rebuilds selected index"
+                (lambda ()
+                  (defrel '(edge6 a b))
+                  (defrel '(edge6 c b))
+                  (assert-true (index-rel! 'edge6 1))
+                  (assert-true (call-rel? 'edge6 'a 'b))))
+              (make-test "tabled caches repeated calls by variant key"
+                (lambda ()
+                  (let ((hits (cons 0 '())))
+                    (defrel '(edge7 a b))
+                    (defrel '(reach7 ?x ?y)
+                            (lambda (?x ?y)
+                              (set-car! hits (+ (car hits) 1))
+                              (call-rel? 'edge7 ?x ?y)))
+                    (assert-true (tabled 'reach7 2))
+                    (assert-true (call-rel? 'reach7 'a 'b))
+                    (assert-true (call-rel? 'reach7 'a 'b))
+                    (assert-equal 1 (car hits)))))))))
+
+    (print-tap (run suite)))))

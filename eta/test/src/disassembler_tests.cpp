@@ -1,4 +1,4 @@
-#include <boost/test/unit_test.hpp>
+﻿#include <boost/test/unit_test.hpp>
 #include <sstream>
 
 #include "eta/runtime/vm/disassembler.h"
@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(disasm_empty_function) {
 }
 
 BOOST_AUTO_TEST_CASE(disasm_all_opcodes_have_names) {
-    // Verify that to_string covers every opcode we might encounter
+    /// Verify that to_string covers every opcode we might encounter
     auto check = [](OpCode op) {
         const char* name = to_string(op);
         BOOST_CHECK(name != nullptr);
@@ -84,6 +84,31 @@ BOOST_AUTO_TEST_CASE(disasm_all_opcodes_have_names) {
     check(OpCode::CopyTerm);
     check(OpCode::_Reserved1);
     check(OpCode::_Reserved2);
+    check(OpCode::WamGetVar);
+    check(OpCode::WamGetVal);
+    check(OpCode::WamGetConst);
+    check(OpCode::WamGetStruct);
+    check(OpCode::WamGetList);
+    check(OpCode::WamPutVar);
+    check(OpCode::WamPutVal);
+    check(OpCode::WamPutConst);
+    check(OpCode::WamPutStruct);
+    check(OpCode::WamPutList);
+    check(OpCode::WamUnifyVar);
+    check(OpCode::WamUnifyVal);
+    check(OpCode::WamUnifyConst);
+    check(OpCode::WamUnifyVoid);
+    check(OpCode::WamAllocate);
+    check(OpCode::WamDeallocate);
+    check(OpCode::WamCall);
+    check(OpCode::WamExecute);
+    check(OpCode::WamProceed);
+    check(OpCode::WamTryMeElse);
+    check(OpCode::WamRetryMeElse);
+    check(OpCode::WamTrustMe);
+    check(OpCode::WamSwitchOnTerm);
+    check(OpCode::WamSwitchOnConst);
+    check(OpCode::WamSwitchOnStruct);
 }
 
 BOOST_AUTO_TEST_CASE(disasm_constant_annotation) {
@@ -100,7 +125,7 @@ BOOST_AUTO_TEST_CASE(disasm_constant_annotation) {
     std::ostringstream out;
     disasm.disassemble(func, out);
     std::string text = out.str();
-    // Should contain the constant value annotation
+    /// Should contain the constant value annotation
     BOOST_CHECK(text.find("42") != std::string::npos);
 }
 
@@ -137,7 +162,7 @@ BOOST_AUTO_TEST_CASE(disasm_instruction_count_matches) {
     std::ostringstream out;
     disasm.disassemble(func, out);
     std::string text = out.str();
-    // Should mention 6 instructions
+    /// Should mention 6 instructions
     BOOST_CHECK(text.find("6 instructions") != std::string::npos);
 }
 

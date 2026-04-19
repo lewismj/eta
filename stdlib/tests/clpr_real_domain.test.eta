@@ -1,0 +1,144 @@
+;;; clpr_domain_smoke.eta — Smoke test for the RDomain
+;;; substrate (real-interval CLP domains).
+;;;
+;;; Verifies:
+;;;   1. Posting a closed R interval and reading it back via
+;;;      (%clp-get-domain v) → (r lo hi #f #f).
+;;;   2. Re-posting tightens the interval (the trail-set path replaces
+;;;      the prior R domain — narrowing logic is in 6.4, but a manual
+;;;      narrower re-post still installs the new bounds).
+;;;   3. R∩R intersection on var–var unify yields the merged interval
+;;;      on the surviving var.
+;;;   4. Cross-kind R∩Z intersection promotes to R bounds.
+;;;   5. Disjoint R domains fail unify cleanly.
+;;;   6. Forward-checking on ground unify accepts in-range flonums and
+;;;      rejects out-of-range flonums.
+;;;   7. Trail unwind restores the original R domain (bounds + flags).
+;;;   8. Open-bound semantics: half-open intervals exclude the open
+;;;      endpoint at unify-time.
+;;;
+;;; (Tests for "empty-interval rejected at post" and "clp:and rejects
+;;; R-domained var" are deferred — they rely on a general
+;;; try/catch-runtime-error form that Eta does not yet expose; the
+;;; underlying C++ paths are exercised by these eight sections.)
+
+(module clpr-domain-smoke
+  (import std.core std.collections std.logic std.clp std.clpr)
+  (begin
+
+    (define fail-count 0)
+
+    (defun chk (label expected actual)
+      (display label) (display " => ") (display actual)
+      (if (equal? actual expected)
+          (display "   [ok]")
+          (begin (display "   [FAIL expected ")
+                 (display expected) (display "]")
+                 (set! fail-count (+ fail-count 1))))
+      (newline))
+
+    (display "clpr domain smoke: start") (newline)
+
+    ;; ── 1. Round-trip: post then read back ──────────────────────────
+    (let ((x (logic-var)))
+      (chk "post R[0,1]"        #t (clp:real x 0.0 1.0))
+      (let ((d (%clp-get-domain x)))
+        (chk "domain head 'r"   'r  (car d))
+        (chk "lo = 0.0"         0.0 (clp:domain-r-lo d))
+        (chk "hi = 1.0"         1.0 (clp:domain-r-hi d))
+        (chk "lo not open"      #f  (clp:domain-r-lo-open? d))
+        (chk "hi not open"      #f  (clp:domain-r-hi-open? d))))
+
+    ;; ── 2. Re-post replaces (manual narrowing) ──────────────────────
+    (let ((x (logic-var)))
+      (clp:real x -1.0 1.0)
+      (clp:real x  0.0 0.5)
+      (let ((d (%clp-get-domain x)))
+        (chk "narrowed lo"  0.0 (clp:domain-r-lo d))
+        (chk "narrowed hi"  0.5 (clp:domain-r-hi d))))
+
+    ;; ── 3. R ∩ R via var–var unify ──────────────────────────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:real x 0.0 5.0)
+      (clp:real y 3.0 7.0)
+      (chk "unify x y succeeds" #t (unify x y))
+      (let ((d (%clp-get-domain y)))
+        (chk "merged R lo = 3.0" 3.0 (clp:domain-r-lo d))
+        (chk "merged R hi = 5.0" 5.0 (clp:domain-r-hi d))))
+
+    ;; ── 4. R ∩ Z (cross-kind) — survivor ends up R-typed ────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:real x 0.0 10.0)
+      (clp:domain y 2 5)            ;; Z[2,5]
+      (unify x y)
+      (let ((d (%clp-get-domain y)))
+        (chk "R∩Z head 'r"       'r  (car d))
+        (chk "R∩Z lo = 2.0"      2.0 (clp:domain-r-lo d))
+        (chk "R∩Z hi = 5.0"      5.0 (clp:domain-r-hi d))))
+
+    ;; ── 5. Disjoint R domains fail unify ────────────────────────────
+    (let ((x (logic-var)) (y (logic-var)))
+      (clp:real x 0.0 1.0)
+      (clp:real y 2.0 3.0)
+      (chk "disjoint R unify fails" #f (unify x y)))
+
+    ;; ── 6. Forward-checking ground unify (flonum + fixnum) ──────────
+    (let ((x (logic-var)))
+      (clp:real x 0.0 1.0)
+      (chk "in-range flonum 0.5 ok" #t (unify x 0.5)))
+    (let ((x (logic-var)))
+      (clp:real x 0.0 1.0)
+      (chk "out-of-range 2.0 fails" #f (unify x 2.0)))
+    (let ((x (logic-var)))
+      (clp:real x 0.0 5.0)
+      (chk "in-range fixnum 3 ok"   #t (unify x 3)))
+
+    ;; ── 7. Trail unwind restores R domain ───────────────────────────
+    (let* ((x (logic-var))
+           (_ (clp:real x 0.0 1.0))
+           (m (trail-mark)))
+      (clp:real x 0.25 0.75)        ;; replace via trailed write
+      (let ((d1 (%clp-get-domain x)))
+        (chk "post-narrow lo = 0.25" 0.25 (clp:domain-r-lo d1)))
+      (unwind-trail m)
+      (let ((d2 (%clp-get-domain x)))
+        (chk "after unwind lo = 0.0"   0.0 (clp:domain-r-lo d2))
+        (chk "after unwind hi = 1.0"   1.0 (clp:domain-r-hi d2))))
+
+    ;; Trail unwind for an R-binding from a var-var intersect.
+    (let* ((x (logic-var)) (y (logic-var))
+           (_ (clp:real x 0.0 5.0))
+           (_ (clp:real y 3.0 7.0))
+           (m (trail-mark)))
+      (unify x y)
+      (chk "merged y lo = 3.0" 3.0 (clp:domain-r-lo (%clp-get-domain y)))
+      (unwind-trail m)
+      (chk "after unwind x.lo = 0.0" 0.0 (clp:domain-r-lo (%clp-get-domain x)))
+      (chk "after unwind y.hi = 7.0" 7.0 (clp:domain-r-hi (%clp-get-domain y)))
+      (chk "after unwind x unbound"   #t  (logic-var? (deref-lvar x))))
+
+    ;; ── 8. Open-bound semantics: half-open intervals at unify-time ──
+    ;; (1.0, 2.0]  → 1.0 excluded
+    (let ((x (logic-var)))
+      (%clp-domain-r! x 1.0 2.0 #t #f)
+      (chk "open lo excludes 1.0"     #f (unify x 1.0)))
+    (let ((x (logic-var)))
+      (%clp-domain-r! x 1.0 2.0 #t #f)
+      (chk "open lo accepts 1.5"      #t (unify x 1.5)))
+    ;; [1.0, 2.0)  → 2.0 excluded
+    (let ((x (logic-var)))
+      (%clp-domain-r! x 1.0 2.0 #f #t)
+      (chk "open hi excludes 2.0"     #f (unify x 2.0)))
+    (let ((x (logic-var)))
+      (%clp-domain-r! x 1.0 2.0 #f #t)
+      (chk "open hi accepts 1.5"      #t (unify x 1.5)))
+
+    ;; ── Summary ─────────────────────────────────────────────────────
+    (newline)
+    (if (= fail-count 0)
+        (display "clpr domain smoke: ALL PASS")
+        (begin (display "clpr domain smoke: ")
+               (display fail-count) (display " FAILURE(S)")))
+    (newline)))
+
+

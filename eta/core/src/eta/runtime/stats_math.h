@@ -1,14 +1,16 @@
 #pragma once
 
-/// @file stats_math.h
-/// @brief Eigen-backed statistical math functions for the Eta runtime.
-///
-/// Provides:  mean, sample variance, std-dev, standard error,
-///            percentile, covariance, correlation, OLS regression,
-///            t-distribution CDF/quantile, and two-sample t-test.
-///
-/// All vector operations delegate to Eigen; scalar special functions
-/// (incomplete beta, t-CDF/quantile) use std::lgamma from <cmath>.
+/**
+ * @file stats_math.h
+ * @brief Eigen-backed statistical math functions for the Eta runtime.
+ *
+ * Provides:  mean, sample variance, std-dev, standard error,
+ *            percentile, covariance, correlation, OLS regression,
+ *            t-distribution CDF/quantile, and two-sample t-test.
+ *
+ * All vector operations delegate to Eigen; scalar special functions
+ * (incomplete beta, t-CDF/quantile) use std::lgamma from <cmath>.
+ */
 
 #include <algorithm>
 #include <cmath>
@@ -21,14 +23,12 @@
 
 namespace eta::runtime::stats {
 
-// ─── Helpers: map std::vector<double> into Eigen ─────────────────────
 
 /// Zero-copy const view of a std::vector<double> as an Eigen column vector.
 inline Eigen::Map<const Eigen::VectorXd> as_eigen(const std::vector<double>& v) {
     return {v.data(), static_cast<Eigen::Index>(v.size())};
 }
 
-// ─── Descriptive statistics (Eigen primary, std::vector overloads) ───
 
 inline double mean(const Eigen::Ref<const Eigen::VectorXd>& xs) {
     if (xs.size() == 0) return 0.0;
@@ -47,13 +47,11 @@ inline double stddev(const Eigen::Ref<const Eigen::VectorXd>& xs) {
     return std::sqrt(variance(xs));
 }
 
-/// Standard error of the mean  (s / √n).
 inline double sem(const Eigen::Ref<const Eigen::VectorXd>& xs) {
     if (xs.size() < 2) return 0.0;
     return stddev(xs) / std::sqrt(static_cast<double>(xs.size()));
 }
 
-/// p-th percentile (0 ≤ p ≤ 1) using linear interpolation.
 /// Takes a copy because we need to sort.
 inline double percentile(Eigen::VectorXd xs, double p) {
     if (xs.size() == 0) return 0.0;
@@ -86,8 +84,6 @@ inline std::optional<double> correlation(const Eigen::Ref<const Eigen::VectorXd>
     return *cov / (sx * sy);
 }
 
-// ─── std::vector<double> convenience overloads ──────────────────────
-//     (zero-copy via Eigen::Map — keeps existing callers compiling)
 
 inline double mean(const std::vector<double>& v) { return mean(as_eigen(v)); }
 inline double variance(const std::vector<double>& v) { return variance(as_eigen(v)); }
@@ -109,23 +105,24 @@ inline std::optional<double> correlation(const std::vector<double>& xs,
     return correlation(as_eigen(xs), as_eigen(ys));
 }
 
-// ─── Special functions: Regularized Incomplete Beta ──────────────────
 
-/// Regularized incomplete beta function I_x(a, b) via continued fraction
-/// (modified Lentz algorithm).  Convergence is fast for most inputs.
+/**
+ * Regularized incomplete beta function I_x(a, b) via continued fraction
+ * (modified Lentz algorithm).  Convergence is fast for most inputs.
+ */
 inline double betainc(double x, double a, double b) {
     if (x <= 0.0) return 0.0;
     if (x >= 1.0) return 1.0;
 
-    // For better convergence, use the symmetry relation when x > (a+1)/(a+b+2)
+    /// For better convergence, use the symmetry relation when x > (a+1)/(a+b+2)
     if (x > (a + 1.0) / (a + b + 2.0))
         return 1.0 - betainc(1.0 - x, b, a);
 
-    // Compute the log of the front factor:  x^a (1-x)^b / (a * Beta(a,b))
+    /// Compute the log of the front factor:  x^a (1-x)^b / (a * Beta(a,b))
     double lbeta = std::lgamma(a) + std::lgamma(b) - std::lgamma(a + b);
     double front = std::exp(a * std::log(x) + b * std::log(1.0 - x) - lbeta) / a;
 
-    // Continued fraction (Lentz's method)
+    /// Continued fraction (Lentz's method)
     constexpr int max_iter = 200;
     constexpr double eps = 1.0e-14;
     constexpr double tiny = 1.0e-30;
@@ -162,7 +159,6 @@ inline double betainc(double x, double a, double b) {
     return front * (f - 1.0);
 }
 
-// ─── t-Distribution CDF / Quantile ──────────────────────────────────
 
 /// CDF of Student's t-distribution.
 inline double t_cdf(double t, double df) {
@@ -196,7 +192,6 @@ inline double t_quantile(double p, double df) {
     return 0.5 * (lo + hi);
 }
 
-// ─── Confidence Intervals ────────────────────────────────────────────
 
 struct ConfidenceInterval {
     double lower;
@@ -221,7 +216,6 @@ inline std::optional<ConfidenceInterval> ci_mean(const std::vector<double>& v, d
     return ci_mean(as_eigen(v), level);
 }
 
-// ─── Two-Sample t-Test ───────────────────────────────────────────────
 
 struct TTestResult {
     double t_stat;
@@ -243,7 +237,7 @@ inline std::optional<TTestResult> t_test_2(const Eigen::Ref<const Eigen::VectorX
 
     double t = (mx - my) / se;
 
-    // Welch-Satterthwaite degrees of freedom
+    /// Welch-Satterthwaite degrees of freedom
     double num = (vx / nx + vy / ny) * (vx / nx + vy / ny);
     double den = (vx / nx) * (vx / nx) / (nx - 1.0)
                + (vy / ny) * (vy / ny) / (ny - 1.0);
@@ -258,7 +252,6 @@ inline std::optional<TTestResult> t_test_2(const std::vector<double>& xs,
     return t_test_2(as_eigen(xs), as_eigen(ys));
 }
 
-// ─── Ordinary Least Squares (Simple Linear Regression) ───────────────
 
 struct OLSResult {
     double slope;
@@ -272,19 +265,18 @@ struct OLSResult {
     double p_intercept;
 };
 
-/// Simple OLS:  y = β₀ + β₁·x  — via Eigen QR decomposition.
 inline std::optional<OLSResult> ols(const Eigen::Ref<const Eigen::VectorXd>& xs,
                                      const Eigen::Ref<const Eigen::VectorXd>& ys) {
     if (xs.size() != ys.size() || xs.size() < 3) return std::nullopt;
 
     Eigen::Index n = xs.size();
 
-    // Design matrix [1 | x]
+    /// Design matrix [1 | x]
     Eigen::MatrixXd X(n, 2);
     X.col(0).setOnes();
     X.col(1) = xs;
 
-    // Solve via QR decomposition
+    /// Solve via QR decomposition
     Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr(X);
     if (qr.rank() < 2) return std::nullopt;
     Eigen::VectorXd beta = qr.solve(ys);
@@ -292,18 +284,16 @@ inline std::optional<OLSResult> ols(const Eigen::Ref<const Eigen::VectorXd>& xs,
     double intercept = beta(0);
     double slope     = beta(1);
 
-    // Residuals
+    /// Residuals
     Eigen::VectorXd residuals = ys - X * beta;
     double sse = residuals.squaredNorm();
     double df  = static_cast<double>(n - 2);
     double mse = sse / df;
 
-    // R²
     double y_mean = ys.mean();
     double sst = (ys.array() - y_mean).square().sum();
     double r2 = (sst > 0.0) ? 1.0 - sse / sst : 0.0;
 
-    // Standard errors via (XᵀX)⁻¹
     Eigen::MatrixXd XtX_inv = (X.transpose() * X).inverse();
     double se_intercept = std::sqrt(XtX_inv(0, 0) * mse);
     double se_slope     = std::sqrt(XtX_inv(1, 1) * mse);
@@ -324,5 +314,5 @@ inline std::optional<OLSResult> ols(const std::vector<double>& xs,
     return ols(as_eigen(xs), as_eigen(ys));
 }
 
-} // namespace eta::runtime::stats
+} ///< namespace eta::runtime::stats
 

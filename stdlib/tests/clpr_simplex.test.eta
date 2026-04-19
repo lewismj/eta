@@ -1,0 +1,87 @@
+;;; clpr_simplex_smoke.eta -- Smoke tests for simplex-backed std.clpr.
+
+(module clpr-simplex-smoke
+  (import std.test std.logic std.clpr)
+  (begin
+
+    (defun lo (bounds) (car bounds))
+    (defun hi (bounds) (cdr bounds))
+
+    (defun make-vars (n)
+      (if (= n 0)
+          '()
+          (cons (logic-var) (make-vars (- n 1)))))
+
+    (defun post-nonneg! (xs)
+      (if (null? xs)
+          #t
+          (and (clp:r>= (car xs) 0)
+               (post-nonneg! (cdr xs)))))
+
+    (defun sum-vars (xs)
+      (if (null? xs)
+          0.0
+          (clp:r+ (car xs) (sum-vars (cdr xs)))))
+
+    (define suite
+      (make-group "clpr-simplex-smoke"
+        (list
+          (make-test "incremental add/retract over 50 vars"
+            (lambda ()
+              (let* ((xs (make-vars 50))
+                     (x0 (car xs))
+                     (x1 (car (cdr xs)))
+                     (m (trail-mark)))
+                (assert-equal #t (post-nonneg! xs))
+                (assert-equal #t (clp:r<= (sum-vars xs) 100))
+                (assert-equal #t (unify x0 40))
+                (let ((b1 (clp:r-bounds x1)))
+                  (assert-true (pair? b1))
+                  (assert-approx-equal 0.0 (lo b1) 1e-8)
+                  (assert-approx-equal 60.0 (hi b1) 1e-6))
+                (unwind-trail m)
+                (assert-equal #f (clp:domain-r x0))
+                (assert-equal #f (clp:domain-r x1)))))
+
+          (make-test "redundant bound posting is idempotent"
+            (lambda ()
+              (let ((x (logic-var)))
+                (assert-equal #t (clp:r<= x 5))
+                (assert-equal #t (clp:r<= x 5))
+                (let ((b (clp:r-bounds x)))
+                  (assert-true (pair? b))
+                  (assert-true (< (lo b) -1e100))
+                  (assert-approx-equal 5.0 (hi b) 1e-9)))))
+
+          (make-test "infeasible post is rejected without widening prior state"
+            (lambda ()
+              (let ((x (logic-var)))
+                (assert-equal #t (clp:r>= x 0))
+                (let ((before (clp:r-bounds x)))
+                  (assert-true (pair? before))
+                  (assert-approx-equal 0.0 (lo before) 1e-9)
+                  (assert-true (> (hi before) 1e100)))
+                (assert-equal #f (clp:r<= x -1))
+                (let ((after (clp:r-bounds x)))
+                  (assert-true (pair? after))
+                  (assert-approx-equal 0.0 (lo after) 1e-9)
+                  (assert-true (> (hi after) 1e100))))))
+
+          (make-test "backtrack restores simplex-projected domains"
+            (lambda ()
+              (let ((x (logic-var))
+                    (y (logic-var))
+                    (m (trail-mark)))
+                (assert-equal #t (clp:r<= (clp:r+ x y) 10))
+                (assert-equal #t (clp:r>= x 2))
+                (assert-equal #t (clp:r>= y 3))
+                (assert-equal #t (clp:r<= y 7))
+                (let ((bx (clp:r-bounds x)))
+                  (assert-true (pair? bx))
+                  (assert-approx-equal 2.0 (lo bx) 1e-9)
+                  (assert-approx-equal 7.0 (hi bx) 1e-9))
+                (unwind-trail m)
+                (assert-equal #f (clp:domain-r x))
+                (assert-equal #f (clp:domain-r y))))))))
+
+    (print-tap (run suite))))

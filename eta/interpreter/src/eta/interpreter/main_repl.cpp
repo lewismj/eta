@@ -24,8 +24,10 @@ static void print_usage(const char* prog) {
               << "  --help          Show this help message.\n";
 }
 
-/// Check whether a line of input has balanced parentheses.
-/// Returns true when the expression is complete (or on empty input).
+/**
+ * Check whether a line of input has balanced parentheses.
+ * Returns true when the expression is complete (or on empty input).
+ */
 static bool is_balanced(const std::string& input) {
     int depth = 0;
     bool in_string = false;
@@ -53,15 +55,15 @@ static bool is_balanced(const std::string& input) {
 
 /// Detect whether a (trimmed) input line starts with a definition form.
 static bool is_definition(const std::string& input) {
-    // Find first non-whitespace
+    /// Find first non-whitespace
     auto pos = input.find_first_not_of(" \t\n\r");
     if (pos == std::string::npos || input[pos] != '(') return false;
-    pos++; // skip '('
-    // Skip whitespace after '('
+    pos++; ///< skip '('
+    /// Skip whitespace after '('
     pos = input.find_first_not_of(" \t\n\r", pos);
     if (pos == std::string::npos) return false;
 
-    // Check if it starts with a definition keyword
+    /// Check if it starts with a definition keyword
     for (const char* kw : {"define ", "define\t", "define\n",
                             "defun ", "defun\t", "defun\n",
                             "def ", "def\t", "def\n",
@@ -76,7 +78,7 @@ static bool is_definition(const std::string& input) {
 static bool is_import(const std::string& input) {
     auto pos = input.find_first_not_of(" \t\n\r");
     if (pos == std::string::npos || input[pos] != '(') return false;
-    pos++; // skip '('
+    pos++; ///< skip '('
     pos = input.find_first_not_of(" \t\n\r", pos);
     if (pos == std::string::npos) return false;
 
@@ -87,8 +89,10 @@ static bool is_import(const std::string& input) {
     return false;
 }
 
-/// Extract the defined name from a (define name ...) or (defun name ...) form.
-/// Returns empty string if not a recognizable definition.
+/**
+ * Extract the defined name from a (define name ...) or (defun name ...) form.
+ * Returns empty string if not a recognizable definition.
+ */
 static std::string extract_define_name(const std::string& input) {
     auto pos = input.find_first_not_of(" \t\n\r");
     if (pos == std::string::npos || input[pos] != '(') return {};
@@ -96,7 +100,7 @@ static std::string extract_define_name(const std::string& input) {
     pos = input.find_first_not_of(" \t\n\r", pos);
     if (pos == std::string::npos) return {};
 
-    // Skip keyword
+    /// Skip keyword
     std::string_view rest(input.data() + pos, input.size() - pos);
     for (const char* kw : {"define", "defun", "def"}) {
         if (rest.starts_with(kw)) {
@@ -108,15 +112,14 @@ static std::string extract_define_name(const std::string& input) {
     pos = input.find_first_not_of(" \t\n\r", pos);
     if (pos == std::string::npos) return {};
 
-    // The name might be bare `x` or a function shorthand `(f x y)`
+    /// The name might be bare `x` or a function shorthand `(f x y)`
     if (input[pos] == '(') {
-        // (define (f x y) ...) — name is the first symbol inside
         pos++;
         pos = input.find_first_not_of(" \t\n\r", pos);
         if (pos == std::string::npos) return {};
     }
 
-    // Collect the identifier
+    /// Collect the identifier
     auto end = pos;
     while (end < input.size() && !std::isspace(static_cast<unsigned char>(input[end]))
            && input[end] != ')' && input[end] != '(') {
@@ -125,8 +128,10 @@ static std::string extract_define_name(const std::string& input) {
     return input.substr(pos, end - pos);
 }
 
-/// Split input into top-level forms (simple paren-balanced splitting).
-/// Each returned string is one complete top-level form or bare atom.
+/**
+ * Split input into top-level forms (simple paren-balanced splitting).
+ * Each returned string is one complete top-level form or bare atom.
+ */
 static std::vector<std::string> split_toplevel_forms(const std::string& input) {
     std::vector<std::string> forms;
     int depth = 0;
@@ -143,7 +148,7 @@ static std::vector<std::string> split_toplevel_forms(const std::string& input) {
         if (in_string) continue;
 
         if (std::isspace(static_cast<unsigned char>(c))) {
-            // If we're outside parens and have accumulated a bare token, finish it
+            /// If we're outside parens and have accumulated a bare token, finish it
             if (depth == 0 && form_start != std::string::npos) {
                 forms.push_back(input.substr(form_start, i - form_start));
                 form_start = std::string::npos;
@@ -151,7 +156,6 @@ static std::vector<std::string> split_toplevel_forms(const std::string& input) {
             continue;
         }
 
-        // Start of comment — skip to end of line
         if (c == ';') {
             if (depth == 0 && form_start != std::string::npos) {
                 forms.push_back(input.substr(form_start, i - form_start));
@@ -173,7 +177,7 @@ static std::vector<std::string> split_toplevel_forms(const std::string& input) {
             }
         }
     }
-    // Trailing bare token
+    /// Trailing bare token
     if (form_start != std::string::npos) {
         auto trailing = input.substr(form_start);
         if (trailing.find_first_not_of(" \t\n\r") != std::string::npos) {
@@ -190,7 +194,7 @@ static constexpr const char* BANNER =
 int main(int argc, char* argv[]) {
     std::string cli_path;
 
-    // Parse CLI arguments
+    /// Parse CLI arguments
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
 
@@ -213,10 +217,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Build module path resolver
+    /// Build module path resolver
     auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
 
-    // Warn when the module path is empty and no explicit --path was given.
+    /// Warn when the module path is empty and no explicit --path was given.
     if (cli_path.empty()) {
         const char* env = std::getenv("ETA_MODULE_PATH");
         if (!env || env[0] == '\0') {
@@ -230,13 +234,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Create driver
+    /// Create driver
     const std::size_t heap_bytes =
         eta::interpreter::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
     eta::interpreter::Driver driver(std::move(resolver), heap_bytes);
     auto resolve = driver.file_resolver();
 
-    // Load prelude (if available in module path)
+    /// Load prelude (if available in module path)
     bool prelude_available = false;
     {
         auto pr = driver.load_prelude();
@@ -263,17 +267,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // REPL loop
+    /// REPL loop
     std::cout << BANNER;
 
     std::string buffer;
     bool continuation = false;
 
-    // Track previous REPL module names so each new module can import from them.
+    /// Track previous REPL module names so each new module can import from them.
     std::vector<std::string> prior_modules;
 
     while (true) {
-        // Prompt
+        /// Prompt
         if (continuation) {
             std::cout << "... ";
         } else {
@@ -283,31 +287,31 @@ int main(int argc, char* argv[]) {
 
         std::string line;
         if (!std::getline(std::cin, line)) {
-            // EOF (Ctrl+D / Ctrl+Z)
+            /// EOF (Ctrl+D / Ctrl+Z)
             std::cout << "\n";
             break;
         }
 
-        // Accumulate multi-line input
+        /// Accumulate multi-line input
         if (continuation) {
             buffer += "\n" + line;
         } else {
             buffer = line;
         }
 
-        // Check for balanced parentheses before submitting
+        /// Check for balanced parentheses before submitting
         if (!is_balanced(buffer)) {
             continuation = true;
             continue;
         }
         continuation = false;
 
-        // Skip empty input
+        /// Skip empty input
         if (buffer.empty() || buffer.find_first_not_of(" \t\n\r") == std::string::npos) {
             continue;
         }
 
-        // Handle (exit) and (quit) commands
+        /// Handle (exit) and (quit) commands
         {
             auto trimmed = buffer;
             auto s = trimmed.find_first_not_of(" \t\n\r");
@@ -320,45 +324,47 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Split input into individual top-level forms (supports multiple
-        // forms per input, e.g. "(define x 10) x")
+        /**
+         * Split input into individual top-level forms (supports multiple
+         * forms per input, e.g. "(define x 10) x")
+         */
         auto forms = split_toplevel_forms(buffer);
         if (forms.empty()) continue;
 
-        // Build the module body. Definitions go in directly; the last
-        // form, if it is an expression, gets captured in a unique result binding.
+        /**
+         * Build the module body. Definitions go in directly; the last
+         * form, if it is an expression, gets captured in a unique result binding.
+         */
         static int repl_counter = 0;
         int this_id = repl_counter++;
         std::string module_name = "__repl_" + std::to_string(this_id);
-        // Unique result name per module to avoid import conflicts
+        /// Unique result name per module to avoid import conflicts
         std::string result_name = "__repl_r_" + std::to_string(this_id);
 
-        // Collect user-defined names for auto-export (NOT the result binding)
+        /// Collect user-defined names for auto-export (NOT the result binding)
         std::vector<std::string> user_defines;
         std::string body;
-        std::string user_imports;   // explicit (import ...) forms from user input
+        std::string user_imports;   ///< explicit (import ...) forms from user input
         bool last_is_expr = false;
 
         for (std::size_t i = 0; i < forms.size(); ++i) {
             bool is_last = (i == forms.size() - 1);
             if (is_import(forms[i])) {
-                // Place import directives at the module level, not in (begin ...)
+                /// Place import directives at the module level, not in (begin ...)
                 user_imports += "  " + forms[i] + "\n";
             } else if (is_definition(forms[i])) {
                 auto name = extract_define_name(forms[i]);
                 if (!name.empty()) user_defines.push_back(name);
                 body += "    " + forms[i] + "\n";
             } else if (is_last) {
-                // Last form is an expression — capture its value
                 body += "    (define " + result_name + " " + forms[i] + ")\n";
                 last_is_expr = true;
             } else {
-                // Non-last expression — run for side effects
                 body += "    " + forms[i] + "\n";
             }
         }
 
-        // Build import clauses: auto-import std.prelude + all prior REPL modules
+        /// Build import clauses: auto-import std.prelude + all prior REPL modules
         std::string imports;
         if (prelude_available) {
             imports += "  (import std.prelude)\n";
@@ -367,7 +373,7 @@ int main(int argc, char* argv[]) {
             imports += "  (import " + prev + ")\n";
         }
 
-        // Build export clause for user defines only (not __repl_r_N)
+        /// Build export clause for user defines only (not __repl_r_N)
         std::string exports;
         if (!user_defines.empty()) {
             exports = "  (export";
@@ -392,15 +398,14 @@ int main(int argc, char* argv[]) {
         }
 
         if (ok) {
-            // Success — register this module so future inputs can import from it
             prior_modules.push_back(module_name);
 
-            // Print the result unless it's the void/unspecified value (Nil)
+            /// Print the result unless it's the void/unspecified value (Nil)
             if (last_is_expr && result != eta::runtime::nanbox::Nil) {
                 std::cout << "=> " << driver.format_value(result) << "\n";
             }
         } else {
-            // Print diagnostics
+            /// Print diagnostics
             driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
         }
     }

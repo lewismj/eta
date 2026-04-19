@@ -33,20 +33,18 @@ using namespace eta::runtime::vm;
 using namespace eta::runtime::memory::factory;
 using namespace eta::runtime::nanbox;
 
-// ============================================================================
-// Fixture — creates VM in constructor so register_core_primitives gets the vm
-// ============================================================================
+/**
+ */
 
 struct HOTestFixture {
     memory::heap::Heap         heap{4 * 1024 * 1024};
     memory::intern::InternTable intern_table;
     BytecodeFunctionRegistry   registry;
     BuiltinEnvironment         builtins;
-    VM                         vm;  // VM lives in the fixture
+    VM                         vm;  ///< VM lives in the fixture
 
     HOTestFixture() : vm(heap, intern_table) {
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
-        // Register primitives with VM reference — enables closure support in map/for-each
         register_core_primitives(builtins, heap, intern_table, &vm);
         register_port_primitives(builtins, heap, intern_table, vm);
         register_io_primitives(builtins, heap, intern_table, vm);
@@ -75,7 +73,7 @@ struct HOTestFixture {
         Emitter emitter(sem_mod, heap, intern_table, registry);
         auto* main_func = emitter.emit();
 
-        // Reset globals each call (install() clears the vector)
+        /// Reset globals each call (install() clears the vector)
         auto install_res = builtins.install(heap, vm.globals(), sem_mod.total_globals);
         if (!install_res) throw std::runtime_error("Failed to install builtins");
 
@@ -89,7 +87,7 @@ struct HOTestFixture {
             throw std::runtime_error(msg);
         }
 
-        // Look for 'result' binding
+        /// Look for 'result' binding
         for (size_t i = 0; i < sem_mod.bindings.size(); ++i) {
             if (sem_mod.bindings[i].name == "result") {
                 return vm.globals()[sem_mod.bindings[i].slot];
@@ -153,14 +151,13 @@ struct HOTestFixture {
     }
 };
 
-// ============================================================================
-// map tests
-// ============================================================================
+/**
+ * map tests
+ */
 
 BOOST_FIXTURE_TEST_SUITE(map_tests, HOTestFixture)
 
 BOOST_AUTO_TEST_CASE(map_with_lambda_doubles_each_element) {
-    // (map (lambda (x) (* x 2)) '(1 2 3))  → '(2 4 6)
     auto result = run(R"(
 (module test ()
   (define result (map (lambda (x) (* x 2)) (list 1 2 3))))
@@ -173,7 +170,6 @@ BOOST_AUTO_TEST_CASE(map_with_lambda_doubles_each_element) {
 }
 
 BOOST_AUTO_TEST_CASE(map_with_lambda_on_empty_list) {
-    // (map (lambda (x) x) '())  → '()
     auto result = run(R"(
 (module test ()
   (define result (map (lambda (x) x) (list))))
@@ -182,7 +178,7 @@ BOOST_AUTO_TEST_CASE(map_with_lambda_on_empty_list) {
 }
 
 BOOST_AUTO_TEST_CASE(map_with_named_closure) {
-    // Define a named function and pass it to map
+    /// Define a named function and pass it to map
     auto result = run(R"(
 (module test ()
   (define (square x) (* x x))
@@ -198,7 +194,7 @@ BOOST_AUTO_TEST_CASE(map_with_named_closure) {
 }
 
 BOOST_AUTO_TEST_CASE(map_closure_captures_variable) {
-    // Closure that captures 'offset' from outer scope
+    /// Closure that captures 'offset' from outer scope
     auto result = run(R"(
 (module test ()
   (define offset 10)
@@ -212,7 +208,7 @@ BOOST_AUTO_TEST_CASE(map_closure_captures_variable) {
 }
 
 BOOST_AUTO_TEST_CASE(map_with_primitive_procedure) {
-    // map with a built-in primitive still works
+    /// map with a built-in primitive still works
     auto result = run(R"(
 (module test ()
   (define result (map (lambda (x) (+ x 0)) (list 5 10 15))))
@@ -225,7 +221,7 @@ BOOST_AUTO_TEST_CASE(map_with_primitive_procedure) {
 }
 
 BOOST_AUTO_TEST_CASE(map_preserves_order) {
-    // Verify result list order matches input list order
+    /// Verify result list order matches input list order
     auto result = run(R"(
 (module test ()
   (define result (map (lambda (x) (- 10 x)) (list 1 2 3 4))))
@@ -239,7 +235,7 @@ BOOST_AUTO_TEST_CASE(map_preserves_order) {
 }
 
 BOOST_AUTO_TEST_CASE(map_error_propagation) {
-    // Error inside the mapped lambda propagates out
+    /// Error inside the mapped lambda propagates out
     auto msg = run_expect_error(R"(
 (module test ()
   (define result (map (lambda (x) (error "oops" x)) (list 1))))
@@ -249,15 +245,17 @@ BOOST_AUTO_TEST_CASE(map_error_propagation) {
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ============================================================================
-// for-each tests
-// ============================================================================
+/**
+ * for-each tests
+ */
 
 BOOST_FIXTURE_TEST_SUITE(for_each_tests, HOTestFixture)
 
 BOOST_AUTO_TEST_CASE(for_each_calls_lambda_for_each_element) {
-    // Use a list to accumulate results via set! (verifies side effects fire)
-    // Simpler approach: use for-each to sum into a global variable
+    /**
+     * Use a list to accumulate results via set! (verifies side effects fire)
+     * Simpler approach: use for-each to sum into a global variable
+     */
     auto result = run(R"(
 (module test ()
   (define count 0)
@@ -289,7 +287,6 @@ BOOST_AUTO_TEST_CASE(for_each_with_named_closure) {
 }
 
 BOOST_AUTO_TEST_CASE(for_each_returns_unspecified) {
-    // for-each returns nil (#void-ish) — we just check it doesn't error
     BOOST_CHECK_NO_THROW(
         run(R"(
 (module test ()
@@ -315,20 +312,19 @@ BOOST_AUTO_TEST_CASE(for_each_closure_captures_outer_binding) {
   (for-each (lambda (x) (set! sum (+ sum (* x multiplier)))) (list 1 2 3 4))
   (define result sum))
 )");
-    // 1*3 + 2*3 + 3*3 + 4*3 = 3+6+9+12 = 30
+    /// 1*3 + 2*3 + 3*3 + 4*3 = 3+6+9+12 = 30
     BOOST_TEST(as_int(result) == 30);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ============================================================================
-// call_value trampoline unit tests (lower level)
-// ============================================================================
+/**
+ * call_value trampoline unit tests (lower level)
+ */
 
 BOOST_FIXTURE_TEST_SUITE(call_value_tests, HOTestFixture)
 
 BOOST_AUTO_TEST_CASE(nested_map_calls) {
-    // map inside map — tests recursive trampoline calls
     auto result = run(R"(
 (module test ()
   (define lst (list (list 1 2) (list 3 4) (list 5 6)))
@@ -336,7 +332,7 @@ BOOST_AUTO_TEST_CASE(nested_map_calls) {
                         (map (lambda (x) (* x x)) inner))
                       lst)))
 )");
-    // Result should be ((1 4) (9 16) (25 36))
+    /// Result should be ((1 4) (9 16) (25 36))
     auto outer = list_to_vec(result);
     BOOST_REQUIRE_EQUAL(outer.size(), 3u);
 
@@ -352,7 +348,7 @@ BOOST_AUTO_TEST_CASE(nested_map_calls) {
 }
 
 BOOST_AUTO_TEST_CASE(map_then_for_each) {
-    // map followed by for-each on the result
+    /// map followed by for-each on the result
     auto result = run(R"(
 (module test ()
   (define doubled (map (lambda (x) (* x 2)) (list 1 2 3)))
@@ -360,7 +356,7 @@ BOOST_AUTO_TEST_CASE(map_then_for_each) {
   (for-each (lambda (x) (set! total (+ total x))) doubled)
   (define result total))
 )");
-    // doubled = (2 4 6), total = 12
+    /// doubled = (2 4 6), total = 12
     BOOST_TEST(as_int(result) == 12);
 }
 

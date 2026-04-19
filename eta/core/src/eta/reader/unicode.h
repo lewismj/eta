@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <cstdint>
@@ -23,5 +23,5 @@ namespace eta::unicode {
         }
     }
 
-} // namespace eta::unicode
+} ///< namespace eta::unicode
 

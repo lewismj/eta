@@ -1,0 +1,85 @@
+;;; clp_linearize_smoke.eta -- Smoke tests for %clp-linearize.
+
+(module clp-linearize-smoke
+  (import std.test std.logic std.core)
+  (begin
+
+    (defun payload-tag (p) (car (cdr p)))
+    (defun payload-msg (p) (car (cdr (cdr p))))
+
+    (defun starts-with? (s pfx)
+      (let ((ns (string-length s))
+            (np (string-length pfx)))
+        (if (> np ns)
+            #f
+            (letrec ((loop (lambda (i)
+                             (if (= i np)
+                                 #t
+                                 (if (eqv? (string-ref s i) (string-ref pfx i))
+                                     (loop (+ i 1))
+                                     #f)))))
+              (loop 0)))))
+
+    ;; Extract a logic variable id through the linearizer result shape:
+    ;; (%clp-linearize x) => (((1.0 . id)) . 0.0)
+    (defun lvar-id (v)
+      (cdr (car (car (%clp-linearize v)))))
+
+    (defun coef-of (pairs vid)
+      (if (null? pairs)
+          0.0
+          (let ((p (car pairs)))
+            (if (= (cdr p) vid)
+                (car p)
+                (coef-of (cdr pairs) vid)))))
+
+    (defun deep-sum (n leaf)
+      (if (= n 0)
+          leaf
+          (deep-sum (- n 1) (list '+ leaf 1))))
+
+    (define suite
+      (make-group "clp-linearize-smoke"
+        (list
+          (make-test "associativity equivalence"
+            (lambda ()
+              (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
+                (let ((a (%clp-linearize (term '+ x (term '+ y z))))
+                      (b (%clp-linearize (term '+ (term '+ x y) z))))
+                  (assert-equal a b)))))
+
+          (make-test "distributivity-style scaling over sums"
+            (lambda ()
+              (let ((x (logic-var)) (y (logic-var)))
+                (let ((a (%clp-linearize (list '* 2 (list '+ x y))))
+                      (b (%clp-linearize (list '+ (list '* 2 x) (list '* 2 y))))
+                      (vx (lvar-id x))
+                      (vy (lvar-id y)))
+                  (assert-equal a b)
+                  (assert-equal 2.0 (coef-of (car a) vx))
+                  (assert-equal 2.0 (coef-of (car a) vy))
+                  (assert-equal 0.0 (cdr a))))))
+
+          (make-test "constant folding"
+            (lambda ()
+              (let ((r (%clp-linearize '(+ 1 2 (* 3 4)))))
+                (assert-equal '() (car r))
+                (assert-equal 15.0 (cdr r)))))
+
+          (make-test "non-linear rejection has stable tag prefix"
+            (lambda ()
+              (let ((x (logic-var)) (y (logic-var)))
+                (let ((p (catch 'runtime.user-error (%clp-linearize (list '* x y)))))
+                  (assert-equal 'runtime.user-error (payload-tag p))
+                  (assert-true (starts-with? (payload-msg p)
+                                             "clp.linearize.non-linear:"))))))
+
+          (make-test "deep nesting trips depth guard"
+            (lambda ()
+              (let ((x (logic-var)))
+                (let ((p (catch 'runtime.user-error (%clp-linearize (deep-sum 520 x)))))
+                  (assert-equal 'runtime.user-error (payload-tag p))
+                  (assert-true (starts-with? (payload-msg p)
+                                             "clp.linearize.depth-exceeded:")))))))))
+
+    (print-tap (run suite))))

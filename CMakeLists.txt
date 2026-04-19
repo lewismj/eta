@@ -3,6 +3,13 @@ project(eta VERSION 0.1.0)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Suppress CMake deprecation warnings from vendored third-party
+# dependencies during configure (e.g. Eigen's old cmake_minimum_required).
+if(MSVC)
+    set(CMAKE_WARN_DEPRECATED OFF
+        CACHE BOOL "Suppress CMake deprecation warnings from third-party dependencies" FORCE)
+endif()
+
 # ── MSVC: use /Z7 (embedded debug info) globally ─────────────────────────────
 # libtorch's Caffe2Targets.cmake injects /Z7 via INTERFACE_COMPILE_OPTIONS.
 # CMake 3.25+ defaults to /Zi unless CMAKE_MSVC_DEBUG_INFORMATION_FORMAT is

@@ -1,11 +1,12 @@
-// dap_tests.cpp — DAP protocol tests for DapServer
-//
-// Tests exercise the DAP server in-process by injecting std::istringstream /
-// std::ostringstream instead of the real stdin/stdout pipe.  This lets us
-// verify the Content-Length framing, request dispatch, and response/event
-// correctness without spawning a subprocess.
-//
-// NOTE: BOOST_TEST_MODULE is defined once in eta_test.cpp for the whole binary.
+/**
+ *
+ * Tests exercise the DAP server in-process by injecting std::istringstream /
+ * std::ostringstream instead of the real stdin/stdout pipe.  This lets us
+ * verify the Content-Length framing, request dispatch, and response/event
+ * correctness without spawning a subprocess.
+ *
+ * NOTE: BOOST_TEST_MODULE is defined once in eta_test.cpp for the whole binary.
+ */
 
 #include <boost/test/unit_test.hpp>
 
@@ -22,9 +23,9 @@
 namespace fs   = std::filesystem;
 namespace json = eta::json;
 
-// ============================================================================
-// Helpers
-// ============================================================================
+/**
+ * Helpers
+ */
 
 /// Wrap a JSON body in the Content-Length frame used by the DAP wire protocol.
 static std::string frame(const std::string& body) {
@@ -62,8 +63,10 @@ static std::vector<json::Value> parse_output(const std::string& raw) {
     return msgs;
 }
 
-/// Find the first message matching type + command/event name.
-/// Returns a null Value if not found.
+/**
+ * Find the first message matching type + command/event name.
+ * Returns a null Value if not found.
+ */
 static json::Value find_msg(const std::vector<json::Value>& msgs,
                              const std::string& type,
                              const std::string& name) {
@@ -73,11 +76,13 @@ static json::Value find_msg(const std::vector<json::Value>& msgs,
         auto n = m.get_string(key);
         if (t && n && *t == type && *n == name) return m;
     }
-    return {};   // null Value
+    return {};   ///< null Value
 }
 
-/// Escape a filesystem path for safe embedding in a JSON string value.
-/// Converts backslashes to \\\\ and double-quotes to \\".
+/**
+ * Escape a filesystem path for safe embedding in a JSON string value.
+ * Converts backslashes to \\\\ and double-quotes to \\".
+ */
 static std::string json_path(const fs::path& p) {
     std::string s = p.string();
     std::string out;
@@ -106,10 +111,12 @@ static std::vector<std::string> collect_output(const std::vector<json::Value>& m
     return out;
 }
 
-/// Collect text from custom "eta-output" events (script stdout/stderr).
-/// The DAP server sends these instead of standard "output" events so the
-/// VS Code extension can route them to the "Eta Output" panel.
-/// Body shape: { "stream": "stdout"|"stderr", "text": "..." }
+/**
+ * Collect text from custom "eta-output" events (script stdout/stderr).
+ * The DAP server sends these instead of standard "output" events so the
+ * VS Code extension can route them to the "Eta Output" panel.
+ * Body shape: { "stream": "stdout"|"stderr", "text": "..." }
+ */
 static std::vector<std::string> collect_eta_output(const std::vector<json::Value>& msgs,
                                                     const std::string& stream) {
     std::vector<std::string> out;
@@ -127,8 +134,10 @@ static std::vector<std::string> collect_eta_output(const std::vector<json::Value
     return out;
 }
 
-/// Run the server synchronously with the given framed input and return all
-/// parsed output messages.
+/**
+ * Run the server synchronously with the given framed input and return all
+ * parsed output messages.
+ */
 static std::vector<json::Value> run_server(const std::string& input) {
     std::istringstream in(input);
     std::ostringstream out;
@@ -137,16 +146,15 @@ static std::vector<json::Value> run_server(const std::string& input) {
     return parse_output(out.str());
 }
 
-// ============================================================================
-// Test suite
-// ============================================================================
+/**
+ * Test suite
+ */
 
 BOOST_AUTO_TEST_SUITE(dap_protocol)
 
-// ---------------------------------------------------------------------------
-// 1. initialize → capabilities response (no "initialized" event yet per DAP spec;
-//    "initialized" is sent after launch so VS Code knows script_path_ is set)
-// ---------------------------------------------------------------------------
+/**
+ *    "initialized" is sent after launch so VS Code knows script_path_ is set)
+ */
 BOOST_AUTO_TEST_CASE(initialize_returns_capabilities) {
     std::string input =
         frame(request(1, "initialize",
@@ -161,15 +169,16 @@ BOOST_AUTO_TEST_CASE(initialize_returns_capabilities) {
     BOOST_TEST(resp["body"]["supportsConfigurationDoneRequest"].as_bool() == true);
     BOOST_TEST(resp["body"]["supportsTerminateRequest"].as_bool() == true);
 
-    // "initialized" must NOT be present without a prior "launch" (we moved the
-    // event to handle_launch to match the DAP spec and fix the 0-breakpoints bug)
+    /**
+     * "initialized" must NOT be present without a prior "launch" (we moved the
+     * event to handle_launch to match the DAP spec and fix the 0-breakpoints bug)
+     */
     auto evt = find_msg(msgs, "event", "initialized");
     BOOST_TEST(evt.is_null());
 }
 
-// ---------------------------------------------------------------------------
-// 1b. launch → capabilities response + initialized event (correct DAP order)
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(launch_sends_initialized_event) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -179,14 +188,14 @@ BOOST_AUTO_TEST_CASE(launch_sends_initialized_event) {
 
     auto msgs = run_server(input);
 
-    // "initialized" must be present and come AFTER the "launch" response
+    /// "initialized" must be present and come AFTER the "launch" response
     auto evt = find_msg(msgs, "event", "initialized");
     BOOST_TEST(!evt.is_null());
 }
 
-// ---------------------------------------------------------------------------
-// 2. launch stores the program path and responds with success
-// ---------------------------------------------------------------------------
+/**
+ * 2. launch stores the program path and responds with success
+ */
 BOOST_AUTO_TEST_CASE(launch_responds_success) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -201,10 +210,9 @@ BOOST_AUTO_TEST_CASE(launch_responds_success) {
     BOOST_TEST(resp["success"].as_bool() == true);
 }
 
-// ---------------------------------------------------------------------------
-// 3. setBreakpoints before launch → unverified breakpoints stored/returned
-//    with IDs assigned by the adapter
-// ---------------------------------------------------------------------------
+/**
+ *    with IDs assigned by the adapter
+ */
 BOOST_AUTO_TEST_CASE(set_breakpoints_before_launch) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -221,20 +229,19 @@ BOOST_AUTO_TEST_CASE(set_breakpoints_before_launch) {
 
     const auto& bps = resp["body"]["breakpoints"].as_array();
     BOOST_REQUIRE_EQUAL(bps.size(), 2u);
-    // Before the VM has started, breakpoints are reported as not yet verified
+    /// Before the VM has started, breakpoints are reported as not yet verified
     BOOST_TEST(bps[0]["verified"].as_bool() == false);
     BOOST_TEST(bps[0]["line"].as_int() == 5);
     BOOST_TEST(bps[1]["line"].as_int() == 10);
-    // Each breakpoint must have an integer ID assigned by the adapter
+    /// Each breakpoint must have an integer ID assigned by the adapter
     BOOST_TEST(bps[0]["id"].is_int() == true);
     BOOST_TEST(bps[1]["id"].is_int() == true);
-    // IDs must be distinct
+    /// IDs must be distinct
     BOOST_TEST(bps[0]["id"].as_int() != bps[1]["id"].as_int());
 }
 
-// ---------------------------------------------------------------------------
-// 4. disconnect → server exits cleanly with a success response
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(disconnect_exits_cleanly) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -247,9 +254,8 @@ BOOST_AUTO_TEST_CASE(disconnect_exits_cleanly) {
     BOOST_TEST(resp["success"].as_bool() == true);
 }
 
-// ---------------------------------------------------------------------------
-// 5. configurationDone with a non-existent file → terminated event with error
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(bad_program_path_sends_terminated) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -260,20 +266,18 @@ BOOST_AUTO_TEST_CASE(bad_program_path_sends_terminated) {
 
     auto msgs = run_server(input);
 
-    // Must eventually send terminated
+    /// Must eventually send terminated
     auto term = find_msg(msgs, "event", "terminated");
     BOOST_TEST(!term.is_null());
-    // And an output/stderr event describing the failure
+    /// And an output/stderr event describing the failure
     auto errs = collect_output(msgs, "stderr");
     BOOST_TEST(!errs.empty());
 }
 
-// ---------------------------------------------------------------------------
-// 6. Full minimal script run — output captured as DAP events, not leaked to pipe
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(script_output_captured_as_output_event) {
-    // Write a tiny script to a temp file.
-    // Does NOT import the prelude — uses only the builtin `display`.
+    /// Write a tiny script to a temp file.
     const std::string src = R"(
 (module dap-test-output
   (begin
@@ -297,24 +301,25 @@ BOOST_AUTO_TEST_CASE(script_output_captured_as_output_event) {
 
     auto msgs = run_server(input);
 
-    // The "hello-dap" text must appear in a custom "eta-output" event
-    // (stream "stdout") — NOT have leaked into the raw protocol stream.
-    // Script output uses "eta-output" instead of standard "output" events
-    // so the VS Code extension routes it to the dedicated "Eta Output" panel.
+    /**
+     * The "hello-dap" text must appear in a custom "eta-output" event
+     * Script output uses "eta-output" instead of standard "output" events
+     * so the VS Code extension routes it to the dedicated "Eta Output" panel.
+     */
     auto stdout_chunks = collect_eta_output(msgs, "stdout");
     std::string all_stdout;
     for (const auto& c : stdout_chunks) all_stdout += c;
     BOOST_TEST(all_stdout.find("hello-dap") != std::string::npos);
 
-    // terminated event must be present
+    /// terminated event must be present
     BOOST_TEST(!find_msg(msgs, "event", "terminated").is_null());
 
     fs::remove(tmp);
 }
 
-// ---------------------------------------------------------------------------
-// 7. Sequence numbers are monotonically increasing in all server messages
-// ---------------------------------------------------------------------------
+/**
+ * 7. Sequence numbers are monotonically increasing in all server messages
+ */
 BOOST_AUTO_TEST_CASE(sequence_numbers_are_monotonic) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -331,9 +336,9 @@ BOOST_AUTO_TEST_CASE(sequence_numbers_are_monotonic) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 8. Unknown command gets an empty-success response (keeps VS Code happy)
-// ---------------------------------------------------------------------------
+/**
+ * 8. Unknown command gets an empty-success response (keeps VS Code happy)
+ */
 BOOST_AUTO_TEST_CASE(unknown_command_gets_success_response) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -347,13 +352,12 @@ BOOST_AUTO_TEST_CASE(unknown_command_gets_success_response) {
     BOOST_TEST(resp["success"].as_bool() == true);
 }
 
-// ---------------------------------------------------------------------------
-// 9. launch with no 'program' field → error response (success:false)
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(launch_without_program_sends_error) {
     std::string input =
         frame(request(1, "initialize", "{}"))
-      + frame(request(2, "launch", "{}"))      // no "program" key
+      + frame(request(2, "launch", "{}"))      ///< no "program" key
       + frame(request(3, "disconnect", "{}"));
 
     auto msgs = run_server(input);
@@ -361,15 +365,14 @@ BOOST_AUTO_TEST_CASE(launch_without_program_sends_error) {
     auto resp = find_msg(msgs, "response", "launch");
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["success"].as_bool() == false);
-    // Must carry an error message
+    /// Must carry an error message
     auto fmt = resp["body"]["error"].get_string("format");
     BOOST_TEST(fmt.has_value());
     BOOST_TEST(fmt->find("program") != std::string::npos);
 }
 
-// ---------------------------------------------------------------------------
-// 10. setBreakpoints with no 'path' in source → empty breakpoints list
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(set_breakpoints_without_source_path) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -385,9 +388,9 @@ BOOST_AUTO_TEST_CASE(set_breakpoints_without_source_path) {
     BOOST_TEST(resp["body"]["breakpoints"].as_array().empty());
 }
 
-// ---------------------------------------------------------------------------
-// 11. setExceptionBreakpoints is acknowledged with success
-// ---------------------------------------------------------------------------
+/**
+ * 11. setExceptionBreakpoints is acknowledged with success
+ */
 BOOST_AUTO_TEST_CASE(set_exception_breakpoints_acknowledged) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -402,13 +405,12 @@ BOOST_AUTO_TEST_CASE(set_exception_breakpoints_acknowledged) {
     BOOST_TEST(resp["success"].as_bool() == true);
 }
 
-// ---------------------------------------------------------------------------
-// 12. configurationDone before launch — must not crash
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(configuration_done_before_launch_is_safe) {
     std::string input =
         frame(request(1, "initialize", "{}"))
-      + frame(request(2, "configurationDone", "{}"))   // no launch first
+      + frame(request(2, "configurationDone", "{}"))   ///< no launch first
       + frame(request(3, "disconnect", "{}"));
 
     auto msgs = run_server(input);
@@ -416,13 +418,13 @@ BOOST_AUTO_TEST_CASE(configuration_done_before_launch_is_safe) {
     auto resp = find_msg(msgs, "response", "configurationDone");
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["success"].as_bool() == true);
-    // No vm thread should have started, so no terminated event
+    /// No vm thread should have started, so no terminated event
     BOOST_TEST(find_msg(msgs, "event", "terminated").is_null());
 }
 
-// ---------------------------------------------------------------------------
-// 13. threads response has correct structure
-// ---------------------------------------------------------------------------
+/**
+ * 13. threads response has correct structure
+ */
 BOOST_AUTO_TEST_CASE(threads_response_structure) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -442,9 +444,9 @@ BOOST_AUTO_TEST_CASE(threads_response_structure) {
     BOOST_TEST(!name->empty());
 }
 
-// ---------------------------------------------------------------------------
-// 14. scopes response has Module + Locals + Upvalues + Globals entries
-// ---------------------------------------------------------------------------
+/**
+ * 14. scopes response has Module + Locals + Upvalues + Globals entries
+ */
 BOOST_AUTO_TEST_CASE(scopes_response_structure) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -470,7 +472,7 @@ BOOST_AUTO_TEST_CASE(scopes_response_structure) {
     BOOST_TEST(*n1 == "Locals");
     BOOST_TEST(*n2 == "Upvalues");
     BOOST_TEST(*n3 == "Globals");
-    // variablesReference values must all differ
+    /// variablesReference values must all differ
     auto ref0 = scopes[0].get_int("variablesReference");
     auto ref1 = scopes[1].get_int("variablesReference");
     auto ref2 = scopes[2].get_int("variablesReference");
@@ -487,9 +489,8 @@ BOOST_AUTO_TEST_CASE(scopes_response_structure) {
     BOOST_TEST(*ref2 != *ref3);
 }
 
-// ---------------------------------------------------------------------------
-// 15. evaluate without a running VM → "<not available>" result
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(evaluate_without_driver_returns_not_available) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -506,23 +507,23 @@ BOOST_AUTO_TEST_CASE(evaluate_without_driver_returns_not_available) {
     BOOST_TEST(*result == "<not available>");
 }
 
-// ---------------------------------------------------------------------------
-// 16. Sending setBreakpoints twice for the same file replaces the first set
-// ---------------------------------------------------------------------------
+/**
+ * 16. Sending setBreakpoints twice for the same file replaces the first set
+ */
 BOOST_AUTO_TEST_CASE(set_breakpoints_replaces_previous_set) {
     std::string input =
         frame(request(1, "initialize", "{}"))
       + frame(request(2, "setBreakpoints",
             R"({"source":{"path":"/tmp/bp_test.eta"},)"
             R"("breakpoints":[{"line":1},{"line":2},{"line":3}]})"))
-      + frame(request(3, "setBreakpoints",        // replace with just line 7
+      + frame(request(3, "setBreakpoints",        ///< replace with just line 7
             R"({"source":{"path":"/tmp/bp_test.eta"},)"
             R"("breakpoints":[{"line":7}]})"))
       + frame(request(4, "disconnect", "{}"));
 
     auto msgs = run_server(input);
 
-    // Only the second response matters; it must have exactly one breakpoint
+    /// Only the second response matters; it must have exactly one breakpoint
     auto resps = [&] {
         std::vector<json::Value> out;
         for (const auto& m : msgs) {
@@ -541,11 +542,10 @@ BOOST_AUTO_TEST_CASE(set_breakpoints_replaces_previous_set) {
     BOOST_TEST(bps[0]["line"].as_int() == 7);
 }
 
-// ---------------------------------------------------------------------------
-// 17. Malformed JSON in a frame is tolerated — server continues running
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(malformed_json_is_tolerated) {
-    // Send a Content-Length frame with invalid JSON, then a valid disconnect
+    /// Send a Content-Length frame with invalid JSON, then a valid disconnect
     std::string bad_body = "{ this is not valid json !!!";
     std::string input =
         "Content-Length: " + std::to_string(bad_body.size()) + "\r\n\r\n" + bad_body
@@ -554,14 +554,13 @@ BOOST_AUTO_TEST_CASE(malformed_json_is_tolerated) {
 
     auto msgs = run_server(input);
 
-    // Server must have survived and processed the valid requests
+    /// Server must have survived and processed the valid requests
     BOOST_TEST(!find_msg(msgs, "response", "initialize").is_null());
     BOOST_TEST(!find_msg(msgs, "response", "disconnect").is_null());
 }
 
-// ---------------------------------------------------------------------------
-// 18. eta/heapSnapshot without a running VM → error 2001
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(heap_snapshot_without_vm_returns_error) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -573,15 +572,14 @@ BOOST_AUTO_TEST_CASE(heap_snapshot_without_vm_returns_error) {
     auto resp = find_msg(msgs, "response", "eta/heapSnapshot");
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["success"].as_bool() == false);
-    // Must report error code 2001
+    /// Must report error code 2001
     auto err_id = resp["body"]["error"].get_int("id");
     BOOST_REQUIRE(err_id.has_value());
     BOOST_TEST(*err_id == 2001);
 }
 
-// ---------------------------------------------------------------------------
-// 19. eta/inspectObject without a running VM → error 2001
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(inspect_object_without_vm_returns_error) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -598,18 +596,17 @@ BOOST_AUTO_TEST_CASE(inspect_object_without_vm_returns_error) {
     BOOST_TEST(*err_id == 2001);
 }
 
-// ---------------------------------------------------------------------------
-// 20. eta/inspectObject without objectId argument (no VM) → error 2001
-//     NOTE: The deeper error 2003 (missing objectId) is only reachable with a
-//     paused VM.  The synchronous test harness cannot reliably pause the VM
-//     (stopOnEntry causes a hang because disconnect's resume() fires before
-//     the VM thread reaches check_and_wait, leaving it blocked on debug_cv_
-//     with nobody to wake it).  We verify the dispatch path doesn't crash.
-// ---------------------------------------------------------------------------
+/**
+ *     NOTE: The deeper error 2003 (missing objectId) is only reachable with a
+ *     paused VM.  The synchronous test harness cannot reliably pause the VM
+ *     (stopOnEntry causes a hang because disconnect's resume() fires before
+ *     the VM thread reaches check_and_wait, leaving it blocked on debug_cv_
+ *     with nobody to wake it).  We verify the dispatch path doesn't crash.
+ */
 BOOST_AUTO_TEST_CASE(inspect_object_missing_objectid) {
     std::string input =
         frame(request(1, "initialize", "{}"))
-      + frame(request(2, "eta/inspectObject", "{}"))   // no objectId field
+      + frame(request(2, "eta/inspectObject", "{}"))   ///< no objectId field
       + frame(request(3, "disconnect", "{}"));
 
     auto msgs = run_server(input);
@@ -617,23 +614,22 @@ BOOST_AUTO_TEST_CASE(inspect_object_missing_objectid) {
     auto resp = find_msg(msgs, "response", "eta/inspectObject");
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["success"].as_bool() == false);
-    // Without a running VM we get error 2001 before objectId is checked
+    /// Without a running VM we get error 2001 before objectId is checked
     auto err_id = resp["body"]["error"].get_int("id");
     BOOST_REQUIRE(err_id.has_value());
     BOOST_TEST(*err_id == 2001);
 }
 
-// ---------------------------------------------------------------------------
-// 21. Heap snapshot consPool field — run a script to completion (no
-//     stopOnEntry) and request a snapshot.  The VM is likely not paused so
-//     we expect error 2002 ("VM must be paused"), but if timing allows a
-//     successful response we validate the consPool shape.
-//
-//     NOTE: stopOnEntry + disconnect hangs the synchronous harness (see #20).
-//     The consPool integration is already covered by cons_pool_tests.cpp;
-//     this test just verifies the DAP endpoint doesn't crash and handles the
-//     not-paused case gracefully.
-// ---------------------------------------------------------------------------
+/**
+ *     stopOnEntry) and request a snapshot.  The VM is likely not paused so
+ *     we expect error 2002 ("VM must be paused"), but if timing allows a
+ *     successful response we validate the consPool shape.
+ *
+ *     NOTE: stopOnEntry + disconnect hangs the synchronous harness (see #20).
+ *     The consPool integration is already covered by cons_pool_tests.cpp;
+ *     this test just verifies the DAP endpoint doesn't crash and handles the
+ *     not-paused case gracefully.
+ */
 BOOST_AUTO_TEST_CASE(heap_snapshot_while_vm_running_returns_not_paused) {
     const std::string src = R"(
 (module dap-test-pool
@@ -660,7 +656,6 @@ BOOST_AUTO_TEST_CASE(heap_snapshot_while_vm_running_returns_not_paused) {
     BOOST_REQUIRE(!resp.is_null());
 
     if (resp["success"].as_bool()) {
-        // Script finished before snapshot request — verify consPool shape
         const auto& body = resp["body"];
         BOOST_TEST(body.has("totalBytes"));
         BOOST_TEST(body.has("softLimit"));
@@ -678,7 +673,7 @@ BOOST_AUTO_TEST_CASE(heap_snapshot_while_vm_running_returns_not_paused) {
             BOOST_TEST(*cap > 0);
         }
     } else {
-        // Expected: error 2002 (VM must be paused)
+        /// Expected: error 2002 (VM must be paused)
         auto err_id = resp["body"]["error"].get_int("id");
         BOOST_REQUIRE(err_id.has_value());
         BOOST_TEST(*err_id == 2002);
@@ -687,9 +682,8 @@ BOOST_AUTO_TEST_CASE(heap_snapshot_while_vm_running_returns_not_paused) {
     fs::remove(tmp);
 }
 
-// ---------------------------------------------------------------------------
-// 22. Inspect a non-existent object by ID (no VM) → error 2001
-// ---------------------------------------------------------------------------
+/**
+ */
 BOOST_AUTO_TEST_CASE(inspect_nonexistent_object) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -706,12 +700,11 @@ BOOST_AUTO_TEST_CASE(inspect_nonexistent_object) {
     BOOST_TEST(*err_id == 2001);
 }
 
-// ---------------------------------------------------------------------------
-// 23. terminate request is handled (Bug 5 fix) — must not fall through to
-//     unknown-command handler.  supportsTerminateRequest is advertised so
-//     VS Code sends this; without the handler the adapter would not unblock
-//     the paused VM.
-// ---------------------------------------------------------------------------
+/**
+ *     unknown-command handler.  supportsTerminateRequest is advertised so
+ *     VS Code sends this; without the handler the adapter would not unblock
+ *     the paused VM.
+ */
 BOOST_AUTO_TEST_CASE(terminate_request_handled) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -725,11 +718,10 @@ BOOST_AUTO_TEST_CASE(terminate_request_handled) {
     BOOST_TEST(resp["success"].as_bool() == true);
 }
 
-// ---------------------------------------------------------------------------
-// 24. completions request returns success (Bug 4 fix) — VS Code sends this
-//     when the user presses Tab in the Debug Console.  Without the handler
-//     it would fall through to unknown-command.
-// ---------------------------------------------------------------------------
+/**
+ *     when the user presses Tab in the Debug Console.  Without the handler
+ *     it would fall through to unknown-command.
+ */
 BOOST_AUTO_TEST_CASE(completions_request_handled) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -741,13 +733,12 @@ BOOST_AUTO_TEST_CASE(completions_request_handled) {
     auto resp = find_msg(msgs, "response", "completions");
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["success"].as_bool() == true);
-    // Must have a "targets" array (even if empty — no VM running)
     BOOST_TEST(resp["body"]["targets"].is_array());
 }
 
-// ---------------------------------------------------------------------------
-// 25. initialize advertises supportsCompletionsRequest (Bug 4 fix)
-// ---------------------------------------------------------------------------
+/**
+ * 25. initialize advertises supportsCompletionsRequest (Bug 4 fix)
+ */
 BOOST_AUTO_TEST_CASE(initialize_advertises_completions_support) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -760,34 +751,33 @@ BOOST_AUTO_TEST_CASE(initialize_advertises_completions_support) {
     BOOST_TEST(resp["body"]["supportsCompletionsRequest"].as_bool() == true);
 }
 
-// ---------------------------------------------------------------------------
-// 26. Compound variable reference encoding round-trip (Bug 6 fix)
-//     encode_var_ref / decode_var_ref must be self-consistent, and the
-//     COMPOUND_REF_BASE must not collide with frame/scope refs.
-// ---------------------------------------------------------------------------
+/**
+ * 26. Compound variable reference encoding round-trip (Bug 6 fix)
+ *     encode_var_ref / decode_var_ref must be self-consistent, and the
+ *     COMPOUND_REF_BASE must not collide with frame/scope refs.
+ */
 BOOST_AUTO_TEST_CASE(var_ref_encoding_round_trip) {
     using eta::dap::DapServer;
-    // Test a variety of frame/scope combinations
+    /// Test a variety of frame/scope combinations
     for (int frame = 0; frame < 16; ++frame) {
         for (int scope = 0; scope < 2; ++scope) {
             int ref = DapServer::encode_var_ref(frame, scope);
-            BOOST_TEST(ref > 0);                           // DAP requires > 0
-            BOOST_TEST(ref < DapServer::COMPOUND_REF_BASE); // must not collide
+            BOOST_TEST(ref > 0);                           ///< DAP requires > 0
+            BOOST_TEST(ref < DapServer::COMPOUND_REF_BASE); ///< must not collide
             BOOST_TEST(DapServer::decode_var_ref_frame(ref) == frame);
             BOOST_TEST(DapServer::decode_var_ref_scope(ref) == scope);
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// 27. stackTrace / continue / disconnect without a paused VM — must not hang.
-//     The synchronous test harness cannot reliably wait for the VM thread to
-//     hit a breakpoint before sending subsequent requests, so a full-lifecycle
-//     breakpoint test would deadlock.  Instead we verify the protocol dispatch
-//     layer handles these requests gracefully when the VM is not paused.
-//     The actual stopped_span / first-breakpoint fix is tested at the VM unit
-//     level in debug_tests.cpp (breakpoint_stopped_span_correct_line).
-// ---------------------------------------------------------------------------
+/**
+ *     The synchronous test harness cannot reliably wait for the VM thread to
+ *     hit a breakpoint before sending subsequent requests, so a full-lifecycle
+ *     breakpoint test would deadlock.  Instead we verify the protocol dispatch
+ *     layer handles these requests gracefully when the VM is not paused.
+ *     The actual stopped_span / first-breakpoint fix is tested at the VM unit
+ *     level in debug_tests.cpp (breakpoint_stopped_span_correct_line).
+ */
 BOOST_AUTO_TEST_CASE(stack_trace_without_paused_vm) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -799,18 +789,16 @@ BOOST_AUTO_TEST_CASE(stack_trace_without_paused_vm) {
     auto resp = find_msg(msgs, "response", "stackTrace");
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["success"].as_bool() == true);
-    // No paused VM → empty stack frames
     BOOST_TEST(resp["body"]["stackFrames"].as_array().empty());
     auto total = resp["body"]["totalFrames"].get_int("totalFrames");
-    // totalFrames should be 0 (or the field exists with value 0)
+    /// totalFrames should be 0 (or the field exists with value 0)
 }
 
-// ---------------------------------------------------------------------------
-// 28. Variables request with compound expansion (Bug 6 fix) — when the VM
-//     is paused with compound values on the stack, variables must report
-//     non-zero variablesReference for expandable types (cons/vector/closure).
-//     Without a running VM we can only verify the empty case doesn't crash.
-// ---------------------------------------------------------------------------
+/**
+ *     is paused with compound values on the stack, variables must report
+ *     non-zero variablesReference for expandable types (cons/vector/closure).
+ *     Without a running VM we can only verify the empty case doesn't crash.
+ */
 BOOST_AUTO_TEST_CASE(variables_without_vm_returns_empty) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -826,12 +814,11 @@ BOOST_AUTO_TEST_CASE(variables_without_vm_returns_empty) {
     BOOST_TEST(resp["body"]["variables"].as_array().empty());
 }
 
-// ---------------------------------------------------------------------------
-// 29. Variables request with compound ref (out of range) returns empty
-//     (Bug 6 fix — ensures compound_refs_ lookup for unknown refs is safe)
-// ---------------------------------------------------------------------------
+/**
+ * 29. Variables request with compound ref (out of range) returns empty
+ */
 BOOST_AUTO_TEST_CASE(variables_compound_ref_out_of_range) {
-    // Use a ref >= COMPOUND_REF_BASE but without a running VM
+    /// Use a ref >= COMPOUND_REF_BASE but without a running VM
     std::string input =
         frame(request(1, "initialize", "{}"))
       + frame(request(2, "variables", R"({"variablesReference":10042})"))
@@ -845,9 +832,9 @@ BOOST_AUTO_TEST_CASE(variables_compound_ref_out_of_range) {
     BOOST_TEST(resp["body"]["variables"].as_array().empty());
 }
 
-// ---------------------------------------------------------------------------
-// 30. Scopes response variablesReferences do not collide with compound refs
-// ---------------------------------------------------------------------------
+/**
+ * 30. Scopes response variablesReferences do not collide with compound refs
+ */
 BOOST_AUTO_TEST_CASE(scopes_refs_below_compound_base) {
     std::string input =
         frame(request(1, "initialize", "{}"))
@@ -863,17 +850,16 @@ BOOST_AUTO_TEST_CASE(scopes_refs_below_compound_base) {
         auto ref = s.get_int("variablesReference");
         BOOST_REQUIRE(ref.has_value());
         BOOST_TEST(*ref > 0);
-        BOOST_TEST(*ref < 10000);  // below COMPOUND_REF_BASE
+        BOOST_TEST(*ref < 10000);  ///< below COMPOUND_REF_BASE
     }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
 
-// ── DAP framing robustness tests (bug fix: memory DoS) ───────────────────────
 
 BOOST_AUTO_TEST_SUITE(dap_framing_robustness)
 
-// Malformed Content-Length must not throw; returns nullopt.
+/// Malformed Content-Length must not throw; returns nullopt.
 BOOST_AUTO_TEST_CASE(malformed_content_length_returns_nullopt) {
     std::istringstream in("Content-Length: not-a-number\r\n\r\n{}");
     BOOST_CHECK_NO_THROW({
@@ -882,7 +868,7 @@ BOOST_AUTO_TEST_CASE(malformed_content_length_returns_nullopt) {
     });
 }
 
-// Empty Content-Length value must not throw.
+/// Empty Content-Length value must not throw.
 BOOST_AUTO_TEST_CASE(empty_content_length_returns_nullopt) {
     std::istringstream in("Content-Length: \r\n\r\n{}");
     BOOST_CHECK_NO_THROW({
@@ -891,7 +877,7 @@ BOOST_AUTO_TEST_CASE(empty_content_length_returns_nullopt) {
     });
 }
 
-// Over-limit Content-Length must not allocate / crash; returns nullopt.
+/// Over-limit Content-Length must not allocate / crash; returns nullopt.
 BOOST_AUTO_TEST_CASE(overlimit_content_length_returns_nullopt) {
     std::istringstream in("Content-Length: 4294967295\r\n\r\n");
     BOOST_CHECK_NO_THROW({
@@ -900,24 +886,24 @@ BOOST_AUTO_TEST_CASE(overlimit_content_length_returns_nullopt) {
     });
 }
 
-// Zero Content-Length skips and returns nullopt (existing behaviour).
+/// Zero Content-Length skips and returns nullopt (existing behaviour).
 BOOST_AUTO_TEST_CASE(zero_content_length_returns_nullopt) {
     std::istringstream in("Content-Length: 0\r\n\r\n");
     auto result = eta::dap::read_message(in);
     BOOST_CHECK(!result.has_value());
 }
 
-// A valid message is still read correctly after a skipped zero-length one.
+/// A valid message is still read correctly after a skipped zero-length one.
 BOOST_AUTO_TEST_CASE(valid_message_after_skipped_zero_length) {
     const std::string body = R"({"seq":1,"type":"request","command":"initialize","arguments":{}})";
     std::istringstream in(
-        "Content-Length: 0\r\n\r\n"          // skipped
-      + frame(body));                          // valid — must be returned
+        "Content-Length: 0\r\n\r\n"          ///< skipped
+      + frame(body));
     auto result = eta::dap::read_message(in);
     BOOST_REQUIRE(result.has_value());
     BOOST_CHECK_EQUAL(*result, body);
 }
 
-BOOST_AUTO_TEST_SUITE_END() // dap_framing_robustness
+BOOST_AUTO_TEST_SUITE_END() ///< dap_framing_robustness
 
 

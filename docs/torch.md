@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md) · [AAD](aad.md) ·
 [European Greeks](european.md) · [SABR](sabr.md) ·
-[Modules & Stdlib](modules.md) · [Next Steps](next-steps.md)
+[Modules & Stdlib](modules.md) · [Project Status](next-steps.md)
 
 ---
 

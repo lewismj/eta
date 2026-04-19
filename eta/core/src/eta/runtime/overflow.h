@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <limits>
@@ -10,7 +10,6 @@ namespace eta::runtime::detail {
  *
  * These functions perform an arithmetic operation and return true if the
  * result overflowed, false otherwise. On overflow the value of *result
- * is unspecified — callers must not use it.
  *
  * On GCC/Clang the compiler builtins are used for optimal codegen.
  * On MSVC a manual bounds check is used instead.
@@ -52,5 +51,5 @@ inline bool mul_overflow(int64_t a, int64_t b, int64_t* result) {
 #endif
 }
 
-} // namespace eta::runtime::detail
+} ///< namespace eta::runtime::detail
 

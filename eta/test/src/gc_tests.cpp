@@ -30,14 +30,14 @@ namespace {
 
 BOOST_AUTO_TEST_SUITE(gc_tests)
 
-// existing basic tests
+/// existing basic tests
 
 BOOST_AUTO_TEST_CASE(collects_unreachable_cons_cells) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Allocate 5 cons cells, none referenced in roots
+    /// Allocate 5 cons cells, none referenced in roots
     std::vector<LispVal> tmp;
     for (int i = 0; i < 5; ++i) {
         auto c = expect_ok(make_cons(heap, Nil));
@@ -55,7 +55,7 @@ BOOST_AUTO_TEST_CASE(retains_reachable_chain) {
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Build a chain of 3 cons cells and keep head in roots
+    /// Build a chain of 3 cons cells and keep head in roots
     auto c3 = expect_ok(make_cons(heap, Nil));
     auto c2 = expect_ok(make_cons(heap, c3));
     auto c1 = expect_ok(make_cons(heap, c2));
@@ -72,16 +72,16 @@ BOOST_AUTO_TEST_CASE(mixed_closure_graph) {
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Build some cons values and a closure referencing them as upvals
+    /// Build some cons values and a closure referencing them as upvals
     auto a = expect_ok(make_cons(heap, Nil));
     auto b = expect_ok(make_cons(heap, a));
     auto c = expect_ok(make_cons(heap, b));
 
     std::vector<LispVal> upvals{ a, b, c };
-    // Create a closure with no function (nullptr) but with upvals
+    /// Create a closure with no function (nullptr) but with upvals
     auto closure = expect_ok(make_closure(heap, nullptr, upvals));
 
-    // Root only the closure; all referenced nodes should be retained
+    /// Root only the closure; all referenced nodes should be retained
     roots.push_back(closure);
 
     GCStats stats{};
@@ -94,13 +94,13 @@ BOOST_AUTO_TEST_CASE(fixnum_heap_leaf) {
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Force out-of-range to allocate Fixnum on heap via factory
+    /// Force out-of-range to allocate Fixnum on heap via factory
     auto big = expect_ok(make_fixnum(heap, std::numeric_limits<int64_t>::max()));
     roots.push_back(big);
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // Should not traverse interior edges (leaf)
+    /// Should not traverse interior edges (leaf)
     BOOST_TEST(stats.objects_freed == 0);
 }
 
@@ -111,29 +111,29 @@ BOOST_AUTO_TEST_CASE(stale_id_root_does_not_crash) {
 
     auto c = expect_ok(make_cons(heap, Nil));
 
-    // Extract object id from boxed value and deallocate manually
+    /// Extract object id from boxed value and deallocate manually
     const auto obj_id = static_cast<ObjectId>(payload(c));
     BOOST_REQUIRE(heap.deallocate(obj_id).has_value());
 
-    // Keep stale boxed value as root
+    /// Keep stale boxed value as root
     roots.push_back(c);
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    BOOST_TEST(true); // no crash
+    BOOST_TEST(true); ///< no crash
 }
 
 BOOST_AUTO_TEST_CASE(clear_marks_resets_mark_bits) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
 
-    // Create a few objects
+    /// Create a few objects
     for (int i = 0; i < 3; ++i) (void) expect_ok(make_cons(heap, Nil));
 
-    // Manually set marks via with_entry
+    /// Manually set marks via with_entry
     heap.for_each_entry([&](ObjectId id, HeapEntry& e){ e.header.flags |= MARK_BIT; });
 
-    // Now clear
+    /// Now clear
     gc.clear_marks(heap);
 
     bool any_marked = false;
@@ -163,15 +163,15 @@ BOOST_AUTO_TEST_CASE(retains_reachable_closure_vector_continuation) {
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // 1. Vector
+    /// 1. Vector
     auto v_el = expect_ok(make_cons(heap, Nil));
     auto vec = expect_ok(make_vector(heap, {v_el}));
 
-    // 2. Closure
+    /// 2. Closure
     auto c_up = expect_ok(make_cons(heap, Nil));
     auto closure = expect_ok(make_closure(heap, nullptr, {c_up}));
 
-    // 3. Continuation
+    /// 3. Continuation
     auto cont_stack_el = expect_ok(make_cons(heap, Nil));
     auto cont_frame_closure = expect_ok(make_closure(heap, nullptr, {}));
     std::vector<eta::runtime::vm::Frame> frames = {
@@ -180,7 +180,7 @@ BOOST_AUTO_TEST_CASE(retains_reachable_closure_vector_continuation) {
     std::vector<eta::runtime::vm::WindFrame> winding_stack = {};
     auto cont = expect_ok(make_continuation(heap, {cont_stack_el}, frames, winding_stack));
 
-    // Root them all
+    /// Root them all
     roots.push_back(vec);
     roots.push_back(closure);
     roots.push_back(cont);
@@ -188,46 +188,48 @@ BOOST_AUTO_TEST_CASE(retains_reachable_closure_vector_continuation) {
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
 
-    // Everything should be retained.
-    // Objects:
-    // 1. v_el (cons)
-    // 2. vec (vector)
-    // 3. c_up (cons)
-    // 4. closure (closure)
-    // 5. cont_stack_el (cons)
-    // 6. cont_frame_closure (closure)
-    // 7. cont (continuation)
+    /**
+     * Everything should be retained.
+     * Objects:
+     * 1. v_el (cons)
+     * 2. vec (vector)
+     * 3. c_up (cons)
+     * 4. closure (closure)
+     * 5. cont_stack_el (cons)
+     * 6. cont_frame_closure (closure)
+     * 7. cont (continuation)
+     */
     BOOST_TEST(stats.objects_freed == 0);
 
-    // Now unroot them
+    /// Now unroot them
     roots.clear();
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     BOOST_TEST(stats.objects_freed == 7);
 }
 
-// per-type GC traversal: LogicVar
+/// per-type GC traversal: LogicVar
 
 BOOST_AUTO_TEST_CASE(retains_bound_logic_var_target) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Create a cons cell and bind it to a LogicVar
+    /// Create a cons cell and bind it to a LogicVar
     auto inner = expect_ok(make_cons(heap, Nil));
     auto lv = expect_ok(make_logic_var(heap));
 
-    // Bind the logic var to the inner cons cell
+    /// Bind the logic var to the inner cons cell
     auto lv_id = static_cast<ObjectId>(payload(lv));
     auto* lv_ptr = heap.try_get_as<ObjectKind::LogicVar, eta::runtime::types::LogicVar>(lv_id);
     BOOST_REQUIRE(lv_ptr != nullptr);
     lv_ptr->binding = inner;
 
-    // Root only the logic var
+    /// Root only the logic var
     roots.push_back(lv);
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // inner cons must be retained via the binding
+    /// inner cons must be retained via the binding
     BOOST_TEST(stats.objects_freed == 0);
 }
 
@@ -236,7 +238,7 @@ BOOST_AUTO_TEST_CASE(collects_unbound_logic_var) {
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Unreachable unbound logic var
+    /// Unreachable unbound logic var
     (void)expect_ok(make_logic_var(heap));
 
     GCStats stats{};
@@ -249,7 +251,7 @@ BOOST_AUTO_TEST_CASE(collects_logic_var_binding_chain) {
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // LogicVar -> cons -> cons chain; root lv, all reachable
+    /// LogicVar -> cons -> cons chain; root lv, all reachable
     auto c2 = expect_ok(make_cons(heap, Nil));
     auto c1 = expect_ok(make_cons(heap, c2));
     auto lv = expect_ok(make_logic_var(heap));
@@ -265,13 +267,12 @@ BOOST_AUTO_TEST_CASE(collects_logic_var_binding_chain) {
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     BOOST_TEST(stats.objects_freed == 0);
 
-    // Unroot — all 3 freed (lv + c1 + c2)
     roots.clear();
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     BOOST_TEST(stats.objects_freed == 3);
 }
 
-// per-type GC traversal: MultipleValues
+/// per-type GC traversal: MultipleValues
 
 BOOST_AUTO_TEST_CASE(retains_multiple_values_elements) {
     Heap heap(1ull << 20);
@@ -290,10 +291,10 @@ BOOST_AUTO_TEST_CASE(retains_multiple_values_elements) {
 
     roots.clear();
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    BOOST_TEST(stats.objects_freed == 3); // mv + a + b
+    BOOST_TEST(stats.objects_freed == 3); ///< mv + a + b
 }
 
-// per-type GC traversal: Primitive with gc_roots
+/// per-type GC traversal: Primitive with gc_roots
 
 BOOST_AUTO_TEST_CASE(retains_primitive_gc_roots) {
     Heap heap(1ull << 20);
@@ -302,15 +303,15 @@ BOOST_AUTO_TEST_CASE(retains_primitive_gc_roots) {
 
     auto captured = expect_ok(make_cons(heap, Nil));
 
-    // Create a primitive with a captured heap object in gc_roots
+    /// Create a primitive with a captured heap object in gc_roots
     auto prim = expect_ok(make_primitive(
         heap,
         [](const std::vector<LispVal>&) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
             return Nil;
         },
-        0,          // arity
-        false,      // has_rest
-        {captured}  // gc_roots
+        0,          ///< arity
+        false,      ///< has_rest
+        {captured}  ///< gc_roots
     ));
 
     roots.push_back(prim);
@@ -321,10 +322,10 @@ BOOST_AUTO_TEST_CASE(retains_primitive_gc_roots) {
 
     roots.clear();
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    BOOST_TEST(stats.objects_freed == 2); // prim + captured cons
+    BOOST_TEST(stats.objects_freed == 2); ///< prim + captured cons
 }
 
-// per-type GC traversal: FactTable
+/// per-type GC traversal: FactTable
 
 BOOST_AUTO_TEST_CASE(retains_fact_table_column_values) {
     Heap heap(1ull << 20);
@@ -336,7 +337,7 @@ BOOST_AUTO_TEST_CASE(retains_fact_table_column_values) {
     auto* ft_ptr = heap.try_get_as<ObjectKind::FactTable, eta::runtime::types::FactTable>(ft_id);
     BOOST_REQUIRE(ft_ptr != nullptr);
 
-    // Insert rows containing heap-allocated cons cells
+    /// Insert rows containing heap-allocated cons cells
     auto v1 = expect_ok(make_cons(heap, Nil));
     auto v2 = expect_ok(make_cons(heap, Nil));
     auto v3 = expect_ok(make_cons(heap, Nil));
@@ -348,22 +349,22 @@ BOOST_AUTO_TEST_CASE(retains_fact_table_column_values) {
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // ft + v1 + v2 + v3 all retained
+    /// ft + v1 + v2 + v3 all retained
     BOOST_TEST(stats.objects_freed == 0);
 
     roots.clear();
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    BOOST_TEST(stats.objects_freed == 4); // ft + v1 + v2 + v3
+    BOOST_TEST(stats.objects_freed == 4); ///< ft + v1 + v2 + v3
 }
 
-// per-type GC traversal: Closure with func->constants
+/// per-type GC traversal: Closure with func->constants
 
 BOOST_AUTO_TEST_CASE(retains_closure_func_constants) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Build a minimal BytecodeFunction whose constants vector has a heap ref
+    /// Build a minimal BytecodeFunction whose constants vector has a heap ref
     auto const_cons = expect_ok(make_cons(heap, Nil));
 
     eta::runtime::vm::BytecodeFunction func;
@@ -375,11 +376,11 @@ BOOST_AUTO_TEST_CASE(retains_closure_func_constants) {
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // closure + const_cons both retained
+    /// closure + const_cons both retained
     BOOST_TEST(stats.objects_freed == 0);
 }
 
-// leaf types as roots
+/// leaf types as roots
 
 BOOST_AUTO_TEST_CASE(bytevector_leaf_retained) {
     Heap heap(1ull << 20);
@@ -438,14 +439,14 @@ BOOST_AUTO_TEST_CASE(unreachable_leaf_types_collected) {
     BOOST_TEST(stats.objects_freed == 3);
 }
 
-// continuation sub-fields: winding_stack
+/// continuation sub-fields: winding_stack
 
 BOOST_AUTO_TEST_CASE(retains_continuation_winding_stack_refs) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Create closures for wind frame before/body/after
+    /// Create closures for wind frame before/body/after
     auto before_closure = expect_ok(make_closure(heap, nullptr, {}));
     auto body_closure   = expect_ok(make_closure(heap, nullptr, {}));
     auto after_closure  = expect_ok(make_closure(heap, nullptr, {}));
@@ -460,15 +461,15 @@ BOOST_AUTO_TEST_CASE(retains_continuation_winding_stack_refs) {
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // cont + 3 closures all retained
+    /// cont + 3 closures all retained
     BOOST_TEST(stats.objects_freed == 0);
 
     roots.clear();
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    BOOST_TEST(stats.objects_freed == 4); // cont + 3 closures
+    BOOST_TEST(stats.objects_freed == 4); ///< cont + 3 closures
 }
 
-// continuation sub-fields: frame.extra
+/// continuation sub-fields: frame.extra
 
 BOOST_AUTO_TEST_CASE(retains_continuation_frame_extra) {
     Heap heap(1ull << 20);
@@ -489,7 +490,7 @@ BOOST_AUTO_TEST_CASE(retains_continuation_frame_extra) {
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // cont + frame_closure + extra_cons all retained
+    /// cont + frame_closure + extra_cons all retained
     BOOST_TEST(stats.objects_freed == 0);
 
     roots.clear();
@@ -497,22 +498,22 @@ BOOST_AUTO_TEST_CASE(retains_continuation_frame_extra) {
     BOOST_TEST(stats.objects_freed == 3);
 }
 
-// GC pause mechanism
+/// GC pause mechanism
 
 BOOST_AUTO_TEST_CASE(pause_for_gc_rejects_allocations) {
     Heap heap(1ull << 20);
 
-    // Pause the heap as if GC were in progress
+    /// Pause the heap as if GC were in progress
     heap.pause_for_gc();
     BOOST_TEST(heap.is_gc_paused());
 
-    // General-heap allocation should fail with GCInProgress
+    /// General-heap allocation should fail with GCInProgress
     auto result = heap.allocate<eta::runtime::types::Cons, ObjectKind::Cons>(
         eta::runtime::types::Cons{.car = Nil, .cdr = Nil});
     BOOST_REQUIRE(!result.has_value());
     BOOST_TEST(result.error() == HeapError::GCInProgress);
 
-    // Resume and verify allocation works again
+    /// Resume and verify allocation works again
     heap.resume_after_gc();
     BOOST_TEST(!heap.is_gc_paused());
 
@@ -521,35 +522,38 @@ BOOST_AUTO_TEST_CASE(pause_for_gc_rejects_allocations) {
     BOOST_TEST(result2.has_value());
 }
 
-// GC callback on soft-limit
+/// GC callback on soft-limit
 
 BOOST_AUTO_TEST_CASE(gc_callback_frees_memory_on_soft_limit) {
-    // Use a very small heap.  The soft-limit check is strict >, so set the
-    // limit to exactly 3 cons cells so that the 4th allocation exceeds it.
+    /**
+     * Use a very small heap.  The soft-limit check is strict >, so set the
+     * limit to exactly 3 cons cells so that the 4th allocation exceeds it.
+     */
     const auto cons_sz = sizeof(eta::runtime::types::Cons);
     Heap heap(cons_sz * 3);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Allocate 3 unreachable cons cells — nearly fills the heap
     for (int i = 0; i < 3; ++i)
         (void)expect_ok(make_cons(heap, Nil));
 
-    // Install a callback that runs GC (with empty roots, so everything is freed)
+    /// Install a callback that runs GC (with empty roots, so everything is freed)
     bool callback_invoked = false;
     heap.set_gc_callback([&]() {
         callback_invoked = true;
         gc.collect(heap, roots.begin(), roots.end());
     });
 
-    // This allocation would exceed the soft limit but the callback should free
-    // the 3 unreachable cons cells first, making room.
+    /**
+     * This allocation would exceed the soft limit but the callback should free
+     * the 3 unreachable cons cells first, making room.
+     */
     auto result = make_cons(heap, Nil);
     BOOST_TEST(callback_invoked);
     BOOST_TEST(result.has_value());
 }
 
-// multiple GC cycles
+/// multiple GC cycles
 
 BOOST_AUTO_TEST_CASE(multi_cycle_stability) {
     Heap heap(1ull << 20);
@@ -557,12 +561,12 @@ BOOST_AUTO_TEST_CASE(multi_cycle_stability) {
     std::vector<LispVal> roots;
 
     for (int cycle = 0; cycle < 5; ++cycle) {
-        // Free leftover roots from the previous cycle first
+        /// Free leftover roots from the previous cycle first
         roots.clear();
         GCStats cleanup{};
         gc.collect(heap, roots.begin(), roots.end(), &cleanup);
 
-        // Each cycle: allocate 20 cons cells, root only the first 5
+        /// Each cycle: allocate 20 cons cells, root only the first 5
         std::vector<LispVal> batch;
         for (int i = 0; i < 20; ++i) {
             auto c = expect_ok(make_cons(heap, Nil));
@@ -575,7 +579,7 @@ BOOST_AUTO_TEST_CASE(multi_cycle_stability) {
         BOOST_TEST(stats.objects_freed == 15u);
     }
 
-    // Final full collect with empty roots should free the remaining 5
+    /// Final full collect with empty roots should free the remaining 5
     roots.clear();
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
@@ -587,14 +591,14 @@ BOOST_AUTO_TEST_CASE(allocate_between_collections) {
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Cycle 1: allocate and collect everything
+    /// Cycle 1: allocate and collect everything
     for (int i = 0; i < 10; ++i) (void)expect_ok(make_cons(heap, Nil));
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     BOOST_TEST(stats.objects_freed == 10u);
     BOOST_TEST(heap.total_bytes() == 0u);
 
-    // Cycle 2: allocate new objects, root some, collect
+    /// Cycle 2: allocate new objects, root some, collect
     auto rooted = expect_ok(make_cons(heap, Nil));
     roots.push_back(rooted);
     for (int i = 0; i < 5; ++i) (void)expect_ok(make_cons(heap, Nil));
@@ -604,18 +608,18 @@ BOOST_AUTO_TEST_CASE(allocate_between_collections) {
     BOOST_TEST(heap.total_bytes() > 0u);
 }
 
-// cyclic graph
+/// cyclic graph
 
 BOOST_AUTO_TEST_CASE(cyclic_cons_does_not_loop) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Create two cons cells and wire them into a cycle: a.cdr -> b, b.cdr -> a
+    /// Create two cons cells and wire them into a cycle: a.cdr -> b, b.cdr -> a
     auto a = expect_ok(make_cons(heap, Nil));
     auto b = expect_ok(make_cons(heap, Nil));
 
-    // Patch cdr of a to point to b, and cdr of b to point to a
+    /// Patch cdr of a to point to b, and cdr of b to point to a
     auto a_id = static_cast<ObjectId>(payload(a));
     auto b_id = static_cast<ObjectId>(payload(b));
 
@@ -626,23 +630,21 @@ BOOST_AUTO_TEST_CASE(cyclic_cons_does_not_loop) {
     a_cons->cdr = b;
     b_cons->cdr = a;
 
-    // Root only a — both should be retained without infinite loop
     roots.push_back(a);
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     BOOST_TEST(stats.objects_freed == 0);
 
-    // Unroot — both collected
     roots.clear();
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     BOOST_TEST(stats.objects_freed == 2);
 }
 
-// deep chain stress
+/// deep chain stress
 
 BOOST_AUTO_TEST_CASE(deep_cons_chain_retained) {
-    Heap heap(1ull << 22);  // 4 MiB — room for deep chain
+    Heap heap(1ull << 22);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
@@ -665,7 +667,7 @@ BOOST_AUTO_TEST_CASE(deep_cons_chain_retained) {
     BOOST_TEST(stats.objects_freed == static_cast<std::size_t>(DEPTH));
 }
 
-// vector with nested heap objects
+/// vector with nested heap objects
 
 BOOST_AUTO_TEST_CASE(vector_with_nested_vectors) {
     Heap heap(1ull << 20);
@@ -681,7 +683,7 @@ BOOST_AUTO_TEST_CASE(vector_with_nested_vectors) {
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // outer_vec -> inner_vec -> {inner1, inner2}: all 4 retained
+    /// outer_vec -> inner_vec -> {inner1, inner2}: all 4 retained
     BOOST_TEST(stats.objects_freed == 0);
 
     roots.clear();
@@ -689,14 +691,14 @@ BOOST_AUTO_TEST_CASE(vector_with_nested_vectors) {
     BOOST_TEST(stats.objects_freed == 4);
 }
 
-// mixed type graph
+/// mixed type graph
 
 BOOST_AUTO_TEST_CASE(mixed_type_interconnected_graph) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Build a graph: vector -> closure -> cons -> logic_var(bound to cons)
+    /// Build a graph: vector -> closure -> cons -> logic_var(bound to cons)
     auto leaf_cons = expect_ok(make_cons(heap, Nil));
 
     auto lv = expect_ok(make_logic_var(heap));
@@ -709,7 +711,7 @@ BOOST_AUTO_TEST_CASE(mixed_type_interconnected_graph) {
     auto closure = expect_ok(make_closure(heap, nullptr, {cons_with_lv}));
     auto vec = expect_ok(make_vector(heap, {closure}));
 
-    // Also create unreachable garbage
+    /// Also create unreachable garbage
     (void)expect_ok(make_cons(heap, Nil));
     (void)expect_ok(make_cons(heap, Nil));
 
@@ -717,21 +719,21 @@ BOOST_AUTO_TEST_CASE(mixed_type_interconnected_graph) {
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // 2 unreachable cons freed; vec+closure+cons_with_lv+lv+leaf_cons retained
+    /// 2 unreachable cons freed; vec+closure+cons_with_lv+lv+leaf_cons retained
     BOOST_TEST(stats.objects_freed == 2);
 }
 
-// multiple roots sharing subgraph
+/// multiple roots sharing subgraph
 
 BOOST_AUTO_TEST_CASE(shared_subgraph_from_multiple_roots) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // Shared node
+    /// Shared node
     auto shared = expect_ok(make_cons(heap, Nil));
 
-    // Two vectors both reference the shared cons
+    /// Two vectors both reference the shared cons
     auto vec1 = expect_ok(make_vector(heap, {shared}));
     auto vec2 = expect_ok(make_vector(heap, {shared}));
 
@@ -742,20 +744,19 @@ BOOST_AUTO_TEST_CASE(shared_subgraph_from_multiple_roots) {
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     BOOST_TEST(stats.objects_freed == 0);
 
-    // Remove one root — shared still reachable from vec2
-    roots.erase(roots.begin()); // remove vec1
+    roots.erase(roots.begin()); ///< remove vec1
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    BOOST_TEST(stats.objects_freed == 1); // only vec1 freed
+    BOOST_TEST(stats.objects_freed == 1); ///< only vec1 freed
 }
 
-// span convenience overload
+/// span convenience overload
 
 BOOST_AUTO_TEST_CASE(collect_with_span) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
 
     auto a = expect_ok(make_cons(heap, Nil));
-    (void)expect_ok(make_cons(heap, Nil)); // unreachable
+    (void)expect_ok(make_cons(heap, Nil)); ///< unreachable
 
     std::vector<LispVal> roots_vec = {a};
     std::span<const LispVal> roots_span(roots_vec);
@@ -765,7 +766,7 @@ BOOST_AUTO_TEST_CASE(collect_with_span) {
     BOOST_TEST(stats.objects_freed == 1);
 }
 
-// callback-based root enumeration
+/// callback-based root enumeration
 
 BOOST_AUTO_TEST_CASE(collect_with_callback_enumeration) {
     Heap heap(1ull << 20);
@@ -773,7 +774,7 @@ BOOST_AUTO_TEST_CASE(collect_with_callback_enumeration) {
 
     auto a = expect_ok(make_cons(heap, Nil));
     auto b = expect_ok(make_cons(heap, Nil));
-    (void)expect_ok(make_cons(heap, Nil)); // unreachable
+    (void)expect_ok(make_cons(heap, Nil)); ///< unreachable
 
     GCStats stats{};
     gc.collect(heap, [&](auto&& visit) {
@@ -784,51 +785,51 @@ BOOST_AUTO_TEST_CASE(collect_with_callback_enumeration) {
     BOOST_TEST(stats.objects_freed == 1);
 }
 
-// non-heap roots ignored gracefully
+/// non-heap roots ignored gracefully
 
 BOOST_AUTO_TEST_CASE(non_heap_roots_ignored) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
 
-    // Roots that are immediate values, not heap pointers
+    /// Roots that are immediate values, not heap pointers
     auto flo = encode(3.14).value();
     auto fix = encode(42).value();
     std::vector<LispVal> roots = {Nil, True, False, flo, fix};
 
-    (void)expect_ok(make_cons(heap, Nil)); // unreachable
+    (void)expect_ok(make_cons(heap, Nil)); ///< unreachable
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // Only the unreachable cons freed; immediate roots don't crash anything
+    /// Only the unreachable cons freed; immediate roots don't crash anything
     BOOST_TEST(stats.objects_freed == 1);
 }
 
-// ─── NngSocket GC tests ───────────────────────────────────────────────────────
 
-// Verifies that an unreachable NngSocket heap entry is swept by GC and its
-// type-erased destructor (which calls nng_close) is invoked.  closed=true
-// prevents nng_close from being called on an uninitialised socket handle.
+/**
+ * Verifies that an unreachable NngSocket heap entry is swept by GC and its
+ * type-erased destructor (which calls nng_close) is invoked.  closed=true
+ * prevents nng_close from being called on an uninitialised socket handle.
+ */
 BOOST_AUTO_TEST_CASE(nng_socket_unreachable_swept) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
     eta::nng::NngSocketPtr sp{};
-    sp.closed = true; // guard: do not call nng_close on an uninitialised fd
+    sp.closed = true; ///< guard: do not call nng_close on an uninitialised fd
     auto sock_val = expect_ok(eta::nng::factory::make_nng_socket(heap, std::move(sp)));
     const auto sock_id = static_cast<ObjectId>(payload(sock_val));
 
-    // Not rooted — must be swept and its destructor invoked.
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     BOOST_TEST(stats.objects_freed == 1);
 
-    // The heap entry must be absent after the sweep.
+    /// The heap entry must be absent after the sweep.
     HeapEntry e{};
     BOOST_TEST(!heap.try_get(sock_id, e));
 }
 
-// Verifies that a rooted NngSocket survives GC while an unrooted one is freed.
+/// Verifies that a rooted NngSocket survives GC while an unrooted one is freed.
 BOOST_AUTO_TEST_CASE(nng_socket_rooted_retained) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
@@ -842,24 +843,25 @@ BOOST_AUTO_TEST_CASE(nng_socket_rooted_retained) {
 
     auto rooted_sock  = expect_ok(eta::nng::factory::make_nng_socket(heap, make_closed_sp()));
     auto garbage_sock = expect_ok(eta::nng::factory::make_nng_socket(heap, make_closed_sp()));
-    (void)garbage_sock; // not rooted
+    (void)garbage_sock; ///< not rooted
 
     roots.push_back(rooted_sock);
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    BOOST_TEST(stats.objects_freed == 1); // only garbage_sock freed
+    BOOST_TEST(stats.objects_freed == 1); ///< only garbage_sock freed
 
-    // Rooted socket is still accessible.
+    /// Rooted socket is still accessible.
     const auto id = static_cast<ObjectId>(payload(rooted_sock));
     auto* retained_ptr = heap.try_get_as<ObjectKind::NngSocket, eta::nng::NngSocketPtr>(id);
     BOOST_TEST(retained_ptr != nullptr);
 }
 
-// ─── ExternalRootFrame RAII tests ────────────────────────────────────────────
 
-// Verifies that objects pushed into an ExternalRootFrame survive GC while the
-// frame is live, and are swept after the frame goes out of scope.
+/**
+ * Verifies that objects pushed into an ExternalRootFrame survive GC while the
+ * frame is live, and are swept after the frame goes out of scope.
+ */
 BOOST_AUTO_TEST_CASE(external_root_frame_roots_object) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
@@ -870,21 +872,21 @@ BOOST_AUTO_TEST_CASE(external_root_frame_roots_object) {
         auto frame = heap.make_external_root_frame();
         frame.push(cons1);
 
-        // GC using heap.external_roots() as root set — cons1 must survive.
         GCStats stats1{};
         gc.collect(heap, heap.external_roots().begin(), heap.external_roots().end(), &stats1);
         BOOST_TEST(stats1.objects_freed == 0);
-    } // frame destructor: external_roots resized back to 0
+    } ///< frame destructor: external_roots resized back to 0
 
-    // cons1 is now unrooted — must be swept.
     std::vector<LispVal> empty;
     GCStats stats2{};
     gc.collect(heap, empty.begin(), empty.end(), &stats2);
     BOOST_TEST(stats2.objects_freed == 1);
 }
 
-// Verifies that nested ExternalRootFrames form a stack: the inner frame pops
-// only its own roots on destruction, leaving the outer frame's roots intact.
+/**
+ * Verifies that nested ExternalRootFrames form a stack: the inner frame pops
+ * only its own roots on destruction, leaving the outer frame's roots intact.
+ */
 BOOST_AUTO_TEST_CASE(external_root_frame_nested_frames) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
@@ -900,28 +902,30 @@ BOOST_AUTO_TEST_CASE(external_root_frame_nested_frames) {
             auto inner = heap.make_external_root_frame();
             inner.push(cons2);
 
-            // Both cons1 and cons2 are rooted: neither freed.
+            /// Both cons1 and cons2 are rooted: neither freed.
             GCStats s1{};
             gc.collect(heap, heap.external_roots().begin(), heap.external_roots().end(), &s1);
             BOOST_TEST(s1.objects_freed == 0);
-        } // inner destructor: external_roots = [cons1]
+        } ///< inner destructor: external_roots = [cons1]
 
-        // cons2 is now unrooted: freed.
+        /// cons2 is now unrooted: freed.
         GCStats s2{};
         gc.collect(heap, heap.external_roots().begin(), heap.external_roots().end(), &s2);
         BOOST_TEST(s2.objects_freed == 1);
-    } // outer destructor: external_roots = []
+    } ///< outer destructor: external_roots = []
 
-    // cons1 is now unrooted: freed.
+    /// cons1 is now unrooted: freed.
     std::vector<LispVal> empty;
     GCStats s3{};
     gc.collect(heap, empty.begin(), empty.end(), &s3);
     BOOST_TEST(s3.objects_freed == 1);
 }
 
-// Verifies ExternalRootFrame move semantics: the moved-from frame becomes
-// inactive and its destructor is a no-op; the moved-to frame retains
-// ownership and correctly unroots on destruction.
+/**
+ * Verifies ExternalRootFrame move semantics: the moved-from frame becomes
+ * inactive and its destructor is a no-op; the moved-to frame retains
+ * ownership and correctly unroots on destruction.
+ */
 BOOST_AUTO_TEST_CASE(external_root_frame_move_semantics) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
@@ -932,38 +936,36 @@ BOOST_AUTO_TEST_CASE(external_root_frame_move_semantics) {
         auto frame1 = heap.make_external_root_frame();
         frame1.push(cons1);
 
-        // Move-construct frame2: frame1 becomes inactive (active_ = false).
+        /// Move-construct frame2: frame1 becomes inactive (active_ = false).
         auto frame2 = std::move(frame1);
 
-        // frame1's destructor is now a no-op.  frame2 still guards cons1.
+        /// frame1's destructor is now a no-op.  frame2 still guards cons1.
         GCStats stats1{};
         gc.collect(heap, heap.external_roots().begin(), heap.external_roots().end(), &stats1);
         BOOST_TEST(stats1.objects_freed == 0);
 
-        // Destructors run in reverse declaration order:
-        //   frame2 (declared second) → active_=true  → external_roots.resize(0)
-        //   frame1 (declared first)  → active_=false → no-op
+        /// Destructors run in reverse declaration order:
     }
 
-    // external_roots is empty; cons1 must now be swept.
+    /// external_roots is empty; cons1 must now be swept.
     std::vector<LispVal> empty;
     GCStats stats2{};
     gc.collect(heap, empty.begin(), empty.end(), &stats2);
     BOOST_TEST(stats2.objects_freed == 1);
 }
 
-// ─── Mixed type graph: Tensor and NngSocket as unreachable leaves ─────────────
 
-// Expands the mixed-type graph test to include NngSocket (always) and Tensor
-// (release builds only) as additional unreachable leaf objects alongside the
-// reachable vector→closure→cons→logic_var graph.  Verifies that leaf types
-// without child edges do not block traversal and are correctly swept.
+/**
+ * Expands the mixed-type graph test to include NngSocket (always) and Tensor
+ * (release builds only) as additional unreachable leaf objects alongside the
+ * without child edges do not block traversal and are correctly swept.
+ */
 BOOST_AUTO_TEST_CASE(mixed_type_with_nng_and_tensor_leaves) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 
-    // --- Reachable graph: vector -> closure -> cons_with_lv -> lv(bound to leaf_cons) ---
+    /// --- Reachable graph: vector -> closure -> cons_with_lv -> lv(bound to leaf_cons) ---
     auto leaf_cons = expect_ok(make_cons(heap, Nil));
 
     auto lv = expect_ok(make_logic_var(heap));
@@ -977,45 +979,50 @@ BOOST_AUTO_TEST_CASE(mixed_type_with_nng_and_tensor_leaves) {
     auto vec          = expect_ok(make_vector(heap, {closure}));
     roots.push_back(vec);
 
-    // --- Unreachable NngSocket leaf (closed=true: avoid nng_close on uninitialised fd) ---
+    /// --- Unreachable NngSocket leaf (closed=true: avoid nng_close on uninitialised fd) ---
     {
         eta::nng::NngSocketPtr sp{};
         sp.closed = true;
         (void)expect_ok(eta::nng::factory::make_nng_socket(heap, std::move(sp)));
     }
 
-    // --- Unreachable Tensor leaf (skipped in MSVC Debug due to ABI mismatch) ---
+    /// --- Unreachable Tensor leaf (skipped in MSVC Debug due to ABI mismatch) ---
 #ifndef ETA_TORCH_DEBUG_SKIP
     namespace tf = eta::torch_bindings::factory;
     (void)expect_ok(tf::make_tensor(heap, torch::zeros({1})));
-    constexpr std::size_t GARBAGE_COUNT = 2; // NngSocket + Tensor
+    constexpr std::size_t GARBAGE_COUNT = 2; ///< NngSocket + Tensor
 #else
-    constexpr std::size_t GARBAGE_COUNT = 1; // NngSocket only
+    constexpr std::size_t GARBAGE_COUNT = 1; ///< NngSocket only
 #endif
 
     GCStats stats{};
     gc.collect(heap, roots.begin(), roots.end(), &stats);
-    // Reachable (retained): vec, closure, cons_with_lv, lv, leaf_cons
-    // Garbage  (freed):     NngSocket + Tensor (if available)
+    /**
+     * Reachable (retained): vec, closure, cons_with_lv, lv, leaf_cons
+     * Garbage  (freed):     NngSocket + Tensor (if available)
+     */
     BOOST_TEST(stats.objects_freed == GARBAGE_COUNT);
 }
 
-// ─── Large ByteVector soft-limit stress ──────────────────────────────────────
 
-// Verifies that:
-//   (a) the GC callback fires when a succession of ByteVector allocations
-//       with large internal data payloads pushes past the soft limit;
-//   (b) the GC correctly invokes the type-erased ByteVector destructor, freeing
-//       the underlying std::vector<uint8_t> storage;
-//   (c) the single rooted ByteVector with a sentinel payload survives intact.
+/**
+ * Verifies that:
+ *   (a) the GC callback fires when a succession of ByteVector allocations
+ *       with large internal data payloads pushes past the soft limit;
+ *   (b) the GC correctly invokes the type-erased ByteVector destructor, freeing
+ *       the underlying std::vector<uint8_t> storage;
+ *   (c) the single rooted ByteVector with a sentinel payload survives intact.
+ */
 BOOST_AUTO_TEST_CASE(large_bytevector_soft_limit_stress) {
-    // ByteVector's tracked heap footprint is sizeof(ByteVector) regardless of
-    // how many bytes its internal std::vector<uint8_t> actually holds.  We use
-    // a 1 KiB internal payload to exercise the destructor's cleanup path.
+    /**
+     * ByteVector's tracked heap footprint is sizeof(ByteVector) regardless of
+     * how many bytes its internal std::vector<uint8_t> actually holds.  We use
+     * a 1 KiB internal payload to exercise the destructor's cleanup path.
+     */
     constexpr std::size_t INTERNAL_SZ = 1024;
     const std::size_t bv_tracked = sizeof(eta::runtime::types::ByteVector);
 
-    // Soft limit: fits exactly 5 ByteVectors.  The 6th allocation triggers GC.
+    /// Soft limit: fits exactly 5 ByteVectors.  The 6th allocation triggers GC.
     Heap heap(bv_tracked * 5);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
@@ -1026,24 +1033,22 @@ BOOST_AUTO_TEST_CASE(large_bytevector_soft_limit_stress) {
         gc.collect(heap, roots.begin(), roots.end());
     });
 
-    // Rooted ByteVector with a recognisable sentinel payload.
+    /// Rooted ByteVector with a recognisable sentinel payload.
     const std::vector<uint8_t> sentinel(INTERNAL_SZ, 0xCA);
     auto rooted_bv = expect_ok(make_bytevector(heap, sentinel));
     roots.push_back(rooted_bv);
 
-    // 4 unreachable ByteVectors — total tracked bytes reaches the limit exactly.
     for (int i = 0; i < 4; ++i) {
         (void)expect_ok(make_bytevector(heap,
             std::vector<uint8_t>(INTERNAL_SZ, static_cast<uint8_t>(i))));
     }
-    BOOST_TEST(!callback_fired); // exactly at the limit — not yet exceeded
+    BOOST_TEST(!callback_fired);
 
-    // This 6th allocation exceeds the soft limit → GC callback fires, frees
-    // the 4 unreachable ByteVectors (and their 1 KiB buffers), then proceeds.
+    /// the 4 unreachable ByteVectors (and their 1 KiB buffers), then proceeds.
     (void)expect_ok(make_bytevector(heap, std::vector<uint8_t>(INTERNAL_SZ, 0xFF)));
     BOOST_TEST(callback_fired);
 
-    // Rooted ByteVector must still be accessible with its sentinel data intact.
+    /// Rooted ByteVector must still be accessible with its sentinel data intact.
     const auto bv_id = static_cast<ObjectId>(payload(rooted_bv));
     auto* bv_ptr = heap.try_get_as<ObjectKind::ByteVector,
                                     eta::runtime::types::ByteVector>(bv_id);

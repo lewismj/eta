@@ -1,0 +1,149 @@
+;;; attrvar_smoke.eta — Smoke test for attributed variables +
+;;; freeze / dif, exercising the trail-unwind semantics.
+;;;
+;;; Run with:
+;;;   $env:ETA_MODULE_PATH="stdlib"
+;;;   etai stdlib/tests/attrvar_smoke.eta
+
+(module attrvar-smoke
+  (import std.core std.logic std.freeze)
+  (begin
+
+    (define fail-count 0)
+
+    (defun chk (label expected actual)
+      (display label)
+      (display " => ")
+      (display actual)
+      (if (equal? actual expected)
+          (display "   [ok]")
+          (begin (display "   [FAIL expected ")
+                 (display expected)
+                 (display "]")
+                 (set! fail-count (+ fail-count 1))))
+      (newline))
+
+    (display "attrvar smoke: start") (newline)
+
+    ;; ── 1. attr-var? on plain vars ──────────────────────────────────
+    (chk "attr-var? fresh plain" #f
+         (attr-var? (logic-var)))
+    (chk "attr-var? non-var"     #f
+         (attr-var? 42))
+
+    ;; ── 2. put-attr / get-attr / del-attr round-trip ───────────────
+    (let ((v (logic-var)))
+      (chk "get-attr absent = #f" #f (get-attr v 'm1))
+      (put-attr v 'm1 'hello)
+      (chk "get-attr after put"   'hello (get-attr v 'm1))
+      (chk "attr-var? after put"  #t     (attr-var? v))
+      (put-attr v 'm2 42)
+      (chk "two modules: m1"      'hello (get-attr v 'm1))
+      (chk "two modules: m2"      42     (get-attr v 'm2))
+      (chk "del-attr returns #t"  #t     (del-attr v 'm1))
+      (chk "after del m1 is gone" #f     (get-attr v 'm1))
+      (chk "after del m2 lives"   42     (get-attr v 'm2))
+      (chk "del-attr absent = #f" #f     (del-attr v 'm1)))
+
+    ;; ── 3. Trail unwinds put-attr ──────────────────────────────────
+    (let* ((v (logic-var))
+           (m (trail-mark)))
+      (put-attr v 'pm 'before-unwind)
+      (chk "before unwind"  'before-unwind (get-attr v 'pm))
+      (unwind-trail m)
+      (chk "after unwind"   #f (get-attr v 'pm)))
+
+    ;; ── 4. Trail unwinds overwrite ────────────────────────────────
+    (let ((v (logic-var)))
+      (put-attr v 'om 'first)
+      (let ((m (trail-mark)))
+        (put-attr v 'om 'second)
+        (chk "mid-overwrite"  'second (get-attr v 'om))
+        (unwind-trail m)
+        (chk "after unwind reinstalls" 'first (get-attr v 'om))))
+
+    ;; ── 5. Trail unwinds del-attr ─────────────────────────────────
+    (let ((v (logic-var)))
+      (put-attr v 'dm 123)
+      (let ((m (trail-mark)))
+        (del-attr v 'dm)
+        (chk "mid-delete = #f" #f (get-attr v 'dm))
+        (unwind-trail m)
+        (chk "after unwind reinstalls delete" 123 (get-attr v 'dm))))
+
+    ;; ── 6. register-attr-hook! is called on unify ─────────────────
+    ;;
+    ;; We register a hook under 'probe that just appends the bound
+    ;; value into a side list; it always succeeds.  Attaching any
+    ;; non-#f attribute under 'probe on a var makes it attr-active.
+    (define probe-log '())
+    (register-attr-hook! 'probe
+      (lambda (var bound attr-val)
+        (set! probe-log (cons (list 'fired bound attr-val) probe-log))
+        #t))
+
+    (let ((v (logic-var)))
+      (put-attr v 'probe 'tag-A)
+      (chk "probe pre-unify log" '() probe-log)
+      (unify v 99)
+      (chk "probe fired on unify"
+           '((fired 99 tag-A)) probe-log))
+
+    ;; ── 7. Failing hook causes unify to fail AND unwinds binding ──
+    (register-attr-hook! 'veto
+      (lambda (var bound attr-val) #f))              ; always vetoes
+
+    (let* ((v  (logic-var))
+           (_  (put-attr v 'veto 'guard))
+           (ok (unify v 'something)))
+      (chk "veto hook fails unify" #f ok)
+      ;; v should still be unbound (binding wasn't committed).
+      (chk "v stays unbound after veto" #t (logic-var? (deref-lvar v))))
+
+    ;; ── 8. freeze fires exactly once on binding ───────────────────
+    (define freeze-fires 0)
+    (let ((v (logic-var)))
+      (freeze v (lambda ()
+                  (set! freeze-fires (+ freeze-fires 1))
+                  #t))
+      (chk "freeze pre-bind fires=0" 0 freeze-fires)
+      (unify v 'ready)
+      (chk "freeze after-bind fires=1" 1 freeze-fires))
+
+    ;; ── 9. freeze immediate when v already ground ─────────────────
+    ;; Counter lifted to module scope so the mutation is visible after
+    ;; freeze returns (let-bound set! captures pattern is exercised in
+    ;; test 8 already; this test just verifies the immediate path).
+    (define already-fired 0)
+    (freeze 7 (lambda ()
+                (set! already-fired (+ already-fired 1))
+                #t))
+    (chk "freeze immediate on ground" 1 already-fired)
+
+    ;; ── 10. dif on two distinct ground values ─────────────────────
+    (chk "dif 1 2"   #t (dif 1 2))
+    (chk "dif 'a 'a" #f (dif 'a 'a))
+
+    ;; ── 11. dif on var + ground, then ground to SAME value → fails
+    (let* ((v  (logic-var))
+           (_  (dif v 5))
+           (ok (unify v 5)))
+      (chk "dif violated by unify" #f ok)
+      (chk "v unbound after violated dif" #t (logic-var? (deref-lvar v))))
+
+    ;; ── 12. dif on var + ground, unified to DIFFERENT value ok ────
+    (let* ((v  (logic-var))
+           (_  (dif v 5))
+           (ok (unify v 6)))
+      (chk "dif satisfied by unify" #t ok)
+      (chk "v now 6" 6 (deref-lvar v)))
+
+    ;; ── Summary ──────────────────────────────────────────────────
+    (newline)
+    (if (= fail-count 0)
+        (display "attrvar smoke: ALL PASS")
+        (begin (display "attrvar smoke: ")
+               (display fail-count)
+               (display " FAILURE(S)")))
+    (newline)))
+

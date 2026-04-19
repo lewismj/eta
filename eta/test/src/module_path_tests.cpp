@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file module_path_tests.cpp
  * @brief Unit tests for eta::interpreter::ModulePathResolver
  */
@@ -13,7 +13,7 @@
 
 namespace fs = std::filesystem;
 
-// helpers
+/// helpers
 
 /// RAII temporary directory that creates / destroys itself automatically.
 struct TempDir {
@@ -42,14 +42,14 @@ struct TempDir {
     }
 };
 
-// test suite
+/// test suite
 
 BOOST_AUTO_TEST_SUITE(module_path_resolver_tests)
 
-// Bring the class name into scope within this test suite namespace.
+/// Bring the class name into scope within this test suite namespace.
 using eta::interpreter::ModulePathResolver;
 
-// from_path_string
+/// from_path_string
 
 BOOST_AUTO_TEST_CASE(empty_path_string_gives_empty_resolver) {
     auto r = ModulePathResolver::from_path_string("");
@@ -97,7 +97,7 @@ BOOST_AUTO_TEST_CASE(consecutive_separators_are_ignored) {
     BOOST_REQUIRE_EQUAL(r.dirs().size(), 2u);
 }
 
-// module_to_relative
+/// module_to_relative
 
 BOOST_AUTO_TEST_CASE(module_to_relative_simple) {
     auto p = ModulePathResolver::module_to_relative("std.core");
@@ -114,7 +114,7 @@ BOOST_AUTO_TEST_CASE(module_to_relative_deep) {
     BOOST_TEST(p == fs::path("a/b/c/d.eta"));
 }
 
-// resolve
+/// resolve
 
 BOOST_AUTO_TEST_CASE(resolve_finds_file_in_first_dir) {
     TempDir d1, d2;
@@ -151,13 +151,13 @@ BOOST_AUTO_TEST_CASE(resolve_empty_resolver_returns_nullopt) {
 
 BOOST_AUTO_TEST_CASE(resolve_only_matches_regular_files) {
     TempDir d;
-    // Create a directory where the file should be (not a regular file)
+    /// Create a directory where the file should be (not a regular file)
     fs::create_directories(d.path / "std" / "core.eta");
     ModulePathResolver r{{d.path}};
     BOOST_TEST(!r.resolve("std.core").has_value());
 }
 
-// find_file
+/// find_file
 
 BOOST_AUTO_TEST_CASE(find_file_locates_prelude) {
     TempDir d;
@@ -185,7 +185,7 @@ BOOST_AUTO_TEST_CASE(find_file_searches_dirs_in_order) {
     BOOST_TEST(result->string().find(d2.path.string()) != std::string::npos);
 }
 
-// add_dir / dirs / empty
+/// add_dir / dirs / empty
 
 BOOST_AUTO_TEST_CASE(add_dir_appends) {
     ModulePathResolver r;
@@ -203,13 +203,13 @@ BOOST_AUTO_TEST_CASE(explicit_dirs_constructor) {
     BOOST_REQUIRE_EQUAL(r.dirs().size(), 2u);
 }
 
-// from_args_or_env
+/// from_args_or_env
 
 BOOST_AUTO_TEST_CASE(from_args_or_env_cli_path_overrides_env) {
     TempDir d;
     d.create_file("dummy.txt");
     auto r = ModulePathResolver::from_args_or_env(d.path.string());
-    // First dir should come from cli
+    /// First dir should come from cli
     BOOST_REQUIRE(!r.empty());
     BOOST_TEST(r.dirs()[0] == d.path);
 }

@@ -1,0 +1,45 @@
+;;; Smoke test for core logic primitives. Run with:
+;;;   eta_test stdlib/tests/logic_phase1_smoke.eta
+(module logic-phase1-smoke
+  (begin
+    (display "phase1 smoke: start\n")
+
+    ;; named logic var
+    (let ((x (logic-var/named 'alpha)))
+      (display "var-name alpha = ") (display (var-name x)) (newline)
+      (display "logic-var? alpha = ") (display (logic-var? x)) (newline))
+
+    ;; anonymous var
+    (let ((y (logic-var)))
+      (display "var-name anon = ") (display (var-name y)) (newline))
+
+    ;; var-name on non-var
+    (display "var-name 42 = ") (display (var-name 42)) (newline)
+
+    ;; occurs-check mode
+    (display "default mode = ") (display (occurs-check-mode)) (newline)
+    (set-occurs-check! 'never)
+    (display "after never = ") (display (occurs-check-mode)) (newline)
+    (set-occurs-check! 'error)
+    (display "after error = ") (display (occurs-check-mode)) (newline)
+    (set-occurs-check! 'always)
+    (display "after always = ") (display (occurs-check-mode)) (newline)
+
+    ;; cyclic unify: always vs never
+    (set-occurs-check! 'always)
+    (let* ((x (logic-var))
+           (m (trail-mark))
+           (ok (unify x (cons 1 x))))
+      (unwind-trail m)
+      (display "cyclic unify (always) = ") (display ok) (newline))
+
+    (set-occurs-check! 'never)
+    (let* ((x (logic-var))
+           (m (trail-mark))
+           (ok (unify x (cons 1 x))))
+      (unwind-trail m)
+      (display "cyclic unify (never)  = ") (display ok) (newline))
+    (set-occurs-check! 'always)
+
+    (display "phase1 smoke: done\n")))
+

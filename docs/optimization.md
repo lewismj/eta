@@ -3,7 +3,7 @@
 [← Back to README](../README.md) · [Architecture](architecture.md) ·
 [Bytecode & VM](bytecode-vm.md) · [Compiler (`etac`)](compiler.md) ·
 [Runtime & GC](runtime.md) · [Modules & Stdlib](modules.md) ·
-[Next Steps](next-steps.md)
+[Project Status](next-steps.md)
 
 ---
 

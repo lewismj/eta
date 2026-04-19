@@ -1,0 +1,81 @@
+;;; portfolio-lp.eta -- CLP(R) optimization example.
+;;;
+;;; Solve a small 10-asset linear portfolio model:
+;;;   maximize   return . w
+;;;   subject to risk . w <= 0.45
+;;;              sum(w) = 1
+;;;              0 <= w_i <= 1
+;;;
+;;; With the coefficients below, the hand optimum is:
+;;;   w1 = 0.5, w2 = 0.5, others = 0, objective = 0.135.
+
+(module portfolio-lp
+  (import std.logic std.clpr)
+  (begin
+
+    (defun make-vars (n)
+      (if (= n 0)
+          '()
+          (cons (logic-var) (make-vars (- n 1)))))
+
+    (defun dot (coeffs vars)
+      (if (null? coeffs)
+          0.0
+          (clp:r+ (clp:r*scalar (car coeffs) (car vars))
+                  (dot (cdr coeffs) (cdr vars)))))
+
+    (defun dot-values (coeffs vars)
+      (if (null? coeffs)
+          0.0
+          (+ (* (car coeffs) (deref-lvar (car vars)))
+             (dot-values (cdr coeffs) (cdr vars)))))
+
+    (defun post-lower-bounds! (xs lo)
+      (if (null? xs)
+          #t
+          (and (clp:r>= (car xs) lo)
+               (post-lower-bounds! (cdr xs) lo))))
+
+    (defun post-upper-bounds! (xs hi)
+      (if (null? xs)
+          #t
+          (and (clp:r<= (car xs) hi)
+               (post-upper-bounds! (cdr xs) hi))))
+
+    (defun apply-witness! (witness)
+      (if (null? witness)
+          #t
+          (and (unify (car (car witness)) (cdr (car witness)))
+               (apply-witness! (cdr witness)))))
+
+    (defun print-allocation (vars i)
+      (if (null? vars)
+          #t
+          (begin
+            (display "  w") (display i) (display " = ")
+            (display (deref-lvar (car vars)))
+            (newline)
+            (print-allocation (cdr vars) (+ i 1)))))
+
+    (let* ((weights (make-vars 10))
+           (returns '(0.15 0.12 0.11 0.10 0.09 0.08 0.07 0.06 0.05 0.04))
+           (risks   '(0.60 0.30 0.20 0.25 0.20 0.35 0.40 0.15 0.10 0.05)))
+
+      (post-lower-bounds! weights 0.0)
+      (post-upper-bounds! weights 1.0)
+      (clp:r=  (dot '(1 1 1 1 1 1 1 1 1 1) weights) 1.0)
+      (clp:r<= (dot risks weights) 0.45)
+
+      (call-with-values
+        (lambda () (clp:r-maximize (dot returns weights)))
+        (lambda (optimum witness)
+          (apply-witness! witness)
+          (display "portfolio-lp optimum return: ")
+          (display optimum)
+          (newline)
+          (display "allocation:")
+          (newline)
+          (print-allocation weights 1)
+          (display "portfolio-lp risk: ")
+          (display (dot-values risks weights))
+          (newline))))))

@@ -1,17 +1,17 @@
-#pragma once
+﻿#pragma once
 
 #include <eta/runtime/memory/heap.h>
 #include <eta/runtime/types/types.h>
 
 namespace eta::runtime::memory::heap {
 
-    // Visitor over heap-allocated objects. R defaults to void.
+    /// Visitor over heap-allocated objects. R defaults to void.
     template <typename R = void>
     struct HeapVisitor {
         using result_type = R;
         virtual ~HeapVisitor() = default;
 
-        // One method per pointer-containing heap type
+        /// One method per pointer-containing heap type
         virtual R visit_cons(const eta::runtime::types::Cons& c) = 0;
         virtual R visit_closure(const eta::runtime::types::Closure& c) = 0;
         virtual R visit_vector(const eta::runtime::types::Vector& v) = 0;
@@ -21,12 +21,12 @@ namespace eta::runtime::memory::heap {
         virtual R visit_tape(const eta::runtime::types::Tape& t) = 0;
         virtual R visit_primitive(const eta::runtime::types::Primitive& p) = 0;
         virtual R visit_fact_table(const eta::runtime::types::FactTable& ft) = 0;
+        virtual R visit_compound_term(const eta::runtime::types::CompoundTerm& ct) = 0;
 
-        // Fallback for leaf/unknown kinds (no outward edges)
+        /// Fallback for leaf/unknown kinds (no outward edges)
         virtual R visit_leaf(ObjectKind kind, const void* payload) = 0;
     };
 
-    // Centralized dispatcher – single switch over ObjectKind
     template <typename R>
     inline_always R visit_heap_object(const ObjectHeader& hdr, const void* payload, HeapVisitor<R>& v) {
         using enum ObjectKind;
@@ -40,6 +40,7 @@ namespace eta::runtime::memory::heap {
             case Tape:         return v.visit_tape(*static_cast<const eta::runtime::types::Tape*>(payload));
             case Primitive:    return v.visit_primitive(*static_cast<const eta::runtime::types::Primitive*>(payload));
             case FactTable:    return v.visit_fact_table(*static_cast<const eta::runtime::types::FactTable*>(payload));
+            case CompoundTerm: return v.visit_compound_term(*static_cast<const eta::runtime::types::CompoundTerm*>(payload));
 
             case Fixnum:
             case ByteVector:
@@ -47,7 +48,7 @@ namespace eta::runtime::memory::heap {
             case Tensor:
             case NNModule:
             case Optimizer:
-            case NngSocket:   // leaf: holds only OS handle + raw bytes, no GC refs
+            case NngSocket:   ///< leaf: holds only OS handle + raw bytes, no GC refs
             case Unknown:
                 return v.visit_leaf(hdr.kind, payload);
         }

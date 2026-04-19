@@ -1,0 +1,76 @@
+;;; clp_fm_smoke.eta -- Smoke tests for %clp-fm-* builtins.
+
+(module clp-fm-smoke
+  (import std.test std.logic std.core)
+  (begin
+
+    (defun lo (bounds) (car bounds))
+    (defun hi (bounds) (cdr bounds))
+
+    (define suite
+      (make-group "clp-fm-smoke"
+        (list
+          (make-test "triangle feasible"
+            (lambda ()
+              (let ((x (logic-var))
+                    (y (logic-var)))
+                (let ((cs (list (list '>= x 0)
+                                (list '>= y 0)
+                                (list '<= (list '+ x y) 3))))
+                  (assert-equal #t (%clp-fm-feasible? cs))))))
+
+          (make-test "direct contradiction is infeasible"
+            (lambda ()
+              (let ((x (logic-var)))
+                (let ((cs (list (list '>= x 0)
+                                (list '<= x -1))))
+                  (assert-equal #f (%clp-fm-feasible? cs))
+                  (assert-equal #f (%clp-fm-bounds x cs))))))
+
+          (make-test "redundant bounds keep tightest"
+            (lambda ()
+              (let ((x (logic-var)))
+                (let ((cs (list (list '<= x 10)
+                                (list '<= x 5)
+                                (list '>= x 0)))
+                      (b #f))
+                  (set! b (%clp-fm-bounds x cs))
+                  (assert-approx-equal 0.0 (lo b) 1e-9)
+                  (assert-approx-equal 5.0 (hi b) 1e-9)))))
+
+          (make-test "bound tightening through elimination"
+            (lambda ()
+              (let ((x (logic-var))
+                    (y (logic-var)))
+                (let ((cs (list (list '<= (list '+ x y) 3)
+                                (list '>= x 1)
+                                (list '>= y 1)))
+                      (bx #f)
+                      (by #f))
+                  (set! bx (%clp-fm-bounds x cs))
+                  (set! by (%clp-fm-bounds y cs))
+                  (assert-approx-equal 1.0 (lo bx) 1e-9)
+                  (assert-approx-equal 2.0 (hi bx) 1e-9)
+                  (assert-approx-equal 1.0 (lo by) 1e-9)
+                  (assert-approx-equal 2.0 (hi by) 1e-9)))))
+
+          (make-test "row cap guard returns explicit symbol"
+            (lambda ()
+              (let ((x  (logic-var))
+                    (y0 (logic-var)) (y1 (logic-var))
+                    (y2 (logic-var)) (y3 (logic-var))
+                    (z0 (logic-var)) (z1 (logic-var))
+                    (z2 (logic-var)) (z3 (logic-var)))
+                (let ((cs (list
+                            (list '<= (list '+ x y0) 100)
+                            (list '<= (list '+ x y1) 101)
+                            (list '<= (list '+ x y2) 102)
+                            (list '<= (list '+ x y3) 103)
+                            (list '<= (list '+ (list '- x) z0) 100)
+                            (list '<= (list '+ (list '- x) z1) 101)
+                            (list '<= (list '+ (list '- x) z2) 102)
+                            (list '<= (list '+ (list '- x) z3) 103))))
+                  (assert-equal 'clp.fm.cap-exceeded (%clp-fm-feasible? cs 8))
+                  (assert-equal 'clp.fm.cap-exceeded (%clp-fm-bounds y0 cs 8)))))))))
+
+    (print-tap (run suite))))

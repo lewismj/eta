@@ -13,8 +13,10 @@
 namespace eta::runtime::memory::heap {
     using namespace eta::runtime::nanbox;
 
-    /// Bit 1 in ObjectHeader.flags marks a pool slot as allocated (live).
-    /// Bit 0 is MARK_BIT (defined in heap.h).
+    /**
+     * Bit 1 in ObjectHeader.flags marks a pool slot as allocated (live).
+     * Bit 0 is MARK_BIT (defined in heap.h).
+     */
     constexpr uint8_t POOL_ALLOCATED_BIT = 1u << 1;
 
     struct PoolStats {
@@ -24,22 +26,24 @@ namespace eta::runtime::memory::heap {
         std::size_t bytes{};
     };
 
-    /// Dedicated slab-based pool for cons cells.
-    ///
-    /// Allocates cons cells from contiguous slabs with an intrusive free-list,
-    /// eliminating the hash-map overhead and general-allocator cost for the
-    /// single most-frequently-allocated object type.
-    ///
-    /// ObjectIds are claimed in contiguous ranges from the Heap's atomic
-    /// counter so pool IDs coexist with general heap IDs without collision.
+    /**
+     * Dedicated slab-based pool for cons cells.
+     *
+     * Allocates cons cells from contiguous slabs with an intrusive free-list,
+     * eliminating the hash-map overhead and general-allocator cost for the
+     * single most-frequently-allocated object type.
+     *
+     * ObjectIds are claimed in contiguous ranges from the Heap's atomic
+     * counter so pool IDs coexist with general heap IDs without collision.
+     */
     class ConsPool {
     public:
         struct ConsSlot {
             ObjectHeader header{};
             ObjectId     id{0};
             union {
-                types::Cons  cell;       // car + cdr when live  (16 bytes)
-                ConsSlot*    next_free;  // free-list link when free (8 bytes)
+                types::Cons  cell;       ///< car + cdr when live  (16 bytes)
+                ConsSlot*    next_free;  ///< free-list link when free (8 bytes)
             };
 
             ConsSlot() : next_free{nullptr} {}
@@ -51,7 +55,7 @@ namespace eta::runtime::memory::heap {
             grow(initial_capacity);
         }
 
-        // allocation
+        /// allocation
 
         /// Pop free-list or grow; return ObjectId for the new cons cell.
         std::expected<ObjectId, HeapError> alloc(LispVal car, LispVal cdr) {
@@ -66,7 +70,7 @@ namespace eta::runtime::memory::heap {
             free_head_ = slot->next_free;
 
             slot->header.kind  = ObjectKind::Cons;
-            slot->header.flags = POOL_ALLOCATED_BIT;   // allocated, not marked
+            slot->header.flags = POOL_ALLOCATED_BIT;   ///< allocated, not marked
             slot->cell.car = car;
             slot->cell.cdr = cdr;
 
@@ -74,9 +78,8 @@ namespace eta::runtime::memory::heap {
             return slot->id;
         }
 
-        // lookup
+        /// lookup
 
-        /// O(1) lookup — returns pointer to Cons if id is in pool and live.
         types::Cons* try_get(ObjectId id) {
             auto* slot = find_slot(id);
             if (!slot || !(slot->header.flags & POOL_ALLOCATED_BIT)) return nullptr;
@@ -105,19 +108,19 @@ namespace eta::runtime::memory::heap {
             return find_slot(id) != nullptr;
         }
 
-        // deallocation
+        /// deallocation
 
         /// Return a live slot to the free-list.
         void free_slot(ObjectId id) {
             auto* slot = find_slot(id);
             if (!slot || !(slot->header.flags & POOL_ALLOCATED_BIT)) return;
-            slot->header.flags = 0;          // clear allocated + mark
+            slot->header.flags = 0;          ///< clear allocated + mark
             slot->next_free = free_head_;
             free_head_ = slot;
             --live_count_;
         }
 
-        // GC support
+        /// GC support
 
         /// Zero all mark bits on allocated slots (dense sweep).
         void clear_marks() {
@@ -138,13 +141,15 @@ namespace eta::runtime::memory::heap {
             }
         }
 
-        /// Combined check-and-mark.  Returns Cons* if newly marked
-        /// (was unmarked and allocated).  Returns nullptr if already marked,
-        /// not allocated, or not in this pool's range.
+        /**
+         * Combined check-and-mark.  Returns Cons* if newly marked
+         * (was unmarked and allocated).  Returns nullptr if already marked,
+         * not allocated, or not in this pool's range.
+         */
         types::Cons* try_mark(ObjectId id) {
             auto* slot = find_slot(id);
             if (!slot || !(slot->header.flags & POOL_ALLOCATED_BIT)) return nullptr;
-            if (slot->header.flags & MARK_BIT) return nullptr; // already marked
+            if (slot->header.flags & MARK_BIT) return nullptr; ///< already marked
             slot->header.flags |= MARK_BIT;
             return &slot->cell;
         }
@@ -168,7 +173,7 @@ namespace eta::runtime::memory::heap {
             return freed;
         }
 
-        // stats / iteration
+        /// stats / iteration
 
         PoolStats stats() const {
             return {
@@ -179,8 +184,10 @@ namespace eta::runtime::memory::heap {
             };
         }
 
-        /// Iterate all live slots, presenting each as a HeapEntry.
-        /// Any header.flags mutation the callback makes is written back.
+        /**
+         * Iterate all live slots, presenting each as a HeapEntry.
+         * Any header.flags mutation the callback makes is written back.
+         */
         void for_each_live_entry(const std::function<void(ObjectId, HeapEntry&)>& fn) {
             for (auto& slab : slabs_) {
                 for (std::size_t i = 0; i < slab.capacity; ++i) {
@@ -193,15 +200,17 @@ namespace eta::runtime::memory::heap {
                             .destructor = nullptr,
                         };
                         fn(slot.id, entry);
-                        // write-back: callback may only mutate header.flags
+                        /// write-back: callback may only mutate header.flags
                         slot.header.flags = entry.header.flags;
                     }
                 }
             }
         }
 
-        /// Provide mutable HeapEntry access for a single pool slot.
-        /// Writes back header.flags after the callback returns.
+        /**
+         * Provide mutable HeapEntry access for a single pool slot.
+         * Writes back header.flags after the callback returns.
+         */
         bool with_entry(ObjectId id, const std::function<void(HeapEntry&)>& fn) {
             auto* slot = find_slot(id);
             if (!slot || !(slot->header.flags & POOL_ALLOCATED_BIT)) return false;
@@ -220,7 +229,7 @@ namespace eta::runtime::memory::heap {
         struct Slab {
             std::unique_ptr<ConsSlot[]> slots;
             std::size_t capacity;
-            ObjectId    base_id;       // first ObjectId in this slab
+            ObjectId    base_id;       ///< first ObjectId in this slab
         };
 
         /// Allocate a new slab and claim a contiguous ID range.
@@ -233,11 +242,11 @@ namespace eta::runtime::memory::heap {
 
             auto slots = std::make_unique<ConsSlot[]>(capacity);
 
-            // Assign IDs and link into the free-list.
+            /// Assign IDs and link into the free-list.
             for (std::size_t i = 0; i < capacity; ++i) {
                 auto& slot   = slots[i];
                 slot.header.kind  = ObjectKind::Cons;
-                slot.header.flags = 0;                // not allocated
+                slot.header.flags = 0;                ///< not allocated
                 slot.id      = base_id + i;
                 slot.next_free = (i + 1 < capacity) ? &slots[i + 1] : free_head_;
             }
@@ -253,7 +262,6 @@ namespace eta::runtime::memory::heap {
             return true;
         }
 
-        /// O(1) lookup within slabs (typically 1–2 slabs).
         ConsSlot* find_slot(ObjectId id) const {
             for (const auto& slab : slabs_) {
                 if (id >= slab.base_id && id < slab.base_id + slab.capacity) {

@@ -25,10 +25,8 @@
  * @endmermaid
  *
  *
- * +∞: [0][11111111111][0000000000000000000000000000000000000000000000000000]
  *      sign  exp=7FF  mantissa all zeros
  *
- * -∞: [1][11111111111][0000000000000000000000000000000000000000000000000000]
  *
  */
 namespace eta::runtime::nanbox {
@@ -99,7 +97,6 @@ namespace eta::runtime::nanbox {
         //! [0][11111111111][0000000000000000000000000000000000000000000000000000]
         constexpr std::uint64_t QNAN_EXP_BITS = 0x7ffull << 52;
 
-        //! Bit 51 is the most significant mantissa bit — setting it indicates a quiet NaN (QNaN).
         //! [0][00000000000][1000000000000000000000000000000000000000000000000000]
         constexpr std::uint64_t QNAN_BIT = 1ull << 51;
 
@@ -116,13 +113,11 @@ namespace eta::runtime::nanbox {
         //! [0][00000000000][0000111111111111111111111111111111111111111111111111]
         constexpr std::uint64_t PAYLOAD_MASK = 0x00007fffffffffffull;
 
-        //! Exponent = all 1s, mantissa MSB = 1 → quiet NaN bit set.
         //! All other mantissa bits = 0. Quiet NaN pattern.
         //! [0][11111111111][1000000000000000000000000000000000000000000000000000]
         constexpr std::uint64_t QUIET_NAN_BASE = QNAN_EXP_BITS | QNAN_BIT;
 
         //! Exponent = 0x7FF (all ones)
-        //! Mantissa bits 51 and 50 set → 11... at the top of the mantissa.
         //! [0][11111111111][1100000000000000000000000000000000000000000000000000]
         constexpr std::uint64_t BOXED_PATTERN_MASK = QNAN_EXP_BITS | QNAN_BIT | MARKER_BIT;
 
@@ -152,8 +147,10 @@ namespace eta::runtime::nanbox {
         }
 
         constexpr bool is_boxed(const uint64_t bits) {
-            // A value is boxed if all QNaN exponent bits, the QNaN bit, and our marker bit are set.
-            // BOXED_PATTERN_MASK is 0x7ffc000000000000ULL
+            /**
+             * A value is boxed if all QNaN exponent bits, the QNaN bit, and our marker bit are set.
+             * BOXED_PATTERN_MASK is 0x7ffc000000000000ULL
+             */
             return (bits & BOXED_PATTERN_MASK) == BOXED_PATTERN_MASK;
         }
 

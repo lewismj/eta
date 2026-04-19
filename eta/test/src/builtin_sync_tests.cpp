@@ -1,4 +1,4 @@
-#include <boost/test/unit_test.hpp>
+﻿#include <boost/test/unit_test.hpp>
 
 #include <unordered_set>
 
@@ -24,17 +24,17 @@ BOOST_AUTO_TEST_SUITE(builtin_sync_tests)
  * coverage is provided by the Driver constructor's verify_all_patched() call.
  */
 BOOST_AUTO_TEST_CASE(names_ssot_contains_torch_and_stats) {
-    // 1. Names-only environment via the SSoT
+    /// 1. Names-only environment via the SSoT
     BuiltinEnvironment names_env;
     register_builtin_names(names_env);
 
-    // 2. Torch primitives
+    /// 2. Torch primitives
     Heap heap(1ull << 22);
     InternTable intern;
     BuiltinEnvironment torch_env;
     eta::torch_bindings::register_torch_primitives(torch_env, heap, intern, nullptr);
 
-    // Every torch name must appear in the SSoT with matching metadata
+    /// Every torch name must appear in the SSoT with matching metadata
     for (size_t i = 0; i < torch_env.size(); ++i) {
         auto idx = names_env.lookup(torch_env.specs()[i].name);
         BOOST_TEST_CONTEXT("torch builtin: " << torch_env.specs()[i].name) {
@@ -44,7 +44,7 @@ BOOST_AUTO_TEST_CASE(names_ssot_contains_torch_and_stats) {
         }
     }
 
-    // 3. Stats primitives
+    /// 3. Stats primitives
     BuiltinEnvironment stats_env;
     eta::stats_bindings::register_stats_primitives(stats_env, heap, intern, nullptr);
 
@@ -67,7 +67,6 @@ BOOST_AUTO_TEST_CASE(names_ssot_no_duplicates) {
 
     BOOST_TEST(env.size() > 0u);
 
-    // Check for duplicates using a set (O(n) instead of O(n²) BOOST_TEST calls)
     std::unordered_set<std::string> seen;
     std::vector<std::string> duplicates;
     for (size_t i = 0; i < env.size(); ++i) {
@@ -89,18 +88,18 @@ BOOST_AUTO_TEST_CASE(names_ssot_no_duplicates) {
 BOOST_AUTO_TEST_CASE(patch_mode_basic_mechanics) {
     BuiltinEnvironment env;
 
-    // Pre-register two names with null funcs
+    /// Pre-register two names with null funcs
     env.register_builtin("foo", 1, false, PrimitiveFunc{});
     env.register_builtin("bar", 2, true,  PrimitiveFunc{});
 
     BOOST_TEST(env.size() == 2u);
-    BOOST_TEST(!env.specs()[0].func);  // null
-    BOOST_TEST(!env.specs()[1].func);  // null
+    BOOST_TEST(!env.specs()[0].func);  ///< null
+    BOOST_TEST(!env.specs()[1].func);  ///< null
 
-    // Switch to patch mode
+    /// Switch to patch mode
     env.begin_patching();
 
-    // Patch with real funcs (matching metadata)
+    /// Patch with real funcs (matching metadata)
     PrimitiveFunc foo_fn = [](const std::vector<nanbox::LispVal>&)
         -> std::expected<nanbox::LispVal, error::RuntimeError> {
         return nanbox::Nil;
@@ -113,14 +112,14 @@ BOOST_AUTO_TEST_CASE(patch_mode_basic_mechanics) {
     env.register_builtin("foo", 1, false, foo_fn);
     env.register_builtin("bar", 2, true,  bar_fn);
 
-    // Both should now have non-null funcs
+    /// Both should now have non-null funcs
     BOOST_TEST(static_cast<bool>(env.specs()[0].func));
     BOOST_TEST(static_cast<bool>(env.specs()[1].func));
 
-    // verify_all_patched should succeed (no abort)
+    /// verify_all_patched should succeed (no abort)
     env.verify_all_patched();
 
-    // Size unchanged
+    /// Size unchanged
     BOOST_TEST(env.size() == 2u);
 }
 

@@ -1,19 +1,31 @@
-/// eta-test — Eta language test runner
-///
-/// Discovers *.test.eta files (recursively), runs each one, captures output,
-/// and aggregates TAP 13 or JUnit XML.
-///
-/// Usage:
-///   eta-test [options] [<path> ...]
-///
-/// Options:
-///   --path <dirs>          Module search path (colon/semicolon-separated)
-///   --format tap|junit     Output format (default: tap)
-///   --help                 Show this message
-///
-/// Each *.test.eta file is expected to call (print-tap (run ...)) at top level.
-/// eta-test captures that output, re-emits it aggregated, and reports a
-/// combined summary.
+/**
+ *
+ * Discovers test files (recursively), runs each one, captures output,
+ * and aggregates TAP 13 or JUnit XML.
+ *
+ * Usage:
+ *   eta-test [options] [<path> ...]
+ *
+ * Options:
+ *   --path <dirs>          Module search path (colon/semicolon-separated)
+ *   --format tap|junit     Output format (default: tap)
+ *   --help                 Show this message
+ *
+ * Any argument beginning with `--` that isn't in this list is a hard error
+ * silently swallowed mistyped options (e.g. `--profile`) and produced
+ * confusing "path does not exist" / "duplicate module" cascades.
+ *
+ * Test discovery rules:
+ *   - If a path is a regular file, it is always accepted (any extension).
+ *   - If a path is a directory, only files matching `*.test.eta` or
+ *     `*_smoke.eta` are picked up.  Other `*.eta` files (e.g. stdlib
+ *     that passing a stdlib-shaped directory does not try to run module
+ *     sources as tests.
+ *
+ * Each *.test.eta file is expected to call (print-tap (run ...)) at top level.
+ * eta-test captures that output, re-emits it aggregated, and reports a
+ * combined summary.
+ */
 
 #include <algorithm>
 #include <filesystem>
@@ -29,9 +41,9 @@
 
 namespace fs = std::filesystem;
 
-// ---------------------------------------------------------------------------
-// TAP result counters
-// ---------------------------------------------------------------------------
+/**
+ * TAP result counters
+ */
 
 struct TapSummary {
     int total{0};
@@ -39,8 +51,10 @@ struct TapSummary {
     int failed{0};
 };
 
-/// Parse TAP 13 output from a single test file and return a summary.
-/// Re-emits individual test lines to `out`, re-numbered from (base+1).
+/**
+ * Parse TAP 13 output from a single test file and return a summary.
+ * Re-emits individual test lines to `out`, re-numbered from (base+1).
+ */
 static TapSummary parse_tap(const std::string& tap_output,
                               const std::string& file_label,
                               int base_test_num,
@@ -88,9 +102,24 @@ static TapSummary parse_tap(const std::string& tap_output,
     return sum;
 }
 
-// ---------------------------------------------------------------------------
-// File discovery
-// ---------------------------------------------------------------------------
+/**
+ * File discovery
+ */
+
+/**
+ * True iff `name` looks like a test file suitable for directory auto-discovery.
+ * Accepts `*.test.eta` (canonical TAP tests) and `*_smoke.eta` (end-to-end
+ * smoke drivers).  Rejects everything else so stdlib module sources like
+ * `prelude.eta`, `core.eta`, `supervisor.eta` are not accidentally run as
+ * tests when a user points eta-test at the stdlib root.
+ */
+static bool is_discoverable_test_filename(const std::string& name) {
+    auto ends_with = [&](std::string_view suffix) {
+        return name.size() >= suffix.size() &&
+               std::equal(suffix.rbegin(), suffix.rend(), name.rbegin());
+    };
+    return ends_with(".test.eta") || ends_with("_smoke.eta");
+}
 
 static void collect_test_files(const fs::path& p, std::vector<fs::path>& out) {
     if (!fs::exists(p)) {
@@ -98,23 +127,27 @@ static void collect_test_files(const fs::path& p, std::vector<fs::path>& out) {
         return;
     }
     if (fs::is_regular_file(p)) {
+        /// Explicit files: accept any `.eta` extension.
         if (p.extension() == ".eta") out.push_back(p);
         return;
     }
     if (fs::is_directory(p)) {
         std::vector<fs::path> entries;
         for (const auto& entry : fs::recursive_directory_iterator(p)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".eta")
-                entries.push_back(entry.path());
+            if (!entry.is_regular_file())              continue;
+            if (entry.path().extension() != ".eta")    continue;
+            if (!is_discoverable_test_filename(entry.path().filename().string()))
+                continue;
+            entries.push_back(entry.path());
         }
         std::sort(entries.begin(), entries.end());
         for (auto& e : entries) out.push_back(std::move(e));
     }
 }
 
-// ---------------------------------------------------------------------------
-// JUnit helpers
-// ---------------------------------------------------------------------------
+/**
+ * JUnit helpers
+ */
 
 struct JUnitTestCase {
     std::string name;
@@ -174,14 +207,15 @@ static std::vector<JUnitTestCase> parse_tap_for_junit(const std::string& tap_out
     return cases;
 }
 
-// ---------------------------------------------------------------------------
-// main
-// ---------------------------------------------------------------------------
+/**
+ * main
+ */
 
 static void print_usage(const char* prog) {
     std::cerr << "Usage: " << prog << " [options] [<path> ...]\n\n"
-              << "Discover and run *.test.eta files.\n"
-              << "Each file should call (print-tap (run ...)) to emit TAP output.\n\n"
+              << "Discover and run test files.  Directory scans pick up\n"
+              << "`*.test.eta` and `*_smoke.eta` files only; explicit paths to\n"
+              << "regular `.eta` files are always accepted.\n\n"
               << "Options:\n"
               << "  --path <dirs>     Module search path (";
 #ifdef _WIN32
@@ -189,11 +223,11 @@ static void print_usage(const char* prog) {
 #else
     std::cerr << "colon";
 #endif
-    std::cerr << "-separated). Falls back to ETA_MODULE_PATH.\n"
+    std::cerr << "-separated).  Falls back to ETA_MODULE_PATH.\n"
               << "  --format tap      Output TAP 13 (default).\n"
               << "  --format junit    Output JUnit XML.\n"
               << "  --help            Show this message.\n\n"
-              << "If no paths are given, searches the current directory for *.test.eta.\n";
+              << "If no paths are given, searches the current directory for tests.\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -201,12 +235,23 @@ int main(int argc, char* argv[]) {
     std::string format = "tap";
     std::vector<std::string> raw_paths;
 
+    /// Helper: append a dir to cli_path using the platform-native separator.
+    auto append_to_cli_path = [&](const std::string& dir) {
+#ifdef _WIN32
+        constexpr char SEP = ';';
+#else
+        constexpr char SEP = ':';
+#endif
+        if (cli_path.empty()) cli_path = dir;
+        else                  cli_path += std::string(1, SEP) + dir;
+    };
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") { print_usage(argv[0]); return 0; }
         if (arg == "--path") {
             if (i + 1 >= argc) { std::cerr << "error: --path requires a value\n"; return 1; }
-            cli_path = argv[++i]; continue;
+            append_to_cli_path(argv[++i]); continue;
         }
         if (arg == "--format") {
             if (i + 1 >= argc) { std::cerr << "error: --format requires a value\n"; return 1; }
@@ -216,12 +261,24 @@ int main(int argc, char* argv[]) {
             }
             continue;
         }
+        /**
+         * Anything else that LOOKS like an option (starts with '-') is rejected
+         * outright.  Previously unknown options were silently treated as
+         * positional paths, producing confusing cascades like
+         * "path does not exist: \"--profile\"" followed by duplicate-module
+         * errors when the next positional was a whole stdlib directory.
+         */
+        if (!arg.empty() && arg[0] == '-') {
+            std::cerr << "error: invalid argument: " << arg << "\n\n";
+            print_usage(argv[0]);
+            return 1;
+        }
         raw_paths.push_back(arg);
     }
 
     if (raw_paths.empty()) raw_paths.push_back(".");
 
-    // Discover test files
+    /// Discover test files
     std::vector<fs::path> test_files;
     for (const auto& p : raw_paths) collect_test_files(fs::path(p), test_files);
 
@@ -230,13 +287,13 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // Base module path resolver (includes stdlib dir from build-time define)
+    /// Base module path resolver (includes stdlib dir from build-time define)
     auto base_resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
 #ifdef ETA_STDLIB_DIR
     base_resolver.add_dir(fs::path(ETA_STDLIB_DIR));
 #endif
 
-    // Per-file results
+    /// Per-file results
     struct FileResult {
         fs::path path;
         std::string tap_output;
@@ -249,18 +306,18 @@ int main(int argc, char* argv[]) {
         const std::size_t heap_bytes =
             eta::interpreter::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
 
-        // Fresh resolver per file: includes the file's own directory
+        /// Fresh resolver per file: includes the file's own directory
         auto resolver = base_resolver;
         resolver.add_dir(fs::absolute(test_file).parent_path());
 
         eta::interpreter::Driver driver(resolver, heap_bytes);
 
-        // Redirect VM output to a StringPort
+        /// Redirect VM output to a StringPort
         auto sp = std::make_shared<eta::runtime::StringPort>(
             eta::runtime::StringPort::Mode::Output);
         driver.set_output_port(sp);
 
-        // Load prelude
+        /// Load prelude
         {
             auto pr = driver.load_prelude();
             if (pr.found && !pr.loaded) {
@@ -281,7 +338,6 @@ int main(int argc, char* argv[]) {
         file_results.push_back({ test_file, sp->get_string(), ok });
     }
 
-    // ── Emit output ──────────────────────────────────────────────────────────
 
     if (format == "tap") {
         std::ostringstream body;
@@ -303,7 +359,7 @@ int main(int argc, char* argv[]) {
 
         std::cout << "TAP version 13\n1.." << grand_total << "\n" << body.str();
 
-        // Exit non-zero on any failure
+        /// Exit non-zero on any failure
         for (const auto& fr : file_results) {
             if (!fr.file_ok) return 1;
             std::istringstream ss(fr.tap_output);
@@ -315,7 +371,7 @@ int main(int argc, char* argv[]) {
         return 0;
 
     } else {
-        // JUnit XML
+        /// JUnit XML
         int total_tests = 0, total_failures = 0;
         std::vector<std::pair<std::string, std::vector<JUnitTestCase>>> suites;
 

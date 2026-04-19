@@ -378,7 +378,7 @@ directly to `SetupCatch` / `Throw` VM opcodes:
 |------|---------|
 | `(raise 'tag value)` | Signal an exception; unwind the stack to the nearest matching `catch` |
 | `(catch 'tag body)` | Evaluate `body`; if a `raise` with `'tag` escapes, return its payload |
-| `(catch body)` | Catch-all: intercepts any `raise` regardless of tag |
+| `(catch body)` | Catch-all: intercepts any `raise` and any runtime error |
 
 Tags are ordinary symbols and serve as typed exception channels.  The
 raised value can be any Eta value — a number, string, pair, or record.
@@ -397,6 +397,37 @@ raised value can be any Eta value — a number, string, pair, or record.
 
 ;; Catch-all — no tag, intercepts everything
 (catch (raise 'anything "caught!"))      ; => "caught!"
+```
+
+### Catching runtime errors
+
+Builtin/runtime failures are catchable with reserved `runtime.*` tags:
+
+```scheme
+;; Catch all runtime errors
+(catch 'runtime.error (car 42))
+;; => (runtime-error runtime.type-error "car: argument must be a pair" ...)
+
+;; Catch specific runtime subtype
+(catch 'runtime.invalid-arity (car 1 2))
+;; => (runtime-error runtime.invalid-arity "Primitive expects 1 argument(s), got 2" ...)
+
+;; Tagless catch-all catches runtime errors too
+(catch (car 42))
+;; => (runtime-error runtime.type-error ...)
+```
+
+Caught runtime payload shape:
+
+```scheme
+(runtime-error <tag-symbol> <message-string> <span-record> <stack-trace>)
+```
+
+Where:
+
+```scheme
+<span-record> ::= (span file-id start-line start-column end-line end-column)
+<stack-trace> ::= ((frame function-name <span-record>) ...)
 ```
 
 ### Tag specificity and nested handlers

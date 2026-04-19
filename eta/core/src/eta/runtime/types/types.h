@@ -13,3 +13,4 @@
 #include "logic_var.h"
 #include "tape.h"
 #include "fact_table.h"
+#include "compound.h"
