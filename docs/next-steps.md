@@ -1,121 +1,100 @@
-# Project Status
+# Project Status and Next Steps
 
-[← Back to README](../README.md) · [Architecture](architecture.md) ·
-[NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
-[Compiler](compiler.md) · [Runtime & GC](runtime.md) · [Modules & Stdlib](modules.md) ·
-[Logic Programming](logic.md) · [CLP](clp.md)
+[Back to README](../README.md) | [Architecture](architecture.md) |
+[NaN-Boxing](nanboxing.md) | [Bytecode and VM](bytecode-vm.md) |
+[Compiler](compiler.md) | [Runtime and GC](runtime.md) |
+[Modules and Stdlib](modules.md) | [Logic Programming](logic.md) | [CLP](clp.md)
 
 ---
 
 ## Overview
 
-This document describes the current state of Eta across compiler/runtime,
-logic and constraints, networking, and tooling.
+This page tracks two things:
+
+1. What is already delivered in the current Eta baseline.
+2. What remains as next-step work.
 
 ---
 
-## 1 · Compiler and VM
+## Delivered Baseline
 
-### Current state
+### 1) Compiler and VM
 
-- Front-end pipeline is stable: lexer, parser, expander, semantic analyser,
-  emitter, and VM execution all run on one bytecode format.
-- `etac` produces `.etac` bytecode files and `etai` can execute them directly.
-- Core optimisations are implemented in dedicated passes (see
-  [Optimization](optimization.md)).
-- Runtime dispatch, serializer, disassembler, and diagnostics are integrated
-  with the same opcode set.
+- Stable end-to-end pipeline (lexer, parser, expander, module linker,
+  semantic analyzer, emitter, VM).
+- `etac` AOT bytecode output (`.etac`) and direct `etai` execution.
+- Optimization pipeline integrated (including constant folding and dead-code elimination).
+- Bytecode serializer/disassembler and diagnostics aligned to the same opcode set.
 
-### Notes
+### 2) Runtime and GC
 
-- Performance characteristics vary by workload; use the benchmark guidance in
-  [Optimization](optimization.md) and project tests for validation.
+- Mark-sweep heap with explicit root enumeration.
+- VM stacks, globals, frames, and trail-backed logic/CLP state are rooted.
+- Unified backtracking recovery via `trail-mark` and `unwind-trail`.
 
----
+### 3) Logic and constraints
 
-## 2 · Runtime and GC
+- VM-native unification and logic primitives (`logic-var`, `unify`, `copy-term`,
+  `ground?`, and related trail primitives).
+- Attributed variables and runtime-configurable occurs-check policy
+  (`set-occurs-check!`, `occurs-check-mode`, `put-attr`, `get-attr`, `del-attr`, `attr-var?`).
+- CLP(FD) propagation, including native all-different support.
+- CLP(B) in `std.clpb`.
+- CLP(R) in `std.clpr`, including optimization workflows.
+- Relation database support in `std.db` (`defrel`, `assert`, `retract`, `tabled`).
 
-### Current state
+See: [Logic Programming](logic.md) and [CLP](clp.md).
 
-- Heap is managed by a mark-sweep collector with explicit GC roots.
-- VM stacks, globals, frames, trail, and runtime-managed structures
-  participate in root enumeration.
-- Logic and CLP backtracking state is captured on the unified trail and
-  restored by `trail-mark` / `unwind-trail`.
+### 4) Networking and actors
 
-### Notes
+- nng-backed messaging over IPC/TCP/inproc.
+- Process actors (`spawn`) and in-process thread actors (`spawn-thread`,
+  `spawn-thread-with`).
+- Lifecycle controls (`spawn-wait`, `spawn-kill`, `thread-join`, `thread-alive?`).
+- Monitoring primitives (`monitor`, `demonitor`) and stdlib supervision helpers in
+  `std.supervisor` (one-for-one and one-for-all strategies).
 
-- GC is stop-the-world at collection boundaries.
+See: [Networking Primitives](networking.md), [Message Passing and Actors](message-passing.md),
+and [Network and Message-Passing Parallelism](network-message-passing.md).
 
----
+### 5) Tooling and tests
 
-## 3 · Logic and Constraints
+- LSP server with parse/analysis-driven diagnostics.
+- DAP server with breakpoints, stepping, stack/local inspection, evaluation,
+  hover-eval support, and completions.
+- VS Code extension with syntax, snippets, debugger views, and test integration.
+- C++ unit suite (`eta_core_test`) and stdlib test runner (`eta_test`).
+- `eta_test` is wired into CTest (`eta_stdlib_tests`) and the convenience target
+  `eta_rebuild_and_test`.
 
-### Current state
-
-- Native unification primitives are built into the VM (`logic-var`, `unify`,
-  `deref-lvar`, `trail-mark`, `unwind-trail`, `copy-term`, `ground?`).
-- Logic variables support:
-  - Optional debug names (`logic-var/named`, `var-name`)
-  - Configurable occurs-check policy (`set-occurs-check!`, `occurs-check-mode`)
-  - Attributed-variable operations (`put-attr`, `get-attr`, `del-attr`, `attr-var?`)
-- Constraint subsystems include:
-  - CLP(FD) domain narrowing and propagation
-  - Native all-different propagation
-  - Boolean constraints in `std.clpb`
-  - Linear arithmetic constraints in `std.clpr`
-- Runtime hook/propagation mechanisms are unified with VM backtracking.
-
-### Detailed status
-
-- [Logic Programming](logic.md): language-level model and VM behavior.
-- [CLP](clp.md): constraints API and solver behavior.
-- [Logic & CLP Status](logic-next-steps.md): consolidated subsystem status.
+See: [Build](build.md), [Architecture](architecture.md), and [Examples](examples.md).
 
 ---
 
-## 4 · Networking and Actors
+## Remaining Next Steps
 
-### Current state
+### 1) Performance work
 
-- nng-backed messaging primitives are available across IPC/TCP/inproc.
-- Actor workflows are supported for both process actors (`spawn`) and
-  in-process thread actors (`spawn-thread` / `spawn-thread-with`).
-- Serialization/deserialization for message payloads is built in, with binary
-  and text formats.
-- Lifecycle helpers are available (`spawn-wait`, `spawn-kill`, `thread-join`,
-  `thread-alive?`).
+- Add a repeatable benchmark harness and track it in CI.
+- Expand optimizer coverage beyond current passes (for example, inlining and
+  stronger interprocedural propagation).
+- Evaluate VM dispatch improvements (for example, super-instructions and inline caches).
 
-### Detailed docs
+### 2) Runtime and GC evolution
 
-- [Networking Primitives](networking.md)
-- [Message Passing & Actors](message-passing.md)
-- [Network & Message-Passing Parallelism](network-message-passing.md)
+- Investigate generational/incremental GC strategies to reduce pause times.
+- Improve adaptive GC triggering and long-running fragmentation behavior.
 
----
+### 3) Logic/CLP internals
 
-## 5 · Tooling
+- Native VM-level tabling engine (current tabled workflow is stdlib-level in `std.db`).
+- Optional WAM-style logic bytecode path for specialized logic workloads.
 
-### Current state
+### 4) Distributed actor runtime
 
-- LSP server provides parsing/analysis-powered editor integration.
-- DAP server supports breakpoints, stepping, stack/local inspection, eval, and
-  heap/GC-oriented views.
-- VS Code extension ships syntax, snippets, and debugger integration.
+- Built-in distributed supervision and name-registry semantics at runtime level
+  (beyond current library-level helpers).
 
-### Detailed docs
+### 5) Notebook workflow
 
-- [Architecture](architecture.md)
-- [Build](build.md)
-- [Examples](examples.md)
-
----
-
-## 6 · Known Gaps
-
-The following capabilities are not part of the current baseline:
-
-- WAM-style dedicated logic bytecode layer.
-- Native tabling engine for logic relations.
-- Distributed actor supervision/name registry as built-in runtime features.
-
+- Optional Jupyter kernel integration for notebook-first exploratory workflows.
