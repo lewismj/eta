@@ -71,7 +71,7 @@ full compilation pipeline).
 | **Linear Algebra & Statistics** | Eigen-backed multivariate OLS, covariance/correlation matrices, column quantiles over FactTables; plus `std.stats` descriptive stats, CIs, t-tests, and simple OLS over lists | [Stats](docs/stats.md) |
 | **Neural Networks (libtorch)** | Native C++ bindings to PyTorch's backend — tensors, autograd, NN layers, optimizers, and GPU offload from Eta code | [LibTorch](docs/torch.md) |
 | **Causal Inference** | Pearl's do-calculus engine, back-door / front-door adjustment, and end-to-end factor analysis | [Causal](docs/causal.md) |
-| **Message Passing & Actors** | Erlang-style actor model via nng: `spawn` child processes, `send!`/`recv!` over PAIR sockets, `worker-pool` parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT — network-transparent across machines | [Networking](docs/networking.md) · [Message Passing](docs/message-passing.md) |
+| **Message Passing & Actors** | Erlang-style actor model via nng: `spawn` child processes, `send!`/`recv!` over PAIR sockets, `worker-pool` parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT, and supervision trees (`one-for-one`, `one-for-all`) — network-transparent across machines | [Networking](docs/networking.md) · [Message Passing](docs/message-passing.md) · [Supervisors](docs/supervisor.md) |
 | **End-to-End Pipeline** | All domains compose: symbolic differentiation → do-calculus identification → logic/CLP validation → libtorch neural estimation | [Causal Factor Pipeline](docs/causal-factor.md) |
 
 The implementation ships as five executables and a VS Code extension:
@@ -224,7 +224,7 @@ See [Language Guide](docs/examples.md) for a guided tour of the example programs
 ### Bundle Layout
 
 ```
-eta-v0.2.0-<platform>/
+eta-<version>-<platform>/
   bin/
     etac(.exe)          # Ahead-of-time bytecode compiler
     etai(.exe)          # File interpreter (also runs .etac files)
@@ -235,47 +235,59 @@ eta-v0.2.0-<platform>/
     prelude.eta         # Auto-loaded standard library
     std/
       core.eta  math.eta  io.eta  collections.eta  test.eta
-      logic.eta  clp.eta  causal.eta  fact_table.eta  torch.eta
-      net.eta             # Networking & actor model (nng)
+      logic.eta  freeze.eta  db.eta
+      clp.eta  clpb.eta  clpr.eta
+      causal.eta  fact_table.eta  stats.eta  torch.eta
+      net.eta  supervisor.eta
   examples/
-    hello.eta           # Hello world & factorial
-    basics.eta          # Arithmetic, let, lists, quoting
-    functions.eta       # defun, lambda, closures, recursion
-    higher-order.eta    # map, filter, fold, sort, zip
-    composition.eta     # compose, flip, currying, pipelines
-    recursion.eta       # Fibonacci, Ackermann, Hanoi
-    exceptions.eta      # catch/raise, dynamic-wind
-    boolean-simplifier.eta  # Symbolic boolean rewriting
-    symbolic-diff.eta       # Symbolic differentiation & simplification
-    unification.eta         # Native structural unification primitives
-    logic.eta               # Relational logic programming
-    aad.eta                 # Reverse-mode automatic differentiation
-    xva.eta                 # Finance example: CVA, FVA calculations with AAD
-    european.eta            # European option Greeks (1st & 2nd order) with AAD
-    sabr.eta                # SABR vol surface with tape-based AD
-    fact-table.eta          # Columnar fact tables with hash-indexed queries
-    stats.eta               # Descriptive stats, t-tests, OLS regression
-    torch.eta               # Tensor computing & neural network training (libtorch)
-    causal_demo.eta         # Demo: symbolic + causal + logic/CLP + libtorch
-    message-passing.eta     # Erlang-style parent/child messaging (spawn/send!/recv!)
+    hello.eta                 # Hello world & factorial
+    basics.eta                # Arithmetic, let, lists, quoting
+    functions.eta             # defun, lambda, closures, recursion
+    higher-order.eta          # map, filter, fold, sort, zip
+    composition.eta           # compose, flip, currying, pipelines
+    recursion.eta             # Fibonacci, Ackermann, Hanoi
+    exceptions.eta            # catch/raise, dynamic-wind
+    boolean-simplifier.eta    # Symbolic boolean rewriting
+    symbolic-diff.eta         # Symbolic differentiation & simplification
+    unification.eta           # Native structural unification primitives
+    logic.eta                 # Relational logic programming
+    nqueens.eta               # CLP(FD) N-queens
+    send-more-money.eta       # CLP(FD) cryptarithmetic
+    aad.eta                   # Reverse-mode automatic differentiation
+    xva.eta                   # Finance: CVA / FVA with AAD sensitivities
+    european.eta              # European option Greeks (1st & 2nd order)
+    sabr.eta                  # SABR vol surface with tape-based AD
+    portfolio.eta             # Causal decision engine for portfolio optimisation (CLP(R) + QP)
+    portfolio-lp.eta          # Linear-only portfolio LP (CLP(R) showcase)
+    fact-table.eta            # Columnar fact tables
+    stats.eta                 # Descriptive stats, t-tests, OLS regression
+    torch.eta                 # Tensor computing & neural network training
+    causal_demo.eta           # Symbolic + causal + logic/CLP + libtorch
+    message-passing.eta       # Erlang-style parent/child messaging
     message-passing-worker.eta
-    worker-pool.eta         # Parallel fan-out: distribute tasks across N workers
+    worker-pool.eta           # Parallel fan-out
     worker-pool-worker.eta
-    echo-server.eta         # REP echo server (request-reply pattern)
-    echo-client.eta         # REQ echo client
-    pub-sub.eta             # PUB/SUB topic filtering
-    pub-sub-publisher.eta
-    scatter-gather.eta      # SURVEYOR/RESPONDENT scatter-gather
-    scatter-gather-worker.eta
-    parallel-map.eta        # Parallel map via worker-pool
+    inproc.eta                # In-process socket transport
+    inproc-worker.eta
+    parallel-fib.eta          # Parallel Fibonacci over worker-pool
+    parallel-fib-worker.eta
+    parallel-map.eta          # Parallel map over worker-pool
     parallel-map-worker.eta
-    monte-carlo.eta         # Parallel Monte Carlo π estimation
+    monte-carlo.eta           # Parallel Monte Carlo π estimation
     monte-carlo-worker.eta
-    distributed-compute.eta # Cross-machine TCP messaging (server + client)
-    causal-factor/          # End-to-end causal factor analysis
-    do-calculus/            # Do-calculus identification engine demos
+    echo-server.eta           # REQ/REP echo
+    echo-client.eta
+    pub-sub.eta               # PUB/SUB topic filtering
+    pub-sub-publisher.eta
+    scatter-gather.eta        # SURVEYOR/RESPONDENT
+    scatter-gather-worker.eta
+    distributed-compute.eta   # Cross-machine TCP messaging
+    distributed-compute-server.eta
+    causal-factor/            # End-to-end causal factor analysis
+    do-calculus/              # Do-calculus identification engine demos
+    torch_tests/              # libtorch integration test suite
   editors/
-    eta-lang-<version>.vsix # VS Code extension
+    eta-lang-<version>.vsix   # VS Code extension
   install.sh / install.cmd
 ```
 
@@ -390,12 +402,18 @@ The prelude auto-loads the following modules:
 | **`std.math`** | `pi`, `e`, `square`, `gcd`, `lcm`, `expt`, `sum`, `product` |
 | **`std.io`** | `println`, `eprintln`, `read-line`, port redirection helpers |
 | **`std.collections`** | `map*`, `filter`, `foldl`, `foldr`, `sort`, `zip`, `range`, vector ops |
-| **`std.logic`** | `==`, `copy-term`, `naf`, `findall`, `run1` — Prolog-style combinators |
-| **`std.clp`** | `clp:domain`, `clp:in-fd`, `clp:solve`, `clp:all-different` — constraint solving |
+| **`std.logic`** | `==`, `copy-term`, `naf`, `findall`, `run1`, `run*`, `run-n` — Prolog/miniKanren-style combinators |
+| **`std.freeze`** | `freeze`, `dif` — suspended goals & structural disequality on attributed vars |
+| **`std.db`** | `defrel`, `assert`, `retract`, `call-rel`, `tabled` — fact-table-backed relations with SLG-lite tabling |
+| **`std.clp`** | `clp:domain`, `clp:in-fd`, `clp:solve`, `clp:all-different`, `clp:labeling`, `clp:minimize`/`maximize` — CLP(Z) and CLP(FD) |
+| **`std.clpb`** | `clp:boolean`, `clp:and/or/xor/imp/eq/not`, `clp:card`, `clp:sat?`, `clp:taut?` — CLP(B) Boolean propagation |
+| **`std.clpr`** | `clp:real`, `clp:r<=`, `clp:r=`, `clp:r-minimize`/`maximize`, `clp:rq-minimize`/`maximize` — CLP(R) linear + convex QP |
 | **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` — causal inference engine |
 | **`std.fact_table`** | `make-fact-table`, `fact-table-insert!`, `fact-table-query`, `fact-table-fold` — columnar fact tables |
+| **`std.stats`** | Descriptive stats, CIs, t-tests, OLS regression (Eigen-backed) |
 | **`std.torch`** | `tensor`, `forward`, `train-step!`, `sgd`, `adam` — libtorch neural networks |
-| **`std.net`** | `spawn`, `send!`, `recv!`, `worker-pool`, `with-socket`, `request-reply`, `pub-sub`, `survey` — Erlang-style actors & nng networking |
+| **`std.net`** | `spawn`, `send!`, `recv!`, `monitor`, `worker-pool`, `with-socket`, `request-reply`, `pub-sub`, `survey` — Erlang-style actors & nng |
+| **`std.supervisor`** | `one-for-one`, `one-for-all` — supervision trees over actor processes |
 | **`std.test`** | `assert-equal`, `assert-true`, `run-tests` — lightweight test framework |
 
 ```scheme
@@ -440,13 +458,18 @@ eta/
 │       ├── math.eta            # Arithmetic, trig, gcd/lcm
 │       ├── io.eta              # I/O primitives
 │       ├── collections.eta     # map*, filter, foldl, sort, zip, range
-│       ├── logic.eta           # Prolog-style unification & backtracking
-│       ├── clp.eta             # Constraint Logic Programming: clp(Z), clp(FD)
+│       ├── logic.eta           # Prolog/miniKanren-style unification & search
+│       ├── freeze.eta          # freeze, dif — attributed-variable combinators
+│       ├── db.eta              # defrel/assert/retract/call-rel + SLG-lite tabling
+│       ├── clp.eta             # CLP(Z), CLP(FD): domains, propagators, labeling
+│       ├── clpb.eta            # CLP(B): Boolean propagation
+│       ├── clpr.eta            # CLP(R): real intervals, simplex, convex QP
 │       ├── causal.eta          # DAG utilities & Pearl do-calculus engine
 │       ├── fact_table.eta      # Columnar fact tables with hash indexes
-│       ├── torch.eta           # libtorch wrappers (tensors, NN, optimizers)
 │       ├── stats.eta           # Descriptive stats, CIs, t-tests, OLS
+│       ├── torch.eta           # libtorch wrappers (tensors, NN, optimizers)
 │       ├── net.eta             # Networking & actor model (nng): spawn, send!, recv!, worker-pool
+│       ├── supervisor.eta      # one-for-one / one-for-all supervision trees
 │       └── test.eta            # Lightweight test framework
 ├── examples/                   # Example programs
 │   ├── hello.eta               # Hello world & factorial
@@ -460,16 +483,31 @@ eta/
 │   ├── symbolic-diff.eta       # Symbolic differentiation & simplification
 │   ├── unification.eta         # Native structural unification primitives
 │   ├── logic.eta               # Relational logic programming (parento, findall)
+│   ├── nqueens.eta             # CLP(FD) N-queens
+│   ├── send-more-money.eta     # CLP(FD) cryptarithmetic
 │   ├── aad.eta                 # Reverse-mode automatic differentiation
 │   ├── xva.eta                 # Finance: CVA, FVA with AAD sensitivities
 │   ├── european.eta            # European option Greeks (1st & 2nd order) with AAD
 │   ├── sabr.eta                # SABR vol surface with tape-based AD
+│   ├── portfolio.eta           # Causal decision engine for portfolio optimisation (CLP(R) + QP)
+│   ├── portfolio-lp.eta        # Linear-only portfolio LP showcase
 │   ├── fact-table.eta          # Columnar fact tables with hash-indexed queries
+│   ├── stats.eta               # Descriptive stats, t-tests, OLS regression
 │   ├── torch.eta               # Tensor computing & neural network training
 │   ├── causal_demo.eta         # Flagship: symbolic + causal + logic/CLP + libtorch
+│   ├── message-passing.eta     # Erlang-style parent/child messaging
+│   ├── worker-pool.eta         # Parallel fan-out
+│   ├── inproc.eta              # In-process socket transport
+│   ├── parallel-fib.eta        # Parallel Fibonacci
+│   ├── parallel-map.eta        # Parallel map
+│   ├── monte-carlo.eta         # Parallel Monte Carlo π estimation
+│   ├── echo-server.eta         # REQ/REP echo
+│   ├── pub-sub.eta             # PUB/SUB topic filtering
+│   ├── scatter-gather.eta      # SURVEYOR/RESPONDENT
+│   ├── distributed-compute.eta # Cross-machine TCP messaging
 │   ├── causal-factor/          # End-to-end causal factor analysis (finance)
 │   ├── do-calculus/            # Do-calculus identification engine demos
-│   └── torch_tests/            # libtorch integration test suite (10 files)
+│   └── torch_tests/            # libtorch integration test suite
 ├── editors/vscode/             # VS Code extension (TextMate grammar)
 ├── scripts/                    # Build & install automation
 └── docs/                       # Design documentation (you are here)
