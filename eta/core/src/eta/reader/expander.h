@@ -97,7 +97,7 @@ namespace eta::reader::expander {
 
     struct PatVar        { std::string name; };                       ///< pattern variable (binds)
     struct PatUnderscore {};                                          ///< _ (matches anything, no binding)
-    struct PatLiteral    { std::string name; };                       ///< literal keyword (matches by name)
+    struct PatLiteral    { std::string identity; };                   ///< literal keyword (matches by binding identity)
     struct PatDatum      { SExprPtr datum; };                         ///< literal constant (number, bool, etc.)
     struct PatList {
         std::vector<SyntaxPatternPtr> elems;                         ///< fixed elements
@@ -137,7 +137,7 @@ namespace eta::reader::expander {
     struct SyntaxRulesTransformer {
         std::vector<std::string> literals;                           ///< literal keywords
         std::vector<SyntaxClause> clauses;
-        std::unordered_set<std::string> definition_scope;           ///< names visible at define-syntax time (for hygiene)
+        std::unordered_map<std::string, std::string> definition_context; ///< definition-site lexical identity
     };
 
     /// Result of pattern matching: pattern variable -> bound value(s)
@@ -204,9 +204,11 @@ namespace eta::reader::expander {
         //! Macro environment: maps macro name -> transformer (populated by define-syntax)
         std::unordered_map<std::string, SyntaxRulesTransformer> macro_env_;
 
-        //! so that free references in macro templates are not hygienically renamed.
+        //! Top-level names defined so far in expansion order.
         std::unordered_set<std::string> defined_names_;
 
+        //! Lexical binding-identity stack for lambda-bound locals.
+        std::vector<std::unordered_map<std::string, std::string>> lexical_scopes_;
 
         /// Error helpers
         static ExpandError syntax_error(Span sp, std::string_view msg, std::string hint = {});
@@ -373,7 +375,7 @@ namespace eta::reader::expander {
         /// syntax-rules helpers
         ExpanderResult<SyntaxPatternPtr> parse_syntax_pattern(
             const SExprPtr& node,
-            const std::unordered_set<std::string>& literals,
+            const std::unordered_map<std::string, std::string>& literal_identities,
             const std::unordered_set<std::string>& bound_vars) const;
 
         ExpanderResult<SyntaxTemplatePtr> parse_syntax_template(
@@ -383,19 +385,26 @@ namespace eta::reader::expander {
         static void collect_pattern_vars(const SyntaxPattern& pat,
                                          std::unordered_set<std::string>& out);
 
-        static bool match_pattern(const SyntaxPattern& pat,
-                                  const SExprPtr& input,
-                                  MatchEnv& env);
+        bool match_pattern(const SyntaxPattern& pat,
+                           const SExprPtr& input,
+                           MatchEnv& env) const;
 
         ExpanderResult<SExprPtr> instantiate_template(
             const SyntaxTemplate& tmpl,
             const MatchEnv& env,
             std::unordered_map<std::string, std::string>& renames,
             Span ctx,
-            const std::unordered_set<std::string>& definition_scope) const;
+            const std::unordered_map<std::string, std::string>& definition_context) const;
 
         ExpanderResult<SExprPtr> try_expand_macro(const std::string& name,
                                                    const List& lst);
+
+        [[nodiscard]] std::optional<std::string> lookup_lexical_rename(std::string_view name) const;
+        [[nodiscard]] std::string resolve_binding_identity(std::string_view name) const;
+        [[nodiscard]] std::unordered_map<std::string, std::string> capture_definition_context() const;
+        [[nodiscard]] SExprPtr contextualize_for_match(const SExprPtr& node) const;
+        static bool is_structural_keyword(std::string_view name);
+        static const std::unordered_set<std::string>& known_global_bindings();
     };
 
 }

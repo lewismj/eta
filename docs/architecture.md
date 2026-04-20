@@ -158,6 +158,10 @@ dynamic-wind  values  call-with-values  call/cc  apply
 The expander also rewrites internal `define`s in lambda bodies into
 `letrec` per R7RS semantics (controlled by `enable_internal_defines_to_letrec`).
 
+For `syntax-rules`, literal keywords are matched by lexical binding identity
+(not raw symbol text), and free template identifiers are rebound to their
+definition-site context so use-site locals do not capture them.
+
 ---
 
 ### 4. Module Linker

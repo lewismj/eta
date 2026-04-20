@@ -161,6 +161,23 @@ SemResult<LookupResult> lookup(const std::string& name, Scope* scope, AnalysisCo
     Scope* current = scope;
     std::vector<core::Lambda*> path;
 
+    auto lookup_toplevel = [&](std::string_view base) -> std::optional<LookupResult> {
+        Scope* root = scope;
+        while (root && root->parent) root = root->parent;
+        if (!root) return std::nullopt;
+
+        auto it = root->table.find(std::string(base));
+        if (it == root->table.end()) return std::nullopt;
+
+        core::BindingId id = it->second;
+        const auto& info = ctx.mod.bindings[id.id];
+        if (info.kind != BindingInfo::Kind::Global &&
+            info.kind != BindingInfo::Kind::Import) {
+            return std::nullopt;
+        }
+        return LookupResult{core::Address{core::Address::Global{info.slot}}, id};
+    };
+
     while (current) {
         if (auto it = current->table.find(name); it != current->table.end()) {
             core::BindingId id = it->second;
@@ -201,6 +218,19 @@ SemResult<LookupResult> lookup(const std::string& name, Scope* scope, AnalysisCo
         }
         current = current->parent;
     }
+
+    /**
+     * Hygienic macro references may encode definition-site capture as
+     * "<base>.def:<token>". If the encoded alias is not present locally,
+     * fall back to the top-level/import binding for <base> so lexical locals
+     * at the use site cannot capture the reference.
+     */
+    if (const auto marker = name.find(".def:"); marker != std::string::npos) {
+        if (auto fallback = lookup_toplevel(name.substr(0, marker)); fallback) {
+            return *fallback;
+        }
+    }
+
     return std::unexpected(SemanticError{SemanticError::Kind::UndefinedName, span, "Undefined symbol: " + name});
 }
 

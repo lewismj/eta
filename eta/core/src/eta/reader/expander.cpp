@@ -42,6 +42,47 @@ namespace eta::reader::expander {
 
     bool Expander::is_reserved(std::string_view name) { return expander::is_reserved(name); }
 
+    const std::unordered_set<std::string>& Expander::known_global_bindings() {
+        static const std::unordered_set<std::string> names = {
+            /// Pair/list/core predicates and constructors
+            "cons","car","cdr","list","append","apply","not",
+            "eq?","eqv?","equal?","null?","pair?","number?","boolean?",
+            "string?","char?","symbol?","procedure?","integer?","vector?",
+            "set-car!","set-cdr!",
+            "map","for-each","length","reverse","list-ref","list-tail",
+
+            /// Numeric and comparison
+            "zero?","positive?","negative?","abs","min","max","modulo","remainder",
+            "sin","cos","tan","asin","acos","atan","exp","log","sqrt",
+            "+","-","*","/","=","<",">","<=",">=",
+
+            /// Strings/vectors
+            "string-length","string-append","number->string","string->number",
+            "vector","vector-length","vector-ref","vector-set!","make-vector","list->vector",
+
+            /// Continuations / control
+            "call/cc","call-with-current-continuation","dynamic-wind",
+            "values","call-with-values",
+
+            /// IO / misc
+            "display","write","newline","error"
+        };
+        return names;
+    }
+
+    bool Expander::is_structural_keyword(std::string_view name) {
+        static const std::unordered_set<std::string> keywords = {
+            "if","begin","lambda","define","set!","quote","let","let*",
+            "letrec","letrec*","cond","case","and","or","when","unless",
+            "do","quasiquote","unquote","unquote-splicing",
+            "module","import","export","define-syntax","define-record-type",
+            "def","defun","progn",
+            "catch","raise",
+            "logic-var","unify","deref-lvar","trail-mark","unwind-trail","copy-term"
+        };
+        return keywords.contains(std::string(name));
+    }
+
     /// ---------- Utilities: constructors and cloning ----------
     SExprPtr Expander::make_symbol(std::string name, Span s) {
         auto p = std::make_unique<SExpr>();
@@ -130,6 +171,47 @@ namespace eta::reader::expander {
 
     /// ---------- Constructor ----------
     Expander::Expander(ExpanderConfig cfg) : cfg_(cfg) {}
+
+    std::optional<std::string> Expander::lookup_lexical_rename(std::string_view name) const {
+        const std::string key(name);
+        for (auto it = lexical_scopes_.rbegin(); it != lexical_scopes_.rend(); ++it) {
+            auto found = it->find(key);
+            if (found != it->end()) return found->second;
+        }
+        return std::nullopt;
+    }
+
+    std::string Expander::resolve_binding_identity(std::string_view name) const {
+        if (auto local = lookup_lexical_rename(name); local) {
+            return "lex:" + *local;
+        }
+        const std::string key(name);
+        if (defined_names_.contains(key) ||
+            macro_env_.contains(key) ||
+            known_global_bindings().contains(key)) {
+            return "global:" + key;
+        }
+        return "unbound:" + key;
+    }
+
+    std::unordered_map<std::string, std::string> Expander::capture_definition_context() const {
+        std::unordered_map<std::string, std::string> out;
+        out.reserve(known_global_bindings().size() + defined_names_.size() + macro_env_.size());
+
+        for (const auto& name : known_global_bindings()) out[name] = name;
+        for (const auto& name : defined_names_) out[name] = name;
+        for (const auto& [mname, _] : macro_env_) out[mname] = mname;
+
+        /// Preserve lexical shadowing: later scopes overwrite earlier ones.
+        for (const auto& scope : lexical_scopes_) {
+            for (const auto& [raw, _] : scope) out[raw] = raw;
+        }
+        return out;
+    }
+
+    SExprPtr Expander::contextualize_for_match(const SExprPtr& node) const {
+        return deep_clone(node);
+    }
 
     /// ---------- Public API ----------
     ExpanderResult<std::vector<SExprPtr>> Expander::expand_many(const std::vector<SExprPtr>& forms) {
@@ -601,6 +683,22 @@ namespace eta::reader::expander {
         auto fm = parse_formals(lst.elems[1]);
         if (!fm) return std::unexpected(fm.error());
 
+        /// Track lexical binding identities for literal matching in macro patterns.
+        std::unordered_map<std::string, std::string> lambda_scope;
+        lambda_scope.reserve(fm->fixed.size() + (fm->rest ? 1 : 0));
+        for (const auto& fixed : fm->fixed) {
+            lambda_scope.emplace(fixed, gensym(fixed));
+        }
+        if (fm->rest) {
+            lambda_scope.emplace(*fm->rest, gensym(*fm->rest));
+        }
+
+        lexical_scopes_.push_back(std::move(lambda_scope));
+        struct ScopeGuard {
+            std::vector<std::unordered_map<std::string, std::string>>& scopes;
+            ~ScopeGuard() { scopes.pop_back(); }
+        } guard{lexical_scopes_};
+
         /// Body clone for optional internal-define rewriting
         std::vector<SExprPtr> body;
         for (size_t i=2;i<lst.elems.size();++i) body.push_back(deep_clone(lst.elems[i]));
@@ -734,7 +832,9 @@ namespace eta::reader::expander {
         auto formalList = make_list({}, pairs.span);
         formalList->as<List>()->elems = std::move(params);
         lam.push_back(std::move(formalList));
-        for (size_t i=2;i<lst.elems.size();++i) { auto r = expand_form(lst.elems[i]); if (!r) return std::unexpected(r.error()); lam.push_back(std::move(*r)); }
+        for (size_t i=2;i<lst.elems.size();++i) {
+            lam.push_back(deep_clone(lst.elems[i]));
+        }
         auto lamE = make_list(std::move(lam), lst.span);
         auto lamX = handle_lambda(*lamE->as<List>()); if (!lamX) return std::unexpected(lamX.error());
 
@@ -1790,19 +1890,34 @@ namespace eta::reader::expander {
         if (srForm.elems.size() < 2)
             return std::unexpected(syntax_error(srForm.span, "syntax-rules: expected literal list"));
 
+        auto definition_context = capture_definition_context();
+
         /// Parse literal list
         if (!srForm.elems[1] || !srForm.elems[1]->is<List>())
             return std::unexpected(syntax_error(srForm.span, "syntax-rules: literals must be a list of symbols"));
         const auto& litList = *srForm.elems[1]->as<List>();
-        std::unordered_set<std::string> literalSet;
+        std::unordered_map<std::string, std::string> literal_identities;
         SyntaxRulesTransformer transformer;
         for (const auto& elem : litList.elems) {
             if (!elem || !elem->is<Symbol>())
                 return std::unexpected(syntax_error(litList.span, "syntax-rules: each literal must be a symbol"));
             const auto& lname = elem->as<Symbol>()->name;
-            literalSet.insert(lname);
+            literal_identities[lname] = resolve_binding_identity(lname);
             transformer.literals.push_back(lname);
         }
+
+        std::unordered_set<std::string> free_template_symbols;
+        auto collect_template_symbols = [&](const SyntaxTemplate& tmpl, auto&& self) -> void {
+            std::visit([&](auto&& t) {
+                using T = std::decay_t<decltype(t)>;
+                if constexpr (std::is_same_v<T, TmplSymbol>) {
+                    free_template_symbols.insert(t.name);
+                } else if constexpr (std::is_same_v<T, TmplList>) {
+                    for (const auto& sub : t.elems) self(*sub, self);
+                    if (t.ellipsis_tmpl) self(**t.ellipsis_tmpl, self);
+                }
+            }, tmpl.data);
+        };
 
         /// Parse clauses
         for (std::size_t i = 2; i < srForm.elems.size(); ++i) {
@@ -1838,7 +1953,7 @@ namespace eta::reader::expander {
                     pl.ellipsis_index = pl.elems.size();
                     continue;
                 }
-                auto sub = parse_syntax_pattern(patList.elems[j], literalSet, boundVars);
+                auto sub = parse_syntax_pattern(patList.elems[j], literal_identities, boundVars);
                 if (!sub) return std::unexpected(sub.error());
                 pl.elems.push_back(std::move(*sub));
             }
@@ -1851,6 +1966,7 @@ namespace eta::reader::expander {
             /// Parse template
             auto tmpl = parse_syntax_template(clause.elems[1], patVars);
             if (!tmpl) return std::unexpected(tmpl.error());
+            collect_template_symbols(**tmpl, collect_template_symbols);
 
             SyntaxClause sc;
             sc.pattern = std::move(patListNode);
@@ -1859,24 +1975,36 @@ namespace eta::reader::expander {
             transformer.clauses.push_back(std::move(sc));
         }
 
-        /**
-         * Capture definition-time scope: all top-level names defined so far plus existing
-         * macro names.  Free references in the template are resolved against this scope
-         */
-        transformer.definition_scope = defined_names_;
-        for (const auto& [mname, _] : macro_env_)
-            transformer.definition_scope.insert(mname);
+        std::vector<std::pair<std::string, std::string>> alias_definitions;
+        for (const auto& name : free_template_symbols) {
+            if (is_structural_keyword(name)) continue;
+            if (!definition_context.contains(name)) continue;
+            if (!defined_names_.contains(name)) continue;
+
+            const auto alias = gensym(name + ".def");
+            definition_context[name] = alias;
+            alias_definitions.emplace_back(alias, name);
+            defined_names_.insert(alias);
+        }
+
+        transformer.definition_context = definition_context;
 
         macro_env_[macroName] = std::move(transformer);
 
-        /// define-syntax produces no runtime output
-        return make_begin(sp, {});
+        /// define-syntax itself has no runtime behavior; optional alias defines
+        /// preserve definition-site bindings for free template identifiers.
+        std::vector<SExprPtr> alias_forms;
+        alias_forms.reserve(alias_definitions.size());
+        for (const auto& [alias, original] : alias_definitions) {
+            alias_forms.push_back(make_form(sp, "define", make_symbol(alias, sp), make_symbol(original, sp)));
+        }
+        return make_begin(sp, std::move(alias_forms));
     }
 
     /// ---------- parse_syntax_pattern ----------
     ExpanderResult<SyntaxPatternPtr> Expander::parse_syntax_pattern(
         const SExprPtr& node,
-        const std::unordered_set<std::string>& literals,
+        const std::unordered_map<std::string, std::string>& literal_identities,
         const std::unordered_set<std::string>& /*bound_vars*/) const
     {
         auto pat = std::make_unique<SyntaxPattern>();
@@ -1889,8 +2017,8 @@ namespace eta::reader::expander {
             const auto& name = node->as<Symbol>()->name;
             if (name == "_") {
                 pat->data = PatUnderscore{};
-            } else if (literals.contains(name)) {
-                pat->data = PatLiteral{name};
+            } else if (auto it = literal_identities.find(name); it != literal_identities.end()) {
+                pat->data = PatLiteral{it->second};
             } else {
                 pat->data = PatVar{name};
             }
@@ -1915,7 +2043,7 @@ namespace eta::reader::expander {
                     pl.ellipsis_index = pl.elems.size();
                     continue;
                 }
-                auto sub = parse_syntax_pattern(lst.elems[i], literals, {});
+                auto sub = parse_syntax_pattern(lst.elems[i], literal_identities, {});
                 if (!sub) return std::unexpected(sub.error());
                 pl.elems.push_back(std::move(*sub));
             }
@@ -2014,7 +2142,7 @@ namespace eta::reader::expander {
     /// Returns true if input matches the pattern, populating env with bindings.
     bool Expander::match_pattern(const SyntaxPattern& pat,
                                  const SExprPtr& input,
-                                 MatchEnv& env) {
+                                 MatchEnv& env) const {
         return std::visit([&](auto&& p) -> bool {
             using T = std::decay_t<decltype(p)>;
 
@@ -2026,7 +2154,8 @@ namespace eta::reader::expander {
                 return true; ///< matches anything
             }
             else if constexpr (std::is_same_v<T, PatLiteral>) {
-                return input && input->is<Symbol>() && input->as<Symbol>()->name == p.name;
+                if (!input || !input->is<Symbol>()) return false;
+                return resolve_binding_identity(input->as<Symbol>()->name) == p.identity;
             }
             else if constexpr (std::is_same_v<T, PatDatum>) {
                 return datum_equal(p.datum, input);
@@ -2101,7 +2230,7 @@ namespace eta::reader::expander {
         const MatchEnv& env,
         std::unordered_map<std::string, std::string>& renames,
         Span ctx,
-        const std::unordered_set<std::string>& definition_scope) const
+        const std::unordered_map<std::string, std::string>& definition_context) const
     {
         return std::visit([&](auto&& t) -> ExpanderResult<SExprPtr> {
             using T = std::decay_t<decltype(t)>;
@@ -2118,48 +2247,20 @@ namespace eta::reader::expander {
                 return deep_clone(t.datum);
             }
             else if constexpr (std::is_same_v<T, TmplSymbol>) {
-                /**
-                 * Hygienic renaming for introduced identifiers:
-                 * If the symbol is not a keyword/special, rename it so it can't
-                 * capture or be captured by user-level bindings.
-                 * We skip renaming for well-known forms that the expander/SA must see literally.
-                 */
-                static const std::unordered_set<std::string> passthrough = {
-                    "if","begin","lambda","define","set!","quote","let","let*",
-                    "letrec","letrec*","cond","case","and","or","when","unless",
-                    "do","quasiquote","unquote","unquote-splicing",
-                    "module","import","export","define-syntax","define-record-type",
-                    "cons","car","cdr","list","append","apply","not",
-                    "eq?","eqv?","equal?","null?","pair?","number?","boolean?",
-                    "string?","char?","symbol?","procedure?","integer?","vector?",
-                    "zero?","positive?","negative?","abs","min","max","modulo","remainder",
-                    "sin","cos","tan","asin","acos","atan","exp","log","sqrt",
-                    "+","-","*","/","=","<",">","<=",">=",
-                    "string-length","string-append","number->string","string->number",
-                    "vector","vector-length","vector-ref","vector-set!","make-vector",
-                    "map","for-each","length","reverse","list-ref","list-tail",
-                    "set-car!","set-cdr!","error",
-                    "call/cc","call-with-current-continuation","dynamic-wind",
-                    "values","call-with-values",
-                    "display","write","newline",
-                    "#t","#f",
-                    "def","defun","progn",
-                };
-                /**
-                 * Pass through: core keywords, known macros, and any name that was
-                 * already defined in the macro's definition-time scope.  These are
-                 * free references into the defining environment and must not be renamed.
-                 */
-                if (passthrough.contains(t.name) ||
-                    macro_env_.contains(t.name) ||
-                    definition_scope.contains(t.name)) {
+                /// Structural forms must remain literal keywords in output syntax.
+                if (is_structural_keyword(t.name)) {
                     return make_symbol(t.name, ctx);
                 }
-                /**
-                 * Apply hygiene: rename introduced identifiers (truly fresh names that
-                 * the macro introduces as new bindings, e.g. loop variables in do-loop
-                 * transformers).
-                 */
+
+                /// Free identifier: bind to definition-site lexical identity.
+                if (auto it = definition_context.find(t.name); it != definition_context.end()) {
+                    return make_symbol(it->second, ctx);
+                }
+
+                /// Macro names remain callable when emitted as list heads.
+                if (macro_env_.contains(t.name)) return make_symbol(t.name, ctx);
+
+                /// Introduced identifier: make a fresh expansion-local name.
                 auto rit = renames.find(t.name);
                 if (rit == renames.end()) {
                     auto fresh = gensym(t.name);
@@ -2175,7 +2276,7 @@ namespace eta::reader::expander {
                     /// No ellipsis: instantiate each element
                     result.reserve(t.elems.size());
                     for (const auto& sub : t.elems) {
-                        auto r = instantiate_template(*sub, env, renames, ctx, definition_scope);
+                        auto r = instantiate_template(*sub, env, renames, ctx, definition_context);
                         if (!r) return r;
                         result.push_back(std::move(*r));
                     }
@@ -2188,7 +2289,7 @@ namespace eta::reader::expander {
 
                 /// Instantiate fixed elements before ellipsis
                 for (std::size_t i = 0; i < fixedBefore; ++i) {
-                    auto r = instantiate_template(*t.elems[i], env, renames, ctx, definition_scope);
+                    auto r = instantiate_template(*t.elems[i], env, renames, ctx, definition_context);
                     if (!r) return r;
                     result.push_back(std::move(*r));
                 }
@@ -2220,7 +2321,7 @@ namespace eta::reader::expander {
                                 subEnv.emplace(k, MatchBinding{deep_clone(v.single), {}, false});
                             }
                         }
-                        auto inst = instantiate_template(**t.ellipsis_tmpl, subEnv, renames, ctx, definition_scope);
+                        auto inst = instantiate_template(**t.ellipsis_tmpl, subEnv, renames, ctx, definition_context);
                         if (!inst) return inst;
                         result.push_back(std::move(*inst));
                     }
@@ -2228,7 +2329,7 @@ namespace eta::reader::expander {
 
                 /// Instantiate fixed elements after ellipsis
                 for (std::size_t i = fixedBefore; i < fixedBefore + fixedAfter; ++i) {
-                    auto r = instantiate_template(*t.elems[i], env, renames, ctx, definition_scope);
+                    auto r = instantiate_template(*t.elems[i], env, renames, ctx, definition_context);
                     if (!r) return r;
                     result.push_back(std::move(*r));
                 }
@@ -2273,14 +2374,14 @@ namespace eta::reader::expander {
              */
             std::vector<SExprPtr> tailElems;
             for (std::size_t i = 1; i < lst.elems.size(); ++i) {
-                tailElems.push_back(deep_clone(lst.elems[i]));
+                tailElems.push_back(contextualize_for_match(lst.elems[i]));
             }
             auto tailList = make_list(std::move(tailElems), lst.span);
 
             if (match_pattern(*clause.pattern, tailList, env)) {
                 std::unordered_map<std::string, std::string> renames;
                 auto expanded = instantiate_template(*clause.tmpl, env, renames, lst.span,
-                                                     transformer.definition_scope);
+                                                     transformer.definition_context);
                 if (!expanded) return expanded;
                 /// Re-expand the output (macros can produce derived forms or other macro calls)
                 return expand_form(*expanded);

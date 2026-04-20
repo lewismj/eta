@@ -3,7 +3,7 @@
     "displayName": "Eta-Scheme Language",
     "description": "Language support for the Eta-Scheme programming language",
     "version": "0.3.0",
-    "publisher": "Michael Lewis",
+    "publisher": "eta-schema-lang",
     "repository": {
         "type": "git",
         "url": "https://github.com/eta-lang/eta"

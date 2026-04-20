@@ -1293,6 +1293,88 @@ BOOST_AUTO_TEST_CASE(test_xva_cva_zero_lgd) {
     BOOST_CHECK_SMALL(to_double(res), 1e-10);
 }
 
+BOOST_AUTO_TEST_CASE(hygiene_definition_site_free_identifier_not_captured) {
+    LispVal res = run(R"(
+        (module m
+          (define x 1)
+          (define-syntax mref
+            (syntax-rules ()
+              ((_ ) x)))
+          (define result
+            (let ((x 2))
+              (mref))))
+    )");
+    auto decoded = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+}
+
+BOOST_AUTO_TEST_CASE(hygiene_literal_keyword_shadowed_local_does_not_match) {
+    LispVal res = run(R"(
+        (module m
+          (define-syntax my-cond
+            (syntax-rules (else)
+              ((_ (else e)) e)
+              ((_ (t e)) (if t e #f))))
+          (define result
+            (let ((else #f))
+              (my-cond (else 42)))))
+    )");
+    BOOST_CHECK_EQUAL(fmt(res), "#f");
+}
+
+BOOST_AUTO_TEST_CASE(hygiene_introduced_binder_does_not_capture_use_site_identifier) {
+    LispVal res = run(R"(
+        (module m
+          (define-syntax m1
+            (syntax-rules ()
+              ((_ e) (let ((tmp 1)) e))))
+          (define result
+            (let ((tmp 2))
+              (m1 tmp))))
+    )");
+    auto decoded = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 2);
+}
+
+BOOST_AUTO_TEST_CASE(hygiene_introduced_reference_stays_linked_to_introduced_binder) {
+    LispVal res = run(R"(
+        (module m
+          (define-syntax m2
+            (syntax-rules ()
+              ((_)
+               (let ((tmp 5))
+                 tmp))))
+          (define result
+            (let ((tmp 99))
+              (m2))))
+    )");
+    auto decoded = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 5);
+}
+
+BOOST_AUTO_TEST_CASE(hygiene_cross_module_definition_site_reference) {
+    LispVal res = run_multi(R"(
+        (module a
+          (define x 7)
+          (define-syntax mref
+            (syntax-rules ()
+              ((_ ) x)))
+          (export x))
+
+        (module b
+          (import a)
+          (define result
+            (let ((x 9))
+              (mref))))
+    )");
+    auto decoded = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 7);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 /**
