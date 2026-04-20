@@ -38,7 +38,7 @@ without losing Eta's current strengths (composability, explainability, exact con
 | 3 | Uncertainty-aware optimization | Robust portfolio choice under parameter uncertainty | Implemented (2026-04-20) |
 | 4 | Structural/learned covariance | Better Sigma(m) aligned with causal structure | Implemented (2026-04-20) |
 | 5 | Empirical stress-test suite | Evidence of graceful degradation vs baselines | Implemented (2026-04-20) |
-| 6 | Dynamic control loop (advanced) | Decision-dependent dynamics and sequential policy | Planned |
+| 6 | Dynamic control loop (advanced) | Decision-dependent dynamics and sequential policy | Implemented (2026-04-20) |
 
 ---
 
@@ -269,6 +269,11 @@ machine-readable stress-validation diagnostics in `run-pipeline`.
 ---
 
 ## Stage 6 - Dynamic Causal Control (Advanced Track)
+
+Current status: implemented in `examples/portfolio.eta` via
+`run-pipeline-dynamic` and `dynamic-control` artifact output, with
+action-dependent state transitions, sequential policy evaluation, and
+parallel actor rollout summaries.
 
 ### Scope
 
