@@ -2687,6 +2687,30 @@ BOOST_FIXTURE_TEST_CASE(non_resurrected_finalized_object_is_reclaimed_later, Fin
 
 BOOST_AUTO_TEST_SUITE_END() ///< finalizer_vm_tests
 
+BOOST_AUTO_TEST_SUITE(guardian_primitive_tests)
+
+BOOST_FIXTURE_TEST_CASE(guardian_collect_returns_false_when_queue_empty, VMTestFixture) {
+    LispVal res = run(
+        "(module m"
+        "  (define g (make-guardian))"
+        "  (define result (guardian-collect g)))");
+    BOOST_CHECK_EQUAL(res, nanbox::False);
+}
+
+BOOST_FIXTURE_TEST_CASE(finalizer_primitive_register_and_unregister_smoke, VMTestFixture) {
+    LispVal res = run(
+        "(module m"
+        "  (define obj (vector))"
+        "  (define fin (lambda (x) #t))"
+        "  (define r1 (register-finalizer! obj fin))"
+        "  (define r2 (unregister-finalizer! obj))"
+        "  (define r3 (unregister-finalizer! obj))"
+        "  (define result (and r1 r2 (not r3))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_SUITE_END() ///< guardian_primitive_tests
+
 /**
  * VM runtime bounds-check tests (bug fix: unchecked stack/upval ops, bug #1)
  * These tests directly construct BytecodeFunctions that bypass the deserializer

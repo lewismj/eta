@@ -1211,6 +1211,114 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id) ? True : False;
     });
 
+    env.register_builtin("register-finalizer!", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        const LispVal obj = args[0];
+        const LispVal proc = args[1];
+
+        if (!ops::is_boxed(obj) || ops::tag(obj) != Tag::HeapObject) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "register-finalizer!: first arg must be a heap object"}});
+        }
+
+        if (!ops::is_boxed(proc) || ops::tag(proc) != Tag::HeapObject) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "register-finalizer!: second arg must be a procedure"}});
+        }
+        const auto proc_id = static_cast<memory::heap::ObjectId>(ops::payload(proc));
+        if (!heap.try_get_as<ObjectKind::Closure, types::Closure>(proc_id)
+            && !heap.try_get_as<ObjectKind::Primitive, types::Primitive>(proc_id)) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "register-finalizer!: second arg must be a procedure"}});
+        }
+
+        const auto obj_id = static_cast<memory::heap::ObjectId>(ops::payload(obj));
+        auto registered = heap.register_finalizer(obj_id, proc);
+        if (!registered.has_value()) {
+            if (registered.error() == memory::heap::HeapError::ObjectIdNotFound) {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "register-finalizer!: first arg must be a live heap object"}});
+            }
+            if (registered.error() == memory::heap::HeapError::UnexpectedObjectKind) {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "register-finalizer!: first arg must be a non-cons heap object"}});
+            }
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "register-finalizer!: failed to register finalizer"}});
+        }
+
+        return True;
+    });
+
+    env.register_builtin("unregister-finalizer!", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        const LispVal obj = args[0];
+        if (!ops::is_boxed(obj) || ops::tag(obj) != Tag::HeapObject) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "unregister-finalizer!: first arg must be a heap object"}});
+        }
+
+        const auto obj_id = static_cast<memory::heap::ObjectId>(ops::payload(obj));
+        return heap.remove_finalizer(obj_id) ? True : False;
+    });
+
+    env.register_builtin("make-guardian", 0, false, [&heap](Args) -> std::expected<LispVal, RuntimeError> {
+        return make_guardian(heap);
+    });
+
+    env.register_builtin("guardian-track!", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        const LispVal guardian = args[0];
+        const LispVal obj = args[1];
+
+        if (!ops::is_boxed(guardian) || ops::tag(guardian) != Tag::HeapObject) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "guardian-track!: first arg must be a guardian"}});
+        }
+
+        const auto guardian_id = static_cast<memory::heap::ObjectId>(ops::payload(guardian));
+        if (!heap.try_get_as<ObjectKind::Guardian, types::Guardian>(guardian_id)) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "guardian-track!: first arg must be a guardian"}});
+        }
+
+        if (!ops::is_boxed(obj) || ops::tag(obj) != Tag::HeapObject) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "guardian-track!: second arg must be a heap object"}});
+        }
+
+        const auto obj_id = static_cast<memory::heap::ObjectId>(ops::payload(obj));
+        auto tracked = heap.guardian_track(guardian_id, obj_id);
+        if (!tracked.has_value()) {
+            if (tracked.error() == memory::heap::HeapError::ObjectIdNotFound) {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "guardian-track!: second arg must be a live heap object"}});
+            }
+            if (tracked.error() == memory::heap::HeapError::UnexpectedObjectKind) {
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "guardian-track!: second arg must be a non-cons heap object"}});
+            }
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "guardian-track!: failed to track object"}});
+        }
+
+        return True;
+    });
+
+    env.register_builtin("guardian-collect", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        const LispVal guardian = args[0];
+        if (!ops::is_boxed(guardian) || ops::tag(guardian) != Tag::HeapObject) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "guardian-collect: arg must be a guardian"}});
+        }
+
+        const auto guardian_id = static_cast<memory::heap::ObjectId>(ops::payload(guardian));
+        if (!heap.try_get_as<ObjectKind::Guardian, types::Guardian>(guardian_id)) {
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                "guardian-collect: arg must be a guardian"}});
+        }
+
+        auto next = heap.dequeue_guardian_ready(guardian_id);
+        return next.has_value() ? *next : False;
+    });
+
     /**
      * Attributed variables
      *                               at least one attribute

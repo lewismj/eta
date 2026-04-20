@@ -115,6 +115,11 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
+    std::expected<LispVal, RuntimeError> make_guardian(Heap& heap) {
+        return make_heap_object<types::Guardian, ObjectKind::Guardian>(heap, types::Guardian{});
+    }
+
+    inline_always
     std::expected<LispVal, RuntimeError> make_port(Heap& heap, std::shared_ptr<Port> port) {
         return make_heap_object<types::PortObject, ObjectKind::Port>(heap, types::PortObject{.port = std::move(port)});
     }

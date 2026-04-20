@@ -11,6 +11,7 @@
 #include <ostream>
 #include <functional>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <boost/unordered/concurrent_flat_map.hpp>
@@ -33,6 +34,7 @@ namespace eta::runtime::memory::heap {
         Closure,
         Continuation,
         Primitive,
+        Guardian,
         MultipleValues,  ///< For (values ...) return
         Port,
         LogicVar,        ///< Unification logic variable
@@ -54,6 +56,7 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(Closure)
         ETA_ENUM_CASE(Continuation)
         ETA_ENUM_CASE(Primitive)
+        ETA_ENUM_CASE(Guardian)
         ETA_ENUM_CASE(MultipleValues)
         ETA_ENUM_CASE(Port)
         ETA_ENUM_CASE(LogicVar)
@@ -333,6 +336,27 @@ namespace eta::runtime::memory::heap {
         std::vector<PendingFinalizer> pending_finalizers_snapshot() const;
 
         /**
+         * Register a weak tracking relation from guardian -> object.
+         * Both ids must refer to live general-heap objects.
+         */
+        std::expected<void, HeapError> guardian_track(ObjectId guardian_id, ObjectId tracked_object_id);
+
+        /// Remove one guardian tracking relation. Returns true when removed.
+        bool remove_guardian_tracking(ObjectId guardian_id, ObjectId tracked_object_id);
+
+        /**
+         * Snapshot guardian tracking relations as (guardian_id, object_id) pairs.
+         * Used by GC weak processing.
+         */
+        std::vector<std::pair<ObjectId, ObjectId>> guardian_tracking_snapshot() const;
+
+        /// Append a ready object to a guardian queue. Returns false for stale/non-guardian ids.
+        bool enqueue_guardian_ready(ObjectId guardian_id, LispVal object);
+
+        /// Pop one object from a guardian ready queue; empty/non-guardian -> nullopt.
+        std::optional<LispVal> dequeue_guardian_ready(ObjectId guardian_id);
+
+        /**
          * Sweep the cons pool and adjust total_heap_bytes.
          * Returns the number of freed pool cells.
          */
@@ -373,8 +397,13 @@ namespace eta::runtime::memory::heap {
         mutable std::mutex finalizer_mutex_;
         std::unordered_map<ObjectId, LispVal> finalizer_table_;
         std::deque<PendingFinalizer> pending_finalizers_;
+        mutable std::mutex guardian_mutex_;
+        std::unordered_map<ObjectId, std::unordered_set<ObjectId>> guardian_to_tracked_;
+        std::unordered_map<ObjectId, std::unordered_set<ObjectId>> tracked_to_guardians_;
 
         void erase_pending_finalizers_for_object_unsafe(ObjectId id);
+        void erase_guardian_tracking_for_object_unsafe(ObjectId id);
+        void erase_guardian_tracking_for_guardian_unsafe(ObjectId id);
 
     };
 

@@ -178,6 +178,11 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return "#<primitive>";
         }
 
+        /// Guardian
+        if (heap.try_get_as<ObjectKind::Guardian, types::Guardian>(id)) {
+            return "#<guardian>";
+        }
+
         /// Continuation
         if (heap.try_get_as<ObjectKind::Continuation, types::Continuation>(id)) {
             return "#<continuation>";

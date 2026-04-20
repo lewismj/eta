@@ -9,6 +9,7 @@
 #include "continuation.h"
 #include "multiple_values.h"
 #include "primitive.h"
+#include "guardian.h"
 #include "port.h"
 #include "logic_var.h"
 #include "tape.h"

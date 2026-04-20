@@ -245,6 +245,61 @@ BOOST_AUTO_TEST_CASE(pending_finalizers_survive_subsequent_gc_cycles) {
     BOOST_TEST(heap.try_get(proc_id, entry));
 }
 
+BOOST_AUTO_TEST_CASE(guardian_track_gc_enqueues_ready_object) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    auto guardian = expect_ok(make_guardian(heap));
+    auto obj = expect_ok(make_vector(heap, {}));
+
+    const auto guardian_id = static_cast<ObjectId>(payload(guardian));
+    const auto obj_id = static_cast<ObjectId>(payload(obj));
+    BOOST_REQUIRE(heap.guardian_track(guardian_id, obj_id).has_value());
+    roots.push_back(guardian);
+
+    GCStats first{};
+    gc.collect(heap, roots.begin(), roots.end(), &first);
+
+    BOOST_TEST(first.objects_freed == 0u);
+    BOOST_TEST(heap.guardian_tracking_snapshot().empty());
+
+    HeapEntry entry{};
+    BOOST_TEST(heap.try_get(obj_id, entry));
+
+    auto collected = heap.dequeue_guardian_ready(guardian_id);
+    BOOST_REQUIRE(collected.has_value());
+    BOOST_TEST(*collected == obj);
+    BOOST_TEST(!heap.dequeue_guardian_ready(guardian_id).has_value());
+
+    GCStats second{};
+    gc.collect(heap, roots.begin(), roots.end(), &second);
+    BOOST_TEST(second.objects_freed == 1u);
+    BOOST_TEST(!heap.try_get(obj_id, entry));
+}
+
+BOOST_AUTO_TEST_CASE(dead_guardian_does_not_retain_tracked_objects) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    auto guardian = expect_ok(make_guardian(heap));
+    auto obj = expect_ok(make_vector(heap, {}));
+
+    const auto guardian_id = static_cast<ObjectId>(payload(guardian));
+    const auto obj_id = static_cast<ObjectId>(payload(obj));
+    BOOST_REQUIRE(heap.guardian_track(guardian_id, obj_id).has_value());
+
+    GCStats stats{};
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+
+    BOOST_TEST(stats.objects_freed == 2u);
+
+    HeapEntry entry{};
+    BOOST_TEST(!heap.try_get(guardian_id, entry));
+    BOOST_TEST(!heap.try_get(obj_id, entry));
+}
+
 BOOST_AUTO_TEST_CASE(stats_sanity) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;

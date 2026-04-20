@@ -1,5 +1,6 @@
 #include "heap.h"
 #include "cons_pool.h"
+#include <eta/runtime/types/guardian.h>
 #include <algorithm>
 #include <iostream>
 
@@ -143,6 +144,89 @@ namespace eta::runtime::memory::heap {
         return {pending_finalizers_.begin(), pending_finalizers_.end()};
     }
 
+    std::expected<void, HeapError> Heap::guardian_track(const ObjectId guardian_id, const ObjectId tracked_object_id) {
+        HeapEntry guardian_entry{};
+        if (!try_get(guardian_id, guardian_entry)) {
+            return std::unexpected(HeapError::ObjectIdNotFound);
+        }
+        if (guardian_entry.header.kind != ObjectKind::Guardian) {
+            return std::unexpected(HeapError::UnexpectedObjectKind);
+        }
+
+        /**
+         * ObjectId reuse in the cons pool makes first-delivery ambiguous.
+         * Keep v1 scope to general-heap objects only.
+         */
+        if (cons_pool_ && cons_pool_->owns(tracked_object_id)) {
+            return std::unexpected(HeapError::UnexpectedObjectKind);
+        }
+
+        HeapEntry tracked_entry{};
+        if (!try_get(tracked_object_id, tracked_entry)) {
+            return std::unexpected(HeapError::ObjectIdNotFound);
+        }
+
+        std::lock_guard lock(guardian_mutex_);
+        guardian_to_tracked_[guardian_id].insert(tracked_object_id);
+        tracked_to_guardians_[tracked_object_id].insert(guardian_id);
+        return {};
+    }
+
+    bool Heap::remove_guardian_tracking(const ObjectId guardian_id, const ObjectId tracked_object_id) {
+        std::lock_guard lock(guardian_mutex_);
+        bool removed = false;
+
+        if (auto guardian_it = guardian_to_tracked_.find(guardian_id);
+            guardian_it != guardian_to_tracked_.end()) {
+            removed = guardian_it->second.erase(tracked_object_id) > 0 || removed;
+            if (guardian_it->second.empty()) {
+                guardian_to_tracked_.erase(guardian_it);
+            }
+        }
+
+        if (auto tracked_it = tracked_to_guardians_.find(tracked_object_id);
+            tracked_it != tracked_to_guardians_.end()) {
+            removed = tracked_it->second.erase(guardian_id) > 0 || removed;
+            if (tracked_it->second.empty()) {
+                tracked_to_guardians_.erase(tracked_it);
+            }
+        }
+
+        return removed;
+    }
+
+    std::vector<std::pair<ObjectId, ObjectId>> Heap::guardian_tracking_snapshot() const {
+        std::vector<std::pair<ObjectId, ObjectId>> out;
+        std::lock_guard lock(guardian_mutex_);
+
+        for (const auto& [guardian_id, tracked] : guardian_to_tracked_) {
+            for (const auto tracked_id : tracked) {
+                out.emplace_back(guardian_id, tracked_id);
+            }
+        }
+
+        return out;
+    }
+
+    bool Heap::enqueue_guardian_ready(const ObjectId guardian_id, const LispVal object) {
+        std::lock_guard lock(guardian_mutex_);
+        auto* guardian = try_get_as<ObjectKind::Guardian, types::Guardian>(guardian_id);
+        if (!guardian) return false;
+
+        guardian->ready_queue.push_back(object);
+        return true;
+    }
+
+    std::optional<LispVal> Heap::dequeue_guardian_ready(const ObjectId guardian_id) {
+        std::lock_guard lock(guardian_mutex_);
+        auto* guardian = try_get_as<ObjectKind::Guardian, types::Guardian>(guardian_id);
+        if (!guardian || guardian->ready_queue.empty()) return std::nullopt;
+
+        auto value = guardian->ready_queue.front();
+        guardian->ready_queue.pop_front();
+        return value;
+    }
+
     void Heap::erase_pending_finalizers_for_object_unsafe(const ObjectId id) {
         pending_finalizers_.erase(
             std::remove_if(
@@ -154,6 +238,40 @@ namespace eta::runtime::memory::heap {
                            && static_cast<ObjectId>(ops::payload(pending.obj)) == id;
                 }),
             pending_finalizers_.end());
+    }
+
+    void Heap::erase_guardian_tracking_for_object_unsafe(const ObjectId id) {
+        const auto tracked_it = tracked_to_guardians_.find(id);
+        if (tracked_it == tracked_to_guardians_.end()) return;
+
+        for (const auto guardian_id : tracked_it->second) {
+            if (const auto guardian_it = guardian_to_tracked_.find(guardian_id);
+                guardian_it != guardian_to_tracked_.end()) {
+                guardian_it->second.erase(id);
+                if (guardian_it->second.empty()) {
+                    guardian_to_tracked_.erase(guardian_it);
+                }
+            }
+        }
+
+        tracked_to_guardians_.erase(tracked_it);
+    }
+
+    void Heap::erase_guardian_tracking_for_guardian_unsafe(const ObjectId id) {
+        const auto guardian_it = guardian_to_tracked_.find(id);
+        if (guardian_it == guardian_to_tracked_.end()) return;
+
+        for (const auto tracked_id : guardian_it->second) {
+            if (const auto tracked_it = tracked_to_guardians_.find(tracked_id);
+                tracked_it != tracked_to_guardians_.end()) {
+                tracked_it->second.erase(id);
+                if (tracked_it->second.empty()) {
+                    tracked_to_guardians_.erase(tracked_it);
+                }
+            }
+        }
+
+        guardian_to_tracked_.erase(guardian_it);
     }
 
     /// deallocation (pool-aware)
@@ -170,6 +288,10 @@ namespace eta::runtime::memory::heap {
                 std::lock_guard lock(finalizer_mutex_);
                 finalizer_table_.erase(id);
                 erase_pending_finalizers_for_object_unsafe(id);
+            }
+            {
+                std::lock_guard lock(guardian_mutex_);
+                erase_guardian_tracking_for_object_unsafe(id);
             }
             return {};
         }
@@ -205,6 +327,14 @@ namespace eta::runtime::memory::heap {
             std::lock_guard lock(finalizer_mutex_);
             finalizer_table_.erase(id);
             erase_pending_finalizers_for_object_unsafe(id);
+        }
+        {
+            std::lock_guard lock(guardian_mutex_);
+            if (entry.header.kind == ObjectKind::Guardian) {
+                erase_guardian_tracking_for_guardian_unsafe(id);
+            } else {
+                erase_guardian_tracking_for_object_unsafe(id);
+            }
         }
 
         /// Now safe to destroy - no other thread can find this entry

@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <span>
+#include <unordered_set>
 
 #include <eta/runtime/nanbox.h>
 #include <eta/runtime/types/types.h>
@@ -80,6 +81,10 @@ namespace eta::runtime::memory::gc {
             for (auto v : p.gc_roots) callback(v);
         }
 
+        void visit_guardian(const types::Guardian& g) override {
+            for (auto v : g.ready_queue) callback(v);
+        }
+
         void visit_fact_table(const types::FactTable& ft) override {
             for (const auto& col : ft.columns)
                 for (auto v : col) callback(v);
@@ -115,7 +120,12 @@ namespace eta::runtime::memory::gc {
             mark_from_roots(heap, enumerate_roots);
             mark_pending_finalizers(heap);
             mark_live_finalizer_procs_fixpoint(heap);
-            enqueue_dead_finalizers(heap);
+
+            const auto dead_finalizer_keys = snapshot_dead_finalizer_keys(heap);
+            const auto dead_guarded_objects = snapshot_dead_guarded_objects(heap);
+            enqueue_dead_finalizers(heap, dead_finalizer_keys);
+            enqueue_dead_guardians(heap, dead_guarded_objects);
+
             mark_pending_finalizers(heap);
             mark_live_finalizer_procs_fixpoint(heap);
 
@@ -266,10 +276,39 @@ namespace eta::runtime::memory::gc {
             }
         }
 
-        void enqueue_dead_finalizers(Heap& heap) const {
+        std::unordered_set<heap::ObjectId> snapshot_dead_finalizer_keys(Heap& heap) const {
+            auto finalizers = heap.finalizer_table_snapshot();
+            std::unordered_set<heap::ObjectId> dead_keys;
+            dead_keys.reserve(finalizers.size());
+
+            for (const auto& [obj_id, _proc] : finalizers) {
+                if (!is_marked(heap, obj_id)) {
+                    dead_keys.insert(obj_id);
+                }
+            }
+
+            return dead_keys;
+        }
+
+        std::unordered_set<heap::ObjectId> snapshot_dead_guarded_objects(Heap& heap) const {
+            auto tracked_pairs = heap.guardian_tracking_snapshot();
+            std::unordered_set<heap::ObjectId> dead_keys;
+            dead_keys.reserve(tracked_pairs.size());
+
+            for (const auto& [_guardian_id, obj_id] : tracked_pairs) {
+                if (!is_marked(heap, obj_id)) {
+                    dead_keys.insert(obj_id);
+                }
+            }
+
+            return dead_keys;
+        }
+
+        void enqueue_dead_finalizers(Heap& heap,
+                                     const std::unordered_set<heap::ObjectId>& dead_keys) const {
             auto finalizers = heap.finalizer_table_snapshot();
             for (const auto& [obj_id, proc] : finalizers) {
-                if (is_marked(heap, obj_id)) continue;
+                if (dead_keys.find(obj_id) == dead_keys.end()) continue;
 
                 heap::HeapEntry entry{};
                 if (!heap.try_get(obj_id, entry)) {
@@ -287,6 +326,40 @@ namespace eta::runtime::memory::gc {
                  */
                 (void)mark_value(heap, boxed_obj);
                 (void)mark_value(heap, proc);
+            }
+        }
+
+        void enqueue_dead_guardians(Heap& heap,
+                                    const std::unordered_set<heap::ObjectId>& dead_keys) const {
+            auto tracked_pairs = heap.guardian_tracking_snapshot();
+            for (const auto& [guardian_id, tracked_id] : tracked_pairs) {
+                if (!is_marked(heap, guardian_id)) {
+                    (void)heap.remove_guardian_tracking(guardian_id, tracked_id);
+                    continue;
+                }
+
+                if (dead_keys.find(tracked_id) == dead_keys.end()) continue;
+
+                heap::HeapEntry entry{};
+                if (!heap.try_get(tracked_id, entry)) {
+                    (void)heap.remove_guardian_tracking(guardian_id, tracked_id);
+                    continue;
+                }
+
+                const auto boxed_obj = ops::box(Tag::HeapObject, tracked_id);
+                if (!heap.enqueue_guardian_ready(guardian_id, boxed_obj)) {
+                    (void)heap.remove_guardian_tracking(guardian_id, tracked_id);
+                    continue;
+                }
+
+                /**
+                 * Guardian delivery is at-most-once per track call.
+                 * Remove weak links once queued.
+                 */
+                (void)heap.remove_guardian_tracking(guardian_id, tracked_id);
+
+                /// Keep the delivered object alive until user code collects it.
+                (void)mark_value(heap, boxed_obj);
             }
         }
     };

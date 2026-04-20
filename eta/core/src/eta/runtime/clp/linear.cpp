@@ -23,7 +23,11 @@ using memory::heap::ObjectKind;
 using memory::intern::InternId;
 using memory::intern::InternTable;
 
-constexpr std::size_t kMaxDepth = 512;
+/**
+ * Keep recursion depth comfortably below default Windows test-runner stack
+ * limits so depth-exceeded errors are reported instead of stack overflow.
+ */
+constexpr std::size_t kMaxDepth = 256;
 
 enum class ArithmeticOp : std::uint8_t {
     Add,

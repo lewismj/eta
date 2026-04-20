@@ -137,9 +137,14 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("error",      1, true);
     r("platform",   0, false);
     r("logic-var?", 1, false);
+    r("register-finalizer!",   2, false);
+    r("unregister-finalizer!", 1, false);
+    r("make-guardian",         0, false);
+    r("guardian-track!",       2, false);
+    r("guardian-collect",      1, false);
     /**
      * register_builtin calls in core_primitives.h immediately after
-     * `logic-var?` and before `logic-var/named` (patch-mode validates
+     * `guardian-collect` and before `logic-var/named` (patch-mode validates
      * name/arity per slot).
      */
     r("put-attr",            3, false);
