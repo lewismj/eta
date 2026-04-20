@@ -127,6 +127,17 @@ adjustment set directly without applying the three rules sequentially.
 ;; => (adjust (sector) (P stock-return market-beta (sector)) (P (sector)))
 ```
 
+To inspect all valid adjustment sets and status metadata:
+
+```scheme
+(do:identify-details finance-dag 'stock-return 'market-beta)
+;; => ((status . adjust)
+;;     (result . (adjust (sector) ...))
+;;     (chosen-z . (sector))
+;;     (all-z-sets . ((sector)))
+;;     (assumptions . (...)))
+```
+
 Formatted as a human-readable formula:
 
 ```scheme
@@ -166,7 +177,11 @@ edge-list format:
 | `(dag:descendants dag n)` | Transitive effects (BFS) |
 | `(dag:non-descendants dag n)` | All nodes except descendants of `n` |
 | `(dag:has-path? dag a b forbidden)` | Path from `a` to `b` not through `forbidden` |
+| `(dag:d-connected? dag x y z-set)` | True if any active path exists between `x` and `y` given `z-set` |
+| `(dag:d-separated? dag x y z-set)` | True if all paths between `x` and `y` are blocked by `z-set` |
 | `(dag:satisfies-backdoor? dag x y z-set)` | Back-door criterion check |
+| `(dag:adjustment-sets dag x y [max-size])` | Enumerate valid back-door adjustment sets, minimal first |
+| `(do:identify-details dag y x [max-size])` | Identification metadata with chosen and alternative adjustment sets |
 
 ```scheme
 (dag:ancestors finance-dag 'stock-return)

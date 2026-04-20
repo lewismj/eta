@@ -1,0 +1,85 @@
+;;; stdlib/tests/causal.test.eta -- Unit tests for std.causal
+
+(module causal.tests
+  (import std.test std.causal std.core)
+  (begin
+
+    (define chain-dag
+      '((a -> b)
+        (b -> c)))
+
+    (define collider-dag
+      '((a -> c)
+        (b -> c)
+        (c -> d)))
+
+    (define backdoor-dag
+      '((z -> x)
+        (z -> y)
+        (x -> y)))
+
+    (define direct-dag
+      '((x -> y)))
+
+    (define suite
+      (make-group "std.causal"
+        (list
+          (make-group "d-separation"
+            (list
+              (make-test "chain is d-connected without conditioning"
+                (lambda ()
+                  (assert-true (dag:d-connected? chain-dag 'a 'c '()))))
+              (make-test "conditioning on chain middle node blocks path"
+                (lambda ()
+                  (assert-true (dag:d-separated? chain-dag 'a 'c '(b)))))
+              (make-test "collider blocks path by default"
+                (lambda ()
+                  (assert-true (dag:d-separated? collider-dag 'a 'b '()))))
+              (make-test "conditioning on collider opens path"
+                (lambda ()
+                  (assert-true (dag:d-connected? collider-dag 'a 'b '(c)))))
+              (make-test "conditioning on collider descendant opens path"
+                (lambda ()
+                  (assert-true (dag:d-connected? collider-dag 'a 'b '(d)))))))
+
+          (make-group "back-door"
+            (list
+              (make-test "empty set fails back-door criterion when confounding exists"
+                (lambda ()
+                  (assert-false (dag:satisfies-backdoor? backdoor-dag 'x 'y '()))))
+              (make-test "z satisfies back-door criterion"
+                (lambda ()
+                  (assert-true (dag:satisfies-backdoor? backdoor-dag 'x 'y '(z)))))
+              (make-test "adjustment set enumeration returns minimal valid set"
+                (lambda ()
+                  (assert-equal '((z))
+                                (dag:adjustment-sets backdoor-dag 'x 'y))))
+              (make-test "identify returns expected adjustment formula"
+                (lambda ()
+                  (assert-equal
+                    '(adjust (z) (P y x (z)) (P (z)))
+                    (do:identify backdoor-dag 'y 'x))))
+              (make-test "identify-details returns metadata"
+                (lambda ()
+                  (let ((details (do:identify-details backdoor-dag 'y 'x)))
+                    (assert-equal 'adjust (assoc-ref 'status details))
+                    (assert-equal '(z) (assoc-ref 'chosen-z details))
+                    (assert-equal '((z)) (assoc-ref 'all-z-sets details)))))
+              (make-test "identify with max-size=0 reports unidentified when confounding exists"
+                (lambda ()
+                  (assert-equal #f (do:identify backdoor-dag 'y 'x 0))))))
+
+          (make-group "direct effects"
+            (list
+              (make-test "identify returns direct when no back-door path exists"
+                (lambda ()
+                  (assert-equal '(direct) (do:identify direct-dag 'y 'x))))
+              (make-test "identify-details direct status"
+                (lambda ()
+                  (let ((details (do:identify-details direct-dag 'y 'x)))
+                    (assert-equal 'direct (assoc-ref 'status details))
+                    (assert-equal '(direct) (assoc-ref 'result details))
+                    (assert-equal '() (assoc-ref 'chosen-z details)))))))))
+
+    (print-tap (run suite)))))
+

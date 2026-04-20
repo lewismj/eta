@@ -1,4 +1,4 @@
-;;; std/causal.eta — Causal DAG utilities and Pearl do-calculus engine.
+;;; std/causal.eta -- Causal DAG utilities and do-calculus helpers.
 ;;;
 ;;; DAG format: a list of directed edges, each written as (cause -> effect).
 ;;; The symbol `->` is a literal separator; edges are plain Scheme lists.
@@ -12,22 +12,15 @@
 ;;;       (interest-rate  -> stock-return)))
 ;;;
 ;;; Causal identification:
-;;;   (do:identify dag 'stock-return 'market-beta)
-;;;   ;; => (adjust (sector) ...)   — back-door adjustment set found
+;;;   (do:identify market-dag 'stock-return 'market-beta)
+;;;   ;; => (adjust (sector) ...)
 ;;;
 ;;; Adjustment formula:
-;;;   P(Y | do(X)) = Σ_z  P(Y | X, Z) · P(Z)
+;;;   P(Y | do(X)) = Sum_z P(Y | X, Z) * P(Z)
 ;;;
-;;; Numeric estimation of the causal effect is available via:
-;;;   (do:estimate-effect dag y-var x-var z-set data)
+;;; Numeric estimation of causal effects is available via:
+;;;   (do:estimate-effect y-var x-var x-val z-set z-val data)
 ;;; where `data` is a list of observation records (association lists).
-;;; This uses pure Eta arithmetic without any FFI dependency.
-;;;
-;;; NOTE: Numeric estimation currently uses a simple plug-in estimator
-;;; (sample proportions).  Integration with a numerical library (e.g.
-;;; libtorch or Eigen via the planned FFI — see docs/next-steps.md §2)
-;;; will enable more robust inference (bootstrapped CIs, regression-based
-;;; adjustment, etc.).
 
 (module std.causal
   (import std.core)
@@ -38,9 +31,12 @@
     dag:nodes dag:parents dag:children
     dag:ancestors dag:descendants dag:non-descendants
     dag:has-path?
+    dag:d-connected? dag:d-separated?
     ;; Causal identification (symbolic)
     dag:satisfies-backdoor?
+    dag:adjustment-sets
     do:identify
+    do:identify-details
     do:adjustment-formula->string
     ;; Numeric estimation (pure Eta, no FFI)
     do:estimate-effect
@@ -48,32 +44,32 @@
     do:marginal-prob)
   (begin
 
-    ;; ── DAG accessors ──────────────────────────────────────────────────────
+    ;; -- DAG accessors ----------------------------------------------------
     ;;
     ;; Each edge is (from -> to); `->` is the symbol at position 1.
 
     (defun %dag-edge-from (edge) (car edge))
-    (defun %dag-edge-to   (edge) (car (cdr (cdr edge))))   ; skip '->'
+    (defun %dag-edge-to (edge) (car (cdr (cdr edge))))   ; skip '->'
 
     ;; All nodes that appear in any edge (union of sources and targets).
     (defun dag:nodes (dag)
       (let ((all-nodes
               (foldr (lambda (edge acc)
                        (let ((f (%dag-edge-from edge))
-                             (t (%dag-edge-to   edge)))
+                             (t (%dag-edge-to edge)))
                          (%adjoin f (%adjoin t acc))))
                      '()
                      dag)))
         all-nodes))
 
-    ;; Direct parents of `node` (nodes with an edge pointing TO node).
+    ;; Direct parents of `node` (nodes with an edge pointing to node).
     (defun dag:parents (dag node)
       (filter (lambda (n) (not (eq? n node)))
               (map* %dag-edge-from
                     (filter (lambda (e) (eq? (%dag-edge-to e) node))
                             dag))))
 
-    ;; Direct children of `node` (nodes with an edge FROM node).
+    ;; Direct children of `node` (nodes with an edge from node).
     (defun dag:children (dag node)
       (filter (lambda (n) (not (eq? n node)))
               (map* %dag-edge-to
@@ -88,7 +84,7 @@
     (defun dag:descendants (dag node)
       (%dag-transitive dag dag:children node '()))
 
-    ;; All nodes that are NOT descendants of `node` (and not `node` itself).
+    ;; All nodes that are not descendants of `node` (and not `node` itself).
     (defun dag:non-descendants (dag node)
       (let ((desc (%adjoin node (dag:descendants dag node))))
         (filter (lambda (n) (not (%member? n desc)))
@@ -99,68 +95,104 @@
     (defun dag:has-path? (dag from to forbidden)
       (%dag-reachable? dag from to forbidden '()))
 
-    ;; ── Causal identification ──────────────────────────────────────────────
+    ;; -- Causal identification --------------------------------------------
+
+    ;; True if there is at least one active path between X and Y given Z.
+    (defun dag:d-connected? (dag x y z-set)
+      (any? (lambda (path) (%path-active? dag path z-set))
+            (%dag-all-simple-paths dag x y)))
+
+    ;; True if all paths between X and Y are blocked by Z.
+    (defun dag:d-separated? (dag x y z-set)
+      (not (dag:d-connected? dag x y z-set)))
 
     ;; (dag:satisfies-backdoor? dag x y z-set)
     ;;
-    ;; Check the back-door criterion for (X → Y) with adjustment set Z:
-    ;;   1. No member of Z is a descendant of X.
-    ;;   2. Z blocks all back-door paths from X to Y.
+    ;; Back-door criterion:
+    ;;   1) No member of Z is a descendant of X.
+    ;;   2) Z blocks every back-door path between X and Y.
     ;;
-    ;; A back-door path is any path starting with an arrow INTO X
-    ;; (i.e., using a parent edge of X as the first step), then reaching Y.
-    ;; Conditioning on Z blocks such a path if Z contains at least one
-    ;; non-collider node on the path (simplified: Z contains a common cause).
-    ;;
-    ;; This implementation uses the sufficient condition:
-    ;;   every common cause of X and Y (ancestors of X that also cause Y
-    ;;   through paths not going through X) is either in Z or is blocked
-    ;;   by a node in Z.
+    ;; Back-door paths are undirected simple paths from X to Y whose first
+    ;; edge is into X.
     (defun dag:satisfies-backdoor? (dag x y z-set)
       (and
-        ;; Condition 1: no Z-member is a descendant of X
         (every? (lambda (z)
                   (not (%member? z (dag:descendants dag x))))
                 z-set)
-        ;; Condition 2: Z blocks all back-door paths
-        (%dag-blocks-backdoor-paths? dag x y z-set)))
+        (every? (lambda (path)
+                  (not (%path-active? dag path z-set)))
+                (%dag-backdoor-node-paths dag x y))))
 
-    ;; (do:identify dag y x)
+    ;; (dag:adjustment-sets dag x y [max-size])
     ;;
-    ;; Attempt to identify P(Y | do(X)) from observational data.
-    ;; Searches for a minimal back-door adjustment set Z ⊆ non-descendants(X)
-    ;; that satisfies the back-door criterion.
+    ;; Enumerate valid back-door adjustment sets in non-decreasing set size.
+    ;; Candidate variables come from non-descendants(X), excluding X and Y.
+    (defun dag:adjustment-sets (dag x y . rest)
+      (let* ((cands (%adjustment-candidates dag x y))
+             (max-k (if (null? rest)
+                        (length cands)
+                        (%normalize-max-size (car rest) (length cands))))
+             (subsets (%subsets-up-to-size cands max-k)))
+        (filter (lambda (z)
+                  (dag:satisfies-backdoor? dag x y z))
+                subsets)))
+
+    ;; (do:identify-details dag y x [max-size])
     ;;
-    ;; Returns one of:
-    ;;   (adjust Z P(Y|X,Z) P(Z))
-    ;;       — back-door adjustment formula
-    ;;   (direct)
-    ;;       — X has no back-door paths; P(Y|do(X)) = P(Y|X)
-    ;;   #f
-    ;;       — could not identify (try front-door or more complex methods)
-    (defun do:identify (dag y x)
-      ;; First check: any back-door paths at all?
-      (if (null? (%dag-backdoor-paths dag x y))
-          '(direct)
-          ;; Try adjustment sets: first Pa(X)\{X}, then individual parents,
-          ;; then pairs, then all non-descendants
-          (let* ((pax  (dag:parents dag x))
-                 (nond (dag:non-descendants dag x))
-                 (candidates
-                   (list pax
-                         (list)               ; empty set (direct adjustment)
-                         nond)))              ; full non-descendant set
-            (let loop ((cands candidates))
-              (if (null? cands)
-                  #f     ; identification failed
-                  (let ((z (car cands)))
-                    (if (dag:satisfies-backdoor? dag x y z)
-                        (if (null? z)
-                            '(direct)
-                            (list 'adjust z
-                                  (list 'P y x z)
-                                  (list 'P z)))
-                        (loop (cdr cands)))))))))
+    ;; Return an association list:
+    ;;   (status . direct|adjust|unidentified)
+    ;;   (result . (direct) | (adjust Z P(Y|X,Z) P(Z)) | #f)
+    ;;   (chosen-z . Z|#f)
+    ;;   (all-z-sets . (Z1 Z2 ...))
+    ;;   (assumptions . (...))
+    (defun do:identify-details (dag y x . rest)
+      (let* ((max-k (if (null? rest) #f (car rest)))
+             (backdoor-paths (%dag-backdoor-node-paths dag x y))
+             (z-sets (if max-k
+                         (dag:adjustment-sets dag x y max-k)
+                         (dag:adjustment-sets dag x y))))
+        (cond
+          ((null? backdoor-paths)
+           (list
+             (cons 'status 'direct)
+             (cons 'result '(direct))
+             (cons 'chosen-z '())
+             (cons 'all-z-sets (list '()))
+             (cons 'assumptions (%identify-assumptions))))
+          ((null? z-sets)
+           (list
+             (cons 'status 'unidentified)
+             (cons 'result #f)
+             (cons 'chosen-z #f)
+             (cons 'all-z-sets '())
+             (cons 'assumptions (%identify-assumptions))))
+          (#t
+           (let ((z (car z-sets)))
+             (if (null? z)
+                 (list
+                   (cons 'status 'direct)
+                   (cons 'result '(direct))
+                   (cons 'chosen-z z)
+                   (cons 'all-z-sets z-sets)
+                   (cons 'assumptions (%identify-assumptions)))
+                 (list
+                   (cons 'status 'adjust)
+                   (cons 'result (list 'adjust z
+                                       (list 'P y x z)
+                                       (list 'P z)))
+                   (cons 'chosen-z z)
+                   (cons 'all-z-sets z-sets)
+                   (cons 'assumptions (%identify-assumptions)))))))))
+
+    ;; (do:identify dag y x [max-size])
+    ;;
+    ;; Backward-compatible convenience API returning only the formula.
+    (defun do:identify (dag y x . rest)
+      (let* ((details (if (null? rest)
+                          (do:identify-details dag y x)
+                          (do:identify-details dag y x (car rest))))
+             (result (assoc-ref 'result details)))
+        result))
 
     ;; Format an identification result as a human-readable string.
     (defun do:adjustment-formula->string (formula y x)
@@ -172,55 +204,46 @@
                         " | do(" (symbol->string x) ")) = "
                         "P(" (symbol->string y) " | " (symbol->string x) ")"))
         ((and (pair? formula) (eq? (car formula) 'adjust))
-         (let* ((z-set  (car (cdr formula)))
-                (z-str  (if (null? z-set) "()"
-                            (foldr (lambda (n acc)
-                                     (string-append (symbol->string n)
-                                                    (if (equal? acc "") "" ", ")
-                                                    acc))
-                                   "" z-set)))
-                (win    (eq? (platform) 'Win32))
-                (sigma  (if win "Sum" "Σ"))
-                (dot    (if win " * " " · ")))
+         (let* ((z-set (car (cdr formula)))
+                (z-str (if (null? z-set)
+                           "()"
+                           (foldr (lambda (n acc)
+                                    (string-append (symbol->string n)
+                                                   (if (equal? acc "") "" ", ")
+                                                   acc))
+                                  ""
+                                  z-set)))
+                (win (eq? (platform) 'Win32))
+                (sigma (if win "Sum" "Sigma"))
+                (dot (if win " * " " * ")))
            (string-append
              "P(" (symbol->string y) " | do(" (symbol->string x) ")) = "
              sigma "_{" z-str "} P(" (symbol->string y)
              " | " (symbol->string x) ", " z-str ")" dot "P(" z-str ")")))
         (#t "Unknown formula")))
 
-    ;; ── Numeric estimation (pure Eta, no FFI) ──────────────────────────────
-    ;;
-    ;; NOTE: The estimators below use simple plug-in (sample-proportion)
-    ;; arithmetic.  They provide unbiased point estimates but no confidence
-    ;; intervals or hypothesis tests.  Integration with a numerical library
-    ;; (e.g. libtorch or Eigen via the planned FFI — see docs/next-steps.md §2)
-    ;; is required for production-quality inference.
+    ;; -- Numeric estimation (pure Eta, no FFI) ---------------------------
 
-    ;; (do:estimate-effect dag y x z-set data)
+    ;; (do:estimate-effect y-var x-var x-val z-set z-val data)
     ;;
-    ;; Estimate E[Y | do(X=x-val)] using the back-door adjustment formula.
-    ;; `data` is a list of observations; each observation is an alist
-    ;;   '((variable . value) ...)
-    ;; `x-val` is the value of the intervention variable X to evaluate at.
-    ;;
-    ;; Returns the weighted average:
-    ;;   Σ_z  E[Y | X=x-val, Z=z]  ·  P(Z=z)
+    ;; Estimate E[Y | do(X=x-val)] using:
+    ;;   Sum_z E[Y | X=x-val, Z=z] * P(Z=z)
     (defun do:estimate-effect (y-var x-var x-val z-set z-val data)
-      ;; Compute E[Y | X=x-val, Z=z-val]
       (let* ((stratum (filter (lambda (obs)
                                 (and (equal? (%obs-get obs x-var) x-val)
                                      (%obs-matches-z obs z-set z-val)))
                               data))
-             (p-z     (do:marginal-prob data z-set z-val)))
+             (p-z (do:marginal-prob data z-set z-val)))
         (if (null? stratum)
             0
             (* (do:conditional-mean stratum y-var) p-z))))
 
     ;; (do:conditional-mean data y-var)
-    ;; Compute the sample mean of y-var in `data`.
+    ;; Compute sample mean of y-var in `data`.
     (defun do:conditional-mean (data y-var)
-      (if (null? data) 0
-          (let* ((n    (length data))
+      (if (null? data)
+          0
+          (let* ((n (length data))
                  (ysum (foldl (lambda (acc obs)
                                 (+ acc (%obs-get obs y-var)))
                               0
@@ -228,18 +251,19 @@
             (/ ysum n))))
 
     ;; (do:marginal-prob data z-set z-val)
-    ;; Estimate P(Z = z-val) from the sample where z-val is an alist.
+    ;; Estimate P(Z=z-val) from sample.
     (defun do:marginal-prob (data z-set z-val)
-      (if (null? data) 0
-          (let* ((n       (length data))
+      (if (null? data)
+          0
+          (let* ((n (length data))
                  (matches (count (lambda (obs)
                                    (%obs-matches-z obs z-set z-val))
                                  data)))
             (/ matches n))))
 
-    ;; ── Internal graph algorithm helpers ───────────────────────────────────
+    ;; -- Internal graph helpers ------------------------------------------
 
-    ;; Transitive closure helper: BFS/DFS from `node` using `next-fn`.
+    ;; Transitive closure helper over next-fn.
     (defun %dag-transitive (dag next-fn node visited)
       (let ((nexts (filter (lambda (n) (not (%member? n visited)))
                            (next-fn dag node))))
@@ -250,7 +274,7 @@
                (foldr %adjoin visited nexts)
                nexts)))
 
-    ;; DFS reachability test (does a directed path exist from `from` to `to`?).
+    ;; Directed reachability (DFS): from -> to with forbidden nodes removed.
     (defun %dag-reachable? (dag from to forbidden visited)
       (cond
         ((eq? from to) #t)
@@ -262,42 +286,130 @@
                    (%dag-reachable? dag child to forbidden new-visited))
                  (dag:children dag from))))))
 
-    ;; Find back-door paths: paths from X to Y that start by going
-    ;; BACKWARDS through an incoming edge of X (i.e. X ← parent → ... → Y).
-    (defun %dag-backdoor-paths (dag x y)
-      (let ((parents-of-x (dag:parents dag x)))
-        (filter (lambda (p)
-                  ;; Is there a path from this parent to Y not going through X?
-                  (dag:has-path? dag p y (list x)))
-                parents-of-x)))
+    ;; True iff there is a directed edge from -> to.
+    (defun %dag-has-edge? (dag from to)
+      (any? (lambda (e)
+              (and (eq? (%dag-edge-from e) from)
+                   (eq? (%dag-edge-to e) to)))
+            dag))
 
-    ;; Check that conditioning on Z blocks all back-door paths.
-    ;; A back-door path is blocked if at least one node in Z lies on it
-    ;; (as a non-collider) or if Z opens/closes v-structures appropriately.
-    ;; Simplified: if every parent of X that can reach Y (not through X)
-    ;; is either in Z or has all paths to Y passing through Z.
-    (defun %dag-blocks-backdoor-paths? (dag x y z-set)
-      (let ((parents-of-x (dag:parents dag x)))
-        (every? (lambda (p)
-                  (or
-                    ;; p is in Z — directly blocked
-                    (%member? p z-set)
-                    ;; p cannot reach Y without going through some node in Z
-                    (not (dag:has-path? dag p y
-                                        (append (list x) z-set)))))
-                parents-of-x)))
+    ;; Undirected neighbors for path enumeration.
+    (defun %dag-neighbors (dag node)
+      (foldl (lambda (acc n) (%adjoin n acc))
+             '()
+             (append (dag:parents dag node)
+                     (dag:children dag node))))
 
-    ;; ── Set utilities ─────────────────────────────────────────────────────
+    ;; Enumerate all simple undirected node paths between src and dst.
+    (defun %dag-all-simple-paths (dag src dst)
+      (letrec ((dfs (lambda (curr visited path-rev)
+                      (if (eq? curr dst)
+                          (list (reverse path-rev))
+                          (let ((nexts (filter (lambda (n)
+                                                 (not (%member? n visited)))
+                                               (%dag-neighbors dag curr))))
+                            (foldr append
+                                   '()
+                                   (map* (lambda (n)
+                                           (dfs n
+                                                (%adjoin n visited)
+                                                (cons n path-rev)))
+                                         nexts)))))))
+        (dfs src (list src) (list src))))
+
+    ;; A path is back-door wrt X iff it starts at X and first edge is into X.
+    (defun %backdoor-path? (dag x path)
+      (and (>= (length path) 2)
+           (eq? (car path) x)
+           (%dag-has-edge? dag (car (cdr path)) x)))
+
+    ;; Back-door node paths from X to Y.
+    (defun %dag-backdoor-node-paths (dag x y)
+      (filter (lambda (path) (%backdoor-path? dag x path))
+              (%dag-all-simple-paths dag x y)))
+
+    ;; Node b is a collider on triple (a, b, c) iff a -> b <- c.
+    (defun %path-collider? (dag a b c)
+      (and (%dag-has-edge? dag a b)
+           (%dag-has-edge? dag c b)))
+
+    ;; Collider activation rule: collider is active if itself or any descendant
+    ;; is in Z.
+    (defun %desc-or-self-in-z? (dag node z-set)
+      (or (%member? node z-set)
+          (any? (lambda (d) (%member? d z-set))
+                (dag:descendants dag node))))
+
+    ;; Path activity for d-separation.
+    ;; Internal non-colliders must not be in Z.
+    ;; Internal colliders must be in Z or have a descendant in Z.
+    (defun %path-active? (dag path z-set)
+      (if (< (length path) 3)
+          #t
+          (letrec ((walk (lambda (a b rest)
+                           (if (null? rest)
+                               #t
+                               (let* ((c (car rest))
+                                      (collider? (%path-collider? dag a b c))
+                                      (open? (if collider?
+                                                 (%desc-or-self-in-z? dag b z-set)
+                                                 (not (%member? b z-set)))))
+                                 (and open? (walk b c (cdr rest))))))))
+            (walk (car path) (car (cdr path)) (cdr (cdr path))))))
+
+    ;; Candidate variables for adjustment sets.
+    (defun %adjustment-candidates (dag x y)
+      (filter (lambda (n)
+                (and (not (eq? n x))
+                     (not (eq? n y))))
+              (dag:non-descendants dag x)))
+
+    ;; Enumerate all size-k subsets of xs.
+    (defun %choose-k (xs k)
+      (cond
+        ((= k 0) (list '()))
+        ((null? xs) '())
+        ((< k 0) '())
+        (#t
+         (append
+           (map* (lambda (s) (cons (car xs) s))
+                 (%choose-k (cdr xs) (- k 1)))
+           (%choose-k (cdr xs) k)))))
+
+    ;; Enumerate subsets of xs with size in [0, max-k], in increasing size.
+    (defun %subsets-up-to-size (xs max-k)
+      (letrec ((loop (lambda (k acc)
+                       (if (> k max-k)
+                           acc
+                           (loop (+ k 1)
+                                 (append acc (%choose-k xs k)))))))
+        (loop 0 '())))
+
+    (defun %normalize-max-size (n max-k)
+      (cond
+        ((not (number? n)) max-k)
+        ((< n 0) 0)
+        ((> n max-k) max-k)
+        (#t n)))
+
+    (defun %identify-assumptions ()
+      '(dag-correctness
+        no-unobserved-confounding
+        positivity
+        consistency-sutva))
+
+    ;; -- Set utilities ----------------------------------------------------
 
     (defun %member? (x xs)
-      (cond ((null? xs) #f)
-            ((equal? x (car xs)) #t)
-            (#t (%member? x (cdr xs)))))
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (#t (%member? x (cdr xs)))))
 
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
-    ;; ── Observation record helpers ─────────────────────────────────────────
+    ;; -- Observation record helpers --------------------------------------
 
     (defun %obs-get (obs var)
       (assoc-ref var obs))

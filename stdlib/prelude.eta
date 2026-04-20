@@ -91,8 +91,11 @@
     dag:nodes dag:parents dag:children
     dag:ancestors dag:descendants dag:non-descendants
     dag:has-path?
+    dag:d-connected? dag:d-separated?
     dag:satisfies-backdoor?
+    dag:adjustment-sets
     do:identify
+    do:identify-details
     do:adjustment-formula->string
     do:estimate-effect
     do:conditional-mean

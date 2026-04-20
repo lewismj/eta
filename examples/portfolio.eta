@@ -185,7 +185,9 @@
                        (loop (+ i 1) (cdr rn)))))))
         (loop 1 seed)))
 
-    (define seed1 (generate-sector-data 'tech       1.0  1.3  42))
+    ;; Reproducible DGP seed used as the baseline reference run.
+    (define dgp-seed 42)
+    (define seed1 (generate-sector-data 'tech       1.0  1.3  dgp-seed))
     (define seed2 (generate-sector-data 'energy     0.0  0.8  seed1))
     (define seed3 (generate-sector-data 'finance   -0.5  1.0  seed2))
     (define seed4 (generate-sector-data 'healthcare -1.0  0.7  seed3))
@@ -195,6 +197,7 @@
 
     (display "  Fact table: ") (display (fact-table-row-count universe))
     (display " observations across 4 sectors\n")
+    (display "  DGP seed: ") (println dgp-seed)
     (display "  Columns: sector, beta, macro_growth, interest_rate, sentiment, return\n\n")
 
     ;; Show sample rows
@@ -342,7 +345,9 @@
     (display "\n")
 
     ;; Identify P(asset_return | do(macro_growth))
-    (define formula (do:identify market-dag 'asset_return 'macro_growth))
+    (define identify-details
+      (do:identify-details market-dag 'asset_return 'macro_growth))
+    (define formula (assoc-ref 'result identify-details))
     (define formula-str
       (if win
         "P(asset_return | do(macro_growth)) = Sum_{sector_perf, interest_rate} P(asset_return | macro_growth, sector_perf, interest_rate) * P(sector_perf, interest_rate)"
@@ -351,30 +356,17 @@
     (display "  Query:   P(asset_return | do(macro_growth))\n")
     (display "  Result:  ") (println formula-str)
 
-    (define z-set
-      (if (and (pair? formula) (eq? (car formula) 'adjust))
-          (car (cdr formula))
-          '()))
+    (define z-set (assoc-ref 'chosen-z identify-details))
+    (define identify-status (assoc-ref 'status identify-details))
+    (define valid-sets (assoc-ref 'all-z-sets identify-details))
 
     (display "  Adjustment set Z = ") (println z-set)
 
-    ;; Validate via findall
     (display "\n")
-    (let* ((all-nodes (dag:nodes market-dag))
-           (non-desc  (dag:non-descendants market-dag 'macro_growth))
-           (candidates (map* (lambda (n) (list n)) non-desc))
-           (z  (logic-var))
-           (valid-sets
-             (findall
-               (lambda () (deref-lvar z))
-               (map* (lambda (cand)
-                       (lambda ()
-                         (and (== z cand)
-                              (dag:satisfies-backdoor?
-                                market-dag 'macro_growth 'asset_return cand))))
-                     candidates))))
-      (display "  Valid back-door adjustment sets (via findall):\n")
-      (display "    ") (println valid-sets))
+    (display "  Identification metadata:\n")
+    (display "    status: ") (println identify-status)
+    (display "    Valid back-door adjustment sets (minimal first):\n")
+    (display "      ") (println valid-sets)
 
     (display "\n  Sentiment confounds macro and asset return.\n")
     (display "  The back-door path macro <- sentiment -> return\n")
@@ -1506,7 +1498,14 @@
                                                  scen-sig)))
                                 (list name scen-ret scen-rsk)))
                             scenario-macros)))
-        (list (cons 'allocation (list (/ wt 100.0) (/ we 100.0)
+        (list (cons 'run-config
+                    (list (cons 'dgp-seed dgp-seed)
+                          (cons 'macro-base 0.5)
+                          (cons 'sentiment-grid '(0.1 0.3 0.5 0.7 0.9))))
+              (cons 'dag dag)
+              (cons 'tau base-returns)
+              (cons 'sigma-base sigma-base-opt)
+              (cons 'allocation (list (/ wt 100.0) (/ we 100.0)
                                       (/ wf 100.0) (/ wh 100.0)))
               (cons 'return ret)
               (cons 'risk risk)
