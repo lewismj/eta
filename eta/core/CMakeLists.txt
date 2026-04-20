@@ -30,6 +30,7 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/vm/bytecode_serializer.cpp
         src/eta/runtime/value_formatter.cpp
         src/eta/runtime/clp/linear.cpp
+        src/eta/runtime/clp/quadratic.cpp
         src/eta/runtime/clp/fm.cpp
         src/eta/runtime/clp/simplex.cpp
         src/eta/runtime/clp/real_store.cpp

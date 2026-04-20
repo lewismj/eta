@@ -1,11 +1,26 @@
 ;;; clpr_optimize_smoke.eta -- Smoke tests for CLP(R) optimization.
 
 (module clpr-optimize-smoke
-  (import std.test std.logic std.clpr)
+  (import std.test std.logic std.clpr std.clp)
   (begin
 
     (defun lo (bounds) (car bounds))
     (defun hi (bounds) (cdr bounds))
+    (defun payload-tag (p) (car (cdr p)))
+    (defun payload-msg (p) (car (cdr (cdr p))))
+
+    (defun starts-with? (s pfx)
+      (let ((ns (string-length s))
+            (np (string-length pfx)))
+        (if (> np ns)
+            #f
+            (letrec ((loop (lambda (i)
+                             (if (= i np)
+                                 #t
+                                 (if (eqv? (string-ref s i) (string-ref pfx i))
+                                     (loop (+ i 1))
+                                     #f)))))
+              (loop 0)))))
 
     (defun make-vars (n)
       (if (= n 0)
@@ -80,6 +95,38 @@
                   (assert-equal #f (clp:r<= x -1))
                   (let ((res (optimize->pair (lambda () (clp:r-minimize x)))))
                     (assert-approx-equal 0.0 (car res) 1e-8)))
+                (unwind-trail m))))
+
+          (make-test "convex quadratic objective reports backend-unavailable tag"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (let ((p (catch 'runtime.user-error (%clp-r-minimize (list '* x x)))))
+                    (assert-equal 'runtime.user-error (payload-tag p))
+                    (assert-true (starts-with? (payload-msg p)
+                                               "clp.r.qp.objective-nonlinear-unsupported:"))))
+                (unwind-trail m))))
+
+          (make-test "non-convex quadratic objective is rejected"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (let ((p (catch 'runtime.user-error
+                             (%clp-r-minimize (list '* -1 (list '* x x))))))
+                    (assert-equal 'runtime.user-error (payload-tag p))
+                    (assert-true (starts-with? (payload-msg p)
+                                               "clp.r.qp.non-convex:"))))
+                (unwind-trail m))))
+
+          (make-test "quadratic objective rejects non-real domains"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:domain x 0 5))
+                  (let ((p (catch 'runtime.user-error (%clp-r-minimize (list '* x x)))))
+                    (assert-equal 'runtime.user-error (payload-tag p))
+                    (assert-true (starts-with? (payload-msg p)
+                                               "clp.r.fd-mixing-not-supported:"))))
                 (unwind-trail m))))
 
           (make-test "10-asset LP matches hand-computed optimum"

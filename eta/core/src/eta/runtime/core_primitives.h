@@ -25,6 +25,7 @@
 #include "eta/runtime/clp/constraint_store.h"
 #include "eta/runtime/clp/alldiff_regin.h"
 #include "eta/runtime/clp/linear.h"
+#include "eta/runtime/clp/quadratic.h"
 #include "eta/runtime/clp/fm.h"
 #include "eta/runtime/clp/simplex.h"
 #include "eta/runtime/stats_math.h"
@@ -2233,6 +2234,46 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return oss.str();
         };
 
+        auto format_quadratic_linearize_error =
+            [](const clp::QuadraticLinearizeErrorInfo& err) -> std::string {
+            std::string suffix = err.tag;
+            const std::string prefix = "clp.qp.linearize.";
+            if (suffix.rfind(prefix, 0) == 0) {
+                suffix = suffix.substr(prefix.size());
+            }
+            std::ostringstream oss;
+            oss << "clp.r.qp.linearize." << suffix << ": " << err.message;
+            if (!err.offending_vars.empty()) {
+                oss << " [vars:";
+                for (std::size_t i = 0; i < err.offending_vars.size(); ++i) {
+                    if (i > 0) oss << ",";
+                    oss << err.offending_vars[i];
+                }
+                oss << "]";
+            }
+            return oss.str();
+        };
+
+        auto format_quadratic_model_error =
+            [](const clp::QuadraticModelErrorInfo& err) -> std::string {
+            std::string suffix = err.tag;
+            const std::string prefix = "clp.qp.";
+            if (suffix.rfind(prefix, 0) == 0) {
+                suffix = suffix.substr(prefix.size());
+            }
+            std::ostringstream oss;
+            oss << "clp.r.qp." << suffix << ": " << err.message;
+            if (!err.offending_vars.empty()) {
+                oss << " [vars:";
+                for (std::size_t i = 0; i < err.offending_vars.size(); ++i) {
+                    if (i > 0) oss << ",";
+                    oss << err.offending_vars[i];
+                }
+                oss << "]";
+            }
+            return oss.str();
+        };
+
         auto linear_diff = [&heap, &intern_table, r_user_error, format_linearize_error]
             (LispVal lhs, LispVal rhs) -> std::expected<clp::LinearExpr, RuntimeError> {
             auto l = clp::linearize(lhs, heap, intern_table);
@@ -2359,30 +2400,77 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return std::make_pair(std::move(sys), std::move(vars));
         };
 
-        auto materialize_linear_expr =
-            [deref_real_var](clp::LinearExpr expr)
-            -> std::expected<clp::LinearExpr, RuntimeError> {
-            clp::LinearExpr out;
+        auto materialize_quadratic_expr =
+            [deref_real_var](clp::QuadraticExpr expr)
+            -> std::expected<clp::QuadraticExpr, RuntimeError> {
+            clp::QuadraticExpr out;
             out.constant = expr.constant;
-            out.terms.reserve(expr.terms.size());
-            for (const auto& t : expr.terms) {
+            out.linear_terms.reserve(expr.linear_terms.size() + expr.quadratic_terms.size());
+            out.quadratic_terms.reserve(expr.quadratic_terms.size());
+
+            for (const auto& t : expr.linear_terms) {
                 auto resolved = deref_real_var(t.var_id);
                 if (!resolved) return std::unexpected(resolved.error());
                 if (std::holds_alternative<double>(*resolved)) {
                     out.constant += t.coef * std::get<double>(*resolved);
                 } else {
-                    out.terms.push_back(clp::LinearTerm{
+                    out.linear_terms.push_back(clp::LinearTerm{
                         .var_id = std::get<ObjectId>(*resolved),
                         .coef = t.coef,
                     });
                 }
             }
+
+            for (const auto& t : expr.quadratic_terms) {
+                auto lhs = deref_real_var(t.var_i);
+                if (!lhs) return std::unexpected(lhs.error());
+                auto rhs = deref_real_var(t.var_j);
+                if (!rhs) return std::unexpected(rhs.error());
+
+                const bool lhs_num = std::holds_alternative<double>(*lhs);
+                const bool rhs_num = std::holds_alternative<double>(*rhs);
+                if (lhs_num && rhs_num) {
+                    out.constant += t.coef * std::get<double>(*lhs) * std::get<double>(*rhs);
+                } else if (lhs_num || rhs_num) {
+                    const double k = lhs_num ? std::get<double>(*lhs) : std::get<double>(*rhs);
+                    const ObjectId var_id = lhs_num ? std::get<ObjectId>(*rhs) : std::get<ObjectId>(*lhs);
+                    out.linear_terms.push_back(clp::LinearTerm{
+                        .var_id = var_id,
+                        .coef = t.coef * k,
+                    });
+                } else {
+                    out.quadratic_terms.push_back(clp::QuadraticTerm{
+                        .var_i = std::get<ObjectId>(*lhs),
+                        .var_j = std::get<ObjectId>(*rhs),
+                        .coef = t.coef,
+                    });
+                }
+            }
+
             out.canonicalize();
             return out;
         };
 
+        auto ensure_real_domains =
+            [vm, mixed_domain_error](const std::vector<ObjectId>& vars)
+            -> std::expected<void, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "clp.r.internal: requires a running VM"}});
+            }
+            for (auto id : vars) {
+                const auto* dom = vm->constraint_store().get_domain(id);
+                if (dom && !std::holds_alternative<clp::RDomain>(*dom)) {
+                    return std::unexpected(mixed_domain_error(id));
+                }
+            }
+            return {};
+        };
+
         auto tighten_real_bounds =
-            [vm, same_rdomain, is_unbounded, mixed_domain_error, r_user_error, materialize_system]()
+            [vm, same_rdomain, is_unbounded, mixed_domain_error, r_user_error,
+             materialize_system, ensure_real_domains]()
             -> std::expected<bool, RuntimeError> {
             if (!vm) {
                 return std::unexpected(RuntimeError{VMError{
@@ -2394,16 +2482,15 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             if (!materialized) return std::unexpected(materialized.error());
             const auto& sys  = materialized->first;
             const auto& vars = materialized->second;
+            if (auto domains_ok = ensure_real_domains(vars); !domains_ok) {
+                return std::unexpected(domains_ok.error());
+            }
 
             clp::Simplex simplex;
             for (const auto& row : sys.leq) simplex.add_leq(row);
             for (const auto& row : sys.eq)  simplex.add_eq(row);
 
             for (auto id : vars) {
-                const auto* dom = vm->constraint_store().get_domain(id);
-                if (dom && !std::holds_alternative<clp::RDomain>(*dom)) {
-                    return std::unexpected(mixed_domain_error(id));
-                }
                 if (const auto* sb = vm->real_store().simplex_bounds(id)) {
                     if (sb->lo.has_value()) simplex.assert_lower(id, *sb->lo);
                     if (sb->hi.has_value()) simplex.assert_upper(id, *sb->hi);
@@ -2606,8 +2693,9 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             });
 
         auto optimize_real_objective =
-            [&heap, &intern_table, vm, r_user_error, format_linearize_error,
-             mixed_domain_error, materialize_system, materialize_linear_expr]
+            [&heap, &intern_table, vm, r_user_error, format_quadratic_linearize_error,
+             format_quadratic_model_error, materialize_system, materialize_quadratic_expr,
+             ensure_real_domains]
             (LispVal objective, clp::SimplexDirection direction)
             -> std::expected<LispVal, RuntimeError> {
             if (!vm) {
@@ -2616,37 +2704,73 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     "clp.r.optimize: requires a running VM"}});
             }
 
-            auto raw_objective = clp::linearize(objective, heap, intern_table);
+            auto raw_objective = clp::linearize_quadratic_objective(objective, heap, intern_table);
             if (!raw_objective) {
-                return std::unexpected(r_user_error(format_linearize_error(raw_objective.error())));
+                return std::unexpected(r_user_error(
+                    format_quadratic_linearize_error(raw_objective.error())));
             }
-            auto objective_expr = materialize_linear_expr(std::move(*raw_objective));
+            auto objective_expr = materialize_quadratic_expr(std::move(*raw_objective));
             if (!objective_expr) return std::unexpected(objective_expr.error());
+
+            auto objective_matrix =
+                clp::materialize_quadratic_objective_matrix(*objective_expr);
+            if (!objective_matrix) {
+                return std::unexpected(r_user_error(
+                    format_quadratic_model_error(objective_matrix.error())));
+            }
 
             auto materialized = materialize_system();
             if (!materialized) return std::unexpected(materialized.error());
             const auto& sys = materialized->first;
             auto vars = materialized->second;
-            vars.reserve(vars.size() + objective_expr->terms.size());
-            for (const auto& t : objective_expr->terms) vars.push_back(t.var_id);
+            vars.reserve(vars.size() + objective_matrix->vars.size());
+            vars.insert(vars.end(),
+                        objective_matrix->vars.begin(),
+                        objective_matrix->vars.end());
             std::sort(vars.begin(), vars.end());
             vars.erase(std::unique(vars.begin(), vars.end()), vars.end());
+            if (auto domains_ok = ensure_real_domains(vars); !domains_ok) {
+                return std::unexpected(domains_ok.error());
+            }
+
+            const double hessian_sign =
+                (direction == clp::SimplexDirection::Minimize) ? 1.0 : -1.0;
+            auto convexity = clp::check_quadratic_convexity(
+                *objective_matrix, hessian_sign);
+            if (!convexity) {
+                return std::unexpected(r_user_error(
+                    format_quadratic_model_error(convexity.error())));
+            }
+
+            if (!objective_expr->quadratic_terms.empty()) {
+                return std::unexpected(r_user_error(
+                    "clp.r.qp.objective-nonlinear-unsupported: quadratic objective requires QP backend"));
+            }
+
+            clp::LinearExpr objective_linear;
+            objective_linear.constant = objective_matrix->k;
+            objective_linear.terms.reserve(objective_matrix->vars.size());
+            for (std::size_t i = 0; i < objective_matrix->vars.size(); ++i) {
+                const auto coef = objective_matrix->c[i];
+                if (coef == 0.0) continue;
+                objective_linear.terms.push_back(clp::LinearTerm{
+                    .var_id = objective_matrix->vars[i],
+                    .coef = coef,
+                });
+            }
+            objective_linear.canonicalize();
 
             clp::Simplex simplex;
             for (const auto& row : sys.leq) simplex.add_leq(row);
             for (const auto& row : sys.eq) simplex.add_eq(row);
             for (auto id : vars) {
-                const auto* dom = vm->constraint_store().get_domain(id);
-                if (dom && !std::holds_alternative<clp::RDomain>(*dom)) {
-                    return std::unexpected(mixed_domain_error(id));
-                }
                 if (const auto* sb = vm->real_store().simplex_bounds(id)) {
                     if (sb->lo.has_value()) simplex.assert_lower(id, *sb->lo);
                     if (sb->hi.has_value()) simplex.assert_upper(id, *sb->hi);
                 }
             }
 
-            const auto result = simplex.optimize(*objective_expr, direction, kRealSimplexEps);
+            const auto result = simplex.optimize(std::move(objective_linear), direction, kRealSimplexEps);
             switch (result.status) {
                 case clp::SimplexOptResult::Status::Optimal:
                     break;
