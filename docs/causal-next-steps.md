@@ -36,7 +36,7 @@ without losing Eta's current strengths (composability, explainability, exact con
 | 1 | Causal identification hardening | Stronger DAG checks and adjustment-set logic | Implemented (2026-04-20) |
 | 2 | Misspecification robustness | DAG sensitivity + partial-identification bounds on returns | Implemented (2026-04-20) |
 | 3 | Uncertainty-aware optimization | Robust portfolio choice under parameter uncertainty | Implemented (2026-04-20) |
-| 4 | Structural/learned covariance | Better Sigma(m) aligned with causal structure | In progress (2026-04-20) |
+| 4 | Structural/learned covariance | Better Sigma(m) aligned with causal structure | Implemented (2026-04-20) |
 | 5 | Empirical stress-test suite | Evidence of graceful degradation vs baselines | Planned |
 | 6 | Dynamic control loop (advanced) | Decision-dependent dynamics and sequential policy | Planned |
 
@@ -189,9 +189,9 @@ scenario-dependent Sigma dispersion.
 
 ## Stage 4 - Structural or Learned Sigma(m)
 
-Current status: the structural Sigma(m) path is implemented in
-`examples/portfolio.eta` with a runtime knob (`empirical-grid` vs
-`structural`). The learned residual covariance path remains planned.
+Current status: implemented in `examples/portfolio.eta` with four runtime
+Sigma modes (`empirical-grid`, `structural`, `learned-residual`, `hybrid`)
+plus sampled PSD/stability diagnostics for all scenario covariances.
 
 ### Scope
 
@@ -210,17 +210,19 @@ Current status: the structural Sigma(m) path is implemented in
   macro volatility regime, and sector correlation structure.
 - Step 2 (implemented): validation checks that Sigma(boom) exceeds
   Sigma(recession) under the structural path and optimisation remains stable.
-- Step 3 (planned): Option B (learned) residual covariance using a two-head
-  model or factor model.
-- Step 4 (planned): hybrid structural + learned covariance.
-- Runtime knob currently supports:
+- Step 3 (implemented): Option B (learned) residual covariance via a
+  residual factor model learned from NN forecast errors.
+- Step 4 (implemented): hybrid structural + learned covariance blend with
+  configurable structural weight.
+- Runtime knob supports:
   - empirical grid Sigma(m)
   - structural Sigma(m)
-  - learned/hybrid paths (planned)
+  - learned residual Sigma(m)
+  - hybrid Sigma(m)
 
 ### Exit Criteria
 
-- New Sigma(m) path is stable and PSD in all tested scenarios.
+- Learned and hybrid Sigma(m) paths are stable and sampled-PSD in all tested scenarios.
 - Portfolio solve remains convex and numerically stable.
 
 ---

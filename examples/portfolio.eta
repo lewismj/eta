@@ -749,19 +749,153 @@
     ;; For §7 scenario analysis and run-pipeline we use portfolio-causal-risk-fn.
     ;; ────────────────────────────────────────────────────────────────
 
-    (define sigma-model 'structural)
+    (define sigma-model 'hybrid)
+    (define sigma-hybrid-structural-weight 0.70)
     (define sigma-corr-floor 0.55)
     (define sigma-corr-range 0.45)
     (define sigma-vol-base 0.80)
     (define sigma-vol-macro-scale 0.50)
     (define sigma-vol-beta-base 0.90)
     (define sigma-vol-beta-scale 0.12)
+    (define sigma-factor-floor 1e-6)
+    (define sigma-idio-floor 1e-6)
 
     (defun clamp01 (x)
       (cond
         ((< x 0.0) 0.0)
         ((> x 1.0) 1.0)
         (#t x)))
+
+    (defun clamp (x lo hi)
+      (cond
+        ((< x lo) lo)
+        ((> x hi) hi)
+        (#t x)))
+
+    (defun list-mean (xs)
+      (if (null? xs)
+          0.0
+          (/ (foldl (lambda (acc x) (+ acc x)) 0.0 xs)
+             (* 1.0 (length xs)))))
+
+    (defun list-variance (xs)
+      (if (null? xs)
+          0.0
+          (let* ((mu (list-mean xs))
+                 (ss (foldl (lambda (acc x)
+                              (+ acc (* (- x mu) (- x mu))))
+                            0.0
+                            xs)))
+            (/ ss (* 1.0 (length xs))))))
+
+    (defun list-covariance (xs ys)
+      (let* ((mu-x (list-mean xs))
+             (mu-y (list-mean ys)))
+        (letrec ((loop (lambda (xs ys acc n)
+                         (if (or (null? xs) (null? ys))
+                             (if (= n 0)
+                                 0.0
+                                 (/ acc (* 1.0 n)))
+                             (loop (cdr xs)
+                                   (cdr ys)
+                                   (+ acc (* (- (car xs) mu-x)
+                                             (- (car ys) mu-y)))
+                                   (+ n 1))))))
+          (loop xs ys 0.0 0))))
+
+    (defun mean4-series (xs1 xs2 xs3 xs4)
+      (letrec ((loop (lambda (a b c d acc)
+                       (if (or (null? a) (null? b) (null? c) (null? d))
+                           (reverse acc)
+                           (loop (cdr a) (cdr b) (cdr c) (cdr d)
+                                 (cons (/ (+ (car a)
+                                             (+ (car b)
+                                                (+ (car c) (car d))))
+                                          4.0)
+                                       acc))))))
+        (loop xs1 xs2 xs3 xs4 '())))
+
+    (defun sigma-blend (alpha a b)
+      (if (null? a)
+          '()
+          (cons (+ (* alpha (car a))
+                   (* (- 1.0 alpha) (car b)))
+                (sigma-blend alpha (cdr a) (cdr b)))))
+
+    (defun collect-sector-macro-residual (sector-sym sector-code)
+      (letrec ((loop (lambda (i macro-acc resid-acc)
+                       (if (>= i n-obs)
+                           (list (reverse macro-acc) (reverse resid-acc))
+                           (let ((s (fact-table-ref universe i 0)))
+                             (if (eq? s sector-sym)
+                                 (let* ((beta (fact-table-ref universe i 1))
+                                        (macro (fact-table-ref universe i 2))
+                                        (sent (fact-table-ref universe i 4))
+                                        (ret (fact-table-ref universe i 5))
+                                        (pred (nn-predict beta macro sector-code sent))
+                                        (resid (- ret pred)))
+                                   (loop (+ i 1)
+                                         (cons macro macro-acc)
+                                         (cons resid resid-acc)))
+                                 (loop (+ i 1) macro-acc resid-acc)))))))
+        (loop 0 '() '())))
+
+    (define tech-series   (collect-sector-macro-residual 'tech        1.0))
+    (define energy-series (collect-sector-macro-residual 'energy      0.0))
+    (define fin-series    (collect-sector-macro-residual 'finance    -0.5))
+    (define health-series (collect-sector-macro-residual 'healthcare -1.0))
+
+    (define macro-tech   (car tech-series))
+    (define resid-tech   (car (cdr tech-series)))
+    (define macro-energy (car energy-series))
+    (define resid-energy (car (cdr energy-series)))
+    (define macro-fin    (car fin-series))
+    (define resid-fin    (car (cdr fin-series)))
+    (define macro-health (car health-series))
+    (define resid-health (car (cdr health-series)))
+
+    ;; Residual factor model learned from NN forecast errors:
+    ;; epsilon_i = l_i * f + eta_i,  Cov = l l^T Var(f) + diag(Var(eta_i)).
+    (define resid-factor-series
+      (mean4-series resid-tech resid-energy resid-fin resid-health))
+    (define learned-factor-var
+      (max sigma-factor-floor (list-variance resid-factor-series)))
+
+    (defun learned-loading (resid-series)
+      (/ (list-covariance resid-series resid-factor-series)
+         (+ learned-factor-var 1e-9)))
+
+    (define learned-loading-tech   (learned-loading resid-tech))
+    (define learned-loading-energy (learned-loading resid-energy))
+    (define learned-loading-fin    (learned-loading resid-fin))
+    (define learned-loading-health (learned-loading resid-health))
+
+    (defun learned-idio-variance (resid-series loading)
+      (max sigma-idio-floor
+           (- (list-variance resid-series)
+              (* (* loading loading) learned-factor-var))))
+
+    (define learned-idio-tech   (learned-idio-variance resid-tech learned-loading-tech))
+    (define learned-idio-energy (learned-idio-variance resid-energy learned-loading-energy))
+    (define learned-idio-fin    (learned-idio-variance resid-fin learned-loading-fin))
+    (define learned-idio-health (learned-idio-variance resid-health learned-loading-health))
+
+    (define learned-macro-series
+      (append macro-tech
+              (append macro-energy
+                      (append macro-fin macro-health))))
+    (define learned-abs-residual-series
+      (append (map* (lambda (x) (abs x)) resid-tech)
+              (append (map* (lambda (x) (abs x)) resid-energy)
+                      (append (map* (lambda (x) (abs x)) resid-fin)
+                              (map* (lambda (x) (abs x)) resid-health)))))
+    (define learned-abs-resid-mean
+      (max 1e-9 (list-mean learned-abs-residual-series)))
+    (define learned-macro-abs-slope
+      (/ (list-covariance learned-macro-series learned-abs-residual-series)
+         (+ (list-variance learned-macro-series) 1e-9)))
+    (define learned-macro-sensitivity
+      (clamp (/ learned-macro-abs-slope learned-abs-resid-mean) 0.05 1.20))
 
     (defun scenario-covariance-empirical (macro-val)
       ;; Returns a 10-element list: (vt ve vf vh cte ctf cth cef ceh cfh)
@@ -826,12 +960,47 @@
         (list (* sig-t sig-t) (* sig-e sig-e) (* sig-f sig-f) (* sig-h sig-h)
               cte ctf cth cef ceh cfh)))
 
+    (defun scenario-covariance-learned (macro-val)
+      ;; PSD residual factor model with macro-dependent volatility scaling.
+      (let* ((macro-offset (- macro-val 0.5))
+             (factor-scale (max 0.40 (+ 1.0 (* learned-macro-sensitivity macro-offset))))
+             (idio-scale   (max 0.55 (+ 1.0 (* 0.35 learned-macro-sensitivity macro-offset))))
+             (factor-var-m (* learned-factor-var (* factor-scale factor-scale)))
+             (idio-tech-m   (* learned-idio-tech   (* idio-scale idio-scale)))
+             (idio-energy-m (* learned-idio-energy (* idio-scale idio-scale)))
+             (idio-fin-m    (* learned-idio-fin    (* idio-scale idio-scale)))
+             (idio-health-m (* learned-idio-health (* idio-scale idio-scale)))
+             (vt (+ (* (* learned-loading-tech learned-loading-tech) factor-var-m)
+                    idio-tech-m))
+             (ve (+ (* (* learned-loading-energy learned-loading-energy) factor-var-m)
+                    idio-energy-m))
+             (vf (+ (* (* learned-loading-fin learned-loading-fin) factor-var-m)
+                    idio-fin-m))
+             (vh (+ (* (* learned-loading-health learned-loading-health) factor-var-m)
+                    idio-health-m))
+             (cte (* (* learned-loading-tech learned-loading-energy) factor-var-m))
+             (ctf (* (* learned-loading-tech learned-loading-fin) factor-var-m))
+             (cth (* (* learned-loading-tech learned-loading-health) factor-var-m))
+             (cef (* (* learned-loading-energy learned-loading-fin) factor-var-m))
+             (ceh (* (* learned-loading-energy learned-loading-health) factor-var-m))
+             (cfh (* (* learned-loading-fin learned-loading-health) factor-var-m)))
+        (list vt ve vf vh cte ctf cth cef ceh cfh)))
+
+    (defun scenario-covariance-hybrid (macro-val)
+      (sigma-blend (clamp01 sigma-hybrid-structural-weight)
+                   (scenario-covariance-structural macro-val)
+                   (scenario-covariance-learned macro-val)))
+
     (defun scenario-covariance (macro-val)
       (cond
         ((eq? sigma-model 'empirical-grid)
          (scenario-covariance-empirical macro-val))
         ((eq? sigma-model 'structural)
          (scenario-covariance-structural macro-val))
+        ((or (eq? sigma-model 'learned) (eq? sigma-model 'learned-residual))
+         (scenario-covariance-learned macro-val))
+        ((eq? sigma-model 'hybrid)
+         (scenario-covariance-hybrid macro-val))
         (#t
          (scenario-covariance-structural macro-val))))
 
@@ -870,6 +1039,34 @@
       ;; precompute (scenario-covariance m) once and call
       ;; portfolio-risk-from-sigma directly to avoid redundant NN calls.
       (portfolio-risk-from-sigma wt we wf wh (scenario-covariance macro-val)))
+
+    (defun sigma-min-risk-sampled (S)
+      ;; Deterministic simplex scan at 10% granularity.
+      (letrec ((loop-tech
+                 (lambda (it best)
+                   (if (> it 10)
+                       best
+                       (loop-energy it 0 best))))
+               (loop-energy
+                 (lambda (it ie best)
+                   (if (> ie (- 10 it))
+                       (loop-tech (+ it 1) best)
+                       (loop-fin it ie 0 best))))
+               (loop-fin
+                 (lambda (it ie iff best)
+                   (if (> iff (- 10 (+ it ie)))
+                       (loop-energy it (+ ie 1) best)
+                       (let* ((ih (- 10 (+ it (+ ie iff))))
+                              (wt (/ it 10.0))
+                              (we (/ ie 10.0))
+                              (wf (/ iff 10.0))
+                              (wh (/ ih 10.0))
+                              (risk (portfolio-risk-from-sigma wt we wf wh S)))
+                         (loop-fin it ie (+ iff 1) (min best risk)))))))
+        (loop-tech 0 1e9)))
+
+    (defun sigma-psd-sampled? (S)
+      (>= (sigma-min-risk-sampled S) -1e-9))
 
     ;; ── Base-case causal covariance ───────────────────────────────────
     ;; Σ(0.5) precomputed once here so that §6 (optimiser) and §7 (scenarios)
@@ -1777,6 +1974,10 @@
 
     (define sigma-boom-trace (sigma-trace sigma-boom))
     (define sigma-recess-trace (sigma-trace sigma-recess))
+    (define sigma-base-min-risk (sigma-min-risk-sampled sigma-base))
+    (define sigma-boom-min-risk (sigma-min-risk-sampled sigma-boom))
+    (define sigma-recess-min-risk (sigma-min-risk-sampled sigma-recess))
+    (define sigma-rate-min-risk (sigma-min-risk-sampled sigma-rate))
 
     (display "\n")
     (thin-sep)
@@ -1784,10 +1985,30 @@
     (thin-sep)
     (display "\n")
     (display "  Sigma model: ") (display sigma-model) (display "\n")
+    (when (or (eq? sigma-model 'learned) (eq? sigma-model 'learned-residual)
+              (eq? sigma-model 'hybrid))
+      (display "  Learned factor variance: ") (display learned-factor-var) (display "\n")
+      (display "  Learned macro sensitivity: ") (display learned-macro-sensitivity) (display "\n"))
+    (when (eq? sigma-model 'hybrid)
+      (display "  Hybrid structural weight: ")
+      (display sigma-hybrid-structural-weight)
+      (display "  (learned weight ")
+      (display (- 1.0 sigma-hybrid-structural-weight))
+      (display ")\n"))
     (display "  Trace Sigma(boom) = ") (display sigma-boom-trace)
     (display "   Trace Sigma(recession) = ") (display sigma-recess-trace) (display "\n")
     (display "  Sigma(boom) > Sigma(recession): ")
     (println (> sigma-boom-trace sigma-recess-trace))
+    (display "  Sampled PSD checks (base/boom/recession/rate): ")
+    (println (list (sigma-psd-sampled? sigma-base)
+                   (sigma-psd-sampled? sigma-boom)
+                   (sigma-psd-sampled? sigma-recess)
+                   (sigma-psd-sampled? sigma-rate)))
+    (display "  Min sampled risk (base/boom/recession/rate): ")
+    (println (list sigma-base-min-risk
+                   sigma-boom-min-risk
+                   sigma-recess-min-risk
+                   sigma-rate-min-risk))
     (display "  Optimization mode: ") (println stage3-mode)
     (display "  Effective lambda: ") (println stage3-lambda-effective)
     (display "  Sigma uncertainty ratio: ") (println stage3-sigma-unc)
@@ -1987,12 +2208,28 @@
                           (cons 'macro-base 0.5)
                           (cons 'sentiment-grid '(0.1 0.3 0.5 0.7 0.9))
                           (cons 'sigma-model sigma-model)
+                          (cons 'sigma-hybrid-structural-weight
+                                sigma-hybrid-structural-weight)
                           (cons 'optimization-mode mode)))
               (cons 'dag dag)
               (cons 'tau base-returns)
               (cons 'tau-min (assoc-ref 'tau-min stage2))
               (cons 'tau-max (assoc-ref 'tau-max stage2))
               (cons 'sigma-base sigma-base-opt)
+              (cons 'sigma-diagnostics
+                    (list
+                      (cons 'trace-base (sigma-trace sigma-base))
+                      (cons 'trace-boom (sigma-trace sigma-boom))
+                      (cons 'trace-recession (sigma-trace sigma-recess))
+                      (cons 'trace-rate-hike (sigma-trace sigma-rate))
+                      (cons 'min-risk-base (sigma-min-risk-sampled sigma-base))
+                      (cons 'min-risk-boom (sigma-min-risk-sampled sigma-boom))
+                      (cons 'min-risk-recession (sigma-min-risk-sampled sigma-recess))
+                      (cons 'min-risk-rate-hike (sigma-min-risk-sampled sigma-rate))
+                      (cons 'psd-sampled-base (sigma-psd-sampled? sigma-base))
+                      (cons 'psd-sampled-boom (sigma-psd-sampled? sigma-boom))
+                      (cons 'psd-sampled-recession (sigma-psd-sampled? sigma-recess))
+                      (cons 'psd-sampled-rate-hike (sigma-psd-sampled? sigma-rate))))
               (cons 'allocation selected-f)
               (cons 'allocation-pct selected-pct)
               (cons 'return ret)
