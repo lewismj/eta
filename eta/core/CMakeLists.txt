@@ -31,10 +31,16 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/value_formatter.cpp
         src/eta/runtime/clp/linear.cpp
         src/eta/runtime/clp/quadratic.cpp
+        src/eta/runtime/clp/qp_solver.cpp
         src/eta/runtime/clp/fm.cpp
         src/eta/runtime/clp/simplex.cpp
         src/eta/runtime/clp/real_store.cpp
 )
+
+option(ETA_CLP_QP_BACKEND "Enable the CLP(R) convex QP backend" ON)
+if(ETA_CLP_QP_BACKEND)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_CLP_QP_BACKEND=1)
+endif()
 
 option(ETA_CLP_FM_ORACLE "Enable FM-vs-Simplex oracle checks for CLP(R)" OFF)
 if(ETA_CLP_FM_ORACLE)

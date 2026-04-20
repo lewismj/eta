@@ -1,0 +1,99 @@
+;;; clpr_qp_optimization.test.eta -- Smoke tests for CLP(R) QP optimization builtins.
+
+(module clpr-qp-optimize-smoke
+  (import std.test std.logic std.clpr)
+  (begin
+
+    (defun payload-tag (p) (car (cdr p)))
+    (defun payload-msg (p) (car (cdr (cdr p))))
+
+    (defun starts-with? (s pfx)
+      (let ((ns (string-length s))
+            (np (string-length pfx)))
+        (if (> np ns)
+            #f
+            (letrec ((loop (lambda (i)
+                             (if (= i np)
+                                 #t
+                                 (if (eqv? (string-ref s i) (string-ref pfx i))
+                                     (loop (+ i 1))
+                                     #f)))))
+              (loop 0)))))
+
+    (defun apply-witness! (witness)
+      (if (null? witness)
+          #t
+          (and (unify (car (car witness)) (cdr (car witness)))
+               (apply-witness! (cdr witness)))))
+
+    (define suite
+      (make-group "clpr-qp-optimize-smoke"
+        (list
+          (make-test "qp minimize returns optimum and witness"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #t (clp:r<= x 3))
+                  (let* ((res (%clp-r-qp-minimize
+                                (list '+ (list '* x x) (list '* -4 x) 4)))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 0.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 2.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "qp maximize handles concave objective"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (let* ((res (%clp-r-qp-maximize
+                                (list '+ (list '* -1 (list '* x x))
+                                          (list '* 2 x)
+                                          -1)))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 0.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 1.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "qp optimize remains feasible after rejected post"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 1))
+                  (assert-equal #f (clp:r<= x 0))
+                  (let* ((res (%clp-r-qp-minimize (list '* x x)))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 1.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 1.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "qp unbounded objective reports clp.r.unbounded"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var))
+                      (y (logic-var)))
+                  (assert-equal 'clp.r.unbounded
+                                (%clp-r-qp-minimize
+                                  (list '+ (list '* x x)
+                                            (list '* -1 y)))))
+                (unwind-trail m))))
+
+          (make-test "qp rejects non-convex objective"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (let ((p (catch 'runtime.user-error
+                             (%clp-r-qp-minimize
+                               (list '* -1 (list '* x x))))))
+                    (assert-equal 'runtime.user-error (payload-tag p))
+                    (assert-true (starts-with? (payload-msg p)
+                                               "clp.r.qp.non-convex:"))))
+                (unwind-trail m)))))))
+
+    (print-tap (run suite))))

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <bit>
 #include <climits>
 #include <cmath>
@@ -10,7 +11,9 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/numeric_value.h"
@@ -26,6 +29,7 @@
 #include "eta/runtime/clp/alldiff_regin.h"
 #include "eta/runtime/clp/linear.h"
 #include "eta/runtime/clp/quadratic.h"
+#include "eta/runtime/clp/qp_solver.h"
 #include "eta/runtime/clp/fm.h"
 #include "eta/runtime/clp/simplex.h"
 #include "eta/runtime/stats_math.h"
@@ -2274,6 +2278,26 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             return oss.str();
         };
 
+        auto format_qp_solve_error =
+            [](const clp::QPSolveErrorInfo& err) -> std::string {
+            std::string suffix = err.tag;
+            const std::string prefix = "clp.qp.";
+            if (suffix.rfind(prefix, 0) == 0) {
+                suffix = suffix.substr(prefix.size());
+            }
+            std::ostringstream oss;
+            oss << "clp.r.qp." << suffix << ": " << err.message;
+            if (!err.offending_vars.empty()) {
+                oss << " [vars:";
+                for (std::size_t i = 0; i < err.offending_vars.size(); ++i) {
+                    if (i > 0) oss << ",";
+                    oss << err.offending_vars[i];
+                }
+                oss << "]";
+            }
+            return oss.str();
+        };
+
         auto linear_diff = [&heap, &intern_table, r_user_error, format_linearize_error]
             (LispVal lhs, LispVal rhs) -> std::expected<clp::LinearExpr, RuntimeError> {
             auto l = clp::linearize(lhs, heap, intern_table);
@@ -2692,10 +2716,255 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return True;
             });
 
+        auto pack_optimization_result =
+            [&heap](double optimum,
+                    const std::vector<std::pair<ObjectId, double>>& witness_entries)
+            -> std::expected<LispVal, RuntimeError> {
+            auto roots = heap.make_external_root_frame();
+            LispVal witness = Nil;
+            roots.push(witness);
+
+            for (auto it = witness_entries.rbegin(); it != witness_entries.rend(); ++it) {
+                const LispVal var = ops::box(Tag::HeapObject, static_cast<int64_t>(it->first));
+                auto value = make_flonum(it->second);
+                if (!value) return std::unexpected(value.error());
+                roots.push(*value);
+
+                auto pair = make_cons(heap, var, *value);
+                if (!pair) return std::unexpected(pair.error());
+                roots.push(*pair);
+
+                auto cell = make_cons(heap, *pair, witness);
+                if (!cell) return std::unexpected(cell.error());
+                witness = *cell;
+                roots.push(witness);
+            }
+
+            auto opt_value = make_flonum(optimum);
+            if (!opt_value) return std::unexpected(opt_value.error());
+            roots.push(*opt_value);
+            return make_cons(heap, *opt_value, witness);
+        };
+
+        auto build_qp_model =
+            [vm, r_user_error](const clp::QuadraticObjectiveMatrix& objective,
+                               const clp::FMSystem& sys,
+                               const std::vector<ObjectId>& vars)
+            -> std::expected<clp::QPModel, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "clp.r.internal: requires a running VM"}});
+            }
+
+            clp::QPModel model;
+            model.vars = vars;
+            const auto n = model.vars.size();
+            if (n > 0 && n > (std::numeric_limits<std::size_t>::max() / n)) {
+                return std::unexpected(r_user_error(
+                    "clp.r.qp.numeric-failure: QP variable dimension overflow"));
+            }
+            model.q.assign(n * n, 0.0);
+            model.c.assign(n, 0.0);
+            model.k = objective.k;
+
+            std::unordered_map<ObjectId, std::size_t> index_of;
+            index_of.reserve(n);
+            for (std::size_t i = 0; i < n; ++i) {
+                index_of.emplace(model.vars[i], i);
+            }
+
+            for (std::size_t i = 0; i < objective.vars.size(); ++i) {
+                const auto it = index_of.find(objective.vars[i]);
+                if (it == index_of.end()) {
+                    return std::unexpected(r_user_error(
+                        "clp.r.qp.numeric-failure: objective variable mapping failed"));
+                }
+                const auto gi = it->second;
+                const double ci = objective.c[i];
+                if (!std::isfinite(ci)) {
+                    return std::unexpected(r_user_error(
+                        "clp.r.qp.numeric-failure: objective linear coefficient is not finite"));
+                }
+                model.c[gi] += ci;
+                if (!std::isfinite(model.c[gi])) {
+                    return std::unexpected(r_user_error(
+                        "clp.r.qp.numeric-failure: objective linear accumulation is not finite"));
+                }
+
+                for (std::size_t j = 0; j < objective.vars.size(); ++j) {
+                    const auto jt = index_of.find(objective.vars[j]);
+                    if (jt == index_of.end()) {
+                        return std::unexpected(r_user_error(
+                            "clp.r.qp.numeric-failure: objective variable mapping failed"));
+                    }
+                    const auto gj = jt->second;
+                    const double qij = objective.q_at(i, j);
+                    if (!std::isfinite(qij)) {
+                        return std::unexpected(r_user_error(
+                            "clp.r.qp.numeric-failure: objective Hessian entry is not finite"));
+                    }
+                    model.q[gi * n + gj] += qij;
+                    if (!std::isfinite(model.q[gi * n + gj])) {
+                        return std::unexpected(r_user_error(
+                            "clp.r.qp.numeric-failure: objective Hessian accumulation is not finite"));
+                    }
+                }
+            }
+
+            auto append_row =
+                [&](const clp::LinearExpr& row,
+                    std::vector<double>& target_a,
+                    std::vector<double>& target_b)
+                -> std::expected<void, RuntimeError> {
+                std::vector<double> coeffs(n, 0.0);
+                for (const auto& t : row.terms) {
+                    if (!std::isfinite(t.coef)) {
+                        return std::unexpected(r_user_error(
+                            "clp.r.qp.numeric-failure: constraint coefficient is not finite"));
+                    }
+                    const auto it = index_of.find(t.var_id);
+                    if (it == index_of.end()) {
+                        return std::unexpected(r_user_error(
+                            "clp.r.qp.numeric-failure: constraint variable mapping failed"));
+                    }
+                    coeffs[it->second] += t.coef;
+                    if (!std::isfinite(coeffs[it->second])) {
+                        return std::unexpected(r_user_error(
+                            "clp.r.qp.numeric-failure: constraint row accumulation is not finite"));
+                    }
+                }
+                const double rhs = -row.constant;
+                if (!std::isfinite(rhs)) {
+                    return std::unexpected(r_user_error(
+                        "clp.r.qp.numeric-failure: constraint constant is not finite"));
+                }
+                target_a.insert(target_a.end(), coeffs.begin(), coeffs.end());
+                target_b.push_back(rhs);
+                return {};
+            };
+
+            for (const auto& row : sys.leq) {
+                auto ok = append_row(row, model.a_leq, model.b_leq);
+                if (!ok) return std::unexpected(ok.error());
+            }
+            for (const auto& row : sys.eq) {
+                auto ok = append_row(row, model.a_eq, model.b_eq);
+                if (!ok) return std::unexpected(ok.error());
+            }
+
+            for (auto id : vars) {
+                const auto* sb = vm->real_store().simplex_bounds(id);
+                if (!sb) continue;
+                const auto it = index_of.find(id);
+                if (it == index_of.end()) {
+                    return std::unexpected(r_user_error(
+                        "clp.r.qp.numeric-failure: bound variable mapping failed"));
+                }
+                const auto idx = it->second;
+
+                if (sb->lo.has_value()) {
+                    const double lo = sb->lo->value + (sb->lo->strict ? kRealSimplexEps : 0.0);
+                    if (!std::isfinite(lo)) {
+                        if (lo > 0.0) {
+                            return std::unexpected(r_user_error(
+                                "clp.r.qp.numeric-failure: lower bound is not finite"));
+                        }
+                    } else {
+                        std::vector<double> coeffs(n, 0.0);
+                        coeffs[idx] = -1.0;
+                        model.a_leq.insert(model.a_leq.end(), coeffs.begin(), coeffs.end());
+                        model.b_leq.push_back(-lo);
+                    }
+                }
+                if (sb->hi.has_value()) {
+                    const double hi = sb->hi->value - (sb->hi->strict ? kRealSimplexEps : 0.0);
+                    if (!std::isfinite(hi)) {
+                        if (hi < 0.0) {
+                            return std::unexpected(r_user_error(
+                                "clp.r.qp.numeric-failure: upper bound is not finite"));
+                        }
+                    } else {
+                        std::vector<double> coeffs(n, 0.0);
+                        coeffs[idx] = 1.0;
+                        model.a_leq.insert(model.a_leq.end(), coeffs.begin(), coeffs.end());
+                        model.b_leq.push_back(hi);
+                    }
+                }
+            }
+
+            return model;
+        };
+
+        auto build_qp_initial_guess =
+            [vm, r_user_error](const clp::FMSystem& sys,
+                               const std::vector<ObjectId>& vars)
+            -> std::expected<std::optional<std::vector<double>>, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "clp.r.internal: requires a running VM"}});
+            }
+
+            clp::Simplex simplex;
+            for (const auto& row : sys.leq) simplex.add_leq(row);
+            for (const auto& row : sys.eq) simplex.add_eq(row);
+            for (auto id : vars) {
+                if (const auto* sb = vm->real_store().simplex_bounds(id)) {
+                    if (sb->lo.has_value()) simplex.assert_lower(id, *sb->lo);
+                    if (sb->hi.has_value()) simplex.assert_upper(id, *sb->hi);
+                }
+            }
+
+            const auto feasible = simplex.check(kRealSimplexEps);
+            switch (feasible) {
+                case clp::SimplexStatus::Feasible:
+                case clp::SimplexStatus::Unbounded:
+                    break;
+                case clp::SimplexStatus::Infeasible:
+                    return std::optional<std::vector<double>>{};
+                case clp::SimplexStatus::NumericFailure:
+                    return std::unexpected(r_user_error(
+                        "clp.r.simplex.numeric-failure: simplex numeric failure"));
+            }
+
+            clp::LinearExpr zero_objective;
+            const auto seed = simplex.optimize(
+                std::move(zero_objective),
+                clp::SimplexDirection::Minimize,
+                kRealSimplexEps);
+            switch (seed.status) {
+                case clp::SimplexOptResult::Status::Optimal:
+                    break;
+                case clp::SimplexOptResult::Status::Infeasible:
+                    return std::optional<std::vector<double>>{};
+                case clp::SimplexOptResult::Status::Unbounded:
+                    return std::unexpected(r_user_error(
+                        "clp.r.simplex.numeric-failure: failed to extract a feasible seed"));
+                case clp::SimplexOptResult::Status::NumericFailure:
+                    return std::unexpected(r_user_error(
+                        "clp.r.simplex.numeric-failure: simplex numeric failure"));
+            }
+
+            std::unordered_map<ObjectId, std::size_t> index_of;
+            index_of.reserve(vars.size());
+            for (std::size_t i = 0; i < vars.size(); ++i) {
+                index_of.emplace(vars[i], i);
+            }
+
+            std::vector<double> x(vars.size(), 0.0);
+            for (const auto& [id, value] : seed.witness) {
+                const auto it = index_of.find(id);
+                if (it == index_of.end()) continue;
+                x[it->second] = value;
+            }
+            return x;
+        };
+
         auto optimize_real_objective =
             [&heap, &intern_table, vm, r_user_error, format_quadratic_linearize_error,
              format_quadratic_model_error, materialize_system, materialize_quadratic_expr,
-             ensure_real_domains]
+             ensure_real_domains, pack_optimization_result]
             (LispVal objective, clp::SimplexDirection direction)
             -> std::expected<LispVal, RuntimeError> {
             if (!vm) {
@@ -2782,31 +3051,89 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     return std::unexpected(r_user_error(
                         "clp.r.simplex.numeric-failure: simplex numeric failure"));
             }
+            return pack_optimization_result(result.value, result.witness);
+        };
 
-            auto roots = heap.make_external_root_frame();
-            LispVal witness = Nil;
-            roots.push(witness);
-
-            for (auto it = result.witness.rbegin(); it != result.witness.rend(); ++it) {
-                const LispVal var = ops::box(Tag::HeapObject, static_cast<int64_t>(it->first));
-                auto value = make_flonum(it->second);
-                if (!value) return std::unexpected(value.error());
-                roots.push(*value);
-
-                auto pair = make_cons(heap, var, *value);
-                if (!pair) return std::unexpected(pair.error());
-                roots.push(*pair);
-
-                auto cell = make_cons(heap, *pair, witness);
-                if (!cell) return std::unexpected(cell.error());
-                witness = *cell;
-                roots.push(witness);
+        auto optimize_real_qp_objective =
+            [&heap, &intern_table, vm, r_user_error, format_quadratic_linearize_error,
+             format_quadratic_model_error, format_qp_solve_error, materialize_system,
+             materialize_quadratic_expr, ensure_real_domains, build_qp_model,
+             build_qp_initial_guess, pack_optimization_result, optimize_real_objective]
+            (LispVal objective, clp::SimplexDirection direction)
+            -> std::expected<LispVal, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "clp.r.optimize: requires a running VM"}});
             }
 
-            auto opt_value = make_flonum(result.value);
-            if (!opt_value) return std::unexpected(opt_value.error());
-            roots.push(*opt_value);
-            return make_cons(heap, *opt_value, witness);
+            auto raw_objective = clp::linearize_quadratic_objective(objective, heap, intern_table);
+            if (!raw_objective) {
+                return std::unexpected(r_user_error(
+                    format_quadratic_linearize_error(raw_objective.error())));
+            }
+            auto objective_expr = materialize_quadratic_expr(std::move(*raw_objective));
+            if (!objective_expr) return std::unexpected(objective_expr.error());
+
+            auto objective_matrix =
+                clp::materialize_quadratic_objective_matrix(*objective_expr);
+            if (!objective_matrix) {
+                return std::unexpected(r_user_error(
+                    format_quadratic_model_error(objective_matrix.error())));
+            }
+
+            auto materialized = materialize_system();
+            if (!materialized) return std::unexpected(materialized.error());
+            const auto& sys = materialized->first;
+            auto vars = materialized->second;
+            vars.reserve(vars.size() + objective_matrix->vars.size());
+            vars.insert(vars.end(),
+                        objective_matrix->vars.begin(),
+                        objective_matrix->vars.end());
+            std::sort(vars.begin(), vars.end());
+            vars.erase(std::unique(vars.begin(), vars.end()), vars.end());
+            if (auto domains_ok = ensure_real_domains(vars); !domains_ok) {
+                return std::unexpected(domains_ok.error());
+            }
+
+            const double hessian_sign =
+                (direction == clp::SimplexDirection::Minimize) ? 1.0 : -1.0;
+            auto convexity = clp::check_quadratic_convexity(
+                *objective_matrix, hessian_sign);
+            if (!convexity) {
+                return std::unexpected(r_user_error(
+                    format_quadratic_model_error(convexity.error())));
+            }
+
+            if (objective_expr->quadratic_terms.empty()) {
+                return optimize_real_objective(objective, direction);
+            }
+
+            auto initial = build_qp_initial_guess(sys, vars);
+            if (!initial) return std::unexpected(initial.error());
+            if (!initial->has_value()) return False;
+
+            auto qp_model = build_qp_model(*objective_matrix, sys, vars);
+            if (!qp_model) return std::unexpected(qp_model.error());
+
+            auto solve = clp::solve_quadratic_program(
+                *qp_model, direction, std::move(initial->value()));
+            if (!solve) {
+                return std::unexpected(r_user_error(
+                    format_qp_solve_error(solve.error())));
+            }
+
+            switch (solve->status) {
+                case clp::QPSolveResult::Status::Optimal:
+                    return pack_optimization_result(solve->value, solve->witness);
+                case clp::QPSolveResult::Status::Infeasible:
+                    return False;
+                case clp::QPSolveResult::Status::Unbounded:
+                    return make_symbol(intern_table, "clp.r.unbounded");
+            }
+
+            return std::unexpected(r_user_error(
+                "clp.r.qp.numeric-failure: unknown QP solver status"));
         };
 
         env.register_builtin("%clp-r-minimize", 1, false,
@@ -2817,6 +3144,16 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         env.register_builtin("%clp-r-maximize", 1, false,
             [optimize_real_objective](Args args) -> std::expected<LispVal, RuntimeError> {
                 return optimize_real_objective(args[0], clp::SimplexDirection::Maximize);
+            });
+
+        env.register_builtin("%clp-r-qp-minimize", 1, false,
+            [optimize_real_qp_objective](Args args) -> std::expected<LispVal, RuntimeError> {
+                return optimize_real_qp_objective(args[0], clp::SimplexDirection::Minimize);
+            });
+
+        env.register_builtin("%clp-r-qp-maximize", 1, false,
+            [optimize_real_qp_objective](Args args) -> std::expected<LispVal, RuntimeError> {
+                return optimize_real_qp_objective(args[0], clp::SimplexDirection::Maximize);
             });
     }
 

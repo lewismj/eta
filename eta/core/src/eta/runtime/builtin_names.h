@@ -183,11 +183,13 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%clp-r-propagate!", 0, false);
     r("%clp-r-minimize",   1, false);
     r("%clp-r-maximize",   1, false);
+    r("%clp-r-qp-minimize", 1, false);
+    r("%clp-r-qp-maximize", 1, false);
 
     /**
      * CLP(FD) native bounds propagators.
      * Must stay in the same order as the register_builtin calls in
-     * core_primitives.h immediately after %clp-r-maximize.
+     * core_primitives.h immediately after %clp-r-qp-maximize.
      */
     r("%clp-fd-plus!",         3, false);
     r("%clp-fd-plus-offset!",  3, false);

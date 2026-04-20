@@ -35,6 +35,7 @@ set(SOURCES
         src/clp_linear_tests.cpp
         src/clp_qp_linearize_tests.cpp
         src/clp_qp_matrix_tests.cpp
+        src/clp_qp_solver_tests.cpp
         src/clp_fm_tests.cpp
         src/clp_simplex_tests.cpp
         src/builtin_sync_tests.cpp)
