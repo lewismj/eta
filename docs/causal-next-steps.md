@@ -37,7 +37,7 @@ without losing Eta's current strengths (composability, explainability, exact con
 | 2 | Misspecification robustness | DAG sensitivity + partial-identification bounds on returns | Implemented (2026-04-20) |
 | 3 | Uncertainty-aware optimization | Robust portfolio choice under parameter uncertainty | Implemented (2026-04-20) |
 | 4 | Structural/learned covariance | Better Sigma(m) aligned with causal structure | Implemented (2026-04-20) |
-| 5 | Empirical stress-test suite | Evidence of graceful degradation vs baselines | Planned |
+| 5 | Empirical stress-test suite | Evidence of graceful degradation vs baselines | Implemented (2026-04-20) |
 | 6 | Dynamic control loop (advanced) | Decision-dependent dynamics and sequential policy | Planned |
 
 ---
@@ -229,6 +229,11 @@ plus sampled PSD/stability diagnostics for all scenario covariances.
 
 ## Stage 5 - Empirical Validation Under Broken Assumptions
 
+Current status: implemented in `examples/portfolio.eta` with an explicit
+evaluation matrix (`dgp-correct`, `dag-misspecified`,
+`latent-confounding`, `noise-regime-shift`), baseline comparators, and
+machine-readable stress-validation diagnostics in `run-pipeline`.
+
 ### Scope
 
 - Prove practical value via comparative stress tests, not only in-DGP correctness.
@@ -269,11 +274,14 @@ plus sampled PSD/stability diagnostics for all scenario covariances.
 
 - Add feedback: actions affect market state and future rewards.
 - Move from one-shot optimization to sequential causal decision-making.
+- Keep the showcase centered on `examples/portfolio.eta` and `docs/portfolio.md`.
 
 ### Touchpoints
 
-- new dynamic example (recommended): `examples/portfolio_dynamic.eta`
-- actor/runtime docs: [message-passing.md](C:/Users/lewis/develop/eta/docs/message-passing.md)
+- primary showcase code: [examples/portfolio.eta](C:/Users/lewis/develop/eta/examples/portfolio.eta)
+- primary showcase docs: [docs/portfolio.md](C:/Users/lewis/develop/eta/docs/portfolio.md)
+- optional supporting actor/runtime reference:
+  [message-passing.md](C:/Users/lewis/develop/eta/docs/message-passing.md)
 
 ### Deliverables
 
@@ -281,12 +289,15 @@ plus sampled PSD/stability diagnostics for all scenario covariances.
   - market impact
   - liquidity penalty
   - crowding feedback
-- Multi-step objective and policy evaluation loop.
-- Scenario actors for parallel rollouts.
+- Multi-step objective and policy evaluation loop exposed from
+  `examples/portfolio.eta` (for example as a dynamic mode or sibling entrypoint).
+- Scenario actors for parallel rollouts as an implementation option, not a
+  documentation-first requirement.
 
 ### Exit Criteria
 
 - Closed-loop simulation shows policy behavior adapts over time.
+- `docs/portfolio.md` documents static and dynamic usage from a single showcase path.
 - Static portfolio mode remains available and unchanged.
 
 ---

@@ -12,9 +12,12 @@
 (module std.collections
   (export
     ;; List higher-order
-    map* filter foldl foldr reduce
+    map* map2 zip-with map-indexed
+    filter foldl foldr reduce
     any? every? count
+    sum-by
     zip
+    pairwise
     take drop
     flatten
     range
@@ -33,6 +36,27 @@
       (if (null? xs)
           '()
           (cons (f (car xs)) (map* f (cdr xs)))))
+
+    ;; Closure-compatible map across two lists.
+    ;; Stops at the shorter input length.
+    (defun map2 (f xs ys)
+      (if (or (null? xs) (null? ys))
+          '()
+          (cons (f (car xs) (car ys))
+                (map2 f (cdr xs) (cdr ys)))))
+
+    ;; Alias for map2; mirrors "zipWith"-style APIs.
+    (defun zip-with (f xs ys)
+      (map2 f xs ys))
+
+    ;; Map with zero-based index.
+    (defun map-indexed (f xs)
+      (letrec ((loop (lambda (i rest)
+                       (if (null? rest)
+                           '()
+                           (cons (f i (car rest))
+                                 (loop (+ i 1) (cdr rest)))))))
+        (loop 0 xs)))
 
     ;; Keep elements where (pred x) is truthy.
     (defun filter (pred xs)
@@ -78,12 +102,23 @@
     (defun count (pred xs)
       (foldl (lambda (acc x) (if (pred x) (+ acc 1) acc)) 0 xs))
 
+    ;; Sum transformed elements.
+    (defun sum-by (f xs)
+      (foldl (lambda (acc x) (+ acc (f x))) 0 xs))
+
     ;; Zip two lists into a list of pairs.
     (defun zip (xs ys)
       (if (or (null? xs) (null? ys))
           '()
           (cons (cons (car xs) (car ys))
                 (zip (cdr xs) (cdr ys)))))
+
+    ;; Adjacent element pairs: '(a b c d) -> ((a . b) (b . c) (c . d))
+    (defun pairwise (xs)
+      (if (or (null? xs) (null? (cdr xs)))
+          '()
+          (cons (cons (car xs) (car (cdr xs)))
+                (pairwise (cdr xs)))))
 
     ;; First n elements.
     (defun take (n xs)

@@ -268,6 +268,11 @@ Map, filter, fold, and friends from `std.collections`.
 
 ;; Utilities
 (zip '(a b c) '(1 2 3))         ; => ((a . 1) (b . 2) (c . 3))
+(map2 + '(1 2 3) '(10 20 30))   ; => (11 22 33)
+(zip-with * '(1 2 3) '(4 5 6))  ; => (4 10 18)
+(map-indexed (lambda (i x) (+ i x)) '(10 10 10)) ; => (10 11 12)
+(sum-by square '(1 2 3 4))      ; => 30
+(pairwise '(a b c d))           ; => ((a . b) (b . c) (c . d))
 (take 3 nums)                   ; => (1 2 3)
 (drop 7 nums)                   ; => (8 9 10)
 (range 1 6)                     ; => (1 2 3 4 5)

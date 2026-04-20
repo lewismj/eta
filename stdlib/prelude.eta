@@ -62,9 +62,12 @@
     with-input-from-port
     with-error-to-port
     ;; ── std.collections ─────────────────────────────────────────────
-    map* filter foldl foldr reduce
+    map* map2 zip-with map-indexed
+    filter foldl foldr reduce
     any? every? count
+    sum-by
     zip
+    pairwise
     take drop
     flatten
     range

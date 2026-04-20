@@ -766,7 +766,7 @@
         ((> x 1.0) 1.0)
         (#t x)))
 
-    (defun clamp (x lo hi)
+    (defun clamp-range (x lo hi)
       (cond
         ((< x lo) lo)
         ((> x hi) hi)
@@ -895,7 +895,7 @@
       (/ (list-covariance learned-macro-series learned-abs-residual-series)
          (+ (list-variance learned-macro-series) 1e-9)))
     (define learned-macro-sensitivity
-      (clamp (/ learned-macro-abs-slope learned-abs-resid-mean) 0.05 1.20))
+      (clamp-range (/ learned-macro-abs-slope learned-abs-resid-mean) 0.05 1.20))
 
     (defun scenario-covariance-empirical (macro-val)
       ;; Returns a 10-element list: (vt ve vf vh cte ctf cth cef ceh cfh)
@@ -2021,6 +2021,294 @@
     (display "  Worst-case score improvement vs nominal: ")
     (println stage3-downside-improvement)
 
+    (defun tau-add (a b)
+      (list (+ (car a) (car b))
+            (+ (car (cdr a)) (car (cdr b)))
+            (+ (car (cdr (cdr a))) (car (cdr (cdr b))))
+            (+ (car (cdr (cdr (cdr a))))
+               (car (cdr (cdr (cdr b)))))))
+
+    (defun sigma-scale (S k)
+      (map* (lambda (x) (* x k)) S))
+
+    (defun collect-sector-return-samples (sector-sym)
+      (letrec ((loop (lambda (i acc)
+                       (if (>= i n-obs)
+                           (reverse acc)
+                           (if (eq? (fact-table-ref universe i 0) sector-sym)
+                               (loop (+ i 1) (cons (fact-table-ref universe i 5) acc))
+                               (loop (+ i 1) acc))))))
+        (loop 0 '())))
+
+    (defun simple-factor-tilt-weights ()
+      ;; Heuristic long-only tilt toward higher macro beta sectors.
+      (list 0.30 0.20 0.40 0.10))
+
+    (defun noncausal-ml-returns (macro-val)
+      ;; Non-causal estimator: fixes sentiment instead of marginalizing it.
+      (list (nn-predict 1.3 macro-val  1.0 0.5)
+            (nn-predict 0.8 macro-val  0.0 0.5)
+            (nn-predict 1.0 macro-val -0.5 0.5)
+            (nn-predict 0.7 macro-val -1.0 0.5)))
+
+    (defun slope4 (y0 y1 y2 y3)
+      (let* ((mx 1.5)
+             (my (/ (+ y0 (+ y1 (+ y2 y3))) 4.0))
+             (num (+ (* (- 0.0 mx) (- y0 my))
+                     (+ (* (- 1.0 mx) (- y1 my))
+                        (+ (* (- 2.0 mx) (- y2 my))
+                           (* (- 3.0 mx) (- y3 my))))))
+             (den (+ (* (- 0.0 mx) (- 0.0 mx))
+                     (+ (* (- 1.0 mx) (- 1.0 mx))
+                        (+ (* (- 2.0 mx) (- 2.0 mx))
+                           (* (- 3.0 mx) (- 3.0 mx)))))))
+        (/ num den)))
+
+    (defun stress-row-metric (rows strategy-name regime-name metric-key)
+      (assoc-ref metric-key
+        (car (filter
+               (lambda (r)
+                 (and (eq? (assoc-ref 'strategy r) strategy-name)
+                      (eq? (assoc-ref 'regime r) regime-name)))
+               rows))))
+
+    (display "\n")
+    (thin-sep)
+    (display "  Empirical Validation Under Broken Assumptions\n")
+    (thin-sep)
+    (display "\n")
+
+    ;; Baseline 1: empirical moments from observed returns.
+    (define empirical-tech-returns   (collect-sector-return-samples 'tech))
+    (define empirical-energy-returns (collect-sector-return-samples 'energy))
+    (define empirical-fin-returns    (collect-sector-return-samples 'finance))
+    (define empirical-health-returns (collect-sector-return-samples 'healthcare))
+    (define empirical-returns
+      (list (list-mean empirical-tech-returns)
+            (list-mean empirical-energy-returns)
+            (list-mean empirical-fin-returns)
+            (list-mean empirical-health-returns)))
+    (define empirical-sigma
+      (list (list-variance empirical-tech-returns)
+            (list-variance empirical-energy-returns)
+            (list-variance empirical-fin-returns)
+            (list-variance empirical-health-returns)
+            (list-covariance empirical-tech-returns empirical-energy-returns)
+            (list-covariance empirical-tech-returns empirical-fin-returns)
+            (list-covariance empirical-tech-returns empirical-health-returns)
+            (list-covariance empirical-energy-returns empirical-fin-returns)
+            (list-covariance empirical-energy-returns empirical-health-returns)
+            (list-covariance empirical-fin-returns empirical-health-returns)))
+    (define empirical-mv-weights
+      (solve-weights-from-tau lambda-risk empirical-returns empirical-sigma))
+
+    ;; Baseline 2: deterministic factor tilt.
+    (define factor-tilt-weights (simple-factor-tilt-weights))
+
+    ;; Baseline 3: non-causal ML + optimizer.
+    (define noncausal-returns (noncausal-ml-returns 0.5))
+    (define noncausal-weights
+      (solve-weights-from-tau lambda-risk noncausal-returns sigma-base-opt))
+
+    ;; Evaluation matrix across assumption failures.
+    (define tau-dgp (scenario-return-coeffs 0.5))
+    (define tau-recession-oos (scenario-return-coeffs 0.1))
+    (define tau-soft (scenario-return-coeffs 0.35))
+    (define tau-dag-main
+      (tau-add (tau-scale tau-dgp 0.97)
+               '(-0.07 0.04 -0.06 0.03)))
+    (define tau-dag-down
+      (tau-add (tau-scale tau-recession-oos 0.96)
+               '(-0.10 0.02 -0.08 0.01)))
+    (define tau-latent-main
+      (tau-add (tau-scale tau-dgp 0.93)
+               '(-0.13 -0.02 -0.10 -0.03)))
+    (define tau-latent-down
+      (tau-add (tau-scale tau-recession-oos 0.91)
+               '(-0.20 -0.05 -0.15 -0.06)))
+    (define tau-shift-main
+      (tau-add (tau-scale tau-soft 0.94)
+               '(-0.16 -0.08 -0.13 -0.11)))
+    (define tau-shift-down
+      (tau-add (tau-scale (scenario-return-coeffs 0.15) 0.90)
+               '(-0.24 -0.12 -0.19 -0.15)))
+    (define sigma-dag
+      (sigma-scale
+        (sigma-blend 0.55 sigma-base-opt (scenario-covariance 0.35))
+        1.10))
+    (define sigma-latent
+      (sigma-scale
+        (sigma-blend 0.45 sigma-base-opt (scenario-covariance 0.20))
+        1.30))
+    (define sigma-shift
+      (sigma-scale
+        (sigma-blend 0.30 sigma-rate (scenario-covariance 0.15))
+        1.45))
+    (define stage5-regimes
+      (list
+        (list (cons 'name 'dgp-correct)
+              (cons 'severity 0.0)
+              (cons 'tau-main tau-dgp)
+              (cons 'tau-down tau-recession-oos)
+              (cons 'sigma sigma-base-opt))
+        (list (cons 'name 'dag-misspecified)
+              (cons 'severity 1.0)
+              (cons 'tau-main tau-dag-main)
+              (cons 'tau-down tau-dag-down)
+              (cons 'sigma sigma-dag))
+        (list (cons 'name 'latent-confounding)
+              (cons 'severity 2.0)
+              (cons 'tau-main tau-latent-main)
+              (cons 'tau-down tau-latent-down)
+              (cons 'sigma sigma-latent))
+        (list (cons 'name 'noise-regime-shift)
+              (cons 'severity 3.0)
+              (cons 'tau-main tau-shift-main)
+              (cons 'tau-down tau-shift-down)
+              (cons 'sigma sigma-shift))))
+
+    (define stage5-strategies
+      (list
+        (list (cons 'name 'robust-causal)
+              (cons 'weights stage3-selected-weights))
+        (list (cons 'name 'empirical-mean-variance)
+              (cons 'weights empirical-mv-weights))
+        (list (cons 'name 'factor-tilt)
+              (cons 'weights factor-tilt-weights))
+        (list (cons 'name 'noncausal-ml)
+              (cons 'weights noncausal-weights))))
+
+    (defun evaluate-stress-row (strategy regime)
+      (let* ((name (assoc-ref 'name strategy))
+             (weights (assoc-ref 'weights strategy))
+             (tau-main (assoc-ref 'tau-main regime))
+             (tau-down (assoc-ref 'tau-down regime))
+             (sigma (assoc-ref 'sigma regime))
+             (oracle-weights (solve-weights-from-tau lambda-risk tau-main sigma))
+             (oracle-score (score-from-tau oracle-weights tau-main lambda-risk sigma))
+             (strategy-score (score-from-tau weights tau-main lambda-risk sigma))
+             (oos-return (portfolio-return-from-tau weights tau-main))
+             (down-return (portfolio-return-from-tau weights tau-down))
+             (downside-risk (max 0.0 (- oos-return down-return)))
+             (regret (max 0.0 (- oracle-score strategy-score))))
+        (list
+          (cons 'strategy name)
+          (cons 'regime (assoc-ref 'name regime))
+          (cons 'severity (assoc-ref 'severity regime))
+          (cons 'oos-return oos-return)
+          (cons 'downside-risk downside-risk)
+          (cons 'regret regret))))
+
+    (define stage5-rows
+      (letrec ((walk-regimes
+                 (lambda (regimes acc)
+                   (if (null? regimes)
+                       (reverse acc)
+                       (walk-regimes
+                         (cdr regimes)
+                         (walk-strategies (car regimes) stage5-strategies acc)))))
+               (walk-strategies
+                 (lambda (regime strategies acc)
+                   (if (null? strategies)
+                       acc
+                       (walk-strategies
+                         regime
+                         (cdr strategies)
+                         (cons (evaluate-stress-row (car strategies) regime) acc))))))
+        (walk-regimes stage5-regimes '())))
+
+    (defun summarize-strategy (strategy-name)
+      (let* ((r0 (stress-row-metric stage5-rows strategy-name 'dgp-correct 'oos-return))
+             (r1 (stress-row-metric stage5-rows strategy-name 'dag-misspecified 'oos-return))
+             (r2 (stress-row-metric stage5-rows strategy-name 'latent-confounding 'oos-return))
+             (r3 (stress-row-metric stage5-rows strategy-name 'noise-regime-shift 'oos-return))
+             (loss1 (- r0 r1))
+             (loss2 (- r0 r2))
+             (loss3 (- r0 r3))
+             (slope (slope4 0.0 loss1 loss2 loss3))
+             (avg-downside
+               (/ (+ (stress-row-metric stage5-rows strategy-name 'dag-misspecified 'downside-risk)
+                     (+ (stress-row-metric stage5-rows strategy-name 'latent-confounding 'downside-risk)
+                        (stress-row-metric stage5-rows strategy-name 'noise-regime-shift 'downside-risk)))
+                  3.0))
+             (avg-regret
+               (/ (+ (stress-row-metric stage5-rows strategy-name 'dgp-correct 'regret)
+                     (+ (stress-row-metric stage5-rows strategy-name 'dag-misspecified 'regret)
+                        (+ (stress-row-metric stage5-rows strategy-name 'latent-confounding 'regret)
+                           (stress-row-metric stage5-rows strategy-name 'noise-regime-shift 'regret))))
+                  4.0)))
+        (list
+          (cons 'strategy strategy-name)
+          (cons 'oos-return-dgp r0)
+          (cons 'degradation-slope slope)
+          (cons 'avg-downside-risk avg-downside)
+          (cons 'avg-regret avg-regret))))
+
+    (define stage5-summaries
+      (map* (lambda (st) (summarize-strategy (assoc-ref 'name st)))
+            stage5-strategies))
+    (define stage5-baseline-summaries
+      (filter (lambda (s) (not (eq? (assoc-ref 'strategy s) 'robust-causal)))
+              stage5-summaries))
+    (define stage5-robust-latent-regret
+      (stress-row-metric stage5-rows 'robust-causal 'latent-confounding 'regret))
+    (define stage5-fails-less-badly-count
+      (count (lambda (s)
+               (< stage5-robust-latent-regret
+                  (stress-row-metric stage5-rows
+                                     (assoc-ref 'strategy s)
+                                     'latent-confounding
+                                     'regret)))
+             stage5-baseline-summaries))
+    (define stage5-fails-less-badly?
+      (> stage5-fails-less-badly-count 0))
+    (define stage5-report
+      (list
+        (cons 'rows stage5-rows)
+        (cons 'summaries stage5-summaries)
+        (cons 'fails-less-badly-latent-confounding stage5-fails-less-badly?)
+        (cons 'fails-less-badly-vs-baselines stage5-fails-less-badly-count)))
+
+    (display "  Evaluation matrix (regime x strategy):\n")
+    (display "  Regime               Strategy                  OOS Return  Downside  Regret\n")
+    (display "  -------------------  ------------------------  ----------  --------  ----------\n")
+    (for-each
+      (lambda (row)
+        (display "  ")
+        (display (assoc-ref 'regime row))
+        (display "  ")
+        (display (assoc-ref 'strategy row))
+        (display "  ")
+        (display (assoc-ref 'oos-return row))
+        (display "  ")
+        (display (assoc-ref 'downside-risk row))
+        (display "  ")
+        (println (assoc-ref 'regret row)))
+      stage5-rows)
+
+    (display "\n  Misspecification degradation summary:\n")
+    (display "  Strategy                  OOS(DGP)   AvgDownside   AvgRegret   DegradationSlope\n")
+    (display "  ------------------------  ---------  ------------  ----------  ----------------\n")
+    (for-each
+      (lambda (s)
+        (display "  ")
+        (display (assoc-ref 'strategy s))
+        (display "  ")
+        (display (assoc-ref 'oos-return-dgp s))
+        (display "  ")
+        (display (assoc-ref 'avg-downside-risk s))
+        (display "  ")
+        (display (assoc-ref 'avg-regret s))
+        (display "  ")
+        (println (assoc-ref 'degradation-slope s)))
+      stage5-summaries)
+
+    (display "\n  Robust causal mode fails less badly under latent-confounding family: ")
+    (display stage5-fails-less-badly?)
+    (display "  (vs ")
+    (display stage5-fails-less-badly-count)
+    (display " baseline(s))\n")
+
     ;; ── Causal–Decision Coupling ──────────────────────────────────
 
     (display "\n")
@@ -2247,6 +2535,7 @@
                             (assoc-ref 'worst-case-regret-nominal stage3))
                       (cons 'worst-case-score-improvement
                             (assoc-ref 'worst-case-score-improvement stage3))))
+              (cons 'stress-validation stage5-report)
               (cons 'decision-robustness
                     (list
                       (cons 'label (assoc-ref 'label stage2))

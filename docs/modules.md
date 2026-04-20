@@ -246,6 +246,9 @@ convenience re-export module:
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `map*` | `(f xs) → list` | Map (single-list) |
+| `map2` | `(f xs ys) → list` | Pairwise map over two lists (truncates to shorter list) |
+| `zip-with` | `(f xs ys) → list` | Alias for `map2` |
+| `map-indexed` | `(f xs) → list` | Map with zero-based index (calls `f` with `i` and `x`) |
 | `filter` | `(pred xs) → list` | Keep elements matching `pred` |
 | `foldl` | `(f acc xs) → value` | Left fold |
 | `foldr` | `(f init xs) → value` | Right fold |
@@ -253,7 +256,9 @@ convenience re-export module:
 | `any?` | `(pred xs) → bool` | True if any element matches |
 | `every?` | `(pred xs) → bool` | True if all elements match |
 | `count` | `(pred xs) → number` | Count matching elements |
+| `sum-by` | `(f xs) → number` | Sum transformed elements |
 | `zip` | `(xs ys) → list` | Zip two lists into pairs |
+| `pairwise` | `(xs) → list` | Adjacent element pairs as dotted pairs |
 | `take` | `(n xs) → list` | First `n` elements |
 | `drop` | `(n xs) → list` | Skip first `n` elements |
 | `flatten` | `(xss) → list` | Flatten one level of nesting |
