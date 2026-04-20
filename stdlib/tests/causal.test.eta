@@ -1,7 +1,7 @@
 ;;; stdlib/tests/causal.test.eta -- Unit tests for std.causal
 
 (module causal.tests
-  (import std.test std.causal std.core)
+  (import std.test std.causal std.core std.collections)
   (begin
 
     (define chain-dag
@@ -21,9 +21,37 @@
     (define direct-dag
       '((x -> y)))
 
+    (define latent-backdoor-dag
+      '((latent -> x)
+        (latent -> y)
+        (x -> y)))
+
+    (defun contains-edge? (dag edge)
+      (any? (lambda (e) (equal? e edge)) dag))
+
     (define suite
       (make-group "std.causal"
         (list
+          (make-group "graph perturbations"
+            (list
+              (make-test "add-edge inserts missing edge once"
+                (lambda ()
+                  (let* ((d0 '((a -> b)))
+                         (d1 (dag:add-edge d0 'b 'c))
+                         (d2 (dag:add-edge d1 'b 'c)))
+                    (assert-true (contains-edge? d1 '(b -> c)))
+                    (assert-equal d1 d2))))
+              (make-test "remove-edge removes directed edge"
+                (lambda ()
+                  (let ((d1 (dag:remove-edge '((a -> b) (b -> c)) 'b 'c)))
+                    (assert-false (contains-edge? d1 '(b -> c)))
+                    (assert-true (contains-edge? d1 '(a -> b))))))
+              (make-test "flip-edge reverses orientation"
+                (lambda ()
+                  (let ((d1 (dag:flip-edge '((a -> b) (b -> c)) 'a 'b)))
+                    (assert-false (contains-edge? d1 '(a -> b)))
+                    (assert-true (contains-edge? d1 '(b -> a))))))))
+
           (make-group "d-separation"
             (list
               (make-test "chain is d-connected without conditioning"
@@ -69,6 +97,29 @@
                 (lambda ()
                   (assert-equal #f (do:identify backdoor-dag 'y 'x 0))))))
 
+          (make-group "observed-set identification"
+            (list
+              (make-test "observed-adjustment enumeration excludes latent variables"
+                (lambda ()
+                  (assert-equal '()
+                                (dag:adjustment-sets-observed
+                                  latent-backdoor-dag 'x 'y '(x y)))))
+              (make-test "identify-observed returns unidentified with latent confounder"
+                (lambda ()
+                  (let ((details (do:identify-details-observed
+                                   latent-backdoor-dag 'y 'x '(x y))))
+                    (assert-equal 'unidentified (assoc-ref 'status details))
+                    (assert-equal #f (assoc-ref 'result details)))))
+              (make-test "identify-observed succeeds when confounder is marked observed"
+                (lambda ()
+                  (let ((details (do:identify-details-observed
+                                   latent-backdoor-dag 'y 'x '(x y latent))))
+                    (assert-equal 'adjust (assoc-ref 'status details))
+                    (assert-equal '(latent) (assoc-ref 'chosen-z details))
+                    (assert-equal '(adjust (latent) (P y x (latent)) (P (latent)))
+                                  (do:identify-observed
+                                    latent-backdoor-dag 'y 'x '(x y latent))))))))
+
           (make-group "direct effects"
             (list
               (make-test "identify returns direct when no back-door path exists"
@@ -82,4 +133,3 @@
                     (assert-equal '() (assoc-ref 'chosen-z details)))))))))
 
     (print-tap (run suite)))))
-

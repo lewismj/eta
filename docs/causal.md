@@ -161,6 +161,21 @@ Formatted as a human-readable formula:
 ;; => #t
 ```
 
+Observed-set-restricted identification (useful for latent-confounder stress DAGs):
+
+```scheme
+(define latent-dag
+  '((latent-u    -> market-beta)
+    (latent-u    -> stock-return)
+    (sector      -> market-beta)
+    (sector      -> stock-return)
+    (market-beta -> stock-return)))
+
+(do:identify-details-observed
+  latent-dag 'stock-return 'market-beta '(sector market-beta stock-return))
+;; => ((status . unidentified) ...)
+```
+
 ---
 
 ## DAG Graph Utilities
@@ -177,11 +192,17 @@ edge-list format:
 | `(dag:descendants dag n)` | Transitive effects (BFS) |
 | `(dag:non-descendants dag n)` | All nodes except descendants of `n` |
 | `(dag:has-path? dag a b forbidden)` | Path from `a` to `b` not through `forbidden` |
+| `(dag:add-edge dag from to)` | Return DAG with `from -> to` inserted |
+| `(dag:remove-edge dag from to)` | Return DAG with `from -> to` removed |
+| `(dag:flip-edge dag from to)` | Return DAG with `from -> to` flipped to `to -> from` |
 | `(dag:d-connected? dag x y z-set)` | True if any active path exists between `x` and `y` given `z-set` |
 | `(dag:d-separated? dag x y z-set)` | True if all paths between `x` and `y` are blocked by `z-set` |
 | `(dag:satisfies-backdoor? dag x y z-set)` | Back-door criterion check |
 | `(dag:adjustment-sets dag x y [max-size])` | Enumerate valid back-door adjustment sets, minimal first |
+| `(dag:adjustment-sets-observed dag x y observed [max-size])` | Enumerate valid sets restricted to observed variables |
 | `(do:identify-details dag y x [max-size])` | Identification metadata with chosen and alternative adjustment sets |
+| `(do:identify-details-observed dag y x observed [max-size])` | Identification metadata under observed-only adjustment |
+| `(do:identify-observed dag y x observed [max-size])` | Convenience API returning only the observed-set-constrained formula |
 
 ```scheme
 (dag:ancestors finance-dag 'stock-return)

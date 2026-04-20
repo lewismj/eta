@@ -1332,6 +1332,298 @@
     (display opt-we) (display ", ") (display opt-wf) (display ", ")
     (display opt-wh) (display ")\n")
 
+    ;; Stage-2 robustness: DAG sensitivity and partial-identification bounds.
+    ;; Evaluate plausible graph variants, including one with latent confounding.
+
+    (display "\n")
+    (thin-sep)
+    (display "  DAG Sensitivity and Partial Identification\n")
+    (thin-sep)
+    (display "\n")
+
+    (define stage2-observed
+      '(sentiment macro_growth sector_perf interest_rate asset_return))
+    (define stage2-latent-stress 0.12)
+
+    (defun make-dag-variant (name dag observed stress)
+      (list (cons 'name name)
+            (cons 'dag dag)
+            (cons 'observed observed)
+            (cons 'stress stress)))
+
+    (define stage2-dag-family
+      (list
+        (make-dag-variant 'baseline
+                          market-dag
+                          stage2-observed
+                          0.0)
+        (make-dag-variant 'drop-sentiment->macro
+                          (dag:remove-edge market-dag 'sentiment 'macro_growth)
+                          stage2-observed
+                          0.0)
+        (make-dag-variant 'drop-sentiment->return
+                          (dag:remove-edge market-dag 'sentiment 'asset_return)
+                          stage2-observed
+                          0.0)
+        (make-dag-variant 'flip-macro-rate
+                          (dag:flip-edge market-dag 'macro_growth 'interest_rate)
+                          stage2-observed
+                          0.0)
+        (make-dag-variant 'add-sentiment->rate
+                          (dag:add-edge market-dag 'sentiment 'interest_rate)
+                          stage2-observed
+                          0.0)
+        (make-dag-variant 'latent-confounder
+                          (dag:add-edge
+                            (dag:add-edge market-dag 'latent_u 'macro_growth)
+                            'latent_u 'asset_return)
+                          stage2-observed
+                          1.0)))
+
+    (defun symbol-member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((eq? x (car xs)) #t)
+        (#t (symbol-member? x (cdr xs)))))
+
+    (defun tau-from-sentiment (sv)
+      (list (nn-predict 1.3 0.5  1.0 sv)
+            (nn-predict 0.8 0.5  0.0 sv)
+            (nn-predict 1.0 0.5 -0.5 sv)
+            (nn-predict 0.7 0.5 -1.0 sv)))
+
+    (defun avg-sentiment-near-macro (macro-val tol)
+      (let* ((agg
+               (fact-table-fold universe
+                 (lambda (acc i)
+                   (let ((m (fact-table-ref universe i 2))
+                         (s (fact-table-ref universe i 4)))
+                     (if (<= (abs (- m macro-val)) tol)
+                         (list (+ (car acc) s)
+                               (+ (car (cdr acc)) 1))
+                         acc)))
+                 '(0.0 0)))
+             (sum (car agg))
+             (n   (car (cdr agg))))
+        (if (= n 0) 0.5 (/ sum n))))
+
+    (define tau-direct (tau-from-sentiment (avg-sentiment-near-macro 0.5 0.05)))
+
+    (defun tau-point-for-status (status z-set)
+      (cond
+        ((eq? status 'unidentified) base-returns)
+        ((eq? status 'direct) tau-direct)
+        ((and (eq? status 'adjust) (null? z-set)) tau-direct)
+        ((and (eq? status 'adjust) (symbol-member? 'sentiment z-set)) base-returns)
+        ((eq? status 'adjust) base-returns)
+        (#t base-returns)))
+
+    (defun tau-bounds-from-stress (tau stress)
+      (let ((t0 (car tau))
+            (t1 (car (cdr tau)))
+            (t2 (car (cdr (cdr tau))))
+            (t3 (car (cdr (cdr (cdr tau))))))
+        (list
+          (list (- t0 (* (abs t0) stress))
+                (- t1 (* (abs t1) stress))
+                (- t2 (* (abs t2) stress))
+                (- t3 (* (abs t3) stress)))
+          (list (+ t0 (* (abs t0) stress))
+                (+ t1 (* (abs t1) stress))
+                (+ t2 (* (abs t2) stress))
+                (+ t3 (* (abs t3) stress))))))
+
+    (defun tau-pairwise-min (a b)
+      (list (min (car a) (car b))
+            (min (car (cdr a)) (car (cdr b)))
+            (min (car (cdr (cdr a))) (car (cdr (cdr b))))
+            (min (car (cdr (cdr (cdr a))))
+                 (car (cdr (cdr (cdr b)))))))
+
+    (defun tau-pairwise-max (a b)
+      (list (max (car a) (car b))
+            (max (car (cdr a)) (car (cdr b)))
+            (max (car (cdr (cdr a))) (car (cdr (cdr b))))
+            (max (car (cdr (cdr (cdr a))))
+                 (car (cdr (cdr (cdr b)))))))
+
+    (defun portfolio-return-from-tau (weights tau)
+      (+ (* (car weights) (car tau))
+         (+ (* (car (cdr weights)) (car (cdr tau)))
+            (+ (* (car (cdr (cdr weights))) (car (cdr (cdr tau))))
+               (* (car (cdr (cdr (cdr weights))))
+                  (car (cdr (cdr (cdr tau)))))))))
+
+    (defun portfolio-risk-from-weights (weights sigma)
+      (portfolio-risk-from-sigma
+        (car weights)
+        (car (cdr weights))
+        (car (cdr (cdr weights)))
+        (car (cdr (cdr (cdr weights))))
+        sigma))
+
+    (defun score-from-tau (weights tau lam sigma)
+      (- (portfolio-return-from-tau weights tau)
+         (* lam (portfolio-risk-from-weights weights sigma))))
+
+    (defun solve-weights-from-tau (lam tau sigma)
+      (let* ((sol (solve-portfolio-for-lambda lam tau sigma tech-cap))
+             (wt (car (cdr sol)))
+             (we (car (cdr (cdr sol))))
+             (wf (car (cdr (cdr (cdr sol)))))
+             (wh (car (cdr (cdr (cdr (cdr sol)))))))
+        (list wt we wf wh)))
+
+    (defun weights-close-f? (a b tol)
+      (and (<= (abs (- (car a) (car b))) tol)
+           (<= (abs (- (car (cdr a)) (car (cdr b)))) tol)
+           (<= (abs (- (car (cdr (cdr a)))
+                       (car (cdr (cdr b))))) tol)
+           (<= (abs (- (car (cdr (cdr (cdr a))))
+                       (car (cdr (cdr (cdr b)))))) tol)))
+
+    (defun robustness-label (change-rate regret-ratio)
+      (cond
+        ((and (<= change-rate 0.2) (<= regret-ratio 0.05)) 'stable)
+        ((and (<= change-rate 0.5) (<= regret-ratio 0.15)) 'moderate)
+        (#t 'fragile)))
+
+    (defun compute-stage2-report (lam base-weights)
+      (letrec ((eval-variant
+                 (lambda (variant)
+                   (let* ((name (assoc-ref 'name variant))
+                          (dagv (assoc-ref 'dag variant))
+                          (observed (assoc-ref 'observed variant))
+                          (stress-scale (assoc-ref 'stress variant))
+                          (details
+                            (do:identify-details-observed
+                              dagv 'asset_return 'macro_growth observed))
+                          (status (assoc-ref 'status details))
+                          (z-set (assoc-ref 'chosen-z details))
+                          (tau-point (tau-point-for-status status z-set))
+                          (base-stress (* stage2-latent-stress stress-scale))
+                          (stress (if (eq? status 'unidentified)
+                                      (max stage2-latent-stress base-stress)
+                                      base-stress))
+                          (bounds (tau-bounds-from-stress tau-point stress))
+                          (tau-low (car bounds))
+                          (tau-high (car (cdr bounds)))
+                          (w-opt (solve-weights-from-tau lam tau-point sigma-base-opt))
+                          (opt-score (score-from-tau w-opt tau-point lam sigma-base-opt))
+                          (base-score-v (score-from-tau base-weights tau-point lam sigma-base-opt))
+                          (regret (max 0.0 (- opt-score base-score-v)))
+                          (changed (not (weights-close-f? w-opt base-weights 1e-6))))
+                     (list (cons 'name name)
+                           (cons 'status status)
+                           (cons 'chosen-z z-set)
+                           (cons 'tau-point tau-point)
+                           (cons 'tau-low tau-low)
+                           (cons 'tau-high tau-high)
+                           (cons 'weights w-opt)
+                           (cons 'changed changed)
+                           (cons 'regret regret)))))
+               (collect
+                 (lambda (vs acc)
+                   (if (null? vs)
+                       (reverse acc)
+                       (collect (cdr vs) (cons (eval-variant (car vs)) acc))))))
+        (let* ((variants (collect stage2-dag-family '()))
+               (first (car variants))
+               (tau-min (foldl (lambda (acc vr)
+                                 (tau-pairwise-min acc (assoc-ref 'tau-low vr)))
+                               (assoc-ref 'tau-low first)
+                               (cdr variants)))
+               (tau-max (foldl (lambda (acc vr)
+                                 (tau-pairwise-max acc (assoc-ref 'tau-high vr)))
+                               (assoc-ref 'tau-high first)
+                               (cdr variants)))
+               (ret-min (portfolio-return-from-tau base-weights tau-min))
+               (ret-max (portfolio-return-from-tau base-weights tau-max))
+               (total (length variants))
+               (changed-count (count (lambda (vr) (assoc-ref 'changed vr)) variants))
+               (change-rate (/ changed-count total))
+               (regret-sum (foldl (lambda (acc vr)
+                                    (+ acc (assoc-ref 'regret vr)))
+                                  0.0
+                                  variants))
+               (max-regret (foldl (lambda (acc vr)
+                                    (max acc (assoc-ref 'regret vr)))
+                                  0.0
+                                  variants))
+               (mean-regret (/ regret-sum total))
+               (baseline-score (score-from-tau base-weights base-returns lam sigma-base-opt))
+               (regret-ratio (/ max-regret (+ (abs baseline-score) 1e-9)))
+               (label (robustness-label change-rate regret-ratio))
+               (distinct-optima
+                 (letrec ((add-unique
+                            (lambda (w ws)
+                              (if (any? (lambda (u) (weights-close-f? u w 1e-6)) ws)
+                                  ws
+                                  (cons w ws))))
+                          (walk
+                            (lambda (xs acc)
+                              (if (null? xs)
+                                  acc
+                                  (walk (cdr xs)
+                                        (add-unique (assoc-ref 'weights (car xs)) acc))))))
+                   (length (walk variants '()))))
+               (argmax-stability (- 1.0 change-rate)))
+          (list
+            (cons 'variants variants)
+            (cons 'tau-min tau-min)
+            (cons 'tau-max tau-max)
+            (cons 'portfolio-return-min ret-min)
+            (cons 'portfolio-return-max ret-max)
+            (cons 'argmax-stability argmax-stability)
+            (cons 'argmax-change-rate change-rate)
+            (cons 'distinct-optima distinct-optima)
+            (cons 'mean-regret mean-regret)
+            (cons 'max-regret max-regret)
+            (cons 'label label)))))
+
+    (define stage2-report
+      (compute-stage2-report lambda-risk
+                             (list opt-wt-f opt-we-f opt-wf-f opt-wh-f)))
+    (define stage2-variants (assoc-ref 'variants stage2-report))
+    (define tau-min (assoc-ref 'tau-min stage2-report))
+    (define tau-max (assoc-ref 'tau-max stage2-report))
+    (define stage2-ret-min (assoc-ref 'portfolio-return-min stage2-report))
+    (define stage2-ret-max (assoc-ref 'portfolio-return-max stage2-report))
+    (define stage2-change-rate (assoc-ref 'argmax-change-rate stage2-report))
+    (define stage2-stability (assoc-ref 'argmax-stability stage2-report))
+    (define stage2-mean-regret (assoc-ref 'mean-regret stage2-report))
+    (define stage2-max-regret (assoc-ref 'max-regret stage2-report))
+    (define stage2-distinct-optima (assoc-ref 'distinct-optima stage2-report))
+    (define stage2-label (assoc-ref 'label stage2-report))
+
+    (display "  Variant               Status        Changed?  Regret\n")
+    (display "  -------------------   ----------    --------  ----------\n")
+    (for-each
+      (lambda (vr)
+        (display "  ")
+        (display (assoc-ref 'name vr))
+        (display "   ")
+        (display (assoc-ref 'status vr))
+        (display "      ")
+        (display (if (assoc-ref 'changed vr) "YES" "no "))
+        (display "      ")
+        (println (assoc-ref 'regret vr)))
+      stage2-variants)
+
+    (display "\n  tau_min (per asset): ") (println tau-min)
+    (display "  tau_max (per asset): ") (println tau-max)
+    (display "  Baseline decision return bounds under DAG family:\n")
+    (display "    min = ") (display stage2-ret-min)
+    (display "   max = ") (println stage2-ret-max)
+    (display "\n  Argmax stability analysis:\n")
+    (display "    w* change rate across DAG family: ") (display stage2-change-rate) (display "\n")
+    (display "    argmax stability:                 ") (display stage2-stability) (display "\n")
+    (display "    distinct optimal allocations:     ") (println stage2-distinct-optima)
+    (display "\n  Decision regret across DAG family:\n")
+    (display "    mean regret = ") (display stage2-mean-regret)
+    (display "   max regret = ") (println stage2-max-regret)
+    (display "\n  Robustness label: ") (display stage2-label) (display "\n")
+
     ;; ── Causal–Decision Coupling ──────────────────────────────────
 
     (display "\n")
@@ -1487,6 +1779,10 @@
                                         (/ wf 100.0) (/ wh 100.0)))
              (risk (portfolio-causal-risk-fn (/ wt 100.0) (/ we 100.0)
                                                (/ wf 100.0) (/ wh 100.0) 0.5))
+             (stage2 (compute-stage2-report
+                       lam
+                       (list (/ wt 100.0) (/ we 100.0)
+                             (/ wf 100.0) (/ wh 100.0))))
              (scens (map* (lambda (sm)
                              (let* ((name     (car sm))
                                     (mv       (car (cdr sm)))
@@ -1504,12 +1800,26 @@
                           (cons 'sentiment-grid '(0.1 0.3 0.5 0.7 0.9))))
               (cons 'dag dag)
               (cons 'tau base-returns)
+              (cons 'tau-min (assoc-ref 'tau-min stage2))
+              (cons 'tau-max (assoc-ref 'tau-max stage2))
               (cons 'sigma-base sigma-base-opt)
               (cons 'allocation (list (/ wt 100.0) (/ we 100.0)
                                       (/ wf 100.0) (/ wh 100.0)))
               (cons 'return ret)
               (cons 'risk risk)
               (cons 'score score)
+              (cons 'decision-robustness
+                    (list
+                      (cons 'label (assoc-ref 'label stage2))
+                      (cons 'argmax-stability (assoc-ref 'argmax-stability stage2))
+                      (cons 'argmax-change-rate (assoc-ref 'argmax-change-rate stage2))
+                      (cons 'distinct-optima (assoc-ref 'distinct-optima stage2))
+                      (cons 'mean-regret (assoc-ref 'mean-regret stage2))
+                      (cons 'max-regret (assoc-ref 'max-regret stage2))
+                      (cons 'portfolio-return-min
+                            (assoc-ref 'portfolio-return-min stage2))
+                      (cons 'portfolio-return-max
+                            (assoc-ref 'portfolio-return-max stage2))))
               (cons 'scenarios scens))))
 
     ;; One call — 5 arguments fully specify the problem:

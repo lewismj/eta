@@ -31,12 +31,16 @@
     dag:nodes dag:parents dag:children
     dag:ancestors dag:descendants dag:non-descendants
     dag:has-path?
+    dag:add-edge dag:remove-edge dag:flip-edge
     dag:d-connected? dag:d-separated?
     ;; Causal identification (symbolic)
     dag:satisfies-backdoor?
     dag:adjustment-sets
+    dag:adjustment-sets-observed
     do:identify
     do:identify-details
+    do:identify-observed
+    do:identify-details-observed
     do:adjustment-formula->string
     ;; Numeric estimation (pure Eta, no FFI)
     do:estimate-effect
@@ -95,6 +99,24 @@
     (defun dag:has-path? (dag from to forbidden)
       (%dag-reachable? dag from to forbidden '()))
 
+    ;; Return `dag` with edge (from -> to) added if missing.
+    (defun dag:add-edge (dag from to)
+      (if (%dag-has-edge? dag from to)
+          dag
+          (cons (list from '-> to) dag)))
+
+    ;; Return `dag` with all edges (from -> to) removed.
+    (defun dag:remove-edge (dag from to)
+      (filter (lambda (e)
+                (not (and (eq? (%dag-edge-from e) from)
+                          (eq? (%dag-edge-to e) to))))
+              dag))
+
+    ;; Return `dag` with (from -> to) flipped to (to -> from).
+    ;; If (from -> to) is missing, this inserts only (to -> from).
+    (defun dag:flip-edge (dag from to)
+      (dag:add-edge (dag:remove-edge dag from to) to from))
+
     ;; -- Causal identification --------------------------------------------
 
     ;; True if there is at least one active path between X and Y given Z.
@@ -129,6 +151,22 @@
     ;; Candidate variables come from non-descendants(X), excluding X and Y.
     (defun dag:adjustment-sets (dag x y . rest)
       (let* ((cands (%adjustment-candidates dag x y))
+             (max-k (if (null? rest)
+                        (length cands)
+                        (%normalize-max-size (car rest) (length cands))))
+             (subsets (%subsets-up-to-size cands max-k)))
+        (filter (lambda (z)
+                  (dag:satisfies-backdoor? dag x y z))
+                subsets)))
+
+    ;; (dag:adjustment-sets-observed dag x y observed [max-size])
+    ;;
+    ;; Same as dag:adjustment-sets, but only variables present in `observed`
+    ;; are eligible for adjustment.  Useful when DAG variants include latent
+    ;; variables that must not appear in Z.
+    (defun dag:adjustment-sets-observed (dag x y observed . rest)
+      (let* ((all-cands (%adjustment-candidates dag x y))
+             (cands (filter (lambda (n) (%member? n observed)) all-cands))
              (max-k (if (null? rest)
                         (length cands)
                         (%normalize-max-size (car rest) (length cands))))
@@ -184,6 +222,49 @@
                    (cons 'all-z-sets z-sets)
                    (cons 'assumptions (%identify-assumptions)))))))))
 
+    ;; (do:identify-details-observed dag y x observed [max-size])
+    ;;
+    ;; Like do:identify-details, but restricts adjustment-set search to
+    ;; variables listed in `observed`.
+    (defun do:identify-details-observed (dag y x observed . rest)
+      (let* ((max-k (if (null? rest) #f (car rest)))
+             (backdoor-paths (%dag-backdoor-node-paths dag x y))
+             (z-sets (if max-k
+                         (dag:adjustment-sets-observed dag x y observed max-k)
+                         (dag:adjustment-sets-observed dag x y observed))))
+        (cond
+          ((null? backdoor-paths)
+           (list
+             (cons 'status 'direct)
+             (cons 'result '(direct))
+             (cons 'chosen-z '())
+             (cons 'all-z-sets (list '()))
+             (cons 'assumptions (%identify-assumptions-observed))))
+          ((null? z-sets)
+           (list
+             (cons 'status 'unidentified)
+             (cons 'result #f)
+             (cons 'chosen-z #f)
+             (cons 'all-z-sets '())
+             (cons 'assumptions (%identify-assumptions-observed))))
+          (#t
+           (let ((z (car z-sets)))
+             (if (null? z)
+                 (list
+                   (cons 'status 'direct)
+                   (cons 'result '(direct))
+                   (cons 'chosen-z z)
+                   (cons 'all-z-sets z-sets)
+                   (cons 'assumptions (%identify-assumptions-observed)))
+                 (list
+                   (cons 'status 'adjust)
+                   (cons 'result (list 'adjust z
+                                       (list 'P y x z)
+                                       (list 'P z)))
+                   (cons 'chosen-z z)
+                   (cons 'all-z-sets z-sets)
+                   (cons 'assumptions (%identify-assumptions-observed)))))))))
+
     ;; (do:identify dag y x [max-size])
     ;;
     ;; Backward-compatible convenience API returning only the formula.
@@ -191,6 +272,17 @@
       (let* ((details (if (null? rest)
                           (do:identify-details dag y x)
                           (do:identify-details dag y x (car rest))))
+             (result (assoc-ref 'result details)))
+        result))
+
+    ;; (do:identify-observed dag y x observed [max-size])
+    ;;
+    ;; Backward-compatible convenience API for observed-set-restricted
+    ;; identification.
+    (defun do:identify-observed (dag y x observed . rest)
+      (let* ((details (if (null? rest)
+                          (do:identify-details-observed dag y x observed)
+                          (do:identify-details-observed dag y x observed (car rest))))
              (result (assoc-ref 'result details)))
         result))
 
@@ -398,6 +490,12 @@
         positivity
         consistency-sutva))
 
+    (defun %identify-assumptions-observed ()
+      '(dag-correctness
+        observed-adjustment-only
+        positivity
+        consistency-sutva))
+
     ;; -- Set utilities ----------------------------------------------------
 
     (defun %member? (x xs)
@@ -421,4 +519,3 @@
               z-set))
 
   ))
-

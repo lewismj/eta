@@ -34,7 +34,7 @@ without losing Eta's current strengths (composability, explainability, exact con
 |------|-------|------------------|--------|
 | 0 | Baseline freeze + metrics | Reproducible benchmark and diagnostics | Implemented (2026-04-20) |
 | 1 | Causal identification hardening | Stronger DAG checks and adjustment-set logic | Implemented (2026-04-20) |
-| 2 | Misspecification robustness | DAG sensitivity + partial-identification bounds on returns | Planned |
+| 2 | Misspecification robustness | DAG sensitivity + partial-identification bounds on returns | Implemented (2026-04-20) |
 | 3 | Uncertainty-aware optimization | Robust portfolio choice under parameter uncertainty | Planned |
 | 4 | Structural/learned covariance | Better Sigma(m) aligned with causal structure | Planned |
 | 5 | Empirical stress-test suite | Evidence of graceful degradation vs baselines | Planned |
@@ -110,6 +110,10 @@ Current status: implemented in `std.causal` with d-separation checks, adjustment
 
 ## Stage 2 - DAG Sensitivity and Partial Identification
 
+Current status: implemented in `std.causal` and `examples/portfolio.eta` with
+DAG perturbation analysis, observed-set-aware identification, tau bounds, and
+decision-sensitivity diagnostics.
+
 ### Scope
 
 - Evaluate causal outputs across plausible DAG variants.
@@ -118,8 +122,9 @@ Current status: implemented in `std.causal` with d-separation checks, adjustment
 ### Touchpoints
 
 - [examples/portfolio.eta](C:/Users/lewis/develop/eta/examples/portfolio.eta)
+- [stdlib/std/causal.eta](C:/Users/lewis/develop/eta/stdlib/std/causal.eta)
+- [stdlib/tests/causal.test.eta](C:/Users/lewis/develop/eta/stdlib/tests/causal.test.eta)
 - [docs/portfolio.md](C:/Users/lewis/develop/eta/docs/portfolio.md)
-- optional new helper module under `stdlib/std/` (for robustness utilities)
 
 ### Deliverables
 
@@ -129,6 +134,10 @@ Current status: implemented in `std.causal` with d-separation checks, adjustment
 - Partial-ID outputs:
   - `tau_min`, `tau_max` per asset
   - portfolio return bounds under DAG family
+- Decision sensitivity outputs:
+  - argmax stability analysis across DAG variants
+  - frequency of optimal-allocation changes
+  - decision regret across the DAG family
 - Robustness report section:
   - "stable", "moderate", "fragile" decision labels
 
@@ -136,6 +145,7 @@ Current status: implemented in `std.causal` with d-separation checks, adjustment
 
 - Portfolio example prints both point estimate and bounds.
 - Bounded outputs exist even when some candidate DAGs are non-identifiable.
+- Portfolio example reports decision-sensitivity diagnostics (stability + regret).
 
 ---
 
