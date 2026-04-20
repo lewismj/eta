@@ -3,10 +3,15 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <expected>
+#include <mutex>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <functional>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 #include <boost/unordered/concurrent_flat_map.hpp>
 
@@ -117,6 +122,11 @@ namespace eta::runtime::memory::heap {
 
     class Heap {
     public:
+        struct PendingFinalizer {
+            LispVal obj{};
+            LispVal proc{};
+        };
+
         class ExternalRootFrame {
         public:
             explicit ExternalRootFrame(Heap& heap)
@@ -296,6 +306,33 @@ namespace eta::runtime::memory::heap {
         const std::vector<LispVal>& external_roots() const { return external_roots_; }
 
         /**
+         * Register or replace a finalizer procedure for an object id.
+         * Cons-pool objects are rejected to avoid ObjectId reuse hazards.
+         */
+        std::expected<void, HeapError> register_finalizer(ObjectId id, LispVal proc);
+
+        /// Remove a finalizer registration. Returns true if an entry was erased.
+        bool remove_finalizer(ObjectId id);
+
+        /// Fetch a finalizer procedure for an object id, if present.
+        std::optional<LispVal> fetch_finalizer(ObjectId id) const;
+
+        /// Snapshot finalizer registrations for GC-side iteration.
+        std::vector<std::pair<ObjectId, LispVal>> finalizer_table_snapshot() const;
+
+        /// Append an object/procedure pair to the pending finalizer queue.
+        void enqueue_pending_finalizer(LispVal obj, LispVal proc);
+
+        /// Pop one pending finalizer pair from the front of the queue.
+        std::optional<PendingFinalizer> dequeue_pending_finalizer();
+
+        /// Number of pending finalizer pairs.
+        std::size_t pending_finalizer_count() const;
+
+        /// Snapshot pending finalizers for GC root marking.
+        std::vector<PendingFinalizer> pending_finalizers_snapshot() const;
+
+        /**
          * Sweep the cons pool and adjust total_heap_bytes.
          * Returns the number of freed pool cells.
          */
@@ -333,6 +370,11 @@ namespace eta::runtime::memory::heap {
         std::atomic<ObjectId> next_id{ 1 };
         std::unique_ptr<ConsPool> cons_pool_;
         std::vector<LispVal> external_roots_;
+        mutable std::mutex finalizer_mutex_;
+        std::unordered_map<ObjectId, LispVal> finalizer_table_;
+        std::deque<PendingFinalizer> pending_finalizers_;
+
+        void erase_pending_finalizers_for_object_unsafe(ObjectId id);
 
     };
 

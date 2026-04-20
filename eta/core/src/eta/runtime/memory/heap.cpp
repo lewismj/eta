@@ -1,5 +1,6 @@
 #include "heap.h"
 #include "cons_pool.h"
+#include <algorithm>
 #include <iostream>
 
 namespace eta::runtime::memory::heap {
@@ -73,6 +74,88 @@ namespace eta::runtime::memory::heap {
         return result;
     }
 
+    /// finalizer registration / queue
+
+    std::expected<void, HeapError> Heap::register_finalizer(const ObjectId id, const LispVal proc) {
+        /**
+         * ObjectId reuse in the cons pool makes finalizer delivery ambiguous.
+         * Keep v1 scope to general-heap objects only.
+         */
+        if (cons_pool_ && cons_pool_->owns(id)) {
+            return std::unexpected(HeapError::UnexpectedObjectKind);
+        }
+
+        HeapEntry entry{};
+        if (!try_get(id, entry)) {
+            return std::unexpected(HeapError::ObjectIdNotFound);
+        }
+
+        std::lock_guard lock(finalizer_mutex_);
+        finalizer_table_[id] = proc; ///< re-registration replaces prior proc
+        return {};
+    }
+
+    bool Heap::remove_finalizer(const ObjectId id) {
+        std::lock_guard lock(finalizer_mutex_);
+        return finalizer_table_.erase(id) > 0;
+    }
+
+    std::optional<LispVal> Heap::fetch_finalizer(const ObjectId id) const {
+        std::lock_guard lock(finalizer_mutex_);
+        const auto it = finalizer_table_.find(id);
+        if (it == finalizer_table_.end()) return std::nullopt;
+        return it->second;
+    }
+
+    std::vector<std::pair<ObjectId, LispVal>> Heap::finalizer_table_snapshot() const {
+        std::vector<std::pair<ObjectId, LispVal>> out;
+        std::lock_guard lock(finalizer_mutex_);
+        out.reserve(finalizer_table_.size());
+        for (const auto& [id, proc] : finalizer_table_) {
+            out.emplace_back(id, proc);
+        }
+        return out;
+    }
+
+    void Heap::enqueue_pending_finalizer(const LispVal obj, const LispVal proc) {
+        std::lock_guard lock(finalizer_mutex_);
+        pending_finalizers_.push_back(PendingFinalizer{
+            .obj = obj,
+            .proc = proc,
+        });
+    }
+
+    std::optional<Heap::PendingFinalizer> Heap::dequeue_pending_finalizer() {
+        std::lock_guard lock(finalizer_mutex_);
+        if (pending_finalizers_.empty()) return std::nullopt;
+        auto next = pending_finalizers_.front();
+        pending_finalizers_.pop_front();
+        return next;
+    }
+
+    std::size_t Heap::pending_finalizer_count() const {
+        std::lock_guard lock(finalizer_mutex_);
+        return pending_finalizers_.size();
+    }
+
+    std::vector<Heap::PendingFinalizer> Heap::pending_finalizers_snapshot() const {
+        std::lock_guard lock(finalizer_mutex_);
+        return {pending_finalizers_.begin(), pending_finalizers_.end()};
+    }
+
+    void Heap::erase_pending_finalizers_for_object_unsafe(const ObjectId id) {
+        pending_finalizers_.erase(
+            std::remove_if(
+                pending_finalizers_.begin(),
+                pending_finalizers_.end(),
+                [id](const PendingFinalizer& pending) {
+                    return ops::is_boxed(pending.obj)
+                           && ops::tag(pending.obj) == Tag::HeapObject
+                           && static_cast<ObjectId>(ops::payload(pending.obj)) == id;
+                }),
+            pending_finalizers_.end());
+    }
+
     /// deallocation (pool-aware)
 
     std::expected<void, HeapError> Heap::deallocate(const ObjectId id) {
@@ -83,6 +166,11 @@ namespace eta::runtime::memory::heap {
             }
             cons_pool_->free_slot(id);
             total_heap_bytes.fetch_sub(sizeof(types::Cons), std::memory_order_relaxed);
+            {
+                std::lock_guard lock(finalizer_mutex_);
+                finalizer_table_.erase(id);
+                erase_pending_finalizers_for_object_unsafe(id);
+            }
             return {};
         }
 
@@ -113,6 +201,11 @@ namespace eta::runtime::memory::heap {
          * other threads from accessing freed memory via try_get()
          */
         heap_objects.erase(id);
+        {
+            std::lock_guard lock(finalizer_mutex_);
+            finalizer_table_.erase(id);
+            erase_pending_finalizers_for_object_unsafe(id);
+        }
 
         /// Now safe to destroy - no other thread can find this entry
         try {

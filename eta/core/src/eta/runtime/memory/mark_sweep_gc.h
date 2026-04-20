@@ -113,6 +113,11 @@ namespace eta::runtime::memory::gc {
             if (out_stats) out_stats->bytes_before = heap.total_bytes();
             clear_marks(heap);
             mark_from_roots(heap, enumerate_roots);
+            mark_pending_finalizers(heap);
+            mark_live_finalizer_procs_fixpoint(heap);
+            enqueue_dead_finalizers(heap);
+            mark_pending_finalizers(heap);
+            mark_live_finalizer_procs_fixpoint(heap);
 
             /**
              * Pause allocations during sweep to prevent unmarked new objects
@@ -157,23 +162,20 @@ namespace eta::runtime::memory::gc {
             }
         }
 
-        /// templated mark phase using centralized visitor
-        template <typename EnumerateRoots>
-        void mark_from_roots(Heap& heap, EnumerateRoots enumerate_roots) const {
-            using namespace eta::runtime::nanbox;
+        static bool is_marked(const Heap& heap, heap::ObjectId id) {
+            if (heap.cons_pool().owns(id)) {
+                heap::HeapEntry entry{};
+                if (!heap.cons_pool().try_get_entry(id, entry)) return false;
+                return (entry.header.flags & heap::MARK_BIT) != 0;
+            }
 
-            std::vector<heap::ObjectId> work;
-            work.reserve(1024);
+            heap::HeapEntry entry{};
+            if (!heap.try_get(id, entry)) return false;
+            return (entry.header.flags & heap::MARK_BIT) != 0;
+        }
 
-            /// Enumerate and scan roots - directly check for heap refs
-            enumerate_roots([&](LispVal v) {
-                push_if_heap_ref(v, work);
-            });
-
-            /// Use lambda-based visitor for marking
-            auto push_ref = [&work](LispVal v) {
-                push_if_heap_ref(v, work);
-            };
+        bool mark_worklist(Heap& heap, std::vector<heap::ObjectId>& work) const {
+            bool marked_any = false;
 
             auto& pool = heap.cons_pool();
             heap::HeapEntry entry{};
@@ -182,29 +184,109 @@ namespace eta::runtime::memory::gc {
                 work.pop_back();
 
                 /**
-                 * Fast path: pool-owned cons cell
+                 * Fast path: pool-owned cons cell.
                  * try_mark returns Cons* only if newly marked (skips already-marked
-                 * and freed slots).  Avoids try_get / with_entry / HeapVisitor dispatch.
+                 * and freed slots).
                  */
                 if (auto* cons = pool.try_mark(id)) {
+                    marked_any = true;
                     push_if_heap_ref(cons->car, work);
                     push_if_heap_ref(cons->cdr, work);
                     continue;
                 }
-                /// or freed slot.  Either way, nothing to do.
+                /// already marked or freed slot. Either way, nothing to do.
                 if (pool.owns(id)) continue;
 
-                /// General-heap path (unchanged)
                 if (!heap.try_get(id, entry)) continue; ///< stale id
                 if ((entry.header.flags & heap::MARK_BIT) != 0) continue; ///< already marked
 
-                /// set mark bit
-                heap.with_entry(id, [&](heap::HeapEntry& e) {
+                if (!heap.with_entry(id, [&](heap::HeapEntry& e) {
                     e.header.flags |= heap::MARK_BIT;
-                });
+                })) {
+                    continue;
+                }
 
-                /// Use centralized dispatch via lambda visitor
+                marked_any = true;
+                auto push_ref = [&work](LispVal v) {
+                    push_if_heap_ref(v, work);
+                };
                 visit_heap_refs(entry, push_ref);
+            }
+
+            return marked_any;
+        }
+
+        template <typename EnumerateValues>
+        bool mark_from_values(Heap& heap, EnumerateValues enumerate_values) const {
+            std::vector<heap::ObjectId> work;
+            work.reserve(1024);
+
+            enumerate_values([&](LispVal v) {
+                push_if_heap_ref(v, work);
+            });
+
+            return mark_worklist(heap, work);
+        }
+
+        bool mark_value(Heap& heap, LispVal value) const {
+            return mark_from_values(heap, [&](auto&& visit) {
+                visit(value);
+            });
+        }
+
+        /// templated mark phase using centralized visitor
+        template <typename EnumerateRoots>
+        void mark_from_roots(Heap& heap, EnumerateRoots enumerate_roots) const {
+            (void)mark_from_values(heap, enumerate_roots);
+        }
+
+        void mark_pending_finalizers(Heap& heap) const {
+            auto pending = heap.pending_finalizers_snapshot();
+            if (pending.empty()) return;
+
+            (void)mark_from_values(heap, [&](auto&& visit) {
+                for (const auto& finalizer : pending) {
+                    visit(finalizer.obj);
+                    visit(finalizer.proc);
+                }
+            });
+        }
+
+        void mark_live_finalizer_procs_fixpoint(Heap& heap) const {
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                auto finalizers = heap.finalizer_table_snapshot();
+                for (const auto& [obj_id, proc] : finalizers) {
+                    if (!is_marked(heap, obj_id)) continue;
+                    if (mark_value(heap, proc)) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        void enqueue_dead_finalizers(Heap& heap) const {
+            auto finalizers = heap.finalizer_table_snapshot();
+            for (const auto& [obj_id, proc] : finalizers) {
+                if (is_marked(heap, obj_id)) continue;
+
+                heap::HeapEntry entry{};
+                if (!heap.try_get(obj_id, entry)) {
+                    (void)heap.remove_finalizer(obj_id);
+                    continue;
+                }
+
+                const auto boxed_obj = ops::box(Tag::HeapObject, obj_id);
+                heap.enqueue_pending_finalizer(boxed_obj, proc);
+                (void)heap.remove_finalizer(obj_id);
+
+                /**
+                 * Keep the finalized object and procedure graphs alive until the VM
+                 * drains the pending queue.
+                 */
+                (void)mark_value(heap, boxed_obj);
+                (void)mark_value(heap, proc);
             }
         }
     };

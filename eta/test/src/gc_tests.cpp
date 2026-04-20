@@ -141,6 +141,110 @@ BOOST_AUTO_TEST_CASE(clear_marks_resets_mark_bits) {
     BOOST_TEST(!any_marked);
 }
 
+BOOST_AUTO_TEST_CASE(dead_finalized_object_is_queued_and_rescued) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    auto obj = expect_ok(make_vector(heap, {}));
+    auto proc = expect_ok(make_primitive(
+        heap,
+        [](const std::vector<LispVal>&) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
+            return Nil;
+        },
+        1,
+        false
+    ));
+
+    const auto obj_id = static_cast<ObjectId>(payload(obj));
+    const auto proc_id = static_cast<ObjectId>(payload(proc));
+    BOOST_REQUIRE(heap.register_finalizer(obj_id, proc).has_value());
+
+    GCStats stats{};
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+
+    BOOST_TEST(stats.objects_freed == 0u);
+    BOOST_TEST(heap.pending_finalizer_count() == 1u);
+    BOOST_TEST(!heap.fetch_finalizer(obj_id).has_value());
+
+    HeapEntry entry{};
+    BOOST_TEST(heap.try_get(obj_id, entry));
+    BOOST_TEST(heap.try_get(proc_id, entry));
+
+    auto pending = heap.dequeue_pending_finalizer();
+    BOOST_REQUIRE(pending.has_value());
+    BOOST_TEST(pending->obj == obj);
+    BOOST_TEST(pending->proc == proc);
+}
+
+BOOST_AUTO_TEST_CASE(finalizer_table_is_ephemeron_like_for_keys) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    auto obj = expect_ok(make_vector(heap, {}));
+    auto proc = expect_ok(make_primitive(
+        heap,
+        [](const std::vector<LispVal>&) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
+            return Nil;
+        },
+        1,
+        false
+    ));
+
+    const auto obj_id = static_cast<ObjectId>(payload(obj));
+    BOOST_REQUIRE(heap.register_finalizer(obj_id, proc).has_value());
+
+    /// Root only the finalizer procedure, not the key object.
+    roots.push_back(proc);
+
+    GCStats stats{};
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+
+    BOOST_TEST(stats.objects_freed == 0u);
+    BOOST_TEST(heap.pending_finalizer_count() == 1u);
+    BOOST_TEST(!heap.fetch_finalizer(obj_id).has_value());
+
+    auto pending = heap.dequeue_pending_finalizer();
+    BOOST_REQUIRE(pending.has_value());
+    BOOST_TEST(pending->obj == obj);
+    BOOST_TEST(pending->proc == proc);
+}
+
+BOOST_AUTO_TEST_CASE(pending_finalizers_survive_subsequent_gc_cycles) {
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    auto obj = expect_ok(make_vector(heap, {}));
+    auto proc = expect_ok(make_primitive(
+        heap,
+        [](const std::vector<LispVal>&) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
+            return Nil;
+        },
+        1,
+        false
+    ));
+
+    const auto obj_id = static_cast<ObjectId>(payload(obj));
+    const auto proc_id = static_cast<ObjectId>(payload(proc));
+    BOOST_REQUIRE(heap.register_finalizer(obj_id, proc).has_value());
+
+    GCStats first{};
+    gc.collect(heap, roots.begin(), roots.end(), &first);
+    BOOST_TEST(first.objects_freed == 0u);
+    BOOST_TEST(heap.pending_finalizer_count() == 1u);
+
+    GCStats second{};
+    gc.collect(heap, roots.begin(), roots.end(), &second);
+    BOOST_TEST(second.objects_freed == 0u);
+    BOOST_TEST(heap.pending_finalizer_count() == 1u);
+
+    HeapEntry entry{};
+    BOOST_TEST(heap.try_get(obj_id, entry));
+    BOOST_TEST(heap.try_get(proc_id, entry));
+}
+
 BOOST_AUTO_TEST_CASE(stats_sanity) {
     Heap heap(1ull << 20);
     MarkSweepGC gc;
