@@ -1,7 +1,8 @@
 # Runtime & Garbage Collection
 
 [← Back to README](../README.md) · [Architecture](architecture.md) ·
-[NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md)
+[NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
+[Finalizers & Guardians](finalizers.md)
 
 ---
 
@@ -293,6 +294,21 @@ After sweeping, the heap is **resumed** and allocations proceed normally.
 
 ---
 
+## Finalizers and Guardians
+
+Finalizers and guardians are integrated into the same mark/sweep pipeline
+through side tables in Heap.
+
+- Finalizers are registered with register-finalizer! and run as (proc obj).
+- Guardians track objects weakly and deliver them later via guardian-collect.
+- Finalization is at-most-once per registration and has no ordering guarantee.
+- Resurrected objects remain alive if a finalizer stores them in a live root.
+
+See [Finalizers & Guardians](finalizers.md) for API details and usage guidance
+(including resource cleanup patterns for ports and sockets).
+
+---
+
 ## Builtin Environment
 
 **File:** [`builtin_env.h`](../eta/core/src/eta/runtime/builtin_env.h) ·
@@ -416,4 +432,3 @@ graph TD
 All `LispVal` references that are **not** `HeapObject`-tagged (doubles,
 fixnums, chars, nil) point to no external storage — they are self-contained
 in the 64-bit word.
-

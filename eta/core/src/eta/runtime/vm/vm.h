@@ -219,6 +219,21 @@ public:
 
     void collect_garbage();
 
+    /**
+     * @brief Drain every pending finalizer immediately.
+     *
+     * Test-only deterministic hook used by VM/GC unit tests.
+     */
+    void drain_finalizers_for_test();
+
+    /**
+     * @brief Force one GC cycle and then drain pending finalizers.
+     *
+     * Test-only deterministic hook used when tests need predictable
+     * finalizer delivery in a single call.
+     */
+    void collect_garbage_and_drain_finalizers_for_test();
+
     std::expected<LispVal, RuntimeError> execute(const BytecodeFunction& main);
 
     std::expected<LispVal, RuntimeError> call_value(LispVal proc, std::vector<LispVal> args);

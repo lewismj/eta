@@ -2685,6 +2685,151 @@ BOOST_FIXTURE_TEST_CASE(non_resurrected_finalized_object_is_reclaimed_later, Fin
     BOOST_TEST(!heap.try_get(obj_id, entry));
 }
 
+BOOST_FIXTURE_TEST_CASE(resurrected_finalized_object_survives_next_collection, FinalizerVMFixture) {
+    VM vm(heap, intern_table);
+    vm.globals().resize(1, Nil);
+
+    int call_count = 0;
+    auto obj = make_vector(heap, {});
+    BOOST_REQUIRE(obj.has_value());
+    const auto obj_id = static_cast<memory::heap::ObjectId>(nanbox::ops::payload(*obj));
+
+    auto proc = make_primitive(
+        heap,
+        [&vm, &call_count](const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
+            if (args.size() != 1u) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "finalizer: unexpected argument count"}});
+            }
+            ++call_count;
+            vm.globals()[0] = args[0];
+            return Nil;
+        },
+        1,
+        false
+    );
+    BOOST_REQUIRE(proc.has_value());
+    BOOST_REQUIRE(heap.register_finalizer(obj_id, *proc).has_value());
+
+    vm.collect_garbage();
+    BOOST_TEST(heap.pending_finalizer_count() == 1u);
+
+    vm.drain_finalizers_for_test();
+    BOOST_TEST(call_count == 1);
+    BOOST_TEST(vm.globals()[0] == *obj);
+    BOOST_TEST(heap.pending_finalizer_count() == 0u);
+
+    memory::heap::HeapEntry entry{};
+    vm.collect_garbage();
+    BOOST_TEST(heap.try_get(obj_id, entry));
+
+    vm.globals()[0] = Nil;
+    vm.collect_garbage();
+    BOOST_TEST(!heap.try_get(obj_id, entry));
+
+    vm.collect_garbage();
+    BOOST_TEST(call_count == 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(finalizer_and_guardian_on_same_object_deliver_once_each, FinalizerVMFixture) {
+    VM vm(heap, intern_table);
+    vm.globals().resize(1, Nil);
+
+    auto guardian = make_guardian(heap);
+    BOOST_REQUIRE(guardian.has_value());
+    vm.globals()[0] = *guardian; ///< Keep guardian live across GC.
+
+    auto obj = make_vector(heap, {});
+    BOOST_REQUIRE(obj.has_value());
+    const auto obj_id = static_cast<memory::heap::ObjectId>(nanbox::ops::payload(*obj));
+    const auto guardian_id = static_cast<memory::heap::ObjectId>(nanbox::ops::payload(*guardian));
+
+    int finalizer_calls = 0;
+    auto proc = make_primitive(
+        heap,
+        [&finalizer_calls, expected_obj = *obj](const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
+            if (args.size() != 1u || args[0] != expected_obj) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "finalizer: unexpected argument"}});
+            }
+            ++finalizer_calls;
+            return Nil;
+        },
+        1,
+        false
+    );
+    BOOST_REQUIRE(proc.has_value());
+    BOOST_REQUIRE(heap.register_finalizer(obj_id, *proc).has_value());
+    BOOST_REQUIRE(heap.guardian_track(guardian_id, obj_id).has_value());
+
+    vm.collect_garbage();
+    BOOST_TEST(heap.pending_finalizer_count() == 1u);
+
+    auto queued_obj = heap.dequeue_guardian_ready(guardian_id);
+    BOOST_REQUIRE(queued_obj.has_value());
+    BOOST_TEST(*queued_obj == *obj);
+    BOOST_TEST(!heap.dequeue_guardian_ready(guardian_id).has_value());
+
+    vm.drain_finalizers_for_test();
+    BOOST_TEST(finalizer_calls == 1);
+    BOOST_TEST(heap.pending_finalizer_count() == 0u);
+
+    memory::heap::HeapEntry entry{};
+    BOOST_TEST(heap.try_get(obj_id, entry));
+
+    vm.collect_garbage();
+    BOOST_TEST(!heap.try_get(obj_id, entry));
+}
+
+BOOST_FIXTURE_TEST_CASE(cyclic_finalizable_objects_are_reclaimed_after_finalizer_runs, FinalizerVMFixture) {
+    VM vm(heap, intern_table);
+
+    auto a = make_vector(heap, {});
+    auto b = make_vector(heap, {});
+    BOOST_REQUIRE(a.has_value());
+    BOOST_REQUIRE(b.has_value());
+
+    const auto a_id = static_cast<memory::heap::ObjectId>(nanbox::ops::payload(*a));
+    const auto b_id = static_cast<memory::heap::ObjectId>(nanbox::ops::payload(*b));
+
+    auto* a_vec = heap.try_get_as<memory::heap::ObjectKind::Vector, eta::runtime::types::Vector>(a_id);
+    auto* b_vec = heap.try_get_as<memory::heap::ObjectKind::Vector, eta::runtime::types::Vector>(b_id);
+    BOOST_REQUIRE(a_vec != nullptr);
+    BOOST_REQUIRE(b_vec != nullptr);
+    a_vec->elements.push_back(*b);
+    b_vec->elements.push_back(*a);
+
+    int finalizer_calls = 0;
+    auto proc = make_primitive(
+        heap,
+        [&finalizer_calls](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
+            ++finalizer_calls;
+            return Nil;
+        },
+        1,
+        false
+    );
+    BOOST_REQUIRE(proc.has_value());
+    BOOST_REQUIRE(heap.register_finalizer(a_id, *proc).has_value());
+
+    vm.collect_garbage();
+    BOOST_TEST(heap.pending_finalizer_count() == 1u);
+
+    memory::heap::HeapEntry entry{};
+    BOOST_TEST(heap.try_get(a_id, entry));
+    BOOST_TEST(heap.try_get(b_id, entry));
+
+    vm.drain_finalizers_for_test();
+    BOOST_TEST(finalizer_calls == 1);
+    BOOST_TEST(heap.pending_finalizer_count() == 0u);
+
+    vm.collect_garbage();
+    BOOST_TEST(!heap.try_get(a_id, entry));
+    BOOST_TEST(!heap.try_get(b_id, entry));
+}
+
 BOOST_AUTO_TEST_SUITE_END() ///< finalizer_vm_tests
 
 BOOST_AUTO_TEST_SUITE(guardian_primitive_tests)
@@ -2707,6 +2852,106 @@ BOOST_FIXTURE_TEST_CASE(finalizer_primitive_register_and_unregister_smoke, VMTes
         "  (define r3 (unregister-finalizer! obj))"
         "  (define result (and r1 r2 (not r3))))");
     BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(register_finalizer_validates_types, VMTestFixture) {
+    auto bad_obj_err = run_expect_error(
+        "(module m"
+        "  (define result (register-finalizer! 42 (lambda (x) #t))))");
+    auto* bad_obj_vm = std::get_if<VMError>(&bad_obj_err);
+    BOOST_REQUIRE(bad_obj_vm);
+    BOOST_CHECK(bad_obj_vm->code == RuntimeErrorCode::TypeError);
+
+    auto bad_proc_err = run_expect_error(
+        "(module m"
+        "  (define obj (vector))"
+        "  (define result (register-finalizer! obj 42)))");
+    auto* bad_proc_vm = std::get_if<VMError>(&bad_proc_err);
+    BOOST_REQUIRE(bad_proc_vm);
+    BOOST_CHECK(bad_proc_vm->code == RuntimeErrorCode::TypeError);
+
+    auto cons_err = run_expect_error(
+        "(module m"
+        "  (define obj (cons 1 2))"
+        "  (define result (register-finalizer! obj (lambda (x) #t))))");
+    auto* cons_vm = std::get_if<VMError>(&cons_err);
+    BOOST_REQUIRE(cons_vm);
+    BOOST_CHECK(cons_vm->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_FIXTURE_TEST_CASE(guardian_primitives_validate_types, VMTestFixture) {
+    auto track_bad_guardian = run_expect_error(
+        "(module m"
+        "  (define obj (vector))"
+        "  (define result (guardian-track! 42 obj)))");
+    auto* track_bad_guardian_vm = std::get_if<VMError>(&track_bad_guardian);
+    BOOST_REQUIRE(track_bad_guardian_vm);
+    BOOST_CHECK(track_bad_guardian_vm->code == RuntimeErrorCode::TypeError);
+
+    auto track_bad_object = run_expect_error(
+        "(module m"
+        "  (define g (make-guardian))"
+        "  (define result (guardian-track! g 42)))");
+    auto* track_bad_object_vm = std::get_if<VMError>(&track_bad_object);
+    BOOST_REQUIRE(track_bad_object_vm);
+    BOOST_CHECK(track_bad_object_vm->code == RuntimeErrorCode::TypeError);
+
+    auto track_cons_object = run_expect_error(
+        "(module m"
+        "  (define g (make-guardian))"
+        "  (define obj (cons 1 2))"
+        "  (define result (guardian-track! g obj)))");
+    auto* track_cons_vm = std::get_if<VMError>(&track_cons_object);
+    BOOST_REQUIRE(track_cons_vm);
+    BOOST_CHECK(track_cons_vm->code == RuntimeErrorCode::TypeError);
+
+    auto collect_bad_guardian = run_expect_error(
+        "(module m"
+        "  (define result (guardian-collect 42)))");
+    auto* collect_bad_guardian_vm = std::get_if<VMError>(&collect_bad_guardian);
+    BOOST_REQUIRE(collect_bad_guardian_vm);
+    BOOST_CHECK(collect_bad_guardian_vm->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_FIXTURE_TEST_CASE(finalizer_and_guardian_primitives_validate_arity, VMTestFixture) {
+    auto register_arity_err = run_expect_error(
+        "(module m"
+        "  (define obj (vector))"
+        "  (define result (register-finalizer! obj)))");
+    auto* register_arity_vm = std::get_if<VMError>(&register_arity_err);
+    BOOST_REQUIRE(register_arity_vm);
+    BOOST_CHECK(register_arity_vm->code == RuntimeErrorCode::InvalidArity);
+
+    auto unregister_arity_err = run_expect_error(
+        "(module m"
+        "  (define obj (vector))"
+        "  (define result (unregister-finalizer! obj obj)))");
+    auto* unregister_arity_vm = std::get_if<VMError>(&unregister_arity_err);
+    BOOST_REQUIRE(unregister_arity_vm);
+    BOOST_CHECK(unregister_arity_vm->code == RuntimeErrorCode::InvalidArity);
+
+    auto make_guardian_arity_err = run_expect_error(
+        "(module m"
+        "  (define result (make-guardian 1)))");
+    auto* make_guardian_arity_vm = std::get_if<VMError>(&make_guardian_arity_err);
+    BOOST_REQUIRE(make_guardian_arity_vm);
+    BOOST_CHECK(make_guardian_arity_vm->code == RuntimeErrorCode::InvalidArity);
+
+    auto track_arity_err = run_expect_error(
+        "(module m"
+        "  (define g (make-guardian))"
+        "  (define result (guardian-track! g)))");
+    auto* track_arity_vm = std::get_if<VMError>(&track_arity_err);
+    BOOST_REQUIRE(track_arity_vm);
+    BOOST_CHECK(track_arity_vm->code == RuntimeErrorCode::InvalidArity);
+
+    auto collect_arity_err = run_expect_error(
+        "(module m"
+        "  (define g (make-guardian))"
+        "  (define result (guardian-collect g 1)))");
+    auto* collect_arity_vm = std::get_if<VMError>(&collect_arity_err);
+    BOOST_REQUIRE(collect_arity_vm);
+    BOOST_CHECK(collect_arity_vm->code == RuntimeErrorCode::InvalidArity);
 }
 
 BOOST_AUTO_TEST_SUITE_END() ///< guardian_primitive_tests

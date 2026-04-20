@@ -20,6 +20,7 @@
   <a href="docs/compiler.md">Compiler</a> ·
   <a href="docs/optimization.md">Optimization</a> ·
   <a href="docs/runtime.md">Runtime &amp; GC</a> ·
+  <a href="docs/finalizers.md">Finalizers &amp; Guardians</a> ·
   <a href="docs/networking.md">Networking</a> ·
   <a href="docs/message-passing.md">Message Passing</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
@@ -359,6 +360,7 @@ flowchart LR
 | **[Compiler (`etac`)](docs/compiler.md)**  | AOT bytecode compiler: CLI reference, `.etac` binary format, optimization passes, disassembly |
 | **[Optimization](docs/optimization.md)**   | IR optimization pipeline architecture, built-in passes, writing custom passes                 |
 | **[Runtime & GC](docs/runtime.md)**        | Heap architecture, object kinds, mark-sweep GC, intern table, factory                         |
+| **[Finalizers & Guardians](docs/finalizers.md)** | Weak lifecycle hooks for cleanup, resurrection semantics, and guardian queues            |
 | **[Modules & Stdlib](docs/modules.md)**    | Module syntax, linker phases, import filters, standard library reference                      |
 | **[Language Guide](docs/examples.md)**     | Guided tour of the language using simple example programs with expected output                |
 | **[Networking Primitives](docs/networking.md)** | nng socket API: `nng-socket`, `send!`, `recv!`, `nng-poll`, endpoints, error handling   |

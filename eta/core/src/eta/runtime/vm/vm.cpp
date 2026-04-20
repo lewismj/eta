@@ -14,6 +14,7 @@
 #include "eta/runtime/port.h"
 #include "eta/runtime/clp/domain.h"
 #include <bit>
+#include <limits>
 
 namespace eta::runtime::vm {
 
@@ -134,6 +135,17 @@ void VM::collect_garbage() {
         /// Mark active AD tape stack
         for (auto v : active_tapes_) visit(v);
     });
+}
+
+void VM::drain_finalizers_for_test() {
+    while (heap_.pending_finalizer_count() != 0u) {
+        process_pending_finalizers((std::numeric_limits<std::size_t>::max)());
+    }
+}
+
+void VM::collect_garbage_and_drain_finalizers_for_test() {
+    collect_garbage();
+    drain_finalizers_for_test();
 }
 
 void VM::process_pending_finalizers(const std::size_t budget) {
