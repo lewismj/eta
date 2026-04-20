@@ -31,6 +31,19 @@
         (lambda (opt witness)
           (cons opt witness))))
 
+    (defun portfolio-risk-expr (x y)
+      (clp:r+ (clp:r*scalar 0.04 (list '* x x))
+              (clp:r*scalar 0.02 (list '* x y))
+              (clp:r*scalar 0.09 (list '* y y))))
+
+    (defun portfolio-risk-value (x y)
+      (+ (+ (* 0.04 (* x x))
+            (* 0.02 (* x y)))
+         (* 0.09 (* y y))))
+
+    (defun portfolio-return-value (x y)
+      (+ (* 0.10 x) (* 0.08 y)))
+
     (define suite
       (make-group "clpr-qp-optimize-smoke"
         (list
@@ -118,6 +131,42 @@
                                 (%clp-r-qp-minimize
                                   (list '+ (list '* x x)
                                             (list '* -1 y)))))
+                (unwind-trail m))))
+
+          (make-test "qp portfolio regression keeps constraints and score consistency"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var))
+                      (y (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #t (clp:r<= x 1))
+                  (assert-equal #t (clp:r>= y 0))
+                  (assert-equal #t (clp:r<= y 1))
+                  (assert-equal #t (clp:r= (clp:r+ x y) 1))
+                  (assert-equal #t (clp:r<= x 0.75))
+                  (let* ((res (optimize->pair
+                                (lambda ()
+                                  (clp:rq-maximize
+                                    (clp:r-
+                                      (clp:r+ (clp:r*scalar 0.10 x)
+                                              (clp:r*scalar 0.08 y))
+                                      (clp:r*scalar 0.5 (portfolio-risk-expr x y)))))))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-equal #t (clp:r-feasible?))
+                    (let* ((xv (deref-lvar x))
+                           (yv (deref-lvar y))
+                           (risk (portfolio-risk-value xv yv))
+                           (ret (portfolio-return-value xv yv))
+                           (score (- ret (* 0.5 risk))))
+                      (assert-approx-equal 1.0 (+ xv yv) 1e-6)
+                      (assert-true (<= xv (+ 0.75 1e-8)))
+                      (assert-true (>= xv -1e-8))
+                      (assert-true (>= yv -1e-8))
+                      (assert-approx-equal 0.75 xv 1e-5)
+                      (assert-approx-equal 0.25 yv 1e-5)
+                      (assert-approx-equal score opt 1e-6))))
                 (unwind-trail m))))
 
           (make-test "qp rejects non-convex objective"

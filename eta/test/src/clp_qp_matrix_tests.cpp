@@ -154,6 +154,51 @@ BOOST_AUTO_TEST_CASE(convexity_check_for_maximize_accepts_concave_objective) {
     BOOST_TEST(res.has_value());
 }
 
+BOOST_AUTO_TEST_CASE(convexity_check_accepts_small_negative_mode_within_jitter_budget) {
+    const LispVal x = lvar();
+    const LispVal y = lvar();
+    const auto xid = id_of(x);
+    const auto yid = id_of(y);
+
+    QuadraticExpr expr;
+    expr.quadratic_terms.push_back(QuadraticTerm{.var_i = xid, .var_j = xid, .coef = 0.5});
+    expr.quadratic_terms.push_back(QuadraticTerm{.var_i = yid, .var_j = yid, .coef = -2.5e-11});
+    auto matrix = materialize_quadratic_objective_matrix(expr);
+    BOOST_REQUIRE(matrix.has_value());
+
+    QuadraticConvexityConfig cfg;
+    cfg.abs_tol = 1e-12;
+    cfg.rel_tol = 0.0;
+    cfg.jitter_abs = 1e-10;
+    cfg.jitter_rel = 0.0;
+
+    auto res = check_quadratic_convexity(*matrix, 1.0, cfg);
+    BOOST_TEST(res.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(convexity_check_rejects_small_negative_mode_beyond_jitter_budget) {
+    const LispVal x = lvar();
+    const LispVal y = lvar();
+    const auto xid = id_of(x);
+    const auto yid = id_of(y);
+
+    QuadraticExpr expr;
+    expr.quadratic_terms.push_back(QuadraticTerm{.var_i = xid, .var_j = xid, .coef = 0.5});
+    expr.quadratic_terms.push_back(QuadraticTerm{.var_i = yid, .var_j = yid, .coef = -1.0e-10});
+    auto matrix = materialize_quadratic_objective_matrix(expr);
+    BOOST_REQUIRE(matrix.has_value());
+
+    QuadraticConvexityConfig cfg;
+    cfg.abs_tol = 1e-12;
+    cfg.rel_tol = 0.0;
+    cfg.jitter_abs = 1e-10;
+    cfg.jitter_rel = 0.0;
+
+    auto res = check_quadratic_convexity(*matrix, 1.0, cfg);
+    BOOST_REQUIRE(!res.has_value());
+    BOOST_TEST(res.error().tag == "clp.qp.non-convex");
+}
+
 BOOST_AUTO_TEST_CASE(materialize_rejects_non_finite_coefficients) {
     const LispVal x = lvar();
     const auto xid = id_of(x);
