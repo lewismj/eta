@@ -182,22 +182,64 @@ Strict inequalities in `std.clpr` are encoded with a small epsilon shift.
 - `(clp:r-bounds x)` -> `(lo . hi)` or `#f`
 - `(clp:r-minimize objective)` / `(clp:r-maximize objective)` -> two values:
   `optimum` and `witness`
+- `(clp:rq-minimize objective)` / `(clp:rq-maximize objective)` -> two values:
+  `optimum` and `witness` for convex QP (or linear objectives)
 
 `witness` is an alist `((var . value) ...)` suitable for replay via `unify`.
 
-Low-level optimization builtins (`%clp-r-minimize`, `%clp-r-maximize`) return:
+Low-level optimization builtins return:
 
 - `#f` for infeasible
 - symbol `clp.r.unbounded` for unbounded
 - `(opt . witness)` for optimal
 
+Low-level names:
+
+- `%clp-r-minimize`, `%clp-r-maximize` (linear objective path)
+- `%clp-r-qp-minimize`, `%clp-r-qp-maximize` (convex QP path)
+
 The high-level `std.clpr` wrappers turn `clp.r.unbounded` into an error.
+
+### Convex QP Optimization
+
+Quadratic optimization in `std.clpr` uses objective shape:
+
+- `0.5*x^T*Q*x + c^T*x + k`
+
+Constraints remain linear (`<=`, `=`, bounds), and only convex QP is accepted:
+
+- `clp:rq-minimize` expects `Q` PSD
+- `clp:rq-maximize` expects `Q` NSD (equivalent PSD check on `-Q`)
+
+Supported arithmetic forms for objective linearization:
+
+- constants
+- variables
+- `+`, `-`
+- scalar multiplication
+- variable-variable products (`(* x y)`) in the objective only
+
+Representative user-error tags:
+
+- `clp.r.qp.non-convex`
+- `clp.r.qp.objective-nonlinear-unsupported`
+- `clp.r.qp.numeric-failure`
+- `clp.r.qp.backend-unavailable`
+
+### QP Backend Flag
+
+`ETA_CLP_QP_BACKEND` controls the runtime QP backend and is enabled by default:
+
+- CMake option: `option(ETA_CLP_QP_BACKEND ... ON)`
+- when disabled, quadratic objectives return `clp.r.qp.backend-unavailable`
+- linear optimization (`clp:r-minimize`/`clp:r-maximize`) is unaffected
 
 ### Backend Notes
 
 - Linearization accepts arithmetic terms built from `+`, `-`, `*`.
-- Non-linear terms (`var * var`) are rejected.
+- Non-linear terms (`var * var`) are rejected in linear optimization paths.
 - CLP(R) posting uses a simplex backend (`clp/simplex.*`).
+- Convex QP optimization uses the active-set backend (`clp/qp_solver.*`).
 - Optional FM cross-checks can be enabled with `ETA_CLP_FM_ORACLE`.
 
 ---
@@ -217,7 +259,8 @@ See:
 
 ## Current Limitations
 
-- `clp(R)` is linear only (no native non-linear solver).
+- CLP(R) posting/propagation remains linear; only the optimize path accepts
+  convex quadratic objectives.
 - CLP(R) posting rejects vars that already carry non-`RDomain` CLP domains.
 - `std.clpr` optimization wrappers signal unbounded objectives as errors (use
   low-level `%clp-r-maximize`/`%clp-r-minimize` if you need the raw symbol).
@@ -231,11 +274,13 @@ See:
 | Domain types (`Z`, `FD`, `R`) + intersection | [`clp/domain.h`](../eta/core/src/eta/runtime/clp/domain.h) |
 | Domain store | [`clp/constraint_store.h`](../eta/core/src/eta/runtime/clp/constraint_store.h) |
 | Linearizer | [`clp/linear.h`](../eta/core/src/eta/runtime/clp/linear.h), [`clp/linear.cpp`](../eta/core/src/eta/runtime/clp/linear.cpp) |
+| Quadratic objective linearizer + matrix checks | [`clp/quadratic.h`](../eta/core/src/eta/runtime/clp/quadratic.h), [`clp/quadratic.cpp`](../eta/core/src/eta/runtime/clp/quadratic.cpp) |
 | CLP(R) append log + simplex-bound cache | [`clp/real_store.h`](../eta/core/src/eta/runtime/clp/real_store.h), [`clp/real_store.cpp`](../eta/core/src/eta/runtime/clp/real_store.cpp) |
 | Simplex backend | [`clp/simplex.h`](../eta/core/src/eta/runtime/clp/simplex.h), [`clp/simplex.cpp`](../eta/core/src/eta/runtime/clp/simplex.cpp) |
+| Active-set QP backend | [`clp/qp_solver.h`](../eta/core/src/eta/runtime/clp/qp_solver.h), [`clp/qp_solver.cpp`](../eta/core/src/eta/runtime/clp/qp_solver.cpp) |
 | FM engine | [`clp/fm.h`](../eta/core/src/eta/runtime/clp/fm.h), [`clp/fm.cpp`](../eta/core/src/eta/runtime/clp/fm.cpp) |
 | Unification + rollback + propagation queue | [`vm/vm.h`](../eta/core/src/eta/runtime/vm/vm.h), [`vm/vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) |
-| CLP builtins (`%clp-domain-*`, `%clp-fd-*`, `%clp-r-*`) | [`core_primitives.h`](../eta/core/src/eta/runtime/core_primitives.h) |
+| CLP builtins (`%clp-domain-*`, `%clp-fd-*`, `%clp-r-*`, `%clp-r-qp-*`) | [`core_primitives.h`](../eta/core/src/eta/runtime/core_primitives.h) |
 | `std.clp` wrappers | [`stdlib/std/clp.eta`](../stdlib/std/clp.eta) |
 | `std.clpr` wrappers | [`stdlib/std/clpr.eta`](../stdlib/std/clpr.eta) |
-| CLP tests | [`stdlib/tests/clp.test.eta`](../stdlib/tests/clp.test.eta), [`stdlib/tests/clpr_simplex.test.eta`](../stdlib/tests/clpr_simplex.test.eta), [`stdlib/tests/clpr_optimization.test.eta`](../stdlib/tests/clpr_optimization.test.eta) |
+| CLP tests | [`stdlib/tests/clp.test.eta`](../stdlib/tests/clp.test.eta), [`stdlib/tests/clpr_simplex.test.eta`](../stdlib/tests/clpr_simplex.test.eta), [`stdlib/tests/clpr_optimization.test.eta`](../stdlib/tests/clpr_optimization.test.eta), [`stdlib/tests/clpr_qp_optimization.test.eta`](../stdlib/tests/clpr_qp_optimization.test.eta) |

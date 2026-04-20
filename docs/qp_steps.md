@@ -196,6 +196,11 @@ Exit criteria:
 Deliverables:
 
 - Baseline benchmark scripts for representative QP sizes.
+- Baseline benchmark executable:
+  - `eta_qp_bench`
+- Benchmark runner scripts:
+  - `scripts/qp-benchmark.ps1`
+  - `scripts/qp-benchmark.sh`
 - Compare against existing LP-proxy workflow for:
   - objective quality
   - runtime
@@ -203,7 +208,11 @@ Deliverables:
 - Documentation updates:
   - `docs/clp.md` QP section
   - `docs/portfolio.md` optimization section
-  - release notes.
+  - `docs/release-notes.md`
+- Optional rollout gate mode (`--gate`) with threshold checks on:
+  - objective parity
+  - stability drift
+  - LP-vs-QP quality delta.
 
 Exit criteria:
 
@@ -259,4 +268,3 @@ SOCP should be a post-MVP stage once concrete cone use-cases are validated.
 - Warm-start from cached witnesses.
 - Incremental QP solves across scenario sweeps.
 - MIQP exploration for discrete allocation decisions.
-

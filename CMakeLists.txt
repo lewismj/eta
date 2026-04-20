@@ -69,7 +69,7 @@ add_custom_target(eta_all
 # Executables + test target (added by subdirectories)
 add_dependencies(eta_all
     etai eta_repl etac eta_lsp eta_dap
-    eta_core_test eta_test
+    eta_core_test eta_test eta_qp_bench
 )
 
 set(VSIX_FILENAME "eta-lang-${ETA_VSIX_VERSION}.vsix")

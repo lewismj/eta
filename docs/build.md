@@ -202,6 +202,30 @@ all `.eta` files (including `torch_tests/`) when built with torch support.
 
 ---
 
+## QP Benchmark and Rollout Gate
+
+Stage 6 QP rollout benchmarking uses `eta_qp_bench` plus wrapper scripts.
+
+### Windows (PowerShell)
+
+```powershell
+cmake --build out\msvc-release --target eta_qp_bench
+.\scripts\qp-benchmark.ps1 -BuildDir C:\Users\lewis\develop\eta\out\msvc-release
+.\scripts\qp-benchmark.ps1 -BuildDir C:\Users\lewis\develop\eta\out\msvc-release -Gate
+```
+
+### Linux / macOS
+
+```bash
+cmake --build out/wsl-clang-release --target eta_qp_bench -j"$(nproc)"
+BUILD_DIR=./out/wsl-clang-release ./scripts/qp-benchmark.sh
+BUILD_DIR=./out/wsl-clang-release GATE=1 ./scripts/qp-benchmark.sh
+```
+
+`-Gate` / `GATE=1` enables rollout checks for quality parity and stability.
+
+---
+
 ## GitHub Actions CI
 
 The repository includes `.github/workflows/release.yml` which:
