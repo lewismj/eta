@@ -46,9 +46,11 @@ synthetic data.
 The pipeline has three pillars — **causal inference**, **constraint
 solving**, and **differentiable optimisation** — supported by a neural
 estimator, a columnar fact table, and actor-based scenario runners.
-Data flows linearly: §0 → §1 → … → §7.  The causal model corrects
-return estimates, constraints guarantee feasibility, and AAD decomposes
-risk — each stage independently verifiable against the known DGP.
+Data flows linearly: §0 → §1 → … → §9.  The causal model corrects
+return estimates, constraints guarantee feasibility, AAD decomposes
+risk, an empirical stress harness pressure-tests assumption breaches
+(§8), and a dynamic control loop closes decisions back into evolving
+state (§9) — each stage independently verifiable against the known DGP.
 
 Each layer is correct in its own semantics; composition does not imply
 equivalence, only compatibility.  The pipeline is acyclic at the stage
@@ -88,6 +90,8 @@ flowchart TD
     S5["§5 AAD Sensitivities\n∂Return/∂w, ∂Risk/∂w"]
     S6["§6 Portfolio Selection\nscore → solve → explain"]
     S7["§7 Scenario Analysis\nmacro shocks + rebalancing"]
+    S8["§8 Stress Validation\nDAG / latent / noise regimes"]
+    S9["§9 Dynamic Control\nsequential decisions + actors"]
 
     S0 -->|"training data"| S4
     S1 -->|"objective structure"| S6
@@ -97,6 +101,9 @@ flowchart TD
     S4 -->|"causal returns"| S6
     S5 -->|"sensitivities"| S6
     S6 -->|"optimal portfolio"| S7
+    S6 -->|"baseline strategy"| S8
+    S7 -->|"scenarios"| S9
+    S8 -->|"robustness report"| S9
 
     style S0 fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
     style S1 fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
@@ -106,6 +113,8 @@ flowchart TD
     style S5 fill:#0f3460,stroke:#f78166,color:#c9d1d9
     style S6 fill:#533483,stroke:#f0e68c,color:#c9d1d9
     style S7 fill:#1a1a2e,stroke:#79c0ff,color:#c9d1d9
+    style S8 fill:#16213e,stroke:#f78166,color:#c9d1d9
+    style S9 fill:#533483,stroke:#56d364,color:#c9d1d9
 ```
 
 > **Traditional vs Eta:**
@@ -126,7 +135,7 @@ artifact preserves stage-by-stage traceability.
 > [!NOTE]
 > **Pipeline Function** — Five core arguments plus an optional optimisation mode fully specify the problem.  One orchestration entry
 > point; multiple internally composable semantics.  Every value traces
-> back to its originating pipeline stage (§0–§7).
+> back to its originating pipeline stage (§0–§9).
 > 
 > ```scheme
 > (define result
@@ -632,40 +641,7 @@ Pipeline
       (scenarios (base 1.86937 0.0211998) (boom 2.07641 0.021773)
                  (recession 1.5845 0.0158068) (rate-hike 1.76241 0.0195018)))
 
-  Five arguments.  One result.  Every value traceable to §0-§7.
-
-### Local DSL Helpers
-
-`examples/portfolio.eta` now uses small syntax helpers to keep artifact builders and reporting sections concise:
-
-```scheme
-(define-syntax dict
-  (syntax-rules ()
-    ((_ (k v) ...)
-     (list (cons (quote k) v) ...))))
-
-(define-syntax dict-from
-  (syntax-rules ()
-    ((_ v ...)
-     (dict (v v) ...))))
-
-(define-syntax report
-  (syntax-rules (=>)
-    ((_ label => value)
-     (report-value-line label value))
-    ((_ line)
-     (report-line line))))
-
-(define-syntax dotimes
-  (syntax-rules ()
-    ((_ (i n) body ...)
-     (letrec ((loop (lambda (i)
-                      (if (< i n)
-                          (begin body ... (loop (+ i 1)))
-                          'done))))
-       (loop 0)))))
-
-These are structural helpers only; runtime behavior and artifact keys remain unchanged.
+  Five arguments.  One result.  Every value traceable to §0-§9.
 
 ==========================================================
   Portfolio Engine Summary
@@ -708,6 +684,43 @@ These are structural helpers only; runtime behavior and artifact keys remain unc
 ```
 
 </details>
+
+### Local DSL Helpers
+
+`examples/portfolio.eta` uses small syntax helpers to keep artifact
+builders and reporting sections concise:
+
+```scheme
+(define-syntax dict
+  (syntax-rules ()
+    ((_ (k v) ...)
+     (list (cons (quote k) v) ...))))
+
+(define-syntax dict-from
+  (syntax-rules ()
+    ((_ v ...)
+     (dict (v v) ...))))
+
+(define-syntax report
+  (syntax-rules (=>)
+    ((_ label => value)
+     (report-value-line label value))
+    ((_ line)
+     (report-line line))))
+
+(define-syntax dotimes
+  (syntax-rules ()
+    ((_ (i n) body ...)
+     (letrec ((loop (lambda (i)
+                      (if (< i n)
+                          (begin body ... (loop (+ i 1)))
+                          'done))))
+       (loop 0)))))
+
+```
+
+These are structural helpers only; runtime behavior and artifact
+keys remain unchanged.
 
 > **Note:** NN training is stochastic — exact numbers will vary between
 > runs, but the qualitative results (adjustment set and optimal allocation) are
@@ -762,14 +775,19 @@ return       = 1.2·β + 0.6·macro_growth + 0.4·sector_code
 
 **DGP structural coefficients (known by construction):**
 
-| Parameter | Structural Value |
-|-----------|-----------|
-| β | 1.2 |
+These are the *coefficients in the structural return equation*, not
+the asset betas in the table above.  In particular, the row labelled
+"β" is the coefficient applied to each asset's market beta —
+the asset betas themselves are 1.3 / 0.8 / 1.0 / 0.7.
+
+| Term in return equation | Structural Coefficient |
+|-------------------------|------------------------|
+| β (asset's own market beta) | 1.2 |
 | macro_growth | 0.6 |
-| sector | 0.4 |
+| sector_code | 0.4 |
 | rate | −0.3 |
-| β × macro_growth | 0.2 |
-| sentiment | 0.5 |
+| β × macro_growth (interaction) | 0.2 |
+| sentiment (latent confounder) | 0.5 |
 
 All evaluation stages assume access to a known SCM for validation
 only.  The same pipeline applies to real data without modification —
@@ -1517,33 +1535,3 @@ observe that all downstream estimates shift accordingly.
 | VM execution engine | [`eta/core/src/eta/runtime/vm/vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) |
 | Constraint store | [`eta/core/src/eta/runtime/clp/constraint_store.h`](../eta/core/src/eta/runtime/clp/constraint_store.h) |
 | Compiler (`etac`) | [`docs/compiler.md`](compiler.md) |
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
