@@ -742,13 +742,28 @@
     ;;
     ;;   Σ(m) ≈ (1/N) Σ_s (R(m,s) − R̄(m)) (R(m,s) − R̄(m))ᵀ
     ;;
-    ;; We estimate Σ(m) from the same 5-point sentiment grid used by
-    ;; scenario-return, marginalising over P(sentiment) = Uniform(0,1).
+    ;; Σ(m) can come from either:
+    ;;   - empirical 5-point sentiment grid (NN samples), or
+    ;;   - structural volatility/correlation parameterisation.
     ;; For §5 base-case AAD diagnostics we keep portfolio-risk-fn (fixed Σ).
     ;; For §7 scenario analysis and run-pipeline we use portfolio-causal-risk-fn.
     ;; ────────────────────────────────────────────────────────────────
 
-    (defun scenario-covariance (macro-val)
+    (define sigma-model 'structural)
+    (define sigma-corr-floor 0.55)
+    (define sigma-corr-range 0.45)
+    (define sigma-vol-base 0.80)
+    (define sigma-vol-macro-scale 0.50)
+    (define sigma-vol-beta-base 0.90)
+    (define sigma-vol-beta-scale 0.12)
+
+    (defun clamp01 (x)
+      (cond
+        ((< x 0.0) 0.0)
+        ((> x 1.0) 1.0)
+        (#t x)))
+
+    (defun scenario-covariance-empirical (macro-val)
       ;; Returns a 10-element list: (vt ve vf vh cte ctf cth cef ceh cfh)
       ;; where vt = Var(tech|do(m)), cte = Cov(tech,energy|do(m)), etc.
       ;; Precompute once per scenario; pass the result to
@@ -788,6 +803,43 @@
           (list (dotc ct ct) (dotc ce ce) (dotc cf cf) (dotc ch ch)
                 (dotc ct ce) (dotc ct cf) (dotc ct ch)
                 (dotc ce cf) (dotc ce ch) (dotc cf ch)))))
+
+    (defun structural-volatility (base-vol beta macro-val)
+      (let* ((macro-scale (+ sigma-vol-base (* sigma-vol-macro-scale macro-val)))
+             (beta-scale (+ sigma-vol-beta-base (* sigma-vol-beta-scale beta))))
+        (* base-vol (* macro-scale beta-scale))))
+
+    (defun scenario-covariance-structural (macro-val)
+      ;; Parametric covariance tied to beta exposures, macro regime, and
+      ;; sector correlation structure.
+      (let* ((corr-scale (clamp01 (+ sigma-corr-floor (* sigma-corr-range macro-val))))
+             (sig-t (structural-volatility vol-tech   1.3 macro-val))
+             (sig-e (structural-volatility vol-energy 0.8 macro-val))
+             (sig-f (structural-volatility vol-fin    1.0 macro-val))
+             (sig-h (structural-volatility vol-health 0.7 macro-val))
+             (cte (* (* corr-scale rho-te) (* sig-t sig-e)))
+             (ctf (* (* corr-scale rho-tf) (* sig-t sig-f)))
+             (cth (* (* corr-scale rho-th) (* sig-t sig-h)))
+             (cef (* (* corr-scale rho-ef) (* sig-e sig-f)))
+             (ceh (* (* corr-scale rho-eh) (* sig-e sig-h)))
+             (cfh (* (* corr-scale rho-fh) (* sig-f sig-h))))
+        (list (* sig-t sig-t) (* sig-e sig-e) (* sig-f sig-f) (* sig-h sig-h)
+              cte ctf cth cef ceh cfh)))
+
+    (defun scenario-covariance (macro-val)
+      (cond
+        ((eq? sigma-model 'empirical-grid)
+         (scenario-covariance-empirical macro-val))
+        ((eq? sigma-model 'structural)
+         (scenario-covariance-structural macro-val))
+        (#t
+         (scenario-covariance-structural macro-val))))
+
+    (defun sigma-trace (S)
+      (+ (car S)
+         (+ (car (cdr S))
+            (+ (car (cdr (cdr S)))
+               (car (cdr (cdr (cdr S))))))))
 
     (defun portfolio-risk-from-sigma (wt we wf wh S)
       ;; wᵀΣw where S = (vt ve vf vh cte ctf cth cef ceh cfh)
@@ -1118,7 +1170,7 @@
              (risk (portfolio-risk-from-sigma wt we wf wh sigma-base-opt))
              (score (- ret (* lam risk)))
              (port (weights-f->pct wt we wf wh)))
-        (list port score)))
+        (list port score (list wt we wf wh))))
 
     (defun show-lambda-row (lam label)
       (let* ((result (find-best-for-lambda lam))
@@ -1624,6 +1676,130 @@
     (display "   max regret = ") (println stage2-max-regret)
     (display "\n  Robustness label: ") (display stage2-label) (display "\n")
 
+    (define stage3-default-mode 'uncertainty-penalty)
+    (define stage3-tau-penalty 0.50)
+    (define stage3-sigma-penalty 0.60)
+
+    (defun tau-sub (a b)
+      (list (- (car a) (car b))
+            (- (car (cdr a)) (car (cdr b)))
+            (- (car (cdr (cdr a))) (car (cdr (cdr b))))
+            (- (car (cdr (cdr (cdr a))))
+               (car (cdr (cdr (cdr b)))))))
+
+    (defun tau-scale (tau k)
+      (list (* (car tau) k)
+            (* (car (cdr tau)) k)
+            (* (car (cdr (cdr tau))) k)
+            (* (car (cdr (cdr (cdr tau)))) k)))
+
+    (defun tau-width (tau-low tau-high)
+      (tau-sub tau-high tau-low))
+
+    (defun sigma-uncertainty-ratio (sigma-base sigma-boom sigma-recess)
+      (/ (abs (- (sigma-trace sigma-boom) (sigma-trace sigma-recess)))
+         (+ (sigma-trace sigma-base) 1e-9)))
+
+    (defun mode-tau (mode tau-center tau-low tau-high)
+      (cond
+        ((eq? mode 'nominal) tau-center)
+        ((eq? mode 'worst-case) tau-low)
+        ((eq? mode 'uncertainty-penalty)
+         (tau-sub tau-center
+                  (tau-scale (tau-width tau-low tau-high) stage3-tau-penalty)))
+        (#t tau-center)))
+
+    (defun mode-lambda (mode lam sigma-unc)
+      (cond
+        ((eq? mode 'uncertainty-penalty)
+         (* lam (+ 1.0 (* stage3-sigma-penalty sigma-unc))))
+        (#t lam)))
+
+    (defun weights->pct (weights)
+      (weights-f->pct
+        (car weights)
+        (car (cdr weights))
+        (car (cdr (cdr weights)))
+        (car (cdr (cdr (cdr weights))))))
+
+    (defun compute-stage3-report (mode lam tau-center tau-low tau-high sigma-base sigma-boom sigma-recess)
+      (let* ((sigma-unc (sigma-uncertainty-ratio sigma-base sigma-boom sigma-recess))
+             (tau-mode (mode-tau mode tau-center tau-low tau-high))
+             (lam-mode (mode-lambda mode lam sigma-unc))
+             (w-nom (solve-weights-from-tau lam tau-center sigma-base))
+             (w-mode (solve-weights-from-tau lam-mode tau-mode sigma-base))
+             (w-wc-opt (solve-weights-from-tau lam tau-low sigma-base))
+             (nominal-score (score-from-tau w-nom tau-center lam sigma-base))
+             (selected-score-mode (score-from-tau w-mode tau-mode lam-mode sigma-base))
+             (selected-score-nominal (score-from-tau w-mode tau-center lam sigma-base))
+             (wc-opt-score (score-from-tau w-wc-opt tau-low lam sigma-base))
+             (wc-selected-score (score-from-tau w-mode tau-low lam sigma-base))
+             (wc-nominal-score (score-from-tau w-nom tau-low lam sigma-base))
+             (objective-gap (- nominal-score selected-score-nominal))
+             (selected-regret (max 0.0 (- wc-opt-score wc-selected-score)))
+             (nominal-regret (max 0.0 (- wc-opt-score wc-nominal-score)))
+             (downside-improvement (- wc-selected-score wc-nominal-score)))
+        (list
+          (cons 'mode mode)
+          (cons 'lambda-effective lam-mode)
+          (cons 'tau-effective tau-mode)
+          (cons 'sigma-uncertainty sigma-unc)
+          (cons 'nominal-weights w-nom)
+          (cons 'selected-weights w-mode)
+          (cons 'nominal-score nominal-score)
+          (cons 'selected-score-mode selected-score-mode)
+          (cons 'selected-score-nominal selected-score-nominal)
+          (cons 'objective-gap objective-gap)
+          (cons 'worst-case-regret selected-regret)
+          (cons 'worst-case-regret-nominal nominal-regret)
+          (cons 'worst-case-score-improvement downside-improvement))))
+
+    (define stage3-report
+      (compute-stage3-report stage3-default-mode
+                             lambda-risk
+                             base-returns
+                             tau-min
+                             tau-max
+                             sigma-base-opt
+                             sigma-boom
+                             sigma-recess))
+    (define stage3-mode (assoc-ref 'mode stage3-report))
+    (define stage3-lambda-effective (assoc-ref 'lambda-effective stage3-report))
+    (define stage3-tau-effective (assoc-ref 'tau-effective stage3-report))
+    (define stage3-sigma-unc (assoc-ref 'sigma-uncertainty stage3-report))
+    (define stage3-selected-weights (assoc-ref 'selected-weights stage3-report))
+    (define stage3-selected-pct (weights->pct stage3-selected-weights))
+    (define stage3-nominal-pct (weights->pct (assoc-ref 'nominal-weights stage3-report)))
+    (define stage3-objective-gap (assoc-ref 'objective-gap stage3-report))
+    (define stage3-wc-regret (assoc-ref 'worst-case-regret stage3-report))
+    (define stage3-wc-regret-nominal (assoc-ref 'worst-case-regret-nominal stage3-report))
+    (define stage3-downside-improvement (assoc-ref 'worst-case-score-improvement stage3-report))
+
+    (define sigma-boom-trace (sigma-trace sigma-boom))
+    (define sigma-recess-trace (sigma-trace sigma-recess))
+
+    (display "\n")
+    (thin-sep)
+    (display "  Uncertainty-Aware Optimization\n")
+    (thin-sep)
+    (display "\n")
+    (display "  Sigma model: ") (display sigma-model) (display "\n")
+    (display "  Trace Sigma(boom) = ") (display sigma-boom-trace)
+    (display "   Trace Sigma(recession) = ") (display sigma-recess-trace) (display "\n")
+    (display "  Sigma(boom) > Sigma(recession): ")
+    (println (> sigma-boom-trace sigma-recess-trace))
+    (display "  Optimization mode: ") (println stage3-mode)
+    (display "  Effective lambda: ") (println stage3-lambda-effective)
+    (display "  Sigma uncertainty ratio: ") (println stage3-sigma-unc)
+    (display "  Effective tau vector: ") (println stage3-tau-effective)
+    (display "  Nominal allocation (%): ") (println stage3-nominal-pct)
+    (display "  Selected allocation (%): ") (println stage3-selected-pct)
+    (display "  Objective gap to nominal optimum: ") (println stage3-objective-gap)
+    (display "  Worst-case regret (selected): ") (println stage3-wc-regret)
+    (display "  Worst-case regret (nominal):  ") (println stage3-wc-regret-nominal)
+    (display "  Worst-case score improvement vs nominal: ")
+    (println stage3-downside-improvement)
+
     ;; ── Causal–Decision Coupling ──────────────────────────────────
 
     (display "\n")
@@ -1754,7 +1930,7 @@
     ;; ════════════════════════════════════════════════════════════════
     ;;
     ;; Everything above (§0–§7) composes into one call.
-    ;; The 5 arguments fully specify the problem; the result is an
+    ;; The 5 core arguments plus mode fully specify the problem; the result is an
     ;; inspectable association list — not a black box.
 
     (display "\n")
@@ -1763,51 +1939,77 @@
     (sep)
     (display "\n")
 
-    (defun run-pipeline (universe dag constraints lam scenario-macros)
-      ;; §0–§4: universe, dag, constraints drive the pipeline setup
-      ;;        (NN trained, causal returns computed, CLP(R) solver ready)
-      ;; §6:    lam selects the optimal portfolio via continuous CLP(R)
-      ;; §7:    scenario-macros stress-tests under do(macro=m)
-      (let* ((result (find-best-for-lambda lam))
-             (port   (car result))
-             (score  (cadr result))
-             (wt (car port))
-             (we (car (cdr port)))
-             (wf (car (cdr (cdr port))))
-             (wh (car (cdr (cdr (cdr port)))))
-             (ret (portfolio-return-fn (/ wt 100.0) (/ we 100.0)
-                                        (/ wf 100.0) (/ wh 100.0)))
-             (risk (portfolio-causal-risk-fn (/ wt 100.0) (/ we 100.0)
-                                               (/ wf 100.0) (/ wh 100.0) 0.5))
-             (stage2 (compute-stage2-report
+    (defun run-pipeline (universe dag constraints lam scenario-macros . mode-opt)
+      ;; universe, dag, constraints, and lam define the optimisation context.
+      ;; scenario-macros are stress-test interventions; mode selects the
+      ;; uncertainty-aware objective ("nominal", "worst-case", or
+      ;; "uncertainty-penalty").
+      (let* ((mode (if (null? mode-opt) 'nominal (car mode-opt)))
+             (result (find-best-for-lambda lam))
+             (nominal-f (car (cdr (cdr result))))
+             (stage2-nominal (compute-stage2-report lam nominal-f))
+             (stage3 (compute-stage3-report
+                       mode
                        lam
-                       (list (/ wt 100.0) (/ we 100.0)
-                             (/ wf 100.0) (/ wh 100.0))))
+                       base-returns
+                       (assoc-ref 'tau-min stage2-nominal)
+                       (assoc-ref 'tau-max stage2-nominal)
+                       sigma-base-opt
+                       sigma-boom
+                       sigma-recess))
+             (selected-f (assoc-ref 'selected-weights stage3))
+             (stage2 (if (eq? mode 'nominal)
+                         stage2-nominal
+                         (compute-stage2-report lam selected-f)))
+             (selected-pct (weights->pct selected-f))
+             (wt (car selected-pct))
+             (we (car (cdr selected-pct)))
+             (wf (car (cdr (cdr selected-pct))))
+             (wh (car (cdr (cdr (cdr selected-pct)))))
+             (wtf (car selected-f))
+             (wef (car (cdr selected-f)))
+             (wff (car (cdr (cdr selected-f))))
+             (whf (car (cdr (cdr (cdr selected-f)))))
+             (ret (portfolio-return-from-tau selected-f base-returns))
+             (risk (portfolio-risk-from-sigma wtf wef wff whf sigma-base-opt))
+             (score (score-from-tau selected-f base-returns lam sigma-base-opt))
              (scens (map* (lambda (sm)
                              (let* ((name     (car sm))
                                     (mv       (car (cdr sm)))
                                     (scen-ret (scenario-return wt we wf wh mv))
                                     (scen-sig (scenario-covariance mv))
-                                     (scen-rsk (portfolio-risk-from-sigma
-                                                 (/ wt 100.0) (/ we 100.0)
-                                                 (/ wf 100.0) (/ wh 100.0)
-                                                 scen-sig)))
+                                    (scen-rsk (portfolio-risk-from-sigma
+                                                wtf wef wff whf scen-sig)))
                                 (list name scen-ret scen-rsk)))
-                            scenario-macros)))
+                           scenario-macros)))
         (list (cons 'run-config
                     (list (cons 'dgp-seed dgp-seed)
                           (cons 'macro-base 0.5)
-                          (cons 'sentiment-grid '(0.1 0.3 0.5 0.7 0.9))))
+                          (cons 'sentiment-grid '(0.1 0.3 0.5 0.7 0.9))
+                          (cons 'sigma-model sigma-model)
+                          (cons 'optimization-mode mode)))
               (cons 'dag dag)
               (cons 'tau base-returns)
               (cons 'tau-min (assoc-ref 'tau-min stage2))
               (cons 'tau-max (assoc-ref 'tau-max stage2))
               (cons 'sigma-base sigma-base-opt)
-              (cons 'allocation (list (/ wt 100.0) (/ we 100.0)
-                                      (/ wf 100.0) (/ wh 100.0)))
+              (cons 'allocation selected-f)
+              (cons 'allocation-pct selected-pct)
               (cons 'return ret)
               (cons 'risk risk)
               (cons 'score score)
+              (cons 'uncertainty-optimization
+                    (list
+                      (cons 'mode (assoc-ref 'mode stage3))
+                      (cons 'lambda-effective (assoc-ref 'lambda-effective stage3))
+                      (cons 'tau-effective (assoc-ref 'tau-effective stage3))
+                      (cons 'sigma-uncertainty (assoc-ref 'sigma-uncertainty stage3))
+                      (cons 'objective-gap (assoc-ref 'objective-gap stage3))
+                      (cons 'worst-case-regret (assoc-ref 'worst-case-regret stage3))
+                      (cons 'worst-case-regret-nominal
+                            (assoc-ref 'worst-case-regret-nominal stage3))
+                      (cons 'worst-case-score-improvement
+                            (assoc-ref 'worst-case-score-improvement stage3))))
               (cons 'decision-robustness
                     (list
                       (cons 'label (assoc-ref 'label stage2))
@@ -1822,18 +2024,20 @@
                             (assoc-ref 'portfolio-return-max stage2))))
               (cons 'scenarios scens))))
 
-    ;; One call — 5 arguments fully specify the problem:
+    ;; One call — 5 core arguments plus optional optimisation mode.
     (define pipeline-result
       (run-pipeline universe market-dag constraint-spec 2.0
-        '((base 0.5) (boom 0.8) (recession 0.1) (rate-hike 0.35))))
+        '((base 0.5) (boom 0.8) (recession 0.1) (rate-hike 0.35))
+        stage3-default-mode))
 
     (display "  (run-pipeline\n")
     (display "    universe market-dag constraint-spec\n")
     (display (if win "    2.0                      ; lambda (risk aversion)\n"
                      "    2.0                      ; λ (risk aversion)\n"))
-    (display "    '((base 0.5) (boom 0.8) (recession 0.1) (rate-hike 0.35)))\n\n")
+    (display "    '((base 0.5) (boom 0.8) (recession 0.1) (rate-hike 0.35))\n")
+    (display "    stage3-default-mode)\n\n")
     (display "  => ") (println pipeline-result)
-    (display "\n  Five arguments.  One result.  Every value traceable to §0-§7.\n")
+    (display "\n  Five core arguments + mode.  One result.  Every value traceable to §0-§7.\n")
 
     ;; ════════════════════════════════════════════════════════════════
     ;; Executive Summary

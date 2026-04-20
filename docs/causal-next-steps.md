@@ -35,8 +35,8 @@ without losing Eta's current strengths (composability, explainability, exact con
 | 0 | Baseline freeze + metrics | Reproducible benchmark and diagnostics | Implemented (2026-04-20) |
 | 1 | Causal identification hardening | Stronger DAG checks and adjustment-set logic | Implemented (2026-04-20) |
 | 2 | Misspecification robustness | DAG sensitivity + partial-identification bounds on returns | Implemented (2026-04-20) |
-| 3 | Uncertainty-aware optimization | Robust portfolio choice under parameter uncertainty | Planned |
-| 4 | Structural/learned covariance | Better Sigma(m) aligned with causal structure | Planned |
+| 3 | Uncertainty-aware optimization | Robust portfolio choice under parameter uncertainty | Implemented (2026-04-20) |
+| 4 | Structural/learned covariance | Better Sigma(m) aligned with causal structure | In progress (2026-04-20) |
 | 5 | Empirical stress-test suite | Evidence of graceful degradation vs baselines | Planned |
 | 6 | Dynamic control loop (advanced) | Decision-dependent dynamics and sequential policy | Planned |
 
@@ -151,6 +151,11 @@ decision-sensitivity diagnostics.
 
 ## Stage 3 - Uncertainty-Aware Optimization
 
+Current status: implemented in `examples/portfolio.eta` with selectable
+optimization modes (`nominal`, `worst-case`, `uncertainty-penalty`), where
+confidence inputs come from Stage 2 DAG-family `tau_min`/`tau_max` bounds and
+scenario-dependent Sigma dispersion.
+
 ### Scope
 
 - Upgrade optimization target from point estimate to uncertainty-aware objective.
@@ -184,6 +189,10 @@ decision-sensitivity diagnostics.
 
 ## Stage 4 - Structural or Learned Sigma(m)
 
+Current status: the structural Sigma(m) path is implemented in
+`examples/portfolio.eta` with a runtime knob (`empirical-grid` vs
+`structural`). The learned residual covariance path remains planned.
+
 ### Scope
 
 - Replace thin empirical 5-point covariance estimation with stronger second-order modeling.
@@ -197,13 +206,17 @@ decision-sensitivity diagnostics.
 
 ### Deliverables
 
-- Option A (structural): parametric Sigma(m) tied to macro regime and sector structure.
-- Option B (learned): two-head model for mean and covariance factors.
-- PSD enforcement strategy documented (e.g. factor form or Cholesky-style parameterization).
-- Runtime knob to choose:
+- Step 1 (implemented): Option A (structural) Sigma(m) tied to beta exposures,
+  macro volatility regime, and sector correlation structure.
+- Step 2 (implemented): validation checks that Sigma(boom) exceeds
+  Sigma(recession) under the structural path and optimisation remains stable.
+- Step 3 (planned): Option B (learned) residual covariance using a two-head
+  model or factor model.
+- Step 4 (planned): hybrid structural + learned covariance.
+- Runtime knob currently supports:
   - empirical grid Sigma(m)
   - structural Sigma(m)
-  - learned Sigma(m)
+  - learned/hybrid paths (planned)
 
 ### Exit Criteria
 
