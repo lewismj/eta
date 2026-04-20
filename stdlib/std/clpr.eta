@@ -8,6 +8,8 @@
 ;;;   (%clp-r-propagate!)          -> re-run feasibility + bound tightening
 ;;;   (%clp-r-minimize objective)  -> #f | clp.r.unbounded | (opt . witness)
 ;;;   (%clp-r-maximize objective)  -> #f | clp.r.unbounded | (opt . witness)
+;;;   (%clp-r-qp-minimize objective) -> #f | clp.r.unbounded | (opt . witness)
+;;;   (%clp-r-qp-maximize objective) -> #f | clp.r.unbounded | (opt . witness)
 ;;;
 ;;; Re-firing uses the existing async propagation queue by attaching
 ;;; thunks under the shared 'clp.prop attribute key.
@@ -28,6 +30,7 @@
     clp:r= clp:r<= clp:r< clp:r>= clp:r>
     ;; Optimization API
     clp:r-minimize clp:r-maximize
+    clp:rq-minimize clp:rq-maximize
     ;; Queries
     clp:r-bounds clp:r-feasible?)
   (begin
@@ -193,6 +196,16 @@
     ;; Returns (values optimum witness) on success, #f on infeasible.
     (defun clp:r-maximize (objective)
       (%clpr-opt-unpack (%clp-r-maximize objective)))
+
+    ;; Returns (values optimum witness) on success, #f on infeasible.
+    ;; Accepts convex quadratic objectives and linear objectives.
+    (defun clp:rq-minimize (objective)
+      (%clpr-opt-unpack (%clp-r-qp-minimize objective)))
+
+    ;; Returns (values optimum witness) on success, #f on infeasible.
+    ;; Accepts convex quadratic objectives and linear objectives.
+    (defun clp:rq-maximize (objective)
+      (%clpr-opt-unpack (%clp-r-qp-maximize objective)))
 
     ;; -- Queries -------------------------------------------------------------
 

@@ -24,7 +24,8 @@
   <a href="docs/networking.md">Networking</a> ·
   <a href="docs/message-passing.md">Message Passing</a> ·
   <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
-  <a href="docs/next-steps.md">Next Steps</a>
+  <a href="docs/next-steps.md">Next Steps</a> ·
+  <a href="docs/release-notes.md">Release Notes</a>
 </p>
 <br>
 <p align="center">
@@ -373,6 +374,7 @@ flowchart LR
 | **[Linear Algebra & Statistics](docs/stats.md)** | Eigen-backed multivariate stats on FactTables; `std.stats` descriptive stats, CIs, t-tests, OLS |
 | **[End-to-End Causal Pipeline](docs/causal-factor.md)** | Showcase: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE                             |
 | **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support               |
+| **[Release Notes](docs/release-notes.md)** | Recent rollout changes and benchmark/gate commands                                            |
 | **[Next Steps](docs/next-steps.md)**       | Roadmap: compiler, GC, testing, logic/CLP upgrades, VS Code improvements, Jupyter kernel |
 
 ---

@@ -96,6 +96,7 @@ add_subdirectory(lsp)
 add_subdirectory(dap)
 add_subdirectory(test)
 add_subdirectory(test_runner)
+add_subdirectory(bench)
 add_subdirectory(fuzz)
 
 # Keep the common local workflow target aligned with test/runtime dependencies:

@@ -1,0 +1,184 @@
+;;; clpr_qp_optimization.test.eta -- Smoke tests for CLP(R) QP optimization paths.
+
+(module clpr-qp-optimize-smoke
+  (import std.test std.logic std.clpr)
+  (begin
+
+    (defun payload-tag (p) (car (cdr p)))
+    (defun payload-msg (p) (car (cdr (cdr p))))
+
+    (defun starts-with? (s pfx)
+      (let ((ns (string-length s))
+            (np (string-length pfx)))
+        (if (> np ns)
+            #f
+            (letrec ((loop (lambda (i)
+                             (if (= i np)
+                                 #t
+                                 (if (eqv? (string-ref s i) (string-ref pfx i))
+                                     (loop (+ i 1))
+                                     #f)))))
+              (loop 0)))))
+
+    (defun apply-witness! (witness)
+      (if (null? witness)
+          #t
+          (and (unify (car (car witness)) (cdr (car witness)))
+               (apply-witness! (cdr witness)))))
+
+    (defun optimize->pair (thunk)
+      (call-with-values thunk
+        (lambda (opt witness)
+          (cons opt witness))))
+
+    (defun portfolio-risk-expr (x y)
+      (clp:r+ (clp:r*scalar 0.04 (list '* x x))
+              (clp:r*scalar 0.02 (list '* x y))
+              (clp:r*scalar 0.09 (list '* y y))))
+
+    (defun portfolio-risk-value (x y)
+      (+ (+ (* 0.04 (* x x))
+            (* 0.02 (* x y)))
+         (* 0.09 (* y y))))
+
+    (defun portfolio-return-value (x y)
+      (+ (* 0.10 x) (* 0.08 y)))
+
+    (define suite
+      (make-group "clpr-qp-optimize-smoke"
+        (list
+          (make-test "clp:rq-minimize wrapper returns optimum and witness"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #t (clp:r<= x 3))
+                  (let* ((res (optimize->pair
+                                (lambda ()
+                                  (clp:rq-minimize
+                                    (list '+ (list '* x x) (list '* -4 x) 4)))))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 0.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 2.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "clp:rq-maximize wrapper handles linear objective"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #t (clp:r<= x 3))
+                  (let* ((res (optimize->pair (lambda () (clp:rq-maximize x))))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 3.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 3.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "qp minimize returns optimum and witness"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #t (clp:r<= x 3))
+                  (let* ((res (%clp-r-qp-minimize
+                                (list '+ (list '* x x) (list '* -4 x) 4)))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 0.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 2.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "qp maximize handles concave objective"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (let* ((res (%clp-r-qp-maximize
+                                (list '+ (list '* -1 (list '* x x))
+                                          (list '* 2 x)
+                                          -1)))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 0.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 1.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "qp optimize remains feasible after rejected post"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 1))
+                  (assert-equal #f (clp:r<= x 0))
+                  (let* ((res (%clp-r-qp-minimize (list '* x x)))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 1.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 1.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "qp unbounded objective reports clp.r.unbounded"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var))
+                      (y (logic-var)))
+                  (assert-equal 'clp.r.unbounded
+                                (%clp-r-qp-minimize
+                                  (list '+ (list '* x x)
+                                            (list '* -1 y)))))
+                (unwind-trail m))))
+
+          (make-test "qp portfolio regression keeps constraints and score consistency"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var))
+                      (y (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #t (clp:r<= x 1))
+                  (assert-equal #t (clp:r>= y 0))
+                  (assert-equal #t (clp:r<= y 1))
+                  (assert-equal #t (clp:r= (clp:r+ x y) 1))
+                  (assert-equal #t (clp:r<= x 0.75))
+                  (let* ((res (optimize->pair
+                                (lambda ()
+                                  (clp:rq-maximize
+                                    (clp:r-
+                                      (clp:r+ (clp:r*scalar 0.10 x)
+                                              (clp:r*scalar 0.08 y))
+                                      (clp:r*scalar 0.5 (portfolio-risk-expr x y)))))))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-equal #t (clp:r-feasible?))
+                    (let* ((xv (deref-lvar x))
+                           (yv (deref-lvar y))
+                           (risk (portfolio-risk-value xv yv))
+                           (ret (portfolio-return-value xv yv))
+                           (score (- ret (* 0.5 risk))))
+                      (assert-approx-equal 1.0 (+ xv yv) 1e-6)
+                      (assert-true (<= xv (+ 0.75 1e-8)))
+                      (assert-true (>= xv -1e-8))
+                      (assert-true (>= yv -1e-8))
+                      (assert-approx-equal 0.75 xv 1e-5)
+                      (assert-approx-equal 0.25 yv 1e-5)
+                      (assert-approx-equal score opt 1e-6))))
+                (unwind-trail m))))
+
+          (make-test "qp rejects non-convex objective"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (let ((p (catch 'runtime.user-error
+                             (%clp-r-qp-minimize
+                               (list '* -1 (list '* x x))))))
+                    (assert-equal 'runtime.user-error (payload-tag p))
+                    (assert-true (starts-with? (payload-msg p)
+                                               "clp.r.qp.non-convex:"))))
+                (unwind-trail m)))))))
+
+    (print-tap (run suite))))
