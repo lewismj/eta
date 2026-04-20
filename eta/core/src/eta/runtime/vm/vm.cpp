@@ -136,6 +136,40 @@ void VM::collect_garbage() {
     });
 }
 
+void VM::process_pending_finalizers(const std::size_t budget) {
+    if (processing_finalizers_ || budget == 0) return;
+    if (heap_.pending_finalizer_count() == 0u) return;
+
+    processing_finalizers_ = true;
+    struct FinalizerProcessingReset {
+        bool& flag;
+        ~FinalizerProcessingReset() { flag = false; }
+    } reset{processing_finalizers_};
+
+    std::size_t processed = 0;
+    while (processed < budget) {
+        auto pending = heap_.dequeue_pending_finalizer();
+        if (!pending.has_value()) break;
+
+        const auto temp_root_mark = temp_roots_.size();
+        temp_roots_.push_back(pending->obj);
+        temp_roots_.push_back(pending->proc);
+
+        auto call_res = call_value(pending->proc, {pending->obj});
+        temp_roots_.resize(temp_root_mark);
+
+        /**
+         * Keep finalizer failure isolated from the VM host call path.
+         * Continue draining subsequent entries in the same safe-point pass.
+         */
+        if (!call_res && debug_) {
+            debug_->notify_exception(runtime_error_message(call_res.error()), reader::lexer::Span{});
+        }
+
+        ++processed;
+    }
+}
+
 std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
     using namespace nanbox;
 
@@ -272,27 +306,43 @@ std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
     
     auto res = run_loop();
     if (!res) return std::unexpected(res.error());
+
+    process_pending_finalizers();
     
     return pop();
 }
 
 std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<LispVal> args) {
+    const bool host_call = (current_func_ == nullptr);
+    const auto process_finalizers_if_host = [&]() {
+        if (host_call) process_pending_finalizers();
+    };
+
     if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(proc)) {
         uint32_t argc = static_cast<uint32_t>(args.size());
         if (prim->has_rest) {
             if (argc < prim->arity)
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
-                    "call_value: expected at least " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+                {
+                    process_finalizers_if_host();
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                        "call_value: expected at least " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+                }
         } else {
             if (argc != prim->arity)
-                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
-                    "call_value: expected " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+                {
+                    process_finalizers_if_host();
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                        "call_value: expected " + std::to_string(prim->arity) + " argument(s), got " + std::to_string(argc)}});
+                }
         }
-        return prim->func(args);
+        auto result = prim->func(args);
+        process_finalizers_if_host();
+        return result;
     }
 
     auto* cl = try_get_as<ObjectKind::Closure, Closure>(proc);
     if (!cl) {
+        process_finalizers_if_host();
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
             "call_value: argument is not a procedure"}});
     }
@@ -300,12 +350,18 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     uint32_t argc = static_cast<uint32_t>(args.size());
     if (cl->func->has_rest) {
         if (argc < cl->func->arity)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
-                "call_value: expected at least " + std::to_string(cl->func->arity) + " argument(s), got " + std::to_string(argc)}});
+            {
+                process_finalizers_if_host();
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "call_value: expected at least " + std::to_string(cl->func->arity) + " argument(s), got " + std::to_string(argc)}});
+            }
     } else {
         if (argc != cl->func->arity)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
-                "call_value: expected " + std::to_string(cl->func->arity) + " argument(s), got " + std::to_string(argc)}});
+            {
+                process_finalizers_if_host();
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity,
+                    "call_value: expected " + std::to_string(cl->func->arity) + " argument(s), got " + std::to_string(argc)}});
+            }
     }
 
     /// Save full outer execution context
@@ -360,6 +416,7 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
         auto pr = pack_rest_args(argc, cl->func->arity);
         if (!pr) {
             restore();
+            process_finalizers_if_host();
             return std::unexpected(pr.error());
         }
     }
@@ -369,6 +426,7 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
 
     if (!run_res) {
         restore();
+        process_finalizers_if_host();
         return std::unexpected(run_res.error());
     }
 
@@ -383,6 +441,7 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     current_closure_ = saved_closure;
     temp_roots_.resize(saved_temp_roots);
 
+    process_finalizers_if_host();
     return result;
 }
 
@@ -578,6 +637,10 @@ void VM::unpack_to_stack(LispVal value) {
 
 std::expected<void, RuntimeError> VM::run_loop() {
     while (current_func_ && pc_ < current_func_->code.size()) {
+        if (heap_.pending_finalizer_count() != 0u) {
+            process_pending_finalizers();
+        }
+
         /**
          * Debug hook
          * Zero-cost when debug_ is null (non-debug runs).

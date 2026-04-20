@@ -2540,6 +2540,154 @@ BOOST_AUTO_TEST_CASE(term_variant_hash_ignores_logic_var_identity) {
 BOOST_AUTO_TEST_SUITE_END() ///< fact_table_tests
 
 /**
+ * VM finalizer safe-point tests
+ */
+
+BOOST_AUTO_TEST_SUITE(finalizer_vm_tests)
+
+struct FinalizerVMFixture {
+    memory::heap::Heap heap{1024 * 1024};
+    memory::intern::InternTable intern_table;
+
+    static BytecodeFunction constant_return_function(LispVal value) {
+        BytecodeFunction func;
+        func.name = "finalizer_safe_point";
+        func.stack_size = 1;
+        func.constants.push_back(value);
+        func.code.push_back({OpCode::LoadConst, 0u});
+        func.code.push_back({OpCode::Return, 0u});
+        return func;
+    }
+
+    std::expected<LispVal, RuntimeError> execute_constant(VM& vm, LispVal value) {
+        auto func = constant_return_function(value);
+        return vm.execute(func);
+    }
+};
+
+BOOST_FIXTURE_TEST_CASE(pending_finalizer_executes_once_and_mutates_state, FinalizerVMFixture) {
+    VM vm(heap, intern_table);
+    int call_count = 0;
+
+    auto obj = make_vector(heap, {});
+    BOOST_REQUIRE(obj.has_value());
+
+    auto proc = make_primitive(
+        heap,
+        [&call_count, expected_obj = *obj](const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
+            if (args.size() != 1u || args[0] != expected_obj) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "finalizer: unexpected argument"}});
+            }
+            ++call_count;
+            return Nil;
+        },
+        1,
+        false
+    );
+    BOOST_REQUIRE(proc.has_value());
+
+    heap.enqueue_pending_finalizer(*obj, *proc);
+    auto forty_two = nanbox::ops::encode<int64_t>(42);
+    BOOST_REQUIRE(forty_two.has_value());
+
+    auto exec_res = execute_constant(vm, *forty_two);
+    BOOST_REQUIRE(exec_res.has_value());
+    BOOST_TEST(exec_res.value() == *forty_two);
+    BOOST_TEST(call_count == 1);
+    BOOST_TEST(heap.pending_finalizer_count() == 0u);
+
+    auto second_exec = execute_constant(vm, *forty_two);
+    BOOST_REQUIRE(second_exec.has_value());
+    BOOST_TEST(call_count == 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(failing_finalizer_does_not_block_later_entries, FinalizerVMFixture) {
+    VM vm(heap, intern_table);
+    int failing_calls = 0;
+    int succeeding_calls = 0;
+
+    auto bad_obj = make_vector(heap, {});
+    auto good_obj = make_vector(heap, {});
+    BOOST_REQUIRE(bad_obj.has_value());
+    BOOST_REQUIRE(good_obj.has_value());
+
+    auto bad_proc = make_primitive(
+        heap,
+        [&failing_calls](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
+            ++failing_calls;
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::UserError,
+                "finalizer failure"}});
+        },
+        1,
+        false
+    );
+    BOOST_REQUIRE(bad_proc.has_value());
+
+    auto good_proc = make_primitive(
+        heap,
+        [&succeeding_calls](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
+            ++succeeding_calls;
+            return Nil;
+        },
+        1,
+        false
+    );
+    BOOST_REQUIRE(good_proc.has_value());
+
+    heap.enqueue_pending_finalizer(*bad_obj, *bad_proc);
+    heap.enqueue_pending_finalizer(*good_obj, *good_proc);
+
+    auto result_val = nanbox::ops::encode<int64_t>(7);
+    BOOST_REQUIRE(result_val.has_value());
+    auto exec_res = execute_constant(vm, *result_val);
+    BOOST_REQUIRE(exec_res.has_value());
+    BOOST_TEST(exec_res.value() == *result_val);
+
+    BOOST_TEST(failing_calls == 1);
+    BOOST_TEST(succeeding_calls == 1);
+    BOOST_TEST(heap.pending_finalizer_count() == 0u);
+}
+
+BOOST_FIXTURE_TEST_CASE(non_resurrected_finalized_object_is_reclaimed_later, FinalizerVMFixture) {
+    VM vm(heap, intern_table);
+
+    auto obj = make_vector(heap, {});
+    BOOST_REQUIRE(obj.has_value());
+    const auto obj_id = static_cast<memory::heap::ObjectId>(nanbox::ops::payload(*obj));
+
+    auto proc = make_primitive(
+        heap,
+        [](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
+            return Nil;
+        },
+        1,
+        false
+    );
+    BOOST_REQUIRE(proc.has_value());
+    BOOST_REQUIRE(heap.register_finalizer(obj_id, *proc).has_value());
+
+    vm.collect_garbage();
+    BOOST_TEST(heap.pending_finalizer_count() == 1u);
+
+    memory::heap::HeapEntry entry{};
+    BOOST_TEST(heap.try_get(obj_id, entry));
+
+    auto zero = nanbox::ops::encode<int64_t>(0);
+    BOOST_REQUIRE(zero.has_value());
+    auto exec_res = execute_constant(vm, *zero);
+    BOOST_REQUIRE(exec_res.has_value());
+    BOOST_TEST(heap.pending_finalizer_count() == 0u);
+
+    vm.collect_garbage();
+    BOOST_TEST(!heap.try_get(obj_id, entry));
+}
+
+BOOST_AUTO_TEST_SUITE_END() ///< finalizer_vm_tests
+
+/**
  * VM runtime bounds-check tests (bug fix: unchecked stack/upval ops, bug #1)
  * These tests directly construct BytecodeFunctions that bypass the deserializer
  * verifier to exercise the VM's own defense-in-depth guards.

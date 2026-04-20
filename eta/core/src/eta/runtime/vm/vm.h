@@ -387,9 +387,19 @@ private:
     std::unique_ptr<memory::gc::MarkSweepGC> gc_;
     std::size_t gc_collections_{0};  ///< DEBUG: count GC runs
 
+    /// Max pending finalizers to execute in one VM safe-point drain pass.
+    static constexpr std::size_t kDefaultFinalizerBudget = 64;
+    bool processing_finalizers_{false};
+
     /// Debug state (null when not debugging)
     std::unique_ptr<DebugState> debug_;
     std::vector<BreakLocation>  pending_breakpoints_;  ///< queued before set_stop_callback
+
+    /**
+     * Drain pending heap finalizers at VM-safe points.
+     * Finalizer failures are isolated so later entries still run.
+     */
+    void process_pending_finalizers(std::size_t budget = kDefaultFinalizerBudget);
 
     std::expected<void, RuntimeError> run_loop();
     std::expected<void, RuntimeError> handle_return(LispVal result);
