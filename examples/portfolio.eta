@@ -64,6 +64,45 @@
       (display (if win "----------------------------------------------------------\n"
                        "──────────────────────────────────────────────────────────\n")))
 
+    ;; Lightweight syntax helpers for repeated structural patterns.
+    (define-syntax dict
+      (syntax-rules ()
+        ((_ (k v) ...)
+         (list (cons (quote k) v) ...))))
+
+    (define-syntax dict-from
+      (syntax-rules ()
+        ((_ v ...)
+         (dict (v v) ...))))
+
+    (defun report-line (line)
+      (display "  ")
+      (println line))
+
+    (defun report-value-line (label value)
+      (display "  ")
+      (display label)
+      (display ": ")
+      (println value))
+
+    (define-syntax report
+      (syntax-rules (=>)
+        ((_ label => value)
+         (report-value-line label value))
+        ((_ line)
+         (report-line line))))
+
+    (define-syntax dotimes
+      (syntax-rules ()
+        ((_ (i n) body ...)
+         (letrec ((loop (lambda (i)
+                          (if (< i n)
+                              (begin
+                                body ...
+                                (loop (+ i 1)))
+                              'done))))
+           (loop 0)))))
+
     (sep)
     (display "  Causal Portfolio Engine\n")
     (sep)
@@ -202,17 +241,14 @@
 
     ;; Show sample rows
     (display "  Sample rows (first 3):\n")
-    (letrec ((show (lambda (i)
-               (when (< i 3)
-                 (display "    ")
-                 (display (fact-table-ref universe i 0)) (display "  ")
-                 (display "beta=") (display (fact-table-ref universe i 1)) (display "  ")
-                 (display "macro=") (display (fact-table-ref universe i 2)) (display "  ")
-                 (display "rate=") (display (fact-table-ref universe i 3)) (display "  ")
-                 (display "sent=") (display (fact-table-ref universe i 4)) (display "  ")
-                 (display "ret=") (println (fact-table-ref universe i 5))
-                 (show (+ i 1))))))
-      (show 0))
+    (dotimes (i 3)
+      (display "    ")
+      (display (fact-table-ref universe i 0)) (display "  ")
+      (display "beta=") (display (fact-table-ref universe i 1)) (display "  ")
+      (display "macro=") (display (fact-table-ref universe i 2)) (display "  ")
+      (display "rate=") (display (fact-table-ref universe i 3)) (display "  ")
+      (display "sent=") (display (fact-table-ref universe i 4)) (display "  ")
+      (display "ret=") (println (fact-table-ref universe i 5)))
 
     (display "\n  Ground truth coefficients:\n")
     (display "    beta: 1.2  macro: 0.6  sector: 0.4  rate: -0.3  beta*macro: 0.2  sentiment: 0.5\n")
@@ -1595,10 +1631,7 @@
     (define stage2-latent-stress 0.12)
 
     (defun make-dag-variant (name dag observed stress)
-      (list (cons 'name name)
-            (cons 'dag dag)
-            (cons 'observed observed)
-            (cons 'stress stress)))
+      (dict-from name dag observed stress))
 
     (define stage2-dag-family
       (list
@@ -1762,15 +1795,16 @@
                           (base-score-v (score-from-tau base-weights tau-point lam sigma-base-opt))
                           (regret (max 0.0 (- opt-score base-score-v)))
                           (changed (not (weights-close-f? w-opt base-weights 1e-6))))
-                     (list (cons 'name name)
-                           (cons 'status status)
-                           (cons 'chosen-z z-set)
-                           (cons 'tau-point tau-point)
-                           (cons 'tau-low tau-low)
-                           (cons 'tau-high tau-high)
-                           (cons 'weights w-opt)
-                           (cons 'changed changed)
-                           (cons 'regret regret)))))
+                     (dict
+                       (name name)
+                       (status status)
+                       (chosen-z z-set)
+                       (tau-point tau-point)
+                       (tau-low tau-low)
+                       (tau-high tau-high)
+                       (weights w-opt)
+                       (changed changed)
+                       (regret regret)))))
                (collect
                  (lambda (vs acc)
                    (if (null? vs)
@@ -1817,18 +1851,18 @@
                                         (add-unique (assoc-ref 'weights (car xs)) acc))))))
                    (length (walk variants '()))))
                (argmax-stability (- 1.0 change-rate)))
-          (list
-            (cons 'variants variants)
-            (cons 'tau-min tau-min)
-            (cons 'tau-max tau-max)
-            (cons 'portfolio-return-min ret-min)
-            (cons 'portfolio-return-max ret-max)
-            (cons 'argmax-stability argmax-stability)
-            (cons 'argmax-change-rate change-rate)
-            (cons 'distinct-optima distinct-optima)
-            (cons 'mean-regret mean-regret)
-            (cons 'max-regret max-regret)
-            (cons 'label label)))))
+          (dict
+            (variants variants)
+            (tau-min tau-min)
+            (tau-max tau-max)
+            (portfolio-return-min ret-min)
+            (portfolio-return-max ret-max)
+            (argmax-stability argmax-stability)
+            (argmax-change-rate change-rate)
+            (distinct-optima distinct-optima)
+            (mean-regret mean-regret)
+            (max-regret max-regret)
+            (label label)))))
 
     (define stage2-report
       (compute-stage2-report lambda-risk
@@ -1936,20 +1970,20 @@
              (selected-regret (max 0.0 (- wc-opt-score wc-selected-score)))
              (nominal-regret (max 0.0 (- wc-opt-score wc-nominal-score)))
              (downside-improvement (- wc-selected-score wc-nominal-score)))
-        (list
-          (cons 'mode mode)
-          (cons 'lambda-effective lam-mode)
-          (cons 'tau-effective tau-mode)
-          (cons 'sigma-uncertainty sigma-unc)
-          (cons 'nominal-weights w-nom)
-          (cons 'selected-weights w-mode)
-          (cons 'nominal-score nominal-score)
-          (cons 'selected-score-mode selected-score-mode)
-          (cons 'selected-score-nominal selected-score-nominal)
-          (cons 'objective-gap objective-gap)
-          (cons 'worst-case-regret selected-regret)
-          (cons 'worst-case-regret-nominal nominal-regret)
-          (cons 'worst-case-score-improvement downside-improvement))))
+        (dict
+          (mode mode)
+          (lambda-effective lam-mode)
+          (tau-effective tau-mode)
+          (sigma-uncertainty sigma-unc)
+          (nominal-weights w-nom)
+          (selected-weights w-mode)
+          (nominal-score nominal-score)
+          (selected-score-mode selected-score-mode)
+          (selected-score-nominal selected-score-nominal)
+          (objective-gap objective-gap)
+          (worst-case-regret selected-regret)
+          (worst-case-regret-nominal nominal-regret)
+          (worst-case-score-improvement downside-improvement))))
 
     (define stage3-report
       (compute-stage3-report stage3-default-mode
@@ -2009,17 +2043,16 @@
                    sigma-boom-min-risk
                    sigma-recess-min-risk
                    sigma-rate-min-risk))
-    (display "  Optimization mode: ") (println stage3-mode)
-    (display "  Effective lambda: ") (println stage3-lambda-effective)
-    (display "  Sigma uncertainty ratio: ") (println stage3-sigma-unc)
-    (display "  Effective tau vector: ") (println stage3-tau-effective)
-    (display "  Nominal allocation (%): ") (println stage3-nominal-pct)
-    (display "  Selected allocation (%): ") (println stage3-selected-pct)
-    (display "  Objective gap to nominal optimum: ") (println stage3-objective-gap)
-    (display "  Worst-case regret (selected): ") (println stage3-wc-regret)
-    (display "  Worst-case regret (nominal):  ") (println stage3-wc-regret-nominal)
-    (display "  Worst-case score improvement vs nominal: ")
-    (println stage3-downside-improvement)
+    (report "Optimization mode" => stage3-mode)
+    (report "Effective lambda" => stage3-lambda-effective)
+    (report "Sigma uncertainty ratio" => stage3-sigma-unc)
+    (report "Effective tau vector" => stage3-tau-effective)
+    (report "Nominal allocation (%)" => stage3-nominal-pct)
+    (report "Selected allocation (%)" => stage3-selected-pct)
+    (report "Objective gap to nominal optimum" => stage3-objective-gap)
+    (report "Worst-case regret (selected)" => stage3-wc-regret)
+    (report "Worst-case regret (nominal)" => stage3-wc-regret-nominal)
+    (report "Worst-case score improvement vs nominal" => stage3-downside-improvement)
 
     (defun tau-add (a b)
       (list (+ (car a) (car b))
@@ -2146,37 +2179,45 @@
         1.45))
     (define stage5-regimes
       (list
-        (list (cons 'name 'dgp-correct)
-              (cons 'severity 0.0)
-              (cons 'tau-main tau-dgp)
-              (cons 'tau-down tau-recession-oos)
-              (cons 'sigma sigma-base-opt))
-        (list (cons 'name 'dag-misspecified)
-              (cons 'severity 1.0)
-              (cons 'tau-main tau-dag-main)
-              (cons 'tau-down tau-dag-down)
-              (cons 'sigma sigma-dag))
-        (list (cons 'name 'latent-confounding)
-              (cons 'severity 2.0)
-              (cons 'tau-main tau-latent-main)
-              (cons 'tau-down tau-latent-down)
-              (cons 'sigma sigma-latent))
-        (list (cons 'name 'noise-regime-shift)
-              (cons 'severity 3.0)
-              (cons 'tau-main tau-shift-main)
-              (cons 'tau-down tau-shift-down)
-              (cons 'sigma sigma-shift))))
+        (dict
+          (name 'dgp-correct)
+          (severity 0.0)
+          (tau-main tau-dgp)
+          (tau-down tau-recession-oos)
+          (sigma sigma-base-opt))
+        (dict
+          (name 'dag-misspecified)
+          (severity 1.0)
+          (tau-main tau-dag-main)
+          (tau-down tau-dag-down)
+          (sigma sigma-dag))
+        (dict
+          (name 'latent-confounding)
+          (severity 2.0)
+          (tau-main tau-latent-main)
+          (tau-down tau-latent-down)
+          (sigma sigma-latent))
+        (dict
+          (name 'noise-regime-shift)
+          (severity 3.0)
+          (tau-main tau-shift-main)
+          (tau-down tau-shift-down)
+          (sigma sigma-shift))))
 
     (define stage5-strategies
       (list
-        (list (cons 'name 'robust-causal)
-              (cons 'weights stage3-selected-weights))
-        (list (cons 'name 'empirical-mean-variance)
-              (cons 'weights empirical-mv-weights))
-        (list (cons 'name 'factor-tilt)
-              (cons 'weights factor-tilt-weights))
-        (list (cons 'name 'noncausal-ml)
-              (cons 'weights noncausal-weights))))
+        (dict
+          (name 'robust-causal)
+          (weights stage3-selected-weights))
+        (dict
+          (name 'empirical-mean-variance)
+          (weights empirical-mv-weights))
+        (dict
+          (name 'factor-tilt)
+          (weights factor-tilt-weights))
+        (dict
+          (name 'noncausal-ml)
+          (weights noncausal-weights))))
 
     (defun evaluate-stress-row (strategy regime)
       (let* ((name (assoc-ref 'name strategy))
@@ -2191,13 +2232,13 @@
              (down-return (portfolio-return-from-tau weights tau-down))
              (downside-risk (max 0.0 (- oos-return down-return)))
              (regret (max 0.0 (- oracle-score strategy-score))))
-        (list
-          (cons 'strategy name)
-          (cons 'regime (assoc-ref 'name regime))
-          (cons 'severity (assoc-ref 'severity regime))
-          (cons 'oos-return oos-return)
-          (cons 'downside-risk downside-risk)
-          (cons 'regret regret))))
+        (dict
+          (strategy name)
+          (regime (assoc-ref 'name regime))
+          (severity (assoc-ref 'severity regime))
+          (oos-return oos-return)
+          (downside-risk downside-risk)
+          (regret regret))))
 
     (define stage5-rows
       (letrec ((walk-regimes
@@ -2237,12 +2278,12 @@
                         (+ (stress-row-metric stage5-rows strategy-name 'latent-confounding 'regret)
                            (stress-row-metric stage5-rows strategy-name 'noise-regime-shift 'regret))))
                   4.0)))
-        (list
-          (cons 'strategy strategy-name)
-          (cons 'oos-return-dgp r0)
-          (cons 'degradation-slope slope)
-          (cons 'avg-downside-risk avg-downside)
-          (cons 'avg-regret avg-regret))))
+        (dict
+          (strategy strategy-name)
+          (oos-return-dgp r0)
+          (degradation-slope slope)
+          (avg-downside-risk avg-downside)
+          (avg-regret avg-regret))))
 
     (define stage5-summaries
       (map* (lambda (st) (summarize-strategy (assoc-ref 'name st)))
@@ -2263,11 +2304,11 @@
     (define stage5-fails-less-badly?
       (> stage5-fails-less-badly-count 0))
     (define stage5-report
-      (list
-        (cons 'rows stage5-rows)
-        (cons 'summaries stage5-summaries)
-        (cons 'fails-less-badly-latent-confounding stage5-fails-less-badly?)
-        (cons 'fails-less-badly-vs-baselines stage5-fails-less-badly-count)))
+      (dict
+        (rows stage5-rows)
+        (summaries stage5-summaries)
+        (fails-less-badly-latent-confounding stage5-fails-less-badly?)
+        (fails-less-badly-vs-baselines stage5-fails-less-badly-count)))
 
     (display "  Evaluation matrix (regime x strategy):\n")
     (display "  Regime               Strategy                  OOS Return  Downside  Regret\n")
@@ -2799,64 +2840,63 @@
                                                 wtf wef wff whf scen-sig)))
                                 (list name scen-ret scen-rsk)))
                            scenario-macros)))
-        (list (cons 'run-config
-                    (list (cons 'dgp-seed dgp-seed)
-                          (cons 'macro-base 0.5)
-                          (cons 'sentiment-grid '(0.1 0.3 0.5 0.7 0.9))
-                          (cons 'sigma-model sigma-model)
-                          (cons 'sigma-hybrid-structural-weight
-                                sigma-hybrid-structural-weight)
-                          (cons 'optimization-mode mode)))
-              (cons 'dag dag)
-              (cons 'tau base-returns)
-              (cons 'tau-min (assoc-ref 'tau-min stage2))
-              (cons 'tau-max (assoc-ref 'tau-max stage2))
-              (cons 'sigma-base sigma-base-opt)
-              (cons 'sigma-diagnostics
-                    (list
-                      (cons 'trace-base (sigma-trace sigma-base))
-                      (cons 'trace-boom (sigma-trace sigma-boom))
-                      (cons 'trace-recession (sigma-trace sigma-recess))
-                      (cons 'trace-rate-hike (sigma-trace sigma-rate))
-                      (cons 'min-risk-base (sigma-min-risk-sampled sigma-base))
-                      (cons 'min-risk-boom (sigma-min-risk-sampled sigma-boom))
-                      (cons 'min-risk-recession (sigma-min-risk-sampled sigma-recess))
-                      (cons 'min-risk-rate-hike (sigma-min-risk-sampled sigma-rate))
-                      (cons 'psd-sampled-base (sigma-psd-sampled? sigma-base))
-                      (cons 'psd-sampled-boom (sigma-psd-sampled? sigma-boom))
-                      (cons 'psd-sampled-recession (sigma-psd-sampled? sigma-recess))
-                      (cons 'psd-sampled-rate-hike (sigma-psd-sampled? sigma-rate))))
-              (cons 'allocation selected-f)
-              (cons 'allocation-pct selected-pct)
-              (cons 'return ret)
-              (cons 'risk risk)
-              (cons 'score score)
-              (cons 'uncertainty-optimization
-                    (list
-                      (cons 'mode (assoc-ref 'mode stage3))
-                      (cons 'lambda-effective (assoc-ref 'lambda-effective stage3))
-                      (cons 'tau-effective (assoc-ref 'tau-effective stage3))
-                      (cons 'sigma-uncertainty (assoc-ref 'sigma-uncertainty stage3))
-                      (cons 'objective-gap (assoc-ref 'objective-gap stage3))
-                      (cons 'worst-case-regret (assoc-ref 'worst-case-regret stage3))
-                      (cons 'worst-case-regret-nominal
-                            (assoc-ref 'worst-case-regret-nominal stage3))
-                      (cons 'worst-case-score-improvement
-                            (assoc-ref 'worst-case-score-improvement stage3))))
-              (cons 'stress-validation stage5-report)
-              (cons 'decision-robustness
-                    (list
-                      (cons 'label (assoc-ref 'label stage2))
-                      (cons 'argmax-stability (assoc-ref 'argmax-stability stage2))
-                      (cons 'argmax-change-rate (assoc-ref 'argmax-change-rate stage2))
-                      (cons 'distinct-optima (assoc-ref 'distinct-optima stage2))
-                      (cons 'mean-regret (assoc-ref 'mean-regret stage2))
-                      (cons 'max-regret (assoc-ref 'max-regret stage2))
-                      (cons 'portfolio-return-min
-                            (assoc-ref 'portfolio-return-min stage2))
-                      (cons 'portfolio-return-max
-                            (assoc-ref 'portfolio-return-max stage2))))
-              (cons 'scenarios scens))))
+        (dict
+          (run-config
+            (dict
+              (dgp-seed dgp-seed)
+              (macro-base 0.5)
+              (sentiment-grid '(0.1 0.3 0.5 0.7 0.9))
+              (sigma-model sigma-model)
+              (sigma-hybrid-structural-weight sigma-hybrid-structural-weight)
+              (optimization-mode mode)))
+          (dag dag)
+          (tau base-returns)
+          (tau-min (assoc-ref 'tau-min stage2))
+          (tau-max (assoc-ref 'tau-max stage2))
+          (sigma-base sigma-base-opt)
+          (sigma-diagnostics
+            (dict
+              (trace-base (sigma-trace sigma-base))
+              (trace-boom (sigma-trace sigma-boom))
+              (trace-recession (sigma-trace sigma-recess))
+              (trace-rate-hike (sigma-trace sigma-rate))
+              (min-risk-base (sigma-min-risk-sampled sigma-base))
+              (min-risk-boom (sigma-min-risk-sampled sigma-boom))
+              (min-risk-recession (sigma-min-risk-sampled sigma-recess))
+              (min-risk-rate-hike (sigma-min-risk-sampled sigma-rate))
+              (psd-sampled-base (sigma-psd-sampled? sigma-base))
+              (psd-sampled-boom (sigma-psd-sampled? sigma-boom))
+              (psd-sampled-recession (sigma-psd-sampled? sigma-recess))
+              (psd-sampled-rate-hike (sigma-psd-sampled? sigma-rate))))
+          (allocation selected-f)
+          (allocation-pct selected-pct)
+          (return ret)
+          (risk risk)
+          (score score)
+          (uncertainty-optimization
+            (dict
+              (mode (assoc-ref 'mode stage3))
+              (lambda-effective (assoc-ref 'lambda-effective stage3))
+              (tau-effective (assoc-ref 'tau-effective stage3))
+              (sigma-uncertainty (assoc-ref 'sigma-uncertainty stage3))
+              (objective-gap (assoc-ref 'objective-gap stage3))
+              (worst-case-regret (assoc-ref 'worst-case-regret stage3))
+              (worst-case-regret-nominal
+                (assoc-ref 'worst-case-regret-nominal stage3))
+              (worst-case-score-improvement
+                (assoc-ref 'worst-case-score-improvement stage3))))
+          (stress-validation stage5-report)
+          (decision-robustness
+            (dict
+              (label (assoc-ref 'label stage2))
+              (argmax-stability (assoc-ref 'argmax-stability stage2))
+              (argmax-change-rate (assoc-ref 'argmax-change-rate stage2))
+              (distinct-optima (assoc-ref 'distinct-optima stage2))
+              (mean-regret (assoc-ref 'mean-regret stage2))
+              (max-regret (assoc-ref 'max-regret stage2))
+              (portfolio-return-min (assoc-ref 'portfolio-return-min stage2))
+              (portfolio-return-max (assoc-ref 'portfolio-return-max stage2))))
+          (scenarios scens))))
 
     (defun run-pipeline-dynamic (universe dag constraints lam scenario-macros horizon . mode-opt)
       ;; Dynamic wrapper around run-pipeline that appends a sequential
@@ -2891,17 +2931,12 @@
     (display "  Dynamic Causal Control\n")
     (thin-sep)
     (display "\n")
-    (display "  (run-pipeline-dynamic ... horizon=8 stage3-default-mode)\n")
-    (display "  Policy adapts over time: ")
-    (println (assoc-ref 'adapts-over-time dynamic-policy-result))
-    (display "  Distinct actions:        ")
-    (println (assoc-ref 'distinct-actions dynamic-policy-result))
-    (display "  Cumulative reward:       ")
-    (println (assoc-ref 'cumulative-reward dynamic-policy-result))
-    (display "  Mean turnover:           ")
-    (println (assoc-ref 'mean-turnover dynamic-policy-result))
-    (display "  Actor rollouts:          ")
-    (println dynamic-actor-rollouts)
+    (report "(run-pipeline-dynamic ... horizon=8 stage3-default-mode)")
+    (report "Policy adapts over time" => (assoc-ref 'adapts-over-time dynamic-policy-result))
+    (report "Distinct actions" => (assoc-ref 'distinct-actions dynamic-policy-result))
+    (report "Cumulative reward" => (assoc-ref 'cumulative-reward dynamic-policy-result))
+    (report "Mean turnover" => (assoc-ref 'mean-turnover dynamic-policy-result))
+    (report "Actor rollouts" => dynamic-actor-rollouts)
     (display "\n  Five core arguments + mode.  One result.  Every value traceable to §0-§7.\n")
 
     ;; ════════════════════════════════════════════════════════════════
