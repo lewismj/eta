@@ -834,9 +834,8 @@
     (define sigma-base-opt (scenario-covariance 0.5))
 
     ;; CLP(R) helpers for continuous portfolio optimization.
-    ;; Objective used for optimization is linear:
-    ;;   ret . w - lambda * (risk-linear . w)
-    ;; while quadratic w'Sigma w is still reported as the risk metric.
+    ;; Objective solved directly in QP form:
+    ;;   ret . w - lambda * w'Sigma(m)w
     (defun make-vars (n)
       (if (= n 0)
           '()
@@ -875,14 +874,43 @@
           ((number? witness-val) witness-val)
           (#t (error tag)))))
 
-    (defun solve-allocation-lp (returns lam risk-linear tech-limit energy-limit health-min risk-cap)
+    (defun quadratic-risk-expr (ws S)
+      ;; Build the exact quadratic form w'Sw in CLP(R) objective syntax.
+      (let* ((wt  (car ws))
+             (we  (car (cdr ws)))
+             (wf  (car (cdr (cdr ws))))
+             (wh  (car (cdr (cdr (cdr ws)))))
+             (vt  (car S))
+             (S1  (cdr S))  (ve  (car S1))
+             (S2  (cdr S1)) (vf  (car S2))
+             (S3  (cdr S2)) (vh  (car S3))
+             (S4  (cdr S3)) (cte (car S4))
+             (S5  (cdr S4)) (ctf (car S5))
+             (S6  (cdr S5)) (cth (car S6))
+             (S7  (cdr S6)) (cef (car S7))
+             (S8  (cdr S7)) (ceh (car S8))
+             (S9  (cdr S8)) (cfh (car S9)))
+        (clp:r+
+          (clp:r*scalar vt (list '* wt wt))
+          (clp:r*scalar ve (list '* we we))
+          (clp:r*scalar vf (list '* wf wf))
+          (clp:r*scalar vh (list '* wh wh))
+          (clp:r*scalar (* 2.0 cte) (list '* wt we))
+          (clp:r*scalar (* 2.0 ctf) (list '* wt wf))
+          (clp:r*scalar (* 2.0 cth) (list '* wt wh))
+          (clp:r*scalar (* 2.0 cef) (list '* we wf))
+          (clp:r*scalar (* 2.0 ceh) (list '* we wh))
+          (clp:r*scalar (* 2.0 cfh) (list '* wf wh)))))
+
+    (defun solve-allocation-rq (returns lam sigma tech-limit energy-limit health-min risk-cap)
       (let ((m (trail-mark)))
         (let* ((ws (make-vars 4))
                (wt (car ws))
                (we (car (cdr ws)))
                (wf (car (cdr (cdr ws))))
                (wh (car (cdr (cdr (cdr ws)))))
-               (ones '(1 1 1 1)))
+               (ones '(1 1 1 1))
+               (risk-expr (quadratic-risk-expr ws sigma)))
           (clp:real wt 0.0 1.0)
           (clp:real we 0.0 1.0)
           (clp:real wf 0.0 1.0)
@@ -896,11 +924,10 @@
           (clp:r<= we energy-limit)
           (clp:r>= wh health-min)
           (when risk-cap
-            (clp:r<= (dot-expr risk-linear ws) risk-cap))
-          (let* ((objective (clp:r+ (dot-expr returns ws)
-                                    (clp:r*scalar (- 0 lam)
-                                                  (dot-expr risk-linear ws))))
-                 (raw (%clp-r-maximize objective))
+            (clp:r<= risk-expr risk-cap))
+          (let* ((objective (clp:r- (dot-expr returns ws)
+                                    (clp:r*scalar lam risk-expr)))
+                 (raw (%clp-r-qp-maximize objective))
                  (res (cond
                         ((eq? raw #f) (error "clp.r.infeasible"))
                         ((eq? raw 'clp.r.unbounded) (error "clp.r.unbounded"))
@@ -921,15 +948,8 @@
             (unwind-trail m)
             res))))
 
-    ;; Use diagonal terms of Sigma(m) as a simple linear risk proxy for LP.
-    (defun sigma-risk-linear (S)
-      (list (car S)
-            (car (cdr S))
-            (car (cdr (cdr S)))
-            (car (cdr (cdr (cdr S))))))
-
     (defun solve-portfolio-for-lambda (lam returns sigma tech-limit)
-      (solve-allocation-lp returns lam (sigma-risk-linear sigma)
+      (solve-allocation-rq returns lam sigma
                            tech-limit energy-cap healthcare-min #f))
 
     (defun weights-f->pct (wt we wf wh)
@@ -1018,13 +1038,12 @@
     (sep)
     (display "\n")
 
-    ;; Solve directly in CLP(R) using a linear risk proxy objective:
-    ;;   ret . w - lambda * (risk-linear . w)
-    ;; and report quadratic causal risk w'Sigma(0.5)w for diagnostics.
+    ;; Solve directly in CLP(R) using the quadratic causal risk objective:
+    ;;   ret . w - lambda * w'Sigma(0.5)w
     (define lambda-risk 2.0)
     (define base-returns (list ret-tech ret-energy ret-fin ret-health))
     (define base-solve (solve-portfolio-for-lambda lambda-risk base-returns sigma-base-opt tech-cap))
-    (define lp-best-score (car base-solve))
+    (define qp-best-score (car base-solve))
     (define opt-wt-f (car (cdr base-solve)))
     (define opt-we-f (car (cdr (cdr base-solve))))
     (define opt-wf-f (car (cdr (cdr (cdr base-solve)))))
@@ -1041,9 +1060,9 @@
     (define opt-risk (portfolio-risk-from-sigma opt-wt-f opt-we-f opt-wf-f opt-wh-f sigma-base-opt))
     (define best-score (- opt-ret (* lambda-risk opt-risk)))
 
-    (display "  Optimization method: continuous CLP(R) solve (no discrete grid).\n")
-    (display (if win "  LP objective: ret - lambda * linear-risk-proxy\n"
-                     "  LP objective: ret - lambda * linear-risk-proxy\n"))
+    (display "  Optimization method: continuous CLP(R) QP solve (no discrete grid).\n")
+    (display (if win "  QP objective: ret - lambda * w'S(0.5)w\n"
+                     "  QP objective: ret - lambda * w'S(0.5)w\n"))
     (display "  Continuous optimum from CLP(R):\n")
     (display "    Tech        ") (display opt-wt) (display "%\n")
     (display "    Energy      ") (display opt-we) (display "%\n")
@@ -1053,7 +1072,8 @@
     (display "    Expected Return (causal): ") (println opt-ret)
     (display (if win "    Risk (w'S(0.5)w):         " "    Risk (w'S(0.5)w):         ")) (println opt-risk)
     (display (if win "    Score (ret - 2*w'S(0.5)w):  " "    Score (ret - 2*w'S(0.5)w):  ")) (println best-score)
-    (display "    LP objective value:          ") (println lp-best-score)
+    (display "    QP objective value:          ") (println qp-best-score)
+    (display "    Objective parity error:      ") (println (abs (- best-score qp-best-score)))
 
     ;; Why this portfolio?
     (display "\n  Why this portfolio?\n")

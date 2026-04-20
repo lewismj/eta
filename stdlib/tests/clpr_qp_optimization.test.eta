@@ -1,4 +1,4 @@
-;;; clpr_qp_optimization.test.eta -- Smoke tests for CLP(R) QP optimization builtins.
+;;; clpr_qp_optimization.test.eta -- Smoke tests for CLP(R) QP optimization paths.
 
 (module clpr-qp-optimize-smoke
   (import std.test std.logic std.clpr)
@@ -26,9 +26,45 @@
           (and (unify (car (car witness)) (cdr (car witness)))
                (apply-witness! (cdr witness)))))
 
+    (defun optimize->pair (thunk)
+      (call-with-values thunk
+        (lambda (opt witness)
+          (cons opt witness))))
+
     (define suite
       (make-group "clpr-qp-optimize-smoke"
         (list
+          (make-test "clp:rq-minimize wrapper returns optimum and witness"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #t (clp:r<= x 3))
+                  (let* ((res (optimize->pair
+                                (lambda ()
+                                  (clp:rq-minimize
+                                    (list '+ (list '* x x) (list '* -4 x) 4)))))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 0.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 2.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
+          (make-test "clp:rq-maximize wrapper handles linear objective"
+            (lambda ()
+              (let ((m (trail-mark)))
+                (let ((x (logic-var)))
+                  (assert-equal #t (clp:r>= x 0))
+                  (assert-equal #t (clp:r<= x 3))
+                  (let* ((res (optimize->pair (lambda () (clp:rq-maximize x))))
+                         (opt (car res))
+                         (witness (cdr res)))
+                    (assert-approx-equal 3.0 opt 1e-7)
+                    (assert-equal #t (apply-witness! witness))
+                    (assert-approx-equal 3.0 (deref-lvar x) 1e-6)))
+                (unwind-trail m))))
+
           (make-test "qp minimize returns optimum and witness"
             (lambda ()
               (let ((m (trail-mark)))
