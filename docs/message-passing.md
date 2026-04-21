@@ -207,12 +207,17 @@ Eta values.
 | Bytevectors | `#u8(0 255 128)` |
 | `'()` (nil) | The empty list |
 
-**Not serializable:** Closures, continuations, ports, nng sockets, and
-tensors.  These carry OS-level references that are meaningless in another
-process.  Attempting to send one raises:
+**Not serializable for `send!`/`recv!` message payloads:** Closures,
+continuations, ports, nng sockets, and tensors.  Attempting to send one
+raises:
 ```
 'nng-error "cannot send non-serializable value"
 ```
+
+This restriction applies to network/message transport encoding. `spawn-thread`
+uses a separate capture serializer that can transfer closures (including nested
+closures and referenced module globals), but still rejects runtime-only
+handles such as ports/sockets/tensors.
 
 **Wire format auto-detection:**
 
