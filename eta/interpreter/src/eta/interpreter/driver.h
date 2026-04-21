@@ -197,9 +197,9 @@ public:
         };
 
         /**
-         * Receives a SerializedClosure, deserializes the bytecode into the child
-         * Driver's registry, reconstructs upvalues, creates the Closure heap
-         * object, and calls it via call_value().
+         * Receives a SerializedClosure, deserializes the bytecode into the
+         * child Driver's registry, reconstructs captures (upvalues + globals),
+         * creates the Closure heap object, and calls it via call_value().
          */
         eta::nng::ProcessManager::ClosureWorkerFn closure_worker_fn =
             [module_search_path](
@@ -240,19 +240,31 @@ public:
                     child.registry().add(std::move(copy));
                 }
 
-                /// Deserialize upvalues
-                std::vector<runtime::nanbox::LispVal> upval_vals;
-                upval_vals.reserve(sc.upvals.size());
-                for (std::size_t uvi = 0; uvi < sc.upvals.size(); ++uvi) {
-                    const auto& uv_bytes = sc.upvals[uvi];
-                    auto uv = eta::nng::deserialize_binary(
-                        std::span<const uint8_t>(uv_bytes),
-                        child.heap(), child.intern_table());
-                    if (!uv) {
-                        alive->store(false, std::memory_order_release);
-                        return;
-                    }
-                    upval_vals.push_back(*uv);
+                auto capture_payload = eta::nng::deserialize_spawn_capture(
+                    std::span<const uint8_t>(sc.captures_bytes),
+                    child.heap(),
+                    child.intern_table(),
+                    [&child, base_idx](uint32_t remapped_idx)
+                        -> const runtime::vm::BytecodeFunction*
+                    {
+                        return child.registry().get(base_idx + remapped_idx);
+                    },
+                    [&child](uint32_t slot) -> std::optional<runtime::nanbox::LispVal>
+                    {
+                        const auto& globals = child.vm().globals();
+                        if (slot >= globals.size()) return std::nullopt;
+                        return globals[slot];
+                    });
+                if (!capture_payload) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                /// Hydrate captured globals before executing the thunk.
+                auto& globals = child.vm().globals();
+                for (const auto& cg : capture_payload->globals) {
+                    if (globals.size() <= cg.slot) globals.resize(cg.slot + 1, runtime::nanbox::Nil);
+                    globals[cg.slot] = cg.value;
                 }
 
                 /// Reconstruct the Closure heap object in the child's heap
@@ -262,7 +274,7 @@ public:
                     return;
                 }
                 auto closure_val = runtime::memory::factory::make_closure(
-                    child.heap(), entry_func, std::move(upval_vals));
+                    child.heap(), entry_func, std::move(capture_payload->upvals));
                 if (!closure_val) {
                     alive->store(false, std::memory_order_release);
                     return;
@@ -283,7 +295,7 @@ public:
             builtins_, heap_, intern_table_,
             &proc_mgr_, etai_path_, &mailbox_val_,
             module_search_path, std::move(thread_worker_fn),
-            &registry_);
+            &registry_, &vm_.globals());
 
         /// Step 3: Verify every pre-registered slot now has a real implementation.
         builtins_.verify_all_patched();

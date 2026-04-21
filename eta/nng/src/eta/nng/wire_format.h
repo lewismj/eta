@@ -116,6 +116,8 @@ struct BinaryWriter {
     std::vector<uint8_t>& buf;
     const Heap& heap;
     const InternTable& intern;
+    bool strict{false};
+    std::string error_msg;
 
     void write_u8(uint8_t v) {
         buf.push_back(v);
@@ -146,7 +148,24 @@ struct BinaryWriter {
         buf.insert(buf.end(), sv.begin(), sv.end());
     }
 
-    void write_heap_value(LispVal v) {
+    std::string describe_non_serializable(LispVal v) const {
+        if (!ops::is_boxed(v)) return "unsupported non-boxed value";
+        if (ops::tag(v) != Tag::HeapObject) {
+            return "unsupported boxed tag " + std::to_string(static_cast<int>(ops::tag(v)));
+        }
+        HeapEntry entry;
+        if (!heap.try_get(ops::payload(v), entry)) {
+            return "unsupported dangling heap reference";
+        }
+        return "unsupported heap object kind " + std::string(to_string(entry.header.kind));
+    }
+
+    bool fail_non_serializable(LispVal v) {
+        if (strict && error_msg.empty()) error_msg = describe_non_serializable(v);
+        return !strict;
+    }
+
+    bool write_heap_value(LispVal v) {
         using namespace eta::runtime::memory::heap;
         auto id = ops::payload(v);
 
@@ -154,81 +173,83 @@ struct BinaryWriter {
         if (auto* big = heap.try_get_as<ObjectKind::Fixnum, int64_t>(id)) {
             write_u8(BT_Fixnum);
             write_i64(*big);
-            return;
+            return true;
         }
         /// Cons cell
         if (auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
             write_u8(BT_HeapCons);
-            write_value(cons->car);
-            write_value(cons->cdr);
-            return;
+            if (!write_value(cons->car)) return false;
+            if (!write_value(cons->cdr)) return false;
+            return true;
         }
         /// Vector
         if (auto* vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
             write_u8(BT_HeapVec);
             write_u32(static_cast<uint32_t>(vec->elements.size()));
             for (auto elem : vec->elements)
-                write_value(elem);
-            return;
+                if (!write_value(elem)) return false;
+            return true;
         }
         /// ByteVector
         if (auto* bv = heap.try_get_as<ObjectKind::ByteVector, types::ByteVector>(id)) {
             write_u8(BT_ByteVec);
             write_u32(static_cast<uint32_t>(bv->data.size()));
             buf.insert(buf.end(), bv->data.begin(), bv->data.end());
-            return;
+            return true;
         }
+        if (!fail_non_serializable(v)) return false;
         write_u8(BT_Nil);
+        return true;
     }
 
-    void write_value(LispVal v) {
+    bool write_value(LispVal v) {
         /// Sentinel values
-        if (v == Nil)   { write_u8(BT_Nil);   return; }
-        if (v == True)  { write_u8(BT_True);  return; }
-        if (v == False) { write_u8(BT_False); return; }
+        if (v == Nil)   { write_u8(BT_Nil);   return true; }
+        if (v == True)  { write_u8(BT_True);  return true; }
+        if (v == False) { write_u8(BT_False); return true; }
 
         if (!ops::is_boxed(v)) {
             /// Raw double (including negative doubles)
             write_u8(BT_Double);
             write_f64(std::bit_cast<double>(v));
-            return;
+            return true;
         }
 
         switch (ops::tag(v)) {
             case Tag::Fixnum: {
                 write_u8(BT_Fixnum);
                 write_i64(ops::decode<int64_t>(v).value_or(0));
-                return;
+                return true;
             }
             case Tag::Char: {
                 write_u8(BT_Char);
                 write_u32(static_cast<uint32_t>(ops::decode<char32_t>(v).value_or(0)));
-                return;
+                return true;
             }
             case Tag::String: {
                 write_u8(BT_String);
                 auto sv = intern.get_string(ops::payload(v));
                 write_str(sv.value_or(""));
-                return;
+                return true;
             }
             case Tag::Symbol: {
                 write_u8(BT_Symbol);
                 auto sv = intern.get_string(ops::payload(v));
                 write_str(sv.value_or(""));
-                return;
+                return true;
             }
             case Tag::HeapObject: {
-                write_heap_value(v);
-                return;
+                return write_heap_value(v);
             }
             case Tag::Nan: {
                 write_u8(BT_Double);
                 write_f64(std::numeric_limits<double>::quiet_NaN());
-                return;
+                return true;
             }
             default:
+                if (!fail_non_serializable(v)) return false;
                 write_u8(BT_Nil);
-                return;
+                return true;
         }
     }
 };
@@ -417,7 +438,34 @@ serialize_binary(LispVal v, const Heap& heap, const InternTable& intern) {
     buf.reserve(64);
     buf.push_back(BINARY_VERSION_BYTE);
     detail::BinaryWriter w{buf, heap, intern};
-    w.write_value(v);
+    (void)w.write_value(v);
+    return buf;
+}
+
+/**
+ * @brief Serialize a LispVal to the binary wire format, failing on unsupported
+ *        value kinds.
+ *
+ * This is used for contexts that require explicit transfer guarantees (for
+ * example closure upvalues in spawn-thread), where silently coercing unknown
+ * values to nil would hide correctness issues.
+ *
+ * @param v      The value to serialize.
+ * @param heap   The heap (needed to dereference heap objects).
+ * @param intern The intern table (needed to resolve string/symbol IDs).
+ * @return Binary payload on success; an error string describing the first
+ *         unsupported value encountered otherwise.
+ */
+inline std::expected<std::vector<uint8_t>, std::string>
+serialize_binary_strict(LispVal v, const Heap& heap, const InternTable& intern) {
+    std::vector<uint8_t> buf;
+    buf.reserve(64);
+    buf.push_back(BINARY_VERSION_BYTE);
+    detail::BinaryWriter w{buf, heap, intern, true, {}};
+    if (!w.write_value(v)) {
+        return std::unexpected(
+            w.error_msg.empty() ? std::string("unsupported value") : w.error_msg);
+    }
     return buf;
 }
 

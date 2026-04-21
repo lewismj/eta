@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -69,6 +70,47 @@ namespace {
             else
                 return to_string(e);
         }, err);
+    }
+
+    static bool diagnostics_contain(const eta::interpreter::Driver& driver,
+                                    std::string_view needle) {
+        for (const auto& diag : driver.diagnostics().diagnostics()) {
+            if (diag.message.find(needle) != std::string::npos) return true;
+        }
+        return false;
+    }
+
+    static void expect_spawn_thread_upvalue_serialization_error(
+        const char* src,
+        std::initializer_list<std::string_view> expected_fragments)
+    {
+        std::string stdlib_path;
+#ifdef ETA_STDLIB_DIR
+        stdlib_path = ETA_STDLIB_DIR;
+#endif
+        if (stdlib_path.empty()) {
+            BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set - skipping spawn-thread upvalue serialization test");
+            return;
+        }
+
+        namespace fs = std::filesystem;
+        using namespace eta::interpreter;
+
+        ModulePathResolver resolver({fs::path(stdlib_path)});
+        Driver driver(std::move(resolver));
+        driver.load_prelude();
+
+        bool ok = driver.run_source(src);
+        BOOST_REQUIRE_MESSAGE(!ok, "expected spawn-thread upvalue serialization failure");
+
+        for (const auto& diag : driver.diagnostics().diagnostics()) {
+            BOOST_TEST_MESSAGE("  diag: " << diag.message);
+        }
+        for (auto frag : expected_fragments) {
+            BOOST_CHECK_MESSAGE(
+                diagnostics_contain(driver, frag),
+                "missing expected diagnostic fragment: " << frag);
+        }
     }
 
     /// Build a full BuiltinEnvironment with all nng primitives registered.
@@ -2782,6 +2824,207 @@ BOOST_AUTO_TEST_CASE(spawn_thread_portfolio_worker_shape_regression) {
     BOOST_REQUIRE_MESSAGE(dec.has_value(), "portfolio worker-shape result is not a flonum");
     BOOST_CHECK_CLOSE(*dec, 1.814, 1e-9);
 }
+
+BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_closure_direct_captured) {
+    std::string stdlib_path;
+#ifdef ETA_STDLIB_DIR
+    stdlib_path = ETA_STDLIB_DIR;
+#endif
+    if (stdlib_path.empty()) {
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set - skipping closure upvalue capture test");
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    using namespace eta::interpreter;
+
+    ModulePathResolver resolver({fs::path(stdlib_path)});
+    Driver driver(std::move(resolver));
+    driver.load_prelude();
+
+    const char* src = R"eta(
+(module spawn-thread-upvalue-closure-direct
+  (begin
+    (define result #f)
+    (let ((payload (lambda (x) (+ x 5))))
+      (define t
+        (spawn-thread
+          (lambda ()
+            (let* ((mb (current-mailbox))
+                   (n  (recv! mb 'wait)))
+              (send! mb (payload n) 'wait)))))
+      (send! t 37 'wait)
+      (set! result (recv! t 'wait))
+      (thread-join t)
+      (nng-close t))))
+)eta";
+
+    LispVal result_val{Nil};
+    bool ok = driver.run_source(src, &result_val, "result");
+    BOOST_REQUIRE_MESSAGE(ok, "Driver::run_source failed for closure upvalue capture test");
+
+    auto dec = ops::decode<int64_t>(result_val);
+    BOOST_REQUIRE_MESSAGE(dec.has_value(), "result is not a fixnum");
+    BOOST_TEST(*dec == 42);
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_module_global_definition_capture) {
+    std::string stdlib_path;
+#ifdef ETA_STDLIB_DIR
+    stdlib_path = ETA_STDLIB_DIR;
+#endif
+    if (stdlib_path.empty()) {
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set - skipping module-global capture test");
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    using namespace eta::interpreter;
+
+    ModulePathResolver resolver({fs::path(stdlib_path)});
+    Driver driver(std::move(resolver));
+    driver.load_prelude();
+
+    const char* src = R"eta(
+(module spawn-thread-module-global-definition-capture
+  (begin
+    (define (clamp-local x lo hi)
+      (if (< x lo) lo
+          (if (> x hi) hi x)))
+
+    (define bump-list '(4 5))
+    (define result #f)
+
+    (define t
+      (spawn-thread
+        (lambda ()
+          (let* ((mb (current-mailbox))
+                 (n (recv! mb 'wait)))
+            (send! mb (+ (clamp-local n 10 30)
+                         (car bump-list)
+                         (car (cdr bump-list)))
+                   'wait)))))
+    (send! t 55 'wait)
+    (set! result (recv! t 'wait))
+    (thread-join t)
+    (nng-close t)))
+)eta";
+
+    LispVal result_val{Nil};
+    bool ok = driver.run_source(src, &result_val, "result");
+    BOOST_REQUIRE_MESSAGE(ok, "Driver::run_source failed for module-global capture test");
+
+    auto dec = ops::decode<int64_t>(result_val);
+    BOOST_REQUIRE_MESSAGE(dec.has_value(), "result is not a fixnum");
+    BOOST_TEST(*dec == 39);
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_global_port_rejected) {
+    const char* src = R"eta(
+(module spawn-thread-global-port-rejected
+  (begin
+    (define bad-port (open-output-string))
+    (spawn-thread
+      (lambda ()
+        bad-port))))
+)eta";
+
+    expect_spawn_thread_upvalue_serialization_error(
+        src, {"spawn-thread: capture is not serializable:", "global[", "Port"});
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_port_direct_rejected) {
+    const char* src = R"eta(
+(module spawn-thread-upvalue-port-direct
+  (begin
+    (let ((payload (open-output-string)))
+      (spawn-thread
+        (lambda ()
+          payload)))))
+)eta";
+
+    expect_spawn_thread_upvalue_serialization_error(
+        src, {"spawn-thread: capture is not serializable:", "upvalue[", "Port"});
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_port_nested_list_rejected) {
+    const char* src = R"eta(
+(module spawn-thread-upvalue-port-nested-list
+  (begin
+    (let* ((raw (open-output-string))
+           (payload (list 1 raw 2)))
+      (spawn-thread
+        (lambda ()
+          payload)))))
+)eta";
+
+    expect_spawn_thread_upvalue_serialization_error(
+        src, {"spawn-thread: capture is not serializable:", "upvalue[", "Port"});
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_socket_direct_rejected) {
+    const char* src = R"eta(
+(module spawn-thread-upvalue-socket-direct
+  (begin
+    (let ((sock (nng-socket 'pair)))
+      (nng-close sock)
+      (spawn-thread
+        (lambda ()
+          sock)))))
+)eta";
+
+    expect_spawn_thread_upvalue_serialization_error(
+        src, {"spawn-thread: capture is not serializable:", "upvalue[", "NngSocket"});
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_socket_nested_vector_rejected) {
+    const char* src = R"eta(
+(module spawn-thread-upvalue-socket-nested-vector
+  (begin
+    (let ((sock (nng-socket 'pair)))
+      (nng-close sock)
+      (let ((payload (vector 1 sock 2)))
+        (spawn-thread
+          (lambda ()
+            payload))))))
+)eta";
+
+    expect_spawn_thread_upvalue_serialization_error(
+        src, {"spawn-thread: capture is not serializable:", "upvalue[", "NngSocket"});
+}
+
+#if defined(ETA_HAS_TORCH) && !defined(ETA_TORCH_DEBUG_SKIP)
+BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_tensor_direct_rejected) {
+    const char* src = R"eta(
+(module spawn-thread-upvalue-tensor-direct
+  (import std.torch)
+  (begin
+    (let ((payload (tensor '(1.0 2.0 3.0))))
+      (spawn-thread
+        (lambda ()
+          payload)))))
+)eta";
+
+    expect_spawn_thread_upvalue_serialization_error(
+        src, {"spawn-thread: capture is not serializable:", "upvalue[", "Tensor"});
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_tensor_nested_list_rejected) {
+    const char* src = R"eta(
+(module spawn-thread-upvalue-tensor-nested-list
+  (import std.torch)
+  (begin
+    (let* ((raw (tensor '(1.0 2.0)))
+           (payload (list 1 raw 2)))
+      (spawn-thread
+        (lambda ()
+          payload)))))
+)eta";
+
+    expect_spawn_thread_upvalue_serialization_error(
+        src, {"spawn-thread: capture is not serializable:", "upvalue[", "Tensor"});
+}
+#endif
 
 BOOST_AUTO_TEST_SUITE_END()
 

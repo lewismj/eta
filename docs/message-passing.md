@@ -476,10 +476,15 @@ See [`examples/inproc.eta`](../examples/inproc.eta) for the runnable demo.
 #### Constraints
 
 - The thunk must take **0 arguments**.
-- All captured **upvalues must be serializable** (numbers, strings, symbols,
-  booleans, pairs, lists, vectors).  Closures, ports, sockets, and tensors
-  are not serializable — keep those in a separate worker file and use
-  `spawn-thread-with` instead.
+- `spawn-thread` transfers the thunk's full capture set: upvalues, nested
+  closures, and referenced module-global slots used by the closure bytecode.
+- Transferable values include numbers, strings, symbols, booleans, pairs,
+  lists, vectors, bytevectors, and closures.
+- Runtime-only handles (ports, sockets, tensors, continuations, etc.) remain
+  non-transferable; nested values are checked recursively and failures report
+  the capture root (`upvalue[...]` or `global[...]`) and object kind.
+- Use `spawn-thread-with` when worker logic depends on those runtime handles
+  or when explicit module loading is preferred.
 
 ---
 

@@ -136,11 +136,12 @@ public:
     /**
      * Serialized closure for spawn-thread.
      * Contains the closure's bytecode (etac-format, 0-based) plus
-     * binary-serialized upvalues for transfer to a new in-process thread.
+     * serialized captures (upvalues + referenced globals) for transfer to a
+     * new in-process thread.
      */
     struct SerializedClosure {
-        std::vector<uint8_t> funcs_bytes;           ///< etac-format bytecode (entry at index 0)
-        std::vector<std::vector<uint8_t>> upvals;   ///< serialized upvalues (binary wire format)
+        std::vector<uint8_t> funcs_bytes;      ///< etac-format bytecode (entry at index 0)
+        std::vector<uint8_t> captures_bytes;   ///< closure/module capture payload
     };
 
     /// Factory for spawn-thread: receives endpoint + serialized closure, dials, executes.
