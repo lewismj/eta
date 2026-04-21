@@ -722,6 +722,14 @@ builders and reporting sections concise:
 These are structural helpers only; runtime behavior and artifact
 keys remain unchanged.
 
+The portfolio file also keeps small compatibility wrappers for repeated
+moment/clamp calls:
+
+- `clamp01` / `clamp-range` expand to `clamp` from `std.math`.
+- `list-mean` / `list-variance` / `list-covariance` expand to
+  `std.stats` calls, with variance/covariance scaled to preserve the
+  existing population-moment semantics used by the risk pipeline.
+
 > **Note:** NN training is stochastic — exact numbers will vary between
 > runs, but the qualitative results (adjustment set and optimal allocation) are
 > deterministic given the LCG seed.  Exact return/risk values can also shift
@@ -1448,6 +1456,14 @@ unchanged via `run-pipeline`; dynamic behavior is exposed through
 - aggregate diagnostics (`cumulative-reward`, `mean-reward`, `mean-turnover`)
 - adaptation markers (`adapts-over-time`, `distinct-actions`)
 - actor-parallel rollout summaries across base/boom/recession/rate-hike paths
+
+Implementation notes:
+
+- Weight and turnover calculations are expressed with list helpers
+  (`weights->fractions`, `dot-product`, `map2` + `foldl`) rather than
+  positional `car`/`cdr` chains.
+- Policy simulation uses a named-let loop to keep state transitions and
+  accumulator updates explicit.
 
 This closes the loop between decisions and future state evolution while
 preserving the existing one-shot portfolio API.

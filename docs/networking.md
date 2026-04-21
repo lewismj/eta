@@ -415,9 +415,16 @@ Inside the thunk, `(current-mailbox)` returns the thread's end of the socket.
 (nng-close t)
 ```
 
-**Serializable upvalues:** numbers, strings, symbols, booleans, pairs,
-lists, and vectors.  Closures, ports, sockets, and tensors are **not**
-serializable; attempting to use them as upvalues raises a runtime error.
+`spawn-thread` transfers a full capture set for the thunk: direct upvalues,
+nested closures, and referenced module-global values used by the closure
+bytecode.  This allows helper lambdas and module-level immutable data to run
+in the child VM without moving worker code to a separate file.
+
+Supported captured values include numbers, strings, symbols, booleans, pairs,
+lists, vectors, bytevectors, and closures. Runtime-only handles such as ports,
+sockets, tensors, and continuations remain non-transferable. Nested values are
+validated recursively, and failures report the specific capture root
+(`upvalue[...]` or `global[...]`) plus the unsupported heap-object kind.
 
 **Errors:**
 - `'runtime-error "spawn-thread: argument must be a 0-argument closure (thunk)"` —
@@ -438,8 +445,7 @@ process), then calls the named function `func-sym` with any additional `args`.
 Returns the **parent-side PAIR socket**.
 
 Use this when you prefer to keep worker logic in a separate source file, or
-when the thunk cannot be serialized (e.g. because it captures non-serializable
-values).
+when the thunk intentionally depends on non-transferable runtime handles.
 
 ```scheme
 ;; inproc-worker.eta defines a (noop) stub; real work is in module body.

@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cstring>
 #include <deque>
+#include <optional>
 #include <queue>
 #include <span>
 #include <sstream>
@@ -52,6 +53,7 @@
 #include "nng_socket_ptr.h"
 #include "nng_factory.h"
 #include "wire_format.h"
+#include "spawn_capture_format.h"
 #include "process_mgr.h"
 
 namespace eta::nng {
@@ -165,66 +167,194 @@ static void monitor_pipe_cb(nng_pipe /*pipe*/, nng_pipe_ev /*ev*/, void* arg) no
 /// Thread closure serialization helpers
 
 /**
- * Collect all function indices reachable from @p entry_idx via MakeClosure
- * constants (BFS).  The entry function is always first in the returned list.
- */
-inline std::vector<uint32_t> collect_closure_deps(
-    uint32_t entry_idx,
-    const semantics::BytecodeFunctionRegistry& reg)
-{
-    std::vector<uint32_t> order;
-    std::unordered_set<uint32_t> visited;
-    std::queue<uint32_t> todo;
-    todo.push(entry_idx);
-    while (!todo.empty()) {
-        auto idx = todo.front(); todo.pop();
-        if (!visited.insert(idx).second) continue;
-        order.push_back(idx);
-        const auto* f = reg.get(idx);
-        if (!f) continue;
-        for (const auto& c : f->constants) {
-            if (runtime::vm::is_func_index(c))
-                todo.push(runtime::vm::decode_func_index(c));
-        }
-    }
-    return order;
-}
-
-/**
  * Build a SerializedClosure from a closure object's entry function and upvalues.
  *
- * Collects all reachable function bytecode (entry first), remaps function-index
- * constants to a 0-based mini-registry, serializes via BytecodeSerializer, and
- * serializes each upvalue via the binary wire format.
+ * Collects all reachable function bytecode (entry first), discovers all global
+ * slots referenced by those functions, captures non-primitive globals, remaps
+ * function-index constants to a 0-based mini-registry, serializes bytecode via
+ * BytecodeSerializer, and serializes captures (upvalues + globals) via the
+ * spawn-capture wire format.
  *
  */
-inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure(
+inline std::expected<ProcessManager::SerializedClosure, RuntimeError> build_serialized_closure(
     uint32_t entry_idx,
     const std::vector<LispVal>& upvals,
+    const std::vector<LispVal>& vm_globals,
     const semantics::BytecodeFunctionRegistry& src_reg,
     Heap& heap,
     InternTable& intern)
 {
-    /// 1. Collect reachable functions (entry at index 0)
-    auto order = collect_closure_deps(entry_idx, src_reg);
+    auto internal_error = [](std::string msg) -> std::unexpected<RuntimeError> {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            std::move(msg)}});
+    };
+
+    auto type_error = [](std::string msg) -> std::unexpected<RuntimeError> {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            std::move(msg)}});
+    };
+
+    /**
+     * Build a pointer->index table once so closure-valued captures can be
+     * mapped back to function indices in the source registry.
+     */
+    std::unordered_map<const runtime::vm::BytecodeFunction*, uint32_t> func_index_by_ptr;
+    {
+        const uint32_t n = static_cast<uint32_t>(src_reg.size());
+        for (uint32_t i = 0; i < n; ++i) {
+            if (const auto* f = src_reg.get(i)) {
+                func_index_by_ptr.emplace(f, i);
+            }
+        }
+    }
+
+    std::vector<uint32_t> order;
+    std::unordered_set<uint32_t> seen_funcs;
+    std::queue<uint32_t> todo_funcs;
+    auto add_func = [&](uint32_t idx) {
+        if (seen_funcs.insert(idx).second) {
+            order.push_back(idx);
+            todo_funcs.push(idx);
+        }
+    };
+
+    /**
+     * Scan runtime values for nested closures so their function bodies are
+     * included in the serialized mini-registry.
+     */
+    auto scan_value_for_functions =
+        [&](auto&& self, LispVal v, std::unordered_set<ObjectId>& seen_objs)
+            -> std::expected<void, RuntimeError>
+    {
+        if (!ops::is_boxed(v)) return {};
+        if (ops::tag(v) != Tag::HeapObject) return {};
+
+        auto id = ops::payload(v);
+        if (!seen_objs.insert(id).second) return {};
+
+        if (auto* cl = heap.try_get_as<ObjectKind::Closure, runtime::types::Closure>(id)) {
+            auto it = func_index_by_ptr.find(cl->func);
+            if (it == func_index_by_ptr.end()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "spawn-thread: closure capture function not found in registry"}});
+            }
+            add_func(it->second);
+            for (auto uv : cl->upvals) {
+                auto sr = self(self, uv, seen_objs);
+                if (!sr) return sr;
+            }
+            return {};
+        }
+
+        if (auto* cons = heap.try_get_as<ObjectKind::Cons, runtime::types::Cons>(id)) {
+            auto a = self(self, cons->car, seen_objs);
+            if (!a) return a;
+            return self(self, cons->cdr, seen_objs);
+        }
+
+        if (auto* vec = heap.try_get_as<ObjectKind::Vector, runtime::types::Vector>(id)) {
+            for (auto elem : vec->elements) {
+                auto sr = self(self, elem, seen_objs);
+                if (!sr) return sr;
+            }
+            return {};
+        }
+
+        return {};
+    };
+
+    /// Seed from entry thunk + direct upvalue closures.
+    add_func(entry_idx);
+    {
+        std::unordered_set<ObjectId> seen_objs;
+        for (auto uv : upvals) {
+            auto sr = scan_value_for_functions(scan_value_for_functions, uv, seen_objs);
+            if (!sr) return std::unexpected(sr.error());
+        }
+    }
+
+    /**
+     * Global slots referenced by reachable functions.
+     * Primitive-valued globals are treated as by-reference globals (resolved by
+     * slot in the child VM) and are not serialized into the payload.
+     */
+    std::unordered_set<uint32_t> seen_globals;
+    std::vector<SpawnCapturedGlobal> captured_globals;
+
+    while (!todo_funcs.empty()) {
+        const auto idx = todo_funcs.front();
+        todo_funcs.pop();
+
+        const auto* f = src_reg.get(idx);
+        if (!f) {
+            return internal_error(
+                "spawn-thread: closure dependency function not found in registry "
+                "(index " + std::to_string(idx) + ")");
+        }
+
+        for (const auto& c : f->constants) {
+            if (runtime::vm::is_func_index(c)) {
+                add_func(runtime::vm::decode_func_index(c));
+            }
+        }
+
+        for (const auto& ins : f->code) {
+            if (ins.opcode != runtime::vm::OpCode::LoadGlobal &&
+                ins.opcode != runtime::vm::OpCode::StoreGlobal) {
+                continue;
+            }
+            const auto slot = ins.arg;
+            if (!seen_globals.insert(slot).second) continue;
+
+            if (slot >= vm_globals.size()) {
+                return internal_error(
+                    "spawn-thread: referenced global slot " + std::to_string(slot)
+                    + " is out of range");
+            }
+
+            const auto gv = vm_globals[slot];
+            {
+                std::unordered_set<ObjectId> seen_objs;
+                auto sr = scan_value_for_functions(scan_value_for_functions, gv, seen_objs);
+                if (!sr) return std::unexpected(sr.error());
+            }
+
+            bool is_primitive_global = false;
+            if (ops::is_boxed(gv) && ops::tag(gv) == Tag::HeapObject) {
+                is_primitive_global =
+                    heap.try_get_as<ObjectKind::Primitive, runtime::types::Primitive>(
+                        ops::payload(gv)) != nullptr;
+            }
+            if (!is_primitive_global) {
+                captured_globals.push_back(SpawnCapturedGlobal{slot, gv});
+            }
+        }
+    }
 
     std::unordered_map<uint32_t, uint32_t> remap;
     for (uint32_t i = 0; i < static_cast<uint32_t>(order.size()); ++i)
         remap[order[i]] = i;
 
-    /// 3. Build new registry with rebased function-index constants
+    /// Build new registry with rebased function-index constants.
     semantics::BytecodeFunctionRegistry new_reg;
     for (uint32_t old_idx : order) {
         const auto* f = src_reg.get(old_idx);
         if (!f) {
-            return std::nullopt;
+            return internal_error(
+                "spawn-thread: closure dependency function not found in registry "
+                "(index " + std::to_string(old_idx) + ")");
         }
         runtime::vm::BytecodeFunction copy = *f;
         for (auto& c : copy.constants) {
             if (runtime::vm::is_func_index(c)) {
                 auto it = remap.find(runtime::vm::decode_func_index(c));
                 if (it == remap.end()) {
-                    return std::nullopt;
+                    return internal_error(
+                        "spawn-thread: closure function remap missing for dependency index "
+                        + std::to_string(runtime::vm::decode_func_index(c)));
                 }
                 c = runtime::vm::encode_func_index(it->second);
             }
@@ -232,32 +362,71 @@ inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure
         new_reg.add(std::move(copy));
     }
 
-    /// 4. Serialize the mini-registry as etac bytes
+    /// Serialize the mini-registry as etac bytes.
     runtime::vm::BytecodeSerializer ser(heap, intern);
     runtime::vm::ModuleEntry mod;
     mod.name             = "__spawn_thread__";
     mod.init_func_index  = 0; ///< entry is always index 0
-    mod.total_globals    = 0;
+    mod.total_globals    = static_cast<uint32_t>(vm_globals.size());
 
     std::ostringstream oss(std::ios::binary);
     /// Pass num_builtins=0 to skip builtin-count validation on deserialization
     if (!ser.serialize({mod}, new_reg, 0, false, oss, {}, 0)) {
-        return std::nullopt;
+        return internal_error("spawn-thread: failed to serialize closure bytecode");
     }
 
     ProcessManager::SerializedClosure sc;
     auto str = oss.str();
     sc.funcs_bytes = std::vector<uint8_t>(str.begin(), str.end());
 
-    /// 5. Serialize upvalues via binary wire format
-    for (std::size_t i = 0; i < upvals.size(); ++i) {
-        const auto& uv = upvals[i];
-        auto bin = serialize_binary(uv, heap, intern);
-        if (bin.empty()) {
-            return std::nullopt;
+    std::unordered_map<LispVal, uint32_t> primitive_global_slots;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(vm_globals.size()); ++i) {
+        const auto gv = vm_globals[i];
+        if (!ops::is_boxed(gv) || ops::tag(gv) != Tag::HeapObject) continue;
+        if (heap.try_get_as<ObjectKind::Primitive, runtime::types::Primitive>(
+                ops::payload(gv))) {
+            primitive_global_slots.try_emplace(gv, i);
         }
-        sc.upvals.push_back(std::move(bin));
     }
+
+    auto closure_func_index = [&](ObjectId closure_id)
+        -> std::expected<uint32_t, std::string>
+    {
+        const auto* cl =
+            heap.try_get_as<ObjectKind::Closure, runtime::types::Closure>(closure_id);
+        if (!cl) {
+            return std::unexpected("dangling closure reference");
+        }
+        auto fit = func_index_by_ptr.find(cl->func);
+        if (fit == func_index_by_ptr.end()) {
+            return std::unexpected("closure function not found in source registry");
+        }
+        auto rit = remap.find(fit->second);
+        if (rit == remap.end()) {
+            return std::unexpected(
+                "closure function remap missing for index " + std::to_string(fit->second));
+        }
+        return rit->second;
+    };
+
+    auto global_ref_slot = [&](LispVal v) -> std::optional<uint32_t> {
+        auto it = primitive_global_slots.find(v);
+        if (it == primitive_global_slots.end()) return std::nullopt;
+        return it->second;
+    };
+
+    auto captures = serialize_spawn_capture(
+        std::span<const LispVal>(upvals),
+        std::span<const SpawnCapturedGlobal>(captured_globals),
+        heap, intern,
+        closure_func_index,
+        global_ref_slot);
+    if (!captures) {
+        return type_error(
+            "spawn-thread: capture is not serializable: " + captures.error());
+    }
+    sc.captures_bytes = std::move(*captures);
+
     return sc;
 }
 
@@ -277,6 +446,8 @@ inline std::optional<ProcessManager::SerializedClosure> build_serialized_closure
  * @param thread_worker_fn  Factory for in-process actor threads.
  * @param func_registry     Pointer to the Driver's function registry, required
  *                           for spawn-thread. nullptr disables it.
+ * @param vm_globals        Pointer to the Driver VM global vector. Required
+ *                           for spawn-thread closure/module capture.
  *
  * Registration order MUST match the ETA_HAS_NNG section in builtin_names.h.
  */
@@ -287,7 +458,8 @@ inline void register_nng_primitives(
     LispVal*        mailbox_val        = nullptr,
     std::string     module_search_path = {},
     ProcessManager::ThreadWorkerFn thread_worker_fn = {},
-    semantics::BytecodeFunctionRegistry* func_registry = nullptr)
+    semantics::BytecodeFunctionRegistry* func_registry = nullptr,
+    const std::vector<LispVal>* vm_globals = nullptr)
 {
     /// nng-socket
     env.register_builtin("nng-socket", 1, false,
@@ -924,7 +1096,7 @@ inline void register_nng_primitives(
      * fresh in-process thread that reconstructs and calls the closure.
      */
     env.register_builtin("spawn-thread", 1, false,
-        [&heap, &intern, proc_mgr, func_registry](Args args)
+        [&heap, &intern, proc_mgr, func_registry, vm_globals](Args args)
             -> std::expected<LispVal, RuntimeError>
         {
             if (!proc_mgr) {
@@ -932,10 +1104,10 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::InternalError,
                     "spawn-thread: process manager not configured"}});
             }
-            if (!func_registry) {
+            if (!func_registry || !vm_globals) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::InternalError,
-                    "spawn-thread: function registry not available "
+                    "spawn-thread: function registry/global state not available "
                     "(use spawn-thread-with for file-based workers)"}});
             }
 
@@ -974,13 +1146,9 @@ inline void register_nng_primitives(
 
             /// Serialize the closure (bytecode + upvalues)
             auto sc_opt = build_serialized_closure(
-                entry_idx, cl->upvals, *func_registry, heap, intern);
+                entry_idx, cl->upvals, *vm_globals, *func_registry, heap, intern);
             if (!sc_opt) {
-                return std::unexpected(RuntimeError{VMError{
-                    RuntimeErrorCode::InternalError,
-                    "spawn-thread: failed to serialize closure â€” upvalues must "
-                    "be serializable (numbers, strings, symbols, lists, vectors; "
-                    "not closures, ports, or sockets)"}});
+                return std::unexpected(sc_opt.error());
             }
 
             return proc_mgr->spawn_thread(std::move(*sc_opt), heap, intern);
@@ -1218,6 +1386,4 @@ inline void register_nng_primitives(
 
 
 } ///< namespace eta::nng
-
-
 
