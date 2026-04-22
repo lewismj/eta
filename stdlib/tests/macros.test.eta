@@ -1,0 +1,52 @@
+;;; stdlib/tests/macros.test.eta - Coverage for new stdlib helper forms.
+
+(module macros.tests
+  (import std.test std.logic std.io std.db)
+  (begin
+
+    (define suite
+      (make-group "stdlib-helpers"
+        (list
+          (make-test "with-port redirects stdout via thunk"
+            (lambda ()
+              (let ((out (open-output-string)))
+                (with-port out
+                  (lambda ()
+                    (display "a")
+                    (display "b")))
+                (assert-equal "ab" (get-output-string out)))))
+
+          (make-test "with-input-port redirects stdin via thunk"
+            (lambda ()
+              (let ((in (open-input-string "line-1\nline-2\n")))
+                (assert-equal "line-1"
+                              (with-input-port in
+                                (lambda () (read-line)))))))
+
+          (make-test "defrel-clause supports facts and rules"
+            (lambda ()
+              (defrel-clause '(macro-edge-rule a b))
+              (defrel-clause '(macro-parent-rule ?x ?y)
+                (lambda (?x ?y)
+                  (let ((branches (call-rel 'macro-edge-rule ?x ?y)))
+                    (if (null? branches) #f ((car branches)))))
+                )
+              (let ((y (logic-var)))
+                (assert-equal '(b)
+                  (findall (lambda () (deref-lvar y))
+                           (call-rel 'macro-parent-rule 'a y))))))
+
+          (make-test "tabled-clause infers arity from head"
+            (lambda ()
+              (let ((hits (cons 0 '())))
+                (defrel-clause '(macro-edge-tabled a b))
+                (defrel-clause '(macro-reach-tabled ?x ?y)
+                  (lambda (?x ?y)
+                    (set-car! hits (+ (car hits) 1))
+                    (call-rel? 'macro-edge-tabled ?x ?y)))
+                (assert-true (tabled-clause '(macro-reach-tabled ?x ?y)))
+                (assert-true (call-rel? 'macro-reach-tabled 'a 'b))
+                (assert-true (call-rel? 'macro-reach-tabled 'a 'b))
+                (assert-equal 1 (car hits)))))))
+
+    (print-tap (run suite)))))

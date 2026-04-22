@@ -1,28 +1,23 @@
-;;; prelude.eta — Eta standard library prelude.
+;;; prelude.eta - Eta standard library prelude.
 ;;;
 ;;; Auto-loaded by etai, eta_repl, and eta_lsp when found in the module
-;;; search path.  Defines std.prelude, which imports every standard library
-;;; module and re-exports the full public API.
+;;; search path. Defines std.prelude, which imports stable standard-library
+;;; modules and re-exports their primary public APIs.
 ;;;
 ;;; Usage:
-;;;   (import std.prelude)          ; get everything in one shot
-;;;   (import std.core)             ; or import only what you need
-;;;   (import std.stats)            ; individual modules work directly
+;;;   (import std.prelude)  ; get the common stable APIs in one import
+;;;   (import std.core)     ; or import only what you need
+;;;   (import std.stats)    ; individual modules work directly
 ;;;
-;;; Individual modules live in std/ alongside this file.
-;;; Dependency order (modules listed before their dependents):
+;;; Modules loaded by this prelude:
+;;;   std.core, std.math, std.io, std.collections, std.logic,
+;;;   std.clp, std.clpb, std.clpr, std.causal, std.fact_table,
+;;;   std.db, std.stats, std.net, std.test
 ;;;
-;;;   std.core        - no dependencies
-;;;   std.math        - no dependencies
-;;;   std.io          - no dependencies
-;;;   std.collections - no dependencies
-;;;   std.logic       - std.collections
-;;;   std.clp         - std.collections, std.logic
-;;;   std.causal      - std.core, std.collections, std.io
-;;;   std.fact_table  - no dependencies
-;;;   std.db          - std.collections, std.fact_table, std.logic
-;;;   std.stats       - no dependencies
-;;;   std.net         - no dependencies
+;;; Opt-in modules not re-exported here:
+;;;   std.freeze, std.supervisor, std.torch
+;;;   (kept opt-in because they are specialised runtime features)
+
 (module std.prelude
   (import std.core)
   (import std.math)
@@ -30,20 +25,24 @@
   (import std.collections)
   (import std.logic)
   (import std.clp)
+  (import std.clpb)
+  (import std.clpr)
   (import std.causal)
   (import std.fact_table)
   (import std.db)
   (import std.stats)
   (import std.net)
+  (import std.test)
   (export
-    ;; ── std.core ────────────────────────────────────────────────────
+    ;; -- std.core ------------------------------------------------------------
     atom? void
     identity compose flip constantly negate
     cadr caddr caar cdar caddar
     last list? iota
     assoc-ref
     windows?
-    ;; ── std.math ────────────────────────────────────────────────────
+
+    ;; -- std.math ------------------------------------------------------------
     pi e
     square cube
     even? odd?
@@ -53,15 +52,18 @@
     floor ceiling truncate round
     expt
     sum product
-    ;; ── std.io ──────────────────────────────────────────────────────
-    print println
-    eprintln
-    display-to-string
+
+    ;; -- std.io --------------------------------------------------------------
+    display->string
+    println eprintln
     read-line
+    with-port
+    with-input-port
     with-output-to-port
     with-input-from-port
     with-error-to-port
-    ;; ── std.collections ─────────────────────────────────────────────
+
+    ;; -- std.collections -----------------------------------------------------
     map* map2 zip-with map-indexed
     filter foldl foldr reduce
     any? every? count
@@ -75,13 +77,15 @@
     vector-map vector-for-each
     vector-foldl vector-foldr
     vector->list list->vector
-    ;; ── std.logic ───────────────────────────────────────────────────
+
+    ;; -- std.logic -----------------------------------------------------------
     ==
     copy-term*
     naf succeeds?
     findall run1
     membero
-    ;; ── std.clp ─────────────────────────────────────────────────────
+
+    ;; -- std.clp -------------------------------------------------------------
     clp:domain clp:in-fd
     clp:domain-z? clp:domain-fd?
     clp:domain-lo clp:domain-hi
@@ -90,7 +94,26 @@
     clp:<= clp:>= clp:<>
     clp:all-different
     clp:solve
-    ;; ── std.causal ──────────────────────────────────────────────────
+
+    ;; -- std.clpb ------------------------------------------------------------
+    clp:boolean
+    clp:and clp:or clp:xor clp:imp clp:eq clp:not
+    clp:card
+    clp:labeling-b
+    clp:sat? clp:taut?
+
+    ;; -- std.clpr ------------------------------------------------------------
+    clp:real clp:real-open clp:real-half-open
+    clp:domain-r? clp:domain-r-lo clp:domain-r-hi
+    clp:domain-r-lo-open? clp:domain-r-hi-open?
+    clp:domain-r
+    clp:r+ clp:r- clp:r*scalar
+    clp:r= clp:r<= clp:r< clp:r>= clp:r>
+    clp:r-minimize clp:r-maximize
+    clp:rq-minimize clp:rq-maximize
+    clp:r-bounds clp:r-feasible?
+
+    ;; -- std.causal ----------------------------------------------------------
     dag:nodes dag:parents dag:children
     dag:ancestors dag:descendants dag:non-descendants
     dag:has-path?
@@ -107,7 +130,8 @@
     do:estimate-effect
     do:conditional-mean
     do:marginal-prob
-    ;; ── std.fact_table ──────────────────────────────────────────────
+
+    ;; -- std.fact_table ------------------------------------------------------
     make-fact-table
     fact-table?
     fact-table-insert!
@@ -119,16 +143,20 @@
     fact-table-for-each
     fact-table-filter
     fact-table-fold
-    ;; -- std.db ---------------------------------------------------------
+
+    ;; -- std.db --------------------------------------------------------------
     defrel
-    assert
-    retract
+    defrel-clause
+    assert-fact!
+    retract-fact!
     retract-all
     call-rel
     call-rel?
     index-rel!
     tabled
-    ;; ── std.stats ───────────────────────────────────────────────────
+    tabled-clause
+
+    ;; -- std.stats -----------------------------------------------------------
     stats:mean stats:variance stats:stddev stats:sem
     stats:percentile stats:median
     stats:covariance stats:correlation
@@ -149,12 +177,21 @@
     stats:ols-multi-t-stats stats:ols-multi-p-values
     stats:ols-multi-r-squared stats:ols-multi-adj-r-squared
     stats:ols-multi-residual-se
-    ;; ── std.net ─────────────────────────────────────────────────────
+
+    ;; -- std.net -------------------------------------------------------------
     with-socket
     request-reply
     worker-pool
     pub-sub
-    survey)
+    survey
+
+    ;; -- std.test ------------------------------------------------------------
+    make-test make-group
+    run summary
+    summary-total summary-passed summary-failed
+    assert-true assert-false assert-equal assert-not-equal
+    assert-approx-equal
+    print-summary print-tap print-junit)
   (begin
-    ;; All names are imported above — nothing else to define here.
+    ;; All names are imported above; nothing else to define here.
   ))

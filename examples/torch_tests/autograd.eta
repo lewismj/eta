@@ -1,4 +1,4 @@
-;;; torch_tests/autograd.eta — Autograd primitives
+;;; torch_tests/autograd.eta  Autograd primitives
 ;;;
 ;;; Tests: requires-grad!, requires-grad?, backward, grad, zero-grad!, detach
 ;;;
@@ -15,7 +15,7 @@
       (run (make-group "Autograd"
         (list
 
-          ;; ── dy/dx = 2x at x=3 → 6 ────────────────────────────────
+          ;;  dy/dx = 2x at x=3  6 
           (make-test "x^2 gradient"
             (lambda ()
               (let* ((x (from-list '(3.0))))
@@ -25,7 +25,7 @@
                   (assert-equal 6.0 (item (grad x))
                     "dy/dx of x^2 at x=3 should be 6")))))
 
-          ;; ── exp gradient ──────────────────────────────────────────
+          ;;  exp gradient 
           (make-test "exp gradient"
             (lambda ()
               (let* ((x (from-list '(0.0))))
@@ -34,7 +34,7 @@
                 (assert-equal 1.0 (item (grad x))
                   "d/dx exp(x) at x=0 should be 1"))))
 
-          ;; ── multivariate: f(x,y) = x*y ───────────────────────────
+          ;;  multivariate: f(x,y) = x*y 
           (make-test "multivariate gradient"
             (lambda ()
               (let ((x (from-list '(2.0)))
@@ -45,7 +45,7 @@
                 (assert-equal 3.0 (item (grad x)) "df/dx = y = 3")
                 (assert-equal 2.0 (item (grad y)) "df/dy = x = 2"))))
 
-          ;; ── requires-grad? predicate ──────────────────────────────
+          ;;  requires-grad? predicate 
           (make-test "requires-grad? predicate"
             (lambda ()
               (let ((x (tensor 1.0)))
@@ -53,7 +53,7 @@
                 (requires-grad! x #t)
                 (assert-true (requires-grad? x) "after setting true"))))
 
-          ;; ── zero-grad! ────────────────────────────────────────────
+          ;;  zero-grad! 
           (make-test "zero-grad!"
             (lambda ()
               (let ((x (from-list '(4.0))))
@@ -66,7 +66,7 @@
                 (assert-equal 0.0 (item (grad x))
                   "grad should be zero after zero-grad!"))))
 
-          ;; ── detach ────────────────────────────────────────────────
+          ;;  detach 
           (make-test "detach"
             (lambda ()
               (let ((x (tensor 5.0)))

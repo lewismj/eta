@@ -1,4 +1,4 @@
-;;; examples/parallel-fib-worker.eta — Worker for parallel-fib.eta
+;;; examples/parallel-fib-worker.eta  Worker for parallel-fib.eta
 ;;;
 ;;; Receives a Fibonacci index, computes fib(n) using a tail-recursive
 ;;; accumulator (O(n) time, O(1) stack), sends back the result.

@@ -1,12 +1,12 @@
-;;; examples/monte-carlo.eta — Parallel Monte Carlo π estimation.
+;;; examples/monte-carlo.eta  Parallel Monte Carlo  estimation.
 ;;;
-;;; Estimates the value of π by sampling random points in the unit square
+;;; Estimates the value of  by sampling random points in the unit square
 ;;; and counting how many fall inside the unit circle:
 ;;;
-;;;   P(x² + y² ≤ 1)  =  π/4    (for x, y ∈ [0,1])
-;;;   ⟹  π ≈ 4 × (points_inside / total_points)
+;;;   P(x + y  1)  =  /4    (for x, y  [0,1])
+;;;       4  (points_inside / total_points)
 ;;;
-;;; The computation is split across N worker processes, each estimating π
+;;; The computation is split across N worker processes, each estimating 
 ;;; independently from its own random seed.  The parent averages the results.
 ;;;
 ;;; Demonstrates:
@@ -43,7 +43,7 @@
                              (number->string (* n-workers samples-per-worker))
                              " total samples"))
 
-    ;; Run workers in parallel — each returns its π estimate
+    ;; Run workers in parallel  each returns its  estimate
     (define estimates
       (worker-pool "examples/monte-carlo-worker.eta" tasks))
 

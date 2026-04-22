@@ -1,4 +1,4 @@
-;;; fact-table.eta — Columnar fact tables with hash-indexed queries
+;;; fact-table.eta  Columnar fact tables with hash-indexed queries
 ;;;
 ;;; Demonstrates the std.fact_table module: creating a table, inserting
 ;;; rows, building hash indexes, and querying / iterating over data.
@@ -12,13 +12,13 @@
   (import std.fact_table)
   (begin
 
-    ;; ── 1. Create a trades table ───────────────────────────────────────────
+    ;;  1. Create a trades table 
     (println "=== Fact Table Demo ===")
     (println "")
 
     (define trades (make-fact-table 'symbol 'side 'qty 'price))
 
-    ;; ── 2. Insert rows ─────────────────────────────────────────────────────
+    ;;  2. Insert rows 
     (fact-table-insert! trades 'AAPL 'buy  100 150)
     (fact-table-insert! trades 'GOOG 'sell  50 2800)
     (fact-table-insert! trades 'AAPL 'sell  75 155)
@@ -29,7 +29,7 @@
     (println (string-append "Row count: "
                (number->string (fact-table-row-count trades))))
 
-    ;; ── 3. Cell access ─────────────────────────────────────────────────────
+    ;;  3. Cell access 
     (println "")
     (println "--- Cell access ---")
     (println (string-append "Trade 0 symbol: "
@@ -37,7 +37,7 @@
     (println (string-append "Trade 1 price:  "
                (number->string (fact-table-ref trades 1 3))))
 
-    ;; ── 4. Linear-scan query (no index) ────────────────────────────────────
+    ;;  4. Linear-scan query (no index) 
     (println "")
     (println "--- Query: all AAPL trades (linear scan) ---")
     (define aapl-rows (fact-table-query trades 0 'AAPL))
@@ -47,7 +47,7 @@
                            " price=" (number->string (fact-table-ref trades r 3)))))
               aapl-rows)
 
-    ;; ── 5. Build index and indexed query ───────────────────────────────────
+    ;;  5. Build index and indexed query 
     (println "")
     (println "--- Build index on column 0 (symbol), then query ---")
     (fact-table-build-index! trades 0)
@@ -58,7 +58,7 @@
                            " qty=" (number->string (fact-table-ref trades r 2)))))
               goog-rows)
 
-    ;; ── 6. Fold: compute total quantity across all trades ──────────────────
+    ;;  6. Fold: compute total quantity across all trades 
     (println "")
     (define total-qty
       (fact-table-fold trades
@@ -67,7 +67,7 @@
         0))
     (println (string-append "Total quantity: " (number->string total-qty)))
 
-    ;; ── 7. For-each: print all trade symbols ───────────────────────────────
+    ;;  7. For-each: print all trade symbols 
     (println "")
     (println "--- All symbols ---")
     (fact-table-for-each trades

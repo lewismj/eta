@@ -1,4 +1,4 @@
-;;; symbolic-diff.eta — Symbolic differentiation & algebraic simplification
+;;; symbolic-diff.eta  Symbolic differentiation & algebraic simplification
 ;;;
 ;;; A small computer algebra system that computes symbolic derivatives of
 ;;; expression trees and simplifies the result.
@@ -8,26 +8,26 @@
 ;;; fixed-point iteration.
 ;;;
 ;;; Expression language (binary operators):
-;;;   number          — numeric constant
-;;;   symbol          — variable name
-;;;   (+ a b)         — addition
-;;;   (* a b)         — multiplication
-;;;   (^ u n)         — power (numeric exponent)
-;;;   (sin u)         — sine
-;;;   (cos u)         — cosine
-;;;   (exp u)         — exponential
-;;;   (log u)         — natural logarithm
+;;;   number           numeric constant
+;;;   symbol           variable name
+;;;   (+ a b)          addition
+;;;   (* a b)          multiplication
+;;;   (^ u n)          power (numeric exponent)
+;;;   (sin u)          sine
+;;;   (cos u)          cosine
+;;;   (exp u)          exponential
+;;;   (log u)          natural logarithm
 ;;;
 ;;; Differentiation rules:
 ;;;   d(c)/dv       = 0                       (constant)
 ;;;   d(v)/dv       = 1                       (identity)
 ;;;   d(a+b)/dv     = da/dv + db/dv           (sum rule)
-;;;   d(a*b)/dv     = da·b + a·db             (product rule)
-;;;   d(u^n)/dv     = n·u^(n−1)·du/dv         (power rule)
-;;;   d(sin u)/dv   = cos(u)·du/dv            (chain rule)
-;;;   d(cos u)/dv   = −sin(u)·du/dv           (chain rule)
-;;;   d(exp u)/dv   = exp(u)·du/dv            (chain rule)
-;;;   d(log u)/dv   = (1/u)·du/dv             (chain rule)
+;;;   d(a*b)/dv     = dab + adb             (product rule)
+;;;   d(u^n)/dv     = nu^(n1)du/dv         (power rule)
+;;;   d(sin u)/dv   = cos(u)du/dv            (chain rule)
+;;;   d(cos u)/dv   = sin(u)du/dv           (chain rule)
+;;;   d(exp u)/dv   = exp(u)du/dv            (chain rule)
+;;;   d(log u)/dv   = (1/u)du/dv             (chain rule)
 ;;;
 ;;; Run:  etai examples/symbolic-diff.eta
 
@@ -35,13 +35,13 @@
   (import std.io)
   (begin
 
-    ;; ── Prelude helpers ─────────────────────────────────────────────
+    ;;  Prelude helpers 
     (defun atom? (x) (not (pair? x)))
     (defun op (e) (car e))
     (defun a1 (e) (car (cdr e)))
     (defun a2 (e) (car (cdr (cdr e))))
 
-    ;; ── Algebraic simplifier ────────────────────────────────────────
+    ;;  Algebraic simplifier 
     (defun simplify (e)
       (cond
         ;; Atoms simplify to themselves
@@ -78,7 +78,7 @@
       (let ((s (simplify e)))
         (if (equal? s e) s (simplify* s))))
 
-    ;; ── Symbolic differentiator ─────────────────────────────────────
+    ;;  Symbolic differentiator 
     (defun diff (e v)
       (cond
         ((number? e) 0)
@@ -88,12 +88,12 @@
         ((eq? (op e) '+)
           (list '+ (diff (a1 e) v) (diff (a2 e) v)))
 
-        ;; Product rule: d(a·b) = da·b + a·db
+        ;; Product rule: d(ab) = dab + adb
         ((eq? (op e) '*)
           (list '+ (list '* (diff (a1 e) v) (a2 e))
                    (list '* (a1 e) (diff (a2 e) v))))
 
-        ;; Power rule: d(u^n) = n·u^(n−1)·du
+        ;; Power rule: d(u^n) = nu^(n1)du
         ((eq? (op e) '^)
           (let ((u (a1 e))
                 (n (a2 e)))
@@ -101,33 +101,33 @@
                 (list '* n (list '* (list '^ u (- n 1)) (diff u v)))
                 0)))
 
-        ;; Chain rule: d(sin u) = cos(u)·du
+        ;; Chain rule: d(sin u) = cos(u)du
         ((eq? (op e) 'sin)
           (let ((u (a1 e)))
             (list '* (list 'cos u) (diff u v))))
 
-        ;; Chain rule: d(cos u) = −sin(u)·du
+        ;; Chain rule: d(cos u) = sin(u)du
         ((eq? (op e) 'cos)
           (let ((u (a1 e)))
             (list '* -1 (list '* (list 'sin u) (diff u v)))))
 
-        ;; Chain rule: d(exp u) = exp(u)·du
+        ;; Chain rule: d(exp u) = exp(u)du
         ((eq? (op e) 'exp)
           (let ((u (a1 e)))
             (list '* (list 'exp u) (diff u v))))
 
-        ;; Chain rule: d(log u) = (1/u)·du
+        ;; Chain rule: d(log u) = (1/u)du
         ((eq? (op e) 'log)
           (let ((u (a1 e)))
             (list '* (list '/ 1 u) (diff u v))))
 
         (#t 0)))
 
-    ;; ── Helper: differentiate and simplify ──────────────────────────
+    ;;  Helper: differentiate and simplify 
     (defun D (expr var)
       (simplify* (diff expr var)))
 
-    ;; ── Demonstrations ──────────────────────────────────────────────
+    ;;  Demonstrations 
 
     (define win (eq? (platform) 'Win32))
 

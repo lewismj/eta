@@ -89,7 +89,7 @@
       (cond
         ((null? xs) #f)
         ((eq? x (car xs)) #t)
-        (#t (%clpr-member-eq? x (cdr xs)))))
+        (else (%clpr-member-eq? x (cdr xs)))))
 
     ;; Merge ys into xs, preserving set semantics (eq? identity).
     (defun %clpr-merge-vars (xs ys)
@@ -106,7 +106,7 @@
         ((pair? xs)
          (%clpr-merge-vars (%clpr-expr-vars (car xs))
                            (%clpr-expr-vars-list (cdr xs))))
-        (#t (%clpr-expr-vars xs))))
+        (else (%clpr-expr-vars xs))))
 
     ;; Collect all unbound logic vars that participate in expr.
     (defun %clpr-expr-vars (expr)
@@ -122,7 +122,7 @@
                    (loop (+ i 1)
                          (%clpr-merge-vars acc
                                            (%clpr-expr-vars (arg i v))))))))
-          (#t '()))))
+          (else '()))))
 
     (defun %clpr-attach-vars! (vars thunk)
       (let loop ((xs vars))
@@ -138,13 +138,13 @@
       (cond
         ((null? args) 0.0)
         ((null? (cdr args)) (car args))
-        (#t (cons '+ args))))
+        (else (cons '+ args))))
 
     (defun clp:r- args
       (cond
         ((null? args) 0.0)
         ((null? (cdr args)) (list '- (car args)))
-        (#t (cons '- args))))
+        (else (cons '- args))))
 
     ;; Scalar multiplication only (non-linear var*var is rejected in C++).
     (defun clp:r*scalar (k expr)
@@ -187,7 +187,7 @@
         ((eq? res #f) #f)
         ((eq? res 'clp.r.unbounded) (error "clp.r.unbounded"))
         ((pair? res) (values (car res) (cdr res)))
-        (#t (error "clp.r.optimize.invalid-result"))))
+        (else (error "clp.r.optimize.invalid-result"))))
 
     ;; Returns (values optimum witness) on success, #f on infeasible.
     (defun clp:r-minimize (objective)

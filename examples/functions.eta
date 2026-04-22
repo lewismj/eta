@@ -1,4 +1,4 @@
-;;; functions.eta — Functions, recursion, and closures
+;;; functions.eta  Functions, recursion, and closures
 ;;;
 ;;; Run:  etai examples/functions.eta
 
@@ -7,17 +7,17 @@
   (import std.math)
   (begin
 
-    ;; ── Named functions with defun ──────────────────────────────────
+    ;;  Named functions with defun 
     (defun sq (x) (* x x))
     (println (sq 7))         ; => 49
 
-    ;; ── Recursive functions ─────────────────────────────────────────
+    ;;  Recursive functions 
     (defun factorial (n)
       (if (= n 0) 1
           (* n (factorial (- n 1)))))
     (println (factorial 10))     ; => 3628800
 
-    ;; ── Tail-recursive with accumulator ─────────────────────────────
+    ;;  Tail-recursive with accumulator 
     (defun factorial-tr (n)
       (letrec ((go (lambda (n acc)
                      (if (= n 0) acc
@@ -25,11 +25,11 @@
         (go n 1)))
     (println (factorial-tr 20))  ; => 2432902008176640000
 
-    ;; ── Anonymous functions (lambda) ────────────────────────────────
+    ;;  Anonymous functions (lambda) 
     (define double (lambda (x) (* 2 x)))
     (println (double 21))        ; => 42
 
-    ;; ── Closures capture their environment ──────────────────────────
+    ;;  Closures capture their environment 
     (defun make-adder (n)
       (lambda (x) (+ n x)))
 
@@ -38,7 +38,7 @@
     (println (add5 3))           ; => 8
     (println (add10 3))          ; => 13
 
-    ;; ── Variadic functions (rest args) ──────────────────────────────
+    ;;  Variadic functions (rest args) 
     (defun sum-all (first . rest)
       (letrec ((go (lambda (xs acc)
                      (if (null? xs) acc
@@ -46,7 +46,7 @@
         (go rest first)))
     (println (sum-all 1 2 3 4 5)) ; => 15
 
-    ;; ── Mutual recursion via letrec ─────────────────────────────────
+    ;;  Mutual recursion via letrec 
     (letrec
       ((is-even? (lambda (n)
          (if (= n 0) #t (is-odd? (- n 1)))))

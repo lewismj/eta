@@ -1,4 +1,4 @@
-;;; std/test.eta — Lightweight test framework.
+;;; std/test.eta  Lightweight test framework.
 ;;;
 ;;; Usage:
 ;;;   (import std.test)
@@ -30,7 +30,7 @@
     print-summary print-tap print-junit)
   (begin
 
-    ;; ── Data (tagged vectors via define-record-type) ────────────────
+    ;;  Data (tagged vectors via define-record-type) 
 
     (define-record-type test-case
       (make-test name thunk)
@@ -45,39 +45,39 @@
       (children group-children))
 
     (define-record-type test-result
-      (__make-result name status error)
+      (%make-result name status error)
       test-result?
       (name result-name)
       (status result-status)
       (error result-error))
 
     (define-record-type group-result
-      (__make-group-result name status children)
+      (%make-group-result name status children)
       group-result?
       (name gresult-name)
       (status gresult-status)
       (children gresult-children))
 
     (define-record-type test-summary
-      (__make-summary total passed failed)
+      (%make-summary total passed failed)
       test-summary?
       (total summary-total)
       (passed summary-passed)
       (failed summary-failed))
 
-    ;; ── Local helpers (no imports needed) ────────────────────────────
+    ;;  Local helpers (no imports needed) 
 
-    (defun __map (f xs)
+    (defun %map (f xs)
       (if (null? xs)
           '()
-          (cons (f (car xs)) (__map f (cdr xs)))))
+          (cons (f (car xs)) (%map f (cdr xs)))))
 
-    (defun __foldl (f acc xs)
+    (defun %foldl (f acc xs)
       (if (null? xs)
           acc
-          (__foldl f (f acc (car xs)) (cdr xs))))
+          (%foldl f (f acc (car xs)) (cdr xs))))
 
-    ;; ── Assertions ──────────────────────────────────────────────────
+    ;;  Assertions 
 
     (defun assert-true (x . rest)
       (let ((msg (if (null? rest) "expected true" (car rest))))
@@ -87,7 +87,7 @@
       (let ((msg (if (null? rest) "expected false" (car rest))))
         (if x (error msg) 'ok)))
 
-    (defun __val->string (x)
+    (defun %val->string (x)
       (let ((p (open-output-string)))
         (display x p)
         (get-output-string p)))
@@ -95,9 +95,9 @@
     (defun assert-equal (expected actual . rest)
       (let ((msg (if (null? rest)
                      (string-append "expected "
-                       (__val->string expected)
+                       (%val->string expected)
                        " but got "
-                       (__val->string actual))
+                       (%val->string actual))
                      (car rest))))
         (if (equal? expected actual)
             'ok
@@ -114,64 +114,64 @@
                         (- actual expected))))
           (if (> diff tol)
               (error (string-append "expected approx "
-                       (__val->string expected)
+                       (%val->string expected)
                        " but got "
-                       (__val->string actual)
+                       (%val->string actual)
                        " (diff="
-                       (__val->string diff)
+                       (%val->string diff)
                        ")"))
               'ok))))
 
-    ;; ── Runner ──────────────────────────────────────────────────────
+    ;;  Runner 
 
-    (defun __run-test (t)
+    (defun %run-test (t)
       ;; Execute the thunk; on success return pass, on error return fail.
       ;; NOTE: Until try/catch exists, a failing assertion (error) will
       ;; propagate up. For now, tests either all pass or abort on first failure.
       (begin
         ((test-thunk t))
-        (__make-result (test-name t) 'pass '())))
+        (%make-result (test-name t) 'pass '())))
 
-    (defun __all-pass? (rs)
+    (defun %all-pass? (rs)
       (if (null? rs)
           #t
           (let ((st (if (test-result? (car rs))
                         (result-status (car rs))
                         (gresult-status (car rs)))))
             (if (eq? st 'pass)
-                (__all-pass? (cdr rs))
+                (%all-pass? (cdr rs))
                 #f))))
 
-    (defun __run-group (g)
-      (let ((kids (__map run (group-children g))))
-        (let ((status (if (__all-pass? kids) 'pass 'fail)))
-          (__make-group-result (group-name g) status kids))))
+    (defun %run-group (g)
+      (let ((kids (%map run (group-children g))))
+        (let ((status (if (%all-pass? kids) 'pass 'fail)))
+          (%make-group-result (group-name g) status kids))))
 
     (defun run (node)
       (if (test-case? node)
-          (__run-test node)
-          (__run-group node)))
+          (%run-test node)
+          (%run-group node)))
 
-    ;; ── Summary ─────────────────────────────────────────────────────
+    ;;  Summary 
 
-    (defun __add-summary (a b)
-      (__make-summary
+    (defun %add-summary (a b)
+      (%make-summary
         (+ (summary-total a)  (summary-total b))
         (+ (summary-passed a) (summary-passed b))
         (+ (summary-failed a) (summary-failed b))))
 
-    (defun __count-results (res)
+    (defun %count-results (res)
       (if (test-result? res)
           (if (eq? (result-status res) 'pass)
-              (__make-summary 1 1 0)
-              (__make-summary 1 0 1))
-          ;; group result — fold children
-          (__foldl __add-summary
-                   (__make-summary 0 0 0)
-                   (__map __count-results (gresult-children res)))))
+              (%make-summary 1 1 0)
+              (%make-summary 1 0 1))
+          ;; group result  fold children
+          (%foldl %add-summary
+                   (%make-summary 0 0 0)
+                   (%map %count-results (gresult-children res)))))
 
     (defun summary (res)
-      (__count-results res))
+      (%count-results res))
 
     ;; Print a human-readable summary line.
     (defun print-summary (s)
@@ -183,7 +183,7 @@
       (display " failed")
       (newline))
 
-    ;; ── TAP 13 output ───────────────────────────────────────────────
+    ;;  TAP 13 output 
     ;;
     ;; Emits TAP version 13 format that can be consumed by VS Code
     ;; Test Explorer (via a TAP parser) and IntelliJ (via tap-junit).
@@ -197,16 +197,16 @@
     ;;     message: error message
     ;;     ...
 
-    (defun __tap-collect-results (res acc)
+    (defun %tap-collect-results (res acc)
       ;; Flatten all test-results from nested group-results into a list.
       (if (test-result? res)
           (cons res acc)
-          ;; group result — recurse children
-          (__foldl (lambda (a child) (__tap-collect-results child a))
+          ;; group result  recurse children
+          (%foldl (lambda (a child) (%tap-collect-results child a))
                    acc
                    (gresult-children res))))
 
-    (defun __tap-print-result (idx r)
+    (defun %tap-print-result (idx r)
       (if (eq? (result-status r) 'pass)
           (begin
             (display "ok ")
@@ -228,29 +228,29 @@
             (display "  ...")
             (newline))))
 
-    (defun __tap-print-all (results idx)
+    (defun %tap-print-all (results idx)
       (if (null? results)
           'done
           (begin
-            (__tap-print-result idx (car results))
-            (__tap-print-all (cdr results) (+ idx 1)))))
+            (%tap-print-result idx (car results))
+            (%tap-print-all (cdr results) (+ idx 1)))))
 
     (defun print-tap (res)
       ;; res is the result of (run ...).
-      (let ((flat (reverse (__tap-collect-results res '()))))
+      (let ((flat (reverse (%tap-collect-results res '()))))
         (let ((n (length flat)))
           (display "TAP version 13")
           (newline)
           (display "1..")
           (display n)
           (newline)
-          (__tap-print-all flat 1))))
+          (%tap-print-all flat 1))))
 
-    ;; ── JUnit XML output ────────────────────────────────────────────
+    ;;  JUnit XML output 
     ;;
     ;; Emits JUnit XML that can be imported by IntelliJ / CI systems.
 
-    (defun __xml-escape (s)
+    (defun %xml-escape (s)
       ;; Minimal XML escaping for attribute/text values.
       ;; Uses string-ref / string-length and eqv? to avoid char=? / string->list.
       (let ((p (open-output-string))
@@ -268,47 +268,47 @@
                     (else          (display c p))))
                 (loop (+ i 1)))))))
 
-    (defun __junit-print-result (r)
+    (defun %junit-print-result (r)
       (if (eq? (result-status r) 'pass)
           (begin
             (display "    <testcase name=\"")
-            (display (__xml-escape (result-name r)))
+            (display (%xml-escape (result-name r)))
             (display "\"/>")
             (newline))
           (begin
             (display "    <testcase name=\"")
-            (display (__xml-escape (result-name r)))
+            (display (%xml-escape (result-name r)))
             (display "\">")
             (newline)
             (display "      <failure message=\"")
-            (display (__xml-escape (__val->string (result-error r))))
+            (display (%xml-escape (%val->string (result-error r))))
             (display "\"/>")
             (newline)
             (display "    </testcase>")
             (newline))))
 
-    (defun __junit-print-all (results)
+    (defun %junit-print-all (results)
       (if (null? results)
           'done
           (begin
-            (__junit-print-result (car results))
-            (__junit-print-all (cdr results)))))
+            (%junit-print-result (car results))
+            (%junit-print-all (cdr results)))))
 
     (defun print-junit (res . suite-name-rest)
       (let ((suite-name (if (null? suite-name-rest) "eta-tests" (car suite-name-rest))))
-        (let ((flat (reverse (__tap-collect-results res '()))))
+        (let ((flat (reverse (%tap-collect-results res '()))))
           (let ((s (summary res)))
             (display "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
             (newline)
             (display "<testsuite name=\"")
-            (display (__xml-escape suite-name))
+            (display (%xml-escape suite-name))
             (display "\" tests=\"")
             (display (summary-total s))
             (display "\" failures=\"")
             (display (summary-failed s))
             (display "\">")
             (newline)
-            (__junit-print-all flat)
+            (%junit-print-all flat)
             (display "</testsuite>")
             (newline)))))
 

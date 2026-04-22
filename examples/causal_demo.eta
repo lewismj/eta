@@ -1,20 +1,20 @@
-;;; causal_demo.eta — Causal - Neural Pipeline
+;;; causal_demo.eta  Causal - Neural Pipeline
 ;;;
 ;;; Steps
 ;;;
-;;;   §1  Symbolic Processing  — define a factor model as S-expressions,
+;;;   1  Symbolic Processing   define a factor model as S-expressions,
 ;;;       symbolically differentiate it, and simplify with fixed-point
 ;;;       algebraic rewriting.
 ;;;
-;;;   §2  Causal Reasoning     — encode a DAG of market variables and
+;;;   2  Causal Reasoning      encode a DAG of market variables and
 ;;;       use Pearl's do-calculus engine to derive the back-door
 ;;;       adjustment formula for P(return | do(beta)).
 ;;;
-;;;   §3  Logic & CLP          — use findall + backtracking to discover
+;;;   3  Logic & CLP           use findall + backtracking to discover
 ;;;       every valid back-door adjustment set; validate each candidate
 ;;;       with CLP(Z) domain constraints.
 ;;;
-;;;   §4  libtorch Integration — train a neural network to learn the
+;;;   4  libtorch Integration  train a neural network to learn the
 ;;;       conditional expectation E[return | beta, sector], then plug
 ;;;       the NN predictions into the causal formula to compute the
 ;;;       Average Treatment Effect (ATE).
@@ -24,8 +24,8 @@
 ;;;
 ;;; Data-generating process (known, for validation):
 ;;;   return = 1.5*beta + 0.8*sector_code + 0.3*beta*sector_code + noise
-;;;   True ATE(beta: 1.2→0.9) ≈ 1.5*(1.2-0.9) + 0.3*E[s]*(1.2-0.9)
-;;;                            = 0.45 + 0.3*(-0.033)*0.3 ≈ 0.447
+;;;   True ATE(beta: 1.20.9)  1.5*(1.2-0.9) + 0.3*E[s]*(1.2-0.9)
+;;;                            = 0.45 + 0.3*(-0.033)*0.3  0.447
 ;;;
 ;;; Compile & run:
 ;;;   etac -O examples/causal_demo.eta
@@ -57,9 +57,9 @@
                      "  Causal Factor Analysis \n"))
     (sep)
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §1  Symbolic Factor Model & Differentiation
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 1  Symbolic Factor Model & Differentiation
+    ;; 
 
     (display "\n")
     (sep)
@@ -70,7 +70,7 @@
 
     ;; The factor model as an S-expression tree:
     ;;   return = alpha + beta*market + gamma*sector + delta*beta*sector
-    ;; This is the structural equation that §4's neural network will learn.
+    ;; This is the structural equation that 4's neural network will learn.
 
     (define factor-model
       '(+ (+ (+ alpha (* beta market))
@@ -82,7 +82,7 @@
     (display "  As S-expression:\n    ")
     (println factor-model)
 
-    ;; ── Symbolic differentiator (self-contained) ──────────────────
+    ;;  Symbolic differentiator (self-contained) 
     ;; atom? is imported from std.core
 
     (defun op (e) (car e))
@@ -141,9 +141,9 @@
     (display (if win "  => confounding! Motivates causal analysis in S2.\n"
                      "  → confounding! Motivates causal analysis in §2.\n"))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §2  Causal DAG & Do-Calculus Identification
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 2  Causal DAG & Do-Calculus Identification
+    ;; 
 
     (display "\n")
     (sep)
@@ -153,8 +153,8 @@
     (display "\n")
 
     ;; Causal structure:
-    ;;   sector ──→ beta ──→ return
-    ;;     └───────────────→ return
+    ;;   sector  beta  return
+    ;;      return
 
     (define finance-dag
       '((sector      -> market-beta)
@@ -185,7 +185,7 @@
     (display "\n  Query:   P(stock-return | do(market-beta))\n")
     (display "  Result:  ") (println formula-str)
 
-    ;; Extract the adjustment set for use in §3
+    ;; Extract the adjustment set for use in 3
     (define z-set
       (if (and (pair? formula) (eq? (car formula) 'adjust))
           (car (cdr formula))
@@ -193,9 +193,9 @@
 
     (display "  Adjustment set Z = ") (println z-set)
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §3  Logic Search & CLP Validation
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 3  Logic Search & CLP Validation
+    ;; 
 
     (display "\n")
     (sep)
@@ -253,9 +253,9 @@
           (display (if win "    FAIL Domain violation\n"
                           "    ✗ Domain violation\n"))))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §4  Neural Network Training (libtorch)
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 4  Neural Network Training (libtorch)
+    ;; 
 
     (display "\n")
     (sep)
@@ -268,7 +268,7 @@
     ;;   return = 1.5*beta + 0.8*sector_code + 0.3*beta*sector_code + noise
     ;; Sector encoding: tech=1.0, energy=0.0, finance=-1.0
     ;;
-    ;; 60 observations — 20 per sector, low noise for clean learning
+    ;; 60 observations  20 per sector, low noise for clean learning
 
     (define train-data
       ;; Each row: (beta  sector_code  return)
@@ -311,7 +311,7 @@
     (display "  Target shape:  ") (println (shape Y))
     (display "\n")
 
-    ;; Build network: 2 → 32 → ReLU → 16 → ReLU → 1
+    ;; Build network: 2  32  ReLU  16  ReLU  1
     (define net (sequential (linear 2 32)
                             (relu-layer)
                             (linear 32 16)
@@ -325,7 +325,7 @@
     ;; Set network to training mode
     (train! net)
 
-    ;; Training loop — 7000 epochs
+    ;; Training loop  7000 epochs
     (display "  epoch  |   MSE loss\n")
     (display "  -------+-----------\n")
     (letrec ((loop (lambda (epoch)
@@ -344,9 +344,9 @@
     ;; Switch to evaluation mode for inference
     (eval! net)
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §5  Neural Back-Door ATE Estimation
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 5  Neural Back-Door ATE Estimation
+    ;; 
 
     (display "\n")
     (sep)
@@ -356,9 +356,9 @@
     (display "\n")
 
     ;; Compute ATE using the back-door formula with NN predictions:
-    ;;   E[return | do(beta=x)] = Σ_s  E_NN[return | beta=x, sector=s] · P(s)
+    ;;   E[return | do(beta=x)] = _s  E_NN[return | beta=x, sector=s]  P(s)
     ;;
-    ;; where s ∈ {tech(1.0), energy(0.0), finance(-1.0)}
+    ;; where s  {tech(1.0), energy(0.0), finance(-1.0)}
     ;; and P(s) = 1/3 each (balanced sample)
 
     (defun nn-predict (beta-val sector-code)
@@ -367,7 +367,7 @@
         (item out)))
 
     (defun nn-adjusted-effect (beta-val)
-      ;; Σ_s E_NN[return | beta, s] · P(s)
+      ;; _s E_NN[return | beta, s]  P(s)
       ;; P(tech) = P(energy) = P(finance) = 1/3
       (/ (+ (+ (nn-predict beta-val  1.0)    ; tech
                (nn-predict beta-val  0.0))   ; energy
@@ -417,7 +417,7 @@
     (display "  True ATE (from DGP) = 1.5 * (1.2 - 0.9) = 0.45\n")
     (display "  (NN estimate should be close with sufficient training)\n")
 
-    ;; ── Summary ───────────────────────────────────────────────────
+    ;;  Summary 
 
     (display "\n")
     (sep)

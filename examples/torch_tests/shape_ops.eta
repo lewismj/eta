@@ -1,4 +1,4 @@
-;;; torch_tests/shape_ops.eta — Shape manipulation primitives
+;;; torch_tests/shape_ops.eta  Shape manipulation primitives
 ;;;
 ;;; Tests: shape, reshape, transpose, squeeze, unsqueeze, cat, numel
 ;;;

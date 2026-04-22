@@ -1,4 +1,4 @@
-;;; clp_phase4b_arith.eta — Smoke tests for the native arithmetic /
+;;; clp_phase4b_arith.eta  Smoke tests for the native arithmetic /
 ;;; global propagators clp:*, clp:sum, clp:scalar-product, clp:element.
 
 (module clp-phase4b-arith
@@ -18,31 +18,31 @@
 
     (display "clp phase4b arith smoke: start") (newline)
 
-    ;; ── clp:* forward bounds ────────────────────────────────────────
-    ;; x ∈ [2,3], y ∈ [4,5] → z ∈ [8,15]
+    ;;  clp:* forward bounds 
+    ;; x  [2,3], y  [4,5]  z  [8,15]
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:domain x 2 3) (clp:domain y 4 5) (clp:domain z 0 100)
       (chk "clp:* post" #t (clp:* z x y))
       (chk "z.lo=8" 8 (clp:domain-lo (%clp-get-domain z)))
       (chk "z.hi=15" 15 (clp:domain-hi (%clp-get-domain z))))
 
-    ;; ── clp:* backward bounds when y non-straddling ────────────────
-    ;; z ∈ [12,12], y ∈ [3,4] → x must be in [3,4] (⌈12/4⌉..⌊12/3⌋)
+    ;;  clp:* backward bounds when y non-straddling 
+    ;; z  [12,12], y  [3,4]  x must be in [3,4] (12/4..12/3)
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:domain x 1 100) (clp:domain y 3 4) (clp:domain z 12 12)
       (clp:* z x y)
       (chk "clp:* back x.lo" 3 (clp:domain-lo (%clp-get-domain x)))
       (chk "clp:* back x.hi" 4 (clp:domain-hi (%clp-get-domain x))))
 
-    ;; ── clp:* re-fires on bind ─────────────────────────────────────
+    ;;  clp:* re-fires on bind 
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:domain x 1 10) (clp:domain y 1 10) (clp:domain z 0 100)
       (clp:* z x y)
       (unify x 5)
       (chk "bind x=5 → z.hi=50" 50 (clp:domain-hi (%clp-get-domain z))))
 
-    ;; ── clp:sum forward bounds ─────────────────────────────────────
-    ;; x ∈ [1,3], y ∈ [2,4], z ∈ [5,7] → s ∈ [8,14]
+    ;;  clp:sum forward bounds 
+    ;; x  [1,3], y  [2,4], z  [5,7]  s  [8,14]
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)) (s (logic-var)))
       (clp:domain x 1 3) (clp:domain y 2 4) (clp:domain z 5 7)
       (clp:domain s 0 100)
@@ -50,8 +50,8 @@
       (chk "s.lo=8" 8 (clp:domain-lo (%clp-get-domain s)))
       (chk "s.hi=14" 14 (clp:domain-hi (%clp-get-domain s))))
 
-    ;; ── clp:sum backward bounds ────────────────────────────────────
-    ;; s = 10, x ∈ [1,3], y ∈ [2,4] → z ∈ [3,7] (10-3-4=3, 10-1-2=7)
+    ;;  clp:sum backward bounds 
+    ;; s = 10, x  [1,3], y  [2,4]  z  [3,7] (10-3-4=3, 10-1-2=7)
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)) (s (logic-var)))
       (clp:domain x 1 3) (clp:domain y 2 4) (clp:domain z 0 100)
       (unify s 10)
@@ -59,24 +59,24 @@
       (chk "sum back z.lo" 3 (clp:domain-lo (%clp-get-domain z)))
       (chk "sum back z.hi" 7 (clp:domain-hi (%clp-get-domain z))))
 
-    ;; ── clp:scalar-product forward ─────────────────────────────────
-    ;; 2x + 3y = s, x ∈ [1,2], y ∈ [1,3] → s ∈ [5,13]
+    ;;  clp:scalar-product forward 
+    ;; 2x + 3y = s, x  [1,2], y  [1,3]  s  [5,13]
     (let ((x (logic-var)) (y (logic-var)) (s (logic-var)))
       (clp:domain x 1 2) (clp:domain y 1 3) (clp:domain s 0 100)
       (chk "scalar-product post" #t (clp:scalar-product '(2 3) (list x y) s))
       (chk "s.lo=5" 5 (clp:domain-lo (%clp-get-domain s)))
       (chk "s.hi=13" 13 (clp:domain-hi (%clp-get-domain s))))
 
-    ;; ── clp:scalar-product with negative coefficient ───────────────
-    ;; 2x - 3y = s, x ∈ [0,5], y ∈ [0,4] → s ∈ [-12, 10]
+    ;;  clp:scalar-product with negative coefficient 
+    ;; 2x - 3y = s, x  [0,5], y  [0,4]  s  [-12, 10]
     (let ((x (logic-var)) (y (logic-var)) (s (logic-var)))
       (clp:domain x 0 5) (clp:domain y 0 4) (clp:domain s -100 100)
       (chk "scalar-product neg post" #t (clp:scalar-product '(2 -3) (list x y) s))
       (chk "s.lo=-12" -12 (clp:domain-lo (%clp-get-domain s)))
       (chk "s.hi=10" 10 (clp:domain-hi (%clp-get-domain s))))
 
-    ;; ── clp:element with ground index ──────────────────────────────
-    ;; xs = [10, 20, 30], i = 2 → v should be 20
+    ;;  clp:element with ground index 
+    ;; xs = [10, 20, 30], i = 2  v should be 20
     (let ((x1 (logic-var)) (x2 (logic-var)) (x3 (logic-var)) (v (logic-var)))
       (unify x1 10) (unify x2 20) (unify x3 30)
       (clp:domain v 0 100)
@@ -84,8 +84,8 @@
       (chk "element ground index v.lo" 20 (clp:domain-lo (%clp-get-domain v)))
       (chk "element ground index v.hi" 20 (clp:domain-hi (%clp-get-domain v))))
 
-    ;; ── clp:element with var index: v narrows to union of candidates ─
-    ;; i ∈ [1..3] (FD), xs = [10 20 30], v ∈ [0,100] → v ∈ [10,30]
+    ;;  clp:element with var index: v narrows to union of candidates 
+    ;; i  [1..3] (FD), xs = [10 20 30], v  [0,100]  v  [10,30]
     (let ((i (logic-var)) (x1 (logic-var)) (x2 (logic-var)) (x3 (logic-var))
           (v (logic-var)))
       (unify x1 10) (unify x2 20) (unify x3 30)
@@ -94,26 +94,26 @@
       (clp:element i (list x1 x2 x3) v)
       (chk "element var i → v.lo=10" 10 (clp:domain-lo (%clp-get-domain v)))
       (chk "element var i → v.hi=30" 30 (clp:domain-hi (%clp-get-domain v)))
-      ;; Pick v = 25 → no candidate matches, infeasible.
+      ;; Pick v = 25  no candidate matches, infeasible.
       (let ((m (trail-mark)))
         (chk "element v=25 infeasible" #f (unify v 25))
         (unwind-trail m))
-      ;; Pick v = 20 → i narrows to {2}.
+      ;; Pick v = 20  i narrows to {2}.
       (unify v 20)
       (chk "v=20 → i grounds to 2" 2 (deref-lvar i)))
 
-    ;; ── SEND + MORE = MONEY end-to-end ──────────────────────────────
+    ;;  SEND + MORE = MONEY end-to-end 
     ;;    S E N D
     ;;  + M O R E
     ;;  ---------
     ;;  M O N E Y
     ;;
     ;; Constraints:
-    ;;   - S,E,N,D,M,O,R,Y all-different ∈ {0..9}
+    ;;   - S,E,N,D,M,O,R,Y all-different  {0..9}
     ;;   - S > 0, M > 0  (no leading zeros)
-    ;;   - 1000·S + 100·E + 10·N + D
-    ;;   + 1000·M + 100·O + 10·R + E
-    ;;   = 10000·M + 1000·O + 100·N + 10·E + Y
+    ;;   - 1000S + 100E + 10N + D
+    ;;   + 1000M + 100O + 10R + E
+    ;;   = 10000M + 1000O + 100N + 10E + Y
     ;; Unique solution: 9567 + 1085 = 10652.
     (let ((s (logic-var)) (e (logic-var)) (n (logic-var)) (d (logic-var))
           (m (logic-var)) (o (logic-var)) (r (logic-var)) (y (logic-var)))
@@ -125,9 +125,9 @@
       ;; (SEND + MORE) - MONEY = 0
       ;; Coefficient pattern:
       ;;   S:1000  E:(100+10-1)=109 wait carefully reproduce:
-      ;;   SEND       : 1000·S + 100·E + 10·N +  1·D
-      ;;   MORE       : 1000·M + 100·O + 10·R +  1·E
-      ;;   -MONEY     : -10000·M - 1000·O - 100·N - 10·E - 1·Y
+      ;;   SEND       : 1000S + 100E + 10N +  1D
+      ;;   MORE       : 1000M + 100O + 10R +  1E
+      ;;   -MONEY     : -10000M - 1000O - 100N - 10E - 1Y
       ;; Sum coefficients for each letter:
       ;;   S: 1000
       ;;   E: 100 + 1 - 10 = 91
@@ -152,7 +152,7 @@
       (chk "R = 8" 8 (deref-lvar r))
       (chk "Y = 2" 2 (deref-lvar y)))
 
-    ;; ── Summary ─────────────────────────────────────────────────────
+    ;;  Summary 
     (newline)
     (if (= fail-count 0)
         (display "clp phase4b arith smoke: ALL PASS")

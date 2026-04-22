@@ -1,10 +1,10 @@
-;;; examples/inproc.eta — In-process actor threads via spawn-thread.
+;;; examples/inproc.eta  In-process actor threads via spawn-thread.
 ;;;
-;;; (spawn-thread thunk) → socket
+;;; (spawn-thread thunk)  socket
 ;;;   - Launches a fresh in-process thread with its own VM.
 ;;;   - The thunk's bytecode and captured upvalues are serialized into the thread.
 ;;;   - Communication uses the same send!/recv! mailbox API as (spawn).
-;;;   - Cheaper than OS-process spawn — no fork/exec overhead.
+;;;   - Cheaper than OS-process spawn  no fork/exec overhead.
 ;;;   - No separate worker file needed; the closure carries its own logic.
 ;;;
 ;;; Run:
@@ -32,7 +32,7 @@
     (define t2 (make-worker 20))
     (define t3 (make-worker 30))
 
-    ;; Send one task to each thread — nng buffers the message even if
+    ;; Send one task to each thread  nng buffers the message even if
     ;; the thread hasn't reached recv! yet.
     (send! t1 5 'wait)
     (send! t2 6 'wait)

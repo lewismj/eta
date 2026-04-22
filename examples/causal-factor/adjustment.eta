@@ -1,20 +1,20 @@
-;;; causal-factor/adjustment.eta — Back-door adjustment estimator.
+;;; causal-factor/adjustment.eta  Back-door adjustment estimator.
 ;;;
 ;;; Implements the numerical side of the back-door adjustment formula:
 ;;;
-;;;   P(Y | do(X=x)) = Σ_z  P(Y | X=x, Z=z)  ·  P(Z=z)
+;;;   P(Y | do(X=x)) = _z  P(Y | X=x, Z=z)    P(Z=z)
 ;;;
 ;;; For a continuous outcome Y (e.g. excess return), this becomes:
 ;;;
-;;;   E[Y | do(X=x)] = Σ_z  E[Y | X=x, Z=z]  ·  P(Z=z)
+;;;   E[Y | do(X=x)] = _z  E[Y | X=x, Z=z]    P(Z=z)
 ;;;
-;;; NOTE: This module uses a *plug-in estimator* — sample proportions and
-;;; sample means — which gives unbiased point estimates but provides no
+;;; NOTE: This module uses a *plug-in estimator*  sample proportions and
+;;; sample means  which gives unbiased point estimates but provides no
 ;;; confidence intervals.  Production-quality causal inference (bootstrap
 ;;; CIs, doubly-robust estimation, propensity-score weighting) requires a
 ;;; numerical library such as libtorch or Eigen.
 ;;;
-;;; The planned FFI extension (docs/next-steps.md §2) will enable these
+;;; The planned FFI extension (docs/next-steps.md 2) will enable these
 ;;; methods by exposing BLAS/LAPACK and PyTorch matrix routines to Eta.
 
 (module adjustment
@@ -23,14 +23,14 @@
   (import std.causal)
   (begin
 
-    ;; ── Core adjustment estimator ─────────────────────────────────────────
+    ;;  Core adjustment estimator 
 
     ;; (adj:estimate-ate y-var x-var x-val z-vars data)
     ;;
     ;; Estimate E[Y | do(X = x-val)] using the back-door formula.
     ;;
-    ;; `z-vars`  — list of adjustment variable symbols (e.g. '(sector))
-    ;; `data`    — list of alist observations
+    ;; `z-vars`   list of adjustment variable symbols (e.g. '(sector))
+    ;; `data`     list of alist observations
     ;;
     ;; Returns a numeric estimate of the average treatment effect (ATE).
     (defun adj:estimate-ate (y-var x-var x-val z-vars data)
@@ -60,7 +60,7 @@
       (- (adj:estimate-ate y-var x-var x1 z-vars data)
          (adj:estimate-ate y-var x-var x0 z-vars data)))
 
-    ;; ── Subgroup stratification ───────────────────────────────────────────
+    ;;  Subgroup stratification 
 
     ;; (adj:z-strata data z-vars)
     ;;
@@ -100,7 +100,7 @@
                              (adj:obs-get b (car kv))))
                    a)))
 
-    ;; ── Descriptive statistics ────────────────────────────────────────────
+    ;;  Descriptive statistics 
 
     ;; (adj:mean data y-var)
     ;; Sample mean of y-var over `data`.
@@ -132,37 +132,37 @@
       (let ((pair (assq var obs)))
         (if pair (cdr pair) 0)))
 
-    ;; ── Summary reporting ─────────────────────────────────────────────────
+    ;;  Summary reporting 
 
     ;; (adj:print-summary y-var x-var x0 x1 z-vars cate)
     ;; Print a brief causal effect summary table.
     (defun adj:print-summary (y-var x-var x0 x1 z-vars cate)      (define win (eq? (platform) 'Win32))
       (println "")
       (println (if win "+--------------------------------------------------------+"
-                       "┌────────────────────────────────────────────────────────┐"))
+                       "â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”"))
       (println (if win "|  Back-Door Adjusted Causal Effect Estimate              |"
-                       "│  Back-Door Adjusted Causal Effect Estimate              │"))
+                       "â”‚  Back-Door Adjusted Causal Effect Estimate              â”‚"))
       (println (if win "+--------------------------------------------------------+"
-                       "├────────────────────────────────────────────────────────┤"))
-      (print   (if win "|  Outcome     Y  = " "│  Outcome     Y  = "))
+                       "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"))
+      (display   (if win "|  Outcome     Y  = " "â”‚  Outcome     Y  = "))
       (println (symbol->string y-var))
-      (print   (if win "|  Treatment   X  = " "│  Treatment   X  = "))
+      (display   (if win "|  Treatment   X  = " "â”‚  Treatment   X  = "))
       (println (symbol->string x-var))
-      (print   (if win "|  Control     x0 = " "│  Control     x0 = "))
+      (display   (if win "|  Control     x0 = " "â”‚  Control     x0 = "))
       (println x0)
-      (print   (if win "|  Treated     x1 = " "│  Treated     x1 = "))
+      (display   (if win "|  Treated     x1 = " "â”‚  Treated     x1 = "))
       (println x1)
-      (print   (if win "|  Adjustment  Z  = " "│  Adjustment  Z  = "))
+      (display   (if win "|  Adjustment  Z  = " "â”‚  Adjustment  Z  = "))
       (println (map* symbol->string z-vars))
       (println (if win "+--------------------------------------------------------+"
-                       "├────────────────────────────────────────────────────────┤"))
-      (print   (if win "|  CATE  E[Y|do(X=x1)] - E[Y|do(X=x0)]  =  "
-                       "│  CATE  E[Y|do(X=x1)] - E[Y|do(X=x0)]  =  "))
+                       "â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤"))
+      (display   (if win "|  CATE  E[Y|do(X=x1)] - E[Y|do(X=x0)]  =  "
+                       "â”‚  CATE  E[Y|do(X=x1)] - E[Y|do(X=x0)]  =  "))
       (println cate)
       (println (if win "+--------------------------------------------------------+"
-                       "└────────────────────────────────────────────────────────┘"))
+                       "â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜"))
       (println "")
-      (println "NOTE: Point estimate only (no CI).  See docs/causal.md §Limitations."))
+      (println "NOTE: Point estimate only (no CI).  See docs/causal.md Â§Limitations."))
 
   ))
 

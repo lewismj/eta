@@ -1,4 +1,4 @@
-;;; examples/worker-pool-worker.eta — Worker for worker-pool.eta
+;;; examples/worker-pool-worker.eta  Worker for worker-pool.eta
 ;;;
 ;;; Each instance of this module:
 ;;;   1. Receives one task from the parent via (current-mailbox)

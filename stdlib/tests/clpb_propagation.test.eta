@@ -1,7 +1,7 @@
-;;; clpb_smoke.eta — Smoke test for CLP(B) propagation-only.
+;;; clpb_smoke.eta  Smoke test for CLP(B) propagation-only.
 ;;;
 ;;; Coverage:
-;;;   1. Basic propagators (and / or / xor / not / imp / eq) — forward &
+;;;   1. Basic propagators (and / or / xor / not / imp / eq)  forward &
 ;;;      back-propagation narrow domains on the initial post where possible.
 ;;;   2. Re-firing on bind via the `'clp.prop` queue attribute shared with
 ;;;      CLP(FD): binding one var cascades to pin its peers.
@@ -10,8 +10,8 @@
 ;;;   4. Backtracking restores Boolean domains (trailed via unified trail).
 ;;;   5. Pigeonhole UNSAT (8 pigeons, 7 holes, encoded via card) is
 ;;;      detected by labelling + propagation.
-;;;   6. Tautology detection via `clp:taut?` on `¬(A → A)`.
-;;;   7. Majority-of-3 circuit: z = (x ∧ y) ∨ (y ∧ w) ∨ (x ∧ w) — labelling
+;;;   6. Tautology detection via `clp:taut?` on `(A  A)`.
+;;;   7. Majority-of-3 circuit: z = (x  y)  (y  w)  (x  w)  labelling
 ;;;      enumerates exactly the 4 models where the majority output is 1.
 
 (module clpb-smoke
@@ -31,7 +31,7 @@
 
     (display "clpb smoke: start") (newline)
 
-    ;; ── (1) clp:and — z=1 forces x=1 and y=1 on post ─────────────────────
+    ;;  (1) clp:and  z=1 forces x=1 and y=1 on post 
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:boolean x) (clp:boolean y) (clp:boolean z)
       (chk "post z=1"              #t (unify z 1))
@@ -39,7 +39,7 @@
       (chk "x pinned to 1"         '(1) (clp:domain-values (%clp-get-domain x)))
       (chk "y pinned to 1"         '(1) (clp:domain-values (%clp-get-domain y))))
 
-    ;; ── (2) clp:or — z=0 forces x=0 and y=0 on post ──────────────────────
+    ;;  (2) clp:or  z=0 forces x=0 and y=0 on post 
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:boolean x) (clp:boolean y) (clp:boolean z)
       (chk "post z=0"              #t (unify z 0))
@@ -47,7 +47,7 @@
       (chk "x pinned to 0"         '(0) (clp:domain-values (%clp-get-domain x)))
       (chk "y pinned to 0"         '(0) (clp:domain-values (%clp-get-domain y))))
 
-    ;; ── (3) clp:not — re-fires on bind ───────────────────────────────────
+    ;;  (3) clp:not  re-fires on bind 
     (let ((x (logic-var)) (z (logic-var)))
       (clp:boolean x) (clp:boolean z)
       (chk "post z=¬x"             #t (clp:not z x))
@@ -55,7 +55,7 @@
       ;; z is forced to 0 via the propagator re-firing on x's binding.
       (chk "z narrowed to {0}"     '(0) (clp:domain-values (%clp-get-domain z))))
 
-    ;; ── (4) clp:xor via implication: z = x⊕y.  Bind x=0 then y=1 → z=1. ──
+    ;;  (4) clp:xor via implication: z = xy.  Bind x=0 then y=1  z=1. 
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:boolean x) (clp:boolean y) (clp:boolean z)
       (chk "post z=x⊕y"            #t (clp:xor z x y))
@@ -63,7 +63,7 @@
       (chk "bind y=1"              #t (unify y 1))
       (chk "z pinned to 1"         '(1) (clp:domain-values (%clp-get-domain z))))
 
-    ;; ── (5) clp:imp — x=1 ∧ y=0 makes (x→y)=0 ───────────────────────────
+    ;;  (5) clp:imp  x=1  y=0 makes (xy)=0 
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:boolean x) (clp:boolean y) (clp:boolean z)
       (chk "post z=(x→y)"          #t (clp:imp z x y))
@@ -71,7 +71,7 @@
       (chk "bind y=0"              #t (unify y 0))
       (chk "z pinned to 0"         '(0) (clp:domain-values (%clp-get-domain z))))
 
-    ;; ── (6) clp:eq — z=(x⇔y); bind x=1, y=0 → z=0 ────────────────────────
+    ;;  (6) clp:eq  z=(xy); bind x=1, y=0  z=0 
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:boolean x) (clp:boolean y) (clp:boolean z)
       (chk "post z=(x⇔y)"          #t (clp:eq z x y))
@@ -79,8 +79,8 @@
       (chk "bind y=0"              #t (unify y 0))
       (chk "z pinned to 0"         '(0) (clp:domain-values (%clp-get-domain z))))
 
-    ;; ── (7) Cardinality saturation ───────────────────────────────────────
-    ;; 3 Booleans, exactly-2-of-3 → after forcing one var=1, nothing to
+    ;;  (7) Cardinality saturation 
+    ;; 3 Booleans, exactly-2-of-3  after forcing one var=1, nothing to
     ;; conclude yet; after a second var=1, the third is pinned to 0.
     (let ((a (logic-var)) (b (logic-var)) (c (logic-var)))
       (clp:boolean a) (clp:boolean b) (clp:boolean c)
@@ -89,7 +89,7 @@
       (chk "bind b=1"              #t (unify b 1))
       (chk "c pinned to 0"         '(0) (clp:domain-values (%clp-get-domain c))))
 
-    ;; ── (8) Backtracking restores Boolean domain ─────────────────────────
+    ;;  (8) Backtracking restores Boolean domain 
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:boolean x) (clp:boolean y) (clp:boolean z)
       (chk "post z=x∧y"            #t (clp:and z x y))
@@ -100,29 +100,29 @@
       (chk "x restored to {0,1}"   '(0 1) (clp:domain-values (%clp-get-domain x)))
       (chk "z restored to {0,1}"   '(0 1) (clp:domain-values (%clp-get-domain z))))
 
-    ;; ── (9) clp:sat? and clp:taut? on a trivially satisfiable constraint ─
-    ;; (a ∧ b) has 1 model: a=1, b=1 — satisfiable, not a tautology.
+    ;;  (9) clp:sat? and clp:taut? on a trivially satisfiable constraint 
+    ;; (a  b) has 1 model: a=1, b=1  satisfiable, not a tautology.
     (let ((a (logic-var)) (b (logic-var)) (z (logic-var)))
       (clp:boolean a) (clp:boolean b) (clp:boolean z)
       (clp:and z a b)
       (unify z 1)
       (chk "sat? (a∧b, z=1)"       #t (clp:sat?  (list a b)))
       (chk "taut? (a∧b, z=1)"      #f (clp:taut? (list a b)))
-      ;; After sat? / taut? the vars are left unbound — verify.
+      ;; After sat? / taut? the vars are left unbound  verify.
       (chk "a still unbound"       #t (logic-var? (deref-lvar a)))
       (chk "b still unbound"       #t (logic-var? (deref-lvar b))))
 
-    ;; ── (10) Tautology detection — `(x ∨ ¬x)` is a tautology, so its
-    ;; negation `t = (x ∨ ¬x); t = 0` is unsatisfiable.
+    ;;  (10) Tautology detection  `(x  x)` is a tautology, so its
+    ;; negation `t = (x  x); t = 0` is unsatisfiable.
     ;;
     ;; Why we exercise via `clp:taut?` rather than checking the return of
     ;; `(unify t 0)` directly: propagator re-firing in the `'clp.prop`
     ;; queue triggers on BINDINGS, not on domain narrowings (matches
-    ;; CLP(FD) — bounds propagators do not auto-bind singletons).  After
+    ;; CLP(FD)  bounds propagators do not auto-bind singletons).  After
     ;; `(unify t 0)`, the or-propagator narrows x and nx to {0}, but the
     ;; not-propagator (attached to nx and x) is never enqueued because
     ;; neither var was bound.  `clp:sat?` / `clp:taut?` invoke labelling,
-    ;; which DOES bind each var in turn — that finally fires the cascade
+    ;; which DOES bind each var in turn  that finally fires the cascade
     ;; and detects the contradiction.
     (let ((x (logic-var)) (nx (logic-var)) (t (logic-var)))
       (clp:boolean x) (clp:boolean nx) (clp:boolean t)
@@ -131,11 +131,11 @@
       (unify t 0)                  ; pin t=0 (negation of the tautology)
       (chk "taut? ¬(x∨¬x)"       #t (clp:taut? (list x))))
 
-    ;; ── (11) Pigeonhole: 4 pigeons into 3 holes → UNSAT.  A pigeon i in
+    ;;  (11) Pigeonhole: 4 pigeons into 3 holes  UNSAT.  A pigeon i in
     ;; hole h is encoded by Boolean p_{i,h}.  Constraints:
     ;;   each pigeon in exactly 1 hole:  card({p_{i,*}}) = 1
-    ;;   each hole holds at most 1 pigeon: card({p_{*,h}}) ≤ 1
-    ;; With 4 pigeons, 3 holes, total picks = 4 but holes cap at 3 → UNSAT.
+    ;;   each hole holds at most 1 pigeon: card({p_{*,h}})  1
+    ;; With 4 pigeons, 3 holes, total picks = 4 but holes cap at 3  UNSAT.
     (let* ((holes 3)
            (pigeons 4)
            (grid (let build-rows ((i 0) (rows '()))
@@ -151,7 +151,7 @@
       (let loop ((rs grid))
         (cond ((null? rs) #t)
               (else (clp:card (car rs) 1 1) (loop (cdr rs)))))
-      ;; Hole columns ≤ 1
+      ;; Hole columns  1
       (let col-loop ((h 0))
         (cond ((= h holes) #t)
               (else
@@ -164,12 +164,12 @@
                         (f-loop (cdr rs) (append acc (car rs)))))))
         (chk "pigeonhole 4→3 UNSAT" #t (clp:taut? flat))))
 
-    ;; ── (12) Majority-of-3: m = maj(a, b, c) enumerates exactly 4 models
+    ;;  (12) Majority-of-3: m = maj(a, b, c) enumerates exactly 4 models
     ;; where m=1: {(1,1,0),(1,0,1),(0,1,1),(1,1,1)}.
     ;;
     ;; NOTE on labelling scope: we must label not just (a, b, c) but ALSO
     ;; the intermediates (ab, bc, ac, t1, m).  Propagator re-firing happens
-    ;; on BINDINGS, not on domain narrowings — so binding only the inputs
+    ;; on BINDINGS, not on domain narrowings  so binding only the inputs
     ;; lets cascades stall at intermediate vars whose domains were only
     ;; narrowed.  Labelling the intermediates forces them to be bound,
     ;; which fires the downstream propagators and prunes spurious branches.

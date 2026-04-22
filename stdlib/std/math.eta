@@ -1,4 +1,4 @@
-;;; std/math.eta — Mathematical constants and helpers.
+;;; std/math.eta  Mathematical constants and helpers.
 ;;;
 ;;; Builtins already available: + - * / abs min max modulo remainder
 ;;;                             zero? positive? negative?
@@ -17,12 +17,12 @@
     sum product)
   (begin
 
-    ;; ── Constants ───────────────────────────────────────────────────
+    ;;  Constants 
 
     (define pi 3.141592653589793)
     (define e  2.718281828459045)
 
-    ;; ── Basic helpers ───────────────────────────────────────────────
+    ;;  Basic helpers 
 
     (defun square (x) (* x x))
     (defun cube   (x) (* x x x))
@@ -34,7 +34,7 @@
     (defun sign (x)
       (cond ((positive? x) 1)
             ((negative? x) -1)
-            (#t 0)))
+            (else 0)))
 
     ;; Restrict x to the range [lo, hi].
     (defun clamp (x lo hi)
@@ -64,7 +64,7 @@
           0
           (abs (/ (* a b) (gcd a b)))))
 
-    ;; ── Rounding (integer-producing) ────────────────────────────────
+    ;;  Rounding (integer-producing) 
     ;; These operate on the float representation; for fixnums they are
     ;; identity.
 
@@ -86,7 +86,7 @@
       (if (integer? x) x
           (floor (+ x 0.5))))
 
-    ;; ── Exponentiation ──────────────────────────────────────────────
+    ;;  Exponentiation 
 
     ;; Integer exponentiation by squaring (non-negative exp only).
     (defun expt (base exp)
@@ -95,25 +95,23 @@
         ((even? exp)
          (let ((half (expt base (/ exp 2))))
            (* half half)))
-        (#t (* base (expt base (- exp 1))))))
+        (else (* base (expt base (- exp 1))))))
 
-    ;; ── Summation helpers ───────────────────────────────────────────
+    ;;  Summation helpers 
 
     ;; Sum a list of numbers.
     (defun sum (xs)
-      (letrec ((loop (lambda (rest acc)
-                       (if (null? rest)
-                           acc
-                           (loop (cdr rest) (+ acc (car rest)))))))
-        (loop xs 0)))
+      (let loop ((rest xs) (acc 0))
+        (if (null? rest)
+            acc
+            (loop (cdr rest) (+ acc (car rest))))))
 
     ;; Product of a list of numbers.
     (defun product (xs)
-      (letrec ((loop (lambda (rest acc)
-                       (if (null? rest)
-                           acc
-                           (loop (cdr rest) (* acc (car rest)))))))
-        (loop xs 1)))
+      (let loop ((rest xs) (acc 1))
+        (if (null? rest)
+            acc
+            (loop (cdr rest) (* acc (car rest))))))
 
   ))
 

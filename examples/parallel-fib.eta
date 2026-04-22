@@ -1,4 +1,4 @@
-;;; examples/parallel-fib.eta — Parallel Fibonacci using a worker pool.
+;;; examples/parallel-fib.eta  Parallel Fibonacci using a worker pool.
 ;;;
 ;;; Demonstrates parallelism with a compute-intensive pure function.
 ;;; Each worker computes fib(n) independently using a tail-recursive
@@ -19,15 +19,15 @@
     (define inputs '(30 31 32 33 34 35))
 
     (println "parallel-fib: computing Fibonacci numbers in parallel...")
-    (println (string-append "  inputs: " (display-to-string inputs)))
+    (println (string-append "  inputs: " (display->string inputs)))
 
     ;; worker-pool spawns one child per input and collects results in order
     (define results
       (worker-pool "examples/parallel-fib-worker.eta" inputs))
 
-    (println (string-append "  results: " (display-to-string results)))
+    (println (string-append "  results: " (display->string results)))
 
-    ;; Display input → result pairs
+    ;; Display input  result pairs
     (for-each (lambda (pair)
                 (let ((n   (car pair))
                       (fib (cdr pair)))

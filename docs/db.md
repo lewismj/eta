@@ -1,16 +1,16 @@
-# Relations & Tabling — `std.db`
+# Relations & Tabling â€” `std.db`
 
-[<- Back to README](../README.md) · [Logic](logic.md) ·
-[Fact Tables](fact-table.md) · [CLP](clp.md)
+[<- Back to README](../README.md) Â· [Logic](logic.md) Â·
+[Fact Tables](fact-table.md) Â· [CLP](clp.md)
 
 ---
 
 ## Overview
 
 `std.db` is a thin relation layer over [`std.fact_table`](fact-table.md)
-and [`std.logic`](logic.md).  It gives Prolog-style **assert / retract /
+and [`std.logic`](logic.md).  It gives Prolog-style **assert-fact! / retract-fact! /
 call** semantics with first-argument indexing and optional **SLG-lite
-tabling** (memoisation with cycle detection) — without leaving Eta or
+tabling** (memoisation with cycle detection) â€” without leaving Eta or
 introducing a separate database engine.
 
 ```scheme
@@ -28,8 +28,12 @@ dedicated `FactTable` whose first column is hash-indexed by default.
 |------|--------|
 | `(defrel '(name a1 ... aN))` | Insert a ground fact (or pattern row containing `?vars`) |
 | `(defrel '(name a1 ... aN) rule-proc)` | Insert a rule row whose body is the procedure `rule-proc` (called with the actual call args) |
-| `(assert '(name ...))` | Same as `defrel` for facts; conventional name for runtime mutation |
-| `(retract '(name pattern...))` | Remove the **first** row matching `pattern` |
+| `(defrel-clause '(name a1 ... aN))` | Convenience wrapper for static fact declarations |
+| `(defrel-clause '(name a1 ... aN) rule-proc)` | Convenience wrapper for static rule declarations |
+| `(assert-fact! '(name ...))` | Same as `defrel` for facts; canonical runtime mutation name |
+| `(assert '(name ...))` | Deprecated alias of `assert-fact!` |
+| `(retract-fact! '(name pattern...))` | Remove the **first** row matching `pattern` |
+| `(retract '(name pattern...))` | Deprecated alias of `retract-fact!` |
 | `(retract-all '(name pattern...))` | Remove **every** row matching `pattern` |
 | `(index-rel! 'name col-spec)` | Build/rebuild a column index for every arity registered under `name` |
 
@@ -73,15 +77,16 @@ Goalsets compose naturally with the rest of `std.logic`.
 | Form | Effect |
 |------|--------|
 | `(tabled 'name arity)` | Mark relation `(name . arity)` as tabled.  Subsequent `call-rel` invocations use a **variant-keyed answer cache** with cycle-aware fixpoint iteration |
+| `(tabled-clause '(name a1 ... aN))` | Convenience wrapper that infers arity from the clause head |
 
 Semantics:
 
 - Cache key uses `term-variant-hash` so it is **stable under
   alpha-renaming** of logic variables.
 - During table population, recursive consumers see answers accumulated
-  so far (`'working` status) — the canonical SLG pattern that lets
+  so far (`'working` status) â€” the canonical SLG pattern that lets
   left-recursive rules terminate.
-- On any DB mutation (`assert`, `retract`, `retract-all`, `defrel`,
+- On any DB mutation (`assert-fact!`, `retract-fact!`, `retract-all`, `defrel`,
   `tabled`) the cache is conservatively flushed.
 
 ```scheme
@@ -95,6 +100,9 @@ Semantics:
 
 Without `tabled`, the same definition would loop on cyclic graphs.
 
+Use the procedural forms (`defrel`, `tabled`) when relation names or heads are
+computed at runtime (for example, `apply`-based registration).
+
 ---
 
 ## Trail & Backtracking
@@ -102,7 +110,7 @@ Without `tabled`, the same definition would loop on cyclic graphs.
 `call-rel` branch thunks are ordinary logic goals: they bind logic
 vars via `unify`, all writes are trailed, and `unwind-trail` after
 each failed branch restores the world exactly.  `defrel` /
-`assert` mutations are **not** trailed — they are global side effects
+`assert-fact!` mutations are **not** trailed â€” they are global side effects
 on the relation table, mirroring Prolog's `assertz`.
 
 ---

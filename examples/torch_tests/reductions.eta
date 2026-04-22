@@ -1,4 +1,4 @@
-;;; torch_tests/reductions.eta — Reduction primitives
+;;; torch_tests/reductions.eta  Reduction primitives
 ;;;
 ;;; Tests: tsum, mean, tmax, tmin, argmax, argmin
 ;;;

@@ -152,11 +152,11 @@ unification.
 
 ### Public API
 
-- `defrel`
-- `assert`, `retract`, `retract-all`
+- `defrel`, `defrel-clause` (clause-head convenience wrapper)
+- `assert-fact!`, `retract-fact!`, `retract-all` (deprecated aliases: `assert`, `retract`)
 - `call-rel`, `call-rel?`
 - `index-rel!`
-- `tabled`
+- `tabled`, `tabled-clause` (clause-head convenience wrapper)
 
 ### How It Works
 
@@ -192,7 +192,7 @@ unification.
 | `member/2` | `(membero x lst)` |
 | `copy_term/2` | `(copy-term t)` / `copy-term*` |
 | Attributed vars | `put-attr`/`get-attr` + hooks |
-| `assert` / `retract` | `std.db` (`assert`, `retract`, `retract-all`) |
+| `assert` / `retract` | `std.db` (`assert-fact!`, `retract-fact!`, `retract-all`) |
 | Tabling | `std.db` `tabled` (variant cache, not full WAM/SLG engine) |
 | Cut `!` | Not a core builtin; use committed-choice combinators (`onceo`, `conda`, `condu`) where appropriate |
 

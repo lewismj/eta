@@ -1,14 +1,14 @@
-;;; boolean-simplifier.eta — Symbolic boolean expression simplifier
+;;; boolean-simplifier.eta  Symbolic boolean expression simplifier
 ;;;
 ;;; Demonstrates: recursive tree transformation, quoting, cond, pattern
 ;;; matching on S-expression trees, De Morgan's laws, fixed-point iteration.
 ;;;
 ;;; Expression language:
-;;;   #t / #f         — boolean constants
-;;;   symbol          — variable
-;;;   (not e)         — negation
-;;;   (and e1 e2)     — conjunction
-;;;   (or  e1 e2)     — disjunction
+;;;   #t / #f          boolean constants
+;;;   symbol           variable
+;;;   (not e)          negation
+;;;   (and e1 e2)      conjunction
+;;;   (or  e1 e2)      disjunction
 ;;;
 ;;; Run:  etai examples/boolean-simplifier.eta
 
@@ -16,8 +16,8 @@
   (import std.io)
   (begin
 
-    ;; ── Helpers ─────────────────────────────────────────────────────
-    ;; atom? — true for anything that is not a pair (symbols, bools, etc.)
+    ;;  Helpers 
+    ;; atom?  true for anything that is not a pair (symbols, bools, etc.)
     (defun atom? (x) (not (pair? x)))
 
     ;; Extract operator and arguments from an expression tree
@@ -25,29 +25,29 @@
     (defun a1 (e) (car (cdr e)))
     (defun a2 (e) (car (cdr (cdr e))))
 
-    ;; ── One-step simplifier ─────────────────────────────────────────
+    ;;  One-step simplifier 
     (defun simplify-bool (e)
       (cond
         ;; Atoms (variables or constants) return as-is
         ((atom? e) e)
 
-        ;; ── not ───────────────────────────────────────────────────
+        ;;  not 
         ((eq? (op e) 'not)
           (let ((u (simplify-bool (a1 e))))
             (cond
               ((and (atom? u) (eq? u #t)) #f)
               ((and (atom? u) (eq? u #f)) #t)
-              ;; Double negation: ¬(¬x) = x
+              ;; Double negation: (x) = x
               ((and (pair? u) (eq? (op u) 'not)) (a1 u))
-              ;; De Morgan: ¬(a ∧ b) = (¬a) ∨ (¬b)
+              ;; De Morgan: (a  b) = (a)  (b)
               ((and (pair? u) (eq? (op u) 'and))
                 (list 'or  (list 'not (a1 u)) (list 'not (a2 u))))
-              ;; De Morgan: ¬(a ∨ b) = (¬a) ∧ (¬b)
+              ;; De Morgan: (a  b) = (a)  (b)
               ((and (pair? u) (eq? (op u) 'or))
                 (list 'and (list 'not (a1 u)) (list 'not (a2 u))))
               (#t (list 'not u)))))
 
-        ;; ── and ──────────────────────────────────────────────────
+        ;;  and 
         ((eq? (op e) 'and)
           (let ((sa (simplify-bool (a1 e)))
                 (sb (simplify-bool (a2 e))))
@@ -59,7 +59,7 @@
               ((equal? sa sb) sa)        ; x ∧ x = x
               (#t (list 'and sa sb)))))
 
-        ;; ── or ───────────────────────────────────────────────────
+        ;;  or 
         ((eq? (op e) 'or)
           (let ((sa (simplify-bool (a1 e)))
                 (sb (simplify-bool (a2 e))))
@@ -74,12 +74,12 @@
         ;; Anything else passes through unchanged
         (#t e)))
 
-    ;; ── Fixed-point wrapper: keep simplifying until stable ──────────
+    ;;  Fixed-point wrapper: keep simplifying until stable 
     (defun simplify-bool* (e)
       (let ((s (simplify-bool e)))
         (if (equal? s e) s (simplify-bool* s))))
 
-    ;; ── Demonstrations ──────────────────────────────────────────────
+    ;;  Demonstrations 
 
     (define win (eq? (platform) 'Win32))
 

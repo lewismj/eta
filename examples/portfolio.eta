@@ -1,18 +1,18 @@
-;;; portfolio.eta — Causal Portfolio Engine
+;;; portfolio.eta  Causal Portfolio Engine
 ;;;
 ;;; An end-to-end institutional portfolio construction system combining
 ;;; symbolic specification, causal inference, constraint logic programming,
 ;;; neural return estimation, automatic differentiation, and parallel
-;;; scenario analysis — in a single Eta program.
+;;; scenario analysis  in a single Eta program.
 ;;;
-;;; ┌─────────────────────────────────────────────────────────────────┐
-;;; │  The Question                                                   │
-;;; │                                                                 │
-;;; │  Given a universe of liquid sector-representative assets,       │
-;;; │  what portfolio maximises causal expected return under          │
-;;; │  macroeconomic uncertainty, subject to risk, sector, and        │
-;;; │  regulatory constraints?                                        │
-;;; └─────────────────────────────────────────────────────────────────┘
+;;; 
+;;;   The Question                                                   
+;;;                                                                  
+;;;   Given a universe of liquid sector-representative assets,       
+;;;   what portfolio maximises causal expected return under          
+;;;   macroeconomic uncertainty, subject to risk, sector, and        
+;;;   regulatory constraints?                                        
+;;; 
 ;;;
 ;;; Why Synthetic Data?
 ;;;
@@ -114,9 +114,9 @@
     (display "    macroeconomic uncertainty, subject to risk, sector, and\n")
     (display "    regulatory constraints?\n")
 
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
     ;; Investment Universe
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
 
     (display "\n")
     (display "  Investment Universe:\n")
@@ -139,9 +139,9 @@
                      "    DGP (known) → Estimator (NN + back-door) → Optimizer (ret(m) − λ·wᵀΣ(m)w)\n"))
     (display "    Structural truth | Learned model output  | Decision\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §0  Data Generation & Fact Table
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 0  Data Generation & Fact Table
+    ;; 
 
     (display "\n")
     (sep)
@@ -211,7 +211,7 @@
                             (rate  (+ 0.01 (* (car rr) 0.04)))
                             (rn  (lcg-noise (cdr rr)))
                             (noise (car rn))
-                            ;; DGP: known coefficients (sentiment confounds macro → return)
+                            ;; DGP: known coefficients (sentiment confounds macro  return)
                             (ret (+ (* 1.2 beta)
                                     (+ (* 0.6 macro)
                                        (+ (* 0.4 sector-code)
@@ -253,9 +253,9 @@
     (display "\n  Ground truth coefficients:\n")
     (display "    beta: 1.2  macro: 0.6  sector: 0.4  rate: -0.3  beta*macro: 0.2  sentiment: 0.5\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §1  Symbolic Portfolio Specification
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 1  Symbolic Portfolio Specification
+    ;; 
 
     (display "\n")
     (sep)
@@ -341,9 +341,9 @@
     (display "    d(Objective)/d(risk)            = ") (println dObj/dRisk)
     (display "\n  The objective is inspectable, auditable data — not a black box.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §2  Causal Return Model
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 2  Causal Return Model
+    ;; 
 
     (display "\n")
     (sep)
@@ -419,9 +419,9 @@
     (display "\n  Note: SCM is assumed known (synthetic data regime).\n")
     (display "  On real data, DAG must be justified from domain knowledge.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §3  Portfolio Constraints (Continuous CLP(R))
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 3  Portfolio Constraints (Continuous CLP(R))
+    ;; 
 
     (display "\n")
     (sep)
@@ -467,9 +467,9 @@
     (display "\n  Constraints are posted declaratively to CLP(R), then solved directly.\n")
     (display "  Unlike discrete grid search, optimization is over the continuous simplex.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §4  Neural Conditional Return Model
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 4  Neural Conditional Return Model
+    ;; 
 
     (display "\n")
     (sep)
@@ -544,10 +544,10 @@
              (out (forward net inp)))
         (item out)))
 
-    ;; Compute causally-adjusted expected return per sector using §2 back-door formula.
-    ;; E[return | do(macro=m)] = Σ_s  E_NN[return | beta, macro, sector, s] · P(s)
+    ;; Compute causally-adjusted expected return per sector using 2 back-door formula.
+    ;; E[return | do(macro=m)] = _s  E_NN[return | beta, macro, sector, s]  P(s)
     ;; NN approximates conditional expectation (not parameter recovery).
-    ;; Causal identification relies on §2 SCM (assumed known in synthetic regime).
+    ;; Causal identification relies on 2 SCM (assumed known in synthetic regime).
 
     (define sector-info
       ;; (sector-sym  sector-code  representative-beta)
@@ -556,12 +556,12 @@
             (list 'finance    -0.5  1.0)
             (list 'healthcare -1.0  0.7)))
 
-    ;; Macro scenarios for adjusted estimate: average macro ≈ 0.5
+    ;; Macro scenarios for adjusted estimate: average macro  0.5
 
     (defun causal-expected-return (sector-sym)
       ;; E[return | do(macro=0.5), sector=s]
       ;; Back-door adjustment: marginalize over sentiment (the confounder)
-      ;; E[ret | do(macro=0.5)] = Σ_sent E[ret | macro=0.5, sent] P(sent)
+      ;; E[ret | do(macro=0.5)] = _sent E[ret | macro=0.5, sent] P(sent)
       (let* ((info (car (filter (lambda (si) (eq? (car si) sector-sym)) sector-info)))
              (scode (car (cdr info)))
              (beta  (car (cdr (cdr info))))
@@ -588,7 +588,7 @@
     ;; True E[return | do(macro=0.5), sector=s] from DGP:
     ;;   = 1.2*beta + 0.6*0.5 + 0.4*sector_code - 0.3*rate_avg
     ;;     + 0.2*beta*0.5 + 0.5*E[sentiment]
-    ;;   rate_avg ≈ 0.03, E[sentiment] = 0.5 (uniform)
+    ;;   rate_avg  0.03, E[sentiment] = 0.5 (uniform)
     (defun dgp-expected (beta-val sector-code)
       (+ (* 1.2 beta-val)
          (+ (* 0.6 0.5)
@@ -622,9 +622,9 @@
     (display "  Agreement validates that the estimator approximates the structural\n")
     (display "  relationship, not that it has recovered exact parameters.\n")
 
-    ;; ────────────────────────────────────────────────────────────────
-    ;; §4b  Naive vs Causal Estimation
-    ;; ────────────────────────────────────────────────────────────────
+    ;; 
+    ;; 4b  Naive vs Causal Estimation
+    ;; 
 
     (display "\n")
     (thin-sep)
@@ -632,26 +632,26 @@
     (thin-sep)
     (display "\n")
 
-    ;; Naive: OLS of return on macro_growth only — does NOT control for
+    ;; Naive: OLS of return on macro_growth only  does NOT control for
     ;; sentiment.  Because sentiment drives both macro and return, OLS
-    ;; conflates the direct macro→return path with the back-door path
-    ;; macro←sentiment→return, inflating the macro coefficient.
+    ;; conflates the direct macroreturn path with the back-door path
+    ;; macrosentimentreturn, inflating the macro coefficient.
     ;;   Fact-table columns: 2=macro_growth, 4=sentiment, 5=return
     (define naive-ols    (stats:ols-multi universe 5 '(2)))
     (define naive-coeffs (stats:ols-multi-coefficients naive-ols))
     ;; coefficients = (intercept  beta_macro)
     (define naive-macro-coeff (car (cdr naive-coeffs)))
 
-    ;; OLS-controlled: regress return on (macro, sentiment) — partially
+    ;; OLS-controlled: regress return on (macro, sentiment)  partially
     ;; controls confounding by conditioning on the back-door variable.
-    ;; Expected macro coefficient ≈ 0.6 + 0.2*avg_beta (structural truth).
+    ;; Expected macro coefficient  0.6 + 0.2*avg_beta (structural truth).
     (define controlled-ols    (stats:ols-multi universe 5 '(2 4)))
     (define controlled-coeffs (stats:ols-multi-coefficients controlled-ols))
     ;; coefficients = (intercept  beta_macro  beta_sentiment)
     (define controlled-macro-coeff     (car (cdr controlled-coeffs)))
     (define controlled-sentiment-coeff (car (cdr (cdr controlled-coeffs))))
 
-    ;; Causal approach: back-door adjusted — compute slope per sector,
+    ;; Causal approach: back-door adjusted  compute slope per sector,
     ;; marginalizing over sentiment (the confounder) at each macro level.
     (define sent-grid '(0.1 0.3 0.5 0.7 0.9))
     (define macro-lo 0.3)
@@ -691,9 +691,9 @@
     (display "    recovering the average structural effect (heterogeneous via beta*macro).\n")
     (display "    The gap naive vs causal validates that causal adjustment works.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §5  AAD Risk Sensitivities
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 5  AAD Risk Sensitivities
+    ;; 
 
     (display "\n")
     (sep)
@@ -732,7 +732,7 @@
             (+ (* wf ret-fin)
                (* wh ret-health)))))
 
-    ;; Covariance risk model: σ²_p = wᵀΣw
+    ;; Covariance risk model: _p = ww
     ;; Volatilities per sector
     (define vol-tech 0.22)
     (define vol-energy 0.28)
@@ -747,7 +747,7 @@
     (define rho-eh 0.15)   ; energy-healthcare
     (define rho-fh 0.35)   ; finance-healthcare
 
-    ;; Covariance entries: cov_ij = ρ_ij · σ_i · σ_j
+    ;; Covariance entries: cov_ij = _ij  _i  _j
     (define cov-te (* rho-te (* vol-tech vol-energy)))
     (define cov-tf (* rho-tf (* vol-tech vol-fin)))
     (define cov-th (* rho-th (* vol-tech vol-health)))
@@ -756,12 +756,12 @@
     (define cov-fh (* rho-fh (* vol-fin vol-health)))
 
     (defun portfolio-risk-fn (wt we wf wh)
-      ;; wᵀΣw — full 4×4 covariance
+      ;; ww  full 44 covariance
       (+ (* (* wt wt) (* vol-tech vol-tech))
          (+ (* (* we we) (* vol-energy vol-energy))
             (+ (* (* wf wf) (* vol-fin vol-fin))
                (+ (* (* wh wh) (* vol-health vol-health))
-                  ;; Cross terms: 2 · w_i · w_j · cov_ij
+                  ;; Cross terms: 2  w_i  w_j  cov_ij
                   (+ (* 2.0 (* (* wt we) cov-te))
                      (+ (* 2.0 (* (* wt wf) cov-tf))
                         (+ (* 2.0 (* (* wt wh) cov-th))
@@ -769,21 +769,21 @@
                               (+ (* 2.0 (* (* we wh) cov-eh))
                                  (* 2.0 (* (* wf wh) cov-fh))))))))))))
 
-    ;; ────────────────────────────────────────────────────────────────
-    ;; Causal Risk Model — Σ(m) = Cov(R | do(macro=m))
+    ;; 
+    ;; Causal Risk Model  (m) = Cov(R | do(macro=m))
     ;;
-    ;; portfolio-risk-fn uses a fixed unconditional Σ (hardcoded above).
+    ;; portfolio-risk-fn uses a fixed unconditional  (hardcoded above).
     ;; Under do(macro=m), macro shifts the entire return distribution, so
     ;; risk must be evaluated in the same causal world as returns:
     ;;
-    ;;   Σ(m) ≈ (1/N) Σ_s (R(m,s) − R̄(m)) (R(m,s) − R̄(m))ᵀ
+    ;;   (m)  (1/N) _s (R(m,s)  R(m)) (R(m,s)  R(m))
     ;;
-    ;; Σ(m) can come from either:
+    ;; (m) can come from either:
     ;;   - empirical 5-point sentiment grid (NN samples), or
     ;;   - structural volatility/correlation parameterisation.
-    ;; For §5 base-case AAD diagnostics we keep portfolio-risk-fn (fixed Σ).
-    ;; For §7 scenario analysis and run-pipeline we use portfolio-causal-risk-fn.
-    ;; ────────────────────────────────────────────────────────────────
+    ;; For 5 base-case AAD diagnostics we keep portfolio-risk-fn (fixed ).
+    ;; For 7 scenario analysis and run-pipeline we use portfolio-causal-risk-fn.
+    ;; 
 
     (define sigma-model 'hybrid)
     (define sigma-hybrid-structural-weight 0.70)
@@ -1047,7 +1047,7 @@
                (car (cdr (cdr (cdr S))))))))
 
     (defun portfolio-risk-from-sigma (wt we wf wh S)
-      ;; wᵀΣw where S = (vt ve vf vh cte ctf cth cef ceh cfh)
+      ;; ww where S = (vt ve vf vh cte ctf cth cef ceh cfh)
       (let* ((vt  (car S))
              (S1  (cdr S))  (ve  (car S1))
              (S2  (cdr S1)) (vf  (car S2))
@@ -1070,7 +1070,7 @@
                                    (* 2.0 (* (* wf wh) cfh)))))))))))))
 
     (defun portfolio-causal-risk-fn (wt we wf wh macro-val)
-      ;; wᵀΣ(m)w — portfolio variance in the causal world do(macro=m).
+      ;; w(m)w  portfolio variance in the causal world do(macro=m).
       ;; Convenience wrapper: for tight loops over many portfolios,
       ;; precompute (scenario-covariance m) once and call
       ;; portfolio-risk-from-sigma directly to avoid redundant NN calls.
@@ -1104,8 +1104,8 @@
     (defun sigma-psd-sampled? (S)
       (>= (sigma-min-risk-sampled S) -1e-9))
 
-    ;; ── Base-case causal covariance ───────────────────────────────────
-    ;; Σ(0.5) precomputed once here so that §6 (optimiser) and §7 (scenarios)
+    ;;  Base-case causal covariance 
+    ;; (0.5) precomputed once here so that 6 (optimiser) and 7 (scenarios)
     ;; share the same risk model.  Both return and risk now live in the
     ;; causal world do(macro=0.5) for the base optimisation objective.
     (define sigma-base-opt (scenario-covariance 0.5))
@@ -1280,7 +1280,7 @@
         (println (vector-ref kg 3))))
 
     ;; Risk contribution by asset (Euler allocation under quadratic form):
-    ;; RC_i = w_i × ∂(wᵀΣw)/∂w_i
+    ;; RC_i = w_i  (ww)/w_i
     (display (if win "\n  Risk Contribution by Asset (Euler: RC_i = w_i * dRisk/dw_i):\n"
                      "\n  Risk Contribution by Asset (Euler: RCᵢ = wᵢ × ∂Risk/∂wᵢ):\n"))
 
@@ -1305,9 +1305,9 @@
     (display "  avoiding repeated revaluation -- the same technique used\n")
     (display "  by production xVA desks.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §6  Explainable Portfolio Selection
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 6  Explainable Portfolio Selection
+    ;; 
 
     (display "\n")
     (sep)
@@ -1457,9 +1457,9 @@
     (display "    -> unified, composable decision system\n")
     (thin-sep)
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §7  Parallel Scenario Analysis (Actor Model)
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 7  Parallel Scenario Analysis (Actor Model)
+    ;; 
 
     (display "\n")
     (sep)
@@ -1507,11 +1507,11 @@
     (define recess-ret (scenario-return opt-wt opt-we opt-wf opt-wh 0.1))
     (define rate-ret   (scenario-return opt-wt opt-we opt-wf opt-wh 0.35))
 
-    ;; Causal risk Σ(m) per scenario — precomputed once, reused in both the
+    ;; Causal risk (m) per scenario  precomputed once, reused in both the
     ;; display table and the counterfactual rebalancing loop below.
-    ;; sigma-base-opt was already computed in §5 (shared with §6 optimizer).
+    ;; sigma-base-opt was already computed in 5 (shared with 6 optimizer).
     ;; Returns and risk now live in the same causal world: do(macro=m).
-    ;; opt-w*-f were already produced by the CLP(R) solve in §6.
+    ;; opt-w*-f were already produced by the CLP(R) solve in 6.
     (define sigma-base   sigma-base-opt)      ; reuse §5 precomputed value
     (define sigma-boom   (scenario-covariance 0.8))
     (define sigma-recess (scenario-covariance 0.1))
@@ -1539,7 +1539,7 @@
       (display "  Best-case return:  ") (println best)
       (display "  Range:             ") (println (- best worst)))
 
-    ;; Counterfactual rebalancing: what if macro +1σ?
+    ;; Counterfactual rebalancing: what if macro +1?
     (display "\n  Counterfactual rebalancing (macro = 0.8, growth boom):\n")
     (defun scenario-return-coeffs (macro-val)
       (list (scenario-return 100 0 0 0 macro-val)
@@ -1561,7 +1561,7 @@
     (display "Finance ") (display (car (cdr (cdr cf-boom-best)))) (display "%, ")
     (display "Healthcare ") (display (car (cdr (cdr (cdr cf-boom-best))))) (display "%\n")
 
-    ;; ── Stability Check ───────────────────────────────────────────
+    ;;  Stability Check 
 
     (display "\n")
     (thin-sep)
@@ -2350,7 +2350,7 @@
     (display stage5-fails-less-badly-count)
     (display " baseline(s))\n")
 
-    ;; ── Causal–Decision Coupling ──────────────────────────────────
+    ;;  CausalDecision Coupling 
 
     (display "\n")
     (thin-sep)
@@ -2398,11 +2398,11 @@
     (display "    - Without covariance: diversification invisible to optimizer\n")
     (display "    - Without AAD: opaque risk decomposition\n")
 
-    ;; ── Distributed Scenario Validation (Actors) ──────────────────
+    ;;  Distributed Scenario Validation (Actors) 
     ;;
     ;; Re-run the 4 macro scenarios in parallel worker threads, each
     ;; using the known DGP coefficients (not the NN).  This demonstrates
-    ;; the scatter → gather actor pattern AND provides an independent
+    ;; the scatter  gather actor pattern AND provides an independent
     ;; cross-check against the NN-based estimates above.
 
     (display "\n")
@@ -2783,13 +2783,13 @@
                           (cons 'policy-evaluation policy-eval)
                           (cons 'actor-rollouts actor-rollouts)))))))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;;  High-Level Abstraction — Complete Pipeline
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;;  High-Level Abstraction  Complete Pipeline
+    ;; 
     ;;
-    ;; Everything above (§0–§7) composes into one call.
+    ;; Everything above (07) composes into one call.
     ;; The 5 core arguments plus mode fully specify the problem; the result is an
-    ;; inspectable association list — not a black box.
+    ;; inspectable association list  not a black box.
 
     (display "\n")
     (sep)
@@ -2905,7 +2905,7 @@
              (base-result (run-pipeline universe dag constraints lam scenario-macros mode)))
         (enrich-with-dynamic-control base-result lam horizon)))
 
-    ;; One call — 5 core arguments plus optional optimisation mode.
+    ;; One call  5 core arguments plus optional optimisation mode.
     (define pipeline-result
       (run-pipeline universe market-dag constraint-spec 2.0
         '((base 0.5) (boom 0.8) (recession 0.1) (rate-hike 0.35))
@@ -2939,9 +2939,9 @@
     (report "Actor rollouts" => dynamic-actor-rollouts)
     (display "\n  Five core arguments + mode.  One result.  Every value traceable to §0-§7.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
     ;; Executive Summary
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
 
     (display "\n")
     (sep)

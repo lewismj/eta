@@ -1,10 +1,10 @@
-;;; examples/scatter-gather.eta — SURVEYOR/RESPONDENT scatter-gather demo.
+;;; examples/scatter-gather.eta  SURVEYOR/RESPONDENT scatter-gather demo.
 ;;;
 ;;; Demonstrates the scatter-gather pattern:
-;;;   - (nng-socket 'surveyor)    → sends a question to all respondents
-;;;   - (nng-socket 'respondent)  → answers the surveyor's question
-;;;   - (nng-set-option sock 'survey-time ms) → deadline for collecting replies
-;;;   - (survey endpoint question timeout-ms) → std.net helper
+;;;   - (nng-socket 'surveyor)     sends a question to all respondents
+;;;   - (nng-socket 'respondent)   answers the surveyor's question
+;;;   - (nng-set-option sock 'survey-time ms)  deadline for collecting replies
+;;;   - (survey endpoint question timeout-ms)  std.net helper
 ;;;
 ;;; The surveyor broadcasts a question and collects ALL responses that
 ;;; arrive before the deadline.  Useful for "which workers are idle?",
@@ -34,7 +34,7 @@
     ;; Deadline: collect responses for up to 1 second
     (nng-set-option surveyor 'survey-time 1000)
 
-    ;; Spawn respondent workers — each worker connects to the survey endpoint
+    ;; Spawn respondent workers  each worker connects to the survey endpoint
     (println "scatter-gather: spawning respondents...")
     (define workers
       (map (lambda (id)
@@ -49,11 +49,11 @@
     ;; Wait for all workers to confirm they've connected
     (for-each (lambda (w) (recv! w 'wait)) workers)
 
-    ;; ── Broadcast the question ────────────────────────────────────────
+    ;;  Broadcast the question 
     (println "scatter-gather: asking 'status?'...")
     (send! surveyor '(status?) 'wait)
 
-    ;; ── Collect all responses within the deadline ─────────────────────
+    ;;  Collect all responses within the deadline 
     (let ((responses
            (letrec ((collect (lambda (acc)
                                (let ((r (recv! surveyor)))
@@ -65,10 +65,10 @@
                               (number->string (length responses))
                               " response(s)"))
       (for-each (lambda (r)
-                  (print "  ") (println r))
+                  (display "  ") (println r))
                 responses))
 
-    ;; ── Cleanup ───────────────────────────────────────────────────────
+    ;;  Cleanup 
     (for-each (lambda (w) (send! w 'stop)) workers)
     (for-each spawn-wait workers)
     (for-each nng-close workers)

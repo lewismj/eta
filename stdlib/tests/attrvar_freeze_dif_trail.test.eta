@@ -1,4 +1,4 @@
-;;; attrvar_smoke.eta — Smoke test for attributed variables +
+;;; attrvar_smoke.eta  Smoke test for attributed variables +
 ;;; freeze / dif, exercising the trail-unwind semantics.
 ;;;
 ;;; Run with:
@@ -25,13 +25,13 @@
 
     (display "attrvar smoke: start") (newline)
 
-    ;; ── 1. attr-var? on plain vars ──────────────────────────────────
+    ;;  1. attr-var? on plain vars 
     (chk "attr-var? fresh plain" #f
          (attr-var? (logic-var)))
     (chk "attr-var? non-var"     #f
          (attr-var? 42))
 
-    ;; ── 2. put-attr / get-attr / del-attr round-trip ───────────────
+    ;;  2. put-attr / get-attr / del-attr round-trip 
     (let ((v (logic-var)))
       (chk "get-attr absent = #f" #f (get-attr v 'm1))
       (put-attr v 'm1 'hello)
@@ -45,7 +45,7 @@
       (chk "after del m2 lives"   42     (get-attr v 'm2))
       (chk "del-attr absent = #f" #f     (del-attr v 'm1)))
 
-    ;; ── 3. Trail unwinds put-attr ──────────────────────────────────
+    ;;  3. Trail unwinds put-attr 
     (let* ((v (logic-var))
            (m (trail-mark)))
       (put-attr v 'pm 'before-unwind)
@@ -53,7 +53,7 @@
       (unwind-trail m)
       (chk "after unwind"   #f (get-attr v 'pm)))
 
-    ;; ── 4. Trail unwinds overwrite ────────────────────────────────
+    ;;  4. Trail unwinds overwrite 
     (let ((v (logic-var)))
       (put-attr v 'om 'first)
       (let ((m (trail-mark)))
@@ -62,7 +62,7 @@
         (unwind-trail m)
         (chk "after unwind reinstalls" 'first (get-attr v 'om))))
 
-    ;; ── 5. Trail unwinds del-attr ─────────────────────────────────
+    ;;  5. Trail unwinds del-attr 
     (let ((v (logic-var)))
       (put-attr v 'dm 123)
       (let ((m (trail-mark)))
@@ -71,7 +71,7 @@
         (unwind-trail m)
         (chk "after unwind reinstalls delete" 123 (get-attr v 'dm))))
 
-    ;; ── 6. register-attr-hook! is called on unify ─────────────────
+    ;;  6. register-attr-hook! is called on unify 
     ;;
     ;; We register a hook under 'probe that just appends the bound
     ;; value into a side list; it always succeeds.  Attaching any
@@ -89,7 +89,7 @@
       (chk "probe fired on unify"
            '((fired 99 tag-A)) probe-log))
 
-    ;; ── 7. Failing hook causes unify to fail AND unwinds binding ──
+    ;;  7. Failing hook causes unify to fail AND unwinds binding 
     (register-attr-hook! 'veto
       (lambda (var bound attr-val) #f))              ; always vetoes
 
@@ -100,7 +100,7 @@
       ;; v should still be unbound (binding wasn't committed).
       (chk "v stays unbound after veto" #t (logic-var? (deref-lvar v))))
 
-    ;; ── 8. freeze fires exactly once on binding ───────────────────
+    ;;  8. freeze fires exactly once on binding 
     (define freeze-fires 0)
     (let ((v (logic-var)))
       (freeze v (lambda ()
@@ -110,7 +110,7 @@
       (unify v 'ready)
       (chk "freeze after-bind fires=1" 1 freeze-fires))
 
-    ;; ── 9. freeze immediate when v already ground ─────────────────
+    ;;  9. freeze immediate when v already ground 
     ;; Counter lifted to module scope so the mutation is visible after
     ;; freeze returns (let-bound set! captures pattern is exercised in
     ;; test 8 already; this test just verifies the immediate path).
@@ -120,25 +120,25 @@
                 #t))
     (chk "freeze immediate on ground" 1 already-fired)
 
-    ;; ── 10. dif on two distinct ground values ─────────────────────
+    ;;  10. dif on two distinct ground values 
     (chk "dif 1 2"   #t (dif 1 2))
     (chk "dif 'a 'a" #f (dif 'a 'a))
 
-    ;; ── 11. dif on var + ground, then ground to SAME value → fails
+    ;;  11. dif on var + ground, then ground to SAME value  fails
     (let* ((v  (logic-var))
            (_  (dif v 5))
            (ok (unify v 5)))
       (chk "dif violated by unify" #f ok)
       (chk "v unbound after violated dif" #t (logic-var? (deref-lvar v))))
 
-    ;; ── 12. dif on var + ground, unified to DIFFERENT value ok ────
+    ;;  12. dif on var + ground, unified to DIFFERENT value ok 
     (let* ((v  (logic-var))
            (_  (dif v 5))
            (ok (unify v 6)))
       (chk "dif satisfied by unify" #t ok)
       (chk "v now 6" 6 (deref-lvar v)))
 
-    ;; ── Summary ──────────────────────────────────────────────────
+    ;;  Summary 
     (newline)
     (if (= fail-count 0)
         (display "attrvar smoke: ALL PASS")

@@ -1,4 +1,4 @@
-;;; examples/worker-pool.eta — Parallel task distribution via std.net worker-pool.
+;;; examples/worker-pool.eta  Parallel task distribution via std.net worker-pool.
 ;;;
 ;;; Demonstrates (worker-pool module-path tasks):
 ;;;   - Spawns one child process per task
@@ -25,12 +25,12 @@
     (define results
       (worker-pool "examples/worker-pool-worker.eta" tasks))
 
-    (print "Results: ")
+    (display "Results: ")
     (println results)
 
-    ;; Verify: each result should be 2× the input
+    ;; Verify: each result should be 2 the input
     (define expected '(2 4 6 8 10))
-    (print "Correct?: ")
+    (display "Correct?: ")
     (println (equal? results expected))
 
     (println "worker-pool demo done.")))

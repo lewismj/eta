@@ -1,4 +1,4 @@
-;;; stdlib/tests/logic.test.eta — Unit tests for std.logic
+;;; stdlib/tests/logic.test.eta  Unit tests for std.logic
 
 (module logic.tests
   (import std.test std.logic)
@@ -8,7 +8,7 @@
       (make-group "std.logic"
         (list
 
-          ;; ── Basic unification ──────────────────────────────────────
+          ;;  Basic unification 
           (make-group "unification"
             (list
               (make-test "unify two equal constants"
@@ -48,7 +48,7 @@
                     (unwind-trail m)
                     (assert-true (logic-var? x)))))))
 
-          ;; ── == combinator ─────────────────────────────────────────
+          ;;  == combinator 
           (make-group "=="
             (list
               (make-test "== succeeds on equal constants"
@@ -64,7 +64,7 @@
                       (unwind-trail m)
                       (assert-equal 5 v)))))))
 
-          ;; ── ground? ───────────────────────────────────────────────
+          ;;  ground? 
           (make-group "ground?"
             (list
               (make-test "ground? on number"
@@ -78,7 +78,7 @@
                   (let ((x (logic-var)))
                     (assert-false (ground? x)))))))
 
-          ;; ── naf / succeeds? ───────────────────────────────────────
+          ;;  naf / succeeds? 
           (make-group "naf-succeeds"
             (list
               (make-test "succeeds? on succeeding goal"
@@ -99,7 +99,7 @@
                     (succeeds? (lambda () (== x 99)))
                     (assert-true (logic-var? x)))))))
 
-          ;; ── findall ───────────────────────────────────────────────
+          ;;  findall 
           (make-group "findall"
             (list
               (make-test "findall collects all successes"
@@ -127,7 +127,7 @@
                   (assert-equal '()
                     (findall (lambda () 'x) '()))))))
 
-          ;; ── run1 ──────────────────────────────────────────────────
+          ;;  run1 
           (make-group "run1"
             (list
               (make-test "run1 returns first solution"
@@ -146,7 +146,7 @@
                         (lambda () (deref-lvar x))
                         (list (lambda () (== 1 2))))))))))
 
-          ;; ── membero ───────────────────────────────────────────────
+          ;;  membero 
           (make-group "membero"
             (list
               (make-test "membero enumerates all members"
@@ -165,7 +165,7 @@
                                (membero x '(a b c)))))
                       (assert-equal '(b) r)))))))
 
-          ;; ── named logic vars ───────────────────────────────────────
+          ;;  named logic vars 
           (make-group "named-logic-vars"
             (list
               (make-test "logic-var/named returns an unbound var"
@@ -196,7 +196,7 @@
                     (unwind-trail m)
                     (assert-equal 7 v))))))
 
-          ;; ── occurs-check toggle ────────────────────────────────────
+          ;;  occurs-check toggle 
           (make-group "occurs-check-toggle"
             (list
               (make-test "default mode is 'always"
@@ -233,7 +233,7 @@
                     (set-occurs-check! 'always)  ; restore default
                     (assert-true ok))))))
 
-          ;; ── compound terms ─────────────────────────────────────────
+          ;;  compound terms 
           (make-group "compound-terms"
             (list
               (make-test "compound? is #t for (term …)"
@@ -326,7 +326,7 @@
                     (assert-false ok))))
               (make-test "term rejects non-symbol functor"
                 (lambda ()
-                  ;; (term 42 …) should raise a type error; succeeds? treats errors as fail.
+                  ;; (term 42 ) should raise a type error; succeeds? treats errors as fail.
                   (assert-false
                     (succeeds? (lambda ()
                       (let ((t (term 42 1)))

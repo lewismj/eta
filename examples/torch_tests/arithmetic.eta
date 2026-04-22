@@ -1,4 +1,4 @@
-;;; torch_tests/arithmetic.eta — Tensor arithmetic and unary op primitives
+;;; torch_tests/arithmetic.eta  Tensor arithmetic and unary op primitives
 ;;;
 ;;; Tests: t+, t-, t*, t/, matmul, dot, neg, tabs, texp, tlog, tsqrt,
 ;;;        relu, sigmoid, ttanh, softmax
@@ -16,7 +16,7 @@
       (run (make-group "Tensor Arithmetic & Unary Ops"
         (list
 
-          ;; ── Binary arithmetic ─────────────────────────────────────
+          ;;  Binary arithmetic 
           (make-test "add"
             (lambda ()
               (let ((r (t+ (from-list '(1.0 2.0)) (from-list '(3.0 4.0)))))
@@ -40,7 +40,7 @@
               (let ((r (t/ (from-list '(6.0 9.0)) (from-list '(2.0 3.0)))))
                 (assert-equal '(3.0 3.0) (to-list r)))))
 
-          ;; ── Matrix multiplication ─────────────────────────────────
+          ;;  Matrix multiplication 
           (make-test "matmul"
             (lambda ()
               (let* ((a (ones '(2 3)))
@@ -50,7 +50,7 @@
                 ;; Each element = 3.0 (dot of 3 ones), total = 2*4*3 = 24
                 (assert-equal 24.0 (item (tsum c)) "matmul sum"))))
 
-          ;; ── Dot product ───────────────────────────────────────────
+          ;;  Dot product 
           (make-test "dot"
             (lambda ()
               (let ((r (dot (from-list '(1.0 2.0 3.0))
@@ -58,7 +58,7 @@
                 ;; 1*4 + 2*5 + 3*6 = 32
                 (assert-equal 32.0 (item r) "dot product"))))
 
-          ;; ── Unary ops ─────────────────────────────────────────────
+          ;;  Unary ops 
           (make-test "neg"
             (lambda ()
               (assert-equal '(-1.0 -2.0 -3.0)
@@ -82,7 +82,7 @@
               (assert-equal '(2.0 3.0)
                 (to-list (tsqrt (from-list '(4.0 9.0)))))))
 
-          ;; ── Activation functions ──────────────────────────────────
+          ;;  Activation functions 
           (make-test "relu"
             (lambda ()
               (assert-equal '(0.0 0.0 3.0)

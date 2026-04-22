@@ -1,4 +1,4 @@
-;;; hello.eta — Hello, Eta!
+;;; hello.eta  Hello, Eta!
 ;;;
 ;;; Run:  etai examples/hello.eta
 

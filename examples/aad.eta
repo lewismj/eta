@@ -1,21 +1,21 @@
-;;; aad.eta — Adjoint Algorithmic Differentiation (reverse-mode AD)
+;;; aad.eta  Adjoint Algorithmic Differentiation (reverse-mode AD)
 ;;;
 ;;; Tape-based reverse-mode AD using a Wengert list.  The VM records
 ;;; arithmetic operations (+, -, *, /) and transcendental functions
 ;;; (sin, cos, exp, log, sqrt) onto a flat tape when a TapeRef operand
 ;;; is detected.  The backward pass sweeps in reverse, accumulating
-;;; adjoints via the chain rule — ~32 bytes per operation, zero
+;;; adjoints via the chain rule  ~32 bytes per operation, zero
 ;;; closure allocations.
 ;;;
 ;;; Builtins used:
-;;;   tape-new        — create a fresh tape
-;;;   tape-start!     — activate a tape (enables recording)
-;;;   tape-stop!      — deactivate the tape
-;;;   tape-var        — register an independent variable on the tape
-;;;   tape-backward!  — run the reverse sweep from an output node
-;;;   tape-adjoint    — read the accumulated adjoint of a tape node
-;;;   tape-primal     — read the forward value of a tape node
-;;;   tape-ref?       — predicate: is the value a tape reference?
+;;;   tape-new         create a fresh tape
+;;;   tape-start!      activate a tape (enables recording)
+;;;   tape-stop!       deactivate the tape
+;;;   tape-var         register an independent variable on the tape
+;;;   tape-backward!   run the reverse sweep from an output node
+;;;   tape-adjoint     read the accumulated adjoint of a tape node
+;;;   tape-primal      read the forward value of a tape node
+;;;   tape-ref?        predicate: is the value a tape reference?
 ;;;
 ;;; Demonstrates: tape-based AD, higher-order functions, vectors.
 ;;;
@@ -25,11 +25,11 @@
   (import std.prelude)
   (begin
 
-    ;; ── Gradient computation ────────────────────────────────────────
+    ;;  Gradient computation 
 
     ;; Compute the gradient of f at a given point.
-    ;; f    — a function of N arguments (receives tape-ref values)
-    ;; vals — a list of N numeric input values
+    ;; f     a function of N arguments (receives tape-ref values)
+    ;; vals  a list of N numeric input values
     ;; Returns: (primal-value gradient-vector)
     (defun grad (f vals)
       (let ((tape (tape-new))
@@ -57,31 +57,31 @@
               (list (tape-primal tape output) grad-vec))))))
 
 
-    ;; ── Examples ──────────────────────────────────────────────
+    ;;  Examples 
 
-    ;; 1. f(x,y) = x·y + sin(x)  at (2, 3)
-    ;;    ∂f/∂x = y + cos(x) = 3 + cos(2) ≈ 2.5839
-    ;;    ∂f/∂y = x = 2
+    ;; 1. f(x,y) = xy + sin(x)  at (2, 3)
+    ;;    f/x = y + cos(x) = 3 + cos(2)  2.5839
+    ;;    f/y = x = 2
     (define win (eq? (platform) 'Win32))
 
     (display (if win "f(x,y) = x*y + sin(x)\n" "f(x,y) = x·y + sin(x)\n"))
     (display "  grad at (2,3): ")
     (println (grad (lambda (x y) (+ (* x y) (sin x))) '(2 3)))
 
-    ;; 2. g(x) = x² + 3x + 1  at x = 4
+    ;; 2. g(x) = x + 3x + 1  at x = 4
     ;;    dg/dx = 2x + 3 = 11
     (display (if win "g(x) = x^2 + 3x + 1\n" "g(x) = x² + 3x + 1\n"))
     (display "  grad at (4): ")
     (println (grad (lambda (x) (+ (+ (* x x) (* 3 x)) 1)) '(4)))
 
     ;; 3. h(x) = exp(2x)  at x = 1
-    ;;    dh/dx = 2·exp(2) ≈ 14.778
+    ;;    dh/dx = 2exp(2)  14.778
     (display "h(x) = exp(2x)\n")
     (display "  grad at (1): ")
     (println (grad (lambda (x) (exp (* 2 x))) '(1)))
 
-    ;; 4. Rosenbrock: f(x,y) = (1-x)² + 100·(y-x²)²
-    ;;    At (1,1) the gradient is (0, 0) — the global minimum.
+    ;; 4. Rosenbrock: f(x,y) = (1-x) + 100(y-x)
+    ;;    At (1,1) the gradient is (0, 0)  the global minimum.
     (display (if win "Rosenbrock f(x,y) = (1-x)^2 + 100(y-x^2)^2\n"
                      "Rosenbrock f(x,y) = (1-x)² + 100(y-x²)²\n"))
     (display "  grad at (1,1): ")
@@ -92,7 +92,7 @@
                    '(1 1)))
 
     ;; 5. Composition with higher-order functions: dot product
-    ;;    f(x,y,z) = x·1 + y·2 + z·3 = x + 2y + 3z
+    ;;    f(x,y,z) = x1 + y2 + z3 = x + 2y + 3z
     ;;    grad = (1, 2, 3)
     (display "dot(v, [1,2,3])\n")
     (display "  grad at (1,1,1): ")

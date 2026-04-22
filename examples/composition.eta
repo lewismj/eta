@@ -1,4 +1,4 @@
-;;; composition.eta — Currying, compose, flip & functional pipelines
+;;; composition.eta  Currying, compose, flip & functional pipelines
 ;;;
 ;;; Run:  etai examples/composition.eta
 
@@ -6,7 +6,7 @@
   (import std.prelude)
   (begin
 
-    ;; ── compose — chain two functions: (f ∘ g)(x) = f(g(x)) ────────
+    ;;  compose  chain two functions: (f  g)(x) = f(g(x)) 
     (define inc-then-double
       (compose (lambda (x) (* 2 x))
                (lambda (x) (+ x 1))))
@@ -16,16 +16,16 @@
       (compose number->string string-length))
     (println (stringify-length "hello world"))  ; => "11"
 
-    ;; ── flip — swap argument order ──────────────────────────────────
+    ;;  flip  swap argument order 
     (define rcons (flip cons))
     (println (rcons '(1 2 3) 0))     ; => (0 1 2 3)
 
-    ;; ── constantly — always returns the same value ──────────────────
+    ;;  constantly  always returns the same value 
     (define always-42 (constantly 42))
     (println (always-42))            ; => 42
     (println (always-42 'ignored))   ; => 42
 
-    ;; ── Manual currying — return a closure for partial application ──
+    ;;  Manual currying  return a closure for partial application 
     (defun add (a)
       (lambda (b) (+ a b)))
 
@@ -35,7 +35,7 @@
     (println (inc 99))               ; => 100
     (println (add10 32))             ; => 42
 
-    ;; ── Curried multiply ────────────────────────────────────────────
+    ;;  Curried multiply 
     (defun mul (a)
       (lambda (b) (* a b)))
 
@@ -45,17 +45,17 @@
     (println (map* double '(1 2 3 4 5)))   ; => (2 4 6 8 10)
     (println (map* triple '(1 2 3 4 5)))   ; => (3 6 9 12 15)
 
-    ;; ── Composing curried functions into a pipeline ─────────────────
+    ;;  Composing curried functions into a pipeline 
     (define double-then-inc (compose (add 1) (mul 2)))
     (println (map* double-then-inc '(1 2 3 4 5)))
     ;; => (3 5 7 9 11)
 
-    ;; ── negate — flip a predicate ───────────────────────────────────
+    ;;  negate  flip a predicate 
     (define not-even? (negate even?))
     (println (filter not-even? (range 1 11)))
     ;; => (1 3 5 7 9)
 
-    ;; ── Putting it all together: a data pipeline ────────────────────
+    ;;  Putting it all together: a data pipeline 
     ;; "take the first 5 odd squares from 1..20"
     (define odds    (filter odd? (range 1 21)))
     (define squares (map* square odds))

@@ -1,4 +1,4 @@
-;;; do-calculus/dag.eta — DAG representation and graph utilities.
+;;; do-calculus/dag.eta  DAG representation and graph utilities.
 ;;;
 ;;; A causal DAG is represented as a list of directed edges:
 ;;;   '((cause -> effect) ...)
@@ -13,13 +13,13 @@
   (import std.causal)
   (begin
 
-    (println "── DAG utilities demo ──────────────────────────────────")
+    (println "â”€â”€ DAG utilities demo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€")
 
-    ;; ── Weather DAG (Pearl 2009) ──────────────────────────────────────────
+    ;;  Weather DAG (Pearl 2009) 
     ;;
-    ;;   season ──→ rain ──────────────┐
-    ;;     │                           ↓
-    ;;     └──→ sprinkler ──→ wet-grass
+    ;;   season  rain 
+    ;;                                
+    ;;      sprinkler  wet-grass
     ;;
     (define weather-dag
       '((season     -> rain)
@@ -32,64 +32,64 @@
     (println weather-dag)
 
     (println "")
-    (print "Nodes:              ") (println (dag:nodes weather-dag))
+    (display "Nodes:              ") (println (dag:nodes weather-dag))
     ; => (wet-grass sprinkler rain season)
 
-    (print "Parents of wet-grass:   ")
+    (display "Parents of wet-grass:   ")
     (println (dag:parents weather-dag 'wet-grass))
     ; => (sprinkler rain)
 
-    (print "Children of season:     ")
+    (display "Children of season:     ")
     (println (dag:children weather-dag 'season))
     ; => (rain sprinkler)
 
-    (print "Ancestors of wet-grass: ")
+    (display "Ancestors of wet-grass: ")
     (println (dag:ancestors weather-dag 'wet-grass))
     ; => (sprinkler rain season)  (order may vary)
 
-    (print "Descendants of season:  ")
+    (display "Descendants of season:  ")
     (println (dag:descendants weather-dag 'season))
     ; => (rain sprinkler wet-grass)
 
-    (print "Non-descendants of sprinkler: ")
+    (display "Non-descendants of sprinkler: ")
     (println (dag:non-descendants weather-dag 'sprinkler))
-    ; => (season rain)  — wet-grass is a descendant, so excluded
+    ; => (season rain)   wet-grass is a descendant, so excluded
 
-    ;; ── Path queries ─────────────────────────────────────────────────────
+    ;;  Path queries 
 
     (println "")
     (println "Path queries:")
 
-    (print "Path season → wet-grass (unrestricted)?  ")
+    (display "Path season â†’ wet-grass (unrestricted)?  ")
     (println (dag:has-path? weather-dag 'season 'wet-grass '()))
     ; => #t
 
-    (print "Path season → wet-grass, blocking rain?  ")
+    (display "Path season â†’ wet-grass, blocking rain?  ")
     (println (dag:has-path? weather-dag 'season 'wet-grass '(rain)))
     ; => #t  (still reachable via sprinkler)
 
-    (print "Path season → wet-grass, blocking rain and sprinkler? ")
+    (display "Path season â†’ wet-grass, blocking rain and sprinkler? ")
     (println (dag:has-path? weather-dag 'season 'wet-grass '(rain sprinkler)))
     ; => #f  (both paths blocked)
 
-    ;; ── Back-door criterion ───────────────────────────────────────────────
+    ;;  Back-door criterion 
 
     (println "")
     (println "Back-door criterion for P(wet-grass | do(sprinkler)):")
 
-    (print "  Z = {} (empty)?     ")
+    (display "  Z = {} (empty)?     ")
     (println (dag:satisfies-backdoor? weather-dag 'sprinkler 'wet-grass '()))
-    ; => #t  (no back-door path from sprinkler — season is NOT a parent of sprinkler
+    ; => #t  (no back-door path from sprinkler  season is NOT a parent of sprinkler
     ;         in this formulation; sprinkler has no incoming back-door paths to wet-grass)
 
-    (print "  Z = {season}?       ")
+    (display "  Z = {season}?       ")
     (println (dag:satisfies-backdoor? weather-dag 'sprinkler 'wet-grass '(season)))
     ; => #t
 
-    ;; ── Finance DAG ───────────────────────────────────────────────────────
+    ;;  Finance DAG 
     ;;
-    ;;   sector ──→ market-beta ──→ stock-return
-    ;;     └─────────────────────→ stock-return
+    ;;   sector  market-beta  stock-return
+    ;;      stock-return
     ;;
     (define finance-dag
       '((sector      -> market-beta)
@@ -99,16 +99,16 @@
     (println "")
     (println "Finance DAG:")
     (println finance-dag)
-    (print "Parents of stock-return: ")
+    (display "Parents of stock-return: ")
     (println (dag:parents finance-dag 'stock-return))
     ; => (market-beta sector)
 
-    (print "Back-door criterion for P(stock-return | do(market-beta)):")
+    (display "Back-door criterion for P(stock-return | do(market-beta)):")
     (println "")
-    (print "  Z = {sector}?  ")
+    (display "  Z = {sector}?  ")
     (println (dag:satisfies-backdoor? finance-dag
                                       'market-beta 'stock-return '(sector)))
-    ; => #t  — sector blocks the only back-door path
+    ; => #t   sector blocks the only back-door path
 
   ))
 

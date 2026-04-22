@@ -1,9 +1,9 @@
-;;; torch_tests/nn_layers.eta — Neural network layer primitives
+;;; torch_tests/nn_layers.eta  Neural network layer primitives
 ;;;
 ;;; Tests: linear, sequential, relu-layer, sigmoid-layer, dropout,
 ;;;        forward, parameters, module?, train!, eval!
 ;;;
-;;; This is the critical test file — nn/sequential via the Eta binding path
+;;; This is the critical test file  nn/sequential via the Eta binding path
 ;;; is exactly the code path where the sequential bug was found.
 ;;;
 ;;; Run:  etai examples/torch_tests/nn_layers.eta
@@ -19,7 +19,7 @@
       (run (make-group "NN Layers"
         (list
 
-          ;; ── nn/linear ─────────────────────────────────────────────
+          ;;  nn/linear 
           (make-test "linear creation"
             (lambda ()
               (let ((l (linear 4 2)))
@@ -42,7 +42,7 @@
                      (out (forward l inp)))
                 (assert-equal '(8 5) (shape out)))))
 
-          ;; ── nn/sequential (3-layer: the causal_demo pattern) ──────
+          ;;  nn/sequential (3-layer: the causal_demo pattern) 
           (make-test "sequential 3-layer"
             (lambda ()
               (let* ((net (sequential (linear 4 8)
@@ -53,14 +53,14 @@
                 (assert-true  (module? net) "sequential is module")
                 (assert-equal '(1 2) (shape out) "sequential output shape"))))
 
-          ;; ── nn/sequential (single layer) ──────────────────────────
+          ;;  nn/sequential (single layer) 
           (make-test "sequential single layer"
             (lambda ()
               (let* ((net (sequential (linear 3 2)))
                      (out (forward net (randn '(1 3)))))
                 (assert-equal '(1 2) (shape out)))))
 
-          ;; ── nn/sequential (deep 5-layer like causal_demo) ─────────
+          ;;  nn/sequential (deep 5-layer like causal_demo) 
           (make-test "sequential deep network"
             (lambda ()
               (let* ((net (sequential (linear 2 32)
@@ -71,11 +71,11 @@
                      (inp (randn '(5 2)))
                      (out (forward net inp)))
                 (assert-equal '(5 1) (shape out) "deep net output shape")
-                ;; 3 linears × (weight + bias) = 6 parameter tensors
+                ;; 3 linears  (weight + bias) = 6 parameter tensors
                 (assert-equal 6 (length (parameters net))
                   "deep net parameter count"))))
 
-          ;; ── nn/sequential with sigmoid ────────────────────────────
+          ;;  nn/sequential with sigmoid 
           (make-test "sequential with sigmoid"
             (lambda ()
               (let* ((net (sequential (linear 4 2)
@@ -86,7 +86,7 @@
                 (assert-true (> (item (tmin out)) 0.0) "sigmoid > 0")
                 (assert-true (< (item (tmax out)) 1.0) "sigmoid < 1"))))
 
-          ;; ── nn/sequential with dropout ────────────────────────────
+          ;;  nn/sequential with dropout 
           (make-test "sequential with dropout"
             (lambda ()
               (let* ((net (sequential (linear 4 4)
@@ -98,14 +98,14 @@
                 (assert-equal 4 (length (parameters net))
                   "dropout net param count"))))
 
-          ;; ── module? predicate ─────────────────────────────────────
+          ;;  module? predicate 
           (make-test "module? predicate"
             (lambda ()
               (assert-true  (module? (linear 2 1)) "linear is module")
               (assert-false (module? 42)           "fixnum is not module")
               (assert-false (module? (ones '(2)))   "tensor is not module")))
 
-          ;; ── train! / eval! ────────────────────────────────────────
+          ;;  train! / eval! 
           (make-test "train! and eval! return module"
             (lambda ()
               (let ((l (linear 2 1)))

@@ -1,4 +1,4 @@
-;;; basics.eta — Core language fundamentals
+;;; basics.eta  Core language fundamentals
 ;;;
 ;;; Run:  etai examples/basics.eta
 
@@ -32,7 +32,7 @@
     (let ((a 10) (b 20))
       (println (+ a b)))         ; => 30
 
-    ;; let* — sequential bindings (each sees the previous)
+    ;; let*  sequential bindings (each sees the previous)
     (let* ((a 1)
            (b (+ a 1))
            (c (+ a b)))
@@ -53,7 +53,7 @@
     (println (append '(a b) '(c d)))  ; => (a b c d)
 
     (println (if win "-- Records --"                 "── Records ──"))
-    ;; define-record-type: name, constructor, predicate, (field accessor) …
+    ;; define-record-type: name, constructor, predicate, (field accessor) 
     (define-record-type <point>
       (make-point x y)
       point?

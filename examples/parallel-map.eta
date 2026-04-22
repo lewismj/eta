@@ -1,4 +1,4 @@
-;;; examples/parallel-map.eta — Parallel map using a worker pool.
+;;; examples/parallel-map.eta  Parallel map using a worker pool.
 ;;;
 ;;; Demonstrates how to parallelize a pure function across a list of inputs
 ;;; using (worker-pool module-path tasks):
@@ -24,15 +24,15 @@
     (define inputs '(1 2 3 4 5 6))
 
     (println "parallel-map: doubling inputs in parallel...")
-    (println (string-append "  inputs: " (display-to-string inputs)))
+    (println (string-append "  inputs: " (display->string inputs)))
 
     ;; worker-pool spawns one child per input and collects results
     (define results
       (worker-pool "examples/parallel-map-worker.eta" inputs))
 
-    (println (string-append "  results: " (display-to-string results)))
+    (println (string-append "  results: " (display->string results)))
 
-    ;; Display input → result pairs
+    ;; Display input  result pairs
     (for-each (lambda (pair)
                 (let ((n   (car pair))
                       (r   (cdr pair)))

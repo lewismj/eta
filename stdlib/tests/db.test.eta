@@ -24,33 +24,42 @@
 
           (make-group "assert-retract"
             (list
-              (make-test "assert + retract remove first matching row"
+              (make-test "assert-fact! + retract-fact! remove first matching row"
                 (lambda ()
-                  (assert '(edge2 a b))
-                  (assert '(edge2 a c))
-                  (retract '(edge2 a b))
+                  (assert-fact! '(edge2 a b))
+                  (assert-fact! '(edge2 a c))
+                  (retract-fact! '(edge2 a b))
                   (let ((y (logic-var)))
                     (assert-equal '(c)
                       (findall (lambda () (deref-lvar y))
                                (call-rel 'edge2 'a y))))))
               (make-test "retract-all handles ?var markers in pattern"
                 (lambda ()
-                  (assert '(edge3 a b))
-                  (assert '(edge3 a c))
-                  (assert '(edge3 d e))
+                  (assert-fact! '(edge3 a b))
+                  (assert-fact! '(edge3 a c))
+                  (assert-fact! '(edge3 d e))
                   (retract-all '(edge3 a ?x))
                   (assert-false (call-rel? 'edge3 'a 'b))
                   (assert-false (call-rel? 'edge3 'a 'c))
-                  (assert-true  (call-rel? 'edge3 'd 'e))))))
+                  (assert-true (call-rel? 'edge3 'd 'e))))))
 
           (make-group "non-ground"
             (list
-              (make-test "assert supports non-ground head markers"
+              (make-test "assert-fact! supports non-ground head markers"
                 (lambda ()
-                  (assert '(edge4 ?x z))
-                  (assert-true  (call-rel? 'edge4 'a 'z))
-                  (assert-true  (call-rel? 'edge4 'b 'z))
-                  (assert-false (call-rel? 'edge4 'a 'q))))))
+                  (assert-fact! '(edge4 ?x z))
+                  (assert-true (call-rel? 'edge4 'a 'z))
+                  (assert-true (call-rel? 'edge4 'b 'z))
+                  (assert-false (call-rel? 'edge4 'a 'q))))
+              (make-test "deprecated assert/retract aliases still resolve"
+                (lambda ()
+                  (assert '(edge4_alias a b))
+                  (assert '(edge4_alias a c))
+                  (retract '(edge4_alias a b))
+                  (let ((y (logic-var)))
+                    (assert-equal '(c)
+                      (findall (lambda () (deref-lvar y))
+                               (call-rel 'edge4_alias 'a y))))))))
 
           (make-group "rule-rows"
             (list

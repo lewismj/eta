@@ -1,10 +1,10 @@
-;;; exceptions.eta — Exception handling with (catch) and (raise)
+;;; exceptions.eta  Exception handling with (catch) and (raise)
 ;;;
 ;;; eta's exception system uses two core forms:
 ;;;
-;;;   (raise 'tag value)   — signal an exception with a tag and a payload value
-;;;   (catch 'tag body)    — evaluate body; if a matching raise escapes, return its value
-;;;   (catch body)         — catch-all: intercept any raise regardless of tag
+;;;   (raise 'tag value)    signal an exception with a tag and a payload value
+;;;   (catch 'tag body)     evaluate body; if a matching raise escapes, return its value
+;;;   (catch body)          catch-all: intercept any raise regardless of tag
 ;;;
 ;;; Run:  etai examples/exceptions.eta
 
@@ -13,21 +13,21 @@
   (import std.core)
   (begin
 
-    ;; ── 1. Basic catch / raise ───────────────────────────────────────────────
+    ;;  1. Basic catch / raise 
 
     (println "-- Basic catch / raise --")
 
-    ;; Body completes normally — catch returns the body result unchanged.
+    ;; Body completes normally  catch returns the body result unchanged.
     (println (catch 'err 42))                        ; => 42
 
-    ;; Body raises — catch intercepts it and returns the raised value.
+    ;; Body raises  catch intercepts it and returns the raised value.
     (println (catch 'err (raise 'err "oops!")))      ; => oops!
 
     ;; Raise with a numeric payload.
     (println (catch 'math-error (raise 'math-error 404)))  ; => 404
 
 
-    ;; ── 2. Catch-all (no tag) ────────────────────────────────────────────────
+    ;;  2. Catch-all (no tag) 
 
     (println "-- Catch-all --")
 
@@ -36,7 +36,7 @@
       (println result))                              ; => caught by catch-all
 
 
-    ;; ── 3. Tag specificity ───────────────────────────────────────────────────
+    ;;  3. Tag specificity 
 
     (println "-- Tag specificity --")
 
@@ -47,7 +47,7 @@
                      (raise 'inner-err 5))))))
       (println result))                              ; => 15
 
-    ;; A catch for 'other-tag does NOT intercept 'real-tag —
+    ;; A catch for 'other-tag does NOT intercept 'real-tag 
     ;; the outer catch-all picks it up instead.
     (let ((result
            (catch
@@ -56,7 +56,7 @@
       (println result))                              ; => bypassed inner
 
 
-    ;; ── 4. Exceptions propagate through function calls ───────────────────────
+    ;;  4. Exceptions propagate through function calls 
 
     (println "-- Propagation through calls --")
 
@@ -71,11 +71,11 @@
     (println (catch 'division-by-zero (safe-divide 10 0)))   ; => undefined
 
 
-    ;; ── 5. Exceptions with structured payloads ────────────────────────────────
+    ;;  5. Exceptions with structured payloads 
 
     (println "-- Structured payloads --")
 
-    ;; The raised value can be any Lisp value — here we pass a pair (code . value).
+    ;; The raised value can be any Lisp value  here we pass a pair (code . value).
     (defun validate-age (age)
       (cond
         ((< age 0)   (raise 'validation-error (cons 'negative age)))
@@ -94,7 +94,7 @@
       (println (cdr err)))                           ; => 200
 
 
-    ;; ── 6. Using exceptions for early exit from search ────────────────────────
+    ;;  6. Using exceptions for early exit from search 
 
     (println "-- Early exit pattern --")
 
@@ -113,12 +113,12 @@
     (println (first-negative '(3 1 -4 2 -1)))        ; => -4
 
 
-    ;; ── 7. Exception-based resource cleanup ──────────────────────────────────
+    ;;  7. Exception-based resource cleanup 
 
     (println "-- Cleanup on exception --")
 
     ;; dynamic-wind guarantees the 'after' thunk runs even when an exception
-    ;; escapes from the body — enabling reliable resource cleanup.
+    ;; escapes from the body  enabling reliable resource cleanup.
     (define cleanup-called #f)
 
     (catch 'resource-error
@@ -130,7 +130,7 @@
     (println cleanup-called)                           ; => #t
 
 
-    ;; ── 8. Re-raising (exception chaining) ───────────────────────────────────
+    ;;  8. Re-raising (exception chaining) 
 
     (println "-- Re-raising --")
 

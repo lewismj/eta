@@ -93,7 +93,7 @@ Low-level shape from `%clp-get-domain`:
 
 - Equality/arithmetic: `clp:=`, `clp:+`, `clp:plus-offset`, `clp:abs`, `clp:*`,
   `clp:sum`, `clp:scalar-product`, `clp:element`
-- Ordering/distinctness: `clp:<=`, `clp:>=`, `clp:<>`, `clp:!=`
+- Ordering/distinctness: `clp:<=`, `clp:>=`, `clp:<>` (deprecated alias: `clp:!=`)
 - Global: `clp:all-different`
 
 `clp:all-different` is backed by native Regin-style value-graph matching

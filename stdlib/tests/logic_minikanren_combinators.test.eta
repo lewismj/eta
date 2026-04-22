@@ -1,4 +1,4 @@
-;;; logic_phase2_smoke.eta — Smoke test for miniKanren-style
+;;; logic_phase2_smoke.eta  Smoke test for miniKanren-style
 ;;; combinators added to std.logic.
 ;;;
 ;;; Exercises (in order):
@@ -35,7 +35,7 @@
 
     (display "phase2 smoke: start") (newline)
 
-    ;; ── 1. Atomic goal constructors ──────────────────────────────────
+    ;;  1. Atomic goal constructors 
     (let* ((x  (logic-var))
            (sols (run* (lambda () (deref-lvar x))
                        (==o x 42))))
@@ -47,7 +47,7 @@
     (chk "failo     run*" '()
          (run* (lambda () #t) (failo)))
 
-    ;; ── 2. disj ──────────────────────────────────────────────────────
+    ;;  2. disj 
     (let* ((x  (logic-var))
            (sols (run* (lambda () (deref-lvar x))
                        (disj (==o x 'a) (==o x 'b) (==o x 'c)))))
@@ -57,7 +57,7 @@
       (chk "disj identity (empty) fails" '()
            (run* (lambda () (deref-lvar x)) (disj))))
 
-    ;; ── 3. conj (Cartesian product) ──────────────────────────────────
+    ;;  3. conj (Cartesian product) 
     (let* ((x  (logic-var))
            (y  (logic-var))
            (sols (run*
@@ -78,7 +78,7 @@
                        (conj (==o x 1) (==o x 2)))))
       (chk "conj contradiction fails" '() sols))
 
-    ;; ── 4. conde ─────────────────────────────────────────────────────
+    ;;  4. conde 
     (let* ((x  (logic-var))
            (y  (logic-var))
            (sols (run*
@@ -91,7 +91,7 @@
                        (if (logic-var? (cadr (car sols))) '_ (cadr (car sols))))
                  (cadr sols))))
 
-    ;; ── 5. onceo ─────────────────────────────────────────────────────
+    ;;  5. onceo 
     (let* ((x  (logic-var))
            (sols (run* (lambda () (deref-lvar x))
                        (onceo (disj (==o x 'first)
@@ -103,7 +103,7 @@
     (chk "onceo over failo" '()
          (run* (lambda () #t) (onceo (failo))))
 
-    ;; ── 6. conda / condu ─────────────────────────────────────────────
+    ;;  6. conda / condu 
     (let* ((x  (logic-var))
            (sols (run* (lambda () (deref-lvar x))
                        (conda (==o x 'ok)        ; test
@@ -125,7 +125,7 @@
                               (failo)))))
       (chk "condu commits to first test" '(1) sols))
 
-    ;; ── 7. fresh / fresh-vars ────────────────────────────────────────
+    ;;  7. fresh / fresh-vars 
     (chk "fresh-vars 3 count"   3 (length (fresh-vars 3)))
     (chk "fresh-vars 0 empty"   '() (fresh-vars 0))
 
@@ -136,7 +136,7 @@
                                    (==o b 2)))))))
       (chk "fresh 2 conj" '(#t) sols))
 
-    ;; ── 8. run-n laziness ────────────────────────────────────────────
+    ;;  8. run-n laziness 
     (let* ((x  (logic-var))
            (big (disj (==o x 1) (==o x 2) (==o x 3)
                       (==o x 4) (==o x 5) (==o x 6))))
@@ -146,7 +146,7 @@
       (chk "run-n 100 caps at all" '(1 2 3 4 5 6)
            (run-n 100 (lambda () (deref-lvar x)) big)))
 
-    ;; ── 9. logic-throw / logic-catch ─────────────────────────────────
+    ;;  9. logic-throw / logic-catch 
     (chk "logic-catch normal return" 42
          (logic-catch 'esc
            (lambda () 42)
@@ -165,7 +165,7 @@
         (lambda (v) v))
       (chk "logic-catch unwinds trail" #t (logic-var? x)))
 
-    ;; ── Summary ──────────────────────────────────────────────────────
+    ;;  Summary 
     (newline)
     (if (= fail-count 0)
         (display "phase2 smoke: ALL PASS")

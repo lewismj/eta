@@ -2,18 +2,96 @@
 
 ## Overview & Goals
 
+**Ultimate goal: a compact, idiomatic-Scheme stdlib.** Concretely:
+fewer lines, fewer files-with-divergent-style, R5RS/R7RS surface
+names as the *canonical* spelling, and deletion preferred over
+rewriting whenever a stdlib symbol or builtin already does the job.
+
 The Eta stdlib (`stdlib/prelude.eta` + `stdlib/std/*.eta`) is functionally
 solid but stylistically heterogeneous: some files use `defun`, others use
 `(define (f ...))`; `cond` fallbacks alternate between `(#t …)` and
 `(else …)`; tail loops sometimes use `letrec`+`lambda`, sometimes
 named-`let`; helpers are variously prefixed `%`, `__`, or unprefixed.
-This plan brings the surface syntax closer to idiomatic R5RS/R7RS +
-SRFI-1/13/69 conventions while preserving every public name, semantic,
-and the existing `(module … (export …) (begin …))` layout documented in
+
+### Scope policy (resolves the earlier "preserve every public name" tension)
+
+Earlier drafts of this plan said "preserve every public name and
+semantic" *and* scheduled breaking renames (`assert` → `assert-fact!`,
+`display-to-string` → `display->string`, `clp:!=` → `clp:<>`, OLS
+tuple → record, `print`/`println` kept as primary). That is a
+contradiction. The resolved policy is:
+
+1. **R7RS-style names are canonical.** Where a Scheme-standard name
+   exists for what the stdlib already does (`display`, `newline`,
+   `write`, `display->string`, `assert-fact!`), it becomes
+   the primary export. Eta-specific names that **duplicate** an
+   R7RS name (`print` ≡ `display`, `display-to-string`,
+   `assert`, `retract`, `clp:!=`) become **deprecated aliases**
+   retained for exactly one minor release, then deleted.
+   Eta-specific names that **add genuine value** over R7RS
+   (`println` = `display` + `newline`; `eprintln` = the same on
+   stderr) are **kept as documented Eta extensions** — not
+   deprecated, but flagged "non-R7RS" in the `std.io` module
+   header. The litmus test is: *does the name save callers from
+   writing the same two-form combo every time?* If yes, keep;
+   if it is just a synonym, deprecate.
+2. **Deletion beats rewriting.** Any helper that *strictly*
+   duplicates a builtin (`%clp-member?` ↔ `member`) is deleted, not
+   "modernised". This is the source of much of the verbosity
+   reduction; mechanical style cleanup (named-`let`, `else`) is
+   secondary.
+   *Counter-example for clarity:* `assoc-ref` is **not** strict
+   duplication — it composes `assoc` + `cdr` + a `#f`-safe guard,
+   saving ~3 forms per call site across ~129 sites; it is **kept
+   and promoted** (see Phase 0). The litmus test is "does deleting
+   it make call sites longer overall?" If yes, keep.
+3. **Semantic compatibility, not nominal compatibility.** Public
+   *behaviour* is preserved through the deprecation window via
+   aliases; public *spellings* are not preserved beyond it. The one
+   exception is `defrel`/`tabled` — see the macro section: the
+   runtime-procedural form is *kept* alongside any new syntactic
+   sugar, because computed-head clause definition (e.g. `(defrel
+   (cons name args) …)` or `(apply defrel computed-clause)`) is a
+   real use case in `stdlib/std/db.eta:212–229` that a macro-only
+   move would silently break.
+
+Non-goals: changing the module system; touching the
+`(module … (export …) (begin …))` layout documented in
 [`docs/modules.md`](modules.md).
 
-Non-goals: changing the module system or breaking the public API of
-`std.prelude`.
+### Verbosity And Idiom Bar
+
+This refactor is evaluated primarily by **readability and Scheme
+idiomaticity**, not by `wc -l` or fixed line-count quotas.
+
+Acceptance bar:
+
+- Repetition is collapsed: mechanical wrapper blocks are replaced with
+  aliases or macros where appropriate.
+- Canonical names are Scheme-like where possible; non-standard names are
+  either deprecated aliases (with a removal window) or explicitly
+  documented Eta extensions.
+- Call sites get simpler on average (especially in `examples/` and
+  `stdlib/tests/`), not more verbose.
+- Safety and semantics are preserved while simplifying syntax
+  (`dynamic-wind` where needed, additive macro strategy for
+  `defrel`/`tabled`, one-release alias compatibility).
+- `std.prelude` stays focused: deprecated aliases live in owning modules,
+  not in prelude's primary export surface.
+
+Tracking signals (non-gating, qualitative):
+
+- `stats.eta` / `torch.eta` alias-heavy sections read as compact alias
+  tables, not dozens of repetitive wrappers.
+- CLP poster families with repeated skeletons are factored through
+  `define-syntax` where it improves clarity.
+- Duplicate helpers (`%clp-member?`, shadowing adapters, etc.) are
+  removed or collapsed.
+- No new style divergence is introduced while refactoring existing files.
+
+The phased plan below is **re-ordered to deletion-first** (new
+Phase 0); style cleanup is Phase 1; structural rewrites Phase 2;
+macros Phase 3.
 
 > **Note on macros.** Eta supports R7RS-style hygienic macros via
 > `define-syntax` + `syntax-rules` (verified by the VM test suite and
@@ -51,9 +129,46 @@ Adopt and enforce across every file in `stdlib/std/`:
    for internal consistency, but document the deviation.
 4. **Mutators end in `!`** (`fact-table-insert!`, `register-attr-hook!`,
    `set-current-output-port!`) — already followed.
-5. **Conversions use `->`** (`vector->list`, `list->vector`,
-   `display-to-string` → rename to `display->string` for symmetry; the
-   `do:adjustment-formula->string` form is already correct).
+5. **R7RS-style names are canonical; Eta-isms are aliases or
+   explicit extensions.** Conversions use `->` (`vector->list`,
+   `list->vector`, `display->string`). The **canonical R7RS output
+   primitives** are `display`, `write`, and `newline` (confirmed in
+   `stdlib/std/io.eta:4` and `docs/runtime.md:357`). Treatment of
+   existing names:
+   - `print` is a verbatim synonym for `display` → becomes a
+     one-line deprecated alias in `std.io`, removed from
+     `std.prelude`'s primary export block.
+   - `display-to-string` → `display->string` (pure `->` rename);
+     old name kept as a one-release deprecated alias.
+   - `println` and `eprintln` are **Eta convenience extensions**
+     (`display` + `newline`, optionally to stderr). They are
+     *not* R7RS but are genuinely useful and heavily used across
+     examples. **Keep them as documented non-standard exports**
+     (not deprecated). Flag them in the `std.io` module header as
+     "Eta extensions, not R7RS" so readers know the deviation.
+   - `assert` → `assert-fact!` and `retract` → `retract-fact!`
+     (canonical — see the DB Mutation Naming box below); old
+     names kept as one-release deprecated aliases in `std.db`.
+   - `clp:!=` → `clp:<>` (Scheme tradition); alias in `std.clp`.
+
+   > **NB:** Earlier drafts listed `write-line` as an R7RS
+   > canonical output primitive. `write-line` is *not* R7RS — it's
+   > SRFI-6 / Racket. It is dropped from the canonical list. If
+   > the refactor wants a `(define (write-line s) (display s)
+   > (newline))` helper, add it as an **Eta extension** clearly
+   > marked as such, alongside `println`.
+
+   > **DB mutation naming (resolves open question 1):**
+   > **canonical names are `assert-fact!` / `retract-fact!`**.
+   > Rationale: (a) describes the operation (asserting a *fact*)
+   > rather than re-encoding the module name; (b) matches the
+   > Prolog/Datalog idiom the module implements; (c) leaves the
+   > `db-` prefix free for future higher-level helpers
+   > (`db-open`, `db-close`, `db-transaction`) that will feel
+   > awkward next to a `db-assert!` that is really about facts,
+   > not connections. The old `assert` / `retract` spellings
+   > become one-line deprecated aliases inside `std.db`, not
+   > re-exported from `std.prelude`.
 6. **Tail recursion via named-`let`.** Replace
    `(letrec ((loop (lambda (i acc) …))) (loop 0 '()))` with
    `(let loop ((i 0) (acc '())) …)`. Affects `core.eta:80–84`,
@@ -119,11 +234,11 @@ Concretely:
 
 | Site | Today | With `define-syntax` |
 |---|---|---|
-| `clpb.eta:76–114` | 5 × `defun clp:and/or/xor/imp/eq` each repeating the `(and (%prim! …) (let ((thunk …)) (attach z) (attach x) (attach y) #t))` skeleton | One `(define-syntax %clpb-binop …)` and 5 one-liner expansions; the prim symbol becomes a syntax argument. Eliminates ~30 LOC and removes the closure-allocation per call. |
+| `clpb.eta:76–114` | 5 × `defun clp:and/or/xor/imp/eq` each repeating the `(and (%prim! …) (let ((thunk …)) (attach z) (attach x) (attach y) #t))` skeleton | One `(define-syntax %clpb-binop …)` and 5 one-liner expansions; the prim symbol becomes a syntax argument. **Note:** the per-call thunk closure (`(lambda () (%clp-bool-and! z x y))`) is a *runtime* allocation that the macro does **not** remove — that's a propagator-API design issue, not a syntax one. The macro is purely a verbosity win. |
 | `clpr.eta` (mirror set) | Same 4–6× duplication for `clp:r=`/`r<=`/`r<` posters | Same macro family, ensuring visual parity between CLP(B), CLP(Z), and CLP(R). |
 | `stats.eta:44–73` | 1-line `(defun stats:foo (xs) (%stats-foo xs))` × ~15 | `(define-syntax %re-export …)` taking a list of names — or, since these are pure aliases, a `(define stats:mean %stats-mean)` block (no macro needed). Pick whichever the runtime treats as zero-cost. |
 | `torch.eta:43–60` | Same 1-line aliasing pattern | Same. |
-| `db.eta` `defrel`/`tabled` (called as `(defrel '(edge a b))`) | Procedure that `eval`s a quoted clause | True macro: `(define-syntax defrel (syntax-rules () ((_ (head args ...) body ...) …)))` — drops the quote at every call site, gives proper hygiene for fresh logic vars, and lets the LSP/highlighter see `defrel` as a binding form. **Highest-impact macro conversion in the stdlib.** |
+| `db.eta` `defrel`/`tabled` (called as `(defrel '(edge a b))`) | Procedure that dispatches on a quoted clause (`db.eta:223`) | **Add an *additive* surface macro** — e.g. `(define-syntax defrel-clause (syntax-rules () ((_ (head args ...) body ...) (defrel '(head args ...) (lambda ...) ...))))` — that expands into the existing procedure call. **Do not delete the procedural form**: computed-head definitions (`(apply defrel computed-clause)`, dynamic relation registration, REPL experimentation) all rely on it. Documented as "use the macro for static clauses, the procedure for computed ones." This is a *less* aggressive change than the previous draft suggested. |
 | Test-framework boilerplate in `std/test.eta` (lines 35–66) | Hand-written `(define-record-type)` + result constructors | Already idiomatic; do *not* macro-ify. Contrast with the `__map`/`__foldl` helpers, which are still procedural and stay so. |
 
 ### Idiom guidelines for stdlib macros
@@ -192,18 +307,18 @@ them:
 
 | File                                                   | Purpose                                     | Priority | Key idiomatic issues                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------------------------ | ------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`prelude.eta`](../stdlib/prelude.eta)                 | Re-export aggregator for the std namespace. | **L**    | Doc comment lists modules but omits `freeze`, `clpb`, `clpr`, `supervisor`, `torch`, `test`. Update list and re-export them (or document why they're excluded).                                                                                                                                                                                                                                                                                                                    |
-| [`std/core.eta`](../stdlib/std/core.eta)               | Combinators, accessors, list helpers.       | **M**    | `cond` uses `(#t …)` (lines 74, 92); `iota` uses `letrec`+`lambda` (lines 80–84) — convert to named-let; `last` lacks empty-list error; `assoc-ref` is reinventing SRFI-1 `assoc` — wrap the builtin instead.                                                                                                                                                                                                                                                                      |
+| [`prelude.eta`](../stdlib/prelude.eta)                 | Re-export aggregator for the std namespace. | **L**    | Doc comment lists modules but omits `freeze`, `clpb`, `clpr`, `supervisor`, `torch`, `test`. **Either re-export them or explicitly justify their opt-in status** in the doc-comment (consistent with the cross-cutting policy that experimental modules — `torch`, `supervisor`, `freeze` — stay opt-in). Default disposition: `clpb`/`clpr` and `test` should be re-exported (stable, widely used); `freeze`/`supervisor`/`torch` stay opt-in with a one-line justification each.                                                                                                                                                                                |
+| [`std/core.eta`](../stdlib/std/core.eta)               | Combinators, accessors, list helpers.       | **M**    | `cond` uses `(#t …)` (lines 74, 92); `iota` uses `letrec`+`lambda` (lines 80–84) — convert to named-let; `last` lacks empty-list error. **`assoc-ref` is kept and promoted** as the canonical lookup helper (Phase 0 rationale: ~129 call sites; deletion would inflate verbosity); just ensure its body is the one-line `(let ((p (assoc k a))) (and p (cdr p)))` form.                                                                                                                                                                                                                                                                                       |
 | [`std/math.eta`](../stdlib/std/math.eta)               | Constants and numerical helpers.            | **M**    | `sign` uses `(#t 0)` (line 37); `quotient` (lines 44–54) is a tortured manual truncation — replace with builtin/`floor` composition; `expt` rejects negative exponents silently; `sum`/`product` use `letrec`+`lambda` — convert to named-let or `foldl`.                                                                                                                                                                                                                          |
 | [`std/io.eta`](../stdlib/std/io.eta)                   | Print/read/redirect helpers.                | **H**    | `print`/`println` are non-Scheme names (R7RS uses `display`/`newline`); document deviation. Redirect helpers (`with-output-to-port`, etc., lines 76–97) are NOT exception-safe — wrap in `dynamic-wind`. `read-line` uses `letrec`+`lambda` — convert to named-let; `display-to-string` should arguably be named `display->string`.                                                                                                                                                |
 | [`std/collections.eta`](../stdlib/std/collections.eta) | List/vector higher-order ops.               | **M**    | `cond` `(#t …)` clauses on lines 67, 92, 99, 156; `map*` / `filter` / `zip` / `pairwise` / `take` / `range` are non-tail-recursive (will blow the stack on long lists) — rewrite with named-let + accumulator + `reverse`; `sort`'s `split` (lines 158–163) is an ad-hoc deal — replace with a clearer halve/merge; `reduce` (line 82) raises on empty — accept SRFI-1 `(reduce f ridentity xs)` signature; `flatten` (line 137) is shallow — rename to `concat` or `append*`.     |
 | [`std/logic.eta`](../stdlib/std/logic.eta)             | Prolog/miniKanren combinators.              | **L**    | Largely idiomatic. Minor: `naf`/`succeeds?`/`findall`/`run-n` already use `let*` correctly; consider `let loop` for `findall` (line 100) and `run-n` (line 297) instead of explicit recursion to make the trail-unwind contract visually obvious. `condu` (line 268) is a one-liner — fine.                                                                                                                                                                                        |
-| [`std/clp.eta`](../stdlib/std/clp.eta)                 | CLP(Z) / CLP(FD).                           | **M**    | Domain accessors (`clp:domain-lo`/`clp:domain-hi`, lines 82–99) cry out for `case` on `(car dom)`; `%clp-member?` (line 118) duplicates `member` — call the builtin; export list mixes `clp:<>` and `clp:!=` (line 59) which are duplicates — collapse and add `(rename …)` for back-compat.                                                                                                                                                                                       |
+| [`std/clp.eta`](../stdlib/std/clp.eta)                 | CLP(Z) / CLP(FD).                           | **M**    | Domain accessors (`clp:domain-lo`/`clp:domain-hi`, lines 82–99) cry out for `case` on `(car dom)`; `%clp-member?` (line 118) duplicates `member` — call the builtin; export list mixes `clp:<>` and `clp:!=` (line 59). Drop `clp:!=` from primary exports; add the deprecated alias `(define clp:!= clp:<>)` **inside `std/clp.eta`** under the `;; ── deprecated aliases ──` header (no `(rename …)` shim in `prelude.eta`).                                                                                                                                                                                       |
 | [`std/clpb.eta`](../stdlib/std/clpb.eta)               | CLP(B) Boolean propagators.                 | **L→M**  | Already the cleanest file (use as style baseline). The five `clp:and/or/xor/imp/eq` defuns (lines 76–114) are now a clear `define-syntax` site — see Macros §; promote priority because the macro is a worked example for `clp.eta` / `clpr.eta`.                                                                                                                                                                                                                       |
 | [`std/clpr.eta`](../stdlib/std/clpr.eta)               | CLP over reals.                             | **M**    | Same `case`-vs-`cond` opportunity for domain accessors; check that the `clp:r=`/`clp:r<=`/`clp:r<` family follows the same `(and (post!) (attach-thunks))` shape as `clpb.eta` for visual parity.                                                                                                                                                                                                                                                                                  |
 | [`std/causal.eta`](../stdlib/std/causal.eta)           | Causal DAGs + do-calculus.                  | **M**    | `dag:nodes` (lines 59–67) uses an `all-nodes` let-binding only to return it — drop the let; `%dag-edge-to` (line 56) — extract `(caddr edge)` once defined, or use `match`-style helpers. Many `cond` chains likely have `(#t …)` fallbacks (verify); also some predicates (`dag:has-path?`) rely on shadowing globals.                                                                                                                                                            |
 | [`std/fact_table.eta`](../stdlib/std/fact_table.eta)   | Wrappers for builtin columnar tables.       | **H**    | `(define (%ft-pred x) (fact-table? x))` then `(defun fact-table? …)` (lines 46–47) is a confusing self-shadowing — just `(define fact-table? %fact-table?)` or import-rename the builtin; `fact-table-row` (lines 88–96) hard-codes `ncols-approx 64` and silently swallows out-of-bounds errors — needs a real `%fact-table-col-count` builtin (or, pending that, a documented `fact-table-row ft row col-count` arity). Mixes `defun` and `define` — pick one.                   |
-| [`std/db.eta`](../stdlib/std/db.eta)                   | Relations on top of fact tables.            | **H**    | Exports `assert` and `retract` which collide with conventional assertion macros — rename to `db-assert!` / `db-retract!` (or `assert-fact!`); huge alist of mutable globals (`*db-registry*` etc., lines 22–32) — encapsulate; `make-col-names` (lines 107–115) uses `letrec`+`lambda` for what's an `(iota arity)` + `map` over `string->symbol`; **`defrel` and `tabled` are procedures called with quoted lists (`(defrel '(edge a b))` — see `tests/db.test.eta:15`); convert to `define-syntax` so call sites lose the quote and the LSP recognises them as binding forms.** `cond (#t …)` on lines 40, 50, 57. |
+| [`std/db.eta`](../stdlib/std/db.eta)                   | Relations on top of fact tables.            | **H**    | Exports `assert` and `retract` which collide with conventional assertion macros — rename to **`assert-fact!` / `retract-fact!`** (canonical; see Scope policy); huge alist of mutable globals (`*db-registry*` etc., lines 22–32) — encapsulate; `make-col-names` (lines 107–115) uses `letrec`+`lambda` for what's an `(iota arity)` + `map` over `string->symbol`; **`defrel` and `tabled` are procedures (`db.eta:223`) called with quoted lists (`(defrel '(edge a b))` — see `tests/db.test.eta:15`); add an *additive* `defrel-clause` / `tabled-clause` sugar macro for static call sites and KEEP the procedural form for computed-head / `apply`-style use (no migration of the quoted form is required or planned).** `cond (#t …)` on lines 40, 50, 57. |
 | [`std/freeze.eta`](../stdlib/std/freeze.eta)           | Attributed-var freeze + dif.                | **L**    | `%freeze-hook` (lines 40–49) good; `(register-attr-hook! 'freeze %freeze-hook)` runs at module body — keep but document the load-order dependency on `std.logic`.                                                                                                                                                                                                                                                                                                                  |
 | [`std/stats.eta`](../stdlib/std/stats.eta)             | Statistical primitives.                     | **M**    | Almost every export is a 1-line `(defun stats:foo (xs) (%stats-foo xs))` (lines 44–73) — collapse via `(define stats:mean %stats-mean)` to make the table-of-aliases nature obvious. Accessor stack `(car (cdr (cdr (cdr (cdr (cdr r))))))` (lines 78–80) is unreadable — use `list-ref` or `define-record-type` for OLS results.                                                                                                                                                  |
 | [`std/net.eta`](../stdlib/std/net.eta)                 | High-level NNG/actor patterns.              | **L**    | `with-socket` (line 45) — uses a `(make-vector 1 #f)` mutable box; comment is excellent. Otherwise idiomatic. Confirm `worker-pool` and `survey` use `dynamic-wind`.                                                                                                                                                                                                                                                                                                               |
@@ -214,6 +329,59 @@ them:
 ---
 
 ## Phased Refactor Plan
+
+### Phase 0 — Deletion & aliasing (highest verbosity payoff, do first)
+
+Pure simplification of duplication and naming. No structural rewriting.
+
+- [ ] **Delete `%clp-member?`** (`clp.eta:118`); call the builtin
+      `member` (or `memv` for fixnums) at the use sites.
+- [ ] **Keep `assoc-ref`.** Earlier draft proposed deletion in
+      favour of `(let ((p (assoc k a))) (and p (cdr p)))`. Code
+      audit (~129 occurrences across `stdlib/std/`, `stdlib/tests/`,
+      `examples/`, dominated by `examples/portfolio.eta`) shows
+      deletion would *increase* call-site verbosity sharply and run
+      counter to the simplification goal. Promote `assoc-ref` to the canonical
+      lookup helper and document it in the style guide; do **not**
+      reimplement it locally in callers.
+- [ ] **Collapse `stats.eta:44–73`** to a single
+      `(define-aliases (stats:mean %stats-mean) …)` block — see
+      Macros §. Same for `torch.eta:43–60`.
+- [ ] **Collapse `fact_table.eta:46–47`** self-shadowing
+      `%ft-pred`/`fact-table?` dance to `(define fact-table?
+      %fact-table?)`.
+- [ ] **Drop `clp:!=`** export entirely (it's a duplicate of
+      `clp:<>`); add a one-line deprecated alias in the same file
+      under a `;; deprecated` comment for one release.
+- [ ] **Promote canonical names; demote duplicates to aliases in
+      their owning modules** (see idiom #5 for the keep-vs-demote
+      rationale). Concretely:
+      - In `std.io`: canonical `display` / `newline` / `write` /
+        `display->string`; demote `print` and `display-to-string`
+        to one-line `(define print display)` /
+        `(define display-to-string display->string)` aliases under a
+        `;; ── deprecated aliases ──` header. **Keep** `println`
+        and `eprintln` as non-deprecated Eta extensions (they
+        bundle `display`+`newline`, which is genuine value).
+      - In `std.db`: canonical `assert-fact!` / `retract-fact!`;
+        demote `assert` / `retract` to one-line aliases under the
+        deprecated header **inside `std.db`** (not `std.io`).
+      - In `std.clp`: canonical `clp:<>`; demote `clp:!=` to a
+        one-line alias under the deprecated header **inside
+        `std.clp`**.
+      - In **none of the above** does the alias appear in
+        `std.prelude`'s primary export block. Prelude remains focused:
+        aliases belong in owning modules.
+- [ ] **Remove `__map`/`__foldl`** in `std/test.eta` if the
+      dependency cycle that motivated them no longer exists; import
+      `std.collections` instead. (If the cycle is real, just rename
+      `__` → `%` per Phase 1; document the cycle.)
+- [ ] **Audit `(import …)` lines** for unused imports and remove
+      (e.g., `causal.eta` may import `std.io` without using it).
+- [ ] **Phase-0 review gate:** duplicate helpers removed/collapsed,
+      canonical-vs-extension naming policy applied, deprecated aliases
+      localized to owning modules, and no call-site verbosity regressions
+      in touched examples/tests.
 
 ### Phase 1 — Quick Wins (mechanical, low-risk)
 
@@ -227,8 +395,11 @@ them:
       `supervisor.eta`, `clpr.eta`, `freeze.eta`.
 - [ ] Drop the redundant `clp:!=` export (keep `clp:<>` per Scheme
   
-      tradition; add `(import (rename std.clp (clp:<> clp:!=)))` shim
-      in prelude if back-compat needed).
+      tradition; if back-compat is needed, the deprecated alias
+      `(define clp:!= clp:<>)` lives **inside `std/clp.eta`** under
+      a `;; ── deprecated aliases ──` header. **Not** in
+      `prelude.eta` (per the global alias-placement policy in the
+      Scope section).
 - [ ] Update [`prelude.eta`](../stdlib/prelude.eta) header doc-comment
   
       list to include all loaded modules; decide & document whether
@@ -252,7 +423,9 @@ them:
   
       accumulator + final `reverse`: `map*`, `map2`, `filter`, `zip`,
       `pairwise`, `take`, `range`, `flatten` in `collections.eta`;
-      `last`/`assoc-ref` in `core.eta`; `fresh-vars` in `logic.eta`.
+      `last` in `core.eta`; `fresh-vars` in `logic.eta`.
+      *(`assoc-ref` is unchanged — it is already a one-line
+      `assoc`+`cdr` wrapper per Phase 0; not a tail-rec target.)*
 - [ ] Wrap `with-output-to-port` / `with-input-from-port` /
   
       `with-error-to-port` in `io.eta` with `dynamic-wind` for
@@ -289,10 +462,12 @@ them:
 - [ ] Rename `display-to-string` → `display->string`; export both for
   
       one release with a deprecation note.
-- [ ] Rename `assert` / `retract` in `db.eta` → `db-assert!` /
+- [ ] Rename `assert` / `retract` in `db.eta` → `assert-fact!` /
   
-      `db-retract!` / `db-retract-all!`; keep old names as aliases for
-      one release.
+      `retract-fact!` (canonical — see idiom #5 rationale box);
+      keep `assert` / `retract` as one-line deprecated aliases in
+      `std.db` under the `;; ── deprecated aliases ──` header for
+      one release. Not re-exported from `std.prelude`.
 - [ ] Collapse the per-primitive `defun` aliases in `stats.eta` and
   
       `torch.eta` to a single `(define stats:mean %stats-mean)` style
@@ -302,10 +477,15 @@ them:
       aliasing (not re-defun) is safe (top-level binding capture).
 - [ ] **Macro conversions** (see [Macros §](#macros-define-syntax)):
       (a) factor the 5 `clp:and/or/xor/imp/eq` defuns in `clpb.eta`
-      and the mirror set in `clpr.eta` into a `%clp-binop` macro;
-      (b) convert `defrel` / `tabled` in `db.eta` from quoted-list
-      procedures to `define-syntax` binding forms (update
-      `tests/db.test.eta` to drop the leading quote);
+      and the mirror set in `clpr.eta` into a `%clp-binop` macro
+      (verbosity win only — does *not* eliminate the per-call thunk
+      allocation, which is a separate propagator-API concern);
+      (b) **add** a `defrel-clause` / `tabled-clause` syntactic-sugar
+      macro in `db.eta` that expands into the existing procedural
+      `defrel` / `tabled`. **Keep** the procedures: `db.eta:212–229`
+      shows they are needed for computed-head and `apply`-style
+      registration. Update `tests/db.test.eta` to cover both call
+      shapes (quoted procedure call *and* sugared macro);
       (c) introduce a `with-port` macro in `std.io` that captures the
       `dynamic-wind` pattern from Phase 2 above;
       (d) promote `dotimes`, `clamp`, `dict`/`alist` from
@@ -318,7 +498,7 @@ them:
 ### Naming conventions
 
 - Predicates: `name?` (`atom?`, `even?`, `tabled-rel?`).
-- Mutators: `name!` (`fact-table-insert!`, `db-assert!`).
+- Mutators: `name!` (`fact-table-insert!`, `assert-fact!`).
 - Conversions: `from->to` (`vector->list`, `display->string`).
 - Internal helpers: `%name` (kebab-case), defined inside the same
   `(begin …)` and **not** exported.
@@ -372,9 +552,12 @@ comments inside `(begin …)` that duplicate the export-block prose.
 
 - After every renamed export, update the corresponding file in
   `stdlib/tests/*.test.eta`. Map of expected impact:
-  - `db.eta` renames + `defrel`/`tabled` macro conversion →
-    `tests/db.test.eta` (drop the leading `'` on every `defrel` /
-    `tabled` call site — see lines 15–17, 59–60, 73–74, 80–81).
+  - `db.eta` rename (`assert` → `assert-fact!`, `retract` →
+    `retract-fact!`) → `tests/db.test.eta`; the additive
+    `defrel-clause` / `tabled-clause` macros add **new** test
+    coverage but do **not** require modifying the existing
+    `(defrel '(...))` procedural call sites — those remain
+    valid and supported.
   - `flatten` → `concat` → `tests/collections.test.eta`.
   - `display-to-string` → `display->string` →
     `tests/test-framework.test.eta` if used.
@@ -396,16 +579,16 @@ comments inside `(begin …)` that duplicate the export-block prose.
 | `(#t …)` → `(else …)` in `cond` | No | `else` already supported. |
 | `letrec`+`lambda` → named-`let` | No | Pure refactor; same scoping. |
 | Tail-recursive list builders | Order-preserving (with `reverse`) | Add tests asserting output order. |
-| Drop `clp:!=` in favour of `clp:<>` | **Yes** | Keep alias via `(rename …)` for one release. |
-| Rename `assert` → `db-assert!` | **Yes** | Keep `assert` alias for one release. |
+| Drop `clp:!=` in favour of `clp:<>` | **Yes** | One-line `(define clp:!= clp:<>)` deprecated alias **inside `std/clp.eta`**; not re-exported from `std.prelude` (per the alias-placement policy). |
+| Rename `assert` → `assert-fact!` | **Yes** | Keep `assert` alias for one release inside `std.db`; not re-exported from `std.prelude`. |
 | `flatten` semantic clarification | Possibly | Keep current shallow `flatten`; add `flatten-deep`. |
 | `display-to-string` → `display->string` | **Yes** | Export both names for one release. |
 | OLS result tuple → record | **Yes** for direct `car`/`cdr` users | Existing accessors keep working. |
-| Replace `print`/`println` with R7RS `display`/`newline` | **No** (don't do it) | Keep current names; document deviation. |
-| `clpb.eta` `defun` posters → `define-syntax` macro | No (call sites unchanged) | Macro produces identical top-level bindings; verify with the existing CLP(B) test suite. |
-| `defrel` / `tabled` procedure → macro | **Yes** (call sites lose the leading `'`) | Land the macro and the `tests/db.test.eta` edit in the same commit; keep the procedural form under `%defrel-proc` for one release for any out-of-tree caller. |
+| `clpb.eta` `defun` posters → `define-syntax` macro | No (call sites unchanged) | Macro produces identical top-level bindings; verify with the existing CLP(B) test suite. The per-call thunk closure is unaffected (see Macros §). |
+| `defrel` / `tabled` *additive* macro alongside the procedure | No (procedure stays; macro is new sugar) | Document the split: macro for static clauses, procedure for computed-head / `apply`-based registration (`db.eta:212–229`). Update `tests/db.test.eta` to cover *both* call shapes. |
 | New `with-port` macro on top of `with-output-to-port` proc | No (additive) | Old procedure stays; macro expands to it. |
 | Promote `dotimes`/`clamp`/`alist` from examples into stdlib | No for the example (it stops re-defining); **Yes** if any other example shadowed the same name | Grep `examples/**/*.eta` before landing each promotion. |
+| **Promote R7RS names to canonical (`print`→`display`, `assert`→`assert-fact!`, `retract`→`retract-fact!`, `display-to-string`→`display->string`, `clp:!=`→`clp:<>`)** | **Yes** — call sites must be updated; aliases remain for one release | Update every `examples/*.eta` and `stdlib/tests/*.test.eta` in the same PR; deprecated aliases stay in their owning module (`std.io`, `std.db`, `std.clp`), **not** in `std.prelude`'s primary block, so the prelude shrinks. `println`/`eprintln` stay as Eta-extension exports (not deprecated). |
 | Adopting `define-syntax` more broadly | **Possible expander/LSP edge cases** | The VM tests cover hygienic capture (`vm_tests.cpp:1992–2090`) but the LSP may not yet treat user macros as binding forms (cf. `lsp_tests.cpp:422`); file LSP follow-ups rather than block the refactor. |
 
 Deprecation strategy: alias old → new for **one minor release**, list
@@ -416,25 +599,46 @@ in the release after.
 
 ## Success Criteria
 
-1. `stdlib/tests/*.test.eta` all pass with no test removed.
-2. Every `examples/*.eta` file still runs under `etai` unchanged
-   (after the in-example macro definitions for `dotimes` etc. are
-   replaced by `(import std.core)` / `(import std.math)`).
-3. `grep -rn '(#t ' stdlib/std/` returns zero matches.
-4. `grep -rnE 'letrec\s*\(\(\w+\s*\(lambda' stdlib/std/` returns zero
+1. Refactored modules are **materially less verbose and more idiomatically
+   Scheme-like** in review: repetitive wrapper blocks are collapsed,
+   duplicate helpers are removed or minimized, and canonical naming
+   policy is applied. This is judged by before/after code review, **not**
+   by a line-count quota.
+2. `stdlib/prelude.eta`'s primary export block does not grow;
+   deprecated aliases live in their owning module under a
+   `;; ── deprecated aliases ──` header, **not** in `prelude.eta`.
+3. `stdlib/tests/*.test.eta` all pass with no test removed.
+4. Every `examples/*.eta` file still runs under `etai` (after
+   updating call sites for the canonical names —
+   `display`/`newline`/`assert-fact!`/`retract-fact!`/`clp:<>`/
+   `display->string`). `println` and `eprintln` remain valid
+   (kept as Eta extensions).
+5. `grep -rn '(#t ' stdlib/std/` returns zero matches.
+6. `grep -rnE 'letrec\s*\(\(\w+\s*\(lambda' stdlib/std/` returns zero
    matches in files targeted by Phase 2.
-5. `grep -n '__' stdlib/std/test.eta` returns zero matches.
-6. `prelude.eta` doc-comment matches the actual `(import …)` list.
-7. `stdlib/std/clpb.eta` remains the style baseline — the new
+7. `grep -n '__' stdlib/std/test.eta` returns zero matches.
+8. `prelude.eta` doc-comment matches the actual `(import …)` list.
+9. `stdlib/std/clpb.eta` remains the style baseline — the new
    `%clp-binop` macro becomes the *new* baseline for `clp.eta` and
    `clpr.eta`.
-8. `grep -rn "(defrel '(" stdlib/ examples/` returns zero matches
-   after the `defrel` macro lands.
-9. `stdlib/tests/macros.test.eta` exists and exercises every
-   stdlib-exported `define-syntax` form.
-10. `docs/modules.md` reference table is updated for any rename, and
-    a new `docs/stdlib_style.md` (extracted from the §"Scheme Idiom
+10. **Both** `(defrel '(edge a b))` (procedure call) **and**
+    `(defrel-clause (edge a b))` (sugar macro) work and have test
+    coverage in `tests/db.test.eta` — the procedural form is *not*
+    removed.
+11. `stdlib/tests/macros.test.eta` exists and exercises every
+    stdlib-exported `define-syntax` form.
+12. `docs/modules.md` reference table is updated for any rename, and
+    a new `docs/stdlib_style.md` (extracted from §"Scheme Idiom
     Guidelines" + §"Macros" of this plan) is added so the convention
     survives future contributions.
+13. **Deprecated aliases** — `print` / `display-to-string` /
+    `assert` / `retract` / `clp:!=` are present *only* as
+    one-line `(define <old> <new>)` aliases in their owning
+    modules (`std.io`, `std.db`, `std.clp`), under a
+    `;; ── deprecated aliases ──` header with a
+    `;; deprecated — remove in vX.Y` comment. None appear in
+    `stdlib/prelude.eta`'s primary export block. `println` and
+    `eprintln` are **not** in this list — they are retained
+    Eta extensions, documented as such in the `std.io` header.
 
 

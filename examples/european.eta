@@ -1,11 +1,11 @@
-;;; european.eta — European Option Greeks with AAD
+;;; european.eta  European Option Greeks with AAD
 ;;;
-;;; Computes Black-Scholes option Greeks — both first-order and
-;;; second-order — using Eta's built-in tape-based reverse-mode AD.
+;;; Computes Black-Scholes option Greeks  both first-order and
+;;; second-order  using Eta's built-in tape-based reverse-mode AD.
 ;;;
 ;;; The VM records arithmetic (+, -, *, /, exp, log, sqrt) onto a flat
 ;;; tape when a TapeRef operand is present.  The backward pass sweeps
-;;; in reverse, accumulating adjoints via the chain rule — ~32 bytes
+;;; in reverse, accumulating adjoints via the chain rule  ~32 bytes
 ;;; per operation, zero closure allocations.
 ;;;
 ;;; First-order Greeks (Delta, Vega, Theta, Rho) are obtained in a
@@ -13,7 +13,7 @@
 ;;; are computed by nested tape differentiation (grad-on-Greek).
 ;;;
 ;;; The CDF/PDF approximations use standard arithmetic that the tape
-;;; records transparently — so AD gradients flow through the polynomial
+;;; records transparently  so AD gradients flow through the polynomial
 ;;; approximation via the chain rule.
 ;;;
 ;;; Demonstrates: tape-based AD, grad-on-Greek second-order AD,
@@ -27,15 +27,15 @@
   (import std.io)
   (begin
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §1  Tape-Based Reverse-Mode AD
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 1  Tape-Based Reverse-Mode AD
+    ;; 
     ;;
     ;; The VM transparently records operations onto a tape when any
-    ;; operand is a TapeRef.  No explicit lifted arithmetic needed —
+    ;; operand is a TapeRef.  No explicit lifted arithmetic needed 
     ;; plain +, -, *, /, exp, log, sqrt are tape-aware.
 
-    ;; ── Gradient driver ─────────────────────────────────────────────
+    ;;  Gradient driver 
 
     (defun grad (f vals)
       (let ((tape (tape-new))
@@ -59,19 +59,19 @@
                 (collect vars 0))
               (list (tape-primal tape output) grad-vec))))))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §2  Statistical Functions
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 2  Statistical Functions
+    ;; 
 
-    ;; ── Normal PDF: φ(x) = (1/√2π) · e^{-x²/2} ─────────────────
+    ;;  Normal PDF: (x) = (1/2)  e^{-x/2} 
     (define inv-sqrt-2pi 0.3989422804014327)
 
     (defun norm-pdf (x)
       (* inv-sqrt-2pi (exp (* -0.5 (* x x)))))
 
-    ;; ── Normal CDF: Abramowitz & Stegun 26.2.17 ──────────────────
-    ;; Maximum absolute error < 7.5 × 10⁻⁸
-    ;; All arithmetic is plain +, *, / — the tape records every step.
+    ;;  Normal CDF: Abramowitz & Stegun 26.2.17 
+    ;; Maximum absolute error < 7.5  10
+    ;; All arithmetic is plain +, *, /  the tape records every step.
     (defun norm-cdf (x)
       (let ((xv (if (tape-ref? x) (tape-ref-value x) x)))
         (if (< xv 0)
@@ -84,20 +84,20 @@
                                                 (* t (+ -1.821255978
                                                         (* t 1.330274429)))))))))))))))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §3  Black-Scholes Building Blocks
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 3  Black-Scholes Building Blocks
+    ;; 
     ;;
     ;; All functions use plain arithmetic.  When called inside `grad`,
     ;; operands are TapeRefs and the VM records every operation.
 
-    ;; d₁ = [ln(S/K) + (r + σ²/2)·T] / (σ·√T)
+    ;; d = [ln(S/K) + (r + /2)T] / (T)
     (defun bs-d1 (S K r sigma T)
       (/ (+ (log (/ S K))
             (* (+ r (/ (* sigma sigma) 2)) T))
          (* sigma (sqrt T))))
 
-    ;; C = S·Φ(d₁) − K·e^{-rT}·Φ(d₂)
+    ;; C = S(d)  Ke^{-rT}(d)
     (defun bs-call-price (S K r sigma T)
       (let ((d1  (bs-d1 S K r sigma T))
             (svt (* sigma (sqrt T))))
@@ -106,21 +106,21 @@
              (* (* K (exp (* -1 (* r T))))
                 (norm-cdf d2))))))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §4  Second-Order Greeks (Grad-on-Greek)
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 4  Second-Order Greeks (Grad-on-Greek)
+    ;; 
 
-    ;; Delta = Φ(d₁) — differentiable for Gamma, Vanna
+    ;; Delta = (d)  differentiable for Gamma, Vanna
     (defun bs-delta-fn (S K r sigma T)
       (norm-cdf (bs-d1 S K r sigma T)))
 
-    ;; Vega = S · φ(d₁) · √T — differentiable for Vanna, Volga
+    ;; Vega = S  (d)  T  differentiable for Vanna, Volga
     (defun bs-vega-fn (S K r sigma T)
       (* S (* (norm-pdf (bs-d1 S K r sigma T)) (sqrt T))))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §5  Run the Computation
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 5  Run the Computation
+    ;; 
 
     ;; Market parameters:
     ;;   S     = 100.0   Spot price
@@ -148,7 +148,7 @@
                      "  σ     =  30%   (volatility)\n"))
     (display "  T     =  0.5   (maturity, years)\n\n")
 
-    ;; ── 1. First-Order Greeks ─────────────────────────────────────
+    ;;  1. First-Order Greeks 
 
     (display (if win "\n-- First-Order Greeks (single backward pass) --\n\n"
                      "\n── First-Order Greeks (single backward pass) ──────\n\n"))
@@ -177,12 +177,12 @@
         (display "    Theta (per day)     = ")
         (println (* -1 (/ (vector-ref g 4) 365.25)))))
 
-    ;; ── 2. Second-Order Greeks via grad-on-Greek ──────────────────
+    ;;  2. Second-Order Greeks via grad-on-Greek 
 
     (display (if win "\n\n-- Second-Order Greeks (grad-on-Greek) --\n\n"
                      "\n\n── Second-Order Greeks (grad-on-Greek) ─────────────\n\n"))
 
-    ;; grad(Delta) → Gamma (∂Δ/∂S), Vanna via ∂Δ/∂σ
+    ;; grad(Delta)  Gamma (/S), Vanna via /
     (let ((delta-result (grad (lambda (S K r sigma T)
                                 (bs-delta-fn S K r sigma T))
                               params)))
@@ -199,7 +199,7 @@
         ;; Save Vanna from Delta side for Schwarz check
         (let ((vanna-from-delta (vector-ref dg 3)))
 
-          ;; grad(Vega) → Vanna via ∂V/∂S, Volga (∂V/∂σ)
+          ;; grad(Vega)  Vanna via V/S, Volga (V/)
           (let ((vega-result (grad (lambda (S K r sigma T)
                                      (bs-vega-fn S K r sigma T))
                                    params)))
@@ -213,7 +213,7 @@
               (display (if win "    Volga (dV/dsigma) = " "    Volga (∂V/∂σ) = "))
               (println (vector-ref vg 3))
 
-              ;; ── 3. Schwarz's Theorem Check ──────────────────────
+              ;;  3. Schwarz's Theorem Check 
               (display (if win "\n\n-- Schwarz's Theorem Check --\n\n"
                                "\n\n── Schwarz's Theorem Check ─────────────────────────\n\n"))
               (display (if win "  Vanna (dDelta/dsigma) = "
@@ -227,7 +227,7 @@
               (println (- vanna-from-delta (vector-ref vg 0)))
               (display "  (Should be ~0 by Schwarz's theorem)\n"))))))
 
-    ;; ── 4. Summary Table ──────────────────────────────────────────
+    ;;  4. Summary Table 
 
     (display (if win "\n-- Summary --\n\n"
                      "\n── Summary ─────────────────────────────────────────\n\n"))
@@ -252,22 +252,22 @@
         (display "  Volga      | ") (println (vector-ref g3 3))))
 
     
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §6  How Tape-Based AD Works
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 6  How Tape-Based AD Works
+    ;; 
     ;;
     ;; The `grad` function:
     ;;   1. Creates a fresh tape (Wengert list)
     ;;   2. Registers each input as an independent variable (TapeRef)
-    ;;   3. Activates the tape — the VM's +, -, *, /, exp, log, sqrt
+    ;;   3. Activates the tape  the VM's +, -, *, /, exp, log, sqrt
     ;;      now transparently record every operation involving a TapeRef
-    ;;   4. Evaluates the function — a computation graph is built
-    ;;   5. Runs the backward pass — sweeps the tape in reverse,
+    ;;   4. Evaluates the function  a computation graph is built
+    ;;   5. Runs the backward pass  sweeps the tape in reverse,
     ;;      accumulating adjoints via the chain rule
     ;;   6. Extracts adjoints for each input variable
     ;;
     ;; Memory: ~32 bytes per tape entry (op, primal, args, adjoint)
-    ;; Speed:  zero closure allocations — all recording is in C++
+    ;; Speed:  zero closure allocations  all recording is in C++
     ;; Accuracy: chain rule through polynomial CDF approximation
 
 

@@ -1,4 +1,4 @@
-;;; torch_tests/optimizers.eta — Optimizer primitives
+;;; torch_tests/optimizers.eta  Optimizer primitives
 ;;;
 ;;; Tests: sgd, adam, step!, optim-zero-grad!, optimizer?
 ;;;
@@ -15,7 +15,7 @@
       (run (make-group "Optimizers"
         (list
 
-          ;; ── SGD creation ──────────────────────────────────────────
+          ;;  SGD creation 
           (make-test "sgd creation"
             (lambda ()
               (let* ((m (linear 2 1))
@@ -24,14 +24,14 @@
                 (assert-false (optimizer? m) "module is not optimizer")
                 (assert-false (optimizer? 42) "fixnum is not optimizer"))))
 
-          ;; ── Adam creation ─────────────────────────────────────────
+          ;;  Adam creation 
           (make-test "adam creation"
             (lambda ()
               (let* ((m (linear 3 1))
                      (o (adam m 0.001)))
                 (assert-true (optimizer? o) "adam is optimizer"))))
 
-          ;; ── SGD step changes weights ──────────────────────────────
+          ;;  SGD step changes weights 
           (make-test "sgd step changes weights"
             (lambda ()
               (let* ((m   (linear 2 1))
@@ -55,7 +55,7 @@
                         (not (= (item pred0) (item pred1)))
                         "weights should change after SGD step")))))))
 
-          ;; ── Adam step changes weights ─────────────────────────────
+          ;;  Adam step changes weights 
           (make-test "adam step changes weights"
             (lambda ()
               (let* ((m   (linear 2 1))

@@ -1,22 +1,22 @@
-;;; clp_prop_queue_smoke.eta — Dedicated smoke tests for the
+;;; clp_prop_queue_smoke.eta  Dedicated smoke tests for the
 ;;; VM-level PropagationQueue and the unified `TrailEntry::Kind::Domain`
 ;;; trail entry that landed alongside it.
 ;;;
-;;; Observable behaviours covered (every assertion checks visible state —
-;;; domain values, queue size, var-bound? — never internal counters):
+;;; Observable behaviours covered (every assertion checks visible state 
+;;; domain values, queue size, var-bound?  never internal counters):
 ;;;
-;;;   1. Queue quiescence at user boundary — `(%clp-prop-queue-size)` is
+;;;   1. Queue quiescence at user boundary  `(%clp-prop-queue-size)` is
 ;;;      0 before, between, and after every top-level `unify`.
-;;;   2. Re-firing on bind — `(unify x v)` for an `x` participating in
+;;;   2. Re-firing on bind  `(unify x v)` for an `x` participating in
 ;;;      `clp:+` cascades to narrow the sibling vars' domains in one
-;;;      user-visible step (domain values, not bindings — bounds-
+;;;      user-visible step (domain values, not bindings  bounds-
 ;;;      consistency propagators do not auto-bind singletons).
-;;;   3. Idempotent FIFO under all-different broadcast — binding one
+;;;   3. Idempotent FIFO under all-different broadcast  binding one
 ;;;      `clp:all-different` var prunes the bound value from every
 ;;;      sibling's FD domain via the queue, with no duplicate work.
-;;;   4. Var–var domain intersection on unbound unify — surviving var
+;;;   4. Varvar domain intersection on unbound unify  surviving var
 ;;;      receives the intersection.
-;;;   5. Unified-trail Domain unwind — `trail-mark` / write-domain /
+;;;   5. Unified-trail Domain unwind  `trail-mark` / write-domain /
 ;;;      `unwind-trail` restores both the binding AND the domain state
 ;;;      that existed at mark time (i.e. post-time narrowings BEFORE the
 ;;;      mark survive; bind-driven narrowings AFTER the mark are undone).
@@ -38,18 +38,18 @@
 
     (display "clp prop-queue smoke: start") (newline)
 
-    ;; ── (1) Queue is empty at the user boundary ─────────────────────────
+    ;;  (1) Queue is empty at the user boundary 
     (chk "queue size at start" 0 (%clp-prop-queue-size))
 
-    ;; ── (2) Re-firing on bind narrows sibling domains ───────────────────
+    ;;  (2) Re-firing on bind narrows sibling domains 
     ;;
-    ;;   x ∈ [1..3], y ∈ [1..3], z ∈ [4..6], post  z = x + y.
-    ;;   Posting alone narrows nothing (every (x, y) ∈ [1,3]² gives sum
-    ;;   ∈ [2,6] ⊃ [4,6], no exclusion).
+    ;;   x  [1..3], y  [1..3], z  [4..6], post  z = x + y.
+    ;;   Posting alone narrows nothing (every (x, y)  [1,3] gives sum
+    ;;    [2,6]  [4,6], no exclusion).
     ;;   Binding x = 1 must re-fire the propagator via the queue and
     ;;   narrow:
-    ;;     z.hi <= 1 + y.hi = 4   → z narrows to {4}
-    ;;     y.lo >= z.lo − 1 = 3, y.hi <= z.hi − 1 = 3   → y narrows to {3}
+    ;;     z.hi <= 1 + y.hi = 4    z narrows to {4}
+    ;;     y.lo >= z.lo  1 = 3, y.hi <= z.hi  1 = 3    y narrows to {3}
     ;;   y stays *unbound* (singletons are not auto-unified by bounds
     ;;   propagators) but its domain is narrowed.
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
@@ -64,12 +64,12 @@
       (chk "y narrowed to {3}"     '(3) (clp:domain-values (%clp-get-domain y)))
       (chk "z narrowed to {4}"     '(4) (clp:domain-values (%clp-get-domain z))))
 
-    ;; ── (3) Idempotent FIFO under all-different broadcast ───────────────
+    ;;  (3) Idempotent FIFO under all-different broadcast 
     ;;
     ;;   clp:all-different attaches the SAME `'clp.prop` thunk to every
     ;;   var.  Binding one var enqueues the thunk via every sibling that
     ;;   shares it, but the dedup set guarantees a single drain
-    ;;   invocation — observable end-state: 1 is removed from each
+    ;;   invocation  observable end-state: 1 is removed from each
     ;;   sibling's FD domain exactly once, and the queue is empty.
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:in-fd x 1 2 3) (clp:in-fd y 1 2 3) (clp:in-fd z 1 2 3)
@@ -79,9 +79,9 @@
       (chk "z's domain is {2,3}"   '(2 3) (clp:domain-values (%clp-get-domain z)))
       (chk "queue empty post-pass" 0     (%clp-prop-queue-size)))
 
-    ;; ── (4) Var–var unify intersects FD domains ─────────────────────────
+    ;;  (4) Varvar unify intersects FD domains 
     ;;
-    ;;   x ∈ {1,2,3,4}, y ∈ {2,3}.  Unify x with y; the surviving var
+    ;;   x  {1,2,3,4}, y  {2,3}.  Unify x with y; the surviving var
     ;;   (y) receives the intersection {2,3}; (deref x) follows the
     ;;   binding to y so %clp-get-domain returns y's domain.
     (let ((x (logic-var)) (y (logic-var)))
@@ -91,15 +91,15 @@
            (clp:domain-values (%clp-get-domain x)))
       (chk "queue empty post-unify"  0 (%clp-prop-queue-size)))
 
-    ;; ── (5) Unified-trail Domain unwind ─────────────────────────────────
+    ;;  (5) Unified-trail Domain unwind 
     ;;
-    ;;   Post (x + y = z) with x,y ∈ [1..5], z ∈ [0..20]; the post
+    ;;   Post (x + y = z) with x,y  [1..5], z  [0..20]; the post
     ;;   itself narrows z to [2..10] (sum bounds).  Then trail-mark,
     ;;   bind x = 5, observe z further narrowed to [6..10], then
     ;;   unwind-trail.  Post-condition:
     ;;     - x is unbound again
     ;;     - z's domain is restored to *the snapshot at mark time*,
-    ;;       i.e. [2..10] — NOT [0..20], because the post-time narrowing
+    ;;       i.e. [2..10]  NOT [0..20], because the post-time narrowing
     ;;       happened BEFORE the trail-mark and is therefore preserved.
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:domain x 1 5) (clp:domain y 1 5) (clp:domain z 0 20)

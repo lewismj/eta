@@ -9,13 +9,18 @@
   (import std.collections std.fact_table std.logic)
   (export
     defrel
-    assert
-    retract
+    defrel-clause
+    assert-fact!
+    retract-fact!
     retract-all
     call-rel
     call-rel?
     index-rel!
-    tabled)
+    tabled
+    tabled-clause
+    ;; Deprecated aliases (remove after one minor release)
+    assert
+    retract)
   (begin
 
     ;; Relation registry: (((name . arity) . fact-table) ...)
@@ -37,7 +42,7 @@
       (cond
         ((null? entries) #f)
         ((equal? key (car (car entries))) (cdr (car entries)))
-        (#t (registry-lookup key (cdr entries)))))
+        (else (registry-lookup key (cdr entries)))))
 
     (define (registry-put! key ft)
       (set! *db-registry* (cons (cons key ft) *db-registry*))
@@ -47,14 +52,14 @@
       (cond
         ((null? entries) default)
         ((equal? key (car (car entries))) (cdr (car entries)))
-        (#t (alist-get (cdr entries) key default))))
+        (else (alist-get (cdr entries) key default))))
 
     (define (alist-set entries key value)
       (cond
         ((null? entries) (list (cons key value)))
         ((equal? key (car (car entries)))
          (cons (cons key value) (cdr entries)))
-        (#t
+        (else
          (cons (car entries)
                (alist-set (cdr entries) key value)))))
 
@@ -76,7 +81,7 @@
       (cond
         ((null? answers) #f)
         ((equal? answer (car answers)) #t)
-        (#t (table-answer-member? answer (cdr answers)))))
+        (else (table-answer-member? answer (cdr answers)))))
 
     (define (table-add-answer! key answer)
       (let ((answers (table-answers key)))
@@ -98,21 +103,20 @@
           (cond
             ((null? entries) #f)
             ((equal? k (car entries)) #t)
-            (#t (loop (cdr entries)))))))
+            (else (loop (cdr entries)))))))
 
     (define (table-key name args)
       ;; Variant key: stable under alpha-renaming of logic vars.
       (term-variant-hash (cons name args) 16))
 
     (define (make-col-names arity)
-      (letrec ((loop (lambda (i acc)
-                       (if (= i arity)
-                           (reverse acc)
-                           (loop (+ i 1)
-                                 (cons (string->symbol
-                                         (string-append "c" (number->string i)))
-                                       acc))))))
-        (loop 0 '())))
+      (let loop ((i 0) (acc '()))
+        (if (= i arity)
+            (reverse acc)
+            (loop (+ i 1)
+                  (cons (string->symbol
+                          (string-append "c" (number->string i)))
+                        acc)))))
 
     (define (ensure-rel-table name arity)
       (let* ((key   (rel-key name arity))
@@ -149,35 +153,33 @@
       (cond
         ((null? xs) #f)
         ((var-marker? (car xs)) #t)
-        (#t (contains-var-marker? (cdr xs)))))
+        (else (contains-var-marker? (cdr xs)))))
 
     (define (head-match? template-args actual-args)
       ;; Unifies template with actual args. Repeated ?vars must unify.
-      (letrec ((loop (lambda (ts as env)
-                       (cond
-                         ((and (null? ts) (null? as)) #t)
-                         ((or  (null? ts) (null? as)) #f)
-                         (else
-                           (let ((t (car ts))
-                                 (a (car as)))
-                             (if (var-marker? t)
-                                 (let ((bound (assoc t env)))
-                                   (if bound
-                                       (and (unify (cdr bound) a)
-                                            (loop (cdr ts) (cdr as) env))
-                                       (loop (cdr ts) (cdr as)
-                                             (cons (cons t a) env))))
-                                 (and (unify t a)
-                                      (loop (cdr ts) (cdr as) env)))))))))
-        (loop template-args actual-args '())))
+      (let loop ((ts template-args) (as actual-args) (env '()))
+        (cond
+          ((and (null? ts) (null? as)) #t)
+          ((or  (null? ts) (null? as)) #f)
+          (else
+            (let ((t (car ts))
+                  (a (car as)))
+              (if (var-marker? t)
+                  (let ((bound (assoc t env)))
+                    (if bound
+                        (and (unify (cdr bound) a)
+                             (loop (cdr ts) (cdr as) env))
+                        (loop (cdr ts) (cdr as)
+                              (cons (cons t a) env))))
+                  (and (unify t a)
+                       (loop (cdr ts) (cdr as) env))))))))
 
     (define (row-args ft row-id arity)
-      (letrec ((loop (lambda (i acc)
-                       (if (= i arity)
-                           (reverse acc)
-                           (loop (+ i 1)
-                                 (cons (%fact-table-ref ft row-id i) acc))))))
-        (loop 0 '())))
+      (let loop ((i 0) (acc '()))
+        (if (= i arity)
+            (reverse acc)
+            (loop (+ i 1)
+                  (cons (%fact-table-ref ft row-id i) acc)))))
 
     (define (goalset-like? v)
       (and (pair? v) (procedure? (car v))))
@@ -228,8 +230,14 @@
             (let ((rule-proc (car rest)))
               (%defrel-rule! name args rule-proc)))))
 
-    (define (assert clause)
-      ;; (assert '(name a1 ... aN))
+    ;; Convenience wrapper for static relation declarations.
+    (define (defrel-clause head . rest)
+      (if (null? rest)
+          (defrel head)
+          (defrel head (car rest))))
+
+    (define (assert-fact! clause)
+      ;; (assert-fact! '(name a1 ... aN))
       (let* ((name (car clause))
              (args (normalize-head-args (cdr clause)))
              (arity (length args))
@@ -273,7 +281,7 @@
                             ((eq? result #f) #f)
                             ((null? result) #f)
                             ((goalset-like? result) (run-goalset-first! result))
-                            (#t #t)))
+                            (else #t)))
                         #t)))
               #f))))
 
@@ -319,7 +327,7 @@
           ((eq? status 'working)
            ;; Recursive consumer: read answers accumulated so far.
            (table-goalset key args))
-          (#t
+          (else
            (set-table-status! key 'working)
            (set-table-answers! key '())
            (populate-table! args arity ft key)
@@ -344,7 +352,7 @@
       (let ((goalset (apply call-rel (cons name args))))
         (if (run1 (lambda () #t) goalset) #t #f)))
 
-    (define (retract clause)
+    (define (retract-fact! clause)
       ;; Removes the first row matching `(name pattern...)`.
       (let* ((name (car clause))
              (args (normalize-head-args (cdr clause)))
@@ -392,18 +400,17 @@
 
     (define (index-rel! name col-spec)
       ;; Rebuild index `col-spec` for every arity currently registered for name.
-      (letrec ((loop (lambda (entries changed)
-                       (if (null? entries)
-                           changed
-                           (let* ((entry (car entries))
-                                  (key   (car entry))
-                                  (ft    (cdr entry)))
-                             (if (eq? (car key) name)
-                                 (begin
-                                   (%fact-table-build-index! ft col-spec)
-                                   (loop (cdr entries) #t))
-                                 (loop (cdr entries) changed)))))))
-        (loop *db-registry* #f)))
+      (let loop ((entries *db-registry*) (changed #f))
+        (if (null? entries)
+            changed
+            (let* ((entry (car entries))
+                   (key   (car entry))
+                   (ft    (cdr entry)))
+              (if (eq? (car key) name)
+                  (begin
+                    (%fact-table-build-index! ft col-spec)
+                    (loop (cdr entries) #t))
+                  (loop (cdr entries) changed))))))
 
     (define (tabled name arity)
       (let ((k (rel-key name arity)))
@@ -413,5 +420,16 @@
               (set! *db-tabled* (cons k *db-tabled*))
               (invalidate-table-cache!)
               #t))))
+
+    ;; Convenience wrapper that infers arity from a clause head list.
+    (define (tabled-clause head)
+      (tabled (car head) (length (cdr head))))
+
+    ;;  Deprecated aliases 
+
+    ;; deprecated - remove after one minor release
+    (define assert assert-fact!)
+    ;; deprecated - remove after one minor release
+    (define retract retract-fact!)
 
   ))

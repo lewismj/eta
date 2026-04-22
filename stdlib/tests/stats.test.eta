@@ -1,4 +1,4 @@
-;;; stdlib/tests/stats.test.eta — Unit tests for std.stats
+;;; stdlib/tests/stats.test.eta  Unit tests for std.stats
 
 (module stats.tests
   (import std.test std.stats std.core)
@@ -10,7 +10,7 @@
       (make-group "std.stats"
         (list
 
-          ;; ── Descriptive statistics ────────────────────────────────
+          ;;  Descriptive statistics 
           (make-group "descriptive"
             (list
               (make-test "mean"
@@ -24,7 +24,7 @@
                   (assert-approx-equal 2.0 (stats:stddev xs) 1e-9)))
               (make-test "sem"
                 (lambda ()
-                  ;; sem = stddev / sqrt(n) = 2 / sqrt(8) ≈ 0.7071
+                  ;; sem = stddev / sqrt(n) = 2 / sqrt(8)  0.7071
                   (assert-approx-equal 0.7071 (stats:sem xs) 0.001)))
               (make-test "median"
                 (lambda ()
@@ -36,7 +36,7 @@
                 (lambda ()
                   (assert-approx-equal 9.0 (stats:percentile xs 1.0) 1e-9)))))
 
-          ;; ── Covariance / Correlation ──────────────────────────────
+          ;;  Covariance / Correlation 
           (make-group "covariance-correlation"
             (list
               (make-test "covariance of list with itself equals variance"
@@ -54,7 +54,7 @@
                     (assert-approx-equal -1.0
                       (stats:correlation xs neg) 1e-9))))))
 
-          ;; ── Confidence interval ───────────────────────────────────
+          ;;  Confidence interval 
           (make-group "confidence-interval"
             (list
               (make-test "ci-lower < mean < ci-upper"
@@ -71,7 +71,7 @@
                     (assert-true (number? (stats:ci-lower ci)))
                     (assert-true (number? (stats:ci-upper ci))))))))
 
-          ;; ── OLS simple regression ─────────────────────────────────
+          ;;  OLS simple regression 
           (make-group "ols"
             (list
               (make-test "slope of y=2x is 2"
@@ -93,7 +93,7 @@
                          (r (stats:ols x y)))
                     (assert-approx-equal 1.0 (stats:ols-r2 r) 1e-6))))))
 
-          ;; ── stats:summary ─────────────────────────────────────────
+          ;;  stats:summary 
           (make-group "summary"
             (list
               (make-test "summary has n entry"

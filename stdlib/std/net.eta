@@ -1,4 +1,4 @@
-;;; std/net.eta — Networking and message-passing module.
+;;; std/net.eta  Networking and message-passing module.
 ;;;
 ;;; Requires the interpreter to be built with -DETA_BUILD_NNG=ON.
 ;;; When built without nng support the nng-socket, send!, recv!, spawn, etc.
@@ -24,8 +24,8 @@
     survey)            ; scatter-gather query via SURVEYOR/RESPONDENT
   (begin
 
-    ;; ── with-socket ───────────────────────────────────────────────────────
-    ;; (with-socket type thunk) → result of thunk
+    ;;  with-socket 
+    ;; (with-socket type thunk)  result of thunk
     ;;
     ;; Creates a socket of the given type (a symbol: 'pair, 'req, 'rep,
     ;; 'pub, 'sub, 'push, 'pull, 'surveyor, 'respondent, 'bus), runs thunk
@@ -51,8 +51,8 @@
             (let ((s (vector-ref box 0)))
               (when s (nng-close s)))))))
 
-    ;; ── request-reply ─────────────────────────────────────────────────────
-    ;; (request-reply endpoint message) → reply value
+    ;;  request-reply 
+    ;; (request-reply endpoint message)  reply value
     ;;
     ;; Opens a fresh REQ socket, dials endpoint, sends message, waits for
     ;; exactly one reply, then closes the socket.  Blocks until the reply
@@ -67,8 +67,8 @@
           (send! sock message)
           (recv! sock 'wait))))
 
-    ;; ── worker-pool ───────────────────────────────────────────────────────
-    ;; (worker-pool module-path tasks) → list of results
+    ;;  worker-pool 
+    ;; (worker-pool module-path tasks)  list of results
     ;;
     ;; Spawns one child Eta process per task, sends each worker its task,
     ;; collects one reply from each worker in order, cleans up all sockets,
@@ -80,7 +80,7 @@
     ;;
     ;; Example:
     ;;   (worker-pool "examples/worker.eta" '(1 2 3 4))
-    ;;   → list of four replies, one from each worker
+    ;;    list of four replies, one from each worker
     (defun worker-pool (module-path tasks)
       ;; Spawn one worker per task
       (let ((workers (map (lambda (dummy) (spawn module-path)) tasks)))
@@ -96,8 +96,8 @@
           (for-each nng-close workers)
           results)))
 
-    ;; ── pub-sub ───────────────────────────────────────────────────────────
-    ;; (pub-sub listen-endpoint topics handler) → does not return normally
+    ;;  pub-sub 
+    ;; (pub-sub listen-endpoint topics handler)  does not return normally
     ;;
     ;; Connects a SUB socket to listen-endpoint, subscribes to each topic
     ;; string in topics, and calls handler on each received message in an
@@ -123,20 +123,20 @@
                            (loop))))
             (loop)))))
 
-    ;; ── survey ────────────────────────────────────────────────────────────
-    ;; (survey endpoint question timeout-ms) → list of responses
+    ;;  survey 
+    ;; (survey endpoint question timeout-ms)  list of responses
     ;;
     ;; Opens a SURVEYOR socket, listens on endpoint, sets the survey deadline
     ;; to timeout-ms milliseconds, sends question, then collects all responses
     ;; that arrive before the deadline.  Returns the responses in arrival
-    ;; order (earliest last — use reverse if order matters).
+    ;; order (earliest last  use reverse if order matters).
     ;;
     ;; Note: recv! returns #f when the survey deadline has passed, which
     ;; terminates the collection loop.
     ;;
     ;; Example:
     ;;   (survey "tcp://*:5557" '(status?) 1000)
-    ;;   → '((ok worker-2) (ok worker-1))   ; order may vary
+    ;;    '((ok worker-2) (ok worker-1))   ; order may vary
     (defun survey (endpoint question timeout-ms)
       (with-socket 'surveyor
         (lambda (sock)

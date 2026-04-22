@@ -1,10 +1,10 @@
-;;; examples/message-passing.eta — Erlang-style parent/child messaging.
+;;; examples/message-passing.eta  Erlang-style parent/child messaging.
 ;;;
 ;;; Demonstrates the std.net module:
-;;;   - (spawn module-path)        → parent-side socket
-;;;   - (send! sock value)         → send a serialised value
-;;;   - (recv! sock 'wait)         → blocking receive
-;;;   - (current-mailbox)          → child side: socket to parent
+;;;   - (spawn module-path)         parent-side socket
+;;;   - (send! sock value)          send a serialised value
+;;;   - (recv! sock 'wait)          blocking receive
+;;;   - (current-mailbox)           child side: socket to parent
 ;;;
 ;;; Run (two separate terminals or as background):
 ;;;   terminal 1 (child is launched automatically by spawn):
@@ -26,13 +26,13 @@
 
     ;; Receive the reply
     (define reply (recv! worker 'wait))
-    (print "parent: received: ")
+    (display "parent: received: ")
     (println reply)
 
     ;; Send a compute request
     (send! worker '(compute 21) 'wait)
     (define result (recv! worker 'wait))
-    (print "parent: compute result: ")
+    (display "parent: compute result: ")
     (println result)
 
     ;; Tell child to exit

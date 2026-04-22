@@ -1,8 +1,8 @@
-;;; causal-factor/analysis.eta — End-to-end causal factor analysis.
+;;; causal-factor/analysis.eta  End-to-end causal factor analysis.
 ;;;
 ;;; Demonstrates the full pipeline for a finance use case:
 ;;;
-;;;   1. Define a causal DAG (sector confounds market-beta → stock returns)
+;;;   1. Define a causal DAG (sector confounds market-beta  stock returns)
 ;;;   2. Identify P(return | do(beta)) symbolically via do-calculus
 ;;;   3. Load observational data (embedded sample or CSV)
 ;;;   4. Estimate the causal effect numerically via back-door adjustment
@@ -15,7 +15,7 @@
 ;;;   Naively regressing stock-return on market-beta conflates the causal
 ;;;   effect of systematic risk (beta) with sector-level confounding.  By
 ;;;   adjusting for sector using the back-door formula, we isolate the
-;;;   pure marginal contribution of beta to expected returns — the CAPM
+;;;   pure marginal contribution of beta to expected returns  the CAPM
 ;;;   Security Market Line slope, estimated from observational data alone.
 ;;;
 ;;; Run:  etai examples/causal-factor/analysis.eta
@@ -23,7 +23,7 @@
 ;;; NOTE: Numerical results are based on a toy sample (n=30).
 ;;; The estimator uses plug-in means with no confidence intervals.
 ;;; Production inference (bootstrap, doubly-robust) requires the
-;;; planned FFI to a numerical library — see docs/next-steps.md §2.
+;;; planned FFI to a numerical library  see docs/next-steps.md 2.
 
 (module analysis
   (import std.io)
@@ -35,23 +35,23 @@
 
     (define win (eq? (platform) 'Win32))
 
-    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+    (println (if win "==========================================================" "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"))
     (println (if win "  Causal Factor Analysis -- Finance Example"
-                     "  Causal Factor Analysis — Finance Example"))
-    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+                     "  Causal Factor Analysis â€” Finance Example"))
+    (println (if win "==========================================================" "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"))
 
-    ;; ── Step 1: Define the causal DAG ─────────────────────────────────────
+    ;;  Step 1: Define the causal DAG 
     ;;
-    ;;   sector ──→ market-beta ──→ stock-return
-    ;;     └─────────────────────→ stock-return
+    ;;   sector  market-beta  stock-return
+    ;;      stock-return
     ;;
     ;; Interpretation:
-    ;;   • `sector` (e.g. Technology vs. Energy) determines both the
+    ;;    `sector` (e.g. Technology vs. Energy) determines both the
     ;;     typical beta of stocks in that sector AND their base return.
-    ;;   • `market-beta` measures a stock's systematic risk sensitivity.
-    ;;   • `stock-return` is the monthly excess return over the risk-free rate.
+    ;;    `market-beta` measures a stock's systematic risk sensitivity.
+    ;;    `stock-return` is the monthly excess return over the risk-free rate.
     ;;
-    ;; Confounding: sector → market-beta and sector → stock-return.
+    ;; Confounding: sector  market-beta and sector  stock-return.
     ;; A naive OLS regression of return on beta will absorb the sector effect.
 
     (define causal-dag
@@ -63,7 +63,7 @@
     (println "Step 1: Causal DAG")
     (println causal-dag)
 
-    ;; ── Step 2: Symbolic identification ──────────────────────────────────
+    ;;  Step 2: Symbolic identification 
 
     (println "")
     (println "Step 2: Identify P(stock-return | do(market-beta))")
@@ -72,7 +72,7 @@
            (formula-str (do:adjustment-formula->string formula
                                                         'stock-return 'market-beta)))
       (println formula-str)
-      ;; => Σ_{sector} P(stock-return | market-beta, sector) · P(sector)
+      ;; => _{sector} P(stock-return | market-beta, sector)  P(sector)
 
       ;; Confirm the adjustment set satisfies the back-door criterion
       (let* ((z-set (if (and (pair? formula)
@@ -83,11 +83,11 @@
                               (dag:satisfies-backdoor?
                                 causal-dag 'market-beta 'stock-return z-set))))
         (println "")
-        (print "Back-door criterion satisfied? ")
+        (display "Back-door criterion satisfied? ")
         (println backdoor-ok)))
     ;; => #t
 
-    ;; ── Step 3: Observational data ────────────────────────────────────────
+    ;;  Step 3: Observational data 
     ;;
     ;; Columns: sector  market-beta  stock-return (monthly excess %)
     ;;
@@ -95,7 +95,7 @@
     ;; In production, replace with:
     ;;   (csv:load-file "observations.csv" '(sector market-beta stock-return))
     ;;
-    ;; NOTE: Numerical estimation limitation — see module header.
+    ;; NOTE: Numerical estimation limitation  see module header.
 
     (println "")
     (println "Step 3: Load observational data (embedded sample, n=30)")
@@ -105,7 +105,7 @@
       ;; Tech stocks tend to have high beta and high return
       ;; Energy stocks tend to have moderate beta and moderate return
       (list
-        ;; Technology sector (beta ≈ 1.2–1.5)
+        ;; Technology sector (beta  1.21.5)
         (list (cons 'sector 'tech) (cons 'market-beta 1.2) (cons 'stock-return 2.1))
         (list (cons 'sector 'tech) (cons 'market-beta 1.3) (cons 'stock-return 2.4))
         (list (cons 'sector 'tech) (cons 'market-beta 1.4) (cons 'stock-return 2.8))
@@ -116,7 +116,7 @@
         (list (cons 'sector 'tech) (cons 'market-beta 1.5) (cons 'stock-return 2.9))
         (list (cons 'sector 'tech) (cons 'market-beta 1.2) (cons 'stock-return 2.0))
         (list (cons 'sector 'tech) (cons 'market-beta 1.3) (cons 'stock-return 2.3))
-        ;; Energy sector (beta ≈ 0.8–1.1)
+        ;; Energy sector (beta  0.81.1)
         (list (cons 'sector 'energy) (cons 'market-beta 0.8) (cons 'stock-return 1.0))
         (list (cons 'sector 'energy) (cons 'market-beta 0.9) (cons 'stock-return 1.2))
         (list (cons 'sector 'energy) (cons 'market-beta 1.0) (cons 'stock-return 1.4))
@@ -127,7 +127,7 @@
         (list (cons 'sector 'energy) (cons 'market-beta 1.1) (cons 'stock-return 1.6))
         (list (cons 'sector 'energy) (cons 'market-beta 0.8) (cons 'stock-return 1.0))
         (list (cons 'sector 'energy) (cons 'market-beta 0.9) (cons 'stock-return 1.2))
-        ;; Finance sector (beta ≈ 1.0–1.2)
+        ;; Finance sector (beta  1.01.2)
         (list (cons 'sector 'finance) (cons 'market-beta 1.0) (cons 'stock-return 1.5))
         (list (cons 'sector 'finance) (cons 'market-beta 1.1) (cons 'stock-return 1.7))
         (list (cons 'sector 'finance) (cons 'market-beta 1.2) (cons 'stock-return 1.9))
@@ -139,10 +139,10 @@
         (list (cons 'sector 'finance) (cons 'market-beta 1.2) (cons 'stock-return 2.1))
         (list (cons 'sector 'finance) (cons 'market-beta 1.0) (cons 'stock-return 1.6))))
 
-    (print "  Observations loaded: ")
+    (display "  Observations loaded: ")
     (println (length data))
 
-    ;; ── Step 4: Numeric estimation via back-door adjustment ───────────────
+    ;;  Step 4: Numeric estimation via back-door adjustment 
 
     (println "")
     (println "Step 4: Estimate causal effect via back-door adjustment")
@@ -186,17 +186,17 @@
            (e-low  (%adjusted-effect 0.9 data))   ; beta=0.9 (energy exposure)
            (cate   (- e-high e-low)))
 
-      (print "  E[return | do(beta=1.4)] = ")
+      (display "  E[return | do(beta=1.4)] = ")
       (println e-high)
-      (print "  E[return | do(beta=0.9)] = ")
+      (display "  E[return | do(beta=0.9)] = ")
       (println e-low)
       (println "")
-      (print "  Adjusted CATE = ")
+      (display "  Adjusted CATE = ")
       (println cate))
     ;; Interpretation: after adjusting for sector, the causal increment in
     ;; monthly return for a 0.5-unit increase in market beta.
 
-    ;; ── Step 5: CLP sanity checks ─────────────────────────────────────────
+    ;;  Step 5: CLP sanity checks 
     ;;
     ;; Use CLP to assert structural properties of the causal structure:
     ;; the back-door adjustment formula sums probabilities, so the
@@ -234,19 +234,19 @@
                (unify we pct-energy)
                (unify wf pct-finance))
           (begin
-            (print "  P(tech)    = ") (print pct-tech)    (println "%")
-            (print "  P(energy)  = ") (print pct-energy)  (println "%")
-            (print "  P(finance) = ") (print pct-finance) (println "%")
+            (display "  P(tech)    = ") (display pct-tech)    (println "%")
+            (display "  P(energy)  = ") (display pct-energy)  (println "%")
+            (display "  P(finance) = ") (display pct-finance) (println "%")
             (println (if win "  OK All sector weights are valid probabilities in (0,1)"
-                           "  ✓ All sector weights are valid probabilities in (0,1)")))
+                           "  âœ“ All sector weights are valid probabilities in (0,1)")))
           (println (if win "  FAIL Domain violation detected in sector weights"
-                           "  ✗ Domain violation detected in sector weights"))))
+                           "  âœ— Domain violation detected in sector weights"))))
 
     (println "")
-    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+    (println (if win "==========================================================" "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"))
     (println "  Analysis complete.")
     (println "  See docs/causal.md for interpretation and limitations.")
-    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+    (println (if win "==========================================================" "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"))
 
   ))
 

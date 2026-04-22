@@ -1,11 +1,11 @@
-;;; examples/nqueens.eta — The classic N-queens constraint problem.
+;;; examples/nqueens.eta  The classic N-queens constraint problem.
 ;;;
-;;; Each queen Qi (1 ≤ i ≤ N) occupies row i of an N×N board; the
-;;; variable Qi names its column ∈ [1..N].  Constraints:
+;;; Each queen Qi (1  i  N) occupies row i of an NN board; the
+;;; variable Qi names its column  [1..N].  Constraints:
 ;;;
-;;;   - all-different(Q1..QN)                   — no two queens share a column
-;;;   - all-different(Qi + i : i ∈ 1..N)        — no two on a ↘ diagonal
-;;;   - all-different(Qi − i : i ∈ 1..N)        — no two on a ↗ diagonal
+;;;   - all-different(Q1..QN)                    no two queens share a column
+;;;   - all-different(Qi + i : i  1..N)         no two on a  diagonal
+;;;   - all-different(Qi  i : i  1..N)         no two on a  diagonal
 ;;;
 ;;; We post the diagonal constraints via `clp:plus-offset` (native
 ;;; bounds-consistency propagator) to build the auxiliary sums/differences.

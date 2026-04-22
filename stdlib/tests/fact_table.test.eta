@@ -1,4 +1,4 @@
-;;; stdlib/tests/fact_table.test.eta — Unit tests for std.fact_table
+;;; stdlib/tests/fact_table.test.eta  Unit tests for std.fact_table
 
 (module fact-table.tests
   (import std.test std.fact_table)
@@ -8,7 +8,7 @@
       (make-group "std.fact_table"
         (list
 
-          ;; ── Construction ──────────────────────────────────────────
+          ;;  Construction 
           (make-group "construction"
             (list
               (make-test "make-fact-table returns a fact-table"
@@ -23,7 +23,7 @@
                   (let ((ft (make-fact-table 'x)))
                     (assert-equal 0 (fact-table-row-count ft)))))))
 
-          ;; ── Insert / row-count ────────────────────────────────────
+          ;;  Insert / row-count 
           (make-group "insert"
             (list
               (make-test "insert increases row count"
@@ -45,7 +45,7 @@
                     (assert-equal 10 (fact-table-ref ft 0 0))
                     (assert-equal 20 (fact-table-ref ft 0 1)))))))
 
-          ;; ── Index and query ───────────────────────────────────────
+          ;;  Index and query 
           (make-group "query"
             (list
               (make-test "query without index returns matching rows"
@@ -64,7 +64,7 @@
                     (fact-table-build-index! ft 0)
                     (assert-equal '() (fact-table-query ft 0 99)))))))
 
-          ;; ── Iteration ─────────────────────────────────────────────
+          ;;  Iteration 
           (make-group "iteration"
             (list
               (make-test "fact-table-fold accumulates correctly"

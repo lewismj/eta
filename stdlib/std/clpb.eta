@@ -1,4 +1,4 @@
-;;; std/clpb.eta — CLP(B) Boolean constraint solver.
+;;; std/clpb.eta  CLP(B) Boolean constraint solver.
 ;;;
 ;;; CLP(B) propagation-only backend.
 ;;; Sits on the same attributed-variable / propagation-queue substrate
@@ -7,20 +7,20 @@
 ;;; attaches a re-firing thunk to every participating var under the
 ;;; shared `'clp.prop` attribute.  The VM-level FIFO propagation queue
 ;;; (registered once by `std.clp`) drains the thunks at the outer-unify
-;;; boundary — Boolean propagation is a peer of FD propagation, not a
+;;; boundary  Boolean propagation is a peer of FD propagation, not a
 ;;; parallel stack.
 ;;;
 ;;; Exports:
 ;;;
 ;;;   Domain & constraints
-;;;     (clp:boolean v)           ; declare v ∈ {0, 1}
-;;;     (clp:and z x y)           ; z ≡ x ∧ y
-;;;     (clp:or  z x y)           ; z ≡ x ∨ y
-;;;     (clp:xor z x y)           ; z ≡ x ⊕ y
-;;;     (clp:imp z x y)           ; z ≡ (x → y)
-;;;     (clp:eq  z x y)           ; z ≡ (x ⇔ y)
-;;;     (clp:not z x)             ; z ≡ ¬x
-;;;     (clp:card xs k-lo k-hi)   ; k-lo ≤ Σ xs ≤ k-hi
+;;;     (clp:boolean v)           ; declare v  {0, 1}
+;;;     (clp:and z x y)           ; z  x  y
+;;;     (clp:or  z x y)           ; z  x  y
+;;;     (clp:xor z x y)           ; z  x  y
+;;;     (clp:imp z x y)           ; z  (x  y)
+;;;     (clp:eq  z x y)           ; z  (x  y)
+;;;     (clp:not z x)             ; z  x
+;;;     (clp:card xs k-lo k-hi)   ; k-lo   xs  k-hi
 ;;;
 ;;;   Solver / query
 ;;;     (clp:labeling-b vars)     ; DFS-label vars to a solution (leaves
@@ -40,7 +40,7 @@
   (import std.logic)
   (import std.clp)
   ;; Note: `put-attr`, `get-attr`, `register-prop-attr!` are core VM
-  ;; built-ins registered globally — the `'clp.prop` attribute is
+  ;; built-ins registered globally  the `'clp.prop` attribute is
   ;; registered once by `std.clp` at module load, shared here.
   (export
     clp:boolean
@@ -50,7 +50,7 @@
     clp:sat? clp:taut?)
   (begin
 
-    ;; ── Internal: same semantics as std.clp's %clp-prop-attach! ──────────
+    ;;  Internal: same semantics as std.clp's %clp-prop-attach! 
     ;; Duplicated (rather than exported from std.clp) to keep the phase
     ;; boundary clean: CLP(B) is a self-contained module that only needs
     ;; std.clp for its domain accessors, not its internals.
@@ -62,58 +62,34 @@
             (put-attr v 'clp.prop (cons thunk (if existing existing '())))
             #t))))
 
-    ;; ── Domain ──────────────────────────────────────────────────────────
+    ;;  Domain 
 
     (defun clp:boolean (v) (%clp-domain-z! v 0 1))
 
-    ;; ── Ternary constraints ─────────────────────────────────────────────
+    ;;  Ternary constraints 
     ;;
-    ;; Each posting helper is expanded inline (rather than factored through
-    ;; a higher-order trampoline) because Eta builtins are not guaranteed
-    ;; to be first-class values across module boundaries — closing over a
-    ;; direct call site is both simpler and guaranteed to resolve.
+    ;; The binary posters share one template; syntax-rules keeps generated
+    ;; call sites direct and avoids value-level dispatch.
 
-    (defun clp:and (z x y)
-      (and (%clp-bool-and! z x y)
-           (let ((thunk (lambda () (%clp-bool-and! z x y))))
-             (%clpb-prop-attach! z thunk)
-             (%clpb-prop-attach! x thunk)
-             (%clpb-prop-attach! y thunk)
-             #t)))
+    ;; Generate repeated poster wrappers while keeping direct prim call sites.
+    (define-syntax %clpb-define-binop
+      (syntax-rules ()
+        ((_ name prim)
+         (defun name (z x y)
+           (and (prim z x y)
+                (let ((thunk (lambda () (prim z x y))))
+                  (%clpb-prop-attach! z thunk)
+                  (%clpb-prop-attach! x thunk)
+                  (%clpb-prop-attach! y thunk)
+                  #t))))))
 
-    (defun clp:or (z x y)
-      (and (%clp-bool-or! z x y)
-           (let ((thunk (lambda () (%clp-bool-or! z x y))))
-             (%clpb-prop-attach! z thunk)
-             (%clpb-prop-attach! x thunk)
-             (%clpb-prop-attach! y thunk)
-             #t)))
+    (%clpb-define-binop clp:and %clp-bool-and!)
+    (%clpb-define-binop clp:or  %clp-bool-or!)
+    (%clpb-define-binop clp:xor %clp-bool-xor!)
+    (%clpb-define-binop clp:imp %clp-bool-imp!)
+    (%clpb-define-binop clp:eq  %clp-bool-eq!)
 
-    (defun clp:xor (z x y)
-      (and (%clp-bool-xor! z x y)
-           (let ((thunk (lambda () (%clp-bool-xor! z x y))))
-             (%clpb-prop-attach! z thunk)
-             (%clpb-prop-attach! x thunk)
-             (%clpb-prop-attach! y thunk)
-             #t)))
-
-    (defun clp:imp (z x y)
-      (and (%clp-bool-imp! z x y)
-           (let ((thunk (lambda () (%clp-bool-imp! z x y))))
-             (%clpb-prop-attach! z thunk)
-             (%clpb-prop-attach! x thunk)
-             (%clpb-prop-attach! y thunk)
-             #t)))
-
-    (defun clp:eq (z x y)
-      (and (%clp-bool-eq! z x y)
-           (let ((thunk (lambda () (%clp-bool-eq! z x y))))
-             (%clpb-prop-attach! z thunk)
-             (%clpb-prop-attach! x thunk)
-             (%clpb-prop-attach! y thunk)
-             #t)))
-
-    ;; ── Unary (well, binary: z = ¬x) ────────────────────────────────────
+    ;;  Unary (well, binary: z = x) 
 
     (defun clp:not (z x)
       (and (%clp-bool-not! z x)
@@ -122,7 +98,7 @@
              (%clpb-prop-attach! x thunk)
              #t)))
 
-    ;; ── Cardinality: k-lo ≤ Σ xs ≤ k-hi ─────────────────────────────────
+    ;;  Cardinality: k-lo   xs  k-hi 
 
     (defun clp:card (xs k-lo k-hi)
       (and (%clp-bool-card! xs k-lo k-hi)
@@ -134,16 +110,16 @@
                    (%clpb-prop-attach! (car ys) thunk)
                    (loop (cdr ys))))))))
 
-    ;; ── Labelling / query ───────────────────────────────────────────────
+    ;;  Labelling / query 
     ;;
     ;; Boolean vars carry a Z-domain {0,1}; std.clp's `clp:labeling` with
     ;; the default leftmost strategy already does the right thing
-    ;; (`clp:domain-values` on Z → (0 1)).  `clp:labeling-b` is a thin
+    ;; (`clp:domain-values` on Z  (0 1)).  `clp:labeling-b` is a thin
     ;; specialisation that makes the intent explicit.
 
     (defun clp:labeling-b (vars) (clp:labeling vars))
 
-    ;; `clp:sat?` — is there any satisfying assignment?  Does NOT leave
+    ;; `clp:sat?`  is there any satisfying assignment?  Does NOT leave
     ;; the vars bound: if a solution is found, the trail is unwound so
     ;; the user can continue posting constraints / asking further
     ;; questions without having to undo bindings manually.
@@ -153,10 +129,10 @@
           (unwind-trail m)
           (if r #t #f))))
 
-    ;; `clp:taut?` — true iff NO assignment satisfies the posted
+    ;; `clp:taut?`  true iff NO assignment satisfies the posted
     ;; constraints (over `vars`).  Think of it as "is the current
     ;; constraint set a contradiction on `vars`?".  For tautology
-    ;; testing of a formula F, the canonical pattern is to post `¬F`
+    ;; testing of a formula F, the canonical pattern is to post `F`
     ;; and call `clp:taut?`.
     (defun clp:taut? (vars) (not (clp:sat? vars)))
 

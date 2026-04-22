@@ -1,4 +1,4 @@
-;;; examples/pub-sub-publisher.eta — Publisher child for pub-sub.eta
+;;; examples/pub-sub-publisher.eta  Publisher child for pub-sub.eta
 ;;;
 ;;; Launched by pub-sub.eta via (spawn ...).
 ;;; Waits for a 'ready signal, publishes messages, then exits on 'stop.

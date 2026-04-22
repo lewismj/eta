@@ -1,4 +1,4 @@
-;;; causal-factor/csv-loader.eta — Port-based CSV ingestion.
+;;; causal-factor/csv-loader.eta  Port-based CSV ingestion.
 ;;;
 ;;; Reads a CSV file from a port and returns a list of observation records.
 ;;; Each record is an alist ((column-symbol . value) ...) where values are

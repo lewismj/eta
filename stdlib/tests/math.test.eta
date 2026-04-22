@@ -1,4 +1,4 @@
-;;; stdlib/tests/math.test.eta — Unit tests for std.math
+;;; stdlib/tests/math.test.eta  Unit tests for std.math
 
 (module math.tests
   (import std.test std.math)
@@ -8,7 +8,7 @@
       (make-group "std.math"
         (list
 
-          ;; ── Constants ────────────────────────────────────────────
+          ;;  Constants 
           (make-group "constants"
             (list
               (make-test "pi is approximately 3.14159"
@@ -16,7 +16,7 @@
               (make-test "e is approximately 2.71828"
                 (lambda () (assert-approx-equal 2.71828 e 0.001)))))
 
-          ;; ── Basic helpers ─────────────────────────────────────────
+          ;;  Basic helpers 
           (make-group "helpers"
             (list
               (make-test "square"
@@ -44,7 +44,7 @@
               (make-test "clamp within"
                 (lambda () (assert-equal 5 (clamp 5 0 10))))))
 
-          ;; ── Integer functions ─────────────────────────────────────
+          ;;  Integer functions 
           (make-group "integer"
             (list
               (make-test "quotient"
@@ -54,7 +54,7 @@
               (make-test "lcm"
                 (lambda () (assert-equal 36 (lcm 12 18))))))
 
-          ;; ── Rounding ─────────────────────────────────────────────
+          ;;  Rounding 
           (make-group "rounding"
             (list
               (make-test "floor"
@@ -66,7 +66,7 @@
               (make-test "truncate"
                 (lambda () (assert-equal 3 (truncate 3.9))))))
 
-          ;; ── Exponentiation ───────────────────────────────────────
+          ;;  Exponentiation 
           (make-group "expt"
             (list
               (make-test "expt 2^3"
@@ -76,7 +76,7 @@
               (make-test "expt 5^2"
                 (lambda () (assert-equal 25 (expt 5 2))))))
 
-          ;; ── sum / product ─────────────────────────────────────────
+          ;;  sum / product 
           (make-group "sum-product"
             (list
               (make-test "sum"

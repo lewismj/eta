@@ -204,7 +204,7 @@
              (cons 'chosen-z #f)
              (cons 'all-z-sets '())
              (cons 'assumptions (%identify-assumptions))))
-          (#t
+          (else
            (let ((z (car z-sets)))
              (if (null? z)
                  (list
@@ -247,7 +247,7 @@
              (cons 'chosen-z #f)
              (cons 'all-z-sets '())
              (cons 'assumptions (%identify-assumptions-observed))))
-          (#t
+          (else
            (let ((z (car z-sets)))
              (if (null? z)
                  (list
@@ -312,7 +312,7 @@
              "P(" (symbol->string y) " | do(" (symbol->string x) ")) = "
              sigma "_{" z-str "} P(" (symbol->string y)
              " | " (symbol->string x) ", " z-str ")" dot "P(" z-str ")")))
-        (#t "Unknown formula")))
+        (else "Unknown formula")))
 
     ;; -- Numeric estimation (pure Eta, no FFI) ---------------------------
 
@@ -372,11 +372,11 @@
         ((eq? from to) #t)
         ((%member? from forbidden) #f)
         ((%member? from visited) #f)
-        (#t
+        (else
          (let ((new-visited (%adjoin from visited)))
            (any? (lambda (child)
                    (%dag-reachable? dag child to forbidden new-visited))
-                 (dag:children dag from))))))
+                  (dag:children dag from))))))
 
     ;; True iff there is a directed edge from -> to.
     (defun %dag-has-edge? (dag from to)
@@ -462,7 +462,7 @@
         ((= k 0) (list '()))
         ((null? xs) '())
         ((< k 0) '())
-        (#t
+        (else
          (append
            (map* (lambda (s) (cons (car xs) s))
                  (%choose-k (cdr xs) (- k 1)))
@@ -482,7 +482,7 @@
         ((not (number? n)) max-k)
         ((< n 0) 0)
         ((> n max-k) max-k)
-        (#t n)))
+        (else n)))
 
     (defun %identify-assumptions ()
       '(dag-correctness
@@ -502,7 +502,7 @@
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
-        (#t (%member? x (cdr xs)))))
+        (else (%member? x (cdr xs)))))
 
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))

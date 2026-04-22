@@ -1,27 +1,27 @@
-;;; std/supervisor.eta — Erlang-inspired supervision trees for Eta actors.
+;;; std/supervisor.eta  Erlang-inspired supervision trees for Eta actors.
 ;;;
 ;;; Built on top of spawn, monitor, recv!, and send! (all available when
 ;;; the interpreter is built with -DETA_BUILD_NNG=ON).
 ;;;
 ;;; This module provides two supervision strategies:
 ;;;
-;;;   one-for-one — only the crashed child is restarted.
-;;;   one-for-all — all children are restarted when any one crashes.
+;;;   one-for-one  only the crashed child is restarted.
+;;;   one-for-all  all children are restarted when any one crashes.
 ;;;
 ;;; Both functions run an event loop and do not return normally.
 ;;;
 ;;; IMPORTANT: The supervisor process itself must be a spawned child that
-;;; has a (current-mailbox) — otherwise recv! 'wait will block the VM.
+;;; has a (current-mailbox)  otherwise recv! 'wait will block the VM.
 ;;; Alternatively, use a short timeout and poll periodically.
 
 (module std.supervisor
   (export one-for-one one-for-all)
   (begin
 
-    ;; ── Internal helpers ─────────────────────────────────────────────────
+    ;;  Internal helpers 
 
     ;; (supervisor-poll sockets timeout-ms)
-    ;; → (socket . msg) for the first socket that delivers a message, or #f
+    ;;  (socket . msg) for the first socket that delivers a message, or #f
     ;;
     ;; Polls all sockets using nng-poll, then calls recv! on the first ready one.
     (defun supervisor-poll (sockets timeout-ms)
@@ -35,11 +35,11 @@
                     (cons sock msg)
                     #f))))))
 
-    ;; (down-message? msg) → #t if msg is a (down ...) notification
+    ;; (down-message? msg)  #t if msg is a (down ...) notification
     (defun down-message? (msg)
       (and (pair? msg) (equal? (car msg) 'down)))
 
-    ;; ── one-for-one ──────────────────────────────────────────────────────
+    ;;  one-for-one 
     ;; (one-for-one children-specs)
     ;;
     ;; Spawns one child per module path in children-specs and monitors each.
@@ -87,7 +87,7 @@
               (let* ((socks (socks->list children))
                      (result (supervisor-poll socks 500)))
                 (when (and result (down-message? (cdr result)))
-                  ;; One child died — find and restart it
+                  ;; One child died  find and restart it
                   (let* ((dead-sock (car result))
                          (idx (find-index children dead-sock)))
                     (when idx
@@ -98,7 +98,7 @@
 
           (supervise (start-all)))))
 
-    ;; ── one-for-all ──────────────────────────────────────────────────────
+    ;;  one-for-all 
     ;; (one-for-all children-specs)
     ;;
     ;; Spawns one child per module path and monitors each.
@@ -142,7 +142,7 @@
               (let* ((socks (socks->list children))
                      (result (supervisor-poll socks 500)))
                 (when (and result (down-message? (cdr result)))
-                  ;; Any child died — kill all, restart all
+                  ;; Any child died  kill all, restart all
                   (kill-all children)
                   (supervise (start-all)))
                 (supervise children)))))

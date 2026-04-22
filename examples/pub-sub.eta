@@ -1,10 +1,10 @@
-;;; examples/pub-sub.eta — PUB/SUB publish-subscribe demo.
+;;; examples/pub-sub.eta  PUB/SUB publish-subscribe demo.
 ;;;
 ;;; Demonstrates the PUB/SUB pattern:
-;;;   - (nng-socket 'pub)   → publisher socket
-;;;   - (nng-socket 'sub)   → subscriber socket
-;;;   - (nng-subscribe sub topic) → filter messages by prefix
-;;;   - (pub-sub endpoint topics handler) → event loop helper
+;;;   - (nng-socket 'pub)    publisher socket
+;;;   - (nng-socket 'sub)    subscriber socket
+;;;   - (nng-subscribe sub topic)  filter messages by prefix
+;;;   - (pub-sub endpoint topics handler)  event loop helper
 ;;;
 ;;; This example spawns a publisher worker child process, then subscribes
 ;;; to two topic streams from the parent.
@@ -47,7 +47,7 @@
                        (when (< count 6)
                          (let ((msg (recv! sub 'wait)))
                            (when msg
-                             (print "sub received: ")
+                             (display "sub received: ")
                              (println msg)
                              (set! count (+ count 1))))
                          (loop)))))

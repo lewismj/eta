@@ -1,4 +1,4 @@
-;;; clp_labeling_options.eta — Smoke test for the clp:labeling
+;;; clp_labeling_options.eta  Smoke test for the clp:labeling
 ;;; option-list API: positional back-compat, plist parsing, value-ordering,
 ;;; solution enumeration ('first / 'all / N), and on-solution callback.
 
@@ -19,7 +19,7 @@
 
     (display "clp labeling options: start") (newline)
 
-    ;; ── 1. Positional back-compat: (clp:labeling vars 'ff) ──────────
+    ;;  1. Positional back-compat: (clp:labeling vars 'ff) 
     (let ((x (logic-var)) (y (logic-var)))
       (clp:in-fd x 1 2 3)
       (clp:in-fd y 1 2 3)
@@ -27,7 +27,7 @@
       (chk "positional 'ff still works" #t
            (clp:labeling (list x y) 'ff)))
 
-    ;; ── 2. Plist: 'strategy 'leftmost, default ──────────────────────
+    ;;  2. Plist: 'strategy 'leftmost, default 
     (let ((x (logic-var)) (y (logic-var)))
       (clp:in-fd x 1 2 3)
       (clp:in-fd y 1 2 3)
@@ -35,39 +35,39 @@
            (clp:labeling (list x y) 'strategy 'leftmost))
       (chk "leftmost picks x=1 first" 1 (deref-lvar x)))
 
-    ;; ── 3. Value ordering: 'down picks highest value first ─────────
+    ;;  3. Value ordering: 'down picks highest value first 
     (let ((x (logic-var)) (y (logic-var)))
       (clp:in-fd x 1 2 3)
       (clp:in-fd y 1 2 3)
       (clp:labeling (list x y) 'strategy 'leftmost 'value-ordering 'down)
       (chk "value-ordering down → x=3" 3 (deref-lvar x)))
 
-    ;; ── 4. 'solutions 'all enumerates every complete assignment ────
-    ;; Two vars each ∈ {1,2,3} with x ≠ y: 6 solutions.
+    ;;  4. 'solutions 'all enumerates every complete assignment 
+    ;; Two vars each  {1,2,3} with x  y: 6 solutions.
     (let ((x (logic-var)) (y (logic-var)))
       (clp:in-fd x 1 2 3)
       (clp:in-fd y 1 2 3)
-      (clp:!= x y)
+      (clp:<> x y)
       (let ((all (clp:labeling (list x y) 'solutions 'all)))
         (chk "'all yields 6 solutions" 6 (length all))
         (chk "vars unbound after enumeration" #t
              (and (logic-var? (deref-lvar x))
                   (logic-var? (deref-lvar y))))))
 
-    ;; ── 5. 'solutions N limits enumeration count ──────────────────
+    ;;  5. 'solutions N limits enumeration count 
     (let ((x (logic-var)) (y (logic-var)))
       (clp:in-fd x 1 2 3)
       (clp:in-fd y 1 2 3)
-      (clp:!= x y)
+      (clp:<> x y)
       (let ((two (clp:labeling (list x y) 'solutions 2)))
         (chk "'solutions 2 yields 2" 2 (length two))))
 
-    ;; ── 6. 'on-solution callback can short-circuit ────────────────
+    ;;  6. 'on-solution callback can short-circuit 
     (let ((x (logic-var)) (y (logic-var))
           (count (cons 0 '())))
       (clp:in-fd x 1 2 3)
       (clp:in-fd y 1 2 3)
-      (clp:!= x y)
+      (clp:<> x y)
       (clp:labeling (list x y)
         'solutions 'all
         'on-solution (lambda (snap)
@@ -75,7 +75,7 @@
                        (< (car count) 3)))   ; stop after 3 calls
       (chk "on-solution stops early" 3 (car count)))
 
-    ;; ── 7. 4-queens via new API: 'solutions 'all yields 2 solutions ─
+    ;;  7. 4-queens via new API: 'solutions 'all yields 2 solutions 
     (let ((q1 (logic-var)) (q2 (logic-var))
           (q3 (logic-var)) (q4 (logic-var))
           (a1 (logic-var)) (a2 (logic-var))
@@ -103,7 +103,7 @@
              (and (member '(2 4 1 3) sols)
                   (member '(3 1 4 2) sols)))))
 
-    ;; ── Summary ────────────────────────────────────────────────────
+    ;;  Summary 
     (newline)
     (if (= fail-count 0)
         (display "clp labeling options: ALL PASS")

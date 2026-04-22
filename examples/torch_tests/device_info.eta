@@ -1,4 +1,4 @@
-;;; torch_tests/device_info.eta — Device management primitives
+;;; torch_tests/device_info.eta  Device management primitives
 ;;;
 ;;; Tests: gpu-available?, gpu-count, device, to-device, to-cpu
 ;;;

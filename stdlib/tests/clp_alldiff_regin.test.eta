@@ -1,13 +1,13 @@
-;;; clp_alldiff_regin_smoke.eta — Smoke test for the native
-;;; Régin value-graph matching all-different propagator.
+;;; clp_alldiff_regin_smoke.eta  Smoke test for the native
+;;; Rgin value-graph matching all-different propagator.
 ;;;
 ;;; Verifies that the native `clp:all-different` (now backed by
-;;; `%clp-fd-all-different!`) performs domain-consistent pruning —
+;;; `%clp-fd-all-different!`) performs domain-consistent pruning 
 ;;; strictly stronger than pairwise forward-checking:
 ;;;
-;;;   X ∈ {1,2}, Y ∈ {1,2}, Z ∈ {1,2,3}, all-different(X,Y,Z)
-;;;     pairwise AC-3  →  Z unchanged {1,2,3}
-;;;     Régin          →  Z narrows to {3}  (1 and 2 are consumed by X,Y)
+;;;   X  {1,2}, Y  {1,2}, Z  {1,2,3}, all-different(X,Y,Z)
+;;;     pairwise AC-3    Z unchanged {1,2,3}
+;;;     Rgin            Z narrows to {3}  (1 and 2 are consumed by X,Y)
 
 (module clp-alldiff-regin-smoke
   (import std.core std.collections std.logic std.clp)
@@ -26,8 +26,8 @@
 
     (display "clp alldiff (Régin) smoke: start") (newline)
 
-    ;; ── 1. Canonical Régin-stronger-than-AC-3 pruning ────────────────
-    ;; X,Y ∈ {1,2}, Z ∈ {1,2,3}, all-different ⇒ Z must be 3.
+    ;;  1. Canonical Rgin-stronger-than-AC-3 pruning 
+    ;; X,Y  {1,2}, Z  {1,2,3}, all-different  Z must be 3.
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:in-fd x 1 2)
       (clp:in-fd y 1 2)
@@ -35,7 +35,7 @@
       (chk "all-different post" #t (clp:all-different (list x y z)))
       (chk "Z narrowed to {3} by Régin" 3 (deref-lvar z)))
 
-    ;; ── 2. Feasibility: pigeonhole (4 vars in {1,2,3}) fails on post ──
+    ;;  2. Feasibility: pigeonhole (4 vars in {1,2,3}) fails on post 
     (let ((a (logic-var)) (b (logic-var))
           (c (logic-var)) (d (logic-var)))
       (clp:in-fd a 1 2 3) (clp:in-fd b 1 2 3)
@@ -43,7 +43,7 @@
       (chk "pigeonhole UNSAT detected at post time" #f
            (clp:all-different (list a b c d))))
 
-    ;; ── 3. Two ground vars with same value fail immediately ─────────
+    ;;  3. Two ground vars with same value fail immediately 
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (unify x 5)
       (unify y 5)
@@ -51,7 +51,7 @@
       (chk "dup ground values → fail" #f
            (clp:all-different (list x y z))))
 
-    ;; ── 4. Ground values prune siblings ─────────────────────────────
+    ;;  4. Ground values prune siblings 
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (unify x 2)
       (clp:in-fd y 1 2 3)
@@ -60,8 +60,8 @@
       (chk "Y excludes 2" '(fd 1 3) (%clp-get-domain y))
       (chk "Z excludes 2" '(fd 3 4) (%clp-get-domain z)))
 
-    ;; ── 5. Re-fires on bind: narrowing happens inside unify ─────────
-    ;; After posting on {X,Y,Z} ⊆ {1,2,3}, binding X=2 should prune 2
+    ;;  5. Re-fires on bind: narrowing happens inside unify 
+    ;; After posting on {X,Y,Z}  {1,2,3}, binding X=2 should prune 2
     ;; from both Y and Z via the re-firing hook.
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
       (clp:in-fd x 1 2 3)
@@ -74,7 +74,7 @@
       (chk "after X=2 bind, Z ∉ {2}" #f
            (member 2 (clp:domain-values (%clp-get-domain z)))))
 
-    ;; ── 6. Backtracking restores domains after failure ──────────────
+    ;;  6. Backtracking restores domains after failure 
     (let* ((x (logic-var)) (y (logic-var)) (z (logic-var))
            (_ (clp:in-fd x 1 2 3))
            (_ (clp:in-fd y 1 2 3))
@@ -89,7 +89,7 @@
            (%clp-get-domain y))
       (chk "X unbound after unwind" #t (logic-var? (deref-lvar x))))
 
-    ;; ── 7. Latin square 4×4 still solvable under Régin ──────────────
+    ;;  7. Latin square 44 still solvable under Rgin 
     ;; 4 rows of 4 cells each, all-different per row and per column.
     ;; We sample a known starting config and verify feasibility via
     ;; labelling.
@@ -114,7 +114,7 @@
                                c31 c32 c33 c34 c41 c42 c43 c44)
                          'strategy 'ff)))
 
-    ;; ── Summary ────────────────────────────────────────────────────
+    ;;  Summary 
     (newline)
     (if (= fail-count 0)
         (display "clp alldiff (Régin) smoke: ALL PASS")

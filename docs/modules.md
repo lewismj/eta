@@ -1,8 +1,8 @@
 # Modules & Standard Library
 
-[← Back to README](../README.md) · [Architecture](architecture.md) ·
-[NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
-[Runtime & GC](runtime.md) · [Networking](networking.md) ·
+[â† Back to README](../README.md) Â· [Architecture](architecture.md) Â·
+[NaN-Boxing](nanboxing.md) Â· [Bytecode & VM](bytecode-vm.md) Â·
+[Runtime & GC](runtime.md) Â· [Networking](networking.md) Â·
 [Message Passing](message-passing.md)
 
 ---
@@ -10,12 +10,12 @@
 ## Module System
 
 Eta organises code into **modules**. Every top-level source file must
-contain one or more `(module …)` forms. The module system supports
+contain one or more `(module â€¦)` forms. The module system supports
 exports, imports with filtering, and incremental REPL execution.
 
 **Key sources:**
-[`module_linker.h`](../eta/core/src/eta/reader/module_linker.h) ·
-[`expander.h`](../eta/core/src/eta/reader/expander.h) ·
+[`module_linker.h`](../eta/core/src/eta/reader/module_linker.h) Â·
+[`expander.h`](../eta/core/src/eta/reader/expander.h) Â·
 [`driver.h`](../eta/interpreter/src/eta/interpreter/driver.h)
 
 ---
@@ -55,7 +55,7 @@ The `ModuleLinker` resolves inter-module dependencies in two passes:
 ```mermaid
 flowchart LR
     subgraph "Pass 1: Index"
-        SCAN["Scan all (module …) forms"]
+        SCAN["Scan all (module â€¦) forms"]
         SCAN --> DEF["Collect define names"]
         SCAN --> EXP["Collect export names"]
         SCAN --> IMP["Queue import specs"]
@@ -64,24 +64,24 @@ flowchart LR
     subgraph "Pass 2: Link"
         RES["Resolve imports"]
         RES --> FILT["Apply only / except / rename"]
-        FILT --> VIS["Populate visible set\n(defined ∪ imported)"]
+        FILT --> VIS["Populate visible set\n(defined âˆª imported)"]
     end
 
     SCAN --> RES
 ```
 
-#### Pass 1 — `index_modules()`
+#### Pass 1 â€” `index_modules()`
 
 For each `(module name ...)` form:
 
 1. Create a `ModuleTable` entry with the module `name`
-2. Scan the body for `define` / `defun` forms → populate `defined`
-3. Scan `(export …)` → populate `exports`
-4. Queue `(import …)` clauses as `PendingImport`s
+2. Scan the body for `define` / `defun` forms â†’ populate `defined`
+3. Scan `(export â€¦)` â†’ populate `exports`
+4. Queue `(import â€¦)` clauses as `PendingImport`s
 
 **Errors detected:** `DuplicateModule`
 
-#### Pass 2 — `link()`
+#### Pass 2 â€” `link()`
 
 For each queued `PendingImport`:
 
@@ -163,12 +163,12 @@ All standard library modules are defined in
 convenience re-export module:
 
 ```scheme
-(import std.prelude)  ;; imports everything from std.core, std.math, std.io, std.collections
+(import std.prelude)  ;; imports the stable prelude surface
 ```
 
 ---
 
-### `std.core` — Core Combinators & Predicates
+### `std.core` â€” Core Combinators & Predicates
 
 ```scheme
 (import std.core)
@@ -176,24 +176,24 @@ convenience re-export module:
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `atom?` | `(x) → bool` | True if `x` is not a pair |
-| `void` | `() → '()` | Returns the empty list |
-| `identity` | `(x) → x` | Identity function |
-| `compose` | `(f g) → (λ (x) (f (g x)))` | Function composition |
-| `flip` | `(f) → (λ (a b) (f b a))` | Swap arguments |
-| `constantly` | `(v) → (λ args v)` | Always returns `v` |
-| `negate` | `(pred) → (λ (x) (not (pred x)))` | Negate a predicate |
-| `cadr` | `(xs) → element` | Second element |
-| `caddr` | `(xs) → element` | Third element |
-| `caar`, `cdar`, `caddar` | `(xs) → element` | Nested accessors |
-| `last` | `(xs) → element` | Last element of a list |
-| `list?` | `(x) → bool` | True if `x` is a proper list |
-| `iota` | `(count [start [step]]) → list` | Generate a sequence |
-| `assoc-ref` | `(key alist) → value \| #f` | Association list lookup |
+| `atom?` | `(x) â†’ bool` | True if `x` is not a pair |
+| `void` | `() â†’ '()` | Returns the empty list |
+| `identity` | `(x) â†’ x` | Identity function |
+| `compose` | `(f g) â†’ (Î» (x) (f (g x)))` | Function composition |
+| `flip` | `(f) â†’ (Î» (a b) (f b a))` | Swap arguments |
+| `constantly` | `(v) â†’ (Î» args v)` | Always returns `v` |
+| `negate` | `(pred) â†’ (Î» (x) (not (pred x)))` | Negate a predicate |
+| `cadr` | `(xs) â†’ element` | Second element |
+| `caddr` | `(xs) â†’ element` | Third element |
+| `caar`, `cdar`, `caddar` | `(xs) â†’ element` | Nested accessors |
+| `last` | `(xs) â†’ element` | Last element of a list |
+| `list?` | `(x) â†’ bool` | True if `x` is a proper list |
+| `iota` | `(count [start [step]]) â†’ list` | Generate a sequence |
+| `assoc-ref` | `(key alist) â†’ value \| #f` | Association list lookup |
 
 ---
 
-### `std.math` — Mathematical Functions
+### `std.math` â€” Mathematical Functions
 
 ```scheme
 (import std.math)
@@ -203,22 +203,22 @@ convenience re-export module:
 |---------|------|-------------|
 | `pi` | constant | 3.141592653589793 |
 | `e` | constant | 2.718281828459045 |
-| `square` | `(x) → x²` | Square |
-| `cube` | `(x) → x³` | Cube |
-| `even?` | `(n) → bool` | Even predicate |
-| `odd?` | `(n) → bool` | Odd predicate |
-| `sign` | `(x) → -1 \| 0 \| 1` | Sign function |
-| `clamp` | `(x lo hi) → number` | Clamp to range |
-| `quotient` | `(a b) → number` | Integer quotient |
-| `gcd` | `(a b) → number` | Greatest common divisor |
-| `lcm` | `(a b) → number` | Least common multiple |
-| `expt` | `(base exp) → number` | Exponentiation (fast power) |
-| `sum` | `(xs) → number` | Sum of a list |
-| `product` | `(xs) → number` | Product of a list |
+| `square` | `(x) â†’ xÂ²` | Square |
+| `cube` | `(x) â†’ xÂ³` | Cube |
+| `even?` | `(n) â†’ bool` | Even predicate |
+| `odd?` | `(n) â†’ bool` | Odd predicate |
+| `sign` | `(x) â†’ -1 \| 0 \| 1` | Sign function |
+| `clamp` | `(x lo hi) â†’ number` | Clamp to range |
+| `quotient` | `(a b) â†’ number` | Integer quotient |
+| `gcd` | `(a b) â†’ number` | Greatest common divisor |
+| `lcm` | `(a b) â†’ number` | Least common multiple |
+| `expt` | `(base exp) â†’ number` | Exponentiation (fast power) |
+| `sum` | `(xs) â†’ number` | Sum of a list |
+| `product` | `(xs) â†’ number` | Product of a list |
 
 ---
 
-### `std.io` — Input/Output Utilities
+### `std.io` â€” Input/Output Utilities
 
 ```scheme
 (import std.io)
@@ -226,18 +226,21 @@ convenience re-export module:
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `print` | `(x)` | Display `x` |
 | `println` | `(x)` | Display `x` followed by newline |
 | `eprintln` | `(x)` | Print to stderr |
-| `display-to-string` | `(x) → string` | Render value to string via string port |
-| `read-line` | `([port]) → string \| #f` | Read a line (returns `#f` at EOF) |
-| `with-output-to-port` | `(port thunk) → result` | Redirect stdout for `thunk` |
-| `with-input-from-port` | `(port thunk) → result` | Redirect stdin for `thunk` |
-| `with-error-to-port` | `(port thunk) → result` | Redirect stderr for `thunk` |
+| `display->string` | `(x) â†’ string` | Render value to string via string port |
+| `read-line` | `([port]) â†’ string \| #f` | Read a line (returns `#f` at EOF) |
+| `with-port` | `(port thunk) â†’ result` | Convenience wrapper for `with-output-to-port` |
+| `with-input-port` | `(port thunk) â†’ result` | Convenience wrapper for `with-input-from-port` |
+| `with-output-to-port` | `(port thunk) â†’ result` | Redirect stdout for `thunk` |
+| `with-input-from-port` | `(port thunk) â†’ result` | Redirect stdin for `thunk` |
+| `with-error-to-port` | `(port thunk) â†’ result` | Redirect stderr for `thunk` |
+| `print` | `(x)` | Deprecated alias of `display` |
+| `display-to-string` | `(x)` | Deprecated alias of `display->string` |
 
 ---
 
-### `std.collections` — Higher-Order List & Vector Operations
+### `std.collections` â€” Higher-Order List & Vector Operations
 
 ```scheme
 (import std.collections)
@@ -245,35 +248,35 @@ convenience re-export module:
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `map*` | `(f xs) → list` | Map (single-list) |
-| `map2` | `(f xs ys) → list` | Pairwise map over two lists (truncates to shorter list) |
-| `zip-with` | `(f xs ys) → list` | Alias for `map2` |
-| `map-indexed` | `(f xs) → list` | Map with zero-based index (calls `f` with `i` and `x`) |
-| `filter` | `(pred xs) → list` | Keep elements matching `pred` |
-| `foldl` | `(f acc xs) → value` | Left fold |
-| `foldr` | `(f init xs) → value` | Right fold |
-| `reduce` | `(f xs) → value` | Fold without initial accumulator |
-| `any?` | `(pred xs) → bool` | True if any element matches |
-| `every?` | `(pred xs) → bool` | True if all elements match |
-| `count` | `(pred xs) → number` | Count matching elements |
-| `sum-by` | `(f xs) → number` | Sum transformed elements |
-| `zip` | `(xs ys) → list` | Zip two lists into pairs |
-| `pairwise` | `(xs) → list` | Adjacent element pairs as dotted pairs |
-| `take` | `(n xs) → list` | First `n` elements |
-| `drop` | `(n xs) → list` | Skip first `n` elements |
-| `flatten` | `(xss) → list` | Flatten one level of nesting |
-| `range` | `(start end) → list` | Integer range `[start, end)` |
-| `sort` | `(less? xs) → list` | Merge sort with custom comparator |
-| `vector-map` | `(f v) → vector` | Map over a vector |
+| `map*` | `(f xs) â†’ list` | Map (single-list) |
+| `map2` | `(f xs ys) â†’ list` | Pairwise map over two lists (truncates to shorter list) |
+| `zip-with` | `(f xs ys) â†’ list` | Alias for `map2` |
+| `map-indexed` | `(f xs) â†’ list` | Map with zero-based index (calls `f` with `i` and `x`) |
+| `filter` | `(pred xs) â†’ list` | Keep elements matching `pred` |
+| `foldl` | `(f acc xs) â†’ value` | Left fold |
+| `foldr` | `(f init xs) â†’ value` | Right fold |
+| `reduce` | `(f xs) â†’ value` | Fold without initial accumulator |
+| `any?` | `(pred xs) â†’ bool` | True if any element matches |
+| `every?` | `(pred xs) â†’ bool` | True if all elements match |
+| `count` | `(pred xs) â†’ number` | Count matching elements |
+| `sum-by` | `(f xs) â†’ number` | Sum transformed elements |
+| `zip` | `(xs ys) â†’ list` | Zip two lists into pairs |
+| `pairwise` | `(xs) â†’ list` | Adjacent element pairs as dotted pairs |
+| `take` | `(n xs) â†’ list` | First `n` elements |
+| `drop` | `(n xs) â†’ list` | Skip first `n` elements |
+| `flatten` | `(xss) â†’ list` | Flatten one level of nesting |
+| `range` | `(start end) â†’ list` | Integer range `[start, end)` |
+| `sort` | `(less? xs) â†’ list` | Merge sort with custom comparator |
+| `vector-map` | `(f v) â†’ vector` | Map over a vector |
 | `vector-for-each` | `(f v)` | Side-effecting vector traversal |
-| `vector-foldl` | `(f acc v) → value` | Left fold over a vector |
-| `vector-foldr` | `(f init v) → value` | Right fold over a vector |
-| `vector->list` | `(v) → list` | Convert vector to list |
-| `list->vector` | `(xs) → vector` | Convert list to vector |
+| `vector-foldl` | `(f acc v) â†’ value` | Left fold over a vector |
+| `vector-foldr` | `(f init v) â†’ value` | Right fold over a vector |
+| `vector->list` | `(v) â†’ list` | Convert vector to list |
+| `list->vector` | `(xs) â†’ vector` | Convert list to vector |
 
 ---
 
-### `std.test` — Lightweight Test Framework
+### `std.test` â€” Lightweight Test Framework
 
 ```scheme
 (import std.test)
@@ -284,15 +287,15 @@ Uses `define-record-type` for `test-case`, `test-group`, `test-result`,
 
 | Function | Description |
 |----------|-------------|
-| `make-test` | `(name thunk)` — create a test case |
-| `make-group` | `(name children)` — create a test group |
-| `run` | `(node) → result` — run a test or group |
-| `summary` | `(result) → test-summary` — count pass/fail |
-| `print-summary` | `(summary)` — display totals |
-| `assert-true` | `(x [msg])` — assert truthy |
-| `assert-false` | `(x [msg])` — assert falsy |
-| `assert-equal` | `(expected actual [msg])` — assert equality |
-| `assert-not-equal` | `(a b [msg])` — assert inequality |
+| `make-test` | `(name thunk)` â€” create a test case |
+| `make-group` | `(name children)` â€” create a test group |
+| `run` | `(node) â†’ result` â€” run a test or group |
+| `summary` | `(result) â†’ test-summary` â€” count pass/fail |
+| `print-summary` | `(summary)` â€” display totals |
+| `assert-true` | `(x [msg])` â€” assert truthy |
+| `assert-false` | `(x [msg])` â€” assert falsy |
+| `assert-equal` | `(expected actual [msg])` â€” assert equality |
+| `assert-not-equal` | `(a b [msg])` â€” assert inequality |
 
 **Example:**
 
@@ -321,7 +324,7 @@ Output:
 
 ---
 
-### `std.fact_table` — Columnar Fact Tables
+### `std.fact_table` â€” Columnar Fact Tables
 
 ```scheme
 (import std.fact_table)
@@ -337,23 +340,42 @@ per-column hash indexes for O(1) equality lookups.
 | **Query** | `fact-table-query`, `fact-table-ref`, `fact-table-row-count`, `fact-table-row` |
 | **Iteration** | `fact-table-for-each`, `fact-table-filter`, `fact-table-fold` |
 
-> **📖 Full documentation:** [Fact Tables](fact-table.md)
+> **ðŸ“– Full documentation:** [Fact Tables](fact-table.md)
 
 ---
 
-### `std.prelude` — Convenience Re-Export
+### `std.db` â€” Relation Database & Tabling
+
+```scheme
+(import std.db)
+```
+
+| Category | Key Functions |
+|----------|---------------|
+| **Definition** | `defrel`, `defrel-clause` |
+| **Mutation** | `assert-fact!`, `retract-fact!`, `retract-all` |
+| **Calls** | `call-rel`, `call-rel?` |
+| **Indexing / tabling** | `index-rel!`, `tabled`, `tabled-clause` |
+| **Deprecated aliases** | `assert`, `retract` |
+
+> **Full documentation:** [Relations & Tabling](db.md)
+
+---
+
+### `std.prelude` â€” Convenience Re-Export
 
 ```scheme
 (import std.prelude)
 ```
 
-Re-exports **all** public names from `std.core`, `std.math`, `std.io`,
-`std.collections`, `std.logic`, `std.clp`, `std.causal`, and
-`std.fact_table` in a single import for convenience.
+Re-exports the stable public names from `std.core`, `std.math`, `std.io`,
+`std.collections`, `std.logic`, `std.clp`, `std.clpb`, `std.clpr`,
+`std.causal`, `std.fact_table`, `std.db`, `std.stats`, `std.net`, and
+`std.test` in a single import for convenience.
 
 ---
 
-### `std.torch` — libtorch Neural Network Bindings
+### `std.torch` â€” libtorch Neural Network Bindings
 
 ```scheme
 (import std.torch)
@@ -373,13 +395,13 @@ Re-exports **all** public names from `std.core`, `std.math`, `std.io`,
 | **Loss functions** | `mse-loss`, `l1-loss`, `cross-entropy-loss` |
 | **Optimizers** | `sgd`, `adam`, `step!`, `optim-zero-grad!` |
 | **Device** | `gpu-available?`, `gpu-count`, `device`, `to-device`, `to-gpu`, `to-cpu`, `nn-to-device` |
-| **Helpers** | `train-step!` — one-call training step (zero-grad → forward → loss → backward → step) |
+| **Helpers** | `train-step!` â€” one-call training step (zero-grad â†’ forward â†’ loss â†’ backward â†’ step) |
 
-> **📖 Full documentation:** [Neural Networks with libtorch](torch.md)
+> **ðŸ“– Full documentation:** [Neural Networks with libtorch](torch.md)
 
 ---
 
-### `std.net` — Networking & Message Passing
+### `std.net` â€” Networking & Message Passing
 
 ```scheme
 (import std.net)
@@ -393,7 +415,7 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `with-socket` | `(with-socket type thunk)` | Create a socket, run `(thunk sock)`, close via `dynamic-wind` — safe even on exceptions |
+| `with-socket` | `(with-socket type thunk)` | Create a socket, run `(thunk sock)`, close via `dynamic-wind` â€” safe even on exceptions |
 | `request-reply` | `(request-reply endpoint message)` | Open a REQ socket, dial, send, receive exactly one reply, close |
 | `worker-pool` | `(worker-pool module-path tasks)` | Spawn one child per task, dispatch, collect results in order, clean up |
 | `pub-sub` | `(pub-sub endpoint topics handler)` | Connect a SUB socket, subscribe to `topics`, call `handler` on each message |
@@ -403,7 +425,7 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 
 | Primitive | Signature | Description |
 |-----------|-----------|-------------|
-| `nng-socket` | `(nng-socket type-sym)` | Create a socket — `'pair`, `'req`, `'rep`, `'pub`, `'sub`, `'push`, `'pull`, `'surveyor`, `'respondent`, `'bus` |
+| `nng-socket` | `(nng-socket type-sym)` | Create a socket â€” `'pair`, `'req`, `'rep`, `'pub`, `'sub`, `'push`, `'pull`, `'surveyor`, `'respondent`, `'bus` |
 | `nng-listen` | `(nng-listen sock endpoint)` | Bind and listen on an endpoint |
 | `nng-dial` | `(nng-dial sock endpoint)` | Connect to an endpoint (auto-reconnects) |
 | `nng-close` | `(nng-close sock)` | Close the socket (idempotent; also called by GC) |
@@ -412,7 +434,7 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 | `recv!` | `(recv! sock [flag])` | Receive and deserialize; returns `#f` on timeout; flags: `'noblock`, `'wait` |
 | `nng-poll` | `(nng-poll items timeout-ms)` | Poll multiple sockets; returns list of ready sockets |
 | `nng-subscribe` | `(nng-subscribe sock topic)` | Set SUB topic filter (byte prefix) |
-| `nng-set-option` | `(nng-set-option sock option value)` | Set socket option (`'recv-timeout`, `'send-timeout`, `'survey-time`, …) |
+| `nng-set-option` | `(nng-set-option sock option value)` | Set socket option (`'recv-timeout`, `'send-timeout`, `'survey-time`, â€¦) |
 
 #### Actor model builtins (globally available)
 
@@ -448,9 +470,9 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 (survey "tcp://*:5557" '(status?) 1000)
 ```
 
-> **📖 Full documentation:**
-> [Networking Primitives](networking.md) ·
-> [Message Passing & Actors](message-passing.md) ·
+> **ðŸ“– Full documentation:**
+> [Networking Primitives](networking.md) Â·
+> [Message Passing & Actors](message-passing.md) Â·
 > [Examples](examples.md#networking--message-passing)
 
 ---
@@ -465,7 +487,7 @@ There are two layers of "standard" functionality:
 | **Standard Library** | Eta (`prelude.eta`, `std/*.eta`) | Regular Eta functions defined in modules |
 
 Builtins like `+`, `cons`, `display` are always available (they occupy
-global slots 0..N−1). The standard library modules build on top of
+global slots 0..Nâˆ’1). The standard library modules build on top of
 builtins to provide higher-level abstractions like `foldl`, `sort`, and
 `read-line`.
 
@@ -481,7 +503,7 @@ compilation pipeline on each `textDocument/didOpen` and `didChange` event,
 publishing diagnostics back to the editor.
 
 Supported LSP features:
-- `textDocument/publishDiagnostics` — real-time error reporting
+- `textDocument/publishDiagnostics` â€” real-time error reporting
 - Document synchronization (full content sync)
 
 ### VS Code Extension

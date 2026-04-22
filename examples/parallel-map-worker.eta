@@ -1,4 +1,4 @@
-;;; examples/parallel-map-worker.eta — Worker for parallel-map.eta
+;;; examples/parallel-map-worker.eta  Worker for parallel-map.eta
 ;;;
 ;;; One instance is spawned per input value.
 

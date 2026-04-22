@@ -1,4 +1,4 @@
-;;; examples/distributed-compute-server.eta — Server child for distributed-compute.eta
+;;; examples/distributed-compute-server.eta  Server child for distributed-compute.eta
 ;;;
 ;;; Spawned by distributed-compute.eta. Binds a REP socket on TCP, signals
 ;;; readiness to the parent via the mailbox, then handles arithmetic tasks.
@@ -12,7 +12,7 @@
     (define endpoint "tcp://127.0.0.1:6000")
     (define mailbox (current-mailbox))
 
-    ;; Bind the REP socket — nng-listen is synchronous, so by the time
+    ;; Bind the REP socket  nng-listen is synchronous, so by the time
     ;; we send 'ready below the socket is guaranteed to be listening.
     (define sock (nng-socket 'rep))
     (nng-listen sock endpoint)
@@ -26,7 +26,7 @@
     (letrec ((loop (lambda ()
                      (let ((task (recv! sock 'wait)))
                        (when task
-                         (print "server: received task: ")
+                         (display "server: received task: ")
                          (println task)
                          (let ((result
                                 (cond

@@ -1,4 +1,4 @@
-;;; stdlib/tests/core.test.eta — Unit tests for builtins and std.core
+;;; stdlib/tests/core.test.eta  Unit tests for builtins and std.core
 
 (module core.tests
   (import std.test std.core std.math)
@@ -8,7 +8,7 @@
       (make-group "core"
         (list
 
-          ;; ── Arithmetic builtins ──────────────────────────────────
+          ;;  Arithmetic builtins 
           (make-group "arithmetic"
             (list
               (make-test "addition"
@@ -28,7 +28,7 @@
               (make-test "abs negative"
                 (lambda () (assert-equal 3 (abs -3))))))
 
-          ;; ── Comparison builtins ──────────────────────────────────
+          ;;  Comparison builtins 
           (make-group "comparison"
             (list
               (make-test "equal numbers"
@@ -44,7 +44,7 @@
               (make-test "greater-or-equal"
                 (lambda () (assert-true (>= 3 2))))))
 
-          ;; ── Boolean builtins ─────────────────────────────────────
+          ;;  Boolean builtins 
           (make-group "boolean"
             (list
               (make-test "and true"
@@ -60,7 +60,7 @@
               (make-test "not false"
                 (lambda () (assert-true (not #f))))))
 
-          ;; ── List builtins ────────────────────────────────────────
+          ;;  List builtins 
           (make-group "lists"
             (list
               (make-test "cons and car"
@@ -87,7 +87,7 @@
                     (for-each (lambda (x) (set! sum (+ sum x))) '(1 2 3))
                     (assert-equal 6 sum))))))
 
-          ;; ── String builtins ──────────────────────────────────────
+          ;;  String builtins 
           (make-group "strings"
             (list
               (make-test "string-length"
@@ -105,7 +105,7 @@
               (make-test "string->number"
                 (lambda () (assert-equal 42 (string->number "42"))))))
 
-          ;; ── Type predicates ──────────────────────────────────────
+          ;;  Type predicates 
           (make-group "type-predicates"
             (list
               (make-test "number?"
@@ -121,7 +121,7 @@
               (make-test "procedure?"
                 (lambda () (assert-true (procedure? car))))))
 
-          ;; ── std.core combinators ─────────────────────────────────
+          ;;  std.core combinators 
           (make-group "std.core"
             (list
               (make-test "identity"

@@ -1,15 +1,15 @@
-;;; std/clp.eta — Constraint Logic Programming over Eta's native unification
+;;; std/clp.eta  Constraint Logic Programming over Eta's native unification
 ;;;               and the attributed-variable substrate.
 ;;;
 ;;; Two domains are supported:
 ;;;
-;;;   clp(Z)  — integer arithmetic with interval bounds  [lo, hi]
-;;;   clp(FD) — finite domains: explicit sets of integer values
+;;;   clp(Z)   integer arithmetic with interval bounds  [lo, hi]
+;;;   clp(FD)  finite domains: explicit sets of integer values
 ;;;
 ;;; Built-in C++ primitives (registered by core_primitives.h):
-;;;   (%clp-domain-z! var lo hi)    — attach Z domain [lo,hi] to var
-;;;   (%clp-domain-fd! var vals)    — attach FD domain (list) to var
-;;;   (%clp-get-domain var)         — retrieve domain as Eta value or #f
+;;;   (%clp-domain-z! var lo hi)     attach Z domain [lo,hi] to var
+;;;   (%clp-domain-fd! var vals)     attach FD domain (list) to var
+;;;   (%clp-get-domain var)          retrieve domain as Eta value or #f
 ;;;
 ;;; Adds real arc-consistency (AC-3) propagation for `all-different`
 ;;; on top of the attributed-variable / attr-unify-hook mechanism:
@@ -31,11 +31,11 @@
 ;;;
 ;;; Also adds:
 ;;;
-;;;   - `clp:labeling vars [strategy]` — DFS solver with pluggable variable-
+;;;   - `clp:labeling vars [strategy]`  DFS solver with pluggable variable-
 ;;;     selection strategies.  `'leftmost` (default) tries vars in list order;
 ;;;     `'ff` (first-fail) picks the var with the smallest current domain.
 ;;;
-;;;   - `clp:minimize cost goal-thunk` / `clp:maximize cost goal-thunk` —
+;;;   - `clp:minimize cost goal-thunk` / `clp:maximize cost goal-thunk` 
 ;;;     branch-and-bound over an integer cost variable.  Repeatedly invokes
 ;;;     `goal-thunk`, each time strictly tightening the bound on `cost`,
 ;;;     returning the optimal value (or #f if no solution).
@@ -44,7 +44,7 @@
   (import std.collections)
   (import std.logic)
   ;; Note: `register-attr-hook!`, `put-attr`, `get-attr` are core VM
-  ;; built-ins registered globally by core_primitives.cc — no import needed.
+  ;; built-ins registered globally by core_primitives.cc  no import needed.
   (export
     ;; Domain constructors
     clp:domain clp:in-fd
@@ -56,22 +56,24 @@
     clp:= clp:+
     clp:plus-offset clp:abs
     clp:* clp:sum clp:scalar-product clp:element
-    clp:<= clp:>= clp:<> clp:!=
+    clp:<= clp:>= clp:<>
     ;; Global constraint
     clp:all-different
     ;; Solver (labelling)
     clp:solve
     clp:labeling
     ;; Optimisation
-    clp:minimize clp:maximize)
+    clp:minimize clp:maximize
+    ;; Deprecated aliases (remove after one minor release)
+    clp:!=)
   (begin
 
-    ;; ── Domain constructors ────────────────────────────────────────────────
+    ;;  Domain constructors 
 
     (defun clp:domain (var lo hi)  (%clp-domain-z!  var lo hi))
     (defun clp:in-fd  (var . vals) (%clp-domain-fd! var vals))
 
-    ;; ── Domain accessors ───────────────────────────────────────────────────
+    ;;  Domain accessors 
 
     (defun clp:domain-z? (dom)
       (and (pair? dom) (eq? (car dom) 'z)))
@@ -80,31 +82,37 @@
       (and (pair? dom) (eq? (car dom) 'fd)))
 
     (defun clp:domain-lo (dom)
-      (cond
-        ((clp:domain-z? dom)  (car (cdr dom)))
-        ((clp:domain-fd? dom)
-         (let ((vs (cdr dom)))
-           (if (null? vs) #f (car vs))))
-        (#t #f)))
+      (if (not (pair? dom))
+          #f
+          (case (car dom)
+            ((z) (car (cdr dom)))
+            ((fd)
+             (let ((vs (cdr dom)))
+               (if (null? vs) #f (car vs))))
+            (else #f))))
 
     (defun clp:domain-hi (dom)
-      (cond
-        ((clp:domain-z? dom)  (car (cdr (cdr dom))))
-        ((clp:domain-fd? dom)
-         (let ((vs (cdr dom)))
-           (if (null? vs) #f
-               (let loop ((xs vs))
-                 (if (null? (cdr xs)) (car xs)
-                     (loop (cdr xs)))))))
-        (#t #f)))
+      (if (not (pair? dom))
+          #f
+          (case (car dom)
+            ((z) (car (cdr (cdr dom))))
+            ((fd)
+             (let ((vs (cdr dom)))
+               (if (null? vs) #f
+                   (let loop ((xs vs))
+                     (if (null? (cdr xs)) (car xs)
+                         (loop (cdr xs)))))))
+            (else #f))))
 
     (defun clp:domain-values (dom)
-      (cond
-        ((clp:domain-z? dom)
-         (range (clp:domain-lo dom) (+ (clp:domain-hi dom) 1)))
-        ((clp:domain-fd? dom)
-         (cdr dom))
-        (#t '())))
+      (if (not (pair? dom))
+          '()
+          (case (car dom)
+            ((z)
+             (range (clp:domain-lo dom) (+ (clp:domain-hi dom) 1)))
+            ((fd)
+             (cdr dom))
+            (else '()))))
 
     (defun clp:domain-empty? (dom)
       (or (not dom) (null? (clp:domain-values dom))))
@@ -113,18 +121,13 @@
       (let ((dom (%clp-get-domain var)))
         (if dom (length (clp:domain-values dom)) #f)))
 
-    ;; ── Internal helpers ───────────────────────────────────────────────────
-
-    (defun %clp-member? (x xs)
-      (cond ((null? xs) #f)
-            ((= x (car xs)) #t)
-            (#t (%clp-member? x (cdr xs)))))
+    ;;  Internal helpers 
 
     (defun %clp-domain-values-for-var (var)
       (let ((dom (%clp-get-domain var)))
         (if dom (clp:domain-values dom) '())))
 
-    ;; ── Constraint propagators ─────────────────────────────────────────────
+    ;;  Constraint propagators 
 
     (defun clp:= (x y)
       (let ((dx (%clp-get-domain x))
@@ -132,7 +135,7 @@
         (if (and dx dy)
             (let* ((vx (clp:domain-values dx))
                    (vy (clp:domain-values dy))
-                   (common (filter (lambda (v) (%clp-member? v vy)) vx)))
+                   (common (filter (lambda (v) (member v vy)) vx)))
               (if (null? common)
                   #f
                   (begin
@@ -152,8 +155,8 @@
              (%clp-prop-attach! z thunk)
              #t)))
 
-    ;; (clp:plus-offset y x k)  — posts y = x + k  (k a ground integer).
-    ;; Useful for N-queens diagonal constraints: Ai = Qi + i, Bi = Qi − i.
+    ;; (clp:plus-offset y x k)   posts y = x + k  (k a ground integer).
+    ;; Useful for N-queens diagonal constraints: Ai = Qi + i, Bi = Qi  i.
     (defun clp:plus-offset (y x k)
       (and (%clp-fd-plus-offset! y x k)
            (let ((thunk (lambda () (%clp-fd-plus-offset! y x k))))
@@ -161,7 +164,7 @@
              (%clp-prop-attach! x thunk)
              #t)))
 
-    ;; (clp:abs y x)  — posts y = |x|.
+    ;; (clp:abs y x)   posts y = |x|.
     (defun clp:abs (y x)
       (and (%clp-fd-abs! y x)
            (let ((thunk (lambda () (%clp-fd-abs! y x))))
@@ -169,7 +172,7 @@
              (%clp-prop-attach! x thunk)
              #t)))
 
-    ;; (clp:* z x y)  — posts z = x * y (bounds consistency).
+    ;; (clp:* z x y)   posts z = x * y (bounds consistency).
     (defun clp:* (z x y)
       (and (%clp-fd-times! z x y)
            (let ((thunk (lambda () (%clp-fd-times! z x y))))
@@ -178,7 +181,7 @@
              (%clp-prop-attach! y thunk)
              #t)))
 
-    ;; (clp:sum xs s)  — posts Σ xs = s.  `xs` is a list of logic vars
+    ;; (clp:sum xs s)   posts  xs = s.  `xs` is a list of logic vars
     ;; and/or ground integers.
     (defun clp:sum (xs s)
       (and (%clp-fd-sum! xs s)
@@ -191,7 +194,7 @@
                    (%clp-prop-attach! (car ys) thunk)
                    (loop (cdr ys))))))))
 
-    ;; (clp:scalar-product cs xs s)  — posts Σ cᵢ·xᵢ = s.
+    ;; (clp:scalar-product cs xs s)   posts  cx = s.
     (defun clp:scalar-product (cs xs s)
       (and (%clp-fd-scalar-product! cs xs s)
            (let ((thunk (lambda () (%clp-fd-scalar-product! cs xs s))))
@@ -203,7 +206,7 @@
                    (%clp-prop-attach! (car ys) thunk)
                    (loop (cdr ys))))))))
 
-    ;; (clp:element i xs v)  — posts xs[i] = v, one-based index.
+    ;; (clp:element i xs v)   posts xs[i] = v, one-based index.
     (defun clp:element (i xs v)
       (and (%clp-fd-element! i xs v)
            (let ((thunk (lambda () (%clp-fd-element! i xs v))))
@@ -233,10 +236,10 @@
 
     (defun clp:>= (x y) (clp:<= y x))
 
-    ;; ── Generic propagator re-firing on variable binding ───────────────────
+    ;;  Generic propagator re-firing on variable binding 
     ;;
     ;; Each variable participating in a native propagator (clp:+, clp:*,
-    ;; clp:all-different, …) carries a `'clp.prop` attribute whose value
+    ;; clp:all-different, ) carries a `'clp.prop` attribute whose value
     ;; is a list of re-propagator thunks.  The attribute key is registered
     ;; with the VM as an *async-thunk attribute* (`register-prop-attr!`):
     ;; when `unify` later binds any such var, every thunk in the list is
@@ -246,7 +249,7 @@
     ;; restores all writes (binding, attribute, and domain).
     ;;
     ;; This replaces the old "synchronous %clp-prop-hook" that ran
-    ;; every thunk recursively inside `unify` — the queue is fairer
+    ;; every thunk recursively inside `unify`  the queue is fairer
     ;; (FIFO), idempotent (no duplicate work when one bind cascades to
     ;; many sibling re-fires), and bounded-stack (drains iteratively
     ;; rather than via C++ recursion).
@@ -263,10 +266,10 @@
 
     (register-prop-attr! 'clp.prop)
 
-    ;; ── All-different (native Régin matching) ─────────────────────────────
+    ;;  All-different (native Rgin matching) 
     ;;
     ;; (clp:all-different vars)
-    ;; Posts the global all-different constraint via Régin's value-graph
+    ;; Posts the global all-different constraint via Rgin's value-graph
     ;; matching: domain-consistent pruning that removes every value
     ;; provably incompatible with any total assignment of `vars` to
     ;; pairwise-distinct integers.  Strictly stronger than pairwise
@@ -286,32 +289,36 @@
                    (loop (cdr ys))))))))
 
     (defun clp:<> (x y) (clp:all-different (list x y)))
-    (defun clp:!= (x y) (clp:<> x y))
 
-    ;; ── Solver: DFS labelling with option-plist dispatch ──────────────────
+    ;;  Deprecated aliases 
+
+    ;; deprecated - remove after one minor release
+    (define clp:!= clp:<>)
+
+    ;;  Solver: DFS labelling with option-plist dispatch 
     ;;
-    ;; (clp:labeling vars)                                — first solution, leftmost, up
-    ;; (clp:labeling vars 'ff)                            — back-compat positional shim
-    ;; (clp:labeling vars 'strategy 'ff 'solutions 'all)  — keyword plist
+    ;; (clp:labeling vars)                                 first solution, leftmost, up
+    ;; (clp:labeling vars 'ff)                             back-compat positional shim
+    ;; (clp:labeling vars 'strategy 'ff 'solutions 'all)   keyword plist
     ;;
     ;; Recognised keys (even-length symbol plist):
-    ;;   strategy        'leftmost | 'ff | 'smallest (≡ ff) | 'largest
+    ;;   strategy        'leftmost | 'ff | 'smallest ( ff) | 'largest
     ;;   value-ordering  'up (default) | 'down
     ;;   solutions       'first (default) | 'all | integer N  (collect up to N)
-    ;;   on-solution     proc  — called with the solution snapshot; returning
+    ;;   on-solution     proc   called with the solution snapshot; returning
     ;;                           #f stops enumeration early.
     ;;
     ;; Return values:
-    ;;   solutions = 'first  →  #t on success, #f on UNSAT (binds vars)
-    ;;   solutions = 'all    →  list of snapshots (each a list of deref'd
+    ;;   solutions = 'first    #t on success, #f on UNSAT (binds vars)
+    ;;   solutions = 'all      list of snapshots (each a list of deref'd
     ;;                          values in the original `vars` order); vars
     ;;                          are left unbound (trail unwinds between).
-    ;;   solutions = <int N> →  list of up to N snapshots.
+    ;;   solutions = <int N>   list of up to N snapshots.
     ;;
     ;; The positional back-compat form `(clp:labeling vars 'ff)` is detected
-    ;; when the rest args is a single symbol — interpreted as a strategy.
+    ;; when the rest args is a single symbol  interpreted as a strategy.
 
-    ;; Back-compat: (clp:solve vars) → first solution, leftmost DFS.
+    ;; Back-compat: (clp:solve vars)  first solution, leftmost DFS.
     (defun clp:solve (vars) (clp:labeling vars))
 
     ;; plist lookup with default.
@@ -344,8 +351,8 @@
              (acc          (cons 0 '())))
         ;; `found-fn` is called at each leaf of the DFS.  Its return value
         ;; tells %clp-search whether to keep searching:
-        ;;   #t → keep going (find another solution)
-        ;;   #f → stop and propagate success up
+        ;;   #t  keep going (find another solution)
+        ;;   #f  stop and propagate success up
         (let ((found-fn
                 (lambda ()
                   (let* ((snap    (map (lambda (v) (deref-lvar v)) vars))
@@ -375,14 +382,14 @@
                 (unwind-trail outer-mark)
                 (reverse (cdr acc))))))))
 
-    ;; Core DFS search.  Returns #t to mean "stop (enough solutions)" —
+    ;; Core DFS search.  Returns #t to mean "stop (enough solutions)" 
     ;; which, for solutions='first, also means success.  Returns #f to
     ;; mean "dead-end, backtrack".
     (defun %clp-search (vars strategy value-order found-fn)
       (let ((unbound (filter (lambda (v) (logic-var? (deref-lvar v))) vars)))
         (cond
           ((null? unbound)
-           ;; All ground → a solution.  found-fn decides whether to stop.
+           ;; All ground  a solution.  found-fn decides whether to stop.
            (let ((r (found-fn)))
              (if r #f #t)))          ; #t-from-fn → keep searching (return #f from %clp-search)
           (else
@@ -430,7 +437,7 @@
             (cond
               (ok
                ;; Either a deeper branch said "stop" (ok=#t from %clp-search
-               ;; means "enough, propagate success") — preserve bindings when
+               ;; means "enough, propagate success")  preserve bindings when
                ;; solutions='first, otherwise we still need to unwind between
                ;; enumerations.  The leaf has already recorded its snapshot;
                ;; we bubble the stop signal up without unwinding here.
@@ -439,11 +446,11 @@
                 (unwind-trail m)
                 (%clp-try-values var (cdr vals) rest strategy value-order found-fn)))))))
 
-    ;; ── Branch-and-bound optimisation ─────────────────────────────────────
+    ;;  Branch-and-bound optimisation 
     ;;
     ;; (clp:minimize cost goal-thunk)
-    ;;   Repeatedly evaluates `(goal-thunk)` — which must succeed with
-    ;;   `cost` ground — tightening the upper bound on `cost` after every
+    ;;   Repeatedly evaluates `(goal-thunk)`  which must succeed with
+    ;;   `cost` ground  tightening the upper bound on `cost` after every
     ;;   solution.  Returns the optimal integer value of `cost`, or #f
     ;;   if no solution exists.
     ;;

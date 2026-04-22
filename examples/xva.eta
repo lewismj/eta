@@ -1,4 +1,4 @@
-;;; xva.eta — xVA (Valuation Adjustments) with Tape-Based AD
+;;; xva.eta  xVA (Valuation Adjustments) with Tape-Based AD
 ;;;
 ;;; Computes Credit Valuation Adjustment (CVA) and Funding Valuation
 ;;; Adjustment (FVA) for a portfolio of uncollateralised derivatives,
@@ -6,13 +6,13 @@
 ;;; Eta's built-in tape-based reverse-mode AD.
 ;;;
 ;;; The VM's arithmetic (+, -, *, /, exp, log, sqrt) transparently
-;;; records onto a tape when TapeRef operands are present — no
+;;; records onto a tape when TapeRef operands are present  no
 ;;; explicit AD-lifted functions needed.  This means the financial
 ;;; building blocks use plain arithmetic and get automatic
 ;;; differentiation for free.
 ;;;
 ;;; This is the same mathematical machinery that production xVA desks
-;;; use — AAD turns O(N) per-Greek finite-difference bumps into a
+;;; use  AAD turns O(N) per-Greek finite-difference bumps into a
 ;;; single O(1) backward sweep, making real-time risk feasible.
 ;;;
 ;;; Demonstrates: tape-based AD, quantitative finance with closures,
@@ -26,15 +26,15 @@
   (import std.io)
   (begin
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §1  Tape-Based Reverse-Mode AD
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 1  Tape-Based Reverse-Mode AD
+    ;; 
     ;;
     ;; The VM transparently records operations onto a tape when any
-    ;; operand is a TapeRef.  No explicit lifted arithmetic needed —
+    ;; operand is a TapeRef.  No explicit lifted arithmetic needed 
     ;; plain +, -, *, /, exp, log, sqrt are tape-aware.
 
-    ;; ── Gradient driver ─────────────────────────────────────────────
+    ;;  Gradient driver 
 
     (defun grad (f vals)
       (let ((tape (tape-new))
@@ -58,60 +58,60 @@
                 (collect vars 0))
               (list (tape-primal tape output) grad-vec))))))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §2  Financial Building Blocks
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 2  Financial Building Blocks
+    ;; 
     ;;
     ;; All functions use plain arithmetic.  When called inside `grad`,
     ;; operands are TapeRefs and the VM records every operation
-    ;; transparently — no d+, d*, dexp wrappers needed.
+    ;; transparently  no d+, d*, dexp wrappers needed.
 
-    ;; ── Discount factor ─────────────────────────────────────────────
-    ;; DF(r, t) = e^{-r·t}
+    ;;  Discount factor 
+    ;; DF(r, t) = e^{-rt}
     ;; `t` is a plain number (time point); `r` is a dual.
     (defun discount-factor (r t)
       (exp (* (* -1 r) t)))
 
-    ;; ── Survival probability (hazard-rate model) ────────────────────
-    ;; Q(λ, t) = e^{-λ·t}
+    ;;  Survival probability (hazard-rate model) 
+    ;; Q(, t) = e^{-t}
     ;; Probability that the counterparty has *not* defaulted by time t.
     (defun survival-prob (hazard-rate t)
       (exp (* (* -1 hazard-rate) t)))
 
-    ;; ── Cumulative default probability ──────────────────────────────
-    ;; PD(λ, t) = 1 − Q(λ, t) = 1 − e^{-λ·t}
+    ;;  Cumulative default probability 
+    ;; PD(, t) = 1  Q(, t) = 1  e^{-t}
     (defun default-prob (hazard-rate t)
       (- 1 (survival-prob hazard-rate t)))
 
-    ;; ── Marginal default probability over a bucket ──────────────────
-    ;; ΔPD(t₁, t₂) = PD(t₂) − PD(t₁) = Q(t₁) − Q(t₂)
-    ;; The probability of defaulting in the interval (t₁, t₂].
+    ;;  Marginal default probability over a bucket 
+    ;; PD(t, t) = PD(t)  PD(t) = Q(t)  Q(t)
+    ;; The probability of defaulting in the interval (t, t].
     (defun marginal-pd (hazard-rate t1 t2)
       (- (default-prob hazard-rate t2)
          (default-prob hazard-rate t1)))
 
-    ;; ── Expected Positive Exposure (simplified) ─────────────────────
+    ;;  Expected Positive Exposure (simplified) 
     ;; For an at-the-money forward / swap under GBM:
-    ;;   EE(t) ≈ N · σ · √t
+    ;;   EE(t)  N    t
     ;;
     ;; This is the leading-order approximation.  A full model would
     ;; include the drift, the payoff profile, and optionally a
-    ;; Monte Carlo simulation — but the AD back-propagation logic
+    ;; Monte Carlo simulation  but the AD back-propagation logic
     ;; is identical regardless of model complexity.
     (defun expected-exposure (notional sigma t)
       (* notional (* sigma (sqrt t))))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §3  CVA — Credit Valuation Adjustment
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 3  CVA  Credit Valuation Adjustment
+    ;; 
     ;;
-    ;; CVA = LGD × Σᵢ EE(tᵢ) × DF(0, tᵢ) × ΔPD(tᵢ₋₁, tᵢ)
+    ;; CVA = LGD   EE(t)  DF(0, t)  PD(t, t)
     ;;
     ;; The bank's expected loss due to the counterparty defaulting
     ;; while the derivative has positive mark-to-market.
 
     ;; One time-bucket contribution:
-    ;;   CVA_i = LGD × EE(t_mid) × DF(t_mid) × [PD(t_i) − PD(t_{i-1})]
+    ;;   CVA_i = LGD  EE(t_mid)  DF(t_mid)  [PD(t_i)  PD(t_{i-1})]
     (defun cva-bucket (notional sigma r hazard-rate lgd t-prev t-curr)
       (let ((t-mid (* 0.5 (+ t-prev t-curr))))
         (* lgd
@@ -137,11 +137,11 @@
         0.0
         0))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §4  FVA — Funding Valuation Adjustment
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 4  FVA  Funding Valuation Adjustment
+    ;; 
     ;;
-    ;; FVA = Σᵢ EE(tᵢ) × DF(0, tᵢ) × s_f × Δtᵢ
+    ;; FVA =  EE(t)  DF(0, t)  s_f  t
     ;;
     ;; The cost of funding the uncollateralised expected exposure at
     ;; the bank's funding spread s_f above the risk-free rate.
@@ -169,9 +169,9 @@
         0.0
         0))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §5  Total xVA and Gradient Computation
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 5  Total xVA and Gradient Computation
+    ;; 
     ;;
     ;; Total xVA = CVA + FVA
     ;;
@@ -184,15 +184,15 @@
       (+ (compute-cva notional sigma r hazard-rate lgd)
          (compute-fva notional sigma r funding-spread)))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §6  Run the Computation
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 6  Run the Computation
+    ;; 
 
-    ;; ── Market parameters ───────────────────────────────────────────
+    ;;  Market parameters 
     ;; notional       = 1,000,000  (1 M USD)
     ;; sigma          = 0.20       (20 % annualised vol)
     ;; r              = 0.05       (5 % risk-free rate)
-    ;; hazard-rate    = 0.02       (2 % hazard rate ≈ BBB credit)
+    ;; hazard-rate    = 0.02       (2 % hazard rate  BBB credit)
     ;; lgd            = 0.60       (60 % loss given default)
     ;; funding-spread = 0.012      (120 bp funding spread)
 
@@ -214,7 +214,7 @@
     (display "  Funding spread = 120 bp\n")
     (display "  Maturity       = 5Y (semi-annual buckets)\n\n")
 
-    ;; ── 1. CVA alone ────────────────────────────────────────────────
+    ;;  1. CVA alone 
 
     (display (if win "\n-- CVA (Credit Valuation Adjustment) --\n\n"
                      "\n── CVA (Credit Valuation Adjustment) ──────────────\n\n"))
@@ -238,7 +238,7 @@
         (display (if win "    dCVA/dlgd         = " "    ∂CVA/∂lgd         = "))
         (println (vector-ref cva-grad 4))))
 
-    ;; ── 2. FVA alone ────────────────────────────────────────────────
+    ;;  2. FVA alone 
 
     (display (if win "\n-- FVA (Funding Valuation Adjustment) --\n\n"
                      "\n── FVA (Funding Valuation Adjustment) ──────────────\n\n"))
@@ -260,7 +260,7 @@
         (display (if win "    dFVA/dfunding_spread = " "    ∂FVA/∂funding_spread = "))
         (println (vector-ref fva-grad 3))))
 
-    ;; ── 3. Total xVA with full gradient ─────────────────────────────
+    ;;  3. Total xVA with full gradient 
 
     (display (if win "\n-- Total xVA = CVA + FVA --\n\n"
                      "\n── Total xVA = CVA + FVA ────────────────────────────\n\n"))
@@ -286,7 +286,7 @@
         (display (if win "    dxVA/dfunding_spread = " "    ∂xVA/∂funding_spread = "))
         (println (vector-ref xva-grad 5))))
 
-    ;; ── 4. Interpretation ───────────────────────────────────────────
+    ;;  4. Interpretation 
 
     (display (if win "\n-- Interpretation --\n\n"
                      "\n── Interpretation ──────────────────────────────────\n\n"))
@@ -307,7 +307,7 @@
     (display "  AAD computes all Greeks in O(1) backward passes -- the\n")
     (display "  same technique used by major dealer banks.\n")
 
-    ;; ── 5. Tape-Based AD Architecture ────────────────────────────────
+    ;;  5. Tape-Based AD Architecture 
 
     (display (if win "\n\n-- Tape-Based AD Architecture --\n\n"
                      "\n\n── Tape-Based AD Architecture ──────────────────────\n\n"))

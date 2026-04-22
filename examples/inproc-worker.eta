@@ -1,4 +1,4 @@
-;;; examples/inproc-worker.eta — In-process thread worker for inproc.eta
+;;; examples/inproc-worker.eta  In-process thread worker for inproc.eta
 ;;;
 ;;; spawn-thread-with loads this module in a fresh thread VM, then calls
 ;;; the named function.  The function call happens outside module scope so
@@ -9,7 +9,7 @@
   (import std.io)
   (begin
 
-    ;; Placeholder — spawn-thread-with requires a named function.
+    ;; Placeholder  spawn-thread-with requires a named function.
     ;; The actual work is done below at module top-level.
     (defun noop () '())
 

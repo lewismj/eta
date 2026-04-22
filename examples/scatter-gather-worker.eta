@@ -1,4 +1,4 @@
-;;; examples/scatter-gather-worker.eta — Respondent worker for scatter-gather.eta
+;;; examples/scatter-gather-worker.eta  Respondent worker for scatter-gather.eta
 ;;;
 ;;; Each instance:
 ;;;   1. Receives its worker ID from the parent
