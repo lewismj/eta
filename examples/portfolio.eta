@@ -1,18 +1,18 @@
-;;; portfolio.eta — Causal Portfolio Engine
+;;; portfolio.eta - Causal Portfolio Engine
 ;;;
 ;;; An end-to-end institutional portfolio construction system combining
 ;;; symbolic specification, causal inference, constraint logic programming,
 ;;; neural return estimation, automatic differentiation, and parallel
-;;; scenario analysis — in a single Eta program.
+;;; scenario analysis in a single Eta program.
 ;;;
-;;; ┌─────────────────────────────────────────────────────────────────┐
-;;; │  The Question                                                   │
-;;; │                                                                 │
-;;; │  Given a universe of liquid sector-representative assets,       │
-;;; │  what portfolio maximises causal expected return under          │
-;;; │  macroeconomic uncertainty, subject to risk, sector, and        │
-;;; │  regulatory constraints?                                        │
-;;; └─────────────────────────────────────────────────────────────────┘
+;;; 
+;;;   The Question                                                   
+;;;                                                                  
+;;;   Given a universe of liquid sector-representative assets,       
+;;;   what portfolio maximises causal expected return under          
+;;;   macroeconomic uncertainty, subject to risk, sector, and        
+;;;   regulatory constraints?                                        
+;;; 
 ;;;
 ;;; Why Synthetic Data?
 ;;;
@@ -64,6 +64,24 @@
       (display (if win "----------------------------------------------------------\n"
                        "──────────────────────────────────────────────────────────\n")))
 
+    (defun section-header (title)
+      (display "\n")
+      (sep)
+      (display " ")
+      (display title)
+      (display "\n")
+      (sep)
+      (display "\n"))
+
+    (defun subsection-header (title)
+      (display "\n")
+      (thin-sep)
+      (display "  ")
+      (display title)
+      (display "\n")
+      (thin-sep)
+      (display "\n"))
+
     ;; Lightweight syntax helpers for repeated structural patterns.
     (define-syntax dict
       (syntax-rules ()
@@ -95,13 +113,12 @@
     (define-syntax dotimes
       (syntax-rules ()
         ((_ (i n) body ...)
-         (letrec ((loop (lambda (i)
-                          (if (< i n)
-                              (begin
-                                body ...
-                                (loop (+ i 1)))
-                              'done))))
-           (loop 0)))))
+         (let loop ((i 0))
+           (if (< i n)
+               (begin
+                 body ...
+                 (loop (+ i 1)))
+               'done)))))
 
     (sep)
     (display "  Causal Portfolio Engine\n")
@@ -114,9 +131,9 @@
     (display "    macroeconomic uncertainty, subject to risk, sector, and\n")
     (display "    regulatory constraints?\n")
 
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
     ;; Investment Universe
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
 
     (display "\n")
     (display "  Investment Universe:\n")
@@ -139,15 +156,11 @@
                      "    DGP (known) → Estimator (NN + back-door) → Optimizer (ret(m) − λ·wᵀΣ(m)w)\n"))
     (display "    Structural truth | Learned model output  | Decision\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §0  Data Generation & Fact Table
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 0  Data Generation & Fact Table
+    ;; 
 
-    (display "\n")
-    (sep)
-    (display " S0. Data Generation & Fact Table\n")
-    (sep)
-    (display "\n")
+    (section-header "S0. Data Generation & Fact Table")
 
     ;; Known DGP:
     ;;   sentiment ~ Uniform(0, 1)
@@ -199,9 +212,9 @@
 
     ;; Generate 30 rows per sector (120 total)
     (defun generate-sector-data (sector-sym sector-code base-beta seed)
-      (letrec ((loop (lambda (i state)
-                 (if (> i 30) state
-                     (let* ((rb  (lcg-next state))
+      (let loop ((i 1) (state seed))
+        (if (> i 30) state
+            (let* ((rb  (lcg-next state))
                             (beta (+ base-beta (* (- (car rb) 0.5) 0.3)))
                             (rs  (lcg-next (cdr rb)))
                             (sentiment (car rs))
@@ -211,7 +224,7 @@
                             (rate  (+ 0.01 (* (car rr) 0.04)))
                             (rn  (lcg-noise (cdr rr)))
                             (noise (car rn))
-                            ;; DGP: known coefficients (sentiment confounds macro → return)
+                            ;; DGP: known coefficients (sentiment confounds macro -> return)
                             (ret (+ (* 1.2 beta)
                                     (+ (* 0.6 macro)
                                        (+ (* 0.4 sector-code)
@@ -219,10 +232,9 @@
                                              (+ (* 0.2 (* beta macro))
                                                 (+ (* 0.5 sentiment)
                                                    noise))))))))
-                       (fact-table-insert! universe
-                         sector-sym beta macro rate sentiment ret)
-                       (loop (+ i 1) (cdr rn)))))))
-        (loop 1 seed)))
+              (fact-table-insert! universe
+                sector-sym beta macro rate sentiment ret)
+              (loop (+ i 1) (cdr rn))))))
 
     ;; Reproducible DGP seed used as the baseline reference run.
     (define dgp-seed 42)
@@ -253,15 +265,11 @@
     (display "\n  Ground truth coefficients:\n")
     (display "    beta: 1.2  macro: 0.6  sector: 0.4  rate: -0.3  beta*macro: 0.2  sentiment: 0.5\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §1  Symbolic Portfolio Specification
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 1  Symbolic Portfolio Specification
+    ;; 
 
-    (display "\n")
-    (sep)
-    (display " S1. Symbolic Portfolio Specification\n")
-    (sep)
-    (display "\n")
+    (section-header "S1. Symbolic Portfolio Specification")
 
     ;; Portfolio objective as S-expression:
     ;;   maximize: expected_return - lambda * risk
@@ -295,13 +303,13 @@
               ((and (number? sa) (= sa 0)) sb)
               ((and (number? sb) (= sb 0)) sa)
               ((and (number? sa) (number? sb)) (+ sa sb))
-              (#t (list '+ sa sb)))))
+              (else (list '+ sa sb)))))
         ((eq? (op e) '-)
           (let ((sa (simplify (a1 e))) (sb (simplify (a2 e))))
             (cond
               ((and (number? sb) (= sb 0)) sa)
               ((and (number? sa) (number? sb)) (- sa sb))
-              (#t (list '- sa sb)))))
+              (else (list '- sa sb)))))
         ((eq? (op e) '*)
           (let ((sa (simplify (a1 e))) (sb (simplify (a2 e))))
             (cond
@@ -310,8 +318,8 @@
               ((and (number? sa) (= sa 1)) sb)
               ((and (number? sb) (= sb 1)) sa)
               ((and (number? sa) (number? sb)) (* sa sb))
-              (#t (list '* sa sb)))))
-        (#t e)))
+              (else (list '* sa sb)))))
+        (else e)))
 
     (defun simplify* (e)
       (let ((s (simplify e)))
@@ -328,7 +336,7 @@
         ((eq? (op e) '*)
           (list '+ (list '* (diff (a1 e) v) (a2 e))
                    (list '* (a1 e) (diff (a2 e) v))))
-        (#t 0)))
+        (else 0)))
 
     (defun D (expr var) (simplify* (diff expr var)))
 
@@ -341,15 +349,11 @@
     (display "    d(Objective)/d(risk)            = ") (println dObj/dRisk)
     (display "\n  The objective is inspectable, auditable data — not a black box.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §2  Causal Return Model
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 2  Causal Return Model
+    ;; 
 
-    (display "\n")
-    (sep)
-    (display " S2. Causal Return Model\n")
-    (sep)
-    (display "\n")
+    (section-header "S2. Causal Return Model")
 
     ;; DAG models the data-generating process (NOT portfolio decisions).
     ;; Weights are decisions made *downstream* of the causal model.
@@ -419,15 +423,11 @@
     (display "\n  Note: SCM is assumed known (synthetic data regime).\n")
     (display "  On real data, DAG must be justified from domain knowledge.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §3  Portfolio Constraints (Continuous CLP(R))
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 3  Portfolio Constraints (Continuous CLP(R))
+    ;; 
 
-    (display "\n")
-    (sep)
-    (display " S3. Portfolio Constraints (Continuous CLP(R))\n")
-    (sep)
-    (display "\n")
+    (section-header "S3. Portfolio Constraints (Continuous CLP(R))")
 
     ;; Continuous weight constraints (fractions in [0,1]).
     (define tech-cap 0.30)
@@ -467,15 +467,11 @@
     (display "\n  Constraints are posted declaratively to CLP(R), then solved directly.\n")
     (display "  Unlike discrete grid search, optimization is over the continuous simplex.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §4  Neural Conditional Return Model
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 4  Neural Conditional Return Model
+    ;; 
 
-    (display "\n")
-    (sep)
-    (display " S4. Neural Conditional Return Model\n")
-    (sep)
-    (display "\n")
+    (section-header "S4. Neural Conditional Return Model")
 
     ;; Extract training data from fact table into tensors.
     ;; Input: [beta, macro_growth, sector_code, sentiment]  Target: [return]
@@ -491,7 +487,7 @@
                                     ((eq? s 'energy)      0.0)
                                     ((eq? s 'finance)    -0.5)
                                     ((eq? s 'healthcare) -1.0)
-                                    (#t 0.0)))
+                                    (else 0.0)))
                             (fact-table-ref universe i 4)))) ; sentiment
         '()))
 
@@ -524,17 +520,16 @@
 
     (display "  epoch  |   MSE loss\n")
     (display "  -------+-----------\n")
-    (letrec ((loop (lambda (epoch)
-               (if (> epoch 5000) 'done
-                    (let ((loss (train-step! net opt mse-loss X Y)))
-                      (when (= (modulo epoch 500) 0)
-                        (display "  ")
-                        (display (if (< epoch 1000) " " ""))
-                        (display epoch)
-                        (display "   |  ")
-                        (println loss))
-                      (loop (+ epoch 1)))))))
-      (loop 1))
+    (let loop ((epoch 1))
+      (if (> epoch 5000) 'done
+          (let ((loss (train-step! net opt mse-loss X Y)))
+            (when (= (modulo epoch 500) 0)
+              (display "  ")
+              (display (if (< epoch 1000) " " ""))
+              (display epoch)
+              (display "   |  ")
+              (println loss))
+            (loop (+ epoch 1)))))
 
     (eval! net)
 
@@ -544,10 +539,11 @@
              (out (forward net inp)))
         (item out)))
 
-    ;; Compute causally-adjusted expected return per sector using §2 back-door formula.
-    ;; E[return | do(macro=m)] = Σ_s  E_NN[return | beta, macro, sector, s] · P(s)
+    ;; Compute causally-adjusted expected return per sector using the
+    ;; Section 2 back-door formula:
+    ;; E[return | do(macro=m)] = sum_s E_NN[return | beta, macro, sector, s] * P(s)
     ;; NN approximates conditional expectation (not parameter recovery).
-    ;; Causal identification relies on §2 SCM (assumed known in synthetic regime).
+    ;; Causal identification relies on 2 SCM (assumed known in synthetic regime).
 
     (define sector-info
       ;; (sector-sym  sector-code  representative-beta)
@@ -556,15 +552,15 @@
             (list 'finance    -0.5  1.0)
             (list 'healthcare -1.0  0.7)))
 
-    ;; Macro scenarios for adjusted estimate: average macro ≈ 0.5
+    ;; Macro scenario for adjusted estimate: average macro ~= 0.5
 
     (defun causal-expected-return (sector-sym)
       ;; E[return | do(macro=0.5), sector=s]
       ;; Back-door adjustment: marginalize over sentiment (the confounder)
-      ;; E[ret | do(macro=0.5)] = Σ_sent E[ret | macro=0.5, sent] P(sent)
+      ;; E[ret | do(macro=0.5)] = sum_sent E[ret | macro=0.5, sent] P(sent)
       (let* ((info (car (filter (lambda (si) (eq? (car si) sector-sym)) sector-info)))
-             (scode (car (cdr info)))
-             (beta  (car (cdr (cdr info))))
+             (scode (list-ref info 1))
+             (beta  (list-ref info 2))
              ;; Marginalize over sentiment grid (uniform prior -> simple average)
              (sent-grid '(0.1 0.3 0.5 0.7 0.9))
              (avg (/ (foldl (lambda (acc sv)
@@ -588,7 +584,7 @@
     ;; True E[return | do(macro=0.5), sector=s] from DGP:
     ;;   = 1.2*beta + 0.6*0.5 + 0.4*sector_code - 0.3*rate_avg
     ;;     + 0.2*beta*0.5 + 0.5*E[sentiment]
-    ;;   rate_avg ≈ 0.03, E[sentiment] = 0.5 (uniform)
+    ;;   rate_avg ~= 0.03, E[sentiment] = 0.5 (uniform)
     (defun dgp-expected (beta-val sector-code)
       (+ (* 1.2 beta-val)
          (+ (* 0.6 0.5)
@@ -622,9 +618,9 @@
     (display "  Agreement validates that the estimator approximates the structural\n")
     (display "  relationship, not that it has recovered exact parameters.\n")
 
-    ;; ────────────────────────────────────────────────────────────────
-    ;; §4b  Naive vs Causal Estimation
-    ;; ────────────────────────────────────────────────────────────────
+    ;; 
+    ;; 4b  Naive vs Causal Estimation
+    ;; 
 
     (display "\n")
     (thin-sep)
@@ -632,34 +628,34 @@
     (thin-sep)
     (display "\n")
 
-    ;; Naive: OLS of return on macro_growth only — does NOT control for
+    ;; Naive: OLS of return on macro_growth only does NOT control for
     ;; sentiment.  Because sentiment drives both macro and return, OLS
-    ;; conflates the direct macro→return path with the back-door path
-    ;; macro←sentiment→return, inflating the macro coefficient.
+    ;; conflates the direct macroreturn path with the back-door path
+    ;; macrosentimentreturn, inflating the macro coefficient.
     ;;   Fact-table columns: 2=macro_growth, 4=sentiment, 5=return
     (define naive-ols    (stats:ols-multi universe 5 '(2)))
     (define naive-coeffs (stats:ols-multi-coefficients naive-ols))
     ;; coefficients = (intercept  beta_macro)
-    (define naive-macro-coeff (car (cdr naive-coeffs)))
+    (define naive-macro-coeff (list-ref naive-coeffs 1))
 
-    ;; OLS-controlled: regress return on (macro, sentiment) — partially
+    ;; OLS-controlled: regress return on (macro, sentiment); this partially
     ;; controls confounding by conditioning on the back-door variable.
-    ;; Expected macro coefficient ≈ 0.6 + 0.2*avg_beta (structural truth).
+    ;; Expected macro coefficient ~= 0.6 + 0.2*avg_beta (structural truth).
     (define controlled-ols    (stats:ols-multi universe 5 '(2 4)))
     (define controlled-coeffs (stats:ols-multi-coefficients controlled-ols))
     ;; coefficients = (intercept  beta_macro  beta_sentiment)
-    (define controlled-macro-coeff     (car (cdr controlled-coeffs)))
-    (define controlled-sentiment-coeff (car (cdr (cdr controlled-coeffs))))
+    (define controlled-macro-coeff     (list-ref controlled-coeffs 1))
+    (define controlled-sentiment-coeff (list-ref controlled-coeffs 2))
 
-    ;; Causal approach: back-door adjusted — compute slope per sector,
+    ;; Causal approach: back-door adjusted; compute slope per sector,
     ;; marginalizing over sentiment (the confounder) at each macro level.
     (define sent-grid '(0.1 0.3 0.5 0.7 0.9))
     (define macro-lo 0.3)
     (define macro-hi 0.7)
     (define causal-slope
       (/ (foldl (lambda (acc si)
-                  (let* ((scode (car (cdr si)))
-                         (beta  (car (cdr (cdr si))))
+                  (let* ((scode (list-ref si 1))
+                         (beta  (list-ref si 2))
                          (lo (/ (foldl (lambda (a sv)
                                          (+ a (nn-predict beta macro-lo scode sv)))
                                        0 sent-grid) 5.0))
@@ -691,37 +687,33 @@
     (display "    recovering the average structural effect (heterogeneous via beta*macro).\n")
     (display "    The gap naive vs causal validates that causal adjustment works.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §5  AAD Risk Sensitivities
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 5  AAD Risk Sensitivities
+    ;; 
 
-    (display "\n")
-    (sep)
-    (display " S5. AAD Risk Sensitivities\n")
-    (sep)
-    (display "\n")
+    (section-header "S5. AAD Risk Sensitivities")
 
     ;; AAD gradient driver (same as european.eta / xva.eta)
     (defun grad (f vals)
       (let ((tape (tape-new))
             (n    (length vals)))
-        (let ((vars (letrec ((mk (lambda (vs acc)
-                                   (if (null? vs) (reverse acc)
-                                       (mk (cdr vs)
-                                           (cons (tape-var tape (car vs)) acc))))))
-                      (mk vals '()))))
+        (let ((vars (let mk ((vs vals) (acc '()))
+                      (if (null? vs)
+                          (reverse acc)
+                          (mk (cdr vs)
+                              (cons (tape-var tape (car vs)) acc))))))
           (tape-start! tape)
           (let ((output (apply f vars)))
             (tape-stop!)
             (tape-backward! tape output)
             (let ((grad-vec (make-vector n 0)))
-              (letrec ((collect (lambda (vs i)
-                                  (if (null? vs) grad-vec
-                                      (begin
-                                        (vector-set! grad-vec i
-                                          (tape-adjoint tape (car vs)))
-                                        (collect (cdr vs) (+ i 1)))))))
-                (collect vars 0))
+              (let collect ((vs vars) (i 0))
+                (if (null? vs)
+                    grad-vec
+                    (begin
+                      (vector-set! grad-vec i
+                        (tape-adjoint tape (car vs)))
+                      (collect (cdr vs) (+ i 1)))))
               (list (tape-primal tape output) grad-vec))))))
 
     ;; Portfolio return: weighted sum of causal expected returns
@@ -732,7 +724,7 @@
             (+ (* wf ret-fin)
                (* wh ret-health)))))
 
-    ;; Covariance risk model: σ²_p = wᵀΣw
+    ;; Covariance risk model: sigma^2_p = w' * S * w
     ;; Volatilities per sector
     (define vol-tech 0.22)
     (define vol-energy 0.28)
@@ -747,7 +739,7 @@
     (define rho-eh 0.15)   ; energy-healthcare
     (define rho-fh 0.35)   ; finance-healthcare
 
-    ;; Covariance entries: cov_ij = ρ_ij · σ_i · σ_j
+    ;; Covariance entries: cov_ij = rho_ij * sigma_i * sigma_j
     (define cov-te (* rho-te (* vol-tech vol-energy)))
     (define cov-tf (* rho-tf (* vol-tech vol-fin)))
     (define cov-th (* rho-th (* vol-tech vol-health)))
@@ -756,12 +748,12 @@
     (define cov-fh (* rho-fh (* vol-fin vol-health)))
 
     (defun portfolio-risk-fn (wt we wf wh)
-      ;; wᵀΣw — full 4×4 covariance
+      ;; w' * S * w over a full 4x4 covariance matrix.
       (+ (* (* wt wt) (* vol-tech vol-tech))
          (+ (* (* we we) (* vol-energy vol-energy))
             (+ (* (* wf wf) (* vol-fin vol-fin))
                (+ (* (* wh wh) (* vol-health vol-health))
-                  ;; Cross terms: 2 · w_i · w_j · cov_ij
+                  ;; Cross terms: 2 * w_i * w_j * cov_ij
                   (+ (* 2.0 (* (* wt we) cov-te))
                      (+ (* 2.0 (* (* wt wf) cov-tf))
                         (+ (* 2.0 (* (* wt wh) cov-th))
@@ -769,21 +761,21 @@
                               (+ (* 2.0 (* (* we wh) cov-eh))
                                  (* 2.0 (* (* wf wh) cov-fh))))))))))))
 
-    ;; ────────────────────────────────────────────────────────────────
-    ;; Causal Risk Model — Σ(m) = Cov(R | do(macro=m))
+    ;; 
+    ;; Causal risk model: Sigma(m) = Cov(R | do(macro=m))
     ;;
-    ;; portfolio-risk-fn uses a fixed unconditional Σ (hardcoded above).
+    ;; portfolio-risk-fn uses a fixed unconditional Sigma (hardcoded above).
     ;; Under do(macro=m), macro shifts the entire return distribution, so
     ;; risk must be evaluated in the same causal world as returns:
     ;;
-    ;;   Σ(m) ≈ (1/N) Σ_s (R(m,s) − R̄(m)) (R(m,s) − R̄(m))ᵀ
+    ;;   Sigma(m) ~= (1/N) * sum_s (R(m,s)-Rbar(m)) * (R(m,s)-Rbar(m))^T
     ;;
-    ;; Σ(m) can come from either:
+    ;; (m) can come from either:
     ;;   - empirical 5-point sentiment grid (NN samples), or
     ;;   - structural volatility/correlation parameterisation.
-    ;; For §5 base-case AAD diagnostics we keep portfolio-risk-fn (fixed Σ).
-    ;; For §7 scenario analysis and run-pipeline we use portfolio-causal-risk-fn.
-    ;; ────────────────────────────────────────────────────────────────
+    ;; For Section 5 base-case AAD diagnostics we keep portfolio-risk-fn.
+    ;; For Section 7 scenario analysis and run-pipeline we use portfolio-causal-risk-fn.
+    ;; 
 
     (define sigma-model 'hybrid)
     (define sigma-hybrid-structural-weight 0.70)
@@ -796,85 +788,46 @@
     (define sigma-factor-floor 1e-6)
     (define sigma-idio-floor 1e-6)
 
-    (defun clamp01 (x)
-      (cond
-        ((< x 0.0) 0.0)
-        ((> x 1.0) 1.0)
-        (#t x)))
-
-    (defun clamp-range (x lo hi)
-      (cond
-        ((< x lo) lo)
-        ((> x hi) hi)
-        (#t x)))
-
-    (defun list-mean (xs)
-      (if (null? xs)
-          0.0
-          (/ (foldl (lambda (acc x) (+ acc x)) 0.0 xs)
-             (* 1.0 (length xs)))))
-
-    (defun list-variance (xs)
-      (if (null? xs)
-          0.0
-          (let* ((mu (list-mean xs))
-                 (ss (foldl (lambda (acc x)
-                              (+ acc (* (- x mu) (- x mu))))
-                            0.0
-                            xs)))
-            (/ ss (* 1.0 (length xs))))))
-
-    (defun list-covariance (xs ys)
-      (let* ((mu-x (list-mean xs))
-             (mu-y (list-mean ys)))
-        (letrec ((loop (lambda (xs ys acc n)
-                         (if (or (null? xs) (null? ys))
-                             (if (= n 0)
-                                 0.0
-                                 (/ acc (* 1.0 n)))
-                             (loop (cdr xs)
-                                   (cdr ys)
-                                   (+ acc (* (- (car xs) mu-x)
-                                             (- (car ys) mu-y)))
-                                   (+ n 1))))))
-          (loop xs ys 0.0 0))))
-
     (defun mean4-series (xs1 xs2 xs3 xs4)
-      (letrec ((loop (lambda (a b c d acc)
-                       (if (or (null? a) (null? b) (null? c) (null? d))
-                           (reverse acc)
-                           (loop (cdr a) (cdr b) (cdr c) (cdr d)
-                                 (cons (/ (+ (car a)
-                                             (+ (car b)
-                                                (+ (car c) (car d))))
-                                          4.0)
-                                       acc))))))
-        (loop xs1 xs2 xs3 xs4 '())))
+      (let loop ((a xs1) (b xs2) (c xs3) (d xs4) (acc '()))
+        (if (or (null? a) (null? b) (null? c) (null? d))
+            (reverse acc)
+            (loop (cdr a)
+                  (cdr b)
+                  (cdr c)
+                  (cdr d)
+                  (cons (/ (+ (car a)
+                              (+ (car b)
+                                 (+ (car c) (car d))))
+                           4.0)
+                        acc)))))
 
     (defun sigma-blend (alpha a b)
-      (if (null? a)
-          '()
-          (cons (+ (* alpha (car a))
-                   (* (- 1.0 alpha) (car b)))
-                (sigma-blend alpha (cdr a) (cdr b)))))
+      (let loop ((xs a) (ys b) (acc '()))
+        (if (or (null? xs) (null? ys))
+            (reverse acc)
+            (loop (cdr xs)
+                  (cdr ys)
+                  (cons (+ (* alpha (car xs))
+                           (* (- 1.0 alpha) (car ys)))
+                        acc)))))
 
     (defun collect-sector-macro-residual (sector-sym sector-code)
-      (letrec ((loop (lambda (i macro-acc resid-acc)
-                       (if (>= i n-obs)
-                           (list (reverse macro-acc) (reverse resid-acc))
-                           (let ((s (fact-table-ref universe i 0)))
-                             (if (eq? s sector-sym)
-                                 (let* ((beta (fact-table-ref universe i 1))
-                                        (macro (fact-table-ref universe i 2))
-                                        (sent (fact-table-ref universe i 4))
-                                        (ret (fact-table-ref universe i 5))
-                                        (pred (nn-predict beta macro sector-code sent))
-                                        (resid (- ret pred)))
-                                   (loop (+ i 1)
-                                         (cons macro macro-acc)
-                                         (cons resid resid-acc)))
-                                 (loop (+ i 1) macro-acc resid-acc)))))))
-        (loop 0 '() '())))
+      (let loop ((i 0) (macro-acc '()) (resid-acc '()))
+        (if (>= i n-obs)
+            (list (reverse macro-acc) (reverse resid-acc))
+            (let ((s (fact-table-ref universe i 0)))
+              (if (eq? s sector-sym)
+                  (let* ((beta (fact-table-ref universe i 1))
+                         (macro (fact-table-ref universe i 2))
+                         (sent (fact-table-ref universe i 4))
+                         (ret (fact-table-ref universe i 5))
+                         (pred (nn-predict beta macro sector-code sent))
+                         (resid (- ret pred)))
+                    (loop (+ i 1)
+                          (cons macro macro-acc)
+                          (cons resid resid-acc)))
+                  (loop (+ i 1) macro-acc resid-acc))))))
 
     (define tech-series   (collect-sector-macro-residual 'tech        1.0))
     (define energy-series (collect-sector-macro-residual 'energy      0.0))
@@ -882,23 +835,23 @@
     (define health-series (collect-sector-macro-residual 'healthcare -1.0))
 
     (define macro-tech   (car tech-series))
-    (define resid-tech   (car (cdr tech-series)))
+    (define resid-tech   (list-ref tech-series 1))
     (define macro-energy (car energy-series))
-    (define resid-energy (car (cdr energy-series)))
+    (define resid-energy (list-ref energy-series 1))
     (define macro-fin    (car fin-series))
-    (define resid-fin    (car (cdr fin-series)))
+    (define resid-fin    (list-ref fin-series 1))
     (define macro-health (car health-series))
-    (define resid-health (car (cdr health-series)))
+    (define resid-health (list-ref health-series 1))
 
     ;; Residual factor model learned from NN forecast errors:
     ;; epsilon_i = l_i * f + eta_i,  Cov = l l^T Var(f) + diag(Var(eta_i)).
     (define resid-factor-series
       (mean4-series resid-tech resid-energy resid-fin resid-health))
     (define learned-factor-var
-      (max sigma-factor-floor (list-variance resid-factor-series)))
+      (max sigma-factor-floor (stats:variance resid-factor-series)))
 
     (defun learned-loading (resid-series)
-      (/ (list-covariance resid-series resid-factor-series)
+      (/ (stats:covariance resid-series resid-factor-series)
          (+ learned-factor-var 1e-9)))
 
     (define learned-loading-tech   (learned-loading resid-tech))
@@ -908,7 +861,7 @@
 
     (defun learned-idio-variance (resid-series loading)
       (max sigma-idio-floor
-           (- (list-variance resid-series)
+           (- (stats:variance resid-series)
               (* (* loading loading) learned-factor-var))))
 
     (define learned-idio-tech   (learned-idio-variance resid-tech learned-loading-tech))
@@ -926,32 +879,36 @@
                       (append (map* (lambda (x) (abs x)) resid-fin)
                               (map* (lambda (x) (abs x)) resid-health)))))
     (define learned-abs-resid-mean
-      (max 1e-9 (list-mean learned-abs-residual-series)))
+      (max 1e-9 (stats:mean learned-abs-residual-series)))
     (define learned-macro-abs-slope
-      (/ (list-covariance learned-macro-series learned-abs-residual-series)
-         (+ (list-variance learned-macro-series) 1e-9)))
+      (/ (stats:covariance learned-macro-series learned-abs-residual-series)
+         (+ (stats:variance learned-macro-series) 1e-9)))
     (define learned-macro-sensitivity
-      (clamp-range (/ learned-macro-abs-slope learned-abs-resid-mean) 0.05 1.20))
+      (clamp (/ learned-macro-abs-slope learned-abs-resid-mean) 0.05 1.20))
 
     (defun scenario-covariance-empirical (macro-val)
       ;; Returns a 10-element list: (vt ve vf vh cte ctf cth cef ceh cfh)
       ;; where vt = Var(tech|do(m)), cte = Cov(tech,energy|do(m)), etc.
       ;; Precompute once per scenario; pass the result to
       ;; portfolio-risk-from-sigma to avoid redundant NN calls in loops.
-      (letrec ((collect (lambda (svs rt-acc re-acc rf-acc rh-acc)
-                          (if (null? svs)
-                              (list rt-acc re-acc rf-acc rh-acc)
-                              (let ((sv (car svs)))
-                                (collect (cdr svs)
-                                  (cons (nn-predict 1.3 macro-val  1.0 sv) rt-acc)
-                                  (cons (nn-predict 0.8 macro-val  0.0 sv) re-acc)
-                                  (cons (nn-predict 1.0 macro-val -0.5 sv) rf-acc)
-                                  (cons (nn-predict 0.7 macro-val -1.0 sv) rh-acc)))))))
-        (let* ((samps (collect '(0.1 0.3 0.5 0.7 0.9) '() '() '() '()))
-               (rt-s  (car samps))
-               (re-s  (car (cdr samps)))
-               (rf-s  (car (cdr (cdr samps))))
-               (rh-s  (car (cdr (cdr (cdr samps)))))
+      (let ((samps
+              (let collect ((svs '(0.1 0.3 0.5 0.7 0.9))
+                            (rt-acc '())
+                            (re-acc '())
+                            (rf-acc '())
+                            (rh-acc '()))
+                (if (null? svs)
+                    (list rt-acc re-acc rf-acc rh-acc)
+                    (let ((sv (car svs)))
+                      (collect (cdr svs)
+                        (cons (nn-predict 1.3 macro-val  1.0 sv) rt-acc)
+                        (cons (nn-predict 0.8 macro-val  0.0 sv) re-acc)
+                        (cons (nn-predict 1.0 macro-val -0.5 sv) rf-acc)
+                        (cons (nn-predict 0.7 macro-val -1.0 sv) rh-acc)))))))
+        (let* ((rt-s  (car samps))
+               (re-s  (list-ref samps 1))
+               (rf-s  (list-ref samps 2))
+               (rh-s  (list-ref samps 3))
                (n     5.0)
                (sumf  (lambda (xs) (foldl (lambda (a x) (+ a x)) 0.0 xs)))
                (mu-t  (/ (sumf rt-s) n))
@@ -964,12 +921,12 @@
                (cf    (ctr rf-s mu-f))
                (ch    (ctr rh-s mu-h))
                (dotc  (lambda (xs ys)
-                        (/ (letrec ((lp (lambda (xs ys acc)
-                                          (if (null? xs) acc
-                                              (lp (cdr xs) (cdr ys)
-                                                  (+ acc (* (car xs) (car ys))))))))
-                              (lp xs ys 0.0))
-                           n))))
+                        (/ (let lp ((lx xs) (ly ys) (acc 0.0))
+                             (if (null? lx)
+                                 acc
+                                 (lp (cdr lx) (cdr ly)
+                                     (+ acc (* (car lx) (car ly))))))
+                            n))))
           (list (dotc ct ct) (dotc ce ce) (dotc cf cf) (dotc ch ch)
                 (dotc ct ce) (dotc ct cf) (dotc ct ch)
                 (dotc ce cf) (dotc ce ch) (dotc cf ch)))))
@@ -982,7 +939,7 @@
     (defun scenario-covariance-structural (macro-val)
       ;; Parametric covariance tied to beta exposures, macro regime, and
       ;; sector correlation structure.
-      (let* ((corr-scale (clamp01 (+ sigma-corr-floor (* sigma-corr-range macro-val))))
+      (let* ((corr-scale (clamp (+ sigma-corr-floor (* sigma-corr-range macro-val)) 0.0 1.0))
              (sig-t (structural-volatility vol-tech   1.3 macro-val))
              (sig-e (structural-volatility vol-energy 0.8 macro-val))
              (sig-f (structural-volatility vol-fin    1.0 macro-val))
@@ -1023,9 +980,9 @@
         (list vt ve vf vh cte ctf cth cef ceh cfh)))
 
     (defun scenario-covariance-hybrid (macro-val)
-      (sigma-blend (clamp01 sigma-hybrid-structural-weight)
-                   (scenario-covariance-structural macro-val)
-                   (scenario-covariance-learned macro-val)))
+      (sigma-blend (clamp sigma-hybrid-structural-weight 0.0 1.0)
+        (scenario-covariance-structural macro-val)
+        (scenario-covariance-learned macro-val)))
 
     (defun scenario-covariance (macro-val)
       (cond
@@ -1037,7 +994,7 @@
          (scenario-covariance-learned macro-val))
         ((eq? sigma-model 'hybrid)
          (scenario-covariance-hybrid macro-val))
-        (#t
+        (else
          (scenario-covariance-structural macro-val))))
 
     (defun sigma-trace (S)
@@ -1047,7 +1004,7 @@
                (car (cdr (cdr (cdr S))))))))
 
     (defun portfolio-risk-from-sigma (wt we wf wh S)
-      ;; wᵀΣw where S = (vt ve vf vh cte ctf cth cef ceh cfh)
+      ;; ww where S = (vt ve vf vh cte ctf cth cef ceh cfh)
       (let* ((vt  (car S))
              (S1  (cdr S))  (ve  (car S1))
              (S2  (cdr S1)) (vf  (car S2))
@@ -1070,7 +1027,7 @@
                                    (* 2.0 (* (* wf wh) cfh)))))))))))))
 
     (defun portfolio-causal-risk-fn (wt we wf wh macro-val)
-      ;; wᵀΣ(m)w — portfolio variance in the causal world do(macro=m).
+      ;; Portfolio variance in the causal world do(macro=m): w' * Sigma(m) * w.
       ;; Convenience wrapper: for tight loops over many portfolios,
       ;; precompute (scenario-covariance m) once and call
       ;; portfolio-risk-from-sigma directly to avoid redundant NN calls.
@@ -1078,34 +1035,32 @@
 
     (defun sigma-min-risk-sampled (S)
       ;; Deterministic simplex scan at 10% granularity.
-      (letrec ((loop-tech
-                 (lambda (it best)
-                   (if (> it 10)
-                       best
-                       (loop-energy it 0 best))))
-               (loop-energy
-                 (lambda (it ie best)
-                   (if (> ie (- 10 it))
-                       (loop-tech (+ it 1) best)
-                       (loop-fin it ie 0 best))))
-               (loop-fin
-                 (lambda (it ie iff best)
-                   (if (> iff (- 10 (+ it ie)))
-                       (loop-energy it (+ ie 1) best)
-                       (let* ((ih (- 10 (+ it (+ ie iff))))
-                              (wt (/ it 10.0))
-                              (we (/ ie 10.0))
-                              (wf (/ iff 10.0))
-                              (wh (/ ih 10.0))
-                              (risk (portfolio-risk-from-sigma wt we wf wh S)))
-                         (loop-fin it ie (+ iff 1) (min best risk)))))))
-        (loop-tech 0 1e9)))
+      (let loop-tech ((it 0) (best 1e9))
+        (if (> it 10)
+            best
+            (loop-tech
+              (+ it 1)
+              (let loop-energy ((ie 0) (best-tech best))
+                (if (> ie (- 10 it))
+                    best-tech
+                    (loop-energy
+                      (+ ie 1)
+                      (let loop-fin ((iff 0) (best-energy best-tech))
+                        (if (> iff (- 10 (+ it ie)))
+                            best-energy
+                            (let* ((ih (- 10 (+ it (+ ie iff))))
+                                   (wt (/ it 10.0))
+                                   (we (/ ie 10.0))
+                                   (wf (/ iff 10.0))
+                                   (wh (/ ih 10.0))
+                                   (risk (portfolio-risk-from-sigma wt we wf wh S)))
+                              (loop-fin (+ iff 1) (min best-energy risk))))))))))))
 
     (defun sigma-psd-sampled? (S)
       (>= (sigma-min-risk-sampled S) -1e-9))
 
-    ;; ── Base-case causal covariance ───────────────────────────────────
-    ;; Σ(0.5) precomputed once here so that §6 (optimiser) and §7 (scenarios)
+    ;; Base-case causal covariance.
+    ;; Sigma(0.5) is precomputed once so Sections 6 (optimizer) and 7 (scenarios)
     ;; share the same risk model.  Both return and risk now live in the
     ;; causal world do(macro=0.5) for the base optimisation objective.
     (define sigma-base-opt (scenario-covariance 0.5))
@@ -1136,7 +1091,7 @@
         (cond
           ((number? b) b)
           ((number? a) a)
-          (#t #f))))
+          (else #f))))
 
     (defun witness-numbers (witness)
       (if (null? witness)
@@ -1149,7 +1104,7 @@
         (cond
           ((number? dv) dv)
           ((number? witness-val) witness-val)
-          (#t (error tag)))))
+          (else (error tag)))))
 
     (defun quadratic-risk-expr (ws S)
       ;; Build the exact quadratic form w'Sw in CLP(R) objective syntax.
@@ -1208,7 +1163,7 @@
                  (res (cond
                         ((eq? raw #f) (error "clp.r.infeasible"))
                         ((eq? raw 'clp.r.unbounded) (error "clp.r.unbounded"))
-                        (#t
+                        (else
                           (let* ((opt (car raw))
                                  (witness (cdr raw))
                                  (_ (apply-witness! witness))
@@ -1280,7 +1235,7 @@
         (println (vector-ref kg 3))))
 
     ;; Risk contribution by asset (Euler allocation under quadratic form):
-    ;; RC_i = w_i × ∂(wᵀΣw)/∂w_i
+    ;; RC_i = w_i * d(w' * S * w)/dw_i
     (display (if win "\n  Risk Contribution by Asset (Euler: RC_i = w_i * dRisk/dw_i):\n"
                      "\n  Risk Contribution by Asset (Euler: RCᵢ = wᵢ × ∂Risk/∂wᵢ):\n"))
 
@@ -1305,15 +1260,11 @@
     (display "  avoiding repeated revaluation -- the same technique used\n")
     (display "  by production xVA desks.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §6  Explainable Portfolio Selection
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 6  Explainable Portfolio Selection
+    ;; 
 
-    (display "\n")
-    (sep)
-    (display " S6. Explainable Portfolio Selection\n")
-    (sep)
-    (display "\n")
+    (section-header "S6. Explainable Portfolio Selection")
 
     ;; Solve directly in CLP(R) using the quadratic causal risk objective:
     ;;   ret . w - lambda * w'Sigma(0.5)w
@@ -1457,15 +1408,11 @@
     (display "    -> unified, composable decision system\n")
     (thin-sep)
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;; §7  Parallel Scenario Analysis (Actor Model)
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; 7  Parallel Scenario Analysis (Actor Model)
+    ;; 
 
-    (display "\n")
-    (sep)
-    (display " S7. Parallel Scenario Analysis (Actor Model)\n")
-    (sep)
-    (display "\n")
+    (section-header "S7. Parallel Scenario Analysis (Actor Model)")
 
     (display "  Each scenario is a do-operator intervention: do(macro=m).\n")
     (display "  Return(m) = E[Y|do(m)] estimated via S4 model + S2 adjustment.\n")
@@ -1507,11 +1454,11 @@
     (define recess-ret (scenario-return opt-wt opt-we opt-wf opt-wh 0.1))
     (define rate-ret   (scenario-return opt-wt opt-we opt-wf opt-wh 0.35))
 
-    ;; Causal risk Σ(m) per scenario — precomputed once, reused in both the
+    ;; Causal risk Sigma(m) per scenario is precomputed once and reused in both the
     ;; display table and the counterfactual rebalancing loop below.
-    ;; sigma-base-opt was already computed in §5 (shared with §6 optimizer).
+    ;; sigma-base-opt was already computed in Section 5 (shared with Section 6 optimizer).
     ;; Returns and risk now live in the same causal world: do(macro=m).
-    ;; opt-w*-f were already produced by the CLP(R) solve in §6.
+    ;; opt-w*-f were already produced by the CLP(R) solve in Section 6.
     (define sigma-base   sigma-base-opt)      ; reuse §5 precomputed value
     (define sigma-boom   (scenario-covariance 0.8))
     (define sigma-recess (scenario-covariance 0.1))
@@ -1539,7 +1486,7 @@
       (display "  Best-case return:  ") (println best)
       (display "  Range:             ") (println (- best worst)))
 
-    ;; Counterfactual rebalancing: what if macro +1σ?
+    ;; Counterfactual rebalancing: what if macro +1?
     (display "\n  Counterfactual rebalancing (macro = 0.8, growth boom):\n")
     (defun scenario-return-coeffs (macro-val)
       (list (scenario-return 100 0 0 0 macro-val)
@@ -1561,7 +1508,7 @@
     (display "Finance ") (display (car (cdr (cdr cf-boom-best)))) (display "%, ")
     (display "Healthcare ") (display (car (cdr (cdr (cdr cf-boom-best))))) (display "%\n")
 
-    ;; ── Stability Check ───────────────────────────────────────────
+    ;; Stability check.
 
     (display "\n")
     (thin-sep)
@@ -1620,11 +1567,8 @@
     ;; Stage-2 robustness: DAG sensitivity and partial-identification bounds.
     ;; Evaluate plausible graph variants, including one with latent confounding.
 
-    (display "\n")
-    (thin-sep)
-    (display "  DAG Sensitivity and Partial Identification\n")
-    (thin-sep)
-    (display "\n")
+    (section-header "S8. Robustness and Stress Validation")
+    (subsection-header "DAG Sensitivity and Partial Identification")
 
     (define stage2-observed
       '(sentiment macro_growth sector_perf interest_rate asset_return))
@@ -1662,12 +1606,6 @@
                           stage2-observed
                           1.0)))
 
-    (defun symbol-member? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((eq? x (car xs)) #t)
-        (#t (symbol-member? x (cdr xs)))))
-
     (defun tau-from-sentiment (sv)
       (list (nn-predict 1.3 0.5  1.0 sv)
             (nn-predict 0.8 0.5  0.0 sv)
@@ -1696,9 +1634,9 @@
         ((eq? status 'unidentified) base-returns)
         ((eq? status 'direct) tau-direct)
         ((and (eq? status 'adjust) (null? z-set)) tau-direct)
-        ((and (eq? status 'adjust) (symbol-member? 'sentiment z-set)) base-returns)
+        ((and (eq? status 'adjust) (member 'sentiment z-set)) base-returns)
         ((eq? status 'adjust) base-returns)
-        (#t base-returns)))
+        (else base-returns)))
 
     (defun tau-bounds-from-stress (tau stress)
       (let ((t0 (car tau))
@@ -1768,49 +1706,48 @@
       (cond
         ((and (<= change-rate 0.2) (<= regret-ratio 0.05)) 'stable)
         ((and (<= change-rate 0.5) (<= regret-ratio 0.15)) 'moderate)
-        (#t 'fragile)))
+        (else 'fragile)))
 
     (defun compute-stage2-report (lam base-weights)
-      (letrec ((eval-variant
-                 (lambda (variant)
-                   (let* ((name (assoc-ref 'name variant))
-                          (dagv (assoc-ref 'dag variant))
-                          (observed (assoc-ref 'observed variant))
-                          (stress-scale (assoc-ref 'stress variant))
-                          (details
-                            (do:identify-details-observed
-                              dagv 'asset_return 'macro_growth observed))
-                          (status (assoc-ref 'status details))
-                          (z-set (assoc-ref 'chosen-z details))
-                          (tau-point (tau-point-for-status status z-set))
-                          (base-stress (* stage2-latent-stress stress-scale))
-                          (stress (if (eq? status 'unidentified)
-                                      (max stage2-latent-stress base-stress)
-                                      base-stress))
-                          (bounds (tau-bounds-from-stress tau-point stress))
-                          (tau-low (car bounds))
-                          (tau-high (car (cdr bounds)))
-                          (w-opt (solve-weights-from-tau lam tau-point sigma-base-opt))
-                          (opt-score (score-from-tau w-opt tau-point lam sigma-base-opt))
-                          (base-score-v (score-from-tau base-weights tau-point lam sigma-base-opt))
-                          (regret (max 0.0 (- opt-score base-score-v)))
-                          (changed (not (weights-close-f? w-opt base-weights 1e-6))))
-                     (dict
-                       (name name)
-                       (status status)
-                       (chosen-z z-set)
-                       (tau-point tau-point)
-                       (tau-low tau-low)
-                       (tau-high tau-high)
-                       (weights w-opt)
-                       (changed changed)
-                       (regret regret)))))
-               (collect
-                 (lambda (vs acc)
-                   (if (null? vs)
-                       (reverse acc)
-                       (collect (cdr vs) (cons (eval-variant (car vs)) acc))))))
-        (let* ((variants (collect stage2-dag-family '()))
+      (let* ((eval-variant
+               (lambda (variant)
+                 (let* ((name (assoc-ref 'name variant))
+                        (dagv (assoc-ref 'dag variant))
+                        (observed (assoc-ref 'observed variant))
+                        (stress-scale (assoc-ref 'stress variant))
+                        (details
+                          (do:identify-details-observed
+                            dagv 'asset_return 'macro_growth observed))
+                        (status (assoc-ref 'status details))
+                        (z-set (assoc-ref 'chosen-z details))
+                        (tau-point (tau-point-for-status status z-set))
+                        (base-stress (* stage2-latent-stress stress-scale))
+                        (stress (if (eq? status 'unidentified)
+                                    (max stage2-latent-stress base-stress)
+                                    base-stress))
+                        (bounds (tau-bounds-from-stress tau-point stress))
+                        (tau-low (car bounds))
+                        (tau-high (list-ref bounds 1))
+                        (w-opt (solve-weights-from-tau lam tau-point sigma-base-opt))
+                        (opt-score (score-from-tau w-opt tau-point lam sigma-base-opt))
+                        (base-score-v (score-from-tau base-weights tau-point lam sigma-base-opt))
+                        (regret (max 0.0 (- opt-score base-score-v)))
+                        (changed (not (weights-close-f? w-opt base-weights 1e-6))))
+                   (dict
+                     (name name)
+                     (status status)
+                     (chosen-z z-set)
+                     (tau-point tau-point)
+                     (tau-low tau-low)
+                     (tau-high tau-high)
+                     (weights w-opt)
+                     (changed changed)
+                     (regret regret)))))
+             (variants (let collect ((vs stage2-dag-family) (acc '()))
+                         (if (null? vs)
+                             (reverse acc)
+                             (collect (cdr vs)
+                                      (cons (eval-variant (car vs)) acc)))))
                (first (car variants))
                (tau-min (foldl (lambda (acc vr)
                                  (tau-pairwise-min acc (assoc-ref 'tau-low vr)))
@@ -1838,18 +1775,14 @@
                (regret-ratio (/ max-regret (+ (abs baseline-score) 1e-9)))
                (label (robustness-label change-rate regret-ratio))
                (distinct-optima
-                 (letrec ((add-unique
-                            (lambda (w ws)
-                              (if (any? (lambda (u) (weights-close-f? u w 1e-6)) ws)
-                                  ws
-                                  (cons w ws))))
-                          (walk
-                            (lambda (xs acc)
-                              (if (null? xs)
+                 (length
+                   (foldl (lambda (acc vr)
+                            (let ((w (assoc-ref 'weights vr)))
+                              (if (any? (lambda (u) (weights-close-f? u w 1e-6)) acc)
                                   acc
-                                  (walk (cdr xs)
-                                        (add-unique (assoc-ref 'weights (car xs)) acc))))))
-                   (length (walk variants '()))))
+                                  (cons w acc))))
+                          '()
+                          variants)))
                (argmax-stability (- 1.0 change-rate)))
           (dict
             (variants variants)
@@ -1938,13 +1871,13 @@
         ((eq? mode 'uncertainty-penalty)
          (tau-sub tau-center
                   (tau-scale (tau-width tau-low tau-high) stage3-tau-penalty)))
-        (#t tau-center)))
+        (else tau-center)))
 
     (defun mode-lambda (mode lam sigma-unc)
       (cond
         ((eq? mode 'uncertainty-penalty)
          (* lam (+ 1.0 (* stage3-sigma-penalty sigma-unc))))
-        (#t lam)))
+        (else lam)))
 
     (defun weights->pct (weights)
       (weights-f->pct
@@ -2065,13 +1998,12 @@
       (map* (lambda (x) (* x k)) S))
 
     (defun collect-sector-return-samples (sector-sym)
-      (letrec ((loop (lambda (i acc)
-                       (if (>= i n-obs)
-                           (reverse acc)
-                           (if (eq? (fact-table-ref universe i 0) sector-sym)
-                               (loop (+ i 1) (cons (fact-table-ref universe i 5) acc))
-                               (loop (+ i 1) acc))))))
-        (loop 0 '())))
+      (let loop ((i 0) (acc '()))
+        (if (>= i n-obs)
+            (reverse acc)
+            (if (eq? (fact-table-ref universe i 0) sector-sym)
+                (loop (+ i 1) (cons (fact-table-ref universe i 5) acc))
+                (loop (+ i 1) acc)))))
 
     (defun simple-factor-tilt-weights ()
       ;; Heuristic long-only tilt toward higher macro beta sectors.
@@ -2117,21 +2049,21 @@
     (define empirical-fin-returns    (collect-sector-return-samples 'finance))
     (define empirical-health-returns (collect-sector-return-samples 'healthcare))
     (define empirical-returns
-      (list (list-mean empirical-tech-returns)
-            (list-mean empirical-energy-returns)
-            (list-mean empirical-fin-returns)
-            (list-mean empirical-health-returns)))
+      (list (stats:mean empirical-tech-returns)
+            (stats:mean empirical-energy-returns)
+            (stats:mean empirical-fin-returns)
+            (stats:mean empirical-health-returns)))
     (define empirical-sigma
-      (list (list-variance empirical-tech-returns)
-            (list-variance empirical-energy-returns)
-            (list-variance empirical-fin-returns)
-            (list-variance empirical-health-returns)
-            (list-covariance empirical-tech-returns empirical-energy-returns)
-            (list-covariance empirical-tech-returns empirical-fin-returns)
-            (list-covariance empirical-tech-returns empirical-health-returns)
-            (list-covariance empirical-energy-returns empirical-fin-returns)
-            (list-covariance empirical-energy-returns empirical-health-returns)
-            (list-covariance empirical-fin-returns empirical-health-returns)))
+      (list (stats:variance empirical-tech-returns)
+            (stats:variance empirical-energy-returns)
+            (stats:variance empirical-fin-returns)
+            (stats:variance empirical-health-returns)
+            (stats:covariance empirical-tech-returns empirical-energy-returns)
+            (stats:covariance empirical-tech-returns empirical-fin-returns)
+            (stats:covariance empirical-tech-returns empirical-health-returns)
+            (stats:covariance empirical-energy-returns empirical-fin-returns)
+            (stats:covariance empirical-energy-returns empirical-health-returns)
+            (stats:covariance empirical-fin-returns empirical-health-returns)))
     (define empirical-mv-weights
       (solve-weights-from-tau lambda-risk empirical-returns empirical-sigma))
 
@@ -2241,22 +2173,14 @@
           (regret regret))))
 
     (define stage5-rows
-      (letrec ((walk-regimes
-                 (lambda (regimes acc)
-                   (if (null? regimes)
-                       (reverse acc)
-                       (walk-regimes
-                         (cdr regimes)
-                         (walk-strategies (car regimes) stage5-strategies acc)))))
-               (walk-strategies
-                 (lambda (regime strategies acc)
-                   (if (null? strategies)
-                       acc
-                       (walk-strategies
-                         regime
-                         (cdr strategies)
-                         (cons (evaluate-stress-row (car strategies) regime) acc))))))
-        (walk-regimes stage5-regimes '())))
+      (reverse
+        (foldl (lambda (rows regime)
+                 (foldl (lambda (acc strategy)
+                          (cons (evaluate-stress-row strategy regime) acc))
+                        rows
+                        stage5-strategies))
+               '()
+               stage5-regimes)))
 
     (defun summarize-strategy (strategy-name)
       (let* ((r0 (stress-row-metric stage5-rows strategy-name 'dgp-correct 'oos-return))
@@ -2350,7 +2274,7 @@
     (display stage5-fails-less-badly-count)
     (display " baseline(s))\n")
 
-    ;; ── Causal–Decision Coupling ──────────────────────────────────
+    ;; Causal-decision coupling.
 
     (display "\n")
     (thin-sep)
@@ -2398,11 +2322,11 @@
     (display "    - Without covariance: diversification invisible to optimizer\n")
     (display "    - Without AAD: opaque risk decomposition\n")
 
-    ;; ── Distributed Scenario Validation (Actors) ──────────────────
+    ;; Distributed scenario validation (actors).
     ;;
     ;; Re-run the 4 macro scenarios in parallel worker threads, each
     ;; using the known DGP coefficients (not the NN).  This demonstrates
-    ;; the scatter → gather actor pattern AND provides an independent
+    ;; the scatter -> gather actor pattern and provides an independent
     ;; cross-check against the NN-based estimates above.
 
     (display "\n")
@@ -2421,27 +2345,28 @@
         (lambda ()
           (let* ((mb (current-mailbox))
                  (task (recv! mb 'wait))
-                 (wt  (/ (car task) 100.0))
-                 (we  (/ (car (cdr task)) 100.0))
-                 (wf  (/ (car (cdr (cdr task))) 100.0))
-                 (wh  (/ (car (cdr (cdr (cdr task)))) 100.0))
-                 (mv  (car (cdr (cdr (cdr (cdr task)))))))
+                 (wt  (/ (list-ref task 0) 100.0))
+                 (we  (/ (list-ref task 1) 100.0))
+                 (wf  (/ (list-ref task 2) 100.0))
+                 (wh  (/ (list-ref task 3) 100.0))
+                 (mv  (list-ref task 4))
+                 (dgp (lambda (b m sc r s)
+                        (+ (* 1.2 b) (+ (* 0.6 m) (+ (* 0.4 sc)
+                           (+ (* -0.3 r) (+ (* 0.2 (* b m))
+                              (* 0.5 s)))))))))
             ;; DGP: return = 1.2*beta + 0.6*macro + 0.4*sector
             ;;             - 0.3*rate + 0.2*beta*macro + 0.5*sentiment
-            (letrec ((dgp (lambda (b m sc r s)
-                       (+ (* 1.2 b) (+ (* 0.6 m) (+ (* 0.4 sc)
-                          (+ (* -0.3 r) (+ (* 0.2 (* b m))
-                             (* 0.5 s))))))))
-                     (avg-sent (lambda (svs acc n)
-                       (if (null? svs) (/ acc n)
-                           (let ((sv (car svs)))
-                             (avg-sent (cdr svs)
-                               (+ acc (+ (* wt (dgp 1.3 mv  1.0 0.03 sv))
-                                         (+ (* we (dgp 0.8 mv  0.0 0.03 sv))
-                                            (+ (* wf (dgp 1.0 mv -0.5 0.03 sv))
-                                               (* wh (dgp 0.7 mv -1.0 0.03 sv))))))
-                               (+ n 1)))))))
-              (send! mb (avg-sent '(0.1 0.3 0.5 0.7 0.9) 0 0) 'wait))))))
+            (let avg-sent ((svs '(0.1 0.3 0.5 0.7 0.9)) (acc 0.0) (n 0.0))
+              (if (null? svs)
+                  (send! mb (/ acc n) 'wait)
+                  (let ((sv (car svs)))
+                    (avg-sent
+                      (cdr svs)
+                      (+ acc (+ (* wt (dgp 1.3 mv  1.0 0.03 sv))
+                                (+ (* we (dgp 0.8 mv  0.0 0.03 sv))
+                                   (+ (* wf (dgp 1.0 mv -0.5 0.03 sv))
+                                      (* wh (dgp 0.7 mv -1.0 0.03 sv))))))
+                      (+ n 1.0)))))))))
 
     ;; Scatter: spawn 4 threads, send each a task
     (define w-base   (make-scenario-worker))
@@ -2480,24 +2405,22 @@
     ;; ------------------------------------------------------------------
 
     (defun pct->frac-weights (weights-pct)
-      (list (/ (car weights-pct) 100.0)
-            (/ (car (cdr weights-pct)) 100.0)
-            (/ (car (cdr (cdr weights-pct))) 100.0)
-            (/ (car (cdr (cdr (cdr weights-pct)))) 100.0)))
+      (list (/ (list-ref weights-pct 0) 100.0)
+            (/ (list-ref weights-pct 1) 100.0)
+            (/ (list-ref weights-pct 2) 100.0)
+            (/ (list-ref weights-pct 3) 100.0)))
 
     (defun portfolio-beta-from-pct (weights-pct)
-      (+ (* (/ (car weights-pct) 100.0) 1.3)
-         (+ (* (/ (car (cdr weights-pct)) 100.0) 0.8)
-            (+ (* (/ (car (cdr (cdr weights-pct))) 100.0) 1.0)
-               (* (/ (car (cdr (cdr (cdr weights-pct)))) 100.0) 0.7)))))
+      (+ (* (/ (list-ref weights-pct 0) 100.0) 1.3)
+         (+ (* (/ (list-ref weights-pct 1) 100.0) 0.8)
+            (+ (* (/ (list-ref weights-pct 2) 100.0) 1.0)
+               (* (/ (list-ref weights-pct 3) 100.0) 0.7)))))
 
     (defun turnover-from-pct (prev-pct next-pct)
-      (/ (+ (abs (- (car prev-pct) (car next-pct)))
-            (+ (abs (- (car (cdr prev-pct)) (car (cdr next-pct))))
-               (+ (abs (- (car (cdr (cdr prev-pct)))
-                          (car (cdr (cdr next-pct)))))
-                  (abs (- (car (cdr (cdr (cdr prev-pct))))
-                          (car (cdr (cdr (cdr next-pct)))))))))
+      (/ (+ (abs (- (list-ref prev-pct 0) (list-ref next-pct 0)))
+            (+ (abs (- (list-ref prev-pct 1) (list-ref next-pct 1)))
+               (+ (abs (- (list-ref prev-pct 2) (list-ref next-pct 2)))
+                  (abs (- (list-ref prev-pct 3) (list-ref next-pct 3))))))
          100.0))
 
     (defun select-dynamic-action (state baseline-pct)
@@ -2511,7 +2434,7 @@
           ((< liquidity 0.30) liquidity-shed)
           ((> crowding 0.65) defensive)
           ((and (> macro 0.65) (< crowding 0.55)) growth-tilt)
-          (#t baseline-pct))))
+          (else baseline-pct))))
 
     (defun dynamic-step-full (state prev-pct action-pct exogenous-macro lam)
       (let* ((macro (assoc-ref 'macro state))
@@ -2531,17 +2454,19 @@
              (reward (- ret-now
                         (+ (* lam risk-now)
                            (+ liquidity-penalty crowding-penalty))))
-             (next-macro (clamp01 (+ (* 0.65 macro)
-                                     (+ (* 0.35 exogenous-macro)
-                                        (+ (* -0.12 market-impact)
-                                           (* 0.05 (- 1.0 crowding)))))))
-             (next-liquidity (clamp-range
+             (next-macro (clamp (+ (* 0.65 macro)
+                                   (+ (* 0.35 exogenous-macro)
+                                      (+ (* -0.12 market-impact)
+                                         (* 0.05 (- 1.0 crowding)))))
+                                0.0
+                                1.0))
+             (next-liquidity (clamp
                                (+ (* 0.75 liquidity)
                                   (+ (* 0.20 (- 1.0 market-impact))
                                      (+ (* -0.08 crowding)
                                         (* -0.05 turnover))))
                                0.10 1.00))
-             (next-crowding (clamp-range
+             (next-crowding (clamp
                               (+ (* 0.55 crowding)
                                  (+ (* 0.35 (max 0.0 (- beta 0.9)))
                                     (* 0.20 market-impact)))
@@ -2562,184 +2487,184 @@
           (cons 'next-state next-state))))
 
     (defun count-unique-actions (steps)
-      (letrec ((add-unique (lambda (action xs)
-                             (if (null? xs)
-                                 (list action)
-                                 (if (equal? action (car xs))
-                                     xs
-                                     (cons (car xs) (add-unique action (cdr xs)))))))
-               (loop (lambda (ss unique)
-                       (if (null? ss)
-                           unique
-                           (loop (cdr ss)
-                                 (add-unique (assoc-ref 'action (car ss))
-                                             unique))))))
-        (length (loop steps '()))))
+      (let ((unique-actions
+              (foldl (lambda (acc step)
+                       (let ((action (assoc-ref 'action step)))
+                         (if (any? (lambda (a) (equal? a action)) acc)
+                             acc
+                             (cons action acc))))
+                     '()
+                     steps)))
+        (length unique-actions)))
 
     (defun simulate-dynamic-policy-full (initial-state baseline-pct lam horizon exogenous-path)
-      (letrec ((loop (lambda (t state prev-pct path-left acc reward-sum turnover-sum)
-                       (if (>= t horizon)
-                           (let* ((steps (reverse acc))
-                                  (mean-reward (if (= horizon 0)
-                                                   0.0
-                                                   (/ reward-sum (* 1.0 horizon))))
-                                  (mean-turnover (if (= horizon 0)
-                                                     0.0
-                                                     (/ turnover-sum (* 1.0 horizon))))
-                                  (distinct-actions (count-unique-actions steps)))
-                             (list
-                               (cons 'policy 'adaptive-guarded)
-                               (cons 'horizon horizon)
-                               (cons 'initial-state initial-state)
-                               (cons 'terminal-state state)
-                               (cons 'cumulative-reward reward-sum)
-                               (cons 'mean-reward mean-reward)
-                               (cons 'mean-turnover mean-turnover)
-                               (cons 'distinct-actions distinct-actions)
-                               (cons 'adapts-over-time (> distinct-actions 1))
-                               (cons 'steps steps)))
-                           (let* ((path-now (if (null? path-left) exogenous-path path-left))
-                                  (exo-macro (if (null? path-now)
-                                                 (assoc-ref 'macro state)
-                                                 (car path-now)))
-                                  (next-path-left (if (null? path-now) '() (cdr path-now)))
-                                  (action (select-dynamic-action state baseline-pct))
-                                  (step (dynamic-step-full state prev-pct action exo-macro lam))
-                                  (step-row (append (list (cons 't t)
-                                                          (cons 'exo-macro exo-macro))
-                                                    step))
-                                  (next-state (assoc-ref 'next-state step))
-                                  (reward (assoc-ref 'reward step))
-                                  (turnover (assoc-ref 'turnover step)))
-                             (loop (+ t 1)
-                                   next-state
-                                   action
-                                   next-path-left
-                                   (cons step-row acc)
-                                   (+ reward-sum reward)
-                                   (+ turnover-sum turnover)))))))
-        (loop 0 initial-state baseline-pct exogenous-path '() 0.0 0.0)))
+      (let loop ((t 0)
+                 (state initial-state)
+                 (prev-pct baseline-pct)
+                 (path-left exogenous-path)
+                 (acc '())
+                 (reward-sum 0.0)
+                 (turnover-sum 0.0))
+        (if (>= t horizon)
+            (let* ((steps (reverse acc))
+                   (mean-reward (if (= horizon 0)
+                                    0.0
+                                    (/ reward-sum (* 1.0 horizon))))
+                   (mean-turnover (if (= horizon 0)
+                                      0.0
+                                      (/ turnover-sum (* 1.0 horizon))))
+                   (distinct-actions (count-unique-actions steps)))
+              (list
+                (cons 'policy 'adaptive-guarded)
+                (cons 'horizon horizon)
+                (cons 'initial-state initial-state)
+                (cons 'terminal-state state)
+                (cons 'cumulative-reward reward-sum)
+                (cons 'mean-reward mean-reward)
+                (cons 'mean-turnover mean-turnover)
+                (cons 'distinct-actions distinct-actions)
+                (cons 'adapts-over-time (> distinct-actions 1))
+                (cons 'steps steps)))
+            (let* ((path-now (if (null? path-left) exogenous-path path-left))
+                   (exo-macro (if (null? path-now)
+                                  (assoc-ref 'macro state)
+                                  (car path-now)))
+                   (next-path-left (if (null? path-now) '() (cdr path-now)))
+                   (action (select-dynamic-action state baseline-pct))
+                   (step (dynamic-step-full state prev-pct action exo-macro lam))
+                   (step-row (append (list (cons 't t)
+                                           (cons 'exo-macro exo-macro))
+                                     step))
+                   (next-state (assoc-ref 'next-state step))
+                   (reward (assoc-ref 'reward step))
+                   (turnover (assoc-ref 'turnover step)))
+              (loop (+ t 1)
+                    next-state
+                    action
+                    next-path-left
+                    (cons step-row acc)
+                    (+ reward-sum reward)
+                    (+ turnover-sum turnover))))))
 
     (defun make-dynamic-rollout-worker ()
       (spawn-thread
         (lambda ()
           (let* ((mb (current-mailbox))
                  (task (recv! mb 'wait))
-                 (regime (car task))
-                 (exo-path (car (cdr task)))
-                 (hz (car (cdr (cdr task))))
-                 (state0 (car (cdr (cdr (cdr task)))))
-                 (baseline0 (car (cdr (cdr (cdr (cdr task))))))
-                 (lam0 (car (cdr (cdr (cdr (cdr (cdr task))))))))
-            (letrec ((clamp-local (lambda (x lo hi)
-                                    (cond
-                                      ((< x lo) lo)
-                                      ((> x hi) hi)
-                                      (#t x))))
-                     (beta-local (lambda (weights-pct)
-                                   (+ (* (/ (car weights-pct) 100.0) 1.3)
-                                      (+ (* (/ (car (cdr weights-pct)) 100.0) 0.8)
-                                         (+ (* (/ (car (cdr (cdr weights-pct))) 100.0) 1.0)
-                                            (* (/ (car (cdr (cdr (cdr weights-pct)))) 100.0)
-                                               0.7))))))
-                     (turnover-local (lambda (prev-pct next-pct)
-                                       (/ (+ (abs (- (car prev-pct) (car next-pct)))
-                                             (+ (abs (- (car (cdr prev-pct))
-                                                        (car (cdr next-pct))))
-                                                (+ (abs (- (car (cdr (cdr prev-pct)))
-                                                           (car (cdr (cdr next-pct)))))
-                                                   (abs (- (car (cdr (cdr (cdr prev-pct))))
-                                                           (car (cdr (cdr (cdr next-pct)))))))))
-                                          100.0)))
-                     (choose-local (lambda (state baseline)
-                                     (let* ((macro (assoc-ref 'macro state))
-                                            (liquidity (assoc-ref 'liquidity state))
-                                            (crowding (assoc-ref 'crowding state)))
-                                       (cond
-                                         ((< liquidity 0.30) '(10 10 45 35))
-                                         ((> crowding 0.65) '(20 0 45 35))
-                                         ((and (> macro 0.65) (< crowding 0.55)) '(30 0 55 15))
-                                         (#t baseline)))))
-                     (asset-ret (lambda (beta macro sector-code)
-                                  (+ (* 1.2 beta)
-                                     (+ (* 0.6 macro)
-                                        (+ (* 0.4 sector-code)
-                                           (+ (* -0.3 0.03)
-                                              (+ (* 0.2 (* beta macro))
-                                                 (* 0.5 0.5))))))))
-                     (portfolio-ret (lambda (weights-pct macro)
-                                      (let ((wt (/ (car weights-pct) 100.0))
-                                            (we (/ (car (cdr weights-pct)) 100.0))
-                                            (wf (/ (car (cdr (cdr weights-pct))) 100.0))
-                                            (wh (/ (car (cdr (cdr (cdr weights-pct)))) 100.0)))
-                                        (+ (* wt (asset-ret 1.3 macro 1.0))
-                                           (+ (* we (asset-ret 0.8 macro 0.0))
-                                              (+ (* wf (asset-ret 1.0 macro -0.5))
-                                                 (* wh (asset-ret 0.7 macro -1.0))))))))
-                     (risk-local (lambda (beta macro crowding turnover)
-                                   (+ 0.010
-                                      (+ (* 0.020 macro)
-                                         (+ (* 0.015 crowding)
-                                            (+ (* 0.010 (abs (- beta 1.0)))
-                                               (* 0.008 turnover)))))))
-                     (loop (lambda (t state prev-pct path-left reward-sum turnover-sum)
-                             (if (>= t hz)
-                                 (list
-                                   (cons 'regime regime)
-                                   (cons 'horizon hz)
-                                   (cons 'terminal-state state)
-                                   (cons 'cumulative-reward reward-sum)
-                                   (cons 'mean-reward (if (= hz 0) 0.0 (/ reward-sum (* 1.0 hz))))
-                                   (cons 'mean-turnover (if (= hz 0) 0.0 (/ turnover-sum (* 1.0 hz)))))
-                                 (let* ((path-now (if (null? path-left) exo-path path-left))
-                                        (exo-macro (if (null? path-now)
-                                                       (assoc-ref 'macro state)
-                                                       (car path-now)))
-                                        (next-path-left (if (null? path-now) '() (cdr path-now)))
-                                        (macro (assoc-ref 'macro state))
+                 (regime (list-ref task 0))
+                 (exo-path (list-ref task 1))
+                 (hz (list-ref task 2))
+                 (state0 (list-ref task 3))
+                 (baseline0 (list-ref task 4))
+                 (lam0 (list-ref task 5))
+                 (clamp-local (lambda (x lo hi) (clamp x lo hi)))
+                 (beta-local (lambda (weights-pct)
+                               (+ (* (/ (list-ref weights-pct 0) 100.0) 1.3)
+                                  (+ (* (/ (list-ref weights-pct 1) 100.0) 0.8)
+                                     (+ (* (/ (list-ref weights-pct 2) 100.0) 1.0)
+                                        (* (/ (list-ref weights-pct 3) 100.0) 0.7))))))
+                 (turnover-local (lambda (prev-pct next-pct)
+                                   (/ (+ (abs (- (list-ref prev-pct 0) (list-ref next-pct 0)))
+                                         (+ (abs (- (list-ref prev-pct 1) (list-ref next-pct 1)))
+                                            (+ (abs (- (list-ref prev-pct 2) (list-ref next-pct 2)))
+                                               (abs (- (list-ref prev-pct 3)
+                                                       (list-ref next-pct 3))))))
+                                      100.0)))
+                 (choose-local (lambda (state baseline)
+                                 (let* ((macro (assoc-ref 'macro state))
                                         (liquidity (assoc-ref 'liquidity state))
-                                        (crowding (assoc-ref 'crowding state))
-                                        (action (choose-local state baseline0))
-                                        (turnover (turnover-local prev-pct action))
-                                        (beta (beta-local action))
-                                        (market-impact (+ (* 0.25 turnover)
-                                                          (* 0.08 (max 0.0 (- beta 1.0)))))
-                                        (liquidity-penalty (* turnover (/ 0.30 (+ 0.15 liquidity))))
-                                        (crowding-penalty (* crowding market-impact 0.20))
-                                        (ret-now (portfolio-ret action macro))
-                                        (risk-now (risk-local beta macro crowding turnover))
-                                        (reward (- ret-now
-                                                   (+ (* lam0 risk-now)
-                                                      (+ liquidity-penalty crowding-penalty))))
-                                        (next-macro (clamp-local (+ (* 0.65 macro)
-                                                                    (+ (* 0.35 exo-macro)
-                                                                       (+ (* -0.12 market-impact)
-                                                                          (* 0.05 (- 1.0 crowding)))))
-                                                                 0.0
-                                                                 1.0))
-                                        (next-liquidity (clamp-local
-                                                          (+ (* 0.75 liquidity)
-                                                             (+ (* 0.20 (- 1.0 market-impact))
-                                                                (+ (* -0.08 crowding)
-                                                                   (* -0.05 turnover))))
-                                                          0.10
-                                                          1.00))
-                                        (next-crowding (clamp-local
-                                                         (+ (* 0.55 crowding)
-                                                            (+ (* 0.35 (max 0.0 (- beta 0.9)))
-                                                               (* 0.20 market-impact)))
-                                                         0.0
-                                                         1.0))
-                                        (next-state (list (cons 'macro next-macro)
-                                                          (cons 'liquidity next-liquidity)
-                                                          (cons 'crowding next-crowding))))
-                                   (loop (+ t 1)
-                                         next-state
-                                         action
-                                         next-path-left
-                                         (+ reward-sum reward)
-                                         (+ turnover-sum turnover)))))))
-              (send! mb (loop 0 state0 baseline0 exo-path 0.0 0.0) 'wait))))))
+                                        (crowding (assoc-ref 'crowding state)))
+                                   (cond
+                                     ((< liquidity 0.30) '(10 10 45 35))
+                                     ((> crowding 0.65) '(20 0 45 35))
+                                     ((and (> macro 0.65) (< crowding 0.55)) '(30 0 55 15))
+                                     (else baseline)))))
+                 (asset-ret (lambda (beta macro sector-code)
+                              (+ (* 1.2 beta)
+                                 (+ (* 0.6 macro)
+                                    (+ (* 0.4 sector-code)
+                                       (+ (* -0.3 0.03)
+                                          (+ (* 0.2 (* beta macro))
+                                             (* 0.5 0.5))))))))
+                 (portfolio-ret (lambda (weights-pct macro)
+                                  (let ((wt (/ (list-ref weights-pct 0) 100.0))
+                                        (we (/ (list-ref weights-pct 1) 100.0))
+                                        (wf (/ (list-ref weights-pct 2) 100.0))
+                                        (wh (/ (list-ref weights-pct 3) 100.0)))
+                                    (+ (* wt (asset-ret 1.3 macro 1.0))
+                                       (+ (* we (asset-ret 0.8 macro 0.0))
+                                          (+ (* wf (asset-ret 1.0 macro -0.5))
+                                             (* wh (asset-ret 0.7 macro -1.0))))))))
+                 (risk-local (lambda (beta macro crowding turnover)
+                               (+ 0.010
+                                  (+ (* 0.020 macro)
+                                     (+ (* 0.015 crowding)
+                                        (+ (* 0.010 (abs (- beta 1.0)))
+                                           (* 0.008 turnover))))))))
+            (let loop ((t 0)
+                       (state state0)
+                       (prev-pct baseline0)
+                       (path-left exo-path)
+                       (reward-sum 0.0)
+                       (turnover-sum 0.0))
+              (if (>= t hz)
+                  (send! mb
+                    (list
+                      (cons 'regime regime)
+                      (cons 'horizon hz)
+                      (cons 'terminal-state state)
+                      (cons 'cumulative-reward reward-sum)
+                      (cons 'mean-reward (if (= hz 0) 0.0 (/ reward-sum (* 1.0 hz))))
+                      (cons 'mean-turnover (if (= hz 0) 0.0 (/ turnover-sum (* 1.0 hz)))))
+                    'wait)
+                  (let* ((path-now (if (null? path-left) exo-path path-left))
+                         (exo-macro (if (null? path-now)
+                                        (assoc-ref 'macro state)
+                                        (car path-now)))
+                         (next-path-left (if (null? path-now) '() (cdr path-now)))
+                         (macro (assoc-ref 'macro state))
+                         (liquidity (assoc-ref 'liquidity state))
+                         (crowding (assoc-ref 'crowding state))
+                         (action (choose-local state baseline0))
+                         (turnover (turnover-local prev-pct action))
+                         (beta (beta-local action))
+                         (market-impact (+ (* 0.25 turnover)
+                                           (* 0.08 (max 0.0 (- beta 1.0)))))
+                         (liquidity-penalty (* turnover (/ 0.30 (+ 0.15 liquidity))))
+                         (crowding-penalty (* crowding market-impact 0.20))
+                         (ret-now (portfolio-ret action macro))
+                         (risk-now (risk-local beta macro crowding turnover))
+                         (reward (- ret-now
+                                    (+ (* lam0 risk-now)
+                                       (+ liquidity-penalty crowding-penalty))))
+                         (next-macro (clamp-local (+ (* 0.65 macro)
+                                                     (+ (* 0.35 exo-macro)
+                                                        (+ (* -0.12 market-impact)
+                                                           (* 0.05 (- 1.0 crowding)))))
+                                                  0.0
+                                                  1.0))
+                         (next-liquidity (clamp-local
+                                           (+ (* 0.75 liquidity)
+                                              (+ (* 0.20 (- 1.0 market-impact))
+                                                 (+ (* -0.08 crowding)
+                                                    (* -0.05 turnover))))
+                                           0.10
+                                           1.00))
+                         (next-crowding (clamp-local
+                                          (+ (* 0.55 crowding)
+                                             (+ (* 0.35 (max 0.0 (- beta 0.9)))
+                                                (* 0.20 market-impact)))
+                                          0.0
+                                          1.0))
+                         (next-state (list (cons 'macro next-macro)
+                                           (cons 'liquidity next-liquidity)
+                                           (cons 'crowding next-crowding))))
+                    (loop (+ t 1)
+                          next-state
+                          action
+                          next-path-left
+                          (+ reward-sum reward)
+                          (+ turnover-sum turnover)))))))))
 
     (defun run-dynamic-actor-rollouts (horizon initial-state baseline-pct lam)
       (let* ((base-path '(0.50 0.55 0.48 0.52 0.50 0.53))
@@ -2783,19 +2708,15 @@
                           (cons 'policy-evaluation policy-eval)
                           (cons 'actor-rollouts actor-rollouts)))))))
 
-    ;; ════════════════════════════════════════════════════════════════
-    ;;  High-Level Abstraction — Complete Pipeline
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
+    ;; High-level abstraction: complete pipeline.
+    ;; 
     ;;
-    ;; Everything above (§0–§7) composes into one call.
+    ;; Everything above (Sections 0-7) composes into one call.
     ;; The 5 core arguments plus mode fully specify the problem; the result is an
-    ;; inspectable association list — not a black box.
+    ;; inspectable association list, not a black box.
 
-    (display "\n")
-    (sep)
-    (display "Pipeline\n")
-    (sep)
-    (display "\n")
+    (section-header "Pipeline")
 
     (defun run-pipeline (universe dag constraints lam scenario-macros . mode-opt)
       ;; universe, dag, constraints, and lam define the optimisation context.
@@ -2905,7 +2826,7 @@
              (base-result (run-pipeline universe dag constraints lam scenario-macros mode)))
         (enrich-with-dynamic-control base-result lam horizon)))
 
-    ;; One call — 5 core arguments plus optional optimisation mode.
+    ;; One call: 5 core arguments plus optional optimization mode.
     (define pipeline-result
       (run-pipeline universe market-dag constraint-spec 2.0
         '((base 0.5) (boom 0.8) (recession 0.1) (rate-hike 0.35))
@@ -2926,11 +2847,7 @@
     (define dynamic-control-result (assoc-ref 'dynamic-control pipeline-dynamic-result))
     (define dynamic-policy-result (assoc-ref 'policy-evaluation dynamic-control-result))
     (define dynamic-actor-rollouts (assoc-ref 'actor-rollouts dynamic-control-result))
-    (display "\n")
-    (thin-sep)
-    (display "  Dynamic Causal Control\n")
-    (thin-sep)
-    (display "\n")
+    (section-header "S9. Dynamic Causal Control")
     (report "(run-pipeline-dynamic ... horizon=8 stage3-default-mode)")
     (report "Policy adapts over time" => (assoc-ref 'adapts-over-time dynamic-policy-result))
     (report "Distinct actions" => (assoc-ref 'distinct-actions dynamic-policy-result))
@@ -2939,15 +2856,11 @@
     (report "Actor rollouts" => dynamic-actor-rollouts)
     (display "\n  Five core arguments + mode.  One result.  Every value traceable to §0-§7.\n")
 
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
     ;; Executive Summary
-    ;; ════════════════════════════════════════════════════════════════
+    ;; 
 
-    (display "\n")
-    (sep)
-    (display "  Portfolio Engine Summary\n")
-    (thin-sep)
-    (display "\n")
+    (section-header "Portfolio Engine Summary")
     (display "  Optimal Allocation:\n")
     (display "    Tech ") (display opt-wt)
     (display "% | Energy ") (display opt-we)
@@ -2986,4 +2899,6 @@
     (display "  Done.\n")
     (sep)
 
-  ))
+  )
+
+

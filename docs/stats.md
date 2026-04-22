@@ -132,9 +132,11 @@ Returns a four-element list `(t-stat p-value df mean-diff)`.
 ## Simple OLS Regression
 
 `stats:ols` fits a univariate linear model `y = slope*x + intercept`.
-It returns an OLS result record with fields for coefficients, standard errors,
-t-statistics, and p-values for both slope and intercept.
-The `stats:ols-*` accessors also accept the legacy nine-element list form.
+It returns an `%ols-result` record (defined via `define-record-type`)
+with fields for coefficients, standard errors, t-statistics, and
+p-values for both slope and intercept. For backward compatibility,
+the `stats:ols-*` accessors also accept the legacy nine-element list
+representation that earlier versions returned.
 
 | Function | Signature | Returns |
 |----------|-----------|---------|

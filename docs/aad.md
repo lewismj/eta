@@ -91,6 +91,7 @@ closures are allocated and no macro rewriting is required.
 | `tape-primal` | 2 | Read forward value: `(tape-primal tape ref)` → number |
 | `tape-ref?` | 1 | Predicate: is the value a TapeRef? |
 | `tape-ref-index` | 1 | Extract the raw index from a TapeRef |
+| `tape-ref-value` | 1 | Extract the primal numeric value stored in a TapeRef |
 | `tape-size` | 1 | Number of entries on the tape |
 
 > **Nesting & exception safety.** Active tapes are managed as a stack

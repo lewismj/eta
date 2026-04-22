@@ -56,6 +56,17 @@ Each layer is correct in its own semantics; composition does not imply
 equivalence, only compatibility.  The pipeline is acyclic at the stage
 level (no feedback loops between stages).
 
+## Source Layout Notes
+
+The refactored [`examples/portfolio.eta`](../examples/portfolio.eta)
+keeps stage flow explicit while reducing presentation duplication:
+
+- stage banners are emitted via shared header helpers
+- stdlib math/stats operations are used directly for clamp/mean/variance/covariance
+- recursive walkers are expressed with named `let`/`foldl` patterns instead of `letrec` loop lambdas
+- dynamic/actor sections use clearer `list-ref` access where positional data is required
+- runtime output now includes explicit `S8` and `S9` section headers
+
 The word *causal* carries three distinct meanings in this document:
 
 | Term | Meaning | Where |

@@ -283,6 +283,10 @@ Eta code on both sides is identical.
 - **`spawn-thread-with` for file-based in-process threads** — loads a source
   module in a fresh VM thread and calls a named function
 - **`thread-join` / `thread-alive?`** — lifecycle management for thread actors
+- **`monitor`** — receive a `(down ...)` message when a peer process or
+  thread exits, used by `std.supervisor`
+- **`std.supervisor`** — Erlang-style `one-for-one` and `one-for-all`
+  restart strategies on top of `spawn` + `monitor`
 - Binary and text wire formats with auto-detection on receive
 - `std.net` high-level helpers: `with-socket`, `request-reply`,
   `worker-pool`, `pub-sub`, `survey`
@@ -294,7 +298,6 @@ Eta code on both sides is identical.
 |---------|-----------|
 | **Remote `spawn-remote`** | Requires SSH integration or a distributed node agent.  The current baseline supports cross-host messaging via raw `tcp://`; remote processes are started independently. |
 | **Actor name registry** | Erlang's `register/2` and `whereis/1` provide process lookup by name.  The current baseline requires knowing the endpoint or holding the socket handle directly. |
-| **Monitoring & supervision trees** | `monitor`, `demonitor`, and OTP-style `one-for-one` supervisors are not part of this baseline API. |
 | **Distributed GC** | Lifecycle is managed explicitly via `nng-close` / `spawn-wait`; distributed GC is not part of this model. |
 | **WebSocket / TLS transports** | nng supports these transports, but they are not covered by this baseline API layer. |
 

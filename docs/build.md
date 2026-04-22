@@ -116,7 +116,9 @@ eta-v0.2.0-<platform>/
     prelude.eta             # Auto-loaded standard library
     std/
       core.eta  math.eta  io.eta  collections.eta  test.eta
-      logic.eta  clp.eta  causal.eta  fact_table.eta  torch.eta
+      logic.eta  clp.eta  clpb.eta  clpr.eta  causal.eta
+      db.eta  fact_table.eta  freeze.eta  net.eta  stats.eta
+      supervisor.eta  torch.eta
   examples/
     hello.eta  basics.eta  functions.eta  higher-order.eta  ...
   editors/

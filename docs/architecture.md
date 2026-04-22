@@ -283,11 +283,13 @@ Stage-specific error types (`LexError`, `ParseError`, `ExpandError`,
 
 | Executable | Entry point | Role |
 |------------|-------------|------|
-| `etai` | [`main_etai.cpp`](../eta/interpreter/src/eta/interpreter/main_etai.cpp) | File interpreter — loads prelude, runs `.eta` file |
+| `etac` | [`main_etac.cpp`](../eta/compiler/src/eta/compiler/main_etac.cpp) | Ahead-of-time compiler — emits `.etac` bytecode |
+| `etai` | [`main_etai.cpp`](../eta/interpreter/src/eta/interpreter/main_etai.cpp) | File interpreter — loads prelude, runs `.eta` or `.etac` |
 | `eta_repl` | [`main_repl.cpp`](../eta/interpreter/src/eta/interpreter/main_repl.cpp) | Interactive REPL — incremental execution, shared state |
 | `eta_lsp` | [`main_lsp.cpp`](../eta/lsp/src/eta/lsp/main_lsp.cpp) | Language Server — JSON-RPC over stdio, publishes diagnostics |
+| `eta_dap` | [`main_dap.cpp`](../eta/dap/src/eta/dap/main_dap.cpp) | Debug Adapter — DAP over stdio (breakpoints, stepping, heap inspection) |
 
-All three create a `Driver` instance, which constructs the `Heap`,
+All frontends create a `Driver` instance, which constructs the `Heap`,
 `InternTable`, `VM`, `BuiltinEnvironment`, and `BytecodeFunctionRegistry`
 and wires them together.
 

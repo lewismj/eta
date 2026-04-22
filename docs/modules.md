@@ -158,12 +158,15 @@ modules inline. After the prelude runs, its modules are in
 
 ## Standard Library Reference
 
-All standard library modules are defined in
-[`stdlib/prelude.eta`](../stdlib/prelude.eta). There is also a
-convenience re-export module:
+All standard library modules are defined in the
+[`stdlib/std/`](../stdlib/std/) directory; the
+[`stdlib/prelude.eta`](../stdlib/prelude.eta) file aggregates and
+re-exports a curated subset for one-line import:
 
 ```scheme
-(import std.prelude)  ;; imports everything from std.core, std.math, std.io, std.collections
+(import std.prelude)  ;; imports std.core, std.math, std.io, std.collections,
+                      ;; std.logic, std.clp, std.causal, std.fact_table,
+                      ;; std.db, std.stats, and std.net
 ```
 
 ---
@@ -293,6 +296,9 @@ Uses `define-record-type` for `test-case`, `test-group`, `test-result`,
 | `assert-false` | `(x [msg])` — assert falsy |
 | `assert-equal` | `(expected actual [msg])` — assert equality |
 | `assert-not-equal` | `(a b [msg])` — assert inequality |
+| `assert-approx-equal` | `(expected actual tol [msg])` — assert numeric closeness within `tol` |
+| `print-tap` | `(result)` — emit TAP-formatted output for CI consumers |
+| `print-junit` | `(result [port])` — emit JUnit XML for CI consumers |
 
 **Example:**
 
@@ -318,6 +324,147 @@ Output:
 ```
 2 tests, 2 passed, 0 failed
 ```
+
+---
+
+---
+
+### `std.logic` — Relational / miniKanren-style Programming
+
+```scheme
+(import std.logic)
+```
+
+Provides logic variables, unification, search combinators, and a
+miniKanren-flavoured surface (`fresh`, `conde`, `conj`, `disj`,
+`run*`, `run-n`, `run1`, `==`, `==o`, `succeedo`, `failo`,
+`copy-term*`, `naf`, `succeeds?`, `findall`, `membero`,
+`condu`, `conda`, `onceo`, `logic-throw`, `logic-catch`).
+
+> **📖 Full documentation:** [Logic Programming](logic.md)
+
+---
+
+### `std.clp` — Constraint Logic Programming over Integers / Finite Domains
+
+```scheme
+(import std.clp)
+```
+
+Domain constructors (`(z lo hi)`, `(fd v1 v2 ...)`), constraint
+posting (`clp:= clp:+ clp:plus-offset clp:abs clp:* clp:sum
+clp:scalar-product clp:element clp:<= clp:>= clp:<>`),
+`clp:all-different`, search (`clp:solve`, `clp:labeling`), and
+optimisation (`clp:minimize`, `clp:maximize`). Shares the unified
+trail and the `'clp.prop` async propagation queue with `std.clpb`
+and `std.clpr`.
+
+> **📖 Full documentation:** [Constraint Logic Programming (Z/FD)](clp.md)
+
+---
+
+### `std.clpb` — Boolean Constraint Logic (opt-in)
+
+```scheme
+(import std.clpb)
+```
+
+Boolean variables and constraints (`clp:boolean`, `clp:and`,
+`clp:or`, `clp:xor`, `clp:imp`, `clp:eq`, `clp:not`, `clp:card`)
+plus search and queries (`clp:labeling-b`, `clp:sat?`, `clp:taut?`).
+Not auto-imported by `std.prelude`.
+
+> **📖 Full documentation:** [Boolean Constraints (CLP(B))](clpb.md)
+
+---
+
+### `std.clpr` — Real-Interval Constraint Logic (opt-in)
+
+```scheme
+(import std.clpr)
+```
+
+Real-domain constructors and accessors, linear arithmetic
+(`clp:r+`, `clp:r-`, `clp:r*scalar`), constraint posting
+(`clp:r=`, `clp:r<=`, `clp:r<`, `clp:r>=`, `clp:r>`), simplex/QP
+optimisation (`clp:r-minimize`, `clp:r-maximize`,
+`clp:rq-minimize`, `clp:rq-maximize`), and queries
+(`clp:r-bounds`, `clp:r-feasible?`). Not auto-imported by
+`std.prelude`.
+
+---
+
+### `std.db` — Procedural Datalog over Fact Tables
+
+```scheme
+(import std.db)
+```
+
+Defines persistent relations as `defrel`, asserts/retracts ground
+facts (`assert`, `retract`, `retract-all`), queries via
+`call-rel` / `call-rel?`, builds per-argument indexes
+(`index-rel!`), and tabulates recursive rules (`tabled`).
+
+> **📖 Full documentation:** [Datalog Database](db.md)
+
+---
+
+### `std.causal` — DAGs, Do-Calculus, and Causal Estimation
+
+```scheme
+(import std.causal)
+```
+
+DAG utilities (`dag:nodes`, `dag:parents`, …), do-calculus
+identification (`do:identify`, `do:identify-details`, observed
+variants), and numeric estimators (`do:estimate-effect`,
+`do:conditional-mean`, `do:marginal-prob`).
+
+> **📖 Full documentation:** [Causal Inference](causal.md)
+
+---
+
+### `std.stats` — Statistics & Linear Models
+
+```scheme
+(import std.stats)
+```
+
+Descriptive statistics, distributions, bivariate measures, OLS
+(returns a `%ols-result` record with backward-compatible
+nine-element list accessors), multivariate regression, and
+column-wise operations over lists, vectors, or fact-table columns.
+Eigen-backed.
+
+> **📖 Full documentation:** [Statistics](stats.md)
+
+---
+
+### `std.freeze` — Coroutine-Style Goal Suspension (opt-in)
+
+```scheme
+(import std.freeze)
+```
+
+Adds `freeze` (suspend a goal until a logic variable is bound) and
+`dif` (disequality between terms) on top of the attributed-variable
+substrate. Not auto-imported by `std.prelude`.
+
+> **📖 Full documentation:** [Freeze & Dif](freeze.md)
+
+---
+
+### `std.supervisor` — Erlang-Style Process Supervision (opt-in)
+
+```scheme
+(import std.supervisor)
+```
+
+`one-for-one` and `one-for-all` supervisors built on top of the
+nng actor primitives (`spawn`, `monitor`, `nng-poll`, `recv!`).
+Not auto-imported by `std.prelude`.
+
+> **📖 Full documentation:** [Supervisors](supervisor.md)
 
 ---
 
@@ -348,8 +495,12 @@ per-column hash indexes for O(1) equality lookups.
 ```
 
 Re-exports **all** public names from `std.core`, `std.math`, `std.io`,
-`std.collections`, `std.logic`, `std.clp`, `std.causal`, and
-`std.fact_table` in a single import for convenience.
+`std.collections`, `std.logic`, `std.clp`, `std.causal`, `std.fact_table`,
+`std.db`, `std.stats`, and `std.net` in a single import for convenience.
+
+The following modules are **not** included in the prelude and must be
+imported explicitly when needed: `std.clpb`, `std.clpr`, `std.freeze`,
+`std.supervisor`, `std.torch`, `std.test`.
 
 ---
 
@@ -421,7 +572,12 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 | `spawn` | `(spawn module-path [endpoint])` | Spawn a child `etai` process; returns parent-side PAIR socket |
 | `spawn-wait` | `(spawn-wait sock)` | Block until the child process exits; return exit code |
 | `spawn-kill` | `(spawn-kill sock)` | Forcibly terminate the child process |
-| `current-mailbox` | `(current-mailbox)` | Inside a spawned child: return the PAIR socket to the parent |
+| `spawn-thread` | `(spawn-thread thunk)` | Run a 0-arg closure (with captured upvalues) in a fresh in-process VM thread; returns the parent-side PAIR socket |
+| `spawn-thread-with` | `(spawn-thread-with proc args)` | In-process variant for a named procedure plus argument list |
+| `thread-join` | `(thread-join sock)` | Wait for an in-process actor thread to finish |
+| `thread-alive?` | `(thread-alive? sock)` | Non-blocking thread liveness check |
+| `monitor` | `(monitor sock)` | Receive a `(down ...)` message when the peer (process or thread) exits |
+| `current-mailbox` | `(current-mailbox)` | Inside a spawned child or thread: return the PAIR socket to the parent |
 
 #### Usage examples
 

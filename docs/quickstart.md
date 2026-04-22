@@ -147,9 +147,12 @@ eta_repl
 ```
 
 The REPL auto-loads `std.prelude`, which re-exports every name from
-`std.core`, `std.math`, `std.io`, and `std.collections`. All standard
-library functions are available immediately — no explicit `import`
-needed:
+`std.core`, `std.math`, `std.io`, `std.collections`, `std.logic`,
+`std.clp`, `std.causal`, `std.fact_table`, `std.db`, `std.stats`, and
+`std.net`. Those standard library functions are available immediately
+— no explicit `import` needed (opt-in modules `std.clpb`, `std.clpr`,
+`std.freeze`, `std.supervisor`, `std.torch`, and `std.test` must still
+be imported by hand):
 
 ```
 η> (atom? 42)
@@ -191,15 +194,22 @@ Hello, REPL!
 |----------------------|------------------------------------------|
 | `std.core`           | `atom?`, `compose`, `flip`, `iota`, …    |
 | `std.math`           | `pi`, `e`, `even?`, `gcd`, `expt`, …     |
-| `std.io`             | `println`, `read-line`, port helpers      |
+| `std.io`             | `println`, `eprintln`, `read-line`, port helpers |
 | `std.collections`    | `filter`, `foldl`, `sort`, `range`, …     |
 | `std.logic`          | `==`, `copy-term`, `naf`, `findall`, …    |
-| `std.clp`            | `clp:domain`, `clp:in-fd`, `clp:solve`, … |
+| `std.clp`            | `clp:=`, `clp:all-different`, `clp:solve`, … |
+| `std.clpb`           | Boolean CLP — `clp:and`, `clp:sat?`, … *(opt-in)* |
+| `std.clpr`           | Real-interval CLP — `clp:r=`, `clp:r-minimize`, … *(opt-in)* |
 | `std.causal`         | `dag:*`, `do:identify`, `do:estimate-effect` |
 | `std.fact_table`     | `make-fact-table`, `fact-table-query`, …  |
-| `std.torch`          | `tensor`, `forward`, `train-step!`, …     |
-| `std.test`           | `make-test`, `assert-equal`, `run`, …     |
-| `std.prelude`        | Re-exports everything from the above      |
+| `std.db`             | `defrel`, `assert`, `retract`, `call-rel`, `tabled` |
+| `std.stats`          | `stats:mean`, `stats:ols`, distributions, … |
+| `std.net`            | `with-socket`, `request-reply`, `worker-pool`, … |
+| `std.freeze`         | `freeze`, `dif` *(opt-in)*                |
+| `std.supervisor`     | `one-for-one`, `one-for-all` *(opt-in)*   |
+| `std.torch`          | `tensor`, `forward`, `train-step!`, … *(opt-in)* |
+| `std.test`           | `make-test`, `assert-equal`, `run`, … *(opt-in)* |
+| `std.prelude`        | Re-exports the non-opt-in modules above   |
 
 ### Writing a Module
 
@@ -398,7 +408,9 @@ eta-v0.2.0-<platform>/
     prelude.eta             # Auto-loaded standard library
     std/
       core.eta  math.eta  io.eta  collections.eta  test.eta
-      logic.eta  clp.eta  causal.eta  fact_table.eta  torch.eta
+      logic.eta  clp.eta  clpb.eta  clpr.eta  causal.eta
+      db.eta  fact_table.eta  freeze.eta  net.eta  stats.eta
+      supervisor.eta  torch.eta
   examples/
     hello.eta  basics.eta  functions.eta  higher-order.eta  ...
   editors/

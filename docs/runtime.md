@@ -112,15 +112,23 @@ struct HeapEntry {
 | Kind | C++ Type | Contents |
 |------|----------|----------|
 | `Cons` | `types::Cons` | `{ car: LispVal, cdr: LispVal }` |
+| `Fixnum` | `types::Fixnum` | Heap-spilled integer (when value exceeds 47-bit inline range) |
 | `Closure` | `types::Closure` | `{ func: BytecodeFunction*, upvals: vector<LispVal> }` |
 | `Vector` | `types::Vector` | `{ elements: vector<LispVal> }` |
 | `ByteVector` | `types::ByteVector` | `{ data: vector<uint8_t> }` |
 | `Continuation` | `types::Continuation` | Captured stack, frames, and winding stack |
 | `Primitive` | `types::Primitive` | `{ func, arity, has_rest }` — builtin function |
+| `Guardian` | `types::Guardian` | Weak-reference object queue used by `make-guardian` |
 | `MultipleValues` | `types::MultipleValues` | `{ vals: vector<LispVal> }` — for `(values ...)` |
 | `Port` | `types::Port` | Input/output port (string or file-backed) |
 | `LogicVar` | `types::LogicVar` | Unification logic variable (binding chain) |
+| `CompoundTerm` | `types::CompoundTerm` | Structured logic term: functor symbol + argument list |
 | `Tape` | `types::Tape` | AD tape (Wengert list) `{ entries: vector<TapeEntry> }` — reverse-mode AD |
+| `Tensor` | `types::TensorPtr` | libtorch tensor handle *(only when built with `ETA_ENABLE_TORCH`)* |
+| `NNModule` | `types::NNModulePtr` | libtorch `nn::Module` handle *(torch only)* |
+| `Optimizer` | `types::OptimizerPtr` | libtorch optimizer handle *(torch only)* |
+| `FactTable` | `types::FactTable` | Columnar fact table with optional per-column hash indexes |
+| `NngSocket` | `types::NngSocketPtr` | nng socket handle for `std.net` and the actor model |
 
 ### Allocation Flow
 
@@ -279,8 +287,13 @@ The `LambdaHeapVisitor` dispatches to type-specific traversal:
 | `Vector` | All `elements[]` |
 | `Continuation` | `stack[]`, `frames[].closure`, `frames[].extra`, `winding_stack[]` entries |
 | `MultipleValues` | All `vals[]` |
-| `ByteVector`, `Primitive`, `Port` | None (leaf objects) |
+| `CompoundTerm` | Functor symbol + every argument |
+| `LogicVar` | Bound term (if any) |
+| `FactTable` | All cell `LispVal`s in every row |
+| `Guardian` | Each tracked object reference |
+| `ByteVector`, `Primitive`, `Port`, `Fixnum` | None (leaf objects) |
 | `Tape` | None (flat array, no LispVal references) |
+| `Tensor`, `NNModule`, `Optimizer`, `NngSocket` | None (opaque foreign handles) |
 
 ### Sweep Phase
 
