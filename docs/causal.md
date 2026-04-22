@@ -68,11 +68,11 @@ sector ──→ market-beta ──→ stock-return
 
 Nodes and their roles:
 
-| Variable | Role |
-|----------|------|
-| `sector` | Observed confounder (e.g. Technology, Energy, Financials) |
-| `market-beta` | Exposure — systematic risk sensitivity (the "X" in do(X)) |
-| `stock-return` | Outcome — monthly excess return over risk-free rate |
+| Variable       | Role                                                      |
+| -------------- | --------------------------------------------------------- |
+| `sector`       | Observed confounder (e.g. Technology, Energy, Financials) |
+| `market-beta`  | Exposure — systematic risk sensitivity (the "X" in do(X)) |
+| `stock-return` | Outcome — monthly excess return over risk-free rate       |
 
 ---
 
@@ -82,7 +82,7 @@ Nodes and their roles:
 
 Pearl's do-calculus provides three rules that transform interventional
 quantities into observational ones.  `std.causal` implements each rule as
-a relational query over a mutilated DAG.
+a relational query over a DAG.
 
 **Rule 1 — Insertion/deletion of observations:**
 
@@ -151,9 +151,11 @@ Formatted as a human-readable formula:
 1. **No descendant condition**: `sector` is not a descendant of
    `market-beta` ✓ (it is a *parent* of `market-beta`)
 2. **Blocking condition**: `sector` blocks the only back-door path:
+   
    ```
    market-beta ← sector → stock-return
    ```
+   
    Conditioning on `sector` closes this path ✓
 
 ```scheme
@@ -183,26 +185,26 @@ Observed-set-restricted identification (useful for latent-confounder stress DAGs
 `std.causal` provides a complete graph library over the `(from -> to)`
 edge-list format:
 
-| Function | Description |
-|----------|-------------|
-| `(dag:nodes dag)` | All nodes in the graph |
-| `(dag:parents dag n)` | Direct causes of `n` |
-| `(dag:children dag n)` | Direct effects of `n` |
-| `(dag:ancestors dag n)` | Transitive causes (BFS) |
-| `(dag:descendants dag n)` | Transitive effects (BFS) |
-| `(dag:non-descendants dag n)` | All nodes except descendants of `n` |
-| `(dag:has-path? dag a b forbidden)` | Path from `a` to `b` not through `forbidden` |
-| `(dag:add-edge dag from to)` | Return DAG with `from -> to` inserted |
-| `(dag:remove-edge dag from to)` | Return DAG with `from -> to` removed |
-| `(dag:flip-edge dag from to)` | Return DAG with `from -> to` flipped to `to -> from` |
-| `(dag:d-connected? dag x y z-set)` | True if any active path exists between `x` and `y` given `z-set` |
-| `(dag:d-separated? dag x y z-set)` | True if all paths between `x` and `y` are blocked by `z-set` |
-| `(dag:satisfies-backdoor? dag x y z-set)` | Back-door criterion check |
-| `(dag:adjustment-sets dag x y [max-size])` | Enumerate valid back-door adjustment sets, minimal first |
-| `(dag:adjustment-sets-observed dag x y observed [max-size])` | Enumerate valid sets restricted to observed variables |
-| `(do:identify-details dag y x [max-size])` | Identification metadata with chosen and alternative adjustment sets |
-| `(do:identify-details-observed dag y x observed [max-size])` | Identification metadata under observed-only adjustment |
-| `(do:identify-observed dag y x observed [max-size])` | Convenience API returning only the observed-set-constrained formula |
+| Function                                                     | Description                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `(dag:nodes dag)`                                            | All nodes in the graph                                              |
+| `(dag:parents dag n)`                                        | Direct causes of `n`                                                |
+| `(dag:children dag n)`                                       | Direct effects of `n`                                               |
+| `(dag:ancestors dag n)`                                      | Transitive causes (BFS)                                             |
+| `(dag:descendants dag n)`                                    | Transitive effects (BFS)                                            |
+| `(dag:non-descendants dag n)`                                | All nodes except descendants of `n`                                 |
+| `(dag:has-path? dag a b forbidden)`                          | Path from `a` to `b` not through `forbidden`                        |
+| `(dag:add-edge dag from to)`                                 | Return DAG with `from -> to` inserted                               |
+| `(dag:remove-edge dag from to)`                              | Return DAG with `from -> to` removed                                |
+| `(dag:flip-edge dag from to)`                                | Return DAG with `from -> to` flipped to `to -> from`                |
+| `(dag:d-connected? dag x y z-set)`                           | True if any active path exists between `x` and `y` given `z-set`    |
+| `(dag:d-separated? dag x y z-set)`                           | True if all paths between `x` and `y` are blocked by `z-set`        |
+| `(dag:satisfies-backdoor? dag x y z-set)`                    | Back-door criterion check                                           |
+| `(dag:adjustment-sets dag x y [max-size])`                   | Enumerate valid back-door adjustment sets, minimal first            |
+| `(dag:adjustment-sets-observed dag x y observed [max-size])` | Enumerate valid sets restricted to observed variables               |
+| `(do:identify-details dag y x [max-size])`                   | Identification metadata with chosen and alternative adjustment sets |
+| `(do:identify-details-observed dag y x observed [max-size])` | Identification metadata under observed-only adjustment              |
+| `(do:identify-observed dag y x observed [max-size])`         | Convenience API returning only the observed-set-constrained formula |
 
 ```scheme
 (dag:ancestors finance-dag 'stock-return)
@@ -317,12 +319,13 @@ analysis:
 > **Numerical estimation** currently uses a *plug-in estimator*:
 > sample means and proportions, giving an unbiased point estimate
 > but **no confidence intervals or hypothesis tests**.
->
+> 
 > Production-quality causal inference requires:
+> 
 > - Bootstrap or influence-function standard errors
 > - Doubly-robust estimation (combines outcome model + propensity score)
 > - Regression-based adjustment for continuous confounders
->
+> 
 > These methods require BLAS/LAPACK matrix operations or a library such
 > as **libtorch** or **Eigen**.  In Eta, they are implemented through the
 > native runtime integration layer so `do:estimate-effect` can use
@@ -366,15 +369,14 @@ quality.
 
 ## Source Locations
 
-| Component | File |
-|-----------|------|
-| DAG utilities, do-calculus engine | [`stdlib/std/causal.eta`](../stdlib/std/causal.eta) |
-| DAG demo | [`examples/do-calculus/dag.eta`](../examples/do-calculus/dag.eta) |
-| Three rules implementation | [`examples/do-calculus/do-rules.eta`](../examples/do-calculus/do-rules.eta) |
-| Full identification demo | [`examples/do-calculus/demo.eta`](../examples/do-calculus/demo.eta) |
-| CSV loader | [`examples/causal-factor/csv-loader.eta`](../examples/causal-factor/csv-loader.eta) |
-| Back-door estimator | [`examples/causal-factor/adjustment.eta`](../examples/causal-factor/adjustment.eta) |
-| Finance analysis | [`examples/causal-factor/analysis.eta`](../examples/causal-factor/analysis.eta) |
-| CLP binding for `clp(Z)` / `clp(FD)` | [`stdlib/std/clp.eta`](../stdlib/std/clp.eta) |
-| C++ constraint store | [`clp/constraint_store.h`](../eta/core/src/eta/runtime/clp/constraint_store.h) |
-
+| Component                            | File                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------- |
+| DAG utilities, do-calculus engine    | [`stdlib/std/causal.eta`](../stdlib/std/causal.eta)                                 |
+| DAG demo                             | [`examples/do-calculus/dag.eta`](../examples/do-calculus/dag.eta)                   |
+| Three rules implementation           | [`examples/do-calculus/do-rules.eta`](../examples/do-calculus/do-rules.eta)         |
+| Full identification demo             | [`examples/do-calculus/demo.eta`](../examples/do-calculus/demo.eta)                 |
+| CSV loader                           | [`examples/causal-factor/csv-loader.eta`](../examples/causal-factor/csv-loader.eta) |
+| Back-door estimator                  | [`examples/causal-factor/adjustment.eta`](../examples/causal-factor/adjustment.eta) |
+| Finance analysis                     | [`examples/causal-factor/analysis.eta`](../examples/causal-factor/analysis.eta)     |
+| CLP binding for `clp(Z)` / `clp(FD)` | [`stdlib/std/clp.eta`](../stdlib/std/clp.eta)                                       |
+| C++ constraint store                 | [`clp/constraint_store.h`](../eta/core/src/eta/runtime/clp/constraint_store.h)      |
