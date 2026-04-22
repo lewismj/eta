@@ -68,18 +68,58 @@
     (defun stats:t-test-mean-diff(result)  (car (cdr (cdr (cdr result)))))
 
     ;; ── OLS simple linear regression ───────────────────────────────
-    ;; Returns (slope intercept r2 se-slope se-intercept
-    ;;          t-slope t-intercept p-slope p-intercept) as a list.
-    (defun stats:ols             (xs ys) (%stats-ols xs ys))
-    (defun stats:ols-slope       (r)     (car r))
-    (defun stats:ols-intercept   (r)     (cadr r))
-    (defun stats:ols-r2          (r)     (caddr r))
-    (defun stats:ols-se-slope    (r)     (car (cdr (cdr (cdr r)))))
-    (defun stats:ols-se-intercept(r)     (car (cdr (cdr (cdr (cdr r))))))
-    (defun stats:ols-t-slope     (r)     (car (cdr (cdr (cdr (cdr (cdr r)))))))
-    (defun stats:ols-t-intercept (r)     (car (cdr (cdr (cdr (cdr (cdr (cdr r))))))))
-    (defun stats:ols-p-slope     (r)     (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr r)))))))))
-    (defun stats:ols-p-intercept (r)     (car (cdr (cdr (cdr (cdr (cdr (cdr (cdr (cdr r))))))))))
+    ;; OLS results are represented as a record for clearer field access.
+    ;; Accessors also accept the legacy 9-element list form.
+    (define-record-type %ols-result
+      (%make-ols-result slope intercept r2
+                        se-slope se-intercept
+                        t-slope t-intercept
+                        p-slope p-intercept)
+      %ols-result?
+      (slope        %ols-result-slope)
+      (intercept    %ols-result-intercept)
+      (r2           %ols-result-r2)
+      (se-slope     %ols-result-se-slope)
+      (se-intercept %ols-result-se-intercept)
+      (t-slope      %ols-result-t-slope)
+      (t-intercept  %ols-result-t-intercept)
+      (p-slope      %ols-result-p-slope)
+      (p-intercept  %ols-result-p-intercept))
+
+    (defun %ols-result-from-list (r)
+      (if (and (list? r) (= (length r) 9))
+          (%make-ols-result
+            (list-ref r 0) (list-ref r 1) (list-ref r 2)
+            (list-ref r 3) (list-ref r 4)
+            (list-ref r 5) (list-ref r 6)
+            (list-ref r 7) (list-ref r 8))
+          (error "stats:ols: expected 9-element result list" r)))
+
+    (defun %as-ols-result (r)
+      (if (%ols-result? r)
+          r
+          (%ols-result-from-list r)))
+
+    (defun stats:ols (xs ys)
+      (%ols-result-from-list (%stats-ols xs ys)))
+    (defun stats:ols-slope (r)
+      (%ols-result-slope (%as-ols-result r)))
+    (defun stats:ols-intercept (r)
+      (%ols-result-intercept (%as-ols-result r)))
+    (defun stats:ols-r2 (r)
+      (%ols-result-r2 (%as-ols-result r)))
+    (defun stats:ols-se-slope (r)
+      (%ols-result-se-slope (%as-ols-result r)))
+    (defun stats:ols-se-intercept (r)
+      (%ols-result-se-intercept (%as-ols-result r)))
+    (defun stats:ols-t-slope (r)
+      (%ols-result-t-slope (%as-ols-result r)))
+    (defun stats:ols-t-intercept (r)
+      (%ols-result-t-intercept (%as-ols-result r)))
+    (defun stats:ols-p-slope (r)
+      (%ols-result-p-slope (%as-ols-result r)))
+    (defun stats:ols-p-intercept (r)
+      (%ols-result-p-intercept (%as-ols-result r)))
 
     ;; ── Multivariate / column-wise operations ──────────────────────
     ;; All accept either:

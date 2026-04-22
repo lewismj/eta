@@ -91,7 +91,19 @@
                   (let* ((x '(1.0 2.0 3.0 4.0 5.0))
                          (y '(2.0 4.0 6.0 8.0 10.0))
                          (r (stats:ols x y)))
-                    (assert-approx-equal 1.0 (stats:ols-r2 r) 1e-6))))))
+                    (assert-approx-equal 1.0 (stats:ols-r2 r) 1e-6))))
+              (make-test "accessors accept legacy list results"
+                (lambda ()
+                  (let ((r '(2.0 1.0 0.9 0.1 0.2 5.0 4.0 0.01 0.02)))
+                    (assert-approx-equal 2.0 (stats:ols-slope r) 1e-9)
+                    (assert-approx-equal 1.0 (stats:ols-intercept r) 1e-9)
+                    (assert-approx-equal 0.9 (stats:ols-r2 r) 1e-9)
+                    (assert-approx-equal 0.1 (stats:ols-se-slope r) 1e-9)
+                    (assert-approx-equal 0.2 (stats:ols-se-intercept r) 1e-9)
+                    (assert-approx-equal 5.0 (stats:ols-t-slope r) 1e-9)
+                    (assert-approx-equal 4.0 (stats:ols-t-intercept r) 1e-9)
+                    (assert-approx-equal 0.01 (stats:ols-p-slope r) 1e-9)
+                    (assert-approx-equal 0.02 (stats:ols-p-intercept r) 1e-9))))))
 
           ;; ── stats:summary ─────────────────────────────────────────
           (make-group "summary"
