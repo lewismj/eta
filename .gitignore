@@ -58,4 +58,5 @@ editors/vscode/out/
 editors/vscode/node_modules/
 *.vsix
 
+demo
 demo/*

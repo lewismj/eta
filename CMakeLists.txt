@@ -10,6 +10,11 @@ enable_testing()
 
 add_subdirectory(eta)
 
+# Install stdlib alongside binaries.
+# Layout: <prefix>/bin/* and <prefix>/stdlib/*.eta
+install(DIRECTORY stdlib/ DESTINATION stdlib
+    FILES_MATCHING PATTERN "*.eta")
+
 add_custom_target(eta_all)
 foreach(_t IN ITEMS
     eta_core
