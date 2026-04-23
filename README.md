@@ -388,83 +388,31 @@ The prelude auto-loads the following modules:
 ```
 eta/
 ├── CMakeLists.txt              # Top-level build
-├── eta/
+├── eta/                        # C++ sources
 │   ├── core/                   # Shared library: reader + semantics + runtime
 │   │   └── src/eta/
 │   │       ├── reader/         # Lexer, Parser, Expander, Module Linker
 │   │       ├── semantics/      # Semantic Analyzer, Core IR, Emitter, Arena
 │   │       ├── runtime/        # NaN-box, VM, Heap, GC, Types, Primitives
 │   │       └── diagnostic/     # Unified error reporting
-│   ├── compiler/               # etac (AOT bytecode compiler)
+│   ├── compiler/               # etac      (AOT bytecode compiler)
 │   ├── interpreter/            # etai + eta_repl (Driver orchestration)
-│   ├── lsp/                    # eta_lsp (Language Server Protocol, JSON-RPC over stdio)
-│   ├── dap/                    # eta_dap (Debug Adapter Protocol, DAP over stdio)
+│   ├── lsp/                    # eta_lsp   (Language Server, JSON-RPC over stdio)
+│   ├── dap/                    # eta_dap   (Debug Adapter, DAP over stdio)
 │   ├── nng/                    # nng networking layer
 │   ├── torch/                  # libtorch integration
 │   ├── stats/                  # Eigen-backed statistics primitives
 │   ├── test/                   # Boost.Test unit tests
 │   └── fuzz/                   # Fuzz testing (heap, intern table, nanbox)
-├── stdlib/                     # Standard library (.eta files)
+├── stdlib/                     # Standard library (.eta sources)
 │   ├── prelude.eta             # Auto-loaded prelude
-│   └── std/
-│       ├── core.eta            # Combinators, list utilities, platform helpers
-│       ├── math.eta            # Arithmetic, trig, gcd/lcm
-│       ├── io.eta              # I/O primitives
-│       ├── collections.eta     # map*, filter, foldl, sort, zip, range
-│       ├── logic.eta           # Prolog/miniKanren-style unification & search
-│       ├── freeze.eta          # freeze, dif — attributed-variable combinators
-│       ├── db.eta              # defrel/assert/retract/call-rel + SLG-lite tabling
-│       ├── clp.eta             # CLP(Z), CLP(FD): domains, propagators, labeling
-│       ├── clpb.eta            # CLP(B): Boolean propagation
-│       ├── clpr.eta            # CLP(R): real intervals, simplex, convex QP
-│       ├── causal.eta          # DAG utilities & Pearl do-calculus engine
-│       ├── fact_table.eta      # Columnar fact tables with hash indexes
-│       ├── stats.eta           # Descriptive stats, CIs, t-tests, OLS
-│       ├── time.eta            # Wall-clock + monotonic time, parts, ISO-8601
-│       ├── torch.eta           # libtorch wrappers (tensors, NN, optimizers)
-│       ├── net.eta             # Networking & actor model (nng): spawn, send!, recv!, worker-pool
-│       ├── supervisor.eta      # one-for-one / one-for-all supervision trees
-│       └── test.eta            # Lightweight test framework
-├── examples/                   # Example programs
-│   ├── hello.eta               # Hello world & factorial
-│   ├── basics.eta              # Arithmetic, let, lists, quoting
-│   ├── functions.eta           # defun, lambda, closures, recursion
-│   ├── higher-order.eta        # map, filter, fold, sort, zip
-│   ├── composition.eta         # compose, flip, currying, pipelines
-│   ├── recursion.eta           # Fibonacci, Ackermann, Hanoi
-│   ├── exceptions.eta          # catch/raise, dynamic-wind, re-raising
-│   ├── boolean-simplifier.eta  # Symbolic boolean rewriting
-│   ├── symbolic-diff.eta       # Symbolic differentiation & simplification
-│   ├── unification.eta         # Native structural unification primitives
-│   ├── logic.eta               # Relational logic programming (parento, findall)
-│   ├── nqueens.eta             # CLP(FD) N-queens
-│   ├── send-more-money.eta     # CLP(FD) cryptarithmetic
-│   ├── aad.eta                 # Reverse-mode automatic differentiation
-│   ├── xva.eta                 # Finance: CVA, FVA with AAD sensitivities
-│   ├── european.eta            # European option Greeks (1st & 2nd order) with AAD
-│   ├── sabr.eta                # SABR vol surface with tape-based AD
-│   ├── portfolio.eta           # Causal decision engine for portfolio optimisation (CLP(R) + QP)
-│   ├── portfolio-lp.eta        # Linear-only portfolio LP showcase
-│   ├── fact-table.eta          # Columnar fact tables with hash-indexed queries
-│   ├── stats.eta               # Descriptive stats, t-tests, OLS regression
-│   ├── torch.eta               # Tensor computing & neural network training
-│   ├── causal_demo.eta         # Primer: symbolic + causal + logic/CLP + libtorch (on-ramp to portfolio.eta)
-│   ├── message-passing.eta     # Erlang-style parent/child messaging
-│   ├── worker-pool.eta         # Parallel fan-out
-│   ├── inproc.eta              # In-process socket transport
-│   ├── parallel-fib.eta        # Parallel Fibonacci
-│   ├── parallel-map.eta        # Parallel map
-│   ├── monte-carlo.eta         # Parallel Monte Carlo π estimation
-│   ├── echo-server.eta         # REQ/REP echo
-│   ├── pub-sub.eta             # PUB/SUB topic filtering
-│   ├── scatter-gather.eta      # SURVEYOR/RESPONDENT
-│   ├── distributed-compute.eta # Cross-machine TCP messaging
-│   ├── causal-factor/          # End-to-end causal factor analysis (finance)
-│   ├── do-calculus/            # Do-calculus identification engine demos
-│   └── torch_tests/            # libtorch integration test suite
-├── editors/vscode/             # VS Code extension (TextMate grammar)
+│   └── std/                    # core, math, io, collections, logic, freeze,
+│                               # db, clp, clpb, clpr, causal, fact_table,
+│                               # stats, time, torch, net, supervisor, test
+├── examples/                   # Example programs (see docs/examples.md)
+├── editors/vscode/             # VS Code extension (TextMate grammar + LSP/DAP client)
 ├── scripts/                    # Build & install automation
-└── docs/                       # Design documentation (you are here)
+└── docs/                       # Design documentation
 ```
 
 ---
