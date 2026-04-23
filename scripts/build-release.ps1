@@ -203,6 +203,17 @@ foreach ($h in $helpers) {
     if (Test-Path $h) { Copy-Item -Force $h "$Prefix\" }
 }
 
+# -- 5b. Prune to minimal Windows layout ---------------------------------------
+# On Windows everything runtime-related lives in bin\ (executables + DLLs
+# copied next to them).  Drop any include/, lib/, share/ trees that
+# third-party dependencies may have installed despite EXCLUDE_FROM_ALL.
+Write-Host "  Pruning non-essential install directories..."
+$keepNames = @('bin','editors','stdlib')
+Get-ChildItem -LiteralPath $Prefix -Directory | Where-Object { $keepNames -notcontains $_.Name } | ForEach-Object {
+    Write-Host "    - removing $($_.Name)\"
+    Remove-Item -LiteralPath $_.FullName -Recurse -Force
+}
+
 # -- 6. Create zip archive -----------------------------------------------------
 $BundleName  = Split-Path -Leaf $Prefix
 $ArchivePath = Join-Path (Split-Path -Parent $Prefix) "$BundleName.zip"

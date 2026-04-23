@@ -25,6 +25,14 @@ FetchContent_Declare(
     nng
     GIT_REPOSITORY https://github.com/nanomsg/nng.git
     GIT_TAG        v1.9.0
+    # EXCLUDE_FROM_ALL (CMake ≥ 3.28) suppresses nng's own install() rules
+    # (which would otherwise drop headers into include/ and a CMake
+    # config package into lib/cmake/nng/ in the release bundle).  We
+    # only need the runtime library — the DLL is copied to bin/ via the
+    # explicit install(FILES $<TARGET_FILE:nng> DESTINATION bin) rule
+    # in eta/CMakeLists.txt on Windows.
+    EXCLUDE_FROM_ALL
+    SYSTEM
 )
 
 # Disable nng's own tests and tools — we only need the library.

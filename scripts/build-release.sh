@@ -146,6 +146,25 @@ echo "▸ [5/6] Copying install script and docs..."
 # Make binaries executable
 chmod +x "$PREFIX/bin/"* 2>/dev/null || true
 
+# ── 5b. Prune to minimal Linux/macOS layout ──────────────────────────
+# Keep only:  bin/  editors/  stdlib/  lib/  (lib/ holds libtorch .so's
+# when torch is enabled — RPATH is set to $ORIGIN/../lib).  Within lib/
+# we further drop CMake config packages and pkgconfig files which are
+# build-time artifacts not needed at runtime.
+echo "  Pruning non-essential install directories..."
+for d in "$PREFIX"/*/; do
+    name="$(basename "$d")"
+    case "$name" in
+        bin|editors|stdlib|lib) ;;
+        *) echo "    - removing ${name}/"; rm -rf "$d" ;;
+    esac
+done
+if [ -d "$PREFIX/lib" ]; then
+    rm -rf "$PREFIX/lib/cmake" "$PREFIX/lib/pkgconfig" 2>/dev/null || true
+    # If lib/ ended up empty (no torch), drop it.
+    rmdir "$PREFIX/lib" 2>/dev/null || true
+fi
+
 # ── 6. Create archive ────────────────────────────────────────────────
 BUNDLE_NAME="$(basename "$PREFIX")"
 ARCHIVE_PATH="$(dirname "$PREFIX")/${BUNDLE_NAME}.tar.gz"

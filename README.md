@@ -1,4 +1,4 @@
-﻿<!--[eta_logo.svg](docs/img/eta.svg) -->
+<!--[eta_logo.svg](docs/img/eta.svg) -->
 
 <p align="center">
   <img src="docs/img/eta.svg" alt="eta logo">
@@ -6,38 +6,38 @@
 
 
 <p align="center">
-  <strong>Î· (Eta)</strong><br>
+  <strong>η (Eta)</strong><br>
   A Lisp/Scheme-inspired language with built-in logic programming,<br>
   automatic differentiation, neural networks, and causal inference.
 </p>
 
 <p align="center">
-  <a href="docs/quickstart.md">Quick Start</a> Â·
-  <a href="docs/build.md">Build from Source</a> Â·
-  <a href="docs/architecture.md">Architecture</a> Â·
-  <a href="docs/nanboxing.md">NaN-Boxing</a> Â·
-  <a href="docs/bytecode-vm.md">Bytecode &amp; VM</a> Â·
-  <a href="docs/compiler.md">Compiler</a> Â·
-  <a href="docs/optimization.md">Optimization</a> Â·
-  <a href="docs/runtime.md">Runtime &amp; GC</a> Â·
-  <a href="docs/finalizers.md">Finalizers &amp; Guardians</a> Â·
-  <a href="docs/networking.md">Networking</a> Â·
-  <a href="docs/message-passing.md">Message Passing</a> Â·
-  <a href="docs/modules.md">Modules &amp; Stdlib</a> Â·
-  <a href="docs/next-steps.md">Next Steps</a> Â·
+  <a href="docs/quickstart.md">Quick Start</a> ·
+  <a href="docs/build.md">Build from Source</a> ·
+  <a href="docs/architecture.md">Architecture</a> ·
+  <a href="docs/nanboxing.md">NaN-Boxing</a> ·
+  <a href="docs/bytecode-vm.md">Bytecode &amp; VM</a> ·
+  <a href="docs/compiler.md">Compiler</a> ·
+  <a href="docs/optimization.md">Optimization</a> ·
+  <a href="docs/runtime.md">Runtime &amp; GC</a> ·
+  <a href="docs/finalizers.md">Finalizers &amp; Guardians</a> ·
+  <a href="docs/networking.md">Networking</a> ·
+  <a href="docs/message-passing.md">Message Passing</a> ·
+  <a href="docs/modules.md">Modules &amp; Stdlib</a> ·
+  <a href="docs/next-steps.md">Next Steps</a> ·
   <a href="docs/release-notes.md">Release Notes</a>
 </p>
 <br>
 <p align="center">
 <strong>Language Guide</strong></p>
 <p align="center">
-  <a href="docs/examples.md">Basics</a> Â·
-  <a href="docs/aad.md">Reverse Mode AAD (Finance Examples)</a> Â·
-  <a href="docs/logic.md">Logic Programming â€“ Unification and Backtracking</a> Â·
-  <a href="docs/clp.md">Constraint Logic Programming</a> Â·
-  <a href="docs/causal.md">Causal Inference &amp; Do-Calculus</a> Â·
-  <a href="docs/fact-table.md">Fact Tables</a> Â·
-  <a href="docs/stats.md">Eigen: Linear Algebra, Statistics</a> Â·
+  <a href="docs/examples.md">Basics</a> ·
+  <a href="docs/aad.md">Reverse Mode AAD (Finance Examples)</a> ·
+  <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
+  <a href="docs/clp.md">Constraint Logic Programming</a> ·
+  <a href="docs/causal.md">Causal Inference & Do-Calculus</a> ·
+  <a href="docs/fact-table.md">Fact Tables</a> ·
+  <a href="docs/stats.md">Eigen: Linear Algebra, Statistics</a> ·
   <a href="docs/torch.md">LibTorch: Neural Networks</a>
 </p>
 <br>
@@ -54,25 +54,25 @@
 
 **Eta** is a Scheme-like language designed for **symbolic reasoning,
 differentiable programming, neural-network training, and causal
-inference** â€” all from a single S-expression syntax.
+inference** — all from a single S-expression syntax.
 It compiles to compact bytecode and runs on a stack-based VM implemented
 in C++ (NaN-boxed values, closures, TCO, `call/cc`, hygienic macros,
-module system â€” see [Architecture](docs/architecture.md) for the
+module system — see [Architecture](docs/architecture.md) for the
 full compilation pipeline).
 
 ### Headline Features
 
 | Domain | What you get | Deep-dive |
 |--------|-------------|-----------|
-| **Scheme Core** | Closures, tail-call elimination, first-class continuations (`call/cc`), hygienic `syntax-rules` macros, module system with import filters | [Bytecode & VM](docs/bytecode-vm.md) Â· [Modules](docs/modules.md) |
-| **Logic Programming** | VM-native structural unification & backtracking â€” seven dedicated opcodes give you Prolog-style pattern matching without leaving the language | [Logic](docs/logic.md) |
+| **Scheme Core** | Closures, tail-call elimination, first-class continuations (`call/cc`), hygienic `syntax-rules` macros, module system with import filters | [Bytecode & VM](docs/bytecode-vm.md) · [Modules](docs/modules.md) |
+| **Logic Programming** | VM-native structural unification & backtracking — seven dedicated opcodes give you Prolog-style pattern matching without leaving the language | [Logic](docs/logic.md) |
 | **Constraint Logic Programming** | `clp(Z)` integer-interval and `clp(FD)` finite-domain solvers built on the unification layer | [CLP](docs/clp.md) |
-| **Reverse-Mode AAD** | VM-native tape-based automatic differentiation â€” standard arithmetic is recorded transparently when a `TapeRef` operand is present; zero closure overhead | [AAD â€“ Finance Examples](docs/aad.md) |
+| **Reverse-Mode AAD** | VM-native tape-based automatic differentiation — standard arithmetic is recorded transparently when a `TapeRef` operand is present; zero closure overhead | [AAD – Finance Examples](docs/aad.md) |
 | **Linear Algebra & Statistics** | Eigen-backed multivariate OLS, covariance/correlation matrices, column quantiles over FactTables; plus `std.stats` descriptive stats, CIs, t-tests, and simple OLS over lists | [Stats](docs/stats.md) |
-| **Neural Networks (libtorch)** | Native C++ bindings to PyTorch's backend â€” tensors, autograd, NN layers, optimizers, and GPU offload from Eta code | [LibTorch](docs/torch.md) |
+| **Neural Networks (libtorch)** | Native C++ bindings to PyTorch's backend — tensors, autograd, NN layers, optimizers, and GPU offload from Eta code | [LibTorch](docs/torch.md) |
 | **Causal Inference** | Pearl's do-calculus engine, back-door / front-door adjustment, and end-to-end factor analysis | [Causal](docs/causal.md) |
-| **Message Passing & Actors** | Erlang-style actor model via nng: `spawn` child processes, `send!`/`recv!` over PAIR sockets, `worker-pool` parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT, and supervision trees (`one-for-one`, `one-for-all`) â€” network-transparent across machines | [Networking](docs/networking.md) Â· [Message Passing](docs/message-passing.md) Â· [Supervisors](docs/supervisor.md) |
-| **End-to-End Pipeline** | All domains compose: symbolic differentiation â†’ do-calculus identification â†’ logic/CLP validation â†’ libtorch neural estimation â†’ AAD risk â†’ CLP(R)+QP allocation | [Portfolio Engine](docs/portfolio.md) Â· [Causal Primer](docs/causal-factor.md) |
+| **Message Passing & Actors** | Erlang-style actor model via nng: `spawn` child processes, `send!`/`recv!` over PAIR sockets, `worker-pool` parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT, and supervision trees (`one-for-one`, `one-for-all`) — network-transparent across machines | [Networking](docs/networking.md) · [Message Passing](docs/message-passing.md) · [Supervisors](docs/supervisor.md) |
+| **End-to-End Pipeline** | All domains compose: symbolic differentiation → do-calculus identification → logic/CLP validation → libtorch neural estimation → AAD risk → CLP(R)+QP allocation | [Portfolio Engine](docs/portfolio.md) · [Causal Primer](docs/causal-factor.md) |
 
 The implementation ships as five executables and a VS Code extension:
 
@@ -123,7 +123,7 @@ installs the VS Code extension automatically if VS Code is detected.
 > [!NOTE]
 > Open a **new** terminal after running the installer for the environment changes to take effect.
 
-### Interpret from Source â€” `etai`
+### Interpret from Source — `etai`
 
 `etai` compiles a `.eta` file in-memory and executes it immediately:
 
@@ -133,7 +133,7 @@ Hello, world!
 2432902008176640000
 ```
 
-### Ahead-of-Time Compilation â€” `etac` + `etai`
+### Ahead-of-Time Compilation — `etac` + `etai`
 
 `etac` compiles `.eta` source to compact `.etac` bytecode. `etai` then
 loads `.etac` files directly, **skipping all front-end phases** (lex,
@@ -141,7 +141,7 @@ parse, expand, link, analyze, emit) for faster startup:
 
 ```console
 $ etac examples/hello.eta
-compiled examples/hello.eta â†’ examples/hello.etac (3 functions, 1 module(s))
+compiled examples/hello.eta → examples/hello.etac (3 functions, 1 module(s))
 
 $ etai examples/hello.etac
 Hello, world!
@@ -166,15 +166,15 @@ $ etac --disasm examples/hello.eta
 
 ```console
 $ eta_repl
-Î·> (+ 1 2 3 4 5)
+η> (+ 1 2 3 4 5)
 => 15
-Î·> (exit)
+η> (exit)
 ```
 
 ### VS Code
 
 The installer automatically sets up the VS Code extension. Configure the
-paths in settings (`Ctrl+,` â†’ search **Eta**):
+paths in settings (`Ctrl+,` → search **Eta**):
 
 ```json
 {
@@ -187,11 +187,11 @@ Open the `examples/` folder, open any `.eta` file, and press **F5** to
 debug. The extension provides:
 
 - **Syntax highlighting** and **live diagnostics** (LSP)
-- **Breakpoints & stepping** â€” F10 Step Over Â· F11 Step In Â· Shift+F11 Step Out Â· F5 Continue
-- **Heap Inspector** â€” live memory gauge, per-kind object stats, GC root tree with drill-down (`Ctrl+Shift+P` â†’ *Eta: Show Heap Inspector*)
-- **Disassembly View** â€” live bytecode with current-PC marker in the Debug sidebar (`Ctrl+Shift+P` â†’ *Eta: Show Disassembly*)
-- **GC Roots Tree** â€” expandable root categories (Stack, Globals, Frames), module-grouped globals, object drill-down
-- **Child Processes** â€” debug sidebar panel listing all spawned actor processes with PID, endpoint, and live/exited status
+- **Breakpoints & stepping** — F10 Step Over · F11 Step In · Shift+F11 Step Out · F5 Continue
+- **Heap Inspector** — live memory gauge, per-kind object stats, GC root tree with drill-down (`Ctrl+Shift+P` → *Eta: Show Heap Inspector*)
+- **Disassembly View** — live bytecode with current-PC marker in the Debug sidebar (`Ctrl+Shift+P` → *Eta: Show Disassembly*)
+- **GC Roots Tree** — expandable root categories (Stack, Globals, Frames), module-grouped globals, object drill-down
+- **Child Processes** — debug sidebar panel listing all spawned actor processes with PID, endpoint, and live/exited status
 
 <img src="docs/img/eta_example_run.png" alt="Eta example run in VS Code" width="500">
 
@@ -204,7 +204,7 @@ debug. The extension provides:
 ### Build from Source
 
 For contributors or those who want to build from source, see
-**[Building from Source](docs/build.md)** â€” prerequisites, one-script
+**[Building from Source](docs/build.md)** — prerequisites, one-script
 builds, manual CMake steps, and CI details.
 
 Quick version:
@@ -225,70 +225,22 @@ See [Language Guide](docs/examples.md) for a guided tour of the example programs
 
 ```
 eta-<version>-<platform>/
-  bin/
-    etac(.exe)          # Ahead-of-time bytecode compiler
-    etai(.exe)          # File interpreter (also runs .etac files)
-    eta_repl(.exe)      # Interactive REPL
-    eta_lsp(.exe)       # Language Server (JSON-RPC over stdio)
-    eta_dap(.exe)       # Debug Adapter (DAP over stdio, used by VS Code)
-  stdlib/
-    prelude.eta         # Auto-loaded standard library
-    std/
-      core.eta  math.eta  io.eta  collections.eta  test.eta
-      logic.eta  freeze.eta  db.eta
-      clp.eta  clpb.eta  clpr.eta
-      causal.eta  fact_table.eta  stats.eta  time.eta  torch.eta
-      net.eta  supervisor.eta
-  examples/
-    hello.eta                 # Hello world & factorial
-    basics.eta                # Arithmetic, let, lists, quoting
-    functions.eta             # defun, lambda, closures, recursion
-    higher-order.eta          # map, filter, fold, sort, zip
-    composition.eta           # compose, flip, currying, pipelines
-    recursion.eta             # Fibonacci, Ackermann, Hanoi
-    exceptions.eta            # catch/raise, dynamic-wind
-    boolean-simplifier.eta    # Symbolic boolean rewriting
-    symbolic-diff.eta         # Symbolic differentiation & simplification
-    unification.eta           # Native structural unification primitives
-    logic.eta                 # Relational logic programming
-    nqueens.eta               # CLP(FD) N-queens
-    send-more-money.eta       # CLP(FD) cryptarithmetic
-    aad.eta                   # Reverse-mode automatic differentiation
-    xva.eta                   # Finance: CVA / FVA with AAD sensitivities
-    european.eta              # European option Greeks (1st & 2nd order)
-    sabr.eta                  # SABR vol surface with tape-based AD
-    portfolio.eta             # Causal decision engine for portfolio optimisation (CLP(R) + QP)
-    portfolio-lp.eta          # Linear-only portfolio LP (CLP(R) showcase)
-    fact-table.eta            # Columnar fact tables
-    stats.eta                 # Descriptive stats, t-tests, OLS regression
-    torch.eta                 # Tensor computing & neural network training
-    causal_demo.eta           # Symbolic + causal + logic/CLP + libtorch
-    message-passing.eta       # Erlang-style parent/child messaging
-    message-passing-worker.eta
-    worker-pool.eta           # Parallel fan-out
-    worker-pool-worker.eta
-    inproc.eta                # In-process socket transport
-    inproc-worker.eta
-    parallel-fib.eta          # Parallel Fibonacci over worker-pool
-    parallel-fib-worker.eta
-    parallel-map.eta          # Parallel map over worker-pool
-    parallel-map-worker.eta
-    monte-carlo.eta           # Parallel Monte Carlo Ï€ estimation
-    monte-carlo-worker.eta
-    echo-server.eta           # REQ/REP echo
-    echo-client.eta
-    pub-sub.eta               # PUB/SUB topic filtering
-    pub-sub-publisher.eta
-    scatter-gather.eta        # SURVEYOR/RESPONDENT
-    scatter-gather-worker.eta
-    distributed-compute.eta   # Cross-machine TCP messaging
-    distributed-compute-server.eta
-    causal-factor/            # End-to-end causal factor analysis
-    do-calculus/              # Do-calculus identification engine demos
-    torch_tests/              # libtorch integration test suite
-  editors/
-    eta-lang-<version>.vsix   # VS Code extension
-  install.sh / install.cmd
+├── bin/                        # Executables (and bundled DLLs on Windows)
+│   ├── etac(.exe)              # Ahead-of-time bytecode compiler
+│   ├── etai(.exe)              # File interpreter (also runs .etac files)
+│   ├── eta_repl(.exe)          # Interactive REPL
+│   ├── eta_lsp(.exe)           # Language Server (JSON-RPC over stdio)
+│   └── eta_dap(.exe)           # Debug Adapter (used by VS Code)
+├── lib/                        # Shared libraries (Linux/macOS only, e.g. libtorch)
+├── stdlib/                     # Standard library (.eta sources)
+│   ├── prelude.eta             # Auto-loaded prelude
+│   └── std/                    # core, math, io, collections, logic, clp,
+│                               # causal, stats, torch, net, supervisor, …
+├── editors/
+│   └── eta-lang-<version>.vsix # VS Code extension
+├── install.sh                  # Installer (Linux/macOS)
+├── install.cmd / install.ps1   # Installer (Windows)
+└── quickstart.md
 ```
 
 ---
@@ -343,20 +295,20 @@ flowchart LR
 
 | Feature | Detail                                                                                                                                                                            |
 |---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **NaN-Boxing** | All values are 64-bit; doubles pass through unboxed while tagged types (fixnums, chars, symbols, heap pointers) are encoded in the NaN mantissa. [â†’ Deep-dive](docs/nanboxing.md) |
-| **AOT Compilation** | `etac` compiles `.eta` â†’ `.etac` bytecode; `etai` loads `.etac` files directly, skipping all front-end phases. Supports `-O` optimization passes (constant folding, DCE). [â†’ Deep-dive](docs/compiler.md) |
-| **47-bit Fixnums** | Integers up to Â±70 trillion are stored inline â€” no heap allocation.                                                                                                               |
-| **Mark-Sweep GC** | Stop-the-world collector with sharded heap, hazard pointers, and a GC callback for auto-triggering on soft-limit. [â†’ Deep-dive](docs/runtime.md)                                  |
+| **NaN-Boxing** | All values are 64-bit; doubles pass through unboxed while tagged types (fixnums, chars, symbols, heap pointers) are encoded in the NaN mantissa. [→ Deep-dive](docs/nanboxing.md) |
+| **AOT Compilation** | `etac` compiles `.eta` → `.etac` bytecode; `etai` loads `.etac` files directly, skipping all front-end phases. Supports `-O` optimization passes (constant folding, DCE). [→ Deep-dive](docs/compiler.md) |
+| **47-bit Fixnums** | Integers up to ±70 trillion are stored inline — no heap allocation.                                                                                                               |
+| **Mark-Sweep GC** | Stop-the-world collector with sharded heap, hazard pointers, and a GC callback for auto-triggering on soft-limit. [→ Deep-dive](docs/runtime.md)                                  |
 | **Tail-Call Elimination** | `TailCall` and `TailApply` opcodes reuse the current stack frame.                                                                                                                 |
 | **First-Class Continuations** | `call/cc` captures the full stack + winding stack; `dynamic-wind` is supported.                                                                                                   |
 | **Hygienic Macros** | `syntax-rules` with ellipsis patterns.                                                                                                                                            |
-| **Module System** | `(module â€¦)` forms with `import`/`export`, `only`, `except`, `rename` filters. [â†’ Deep-dive](docs/modules.md)                                                                     |
+| **Module System** | `(module …)` forms with `import`/`export`, `only`, `except`, `rename` filters. [→ Deep-dive](docs/modules.md)                                                                     |
 | **Arena Allocator** | IR nodes are block-allocated in a 16 KB arena for cache locality.                                                                                                                 |
 | **Concurrent Heap** | `boost::unordered::concurrent_flat_map` with 16 shards for lock-free reads.                                                                                                       |
 | **LSP Integration** | JSON-RPC language server for real-time diagnostics in any editor.                                                                                                                 |
 | **DAP Integration** | Debug Adapter Protocol server (`eta_dap`) enables breakpoints, step-through debugging, call-stack inspection, and REPL-style expression evaluation directly in VS Code.           |
-| **libtorch Integration** | Native C++ bindings to PyTorch's backend for tensors, autograd, neural-network layers, optimizers, and GPU offload. [â†’ Deep-dive](docs/torch.md) |
-| **nng Networking** | Erlang-style actor model: `spawn` processes, `send!`/`recv!`, `worker-pool` for parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT â€” network-transparent over IPC or TCP. [â†’ Deep-dive](docs/networking.md) Â· [Actor Model](docs/message-passing.md) |
+| **libtorch Integration** | Native C++ bindings to PyTorch's backend for tensors, autograd, neural-network layers, optimizers, and GPU offload. [→ Deep-dive](docs/torch.md) |
+| **nng Networking** | Erlang-style actor model: `spawn` processes, `send!`/`recv!`, `worker-pool` for parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT — network-transparent over IPC or TCP. [→ Deep-dive](docs/networking.md) · [Actor Model](docs/message-passing.md) |
 
 ---
 
@@ -379,12 +331,12 @@ flowchart LR
 | **[Networking Primitives](docs/networking.md)** | nng socket API: `nng-socket`, `send!`, `recv!`, `nng-poll`, endpoints, error handling   |
 | **[Message Passing & Actors](docs/message-passing.md)** | Actor model: `spawn`, `worker-pool`, REQ/REP, PUB/SUB, scatter-gather, timeouts  |
 | **[Network & Message Passing Design](docs/network-message-passing.md)** | Full design doc: architecture, phases, nng rationale             |
-| **[AAD â€“ Finance Examples](docs/aad.md)** | Reverse-mode AD walkthrough, xVA sensitivities, European Greeks, SABR vol surface            |
+| **[AAD – Finance Examples](docs/aad.md)** | Reverse-mode AD walkthrough, xVA sensitivities, European Greeks, SABR vol surface            |
 | **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`           |
 | **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                             |
 | **[Fact Tables](docs/fact-table.md)**      | Columnar fact tables with hash-indexed queries, iteration, and fold                           |
 | **[Linear Algebra & Statistics](docs/stats.md)** | Eigen-backed multivariate stats on FactTables; `std.stats` descriptive stats, CIs, t-tests, OLS |
-| **[Causal Pipeline Primer](docs/causal-factor.md)** | Gentle on-ramp: symbolic diff â†’ do-calculus â†’ logic/CLP â†’ libtorch NN â†’ ATE (precursor to the portfolio engine) |
+| **[Causal Pipeline Primer](docs/causal-factor.md)** | Gentle on-ramp: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE (precursor to the portfolio engine) |
 | **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support               |
 | **[Release Notes](docs/release-notes.md)** | Recent rollout changes and benchmark/gate commands                                            |
 | **[Next Steps](docs/next-steps.md)**       | Roadmap: compiler, GC, testing, logic/CLP upgrades, VS Code improvements, Jupyter kernel |
@@ -402,20 +354,20 @@ The prelude auto-loads the following modules:
 | **`std.math`** | `pi`, `e`, `square`, `gcd`, `lcm`, `expt`, `sum`, `product` |
 | **`std.io`** | `println`, `eprintln`, `read-line`, port redirection helpers |
 | **`std.collections`** | `map*`, `filter`, `foldl`, `foldr`, `sort`, `zip`, `range`, vector ops |
-| **`std.logic`** | `==`, `copy-term`, `naf`, `findall`, `run1`, `run*`, `run-n` â€” Prolog/miniKanren-style combinators |
-| **`std.freeze`** | `freeze`, `dif` â€” suspended goals & structural disequality on attributed vars |
-| **`std.db`** | `defrel`, `assert`, `retract`, `call-rel`, `tabled` â€” fact-table-backed relations with SLG-lite tabling |
-| **`std.clp`** | `clp:domain`, `clp:in-fd`, `clp:solve`, `clp:all-different`, `clp:labeling`, `clp:minimize`/`maximize` â€” CLP(Z) and CLP(FD) |
-| **`std.clpb`** | `clp:boolean`, `clp:and/or/xor/imp/eq/not`, `clp:card`, `clp:sat?`, `clp:taut?` â€” CLP(B) Boolean propagation |
-| **`std.clpr`** | `clp:real`, `clp:r<=`, `clp:r=`, `clp:r-minimize`/`maximize`, `clp:rq-minimize`/`maximize` â€” CLP(R) linear + convex QP |
-| **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` â€” causal inference engine |
-| **`std.fact_table`** | `make-fact-table`, `fact-table-insert!`, `fact-table-query`, `fact-table-fold` â€” columnar fact tables |
+| **`std.logic`** | `==`, `copy-term`, `naf`, `findall`, `run1`, `run*`, `run-n` — Prolog/miniKanren-style combinators |
+| **`std.freeze`** | `freeze`, `dif` — suspended goals & structural disequality on attributed vars |
+| **`std.db`** | `defrel`, `assert`, `retract`, `call-rel`, `tabled` — fact-table-backed relations with SLG-lite tabling |
+| **`std.clp`** | `clp:domain`, `clp:in-fd`, `clp:solve`, `clp:all-different`, `clp:labeling`, `clp:minimize`/`maximize` — CLP(Z) and CLP(FD) |
+| **`std.clpb`** | `clp:boolean`, `clp:and/or/xor/imp/eq/not`, `clp:card`, `clp:sat?`, `clp:taut?` — CLP(B) Boolean propagation |
+| **`std.clpr`** | `clp:real`, `clp:r<=`, `clp:r=`, `clp:r-minimize`/`maximize`, `clp:rq-minimize`/`maximize` — CLP(R) linear + convex QP |
+| **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` — causal inference engine |
+| **`std.fact_table`** | `make-fact-table`, `fact-table-insert!`, `fact-table-query`, `fact-table-fold` — columnar fact tables |
 | **`std.stats`** | Descriptive stats, CIs, t-tests, OLS regression (Eigen-backed) |
 | **`std.time`** | Wall-clock + monotonic time, UTC/local parts, ISO-8601 formatting |
-| **`std.torch`** | `tensor`, `forward`, `train-step!`, `sgd`, `adam` â€” libtorch neural networks |
-| **`std.net`** | `spawn`, `send!`, `recv!`, `monitor`, `worker-pool`, `with-socket`, `request-reply`, `pub-sub`, `survey` â€” Erlang-style actors & nng |
-| **`std.supervisor`** | `one-for-one`, `one-for-all` â€” supervision trees over actor processes |
-| **`std.test`** | `assert-equal`, `assert-true`, `run-tests` â€” lightweight test framework |
+| **`std.torch`** | `tensor`, `forward`, `train-step!`, `sgd`, `adam` — libtorch neural networks |
+| **`std.net`** | `spawn`, `send!`, `recv!`, `monitor`, `worker-pool`, `with-socket`, `request-reply`, `pub-sub`, `survey` — Erlang-style actors & nng |
+| **`std.supervisor`** | `one-for-one`, `one-for-all` — supervision trees over actor processes |
+| **`std.test`** | `assert-equal`, `assert-true`, `run-tests` — lightweight test framework |
 
 ```scheme
 (module my-app
@@ -435,84 +387,84 @@ The prelude auto-loads the following modules:
 
 ```
 eta/
-â”œâ”€â”€ CMakeLists.txt              # Top-level build
-â”œâ”€â”€ eta/
-â”‚   â”œâ”€â”€ core/                   # Shared library: reader + semantics + runtime
-â”‚   â”‚   â””â”€â”€ src/eta/
-â”‚   â”‚       â”œâ”€â”€ reader/         # Lexer, Parser, Expander, Module Linker
-â”‚   â”‚       â”œâ”€â”€ semantics/      # Semantic Analyzer, Core IR, Emitter, Arena
-â”‚   â”‚       â”œâ”€â”€ runtime/        # NaN-box, VM, Heap, GC, Types, Primitives
-â”‚   â”‚       â””â”€â”€ diagnostic/     # Unified error reporting
-â”‚   â”œâ”€â”€ compiler/               # etac (AOT bytecode compiler)
-â”‚   â”œâ”€â”€ interpreter/            # etai + eta_repl (Driver orchestration)
-â”‚   â”œâ”€â”€ lsp/                    # eta_lsp (Language Server Protocol, JSON-RPC over stdio)
-â”‚   â”œâ”€â”€ dap/                    # eta_dap (Debug Adapter Protocol, DAP over stdio)
-â”‚   â”œâ”€â”€ nng/                    # nng networking layer
-â”‚   â”œâ”€â”€ torch/                  # libtorch integration
-â”‚   â”œâ”€â”€ stats/                  # Eigen-backed statistics primitives
-â”‚   â”œâ”€â”€ test/                   # Boost.Test unit tests
-â”‚   â””â”€â”€ fuzz/                   # Fuzz testing (heap, intern table, nanbox)
-â”œâ”€â”€ stdlib/                     # Standard library (.eta files)
-â”‚   â”œâ”€â”€ prelude.eta             # Auto-loaded prelude
-â”‚   â””â”€â”€ std/
-â”‚       â”œâ”€â”€ core.eta            # Combinators, list utilities, platform helpers
-â”‚       â”œâ”€â”€ math.eta            # Arithmetic, trig, gcd/lcm
-â”‚       â”œâ”€â”€ io.eta              # I/O primitives
-â”‚       â”œâ”€â”€ collections.eta     # map*, filter, foldl, sort, zip, range
-â”‚       â”œâ”€â”€ logic.eta           # Prolog/miniKanren-style unification & search
-â”‚       â”œâ”€â”€ freeze.eta          # freeze, dif â€” attributed-variable combinators
-â”‚       â”œâ”€â”€ db.eta              # defrel/assert/retract/call-rel + SLG-lite tabling
-â”‚       â”œâ”€â”€ clp.eta             # CLP(Z), CLP(FD): domains, propagators, labeling
-â”‚       â”œâ”€â”€ clpb.eta            # CLP(B): Boolean propagation
-â”‚       â”œâ”€â”€ clpr.eta            # CLP(R): real intervals, simplex, convex QP
-â”‚       â”œâ”€â”€ causal.eta          # DAG utilities & Pearl do-calculus engine
-â”‚       â”œâ”€â”€ fact_table.eta      # Columnar fact tables with hash indexes
-â”‚       â”œâ”€â”€ stats.eta           # Descriptive stats, CIs, t-tests, OLS
-â”‚       â”œâ”€â”€ time.eta            # Wall-clock + monotonic time, parts, ISO-8601
-â”‚       â”œâ”€â”€ torch.eta           # libtorch wrappers (tensors, NN, optimizers)
-â”‚       â”œâ”€â”€ net.eta             # Networking & actor model (nng): spawn, send!, recv!, worker-pool
-â”‚       â”œâ”€â”€ supervisor.eta      # one-for-one / one-for-all supervision trees
-â”‚       â””â”€â”€ test.eta            # Lightweight test framework
-â”œâ”€â”€ examples/                   # Example programs
-â”‚   â”œâ”€â”€ hello.eta               # Hello world & factorial
-â”‚   â”œâ”€â”€ basics.eta              # Arithmetic, let, lists, quoting
-â”‚   â”œâ”€â”€ functions.eta           # defun, lambda, closures, recursion
-â”‚   â”œâ”€â”€ higher-order.eta        # map, filter, fold, sort, zip
-â”‚   â”œâ”€â”€ composition.eta         # compose, flip, currying, pipelines
-â”‚   â”œâ”€â”€ recursion.eta           # Fibonacci, Ackermann, Hanoi
-â”‚   â”œâ”€â”€ exceptions.eta          # catch/raise, dynamic-wind, re-raising
-â”‚   â”œâ”€â”€ boolean-simplifier.eta  # Symbolic boolean rewriting
-â”‚   â”œâ”€â”€ symbolic-diff.eta       # Symbolic differentiation & simplification
-â”‚   â”œâ”€â”€ unification.eta         # Native structural unification primitives
-â”‚   â”œâ”€â”€ logic.eta               # Relational logic programming (parento, findall)
-â”‚   â”œâ”€â”€ nqueens.eta             # CLP(FD) N-queens
-â”‚   â”œâ”€â”€ send-more-money.eta     # CLP(FD) cryptarithmetic
-â”‚   â”œâ”€â”€ aad.eta                 # Reverse-mode automatic differentiation
-â”‚   â”œâ”€â”€ xva.eta                 # Finance: CVA, FVA with AAD sensitivities
-â”‚   â”œâ”€â”€ european.eta            # European option Greeks (1st & 2nd order) with AAD
-â”‚   â”œâ”€â”€ sabr.eta                # SABR vol surface with tape-based AD
-â”‚   â”œâ”€â”€ portfolio.eta           # Causal decision engine for portfolio optimisation (CLP(R) + QP)
-â”‚   â”œâ”€â”€ portfolio-lp.eta        # Linear-only portfolio LP showcase
-â”‚   â”œâ”€â”€ fact-table.eta          # Columnar fact tables with hash-indexed queries
-â”‚   â”œâ”€â”€ stats.eta               # Descriptive stats, t-tests, OLS regression
-â”‚   â”œâ”€â”€ torch.eta               # Tensor computing & neural network training
-â”‚   â”œâ”€â”€ causal_demo.eta         # Primer: symbolic + causal + logic/CLP + libtorch (on-ramp to portfolio.eta)
-â”‚   â”œâ”€â”€ message-passing.eta     # Erlang-style parent/child messaging
-â”‚   â”œâ”€â”€ worker-pool.eta         # Parallel fan-out
-â”‚   â”œâ”€â”€ inproc.eta              # In-process socket transport
-â”‚   â”œâ”€â”€ parallel-fib.eta        # Parallel Fibonacci
-â”‚   â”œâ”€â”€ parallel-map.eta        # Parallel map
-â”‚   â”œâ”€â”€ monte-carlo.eta         # Parallel Monte Carlo Ï€ estimation
-â”‚   â”œâ”€â”€ echo-server.eta         # REQ/REP echo
-â”‚   â”œâ”€â”€ pub-sub.eta             # PUB/SUB topic filtering
-â”‚   â”œâ”€â”€ scatter-gather.eta      # SURVEYOR/RESPONDENT
-â”‚   â”œâ”€â”€ distributed-compute.eta # Cross-machine TCP messaging
-â”‚   â”œâ”€â”€ causal-factor/          # End-to-end causal factor analysis (finance)
-â”‚   â”œâ”€â”€ do-calculus/            # Do-calculus identification engine demos
-â”‚   â””â”€â”€ torch_tests/            # libtorch integration test suite
-â”œâ”€â”€ editors/vscode/             # VS Code extension (TextMate grammar)
-â”œâ”€â”€ scripts/                    # Build & install automation
-â””â”€â”€ docs/                       # Design documentation (you are here)
+├── CMakeLists.txt              # Top-level build
+├── eta/
+│   ├── core/                   # Shared library: reader + semantics + runtime
+│   │   └── src/eta/
+│   │       ├── reader/         # Lexer, Parser, Expander, Module Linker
+│   │       ├── semantics/      # Semantic Analyzer, Core IR, Emitter, Arena
+│   │       ├── runtime/        # NaN-box, VM, Heap, GC, Types, Primitives
+│   │       └── diagnostic/     # Unified error reporting
+│   ├── compiler/               # etac (AOT bytecode compiler)
+│   ├── interpreter/            # etai + eta_repl (Driver orchestration)
+│   ├── lsp/                    # eta_lsp (Language Server Protocol, JSON-RPC over stdio)
+│   ├── dap/                    # eta_dap (Debug Adapter Protocol, DAP over stdio)
+│   ├── nng/                    # nng networking layer
+│   ├── torch/                  # libtorch integration
+│   ├── stats/                  # Eigen-backed statistics primitives
+│   ├── test/                   # Boost.Test unit tests
+│   └── fuzz/                   # Fuzz testing (heap, intern table, nanbox)
+├── stdlib/                     # Standard library (.eta files)
+│   ├── prelude.eta             # Auto-loaded prelude
+│   └── std/
+│       ├── core.eta            # Combinators, list utilities, platform helpers
+│       ├── math.eta            # Arithmetic, trig, gcd/lcm
+│       ├── io.eta              # I/O primitives
+│       ├── collections.eta     # map*, filter, foldl, sort, zip, range
+│       ├── logic.eta           # Prolog/miniKanren-style unification & search
+│       ├── freeze.eta          # freeze, dif — attributed-variable combinators
+│       ├── db.eta              # defrel/assert/retract/call-rel + SLG-lite tabling
+│       ├── clp.eta             # CLP(Z), CLP(FD): domains, propagators, labeling
+│       ├── clpb.eta            # CLP(B): Boolean propagation
+│       ├── clpr.eta            # CLP(R): real intervals, simplex, convex QP
+│       ├── causal.eta          # DAG utilities & Pearl do-calculus engine
+│       ├── fact_table.eta      # Columnar fact tables with hash indexes
+│       ├── stats.eta           # Descriptive stats, CIs, t-tests, OLS
+│       ├── time.eta            # Wall-clock + monotonic time, parts, ISO-8601
+│       ├── torch.eta           # libtorch wrappers (tensors, NN, optimizers)
+│       ├── net.eta             # Networking & actor model (nng): spawn, send!, recv!, worker-pool
+│       ├── supervisor.eta      # one-for-one / one-for-all supervision trees
+│       └── test.eta            # Lightweight test framework
+├── examples/                   # Example programs
+│   ├── hello.eta               # Hello world & factorial
+│   ├── basics.eta              # Arithmetic, let, lists, quoting
+│   ├── functions.eta           # defun, lambda, closures, recursion
+│   ├── higher-order.eta        # map, filter, fold, sort, zip
+│   ├── composition.eta         # compose, flip, currying, pipelines
+│   ├── recursion.eta           # Fibonacci, Ackermann, Hanoi
+│   ├── exceptions.eta          # catch/raise, dynamic-wind, re-raising
+│   ├── boolean-simplifier.eta  # Symbolic boolean rewriting
+│   ├── symbolic-diff.eta       # Symbolic differentiation & simplification
+│   ├── unification.eta         # Native structural unification primitives
+│   ├── logic.eta               # Relational logic programming (parento, findall)
+│   ├── nqueens.eta             # CLP(FD) N-queens
+│   ├── send-more-money.eta     # CLP(FD) cryptarithmetic
+│   ├── aad.eta                 # Reverse-mode automatic differentiation
+│   ├── xva.eta                 # Finance: CVA, FVA with AAD sensitivities
+│   ├── european.eta            # European option Greeks (1st & 2nd order) with AAD
+│   ├── sabr.eta                # SABR vol surface with tape-based AD
+│   ├── portfolio.eta           # Causal decision engine for portfolio optimisation (CLP(R) + QP)
+│   ├── portfolio-lp.eta        # Linear-only portfolio LP showcase
+│   ├── fact-table.eta          # Columnar fact tables with hash-indexed queries
+│   ├── stats.eta               # Descriptive stats, t-tests, OLS regression
+│   ├── torch.eta               # Tensor computing & neural network training
+│   ├── causal_demo.eta         # Primer: symbolic + causal + logic/CLP + libtorch (on-ramp to portfolio.eta)
+│   ├── message-passing.eta     # Erlang-style parent/child messaging
+│   ├── worker-pool.eta         # Parallel fan-out
+│   ├── inproc.eta              # In-process socket transport
+│   ├── parallel-fib.eta        # Parallel Fibonacci
+│   ├── parallel-map.eta        # Parallel map
+│   ├── monte-carlo.eta         # Parallel Monte Carlo π estimation
+│   ├── echo-server.eta         # REQ/REP echo
+│   ├── pub-sub.eta             # PUB/SUB topic filtering
+│   ├── scatter-gather.eta      # SURVEYOR/RESPONDENT
+│   ├── distributed-compute.eta # Cross-machine TCP messaging
+│   ├── causal-factor/          # End-to-end causal factor analysis (finance)
+│   ├── do-calculus/            # Do-calculus identification engine demos
+│   └── torch_tests/            # libtorch integration test suite
+├── editors/vscode/             # VS Code extension (TextMate grammar)
+├── scripts/                    # Build & install automation
+└── docs/                       # Design documentation (you are here)
 ```
 
 ---

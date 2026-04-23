@@ -111,9 +111,11 @@ if (NOT MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE -Wswitch-enum)
 endif()
 
-install(TARGETS ${PROJECT_NAME}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# eta_core is an internal STATIC library consumed only by the in-tree
+# binaries (etai, etac, eta_repl, eta_lsp, eta_dap, ...).  It is *not*
+# part of the distributable release bundle, so we deliberately do not
+# emit any install() rules for it — that would otherwise create stray
+# include/ and lib/ directories under CMAKE_INSTALL_PREFIX.
 
 
 # --- Fuzzing support (Clang/LLVM only, not Windows) ---

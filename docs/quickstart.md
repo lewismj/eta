@@ -1,4 +1,4 @@
-﻿# Eta â€” Quick Start
+﻿# Eta — Quick Start
 
 [<- Back to README](../README.md) · [Build from Source](build.md) ·
 [Language Guide](examples.md) · [Compiler (`etac`)](compiler.md)
@@ -27,7 +27,7 @@ cd eta-v0.2.0-linux-x86_64
 To install into a custom prefix instead of using the bundle in-place:
 
 ```bash
-./install.sh /usr/local       # copies bin/, stdlib/ â†’ /usr/local/
+./install.sh /usr/local       # copies bin/, stdlib/ → /usr/local/
 ```
 
 ### Windows
@@ -47,7 +47,7 @@ To install into a custom prefix:
 
 > [!NOTE]
 > Always use `install.cmd` rather than calling `install.ps1`
-> directly â€” the `.cmd` wrapper launches PowerShell with
+> directly — the `.cmd` wrapper launches PowerShell with
 > `-ExecutionPolicy Bypass` so it works regardless of the system
 > execution policy.
 
@@ -59,13 +59,13 @@ To install into a custom prefix:
 
 ## Running Programs
 
-Eta provides two ways to run `.eta` source files â€” **interpret directly**
+Eta provides two ways to run `.eta` source files — **interpret directly**
 or **compile ahead-of-time** then run the bytecode.
 
-### Interpret from Source â€” `etai`
+### Interpret from Source — `etai`
 
-`etai` compiles an `.eta` file in-memory (lex â†’ parse â†’ expand â†’ link â†’
-analyze â†’ emit) and executes it immediately:
+`etai` compiles an `.eta` file in-memory (lex → parse → expand → link →
+analyze → emit) and executes it immediately:
 
 ```bash
 etai examples/hello.eta
@@ -84,14 +84,14 @@ execution for faster startup:
 etai examples/hello.etac
 ```
 
-### Ahead-of-Time Compilation â€” `etac`
+### Ahead-of-Time Compilation — `etac`
 
 `etac` runs the full compilation pipeline and **serializes** the
 resulting bytecode to a compact binary `.etac` file instead of executing
 it:
 
 ```bash
-etac examples/hello.eta                       # â†’ examples/hello.etac
+etac examples/hello.eta                       # → examples/hello.etac
 etai examples/hello.etac                      # run from bytecode (instant load)
 ```
 
@@ -150,24 +150,24 @@ The REPL auto-loads `std.prelude`, which re-exports every name from
 `std.core`, `std.math`, `std.io`, `std.collections`, `std.logic`,
 `std.clp`, `std.causal`, `std.fact_table`, `std.db`, `std.stats`,
 `std.time`, and `std.net`. Those standard library functions are available immediately
-â€” no explicit `import` needed (opt-in modules `std.clpb`, `std.clpr`,
+— no explicit `import` needed (opt-in modules `std.clpb`, `std.clpr`,
 `std.freeze`, `std.supervisor`, `std.torch`, and `std.test` must still
 be imported by hand):
 
 ```
-Î·> (atom? 42)
+η> (atom? 42)
 #t
-Î·> (even? 6)
+η> (even? 6)
 #t
-Î·> (filter (lambda (x) (> x 3)) (range 1 7))
+η> (filter (lambda (x) (> x 3)) (range 1 7))
 (4 5 6)
 ```
 
 You can define and use your own functions interactively:
 
 ```
-Î·> (defun square (x) (* x x))
-Î·> (square 7)
+η> (defun square (x) (* x x))
+η> (square 7)
 => 49
 ```
 
@@ -179,8 +179,8 @@ eta_repl --path ./mylibs
 ```
 
 ```
-Î·> (import greeting)
-Î·> (say-hello "REPL")
+η> (import greeting)
+η> (say-hello "REPL")
 Hello, REPL!
 ```
 
@@ -192,24 +192,24 @@ Hello, REPL!
 
 | Module               | Description                              |
 |----------------------|------------------------------------------|
-| `std.core`           | `atom?`, `compose`, `flip`, `iota`, â€¦    |
-| `std.math`           | `pi`, `e`, `even?`, `gcd`, `expt`, â€¦     |
+| `std.core`           | `atom?`, `compose`, `flip`, `iota`, …    |
+| `std.math`           | `pi`, `e`, `even?`, `gcd`, `expt`, …     |
 | `std.io`             | `println`, `eprintln`, `read-line`, port helpers |
-| `std.collections`    | `filter`, `foldl`, `sort`, `range`, â€¦     |
-| `std.logic`          | `==`, `copy-term`, `naf`, `findall`, â€¦    |
-| `std.clp`            | `clp:=`, `clp:all-different`, `clp:solve`, â€¦ |
-| `std.clpb`           | Boolean CLP â€” `clp:and`, `clp:sat?`, â€¦ *(opt-in)* |
-| `std.clpr`           | Real-interval CLP â€” `clp:r=`, `clp:r-minimize`, â€¦ *(opt-in)* |
+| `std.collections`    | `filter`, `foldl`, `sort`, `range`, …     |
+| `std.logic`          | `==`, `copy-term`, `naf`, `findall`, …    |
+| `std.clp`            | `clp:=`, `clp:all-different`, `clp:solve`, … |
+| `std.clpb`           | Boolean CLP — `clp:and`, `clp:sat?`, … *(opt-in)* |
+| `std.clpr`           | Real-interval CLP — `clp:r=`, `clp:r-minimize`, … *(opt-in)* |
 | `std.causal`         | `dag:*`, `do:identify`, `do:estimate-effect` |
-| `std.fact_table`     | `make-fact-table`, `fact-table-query`, â€¦  |
+| `std.fact_table`     | `make-fact-table`, `fact-table-query`, …  |
 | `std.db`             | `defrel`, `assert`, `retract`, `call-rel`, `tabled` |
-| `std.stats`          | `stats:mean`, `stats:ols`, distributions, â€¦ |
+| `std.stats`          | `stats:mean`, `stats:ols`, distributions, … |
 | `std.time`           | `time:now-ms`, `time:elapsed-ms`, `time:format-iso8601-utc`, ... |
-| `std.net`            | `with-socket`, `request-reply`, `worker-pool`, â€¦ |
+| `std.net`            | `with-socket`, `request-reply`, `worker-pool`, … |
 | `std.freeze`         | `freeze`, `dif` *(opt-in)*                |
 | `std.supervisor`     | `one-for-one`, `one-for-all` *(opt-in)*   |
-| `std.torch`          | `tensor`, `forward`, `train-step!`, â€¦ *(opt-in)* |
-| `std.test`           | `make-test`, `assert-equal`, `run`, â€¦ *(opt-in)* |
+| `std.torch`          | `tensor`, `forward`, `train-step!`, … *(opt-in)* |
+| `std.test`           | `make-test`, `assert-equal`, `run`, … *(opt-in)* |
 | `std.prelude`        | Re-exports the non-opt-in modules above   |
 
 ### Writing a Module
@@ -279,7 +279,7 @@ Eta supports several ways to control which names are imported:
 ;; Rename on import
 (import (rename std.math (pi PI) (e E)))
 
-;; Prefix â€” all imported names gain a prefix (namespace-style)
+;; Prefix — all imported names gain a prefix (namespace-style)
 (import (prefix std.math math:))
 ;; now use math:pi, math:even?, math:gcd, etc.
 ```
@@ -292,7 +292,7 @@ same name:
   (import (prefix mod-a a:))
   (import (prefix mod-b b:))
   (begin
-    ;; No conflict â€” each name is qualified
+    ;; No conflict — each name is qualified
     (a:process data)
     (b:process data)))
 ```
@@ -307,9 +307,9 @@ is present. The extension provides:
 - **Syntax highlighting** for `.eta` files
 - **Live diagnostics** via the Language Server (`eta_lsp`)
 - **Debugging** with breakpoints, stepping, and call-stack inspection via the Debug Adapter (`eta_dap`)
-- **Heap Inspector** â€” live memory visualisation while debugging
-- **Disassembly View** â€” live bytecode view with current-PC marker
-- **GC Roots Tree** â€” sidebar panel showing root categories with drill-down
+- **Heap Inspector** — live memory visualisation while debugging
+- **Disassembly View** — live bytecode view with current-PC marker
+- **GC Roots Tree** — sidebar panel showing root categories with drill-down
 
 ### Extension Settings
 
@@ -341,17 +341,17 @@ The extension looks for the LSP binary in the following order:
 
 ### Running & Debugging
 
-1. Open the `examples/` folder from the release bundle (**File â†’ Open Folder**).
-2. Open any `.eta` file â€” syntax highlighting and diagnostics activate automatically.
+1. Open the `examples/` folder from the release bundle (**File → Open Folder**).
+2. Open any `.eta` file — syntax highlighting and diagnostics activate automatically.
 3. **Run from terminal:** `etai hello.eta` in the integrated terminal.
-4. **Debug with F5:** press **F5** (or **Run â†’ Start Debugging**) â€” the extension launches `eta_dap` automatically.
+4. **Debug with F5:** press **F5** (or **Run → Start Debugging**) — the extension launches `eta_dap` automatically.
 
 #### Breakpoints & Stepping
 
 1. Click the gutter to set a breakpoint (red dot).
 2. Press **F5** to start debugging.
 3. When the VM hits a breakpoint it pauses. Use the standard controls:
-   - **F10** Step Over Â· **F11** Step In Â· **Shift+F11** Step Out Â· **F5** Continue
+   - **F10** Step Over · **F11** Step In · **Shift+F11** Step Out · **F5** Continue
 4. Inspect local variables, the call stack, and evaluate expressions in the Debug Console.
 
 Script output (`display`, `newline`, etc.) appears in the **Eta Output**
@@ -365,11 +365,11 @@ debugging.
 1. Open the Command Palette (`Ctrl+Shift+P`) and run **Eta: Show Heap Inspector**.
    (The panel also opens automatically when a debug session starts, controlled by `eta.debug.autoShowHeap`.)
 2. The inspector panel opens beside your editor showing:
-   - **Memory gauge** â€” current heap usage vs. soft limit.
-   - **Cons Pool** â€” pool utilisation (live/capacity/free/bytes).
-   - **Object Kinds** â€” count and bytes per type (Cons, Closure, Vector, String, etc.), sorted by size.
-   - **GC Roots** â€” expandable tree of root categories (Stack, Globals, Frames, etc.). Globals are grouped by module.
-3. Click any **Object #N** link to drill into it â€” view kind, size, value preview, and child references.
+   - **Memory gauge** — current heap usage vs. soft limit.
+   - **Cons Pool** — pool utilisation (live/capacity/free/bytes).
+   - **Object Kinds** — count and bytes per type (Cons, Closure, Vector, String, etc.), sorted by size.
+   - **GC Roots** — expandable tree of root categories (Stack, Globals, Frames, etc.). Globals are grouped by module.
+3. Click any **Object #N** link to drill into it — view kind, size, value preview, and child references.
 4. The panel **auto-refreshes** each time the VM stops (breakpoint, step). You can also click **Refresh** manually.
 
 ### Disassembly View
@@ -379,8 +379,8 @@ function (or all loaded functions) while debugging.
 
 - **Sidebar panel:** The **Disassembly** panel appears in the Debug sidebar when an Eta debug session is active. It shows each bytecode instruction as a tree item, with a `â—€ PC` marker on the current program counter. It auto-refreshes on every step/breakpoint.
 - **Full-document view:** Open the Command Palette and run:
-  - **Eta: Show Disassembly** â€” disassembly of the current function.
-  - **Eta: Show Disassembly (All Functions)** â€” disassembly of every loaded function.
+  - **Eta: Show Disassembly** — disassembly of the current function.
+  - **Eta: Show Disassembly (All Functions)** — disassembly of every loaded function.
 
 ### GC Roots Tree
 
@@ -389,7 +389,7 @@ session. It provides an expandable tree of GC root categories:
 
 - **Stack**, **Globals**, **Frames**, etc.
 - **Globals** are automatically grouped by module prefix for readability.
-- Each root object is expandable â€” clicking it sends an `eta/inspectObject` request and shows child fields (car/cdr, vector elements, upvalues, etc.).
+- Each root object is expandable — clicking it sends an `eta/inspectObject` request and shows child fields (car/cdr, vector elements, upvalues, etc.).
 - Click any object node to open it in the Heap Inspector.
 - Use the refresh button in the panel title bar, or it auto-refreshes on each VM stop.
 

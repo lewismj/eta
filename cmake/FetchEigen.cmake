@@ -16,6 +16,13 @@ FetchContent_Declare(
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG        3.4.0
     GIT_SHALLOW    TRUE
+    # EXCLUDE_FROM_ALL (CMake ≥ 3.28) keeps Eigen out of the default `all`
+    # target AND — importantly — disables Eigen's own install() rules so
+    # we don't end up with include/, lib/cmake/eigen3/, share/eigen3/cmake/
+    # polluting the release bundle.  Eigen is header-only and consumed
+    # purely through the imported Eigen3::Eigen target.
+    EXCLUDE_FROM_ALL
+    SYSTEM
 )
 
 # Disable Eigen's own build artifacts — we only need the headers.
