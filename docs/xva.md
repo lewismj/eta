@@ -5,6 +5,39 @@
 
 ---
 
+> [!IMPORTANT]
+> **Scope — illustrative, not production.** This example demonstrates
+> the **AAD machinery** that production xVA desks use, but the
+> **financial model is deliberately simplified** so the maths fits on
+> one page. In particular it uses:
+>
+> - a **closed-form scalar exposure** $EE(t) \approx N\sigma\sqrt{t}$
+>   (no term-structure model, no Monte Carlo, no path-level
+>   revaluation, no Bermudan exercise);
+> - a **constant hazard rate** $\lambda$ (no CDS-bootstrapped term
+>   structure);
+> - **single-curve discounting** $DF = e^{-rt}$ (no OIS / forwarding
+>   curve split, no multi-currency CSA);
+> - **no netting, no collateral / CSA, no MPoR** — exposures are
+>   summed per-trade rather than netted, so CVA is materially
+>   over-stated for a real book;
+> - **no wrong-way risk** — $EE \perp PD$ is assumed (see
+>   [causal](causal.md) for how to relax this with `do`-calculus);
+> - **FCA only** — no FBA, KVA, or MVA;
+> - a **coarse 10-bucket** semi-annual time grid.
+>
+> For a realistic IR-swaption book the CVA number this example
+> produces would be off by **1–2 orders of magnitude**. What *is*
+> production-grade is the tape architecture: the same `+`, `-`,
+> `*`, `exp`, `log`, `sqrt` that record here would record through a
+> Hull–White Monte Carlo path generator unchanged, giving full
+> AAD Greeks at ≈3–5× the cost of a single forward pass regardless
+> of the number of risk factors. The path from this example to a
+> realistic engine is mostly **adding finance** (exposure simulator,
+> curves, netting/CSA) rather than changing the runtime.
+
+---
+
 ## Overview
 
 [`examples/xva.eta`](../examples/xva.eta) builds on
