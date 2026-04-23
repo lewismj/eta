@@ -19,8 +19,8 @@ etai examples/hello.eta
 
 | Example                                            | Key Concepts |
 |----------------------------------------------------|-------------|
-| [`causal_demo.eta`](#causal-demo--causal-neural-factor-analysis) | **Flagship** — symbolic diff, do-calculus, findall+CLP, libtorch NN, causal ATE |
-| [`portfolio.eta`](#portfolio--causal-portfolio-engine) | **Flagship** — institutional portfolio: fact tables, causal DAG, CLP constraints, NN returns, AAD sensitivities, scenarios |
+| [`portfolio.eta`](#portfolio--causal-portfolio-engine) | **Featured** — institutional portfolio: fact tables, causal DAG, CLP constraints, NN returns, AAD sensitivities, scenarios |
+| [`causal_demo.eta`](#causal-demo--causal-neural-factor-analysis) | **Primer** — symbolic diff, do-calculus, findall+CLP, libtorch NN, causal ATE (gentle on-ramp to `portfolio.eta`) |
 | [`hello.eta`](#hello-world)                        | Minimal program, `println`, `defun`, recursion |
 | [`basics.eta`](#basics)                            | Arithmetic, booleans, `if`/`cond`, `let`/`let*`, strings, pairs, lists, records, quoting |
 | [`functions.eta`](#functions)                      | `defun`, `lambda`, closures, tail recursion, variadic args, `letrec` |
@@ -50,8 +50,10 @@ etai examples/hello.eta
 
 ## [causal demo — Causal Neural Factor Analysis](../examples/causal_demo.eta)
 
-The flagship example that threads **all four pillars** of Eta through a
-single quantitative-finance pipeline:
+A compact **paradigm-composition primer** that threads all four pillars of
+Eta through a small quantitative-finance pipeline. It is the gentle
+on-ramp to the larger [`portfolio.eta`](#portfolio--causal-portfolio-engine)
+engine:
 
 1. **Symbolic Processing** — factor model as S-expressions, symbolic
    differentiation, algebraic simplification
@@ -72,7 +74,7 @@ etai causal_demo.etac
 ```
 
 > [!TIP]
-> See the full [Causal Neural Factor Analysis walkthrough](causal-factor.md)
+> See the full [Causal Pipeline Primer walkthrough](causal-factor.md)
 > for detailed commentary on each step, including how the VM handles
 > unification, trail management, CLP forward checking, and libtorch
 > tensor objects.
@@ -81,8 +83,9 @@ etai causal_demo.etac
 
 ## [portfolio — Causal Portfolio Engine](../examples/portfolio.eta)
 
-An end-to-end **institutional portfolio construction system** that goes
-beyond paradigm demonstration to act like a real decision engine:
+The featured example: an end-to-end **institutional portfolio
+construction pipeline** that goes beyond paradigm demonstration to act
+like a real decision engine:
 
 1. **Fact Table** — 120-observation dataset from a known DGP, stored in a
    columnar fact table with hash-indexed sector lookups

@@ -22,6 +22,7 @@
 ;;;   std.fact_table  - no dependencies
 ;;;   std.db          - std.collections, std.fact_table, std.logic
 ;;;   std.stats       - no dependencies
+;;;   std.time        - no dependencies
 ;;;   std.net         - no dependencies
 (module std.prelude
   (import std.core)
@@ -34,6 +35,7 @@
   (import std.fact_table)
   (import std.db)
   (import std.stats)
+  (import std.time)
   (import std.net)
   (export
     ;; ── std.core ────────────────────────────────────────────────────
@@ -153,6 +155,17 @@
     stats:ols-multi-t-stats stats:ols-multi-p-values
     stats:ols-multi-r-squared stats:ols-multi-adj-r-squared
     stats:ols-multi-residual-se
+    ;; -- std.time -------------------------------------------------------
+    time:now-ms
+    time:now-us
+    time:now-ns
+    time:monotonic-ms
+    time:sleep-ms
+    time:utc-parts
+    time:local-parts
+    time:format-iso8601-utc
+    time:format-iso8601-local
+    time:elapsed-ms
     ;; ── std.net ─────────────────────────────────────────────────────
     with-socket
     request-reply

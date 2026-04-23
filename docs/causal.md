@@ -1,15 +1,27 @@
-# Causal Inference — Do-Calculus & Factor Analysis
+# Causal Inference — `std.causal` Reference
 
-[← Back to README](../README.md) · [Logic Programming](logic.md) ·
+[← Back to README](../README.md) · [Causal Primer](causal-factor.md) ·
+[Portfolio Engine](portfolio.md) · [Logic Programming](logic.md) ·
 [CLP](clp.md) · [AAD](aad.md) · [xVA](xva.md) · [Project Status](next-steps.md)
+
+> [!TIP]
+> **See also**
+>
+> - [`causal-factor.md`](causal-factor.md) — gentle primer that walks the
+>   small `causal_demo.eta` end-to-end (3-node DAG, single confounder)
+>   with VM-internals sidebars on unification, trail, and CLP forward
+>   checking.
+> - [`portfolio.md`](portfolio.md) — full institutional pipeline:
+>   6-node macro DAG, AAD risk sensitivities, CLP(R) + QP allocation,
+>   scenario stress, dynamic control.
 
 ---
 
 ## Overview
 
-This page describes Eta's causal inference layer: the `std.causal` module
-and the `examples/do-calculus/` and `examples/causal-factor/` example
-programs.
+This page is the **API reference** for Eta's causal inference layer:
+the `std.causal` module plus the supporting `examples/do-calculus/`
+and `examples/causal-factor/` programs.
 
 The layer combines:
 
@@ -333,39 +345,6 @@ analysis:
 
 ---
 
-## Extended Finance Examples
-
-### Fama-French Three-Factor Model
-
-```
-market-return  ──→ stock-return
-smb            ──→ stock-return     (size premium: Small Minus Big)
-hml            ──→ stock-return     (value premium: High Minus Low)
-economic-cycle ──→ market-return
-economic-cycle ──→ smb
-economic-cycle ──→ hml
-```
-
-Query: `P(stock-return | do(hml))` — the causal effect of increasing
-value-factor exposure, holding market and size exposures fixed.
-`{economic-cycle}` satisfies the back-door criterion.
-
-### CVA Causal Decomposition
-
-In the context of Credit Valuation Adjustment (CVA, see [`docs/xva.md`](xva.md)):
-
-```
-credit-quality ──→ default-intensity ──→ CVA
-interest-rate  ──→ exposure
-interest-rate  ──→ CVA
-credit-quality ──→ CVA
-```
-
-Query: `P(CVA | do(interest-rate))` — the causal contribution of a
-rate shock to CVA, isolating it from the confounding through credit
-quality.
-
----
 
 ## Source Locations
 

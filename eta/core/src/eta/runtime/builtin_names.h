@@ -310,6 +310,20 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("newline", 0, true);
 
     /**
+     * time_primitives.h  (must match registration order exactly)
+     */
+
+    r("%time-now-ms",             0, false);
+    r("%time-now-us",             0, false);
+    r("%time-now-ns",             0, false);
+    r("%time-monotonic-ms",       0, false);
+    r("%time-sleep-ms",           1, false);
+    r("%time-utc-parts",          1, false);
+    r("%time-local-parts",        1, false);
+    r("%time-format-iso8601-utc", 1, false);
+    r("%time-format-iso8601-local", 1, false);
+
+    /**
      * torch_primitives.h  (must match registration order exactly)
      */
 

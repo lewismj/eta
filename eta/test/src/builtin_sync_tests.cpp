@@ -6,6 +6,7 @@
 #include <eta/runtime/memory/intern_table.h>
 #include <eta/runtime/builtin_env.h>
 #include <eta/runtime/builtin_names.h>
+#include <eta/runtime/time_primitives.h>
 #include <eta/torch/torch_primitives.h>
 #include <eta/stats/stats_primitives.h>
 
@@ -19,18 +20,32 @@ BOOST_AUTO_TEST_SUITE(builtin_sync_tests)
  * Verify that register_builtin_names() (the SSoT) contains entries for
  * every builtin that the runtime modules register.
  *
- * We check torch and stats individually (they accept a null VM pointer).
+ * We check time, torch, and stats individually (they accept a null VM
+ * pointer).
  * Port/IO/NNG require a live VM or driver-specific args, so full end-to-end
  * coverage is provided by the Driver constructor's verify_all_patched() call.
  */
-BOOST_AUTO_TEST_CASE(names_ssot_contains_torch_and_stats) {
+BOOST_AUTO_TEST_CASE(names_ssot_contains_time_torch_and_stats) {
     /// 1. Names-only environment via the SSoT
     BuiltinEnvironment names_env;
     register_builtin_names(names_env);
 
-    /// 2. Torch primitives
+    /// 2. Time primitives
     Heap heap(1ull << 22);
     InternTable intern;
+    BuiltinEnvironment time_env;
+    register_time_primitives(time_env, heap, intern, nullptr);
+
+    for (size_t i = 0; i < time_env.size(); ++i) {
+        auto idx = names_env.lookup(time_env.specs()[i].name);
+        BOOST_TEST_CONTEXT("time builtin: " << time_env.specs()[i].name) {
+            BOOST_REQUIRE(idx.has_value());
+            BOOST_TEST(names_env.specs()[*idx].arity == time_env.specs()[i].arity);
+            BOOST_TEST(names_env.specs()[*idx].has_rest == time_env.specs()[i].has_rest);
+        }
+    }
+
+    /// 3. Torch primitives
     BuiltinEnvironment torch_env;
     eta::torch_bindings::register_torch_primitives(torch_env, heap, intern, nullptr);
 
@@ -44,7 +59,7 @@ BOOST_AUTO_TEST_CASE(names_ssot_contains_torch_and_stats) {
         }
     }
 
-    /// 3. Stats primitives
+    /// 4. Stats primitives
     BuiltinEnvironment stats_env;
     eta::stats_bindings::register_stats_primitives(stats_env, heap, intern, nullptr);
 

@@ -31,6 +31,7 @@ set(SOURCES
         src/optimization_tests.cpp
         src/cons_pool_tests.cpp
         src/stats_tests.cpp
+        src/time_primitives_tests.cpp
         src/nng_tests.cpp
         src/clp_linear_tests.cpp
         src/clp_qp_linearize_tests.cpp

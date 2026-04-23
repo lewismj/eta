@@ -119,7 +119,7 @@ public:
         heap_.set_gc_callback([this]() { collect_garbage_with_registry_roots(); });
 
         /**
-         * Register all core + port + io + torch + stats primitives.
+         * Register all core + port + io + time + torch + stats primitives.
          * NNG follows with driver-specific arguments.
          * Step 1: Populate all slots with metadata (name/arity/has_rest) + null funcs.
          *         builtin_names.h is the Single Source of Truth for slot order.

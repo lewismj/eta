@@ -1,0 +1,48 @@
+;;; std/time.eta - Time utilities built on native %time-* primitives.
+;;;
+;;; Builtins already available:
+;;;   %time-now-ms  %time-now-us  %time-now-ns
+;;;   %time-monotonic-ms  %time-sleep-ms
+;;;   %time-utc-parts  %time-local-parts
+;;;   %time-format-iso8601-utc  %time-format-iso8601-local
+
+(module std.time
+  (export
+    time:now-ms
+    time:now-us
+    time:now-ns
+    time:monotonic-ms
+    time:sleep-ms
+    time:utc-parts
+    time:local-parts
+    time:format-iso8601-utc
+    time:format-iso8601-local
+    time:elapsed-ms)
+  (begin
+
+    (defun time:now-ms () (%time-now-ms))
+    (defun time:now-us () (%time-now-us))
+    (defun time:now-ns () (%time-now-ns))
+    (defun time:monotonic-ms () (%time-monotonic-ms))
+
+    (defun time:sleep-ms (ms)
+      (%time-sleep-ms ms))
+
+    (defun time:utc-parts (epoch-ms)
+      (%time-utc-parts epoch-ms))
+
+    (defun time:local-parts (epoch-ms)
+      (%time-local-parts epoch-ms))
+
+    (defun time:format-iso8601-utc (epoch-ms)
+      (%time-format-iso8601-utc epoch-ms))
+
+    (defun time:format-iso8601-local (epoch-ms)
+      (%time-format-iso8601-local epoch-ms))
+
+    ;; Returns a non-negative monotonic delta in milliseconds.
+    (defun time:elapsed-ms (start-monotonic end-monotonic)
+      (let ((delta (- end-monotonic start-monotonic)))
+        (if (< delta 0) 0 delta)))
+
+  ))
