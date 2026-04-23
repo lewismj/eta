@@ -4218,14 +4218,54 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return result;
     };
 
-    /// fact-table? predicate
-    env.register_builtin("fact-table?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+    /**
+     * @brief Count live rows per distinct key in one column.
+     *
+     * Returns the groups in first-seen row order so output is deterministic.
+     */
+    auto group_count_rows = [](const types::FactTable& ft, std::size_t col)
+        -> std::vector<std::pair<LispVal, std::size_t>> {
+        std::vector<std::pair<LispVal, std::size_t>> out;
+        if (col >= ft.columns.size()) return out;
+
+        std::unordered_map<LispVal, std::size_t> slot_by_key;
+        slot_by_key.reserve(ft.live_count);
+
+        std::vector<LispVal> keys;
+        std::vector<std::size_t> counts;
+        keys.reserve(ft.live_count);
+        counts.reserve(ft.live_count);
+
+        const auto& group_col = ft.columns[col];
+        for (std::size_t r = 0; r < ft.row_count; ++r) {
+            if (ft.live_mask[r] == 0) continue;
+            LispVal key = group_col[r];
+            auto [it, inserted] = slot_by_key.emplace(key, counts.size());
+            if (inserted) {
+                keys.push_back(key);
+                counts.push_back(1);
+            } else {
+                ++counts[it->second];
+            }
+        }
+
+        out.reserve(keys.size());
+        for (std::size_t i = 0; i < keys.size(); ++i) {
+            out.emplace_back(keys[i], counts[i]);
+        }
+        return out;
+    };
+
+    /// fact-table predicates
+    auto fact_table_predicate = [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         if (ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::HeapObject) {
             if (heap.try_get_as<ObjectKind::FactTable, types::FactTable>(ops::payload(args[0])))
                 return True;
         }
         return False;
-    });
+    };
+    env.register_builtin("%fact-table?", 1, false, fact_table_predicate);
+    env.register_builtin("fact-table?", 1, false, fact_table_predicate);
 
     ///   col-name-list is an Eta list of symbols or strings.
     env.register_builtin("%make-fact-table", 1, false, [&heap, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -4378,6 +4418,158 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return row_ids_to_list(rows, "%fact-table-query");
     });
 
+    /**
+     * (%fact-table-group-count table group-col-idx)
+     *
+     * Returns an alist of dotted pairs: ((key . count) ...).
+     */
+    env.register_builtin("%fact-table-group-count", 2, false,
+        [&heap, get_fact_table, group_count_rows](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto ft_res = get_fact_table(args[0], "%fact-table-group-count");
+            if (!ft_res) return std::unexpected(ft_res.error());
+            auto col_opt = ops::decode<int64_t>(args[1]);
+            if (!col_opt)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%fact-table-group-count: column index must be a fixnum"}});
+
+            auto grouped = group_count_rows(**ft_res, static_cast<std::size_t>(*col_opt));
+
+            auto roots = heap.make_external_root_frame();
+            LispVal result = Nil;
+            roots.push(result);
+
+            for (auto it = grouped.rbegin(); it != grouped.rend(); ++it) {
+                if (it->second > static_cast<std::size_t>(std::numeric_limits<int64_t>::max())) {
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%fact-table-group-count: group count too large"}});
+                }
+
+                auto count_val = make_fixnum(heap, static_cast<int64_t>(it->second));
+                if (!count_val) return std::unexpected(count_val.error());
+                roots.push(*count_val);
+
+                auto pair_val = make_cons(heap, it->first, *count_val);
+                if (!pair_val) return std::unexpected(pair_val.error());
+                roots.push(*pair_val);
+
+                auto cell = make_cons(heap, *pair_val, result);
+                if (!cell) return std::unexpected(cell.error());
+                result = *cell;
+                roots.push(result);
+            }
+
+            return result;
+        });
+
+    /**
+     * (%fact-table-group-sum table group-col-idx value-col-idx)
+     *
+     * Returns an alist of dotted pairs: ((key . sum) ...). The sum preserves
+     * fixnum accumulation until overflow or flonum input forces promotion.
+     */
+    env.register_builtin("%fact-table-group-sum", 3, false,
+        [&heap, get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto ft_res = get_fact_table(args[0], "%fact-table-group-sum");
+            if (!ft_res) return std::unexpected(ft_res.error());
+            auto group_col_opt = ops::decode<int64_t>(args[1]);
+            if (!group_col_opt)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%fact-table-group-sum: group column index must be a fixnum"}});
+            auto value_col_opt = ops::decode<int64_t>(args[2]);
+            if (!value_col_opt)
+                return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                    "%fact-table-group-sum: value column index must be a fixnum"}});
+
+            const auto group_col = static_cast<std::size_t>(*group_col_opt);
+            const auto value_col = static_cast<std::size_t>(*value_col_opt);
+            auto& ft = **ft_res;
+            if (group_col >= ft.columns.size() || value_col >= ft.columns.size()) return Nil;
+
+            struct SumState {
+                bool use_float{false};
+                int64_t isum{0};
+                double fsum{0.0};
+            };
+
+            std::unordered_map<LispVal, std::size_t> slot_by_key;
+            slot_by_key.reserve(ft.live_count);
+
+            std::vector<LispVal> keys;
+            std::vector<SumState> sums;
+            keys.reserve(ft.live_count);
+            sums.reserve(ft.live_count);
+
+            const auto& group_values = ft.columns[group_col];
+            const auto& sum_values = ft.columns[value_col];
+            for (std::size_t r = 0; r < ft.row_count; ++r) {
+                if (ft.live_mask[r] == 0) continue;
+
+                LispVal key = group_values[r];
+                auto n = classify_numeric(sum_values[r], heap);
+                if (!n.is_valid()) {
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+                        "%fact-table-group-sum: value column contains non-numeric data"}});
+                }
+
+                auto [it, inserted] = slot_by_key.emplace(key, sums.size());
+                if (inserted) {
+                    keys.push_back(key);
+                    SumState st;
+                    st.use_float = n.is_flonum();
+                    if (st.use_float) {
+                        st.fsum = n.as_double();
+                    } else {
+                        st.isum = n.int_val;
+                    }
+                    sums.push_back(st);
+                    continue;
+                }
+
+                auto& st = sums[it->second];
+                if (n.is_flonum() || st.use_float) {
+                    if (!st.use_float) {
+                        st.fsum = static_cast<double>(st.isum);
+                        st.use_float = true;
+                    }
+                    st.fsum += n.as_double();
+                } else {
+                    int64_t next = 0;
+                    if (detail::add_overflow(st.isum, n.int_val, &next)) {
+                        st.use_float = true;
+                        st.fsum = static_cast<double>(st.isum) + static_cast<double>(n.int_val);
+                    } else {
+                        st.isum = next;
+                    }
+                }
+            }
+
+            auto roots = heap.make_external_root_frame();
+            LispVal result = Nil;
+            roots.push(result);
+
+            for (std::size_t i = keys.size(); i > 0; --i) {
+                const std::size_t idx = i - 1;
+
+                std::expected<LispVal, RuntimeError> sum_val =
+                    sums[idx].use_float
+                        ? make_flonum(sums[idx].fsum)
+                        : make_fixnum(heap, sums[idx].isum);
+                if (!sum_val) return std::unexpected(sum_val.error());
+                roots.push(*sum_val);
+
+                auto pair_val = make_cons(heap, keys[idx], *sum_val);
+                if (!pair_val) return std::unexpected(pair_val.error());
+                roots.push(*pair_val);
+
+                auto cell = make_cons(heap, *pair_val, result);
+                if (!cell) return std::unexpected(cell.error());
+                result = *cell;
+                roots.push(result);
+            }
+
+            return result;
+        });
+
     env.register_builtin("%fact-table-live-row-ids", 1, false, [get_fact_table, row_ids_to_list](Args args) -> std::expected<LispVal, RuntimeError> {
         auto ft_res = get_fact_table(args[0], "%fact-table-live-row-ids");
         if (!ft_res) return std::unexpected(ft_res.error());
@@ -4399,6 +4591,37 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto ft_res = get_fact_table(args[0], "%fact-table-row-count");
         if (!ft_res) return std::unexpected(ft_res.error());
         return ops::encode(static_cast<int64_t>((*ft_res)->active_row_count()));
+    });
+
+    /**
+     * (%fact-table-column-names table)
+     *
+     * Returns the declared column names as a list of symbols.
+     */
+    env.register_builtin("%fact-table-column-names", 1, false, [&heap, &intern_table, get_fact_table](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto ft_res = get_fact_table(args[0], "%fact-table-column-names");
+        if (!ft_res) return std::unexpected(ft_res.error());
+
+        auto roots = heap.make_external_root_frame();
+        LispVal result = Nil;
+        roots.push(result);
+
+        const auto& names = (*ft_res)->col_names;
+        for (auto it = names.rbegin(); it != names.rend(); ++it) {
+            auto sid = intern_table.intern(*it);
+            if (!sid) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "%fact-table-column-names: intern failed"}});
+            }
+            const LispVal sym = ops::box(Tag::Symbol, *sid);
+
+            auto cell = make_cons(heap, sym, result);
+            if (!cell) return std::unexpected(cell.error());
+            result = *cell;
+            roots.push(result);
+        }
+        return result;
     });
 
     /**

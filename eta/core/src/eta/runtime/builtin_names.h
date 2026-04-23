@@ -227,6 +227,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("tape-ref-value",  1, false);
 
     /// Fact-table builtins (must match core_primitives.h registration order)
+    r("%fact-table?",            1, false);
     r("fact-table?",             1, false);
     r("%make-fact-table",        1, false);
     r("%fact-table-insert!",     2, false);
@@ -239,9 +240,12 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%fact-table-predicate",   1, false);
     r("%fact-table-build-index!", 2, false);
     r("%fact-table-query",       3, false);
+    r("%fact-table-group-count", 2, false);
+    r("%fact-table-group-sum",   3, false);
     r("%fact-table-live-row-ids", 1, false);
     r("%fact-table-ref",         3, false);
     r("%fact-table-row-count",   1, false);
+    r("%fact-table-column-names", 1, false);
     r("term-hash",               2, false);
     r("term-variant-hash",       2, false);
 

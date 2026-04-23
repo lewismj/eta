@@ -119,6 +119,10 @@
     fact-table-for-each
     fact-table-filter
     fact-table-fold
+    fact-table-group-count
+    fact-table-group-sum
+    fact-table-group-by
+    fact-table-partition
     ;; -- std.db ---------------------------------------------------------
     defrel
     assert

@@ -119,8 +119,13 @@ wrappers.
 | `%fact-table-insert!` | `(table row-list)` | Insert a row; arg 2 is an Eta list of values |
 | `%fact-table-build-index!` | `(table col-idx)` | Build hash index on column `col-idx` |
 | `%fact-table-query` | `(table col-idx key)` | Return list of row-index fixnums matching `key` |
+| `%fact-table-column-names` | `(table)` | Return declared column names as symbols |
+| `%fact-table-live-row-ids` | `(table)` | Return live row IDs in ascending row-id order |
+| `%fact-table-group-count` | `(table group-col-idx)` | Return alist `((key . count) ...)` over live rows |
+| `%fact-table-group-sum` | `(table group-col-idx value-col-idx)` | Return alist `((key . sum) ...)` over live rows |
 | `%fact-table-ref` | `(table row-idx col-idx)` | Return the cell value at `(row, col)` |
 | `%fact-table-row-count` | `(table)` | Return number of rows as fixnum |
+| `%fact-table?` | `(value)` | Low-level fact-table predicate (`#t` / `#f`) |
 | `fact-table?` | `(value)` | `#t` if value is a FactTable, `#f` otherwise |
 
 ---
@@ -160,9 +165,18 @@ The module wraps the low-level builtins with a friendlier variadic API.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `fact-table-for-each` | `(ft f)` | Call `(f row-idx)` for each row |
+| `fact-table-for-each` | `(ft f)` | Call `(f row-idx)` for each live row |
 | `fact-table-filter` | `(ft col-idx key) → list` | Alias for `fact-table-query` |
-| `fact-table-fold` | `(ft f init) → value` | Fold `(f acc row-idx)` over all rows |
+| `fact-table-fold` | `(ft f init) → value` | Fold `(f acc row-idx)` over live rows |
+
+### Aggregation
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `fact-table-group-count` | `(ft group-col-idx) → alist` | Group by key and count live rows |
+| `fact-table-group-sum` | `(ft group-col-idx value-col-idx) → alist` | Group by key and sum numeric values |
+| `fact-table-group-by` | `(ft group-col-idx [agg-op [value-col-idx]]) → fact-table` | Group into a new fact table; `agg-op` is `'count` (default) or `'sum` |
+| `fact-table-partition` | `(ft group-col-idx) → alist` | Partition into `((key . fact-table) ...)`, one table per key |
 
 ---
 

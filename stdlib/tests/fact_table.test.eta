@@ -1,4 +1,4 @@
-;;; stdlib/tests/fact_table.test.eta — Unit tests for std.fact_table
+;;; stdlib/tests/fact_table.test.eta - Unit tests for std.fact_table
 
 (module fact-table.tests
   (import std.test std.fact_table)
@@ -7,8 +7,7 @@
     (define suite
       (make-group "std.fact_table"
         (list
-
-          ;; ── Construction ──────────────────────────────────────────
+          ;; Construction
           (make-group "construction"
             (list
               (make-test "make-fact-table returns a fact-table"
@@ -23,7 +22,7 @@
                   (let ((ft (make-fact-table 'x)))
                     (assert-equal 0 (fact-table-row-count ft)))))))
 
-          ;; ── Insert / row-count ────────────────────────────────────
+          ;; Insert / row-count
           (make-group "insert"
             (list
               (make-test "insert increases row count"
@@ -45,7 +44,7 @@
                     (assert-equal 10 (fact-table-ref ft 0 0))
                     (assert-equal 20 (fact-table-ref ft 0 1)))))))
 
-          ;; ── Index and query ───────────────────────────────────────
+          ;; Index and query
           (make-group "query"
             (list
               (make-test "query without index returns matching rows"
@@ -64,7 +63,7 @@
                     (fact-table-build-index! ft 0)
                     (assert-equal '() (fact-table-query ft 0 99)))))))
 
-          ;; ── Iteration ─────────────────────────────────────────────
+          ;; Iteration
           (make-group "iteration"
             (list
               (make-test "fact-table-fold accumulates correctly"
@@ -82,11 +81,114 @@
               (make-test "fact-table-for-each visits every row"
                 (lambda ()
                   (let ((ft (make-fact-table 'v))
-                        (count 0))
+                        (count-box (vector 0)))
                     (fact-table-insert! ft 1)
                     (fact-table-insert! ft 2)
-                    (fact-table-for-each ft (lambda (i) (set! count (+ count 1))))
-                    (assert-equal 2 count))))))))
+                    (fact-table-for-each ft
+                      (lambda (i)
+                        (vector-set! count-box 0 (+ (vector-ref count-box 0) 1))))
+                    (assert-equal 2 (vector-ref count-box 0)))))
+              (make-test "fact-table-for-each skips tombstoned rows"
+                (lambda ()
+                  (let ((ft (make-fact-table 'v))
+                        (seen-box (vector '())))
+                    (fact-table-insert! ft 10)
+                    (fact-table-insert! ft 20)
+                    (fact-table-insert! ft 30)
+                    (%fact-table-delete-row! ft 1)
+                    (fact-table-for-each ft
+                      (lambda (i)
+                        (vector-set! seen-box 0 (cons i (vector-ref seen-box 0)))))
+                    (assert-equal '(2 0) (vector-ref seen-box 0)))))
+              (make-test "fact-table-fold skips tombstoned rows"
+                (lambda ()
+                  (let ((ft (make-fact-table 'v)))
+                    (fact-table-insert! ft 10)
+                    (fact-table-insert! ft 20)
+                    (fact-table-insert! ft 30)
+                    (%fact-table-delete-row! ft 1)
+                    (let ((total
+                            (fact-table-fold ft
+                              (lambda (acc i)
+                                (+ acc (fact-table-ref ft i 0)))
+                              0)))
+                      (assert-equal 40 total)))))))
 
-    (print-tap (run suite)))))
+          ;; Aggregation
+          (make-group "aggregation"
+            (list
+              (make-test "fact-table-group-count groups live rows"
+                (lambda ()
+                  (let ((ft (make-fact-table 'k 'v)))
+                    (fact-table-insert! ft 'a 1)
+                    (fact-table-insert! ft 'a 2)
+                    (fact-table-insert! ft 'b 3)
+                    (%fact-table-delete-row! ft 1)
+                    (let ((g (fact-table-group-count ft 0)))
+                      (assert-equal 1 (cdr (assq 'a g)))
+                      (assert-equal 1 (cdr (assq 'b g)))))))
+              (make-test "fact-table-group-sum accumulates by key"
+                (lambda ()
+                  (let ((ft (make-fact-table 'k 'v)))
+                    (fact-table-insert! ft 'a 1)
+                    (fact-table-insert! ft 'a 3)
+                    (fact-table-insert! ft 'b 2)
+                    (let ((g (fact-table-group-sum ft 0 1)))
+                      (assert-equal 4 (cdr (assq 'a g)))
+                      (assert-equal 2 (cdr (assq 'b g)))))))
+              (make-test "fact-table-group-sum promotes to flonum"
+                (lambda ()
+                  (let ((ft (make-fact-table 'k 'v)))
+                    (fact-table-insert! ft 'a 1)
+                    (fact-table-insert! ft 'a 2.5)
+                    (let ((g (fact-table-group-sum ft 0 1)))
+                      (assert-approx-equal 3.5 (cdr (assq 'a g)) 1e-10)))))
+              (make-test "fact-table-group-by defaults to count and returns a table"
+                (lambda ()
+                  (let ((ft (make-fact-table 'k 'v)))
+                    (fact-table-insert! ft 'a 1)
+                    (fact-table-insert! ft 'a 2)
+                    (fact-table-insert! ft 'b 3)
+                    (%fact-table-delete-row! ft 1)
+                    (let ((g (fact-table-group-by ft 0)))
+                      (assert-true (fact-table? g))
+                      (assert-equal 2 (fact-table-row-count g))
+                      (let ((a-row (car (fact-table-query g 0 'a)))
+                            (b-row (car (fact-table-query g 0 'b))))
+                        (assert-equal 1 (fact-table-ref g a-row 1))
+                        (assert-equal 1 (fact-table-ref g b-row 1)))))))
+              (make-test "fact-table-group-by sum returns grouped sums in a table"
+                (lambda ()
+                  (let ((ft (make-fact-table 'k 'v)))
+                    (fact-table-insert! ft 'a 1)
+                    (fact-table-insert! ft 'a 3)
+                    (fact-table-insert! ft 'b 2)
+                    (let ((g (fact-table-group-by ft 0 'sum 1)))
+                      (assert-equal 2 (fact-table-row-count g))
+                      (let ((a-row (car (fact-table-query g 0 'a)))
+                            (b-row (car (fact-table-query g 0 'b))))
+                        (assert-equal 4 (fact-table-ref g a-row 1))
+                        (assert-equal 2 (fact-table-ref g b-row 1)))))))
+              (make-test "fact-table-partition returns per-key fact tables"
+                (lambda ()
+                  (let ((ft (make-fact-table 'k 'v)))
+                    (fact-table-insert! ft 'a 1)
+                    (fact-table-insert! ft 'a 2)
+                    (fact-table-insert! ft 'b 3)
+                    (%fact-table-delete-row! ft 1)
+                    (let* ((parts (fact-table-partition ft 0))
+                           (a-ft (cdr (assq 'a parts)))
+                           (b-ft (cdr (assq 'b parts))))
+                      (assert-true (fact-table? a-ft))
+                      (assert-true (fact-table? b-ft))
+                      (assert-equal 1 (fact-table-row-count a-ft))
+                      (assert-equal 1 (fact-table-row-count b-ft))
+                      (assert-equal 1 (fact-table-ref a-ft 0 1))
+                      (assert-equal 3 (fact-table-ref b-ft 0 1))))))
+              (make-test "fact-table-partition returns empty on out-of-range column"
+                (lambda ()
+                  (let ((ft (make-fact-table 'k 'v)))
+                    (fact-table-insert! ft 'a 1)
+                    (assert-equal '() (fact-table-partition ft 99))))))))))
 
+    (print-tap (run suite))))

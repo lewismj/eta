@@ -483,6 +483,7 @@ per-column hash indexes for O(1) equality lookups.
 | **Mutation** | `fact-table-insert!`, `fact-table-build-index!` |
 | **Query** | `fact-table-query`, `fact-table-ref`, `fact-table-row-count`, `fact-table-row` |
 | **Iteration** | `fact-table-for-each`, `fact-table-filter`, `fact-table-fold` |
+| **Aggregation** | `fact-table-group-count`, `fact-table-group-sum`, `fact-table-group-by`, `fact-table-partition` |
 
 > **📖 Full documentation:** [Fact Tables](fact-table.md)
 

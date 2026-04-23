@@ -1,18 +1,18 @@
-;;; std/fact_table.eta — Columnar fact tables with optional hash indexes.
+;;; std/fact_table.eta - Columnar fact tables with optional hash indexes.
 ;;;
 ;;; A fact table is an in-memory, column-oriented store of fixed-arity
-;;; rows (NaN-boxed LispVals).  Each column can optionally carry a hash
-;;; index for O(1) equality lookups.  The table is designed for the
-;;; kind of relational / causal / logic workloads typical in Eta.
+;;; rows (NaN-boxed LispVals). Each column can optionally carry a hash
+;;; index for O(1) equality lookups.
 ;;;
 ;;; Low-level builtins (% prefix):
-;;;   %make-fact-table         col-name-list → fact-table
-;;;   %fact-table-insert!      table row-list → #t
-;;;   %fact-table-build-index! table col-idx  → #t
-;;;   %fact-table-query        table col-idx key → list of row indices
-;;;   %fact-table-ref          table row-idx col-idx → value
-;;;   %fact-table-row-count    table → fixnum
-;;;   fact-table?              value → boolean
+;;;   %make-fact-table         col-name-list -> fact-table
+;;;   %fact-table-insert!      table row-list -> #t
+;;;   %fact-table-build-index! table col-idx  -> #t
+;;;   %fact-table-query        table col-idx key -> list of row indices
+;;;   %fact-table-column-names table -> list of symbols
+;;;   %fact-table-ref          table row-idx col-idx -> value
+;;;   %fact-table-row-count    table -> fixnum
+;;;   fact-table?              value -> boolean
 ;;;
 ;;; This module wraps them in a friendlier API.
 
@@ -35,92 +35,143 @@
     ;; Iteration / higher-order
     fact-table-for-each
     fact-table-filter
-    fact-table-fold)
+    fact-table-fold
+
+    ;; Aggregation / grouping
+    fact-table-group-count
+    fact-table-group-sum
+    fact-table-group-by
+    fact-table-partition)
   (begin
 
-    ;; ── Construction ──────────────────────────────────────────────────
+    ;; Re-export via low-level predicate to avoid local-name shadowing.
+    (defun fact-table? (x) (%fact-table? x))
 
-    ;; Re-export the builtin fact-table? predicate.
-    ;; The builtin is always in scope; we define a local wrapper so the
-    ;; module system can see and export the name.
-    (define (%ft-pred x) (fact-table? x))
-    (defun fact-table? (x) (%ft-pred x))
-
-    ;; (make-fact-table 'col1 'col2 ...)  → fact-table
-    ;; Accepts column names as individual symbol arguments.
+    ;; (make-fact-table 'col1 'col2 ...) -> fact-table
     (define (make-fact-table . col-names)
       (%make-fact-table col-names))
 
-    ;; ── Mutation ──────────────────────────────────────────────────────
-
     ;; (fact-table-insert! ft val1 val2 ...)
-    ;; Insert a row given as individual values.
     (define (fact-table-insert! ft . vals)
       (%fact-table-insert! ft vals))
 
     ;; (fact-table-build-index! ft col-idx)
-    ;; Build or rebuild the hash index on the given column.
     (define (fact-table-build-index! ft col-idx)
       (%fact-table-build-index! ft col-idx))
 
-    ;; ── Query ─────────────────────────────────────────────────────────
-
-    ;; (fact-table-query ft col-idx key)  → list of row indices
+    ;; (fact-table-query ft col-idx key) -> list of row indices
     (define (fact-table-query ft col-idx key)
       (%fact-table-query ft col-idx key))
 
-    ;; (fact-table-ref ft row-idx col-idx)  → value
+    ;; (fact-table-ref ft row-idx col-idx) -> value
     (define (fact-table-ref ft row col)
       (%fact-table-ref ft row col))
 
-    ;; (fact-table-row-count ft)  → fixnum
+    ;; (fact-table-row-count ft) -> fixnum (live rows)
     (define (fact-table-row-count ft)
       (%fact-table-row-count ft))
 
-    ;; (fact-table-row ft row-idx)  → list of values for that row
-    ;; Reads every column at the given row index.
-    ;; NOTE: requires knowing the column count.  We loop until
-    ;; %fact-table-ref would be out-of-bounds; since column count is
-    ;; fixed, we just pass through any error as end-of-columns.
-    ;; For now we use a simple loop approach.
-
-    ;; Helper: collect columns 0..ncols-1 at a given row.
-    (define (fact-table-row ft row-idx)
-      (letrec ((ncols-approx 64)  ;; safe upper bound
-               (loop (lambda (col acc)
-                       (if (>= col ncols-approx)
+    ;; Internal: collect one row using an explicit column count.
+    (define (__fact-table-row-n ft row-idx ncols)
+      (letrec ((loop (lambda (col acc)
+                       (if (= col ncols)
                            (reverse acc)
-                           ;; try to read; on error, we've passed the last col
-                           (let ((v (%fact-table-ref ft row-idx col)))
-                             (loop (+ col 1) (cons v acc)))))))
+                           (loop (+ col 1)
+                                 (cons (%fact-table-ref ft row-idx col) acc))))))
         (loop 0 '())))
 
-    ;; ── Iteration / higher-order ──────────────────────────────────────
+    ;; (fact-table-row ft row-idx) -> list of row values
+    (define (fact-table-row ft row-idx)
+      (__fact-table-row-n ft row-idx (length (%fact-table-column-names ft))))
 
     ;; (fact-table-for-each ft f)
-    ;; Call (f row-idx) for each row index.
+    ;; Call (f row-idx) for each live row index.
     (define (fact-table-for-each ft f)
-      (letrec ((n (%fact-table-row-count ft))
-               (loop (lambda (i)
-                       (when (< i n)
-                         (f i)
-                         (loop (+ i 1))))))
-        (loop 0)))
+      (letrec ((loop (lambda (rows)
+                       (if (null? rows)
+                           '()
+                           (begin
+                             (f (car rows))
+                             (loop (cdr rows)))))))
+        (loop (%fact-table-live-row-ids ft))))
 
-    ;; (fact-table-filter ft col-idx key)  → list of row indices
+    ;; (fact-table-filter ft col-idx key) -> list of row indices
     ;; Convenience alias for fact-table-query.
     (define (fact-table-filter ft col-idx key)
       (%fact-table-query ft col-idx key))
 
     ;; (fact-table-fold ft f init)
-    ;; Fold over row indices: (f acc row-idx) for each row.
+    ;; Fold over live row indices: (f acc row-idx).
     (define (fact-table-fold ft f init)
-      (letrec ((n (%fact-table-row-count ft))
-               (loop (lambda (i acc)
-                       (if (= i n)
+      (letrec ((loop (lambda (rows acc)
+                       (if (null? rows)
                            acc
-                           (loop (+ i 1) (f acc i))))))
-        (loop 0 init)))
+                           (loop (cdr rows) (f acc (car rows)))))))
+        (loop (%fact-table-live-row-ids ft) init)))
+
+    ;; (fact-table-group-count ft group-col-idx) -> alist of (key . count)
+    (define (fact-table-group-count ft group-col-idx)
+      (%fact-table-group-count ft group-col-idx))
+
+    ;; (fact-table-group-sum ft group-col-idx value-col-idx) -> alist of (key . sum)
+    (define (fact-table-group-sum ft group-col-idx value-col-idx)
+      (%fact-table-group-sum ft group-col-idx value-col-idx))
+
+    ;; Internal: materialize grouped alist ((key . value) ...) into a fact-table.
+    (define (__fact-table-group-alist->table grouped value-col-name)
+      (let ((out (make-fact-table 'group-key value-col-name)))
+        (letrec ((emit (lambda (pairs)
+                         (if (null? pairs)
+                             out
+                             (let ((kv (car pairs)))
+                               (fact-table-insert! out (car kv) (cdr kv))
+                               (emit (cdr pairs)))))))
+          (emit grouped))))
+
+    ;; (fact-table-group-by ft group-col-idx [agg-op [value-col-idx]])
+    ;; agg-op: 'count (default) or 'sum.
+    (define (fact-table-group-by ft group-col-idx . spec)
+      (let ((agg-op (if (null? spec) 'count (car spec)))
+            (rest   (if (null? spec) '() (cdr spec))))
+        (cond
+          ((eq? agg-op 'count)
+           (if (null? rest)
+               (__fact-table-group-alist->table
+                 (%fact-table-group-count ft group-col-idx)
+                 'count)
+               (error "fact-table-group-by: count takes no value column index")))
+          ((eq? agg-op 'sum)
+           (if (= (length rest) 1)
+               (__fact-table-group-alist->table
+                 (%fact-table-group-sum ft group-col-idx (car rest))
+                 'sum)
+               (error "fact-table-group-by: sum requires exactly one value column index")))
+          (#t
+           (error "fact-table-group-by: unsupported aggregation (use 'count or 'sum)")))))
+
+    ;; (fact-table-partition ft group-col-idx)
+    ;; Returns alist: ((key . fact-table) ...), preserving first-seen key order.
+    (define (fact-table-partition ft group-col-idx)
+      (let* ((col-names (%fact-table-column-names ft))
+             (ncols (length col-names))
+             (rows (%fact-table-live-row-ids ft)))
+        (if (or (< group-col-idx 0) (>= group-col-idx ncols))
+            '()
+            (letrec ((loop (lambda (pending groups-rev)
+                             (if (null? pending)
+                                 (reverse groups-rev)
+                                 (let* ((row-id (car pending))
+                                        (key (%fact-table-ref ft row-id group-col-idx))
+                                        (entry (assoc key groups-rev))
+                                        (tbl (if entry
+                                                 (cdr entry)
+                                                 (apply make-fact-table col-names)))
+                                        (row (__fact-table-row-n ft row-id ncols)))
+                                   (%fact-table-insert! tbl row)
+                                   (if entry
+                                       (loop (cdr pending) groups-rev)
+                                       (loop (cdr pending)
+                                             (cons (cons key tbl) groups-rev))))))))
+              (loop rows '())))))
 
   ))
-

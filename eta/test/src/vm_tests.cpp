@@ -2510,6 +2510,71 @@ BOOST_AUTO_TEST_CASE(fact_table_live_row_ids_excludes_tombstones) {
     BOOST_CHECK_EQUAL(*v, 2);  ///< ids are (0 2)
 }
 
+BOOST_AUTO_TEST_CASE(fact_table_column_names_round_trip) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(k v)))"
+        "  (define names (%fact-table-column-names ft))"
+        "  (define result (and (eq? (car names) 'k)"
+        "                      (eq? (car (cdr names)) 'v))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_group_count_counts_live_rows_only) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(k v)))"
+        "  (%fact-table-insert! ft '(a 10))"
+        "  (%fact-table-insert! ft '(a 20))"
+        "  (%fact-table-insert! ft '(b 30))"
+        "  (%fact-table-delete-row! ft 1)"
+        "  (define grouped (%fact-table-group-count ft 0))"
+        "  (define a-count (cdr (assq 'a grouped)))"
+        "  (define b-count (cdr (assq 'b grouped)))"
+        "  (define result (+ (* 10 a-count) b-count)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 11);  ///< a=1, b=1
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_group_sum_accumulates_by_key) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(k v)))"
+        "  (%fact-table-insert! ft '(a 1))"
+        "  (%fact-table-insert! ft '(a 3))"
+        "  (%fact-table-insert! ft '(b 2))"
+        "  (define grouped (%fact-table-group-sum ft 0 1))"
+        "  (define a-sum (cdr (assq 'a grouped)))"
+        "  (define b-sum (cdr (assq 'b grouped)))"
+        "  (define result (+ (* 10 a-sum) b-sum)))");
+    auto v = nanbox::ops::decode<int64_t>(res);
+    BOOST_REQUIRE(v.has_value());
+    BOOST_CHECK_EQUAL(*v, 42);  ///< a=4, b=2
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_group_sum_promotes_to_flonum) {
+    LispVal res = run(
+        "(module m"
+        "  (define ft (%make-fact-table '(k v)))"
+        "  (%fact-table-insert! ft '(a 1))"
+        "  (%fact-table-insert! ft '(a 2.5))"
+        "  (define grouped (%fact-table-group-sum ft 0 1))"
+        "  (define result (cdr (assq 'a grouped))))");
+    auto d = nanbox::ops::decode<double>(res);
+    BOOST_REQUIRE(d.has_value());
+    BOOST_CHECK_CLOSE(*d, 3.5, 1e-10);
+}
+
+BOOST_AUTO_TEST_CASE(fact_table_group_sum_errors_on_non_numeric_value_column) {
+    BOOST_CHECK_THROW(
+        run("(module m"
+            "  (define ft (%make-fact-table '(k v)))"
+            "  (%fact-table-insert! ft '(a 'x))"
+            "  (define result (%fact-table-group-sum ft 0 1)))"),
+        std::runtime_error);
+}
+
 BOOST_AUTO_TEST_CASE(term_hash_structural_consistency) {
     LispVal res = run(
         "(module m"
