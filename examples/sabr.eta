@@ -36,6 +36,13 @@
     ;; TapeRef.  No nd+, nd*, ndlog etc. needed — plain arithmetic
     ;; is tape-aware.
 
+    ;; Explicit tape context for branch-only primal extraction.
+    (define branch-tape #f)
+    (defun branch-primal (x)
+      (if (and branch-tape (tape-ref? x))
+          (tape-ref-value-of branch-tape x)
+          x))
+
     (defun grad (f vals)
       (let ((tape (tape-new))
             (n    (length vals)))
@@ -44,9 +51,11 @@
                                        (mk (cdr vs)
                                            (cons (tape-var tape (car vs)) acc))))))
                       (mk vals '()))))
+          (set! branch-tape tape)
           (tape-start! tape)
           (let ((output (apply f vars)))
             (tape-stop!)
+            (set! branch-tape #f)
             (tape-backward! tape output)
             (let ((grad-vec (make-vector n 0)))
               (letrec ((collect (lambda (vs i)
@@ -60,10 +69,10 @@
 
     ;; ── nd-val: extract primal (works for tape-refs and plain numbers) ──
     (defun nd-val (x)
-      (if (tape-ref? x) (tape-ref-value x) x))
+      (branch-primal x))
 
-    ;; ── Helper: pow via exp/log (tape records transparently) ─────
-    (defun ndpow (a b) (exp (* b (log a))))
+    ;; ── Helper: pow uses dedicated taped primitive support ────────
+    (defun ndpow (a b) (pow a b))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §2  SABR Hagan Implied Volatility Approximation
@@ -133,7 +142,7 @@
                 ;; z = (ν/α) × FK^{(1-β)/2} × ln(F/K)
                 (let ((z (* (/ nu alpha) (* FK-mid log-FK))))
                   ;; x(z) — handle z ≈ 0 (would make x(z)/z ≈ 1)
-                  (let ((z-val (if (tape-ref? z) (tape-ref-value z) z)))
+                  (let ((z-val (branch-primal z)))
                     (let ((zx-ratio
                             (if (< (abs z-val) 1e-12)
                                 1

@@ -2,10 +2,12 @@
 #include <algorithm>
 #include <iostream>
 #include "eta/runtime/factory.h"
+#include "eta/runtime/ad_error.h"
 #include "eta/runtime/types/types.h"
 #include "eta/runtime/types/logic_var.h"
 #include "eta/runtime/types/primitive.h"
 #include "eta/runtime/types/tape.h"
+#include "eta/runtime/types/tape_ref.h"
 #include "eta/runtime/memory/value_visit.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/string_view.h"
@@ -1388,9 +1390,19 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
     const bool is_tape_b = ops::is_boxed(b) && ops::tag(b) == Tag::TapeRef;
 
     if (is_tape_a || is_tape_b) {
-        auto* tape = heap_.try_get_as<ObjectKind::Tape, Tape>(ops::payload(active_tape()));
+        const LispVal active = active_tape();
+        if (!ops::is_boxed(active) || ops::tag(active) != Tag::HeapObject) {
+            return std::unexpected(ad::make_error(
+                ad::kTagNoActiveTape,
+                "tape arithmetic: no active tape",
+                {ad::field("op", std::string("binary-arithmetic"))}));
+        }
+        auto* tape = heap_.try_get_as<ObjectKind::Tape, Tape>(ops::payload(active));
         if (!tape) {
-            return std::unexpected(make_type_error("tape arithmetic: no active tape"));
+            return std::unexpected(ad::make_error(
+                ad::kTagNoActiveTape,
+                "tape arithmetic: no active tape",
+                {ad::field("op", std::string("binary-arithmetic"))}));
         }
 
         /// Map opcode to tape op
@@ -1404,17 +1416,75 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
                 return std::unexpected(make_type_error("tape arithmetic: unknown op"));
         }
 
-        auto resolve_idx = [&](LispVal v, bool is_tape) -> std::expected<uint32_t, RuntimeError> {
-            if (is_tape) return static_cast<uint32_t>(ops::payload(v));
+        auto op_name = [&]() -> std::string {
+            switch (op) {
+                case OpCode::Add: return "+";
+                case OpCode::Sub: return "-";
+                case OpCode::Mul: return "*";
+                case OpCode::Div: return "/";
+                default: return "unknown";
+            }
+        };
+
+        auto resolve_idx = [&](LispVal v, bool is_tape, const char* side) -> std::expected<uint32_t, RuntimeError> {
+            if (is_tape) {
+                const auto ref = types::tape_ref::decode(v);
+                if (ref.tape_id != tape->tape_id) {
+                    return std::unexpected(ad::make_error(
+                        ad::kTagMixedTape,
+                        "tape arithmetic: reference belongs to a different tape",
+                        {
+                            ad::field("op", op_name()),
+                            ad::field("side", std::string(side)),
+                            ad::field("expected-tape-id", tape->tape_id),
+                            ad::field("actual-tape-id", ref.tape_id),
+                            ad::field("generation", ref.generation),
+                            ad::field("node-index", ref.node_index)
+                        }));
+                }
+                if (ref.generation != tape->generation) {
+                    return std::unexpected(ad::make_error(
+                        ad::kTagStaleRef,
+                        "tape arithmetic: stale TapeRef generation",
+                        {
+                            ad::field("op", op_name()),
+                            ad::field("side", std::string(side)),
+                            ad::field("tape-id", tape->tape_id),
+                            ad::field("expected-gen", tape->generation),
+                            ad::field("actual-gen", ref.generation),
+                            ad::field("node-index", ref.node_index)
+                        }));
+                }
+                if (ref.node_index >= tape->entries.size()) {
+                    return std::unexpected(ad::make_error(
+                        ad::kTagStaleRef,
+                        "tape arithmetic: TapeRef index out of range",
+                        {
+                            ad::field("op", op_name()),
+                            ad::field("side", std::string(side)),
+                            ad::field("tape-id", tape->tape_id),
+                            ad::field("expected-gen", tape->generation),
+                            ad::field("actual-gen", ref.generation),
+                            ad::field("node-index", ref.node_index)
+                        }));
+                }
+                return ref.node_index;
+            }
             /// Promote plain number to tape constant
             auto nv = classify_numeric(v, heap_);
             if (!nv.is_valid()) return std::unexpected(make_type_error("tape arithmetic: operand is not a number"));
-            return tape->push_const(nv.as_double());
+            auto idx = tape->push_const(nv.as_double());
+            if (idx > types::tape_ref::MAX_NODE_INDEX) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "tape arithmetic: tape node index exceeds TapeRef capacity"}});
+            }
+            return idx;
         };
 
-        auto idx_a = resolve_idx(a, is_tape_a);
+        auto idx_a = resolve_idx(a, is_tape_a, "lhs");
         if (!idx_a) return std::unexpected(idx_a.error());
-        auto idx_b = resolve_idx(b, is_tape_b);
+        auto idx_b = resolve_idx(b, is_tape_b, "rhs");
         if (!idx_b) return std::unexpected(idx_b.error());
 
         double pa = tape->entries[*idx_a].primal;
@@ -1433,7 +1503,12 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
         }
 
         uint32_t new_idx = tape->push({tape_op, *idx_a, *idx_b, result, 0.0});
-        push(ops::box(Tag::TapeRef, new_idx));
+        if (new_idx > types::tape_ref::MAX_NODE_INDEX) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::InternalError,
+                "tape arithmetic: tape node index exceeds TapeRef capacity"}});
+        }
+        push(types::tape_ref::make(tape->tape_id, tape->generation, new_idx));
         return {};
     }
 #if defined(__clang__) || defined(__GNUC__)
@@ -1688,6 +1763,10 @@ std::expected<LispVal, RuntimeError> VM::runtime_error_tag(const RuntimeError& e
     std::visit([&](auto&& e) {
         using T = std::decay_t<decltype(e)>;
         if constexpr (std::is_same_v<T, VMError>) {
+            if (!e.tag_override.empty()) {
+                tag_name = e.tag_override.c_str();
+                return;
+            }
             switch (e.code) {
                 case RuntimeErrorCode::TypeError:       tag_name = "runtime.type-error"; break;
                 case RuntimeErrorCode::InvalidArity:    tag_name = "runtime.invalid-arity"; break;
@@ -1836,8 +1915,53 @@ std::expected<LispVal, RuntimeError> VM::build_runtime_error_payload(
     }
     temp_roots_.push_back(*stack_trace);
 
-    auto payload = make_list_payload(
-        {*runtime_error_sym, tag, *msg_val, *span_val, *stack_trace});
+    auto build_field_rows = [&]() -> std::expected<LispVal, RuntimeError> {
+        const auto* vm_err = std::get_if<VMError>(&err);
+        if (!vm_err || vm_err->fields.empty()) return Nil;
+
+        std::vector<LispVal> rows;
+        rows.reserve(vm_err->fields.size());
+        for (const auto& field : vm_err->fields) {
+            auto key_sym = make_symbol(intern_table_, field.key);
+            if (!key_sym) return std::unexpected(key_sym.error());
+            temp_roots_.push_back(*key_sym);
+
+            std::expected<LispVal, RuntimeError> value = std::visit([&](auto&& raw)
+                -> std::expected<LispVal, RuntimeError> {
+                    using U = std::decay_t<decltype(raw)>;
+                    if constexpr (std::is_same_v<U, int64_t>) {
+                        auto enc = ops::encode<int64_t>(raw);
+                        if (enc) return *enc;
+                        return make_fixnum(heap_, raw);
+                    } else if constexpr (std::is_same_v<U, double>) {
+                        return make_flonum(raw);
+                    } else {
+                        return make_string(heap_, intern_table_, raw);
+                    }
+                }, field.value);
+            if (!value) return std::unexpected(value.error());
+            temp_roots_.push_back(*value);
+
+            auto row = make_list_payload({*key_sym, *value});
+            if (!row) return std::unexpected(row.error());
+            rows.push_back(*row);
+            temp_roots_.push_back(*row);
+        }
+        return make_list_payload(rows);
+    };
+
+    auto field_rows = build_field_rows();
+    if (!field_rows) {
+        restore_roots();
+        return std::unexpected(field_rows.error());
+    }
+    if (*field_rows != Nil) {
+        temp_roots_.push_back(*field_rows);
+    }
+
+    std::expected<LispVal, RuntimeError> payload = (*field_rows == Nil)
+        ? make_list_payload({*runtime_error_sym, tag, *msg_val, *span_val, *stack_trace})
+        : make_list_payload({*runtime_error_sym, tag, *msg_val, *span_val, *stack_trace, *field_rows});
     if (!payload) {
         restore_roots();
         return std::unexpected(payload.error());

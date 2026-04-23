@@ -105,7 +105,10 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
     }
 
     if (t == Tag::TapeRef) {
-        return "#<tape-ref:" + std::to_string(ops::payload(v)) + ">";
+        const auto ref = types::tape_ref::decode(v);
+        return "#<tape-ref:t" + std::to_string(ref.tape_id)
+             + " g" + std::to_string(ref.generation)
+             + " n" + std::to_string(ref.node_index) + ">";
     }
 
     if (t == Tag::HeapObject) {

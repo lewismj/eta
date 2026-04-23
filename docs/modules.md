@@ -164,7 +164,7 @@ All standard library modules are defined in the
 re-exports a curated subset for one-line import:
 
 ```scheme
-(import std.prelude)  ;; imports std.core, std.math, std.io, std.collections,
+(import std.prelude)  ;; imports std.core, std.math, std.aad, std.io, std.collections,
                       ;; std.logic, std.clp, std.causal, std.fact_table,
                       ;; std.db, std.stats, std.time, and std.net
 ```
@@ -218,6 +218,28 @@ re-exports a curated subset for one-line import:
 | `expt` | `(base exp) → number` | Exponentiation (fast power) |
 | `sum` | `(xs) → number` | Sum of a list |
 | `product` | `(xs) → number` | Product of a list |
+
+---
+
+### `std.aad` — AD Helpers and Gradient Checks
+
+```scheme
+(import std.aad)
+```
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `grad` | `(f vals) → (list primal grad-vector)` | Run tape-based reverse-mode AD on scalar `f` |
+| `ad-abs` | `(x) → number` | Policy-aware absolute value |
+| `ad-max` / `ad-min` | `(a b ...) → number` | Policy-aware piecewise max/min |
+| `ad-relu` | `(x) → number` | `max(0, x)` built on AD-safe primitives |
+| `ad-clamp` | `(x lo hi) → number` | Policy-aware clamp |
+| `softplus` | `(x beta) → number` | Smooth approximation to `max(0, x)` |
+| `smooth-abs` | `(x epsilon) → number` | Smooth absolute value (`epsilon` required) |
+| `smooth-clamp` | `(x lo hi beta) → number` | Smooth clamp approximation |
+| `check-grad` | `(f vals [rtol [atol [step-scale]]]) → bool` | Compare AAD gradient vs finite differences |
+| `check-grad-report` | `(f vals [rtol [atol [step-scale]]]) → vector` | Detailed gradient-check report |
+| `with-checkpoint` | `(thunk) → result` | Checkpoint API surface for AD blocks |
 
 ---
 
@@ -528,10 +550,13 @@ per-column hash indexes for O(1) equality lookups.
 (import std.prelude)
 ```
 
-Re-exports **all** public names from `std.core`, `std.math`, `std.io`,
+Re-exports public names from `std.core`, `std.math`, `std.aad`, `std.io`,
 `std.collections`, `std.logic`, `std.clp`, `std.causal`, `std.fact_table`,
 `std.db`, `std.stats`, `std.time`, and `std.net` in a single import for
 convenience.
+
+The prelude intentionally does not re-export `std.aad`'s `grad` symbol to avoid
+name conflicts with example-local gradient drivers.
 
 The following modules are **not** included in the prelude and must be
 imported explicitly when needed: `std.clpb`, `std.clpr`, `std.freeze`,
@@ -685,4 +710,3 @@ extension that provides:
 - LSP client that launches `eta_lsp` as a child process
 
 Install via the build script or manually with `vsce package`.
-

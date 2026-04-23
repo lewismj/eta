@@ -2061,4 +2061,331 @@ BOOST_FIXTURE_TEST_CASE(tape_exception_preserves_outer_tape, FunctionalTestFixtu
     BOOST_CHECK_CLOSE(to_double(res), 3.0, 1e-10);
 }
 
+BOOST_FIXTURE_TEST_CASE(tape_mixed_tape_error_has_tag_and_fields, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t1 (tape-new))
+            (define t2 (tape-new))
+            (define x (tape-var t1 2.0))
+            (define y (tape-var t2 3.0))
+            (define p
+                (catch 'runtime.error
+                    (begin
+                        (tape-start! t1)
+                        (+ x y))))
+            (define tag (car (cdr p)))
+            (define fields (car (cdr (cdr (cdr (cdr (cdr p)))))))
+            (define k0 (car (car (list-tail fields 0))))
+            (define k2 (car (car (list-tail fields 2))))
+            (define k3 (car (car (list-tail fields 3))))
+            (define result
+                (and (= (length p) 6)
+                     (eq? tag ':ad/mixed-tape)
+                     (>= (length fields) 4)
+                     (eq? k0 'op)
+                     (eq? k2 'expected-tape-id)
+                     (eq? k3 'actual-tape-id)))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_stale_ref_after_clear_has_tag_and_fields, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 7.0))
+            (tape-clear! t)
+            (define p (catch 'runtime.error (tape-primal t x)))
+            (define tag (car (cdr p)))
+            (define fields (car (cdr (cdr (cdr (cdr (cdr p)))))))
+            (define k3 (car (car (list-tail fields 3))))
+            (define k4 (car (car (list-tail fields 4))))
+            (define result
+                (and (= (length p) 6)
+                     (eq? tag ':ad/stale-ref)
+                     (>= (length fields) 5)
+                     (eq? k3 'expected-gen)
+                     (eq? k4 'actual-gen)))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_ref_value_no_active_tape_has_tag_and_fields, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 11.0))
+            (define p (catch 'runtime.error (tape-ref-value x)))
+            (define tag (car (cdr p)))
+            (define fields (car (cdr (cdr (cdr (cdr (cdr p)))))))
+            (define k0 (car (car fields)))
+            (define result
+                (and (= (length p) 6)
+                     (eq? tag ':ad/no-active-tape)
+                     (>= (length fields) 1)
+                     (eq? k0 'op)))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_ref_value_wrong_active_tape_has_tag_and_fields, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t1 (tape-new))
+            (define t2 (tape-new))
+            (define x (tape-var t1 5.0))
+            (define p
+                (catch 'runtime.error
+                    (begin
+                        (tape-start! t2)
+                        (tape-ref-value x))))
+            (define tag (car (cdr p)))
+            (define fields (car (cdr (cdr (cdr (cdr (cdr p)))))))
+            (define k2 (car (car (list-tail fields 2))))
+            (define k3 (car (car (list-tail fields 3))))
+            (define result
+                (and (= (length p) 6)
+                     (eq? tag ':ad/mixed-tape)
+                     (>= (length fields) 4)
+                     (eq? k2 'expected-tape-id)
+                     (eq? k3 'actual-tape-id)))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_nondiff_policy_round_trip, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define p0 (aad-nondiff-policy))
+            (set-aad-nondiff-policy! 'zero-subgrad)
+            (define p1 (aad-nondiff-policy))
+            (set-aad-nondiff-policy! 'strict)
+            (define p2 (aad-nondiff-policy))
+            (define result (and (eq? p0 'strict)
+                                (eq? p1 'zero-subgrad)
+                                (eq? p2 'strict)))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_abs_strict_kink_raises_nondiff_tag, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 0.0))
+            (define p
+                (catch 'runtime.error
+                    (begin
+                        (tape-start! t)
+                        (abs x))))
+            (define tag (car (cdr p)))
+            (define result (eq? tag ':ad/nondiff-strict))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_abs_zero_subgrad_kink_gradient_is_zero, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (set-aad-nondiff-policy! 'zero-subgrad)
+            (define t (tape-new))
+            (define x (tape-var t 0.0))
+            (tape-start! t)
+            (define z (abs x))
+            (tape-stop!)
+            (tape-backward! t z)
+            (set-aad-nondiff-policy! 'strict)
+            (define result (tape-adjoint t x))
+        )
+    )");
+    BOOST_CHECK_SMALL(to_double(res), 1e-12);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_max_zero_subgrad_tie_gradient_is_zero, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (set-aad-nondiff-policy! 'zero-subgrad)
+            (define t (tape-new))
+            (define x (tape-var t 2.0))
+            (define y (tape-var t 2.0))
+            (tape-start! t)
+            (define z (max x y))
+            (tape-stop!)
+            (tape-backward! t z)
+            (set-aad-nondiff-policy! 'strict)
+            (define result (+ (abs (tape-adjoint t x))
+                              (abs (tape-adjoint t y))))
+        )
+    )");
+    BOOST_CHECK_SMALL(to_double(res), 1e-12);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_comparison_strict_mode_rejects_taped_values, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 1.0))
+            (define p
+                (catch 'runtime.error
+                    (begin
+                        (tape-start! t)
+                        (> x 0.0))))
+            (define tag (car (cdr p)))
+            (define result (eq? tag ':ad/nondiff-strict))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_comparison_zero_subgrad_mode_uses_primals, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (set-aad-nondiff-policy! 'zero-subgrad)
+            (define t (tape-new))
+            (define x (tape-var t 1.5))
+            (define y (tape-var t 2.0))
+            (tape-start! t)
+            (define ok (and (< x y) (>= y 2.0)))
+            (tape-stop!)
+            (set-aad-nondiff-policy! 'strict)
+            (define result (if ok 1.0 0.0))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 1.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_ref_value_of_reads_without_active_tape, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 9.0))
+            (define result (tape-ref-value-of t x))
+        )
+    )");
+    BOOST_CHECK_CLOSE(to_double(res), 9.0, 1e-10);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_new_unary_ops_gradient_matches_closed_form, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 0.3))
+            (tape-start! t)
+            (define z (+ (+ (tan x) (asin x))
+                         (+ (acos x) (atan x))))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (tape-adjoint t x))
+        )
+    )");
+    const double x = 0.3;
+    const double expected = (1.0 / (std::cos(x) * std::cos(x))) + (1.0 / (1.0 + x * x));
+    BOOST_CHECK_CLOSE(to_double(res), expected, 0.02);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_pow_gradient_base_and_exponent, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 2.0))
+            (define y (tape-var t 3.0))
+            (tape-start! t)
+            (define z (pow x y))
+            (tape-stop!)
+            (tape-backward! t z)
+            (define result (+ (tape-adjoint t x)
+                              (tape-adjoint t y)))
+        )
+    )");
+    const double expected = (3.0 * std::pow(2.0, 2.0)) + (std::pow(2.0, 3.0) * std::log(2.0));
+    BOOST_CHECK_CLOSE(to_double(res), expected, 0.02);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_pow_negative_non_integer_exponent_raises_domain_tag, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t -2.0))
+            (define y (tape-var t 0.5))
+            (define p
+                (catch 'runtime.error
+                    (begin
+                        (tape-start! t)
+                        (pow x y))))
+            (define tag (car (cdr p)))
+            (define result (eq? tag ':ad/domain))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_pow_zero_zero_strict_raises_domain_tag, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t 0.0))
+            (define y (tape-var t 0.0))
+            (define p
+                (catch 'runtime.error
+                    (begin
+                        (tape-start! t)
+                        (pow x y))))
+            (define tag (car (cdr p)))
+            (define result (eq? tag ':ad/domain))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_pow_zero_zero_zero_subgrad_returns_one_and_zero_grads, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (set-aad-nondiff-policy! 'zero-subgrad)
+            (define t (tape-new))
+            (define x (tape-var t 0.0))
+            (define y (tape-var t 0.0))
+            (tape-start! t)
+            (define z (pow x y))
+            (tape-stop!)
+            (tape-backward! t z)
+            (set-aad-nondiff-policy! 'strict)
+            (define result
+                (and (= (tape-primal t z) 1.0)
+                     (= (tape-adjoint t x) 0.0)
+                     (= (tape-adjoint t y) 0.0)))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
+BOOST_FIXTURE_TEST_CASE(tape_unary_domain_violations_raise_domain_tag, FunctionalTestFixture) {
+    LispVal res = run(R"(
+        (module test
+            (define t (tape-new))
+            (define x (tape-var t -1.0))
+            (define y (tape-var t 2.0))
+            (define p1
+                (catch 'runtime.error
+                    (begin
+                        (tape-start! t)
+                        (log x))))
+            (define p2
+                (catch 'runtime.error
+                    (begin
+                        (tape-start! t)
+                        (asin y))))
+            (define ok1 (eq? (car (cdr p1)) ':ad/domain))
+            (define ok2 (eq? (car (cdr p2)) ':ad/domain))
+            (define result (and ok1 ok2))
+        )
+    )");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

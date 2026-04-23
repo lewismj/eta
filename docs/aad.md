@@ -1,217 +1,200 @@
 # Adjoint Algorithmic Differentiation (AAD)
 
-[← Back to README](../README.md) · [Examples](examples.md) ·
-[Architecture](architecture.md) · [Modules & Stdlib](modules.md)
+[Back to README](../README.md) | [Examples](examples.md) | [Modules](modules.md) | [ADR 0001](adr/0001-aad-taperef-and-error-tags.md)
 
 ---
 
 ## Contents
 
 - [Overview](#overview)
-- [How Reverse-Mode AD Works](#how-reverse-mode-ad-works)
-- [Tape-Based AD](#tape-based-ad)
-  - [Tape API](#tape-api)
-  - [Tape Usage Pattern](#tape-usage-pattern)
-  - [The `grad` Helper](#the-grad-helper)
-  - [Tape Internal Structure](#tape-internal-structure)
-- [Summary](#summary)
-- [Finance Examples](#finance-examples)
+- [Core API](#core-api)
+- [Safety Model](#safety-model)
+- [Nested Tape Contract](#nested-tape-contract)
+- [Parallel Contract](#parallel-contract)
+- [Non-Differentiability Policy](#non-differentiability-policy)
+- [Primitive Coverage and Domain Rules](#primitive-coverage-and-domain-rules)
+- [Stdlib Helpers](#stdlib-helpers)
+- [AD Error Tags](#ad-error-tags)
+- [Examples](#examples)
 
 ---
 
 ## Overview
 
-[`examples/aad.eta`](../examples/aad.eta) implements **reverse-mode
-automatic differentiation** (also called adjoint or backpropagation)
-using a **tape-based (Wengert list)** approach built into the Eta VM.
-It computes exact gradients of scalar functions with respect to any
-number of input variables — the same mathematical machinery that
-powers deep-learning frameworks.
+Eta provides VM-native reverse-mode automatic differentiation using a tape
+(Wengert list). When an operation sees a `TapeRef`, the VM records the forward
+operation and later computes adjoints in a reverse sweep.
 
-Eta provides tape-based reverse-mode AD:
-
-| Approach | Description |
-|----------|-------------|
-| **Tape (Wengert list)** | ~32 bytes/op, zero closure allocations, VM-native recording |
-
-Standard arithmetic (`+`, `-`, `*`, `/`) and transcendentals (`sin`,
-`cos`, `exp`, `log`, `sqrt`) are **automatically recorded** when a
-`TapeRef` operand is detected — no macro rewriting or lifted operators
-needed.
-
-**Key ideas demonstrated:**
-
-- VM-native tape recording of arithmetic and transcendentals
-- Higher-order functions (`foldl`, `apply`)
-- Vectors for gradient collection
-- Zero-overhead: plain arithmetic becomes tape-aware transparently
-
-```bash
-etai examples/aad.eta
-```
+Eta uses standardized safety semantics for ownership, stale references,
+cross-VM boundaries, non-differentiable branch policy, and domain failures.
 
 ---
 
-## How Reverse-Mode AD Works
+## Core API
 
-Reverse-mode AD records a computation as a graph of elementary
-operations on a **tape** (Wengert list).  A single backward sweep from
-the output propagates adjoints all the way to the input variables,
-yielding the full gradient in one pass regardless of the number of
-inputs.
+### Tape lifecycle and values
 
-```
-Forward pass                 Backward pass
-────────────                 ─────────────
-x ──┐                        ∂f/∂x ← adj_x
-    ├── z = x·y ── f         1 (seed)
-y ──┘                        ∂f/∂y ← adj_y
-```
+| Primitive | Arity | Purpose |
+|---|---:|---|
+| `tape-new` | 0 | Create a tape |
+| `tape-start!` | 1 | Push tape onto active-tape stack |
+| `tape-stop!` | 0 | Pop active tape |
+| `tape-clear!` | 1 | Clear entries and bump generation |
+| `tape-var` | 2 | Create an independent variable reference |
+| `tape-backward!` | 2 | Reverse sweep from output ref |
+| `tape-adjoint` | 2 | Read adjoint for a ref |
+| `tape-primal` | 2 | Read primal for a ref |
+| `tape-size` | 1 | Number of tape entries |
+| `tape-ref?` | 1 | Predicate |
+| `tape-ref-index` | 1 | Encoded node index field |
+| `tape-ref-value-of` | 2 | Explicit primal extraction with tape argument |
+| `tape-ref-value` | 1 | Active-tape primal extraction (strict for TapeRefs) |
 
----
+### AAD policy controls
 
-## Tape-Based AD
-
-The tape (Wengert list) approach records all arithmetic into a flat
-array of ~32-byte entries.  The VM intercepts `+`, `-`, `*`, `/`,
-`sin`, `cos`, `exp`, `log`, and `sqrt` when any operand is a
-**TapeRef** — a lightweight NaN-boxed index into the tape.  No
-closures are allocated and no macro rewriting is required.
-
-### Tape API
-
-| Builtin | Arity | Description |
-|---------|-------|-------------|
-| `tape-new` | 0 | Create a fresh, empty tape |
-| `tape-start!` | 1 | Push a tape onto the active-tape stack (enables recording) |
-| `tape-stop!` | 0 | Pop the most recent tape from the active-tape stack |
-| `tape-var` | 2 | Register an independent variable: `(tape-var tape value)` → TapeRef |
-| `tape-backward!` | 2 | Run reverse sweep: `(tape-backward! tape output-ref)` |
-| `tape-adjoint` | 2 | Read accumulated adjoint: `(tape-adjoint tape ref)` → number |
-| `tape-primal` | 2 | Read forward value: `(tape-primal tape ref)` → number |
-| `tape-ref?` | 1 | Predicate: is the value a TapeRef? |
-| `tape-ref-index` | 1 | Extract the raw index from a TapeRef |
-| `tape-ref-value` | 1 | Extract the primal numeric value stored in a TapeRef |
-| `tape-size` | 1 | Number of entries on the tape |
-
-> **Nesting & exception safety.** Active tapes are managed as a stack
-> inside the VM.  Calling `tape-start!` pushes a tape; `tape-stop!`
-> pops it.  This means you can nest independent AD computations:
->
-> ```scheme
-> (tape-start! outer)        ; outer is now active
-> (tape-start! inner)        ; inner is now active (outer is preserved)
-> ...                        ; arithmetic records on inner
-> (tape-stop!)               ; inner popped — outer is active again
-> ...                        ; arithmetic records on outer
-> (tape-stop!)               ; outer popped — no tape active
-> ```
->
-> If an exception (`raise`) is thrown between `tape-start!` and
-> `tape-stop!`, the tape stack is automatically unwound to the depth
-> saved by the enclosing `catch`, so the caller's tape context is
-> not corrupted.
-
-### Tape Usage Pattern
-
-```scheme
-(define tape (tape-new))           ; 1. Create tape
-(define x (tape-var tape 2.0))     ; 2. Register inputs
-(define y (tape-var tape 3.0))
-(tape-start! tape)                 ; 3. Activate recording
-(define z (+ (* x y) (sin x)))    ; 4. Forward pass (auto-recorded)
-(tape-stop!)                       ; 5. Stop recording
-(tape-backward! tape z)            ; 6. Reverse sweep
-(tape-adjoint tape x)              ; 7. Read gradients → 3 + cos(2)
-(tape-adjoint tape y)              ;    → 2
-```
-
-### The `grad` Helper
-
-The [`examples/aad.eta`](../examples/aad.eta) file provides a
-convenient `grad` function that wraps the tape API:
-
-```scheme
-(defun grad (f vals)
-  (let ((tape (tape-new))
-        (n    (length vals)))
-    (let ((vars (letrec ((mk (lambda (vs acc)
-                               (if (null? vs) (reverse acc)
-                                   (mk (cdr vs)
-                                       (cons (tape-var tape (car vs)) acc))))))
-                  (mk vals '()))))
-      (tape-start! tape)
-      (let ((output (apply f vars)))
-        (tape-stop!)
-        (tape-backward! tape output)
-        (let ((grad-vec (make-vector n 0)))
-          (letrec ((collect (lambda (vs i)
-                              (if (null? vs) grad-vec
-                                  (begin
-                                    (vector-set! grad-vec i
-                                      (tape-adjoint tape (car vs)))
-                                    (collect (cdr vs) (+ i 1)))))))
-            (collect vars 0))
-          (list (tape-primal tape output) grad-vec))))))
-```
-
-Usage — gradients are computed with plain arithmetic:
-
-```scheme
-(grad (lambda (x y) (+ (* x y) (sin x))) '(2 3))
-;; => (6.909.. #(2.583.. 2))
-```
-
-### Tape Internal Structure
-
-Each tape entry is ~32 bytes:
-
-```
-┌────────┬──────┬───────┬─────────┬──────────┐
-│ TapeOp │ left │ right │ primal  │ adjoint  │
-│ (1B)   │(4B)  │ (4B)  │ (8B)    │ (8B)     │
-└────────┴──────┴───────┴─────────┴──────────┘
-```
-
-Supported operations: `Const`, `Var`, `Add`, `Sub`, `Mul`, `Div`,
-`Exp`, `Log`, `Sqrt`, `Sin`, `Cos`.
-
-The backward pass sweeps entries in reverse order, applying the chain
-rule at each node.  Adjoints accumulate additively — a variable used
-in multiple sub-expressions receives the sum of all path contributions.
+| Primitive | Arity | Purpose |
+|---|---:|---|
+| `set-aad-nondiff-policy!` | 1 | Set `strict` or `zero-subgrad` |
+| `aad-nondiff-policy` | 0 | Get current policy symbol |
 
 ---
 
-## Summary
+## Safety Model
 
-| Component | Role |
-|-----------|------|
-| `tape-new` | Create a fresh, empty tape |
-| `tape-start!` / `tape-stop!` | Push / pop the active tape (stack-based, nestable) |
-| `tape-var` | Register an independent variable on the tape |
-| `tape-backward!` | Run the reverse sweep from an output node |
-| `tape-adjoint` / `tape-primal` | Read accumulated adjoint / forward value |
-| `grad` | Top-level driver: register inputs → forward → backward → collect |
+`TapeRef` is a packed immediate with three fields:
+
+- `tape-id`
+- `generation`
+- `node-index`
+
+At every taped operation and lookup, runtime validation enforces:
+
+- Ownership (`tape-id` must match)
+- Lifecycle (`generation` must match current tape generation)
+- Bounds (`node-index` must be valid)
+
+This produces deterministic, catchable AD errors instead of silent misuse.
 
 ---
 
-## Finance Examples
+## Nested Tape Contract
 
-All of these examples build on the tape-based AD described above —
-plain arithmetic is transparently recorded, and gradients are obtained
-in a single backward pass.
+`active_tape` is stack-based:
 
-| Example | Description | Docs |
-|---------|-------------|------|
-| [`aad.eta`](../examples/aad.eta) | Core AD walkthrough — `grad` helper, multi-variable gradients | *(this page)* |
-| [`xva.eta`](../examples/xva.eta) | CVA & FVA valuation adjustments with market-risk sensitivities | [xVA](xva.md) |
-| [`european.eta`](../examples/european.eta) | Black-Scholes Greeks (1st & 2nd order), custom VJP, Schwarz check | [European Greeks](european.md) |
-| [`sabr.eta`](../examples/sabr.eta) | SABR Hagan implied vol, strike × expiry vol surface Greeks | [SABR](sabr.md) |
+1. `tape-start!` pushes.
+2. `tape-stop!` pops.
+3. Nested tapes are supported.
 
-```bash
-etai examples/aad.eta
-etai examples/xva.eta
-etai examples/european.eta
-etai examples/sabr.eta
-```
+If control exits through `raise`/`catch`, the VM unwinds tape stack depth with
+the catch boundary, so outer tape context remains consistent.
 
+Cross-tape `TapeRef` use is rejected deterministically.
+
+---
+
+## Parallel Contract
+
+AAD values are VM-local:
+
+- `spawn-thread` / `spawn-thread-with`: fresh in-process VM per actor thread.
+- `spawn` / `worker-pool`: separate process VM per worker.
+- `Tape` and `TapeRef` are not transferable across VM boundaries.
+
+Serializer checks reject `Tape` and `TapeRef` with tag `:ad/cross-vm-ref`.
+Callers must extract plain numeric primals before send.
+
+See also: [Network and Message-Passing Parallelism](network-message-passing.md).
+
+---
+
+## Non-Differentiability Policy
+
+Supported modes:
+
+- `strict` (default): reject kinks with `:ad/nondiff-strict`
+- `zero-subgrad`: use deterministic zero subgradient at ties/kinks
+
+Kink definitions:
+
+- `abs(x)`: `x == 0`
+- `max(a, b)` / `min(a, b)`: `a == b`
+- `relu(x)` (via helper): `x == 0`
+- `clamp(x, lo, hi)` (via helper): `x == lo` or `x == hi`
+
+Comparison semantics on taped values:
+
+- `strict`: comparison on taped operands raises `:ad/nondiff-strict`
+- `zero-subgrad`: taped operands are compared by validated primals
+
+---
+
+## Primitive Coverage and Domain Rules
+
+Taped primitives include:
+
+- Arithmetic: `+`, `-`, `*`, `/`
+- Unary math: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `exp`, `log`, `sqrt`
+- Piecewise numerics: `abs`, `min`, `max`
+- Binary math: `pow`
+
+Domain behavior for taped primitives:
+
+- `log(x)`: `x > 0`, else `:ad/domain`
+- `sqrt(x)`: `x >= 0`, else `:ad/domain`
+- `asin(x)`, `acos(x)`: `-1 <= x <= 1`, else `:ad/domain`
+- `pow(negative, non-integer exponent)`: `:ad/domain`
+- `pow(0, negative)`: `:ad/domain`
+- `pow(0, 0)`:
+  - `strict`: `:ad/domain`
+  - `zero-subgrad`: value `1`, zero subgrad
+- `pow(0, positive < 1)`:
+  - `strict`: `:ad/domain`
+  - `zero-subgrad`: finite forward value with zero subgrad at singular base derivative
+
+The current API remains scalar-focused (no tensor-aware tape extension here).
+
+---
+
+## Stdlib Helpers
+
+`std.aad` provides:
+
+- Piecewise wrappers: `ad-abs`, `ad-max`, `ad-min`, `ad-relu`, `ad-clamp`
+- Smooth alternatives: `softplus`, `smooth-abs`, `smooth-clamp`
+- Gradient tools: `grad`, `check-grad`, `check-grad-report`
+- Checkpoint API: `with-checkpoint` (MVP API surface)
+
+Gradient checker defaults:
+
+- `rtol = 1e-5`
+- `atol = 1e-7`
+- Central difference step: `h = sqrt(eps) * max(1, |x|)` (scaled by optional `step-scale`)
+
+Tolerance test:
+
+`|aad - fd| <= atol + rtol * |aad|`
+
+---
+
+## AD Error Tags
+
+| Tag | Meaning |
+|---|---|
+| `:ad/mixed-tape` | refs from different tapes |
+| `:ad/stale-ref` | old generation or invalid index |
+| `:ad/no-active-tape` | ambient tape API used with no active tape |
+| `:ad/nondiff-strict` | strict-mode kink/comparison rejection |
+| `:ad/cross-vm-ref` | Tape/TapeRef attempted across VM boundary |
+| `:ad/domain` | taped primitive domain violation |
+
+Errors are emitted as `runtime.error` payloads with structured field rows.
+Tests should assert tag identity and payload keys, not message text.
+
+---
+
+## Examples
+
+- [examples/aad.eta](../examples/aad.eta)
+- [examples/european.eta](../examples/european.eta)
+- [examples/sabr.eta](../examples/sabr.eta)
+- [examples/xva.eta](../examples/xva.eta)

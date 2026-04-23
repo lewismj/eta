@@ -201,10 +201,14 @@ receiving end.
 **Serializable types:** booleans, fixnums, flonums, characters, strings,
 symbols, pairs, lists, vectors, bytevectors.
 
-**Not serializable:** closures, continuations, ports, nng sockets, tensors.
-These contain OS-level references or code pointers that are meaningless in
-another process.  Attempting to send one raises
-`'nng-error "cannot send non-serializable value"`.
+**Not serializable:** closures, continuations, ports, nng sockets, tensors,
+`Tape`, and `TapeRef`.
+
+`Tape` and `TapeRef` are VM-local AAD runtime values and cannot cross actor or
+worker boundaries. Attempting to transport them raises runtime tag
+`:ad/cross-vm-ref` with structured payload fields (including traversal path).
+
+Other non-serializable values raise the existing nng serialization error.
 
 ---
 

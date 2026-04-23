@@ -38,6 +38,8 @@
 #include <eta/runtime/value_formatter.h>
 #include <eta/runtime/types/cons.h>
 #include <eta/runtime/types/vector.h>
+#include <eta/runtime/types/tape.h>
+#include <eta/runtime/types/tape_ref.h>
 #include <eta/runtime/builtin_env.h>
 
 using namespace eta::nng;
@@ -1485,6 +1487,41 @@ BOOST_AUTO_TEST_CASE(send_wrong_socket_type) {
     NngEnv e;
     auto res = e.try_call("send!", {e.fixnum(1), e.fixnum(42)});
     BOOST_TEST(!res.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(send_rejects_cross_vm_tape_ref_with_ad_tag) {
+    NngEnv e;
+    auto sock = e.call("nng-socket", {e.sym("pair")});
+    auto ref = types::tape_ref::make(1, 1, 0);
+
+    auto res = e.try_call("send!", {sock, ref});
+    BOOST_REQUIRE(!res.has_value());
+    auto* vm_err = std::get_if<error::VMError>(&res.error());
+    BOOST_REQUIRE(vm_err);
+    BOOST_TEST(vm_err->tag_override == std::string(":ad/cross-vm-ref"));
+    BOOST_REQUIRE_GE(vm_err->fields.size(), static_cast<std::size_t>(2));
+    BOOST_TEST(vm_err->fields[0].key == "op");
+    BOOST_TEST(vm_err->fields[1].key == "path");
+    auto op = std::get_if<std::string>(&vm_err->fields[0].value);
+    BOOST_REQUIRE(op);
+    BOOST_TEST(*op == "send!");
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_with_rejects_cross_vm_tape_ref_with_ad_tag) {
+    NngEnvWithSpawn e;
+    auto ref = types::tape_ref::make(1, 1, 0);
+
+    auto res = e.try_call("spawn-thread-with",
+                          {e.str("dummy.eta"), e.sym("worker-main"), ref});
+    BOOST_REQUIRE(!res.has_value());
+    auto* vm_err = std::get_if<error::VMError>(&res.error());
+    BOOST_REQUIRE(vm_err);
+    BOOST_TEST(vm_err->tag_override == std::string(":ad/cross-vm-ref"));
+    BOOST_REQUIRE_GE(vm_err->fields.size(), static_cast<std::size_t>(2));
+    BOOST_TEST(vm_err->fields[0].key == "op");
+    auto op = std::get_if<std::string>(&vm_err->fields[0].value);
+    BOOST_REQUIRE(op);
+    BOOST_TEST(*op == "spawn-thread-with");
 }
 
 BOOST_AUTO_TEST_CASE(recv_wrong_socket_type) {
@@ -2991,6 +3028,35 @@ BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_socket_nested_vector_rejected) {
 
     expect_spawn_thread_upvalue_serialization_error(
         src, {"spawn-thread: capture is not serializable:", "upvalue[", "NngSocket"});
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_tape_direct_rejected) {
+    const char* src = R"eta(
+(module spawn-thread-upvalue-tape-direct
+  (begin
+    (let ((payload (tape-new)))
+      (spawn-thread
+        (lambda ()
+          payload)))))
+)eta";
+
+    expect_spawn_thread_upvalue_serialization_error(
+        src, {"Tape/TapeRef values cannot cross VM boundaries"});
+}
+
+BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_tape_ref_direct_rejected) {
+    const char* src = R"eta(
+(module spawn-thread-upvalue-tape-ref-direct
+  (begin
+    (let* ((t (tape-new))
+           (payload (tape-var t 1.0)))
+      (spawn-thread
+        (lambda ()
+          payload)))))
+)eta";
+
+    expect_spawn_thread_upvalue_serialization_error(
+        src, {"Tape/TapeRef values cannot cross VM boundaries"});
 }
 
 #if defined(ETA_HAS_TORCH) && !defined(ETA_TORCH_DEBUG_SKIP)

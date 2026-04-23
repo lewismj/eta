@@ -37,6 +37,13 @@
 
     ;; ── Gradient driver ─────────────────────────────────────────────
 
+    ;; Explicit tape context for branch-only primal extraction.
+    (define branch-tape #f)
+    (defun branch-primal (x)
+      (if (and branch-tape (tape-ref? x))
+          (tape-ref-value-of branch-tape x)
+          x))
+
     (defun grad (f vals)
       (let ((tape (tape-new))
             (n    (length vals)))
@@ -45,9 +52,11 @@
                                        (mk (cdr vs)
                                            (cons (tape-var tape (car vs)) acc))))))
                       (mk vals '()))))
+          (set! branch-tape tape)
           (tape-start! tape)
           (let ((output (apply f vars)))
             (tape-stop!)
+            (set! branch-tape #f)
             (tape-backward! tape output)
             (let ((grad-vec (make-vector n 0)))
               (letrec ((collect (lambda (vs i)
@@ -73,7 +82,7 @@
     ;; Maximum absolute error < 7.5 × 10⁻⁸
     ;; All arithmetic is plain +, *, / — the tape records every step.
     (defun norm-cdf (x)
-      (let ((xv (if (tape-ref? x) (tape-ref-value x) x)))
+      (let ((xv (branch-primal x)))
         (if (< xv 0)
             (- 1.0 (norm-cdf (* -1 x)))
             (let ((t (/ 1.0 (+ 1.0 (* 0.2316419 x)))))

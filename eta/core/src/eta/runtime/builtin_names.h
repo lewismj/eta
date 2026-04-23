@@ -83,6 +83,11 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("exp",  1, false);
     r("log",  1, false);
     r("sqrt", 1, false);
+    r("pow",  2, false);
+
+    /// AAD non-differentiability policy controls
+    r("set-aad-nondiff-policy!", 1, false);
+    r("aad-nondiff-policy",      0, false);
 
     /// List operations
     r("length",   1, false);
@@ -217,6 +222,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("tape-new",        0, false);
     r("tape-start!",     1, false);
     r("tape-stop!",      0, false);
+    r("tape-clear!",     1, false);
     r("tape-var",        2, false);
     r("tape-backward!",  2, false);
     r("tape-adjoint",    2, false);
@@ -224,6 +230,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("tape-ref?",       1, false);
     r("tape-ref-index",  1, false);
     r("tape-size",       1, false);
+    r("tape-ref-value-of", 2, false);
     r("tape-ref-value",  1, false);
 
     /// Fact-table builtins (must match core_primitives.h registration order)

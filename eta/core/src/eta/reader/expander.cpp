@@ -53,8 +53,10 @@ namespace eta::reader::expander {
 
             /// Numeric and comparison
             "zero?","positive?","negative?","abs","min","max","modulo","remainder",
-            "sin","cos","tan","asin","acos","atan","exp","log","sqrt",
+            "sin","cos","tan","asin","acos","atan","exp","log","sqrt","pow",
             "+","-","*","/","=","<",">","<=",">=",
+            "set-aad-nondiff-policy!","aad-nondiff-policy",
+            "tape-ref-value-of",
 
             /// Strings/vectors
             "string-length","string-append","number->string","string->number",

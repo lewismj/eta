@@ -44,6 +44,7 @@
 #include <eta/runtime/memory/intern_table.h>
 #include <eta/runtime/nanbox.h>
 #include <eta/runtime/error.h>
+#include <eta/runtime/ad_error.h>
 #include <eta/runtime/factory.h>
 #include <eta/runtime/numeric_value.h>
 #include <eta/runtime/types/types.h>
@@ -87,6 +88,75 @@ inline std::optional<std::string> symbol_to_string(LispVal v, InternTable& inter
     auto sv = intern.get_string(ops::payload(v));
     if (!sv) return std::nullopt;
     return std::string(*sv);
+}
+
+/**
+ * Detect VM-local AD runtime values (Tape / TapeRef) in a transitive value graph.
+ * Returns the first path where a disallowed value is found.
+ */
+inline std::optional<std::string> find_cross_vm_ad_value(
+    LispVal root, const Heap& heap, std::string root_label = "value") {
+    std::unordered_set<ObjectId> visited;
+
+    auto visit = [&](auto&& self, LispVal v, const std::string& path) -> std::optional<std::string> {
+        if (!ops::is_boxed(v)) return std::nullopt;
+
+        if (ops::tag(v) == Tag::TapeRef) {
+            return path + ": tape-ref";
+        }
+        if (ops::tag(v) != Tag::HeapObject) return std::nullopt;
+
+        const ObjectId id = ops::payload(v);
+        if (!visited.insert(id).second) return std::nullopt;
+
+        if (heap.try_get_as<ObjectKind::Tape, runtime::types::Tape>(id)) {
+            return path + ": tape";
+        }
+        if (auto* cons = heap.try_get_as<ObjectKind::Cons, runtime::types::Cons>(id)) {
+            if (auto hit = self(self, cons->car, path + ".car")) return hit;
+            return self(self, cons->cdr, path + ".cdr");
+        }
+        if (auto* vec = heap.try_get_as<ObjectKind::Vector, runtime::types::Vector>(id)) {
+            for (std::size_t i = 0; i < vec->elements.size(); ++i) {
+                if (auto hit = self(self, vec->elements[i], path + "[" + std::to_string(i) + "]")) return hit;
+            }
+            return std::nullopt;
+        }
+        if (auto* ct = heap.try_get_as<ObjectKind::CompoundTerm, runtime::types::CompoundTerm>(id)) {
+            if (auto hit = self(self, ct->functor, path + ".functor")) return hit;
+            for (std::size_t i = 0; i < ct->args.size(); ++i) {
+                if (auto hit = self(self, ct->args[i], path + ".args[" + std::to_string(i) + "]")) return hit;
+            }
+            return std::nullopt;
+        }
+        if (auto* cl = heap.try_get_as<ObjectKind::Closure, runtime::types::Closure>(id)) {
+            for (std::size_t i = 0; i < cl->upvals.size(); ++i) {
+                if (auto hit = self(self, cl->upvals[i], path + ".upvals[" + std::to_string(i) + "]")) return hit;
+            }
+            return std::nullopt;
+        }
+        if (auto* lv = heap.try_get_as<ObjectKind::LogicVar, runtime::types::LogicVar>(id)) {
+            if (lv->binding.has_value()) return self(self, *lv->binding, path + ".binding");
+            return std::nullopt;
+        }
+        if (auto* ft = heap.try_get_as<ObjectKind::FactTable, runtime::types::FactTable>(id)) {
+            for (std::size_t c = 0; c < ft->columns.size(); ++c) {
+                const auto& col = ft->columns[c];
+                for (std::size_t r = 0; r < col.size(); ++r) {
+                    if (auto hit = self(self, col[r], path + ".col[" + std::to_string(c) + "][" + std::to_string(r) + "]")) {
+                        return hit;
+                    }
+                }
+            }
+            for (std::size_t i = 0; i < ft->rule_column.size(); ++i) {
+                if (auto hit = self(self, ft->rule_column[i], path + ".rule[" + std::to_string(i) + "]")) return hit;
+            }
+            return std::nullopt;
+        }
+        return std::nullopt;
+    };
+
+    return visit(visit, root, root_label);
 }
 
 /// Get the protocol name string for display.
@@ -195,6 +265,22 @@ inline std::expected<ProcessManager::SerializedClosure, RuntimeError> build_seri
             RuntimeErrorCode::TypeError,
             std::move(msg)}});
     };
+
+    auto cross_vm_ref_error = [](std::string op, std::string path) -> std::unexpected<RuntimeError> {
+        return std::unexpected(ad::make_error(
+            ad::kTagCrossVmRef,
+            op + ": Tape/TapeRef values cannot cross VM boundaries",
+            {
+                ad::field("op", op),
+                ad::field("path", path)
+            }));
+    };
+
+    for (std::size_t i = 0; i < upvals.size(); ++i) {
+        if (auto hit = find_cross_vm_ad_value(upvals[i], heap, "upvalue[" + std::to_string(i) + "]")) {
+            return cross_vm_ref_error("spawn-thread", *hit);
+        }
+    }
 
     /**
      * Build a pointer->index table once so closure-valued captures can be
@@ -316,6 +402,9 @@ inline std::expected<ProcessManager::SerializedClosure, RuntimeError> build_seri
             }
 
             const auto gv = vm_globals[slot];
+            if (auto hit = find_cross_vm_ad_value(gv, heap, "global[" + std::to_string(slot) + "]")) {
+                return cross_vm_ref_error("spawn-thread", *hit);
+            }
             {
                 std::unordered_set<ObjectId> seen_objs;
                 auto sr = scan_value_for_functions(scan_value_for_functions, gv, seen_objs);
@@ -608,6 +697,16 @@ inline void register_nng_primitives(
                     else if (*flag_sym == "wait")    wait_mode = true;
                     else if (*flag_sym == "text")    use_text  = true;
                 }
+            }
+
+            if (auto hit = find_cross_vm_ad_value(args[1], heap, "send-arg")) {
+                return std::unexpected(ad::make_error(
+                    ad::kTagCrossVmRef,
+                    "send!: Tape/TapeRef values cannot cross VM boundaries",
+                    {
+                        ad::field("op", std::string("send!")),
+                        ad::field("path", *hit)
+                    }));
             }
 
             /// Serialize: binary by default, text when 'text flag given
@@ -1082,6 +1181,15 @@ inline void register_nng_primitives(
             std::vector<std::string> text_args;
             text_args.reserve(args.size() - 2);
             for (std::size_t i = 2; i < args.size(); ++i) {
+                if (auto hit = find_cross_vm_ad_value(args[i], heap, "spawn-thread-with.arg[" + std::to_string(i - 2) + "]")) {
+                    return std::unexpected(ad::make_error(
+                        ad::kTagCrossVmRef,
+                        "spawn-thread-with: Tape/TapeRef values cannot cross VM boundaries",
+                        {
+                            ad::field("op", std::string("spawn-thread-with")),
+                            ad::field("path", *hit)
+                        }));
+                }
                 text_args.push_back(serialize_value(args[i], heap, intern));
             }
 

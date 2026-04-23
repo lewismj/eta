@@ -41,7 +41,7 @@ namespace eta::runtime::nanbox {
         Symbol,
         Nan,
         HeapObject,
-        TapeRef        ///< AD tape node index (payload = index into active Tape)
+        TapeRef        ///< AD reference payload (tape-id, generation, node-index)
     };
 
     constexpr const char* to_string(const Tag tag) {

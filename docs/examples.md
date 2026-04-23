@@ -695,7 +695,7 @@ records and differentiates automatically.  See the full
 ```scheme
 ;; Normal CDF — tape records every arithmetic step automatically
 (defun norm-cdf (x)
-  (let ((xv (if (tape-ref? x) (tape-ref-value x) x)))
+  (let ((xv (branch-primal x)))
     (if (< xv 0)
         (- 1.0 (norm-cdf (* -1 x)))
         (let ((t (/ 1.0 (+ 1.0 (* 0.2316419 x)))))

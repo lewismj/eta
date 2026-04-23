@@ -326,6 +326,16 @@ public:
     void clear_last_unify_cycle_error() noexcept { last_unify_cycle_error_ = false; }
 
     /**
+     * AAD non-differentiability policy used by piecewise taped operations.
+     * Strict mode raises a tagged runtime error at kinks; zero-subgrad emits
+     * deterministic zero subgradients.
+     */
+    enum class AadNondiffPolicy : uint8_t { Strict, ZeroSubgrad };
+
+    [[nodiscard]] AadNondiffPolicy aad_nondiff_policy() const noexcept { return aad_nondiff_policy_; }
+    void set_aad_nondiff_policy(AadNondiffPolicy p) noexcept { aad_nondiff_policy_ = p; }
+
+    /**
      * AD Tape state
      * Return the currently active tape (NaN-boxed HeapObject), or Nil if none.
      */
@@ -387,6 +397,7 @@ private:
 
     OccursCheckMode occurs_check_mode_{OccursCheckMode::Always};
     bool            last_unify_cycle_error_{false};
+    AadNondiffPolicy aad_nondiff_policy_{AadNondiffPolicy::Strict};
 
     /// Current I/O ports
     LispVal current_input_{nanbox::Nil};

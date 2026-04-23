@@ -370,7 +370,7 @@ objects from a prior cycle.
 **I/O:** `display`, `write`, `newline`, `read-char`
 **Ports:** `open-input-string`, `open-output-string`, `get-output-string`, `current-input-port`, `current-output-port`, `current-error-port`, etc.
 **Error:** `error`
-**AD Tape:** `tape-new`, `tape-start!`, `tape-stop!`, `tape-var`, `tape-backward!`, `tape-adjoint`, `tape-primal`, `tape-ref?`, `tape-ref-value`
+**AD Tape:** `tape-new`, `tape-start!`, `tape-stop!`, `tape-clear!`, `tape-var`, `tape-backward!`, `tape-adjoint`, `tape-primal`, `tape-ref?`, `tape-ref-index`, `tape-size`, `tape-ref-value-of`, `tape-ref-value`, `set-aad-nondiff-policy!`, `aad-nondiff-policy`
 **Logic:** `logic-var`, `unify`, `deref-lvar`, `trail-mark`, `unwind-trail`, `logic-var?`, `ground?`
 
 ---

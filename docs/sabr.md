@@ -193,8 +193,8 @@ per entry, zero closure allocations).
 | `sabr-general-vol` | General-K formula with z / x(z) correction |
 | `sabr-xz` | Helper: x(z) = ln[(√(1−2ρz+z²)+z−ρ) / (1−ρ)] |
 | `grad` | One backward pass → all 4 sensitivities |
-| `tape-ref-value` | Extract primal from TapeRef for non-differentiable branches |
-| Tape-aware arithmetic | `+`/`-`/`*`/`/`, `exp`/`log`/`sqrt` — transparent recording |
+| `branch-primal` | Explicit primal extraction helper backed by `tape-ref-value-of` |
+| Tape-aware arithmetic | `+`/`-`/`*`/`/`, `exp`/`log`/`sqrt`/`pow` — transparent recording |
 
 ---
 

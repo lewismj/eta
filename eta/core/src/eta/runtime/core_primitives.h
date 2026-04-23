@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <climits>
 #include <cmath>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "eta/runtime/builtin_env.h"
+#include "eta/runtime/ad_error.h"
 #include "eta/runtime/numeric_value.h"
 #include "eta/runtime/overflow.h"
 #include "eta/runtime/factory.h"
@@ -24,6 +26,7 @@
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/types/logic_var.h"
 #include "eta/runtime/types/tape.h"
+#include "eta/runtime/types/tape_ref.h"
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/clp/constraint_store.h"
 #include "eta/runtime/clp/alldiff_regin.h"
@@ -81,6 +84,127 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return true;
         }
         return false;
+    };
+
+    /**
+     * Allocate compact tape IDs used by TapeRef ownership checks.
+     * 0 is reserved as invalid.
+     */
+    auto allocate_tape_id = []() -> uint32_t {
+        static std::atomic<uint32_t> next_id{1};
+        const uint32_t raw = next_id.fetch_add(1, std::memory_order_relaxed);
+        return static_cast<uint32_t>(((raw - 1u) % types::tape_ref::MAX_TAPE_ID) + 1u);
+    };
+
+    auto make_ad_runtime_error = [](const char* tag, std::string message,
+                                    std::vector<error::VMErrorField> fields = {}) -> RuntimeError {
+        return ad::make_error(tag, std::move(message), std::move(fields));
+    };
+
+    auto validate_ref_for_tape =
+        [make_ad_runtime_error](types::Tape* tape,
+                                 LispVal ref,
+                                 const char* op_name,
+                                 const char* role) -> std::expected<uint32_t, RuntimeError> {
+            const auto parts = types::tape_ref::decode(ref);
+            if (parts.tape_id != tape->tape_id) {
+                return std::unexpected(make_ad_runtime_error(
+                    ad::kTagMixedTape,
+                    std::string(op_name) + ": reference belongs to a different tape",
+                    {
+                        ad::field("op", std::string(op_name)),
+                        ad::field("role", std::string(role)),
+                        ad::field("expected-tape-id", tape->tape_id),
+                        ad::field("actual-tape-id", parts.tape_id),
+                        ad::field("generation", parts.generation),
+                        ad::field("node-index", parts.node_index)
+                    }));
+            }
+            if (parts.generation != tape->generation) {
+                return std::unexpected(make_ad_runtime_error(
+                    ad::kTagStaleRef,
+                    std::string(op_name) + ": stale TapeRef generation",
+                    {
+                        ad::field("op", std::string(op_name)),
+                        ad::field("role", std::string(role)),
+                        ad::field("tape-id", tape->tape_id),
+                        ad::field("expected-gen", tape->generation),
+                        ad::field("actual-gen", parts.generation),
+                        ad::field("node-index", parts.node_index)
+                    }));
+            }
+            if (parts.node_index >= tape->entries.size()) {
+                return std::unexpected(make_ad_runtime_error(
+                    ad::kTagStaleRef,
+                    std::string(op_name) + ": TapeRef index out of range",
+                    {
+                        ad::field("op", std::string(op_name)),
+                        ad::field("role", std::string(role)),
+                        ad::field("tape-id", tape->tape_id),
+                        ad::field("expected-gen", tape->generation),
+                        ad::field("actual-gen", parts.generation),
+                        ad::field("node-index", parts.node_index)
+                    }));
+            }
+            return parts.node_index;
+        };
+
+    auto policy_is_strict = [vm]() -> bool {
+        return vm && vm->aad_nondiff_policy() == vm::VM::AadNondiffPolicy::Strict;
+    };
+
+    auto make_nondiff_error = [make_ad_runtime_error](std::string op, std::string detail) -> RuntimeError {
+        return make_ad_runtime_error(
+            ad::kTagNondiffStrict,
+            op + ": non-differentiable point reached in strict mode",
+            {
+                ad::field("op", std::move(op)),
+                ad::field("detail", std::move(detail))
+            });
+    };
+
+    auto make_domain_error = [make_ad_runtime_error](std::string op, double base, double exponent, std::string detail)
+        -> RuntimeError {
+        return make_ad_runtime_error(
+            ad::kTagDomain,
+            op + ": domain violation",
+            {
+                ad::field("op", std::move(op)),
+                ad::field("base", base),
+                ad::field("exponent", exponent),
+                ad::field("detail", std::move(detail))
+            });
+    };
+
+    auto make_unary_domain_error = [make_ad_runtime_error](std::string op, double value, std::string detail)
+        -> RuntimeError {
+        return make_ad_runtime_error(
+            ad::kTagDomain,
+            op + ": domain violation",
+            {
+                ad::field("op", std::move(op)),
+                ad::field("value", value),
+                ad::field("detail", std::move(detail))
+            });
+    };
+
+    auto get_active_tape_for_op = [&heap, vm, make_ad_runtime_error](const char* op_name)
+        -> std::expected<types::Tape*, RuntimeError> {
+        if (!vm) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError, std::string(op_name) + ": requires a running VM"}});
+        }
+        const LispVal active = vm->active_tape();
+        auto* tape = (ops::is_boxed(active) && ops::tag(active) == Tag::HeapObject)
+            ? heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(active))
+            : nullptr;
+        if (!tape) {
+            return std::unexpected(make_ad_runtime_error(
+                ad::kTagNoActiveTape,
+                std::string(op_name) + ": no active tape",
+                {ad::field("op", std::string(op_name))}));
+        }
+        return tape;
     };
 
     /**
@@ -264,20 +388,56 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
      * Comparison: = < > <= >=
      */
 
-    auto make_comparison = [&heap](const char* name, auto cmp_int, auto cmp_float) {
-        return [&heap, name, cmp_int, cmp_float](Args args) -> std::expected<LispVal, RuntimeError> {
+    auto make_comparison = [&heap, vm, validate_ref_for_tape, get_active_tape_for_op, policy_is_strict, make_nondiff_error]
+        (const char* name, auto cmp_int, auto cmp_float) {
+        return [&heap, vm, validate_ref_for_tape, get_active_tape_for_op, policy_is_strict, make_nondiff_error,
+                name, cmp_int, cmp_float](Args args) -> std::expected<LispVal, RuntimeError> {
             if (args.size() < 2) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, std::string(name) + ": requires at least 2 arguments"}});
             for (size_t i = 0; i + 1 < args.size(); ++i) {
+                const bool a_is_ref = types::tape_ref::is_tape_ref(args[i]);
+                const bool b_is_ref = types::tape_ref::is_tape_ref(args[i + 1]);
+
+                if (a_is_ref || b_is_ref) {
+                    if (policy_is_strict()) {
+                        return std::unexpected(make_nondiff_error(name, "comparison"));
+                    }
+                    auto tape = get_active_tape_for_op(name);
+                    if (!tape) return std::unexpected(tape.error());
+
+                    auto extract_ref = [&](LispVal v, bool is_ref, const char* role)
+                        -> std::expected<double, RuntimeError> {
+                        if (!is_ref) {
+                            auto n = classify_numeric(v, heap);
+                            if (!n.is_valid()) {
+                                return std::unexpected(RuntimeError{VMError{
+                                    RuntimeErrorCode::TypeError, std::string(name) + ": argument is not a number"}});
+                            }
+                            return n.as_double();
+                        }
+                        auto idx = validate_ref_for_tape(*tape, v, name, role);
+                        if (!idx) return std::unexpected(idx.error());
+                        return (*tape)->entries[*idx].primal;
+                    };
+
+                    auto da = extract_ref(args[i], a_is_ref, "lhs");
+                    if (!da) return std::unexpected(da.error());
+                    auto db = extract_ref(args[i + 1], b_is_ref, "rhs");
+                    if (!db) return std::unexpected(db.error());
+                    if (!cmp_float(*da, *db)) return nanbox::False;
+                    continue;
+                }
+
                 auto a = classify_numeric(args[i], heap);
                 auto b = classify_numeric(args[i + 1], heap);
-                if (!a.is_valid() || !b.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, std::string(name) + ": argument is not a number"}});
-                bool result;
-                if (a.is_flonum() || b.is_flonum()) {
-                    result = cmp_float(a.as_double(), b.as_double());
-                } else {
-                    result = cmp_int(a.int_val, b.int_val);
+                if (!a.is_valid() || !b.is_valid()) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::TypeError, std::string(name) + ": argument is not a number"}});
                 }
-                if (!result) return nanbox::False;
+                if (a.is_flonum() || b.is_flonum()) {
+                    if (!cmp_float(a.as_double(), b.as_double())) return nanbox::False;
+                } else {
+                    if (!cmp_int(a.int_val, b.int_val)) return nanbox::False;
+                }
             }
             return nanbox::True;
         };
@@ -460,48 +620,167 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
      * Numeric operations: abs min max modulo remainder
      */
 
-    env.register_builtin("abs", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto n = classify_numeric(args[0], heap);
-        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "abs: argument is not a number"}});
-        if (n.is_flonum()) return make_flonum(std::abs(n.float_val));
-        return make_fixnum(heap, n.int_val < 0 ? -n.int_val : n.int_val);
-    });
-
-    env.register_builtin("min", 2, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto best = classify_numeric(args[0], heap);
-        if (!best.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "min: argument is not a number"}});
-        bool use_float = best.is_flonum();
-        for (size_t i = 1; i < args.size(); ++i) {
-            auto n = classify_numeric(args[i], heap);
-            if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "min: argument is not a number"}});
-            if (n.is_flonum() || use_float) {
-                use_float = true;
-                if (n.as_double() < best.as_double()) best = n;
-            } else {
-                if (n.int_val < best.int_val) best = n;
+    auto resolve_tape_numeric =
+        [&heap, validate_ref_for_tape](types::Tape* tape,
+                                       LispVal value,
+                                       const char* op_name,
+                                       const char* role) -> std::expected<uint32_t, RuntimeError> {
+            if (types::tape_ref::is_tape_ref(value)) {
+                return validate_ref_for_tape(tape, value, op_name, role);
             }
-        }
-        if (use_float) return make_flonum(best.as_double());
-        return make_fixnum(heap, best.int_val);
-    });
-
-    env.register_builtin("max", 2, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto best = classify_numeric(args[0], heap);
-        if (!best.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "max: argument is not a number"}});
-        bool use_float = best.is_flonum();
-        for (size_t i = 1; i < args.size(); ++i) {
-            auto n = classify_numeric(args[i], heap);
-            if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "max: argument is not a number"}});
-            if (n.is_flonum() || use_float) {
-                use_float = true;
-                if (n.as_double() > best.as_double()) best = n;
-            } else {
-                if (n.int_val > best.int_val) best = n;
+            auto n = classify_numeric(value, heap);
+            if (!n.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, std::string(op_name) + ": argument is not a number"}});
             }
+            const uint32_t idx = tape->push_const(n.as_double());
+            if (idx > types::tape_ref::MAX_NODE_INDEX) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    std::string(op_name) + ": tape node index exceeds TapeRef capacity"}});
+            }
+            return idx;
+        };
+
+    auto make_tape_ref_result = [](types::Tape* tape, uint32_t idx, const char* op_name)
+        -> std::expected<LispVal, RuntimeError> {
+        if (idx > types::tape_ref::MAX_NODE_INDEX) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::InternalError,
+                std::string(op_name) + ": tape node index exceeds TapeRef capacity"}});
         }
-        if (use_float) return make_flonum(best.as_double());
-        return make_fixnum(heap, best.int_val);
-    });
+        return types::tape_ref::make(tape->tape_id, tape->generation, idx);
+    };
+
+    env.register_builtin("abs", 1, false,
+        [&heap, vm, policy_is_strict, make_nondiff_error, get_active_tape_for_op,
+         resolve_tape_numeric, make_tape_ref_result](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (vm && types::tape_ref::is_tape_ref(args[0])) {
+                auto tape = get_active_tape_for_op("abs");
+                if (!tape) return std::unexpected(tape.error());
+                auto idx = resolve_tape_numeric(*tape, args[0], "abs", "arg");
+                if (!idx) return std::unexpected(idx.error());
+                const double x = (*tape)->entries[*idx].primal;
+                if (x == 0.0 && policy_is_strict()) {
+                    return std::unexpected(make_nondiff_error("abs", "x == 0"));
+                }
+                const uint32_t out = (*tape)->push({types::TapeOp::Abs, *idx, *idx, std::abs(x), 0.0});
+                return make_tape_ref_result(*tape, out, "abs");
+            }
+            auto n = classify_numeric(args[0], heap);
+            if (!n.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "abs: argument is not a number"}});
+            }
+            if (n.is_flonum()) return make_flonum(std::abs(n.float_val));
+            return make_fixnum(heap, n.int_val < 0 ? -n.int_val : n.int_val);
+        });
+
+    env.register_builtin("min", 2, true,
+        [&heap, vm, has_tape_ref, policy_is_strict, make_nondiff_error,
+         get_active_tape_for_op, resolve_tape_numeric, make_tape_ref_result]
+        (Args args) -> std::expected<LispVal, RuntimeError> {
+            if (vm && has_tape_ref(args)) {
+                auto tape = get_active_tape_for_op("min");
+                if (!tape) return std::unexpected(tape.error());
+                auto best_idx = resolve_tape_numeric(*tape, args[0], "min", "arg[0]");
+                if (!best_idx) return std::unexpected(best_idx.error());
+                for (size_t i = 1; i < args.size(); ++i) {
+                    auto cur_idx = resolve_tape_numeric(
+                        *tape, args[i], "min", ("arg[" + std::to_string(i) + "]").c_str());
+                    if (!cur_idx) return std::unexpected(cur_idx.error());
+                    const double a = (*tape)->entries[*best_idx].primal;
+                    const double b = (*tape)->entries[*cur_idx].primal;
+                    if (a == b && policy_is_strict()) {
+                        return std::unexpected(make_nondiff_error("min", "tie (a == b)"));
+                    }
+                    const uint32_t out = (*tape)->push({
+                        types::TapeOp::Min, *best_idx, *cur_idx, std::min(a, b), 0.0});
+                    if (out > types::tape_ref::MAX_NODE_INDEX) {
+                        return std::unexpected(RuntimeError{VMError{
+                            RuntimeErrorCode::InternalError,
+                            "min: tape node index exceeds TapeRef capacity"}});
+                    }
+                    best_idx = out;
+                }
+                return make_tape_ref_result(*tape, *best_idx, "min");
+            }
+
+            auto best = classify_numeric(args[0], heap);
+            if (!best.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "min: argument is not a number"}});
+            }
+            bool use_float = best.is_flonum();
+            for (size_t i = 1; i < args.size(); ++i) {
+                auto n = classify_numeric(args[i], heap);
+                if (!n.is_valid()) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::TypeError, "min: argument is not a number"}});
+                }
+                if (n.is_flonum() || use_float) {
+                    use_float = true;
+                    if (n.as_double() < best.as_double()) best = n;
+                } else if (n.int_val < best.int_val) {
+                    best = n;
+                }
+            }
+            if (use_float) return make_flonum(best.as_double());
+            return make_fixnum(heap, best.int_val);
+        });
+
+    env.register_builtin("max", 2, true,
+        [&heap, vm, has_tape_ref, policy_is_strict, make_nondiff_error,
+         get_active_tape_for_op, resolve_tape_numeric, make_tape_ref_result]
+        (Args args) -> std::expected<LispVal, RuntimeError> {
+            if (vm && has_tape_ref(args)) {
+                auto tape = get_active_tape_for_op("max");
+                if (!tape) return std::unexpected(tape.error());
+                auto best_idx = resolve_tape_numeric(*tape, args[0], "max", "arg[0]");
+                if (!best_idx) return std::unexpected(best_idx.error());
+                for (size_t i = 1; i < args.size(); ++i) {
+                    auto cur_idx = resolve_tape_numeric(
+                        *tape, args[i], "max", ("arg[" + std::to_string(i) + "]").c_str());
+                    if (!cur_idx) return std::unexpected(cur_idx.error());
+                    const double a = (*tape)->entries[*best_idx].primal;
+                    const double b = (*tape)->entries[*cur_idx].primal;
+                    if (a == b && policy_is_strict()) {
+                        return std::unexpected(make_nondiff_error("max", "tie (a == b)"));
+                    }
+                    const uint32_t out = (*tape)->push({
+                        types::TapeOp::Max, *best_idx, *cur_idx, std::max(a, b), 0.0});
+                    if (out > types::tape_ref::MAX_NODE_INDEX) {
+                        return std::unexpected(RuntimeError{VMError{
+                            RuntimeErrorCode::InternalError,
+                            "max: tape node index exceeds TapeRef capacity"}});
+                    }
+                    best_idx = out;
+                }
+                return make_tape_ref_result(*tape, *best_idx, "max");
+            }
+
+            auto best = classify_numeric(args[0], heap);
+            if (!best.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "max: argument is not a number"}});
+            }
+            bool use_float = best.is_flonum();
+            for (size_t i = 1; i < args.size(); ++i) {
+                auto n = classify_numeric(args[i], heap);
+                if (!n.is_valid()) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::TypeError, "max: argument is not a number"}});
+                }
+                if (n.is_flonum() || use_float) {
+                    use_float = true;
+                    if (n.as_double() > best.as_double()) best = n;
+                } else if (n.int_val > best.int_val) {
+                    best = n;
+                }
+            }
+            if (use_float) return make_flonum(best.as_double());
+            return make_fixnum(heap, best.int_val);
+        });
 
     env.register_builtin("modulo", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto a = classify_numeric(args[0], heap);
@@ -528,109 +807,375 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
      * Transcendental math: sin cos tan asin acos atan atan2 exp log sqrt
      */
 
-    env.register_builtin("sin", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("sin", 1, false, [&heap, vm, validate_ref_for_tape, make_ad_runtime_error](Args args) -> std::expected<LispVal, RuntimeError> {
         /// Tape-aware: record sin on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
-            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
-            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sin: no active tape"}});
-            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
-            double val = std::sin(tape->entries[idx].primal);
-            uint32_t new_idx = tape->push({types::TapeOp::Sin, idx, 0, val, 0.0});
-            return ops::box(Tag::TapeRef, new_idx);
+            const LispVal active = vm->active_tape();
+            auto* tape = (ops::is_boxed(active) && ops::tag(active) == Tag::HeapObject)
+                ? heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(active))
+                : nullptr;
+            if (!tape) {
+                return std::unexpected(make_ad_runtime_error(
+                    ad::kTagNoActiveTape,
+                    "sin: no active tape",
+                    {ad::field("op", std::string("sin"))}));
+            }
+            auto idx = validate_ref_for_tape(tape, args[0], "sin", "arg");
+            if (!idx) return std::unexpected(idx.error());
+            double val = std::sin(tape->entries[*idx].primal);
+            uint32_t new_idx = tape->push({types::TapeOp::Sin, *idx, 0, val, 0.0});
+            if (new_idx > types::tape_ref::MAX_NODE_INDEX) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "sin: tape node index exceeds TapeRef capacity"}});
+            }
+            return types::tape_ref::make(tape->tape_id, tape->generation, new_idx);
         }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sin: argument is not a number"}});
         return make_flonum(std::sin(n.as_double()));
     });
 
-    env.register_builtin("cos", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("cos", 1, false, [&heap, vm, validate_ref_for_tape, make_ad_runtime_error](Args args) -> std::expected<LispVal, RuntimeError> {
         /// Tape-aware: record cos on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
-            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
-            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "cos: no active tape"}});
-            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
-            double val = std::cos(tape->entries[idx].primal);
-            uint32_t new_idx = tape->push({types::TapeOp::Cos, idx, 0, val, 0.0});
-            return ops::box(Tag::TapeRef, new_idx);
+            const LispVal active = vm->active_tape();
+            auto* tape = (ops::is_boxed(active) && ops::tag(active) == Tag::HeapObject)
+                ? heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(active))
+                : nullptr;
+            if (!tape) {
+                return std::unexpected(make_ad_runtime_error(
+                    ad::kTagNoActiveTape,
+                    "cos: no active tape",
+                    {ad::field("op", std::string("cos"))}));
+            }
+            auto idx = validate_ref_for_tape(tape, args[0], "cos", "arg");
+            if (!idx) return std::unexpected(idx.error());
+            double val = std::cos(tape->entries[*idx].primal);
+            uint32_t new_idx = tape->push({types::TapeOp::Cos, *idx, 0, val, 0.0});
+            if (new_idx > types::tape_ref::MAX_NODE_INDEX) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "cos: tape node index exceeds TapeRef capacity"}});
+            }
+            return types::tape_ref::make(tape->tape_id, tape->generation, new_idx);
         }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "cos: argument is not a number"}});
         return make_flonum(std::cos(n.as_double()));
     });
 
-    env.register_builtin("tan", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto n = classify_numeric(args[0], heap);
-        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tan: argument is not a number"}});
-        return make_flonum(std::tan(n.as_double()));
-    });
+    env.register_builtin("tan", 1, false,
+        [&heap, vm, validate_ref_for_tape, make_ad_runtime_error, get_active_tape_for_op](Args args)
+            -> std::expected<LispVal, RuntimeError> {
+            if (vm && types::tape_ref::is_tape_ref(args[0])) {
+                auto tape = get_active_tape_for_op("tan");
+                if (!tape) return std::unexpected(tape.error());
+                auto idx = validate_ref_for_tape(*tape, args[0], "tan", "arg");
+                if (!idx) return std::unexpected(idx.error());
+                const double val = std::tan((*tape)->entries[*idx].primal);
+                const uint32_t out = (*tape)->push({types::TapeOp::Tan, *idx, 0, val, 0.0});
+                if (out > types::tape_ref::MAX_NODE_INDEX) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::InternalError,
+                        "tan: tape node index exceeds TapeRef capacity"}});
+                }
+                return types::tape_ref::make((*tape)->tape_id, (*tape)->generation, out);
+            }
+            auto n = classify_numeric(args[0], heap);
+            if (!n.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "tan: argument is not a number"}});
+            }
+            return make_flonum(std::tan(n.as_double()));
+        });
 
-    env.register_builtin("asin", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto n = classify_numeric(args[0], heap);
-        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "asin: argument is not a number"}});
-        return make_flonum(std::asin(n.as_double()));
-    });
+    env.register_builtin("asin", 1, false,
+        [&heap, vm, validate_ref_for_tape, get_active_tape_for_op, make_unary_domain_error](Args args)
+            -> std::expected<LispVal, RuntimeError> {
+            if (vm && types::tape_ref::is_tape_ref(args[0])) {
+                auto tape = get_active_tape_for_op("asin");
+                if (!tape) return std::unexpected(tape.error());
+                auto idx = validate_ref_for_tape(*tape, args[0], "asin", "arg");
+                if (!idx) return std::unexpected(idx.error());
+                const double x = (*tape)->entries[*idx].primal;
+                if (x < -1.0 || x > 1.0) {
+                    return std::unexpected(make_unary_domain_error("asin", x, "requires -1 <= x <= 1"));
+                }
+                const double val = std::asin(x);
+                const uint32_t out = (*tape)->push({types::TapeOp::Asin, *idx, 0, val, 0.0});
+                if (out > types::tape_ref::MAX_NODE_INDEX) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::InternalError,
+                        "asin: tape node index exceeds TapeRef capacity"}});
+                }
+                return types::tape_ref::make((*tape)->tape_id, (*tape)->generation, out);
+            }
+            auto n = classify_numeric(args[0], heap);
+            if (!n.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "asin: argument is not a number"}});
+            }
+            return make_flonum(std::asin(n.as_double()));
+        });
 
-    env.register_builtin("acos", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto n = classify_numeric(args[0], heap);
-        if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "acos: argument is not a number"}});
-        return make_flonum(std::acos(n.as_double()));
-    });
+    env.register_builtin("acos", 1, false,
+        [&heap, vm, validate_ref_for_tape, get_active_tape_for_op, make_unary_domain_error](Args args)
+            -> std::expected<LispVal, RuntimeError> {
+            if (vm && types::tape_ref::is_tape_ref(args[0])) {
+                auto tape = get_active_tape_for_op("acos");
+                if (!tape) return std::unexpected(tape.error());
+                auto idx = validate_ref_for_tape(*tape, args[0], "acos", "arg");
+                if (!idx) return std::unexpected(idx.error());
+                const double x = (*tape)->entries[*idx].primal;
+                if (x < -1.0 || x > 1.0) {
+                    return std::unexpected(make_unary_domain_error("acos", x, "requires -1 <= x <= 1"));
+                }
+                const double val = std::acos(x);
+                const uint32_t out = (*tape)->push({types::TapeOp::Acos, *idx, 0, val, 0.0});
+                if (out > types::tape_ref::MAX_NODE_INDEX) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::InternalError,
+                        "acos: tape node index exceeds TapeRef capacity"}});
+                }
+                return types::tape_ref::make((*tape)->tape_id, (*tape)->generation, out);
+            }
+            auto n = classify_numeric(args[0], heap);
+            if (!n.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "acos: argument is not a number"}});
+            }
+            return make_flonum(std::acos(n.as_double()));
+        });
 
-    env.register_builtin("atan", 1, true, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        auto a = classify_numeric(args[0], heap);
-        if (!a.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "atan: argument is not a number"}});
-        if (args.size() == 2) {
-            auto b = classify_numeric(args[1], heap);
-            if (!b.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "atan: argument is not a number"}});
-            return make_flonum(std::atan2(a.as_double(), b.as_double()));
-        }
-        return make_flonum(std::atan(a.as_double()));
-    });
+    env.register_builtin("atan", 1, true,
+        [&heap, vm, validate_ref_for_tape, get_active_tape_for_op](Args args)
+            -> std::expected<LispVal, RuntimeError> {
+            if (args.size() == 1 && vm && types::tape_ref::is_tape_ref(args[0])) {
+                auto tape = get_active_tape_for_op("atan");
+                if (!tape) return std::unexpected(tape.error());
+                auto idx = validate_ref_for_tape(*tape, args[0], "atan", "arg");
+                if (!idx) return std::unexpected(idx.error());
+                const double val = std::atan((*tape)->entries[*idx].primal);
+                const uint32_t out = (*tape)->push({types::TapeOp::Atan, *idx, 0, val, 0.0});
+                if (out > types::tape_ref::MAX_NODE_INDEX) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::InternalError,
+                        "atan: tape node index exceeds TapeRef capacity"}});
+                }
+                return types::tape_ref::make((*tape)->tape_id, (*tape)->generation, out);
+            }
+            auto a = classify_numeric(args[0], heap);
+            if (!a.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "atan: argument is not a number"}});
+            }
+            if (args.size() == 2) {
+                auto b = classify_numeric(args[1], heap);
+                if (!b.is_valid()) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::TypeError, "atan: argument is not a number"}});
+                }
+                return make_flonum(std::atan2(a.as_double(), b.as_double()));
+            }
+            return make_flonum(std::atan(a.as_double()));
+        });
 
-    env.register_builtin("exp", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("exp", 1, false, [&heap, vm, validate_ref_for_tape, make_ad_runtime_error](Args args) -> std::expected<LispVal, RuntimeError> {
         /// Tape-aware: record exp on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
-            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
-            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "exp: no active tape"}});
-            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
-            double val = std::exp(tape->entries[idx].primal);
-            uint32_t new_idx = tape->push({types::TapeOp::Exp, idx, 0, val, 0.0});
-            return ops::box(Tag::TapeRef, new_idx);
+            const LispVal active = vm->active_tape();
+            auto* tape = (ops::is_boxed(active) && ops::tag(active) == Tag::HeapObject)
+                ? heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(active))
+                : nullptr;
+            if (!tape) {
+                return std::unexpected(make_ad_runtime_error(
+                    ad::kTagNoActiveTape,
+                    "exp: no active tape",
+                    {ad::field("op", std::string("exp"))}));
+            }
+            auto idx = validate_ref_for_tape(tape, args[0], "exp", "arg");
+            if (!idx) return std::unexpected(idx.error());
+            double val = std::exp(tape->entries[*idx].primal);
+            uint32_t new_idx = tape->push({types::TapeOp::Exp, *idx, 0, val, 0.0});
+            if (new_idx > types::tape_ref::MAX_NODE_INDEX) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "exp: tape node index exceeds TapeRef capacity"}});
+            }
+            return types::tape_ref::make(tape->tape_id, tape->generation, new_idx);
         }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "exp: argument is not a number"}});
         return make_flonum(std::exp(n.as_double()));
     });
 
-    env.register_builtin("log", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("log", 1, false,
+        [&heap, vm, validate_ref_for_tape, make_ad_runtime_error, make_unary_domain_error](Args args)
+            -> std::expected<LispVal, RuntimeError> {
         /// Tape-aware: record log on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
-            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
-            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "log: no active tape"}});
-            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
-            double val = std::log(tape->entries[idx].primal);
-            uint32_t new_idx = tape->push({types::TapeOp::Log, idx, 0, val, 0.0});
-            return ops::box(Tag::TapeRef, new_idx);
+            const LispVal active = vm->active_tape();
+            auto* tape = (ops::is_boxed(active) && ops::tag(active) == Tag::HeapObject)
+                ? heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(active))
+                : nullptr;
+            if (!tape) {
+                return std::unexpected(make_ad_runtime_error(
+                    ad::kTagNoActiveTape,
+                    "log: no active tape",
+                    {ad::field("op", std::string("log"))}));
+            }
+            auto idx = validate_ref_for_tape(tape, args[0], "log", "arg");
+            if (!idx) return std::unexpected(idx.error());
+            const double x = tape->entries[*idx].primal;
+            if (x <= 0.0) {
+                return std::unexpected(make_unary_domain_error("log", x, "requires x > 0"));
+            }
+            double val = std::log(x);
+            uint32_t new_idx = tape->push({types::TapeOp::Log, *idx, 0, val, 0.0});
+            if (new_idx > types::tape_ref::MAX_NODE_INDEX) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "log: tape node index exceeds TapeRef capacity"}});
+            }
+            return types::tape_ref::make(tape->tape_id, tape->generation, new_idx);
         }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "log: argument is not a number"}});
         return make_flonum(std::log(n.as_double()));
     });
 
-    env.register_builtin("sqrt", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+    env.register_builtin("sqrt", 1, false,
+        [&heap, vm, validate_ref_for_tape, make_ad_runtime_error, make_unary_domain_error](Args args)
+            -> std::expected<LispVal, RuntimeError> {
         /// Tape-aware: record sqrt on active tape
         if (vm && ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) {
-            auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
-            if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sqrt: no active tape"}});
-            auto idx = static_cast<uint32_t>(ops::payload(args[0]));
-            double val = std::sqrt(tape->entries[idx].primal);
-            uint32_t new_idx = tape->push({types::TapeOp::Sqrt, idx, 0, val, 0.0});
-            return ops::box(Tag::TapeRef, new_idx);
+            const LispVal active = vm->active_tape();
+            auto* tape = (ops::is_boxed(active) && ops::tag(active) == Tag::HeapObject)
+                ? heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(active))
+                : nullptr;
+            if (!tape) {
+                return std::unexpected(make_ad_runtime_error(
+                    ad::kTagNoActiveTape,
+                    "sqrt: no active tape",
+                    {ad::field("op", std::string("sqrt"))}));
+            }
+            auto idx = validate_ref_for_tape(tape, args[0], "sqrt", "arg");
+            if (!idx) return std::unexpected(idx.error());
+            const double x = tape->entries[*idx].primal;
+            if (x < 0.0) {
+                return std::unexpected(make_unary_domain_error("sqrt", x, "requires x >= 0"));
+            }
+            double val = std::sqrt(x);
+            uint32_t new_idx = tape->push({types::TapeOp::Sqrt, *idx, 0, val, 0.0});
+            if (new_idx > types::tape_ref::MAX_NODE_INDEX) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "sqrt: tape node index exceeds TapeRef capacity"}});
+            }
+            return types::tape_ref::make(tape->tape_id, tape->generation, new_idx);
         }
         auto n = classify_numeric(args[0], heap);
         if (!n.is_valid()) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "sqrt: argument is not a number"}});
         return make_flonum(std::sqrt(n.as_double()));
     });
+
+    env.register_builtin("pow", 2, false,
+        [&heap, vm, resolve_tape_numeric, get_active_tape_for_op, policy_is_strict,
+         make_domain_error, make_tape_ref_result](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto lhs_is_ref = types::tape_ref::is_tape_ref(args[0]);
+            auto rhs_is_ref = types::tape_ref::is_tape_ref(args[1]);
+
+            if (vm && (lhs_is_ref || rhs_is_ref)) {
+                auto tape = get_active_tape_for_op("pow");
+                if (!tape) return std::unexpected(tape.error());
+
+                auto lhs_idx = resolve_tape_numeric(*tape, args[0], "pow", "base");
+                if (!lhs_idx) return std::unexpected(lhs_idx.error());
+                auto rhs_idx = resolve_tape_numeric(*tape, args[1], "pow", "exponent");
+                if (!rhs_idx) return std::unexpected(rhs_idx.error());
+
+                const double base = (*tape)->entries[*lhs_idx].primal;
+                const double exponent = (*tape)->entries[*rhs_idx].primal;
+                const bool exponent_is_integer = std::isfinite(exponent) && std::floor(exponent) == exponent;
+
+                if (base < 0.0 && !exponent_is_integer) {
+                    return std::unexpected(make_domain_error(
+                        "pow", base, exponent, "negative base requires an integer exponent"));
+                }
+                if (base == 0.0 && exponent < 0.0) {
+                    return std::unexpected(make_domain_error(
+                        "pow", base, exponent, "0 raised to a negative exponent is undefined"));
+                }
+                if (policy_is_strict()) {
+                    if (base == 0.0 && exponent == 0.0) {
+                        return std::unexpected(make_domain_error(
+                            "pow", base, exponent, "strict mode rejects derivative at pow(0, 0)"));
+                    }
+                    if (base == 0.0 && exponent > 0.0 && exponent < 1.0) {
+                        return std::unexpected(make_domain_error(
+                            "pow", base, exponent, "strict mode rejects singular derivative at base=0"));
+                    }
+                }
+
+                double primal = 0.0;
+                if (base == 0.0 && exponent == 0.0) {
+                    primal = 1.0;
+                } else {
+                    primal = std::pow(base, exponent);
+                }
+
+                const uint32_t out = (*tape)->push({
+                    types::TapeOp::Pow, *lhs_idx, *rhs_idx, primal, 0.0});
+                return make_tape_ref_result(*tape, out, "pow");
+            }
+
+            auto a = classify_numeric(args[0], heap);
+            auto b = classify_numeric(args[1], heap);
+            if (!a.is_valid() || !b.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "pow: arguments must be numbers"}});
+            }
+            return make_flonum(std::pow(a.as_double(), b.as_double()));
+        });
+
+    env.register_builtin("set-aad-nondiff-policy!", 1, false,
+        [vm, &intern_table](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "set-aad-nondiff-policy!: requires a running VM"}});
+            }
+            auto name = get_symbol_name(args[0], intern_table);
+            if (!name) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "set-aad-nondiff-policy!: argument must be a symbol ('strict or 'zero-subgrad)"}});
+            }
+            if (*name == "strict") {
+                vm->set_aad_nondiff_policy(vm::VM::AadNondiffPolicy::Strict);
+                return True;
+            }
+            if (*name == "zero-subgrad") {
+                vm->set_aad_nondiff_policy(vm::VM::AadNondiffPolicy::ZeroSubgrad);
+                return True;
+            }
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError,
+                "set-aad-nondiff-policy!: expected 'strict or 'zero-subgrad"}});
+        });
+
+    env.register_builtin("aad-nondiff-policy", 0, false,
+        [vm, &intern_table](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "aad-nondiff-policy: requires a running VM"}});
+            }
+            const char* name =
+                (vm->aad_nondiff_policy() == vm::VM::AadNondiffPolicy::Strict)
+                ? "strict"
+                : "zero-subgrad";
+            return make_symbol(intern_table, name);
+        });
 
     /**
      * List operations: length append reverse list-ref
@@ -4052,121 +4597,180 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
      * automatically recorded when a TapeRef operand is detected.
      */
 
-    env.register_builtin("tape-new", 0, false, [&heap](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
-        return make_tape(heap);
+    auto get_tape_arg = [&heap](LispVal v, const char* who, const char* role) -> std::expected<types::Tape*, RuntimeError> {
+        if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError, std::string(who) + ": " + role + " must be a tape"}});
+        }
+        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(v));
+        if (!tape) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError, std::string(who) + ": " + role + " must be a tape"}});
+        }
+        return tape;
+    };
+
+    auto ensure_tape_identity = [allocate_tape_id](types::Tape& tape) {
+        if (tape.tape_id == 0) tape.tape_id = allocate_tape_id();
+        tape.generation = types::tape_ref::normalize_generation(tape.generation);
+    };
+
+    env.register_builtin("tape-new", 0, false, [&heap, ensure_tape_identity](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
+        auto tv = make_tape(heap);
+        if (!tv) return std::unexpected(tv.error());
+        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(*tv));
+        if (!tape) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::InternalError, "tape-new: failed to allocate tape object"}});
+        }
+        ensure_tape_identity(*tape);
+        return *tv;
     });
 
-    env.register_builtin("tape-start!", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: requires a running VM"}});
-        /// Verify argument is a tape
-        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: argument must be a tape"}});
-        if (!heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0])))
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-start!: argument must be a tape"}});
+    env.register_builtin("tape-start!", 1, false, [get_tape_arg, ensure_tape_identity, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!vm) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError, "tape-start!: requires a running VM"}});
+        }
+        auto tape = get_tape_arg(args[0], "tape-start!", "argument");
+        if (!tape) return std::unexpected(tape.error());
+        ensure_tape_identity(**tape);
         vm->push_active_tape(args[0]);
         return True;
     });
 
     env.register_builtin("tape-stop!", 0, false, [vm](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
-        if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-stop!: requires a running VM"}});
+        if (!vm) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError, "tape-stop!: requires a running VM"}});
+        }
         vm->pop_active_tape();
         return True;
     });
 
-    env.register_builtin("tape-var", 2, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: requires a running VM"}});
-        /// args[0] = tape, args[1] = numeric value
-        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: first argument must be a tape"}});
-        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
-        if (!tape)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: first argument must be a tape"}});
-        auto n = classify_numeric(args[1], heap);
-        if (!n.is_valid())
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-var: second argument must be a number"}});
-        uint32_t idx = tape->push_var(n.as_double());
-        return ops::box(Tag::TapeRef, idx);
-    });
-
-    env.register_builtin("tape-backward!", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        /// args[0] = tape, args[1] = tape-ref (output node)
-        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-backward!: first argument must be a tape"}});
-        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
-        if (!tape)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-backward!: first argument must be a tape"}});
-        if (!ops::is_boxed(args[1]) || ops::tag(args[1]) != Tag::TapeRef)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-backward!: second argument must be a tape-ref"}});
-        auto output_idx = static_cast<uint32_t>(ops::payload(args[1]));
-        tape->backward(output_idx);
+    env.register_builtin("tape-clear!", 1, false, [get_tape_arg](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto tape = get_tape_arg(args[0], "tape-clear!", "argument");
+        if (!tape) return std::unexpected(tape.error());
+        (*tape)->clear_and_bump_generation();
         return True;
     });
 
-    env.register_builtin("tape-adjoint", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        /// args[0] = tape, args[1] = tape-ref
-        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-adjoint: first argument must be a tape"}});
-        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
-        if (!tape)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-adjoint: first argument must be a tape"}});
-        if (!ops::is_boxed(args[1]) || ops::tag(args[1]) != Tag::TapeRef)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-adjoint: second argument must be a tape-ref"}});
-        auto idx = static_cast<uint32_t>(ops::payload(args[1]));
-        if (idx >= tape->entries.size())
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-adjoint: index out of range"}});
-        return make_flonum(tape->entries[idx].adjoint);
-    });
+    env.register_builtin("tape-var", 2, false,
+        [&heap, get_tape_arg, ensure_tape_identity](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto tape = get_tape_arg(args[0], "tape-var", "first argument");
+            if (!tape) return std::unexpected(tape.error());
+            ensure_tape_identity(**tape);
+            auto n = classify_numeric(args[1], heap);
+            if (!n.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "tape-var: second argument must be a number"}});
+            }
+            uint32_t idx = (*tape)->push_var(n.as_double());
+            if (idx > types::tape_ref::MAX_NODE_INDEX) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "tape-var: tape node index exceeds TapeRef capacity"}});
+            }
+            return types::tape_ref::make((*tape)->tape_id, (*tape)->generation, idx);
+        });
 
-    env.register_builtin("tape-primal", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        /// args[0] = tape, args[1] = tape-ref
-        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-primal: first argument must be a tape"}});
-        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
-        if (!tape)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-primal: first argument must be a tape"}});
-        if (!ops::is_boxed(args[1]) || ops::tag(args[1]) != Tag::TapeRef)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-primal: second argument must be a tape-ref"}});
-        auto idx = static_cast<uint32_t>(ops::payload(args[1]));
-        if (idx >= tape->entries.size())
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-primal: index out of range"}});
-        return make_flonum(tape->entries[idx].primal);
-    });
+    env.register_builtin("tape-backward!", 2, false,
+        [get_tape_arg, validate_ref_for_tape](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto tape = get_tape_arg(args[0], "tape-backward!", "first argument");
+            if (!tape) return std::unexpected(tape.error());
+            if (!types::tape_ref::is_tape_ref(args[1])) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "tape-backward!: second argument must be a tape-ref"}});
+            }
+            auto output_idx = validate_ref_for_tape(*tape, args[1], "tape-backward!", "output-ref");
+            if (!output_idx) return std::unexpected(output_idx.error());
+            (*tape)->backward(*output_idx);
+            return True;
+        });
+
+    env.register_builtin("tape-adjoint", 2, false,
+        [get_tape_arg, validate_ref_for_tape](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto tape = get_tape_arg(args[0], "tape-adjoint", "first argument");
+            if (!tape) return std::unexpected(tape.error());
+            if (!types::tape_ref::is_tape_ref(args[1])) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "tape-adjoint: second argument must be a tape-ref"}});
+            }
+            auto idx = validate_ref_for_tape(*tape, args[1], "tape-adjoint", "ref");
+            if (!idx) return std::unexpected(idx.error());
+            return make_flonum((*tape)->entries[*idx].adjoint);
+        });
+
+    env.register_builtin("tape-primal", 2, false,
+        [get_tape_arg, validate_ref_for_tape](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto tape = get_tape_arg(args[0], "tape-primal", "first argument");
+            if (!tape) return std::unexpected(tape.error());
+            if (!types::tape_ref::is_tape_ref(args[1])) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "tape-primal: second argument must be a tape-ref"}});
+            }
+            auto idx = validate_ref_for_tape(*tape, args[1], "tape-primal", "ref");
+            if (!idx) return std::unexpected(idx.error());
+            return make_flonum((*tape)->entries[*idx].primal);
+        });
 
     env.register_builtin("tape-ref?", 1, false, [](Args args) -> std::expected<LispVal, RuntimeError> {
-        return (ops::is_boxed(args[0]) && ops::tag(args[0]) == Tag::TapeRef) ? True : False;
+        return types::tape_ref::is_tape_ref(args[0]) ? True : False;
     });
 
     env.register_builtin("tape-ref-index", 1, false, [](Args args) -> std::expected<LispVal, RuntimeError> {
-        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::TapeRef)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-index: argument must be a tape-ref"}});
-        return ops::encode(static_cast<int64_t>(ops::payload(args[0])));
+        if (!types::tape_ref::is_tape_ref(args[0])) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError, "tape-ref-index: argument must be a tape-ref"}});
+        }
+        const auto parts = types::tape_ref::decode(args[0]);
+        return ops::encode(static_cast<int64_t>(parts.node_index));
     });
 
-    env.register_builtin("tape-size", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
-        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-size: argument must be a tape"}});
-        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(args[0]));
-        if (!tape)
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-size: argument must be a tape"}});
-        return ops::encode(static_cast<int64_t>(tape->entries.size()));
+    env.register_builtin("tape-size", 1, false, [get_tape_arg](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto tape = get_tape_arg(args[0], "tape-size", "argument");
+        if (!tape) return std::unexpected(tape.error());
+        return ops::encode(static_cast<int64_t>((*tape)->entries.size()));
     });
+
+    env.register_builtin("tape-ref-value-of", 2, false,
+        [get_tape_arg, validate_ref_for_tape](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto tape = get_tape_arg(args[0], "tape-ref-value-of", "first argument");
+            if (!tape) return std::unexpected(tape.error());
+            if (!types::tape_ref::is_tape_ref(args[1])) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "tape-ref-value-of: second argument must be a tape-ref"}});
+            }
+            auto idx = validate_ref_for_tape(*tape, args[1], "tape-ref-value-of", "ref");
+            if (!idx) return std::unexpected(idx.error());
+            return make_flonum((*tape)->entries[*idx].primal);
+        });
 
     /**
-     * tape-ref-value: extract the forward (primal) value of a TapeRef from the
-     * active tape.  Returns the value as-is if it is not a TapeRef.  This is
-     * needed for non-differentiable comparisons (e.g. branch conditions).
+     * tape-ref-value: extract the primal value of a TapeRef from the
+     * current active tape. Non-TapeRef inputs remain pass-through.
      */
-    env.register_builtin("tape-ref-value", 1, false, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
-        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::TapeRef)
-            return args[0];  ///< pass-through for non-TapeRef
-        if (!vm) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-value: requires a running VM"}});
-        auto* tape = heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(vm->active_tape()));
-        if (!tape) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-value: no active tape"}});
-        auto idx = static_cast<uint32_t>(ops::payload(args[0]));
-        if (idx >= tape->entries.size())
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "tape-ref-value: index out of range"}});
-        return make_flonum(tape->entries[idx].primal);
-    });
+    env.register_builtin("tape-ref-value", 1, false,
+        [&heap, vm, validate_ref_for_tape, make_ad_runtime_error](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!types::tape_ref::is_tape_ref(args[0])) return args[0];
+            if (!vm) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, "tape-ref-value: requires a running VM"}});
+            }
+            auto active = vm->active_tape();
+            auto* tape = (ops::is_boxed(active) && ops::tag(active) == Tag::HeapObject)
+                ? heap.try_get_as<ObjectKind::Tape, types::Tape>(ops::payload(active))
+                : nullptr;
+            if (!tape) {
+                return std::unexpected(make_ad_runtime_error(
+                    ad::kTagNoActiveTape,
+                    "tape-ref-value: no active tape",
+                    {ad::field("op", std::string("tape-ref-value"))}));
+            }
+            auto idx = validate_ref_for_tape(tape, args[0], "tape-ref-value", "ref");
+            if (!idx) return std::unexpected(idx.error());
+            return make_flonum(tape->entries[*idx].primal);
+        });
 
     /// Fact-table builtins
 

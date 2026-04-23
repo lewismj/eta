@@ -251,9 +251,12 @@ nng message frame.
 **Serializable types:** `#f`, `#t`, `'()`, fixnums, flonums, characters,
 strings, symbols, pairs, lists, vectors, and bytevectors.
 
-**Non-serializable types:** Closures, continuations, ports, and tensors.
-Attempting to send these raises `'nng-error` with message
-`"cannot send non-serializable value"`.
+**Non-serializable types:** Closures, continuations, ports, tensors, `Tape`,
+and `TapeRef`.
+
+`Tape` and `TapeRef` are VM-local AAD values. Sending them raises
+`:ad/cross-vm-ref` so callers can catch and handle the AD boundary violation.
+Other non-serializable values raise the standard nng serialization error.
 
 ```scheme
 (send! sock 42)                     ; send a fixnum

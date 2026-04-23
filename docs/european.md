@@ -70,13 +70,16 @@ transparently when the argument is a TapeRef.
 
 ```scheme
 (defun norm-cdf (x)
-  (let ((xv (if (tape-ref? x) (tape-ref-value x) x)))
+  (let ((xv (branch-primal x)))
     (if (< xv 0)
         (- 1.0 (norm-cdf (* -1 x)))
         (let ((t (/ 1.0 (+ 1.0 (* 0.2316419 x)))))
           (- 1.0 (* (* inv-sqrt-2pi (exp (* -0.5 (* x x))))
                      (* t (+ 0.319381530 ...))))))))
 ```
+
+`branch-primal` is an explicit helper that reads tape values via
+`tape-ref-value-of` using the current gradient tape context.
 
 > [!TIP]
 > Because the polynomial approximation is computed with standard

@@ -1,0 +1,69 @@
+;;; stdlib/tests/aad.test.eta - Unit tests for std.aad
+
+(module aad.tests
+  (import std.test std.aad)
+  (begin
+
+    (define suite
+      (make-group "std.aad"
+        (list
+          (make-group "piecewise"
+            (list
+              (make-test "ad-abs plain"
+                (lambda () (assert-equal 3.0 (ad-abs -3.0))))
+              (make-test "ad-max plain"
+                (lambda () (assert-equal 7.0 (ad-max 2.0 7.0))))
+              (make-test "ad-min plain"
+                (lambda () (assert-equal 2.0 (ad-min 2.0 7.0))))
+              (make-test "ad-relu plain"
+                (lambda () (assert-equal 0.0 (ad-relu -2.0))))
+              (make-test "ad-clamp plain"
+                (lambda () (assert-equal 1.0 (ad-clamp 5.0 -1.0 1.0))))))
+
+          (make-group "smooth"
+            (list
+              (make-test "softplus positive"
+                (lambda () (assert-true (> (softplus 1.0 5.0) 1.0))))
+              (make-test "smooth-abs near zero"
+                (lambda () (assert-approx-equal 0.1 (smooth-abs 0.0 0.1) 1e-9)))
+              (make-test "smooth-clamp bounded"
+                (lambda ()
+                  (let ((y (smooth-clamp 10.0 -1.0 1.0 8.0)))
+                    (assert-true (and (<= y 1.1) (>= y -1.1))))))))
+
+          (make-group "grad-driver"
+            (list
+              (make-test "grad returns expected derivative"
+                (lambda ()
+                  (let ((r (grad (lambda (x) (pow x 3.0)) '(2.0))))
+                    (assert-approx-equal 12.0 (vector-ref (car (cdr r)) 0) 1e-6))))
+              (make-test "relu kink zero-subgrad policy"
+                (lambda ()
+                  (set-aad-nondiff-policy! 'zero-subgrad)
+                  (let ((r (grad (lambda (x) (ad-relu x)) '(0.0))))
+                    (set-aad-nondiff-policy! 'strict)
+                    (assert-approx-equal 0.0 (vector-ref (car (cdr r)) 0) 1e-12))))))
+
+          (make-group "grad-check"
+            (list
+              (make-test "check-grad cubic"
+                (lambda ()
+                  (assert-true (check-grad (lambda (x) (pow x 3.0)) '(2.0)))))
+              (make-test "check-grad multivariate"
+                (lambda ()
+                  (assert-true
+                    (check-grad (lambda (x y) (+ (* x y) (sin x))) '(2.0 3.0)))))
+              (make-test "check-grad-report shape"
+                (lambda ()
+                  (let ((r (check-grad-report (lambda (x) (+ (* x x) 1.0)) '(1.5))))
+                    (assert-true (and (= (vector-length r) 7)
+                                      (vector-ref r 0)
+                                      (<= (vector-ref r 1) 1e-4))))))))
+
+          (make-group "checkpoint"
+            (list
+              (make-test "with-checkpoint executes thunk"
+                (lambda ()
+                  (assert-equal 42 (with-checkpoint (lambda () 42)))))))))
+
+    (print-tap (run suite)))))

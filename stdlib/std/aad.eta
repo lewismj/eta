@@ -1,0 +1,151 @@
+;;; std/aad.eta - Helpers for tape-based reverse-mode AD.
+;;;
+;;; This module provides:
+;;; - Gradient driver utilities (`grad`)
+;;; - AD-safe piecewise helpers (`ad-abs`, `ad-max`, `ad-min`, `ad-relu`, `ad-clamp`)
+;;; - Smooth alternatives (`softplus`, `smooth-abs`, `smooth-clamp`)
+;;; - Finite-difference gradient checks (`check-grad`, `check-grad-report`)
+;;; - Checkpoint surface API (`with-checkpoint`)
+
+(module std.aad
+  (import std.core)
+  (export
+    grad
+    ad-abs ad-max ad-min ad-relu ad-clamp
+    softplus smooth-abs smooth-clamp
+    check-grad check-grad-report
+    with-checkpoint)
+  (begin
+
+    (define fd-eps 2.220446049250313e-16)
+    (define default-rtol 1e-5)
+    (define default-atol 1e-7)
+    (define default-step-scale 1.0)
+
+    ;; Compute (value, grad-vector) for scalar f at point vals.
+    (defun grad (f vals)
+      (let ((tape (tape-new))
+            (n (length vals)))
+        (let ((vars (letrec ((mk (lambda (vs acc)
+                                   (if (null? vs)
+                                       (reverse acc)
+                                       (mk (cdr vs)
+                                           (cons (tape-var tape (car vs)) acc))))))
+                      (mk vals '()))))
+          (tape-start! tape)
+          (let ((out (apply f vars)))
+            (tape-stop!)
+            (tape-backward! tape out)
+            (let ((g (make-vector n 0.0)))
+              (letrec ((fill (lambda (vs i)
+                               (if (null? vs)
+                                   g
+                                   (begin
+                                     (vector-set! g i (tape-adjoint tape (car vs)))
+                                     (fill (cdr vs) (+ i 1)))))))
+                (fill vars 0))
+              (list (tape-primal tape out) g))))))
+
+    ;; Piecewise helpers use runtime policy controls for kink behavior.
+    (defun ad-abs (x) (abs x))
+    (defun ad-max (a b . rest)
+      (if (null? rest)
+          (max a b)
+          (apply max (cons a (cons b rest)))))
+    (defun ad-min (a b . rest)
+      (if (null? rest)
+          (min a b)
+          (apply min (cons a (cons b rest)))))
+    (defun ad-relu (x) (ad-max 0.0 x))
+    (defun ad-clamp (x lo hi) (ad-min hi (ad-max lo x)))
+
+    ;; Smooth helpers avoid exact branch points and keep epsilon explicit.
+    (defun softplus (x beta)
+      (if (<= beta 0.0)
+          (error "softplus: beta must be > 0")
+          (/ (log (+ 1.0 (exp (* beta x)))) beta)))
+
+    (defun smooth-abs (x epsilon)
+      (if (<= epsilon 0.0)
+          (error "smooth-abs: epsilon must be > 0")
+          (sqrt (+ (* x x) (* epsilon epsilon)))))
+
+    ;; Smooth max/min via softplus:
+    ;; max(a,b) ~ b + softplus(a-b, beta)
+    ;; min(a,b) ~ a - softplus(a-b, beta)
+    (defun __smooth-max (a b beta)
+      (+ b (softplus (- a b) beta)))
+    (defun __smooth-min (a b beta)
+      (- a (softplus (- a b) beta)))
+
+    (defun smooth-clamp (x lo hi beta)
+      (__smooth-min hi (__smooth-max x lo beta) beta))
+
+    (defun __replace-at (xs idx value)
+      (letrec ((go (lambda (ys i)
+                     (if (null? ys)
+                         '()
+                         (if (= i idx)
+                             (cons value (cdr ys))
+                             (cons (car ys) (go (cdr ys) (+ i 1))))))))
+        (go xs 0)))
+
+    (defun __step-size (x step-scale)
+      (* step-scale (sqrt fd-eps) (max 1.0 (abs x))))
+
+    (defun __fd-component (f vals i step-scale)
+      (let ((x0 (list-ref vals i)))
+        (let ((h (__step-size x0 step-scale)))
+          (let ((x+ (__replace-at vals i (+ x0 h)))
+                (x- (__replace-at vals i (- x0 h))))
+            (/ (- (apply f x+) (apply f x-))
+               (* 2.0 h))))))
+
+    (defun __fd-grad (f vals step-scale)
+      (let ((n (length vals))
+            (out (make-vector (length vals) 0.0)))
+        (letrec ((loop (lambda (i)
+                         (if (= i n)
+                             out
+                             (begin
+                               (vector-set! out i (__fd-component f vals i step-scale))
+                               (loop (+ i 1)))))))
+          (loop 0))))
+
+    (defun __opt (opts idx default)
+      (if (< idx (length opts))
+          (list-ref opts idx)
+          default))
+
+    ;; Returns a vector:
+    ;;   [ok, max-error, aad-grad, fd-grad, rtol, atol, step-scale]
+    (defun check-grad-report (f vals . opts)
+      (let ((rtol (__opt opts 0 default-rtol))
+            (atol (__opt opts 1 default-atol))
+            (step-scale (__opt opts 2 default-step-scale)))
+        (let ((aad (grad f vals))
+              (fd (__fd-grad f vals step-scale)))
+          (let ((aad-grad (cadr aad))
+                (n (vector-length fd)))
+            (letrec ((scan (lambda (i ok max-err)
+                             (if (= i n)
+                                 (vector ok max-err aad-grad fd rtol atol step-scale)
+                                 (let ((a (vector-ref aad-grad i))
+                                       (d (vector-ref fd i)))
+                                   (let ((err (abs (- a d)))
+                                         (tol (+ atol (* rtol (abs a)))))
+                                     (scan (+ i 1)
+                                           (and ok (<= err tol))
+                                           (max max-err err))))))))
+              (scan 0 #t 0.0))))))
+
+    (defun check-grad (f vals . opts)
+      (vector-ref (apply check-grad-report (cons f (cons vals opts))) 0))
+
+    ;; MVP checkpoint API.
+    ;; Current behavior evaluates thunk directly.
+    (defun with-checkpoint (thunk)
+      (thunk))
+
+  ))
+
