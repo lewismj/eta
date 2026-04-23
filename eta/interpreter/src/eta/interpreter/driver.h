@@ -1081,6 +1081,11 @@ private:
             if (execute) {
                 auto exec_res = vm_.execute(*init_func);
                 if (!exec_res) {
+                    /// Rollback: remove the forms we just added so future
+                    /// REPL inputs are not poisoned by the broken module.
+                    for (std::size_t i = 0; i < new_expanded.size(); ++i) {
+                        accumulated_forms_.pop_back();
+                    }
                     emit_runtime_error(exec_res.error());
                     return false;
                 }
@@ -1093,6 +1098,10 @@ private:
                     if (main_val != runtime::nanbox::Nil) {
                         auto main_res = vm_.call_value(main_val, {});
                         if (!main_res) {
+                            /// Rollback for failed main invocation too.
+                            for (std::size_t i = 0; i < new_expanded.size(); ++i) {
+                                accumulated_forms_.pop_back();
+                            }
                             emit_runtime_error(main_res.error());
                             return false;
                         }
