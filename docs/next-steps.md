@@ -125,6 +125,9 @@ advertised capability set is conservative.  The table below mirrors the
 | `restartRequest` | ✅ | Restart reuses cached launch arguments |
 | `breakpointLocations` | ✅ | Source-map-backed valid-line reporting |
 | `disassemble` (standard) | ✅ | Structured instruction responses for DAP `disassemble` |
+| `cancelRequest` | ✅ | `cancel` request accepted; heap snapshot cancellation returns error 2020 |
+| `steppingGranularity` | ✅ | `next`/`stepIn` support instruction-granularity stepping |
+| `terminateThreadsRequest` | ✅ | Best-effort actor-thread termination via mailbox close + detach |
 | `stepBack` | ❌ | Out of scope without time-travel |
 
 **Concrete work items:**
@@ -135,14 +138,20 @@ advertised capability set is conservative.  The table below mirrors the
   verification updates.
 - **`setVariable`.** Implemented for paused locals and globals.
 - **`breakpointLocations`.** Implemented via source-map line discovery.
-- **Restart.** Implemented with cached launch arguments; remaining work is
-  hard cancellation for long-running/infinite programs.
-- **Per-thread state for `spawn-thread` actors.** `threads` currently
-  reports the main VM thread only; expose in-process thread actors as
-  separate DAP threads so each can be paused / inspected
-  independently.
-- **Test coverage.** Expand existing protocol coverage with an async
-  harness for paused-VM interaction scenarios.
+- **Restart + cancel.** Restart is implemented with cached launch arguments,
+  and `cancel` is implemented for request-cancellation plumbing (including
+  heap snapshot cancellation responses).
+- **Stepping granularity.** Instruction-level stepping is implemented for
+  `next` and `stepIn` via DAP `granularity: "instruction"`.
+- **TerminateThreads.** Implemented as best-effort actor-thread termination.
+- **Per-thread state for `spawn-thread` actors.** `threads` now lists actor
+  threads, but stop/stack/evaluate control is still routed through the main VM;
+  finish full per-thread pause/inspect/step routing.
+- **Test coverage.** Async DAP harness support is now in place in
+  `eta/test/src/dap_tests.cpp` with a paused-session round trip
+  (`initialize` -> `launch stopOnEntry` -> `configurationDone` ->
+  `stopped` -> `continue` -> `terminated`); continue expanding paused-VM
+  interaction scenarios on top of this harness.
 - **Diagnostics.** `--trace-protocol` is implemented; keep expanding
   trace-driven test scenarios for new protocol surface.
 

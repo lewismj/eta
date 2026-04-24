@@ -205,6 +205,12 @@ public:
         }
     }
     void step_out()      { if (debug_) debug_->step_out(frames_.size()); }
+    void step_over_instruction() {
+        if (debug_) debug_->step_over_instruction(frames_.size());
+    }
+    void step_in_instruction() {
+        if (debug_) debug_->step_in_instruction(frames_.size());
+    }
     void request_pause() { if (debug_) debug_->request_pause(); }
 
     [[nodiscard]] bool is_paused() const noexcept {

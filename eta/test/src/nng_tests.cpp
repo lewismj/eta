@@ -2077,7 +2077,16 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
 
     namespace fs = std::filesystem;
     auto tmp_dir  = fs::temp_directory_path();
-    auto worker   = tmp_dir / "eta_worker_test.eta";
+    static std::atomic<uint64_t> s_worker_id{0};
+    const auto worker_id = s_worker_id.fetch_add(1, std::memory_order_relaxed);
+    auto worker = tmp_dir / ("eta_worker_test_" + std::to_string(worker_id) + ".eta");
+    struct WorkerFileCleanup {
+        fs::path path;
+        ~WorkerFileCleanup() {
+            std::error_code ec;
+            fs::remove(path, ec);
+        }
+    } cleanup{worker};
 
     {
         std::ofstream f(worker);
@@ -2090,7 +2099,6 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
 
     std::string etai_path = etai_binary_path();
     if (etai_path.empty()) {
-        fs::remove(worker);
         return;
     }
     BOOST_REQUIRE_MESSAGE(fs::exists(etai_path),
@@ -2101,34 +2109,64 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
     auto sock_res = e.try_call("spawn", {e.str(worker.string())});
     if (!sock_res.has_value()) {
         BOOST_TEST_MESSAGE("spawn failed: " + runtime_error_msg(sock_res.error()));
-        fs::remove(worker);
         return; ///< not a hard failure during bring-up
     }
     auto sock = *sock_res;
 
-    /// Give child a moment to start, dial, and reach recv!
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-    /// Set finite send + recv timeouts on the parent socket.
+    /// Configure finite send/recv timeouts on the parent socket.
+    constexpr int kIoTimeoutMs = 250;
+    constexpr int kRetryDelayMs = 50;
+    constexpr int kMaxSendAttempts = 40; ///< ~10s max including per-call timeout.
+    constexpr int kMaxRecvAttempts = 40; ///< ~10s max including per-call timeout.
     {
         auto* sp = e.heap.try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(sock));
         BOOST_REQUIRE(sp != nullptr);
-        nng_socket_set_ms(sp->socket, NNG_OPT_SENDTIMEO, 5000);
-        nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, 5000);
+        nng_socket_set_ms(sp->socket, NNG_OPT_SENDTIMEO, kIoTimeoutMs);
+        nng_socket_set_ms(sp->socket, NNG_OPT_RECVTIMEO, kIoTimeoutMs);
     }
 
     BOOST_TEST_MESSAGE("Child spawned, sending message 41...");
 
-    auto send_res = e.try_call("send!", {sock, e.fixnum(41)});
-    BOOST_REQUIRE_MESSAGE(send_res.has_value(), "send! error: " +
-        (send_res.has_value() ? "" : runtime_error_msg(send_res.error())));
-    BOOST_REQUIRE_MESSAGE(*send_res != nanbox::False, "send! timed out (child may not have connected)");
+    bool sent = false;
+    for (int attempt = 1; attempt <= kMaxSendAttempts; ++attempt) {
+        auto send_res = e.try_call("send!", {sock, e.fixnum(41)});
+        if (!send_res.has_value()) {
+            const auto err = runtime_error_msg(send_res.error());
+            if (err.find("Timed out") != std::string::npos) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(kRetryDelayMs));
+                continue;
+            }
+            BOOST_REQUIRE_MESSAGE(false, "send! error: " + err);
+        }
+        if (*send_res != nanbox::False) {
+            sent = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(kRetryDelayMs));
+    }
+    BOOST_REQUIRE_MESSAGE(sent, "send! timed out (child may not have connected)");
 
-    auto recv_res = e.try_call("recv!", {sock});
-    BOOST_REQUIRE_MESSAGE(recv_res.has_value(), "recv! error: " +
-        (recv_res.has_value() ? "" : runtime_error_msg(recv_res.error())));
-    BOOST_REQUIRE_MESSAGE(*recv_res != nanbox::False, "recv! timed out (child did not respond)");
-    auto dec = ops::decode<int64_t>(*recv_res);
+    bool got_reply = false;
+    LispVal reply = nanbox::False;
+    for (int attempt = 1; attempt <= kMaxRecvAttempts; ++attempt) {
+        auto recv_res = e.try_call("recv!", {sock});
+        if (!recv_res.has_value()) {
+            const auto err = runtime_error_msg(recv_res.error());
+            if (err.find("Timed out") != std::string::npos) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(kRetryDelayMs));
+                continue;
+            }
+            BOOST_REQUIRE_MESSAGE(false, "recv! error: " + err);
+        }
+        if (*recv_res != nanbox::False) {
+            got_reply = true;
+            reply = *recv_res;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(kRetryDelayMs));
+    }
+    BOOST_REQUIRE_MESSAGE(got_reply, "recv! timed out (child did not respond)");
+    auto dec = ops::decode<int64_t>(reply);
     BOOST_REQUIRE(dec.has_value());
     BOOST_TEST(*dec == 42);
     BOOST_TEST_MESSAGE("Round-trip OK: sent 41, received " << *dec);
@@ -2139,7 +2177,6 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
     BOOST_TEST_MESSAGE("Child exit code: " << ops::decode<int64_t>(*wait_res).value_or(-1));
 
     (void) e.try_call("nng-close", {sock});
-    fs::remove(worker);
 }
 
 BOOST_AUTO_TEST_CASE(spawn_kill_terminates_child) {

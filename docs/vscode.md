@@ -28,3 +28,14 @@ The Eta launch schema supports:
 - `etac` (boolean)
 - `console` (`debugConsole` | `integratedTerminal` | `externalTerminal`)
 - `trace` (boolean, adds `--trace-protocol` to `eta_dap`)
+
+## Test Explorer Notes
+
+The Test Controller now parses TAP YAML diagnostics beyond `message`, including:
+
+- `severity`
+- `at` (mapped to clickable `TestMessage.location`)
+- `expected` / `actual` (forwarded as expected/actual output when present)
+
+Runner stdout/stderr is also streamed into test output as it arrives instead of
+only being emitted at process exit.

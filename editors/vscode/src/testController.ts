@@ -19,13 +19,18 @@ interface TapTestResult {
     ok: boolean;
     num: number;
     description: string;
-    message?: string;   // failure message from YAML diagnostic block
+    message?: string;
+    severity?: string;
+    at?: string;
+    expected?: string;
+    actual?: string;
 }
 
 function parseTap(output: string): TapTestResult[] {
     const results: TapTestResult[] = [];
     const lines = output.split(/\r?\n/);
     let current: TapTestResult | null = null;
+    let inYaml = false;
 
     for (const line of lines) {
         if (line.startsWith('TAP version') || line.match(/^\d+\.\.\d+$/)) continue;
@@ -34,6 +39,7 @@ function parseTap(output: string): TapTestResult[] {
         if (okMatch) {
             current = { ok: true, num: parseInt(okMatch[1], 10), description: okMatch[2].trim() };
             results.push(current);
+            inYaml = false;
             continue;
         }
 
@@ -41,16 +47,65 @@ function parseTap(output: string): TapTestResult[] {
         if (notOkMatch) {
             current = { ok: false, num: parseInt(notOkMatch[1], 10), description: notOkMatch[2].trim() };
             results.push(current);
+            inYaml = false;
             continue;
         }
 
-        // YAML diagnostic lines
-        if (current && line.startsWith('  message: ')) {
-            current.message = line.slice(11).trim();
+        if (!current) continue;
+
+        if (line.trim() === '---') {
+            inYaml = true;
+            continue;
+        }
+        if (line.trim() === '...') {
+            inYaml = false;
+            continue;
+        }
+
+        if (!inYaml) continue;
+
+        const yamlField = line.match(/^\s{2}([a-zA-Z0-9_-]+):\s*(.*)$/);
+        if (!yamlField) continue;
+
+        const key = yamlField[1];
+        const value = yamlField[2].trim();
+        switch (key) {
+            case 'message':
+                current.message = value;
+                break;
+            case 'severity':
+                current.severity = value;
+                break;
+            case 'at':
+                current.at = value;
+                break;
+            case 'expected':
+                current.expected = value;
+                break;
+            case 'actual':
+                current.actual = value;
+                break;
+            default:
+                break;
         }
     }
 
     return results;
+}
+
+function parseTapAtLocation(at: string, fallbackUri: vscode.Uri): vscode.Location | undefined {
+    const m = at.match(/^(.*):(\d+)(?::(\d+))?$/);
+    if (!m) return undefined;
+
+    const filePart = m[1].trim();
+    const line = Math.max(1, parseInt(m[2], 10));
+    const col = m[3] ? Math.max(1, parseInt(m[3], 10)) : 1;
+
+    const baseDir = path.dirname(fallbackUri.fsPath);
+    const abs = path.isAbsolute(filePart) ? filePart : path.resolve(baseDir, filePart);
+    const uri = vscode.Uri.file(abs);
+    const pos = new vscode.Position(line - 1, col - 1);
+    return new vscode.Location(uri, pos);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,17 +221,21 @@ async function runTests(
                 cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
             });
 
-            proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
-            proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+            proc.stdout.on('data', (d: Buffer) => {
+                const chunk = d.toString();
+                stdout += chunk;
+                run.appendOutput(chunk.replace(/\r?\n/g, '\r\n'));
+            });
+            proc.stderr.on('data', (d: Buffer) => {
+                const chunk = d.toString();
+                stderr += chunk;
+                run.appendOutput(chunk.replace(/\r?\n/g, '\r\n'));
+            });
 
             const cancelSub = token.onCancellationRequested(() => proc.kill());
 
             proc.on('close', (code) => {
                 cancelSub.dispose();
-
-                if (stderr.trim()) {
-                    run.appendOutput(stderr.replace(/\r?\n/g, '\r\n'));
-                }
 
                 const tapResults = parseTap(stdout);
 
@@ -200,9 +259,25 @@ async function runTests(
                         if (tr.ok) {
                             run.passed(child);
                         } else {
-                            const msg = new vscode.TestMessage(
-                                tr.message ?? 'test failed'
-                            );
+                            const headline = tr.message ?? tr.description ?? 'test failed';
+                            const detailParts: string[] = [];
+                            if (tr.severity) detailParts.push(`severity: ${tr.severity}`);
+                            if (tr.expected !== undefined) detailParts.push(`expected: ${tr.expected}`);
+                            if (tr.actual !== undefined) detailParts.push(`actual: ${tr.actual}`);
+                            const detail = detailParts.length > 0
+                                ? `${headline}\n${detailParts.join('\n')}`
+                                : headline;
+                            const msg = new vscode.TestMessage(detail);
+                            if (tr.expected !== undefined) {
+                                msg.expectedOutput = tr.expected;
+                            }
+                            if (tr.actual !== undefined) {
+                                msg.actualOutput = tr.actual;
+                            }
+                            if (tr.at && item.uri) {
+                                const loc = parseTapAtLocation(tr.at, item.uri);
+                                if (loc) msg.location = loc;
+                            }
                             run.failed(child, msg);
                         }
                     }

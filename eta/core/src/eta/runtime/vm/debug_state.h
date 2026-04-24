@@ -70,6 +70,7 @@ public:
     void resume() {
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_mode_  = StepMode::None;
+        step_skip_current_ = false;
         is_paused_  = false;
         last_bp_file_ = 0;
         last_bp_line_ = 0;
@@ -79,6 +80,7 @@ public:
     void step_over(reader::lexer::Span sp, std::size_t depth) {
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_mode_         = StepMode::Over;
+        step_skip_current_ = false;
         step_target_depth_ = depth;
         step_origin_file_  = sp.file_id;
         step_origin_line_  = sp.start.line;
@@ -90,6 +92,7 @@ public:
     void step_in(reader::lexer::Span sp, std::size_t depth) {
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_mode_         = StepMode::In;
+        step_skip_current_ = false;
         step_target_depth_ = depth;
         step_origin_file_  = sp.file_id;
         step_origin_line_  = sp.start.line;
@@ -101,6 +104,35 @@ public:
     void step_out(std::size_t depth) {
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_mode_         = StepMode::Out;
+        step_skip_current_ = false;
+        step_target_depth_ = depth;
+        step_epoch_        = step_current_epoch_;
+        is_paused_         = false;
+        debug_cv_.notify_one();
+    }
+
+    /**
+     * Step to the next instruction in the current frame (or shallower).
+     * This ignores source-line boundaries.
+     */
+    void step_over_instruction(std::size_t depth) {
+        std::lock_guard<std::mutex> lk(debug_mutex_);
+        step_mode_         = StepMode::OverInstruction;
+        step_skip_current_ = true;
+        step_target_depth_ = depth;
+        step_epoch_        = step_current_epoch_;
+        is_paused_         = false;
+        debug_cv_.notify_one();
+    }
+
+    /**
+     * Step to the next instruction, including into callees.
+     * This ignores source-line boundaries.
+     */
+    void step_in_instruction(std::size_t depth) {
+        std::lock_guard<std::mutex> lk(debug_mutex_);
+        step_mode_         = StepMode::InInstruction;
+        step_skip_current_ = true;
         step_target_depth_ = depth;
         step_epoch_        = step_current_epoch_;
         is_paused_         = false;
@@ -172,7 +204,7 @@ public:
     }
 
 private:
-    enum class StepMode { None, Continue, Over, In, Out };
+    enum class StepMode { None, Continue, Over, In, Out, OverInstruction, InInstruction };
 
     StopCallback               stop_callback_;
 
@@ -190,6 +222,7 @@ private:
     uint32_t    step_origin_line_{0};
     uint32_t    step_epoch_{0};         ///< epoch when step was armed
     uint32_t    step_current_epoch_{0}; ///< incremented on call/cc
+    bool        step_skip_current_{false}; ///< skip the instruction where step was armed
 
     /**
      * Track last breakpoint hit to avoid re-firing on consecutive instructions
@@ -241,6 +274,7 @@ private:
             /// Stale step from before a call/cc context switch
             if (step_epoch_ != step_current_epoch_) {
                 step_mode_ = StepMode::None;
+                step_skip_current_ = false;
                 return std::nullopt;
             }
 
@@ -255,6 +289,20 @@ private:
                     break;
                 case StepMode::Out:
                     should_stop = (depth < step_target_depth_);
+                    break;
+                case StepMode::OverInstruction:
+                    if (step_skip_current_) {
+                        step_skip_current_ = false;
+                    } else {
+                        should_stop = (depth <= step_target_depth_);
+                    }
+                    break;
+                case StepMode::InInstruction:
+                    if (step_skip_current_) {
+                        step_skip_current_ = false;
+                    } else {
+                        should_stop = true;
+                    }
                     break;
                 case StepMode::None:
                 case StepMode::Continue:

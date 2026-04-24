@@ -10,10 +10,17 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <thread>
 #include <vector>
 
 #include "eta/dap/dap_io.h"
@@ -146,6 +153,219 @@ static std::vector<json::Value> run_server(const std::string& input) {
     server.run();
     return parse_output(out.str());
 }
+
+class BlockingInputStreambuf final : public std::streambuf {
+public:
+    void push(std::string_view text) {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            for (char c : text) bytes_.push_back(c);
+        }
+        cv_.notify_all();
+    }
+
+    void close() {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            closed_ = true;
+        }
+        cv_.notify_all();
+    }
+
+protected:
+    int_type underflow() override {
+        std::unique_lock<std::mutex> lk(mu_);
+        cv_.wait(lk, [&]() { return closed_ || !bytes_.empty(); });
+        if (bytes_.empty()) return traits_type::eof();
+        current_ = bytes_.front();
+        bytes_.pop_front();
+        setg(&current_, &current_, &current_ + 1);
+        return traits_type::to_int_type(current_);
+    }
+
+private:
+    std::mutex mu_;
+    std::condition_variable cv_;
+    std::deque<char> bytes_;
+    bool closed_{false};
+    char current_{'\0'};
+};
+
+class FramedOutputStreambuf final : public std::streambuf {
+public:
+    json::Value wait_next_matching(std::size_t& cursor,
+                                   const std::function<bool(const json::Value&)>& pred,
+                                   std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lk(mu_);
+
+        auto try_find = [&]() -> json::Value {
+            for (std::size_t i = cursor; i < messages_.size(); ++i) {
+                if (pred(messages_[i])) {
+                    cursor = i + 1;
+                    return messages_[i];
+                }
+            }
+            return {};
+        };
+
+        json::Value found = try_find();
+        if (!found.is_null()) return found;
+
+        const bool ready = cv_.wait_for(lk, timeout, [&]() {
+            found = try_find();
+            return !found.is_null();
+        });
+        if (!ready) return {};
+        return found;
+    }
+
+protected:
+    std::streamsize xsputn(const char_type* s, std::streamsize count) override {
+        if (count <= 0) return 0;
+        append(s, static_cast<std::size_t>(count));
+        return count;
+    }
+
+    int_type overflow(int_type ch) override {
+        if (traits_type::eq_int_type(ch, traits_type::eof())) return ch;
+        const char c = traits_type::to_char_type(ch);
+        append(&c, 1);
+        return ch;
+    }
+
+private:
+    void append(const char* data, std::size_t count) {
+        std::lock_guard<std::mutex> lk(mu_);
+        buffer_.append(data, count);
+
+        bool parsed_message = false;
+        while (true) {
+            const std::size_t header_end = buffer_.find("\r\n\r\n");
+            if (header_end == std::string::npos) break;
+
+            std::size_t content_length = 0;
+            bool has_content_length = false;
+            std::istringstream hs(buffer_.substr(0, header_end));
+            std::string line;
+            while (std::getline(hs, line)) {
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                const std::string pfx = "Content-Length: ";
+                if (line.rfind(pfx, 0) != 0) continue;
+                try {
+                    content_length = std::stoull(line.substr(pfx.size()));
+                    has_content_length = true;
+                } catch (const std::exception&) {
+                    has_content_length = false;
+                }
+            }
+
+            const std::size_t body_start = header_end + 4;
+            if (!has_content_length || content_length == 0) {
+                buffer_.erase(0, body_start);
+                continue;
+            }
+            if (buffer_.size() < body_start + content_length) break;
+
+            const std::string body = buffer_.substr(body_start, content_length);
+            buffer_.erase(0, body_start + content_length);
+
+            try {
+                messages_.push_back(json::parse(body));
+                parsed_message = true;
+            } catch (const std::exception&) {
+                // Ignore malformed payloads in the test harness.
+            }
+        }
+
+        if (parsed_message) cv_.notify_all();
+    }
+
+    std::mutex mu_;
+    std::condition_variable cv_;
+    std::string buffer_;
+    std::vector<json::Value> messages_;
+};
+
+class AsyncDapHarness {
+public:
+    AsyncDapHarness()
+        : in_(&in_buf_),
+          out_(&out_buf_) {
+        server_thread_ = std::thread([this]() {
+            eta::dap::DapServer server(in_, out_);
+            server.run();
+        });
+    }
+
+    ~AsyncDapHarness() {
+        close();
+    }
+
+    void send(const std::string& json_body) {
+        in_buf_.push(frame(json_body));
+    }
+
+    json::Value wait_response(const std::string& command,
+                              std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)) {
+        return out_buf_.wait_next_matching(
+            cursor_,
+            [&](const json::Value& msg) {
+                auto t = msg.get_string("type");
+                auto c = msg.get_string("command");
+                return t && c && *t == "response" && *c == command;
+            },
+            timeout);
+    }
+
+    json::Value wait_message(const std::function<bool(const json::Value&)>& pred,
+                             std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)) {
+        return out_buf_.wait_next_matching(cursor_, pred, timeout);
+    }
+
+    json::Value wait_event(const std::string& event_name,
+                           std::chrono::milliseconds timeout = std::chrono::milliseconds(5000)) {
+        return out_buf_.wait_next_matching(
+            cursor_,
+            [&](const json::Value& msg) {
+                auto t = msg.get_string("type");
+                auto e = msg.get_string("event");
+                return t && e && *t == "event" && *e == event_name;
+            },
+            timeout);
+    }
+
+    void close() {
+        if (closed_) return;
+        /**
+         * Best-effort graceful shutdown so a paused VM does not block the
+         * server thread's vm_thread_.join() path.
+         */
+        const std::string disconnect_body =
+            R"({"seq":2147483000,"type":"request","command":"disconnect","arguments":{}})";
+        in_buf_.push(frame(disconnect_body));
+        (void) out_buf_.wait_next_matching(
+            cursor_,
+            [](const json::Value& msg) {
+                auto t = msg.get_string("type");
+                auto c = msg.get_string("command");
+                return t && c && *t == "response" && *c == "disconnect";
+            },
+            std::chrono::milliseconds(300));
+
+        closed_ = true;
+        in_buf_.close();
+        if (server_thread_.joinable()) server_thread_.join();
+    }
+
+private:
+    BlockingInputStreambuf in_buf_;
+    FramedOutputStreambuf out_buf_;
+    std::istream in_;
+    std::ostream out_;
+    std::thread server_thread_;
+    std::size_t cursor_{0};
+    bool closed_{false};
+};
 
 /**
  * Test suite
@@ -845,7 +1065,84 @@ BOOST_AUTO_TEST_CASE(initialize_advertises_disassemble_support) {
 }
 
 /**
- * 32. disassemble without a running VM returns a structured error
+ * 32. initialize advertises cancel support
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_cancel_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsCancelRequest"].as_bool() == true);
+}
+
+/**
+ * 33. initialize advertises terminateThreads support
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_terminate_threads_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsTerminateThreadsRequest"].as_bool() == true);
+}
+
+/**
+ * 34. initialize advertises stepping granularity support
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_stepping_granularity_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsSteppingGranularity"].as_bool() == true);
+}
+
+/**
+ * 35. terminateThreads request is accepted
+ */
+BOOST_AUTO_TEST_CASE(terminate_threads_request_is_acknowledged) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "terminateThreads", R"({"threadIds":[2,3]})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "terminateThreads");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+}
+
+/**
+ * 36. next with instruction granularity is accepted
+ */
+BOOST_AUTO_TEST_CASE(next_instruction_granularity_without_vm_is_safe) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "next", R"({"threadId":1,"granularity":"instruction"})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "next");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+}
+
+/**
+ * 37. disassemble without a running VM returns a structured error
  */
 BOOST_AUTO_TEST_CASE(disassemble_without_vm_returns_error) {
     std::string input =
@@ -865,7 +1162,7 @@ BOOST_AUTO_TEST_CASE(disassemble_without_vm_returns_error) {
 }
 
 /**
- * 33. restart before launch returns an error response
+ * 38. restart before launch returns an error response
  */
 BOOST_AUTO_TEST_CASE(restart_before_launch_returns_error) {
     std::string input =
@@ -881,7 +1178,43 @@ BOOST_AUTO_TEST_CASE(restart_before_launch_returns_error) {
 }
 
 /**
- * 34. setBreakpoints accepts condition/hitCondition/logMessage before launch
+ * 39. cancel request is acknowledged
+ */
+BOOST_AUTO_TEST_CASE(cancel_request_is_acknowledged) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "cancel", R"({"requestId":99})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "cancel");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+}
+
+/**
+ * 40. pre-cancelled heap snapshot request returns cancellation error
+ */
+BOOST_AUTO_TEST_CASE(pre_cancelled_heap_snapshot_returns_cancelled_error) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "cancel", R"({"requestId":3})"))
+      + frame(request(3, "eta/heapSnapshot", "{}"))
+      + frame(request(4, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/heapSnapshot");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == false);
+    auto err_id = resp["body"]["error"].get_int("id");
+    BOOST_REQUIRE(err_id.has_value());
+    BOOST_TEST(*err_id == 2020);
+}
+
+/**
+ * 41. setBreakpoints accepts condition/hitCondition/logMessage before launch
  */
 BOOST_AUTO_TEST_CASE(set_breakpoints_with_condition_hit_and_log_before_launch) {
     std::string input =
@@ -908,7 +1241,7 @@ BOOST_AUTO_TEST_CASE(set_breakpoints_with_condition_hit_and_log_before_launch) {
 }
 
 /**
- * 35. setVariable without a running/paused VM returns a structured error
+ * 42. setVariable without a running/paused VM returns a structured error
  */
 BOOST_AUTO_TEST_CASE(set_variable_without_vm_returns_error) {
     std::string input =
@@ -928,7 +1261,7 @@ BOOST_AUTO_TEST_CASE(set_variable_without_vm_returns_error) {
 }
 
 /**
- * 36. setFunctionBreakpoints is accepted before launch
+ * 43. setFunctionBreakpoints is accepted before launch
  */
 BOOST_AUTO_TEST_CASE(set_function_breakpoints_before_launch) {
     std::string input =
@@ -1111,6 +1444,461 @@ BOOST_AUTO_TEST_CASE(scopes_refs_below_compound_base) {
         BOOST_TEST(*ref > 0);
         BOOST_TEST(*ref < 10000);  ///< below COMPOUND_REF_BASE
     }
+}
+
+/**
+ * 44. Async harness supports pause/continue interaction with stopOnEntry
+ */
+BOOST_AUTO_TEST_CASE(async_harness_stop_on_entry_continue_round_trip) {
+    const auto tmp = fs::temp_directory_path() / "eta_dap_async_harness_test.eta";
+    struct TempFileCleanup {
+        fs::path path;
+        ~TempFileCleanup() {
+            std::error_code ec;
+            fs::remove(path, ec);
+        }
+    } cleanup{tmp};
+
+    {
+        std::ofstream f(tmp, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module dap-async-harness\n"
+             "  (defun main ()\n"
+             "    (let ((x 41))\n"
+             "      (+ x 1))))\n";
+    }
+
+    AsyncDapHarness harness;
+
+    harness.send(request(1, "initialize", "{}"));
+    auto init_resp = harness.wait_response("initialize");
+    BOOST_REQUIRE(!init_resp.is_null());
+    BOOST_TEST(init_resp["success"].as_bool() == true);
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(tmp) + R"(","stopOnEntry":true})";
+    harness.send(request(2, "launch", launch_args));
+    auto launch_resp = harness.wait_response("launch");
+    BOOST_REQUIRE(!launch_resp.is_null());
+    BOOST_TEST(launch_resp["success"].as_bool() == true);
+
+    auto initialized_evt = harness.wait_event("initialized");
+    BOOST_REQUIRE(!initialized_evt.is_null());
+
+    harness.send(request(3, "configurationDone", "{}"));
+    auto config_done_resp = harness.wait_response("configurationDone");
+    BOOST_REQUIRE(!config_done_resp.is_null());
+    BOOST_TEST(config_done_resp["success"].as_bool() == true);
+
+    auto stopped_evt = harness.wait_event("stopped");
+    BOOST_REQUIRE(!stopped_evt.is_null());
+    BOOST_TEST(stopped_evt["body"]["threadId"].as_int() == 1);
+
+    harness.send(request(4, "continue", R"({"threadId":1})"));
+    auto continue_resp = harness.wait_response("continue");
+    BOOST_REQUIRE(!continue_resp.is_null());
+    BOOST_TEST(continue_resp["success"].as_bool() == true);
+
+    auto terminated_evt = harness.wait_event("terminated", std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!terminated_evt.is_null());
+
+    harness.send(request(5, "disconnect", "{}"));
+    auto disconnect_resp = harness.wait_response("disconnect");
+    BOOST_REQUIRE(!disconnect_resp.is_null());
+    BOOST_TEST(disconnect_resp["success"].as_bool() == true);
+}
+
+/**
+ * 45. Async conditional breakpoint flow pauses exactly on the truthy hit
+ */
+BOOST_AUTO_TEST_CASE(async_conditional_breakpoint_pauses_on_truthy_hit) {
+    const auto tmp = fs::temp_directory_path() / "eta_dap_async_conditional_bp_test.eta";
+    struct TempFileCleanup {
+        fs::path path;
+        ~TempFileCleanup() {
+            std::error_code ec;
+            fs::remove(path, ec);
+        }
+    } cleanup{tmp};
+
+    {
+        std::ofstream f(tmp, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module dap-async-conditional-bp\n"
+             "  (defun bp-target (flag n)\n"
+             "    (if flag\n"
+             "        (+ n 1)\n"
+             "        (+ n 2)))\n"
+             "  (defun main ()\n"
+             "    (bp-target #f 1)\n"
+             "    (bp-target #t 2)\n"
+             "    0))\n";
+    }
+
+    int bp_line = 3;
+    {
+        auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
+        resolver.add_dir(tmp.parent_path());
+        eta::interpreter::Driver driver(std::move(resolver));
+        BOOST_REQUIRE(driver.run_file(tmp));
+        const auto file_id = driver.file_id_for_path(tmp.string());
+        BOOST_REQUIRE(file_id != 0);
+        const auto valid_lines = driver.valid_lines_for(file_id);
+        if (valid_lines.find(3u) != valid_lines.end()) {
+            bp_line = 3;
+        } else if (valid_lines.find(4u) != valid_lines.end()) {
+            bp_line = 4;
+        } else {
+            BOOST_FAIL("expected executable line for conditional breakpoint at line 3 or 4");
+        }
+    }
+
+    AsyncDapHarness harness;
+
+    harness.send(request(1, "initialize", "{}"));
+    auto init_resp = harness.wait_response("initialize");
+    BOOST_REQUIRE(!init_resp.is_null());
+    BOOST_TEST(init_resp["success"].as_bool() == true);
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(tmp) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    auto launch_resp = harness.wait_response("launch");
+    BOOST_REQUIRE(!launch_resp.is_null());
+    BOOST_TEST(launch_resp["success"].as_bool() == true);
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    const std::string set_bp_args =
+        std::string(R"({"source":{"path":")") + json_path(tmp)
+      + R"("},"breakpoints":[{"line":)" + std::to_string(bp_line)
+      + R"(,"condition":"flag"}]})";
+    harness.send(request(3, "setBreakpoints", set_bp_args));
+    auto set_bp_resp = harness.wait_response("setBreakpoints");
+    BOOST_REQUIRE(!set_bp_resp.is_null());
+    BOOST_TEST(set_bp_resp["success"].as_bool() == true);
+    BOOST_REQUIRE_EQUAL(set_bp_resp["body"]["breakpoints"].as_array().size(), 1u);
+
+    harness.send(request(4, "configurationDone", "{}"));
+    auto config_done_resp = harness.wait_response("configurationDone");
+    BOOST_REQUIRE(!config_done_resp.is_null());
+    BOOST_TEST(config_done_resp["success"].as_bool() == true);
+
+    auto stopped_evt = harness.wait_event("stopped", std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!stopped_evt.is_null());
+    BOOST_TEST(stopped_evt["body"].get_string("reason").value_or("") == "breakpoint");
+
+    harness.send(request(5, "stackTrace", R"({"threadId":1})"));
+    auto stack_resp = harness.wait_response("stackTrace");
+    BOOST_REQUIRE(!stack_resp.is_null());
+    BOOST_TEST(stack_resp["success"].as_bool() == true);
+    const auto& frames = stack_resp["body"]["stackFrames"].as_array();
+    BOOST_REQUIRE(!frames.empty());
+    bool frame_in_script = false;
+    for (const auto& frame : frames) {
+        auto path = frame["source"].get_string("path");
+        if (!path) continue;
+        if (*path == tmp.string()) {
+            frame_in_script = true;
+            break;
+        }
+    }
+    BOOST_TEST(frame_in_script);
+
+    int seq = 6;
+    harness.send(request(seq++, "continue", R"({"threadId":1})"));
+    auto continue_resp = harness.wait_response("continue");
+    BOOST_REQUIRE(!continue_resp.is_null());
+    BOOST_TEST(continue_resp["success"].as_bool() == true);
+
+    bool terminated = false;
+    for (int attempts = 0; attempts < 6 && !terminated; ++attempts) {
+        auto evt = harness.wait_message([](const json::Value& m) {
+            auto t = m.get_string("type");
+            if (!t || *t != "event") return false;
+            auto e = m.get_string("event");
+            return e && (*e == "stopped" || *e == "terminated");
+        }, std::chrono::milliseconds(10000));
+        BOOST_REQUIRE(!evt.is_null());
+
+        auto name = evt.get_string("event");
+        BOOST_REQUIRE(name.has_value());
+        if (*name == "terminated") {
+            terminated = true;
+            break;
+        }
+
+        harness.send(request(seq++, "continue", R"({"threadId":1})"));
+        auto more_continue = harness.wait_response("continue");
+        BOOST_REQUIRE(!more_continue.is_null());
+        BOOST_TEST(more_continue["success"].as_bool() == true);
+    }
+    BOOST_TEST(terminated);
+
+    harness.send(request(seq++, "disconnect", "{}"));
+    auto disconnect_resp = harness.wait_response("disconnect");
+    BOOST_REQUIRE(!disconnect_resp.is_null());
+    BOOST_TEST(disconnect_resp["success"].as_bool() == true);
+}
+
+/**
+ * 46. Async logpoint flow emits output and does not pause execution
+ */
+BOOST_AUTO_TEST_CASE(async_logpoint_emits_output_without_stopping) {
+    const auto tmp = fs::temp_directory_path() / "eta_dap_async_logpoint_test.eta";
+    struct TempFileCleanup {
+        fs::path path;
+        ~TempFileCleanup() {
+            std::error_code ec;
+            fs::remove(path, ec);
+        }
+    } cleanup{tmp};
+
+    {
+        std::ofstream f(tmp, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module dap-async-logpoint\n"
+             "  (defun log-loop (i)\n"
+             "    (if (< i 3)\n"
+             "        (log-loop (+ i 1))\n"
+             "        i))\n"
+             "  (defun main ()\n"
+             "    (log-loop 0)\n"
+             "    0))\n";
+    }
+
+    AsyncDapHarness harness;
+
+    harness.send(request(1, "initialize", "{}"));
+    auto init_resp = harness.wait_response("initialize");
+    BOOST_REQUIRE(!init_resp.is_null());
+    BOOST_TEST(init_resp["success"].as_bool() == true);
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(tmp) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    auto launch_resp = harness.wait_response("launch");
+    BOOST_REQUIRE(!launch_resp.is_null());
+    BOOST_TEST(launch_resp["success"].as_bool() == true);
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    const std::string set_bp_args =
+        std::string(R"({"source":{"path":")") + json_path(tmp)
+      + R"("},"breakpoints":[{"line":3,"logMessage":"loop i={i}"}]})";
+    harness.send(request(3, "setBreakpoints", set_bp_args));
+    auto set_bp_resp = harness.wait_response("setBreakpoints");
+    BOOST_REQUIRE(!set_bp_resp.is_null());
+    BOOST_TEST(set_bp_resp["success"].as_bool() == true);
+    BOOST_REQUIRE_EQUAL(set_bp_resp["body"]["breakpoints"].as_array().size(), 1u);
+
+    harness.send(request(4, "configurationDone", "{}"));
+    auto config_done_resp = harness.wait_response("configurationDone");
+    BOOST_REQUIRE(!config_done_resp.is_null());
+    BOOST_TEST(config_done_resp["success"].as_bool() == true);
+
+    int log_hits = 0;
+    bool terminated = false;
+    for (int i = 0; i < 64 && !terminated; ++i) {
+        auto msg = harness.wait_message([](const json::Value& m) {
+            auto t = m.get_string("type");
+            if (!t || *t != "event") return false;
+            auto e = m.get_string("event");
+            if (!e) return false;
+            return *e == "output" || *e == "stopped" || *e == "terminated";
+        }, std::chrono::milliseconds(10000));
+        BOOST_REQUIRE(!msg.is_null());
+
+        auto evt = msg.get_string("event");
+        BOOST_REQUIRE(evt.has_value());
+        if (*evt == "stopped") {
+            BOOST_FAIL("logpoint breakpoint unexpectedly paused execution");
+        } else if (*evt == "output") {
+            auto text = msg["body"].get_string("output");
+            if (text && text->find("loop i=") != std::string::npos) {
+                ++log_hits;
+            }
+        } else if (*evt == "terminated") {
+            terminated = true;
+        }
+    }
+
+    BOOST_TEST(terminated);
+    BOOST_TEST(log_hits >= 3);
+
+    harness.send(request(5, "disconnect", "{}"));
+    auto disconnect_resp = harness.wait_response("disconnect");
+    BOOST_REQUIRE(!disconnect_resp.is_null());
+    BOOST_TEST(disconnect_resp["success"].as_bool() == true);
+}
+
+/**
+ * 47. Async function breakpoint flow pauses at function entry
+ */
+BOOST_AUTO_TEST_CASE(async_function_breakpoint_pauses_on_function_entry) {
+    const auto tmp = fs::temp_directory_path() / "eta_dap_async_function_bp_test.eta";
+    struct TempFileCleanup {
+        fs::path path;
+        ~TempFileCleanup() {
+            std::error_code ec;
+            fs::remove(path, ec);
+        }
+    } cleanup{tmp};
+
+    {
+        std::ofstream f(tmp, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module dap-async-function-bp\n"
+             "  (defun func-bp-target-async (x)\n"
+             "    (+ x 1))\n"
+             "  (defun main ()\n"
+             "    (let ((v 41))\n"
+             "      (func-bp-target-async v))\n"
+             "    0))\n";
+    }
+
+    int setup_bp_line = 5;
+    {
+        auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
+        resolver.add_dir(tmp.parent_path());
+        eta::interpreter::Driver driver(std::move(resolver));
+        BOOST_REQUIRE(driver.run_file(tmp));
+        const auto file_id = driver.file_id_for_path(tmp.string());
+        BOOST_REQUIRE(file_id != 0);
+        const auto valid_lines = driver.valid_lines_for(file_id);
+        if (valid_lines.find(5u) != valid_lines.end()) {
+            setup_bp_line = 5;
+        } else if (valid_lines.find(6u) != valid_lines.end()) {
+            setup_bp_line = 6;
+        } else {
+            BOOST_FAIL("expected executable setup breakpoint line at line 5 or 6");
+        }
+    }
+
+    AsyncDapHarness harness;
+
+    harness.send(request(1, "initialize", "{}"));
+    auto init_resp = harness.wait_response("initialize");
+    BOOST_REQUIRE(!init_resp.is_null());
+    BOOST_TEST(init_resp["success"].as_bool() == true);
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(tmp) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    auto launch_resp = harness.wait_response("launch");
+    BOOST_REQUIRE(!launch_resp.is_null());
+    BOOST_TEST(launch_resp["success"].as_bool() == true);
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    const std::string set_line_bp_args =
+        std::string(R"({"source":{"path":")") + json_path(tmp)
+      + R"("},"breakpoints":[{"line":)" + std::to_string(setup_bp_line) + R"(}]})";
+    harness.send(request(3, "setBreakpoints", set_line_bp_args));
+    auto set_line_bp_resp = harness.wait_response("setBreakpoints");
+    BOOST_REQUIRE(!set_line_bp_resp.is_null());
+    BOOST_TEST(set_line_bp_resp["success"].as_bool() == true);
+
+    harness.send(request(4, "configurationDone", "{}"));
+    auto config_done_resp = harness.wait_response("configurationDone");
+    BOOST_REQUIRE(!config_done_resp.is_null());
+    BOOST_TEST(config_done_resp["success"].as_bool() == true);
+
+    auto setup_stop_evt = harness.wait_event("stopped", std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!setup_stop_evt.is_null());
+
+    harness.send(request(5, "setFunctionBreakpoints",
+        R"({"breakpoints":[{"name":"func-bp-target-async"}]})"));
+    auto set_bp_resp = harness.wait_response("setFunctionBreakpoints");
+    BOOST_REQUIRE(!set_bp_resp.is_null());
+    BOOST_TEST(set_bp_resp["success"].as_bool() == true);
+    BOOST_REQUIRE_EQUAL(set_bp_resp["body"]["breakpoints"].as_array().size(), 1u);
+    /**
+     * Capture the line where the function breakpoint was actually resolved.
+     * Function names emitted by the compiler include a synthesised `_lambda<N>`
+     * suffix, so verifying the stop happened "in func-bp-target-async" is done
+     * by matching the stack frame's source file + resolved line, rather than
+     * by name.
+     */
+    const auto& fn_bps = set_bp_resp["body"]["breakpoints"].as_array();
+    BOOST_REQUIRE(fn_bps[0].is_object());
+    BOOST_REQUIRE(fn_bps[0]["verified"].is_bool());
+    BOOST_TEST(fn_bps[0]["verified"].as_bool() == true);
+    auto fn_bp_line_opt = fn_bps[0].get_int("line");
+    BOOST_REQUIRE(fn_bp_line_opt.has_value());
+    const int fn_bp_line = static_cast<int>(*fn_bp_line_opt);
+
+    const std::string clear_line_bp_args =
+        std::string(R"({"source":{"path":")") + json_path(tmp)
+      + R"("},"breakpoints":[]})";
+    harness.send(request(6, "setBreakpoints", clear_line_bp_args));
+    auto clear_line_bp_resp = harness.wait_response("setBreakpoints");
+    BOOST_REQUIRE(!clear_line_bp_resp.is_null());
+    BOOST_TEST(clear_line_bp_resp["success"].as_bool() == true);
+
+    harness.send(request(7, "continue", R"({"threadId":1})"));
+    auto continue_to_func_resp = harness.wait_response("continue");
+    BOOST_REQUIRE(!continue_to_func_resp.is_null());
+    BOOST_TEST(continue_to_func_resp["success"].as_bool() == true);
+
+    auto stopped_evt = harness.wait_event("stopped", std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!stopped_evt.is_null());
+    BOOST_TEST(stopped_evt["body"].get_string("reason").value_or("") == "breakpoint");
+
+    harness.send(request(8, "stackTrace", R"({"threadId":1})"));
+    auto stack_resp = harness.wait_response("stackTrace");
+    BOOST_REQUIRE(!stack_resp.is_null());
+    BOOST_TEST(stack_resp["success"].as_bool() == true);
+    const auto& frames = stack_resp["body"]["stackFrames"].as_array();
+    BOOST_REQUIRE(!frames.empty());
+    /**
+     * The innermost frame should be inside the body of func-bp-target-async,
+     * which is identified here by (source path == tmp) AND (line == resolved bp line).
+     */
+    bool has_target_frame = false;
+    auto top_path = frames.front()["source"].get_string("path");
+    auto top_line = frames.front().get_int("line");
+    if (top_path && top_line && *top_path == tmp.string()
+        && static_cast<int>(*top_line) == fn_bp_line) {
+        has_target_frame = true;
+    }
+    BOOST_TEST(has_target_frame);
+
+    /**
+     * The function breakpoint may match several consecutive instructions on
+     * the same source line. Loop continuing across any further `stopped`
+     * events until we observe `terminated`.
+     */
+    int seq = 9;
+    bool terminated = false;
+    harness.send(request(seq++, "continue", R"({"threadId":1})"));
+    auto continue_resp = harness.wait_response("continue");
+    BOOST_REQUIRE(!continue_resp.is_null());
+    BOOST_TEST(continue_resp["success"].as_bool() == true);
+    for (int attempts = 0; attempts < 16 && !terminated; ++attempts) {
+        auto evt = harness.wait_message([](const json::Value& m) {
+            auto t = m.get_string("type");
+            if (!t || *t != "event") return false;
+            auto e = m.get_string("event");
+            return e && (*e == "stopped" || *e == "terminated");
+        }, std::chrono::milliseconds(10000));
+        BOOST_REQUIRE(!evt.is_null());
+
+        auto name = evt.get_string("event");
+        BOOST_REQUIRE(name.has_value());
+        if (*name == "terminated") {
+            terminated = true;
+            break;
+        }
+
+        harness.send(request(seq++, "continue", R"({"threadId":1})"));
+        auto more_continue = harness.wait_response("continue");
+        BOOST_REQUIRE(!more_continue.is_null());
+        BOOST_TEST(more_continue["success"].as_bool() == true);
+    }
+    BOOST_TEST(terminated);
+
+    harness.send(request(seq++, "disconnect", "{}"));
+    auto disconnect_resp = harness.wait_response("disconnect");
+    BOOST_REQUIRE(!disconnect_resp.is_null());
+    BOOST_TEST(disconnect_resp["success"].as_bool() == true);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
