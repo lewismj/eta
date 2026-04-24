@@ -141,6 +141,34 @@
         ],
         "description": "Iteration construct"
     },
+    "Regex Compile": {
+        "prefix": "regex-compile",
+        "body": "(define ${1:rx} (regex:compile \"${2:pattern}\" ${3:'icase}))",
+        "description": "Compile a reusable regex handle"
+    },
+    "Regex Match": {
+        "prefix": "regex-match",
+        "body": "(regex:match? ${1:regex-or-pattern} ${2:string})",
+        "description": "Run a full-string regex match"
+    },
+    "Regex Replace Fn": {
+        "prefix": "regex-replace-fn",
+        "body": [
+            "(regex:replace-fn ${1:regex-or-pattern} ${2:string}",
+            "  (lambda (${3:m})",
+            "    ${0:(regex-match-text m)}))"
+        ],
+        "description": "Replace each match via callback"
+    },
+    "Regex Find All": {
+        "prefix": "regex-find-all",
+        "body": [
+            "(define ${1:matches}",
+            "  (regex:find-all ${2:regex-or-pattern} ${3:string}))",
+            "$0"
+        ],
+        "description": "Collect all regex match payloads"
+    },
 
     "Import Net": {
         "prefix": "import-net",

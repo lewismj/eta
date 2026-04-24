@@ -13,6 +13,7 @@
 (module csv-loader
   (import std.io)
   (import std.collections)
+  (import std.regex)
   (begin
 
     ;; (csv:load-file path column-names)
@@ -67,38 +68,12 @@
     ;; (csv:split-on-comma str)
     ;; Split `str` at comma boundaries, returning a list of strings.
     (defun csv:split-on-comma (str)
-      (let ((out (open-output-string))
-            (fields '()))
-        (letrec ((loop (lambda (i acc)
-                         (if (>= i (string-length str))
-                             (reverse (cons (get-output-string out) acc))
-                             (let ((ch (string-ref str i)))
-                               (if (eq? ch #\,)
-                                   (let ((field (get-output-string out)))
-                                     (close-output-port out)
-                                     (let ((new-out (open-output-string)))
-                                       (loop (+ i 1) (cons field acc))))
-                                   (begin
-                                     (write-char ch out)
-                                     (loop (+ i 1) acc))))))))
-          (loop 0 '()))))
+      (vector->list (regex:split "," str)))
 
     ;; (csv:trim str)
     ;; Remove leading and trailing whitespace.
     (defun csv:trim (str)
-      (let* ((len (string-length str))
-             (start (let find-start ((i 0))
-                      (if (or (>= i len) (not (csv:whitespace? (string-ref str i))))
-                          i
-                          (find-start (+ i 1)))))
-             (end   (let find-end ((i (- len 1)))
-                      (if (or (< i start) (not (csv:whitespace? (string-ref str i))))
-                          (+ i 1)
-                          (find-end (- i 1))))))
-        (substring str start end)))
-
-    (defun csv:whitespace? (ch)
-      (or (eq? ch #\space) (eq? ch #\tab) (eq? ch #\return)))
+      (regex:replace "^[\\t\\r ]+|[\\t\\r ]+$" str ""))
 
     ;; (csv:make-sample-data column-names rows)
     ;; Build an in-memory dataset (list of alists) without file I/O.

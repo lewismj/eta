@@ -4,6 +4,7 @@ project(eta_dap LANGUAGES CXX)
 add_executable(eta_dap
     src/eta/dap/main_dap.cpp
     src/eta/dap/dap_io.cpp
+    src/eta/dap/dap_trace.cpp
     src/eta/dap/dap_server.cpp
 )
 

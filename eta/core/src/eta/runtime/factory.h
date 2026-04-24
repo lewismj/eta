@@ -152,6 +152,25 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
+    std::expected<LispVal, RuntimeError> make_regex(
+        Heap& heap,
+        std::string pattern,
+        std::regex::flag_type flags,
+        std::vector<std::string> flag_names,
+        std::vector<std::pair<std::string, std::size_t>> named_group_indices,
+        std::shared_ptr<const std::regex> compiled) {
+        return make_heap_object<types::Regex, ObjectKind::Regex>(
+            heap,
+            types::Regex{
+                .pattern = std::move(pattern),
+                .flags = flags,
+                .flag_names = std::move(flag_names),
+                .named_group_indices = std::move(named_group_indices),
+                .compiled = std::move(compiled)
+            });
+    }
+
+    inline_always
     std::expected<LispVal, RuntimeError> make_compound(Heap& heap, LispVal functor,
                                                        std::vector<LispVal> args) {
         return make_heap_object<types::CompoundTerm, ObjectKind::CompoundTerm>(

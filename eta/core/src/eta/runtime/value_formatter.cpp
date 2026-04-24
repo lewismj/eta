@@ -6,6 +6,24 @@ using namespace eta::runtime::nanbox;
 using namespace eta::runtime::memory::heap;
 using namespace eta::runtime::memory::intern;
 
+namespace {
+std::string escape_write_string(std::string_view raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (char ch : raw) {
+        switch (ch) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:   out += ch; break;
+        }
+    }
+    return out;
+}
+} // namespace
+
 std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& intern_table) {
     if (v == nanbox::Nil) return "()";
     if (v == nanbox::True) return "#t";
@@ -234,6 +252,20 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
         /// Optimizer (opaque)
         if (heap.try_get_as<ObjectKind::Optimizer, void>(id)) {
             return "#<optimizer>";
+        }
+
+        /// Regex object
+        if (auto* rx = heap.try_get_as<ObjectKind::Regex, types::Regex>(id)) {
+            std::string out = "#<regex \"";
+            out += escape_write_string(rx->pattern);
+            out += "\"";
+            for (const auto& flag_name : rx->flag_names) {
+                if (flag_name == "ecmascript") continue;
+                out += " :";
+                out += flag_name;
+            }
+            out += ">";
+            return out;
         }
 
         /// Fact table

@@ -327,6 +327,7 @@ flowchart LR
 | **[Runtime & GC](docs/runtime.md)**        | Heap architecture, object kinds, mark-sweep GC, intern table, factory                         |
 | **[Finalizers & Guardians](docs/finalizers.md)** | Weak lifecycle hooks for cleanup, resurrection semantics, and guardian queues            |
 | **[Modules & Stdlib](docs/modules.md)**    | Module syntax, linker phases, import filters, standard library reference                      |
+| **[Regex](docs/regex.md)**                 | `std.regex` API, ECMAScript syntax notes, and performance guidance                           |
 | **[Language Guide](docs/examples.md)**     | Guided tour of the language using simple example programs with expected output                |
 | **[Networking Primitives](docs/networking.md)** | nng socket API: `nng-socket`, `send!`, `recv!`, `nng-poll`, endpoints, error handling   |
 | **[Message Passing & Actors](docs/message-passing.md)** | Actor model: `spawn`, `worker-pool`, REQ/REP, PUB/SUB, scatter-gather, timeouts  |
@@ -354,6 +355,7 @@ The prelude auto-loads the following modules:
 | **`std.math`** | `pi`, `e`, `square`, `gcd`, `lcm`, `expt`, `sum`, `product` |
 | **`std.io`** | `println`, `eprintln`, `read-line`, port redirection helpers |
 | **`std.collections`** | `map*`, `filter`, `foldl`, `foldr`, `sort`, `zip`, `range`, vector ops |
+| **`std.regex`** | `regex:compile`, `regex:match?`, `regex:search`, `regex:find-all`, `regex:replace`, `regex:split` |
 | **`std.logic`** | `==`, `copy-term`, `naf`, `findall`, `run1`, `run*`, `run-n` — Prolog/miniKanren-style combinators |
 | **`std.freeze`** | `freeze`, `dif` — suspended goals & structural disequality on attributed vars |
 | **`std.db`** | `defrel`, `assert`, `retract`, `call-rel`, `tabled` — fact-table-backed relations with SLG-lite tabling |

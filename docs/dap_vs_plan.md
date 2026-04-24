@@ -907,7 +907,7 @@ A stage is done when:
 
 Side note:
 Notable findings worth highlighting
-While auditing the code (not just the docs), I uncovered three concrete bugs that the existing dap_plan.md doesn't mention:
+1) While auditing the code (not just the docs), I uncovered three concrete bugs that the existing dap_plan.md doesn't mention:
 currentPC is hard-coded to -1 in dap_server.cpp line 1119 → the "◀ PC" indicator in the disassembly tree never lights up.
 All stop events carry threadId: 1 (line 387) regardless of which actor produced them — actor threads are listed but cannot be paused/inspected independently.
 Heap Inspector shows "VM must be paused" as an error instead of an empty state, because the webview always issues eta/heapSnapshot on open and the server returns an error response when the VM is running.

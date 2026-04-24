@@ -23,6 +23,7 @@
 #include "eta/runtime/factory.h"
 #include "eta/runtime/string_view.h"
 #include "eta/runtime/value_formatter.h"
+#include "eta/runtime/regex_builtins.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/types/logic_var.h"
 #include "eta/runtime/types/tape.h"
@@ -1511,6 +1512,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 return true;
             }
 
+            /// Regex equality: pattern + compile flags.
+            auto* ra = heap.try_get_as<ObjectKind::Regex, types::Regex>(ops::payload(a));
+            auto* rb = heap.try_get_as<ObjectKind::Regex, types::Regex>(ops::payload(b));
+            if (ra && rb) {
+                return ra->pattern == rb->pattern && ra->flags == rb->flags;
+            }
+
             return false;
         };
         return equal_impl(args[0], args[1]) ? nanbox::True : nanbox::False;
@@ -1635,6 +1643,11 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (!b) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string>=?: second argument is not a string"}});
         return (a->view() >= b->view()) ? nanbox::True : nanbox::False;
     });
+
+    /**
+     * Regex primitives: %regex-*
+     */
+    register_regex_builtins(env, heap, intern_table, vm);
 
     env.register_builtin("char->integer", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::Char)
@@ -5312,6 +5325,12 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             }
             return h;
         }
+        if (auto* rx = heap.try_get_as<ObjectKind::Regex, types::Regex>(id)) {
+            h = mix_hash(h, 0x9E97A8B1ULL);
+            h = mix_hash(h, std::hash<std::string>{}(rx->pattern));
+            h = mix_hash(h, static_cast<std::uint64_t>(rx->flags));
+            return h;
+        }
         return mix_hash(h, static_cast<std::uint64_t>(id));
     };
 
@@ -5415,6 +5434,12 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                     h = mix_hash(h, *ft->predicate_functor);
                     h = mix_hash(h, static_cast<std::uint64_t>(ft->predicate_arity));
                 }
+                return h;
+            }
+            if (auto* rx = heap.try_get_as<ObjectKind::Regex, types::Regex>(id)) {
+                h = mix_hash(h, 0x9E97A8B1ULL);
+                h = mix_hash(h, std::hash<std::string>{}(rx->pattern));
+                h = mix_hash(h, static_cast<std::uint64_t>(rx->flags));
                 return h;
             }
             return mix_hash(h, static_cast<std::uint64_t>(id));

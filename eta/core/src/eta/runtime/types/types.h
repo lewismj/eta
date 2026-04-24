@@ -15,3 +15,4 @@
 #include "tape.h"
 #include "fact_table.h"
 #include "compound.h"
+#include "regex.h"

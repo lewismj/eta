@@ -276,6 +276,7 @@ prototype.
 ### Documentation
 
 - `docs/jupyter.md` (alongside the kernel prototype).
+- `docs/regex.md` - `std.regex` reference and performance notes.
 - `docs/dap.md` — currently the DAP surface is documented only in code
   comments; a protocol-extension reference would help editor authors.
 - `docs/clpr.md` — split out from `clp.md` once that page exceeds a

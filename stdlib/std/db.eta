@@ -6,7 +6,7 @@
 ;;; for `findall`, `run1`, and `run*` from std.logic.
 
 (module std.db
-  (import std.collections std.fact_table std.logic)
+  (import std.collections std.fact_table std.logic std.regex)
   (export
     defrel
     assert
@@ -140,9 +140,7 @@
     (define (var-marker? x)
       ;; Convention: symbols starting with '?' are relation head variables.
       (if (symbol? x)
-          (let ((s (symbol->string x)))
-            (and (> (string-length s) 0)
-                 (eqv? (string-ref s 0) #\?)))
+          (regex:match? "^\\?.*" (symbol->string x))
           #f))
 
     (define (contains-var-marker? xs)

@@ -126,6 +126,26 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("string<=?",       2, false);
     r("string>=?",       2, false);
 
+    /// Regex operations
+    r("%regex-compile",     2, false);
+    r("%regex?",            1, false);
+    r("%regex-pattern",     1, false);
+    r("%regex-flags",       1, false);
+    r("%regex-match?",      2, false);
+    r("%regex-search",      3, false);
+    r("%regex-find-all",    2, false);
+    r("%regex-replace",     3, false);
+    r("%regex-replace-fn",  3, false);
+    r("%regex-split",       2, false);
+    r("%regex-quote",       1, false);
+    r("%regex-match?-str",  2, false);
+    r("%regex-search-str",  3, false);
+    r("%regex-find-all-str", 2, false);
+    r("%regex-replace-str", 3, false);
+    r("%regex-split-str",   2, false);
+    r("%regex-cache-stats", 0, false);
+    r("%regex-cache-reset!", 0, false);
+
     /// Char operations
     r("char->integer",   1, false);
     r("integer->char",   1, false);

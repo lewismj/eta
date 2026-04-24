@@ -1,0 +1,125 @@
+;;; stdlib/tests/regex.test.eta - Tests for std.regex wrappers.
+
+(module regex.tests
+  (import std.test std.regex std.collections std.core)
+  (begin
+
+    (defun ascii-upcase-char (c)
+      (let ((n (char->integer c)))
+        (if (and (>= n 97) (<= n 122))
+            (integer->char (- n 32))
+            c)))
+
+    (defun ascii-upcase (s)
+      (let ((p (open-output-string))
+            (n (string-length s)))
+        (letrec ((loop (lambda (i)
+                         (if (= i n)
+                             (get-output-string p)
+                             (begin
+                               (write-char (ascii-upcase-char (string-ref s i)) p)
+                               (loop (+ i 1)))))))
+          (loop 0))))
+
+    (defun repeat-char (ch count)
+      (let ((p (open-output-string)))
+        (letrec ((loop (lambda (i)
+                         (if (= i count)
+                             (get-output-string p)
+                             (begin
+                               (write-char ch p)
+                               (loop (+ i 1)))))))
+          (loop 0))))
+
+    (defun repeat-string (piece count)
+      (let ((p (open-output-string)))
+        (letrec ((loop (lambda (i)
+                         (if (= i count)
+                             (get-output-string p)
+                             (begin
+                               (display piece p)
+                               (loop (+ i 1)))))))
+          (loop 0))))
+
+    (define suite
+      (make-group "std.regex"
+        (list
+
+          (make-test "compile returns regex object"
+            (lambda ()
+              (let ((r (regex:compile "^foo$" 'icase)))
+                (assert-true (regex? r))
+                (assert-equal "^foo$" (regex:pattern r))
+                (assert-true (member 'ecmascript (regex:flags r)))
+                (assert-true (member 'icase (regex:flags r))))))
+
+          (make-test "match and search work for string patterns"
+            (lambda ()
+              (assert-true (regex:match? "^foo\\d+$" "foo42"))
+              (assert-false (regex:match? "^foo\\d+$" "xfoo42"))
+              (let ((m (regex:search "(?<user>[a-z]+)-(?<id>\\d+)" "xxalice-42yy" 2)))
+                (assert-true (regex-match? m))
+                (assert-equal 2 (regex-match-start m))
+                (assert-equal 10 (regex-match-end m))
+                (assert-equal '(2 . 10) (regex-match-span m))
+                (assert-equal "alice-42" (regex-match-text m))
+                (assert-equal "alice" (regex-match-named m 'user))
+                (assert-equal "42" (regex-match-group m 2))
+                (assert-false (regex-match-group-span m 99)))))
+
+          (make-test "find-all returns all matches"
+            (lambda ()
+              (let ((rows (regex:find-all "(\\d+)" "a1 b22 c333")))
+                (assert-equal 3 (length rows))
+                (assert-equal "1" (regex-match-group (car rows) 1))
+                (assert-equal "22" (regex-match-group (car (cdr rows)) 1))
+                (assert-equal "333" (regex-match-group (car (cdr (cdr rows))) 1)))))
+
+          (make-test "replace and replace-fn"
+            (lambda ()
+              (assert-equal "100200300" (regex:replace "," "100,200,300" ""))
+              (assert-equal "a-b-c" (regex:replace "\\s+" "a   b\tc" "-"))
+              (assert-equal "ETA ETA ETA"
+                            (regex:replace-fn "(eta)"
+                                              "eta eta eta"
+                                              (lambda (m)
+                                                (ascii-upcase (regex-match-text m)))))))
+
+          (make-test "split and quote"
+            (lambda ()
+              (assert-equal (vector "sum" "x" "42")
+                            (regex:split "[\\s,]+" "sum, x, 42"))
+              (assert-equal "\\.\\^\\$\\|\\(\\)\\[\\]\\{\\}\\*\\+\\?\\\\"
+                            (regex:quote ".^$|()[]{}*+?\\"))))
+
+          (make-test "log-line filtering idiom"
+            (lambda ()
+              (let ((lines '("INFO boot"
+                             "ERROR disk full"
+                             "WARN high latency"
+                             "ERROR timeout")))
+                (assert-equal '("ERROR disk full" "ERROR timeout")
+                              (filter (lambda (line) (regex:match? "^ERROR" line))
+                                      lines)))))
+
+          (make-test "find-all handles 1mb input with offset accessors"
+            (lambda ()
+              (let ((chunk (string-append "id=42;" (repeat-char #\z 250)))
+                    (total 4096))
+                (let ((haystack (repeat-string chunk total)))
+                  (assert-equal 1048576 (string-length haystack))
+                  (let ((rows (regex:find-all "id=(\\d+)" haystack)))
+                    (assert-equal total (length rows))
+                    (let ((m0 (car rows))
+                          (mlast (last rows))
+                          (last-start (* 256 (- total 1))))
+                      (assert-equal 0 (regex-match-start m0))
+                      (assert-equal 5 (regex-match-end m0))
+                      (assert-equal "42" (regex-match-group m0 1))
+                      (assert-equal last-start (regex-match-start mlast))
+                      (assert-equal (+ last-start 5) (regex-match-end mlast))))))))
+
+        ))
+
+    (print-tap (run suite))))
+)

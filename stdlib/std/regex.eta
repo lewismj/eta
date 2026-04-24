@@ -1,0 +1,99 @@
+;;; std/regex.eta - Regular expression helpers backed by %regex-* primitives.
+
+(module std.regex
+  (import std.core)
+  (export
+    regex:compile regex?
+    regex:pattern regex:flags
+    regex:match? regex:search regex:find-all
+    regex:replace regex:replace-fn regex:split
+    regex:quote
+    regex-match? regex-match-start regex-match-end
+    regex-match-text regex-match-group regex-match-named
+    regex-match-span regex-match-group-span)
+  (begin
+
+    ;; Compile a pattern once and reuse it across calls.
+    (defun regex:compile (pattern . flags)
+      (%regex-compile pattern flags))
+
+    (defun regex? (x) (%regex? x))
+    (defun regex:pattern (r) (%regex-pattern r))
+    (defun regex:flags (r) (%regex-flags r))
+
+    ;; Query helpers accept either a compiled regex or a pattern string.
+    (defun regex:match? (r-or-pattern s)
+      (if (%regex? r-or-pattern)
+          (%regex-match? r-or-pattern s)
+          (%regex-match?-str r-or-pattern s)))
+
+    (defun regex:search (r-or-pattern s . start-rest)
+      (let ((start (if (null? start-rest) 0 (car start-rest))))
+        (if (%regex? r-or-pattern)
+            (%regex-search r-or-pattern s start)
+            (%regex-search-str r-or-pattern s start))))
+
+    (defun regex:find-all (r-or-pattern s)
+      (if (%regex? r-or-pattern)
+          (%regex-find-all r-or-pattern s)
+          (%regex-find-all-str r-or-pattern s)))
+
+    (defun regex:replace (r-or-pattern s replacement)
+      (if (%regex? r-or-pattern)
+          (%regex-replace r-or-pattern s replacement)
+          (%regex-replace-str r-or-pattern s replacement)))
+
+    (defun regex:replace-fn (r-or-pattern s fn)
+      (let ((r (if (%regex? r-or-pattern)
+                   r-or-pattern
+                   (regex:compile r-or-pattern))))
+        (%regex-replace-fn r s fn)))
+
+    (defun regex:split (r-or-pattern s)
+      (if (%regex? r-or-pattern)
+          (%regex-split r-or-pattern s)
+          (%regex-split-str r-or-pattern s)))
+
+    (defun regex:quote (s) (%regex-quote s))
+
+    ;; Match payload accessors.
+    (defun regex-match? (x)
+      (and (vector? x) (= (vector-length x) 5)))
+
+    (defun regex-match-start (m) (vector-ref m 0))
+    (defun regex-match-end (m)   (vector-ref m 1))
+
+    (defun __regex-match-groups (m)       (vector-ref m 2))
+    (defun __regex-match-named-groups (m) (vector-ref m 3))
+    (defun __regex-match-input (m)        (vector-ref m 4))
+
+    (defun regex-match-span (m)
+      (cons (regex-match-start m) (regex-match-end m)))
+
+    (defun regex-match-group-span (m i)
+      (let ((groups (__regex-match-groups m)))
+        (if (or (< i 0) (>= i (vector-length groups)))
+            #f
+            (vector-ref groups i))))
+
+    (defun regex-match-group (m i)
+      (let ((span (regex-match-group-span m i)))
+        (if span
+            (substring (__regex-match-input m) (car span) (cdr span))
+            #f)))
+
+    (defun regex-match-named (m name)
+      (let ((row (assoc name (__regex-match-named-groups m))))
+        (if row
+            (let ((span (cdr row)))
+              (if span
+                  (substring (__regex-match-input m) (car span) (cdr span))
+                  #f))
+            #f)))
+
+    (defun regex-match-text (m)
+      (substring (__regex-match-input m)
+                 (regex-match-start m)
+                 (regex-match-end m)))
+
+  ))

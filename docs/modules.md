@@ -298,6 +298,29 @@ re-exports a curated subset for one-line import:
 
 ---
 
+### `std.regex` — Regular Expressions
+
+```scheme
+(import std.regex)
+```
+
+Regex helpers backed by C++ `std::regex` (ECMAScript syntax). The API accepts either compiled regex handles or string patterns.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `regex:compile` | `(pattern . flags) -> regex` | Compile a reusable regex object |
+| `regex:match?` | `(regex-or-pattern input) -> bool` | Full-string match |
+| `regex:search` | `(regex-or-pattern input [start]) -> match-or-#f` | First match with offsets/captures |
+| `regex:find-all` | `(regex-or-pattern input) -> list` | All matches |
+| `regex:replace` | `(regex-or-pattern input replacement) -> string` | Replacement string form (`$1`, `$<name>`, etc.) |
+| `regex:replace-fn` | `(regex-or-pattern input fn) -> string` | Callback replacement form |
+| `regex:split` | `(regex-or-pattern input) -> vector` | Regex delimiter split |
+| `regex:quote` | `(s) -> string` | Escape regex metacharacters |
+
+For the full reference and performance notes, see [regex.md](regex.md).
+
+---
+
 ### `std.test` — Lightweight Test Framework
 
 ```scheme
@@ -559,8 +582,8 @@ The prelude intentionally does not re-export `std.aad`'s `grad` symbol to avoid
 name conflicts with example-local gradient drivers.
 
 The following modules are **not** included in the prelude and must be
-imported explicitly when needed: `std.clpb`, `std.clpr`, `std.freeze`,
-`std.supervisor`, `std.torch`, `std.test`.
+imported explicitly when needed: `std.regex`, `std.clpb`, `std.clpr`,
+`std.freeze`, `std.supervisor`, `std.torch`, `std.test`.
 
 ---
 
