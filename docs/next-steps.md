@@ -298,4 +298,6 @@ prototype.
   ([portfolio.md](portfolio.md)).
 - Native CSV subsystem (`std.csv`) and fact-table CSV bridge
   (`fact-table-load-csv`, `fact-table-save-csv`) - see [csv.md](csv.md).
+- REPL redefinition shadowing for new submissions, documented in
+  [repl.md](repl.md).
 

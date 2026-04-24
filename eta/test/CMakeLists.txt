@@ -23,6 +23,7 @@ set(SOURCES
         src/dap_tests.cpp
         src/lsp_tests.cpp
         src/module_path_tests.cpp
+        src/repl_redefine_tests.cpp
         src/higher_order_tests.cpp
         src/example_runner_tests.cpp
         src/compiled_example_tests.cpp
@@ -85,6 +86,7 @@ target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_io.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_server.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../lsp/src/eta/lsp/lsp_server.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src/eta/interpreter/repl_wrap.cpp
 )
 
 # Always link all runtime libraries

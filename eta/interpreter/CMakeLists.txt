@@ -45,6 +45,7 @@ endif()
 # ── eta-repl — interactive REPL executable ────────────────────────────
 add_executable(eta_repl
     src/eta/interpreter/main_repl.cpp
+    src/eta/interpreter/repl_wrap.cpp
 )
 
 target_include_directories(eta_repl

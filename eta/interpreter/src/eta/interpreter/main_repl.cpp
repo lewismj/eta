@@ -2,9 +2,11 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "eta/interpreter/driver.h"
 #include "eta/interpreter/module_path.h"
+#include "eta/interpreter/repl_wrap.h"
 #include "eta/runtime/nanbox.h"
 
 namespace fs = std::filesystem;
@@ -51,81 +53,6 @@ static bool is_balanced(const std::string& input) {
         else if (c == ')') --depth;
     }
     return depth <= 0 && !in_string;
-}
-
-/// Detect whether a (trimmed) input line starts with a definition form.
-static bool is_definition(const std::string& input) {
-    /// Find first non-whitespace
-    auto pos = input.find_first_not_of(" \t\n\r");
-    if (pos == std::string::npos || input[pos] != '(') return false;
-    pos++; ///< skip '('
-    /// Skip whitespace after '('
-    pos = input.find_first_not_of(" \t\n\r", pos);
-    if (pos == std::string::npos) return false;
-
-    /// Check if it starts with a definition keyword
-    for (const char* kw : {"define ", "define\t", "define\n",
-                            "defun ", "defun\t", "defun\n",
-                            "def ", "def\t", "def\n",
-                            "define-syntax ", "define-syntax\t", "define-syntax\n"}) {
-        std::string_view rest(input.data() + pos, input.size() - pos);
-        if (rest.starts_with(kw)) return true;
-    }
-    return false;
-}
-
-/// Detect whether a form is an (import ...) directive.
-static bool is_import(const std::string& input) {
-    auto pos = input.find_first_not_of(" \t\n\r");
-    if (pos == std::string::npos || input[pos] != '(') return false;
-    pos++; ///< skip '('
-    pos = input.find_first_not_of(" \t\n\r", pos);
-    if (pos == std::string::npos) return false;
-
-    std::string_view rest(input.data() + pos, input.size() - pos);
-    for (const char* kw : {"import ", "import\t", "import\n", "import)"}) {
-        if (rest.starts_with(kw)) return true;
-    }
-    return false;
-}
-
-/**
- * Extract the defined name from a (define name ...) or (defun name ...) form.
- * Returns empty string if not a recognizable definition.
- */
-static std::string extract_define_name(const std::string& input) {
-    auto pos = input.find_first_not_of(" \t\n\r");
-    if (pos == std::string::npos || input[pos] != '(') return {};
-    pos++;
-    pos = input.find_first_not_of(" \t\n\r", pos);
-    if (pos == std::string::npos) return {};
-
-    /// Skip keyword
-    std::string_view rest(input.data() + pos, input.size() - pos);
-    for (const char* kw : {"define", "defun", "def"}) {
-        if (rest.starts_with(kw)) {
-            pos += std::strlen(kw);
-            break;
-        }
-    }
-
-    pos = input.find_first_not_of(" \t\n\r", pos);
-    if (pos == std::string::npos) return {};
-
-    /// The name might be bare `x` or a function shorthand `(f x y)`
-    if (input[pos] == '(') {
-        pos++;
-        pos = input.find_first_not_of(" \t\n\r", pos);
-        if (pos == std::string::npos) return {};
-    }
-
-    /// Collect the identifier
-    auto end = pos;
-    while (end < input.size() && !std::isspace(static_cast<unsigned char>(input[end]))
-           && input[end] != ')' && input[end] != '(') {
-        ++end;
-    }
-    return input.substr(pos, end - pos);
 }
 
 /**
@@ -273,8 +200,8 @@ int main(int argc, char* argv[]) {
     std::string buffer;
     bool continuation = false;
 
-    /// Track previous REPL module names so each new module can import from them.
-    std::vector<std::string> prior_modules;
+    /// Track prior REPL modules and their exported names.
+    std::vector<eta::interpreter::PriorModule> prior_modules;
 
     while (true) {
         /// Prompt
@@ -331,77 +258,25 @@ int main(int argc, char* argv[]) {
         auto forms = split_toplevel_forms(buffer);
         if (forms.empty()) continue;
 
-        /**
-         * Build the module body. Definitions go in directly; the last
-         * form, if it is an expression, gets captured in a unique result binding.
-         */
         static int repl_counter = 0;
         int this_id = repl_counter++;
-        std::string module_name = "__repl_" + std::to_string(this_id);
-        /// Unique result name per module to avoid import conflicts
-        std::string result_name = "__repl_r_" + std::to_string(this_id);
-
-        /// Collect user-defined names for auto-export (NOT the result binding)
-        std::vector<std::string> user_defines;
-        std::string body;
-        std::string user_imports;   ///< explicit (import ...) forms from user input
-        bool last_is_expr = false;
-
-        for (std::size_t i = 0; i < forms.size(); ++i) {
-            bool is_last = (i == forms.size() - 1);
-            if (is_import(forms[i])) {
-                /// Place import directives at the module level, not in (begin ...)
-                user_imports += "  " + forms[i] + "\n";
-            } else if (is_definition(forms[i])) {
-                auto name = extract_define_name(forms[i]);
-                if (!name.empty()) user_defines.push_back(name);
-                body += "    " + forms[i] + "\n";
-            } else if (is_last) {
-                body += "    (define " + result_name + " " + forms[i] + ")\n";
-                last_is_expr = true;
-            } else {
-                body += "    " + forms[i] + "\n";
-            }
-        }
-
-        /// Build import clauses: auto-import std.prelude + all prior REPL modules
-        std::string imports;
-        if (prelude_available) {
-            imports += "  (import std.prelude)\n";
-        }
-        for (const auto& prev : prior_modules) {
-            imports += "  (import " + prev + ")\n";
-        }
-
-        /// Build export clause for user defines only (not __repl_r_N)
-        std::string exports;
-        if (!user_defines.empty()) {
-            exports = "  (export";
-            for (const auto& n : user_defines) exports += " " + n;
-            exports += ")\n";
-        }
-
-        std::string wrapped = "(module " + module_name + "\n"
-                              + exports
-                              + imports
-                              + user_imports
-                              + "  (begin\n"
-                              + body
-                              + "  ))";
+        auto wrapped = eta::interpreter::wrap_repl_submission(
+            forms, this_id, prelude_available, prior_modules);
 
         eta::runtime::nanbox::LispVal result{};
         bool ok;
-        if (last_is_expr) {
-            ok = driver.run_source(wrapped, &result, result_name);
+        if (wrapped.last_is_expr) {
+            ok = driver.run_source(wrapped.source, &result, wrapped.result_name);
         } else {
-            ok = driver.run_source(wrapped);
+            ok = driver.run_source(wrapped.source);
         }
 
         if (ok) {
-            prior_modules.push_back(module_name);
+            prior_modules.push_back(eta::interpreter::PriorModule{
+                wrapped.module_name, wrapped.user_defines});
 
             /// Print the result unless it's the void/unspecified value (Nil)
-            if (last_is_expr && result != eta::runtime::nanbox::Nil) {
+            if (wrapped.last_is_expr && result != eta::runtime::nanbox::Nil) {
                 std::cout << "=> " << driver.format_value(result) << "\n";
             }
         } else {

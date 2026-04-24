@@ -1,7 +1,8 @@
 ﻿# Eta — Quick Start
 
 [<- Back to README](../README.md) · [Build from Source](build.md) ·
-[Language Guide](examples.md) · [Compiler (`etac`)](compiler.md)
+[Language Guide](examples.md) · [Compiler (`etac`)](compiler.md) ·
+[REPL](repl.md)
 
 ---
 
@@ -170,6 +171,10 @@ You can define and use your own functions interactively:
 η> (square 7)
 => 49
 ```
+
+Redefining a name is supported. New submissions see the latest definition,
+while functions compiled earlier keep the bindings they were compiled with.
+See [REPL](repl.md) for details.
 
 You can import user-defined modules too. Use `--path` to tell the REPL
 where to find your `.eta` files:
@@ -422,4 +427,3 @@ eta-v0.2.0-<platform>/
 The binaries automatically locate `stdlib/` relative to themselves
 (`<exe>/../stdlib/`), so no environment variables are needed when
 using the installed layout.
-
