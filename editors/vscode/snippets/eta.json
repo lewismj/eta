@@ -169,6 +169,32 @@
         ],
         "description": "Collect all regex match payloads"
     },
+    "CSV Open Reader": {
+        "prefix": "csv-open-reader",
+        "body": [
+            "(define ${1:r} (csv:open-reader \"${2:data.csv}\"${3: :delimiter #\\;}))",
+            "$0"
+        ],
+        "description": "Open a CSV reader with optional keyword options"
+    },
+    "CSV Fold": {
+        "prefix": "csv-fold",
+        "body": [
+            "(csv:fold ${1:reader}",
+            "  (lambda (${2:acc} ${3:row})",
+            "    ${4:(f acc row)})",
+            "  ${5:init})"
+        ],
+        "description": "Stream CSV records with a fold"
+    },
+    "CSV Write Record": {
+        "prefix": "csv-write-record",
+        "body": [
+            "(csv:write-record ${1:writer} ${2:record} ${3:columns})",
+            "$0"
+        ],
+        "description": "Write one record with explicit column ordering"
+    },
 
     "Import Net": {
         "prefix": "import-net",

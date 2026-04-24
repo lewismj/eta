@@ -38,6 +38,7 @@
   <a href="docs/causal.md">Causal Inference & Do-Calculus</a> ·
   <a href="docs/fact-table.md">Fact Tables</a> ·
   <a href="docs/stats.md">Eigen: Linear Algebra, Statistics</a> ·
+  <a href="docs/csv.md">CSV</a> ·
   <a href="docs/torch.md">LibTorch: Neural Networks</a>
 </p>
 <br>
@@ -336,6 +337,7 @@ flowchart LR
 | **[CLP](docs/clp.md)**                     | Constraint Logic Programming: clp(Z) intervals, clp(FD) finite domains, `clp:solve`           |
 | **[Causal Inference](docs/causal.md)**     | Do-calculus engine, back-door adjustment, finance factor analysis                             |
 | **[Fact Tables](docs/fact-table.md)**      | Columnar fact tables with hash-indexed queries, iteration, and fold                           |
+| **[CSV](docs/csv.md)**                     | Native CSV reader/writer and FactTable CSV bridge                                              |
 | **[Linear Algebra & Statistics](docs/stats.md)** | Eigen-backed multivariate stats on FactTables; `std.stats` descriptive stats, CIs, t-tests, OLS |
 | **[Causal Pipeline Primer](docs/causal-factor.md)** | Gentle on-ramp: symbolic diff → do-calculus → logic/CLP → libtorch NN → ATE (precursor to the portfolio engine) |
 | **[Neural Networks](docs/torch.md)**       | libtorch integration: tensors, autograd, NN layers, training loops, GPU support               |
@@ -363,6 +365,7 @@ The prelude auto-loads the following modules:
 | **`std.clpb`** | `clp:boolean`, `clp:and/or/xor/imp/eq/not`, `clp:card`, `clp:sat?`, `clp:taut?` — CLP(B) Boolean propagation |
 | **`std.clpr`** | `clp:real`, `clp:r<=`, `clp:r=`, `clp:r-minimize`/`maximize`, `clp:rq-minimize`/`maximize` — CLP(R) linear + convex QP |
 | **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` — causal inference engine |
+| **`std.csv`** | `csv:open-reader`, `csv:read-record`, `csv:read-typed-row`, `csv:open-writer`, `csv:save-file` |
 | **`std.fact_table`** | `make-fact-table`, `fact-table-insert!`, `fact-table-query`, `fact-table-fold` — columnar fact tables |
 | **`std.stats`** | Descriptive stats, CIs, t-tests, OLS regression (Eigen-backed) |
 | **`std.time`** | Wall-clock + monotonic time, UTC/local parts, ISO-8601 formatting |

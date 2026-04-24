@@ -152,6 +152,16 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
+    std::expected<LispVal, RuntimeError> make_csv_reader(Heap& heap, types::CsvReader reader) {
+        return make_heap_object<types::CsvReader, ObjectKind::CsvReader>(heap, std::move(reader));
+    }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_csv_writer(Heap& heap, types::CsvWriter writer) {
+        return make_heap_object<types::CsvWriter, ObjectKind::CsvWriter>(heap, std::move(writer));
+    }
+
+    inline_always
     std::expected<LispVal, RuntimeError> make_regex(
         Heap& heap,
         std::string pattern,

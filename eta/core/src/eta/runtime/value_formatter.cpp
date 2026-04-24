@@ -254,6 +254,16 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return "#<optimizer>";
         }
 
+        /// CSV reader
+        if (auto* reader = heap.try_get_as<ObjectKind::CsvReader, types::CsvReader>(id)) {
+            return "#<csv-reader rows=" + std::to_string(reader->row_index) + ">";
+        }
+
+        /// CSV writer
+        if (auto* writer = heap.try_get_as<ObjectKind::CsvWriter, types::CsvWriter>(id)) {
+            return "#<csv-writer rows=" + std::to_string(writer->row_index) + ">";
+        }
+
         /// Regex object
         if (auto* rx = heap.try_get_as<ObjectKind::Regex, types::Regex>(id)) {
             std::string out = "#<regex \"";

@@ -14,6 +14,7 @@ target_include_directories(${PROJECT_NAME}
 # Eigen is header-only; propagate PUBLIC so downstream targets (eta_stats etc.)
 # inherit the include paths automatically.
 target_link_libraries(${PROJECT_NAME} PUBLIC Eigen3::Eigen)
+target_link_libraries(${PROJECT_NAME} PRIVATE csv::parser)
 
 target_sources(${PROJECT_NAME}
         PRIVATE
@@ -29,6 +30,7 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/vm/vm.cpp
         src/eta/runtime/vm/bytecode_serializer.cpp
         src/eta/runtime/value_formatter.cpp
+        src/eta/runtime/csv_builtins.cpp
         src/eta/runtime/regex_builtins.cpp
         src/eta/runtime/clp/linear.cpp
         src/eta/runtime/clp/quadratic.cpp

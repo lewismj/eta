@@ -125,6 +125,8 @@ wrappers.
 | `%fact-table-group-sum` | `(table group-col-idx value-col-idx)` | Return alist `((key . sum) ...)` over live rows |
 | `%fact-table-ref` | `(table row-idx col-idx)` | Return the cell value at `(row, col)` |
 | `%fact-table-row-count` | `(table)` | Return number of rows as fixnum |
+| `%fact-table-load-csv` | `(path opts-alist)` | Load CSV into a fact table |
+| `%fact-table-save-csv` | `(table path opts-alist)` | Save a fact table to CSV |
 | `%fact-table?` | `(value)` | Low-level fact-table predicate (`#t` / `#f`) |
 | `fact-table?` | `(value)` | `#t` if value is a FactTable, `#f` otherwise |
 
@@ -177,6 +179,15 @@ The module wraps the low-level builtins with a friendlier variadic API.
 | `fact-table-group-sum` | `(ft group-col-idx value-col-idx) → alist` | Group by key and sum numeric values |
 | `fact-table-group-by` | `(ft group-col-idx [agg-op [value-col-idx]]) → fact-table` | Group into a new fact table; `agg-op` is `'count` (default) or `'sum` |
 | `fact-table-partition` | `(ft group-col-idx) → alist` | Partition into `((key . fact-table) ...)`, one table per key |
+
+### CSV Bridge
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `fact-table-load-csv` | `(path . opts) -> fact-table` | Load CSV rows into a fact table |
+| `fact-table-save-csv` | `(ft path . opts) -> unspecified` | Save live rows from a fact table to CSV |
+
+See [CSV](csv.md) for option details and full reader/writer behavior.
 
 ---
 
@@ -236,7 +247,7 @@ The column count and row count are shown for quick identification.
 | Heap visitor dispatch | [`memory/heap_visit.h`](../eta/core/src/eta/runtime/memory/heap_visit.h) |
 | Factory function | [`factory.h`](../eta/core/src/eta/runtime/factory.h) |
 | Value formatter | [`value_formatter.h`](../eta/core/src/eta/runtime/value_formatter.h) |
-| Builtins | [`core_primitives.h`](../eta/core/src/eta/runtime/core_primitives.h) |
+| Builtins | [`core_primitives.h`](../eta/core/src/eta/runtime/core_primitives.h), [`csv_builtins.cpp`](../eta/core/src/eta/runtime/csv_builtins.cpp) |
 | `std.fact_table` module | [`stdlib/std/fact_table.eta`](../stdlib/std/fact_table.eta) |
 | Example | [`examples/fact-table.eta`](../examples/fact-table.eta) |
 

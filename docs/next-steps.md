@@ -296,4 +296,6 @@ prototype.
 - ✅ Finalizers & guardians.
 - ✅ Causal portfolio decision engine showcase
   ([portfolio.md](portfolio.md)).
+- Native CSV subsystem (`std.csv`) and fact-table CSV bridge
+  (`fact-table-load-csv`, `fact-table-save-csv`) - see [csv.md](csv.md).
 

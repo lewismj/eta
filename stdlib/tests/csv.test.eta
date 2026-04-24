@@ -1,0 +1,119 @@
+;;; stdlib/tests/csv.test.eta - Tests for std.csv wrappers.
+
+(module csv.tests
+  (import std.test std.csv)
+  (begin
+
+    (defun make-repeated-csv (n)
+      (let ((p (open-output-string)))
+        (display "i,val\n" p)
+        (letrec ((loop (lambda (i)
+                         (if (= i n)
+                             (get-output-string p)
+                             (begin
+                               (display i p)
+                               (display "," p)
+                               (display 1 p)
+                               (display "\n" p)
+                               (loop (+ i 1)))))))
+          (loop 0))))
+
+    (defun csv:test-assq (key alist)
+      (letrec ((loop (lambda (xs)
+                       (if (null? xs)
+                           #f
+                           (if (pair? xs)
+                               (let ((entry (car xs)))
+                                 (if (and (pair? entry) (eq? (car entry) key))
+                                     entry
+                                     (loop (cdr xs))))
+                               #f)))))
+        (loop alist)))
+
+    (defun csv:test-ref (key alist)
+      (let ((entry (csv:test-assq key alist)))
+        (if entry (cdr entry) #f)))
+
+    (define test-quoted
+      (make-test "quoted commas and escaped quotes parse correctly"
+        (lambda ()
+          (let* ((r (csv:reader-from-string
+                      "a,b,c\n1,\"two,three\",\"he said \"\"hi\"\"\"\n"))
+                 (rec (csv:read-record r)))
+            (assert-equal "1" (csv:test-ref 'a rec))
+            (assert-equal "two,three" (csv:test-ref 'b rec))
+            (assert-equal "he said \"hi\"" (csv:test-ref 'c rec))
+            (csv:close r)))))
+
+    (define test-fold
+      (make-test "csv:fold streams 100k rows with correct sum"
+        (lambda ()
+          (let* ((csv-data (make-repeated-csv 100000))
+                 (r (csv:reader-from-string csv-data))
+                 (total (csv:fold r
+                                  (lambda (acc rec)
+                                    (let ((v (csv:test-ref 'val rec)))
+                                      (+ acc (if v (string->number v) 0))))
+                                  0)))
+            (assert-equal 100000 total)
+            (csv:close r)))))
+
+    (define test-intern
+      (make-test "record keys stay interned across reads"
+        (lambda ()
+          (let* ((r (csv:reader-from-string "x,y\n1,2\n3,4\n"))
+                 (row1 (csv:read-record r))
+                 (row2 (csv:read-record r))
+                 (k1 (car (car row1)))
+                 (k2 (car (car row2))))
+            (assert-true (eq? k1 k2))
+            (csv:close r)))))
+
+    (define test-header-options
+      (make-test "header off with column names and comment skipping"
+        (lambda ()
+          (let* ((r (csv:reader-from-string
+                      "#ignore,me\n10,20\n#skip,again\n30,40\n"
+                      'header #f
+                      'column-names '("left" "right")
+                      'comment #\#))
+                 (row1 (csv:read-record r))
+                 (row2 (csv:read-record r)))
+            (assert-equal "10" (csv:test-ref 'left row1))
+            (assert-equal "20" (csv:test-ref 'right row1))
+            (assert-equal "30" (csv:test-ref 'left row2))
+            (assert-equal "40" (csv:test-ref 'right row2))
+            (csv:close r)))))
+
+    (define test-typed-row
+      (make-test "csv:read-typed-row parses numbers and null tokens"
+        (lambda ()
+          (let* ((r (csv:reader-from-string
+                      "x,y,z,w\n42,3.5,NA,alpha\n,7,NaN,0\n"))
+                 (row1 (csv:read-typed-row r))
+                 (row2 (csv:read-typed-row r)))
+            (assert-equal 42 (vector-ref row1 0))
+            (assert-approx-equal 3.5 (vector-ref row1 1) 1e-12)
+            (assert-equal '() (vector-ref row1 2))
+            (assert-equal "alpha" (vector-ref row1 3))
+            (assert-equal '() (vector-ref row2 0))
+            (assert-equal 7 (vector-ref row2 1))
+            (assert-equal '() (vector-ref row2 2))
+            (assert-equal 0 (vector-ref row2 3))
+            (csv:close r)))))
+
+    (define test-typed-row-locale
+      (make-test "csv:read-typed-row keeps 1,5 as string with ; delimiter"
+        (lambda ()
+          (let* ((r (csv:reader-from-string "x;y\n1,5;2\n" 'delimiter #\;))
+                 (row (csv:read-typed-row r)))
+            (assert-equal "1,5" (vector-ref row 0))
+            (assert-equal 2 (vector-ref row 1))
+            (csv:close r)))))
+
+    (define suite
+      (make-group "std.csv"
+        (list test-quoted test-fold test-intern test-header-options
+              test-typed-row test-typed-row-locale)))
+
+    (print-tap (run suite))))

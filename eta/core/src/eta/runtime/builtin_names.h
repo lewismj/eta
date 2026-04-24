@@ -126,6 +126,23 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("string<=?",       2, false);
     r("string>=?",       2, false);
 
+    /// CSV operations
+    r("%csv-open-reader",        2, false);
+    r("%csv-reader-from-string", 2, false);
+    r("%csv-columns",            1, false);
+    r("%csv-read-row",           1, false);
+    r("%csv-read-record",        1, false);
+    r("%csv-read-typed-row",     1, false);
+    r("%csv-close",              1, false);
+    r("%csv-open-writer",        2, false);
+    r("%csv-write-row",          2, false);
+    r("%csv-write-record",       3, false);
+    r("%csv-flush",              1, false);
+    r("%fact-table-load-csv",    2, false);
+    r("%fact-table-save-csv",    3, false);
+    r("%csv-reader?",            1, false);
+    r("%csv-writer?",            1, false);
+
     /// Regex operations
     r("%regex-compile",     2, false);
     r("%regex?",            1, false);

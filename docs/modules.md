@@ -562,8 +562,27 @@ per-column hash indexes for O(1) equality lookups.
 | **Query** | `fact-table-query`, `fact-table-ref`, `fact-table-row-count`, `fact-table-row` |
 | **Iteration** | `fact-table-for-each`, `fact-table-filter`, `fact-table-fold` |
 | **Aggregation** | `fact-table-group-count`, `fact-table-group-sum`, `fact-table-group-by`, `fact-table-partition` |
+| **CSV Bridge** | `fact-table-load-csv`, `fact-table-save-csv` |
 
 > **ðŸ“– Full documentation:** [Fact Tables](fact-table.md)
+
+---
+
+### `std.csv` — Native CSV Reader/Writer
+
+```scheme
+(import std.csv)
+```
+
+Native CSV API backed by `vincentlaucsb/csv-parser`.
+
+| Category | Key Functions |
+|----------|---------------|
+| **Reader** | `csv:open-reader`, `csv:reader-from-string`, `csv:columns`, `csv:read-row`, `csv:read-record`, `csv:read-typed-row`, `csv:close` |
+| **Writer** | `csv:open-writer`, `csv:write-row`, `csv:write-record`, `csv:flush`, `csv:save-file` |
+| **Streaming** | `csv:fold`, `csv:for-each`, `csv:collect`, `csv:load-file` |
+
+> **ðŸ“– Full documentation:** [CSV](csv.md)
 
 ---
 
@@ -583,7 +602,7 @@ name conflicts with example-local gradient drivers.
 
 The following modules are **not** included in the prelude and must be
 imported explicitly when needed: `std.regex`, `std.clpb`, `std.clpr`,
-`std.freeze`, `std.supervisor`, `std.torch`, `std.test`.
+`std.freeze`, `std.supervisor`, `std.csv`, `std.torch`, `std.test`.
 
 ---
 

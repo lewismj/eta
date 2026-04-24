@@ -91,6 +91,10 @@ namespace eta::runtime::memory::gc {
             for (auto v : ft.rule_column) callback(v);
         }
 
+        void visit_csv_reader(const types::CsvReader& reader) override {
+            for (auto sym : reader.column_symbols) callback(sym);
+        }
+
         void visit_compound_term(const types::CompoundTerm& ct) override {
             callback(ct.functor);
             for (auto v : ct.args) callback(v);

@@ -22,6 +22,7 @@ namespace eta::runtime::memory::heap {
         virtual R visit_primitive(const eta::runtime::types::Primitive& p) = 0;
         virtual R visit_guardian(const eta::runtime::types::Guardian& g) = 0;
         virtual R visit_fact_table(const eta::runtime::types::FactTable& ft) = 0;
+        virtual R visit_csv_reader(const eta::runtime::types::CsvReader& reader) = 0;
         virtual R visit_compound_term(const eta::runtime::types::CompoundTerm& ct) = 0;
 
         /// Fallback for leaf/unknown kinds (no outward edges)
@@ -42,6 +43,7 @@ namespace eta::runtime::memory::heap {
             case Primitive:    return v.visit_primitive(*static_cast<const eta::runtime::types::Primitive*>(payload));
             case Guardian:     return v.visit_guardian(*static_cast<const eta::runtime::types::Guardian*>(payload));
             case FactTable:    return v.visit_fact_table(*static_cast<const eta::runtime::types::FactTable*>(payload));
+            case CsvReader:    return v.visit_csv_reader(*static_cast<const eta::runtime::types::CsvReader*>(payload));
             case CompoundTerm: return v.visit_compound_term(*static_cast<const eta::runtime::types::CompoundTerm*>(payload));
 
             case Fixnum:
@@ -50,6 +52,7 @@ namespace eta::runtime::memory::heap {
             case Tensor:
             case NNModule:
             case Optimizer:
+            case CsvWriter:
             case Regex:
             case NngSocket:   ///< leaf: holds only OS handle + raw bytes, no GC refs
             case Unknown:

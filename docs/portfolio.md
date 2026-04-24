@@ -994,7 +994,7 @@ preserve the existing population-moment semantics.
 
 | Extension | Effort | Impact |
 |---|---|---|
-| **CSV / real data** | Replace §0 DGP with `csv:load-file` (see [`causal-factor/csv-loader.eta`](../examples/causal-factor/csv-loader.eta)) | Use actual ETF returns |
+| **CSV / real data** | Replace §0 DGP with `csv:load-file` (see [`std/csv.eta`](../stdlib/std/csv.eta)) | Use actual ETF returns |
 | **HTTP data feed** | When HTTP primitives land, swap §0 for a live loader | Real-time portfolio construction |
 | **Deeper backtest** | Split data 80/20, report OOS return vs predicted | Production validation |
 | **Denser Σ(m) grid** | Higher empirical-grid resolution (e.g., 50-point or MC) | Smoother scenario-dependent risk |

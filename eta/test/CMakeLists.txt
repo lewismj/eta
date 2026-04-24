@@ -32,6 +32,9 @@ set(SOURCES
         src/cons_pool_tests.cpp
         src/stats_tests.cpp
         src/time_primitives_tests.cpp
+        src/csv_reader_tests.cpp
+        src/csv_writer_tests.cpp
+        src/csv_fact_table_tests.cpp
         src/regex_tests.cpp
         src/nng_tests.cpp
         src/clp_linear_tests.cpp

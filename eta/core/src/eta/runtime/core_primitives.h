@@ -23,6 +23,7 @@
 #include "eta/runtime/factory.h"
 #include "eta/runtime/string_view.h"
 #include "eta/runtime/value_formatter.h"
+#include "eta/runtime/csv_builtins.h"
 #include "eta/runtime/regex_builtins.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/types/logic_var.h"
@@ -1643,6 +1644,11 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         if (!b) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "string>=?: second argument is not a string"}});
         return (a->view() >= b->view()) ? nanbox::True : nanbox::False;
     });
+
+    /**
+     * CSV primitives: %csv-*
+     */
+    register_csv_builtins(env, heap, intern_table);
 
     /**
      * Regex primitives: %regex-*

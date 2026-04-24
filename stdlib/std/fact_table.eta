@@ -41,11 +41,40 @@
     fact-table-group-count
     fact-table-group-sum
     fact-table-group-by
-    fact-table-partition)
+    fact-table-partition
+
+    ;; CSV bridge
+    fact-table-load-csv
+    fact-table-save-csv)
   (begin
 
     ;; Re-export via low-level predicate to avoid local-name shadowing.
     (defun fact-table? (x) (%fact-table? x))
+
+    (defun fact-table:strip-leading-colon (s)
+      (if (and (> (string-length s) 0)
+               (eq? (string-ref s 0) #\:))
+          (substring s 1 (string-length s))
+          s))
+
+    (defun fact-table:normalize-opt-key (k)
+      (cond
+        ((symbol? k) (string->symbol (fact-table:strip-leading-colon (symbol->string k))))
+        ((string? k) (string->symbol (fact-table:strip-leading-colon k)))
+        (#t (error "fact-table: option key must be a symbol or string"))))
+
+    ;; (fact-table:opts->alist '(:header #f)) -> ((header . #f))
+    (defun fact-table:opts->alist (opts)
+      (letrec ((loop (lambda (xs acc)
+                       (if (null? xs)
+                           (reverse acc)
+                           (if (null? (cdr xs))
+                               (error "fact-table: options must be key/value pairs")
+                               (loop (cdr (cdr xs))
+                                     (cons (cons (fact-table:normalize-opt-key (car xs))
+                                                 (car (cdr xs)))
+                                           acc)))))))
+        (loop opts '())))
 
     ;; (make-fact-table 'col1 'col2 ...) -> fact-table
     (define (make-fact-table . col-names)
@@ -173,5 +202,13 @@
                                        (loop (cdr pending)
                                              (cons (cons key tbl) groups-rev))))))))
               (loop rows '())))))
+
+    ;; (fact-table-load-csv path . opts) -> fact-table
+    (define (fact-table-load-csv path . opts)
+      (%fact-table-load-csv path (fact-table:opts->alist opts)))
+
+    ;; (fact-table-save-csv ft path . opts) -> unspecified
+    (define (fact-table-save-csv ft path . opts)
+      (%fact-table-save-csv ft path (fact-table:opts->alist opts)))
 
   ))

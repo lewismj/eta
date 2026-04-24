@@ -14,5 +14,6 @@
 #include "logic_var.h"
 #include "tape.h"
 #include "fact_table.h"
+#include "csv.h"
 #include "compound.h"
 #include "regex.h"

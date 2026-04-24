@@ -93,7 +93,10 @@
     ;;
     ;; Embedded toy dataset (30 observations).
     ;; In production, replace with:
-    ;;   (csv:load-file "observations.csv" '(sector market-beta stock-return))
+    ;;   (csv:load-file "observations.csv")
+    ;; or, for headerless CSV:
+    ;;   (csv:load-file "observations.csv" :header #f
+    ;;                              :column-names '(sector market-beta stock-return))
     ;;
     ;; NOTE: Numerical estimation limitation — see module header.
 

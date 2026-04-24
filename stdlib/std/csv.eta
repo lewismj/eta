@@ -1,0 +1,150 @@
+;;; std/csv.eta - CSV helpers backed by %csv-* runtime primitives.
+
+(module std.csv
+  (export
+    csv:open-reader
+    csv:reader-from-string
+    csv:columns
+    csv:read-row
+    csv:read-record
+    csv:read-typed-row
+    csv:reader?
+    csv:open-writer
+    csv:write-row
+    csv:write-record
+    csv:flush
+    csv:writer?
+    csv:close
+    csv:fold
+    csv:for-each
+    csv:collect
+    csv:load-file
+    csv:save-file)
+  (begin
+
+    (defun csv:strip-leading-colon (s)
+      (if (and (> (string-length s) 0)
+               (eq? (string-ref s 0) #\:))
+          (substring s 1 (string-length s))
+          s))
+
+    (defun csv:normalize-opt-key (k)
+      (cond
+        ((symbol? k) (string->symbol (csv:strip-leading-colon (symbol->string k))))
+        ((string? k) (string->symbol (csv:strip-leading-colon k)))
+        (#t (error "csv: option key must be a symbol or string"))))
+
+    ;; (csv:opts->alist '(:delimiter #\; :header #f)) -> ((delimiter . #\;) (header . #f))
+    (defun csv:opts->alist (opts)
+      (letrec ((loop (lambda (xs acc)
+                       (if (null? xs)
+                           (reverse acc)
+                           (if (null? (cdr xs))
+                               (error "csv: options must be key/value pairs")
+                               (loop (cdr (cdr xs))
+                                     (cons (cons (csv:normalize-opt-key (car xs))
+                                                 (car (cdr xs)))
+                                           acc)))))))
+        (loop opts '())))
+
+    ;; --- reader ---------------------------------------------------------
+    (defun csv:open-reader (path . opts)
+      (%csv-open-reader path (csv:opts->alist opts)))
+
+    (defun csv:reader-from-string (str . opts)
+      (%csv-reader-from-string str (csv:opts->alist opts)))
+
+    (defun csv:columns (r)
+      (%csv-columns r))
+
+    (defun csv:read-row (r)
+      (%csv-read-row r))
+
+    (defun csv:read-record (r)
+      (%csv-read-record r))
+
+    (defun csv:read-typed-row (r)
+      (%csv-read-typed-row r))
+
+    (defun csv:reader? (x)
+      (%csv-reader? x))
+
+    ;; --- writer ---------------------------------------------------------
+    (defun csv:open-writer (path . opts)
+      (%csv-open-writer path (csv:opts->alist opts)))
+
+    (defun csv:write-row (w row)
+      (%csv-write-row w row))
+
+    (defun csv:write-record (w alist columns)
+      (%csv-write-record w alist columns))
+
+    (defun csv:flush (w)
+      (%csv-flush w))
+
+    (defun csv:writer? (x)
+      (%csv-writer? x))
+
+    (defun csv:close (h)
+      (%csv-close h))
+
+    ;; (csv:fold reader f init) - stream rows without materializing all rows.
+    (defun csv:fold (r f init)
+      (letrec ((loop (lambda (acc)
+                       (let ((row (csv:read-record r)))
+                         (if row
+                             (loop (f acc row))
+                             acc)))))
+        (loop init)))
+
+    ;; (csv:for-each reader f)
+    (defun csv:for-each (r f)
+      (letrec ((loop (lambda ()
+                       (let ((row (csv:read-record r)))
+                         (if row
+                             (begin
+                               (f row)
+                               (loop))
+                             '())))))
+        (loop)))
+
+    ;; (csv:collect reader) - eager list of records.
+    (defun csv:collect (r)
+      (reverse (csv:fold r (lambda (acc rec) (cons rec acc)) '())))
+
+    (defun csv:record-columns (record)
+      (letrec ((loop (lambda (xs acc)
+                       (if (null? xs)
+                           (reverse acc)
+                           (loop (cdr xs) (cons (car (car xs)) acc))))))
+        (loop record '())))
+
+    ;; (csv:load-file path . opts) -> list of records
+    (defun csv:load-file (path . opts)
+      (let* ((r (apply csv:open-reader path opts))
+             (rows (csv:collect r)))
+        (csv:close r)
+        rows))
+
+    ;; (csv:save-file path records . opts) -> writes record alist rows.
+    ;; Caller can override inferred columns via :column-names.
+    (defun csv:save-file (path records . opts)
+      (let ((columns-opt (let ((entry (assq 'column-names (csv:opts->alist opts))))
+                           (if entry (cdr entry) #f))))
+        (let ((columns (if columns-opt
+                           columns-opt
+                           (if (null? records) '() (csv:record-columns (car records))))))
+          (let ((w (apply csv:open-writer path
+                          (if columns-opt
+                              opts
+                              (append (list 'column-names columns) opts)))))
+            (letrec ((loop (lambda (rows)
+                             (if (null? rows)
+                                 '()
+                                 (begin
+                                   (csv:write-record w (car rows) columns)
+                                   (loop (cdr rows)))))))
+              (loop records))
+            (csv:close w)))))
+
+  ))

@@ -1,8 +1,17 @@
 ;;; stdlib/tests/fact_table.test.eta - Unit tests for std.fact_table
 
 (module fact-table.tests
-  (import std.test std.fact_table)
+  (import std.test std.fact_table std.io)
   (begin
+
+    (defun fact-table:test-write-file (path text)
+      (let ((p (open-output-file path)))
+        (if p
+            (begin
+              (display text p)
+              (close-output-port p)
+              #t)
+            #f)))
 
     (define suite
       (make-group "std.fact_table"
@@ -189,6 +198,46 @@
                 (lambda ()
                   (let ((ft (make-fact-table 'k 'v)))
                     (fact-table-insert! ft 'a 1)
-                    (assert-equal '() (fact-table-partition ft 99))))))))))
+                    (assert-equal '() (fact-table-partition ft 99)))))))
 
-    (print-tap (run suite))))
+          ;; CSV bridge
+          (make-group "csv bridge"
+            (list
+              (make-test "fact-table-load-csv infers numeric columns"
+                (lambda ()
+                  (let ((path "fact_table_load_csv_infer.csv"))
+                    (assert-true
+                      (fact-table:test-write-file
+                        path
+                        "sector,beta,ret\ntech,1.2,2.3\nenergy,0.9,1.1\n"))
+                    (let ((ft (fact-table-load-csv path)))
+                      (assert-true (fact-table? ft))
+                      (assert-equal 2 (fact-table-row-count ft))
+                      (assert-equal "tech" (fact-table-ref ft 0 0))
+                      (assert-approx-equal 1.2 (fact-table-ref ft 0 1) 1e-12)
+                      (assert-approx-equal 2.3 (fact-table-ref ft 0 2) 1e-12)))))
+              (make-test "fact-table-load-csv infer-types? #f keeps numbers as strings"
+                (lambda ()
+                  (let ((path "fact_table_load_csv_strings.csv"))
+                    (assert-true
+                      (fact-table:test-write-file
+                        path
+                        "name,qty\nalpha,10\nbeta,20\n"))
+                    (let ((ft (fact-table-load-csv path 'infer-types? #f)))
+                      (assert-equal 2 (fact-table-row-count ft))
+                      (assert-equal "10" (fact-table-ref ft 0 1))
+                      (assert-equal "20" (fact-table-ref ft 1 1))))))
+              (make-test "fact-table-save-csv round-trips live rows"
+                (lambda ()
+                  (let ((path "fact_table_save_csv_roundtrip.csv")
+                        (ft (make-fact-table 'name 'score)))
+                    (fact-table-insert! ft "alice" 10)
+                    (fact-table-insert! ft "bob" 20)
+                    (%fact-table-delete-row! ft 0)
+                    (fact-table-save-csv ft path)
+                    (let ((loaded (fact-table-load-csv path)))
+                      (assert-equal 1 (fact-table-row-count loaded))
+                      (assert-equal "bob" (fact-table-ref loaded 0 0))
+                      (assert-equal 20 (fact-table-ref loaded 0 1))))))))))
+
+    (print-tap (run suite)))))

@@ -354,7 +354,7 @@ analysis:
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../examples/do-calculus/dag.eta)                   |
 | Three rules implementation           | [`examples/do-calculus/do-rules.eta`](../examples/do-calculus/do-rules.eta)         |
 | Full identification demo             | [`examples/do-calculus/demo.eta`](../examples/do-calculus/demo.eta)                 |
-| CSV loader                           | [`examples/causal-factor/csv-loader.eta`](../examples/causal-factor/csv-loader.eta) |
+| CSV module                           | [`stdlib/std/csv.eta`](../stdlib/std/csv.eta)                                         |
 | Back-door estimator                  | [`examples/causal-factor/adjustment.eta`](../examples/causal-factor/adjustment.eta) |
 | Finance analysis                     | [`examples/causal-factor/analysis.eta`](../examples/causal-factor/analysis.eta)     |
 | CLP binding for `clp(Z)` / `clp(FD)` | [`stdlib/std/clp.eta`](../stdlib/std/clp.eta)                                       |
