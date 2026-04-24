@@ -1,4 +1,4 @@
-﻿# Project Status and Next Steps
+# Project Status and Next Steps
 
 [Back to README](../README.md) · [Architecture](architecture.md) ·
 [Bytecode and VM](bytecode-vm.md) · [Compiler](compiler.md) ·
