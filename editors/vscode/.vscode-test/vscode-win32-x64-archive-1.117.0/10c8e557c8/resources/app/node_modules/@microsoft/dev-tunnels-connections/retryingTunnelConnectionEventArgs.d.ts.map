@@ -1,0 +1,1 @@
+{"version":3,"file":"retryingTunnelConnectionEventArgs.d.ts","sourceRoot":"","sources":["../../../src/connections/retryingTunnelConnectionEventArgs.ts"],"names":[],"mappings":"AAGA;;GAEG;AACH,qBAAa,iCAAiC;IAEtC;;OAEG;aACa,KAAK,EAAE,KAAK;IAE5B;;OAEG;IACI,OAAO,EAAE,MAAM;;IARtB;;OAEG;IACa,KAAK,EAAE,KAAK;IAE5B;;OAEG;IACI,OAAO,EAAE,MAAM;IAG1B;;;OAGG;IACI,KAAK,EAAE,OAAO,CAAQ;CAChC"}

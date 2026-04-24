@@ -1901,6 +1901,304 @@ BOOST_AUTO_TEST_CASE(async_function_breakpoint_pauses_on_function_entry) {
     BOOST_TEST(disconnect_resp["success"].as_bool() == true);
 }
 
+/**
+ * 48. Sandbox-backed evaluate handles compound expressions while paused.
+ *
+ * The DAP server's `handle_evaluate` used to reply with `<not available>`
+ * for anything that wasn't a bare identifier. After Stage A0 (the sandbox
+ * tree-walker) it must compute `(+ x 1)` against the paused frame's
+ * environment, return a numeric result, and leave the VM in a state that
+ * still resumes cleanly to termination.
+ */
+BOOST_AUTO_TEST_CASE(async_evaluate_uses_sandbox_for_compound_expression) {
+    const auto tmp = fs::temp_directory_path() / "eta_dap_async_sandbox_eval_test.eta";
+    struct TempFileCleanup {
+        fs::path path;
+        ~TempFileCleanup() {
+            std::error_code ec;
+            fs::remove(path, ec);
+        }
+    } cleanup{tmp};
+
+    {
+        std::ofstream f(tmp, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module dap-async-sandbox-eval\n"
+             "  (defun bp-target (x)\n"
+             "    (+ x 1))\n"
+             "  (defun main ()\n"
+             "    (bp-target 41)\n"
+             "    0))\n";
+    }
+
+    int bp_line = 3;
+    {
+        auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
+        resolver.add_dir(tmp.parent_path());
+        eta::interpreter::Driver driver(std::move(resolver));
+        BOOST_REQUIRE(driver.run_file(tmp));
+        const auto file_id = driver.file_id_for_path(tmp.string());
+        BOOST_REQUIRE(file_id != 0);
+        const auto valid_lines = driver.valid_lines_for(file_id);
+        if (valid_lines.find(3u) == valid_lines.end()) {
+            BOOST_FAIL("expected executable line for sandbox eval at line 3");
+        }
+    }
+
+    AsyncDapHarness harness;
+
+    harness.send(request(1, "initialize", "{}"));
+    auto init_resp = harness.wait_response("initialize");
+    BOOST_REQUIRE(!init_resp.is_null());
+    BOOST_TEST(init_resp["success"].as_bool() == true);
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(tmp) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    auto launch_resp = harness.wait_response("launch");
+    BOOST_REQUIRE(!launch_resp.is_null());
+    BOOST_TEST(launch_resp["success"].as_bool() == true);
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    const std::string set_bp_args =
+        std::string(R"({"source":{"path":")") + json_path(tmp)
+      + R"("},"breakpoints":[{"line":)" + std::to_string(bp_line) + R"(}]})";
+    harness.send(request(3, "setBreakpoints", set_bp_args));
+    auto set_bp_resp = harness.wait_response("setBreakpoints");
+    BOOST_REQUIRE(!set_bp_resp.is_null());
+    BOOST_TEST(set_bp_resp["success"].as_bool() == true);
+
+    harness.send(request(4, "configurationDone", "{}"));
+    auto config_done_resp = harness.wait_response("configurationDone");
+    BOOST_REQUIRE(!config_done_resp.is_null());
+    BOOST_TEST(config_done_resp["success"].as_bool() == true);
+
+    auto stopped_evt = harness.wait_event("stopped", std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!stopped_evt.is_null());
+
+    /// Acquire frameId so the evaluate request resolves locals correctly.
+    harness.send(request(5, "stackTrace", R"({"threadId":1})"));
+    auto stack_resp = harness.wait_response("stackTrace");
+    BOOST_REQUIRE(!stack_resp.is_null());
+    BOOST_REQUIRE(stack_resp["success"].as_bool() == true);
+    const auto& frames = stack_resp["body"]["stackFrames"].as_array();
+    BOOST_REQUIRE(!frames.empty());
+    auto frame_id_opt = frames.front().get_int("id");
+    BOOST_REQUIRE(frame_id_opt.has_value());
+    const int64_t frame_id = *frame_id_opt;
+
+    /// Compound expression: must succeed and produce 42.
+    const std::string eval_args =
+        std::string(R"j({"expression":"(+ x 1)","frameId":)j")
+      + std::to_string(frame_id) + R"(,"context":"watch"})";
+    harness.send(request(6, "evaluate", eval_args));
+    auto eval_resp = harness.wait_response("evaluate");
+    BOOST_REQUIRE(!eval_resp.is_null());
+    BOOST_TEST(eval_resp["success"].as_bool() == true);
+    auto eval_result = eval_resp["body"].get_string("result");
+    BOOST_REQUIRE(eval_result.has_value());
+    BOOST_TEST(*eval_result == "42");
+
+    /// Boolean predicate: must succeed and produce #t.
+    const std::string pred_args =
+        std::string(R"j({"expression":"(< x 100)","frameId":)j")
+      + std::to_string(frame_id) + R"(,"context":"hover"})";
+    harness.send(request(7, "evaluate", pred_args));
+    auto pred_resp = harness.wait_response("evaluate");
+    BOOST_REQUIRE(!pred_resp.is_null());
+    BOOST_TEST(pred_resp["success"].as_bool() == true);
+    auto pred_result = pred_resp["body"].get_string("result");
+    BOOST_REQUIRE(pred_result.has_value());
+    BOOST_TEST(*pred_result == "#t");
+
+    /**
+     * Side-effecting / disallowed expression: must report a sandbox-blocked
+     * diagnostic. The exact wording is allowed to evolve, but the response
+     * itself must still be `success: true` (the evaluate request did not
+     * fail at the protocol level - it simply produced an error string).
+     */
+    const std::string bad_args =
+        std::string(R"j({"expression":"(set! x 99)","frameId":)j")
+      + std::to_string(frame_id) + R"(,"context":"watch"})";
+    harness.send(request(8, "evaluate", bad_args));
+    auto bad_resp = harness.wait_response("evaluate");
+    BOOST_REQUIRE(!bad_resp.is_null());
+    BOOST_TEST(bad_resp["success"].as_bool() == true);
+    auto bad_result = bad_resp["body"].get_string("result");
+    BOOST_REQUIRE(bad_result.has_value());
+    BOOST_TEST(bad_result->find("sandbox blocked") != std::string::npos);
+
+    /// VM still healthy: continue must terminate cleanly.
+    int seq = 9;
+    harness.send(request(seq++, "continue", R"({"threadId":1})"));
+    auto continue_resp = harness.wait_response("continue");
+    BOOST_REQUIRE(!continue_resp.is_null());
+    BOOST_TEST(continue_resp["success"].as_bool() == true);
+
+    bool terminated = false;
+    for (int attempts = 0; attempts < 6 && !terminated; ++attempts) {
+        auto evt = harness.wait_message([](const json::Value& m) {
+            auto t = m.get_string("type");
+            if (!t || *t != "event") return false;
+            auto e = m.get_string("event");
+            return e && (*e == "stopped" || *e == "terminated");
+        }, std::chrono::milliseconds(10000));
+        BOOST_REQUIRE(!evt.is_null());
+
+        auto name = evt.get_string("event");
+        BOOST_REQUIRE(name.has_value());
+        if (*name == "terminated") {
+            terminated = true;
+            break;
+        }
+
+        harness.send(request(seq++, "continue", R"({"threadId":1})"));
+        auto more_continue = harness.wait_response("continue");
+        BOOST_REQUIRE(!more_continue.is_null());
+        BOOST_TEST(more_continue["success"].as_bool() == true);
+    }
+    BOOST_TEST(terminated);
+
+    harness.send(request(seq++, "disconnect", "{}"));
+    auto disconnect_resp = harness.wait_response("disconnect");
+    BOOST_REQUIRE(!disconnect_resp.is_null());
+    BOOST_TEST(disconnect_resp["success"].as_bool() == true);
+}
+
+/**
+ * 49. Compound conditional breakpoints route through the sandbox.
+ *
+ * Before Stage A0, conditions like `(= i 3)` were rejected with
+ * "unsupported expression". After A0 they must evaluate against the
+ * paused frame and pause exactly when the condition is truthy.
+ */
+BOOST_AUTO_TEST_CASE(async_conditional_bp_uses_sandbox_for_compound_expression) {
+    const auto tmp = fs::temp_directory_path() / "eta_dap_async_sandbox_cond_bp_test.eta";
+    struct TempFileCleanup {
+        fs::path path;
+        ~TempFileCleanup() {
+            std::error_code ec;
+            fs::remove(path, ec);
+        }
+    } cleanup{tmp};
+
+    {
+        std::ofstream f(tmp, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module dap-async-sandbox-cond-bp\n"
+             "  (defun loop-target (i)\n"
+             "    (if (< i 5)\n"
+             "        (loop-target (+ i 1))\n"
+             "        i))\n"
+             "  (defun main ()\n"
+             "    (loop-target 0)\n"
+             "    0))\n";
+    }
+
+    int bp_line = 3;
+    {
+        auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
+        resolver.add_dir(tmp.parent_path());
+        eta::interpreter::Driver driver(std::move(resolver));
+        BOOST_REQUIRE(driver.run_file(tmp));
+        const auto file_id = driver.file_id_for_path(tmp.string());
+        BOOST_REQUIRE(file_id != 0);
+        const auto valid_lines = driver.valid_lines_for(file_id);
+        if (valid_lines.find(3u) != valid_lines.end()) {
+            bp_line = 3;
+        } else if (valid_lines.find(4u) != valid_lines.end()) {
+            bp_line = 4;
+        } else {
+            BOOST_FAIL("expected executable line for conditional bp at line 3 or 4");
+        }
+    }
+
+    AsyncDapHarness harness;
+
+    harness.send(request(1, "initialize", "{}"));
+    auto init_resp = harness.wait_response("initialize");
+    BOOST_REQUIRE(!init_resp.is_null());
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(tmp) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    auto launch_resp = harness.wait_response("launch");
+    BOOST_REQUIRE(!launch_resp.is_null());
+    auto initialized_evt = harness.wait_event("initialized");
+    BOOST_REQUIRE(!initialized_evt.is_null());
+
+    const std::string set_bp_args =
+        std::string(R"({"source":{"path":")") + json_path(tmp)
+      + R"j("},"breakpoints":[{"line":)j" + std::to_string(bp_line)
+      + R"j(,"condition":"(= i 3)"}]})j";
+    harness.send(request(3, "setBreakpoints", set_bp_args));
+    auto set_bp_resp = harness.wait_response("setBreakpoints");
+    BOOST_REQUIRE(!set_bp_resp.is_null());
+    BOOST_TEST(set_bp_resp["success"].as_bool() == true);
+
+    harness.send(request(4, "configurationDone", "{}"));
+    auto config_done_resp = harness.wait_response("configurationDone");
+    BOOST_REQUIRE(!config_done_resp.is_null());
+
+    /**
+     * Expect exactly one `stopped` event (when i becomes 3), then the
+     * program runs to completion. Other iterations must NOT pause because
+     * the sandbox-evaluated condition is false.
+     */
+    auto stopped_evt = harness.wait_event("stopped", std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!stopped_evt.is_null());
+
+    /// Verify it really stopped at i=3 by evaluating `i` in the paused frame.
+    harness.send(request(5, "stackTrace", R"({"threadId":1})"));
+    auto stack_resp = harness.wait_response("stackTrace");
+    BOOST_REQUIRE(!stack_resp.is_null());
+    const auto& frames = stack_resp["body"]["stackFrames"].as_array();
+    BOOST_REQUIRE(!frames.empty());
+    auto frame_id_opt = frames.front().get_int("id");
+    BOOST_REQUIRE(frame_id_opt.has_value());
+
+    const std::string eval_args =
+        std::string(R"({"expression":"i","frameId":)")
+      + std::to_string(*frame_id_opt) + R"(,"context":"watch"})";
+    harness.send(request(6, "evaluate", eval_args));
+    auto eval_resp = harness.wait_response("evaluate");
+    BOOST_REQUIRE(!eval_resp.is_null());
+    auto eval_result = eval_resp["body"].get_string("result");
+    BOOST_REQUIRE(eval_result.has_value());
+    BOOST_TEST(*eval_result == "3");
+
+    int seq = 7;
+    harness.send(request(seq++, "continue", R"({"threadId":1})"));
+    auto continue_resp = harness.wait_response("continue");
+    BOOST_REQUIRE(!continue_resp.is_null());
+
+    bool terminated = false;
+    for (int attempts = 0; attempts < 8 && !terminated; ++attempts) {
+        auto evt = harness.wait_message([](const json::Value& m) {
+            auto t = m.get_string("type");
+            if (!t || *t != "event") return false;
+            auto e = m.get_string("event");
+            return e && (*e == "stopped" || *e == "terminated");
+        }, std::chrono::milliseconds(10000));
+        BOOST_REQUIRE(!evt.is_null());
+        auto name = evt.get_string("event");
+        BOOST_REQUIRE(name.has_value());
+        if (*name == "terminated") {
+            terminated = true;
+            break;
+        }
+        /// Should never re-pause for this condition, but be tolerant.
+        harness.send(request(seq++, "continue", R"({"threadId":1})"));
+        auto more_continue = harness.wait_response("continue");
+        BOOST_REQUIRE(!more_continue.is_null());
+    }
+    BOOST_TEST(terminated);
+
+    harness.send(request(seq++, "disconnect", "{}"));
+    auto disconnect_resp = harness.wait_response("disconnect");
+    BOOST_REQUIRE(!disconnect_resp.is_null());
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 

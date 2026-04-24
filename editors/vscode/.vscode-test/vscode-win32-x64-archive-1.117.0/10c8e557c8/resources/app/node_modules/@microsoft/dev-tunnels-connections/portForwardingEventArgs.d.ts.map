@@ -1,0 +1,1 @@
+{"version":3,"file":"portForwardingEventArgs.d.ts","sourceRoot":"","sources":["../../../src/connections/portForwardingEventArgs.ts"],"names":[],"mappings":"AAGA;;GAEG;AACH,qBAAa,uBAAuB;IAK5B;;OAEG;aACa,UAAU,EAAE,MAAM;IAPtC;;OAEG;;IAEC;;OAEG;IACa,UAAU,EAAE,MAAM;IAG/B,MAAM,EAAE,OAAO,CAAS;CAClC"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"sessionPortKey.d.ts","sourceRoot":"","sources":["../../../src/connections/sessionPortKey.ts"],"names":[],"mappings":";AAGA;;GAEG;AACH,qBAAa,cAAc;IACvB;;;OAGG;IACI,SAAS,EAAE,MAAM,GAAG,IAAI,CAAC;IAEhC;;OAEG;IACI,IAAI,EAAE,MAAM,CAAC;gBAED,SAAS,EAAE,MAAM,GAAG,IAAI,EAAE,IAAI,EAAE,MAAM;IAKlD,MAAM,CAAC,KAAK,EAAE,cAAc;IAM5B,QAAQ;CAGlB"}

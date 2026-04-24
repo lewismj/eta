@@ -1,0 +1,12 @@
+;;; sample.eta — fixture used by the VS Code extension test suite.
+(module sample
+  (import std.core std.io)
+  (begin
+    (define greeting "hello")
+    (defun add (x y)
+      (+ x y))
+    (display greeting)
+    (newline)
+    (display (add 1 2))
+    (newline)))
+

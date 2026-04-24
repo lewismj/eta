@@ -18,6 +18,7 @@
 #include "eta/runtime/port.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/vm/disassembler.h"
+#include "eta/runtime/vm/sandbox.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/memory/cons_pool.h"
@@ -227,6 +228,10 @@ void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
         {"supportsBreakpointLocationsRequest",  true},
         {"supportsDisassembleRequest",          true},
         {"supportsCompletionsRequest",          true},
+        /// Vectors and other indexed compounds expose `indexedVariables`/`namedVariables`
+        /// in their `make_variable_json` output and honour `start`/`count` on `variables`.
+        {"supportsVariablePaging",              true},
+        {"supportsVariableType",                false},
     }));
     /**
      * IMPORTANT: "initialized" is intentionally NOT sent here.
@@ -918,7 +923,12 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
             send_response(id, json::object({{"variables", json::array({})}}));
             return;
         }
-        auto children = expand_compound(cit->second);
+        /// Honour DAP variables-paging on indexed children (e.g. large vectors).
+        const auto start_opt = args.get_int("start");
+        const auto count_opt = args.get_int("count");
+        const int  start = start_opt ? static_cast<int>(*start_opt) : 0;
+        const int  count = count_opt ? static_cast<int>(*count_opt) : 0;
+        auto children = expand_compound(cit->second, start, count);
         send_response(id, json::object({{"variables", Value(std::move(children))}}));
         return;
     }
@@ -1071,7 +1081,29 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
             return;
         }
 
-        send_response(id, json::object({{"result", "<not available>"}, {"variablesReference", 0}}));
+        /**
+         * Non-identifier expressions go through the sandbox tree-walker so we
+         * can support `(+ x 1)`, `(< i 5)` etc. for watch / hover / debug
+         * console without executing on the paused VM stack.
+         */
+        std::string formatted;
+        uint64_t    sandbox_val = runtime::nanbox::Nil;
+        std::string sandbox_err;
+        bool        violation = false;
+        if (eval_in_paused_frame(0, expr, formatted, &sandbox_val, &sandbox_err, &violation)) {
+            int vr = is_compound_value(sandbox_val) ? alloc_compound_ref(sandbox_val) : 0;
+            send_response(id, json::object({
+                {"result",             Value(formatted)},
+                {"variablesReference", Value(static_cast<int64_t>(vr))},
+            }));
+            return;
+        }
+
+        const std::string label = violation ? "<sandbox blocked: " : "<eval error: ";
+        send_response(id, json::object({
+            {"result",             Value(label + sandbox_err + ">")},
+            {"variablesReference", 0},
+        }));
         return;
     }
 
@@ -1429,8 +1461,22 @@ bool DapServer::eval_breakpoint_condition(const std::string& condition,
     }
 
     if (!is_identifier_expr(expr)) {
-        out_error =
-            "unsupported expression while paused; only identifiers and boolean/integer literals are supported";
+        /**
+         * Fall through to the sandbox evaluator. Conditions like `(< i 5)`
+         * or `(eq? state 'ready)` are evaluated against the paused frame's
+         * environment without touching the live VM stack.
+         */
+        std::string formatted;
+        uint64_t    val = runtime::nanbox::Nil;
+        std::string sandbox_err;
+        bool        violation = false;
+        if (eval_in_paused_frame(0, expr, formatted, &val, &sandbox_err, &violation)) {
+            out_truthy = (val != runtime::nanbox::False);
+            return true;
+        }
+        out_error = violation
+            ? "sandbox-violation: " + sandbox_err
+            : sandbox_err;
         return false;
     }
 
@@ -1441,6 +1487,59 @@ bool DapServer::eval_breakpoint_condition(const std::string& condition,
     }
 
     out_truthy = (val != runtime::nanbox::False);
+    return true;
+}
+
+bool DapServer::eval_in_paused_frame(int /*frame_idx*/,
+                                     const std::string& expr,
+                                     std::string& out_str,
+                                     uint64_t* out_val,
+                                     std::string* out_error,
+                                     bool* out_violation) {
+    out_str.clear();
+    if (out_error)     out_error->clear();
+    if (out_violation) *out_violation = false;
+
+    if (!driver_) {
+        if (out_error) *out_error = "VM not running";
+        return false;
+    }
+    if (!driver_->vm().is_paused()) {
+        if (out_error) *out_error = "VM must be paused";
+        return false;
+    }
+
+    /**
+     * The sandbox treats every free identifier as a paused-frame lookup:
+     * locals -> upvalues -> module globals -> short-name globals (the same
+     * order used by `evaluate` for bare names today).
+     */
+    runtime::vm::Sandbox sandbox(
+        driver_->heap(),
+        driver_->intern_table(),
+        [this](const std::string& name, runtime::nanbox::LispVal& v) -> bool {
+            return try_lookup_paused_name(name, v);
+        });
+
+    /**
+     * Defence-in-depth: arm the VM sandbox flag so any future codepath that
+     * does enter the bytecode interpreter against the paused VM gets refused
+     * by `StoreGlobal` / `StoreUpval` / `PatchClosureUpval`. The flag is
+     * cleared unconditionally before we return.
+     */
+    auto& vm = driver_->vm();
+    vm.set_sandbox_mode(true);
+    auto sandbox_result = sandbox.eval(expr);
+    vm.set_sandbox_mode(false);
+
+    if (!sandbox_result.ok()) {
+        if (out_error)     *out_error     = sandbox_result.error;
+        if (out_violation) *out_violation = sandbox_result.violation;
+        return false;
+    }
+
+    if (out_val) *out_val = sandbox_result.value;
+    out_str = driver_->format_value(sandbox_result.value);
     return true;
 }
 
@@ -1509,9 +1608,22 @@ bool DapServer::parse_set_variable_value(const std::string& value_text,
         return true;
     }
 
-    out_error =
-        "unsupported value expression while paused; use identifier or literal (#t/#f/nil/int/float/string)";
-    return false;
+    /**
+     * Last-resort fallback: parse and evaluate the value text in the sandbox
+     * so users can type `(+ x 1)` or `(if flag 1 0)` in the Variables pane.
+     */
+    {
+        std::string formatted;
+        std::string sandbox_err;
+        bool        violation = false;
+        if (eval_in_paused_frame(0, text, formatted, &out_value, &sandbox_err, &violation)) {
+            return true;
+        }
+        out_error = violation
+            ? "sandbox-violation: " + sandbox_err
+            : sandbox_err;
+        return false;
+    }
 }
 
 bool DapServer::matches_hit_condition(const std::string& hit_condition,
@@ -2221,18 +2333,46 @@ bool DapServer::is_compound_value(uint64_t val) const {
 }
 
 Value DapServer::make_variable_json(const std::string& name, uint64_t val) {
+    using namespace runtime::nanbox;
+    using namespace runtime::memory::heap;
+    using namespace runtime::types;
+
     int var_ref = 0;
+    int64_t indexed_count = 0;
+    int64_t named_count   = 0;
     if (is_compound_value(val)) {
         var_ref = alloc_compound_ref(val);
+        if (driver_) {
+            auto& heap = driver_->heap();
+            const auto pid = static_cast<ObjectId>(ops::payload(val));
+            if (auto* vec = heap.try_get_as<ObjectKind::Vector, Vector>(pid)) {
+                indexed_count = static_cast<int64_t>(vec->elements.size());
+            } else if (heap.try_get_as<ObjectKind::Cons, Cons>(pid)) {
+                named_count = 2;   ///< car / cdr
+            } else if (auto* cl = heap.try_get_as<ObjectKind::Closure, Closure>(pid)) {
+                named_count = static_cast<int64_t>(cl->upvals.size()) + (cl->func ? 1 : 0);
+            }
+        }
     }
-    return json::object({
+    auto obj = json::object({
         {"name",               Value(name)},
         {"value",              Value(driver_->format_value(val))},
         {"variablesReference", Value(static_cast<int64_t>(var_ref))},
     });
+    /**
+     * Advertise paging hints when expandable. VS Code uses these to render the
+     * "[0..99]", "[100..199]", … buckets and only requests one slice at a time.
+     */
+    if (indexed_count > 0) {
+        obj.as_object().insert_or_assign("indexedVariables", Value(indexed_count));
+    }
+    if (named_count > 0) {
+        obj.as_object().insert_or_assign("namedVariables", Value(named_count));
+    }
+    return obj;
 }
 
-Array DapServer::expand_compound(uint64_t val) {
+Array DapServer::expand_compound(uint64_t val, int start, int count) {
     using namespace runtime::nanbox;
     using namespace runtime::memory::heap;
     using namespace runtime::types;
@@ -2249,15 +2389,34 @@ Array DapServer::expand_compound(uint64_t val) {
 
     if (auto* vec = heap.try_get_as<ObjectKind::Vector, Vector>(
             static_cast<ObjectId>(ops::payload(val)))) {
-        int limit = static_cast<int>((std::min)(vec->elements.size(), std::size_t{200}));
-        for (int i = 0; i < limit; ++i) {
-            children.push_back(make_variable_json(
-                "[" + std::to_string(i) + "]", vec->elements[static_cast<std::size_t>(i)]));
+        const std::size_t total = vec->elements.size();
+        /**
+         * DAP variables-paging: when `start`/`count` are given, return only
+         * that slice. Otherwise fall back to the legacy soft cap of 200 so
+         * unpaged clients still get a bounded response.
+         */
+        std::size_t s = (start > 0) ? static_cast<std::size_t>(start) : 0;
+        if (s > total) s = total;
+        std::size_t end;
+        if (count > 0) {
+            end = s + static_cast<std::size_t>(count);
+            if (end > total) end = total;
+        } else if (start > 0) {
+            end = total;
+        } else {
+            end = (std::min)(total, std::size_t{200});
         }
-        if (vec->elements.size() > 200) {
+
+        children.reserve(end - s);
+        for (std::size_t i = s; i < end; ++i) {
+            children.push_back(make_variable_json(
+                "[" + std::to_string(i) + "]", vec->elements[i]));
+        }
+        /// Only show the legacy "(... N more)" tail when no explicit paging was requested.
+        if (start <= 0 && count <= 0 && total > 200) {
             children.push_back(json::object({
                 {"name",  "..."},
-                {"value", Value("(" + std::to_string(vec->elements.size() - 200) + " more)")},
+                {"value", Value("(" + std::to_string(total - 200) + " more)")},
                 {"variablesReference", 0},
             }));
         }

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources revision="1.0" schemaVersion="1.0">
+	<displayName />
+	<description />
+	<resources>
+		<stringTable>
+			<string id="Application">Visual Studio Code</string>
+			<string id="Supported_1_101">Visual Studio Code &gt;= 1.101</string>
+			<string id="Supported_1_104">Visual Studio Code &gt;= 1.104</string>
+			<string id="Supported_1_107">Visual Studio Code &gt;= 1.107</string>
+			<string id="Supported_1_109">Visual Studio Code &gt;= 1.109</string>
+			<string id="Supported_1_110">Visual Studio Code &gt;= 1.110</string>
+			<string id="Supported_1_112">Visual Studio Code &gt;= 1.112</string>
+			<string id="Supported_1_113">Visual Studio Code &gt;= 1.113</string>
+			<string id="Supported_1_116">Visual Studio Code &gt;= 1.116</string>
+			<string id="Supported_1_67">Visual Studio Code &gt;= 1.67</string>
+			<string id="Supported_1_96">Visual Studio Code &gt;= 1.96</string>
+			<string id="Supported_1_99">Visual Studio Code &gt;= 1.99</string>
+			<string id="Category_interactiveSessionConfigurationTitle">Etkileşimli Oturum</string>
+			<string id="Category_extensionsConfigurationTitle">Uzantılar</string>
+			<string id="Category_terminalIntegratedConfigurationTitle">Tümleşik Terminal</string>
+			<string id="Category_telemetryConfigurationTitle">Telemetri</string>
+			<string id="Category_updateConfigurationTitle">Güncelleştir</string>
+			<string id="BrowserChatTools">BrowserChatTools</string>
+			<string id="BrowserChatTools_browser_enableChatTools">Etkinleştirildiğinde, sohbet araçları Tümleşik Tarayıcı'da sayfaları açmak ve bu sayfalarla etkileşim kurmak için tarayıcı araçlarını kullanabilir.</string>
+			<string id="ChatAgentAllowedNetworkDomains">ChatAgentAllowedNetworkDomains</string>
+			<string id="ChatAgentAllowedNetworkDomains_chat_agent_allowedNetworkDomains">Aracı araçlarının (getirme aracı, tümleşik tarayıcı) ağ erişimi için izin verilen etki alanları. Yalnızca {0} etkinleştirildiğinde geçerli olur. {1} etkinleştirildiğinde, bunlar terminal korumalı alanı için de geçerlidir. {2} gibi joker karakterleri destekler. Hem izin verilenler hem de reddedilenler listeleri boşsa, tüm etki alanları engellenir. Reddedilen etki alanları (bkz. {3}) öncelik kazanır.</string>
+			<string id="ChatAgentDeniedNetworkDomains">ChatAgentDeniedNetworkDomains</string>
+			<string id="ChatAgentDeniedNetworkDomains_chat_agent_deniedNetworkDomains">Aracı araçlarının (getirme aracı, tümleşik tarayıcı) ağ erişimi için reddedilen etki alanları. Yalnızca {0} etkinleştirildiğinde geçerli olur. {1} etkinleştirildiğinde, bunlar terminal korumalı alanı için de geçerlidir. Şuna göre öncelik kazanır: {2}. {3} gibi joker karakterleri destekler.</string>
+			<string id="ChatAgentExtensionTools">ChatAgentExtensionTools</string>
+			<string id="ChatAgentExtensionTools_chat_extensionToolsEnabled">Üçüncü taraf uzantıları tarafından sağlanan araçların kullanımını etkinleştirin.</string>
+			<string id="ChatAgentMode">ChatAgentMode</string>
+			<string id="ChatAgentMode_chat_agent_enabled_description">Etkinleştirildiğinde, aracı modu sohbetten etkinleştirilebilir ve yan etkileri olan aracı bağlamlarındaki araçlar kullanılabilir.</string>
+			<string id="ChatAgentNetworkFilter">ChatAgentNetworkFilter</string>
+			<string id="ChatAgentNetworkFilter_chat_agent_networkFilter">Etkinleştirildiğinde, aracı araçlarının (getirme aracı, tümleşik tarayıcı) ağ erişimi {0} ve {1} doğrultusunda kısıtlanır. Devre dışı bırakıldığında ağ filtrelemesi uygulanmaz.</string>
+			<string id="ChatHooks">ChatHooks</string>
+			<string id="ChatHooks_chat_useHooks_description">Bir aracının iş akışı sırasında sohbet kancalarının stratejik noktalarda çalıştırılıp çalıştırılmayacağını kontrol eder. Kancalar `#chat.hookFilesLocations#` içinde yapılandırılan dosyalardan yüklenir.</string>
+			<string id="ChatMCP">ChatMCP</string>
+			<string id="ChatMCP_chat_mcp_access">Yüklü Model Bağlam Protokolü sunucularına erişimi denetler.</string>
+			<string id="ChatMCP_chat_mcp_access_none">MCP sunucularına erişim yok.</string>
+			<string id="ChatMCP_chat_mcp_access_registry">VS Code'un bağlı olduğu kayıt defterinden yüklenen MCP sunucularına erişime izin verir.</string>
+			<string id="ChatMCP_chat_mcp_access_any">Tüm yüklü MCP sunucularına erişime izin ver.</string>
+			<string id="ChatPluginsEnabled">ChatPluginsEnabled</string>
+			<string id="ChatPluginsEnabled_chat_plugins_enabled">Sohbette aracı eklentisi tümleştirmesini etkinleştir.</string>
+			<string id="ChatToolsAutoApprove">ChatToolsAutoApprove</string>
+			<string id="ChatToolsAutoApprove_autoApprove3_description">"YOLO modu" olarak da bilinen genel otomatik onaylama, tüm çalışma alanlarındaki tüm araçlar için el ile onayı tamamen devre dışı bırakır ve aracının tamamen otonom olarak hareket etmesine olanak tanır. Bu son derece tehlikelidir ve *hiçbir zaman* önerilmez; Codespaces ve Geliştirici Kapsayıcıları gibi kapsayıcılı ortamlarda bile, kapsayıcıya iletilen kullanıcı anahtarları riske girebilir.
+
+Bu özellik, kritik güvenlik korumalarını devre dışı bırakarak bir saldırganın makineyi ele geçirmesini çok daha kolay hale getirir.
+
+Not: Bu ayar yalnızca araç onayını denetler, aracının soru sormasını engellemez. Aracının sorularını otomatik olarak yanıtlamak için `#chat.autoReply#` ayarını kullanın.</string>
+			<string id="ChatToolsEligibleForAutoApproval">ChatToolsEligibleForAutoApproval</string>
+			<string id="ChatToolsEligibleForAutoApproval_chat_tools_eligibleForAutoApproval">Hangi araçların otomatik onay için uygun olduğunu denetler. ‘False’ olarak ayarlanan araçlar her zaman bir onay mesajı gösterir ve otomatik onay seçeneği sunmaz. Varsayılan davranış (veya bir aracı ‘true’ olarak ayarlamak), aracın otomatik onay seçenekleri sunmasına neden olabilir.</string>
+			<string id="Claude3PIntegration">Claude3PIntegration</string>
+			<string id="Claude3PIntegration_github_copilot_chat_claudeAgent_enabled">Enable Claude Agent sessions in VS Code. Start and resume agentic coding sessions powered by Anthropic Claude Agent SDK directly in the editor. Uses your existing Copilot subscription.</string>
+			<string id="CopilotNextEditSuggestions">CopilotNextEditSuggestions</string>
+			<string id="CopilotNextEditSuggestions_github_copilot_nextEditSuggestions_enabled">Whether to enable next edit suggestions (NES). NES can propose a next edit based on your recent changes.</string>
+			<string id="CopilotReviewAgent">CopilotReviewAgent</string>
+			<string id="CopilotReviewAgent_github_copilot_chat_reviewAgent_enabled">Enables the code review agent.</string>
+			<string id="CopilotReviewSelection">CopilotReviewSelection</string>
+			<string id="CopilotReviewSelection_github_copilot_chat_reviewSelection_enabled">Enables code review on current selection.</string>
+			<string id="DeprecatedEditModeHidden">DeprecatedEditModeHidden</string>
+			<string id="DeprecatedEditModeHidden_chat_editMode_hidden">Etkinleştirildiğinde, Düzenleme modu sohbet modu seçicisinden gizlenir.</string>
+			<string id="McpGalleryServiceUrl">McpGalleryServiceUrl</string>
+			<string id="McpGalleryServiceUrl_mcp_gallery_serviceUrl">MCP Galeri hizmeti URL'sini şuna bağlanacak şekilde yapılandır</string>
+			<string id="AllowedExtensions">AllowedExtensions</string>
+			<string id="AllowedExtensions_extensions_allowed_policy">Kullanılmasına izin verilen uzantıların bir listesini belirtin. Bu, yetkisiz uzantıların kullanımını kısıtlayarak güvenli ve tutarlı bir geliştirme ortamının korunmasına yardımcı olur. Daha fazla bilgi: https://aka.ms/vscode/enterprise/extensions/allowed</string>
+			<string id="ExtensionGalleryServiceUrl">ExtensionGalleryServiceUrl</string>
+			<string id="ExtensionGalleryServiceUrl_extensions_gallery_serviceUrl">Şuraya bağlanmak için Market hizmeti URL'sini yapılandır</string>
+			<string id="ChatAgentSandboxEnabled">ChatAgentSandboxEnabled</string>
+			<string id="ChatAgentSandboxEnabled_agentSandbox_enabledSetting">Aracı modunun, araçların yapabileceklerini kısıtlamak için korumalı alan kullanıp kullanmayacağını denetler. Etkinleştirildiğinde, terminal gibi araçlar sistem erişimini sınırlamak için korumalı bir ortamda çalıştırılır.</string>
+			<string id="ChatAgentSandboxEnabled_agentSandbox_enabledSetting_offDescription">Aracı modu araçları için korumalı alanı devre dışı bırakın.</string>
+			<string id="ChatAgentSandboxEnabled_agentSandbox_enabledSetting_onDescription">Aracı modu araçları için korumalı alanı etkinleştirin.</string>
+			<string id="ChatToolsTerminalEnableAutoApprove">ChatToolsTerminalEnableAutoApprove</string>
+			<string id="ChatToolsTerminalEnableAutoApprove_autoApproveMode_description">Terminal aracında çalıştırmada otomatik onaya izin verilip verilmeyeceğini denetler.</string>
+			<string id="EnableFeedback">EnableFeedback</string>
+			<string id="EnableFeedback_telemetry_feedback_enabled">Sorun bildirici, anketler ve diğer geri bildirim seçenekleri gibi geri bildirim mekanizmalarını etkinleştirin.</string>
+			<string id="TelemetryLevel">TelemetryLevel</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_policyDescription">Telemetri düzeyini kontrol eder.</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_default">Kullanım verilerini, hataları ve kilitlenme raporlarını gönderir.</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_error">Genel hata telemetrisini ve kilitlenme raporlarını gönderir.</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_crash">İşletim sistemi düzeyi kilitlenme raporlarını gönderir.</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_off">Tüm ürün telemetrisini devre dışı bırakır.</string>
+			<string id="UpdateMode">UpdateMode</string>
+			<string id="UpdateMode_updateMode">Otomatik güncelleştirmeleri alıp almayacağınızı yapılandırın. Değişiklikten sonra yeniden başlatma gerektirir. Güncelleştirmeler bir Microsoft çevrimiçi hizmetinden getirilir.</string>
+			<string id="UpdateMode_none">Yok</string>
+			<string id="UpdateMode_manual">Otomatik arka plan güncelleştirme denetimlerini devre dışı bırak. El ile denetlerseniz güncelleştirmeler kullanılabilir.</string>
+			<string id="UpdateMode_start">Başlat</string>
+			<string id="UpdateMode_default">Sistem</string>
+		</stringTable>
+		<presentationTable>
+			<presentation id="BrowserChatTools"><checkBox refId="BrowserChatTools">BrowserChatTools</checkBox></presentation>
+			<presentation id="ChatAgentAllowedNetworkDomains"><multiTextBox refId="ChatAgentAllowedNetworkDomains" /></presentation>
+			<presentation id="ChatAgentDeniedNetworkDomains"><multiTextBox refId="ChatAgentDeniedNetworkDomains" /></presentation>
+			<presentation id="ChatAgentExtensionTools"><checkBox refId="ChatAgentExtensionTools">ChatAgentExtensionTools</checkBox></presentation>
+			<presentation id="ChatAgentMode"><checkBox refId="ChatAgentMode">ChatAgentMode</checkBox></presentation>
+			<presentation id="ChatAgentNetworkFilter"><checkBox refId="ChatAgentNetworkFilter">ChatAgentNetworkFilter</checkBox></presentation>
+			<presentation id="ChatHooks"><checkBox refId="ChatHooks">ChatHooks</checkBox></presentation>
+			<presentation id="ChatMCP"><dropdownList refId="ChatMCP" /></presentation>
+			<presentation id="ChatPluginsEnabled"><checkBox refId="ChatPluginsEnabled">ChatPluginsEnabled</checkBox></presentation>
+			<presentation id="ChatToolsAutoApprove"><checkBox refId="ChatToolsAutoApprove">ChatToolsAutoApprove</checkBox></presentation>
+			<presentation id="ChatToolsEligibleForAutoApproval"><multiTextBox refId="ChatToolsEligibleForAutoApproval" /></presentation>
+			<presentation id="Claude3PIntegration"><checkBox refId="Claude3PIntegration">Claude3PIntegration</checkBox></presentation>
+			<presentation id="CopilotNextEditSuggestions"><checkBox refId="CopilotNextEditSuggestions">CopilotNextEditSuggestions</checkBox></presentation>
+			<presentation id="CopilotReviewAgent"><checkBox refId="CopilotReviewAgent">CopilotReviewAgent</checkBox></presentation>
+			<presentation id="CopilotReviewSelection"><checkBox refId="CopilotReviewSelection">CopilotReviewSelection</checkBox></presentation>
+			<presentation id="DeprecatedEditModeHidden"><checkBox refId="DeprecatedEditModeHidden">DeprecatedEditModeHidden</checkBox></presentation>
+			<presentation id="McpGalleryServiceUrl"><textBox refId="McpGalleryServiceUrl"><label>McpGalleryServiceUrl:</label></textBox></presentation>
+			<presentation id="AllowedExtensions"><multiTextBox refId="AllowedExtensions" /></presentation>
+			<presentation id="ExtensionGalleryServiceUrl"><textBox refId="ExtensionGalleryServiceUrl"><label>ExtensionGalleryServiceUrl:</label></textBox></presentation>
+			<presentation id="ChatAgentSandboxEnabled"><dropdownList refId="ChatAgentSandboxEnabled" /></presentation>
+			<presentation id="ChatToolsTerminalEnableAutoApprove"><checkBox refId="ChatToolsTerminalEnableAutoApprove">ChatToolsTerminalEnableAutoApprove</checkBox></presentation>
+			<presentation id="EnableFeedback"><checkBox refId="EnableFeedback">EnableFeedback</checkBox></presentation>
+			<presentation id="TelemetryLevel"><dropdownList refId="TelemetryLevel" /></presentation>
+			<presentation id="UpdateMode"><dropdownList refId="UpdateMode" /></presentation>
+		</presentationTable>
+	</resources>
+</policyDefinitionResources>

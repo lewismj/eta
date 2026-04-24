@@ -1,0 +1,7 @@
+2026-04-24 19:24:02.835 [info] [main] Log level: Info
+2026-04-24 19:24:02.835 [info] [main] Validating found git in: "C:\Program Files\Git\cmd\git.exe"
+2026-04-24 19:24:02.835 [info] [main] Using git "2.45.2.windows.1" from "C:\Program Files\Git\cmd\git.exe"
+2026-04-24 19:24:02.835 [info] [Model][doInitialScan] Initial repository scan started
+2026-04-24 19:24:02.835 [info] > git rev-parse --show-toplevel [2097ms]
+2026-04-24 19:24:02.836 [info] [Model][doInitialScan] Initial repository scan completed - repositories (0), closed repositories (0), parent repositories (1), unsafe repositories (0)
+2026-04-24 19:24:03.883 [info] > git rev-parse --show-toplevel [511ms]

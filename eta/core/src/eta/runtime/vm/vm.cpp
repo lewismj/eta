@@ -794,6 +794,8 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 if (!closure) return std::unexpected(closure.error());
                 if (instr.arg >= (*closure)->upvals.size()) [[unlikely]]
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "StoreUpval: index out of range"}});
+                if (sandbox_mode_) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::SandboxViolation, "StoreUpval blocked: sandbox is read-only"}});
                 (*closure)->upvals[instr.arg] = pop();
                 break;
             }
@@ -805,6 +807,8 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 }
                 break;
             case OpCode::StoreGlobal:
+                if (sandbox_mode_) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::SandboxViolation, "StoreGlobal blocked: sandbox is read-only"}});
                 if (instr.arg >= globals_.size()) {
                     globals_.resize(instr.arg + 1, Nil);
                 }
@@ -880,6 +884,8 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 /// Fixup for letrec: patch a closure's captured upval after set!
                 LispVal value = pop();
                 LispVal closure_val = pop();
+                if (sandbox_mode_) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::SandboxViolation, "PatchClosureUpval blocked: sandbox is read-only"}});
                 auto* closure = try_get_as<ObjectKind::Closure, Closure>(closure_val);
                 if (closure && instr.arg < closure->upvals.size()) {
                     closure->upvals[instr.arg] = value;
@@ -1818,6 +1824,7 @@ std::expected<LispVal, RuntimeError> VM::runtime_error_tag(const RuntimeError& e
                 case RuntimeErrorCode::InvalidArity:    tag_name = "runtime.invalid-arity"; break;
                 case RuntimeErrorCode::UserError:       tag_name = "runtime.user-error"; break;
                 case RuntimeErrorCode::UndefinedGlobal: tag_name = "runtime.undefined-global"; break;
+                case RuntimeErrorCode::SandboxViolation: tag_name = "runtime.sandbox-violation"; break;
                 case RuntimeErrorCode::NotImplemented:
                 case RuntimeErrorCode::InternalError:
                 case RuntimeErrorCode::StackOverflow:

@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources revision="1.0" schemaVersion="1.0">
+	<displayName />
+	<description />
+	<resources>
+		<stringTable>
+			<string id="Application">Visual Studio Code</string>
+			<string id="Supported_1_101">Visual Studio Code &gt;= 1.101</string>
+			<string id="Supported_1_104">Visual Studio Code &gt;= 1.104</string>
+			<string id="Supported_1_107">Visual Studio Code &gt;= 1.107</string>
+			<string id="Supported_1_109">Visual Studio Code &gt;= 1.109</string>
+			<string id="Supported_1_110">Visual Studio Code &gt;= 1.110</string>
+			<string id="Supported_1_112">Visual Studio Code &gt;= 1.112</string>
+			<string id="Supported_1_113">Visual Studio Code &gt;= 1.113</string>
+			<string id="Supported_1_116">Visual Studio Code &gt;= 1.116</string>
+			<string id="Supported_1_67">Visual Studio Code &gt;= 1.67</string>
+			<string id="Supported_1_96">Visual Studio Code &gt;= 1.96</string>
+			<string id="Supported_1_99">Visual Studio Code &gt;= 1.99</string>
+			<string id="Category_interactiveSessionConfigurationTitle">Interaktivní relace</string>
+			<string id="Category_extensionsConfigurationTitle">Rozšíření</string>
+			<string id="Category_terminalIntegratedConfigurationTitle">Integrovaný terminál</string>
+			<string id="Category_telemetryConfigurationTitle">Telemetry</string>
+			<string id="Category_updateConfigurationTitle">Aktualizace</string>
+			<string id="BrowserChatTools">BrowserChatTools</string>
+			<string id="BrowserChatTools_browser_enableChatTools">Pokud je tato možnost povolená, můžou chatovací agenti používat nástroje prohlížeče k otevírání stránek a interakci se stránkami v integrovaném prohlížeči.</string>
+			<string id="ChatAgentAllowedNetworkDomains">ChatAgentAllowedNetworkDomains</string>
+			<string id="ChatAgentAllowedNetworkDomains_chat_agent_allowedNetworkDomains">Povolené domény pro síťový přístup nástrojů agentů (nástroj pro načtení, integrovaný prohlížeč). Platí jen tehdy, když je povolené {0}. Když je povolené {1}, vztahují se tato nastavení také na sandbox terminálu. Podporuje zástupné znaky jako {2}. Když jsou seznamy povolených i zakázaných prázdné, všechny domény jsou blokované. Zakázané domény (viz {3}) mají přednost.</string>
+			<string id="ChatAgentDeniedNetworkDomains">ChatAgentDeniedNetworkDomains</string>
+			<string id="ChatAgentDeniedNetworkDomains_chat_agent_deniedNetworkDomains">Zakázané domény pro síťový přístup nástrojů agentů (nástroj fetch, integrovaný prohlížeč). Platí jen tehdy, když je povolené {0}. Když je povolené {1}, vztahují se tato nastavení také na sandbox terminálu. Má přednost před {2}. Podporuje zástupné znaky jako {3}.</string>
+			<string id="ChatAgentExtensionTools">ChatAgentExtensionTools</string>
+			<string id="ChatAgentExtensionTools_chat_extensionToolsEnabled">Umožňuje používat nástroje z rozšíření třetích stran.</string>
+			<string id="ChatAgentMode">ChatAgentMode</string>
+			<string id="ChatAgentMode_chat_agent_enabled_description">Pokud je tato volba povolená, může být režim agenta aktivován z chatu a lze využívat nástroje s vedlejšími účinky v agentních kontextech.</string>
+			<string id="ChatAgentNetworkFilter">ChatAgentNetworkFilter</string>
+			<string id="ChatAgentNetworkFilter_chat_agent_networkFilter">Když je tato možnost povolená, síťový přístup nástrojů agentů (nástroj pro načtení změn, integrovaný prohlížeč) je omezen podle {0} a {1}. Když je tato možnost vypnutá, nepoužije se žádné filtrování sítě.</string>
+			<string id="ChatHooks">ChatHooks</string>
+			<string id="ChatHooks_chat_useHooks_description">Určuje, zda se volání chatu provádějí v určitých strategických bodech pracovního postupu agenta. Volání se načítají ze souborů nakonfigurovaných v `#chat.hookFilesLocations#`.</string>
+			<string id="ChatMCP">ChatMCP</string>
+			<string id="ChatMCP_chat_mcp_access">Řídí přístup k nainstalovaným serverům protokolu Model Context Protocol.</string>
+			<string id="ChatMCP_chat_mcp_access_none">Nemáte přístup k serverům MCP.</string>
+			<string id="ChatMCP_chat_mcp_access_registry">Umožňuje přístup k serverům MCP nainstalovaným z registru, ke kterému je VS Code připojen.</string>
+			<string id="ChatMCP_chat_mcp_access_any">Povolení přístupu k libovolnému nainstalovanému serveru MCP.</string>
+			<string id="ChatPluginsEnabled">ChatPluginsEnabled</string>
+			<string id="ChatPluginsEnabled_chat_plugins_enabled">Povolte integraci modulu plug-in agenta v chatu.</string>
+			<string id="ChatToolsAutoApprove">ChatToolsAutoApprove</string>
+			<string id="ChatToolsAutoApprove_autoApprove3_description">Globální automatické schvalování, známé také jako „režim YOLO“, zcela vypíná ruční schvalování pro všechny nástroje ve všech pracovních prostorech a umožňuje agentovi jednat plně autonomně. Toto je mimořádně nebezpečné a nikdy se to nedoporučuje, i v kontejnerizovaných prostředích, jako jsou Codespaces a Dev Containers, jsou do kontejneru přeposílány uživatelské klíče, které mohou být kompromitovány.
+
+Tato funkce vypíná klíčové bezpečnostní ochrany a výrazně usnadňuje útočníkovi kompromitaci zařízení.
+
+Poznámka: Toto nastavení řídí pouze schvalování nástrojů a nebrání agentovi v kladení otázek. Pokud chcete automaticky odpovídat na otázky agenta, použijte nastavení `#chat.autoReply#`.</string>
+			<string id="ChatToolsEligibleForAutoApproval">ChatToolsEligibleForAutoApproval</string>
+			<string id="ChatToolsEligibleForAutoApproval_chat_tools_eligibleForAutoApproval">Určuje, které nástroje mají nárok na automatické schválení. Nástroje nastavené na false vždy zobrazí potvrzení a nikdy nenabízejí možnost automatického schválení. Výchozí chování (nebo nastavení nástroje na true) může vést k tomu, že nástroj nabízí možnosti automatického schválení.</string>
+			<string id="Claude3PIntegration">Claude3PIntegration</string>
+			<string id="Claude3PIntegration_github_copilot_chat_claudeAgent_enabled">Enable Claude Agent sessions in VS Code. Start and resume agentic coding sessions powered by Anthropic Claude Agent SDK directly in the editor. Uses your existing Copilot subscription.</string>
+			<string id="CopilotNextEditSuggestions">CopilotNextEditSuggestions</string>
+			<string id="CopilotNextEditSuggestions_github_copilot_nextEditSuggestions_enabled">Whether to enable next edit suggestions (NES). NES can propose a next edit based on your recent changes.</string>
+			<string id="CopilotReviewAgent">CopilotReviewAgent</string>
+			<string id="CopilotReviewAgent_github_copilot_chat_reviewAgent_enabled">Enables the code review agent.</string>
+			<string id="CopilotReviewSelection">CopilotReviewSelection</string>
+			<string id="CopilotReviewSelection_github_copilot_chat_reviewSelection_enabled">Enables code review on current selection.</string>
+			<string id="DeprecatedEditModeHidden">DeprecatedEditModeHidden</string>
+			<string id="DeprecatedEditModeHidden_chat_editMode_hidden">Pokud je tato možnost povolená, skryje režim úprav v nabídce výběru režimu chatu.</string>
+			<string id="McpGalleryServiceUrl">McpGalleryServiceUrl</string>
+			<string id="McpGalleryServiceUrl_mcp_gallery_serviceUrl">Nakonfigurovat adresu URL služby Galerie MCP pro připojení k</string>
+			<string id="AllowedExtensions">AllowedExtensions</string>
+			<string id="AllowedExtensions_extensions_allowed_policy">Zadejte seznam rozšíření, která mohou být použita. Pomáhá udržovat zabezpečené a konzistentní vývojové prostředí tím, že je omezeno používání neautorizovaných rozšíření. Další informace: https://aka.ms/vscode/enterprise/extensions/allowed</string>
+			<string id="ExtensionGalleryServiceUrl">ExtensionGalleryServiceUrl</string>
+			<string id="ExtensionGalleryServiceUrl_extensions_gallery_serviceUrl">Nakonfigurovat adresu URL služby Marketplace pro připojení k</string>
+			<string id="ChatAgentSandboxEnabled">ChatAgentSandboxEnabled</string>
+			<string id="ChatAgentSandboxEnabled_agentSandbox_enabledSetting">Určuje, zda režim agenta používá sandboxing k omezení toho, co mohou nástroje provádět. Pokud je povoleno, nástroje, jako je terminál, běží v prostředí sandboxu, které omezuje přístup k systému.</string>
+			<string id="ChatAgentSandboxEnabled_agentSandbox_enabledSetting_offDescription">Zakázat sandboxing pro nástroje režimu agenta</string>
+			<string id="ChatAgentSandboxEnabled_agentSandbox_enabledSetting_onDescription">Povolte sandboxing pro nástroje režimu agenta.</string>
+			<string id="ChatToolsTerminalEnableAutoApprove">ChatToolsTerminalEnableAutoApprove</string>
+			<string id="ChatToolsTerminalEnableAutoApprove_autoApproveMode_description">Určuje, jestli se má povolit automatické schvalování při spuštění v nástroji terminálu.</string>
+			<string id="EnableFeedback">EnableFeedback</string>
+			<string id="EnableFeedback_telemetry_feedback_enabled">Povolte mechanismy zpětné vazby, například hlášení problémů, průzkumy a další možnosti zpětné vazby.</string>
+			<string id="TelemetryLevel">TelemetryLevel</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_policyDescription">Řídí úroveň telemetrie.</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_default">Odesílá data o využití, chyby a hlášení o selhání.</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_error">Odesílá obecné hlášení o selhání a telemetrii chyb.</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_crash">Odesílá hlášení o selhání na úrovni operačního systému.</string>
+			<string id="TelemetryLevel_telemetry_telemetryLevel_off">Zakáže veškerou telemetrii produktu.</string>
+			<string id="UpdateMode">UpdateMode</string>
+			<string id="UpdateMode_updateMode">Umožňuje nakonfigurovat, jestli budete dostávat automatické aktualizace. Po změně vyžaduje restart. Aktualizace se načítají z online služby Microsoftu.</string>
+			<string id="UpdateMode_none">Žádné</string>
+			<string id="UpdateMode_manual">Zakázat automatické vyhledávání aktualizací na pozadí (aktualizace lze nechat vyhledat ručně)</string>
+			<string id="UpdateMode_start">Spustit</string>
+			<string id="UpdateMode_default">Systém</string>
+		</stringTable>
+		<presentationTable>
+			<presentation id="BrowserChatTools"><checkBox refId="BrowserChatTools">BrowserChatTools</checkBox></presentation>
+			<presentation id="ChatAgentAllowedNetworkDomains"><multiTextBox refId="ChatAgentAllowedNetworkDomains" /></presentation>
+			<presentation id="ChatAgentDeniedNetworkDomains"><multiTextBox refId="ChatAgentDeniedNetworkDomains" /></presentation>
+			<presentation id="ChatAgentExtensionTools"><checkBox refId="ChatAgentExtensionTools">ChatAgentExtensionTools</checkBox></presentation>
+			<presentation id="ChatAgentMode"><checkBox refId="ChatAgentMode">ChatAgentMode</checkBox></presentation>
+			<presentation id="ChatAgentNetworkFilter"><checkBox refId="ChatAgentNetworkFilter">ChatAgentNetworkFilter</checkBox></presentation>
+			<presentation id="ChatHooks"><checkBox refId="ChatHooks">ChatHooks</checkBox></presentation>
+			<presentation id="ChatMCP"><dropdownList refId="ChatMCP" /></presentation>
+			<presentation id="ChatPluginsEnabled"><checkBox refId="ChatPluginsEnabled">ChatPluginsEnabled</checkBox></presentation>
+			<presentation id="ChatToolsAutoApprove"><checkBox refId="ChatToolsAutoApprove">ChatToolsAutoApprove</checkBox></presentation>
+			<presentation id="ChatToolsEligibleForAutoApproval"><multiTextBox refId="ChatToolsEligibleForAutoApproval" /></presentation>
+			<presentation id="Claude3PIntegration"><checkBox refId="Claude3PIntegration">Claude3PIntegration</checkBox></presentation>
+			<presentation id="CopilotNextEditSuggestions"><checkBox refId="CopilotNextEditSuggestions">CopilotNextEditSuggestions</checkBox></presentation>
+			<presentation id="CopilotReviewAgent"><checkBox refId="CopilotReviewAgent">CopilotReviewAgent</checkBox></presentation>
+			<presentation id="CopilotReviewSelection"><checkBox refId="CopilotReviewSelection">CopilotReviewSelection</checkBox></presentation>
+			<presentation id="DeprecatedEditModeHidden"><checkBox refId="DeprecatedEditModeHidden">DeprecatedEditModeHidden</checkBox></presentation>
+			<presentation id="McpGalleryServiceUrl"><textBox refId="McpGalleryServiceUrl"><label>McpGalleryServiceUrl:</label></textBox></presentation>
+			<presentation id="AllowedExtensions"><multiTextBox refId="AllowedExtensions" /></presentation>
+			<presentation id="ExtensionGalleryServiceUrl"><textBox refId="ExtensionGalleryServiceUrl"><label>ExtensionGalleryServiceUrl:</label></textBox></presentation>
+			<presentation id="ChatAgentSandboxEnabled"><dropdownList refId="ChatAgentSandboxEnabled" /></presentation>
+			<presentation id="ChatToolsTerminalEnableAutoApprove"><checkBox refId="ChatToolsTerminalEnableAutoApprove">ChatToolsTerminalEnableAutoApprove</checkBox></presentation>
+			<presentation id="EnableFeedback"><checkBox refId="EnableFeedback">EnableFeedback</checkBox></presentation>
+			<presentation id="TelemetryLevel"><dropdownList refId="TelemetryLevel" /></presentation>
+			<presentation id="UpdateMode"><dropdownList refId="UpdateMode" /></presentation>
+		</presentationTable>
+	</resources>
+</policyDefinitionResources>

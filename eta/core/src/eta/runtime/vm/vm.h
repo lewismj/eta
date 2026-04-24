@@ -385,6 +385,26 @@ public:
     void set_current_output_port(LispVal port) { current_output_ = port; }
     void set_current_error_port(LispVal port) { current_error_ = port; }
 
+    /**
+     * Sandbox mode (used by the DAP-side `Sandbox` evaluator).
+     *
+     * When enabled, any opcode that would visibly mutate state outside the
+     * caller-owned transient stack (`StoreGlobal`, `StoreUpval`,
+     * `PatchClosureUpval`) returns `RuntimeErrorCode::SandboxViolation`
+     * instead of executing.  Other mutating effects (logic-var bindings via
+     * `Unify`, attribute writes, CLP store updates) are *trail-bound* and
+     * therefore safe to execute speculatively as long as the caller rolls
+     * the trail back at the boundary.
+     *
+     * The sandbox flag is intentionally simple: it is defence-in-depth on
+     * the VM execution path.  The DAP `Sandbox` itself is a tree-walking
+     * evaluator that does not enter the bytecode interpreter, so it does
+     * not depend on this gate to be safe — but anything that ever reuses
+     * `vm.execute()` against a paused VM must set it.
+     */
+    void set_sandbox_mode(bool on) noexcept { sandbox_mode_ = on; }
+    [[nodiscard]] bool is_sandbox_mode() const noexcept { return sandbox_mode_; }
+
 private:
     Heap& heap_;
     InternTable& intern_table_;
@@ -446,6 +466,12 @@ private:
     /// Debug state (null when not debugging)
     std::unique_ptr<DebugState> debug_;
     std::vector<BreakLocation>  pending_breakpoints_;  ///< queued before set_stop_callback
+
+    /**
+     * When true, mutating opcodes (StoreGlobal/StoreUpval/PatchClosureUpval)
+     * refuse to execute and instead surface a SandboxViolation error.
+     */
+    bool sandbox_mode_{false};
 
     /**
      * Drain pending heap finalizers at VM-safe points.

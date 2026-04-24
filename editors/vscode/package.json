@@ -20,30 +20,52 @@
     "engines": {
         "vscode": "^1.85.0"
     },
-    "categories": ["Programming Languages", "Debuggers", "Snippets"],
-    "keywords": ["eta", "lisp", "scheme", "functional", "logic-programming", "unification"],
+    "categories": [
+        "Programming Languages",
+        "Debuggers",
+        "Snippets"
+    ],
+    "keywords": [
+        "eta",
+        "lisp",
+        "scheme",
+        "functional",
+        "logic-programming",
+        "unification"
+    ],
     "license": "Apache-2.0",
     "activationEvents": [
         "workspaceContains:**/*.test.eta"
     ],
     "main": "./out/extension.js",
     "contributes": {
-        "languages": [{
-            "id": "eta",
-            "aliases": ["Eta", "eta"],
-            "extensions": [".eta"],
-            "configuration": "./language-configuration.json"
-        }],
-        "grammars": [{
-            "language": "eta",
-            "scopeName": "source.eta",
-            "path": "./syntaxes/eta.tmLanguage.json"
-        }],
-        "snippets": [{
-            "language": "eta",
-            "path": "./snippets/eta.json"
-        }],
-            "views": {
+        "languages": [
+            {
+                "id": "eta",
+                "aliases": [
+                    "Eta",
+                    "eta"
+                ],
+                "extensions": [
+                    ".eta"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "eta",
+                "scopeName": "source.eta",
+                "path": "./syntaxes/eta.tmLanguage.json"
+            }
+        ],
+        "snippets": [
+            {
+                "language": "eta",
+                "path": "./snippets/eta.json"
+            }
+        ],
+        "views": {
             "debug": [
                 {
                     "id": "etaGCRoots",
@@ -121,6 +143,18 @@
                 "category": "Eta"
             },
             {
+                "command": "eta.debugFile",
+                "title": "Debug Eta File",
+                "icon": "$(debug-alt)",
+                "category": "Eta"
+            },
+            {
+                "command": "eta.runTestFile",
+                "title": "Run Tests in Current File",
+                "icon": "$(beaker)",
+                "category": "Eta"
+            },
+            {
                 "command": "eta.showHeapInspector",
                 "title": "Show Heap Inspector",
                 "icon": "$(database)",
@@ -176,6 +210,14 @@
                     "when": "resourceLangId == eta"
                 },
                 {
+                    "command": "eta.debugFile",
+                    "when": "resourceLangId == eta"
+                },
+                {
+                    "command": "eta.runTestFile",
+                    "when": "resourceLangId == eta && resourceFilename =~ /\\.test\\.eta$/"
+                },
+                {
                     "command": "eta.showHeapInspector"
                 },
                 {
@@ -213,13 +255,19 @@
             {
                 "type": "eta",
                 "label": "Eta",
-                "languages": ["eta"],
+                "languages": [
+                    "eta"
+                ],
                 "breakpoints": [
-                    { "language": "eta" }
+                    {
+                        "language": "eta"
+                    }
                 ],
                 "configurationAttributes": {
                     "launch": {
-                        "required": ["program"],
+                        "required": [
+                            "program"
+                        ],
                         "properties": {
                             "program": {
                                 "type": "string",
@@ -305,18 +353,27 @@
     "scripts": {
         "vscode:prepublish": "npm run bundle",
         "compile": "tsc -p ./",
+        "compile-tests": "tsc -p ./tsconfig.test.json",
         "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
         "watch": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
-        "package": "npm run bundle && vsce package"
+        "package": "npm run bundle && vsce package",
+        "pretest": "npm run compile-tests",
+        "test": "vscode-test"
     },
     "dependencies": {
         "vscode-languageclient": "^9.0.1"
     },
     "devDependencies": {
-        "@types/vscode": "^1.85.0",
+        "@types/glob": "^8.1.0",
+        "@types/mocha": "^10.0.10",
         "@types/node": "^20.0.0",
-        "typescript": "^5.3.0",
+        "@types/vscode": "^1.85.0",
+        "@vscode/test-cli": "^0.0.12",
+        "@vscode/test-electron": "^2.5.2",
         "@vscode/vsce": "^3.2.0",
-        "esbuild": "^0.25.0"
+        "esbuild": "^0.25.0",
+        "glob": "^13.0.6",
+        "mocha": "^11.7.5",
+        "typescript": "^5.3.0"
     }
 }

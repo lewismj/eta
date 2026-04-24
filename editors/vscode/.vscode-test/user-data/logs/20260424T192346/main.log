@@ -1,0 +1,4 @@
+2026-04-24 19:23:47.425 [info] CrossAppIPCService: connecting to peer
+2026-04-24 19:23:47.728 [info] update#setState disabled
+2026-04-24 19:23:47.728 [info] update#ctor - updates are disabled by the environment
+2026-04-24 19:24:04.758 [info] Extension host with pid 28468 exited with code: 0, signal: unknown.

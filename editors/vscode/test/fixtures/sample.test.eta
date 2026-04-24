@@ -1,0 +1,9 @@
+;;; sample.test.eta — fixture used by code-lens tests.
+(module sample.tests
+  (import std.test)
+  (begin
+    (define suite
+      (make-group "sample"
+        (list
+          (make-test "trivial" (lambda () (assert-true #t))))))))
+

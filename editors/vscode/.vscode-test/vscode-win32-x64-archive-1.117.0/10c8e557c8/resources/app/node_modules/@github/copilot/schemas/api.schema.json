@@ -1,0 +1,3645 @@
+{
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "title": "CopilotApi",
+  "description": "Describes all JSON-RPC methods exposed by the Copilot CLI server. SDK codegen tools consume this to produce typed client wrappers.",
+  "server": {
+    "ping": {
+      "rpcMethod": "ping",
+      "params": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Optional message to echo back"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Echoed message (or default greeting)"
+          },
+          "timestamp": {
+            "type": "number",
+            "description": "Server timestamp in milliseconds"
+          },
+          "protocolVersion": {
+            "type": "number",
+            "description": "Server protocol version number"
+          }
+        },
+        "required": [
+          "message",
+          "timestamp",
+          "protocolVersion"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models": {
+      "list": {
+        "rpcMethod": "models.list",
+        "params": null,
+        "result": {
+          "type": "object",
+          "properties": {
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Model identifier (e.g., \"claude-sonnet-4.5\")"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Display name"
+                  },
+                  "capabilities": {
+                    "type": "object",
+                    "properties": {
+                      "supports": {
+                        "type": "object",
+                        "properties": {
+                          "vision": {
+                            "type": "boolean",
+                            "description": "Whether this model supports vision/image input"
+                          },
+                          "reasoningEffort": {
+                            "type": "boolean",
+                            "description": "Whether this model supports reasoning effort configuration"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Feature flags indicating what the model supports",
+                        "title": "ModelCapabilitiesSupports"
+                      },
+                      "limits": {
+                        "type": "object",
+                        "properties": {
+                          "max_prompt_tokens": {
+                            "type": "number",
+                            "description": "Maximum number of prompt/input tokens"
+                          },
+                          "max_output_tokens": {
+                            "type": "number",
+                            "description": "Maximum number of output/completion tokens"
+                          },
+                          "max_context_window_tokens": {
+                            "type": "number",
+                            "description": "Maximum total context window size in tokens"
+                          },
+                          "vision": {
+                            "type": "object",
+                            "properties": {
+                              "supported_media_types": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "MIME types the model accepts"
+                              },
+                              "max_prompt_images": {
+                                "type": "number",
+                                "description": "Maximum number of images per prompt"
+                              },
+                              "max_prompt_image_size": {
+                                "type": "number",
+                                "description": "Maximum image size in bytes"
+                              }
+                            },
+                            "required": [
+                              "supported_media_types",
+                              "max_prompt_images",
+                              "max_prompt_image_size"
+                            ],
+                            "additionalProperties": false,
+                            "description": "Vision-specific limits",
+                            "title": "ModelCapabilitiesLimitsVision"
+                          }
+                        },
+                        "required": [
+                          "max_context_window_tokens"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Token limits for prompts, outputs, and context window",
+                        "title": "ModelCapabilitiesLimits"
+                      }
+                    },
+                    "required": [
+                      "supports",
+                      "limits"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Model capabilities and limits",
+                    "title": "ModelCapabilities"
+                  },
+                  "policy": {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "description": "Current policy state for this model"
+                      },
+                      "terms": {
+                        "type": "string",
+                        "description": "Usage terms or conditions for this model"
+                      }
+                    },
+                    "required": [
+                      "state",
+                      "terms"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Policy state (if applicable)"
+                  },
+                  "billing": {
+                    "type": "object",
+                    "properties": {
+                      "multiplier": {
+                        "type": "number",
+                        "description": "Billing cost multiplier relative to the base rate"
+                      }
+                    },
+                    "required": [
+                      "multiplier"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Billing information"
+                  },
+                  "supportedReasoningEfforts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Supported reasoning effort levels (only present if model supports reasoning effort)"
+                  },
+                  "defaultReasoningEffort": {
+                    "type": "string",
+                    "description": "Default reasoning effort level (only present if model supports reasoning effort)"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "capabilities"
+                ],
+                "additionalProperties": false
+              },
+              "description": "List of available models with full metadata"
+            }
+          },
+          "required": [
+            "models"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "tools": {
+      "list": {
+        "rpcMethod": "tools.list",
+        "params": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "description": "Optional model ID — when provided, the returned tool list reflects model-specific overrides"
+            }
+          },
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "tools": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Tool identifier (e.g., \"bash\", \"grep\", \"str_replace_editor\")"
+                  },
+                  "namespacedName": {
+                    "type": "string",
+                    "description": "Optional namespaced name for declarative filtering (e.g., \"playwright/navigate\" for MCP tools)"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Description of what the tool does"
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "description": "JSON Schema for the tool's input parameters"
+                  },
+                  "instructions": {
+                    "type": "string",
+                    "description": "Optional instructions for how to use this tool effectively"
+                  }
+                },
+                "required": [
+                  "name",
+                  "description"
+                ],
+                "additionalProperties": false
+              },
+              "description": "List of available built-in tools with metadata"
+            }
+          },
+          "required": [
+            "tools"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "account": {
+      "getQuota": {
+        "rpcMethod": "account.getQuota",
+        "params": null,
+        "result": {
+          "type": "object",
+          "properties": {
+            "quotaSnapshots": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "entitlementRequests": {
+                    "type": "number",
+                    "description": "Number of requests included in the entitlement"
+                  },
+                  "usedRequests": {
+                    "type": "number",
+                    "description": "Number of requests used so far this period"
+                  },
+                  "remainingPercentage": {
+                    "type": "number",
+                    "description": "Percentage of entitlement remaining"
+                  },
+                  "overage": {
+                    "type": "number",
+                    "description": "Number of overage requests made this period"
+                  },
+                  "overageAllowedWithExhaustedQuota": {
+                    "type": "boolean",
+                    "description": "Whether pay-per-request usage is allowed when quota is exhausted"
+                  },
+                  "resetDate": {
+                    "type": "string",
+                    "description": "Date when the quota resets (ISO 8601)"
+                  }
+                },
+                "required": [
+                  "entitlementRequests",
+                  "usedRequests",
+                  "remainingPercentage",
+                  "overage",
+                  "overageAllowedWithExhaustedQuota"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Quota snapshots keyed by type (e.g., chat, completions, premium_interactions)"
+            }
+          },
+          "required": [
+            "quotaSnapshots"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "mcp": {
+      "config": {
+        "list": {
+          "rpcMethod": "mcp.config.list",
+          "params": null,
+          "result": {
+            "type": "object",
+            "properties": {
+              "servers": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Tools to include. Defaults to all tools if not specified."
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "stdio"
+                          ]
+                        },
+                        "isDefaultServer": {
+                          "type": "boolean"
+                        },
+                        "filterMapping": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "string",
+                                "enum": [
+                                  "none",
+                                  "markdown",
+                                  "hidden_characters"
+                                ]
+                              }
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "markdown",
+                                "hidden_characters"
+                              ]
+                            }
+                          ]
+                        },
+                        "timeout": {
+                          "type": "number",
+                          "exclusiveMinimum": true,
+                          "minimum": 0
+                        },
+                        "command": {
+                          "type": "string"
+                        },
+                        "args": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "cwd": {
+                          "type": "string"
+                        },
+                        "env": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "command",
+                        "args"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "tools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Tools to include. Defaults to all tools if not specified."
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "http",
+                            "sse"
+                          ]
+                        },
+                        "isDefaultServer": {
+                          "type": "boolean"
+                        },
+                        "filterMapping": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "string",
+                                "enum": [
+                                  "none",
+                                  "markdown",
+                                  "hidden_characters"
+                                ]
+                              }
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "markdown",
+                                "hidden_characters"
+                              ]
+                            }
+                          ]
+                        },
+                        "timeout": {
+                          "type": "number",
+                          "exclusiveMinimum": true,
+                          "minimum": 0
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "headers": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "oauthClientId": {
+                          "type": "string"
+                        },
+                        "oauthPublicClient": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "url"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ],
+                  "description": "MCP server configuration (local/stdio or remote/http)"
+                },
+                "description": "All MCP servers from user config, keyed by name"
+              }
+            },
+            "required": [
+              "servers"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "add": {
+          "rpcMethod": "mcp.config.add",
+          "params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Unique name for the MCP server"
+              },
+              "config": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "tools": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Tools to include. Defaults to all tools if not specified."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "local",
+                          "stdio"
+                        ]
+                      },
+                      "isDefaultServer": {
+                        "type": "boolean"
+                      },
+                      "filterMapping": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "markdown",
+                                "hidden_characters"
+                              ]
+                            }
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "markdown",
+                              "hidden_characters"
+                            ]
+                          }
+                        ]
+                      },
+                      "timeout": {
+                        "type": "number",
+                        "exclusiveMinimum": true,
+                        "minimum": 0
+                      },
+                      "command": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "cwd": {
+                        "type": "string"
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "args"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "tools": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Tools to include. Defaults to all tools if not specified."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "http",
+                          "sse"
+                        ]
+                      },
+                      "isDefaultServer": {
+                        "type": "boolean"
+                      },
+                      "filterMapping": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "markdown",
+                                "hidden_characters"
+                              ]
+                            }
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "markdown",
+                              "hidden_characters"
+                            ]
+                          }
+                        ]
+                      },
+                      "timeout": {
+                        "type": "number",
+                        "exclusiveMinimum": true,
+                        "minimum": 0
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "headers": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "oauthClientId": {
+                        "type": "string"
+                      },
+                      "oauthPublicClient": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  }
+                ],
+                "description": "MCP server configuration (local/stdio or remote/http)"
+              }
+            },
+            "required": [
+              "name",
+              "config"
+            ],
+            "additionalProperties": false
+          },
+          "result": null
+        },
+        "update": {
+          "rpcMethod": "mcp.config.update",
+          "params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the MCP server to update"
+              },
+              "config": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "tools": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Tools to include. Defaults to all tools if not specified."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "local",
+                          "stdio"
+                        ]
+                      },
+                      "isDefaultServer": {
+                        "type": "boolean"
+                      },
+                      "filterMapping": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "markdown",
+                                "hidden_characters"
+                              ]
+                            }
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "markdown",
+                              "hidden_characters"
+                            ]
+                          }
+                        ]
+                      },
+                      "timeout": {
+                        "type": "number",
+                        "exclusiveMinimum": true,
+                        "minimum": 0
+                      },
+                      "command": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "cwd": {
+                        "type": "string"
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "args"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "tools": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Tools to include. Defaults to all tools if not specified."
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "http",
+                          "sse"
+                        ]
+                      },
+                      "isDefaultServer": {
+                        "type": "boolean"
+                      },
+                      "filterMapping": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "markdown",
+                                "hidden_characters"
+                              ]
+                            }
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "markdown",
+                              "hidden_characters"
+                            ]
+                          }
+                        ]
+                      },
+                      "timeout": {
+                        "type": "number",
+                        "exclusiveMinimum": true,
+                        "minimum": 0
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "headers": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "oauthClientId": {
+                        "type": "string"
+                      },
+                      "oauthPublicClient": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  }
+                ],
+                "description": "MCP server configuration (local/stdio or remote/http)"
+              }
+            },
+            "required": [
+              "name",
+              "config"
+            ],
+            "additionalProperties": false
+          },
+          "result": null
+        },
+        "remove": {
+          "rpcMethod": "mcp.config.remove",
+          "params": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the MCP server to remove"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "result": null
+        }
+      },
+      "discover": {
+        "rpcMethod": "mcp.discover",
+        "params": {
+          "type": "object",
+          "properties": {
+            "workingDirectory": {
+              "type": "string",
+              "description": "Working directory used as context for discovery (e.g., plugin resolution)"
+            }
+          },
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "servers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Server name (config key)"
+                  },
+                  "type": {
+                    "type": "string",
+                    "description": "Server type: local, stdio, http, or sse"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "workspace",
+                      "plugin",
+                      "builtin"
+                    ],
+                    "description": "Configuration source"
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Whether the server is enabled (not in the disabled list)"
+                  }
+                },
+                "required": [
+                  "name",
+                  "source",
+                  "enabled"
+                ],
+                "additionalProperties": false,
+                "title": "DiscoveredMcpServer"
+              },
+              "description": "MCP servers discovered from all sources"
+            }
+          },
+          "required": [
+            "servers"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "sessionFs": {
+      "setProvider": {
+        "rpcMethod": "sessionFs.setProvider",
+        "params": {
+          "type": "object",
+          "properties": {
+            "initialCwd": {
+              "type": "string",
+              "description": "Initial working directory for sessions"
+            },
+            "sessionStatePath": {
+              "type": "string",
+              "description": "Path within each session's SessionFs where the runtime stores files for that session"
+            },
+            "conventions": {
+              "type": "string",
+              "enum": [
+                "windows",
+                "posix"
+              ],
+              "description": "Path conventions used by this filesystem"
+            }
+          },
+          "required": [
+            "initialCwd",
+            "sessionStatePath",
+            "conventions"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "description": "Whether the provider was set successfully"
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "sessions": {
+      "fork": {
+        "rpcMethod": "sessions.fork",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Source session ID to fork from"
+            },
+            "toEventId": {
+              "type": "string",
+              "description": "Optional event ID boundary. When provided, the fork includes only events before this ID (exclusive). When omitted, all events are included."
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "The new forked session's ID"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      }
+    }
+  },
+  "session": {
+    "model": {
+      "getCurrent": {
+        "rpcMethod": "session.model.getCurrent",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "modelId": {
+              "type": "string",
+              "description": "Currently active model identifier"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "switchTo": {
+        "rpcMethod": "session.model.switchTo",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "modelId": {
+              "type": "string",
+              "description": "Model identifier to switch to"
+            },
+            "reasoningEffort": {
+              "type": "string",
+              "description": "Reasoning effort level to use for the model"
+            },
+            "modelCapabilities": {
+              "type": "object",
+              "properties": {
+                "supports": {
+                  "type": "object",
+                  "properties": {
+                    "vision": {
+                      "type": "boolean"
+                    },
+                    "reasoningEffort": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Feature flags indicating what the model supports",
+                  "title": "ModelCapabilitiesOverrideSupports"
+                },
+                "limits": {
+                  "type": "object",
+                  "properties": {
+                    "max_prompt_tokens": {
+                      "type": "number"
+                    },
+                    "max_output_tokens": {
+                      "type": "number"
+                    },
+                    "max_context_window_tokens": {
+                      "type": "number",
+                      "description": "Maximum total context window size in tokens"
+                    },
+                    "vision": {
+                      "type": "object",
+                      "properties": {
+                        "supported_media_types": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "MIME types the model accepts"
+                        },
+                        "max_prompt_images": {
+                          "type": "number",
+                          "description": "Maximum number of images per prompt"
+                        },
+                        "max_prompt_image_size": {
+                          "type": "number",
+                          "description": "Maximum image size in bytes"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "title": "ModelCapabilitiesOverrideLimitsVision"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Token limits for prompts, outputs, and context window",
+                  "title": "ModelCapabilitiesOverrideLimits"
+                }
+              },
+              "additionalProperties": false,
+              "description": "Override individual model capabilities resolved by the runtime",
+              "title": "ModelCapabilitiesOverride"
+            }
+          },
+          "required": [
+            "sessionId",
+            "modelId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "modelId": {
+              "type": "string",
+              "description": "Currently active model identifier after the switch"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "mode": {
+      "get": {
+        "rpcMethod": "session.mode.get",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "plan",
+                "autopilot"
+              ],
+              "description": "The current agent mode."
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "set": {
+        "rpcMethod": "session.mode.set",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "plan",
+                "autopilot"
+              ],
+              "description": "The mode to switch to. Valid values: \"interactive\", \"plan\", \"autopilot\"."
+            }
+          },
+          "required": [
+            "sessionId",
+            "mode"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "plan",
+                "autopilot"
+              ],
+              "description": "The agent mode after switching."
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "plan": {
+      "read": {
+        "rpcMethod": "session.plan.read",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "exists": {
+              "type": "boolean",
+              "description": "Whether the plan file exists in the workspace"
+            },
+            "content": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The content of the plan file, or null if it does not exist"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Absolute file path of the plan file, or null if workspace is not enabled"
+            }
+          },
+          "required": [
+            "exists",
+            "content",
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "update": {
+        "rpcMethod": "session.plan.update",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "content": {
+              "type": "string",
+              "description": "The new content for the plan file"
+            }
+          },
+          "required": [
+            "sessionId",
+            "content"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "delete": {
+        "rpcMethod": "session.plan.delete",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      }
+    },
+    "workspace": {
+      "listFiles": {
+        "rpcMethod": "session.workspace.listFiles",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Relative file paths in the workspace files directory"
+            }
+          },
+          "required": [
+            "files"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "readFile": {
+        "rpcMethod": "session.workspace.readFile",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Relative path within the workspace files directory"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "File content as a UTF-8 string"
+            }
+          },
+          "required": [
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "createFile": {
+        "rpcMethod": "session.workspace.createFile",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Relative path within the workspace files directory"
+            },
+            "content": {
+              "type": "string",
+              "description": "File content to write as a UTF-8 string"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path",
+            "content"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      }
+    },
+    "fleet": {
+      "start": {
+        "rpcMethod": "session.fleet.start",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "prompt": {
+              "type": "string",
+              "description": "Optional user prompt to combine with fleet instructions"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "sessionId"
+          ]
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "started": {
+              "type": "boolean",
+              "description": "Whether fleet mode was successfully activated"
+            }
+          },
+          "required": [
+            "started"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      }
+    },
+    "agent": {
+      "list": {
+        "rpcMethod": "session.agent.list",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "agents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Unique identifier of the custom agent"
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "description": "Human-readable display name"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Description of the agent's purpose"
+                  }
+                },
+                "required": [
+                  "name",
+                  "displayName",
+                  "description"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Available custom agents"
+            }
+          },
+          "required": [
+            "agents"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "getCurrent": {
+        "rpcMethod": "session.agent.getCurrent",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "agent": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "Unique identifier of the custom agent"
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "description": "Human-readable display name"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "Description of the agent's purpose"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "displayName",
+                    "description"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Currently selected custom agent, or null if using the default agent"
+            }
+          },
+          "required": [
+            "agent"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "select": {
+        "rpcMethod": "session.agent.select",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "name": {
+              "type": "string",
+              "description": "Name of the custom agent to select"
+            }
+          },
+          "required": [
+            "sessionId",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "agent": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Unique identifier of the custom agent"
+                },
+                "displayName": {
+                  "type": "string",
+                  "description": "Human-readable display name"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description of the agent's purpose"
+                }
+              },
+              "required": [
+                "name",
+                "displayName",
+                "description"
+              ],
+              "additionalProperties": false,
+              "description": "The newly selected custom agent"
+            }
+          },
+          "required": [
+            "agent"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "deselect": {
+        "rpcMethod": "session.agent.deselect",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "reload": {
+        "rpcMethod": "session.agent.reload",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "agents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Unique identifier of the custom agent"
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "description": "Human-readable display name"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Description of the agent's purpose"
+                  }
+                },
+                "required": [
+                  "name",
+                  "displayName",
+                  "description"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Reloaded custom agents"
+            }
+          },
+          "required": [
+            "agents"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      }
+    },
+    "skills": {
+      "list": {
+        "rpcMethod": "session.skills.list",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "skills": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Unique identifier for the skill"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Description of what the skill does"
+                  },
+                  "source": {
+                    "type": "string",
+                    "description": "Source location type (e.g., project, personal, plugin)"
+                  },
+                  "userInvocable": {
+                    "type": "boolean",
+                    "description": "Whether the skill can be invoked by the user as a slash command"
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Whether the skill is currently enabled"
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "Absolute path to the skill file"
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "source",
+                  "userInvocable",
+                  "enabled"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Available skills"
+            }
+          },
+          "required": [
+            "skills"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "enable": {
+        "rpcMethod": "session.skills.enable",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "name": {
+              "type": "string",
+              "description": "Name of the skill to enable"
+            }
+          },
+          "required": [
+            "sessionId",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "disable": {
+        "rpcMethod": "session.skills.disable",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "name": {
+              "type": "string",
+              "description": "Name of the skill to disable"
+            }
+          },
+          "required": [
+            "sessionId",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "reload": {
+        "rpcMethod": "session.skills.reload",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      }
+    },
+    "mcp": {
+      "list": {
+        "rpcMethod": "session.mcp.list",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "servers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Server name (config key)"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "connected",
+                      "failed",
+                      "needs-auth",
+                      "pending",
+                      "disabled",
+                      "not_configured"
+                    ],
+                    "description": "Connection status: connected, failed, needs-auth, pending, disabled, or not_configured"
+                  },
+                  "source": {
+                    "type": "string",
+                    "description": "Configuration source: user, workspace, plugin, or builtin"
+                  },
+                  "error": {
+                    "type": "string",
+                    "description": "Error message if the server failed to connect"
+                  }
+                },
+                "required": [
+                  "name",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Configured MCP servers"
+            }
+          },
+          "required": [
+            "servers"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "enable": {
+        "rpcMethod": "session.mcp.enable",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "serverName": {
+              "type": "string",
+              "description": "Name of the MCP server to enable"
+            }
+          },
+          "required": [
+            "sessionId",
+            "serverName"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "disable": {
+        "rpcMethod": "session.mcp.disable",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "serverName": {
+              "type": "string",
+              "description": "Name of the MCP server to disable"
+            }
+          },
+          "required": [
+            "sessionId",
+            "serverName"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "reload": {
+        "rpcMethod": "session.mcp.reload",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      }
+    },
+    "plugins": {
+      "list": {
+        "rpcMethod": "session.plugins.list",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "plugins": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Plugin name"
+                  },
+                  "marketplace": {
+                    "type": "string",
+                    "description": "Marketplace the plugin came from"
+                  },
+                  "version": {
+                    "type": "string",
+                    "description": "Installed version"
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Whether the plugin is currently enabled"
+                  }
+                },
+                "required": [
+                  "name",
+                  "marketplace",
+                  "enabled"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Installed plugins"
+            }
+          },
+          "required": [
+            "plugins"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      }
+    },
+    "extensions": {
+      "list": {
+        "rpcMethod": "session.extensions.list",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "extensions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Source-qualified ID (e.g., 'project:my-ext', 'user:auth-helper')"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Extension name (directory name)"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "project",
+                      "user"
+                    ],
+                    "description": "Discovery source: project (.github/extensions/) or user (~/.copilot/extensions/)"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "disabled",
+                      "failed",
+                      "starting"
+                    ],
+                    "description": "Current status: running, disabled, failed, or starting"
+                  },
+                  "pid": {
+                    "type": "integer",
+                    "description": "Process ID if the extension is running"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Discovered extensions and their current status"
+            }
+          },
+          "required": [
+            "extensions"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "enable": {
+        "rpcMethod": "session.extensions.enable",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "id": {
+              "type": "string",
+              "description": "Source-qualified extension ID to enable"
+            }
+          },
+          "required": [
+            "sessionId",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "disable": {
+        "rpcMethod": "session.extensions.disable",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "id": {
+              "type": "string",
+              "description": "Source-qualified extension ID to disable"
+            }
+          },
+          "required": [
+            "sessionId",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "reload": {
+        "rpcMethod": "session.extensions.reload",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      }
+    },
+    "tools": {
+      "handlePendingToolCall": {
+        "rpcMethod": "session.tools.handlePendingToolCall",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "requestId": {
+              "type": "string",
+              "description": "Request ID of the pending tool call"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "textResultForLlm": {
+                      "type": "string",
+                      "description": "Text result to send back to the LLM"
+                    },
+                    "resultType": {
+                      "type": "string",
+                      "description": "Type of the tool result"
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Error message if the tool call failed"
+                    },
+                    "toolTelemetry": {
+                      "type": "object",
+                      "additionalProperties": {},
+                      "description": "Telemetry data from tool execution"
+                    }
+                  },
+                  "required": [
+                    "textResultForLlm"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "description": "Tool call result (string or expanded result object)"
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message if the tool call failed"
+            }
+          },
+          "required": [
+            "sessionId",
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "description": "Whether the tool call result was handled successfully"
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "commands": {
+      "handlePendingCommand": {
+        "rpcMethod": "session.commands.handlePendingCommand",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "requestId": {
+              "type": "string",
+              "description": "Request ID from the command invocation event"
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message if the command handler failed"
+            }
+          },
+          "required": [
+            "sessionId",
+            "requestId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "description": "Whether the command was handled successfully"
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "ui": {
+      "elicitation": {
+        "rpcMethod": "session.ui.elicitation",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "message": {
+              "type": "string",
+              "description": "Message describing what information is needed from the user"
+            },
+            "requestedSchema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "object",
+                  "description": "Schema type indicator (always 'object')"
+                },
+                "properties": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "enum": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "enumNames": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "default": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "enum"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "oneOf": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "const": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "const",
+                                "title"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "default": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "oneOf"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "array"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "minItems": {
+                            "type": "number"
+                          },
+                          "maxItems": {
+                            "type": "number"
+                          },
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "const": "string"
+                              },
+                              "enum": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "enum"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "default": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "items"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "array"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "minItems": {
+                            "type": "number"
+                          },
+                          "maxItems": {
+                            "type": "number"
+                          },
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "anyOf": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "const": {
+                                      "type": "string"
+                                    },
+                                    "title": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "const",
+                                    "title"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "anyOf"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "default": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "items"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "boolean"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "default": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "minLength": {
+                            "type": "number"
+                          },
+                          "maxLength": {
+                            "type": "number"
+                          },
+                          "format": {
+                            "type": "string",
+                            "enum": [
+                              "email",
+                              "uri",
+                              "date",
+                              "date-time"
+                            ]
+                          },
+                          "default": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "number",
+                              "integer"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "minimum": {
+                            "type": "number"
+                          },
+                          "maximum": {
+                            "type": "number"
+                          },
+                          "default": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "description": "Form field definitions, keyed by field name"
+                },
+                "required": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "List of required field names"
+                }
+              },
+              "required": [
+                "type",
+                "properties"
+              ],
+              "additionalProperties": false,
+              "description": "JSON Schema describing the form fields to present to the user"
+            }
+          },
+          "required": [
+            "sessionId",
+            "message",
+            "requestedSchema"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "accept",
+                "decline",
+                "cancel"
+              ],
+              "description": "The user's response: accept (submitted), decline (rejected), or cancel (dismissed)"
+            },
+            "content": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "description": "The form values submitted by the user (present when action is 'accept')"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "handlePendingElicitation": {
+        "rpcMethod": "session.ui.handlePendingElicitation",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "requestId": {
+              "type": "string",
+              "description": "The unique request ID from the elicitation.requested event"
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "accept",
+                    "decline",
+                    "cancel"
+                  ],
+                  "description": "The user's response: accept (submitted), decline (rejected), or cancel (dismissed)"
+                },
+                "content": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  },
+                  "description": "The form values submitted by the user (present when action is 'accept')"
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false,
+              "description": "The elicitation response (accept with form values, decline, or cancel)"
+            }
+          },
+          "required": [
+            "sessionId",
+            "requestId",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "description": "Whether the response was accepted. False if the request was already resolved by another client."
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "permissions": {
+      "handlePendingPermissionRequest": {
+        "rpcMethod": "session.permissions.handlePendingPermissionRequest",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "requestId": {
+              "type": "string",
+              "description": "Request ID of the pending permission request"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "approved",
+                      "description": "The permission request was approved"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "denied-by-rules",
+                      "description": "Denied because approval rules explicitly blocked it"
+                    },
+                    "rules": {
+                      "type": "array",
+                      "items": {},
+                      "description": "Rules that denied the request"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "rules"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "denied-no-approval-rule-and-could-not-request-from-user",
+                      "description": "Denied because no approval rule matched and user confirmation was unavailable"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "denied-interactively-by-user",
+                      "description": "Denied by the user during an interactive prompt"
+                    },
+                    "feedback": {
+                      "type": "string",
+                      "description": "Optional feedback from the user explaining the denial"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "denied-by-content-exclusion-policy",
+                      "description": "Denied by the organization's content exclusion policy"
+                    },
+                    "path": {
+                      "type": "string",
+                      "description": "File path that triggered the exclusion"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable explanation of why the path was excluded"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "path",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "denied-by-permission-request-hook",
+                      "description": "Denied by a permission request hook registered by an extension or plugin"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Optional message from the hook explaining the denial"
+                    },
+                    "interrupt": {
+                      "type": "boolean",
+                      "description": "Whether to interrupt the current agent turn"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "sessionId",
+            "requestId",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "description": "Whether the permission request was handled successfully"
+            }
+          },
+          "required": [
+            "success"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "log": {
+      "rpcMethod": "session.log",
+      "params": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Target session identifier"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ],
+            "description": "Log severity level. Determines how the message is displayed in the timeline. Defaults to \"info\"."
+          },
+          "ephemeral": {
+            "type": "boolean",
+            "description": "When true, the message is transient and not persisted to the session event log on disk"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional URL the user can open in their browser for more details"
+          }
+        },
+        "required": [
+          "sessionId",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The unique identifier of the emitted session event"
+          }
+        },
+        "required": [
+          "eventId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "shell": {
+      "exec": {
+        "rpcMethod": "session.shell.exec",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "command": {
+              "type": "string",
+              "description": "Shell command to execute"
+            },
+            "cwd": {
+              "type": "string",
+              "description": "Working directory (defaults to session working directory)"
+            },
+            "timeout": {
+              "type": "number",
+              "description": "Timeout in milliseconds (default: 30000)"
+            }
+          },
+          "required": [
+            "sessionId",
+            "command"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "processId": {
+              "type": "string",
+              "description": "Unique identifier for tracking streamed output"
+            }
+          },
+          "required": [
+            "processId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "kill": {
+        "rpcMethod": "session.shell.kill",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "processId": {
+              "type": "string",
+              "description": "Process identifier returned by shell.exec"
+            },
+            "signal": {
+              "type": "string",
+              "enum": [
+                "SIGTERM",
+                "SIGKILL",
+                "SIGINT"
+              ],
+              "description": "Signal to send (default: SIGTERM)"
+            }
+          },
+          "required": [
+            "sessionId",
+            "processId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "killed": {
+              "type": "boolean",
+              "description": "Whether the signal was sent successfully"
+            }
+          },
+          "required": [
+            "killed"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "history": {
+      "compact": {
+        "rpcMethod": "session.history.compact",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "boolean",
+              "description": "Whether compaction completed successfully"
+            },
+            "tokensRemoved": {
+              "type": "number",
+              "description": "Number of tokens freed by compaction"
+            },
+            "messagesRemoved": {
+              "type": "number",
+              "description": "Number of messages removed during compaction"
+            },
+            "contextWindow": {
+              "type": "object",
+              "properties": {
+                "tokenLimit": {
+                  "type": "number",
+                  "description": "Maximum token count for the model's context window"
+                },
+                "currentTokens": {
+                  "type": "number",
+                  "description": "Current total tokens in the context window (system + conversation + tool definitions)"
+                },
+                "messagesLength": {
+                  "type": "number",
+                  "description": "Current number of messages in the conversation"
+                },
+                "systemTokens": {
+                  "type": "number",
+                  "description": "Token count from system message(s)"
+                },
+                "conversationTokens": {
+                  "type": "number",
+                  "description": "Token count from non-system messages (user, assistant, tool)"
+                },
+                "toolDefinitionsTokens": {
+                  "type": "number",
+                  "description": "Token count from tool definitions"
+                }
+              },
+              "required": [
+                "tokenLimit",
+                "currentTokens",
+                "messagesLength"
+              ],
+              "additionalProperties": false,
+              "description": "Post-compaction context window usage breakdown"
+            }
+          },
+          "required": [
+            "success",
+            "tokensRemoved",
+            "messagesRemoved"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      },
+      "truncate": {
+        "rpcMethod": "session.history.truncate",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "eventId": {
+              "type": "string",
+              "description": "Event ID to truncate to. This event and all events after it are removed from the session."
+            }
+          },
+          "required": [
+            "sessionId",
+            "eventId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "eventsRemoved": {
+              "type": "number",
+              "description": "Number of events that were removed"
+            }
+          },
+          "required": [
+            "eventsRemoved"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      }
+    },
+    "usage": {
+      "getMetrics": {
+        "rpcMethod": "session.usage.getMetrics",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "totalPremiumRequestCost": {
+              "type": "number",
+              "description": "Total user-initiated premium request cost across all models (may be fractional due to multipliers)"
+            },
+            "totalUserRequests": {
+              "type": "integer",
+              "description": "Raw count of user-initiated API requests"
+            },
+            "totalApiDurationMs": {
+              "type": "number",
+              "description": "Total time spent in model API calls (milliseconds)"
+            },
+            "sessionStartTime": {
+              "type": "integer",
+              "description": "Session start timestamp (epoch milliseconds)"
+            },
+            "codeChanges": {
+              "type": "object",
+              "properties": {
+                "linesAdded": {
+                  "type": "integer",
+                  "description": "Total lines of code added"
+                },
+                "linesRemoved": {
+                  "type": "integer",
+                  "description": "Total lines of code removed"
+                },
+                "filesModifiedCount": {
+                  "type": "integer",
+                  "description": "Number of distinct files modified"
+                }
+              },
+              "required": [
+                "linesAdded",
+                "linesRemoved",
+                "filesModifiedCount"
+              ],
+              "additionalProperties": false,
+              "description": "Aggregated code change metrics"
+            },
+            "modelMetrics": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "requests": {
+                    "type": "object",
+                    "properties": {
+                      "count": {
+                        "type": "integer",
+                        "description": "Number of API requests made with this model"
+                      },
+                      "cost": {
+                        "type": "number",
+                        "description": "User-initiated premium request cost (with multiplier applied)"
+                      }
+                    },
+                    "required": [
+                      "count",
+                      "cost"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Request count and cost metrics for this model"
+                  },
+                  "usage": {
+                    "type": "object",
+                    "properties": {
+                      "inputTokens": {
+                        "type": "integer",
+                        "description": "Total input tokens consumed"
+                      },
+                      "outputTokens": {
+                        "type": "integer",
+                        "description": "Total output tokens produced"
+                      },
+                      "cacheReadTokens": {
+                        "type": "integer",
+                        "description": "Total tokens read from prompt cache"
+                      },
+                      "cacheWriteTokens": {
+                        "type": "integer",
+                        "description": "Total tokens written to prompt cache"
+                      },
+                      "reasoningTokens": {
+                        "type": "integer",
+                        "description": "Total output tokens used for reasoning"
+                      }
+                    },
+                    "required": [
+                      "inputTokens",
+                      "outputTokens",
+                      "cacheReadTokens",
+                      "cacheWriteTokens"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Token usage metrics for this model"
+                  }
+                },
+                "required": [
+                  "requests",
+                  "usage"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Per-model token and request metrics, keyed by model identifier"
+            },
+            "currentModel": {
+              "type": "string",
+              "description": "Currently active model identifier"
+            },
+            "lastCallInputTokens": {
+              "type": "integer",
+              "description": "Input tokens from the most recent main-agent API call"
+            },
+            "lastCallOutputTokens": {
+              "type": "integer",
+              "description": "Output tokens from the most recent main-agent API call"
+            }
+          },
+          "required": [
+            "totalPremiumRequestCost",
+            "totalUserRequests",
+            "totalApiDurationMs",
+            "sessionStartTime",
+            "codeChanges",
+            "modelMetrics",
+            "lastCallInputTokens",
+            "lastCallOutputTokens"
+          ],
+          "additionalProperties": false
+        },
+        "stability": "experimental"
+      }
+    }
+  },
+  "clientSession": {
+    "sessionFs": {
+      "readFile": {
+        "rpcMethod": "sessionFs.readFile",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path using SessionFs conventions"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "File content as UTF-8 string"
+            }
+          },
+          "required": [
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "writeFile": {
+        "rpcMethod": "sessionFs.writeFile",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path using SessionFs conventions"
+            },
+            "content": {
+              "type": "string",
+              "description": "Content to write"
+            },
+            "mode": {
+              "type": "number",
+              "description": "Optional POSIX-style mode for newly created files"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path",
+            "content"
+          ],
+          "additionalProperties": false
+        },
+        "result": null
+      },
+      "appendFile": {
+        "rpcMethod": "sessionFs.appendFile",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path using SessionFs conventions"
+            },
+            "content": {
+              "type": "string",
+              "description": "Content to append"
+            },
+            "mode": {
+              "type": "number",
+              "description": "Optional POSIX-style mode for newly created files"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path",
+            "content"
+          ],
+          "additionalProperties": false
+        },
+        "result": null
+      },
+      "exists": {
+        "rpcMethod": "sessionFs.exists",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path using SessionFs conventions"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "exists": {
+              "type": "boolean",
+              "description": "Whether the path exists"
+            }
+          },
+          "required": [
+            "exists"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "stat": {
+        "rpcMethod": "sessionFs.stat",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path using SessionFs conventions"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "isFile": {
+              "type": "boolean",
+              "description": "Whether the path is a file"
+            },
+            "isDirectory": {
+              "type": "boolean",
+              "description": "Whether the path is a directory"
+            },
+            "size": {
+              "type": "number",
+              "description": "File size in bytes"
+            },
+            "mtime": {
+              "type": "string",
+              "description": "ISO 8601 timestamp of last modification"
+            },
+            "birthtime": {
+              "type": "string",
+              "description": "ISO 8601 timestamp of creation"
+            }
+          },
+          "required": [
+            "isFile",
+            "isDirectory",
+            "size",
+            "mtime",
+            "birthtime"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "mkdir": {
+        "rpcMethod": "sessionFs.mkdir",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path using SessionFs conventions"
+            },
+            "recursive": {
+              "type": "boolean",
+              "description": "Create parent directories as needed"
+            },
+            "mode": {
+              "type": "number",
+              "description": "Optional POSIX-style mode for newly created directories"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "result": null
+      },
+      "readdir": {
+        "rpcMethod": "sessionFs.readdir",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path using SessionFs conventions"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Entry names in the directory"
+            }
+          },
+          "required": [
+            "entries"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "readdirWithTypes": {
+        "rpcMethod": "sessionFs.readdirWithTypes",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path using SessionFs conventions"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Entry name"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "file",
+                      "directory"
+                    ],
+                    "description": "Entry type"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Directory entries with type information"
+            }
+          },
+          "required": [
+            "entries"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "rm": {
+        "rpcMethod": "sessionFs.rm",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "path": {
+              "type": "string",
+              "description": "Path using SessionFs conventions"
+            },
+            "recursive": {
+              "type": "boolean",
+              "description": "Remove directories and their contents recursively"
+            },
+            "force": {
+              "type": "boolean",
+              "description": "Ignore errors if the path does not exist"
+            }
+          },
+          "required": [
+            "sessionId",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "result": null
+      },
+      "rename": {
+        "rpcMethod": "sessionFs.rename",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "description": "Target session identifier"
+            },
+            "src": {
+              "type": "string",
+              "description": "Source path using SessionFs conventions"
+            },
+            "dest": {
+              "type": "string",
+              "description": "Destination path using SessionFs conventions"
+            }
+          },
+          "required": [
+            "sessionId",
+            "src",
+            "dest"
+          ],
+          "additionalProperties": false
+        },
+        "result": null
+      }
+    }
+  }
+}

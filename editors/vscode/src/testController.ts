@@ -15,7 +15,7 @@ import { discoverBinaries } from './binaries';
 // TAP parser
 // ---------------------------------------------------------------------------
 
-interface TapTestResult {
+export interface TapTestResult {
     ok: boolean;
     num: number;
     description: string;
@@ -26,7 +26,7 @@ interface TapTestResult {
     actual?: string;
 }
 
-function parseTap(output: string): TapTestResult[] {
+export function parseTap(output: string): TapTestResult[] {
     const results: TapTestResult[] = [];
     const lines = output.split(/\r?\n/);
     let current: TapTestResult | null = null;
@@ -93,7 +93,7 @@ function parseTap(output: string): TapTestResult[] {
     return results;
 }
 
-function parseTapAtLocation(at: string, fallbackUri: vscode.Uri): vscode.Location | undefined {
+export function parseTapAtLocation(at: string, fallbackUri: vscode.Uri): vscode.Location | undefined {
     const m = at.match(/^(.*):(\d+)(?::(\d+))?$/);
     if (!m) return undefined;
 
@@ -114,9 +114,11 @@ function parseTapAtLocation(at: string, fallbackUri: vscode.Uri): vscode.Locatio
 
 let controller: vscode.TestController | undefined;
 let fileWatcher: vscode.FileSystemWatcher | undefined;
+let extensionContextRef: vscode.ExtensionContext | undefined;
 const testItemMap = new Map<string, vscode.TestItem>();
 
 export function registerTestController(context: vscode.ExtensionContext): void {
+    extensionContextRef = context;
     controller = vscode.tests.createTestController('eta-test-controller', 'Eta Tests');
     context.subscriptions.push(controller);
 
@@ -144,6 +146,28 @@ export function registerTestController(context: vscode.ExtensionContext): void {
 
     // Initial discovery
     discoverAllTests();
+}
+
+/**
+ * Programmatic entry point used by the code-lens "▶ Run Tests in File"
+ * action: ensures the file is registered, then triggers a TestRun
+ * limited to it.
+ */
+export async function runTestsForUri(uri: vscode.Uri): Promise<void> {
+    if (!controller || !extensionContextRef) {
+        vscode.window.showWarningMessage('Eta test controller is not initialised yet.');
+        return;
+    }
+    addTestFile(uri);
+    const item = testItemMap.get(uri.toString());
+    if (!item) return;
+    const request = new vscode.TestRunRequest([item]);
+    const tokenSrc = new vscode.CancellationTokenSource();
+    try {
+        await runTests(request, tokenSrc.token, extensionContextRef);
+    } finally {
+        tokenSrc.dispose();
+    }
 }
 
 async function discoverAllTests(): Promise<void> {
