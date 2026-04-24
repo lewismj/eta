@@ -124,6 +124,7 @@ public:
         std::string module_path;
         std::string func_name;
         LispVal     socket{Nil};
+        Heap*       heap{nullptr}; ///< owning heap for socket lookup/close
         std::shared_ptr<std::atomic<bool>> alive_;
 
         ThreadHandle() : alive_(std::make_shared<std::atomic<bool>>(true)) {}
@@ -268,6 +269,15 @@ public:
 
     /// Snapshot of all actor threads for DAP display.
     std::vector<ThreadInfo> list_threads() const;
+
+    /**
+     * Best-effort termination for an in-process actor thread by index from
+     * list_threads(). This closes the parent-side mailbox socket and detaches
+     * any joinable std::thread so the caller is not blocked.
+     *
+     * Returns true if a termination action was attempted.
+     */
+    bool terminate_thread_by_index(int index);
 
     /// Mutex guarding children_
     mutable std::mutex mu_;
@@ -617,6 +627,7 @@ ProcessManager::spawn_thread_with(const std::string& module_path,
     th.module_path = module_path;
     th.func_name   = func_name;
     th.socket      = sock_val;
+    th.heap        = &heap;
 
     auto alive_ptr = th.alive_;  ///< shared with the thread
     ThreadWorkerFn factory_copy = worker_factory_;
@@ -682,6 +693,7 @@ ProcessManager::spawn_thread(SerializedClosure sc, Heap& heap, InternTable& /*in
     th.module_path = "(spawn-thread)";
     th.func_name   = "(thunk)";
     th.socket      = sock_val;
+    th.heap        = &heap;
 
     auto alive_ptr = th.alive_;
     ClosureWorkerFn factory_copy = closure_worker_factory_;
@@ -735,6 +747,38 @@ ProcessManager::list_threads() const {
         result.push_back(std::move(ti));
     }
     return result;
+}
+
+inline bool ProcessManager::terminate_thread_by_index(int index) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (index < 0 || static_cast<std::size_t>(index) >= threads_.size()) return false;
+
+    auto& th = threads_[static_cast<std::size_t>(index)];
+    bool attempted = false;
+
+    if (th.heap &&
+        ops::is_boxed(th.socket) &&
+        ops::tag(th.socket) == Tag::HeapObject) {
+        auto* sp = th.heap->try_get_as<ObjectKind::NngSocket, NngSocketPtr>(ops::payload(th.socket));
+        if (sp && !sp->closed) {
+            if (sp->monitor_state) {
+                sp->monitor_state->closing_normally.store(true, std::memory_order_release);
+                if (sp->monitor_state->heartbeat) {
+                    sp->monitor_state->heartbeat->stop.store(true, std::memory_order_release);
+                }
+            }
+            nng_close(sp->socket);
+            sp->closed = true;
+            attempted = true;
+        }
+    }
+
+    if (th.thread.joinable()) {
+        th.thread.detach();
+        attempted = true;
+    }
+
+    return attempted;
 }
 
 } ///< namespace eta::nng

@@ -184,6 +184,8 @@ void DapServer::dispatch(const Value& msg) {
     else if (*cmd == "setVariable")         handle_set_variable(id, args);
     else if (*cmd == "restart")             handle_restart(id, args);
     else if (*cmd == "terminate")           handle_terminate(id, args);
+    else if (*cmd == "terminateThreads")    handle_terminate_threads(id, args);
+    else if (*cmd == "cancel")              handle_cancel(id, args);
     else if (*cmd == "completions")         handle_completions(id, args);
     else if (*cmd == "disconnect")          handle_disconnect(id, args);
     else if (*cmd == "disassemble")         handle_standard_disassemble(id, args);
@@ -216,6 +218,9 @@ void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
         {"supportsSetVariable",                 true},
         {"supportsRestartRequest",              true},
         {"supportsTerminateRequest",            true},
+        {"supportsTerminateThreadsRequest",     true},
+        {"supportsCancelRequest",               true},
+        {"supportsSteppingGranularity",         true},
         {"supportsEvaluateForHovers",           true},
         {"supportsStepBack",                    false},
         {"supportsGotoTargetsRequest",          false},
@@ -990,22 +995,40 @@ void DapServer::handle_continue(const Value& id, const Value& /*args*/) {
     if (driver_) driver_->vm().resume();
 }
 
-void DapServer::handle_next(const Value& id, const Value& /*args*/) {
+void DapServer::handle_next(const Value& id, const Value& args) {
     send_response(id, json::object({}));
     std::lock_guard<std::mutex> lk(vm_mutex_);
-    if (driver_) driver_->vm().step_over();
+    if (!driver_) return;
+    auto granularity = args.get_string("granularity");
+    if (granularity && *granularity == "instruction") {
+        driver_->vm().step_over_instruction();
+    } else {
+        driver_->vm().step_over();
+    }
 }
 
-void DapServer::handle_step_in(const Value& id, const Value& /*args*/) {
+void DapServer::handle_step_in(const Value& id, const Value& args) {
     send_response(id, json::object({}));
     std::lock_guard<std::mutex> lk(vm_mutex_);
-    if (driver_) driver_->vm().step_in();
+    if (!driver_) return;
+    auto granularity = args.get_string("granularity");
+    if (granularity && *granularity == "instruction") {
+        driver_->vm().step_in_instruction();
+    } else {
+        driver_->vm().step_in();
+    }
 }
 
-void DapServer::handle_step_out(const Value& id, const Value& /*args*/) {
+void DapServer::handle_step_out(const Value& id, const Value& args) {
     send_response(id, json::object({}));
     std::lock_guard<std::mutex> lk(vm_mutex_);
-    if (driver_) driver_->vm().step_out();
+    if (!driver_) return;
+    /**
+     * stepOut is depth-based in the VM debug core and already instruction-level
+     * with respect to source lines. Accept the field for protocol compatibility.
+     */
+    (void) args.get_string("granularity");
+    driver_->vm().step_out();
 }
 
 void DapServer::handle_pause(const Value& id, const Value& /*args*/) {
@@ -1252,6 +1275,56 @@ void DapServer::handle_terminate(const Value& id, const Value& /*args*/) {
     if (driver_) {
         driver_->vm().resume();
     }
+}
+
+/**
+ * terminateThreads
+ */
+
+void DapServer::handle_terminate_threads(const Value& id, const Value& args) {
+    send_response(id, json::object({}));
+#ifdef ETA_HAS_NNG
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (!driver_ || !driver_->process_manager()) return;
+
+    auto* pm = driver_->process_manager();
+    if (!args.has("threadIds") || !args["threadIds"].is_array()) {
+        const auto threads = pm->list_threads();
+        for (std::size_t i = 0; i < threads.size(); ++i) {
+            pm->terminate_thread_by_index(static_cast<int>(i));
+        }
+        return;
+    }
+
+    for (const auto& tid_v : args["threadIds"].as_array()) {
+        if (!tid_v.is_int()) continue;
+        const int tid = static_cast<int>(tid_v.as_int());
+        if (tid <= 1) continue; ///< threadId 1 is the main VM thread.
+        const int thread_index = tid - 2; ///< DAP IDs: main=1, actor threads start at 2.
+        pm->terminate_thread_by_index(thread_index);
+    }
+#else
+    (void) args;
+#endif
+}
+
+/**
+ * cancel
+ */
+
+void DapServer::handle_cancel(const Value& id, const Value& args) {
+    const auto request_id_opt = args.get_int("requestId");
+    if (request_id_opt.has_value()) {
+        const int64_t request_id = *request_id_opt;
+        {
+            std::lock_guard<std::mutex> lk(cancel_mutex_);
+            cancelled_request_ids_.insert(request_id);
+        }
+        if (active_heap_snapshot_request_.load(std::memory_order_relaxed) == request_id) {
+            cancel_active_heap_snapshot_.store(true, std::memory_order_relaxed);
+        }
+    }
+    send_response(id, json::object({}));
 }
 
 /**
@@ -1724,20 +1797,53 @@ void DapServer::notify_breakpoints_verified() {
  */
 
 void DapServer::handle_heap_inspector(const Value& id, const Value& /*args*/) {
+    if (id.is_int()) {
+        const int64_t request_id = id.as_int();
+        bool pre_cancelled = false;
+        {
+            std::lock_guard<std::mutex> lk(cancel_mutex_);
+            auto it = cancelled_request_ids_.find(request_id);
+            if (it != cancelled_request_ids_.end()) {
+                pre_cancelled = true;
+                cancelled_request_ids_.erase(it);
+            }
+        }
+        if (pre_cancelled) {
+            active_heap_snapshot_request_.store(-1, std::memory_order_relaxed);
+            cancel_active_heap_snapshot_.store(false, std::memory_order_relaxed);
+            send_error_response(id, 2020, "Request cancelled");
+            return;
+        }
+        active_heap_snapshot_request_.store(request_id, std::memory_order_relaxed);
+    } else {
+        active_heap_snapshot_request_.store(-1, std::memory_order_relaxed);
+    }
+    cancel_active_heap_snapshot_.store(false, std::memory_order_relaxed);
+
     std::lock_guard<std::mutex> lk(vm_mutex_);
     if (!driver_) {
+        active_heap_snapshot_request_.store(-1, std::memory_order_relaxed);
         send_error_response(id, 2001, "VM not running");
         return;
     }
     if (!driver_->vm().is_paused()) {
+        active_heap_snapshot_request_.store(-1, std::memory_order_relaxed);
         send_error_response(id, 2002, "VM must be paused to inspect the heap");
         return;
     }
-    send_response(id, build_heap_snapshot());
+    bool cancelled = false;
+    auto body = build_heap_snapshot(&cancelled);
+    active_heap_snapshot_request_.store(-1, std::memory_order_relaxed);
+    if (cancelled) {
+        send_error_response(id, 2020, "Request cancelled");
+        return;
+    }
+    send_response(id, body);
 }
 
-Value DapServer::build_heap_snapshot() {
+Value DapServer::build_heap_snapshot(bool* out_cancelled) {
     using namespace runtime::memory::heap;
+    if (out_cancelled) *out_cancelled = false;
 
     auto& heap = driver_->heap();
 
@@ -1745,11 +1851,20 @@ Value DapServer::build_heap_snapshot() {
     struct KindStat { int64_t count{0}; int64_t bytes{0}; };
     std::unordered_map<uint8_t, KindStat> kind_stats;
 
-    heap.for_each_entry([&](ObjectId /*id*/, HeapEntry& entry) {
-        auto k = static_cast<uint8_t>(entry.header.kind);
-        kind_stats[k].count++;
-        kind_stats[k].bytes += static_cast<int64_t>(entry.size);
-    });
+    struct HeapSnapshotCancelled {};
+    try {
+        heap.for_each_entry([&](ObjectId /*id*/, HeapEntry& entry) {
+            if (cancel_active_heap_snapshot_.load(std::memory_order_relaxed)) {
+                throw HeapSnapshotCancelled{};
+            }
+            auto k = static_cast<uint8_t>(entry.header.kind);
+            kind_stats[k].count++;
+            kind_stats[k].bytes += static_cast<int64_t>(entry.size);
+        });
+    } catch (const HeapSnapshotCancelled&) {
+        if (out_cancelled) *out_cancelled = true;
+        return json::object({});
+    }
 
     Array kinds_arr;
     for (const auto& [k, stat] : kind_stats) {
@@ -1764,9 +1879,17 @@ Value DapServer::build_heap_snapshot() {
     auto gc_roots = driver_->vm().enumerate_gc_roots();
     Array roots_arr;
     for (const auto& root : gc_roots) {
+        if (cancel_active_heap_snapshot_.load(std::memory_order_relaxed)) {
+            if (out_cancelled) *out_cancelled = true;
+            return json::object({});
+        }
         Array ids;
         Array labels;
         for (std::size_t i = 0; i < root.object_ids.size(); ++i) {
+            if (cancel_active_heap_snapshot_.load(std::memory_order_relaxed)) {
+                if (out_cancelled) *out_cancelled = true;
+                return json::object({});
+            }
             ids.push_back(Value(static_cast<int64_t>(root.object_ids[i])));
         }
 

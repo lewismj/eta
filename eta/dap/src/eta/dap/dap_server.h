@@ -6,6 +6,7 @@
  */
 
 #include <filesystem>
+#include <atomic>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -14,6 +15,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "eta/util/json.h"
@@ -103,6 +105,12 @@ private:
     /// Command name of the request currently being dispatched (used by send_response).
     std::string current_command_;
 
+    /// Request-cancellation bookkeeping for long-running custom requests.
+    std::mutex cancel_mutex_;
+    std::unordered_set<int64_t> cancelled_request_ids_;
+    std::atomic<int64_t> active_heap_snapshot_request_{-1};
+    std::atomic<bool> cancel_active_heap_snapshot_{false};
+
     /// The driver and its execution thread
     std::unique_ptr<interpreter::Driver> driver_;
     std::thread vm_thread_;
@@ -139,6 +147,8 @@ private:
     void handle_set_variable(const Value& id, const Value& args);
     void handle_restart(const Value& id, const Value& args);
     void handle_terminate(const Value& id, const Value& args);
+    void handle_terminate_threads(const Value& id, const Value& args);
+    void handle_cancel(const Value& id, const Value& args);
     void handle_completions(const Value& id, const Value& args);
     void handle_disconnect(const Value& id, const Value& args);
 
@@ -154,7 +164,7 @@ private:
      * Helpers
      * Build a JSON heap snapshot from the paused VM. Caller must hold vm_mutex_.
      */
-    Value build_heap_snapshot();
+    Value build_heap_snapshot(bool* out_cancelled = nullptr);
 
     /**
      * Resolve a function-breakpoint name to a concrete file/line location.
