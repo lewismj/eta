@@ -194,7 +194,7 @@ Tests should assert tag identity and payload keys, not message text.
 
 ## Examples
 
-- [examples/aad.eta](../examples/aad.eta)
-- [examples/european.eta](../examples/european.eta)
-- [examples/sabr.eta](../examples/sabr.eta)
-- [examples/xva.eta](../examples/xva.eta)
+- [examples/aad.eta](../examples/aad.eta) — basic AAD walkthrough
+- [European option pricing](european.md) ([source](../examples/european.eta))
+- [SABR model](sabr.md) ([source](../examples/sabr.eta))
+- [XVA](xva.md) ([source](../examples/xva.eta))
