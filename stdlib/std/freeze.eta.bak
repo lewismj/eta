@@ -1,4 +1,4 @@
-;;; std/freeze.eta  attributed-variable combinators.
+;;; std/freeze.eta — attributed-variable combinators.
 ;;;
 ;;; Builds on the attributed-variable primitives
 ;;;   (put-attr v 'mod val)
@@ -13,7 +13,7 @@
 ;;;       Delay `goal-thunk` until `v` becomes bound.  If `v` is already
 ;;;       ground at the time of the call, run the goal immediately.
 ;;;       Otherwise attach the thunk as an attribute on `v` under the
-;;;       'freeze module  the registered hook will fire it exactly
+;;;       'freeze module — the registered hook will fire it exactly
 ;;;       once when unification later binds `v`.
 ;;;
 ;;;   (dif x y)
@@ -32,7 +32,7 @@
   (export freeze dif)
   (begin
 
-    ;;  freeze 
+    ;; ── freeze ────────────────────────────────────────────────────────
     ;;
     ;; Hook payload on a variable under the 'freeze module is a *list*
     ;; of thunks accumulated by successive (freeze v g) calls.  When
@@ -55,17 +55,17 @@
       ;; If v is already ground, run goal-thunk now.
       (cond
         ((not (logic-var? v))   (goal-thunk))
-        ;; Already bound (follows binding chain)  run immediately.
+        ;; Already bound (follows binding chain) — run immediately.
         ((not (logic-var? (deref-lvar v)))
          (goal-thunk))
         (else
-          ;; Still unbound  append to (or create) 'freeze attribute.
+          ;; Still unbound — append to (or create) 'freeze attribute.
           (let* ((existing (get-attr v 'freeze))
                  (pending  (if existing existing '())))
             (put-attr v 'freeze (cons goal-thunk pending))
             #t))))
 
-    ;;  dif 
+    ;; ── dif ──────────────────────────────────────────────────────────
     ;;
     ;; `dif` maintains, per participating variable, a list of (term . term)
     ;; witness pairs that must NEVER unify.  On each binding the hook
@@ -73,9 +73,9 @@
     ;;
     ;;   - If the pair is now structurally equal (ground & equal, or
     ;;     `(unify t1 t2)` succeeds with no new bindings), the constraint
-    ;;     is violated  hook returns #f.
+    ;;     is violated → hook returns #f.
     ;;   - If the pair cannot unify at all, the constraint is satisfied
-    ;;     forever  drop it.
+    ;;     forever — drop it.
     ;;   - Otherwise (still under-determined) keep the witness.
     ;;
     ;; Implementation detail: we test "does unify succeed" via a
@@ -102,7 +102,7 @@
         ok))
 
     (defun %dif-hook (var bound-val attr-val)
-      ;; attr-val is a list of (other-term . nil) witnesses  each entry
+      ;; attr-val is a list of (other-term . nil) witnesses — each entry
       ;; is a term that must stay *different* from `var`.
       (let loop ((ws attr-val))
         (cond
@@ -110,7 +110,7 @@
           (else
             (let ((other (car (car ws))))
               (cond
-                ;; Now provably equal  disequality violated.
+                ;; Now provably equal → disequality violated.
                 ((%dif-equal? var other) #f)
                 ;; Otherwise keep going.
                 (else (loop (cdr ws)))))))))

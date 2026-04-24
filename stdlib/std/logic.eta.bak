@@ -1,16 +1,16 @@
-;;; std/logic.eta  Prolog-style logic programming over Eta's native
+;;; std/logic.eta — Prolog-style logic programming over Eta's native
 ;;;                 unification primitives.
 ;;;
 ;;; Built-in primitives (always available, no import needed):
 ;;;
-;;;   (logic-var)           allocate a fresh, unbound logic variable
-;;;   (unify a b)           structural unification; returns #t or #f
-;;;   (deref-lvar x)        walk a logic variable chain to its value
-;;;   (logic-var? x)        #t if x is still unbound
-;;;   (trail-mark)          snapshot the binding stack for backtracking
-;;;   (unwind-trail mark)   undo every binding made since the snapshot
-;;;   (ground? t)           #t if t contains no unbound logic variables
-;;;   (copy-term t)         deep copy term; unbound vars  fresh copies
+;;;   (logic-var)          – allocate a fresh, unbound logic variable
+;;;   (unify a b)          – structural unification; returns #t or #f
+;;;   (deref-lvar x)       – walk a logic variable chain to its value
+;;;   (logic-var? x)       – #t if x is still unbound
+;;;   (trail-mark)         – snapshot the binding stack for backtracking
+;;;   (unwind-trail mark)  – undo every binding made since the snapshot
+;;;   (ground? t)          – #t if t contains no unbound logic variables
+;;;   (copy-term t)        – deep copy term; unbound vars → fresh copies
 ;;;
 ;;; This module adds higher-level combinators on top of those primitives.
 ;;; It depends on std.collections for map* (used in membero).
@@ -29,7 +29,7 @@
     run1
     ;; Relational building blocks
     membero
-    ;;  miniKanren-style goal combinators 
+    ;; ── miniKanren-style goal combinators ──────────────────────────────
     ;; A "goalset" is a list of zero-arg branch thunks.  Each branch thunk
     ;; returns #t when the branch's goals succeeded (with bindings live on
     ;; the trail) or #f when it failed.  This is the same shape accepted
@@ -44,12 +44,12 @@
     logic-throw logic-catch)
   (begin
 
-    ;;  == 
+    ;; ── == ────────────────────────────────────────────────────────────────
     ;; Wrap the (unify a b) special form as an ordinary callable goal.
     ;; Returns #t on success (bindings placed on the trail) or #f on failure.
     (defun == (a b) (unify a b))
 
-    ;;  copy-term 
+    ;; ── copy-term ─────────────────────────────────────────────────────────
     ;; Wrap the (copy-term t) special form as an ordinary callable function.
     ;; Returns a deep copy of t where every unbound logic variable has been
     ;; replaced by a fresh one.  Sharing is preserved: if the same unbound
@@ -60,7 +60,7 @@
     ;; performs the walk in C++ with an O(1)-amortised hash-map memo table.
     (defun copy-term* (t) (copy-term t))
 
-    ;;  naf 
+    ;; ── naf ───────────────────────────────────────────────────────────────
     ;; Negation as failure.
     ;; Probes goal-thunk in isolation; ALWAYS unwinds any bindings it made.
     ;; Returns #t if the goal failed; #f if it succeeded.
@@ -70,7 +70,7 @@
         (unwind-trail m)
         (not ok)))
 
-    ;;  succeeds? 
+    ;; ── succeeds? ─────────────────────────────────────────────────────────
     ;; Run goal-thunk in isolation; ALWAYS unwinds any bindings it made.
     ;; Returns #t if the goal succeeded; #f if it failed.
     ;; Useful for pure membership or satisfiability tests without side effects.
@@ -80,7 +80,7 @@
         (unwind-trail m)
         (if ok #t #f)))
 
-    ;;  findall 
+    ;; ── findall ───────────────────────────────────────────────────────────
     ;; (findall template-thunk branches)
     ;;
     ;;   template-thunk : zero-arg thunk evaluated after each successful branch
@@ -110,7 +110,7 @@
                   (unwind-trail m)
                   (findall template-thunk (cdr branches)))))))
 
-    ;;  run1 
+    ;; ── run1 ──────────────────────────────────────────────────────────────
     ;; Return the first solution from branches where the goal succeeds, or
     ;; #f if no branch succeeds.  Cheaper than findall when only one answer
     ;; is needed.
@@ -118,7 +118,7 @@
       (let ((sols (findall template-thunk branches)))
         (if (null? sols) #f (car sols))))
 
-    ;;  membero 
+    ;; ── membero ───────────────────────────────────────────────────────────
     ;; (membero x lst)
     ;;
     ;; Returns one goal branch per element of lst; each branch unifies x with
@@ -134,51 +134,51 @@
     (defun membero (x lst)
       (map* (lambda (elem) (lambda () (== x elem))) lst))
 
-    ;; 
+    ;; ══════════════════════════════════════════════════════════════════
     ;;  miniKanren-style goal combinators
-    ;; 
+    ;; ══════════════════════════════════════════════════════════════════
     ;;
     ;; A GOALSET is a list of branch thunks.  Each branch thunk installs
     ;; some bindings on the per-VM trail and returns #t on success or #f
     ;; on failure.  A goalset therefore represents a *disjunction* of
     ;; *conjunctions*.  This is exactly the shape consumed by `findall`
-    ;; / `run1`  the combinators here let you *build* goalsets
-    ;; compositionally instead of writing raw `(list (lambda () ))`.
+    ;; / `run1` — the combinators here let you *build* goalsets
+    ;; compositionally instead of writing raw `(list (lambda () …))`.
     ;;
     ;; Design notes
     ;; ------------
     ;; * Pure Eta, zero VM changes.  Uses only `trail-mark`/`unwind-trail`
     ;;   + `unify` + the existing `findall` semantics.
     ;; * `conj` is implemented as a Cartesian product of branch lists:
-    ;;   combining goalsets of size M and N produces a goalset of size MN.
+    ;;   combining goalsets of size M and N produces a goalset of size M·N.
     ;;   Each combined branch is `(lambda () (and (b1) (b2)))`.  The trail
-    ;;   is left dirty on partial failure  `findall` / `run*` unwind on
+    ;;   is left dirty on partial failure — `findall` / `run*` unwind on
     ;;   every branch boundary so that's safe.  Soft-cut / committed-choice
     ;;   variants (`conda`/`condu`/`onceo`) build a *single* branch that
     ;;   iterates internally, giving cut-like commitment.
     ;; * No native choice-point stack or WAM opcodes; those remain
     ;;   reserved for future WAM opcodes and are not required for the visible API.
 
-    ;;  Atomic goal constructors 
+    ;; ── Atomic goal constructors ──────────────────────────────────────
 
-    ;; (goal thunk)   lift a 0-arg thunk into a single-branch goalset.
+    ;; (goal thunk)  — lift a 0-arg thunk into a single-branch goalset.
     (defun goal (thunk) (list thunk))
 
-    ;; (==o a b)      unification as a goalset.
+    ;; (==o a b)     — unification as a goalset.
     (defun ==o (a b) (goal (lambda () (unify a b))))
 
     ;; Always-succeeding / always-failing goals.
     (defun succeedo () (goal (lambda () #t)))
     (defun failo    () '())
 
-    ;;  Disjunction & conjunction over goalsets 
+    ;; ── Disjunction & conjunction over goalsets ───────────────────────
 
-    ;; (disj g1 g2 )   flatten branch lists; identity is the empty list
+    ;; (disj g1 g2 …)  — flatten branch lists; identity is the empty list
     ;;                   (a goalset that fails).
     (defun disj gs
       (foldr append '() gs))
 
-    ;; (conj2-goalsets gs1 gs2)  Cartesian product of branch thunks.
+    ;; (conj2-goalsets gs1 gs2) — Cartesian product of branch thunks.
     (defun conj2-goalsets (gs1 gs2)
       (if (null? gs1) '()
           (append
@@ -188,27 +188,27 @@
                   gs2)
             (conj2-goalsets (cdr gs1) gs2))))
 
-    ;; (conj g1 g2 )   conjunction of goalsets.  Identity is a single
+    ;; (conj g1 g2 …)  — conjunction of goalsets.  Identity is a single
     ;;                   always-succeeding branch.
     (defun conj gs
       (cond ((null? gs)        (succeedo))
             ((null? (cdr gs))  (car gs))
             (else              (foldl conj2-goalsets (car gs) (cdr gs)))))
 
-    ;;  conde / conda / condu 
+    ;; ── conde / conda / condu ─────────────────────────────────────────
 
-    ;; (conde clause1 clause2 ) where each clause is a *list* of goalsets
-    ;; to conj together.  Expands to  disj (conj clause1) (conj clause2) 
+    ;; (conde clause1 clause2 …) where each clause is a *list* of goalsets
+    ;; to conj together.  Expands to  disj (conj clause1) (conj clause2) …
     ;;
     ;; Example:
     ;;   (conde (list (==o x 1))
     ;;          (list (==o x 2) (==o y 10)))
-    ;;    2-branch goalset equivalent to  X=1    (X=2  Y=10)
+    ;;   ⇒ 2-branch goalset equivalent to  X=1  ∨  (X=2 ∧ Y=10)
     (defun conde clauses
       (foldr append '()
              (map* (lambda (clause) (apply conj clause)) clauses)))
 
-    ;; (onceo goalset)  cut-like: returns a 1-branch goalset whose single
+    ;; (onceo goalset) — cut-like: returns a 1-branch goalset whose single
     ;; branch commits to the first succeeding branch of `goalset`.
     ;; Bindings from that branch stay live; later branches are never tried.
     (defun onceo (goalset)
@@ -233,7 +233,7 @@
               (let loop ((bs test))
                 (cond
                   ((null? bs)
-                   ;; test had no solution  run else branches
+                   ;; test had no solution — run else branches
                    (let inner ((eb else-gs))
                      (cond ((null? eb) #f)
                            (else (let* ((m  (trail-mark))
@@ -245,7 +245,7 @@
                     (let* ((m  (trail-mark))
                            (ok ((car bs))))
                       (if ok
-                          ;; Found first test solution  keep bindings,
+                          ;; Found first test solution — keep bindings,
                           ;; now run `then` as a commitment.
                           (let try-then ((tb then))
                             (cond ((null? tb) #f)
@@ -260,7 +260,7 @@
 
     ;; (condu (test then) else-gs)
     ;;   committed choice: like conda but test is run under `onceo`
-    ;;   semantics  only one solution of test is ever produced.  Since
+    ;;   semantics — only one solution of test is ever produced.  Since
     ;;   `conda` above already commits on the first successful branch,
     ;;   `condu` behaves identically for single-branch tests.  For
     ;;   multi-branch tests the difference is that `condu` guarantees
@@ -268,21 +268,19 @@
     (defun condu (test then else-gs)
       (conda (onceo test) then else-gs))
 
-    ;;  fresh / fresh-vars 
+    ;; ── fresh / fresh-vars ────────────────────────────────────────────
 
-    ;; (fresh-vars n)   return a list of n fresh unbound logic variables.
+    ;; (fresh-vars n)  — return a list of n fresh unbound logic variables.
     (defun fresh-vars (n)
-      (let loop ((k n) (acc '()))
-        (if (<= k 0)
-            (reverse acc)
-            (loop (- k 1) (cons (logic-var) acc)))))
+      (if (<= n 0) '()
+          (cons (logic-var) (fresh-vars (- n 1)))))
 
-    ;; (fresh n f)   call (f v1 v2  vn) with n fresh vars; return the
+    ;; (fresh n f)  — call (f v1 v2 … vn) with n fresh vars; return the
     ;; goalset produced by f.  Eta has no macros, so fresh is a higher-
     ;; order function: the body must be a lambda of exactly n params.
     (defun fresh (n f) (apply f (fresh-vars n)))
 
-    ;;  run*  / run-n  
+    ;; ── run*  / run-n  ─────────────────────────────────────────────────
 
     ;; (run* template-thunk goalset)
     ;;   Collect ALL solutions.  Alias of `findall` with a more miniKanren-
@@ -293,7 +291,7 @@
 
     ;; (run-n n template-thunk goalset)
     ;;   Return up to n solutions, in order.  Stops enumerating as soon as
-    ;;   n solutions have been collected  the remaining branches are not
+    ;;   n solutions have been collected — the remaining branches are not
     ;;   executed.  This gives real lazy semantics: computing the 3rd
     ;;   answer does not compute the 4th.
     (defun run-n (n template-thunk goalset)
@@ -311,10 +309,10 @@
                   (unwind-trail m)
                   (run-n n template-thunk (cdr goalset))))))))
 
-    ;;  Logic-scoped exceptions 
+    ;; ── Logic-scoped exceptions ───────────────────────────────────────
 
     ;; (logic-throw tag val)
-    ;;   Escape upward to the nearest (logic-catch tag ), unwinding the
+    ;;   Escape upward to the nearest (logic-catch tag …), unwinding the
     ;;   trail back to its depth at logic-catch entry on the way.
     ;;
     ;;   Eta's builtin `raise` / `catch` require a *quoted-symbol literal*
@@ -332,7 +330,7 @@
     ;;   Otherwise return body's value; raises with other tags propagate.
     ;;
     ;;   Eta's builtin `(catch 'tag body)` returns body's value OR the
-    ;;   raised value  it does not distinguish.  We wrap body's result
+    ;;   raised value — it does not distinguish.  We wrap body's result
     ;;   in a freshly-consed sentinel so we can tell the two cases apart.
     (defun logic-catch (tag body-thunk handler)
       (let* ((m         (trail-mark))

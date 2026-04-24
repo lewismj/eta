@@ -1,4 +1,4 @@
-;;; std/core.eta  Core utilities for the Eta language.
+;;; std/core.eta — Core utilities for the Eta language.
 ;;;
 ;;; All arithmetic, comparison, equivalence, list, string, and vector
 ;;; primitives are already available as builtins in every module.
@@ -18,16 +18,16 @@
     windows?)
   (begin
 
-    ;;  Predicates 
+    ;; ── Predicates ──────────────────────────────────────────────────
 
     ;; True for anything that is not a pair.
     (defun atom? (x) (not (pair? x)))
 
-    ;; Returns '()  the canonical "no useful value" result.
+    ;; Returns '() — the canonical "no useful value" result.
     (defun void () '())
 
 
-    ;;  Combinators 
+    ;; ── Combinators ─────────────────────────────────────────────────
 
     ;; Returns its argument unchanged.
     (defun identity (x) x)
@@ -50,7 +50,7 @@
     (defun negate (pred)
       (lambda (x) (not (pred x))))
 
-    ;;  Accessors 
+    ;; ── Accessors ───────────────────────────────────────────────────
 
     (defun cadr (xs)  (car (cdr xs)))
     (defun caddr (xs) (car (cdr (cdr xs))))
@@ -58,38 +58,40 @@
     (defun cdar (xs)  (cdr (car xs)))
     (defun caddar (xs) (car (cdr (cdr (car xs)))))
 
-    ;;  List utilities 
+    ;; ── List utilities ──────────────────────────────────────────────
 
     ;; Last element of a non-empty proper list.
     (defun last (xs)
-      (let loop ((rest xs))
-        (if (null? (cdr rest))
-            (car rest)
-            (loop (cdr rest)))))
+      (if (null? (cdr xs))
+          (car xs)
+          (last (cdr xs))))
 
     ;; Proper-list predicate (handles dotted pairs correctly).
     (defun list? (x)
       (cond
         ((null? x) #t)
         ((pair? x) (list? (cdr x)))
-        (else #f)))
+        (#t #f)))
 
     ;; Generate a list of integers [start .. start+count-1].
     (defun iota (count . rest)
       (let ((start (if (null? rest) 0 (car rest)))
             (step  (if (or (null? rest) (null? (cdr rest))) 1 (car (cdr rest)))))
-        (let build ((i (- count 1)) (acc '()))
-          (if (< i 0)
-              acc
-              (build (- i 1) (cons (+ start (* i step)) acc))))))
+        (letrec ((build (lambda (i acc)
+                          (if (< i 0)
+                              acc
+                              (build (- i 1) (cons (+ start (* i step)) acc))))))
+          (build (- count 1) '()))))
 
     ;; Association list lookup: returns the value (cdr) of the first
     ;; pair whose car is equal? to key, or #f if not found.
     (defun assoc-ref (key alist)
-      (let ((p (assoc key alist)))
-        (and p (cdr p))))
+      (cond
+        ((null? alist) #f)
+        ((equal? key (car (car alist))) (cdr (car alist)))
+        (#t (assoc-ref key (cdr alist)))))
 
-    ;;  Platform 
+    ;; ── Platform ────────────────────────────────────────────────────
 
     ;; True when running on Windows. (platform) is evaluated at VM
     ;; execution time, so this is safe for cross-platform bytecode.

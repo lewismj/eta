@@ -1,0 +1,228 @@
+;;; std/collections.eta — Higher-order list and vector operations.
+;;;
+;;; Builtins already available:
+;;;   cons car cdr pair? null? list
+;;;   length append reverse list-ref list-tail
+;;;   vector vector-length vector-ref vector-set! vector? make-vector
+;;;   map for-each  (primitive-only versions)
+;;;
+;;; This module provides closure-compatible versions that work with
+;;; lambdas and additional collection utilities.
+
+(module std.collections
+  (export
+    ;; List higher-order
+    map* map2 zip-with map-indexed
+    filter foldl foldr reduce
+    any? every? count
+    sum-by
+    zip
+    pairwise
+    take drop
+    flatten
+    range
+    ;; Sorting
+    sort
+    ;; Vector higher-order
+    vector-map vector-for-each
+    vector-foldl vector-foldr
+    vector->list list->vector)
+  (begin
+
+    ;; ── List higher-order ───────────────────────────────────────────
+
+    ;; Closure-compatible map (the builtin only works with primitives).
+    (defun map* (f xs)
+      (if (null? xs)
+          '()
+          (cons (f (car xs)) (map* f (cdr xs)))))
+
+    ;; Closure-compatible map across two lists.
+    ;; Stops at the shorter input length.
+    (defun map2 (f xs ys)
+      (if (or (null? xs) (null? ys))
+          '()
+          (cons (f (car xs) (car ys))
+                (map2 f (cdr xs) (cdr ys)))))
+
+    ;; Alias for map2; mirrors "zipWith"-style APIs.
+    (defun zip-with (f xs ys)
+      (map2 f xs ys))
+
+    ;; Map with zero-based index.
+    (defun map-indexed (f xs)
+      (letrec ((loop (lambda (i rest)
+                       (if (null? rest)
+                           '()
+                           (cons (f i (car rest))
+                                 (loop (+ i 1) (cdr rest)))))))
+        (loop 0 xs)))
+
+    ;; Keep elements where (pred x) is truthy.
+    (defun filter (pred xs)
+      (cond
+        ((null? xs) '())
+        ((pred (car xs))
+         (cons (car xs) (filter pred (cdr xs))))
+        (#t (filter pred (cdr xs)))))
+
+    ;; Left fold: (foldl f init '(a b c)) = (f (f (f init a) b) c)
+    (defun foldl (f acc xs)
+      (if (null? xs)
+          acc
+          (foldl f (f acc (car xs)) (cdr xs))))
+
+    ;; Right fold: (foldr f init '(a b c)) = (f a (f b (f c init)))
+    (defun foldr (f init xs)
+      (if (null? xs)
+          init
+          (f (car xs) (foldr f init (cdr xs)))))
+
+    ;; Fold using the first element as the initial accumulator.
+    (defun reduce (f xs)
+      (if (null? xs)
+          (error "reduce: empty list")
+          (foldl f (car xs) (cdr xs))))
+
+    ;; True if (pred x) is truthy for at least one element.
+    (defun any? (pred xs)
+      (cond
+        ((null? xs) #f)
+        ((pred (car xs)) #t)
+        (#t (any? pred (cdr xs)))))
+
+    ;; True if (pred x) is truthy for every element.
+    (defun every? (pred xs)
+      (cond
+        ((null? xs) #t)
+        ((not (pred (car xs))) #f)
+        (#t (every? pred (cdr xs)))))
+
+    ;; Count elements satisfying pred.
+    (defun count (pred xs)
+      (foldl (lambda (acc x) (if (pred x) (+ acc 1) acc)) 0 xs))
+
+    ;; Sum transformed elements.
+    (defun sum-by (f xs)
+      (foldl (lambda (acc x) (+ acc (f x))) 0 xs))
+
+    ;; Zip two lists into a list of pairs.
+    (defun zip (xs ys)
+      (if (or (null? xs) (null? ys))
+          '()
+          (cons (cons (car xs) (car ys))
+                (zip (cdr xs) (cdr ys)))))
+
+    ;; Adjacent element pairs: '(a b c d) -> ((a . b) (b . c) (c . d))
+    (defun pairwise (xs)
+      (if (or (null? xs) (null? (cdr xs)))
+          '()
+          (cons (cons (car xs) (car (cdr xs)))
+                (pairwise (cdr xs)))))
+
+    ;; First n elements.
+    (defun take (n xs)
+      (if (or (= n 0) (null? xs))
+          '()
+          (cons (car xs) (take (- n 1) (cdr xs)))))
+
+    ;; Drop first n elements.
+    (defun drop (n xs)
+      (if (or (= n 0) (null? xs))
+          xs
+          (drop (- n 1) (cdr xs))))
+
+    ;; Flatten one level of nesting.
+    (defun flatten (xss)
+      (foldr append '() xss))
+
+    ;; Generate '(start start+1 ... end-1).
+    (defun range (start end)
+      (if (>= start end)
+          '()
+          (cons start (range (+ start 1) end))))
+
+    ;; ── Sorting ─────────────────────────────────────────────────────
+
+    ;; Merge sort (stable, O(n log n)).
+    (defun sort (less? xs)
+      (letrec
+        ((merge (lambda (a b)
+           (cond
+             ((null? a) b)
+             ((null? b) a)
+             ((less? (car a) (car b))
+              (cons (car a) (merge (cdr a) b)))
+             (#t
+              (cons (car b) (merge a (cdr b)))))))
+         (split (lambda (xs left right toggle)
+           (if (null? xs)
+               (cons left right)
+               (if toggle
+                   (split (cdr xs) (cons (car xs) left) right (not toggle))
+                   (split (cdr xs) left (cons (car xs) right) (not toggle))))))
+         (msort (lambda (xs)
+           (if (or (null? xs) (null? (cdr xs)))
+               xs
+               (let ((halves (split xs '() '() #t)))
+                 (merge (msort (car halves))
+                        (msort (cdr halves))))))))
+        (msort xs)))
+
+    ;; ── Vector operations ───────────────────────────────────────────
+
+    ;; Apply f to each element, returning a new vector.
+    (defun vector-map (f v)
+      (let ((n (vector-length v)))
+        (let ((out (make-vector n '())))
+          (letrec ((loop (lambda (i)
+                           (when (< i n)
+                             (vector-set! out i (f (vector-ref v i)))
+                             (loop (+ i 1))))))
+            (loop 0)
+            out))))
+
+    ;; Apply f to each element for side effects.
+    (defun vector-for-each (f v)
+      (let ((n (vector-length v)))
+        (letrec ((loop (lambda (i)
+                         (when (< i n)
+                           (f (vector-ref v i))
+                           (loop (+ i 1))))))
+          (loop 0))))
+
+    ;; Left fold over a vector.
+    (defun vector-foldl (f acc v)
+      (let ((n (vector-length v)))
+        (letrec ((loop (lambda (i a)
+                         (if (= i n)
+                             a
+                             (loop (+ i 1) (f a (vector-ref v i)))))))
+          (loop 0 acc))))
+
+    ;; Right fold over a vector.
+    (defun vector-foldr (f init v)
+      (let ((n (vector-length v)))
+        (letrec ((loop (lambda (i a)
+                         (if (< i 0)
+                             a
+                             (loop (- i 1) (f (vector-ref v i) a))))))
+          (loop (- n 1) init))))
+
+    ;; Convert a vector to a list.
+    (defun vector->list (v)
+      (vector-foldr cons '() v))
+
+    ;; Convert a list to a vector.
+    (defun list->vector (xs)
+      (let ((n (length xs)))
+        (let ((v (make-vector n '())))
+          (letrec ((loop (lambda (i rest)
+                           (when (< i n)
+                             (vector-set! v i (car rest))
+                             (loop (+ i 1) (cdr rest))))))
+            (loop 0 xs)
+            v))))
+
+  ))
+

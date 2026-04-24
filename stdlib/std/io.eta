@@ -1,4 +1,4 @@
-;;; std/io.eta — I/O utilities.
+;;; std/io.eta - I/O utilities.
 ;;;
 ;;; Builtins already available:
 ;;;   display  write  newline  write-string  write-char  read-char
@@ -10,22 +10,29 @@
 ;;;   close-port  close-input-port  close-output-port
 ;;;   string-ref  substring
 ;;;
-;;; This module adds convenience helpers on top of those primitives.
+;;; Canonical Scheme names are the builtins (`display`, `write`,
+;;; `newline`) plus `display->string` in this module. `println` and
+;;; `eprintln` are Eta extensions (non-R7RS convenience helpers).
 
 (module std.io
   (export
-    print println
+    display->string
+    println
     eprintln
-    display-to-string
     read-line
+    with-port
+    with-input-port
     with-output-to-port
     with-input-from-port
-    with-error-to-port)
+    with-error-to-port
+    ;; Deprecated aliases (remove after one minor release)
+    print
+    display-to-string)
   (begin
 
-    ;; ── Convenience output ──────────────────────────────────────────
+    ;; -- Convenience output --------------------------------------------------
 
-    ;; Display a value (human-readable).
+    ;; deprecated - remove after one minor release
     (defun print (x) (display x))
 
     ;; Display followed by a newline.
@@ -39,62 +46,73 @@
       (newline (current-error-port)))
 
     ;; Format a value into a string using write representation.
-    (defun display-to-string (x)
+    (defun display->string (x)
       (let ((p (open-output-string)))
         (display x p)
         (get-output-string p)))
 
-    ;; ── Input helpers ───────────────────────────────────────────────
+    ;; -- Deprecated aliases --------------------------------------------------
+
+    ;; deprecated - remove after one minor release
+    (define display-to-string display->string)
+
+    ;; -- Input helpers -------------------------------------------------------
 
     ;; Read characters until a newline (or EOF) and return a string.
     ;; The newline is consumed but not included in the result.
     (defun read-line args
       (let ((port (if (null? args) (current-input-port) (car args)))
             (out  (open-output-string)))
-        (letrec ((loop (lambda ()
-                         (let ((ch (read-char port)))
-                           (cond
-                             ;; EOF → return what we have (#f if nothing)
-                             ((eq? ch #f)
-                              (let ((s (get-output-string out)))
-                                (if (= (string-length s) 0) #f s)))
-                             ;; newline → done
-                             ((eq? ch #\newline)
-                              (get-output-string out))
-                             ;; carriage-return → skip
-                             ((eq? ch #\return)
-                              (loop))
-                             ;; normal char → accumulate via display
-                             (#t
-                              (display ch out)
-                              (loop)))))))
-          (loop))))
+        (let loop ()
+          (let ((ch (read-char port)))
+            (cond
+              ;; EOF -> return what we have (#f if nothing)
+              ((eq? ch #f)
+               (let ((s (get-output-string out)))
+                 (if (= (string-length s) 0) #f s)))
+              ;; newline -> done
+              ((eq? ch #\newline)
+               (get-output-string out))
+              ;; carriage-return -> skip
+              ((eq? ch #\return)
+               (loop))
+              ;; normal char -> accumulate via display
+              (else
+               (display ch out)
+               (loop)))))))
 
-    ;; ── Dynamic port redirection ────────────────────────────────────
+    ;; -- Dynamic port redirection -------------------------------------------
+
+    ;; Convenience wrapper around with-output-to-port.
+    (defun with-port (port thunk)
+      (with-output-to-port port thunk))
+
+    ;; Convenience wrapper around with-input-from-port.
+    (defun with-input-port (port thunk)
+      (with-input-from-port port thunk))
 
     ;; Execute thunk with stdout redirected to port.
     (defun with-output-to-port (port thunk)
       (let ((old (current-output-port)))
-        (set-current-output-port! port)
-        (let ((res (thunk)))
-          (set-current-output-port! old)
-          res)))
+        (dynamic-wind
+          (lambda () (set-current-output-port! port))
+          thunk
+          (lambda () (set-current-output-port! old)))))
 
     ;; Execute thunk with stdin redirected to port.
     (defun with-input-from-port (port thunk)
       (let ((old (current-input-port)))
-        (set-current-input-port! port)
-        (let ((res (thunk)))
-          (set-current-input-port! old)
-          res)))
+        (dynamic-wind
+          (lambda () (set-current-input-port! port))
+          thunk
+          (lambda () (set-current-input-port! old)))))
 
     ;; Execute thunk with stderr redirected to port.
     (defun with-error-to-port (port thunk)
       (let ((old (current-error-port)))
-        (set-current-error-port! port)
-        (let ((res (thunk)))
-          (set-current-error-port! old)
-          res)))
+        (dynamic-wind
+          (lambda () (set-current-error-port! port))
+          thunk
+          (lambda () (set-current-error-port! old)))))
 
   ))
-
