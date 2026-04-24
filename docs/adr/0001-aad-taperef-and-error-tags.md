@@ -72,7 +72,7 @@ generations, node index, and path metadata for cross-VM violations).
 - Message boundaries reject `Tape` and `TapeRef` values with `:ad/cross-vm-ref`.
 - Tests can assert on tag identity and payload fields rather than string text.
 
-## Migration Notes
+## Notes
 
 - `tape-ref-value-of` is the explicit primitive for reading a TapeRef against a
   specific tape.
