@@ -18,6 +18,7 @@
 #include "eta/runtime/port.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/vm/disassembler.h"
+#include "eta/runtime/vm/sandbox.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/memory/cons_pool.h"
@@ -1071,7 +1072,29 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
             return;
         }
 
-        send_response(id, json::object({{"result", "<not available>"}, {"variablesReference", 0}}));
+        /**
+         * Non-identifier expressions go through the sandbox tree-walker so we
+         * can support `(+ x 1)`, `(< i 5)` etc. for watch / hover / debug
+         * console without executing on the paused VM stack.
+         */
+        std::string formatted;
+        uint64_t    sandbox_val = runtime::nanbox::Nil;
+        std::string sandbox_err;
+        bool        violation = false;
+        if (eval_in_paused_frame(0, expr, formatted, &sandbox_val, &sandbox_err, &violation)) {
+            int vr = is_compound_value(sandbox_val) ? alloc_compound_ref(sandbox_val) : 0;
+            send_response(id, json::object({
+                {"result",             Value(formatted)},
+                {"variablesReference", Value(static_cast<int64_t>(vr))},
+            }));
+            return;
+        }
+
+        const std::string label = violation ? "<sandbox blocked: " : "<eval error: ";
+        send_response(id, json::object({
+            {"result",             Value(label + sandbox_err + ">")},
+            {"variablesReference", 0},
+        }));
         return;
     }
 
@@ -1429,8 +1452,22 @@ bool DapServer::eval_breakpoint_condition(const std::string& condition,
     }
 
     if (!is_identifier_expr(expr)) {
-        out_error =
-            "unsupported expression while paused; only identifiers and boolean/integer literals are supported";
+        /**
+         * Fall through to the sandbox evaluator. Conditions like `(< i 5)`
+         * or `(eq? state 'ready)` are evaluated against the paused frame's
+         * environment without touching the live VM stack.
+         */
+        std::string formatted;
+        uint64_t    val = runtime::nanbox::Nil;
+        std::string sandbox_err;
+        bool        violation = false;
+        if (eval_in_paused_frame(0, expr, formatted, &val, &sandbox_err, &violation)) {
+            out_truthy = (val != runtime::nanbox::False);
+            return true;
+        }
+        out_error = violation
+            ? "sandbox-violation: " + sandbox_err
+            : sandbox_err;
         return false;
     }
 
@@ -1441,6 +1478,59 @@ bool DapServer::eval_breakpoint_condition(const std::string& condition,
     }
 
     out_truthy = (val != runtime::nanbox::False);
+    return true;
+}
+
+bool DapServer::eval_in_paused_frame(int /*frame_idx*/,
+                                     const std::string& expr,
+                                     std::string& out_str,
+                                     uint64_t* out_val,
+                                     std::string* out_error,
+                                     bool* out_violation) {
+    out_str.clear();
+    if (out_error)     out_error->clear();
+    if (out_violation) *out_violation = false;
+
+    if (!driver_) {
+        if (out_error) *out_error = "VM not running";
+        return false;
+    }
+    if (!driver_->vm().is_paused()) {
+        if (out_error) *out_error = "VM must be paused";
+        return false;
+    }
+
+    /**
+     * The sandbox treats every free identifier as a paused-frame lookup:
+     * locals -> upvalues -> module globals -> short-name globals (the same
+     * order used by `evaluate` for bare names today).
+     */
+    runtime::vm::Sandbox sandbox(
+        driver_->heap(),
+        driver_->intern_table(),
+        [this](const std::string& name, runtime::nanbox::LispVal& v) -> bool {
+            return try_lookup_paused_name(name, v);
+        });
+
+    /**
+     * Defence-in-depth: arm the VM sandbox flag so any future codepath that
+     * does enter the bytecode interpreter against the paused VM gets refused
+     * by `StoreGlobal` / `StoreUpval` / `PatchClosureUpval`. The flag is
+     * cleared unconditionally before we return.
+     */
+    auto& vm = driver_->vm();
+    vm.set_sandbox_mode(true);
+    auto sandbox_result = sandbox.eval(expr);
+    vm.set_sandbox_mode(false);
+
+    if (!sandbox_result.ok()) {
+        if (out_error)     *out_error     = sandbox_result.error;
+        if (out_violation) *out_violation = sandbox_result.violation;
+        return false;
+    }
+
+    if (out_val) *out_val = sandbox_result.value;
+    out_str = driver_->format_value(sandbox_result.value);
     return true;
 }
 
@@ -1509,9 +1599,22 @@ bool DapServer::parse_set_variable_value(const std::string& value_text,
         return true;
     }
 
-    out_error =
-        "unsupported value expression while paused; use identifier or literal (#t/#f/nil/int/float/string)";
-    return false;
+    /**
+     * Last-resort fallback: parse and evaluate the value text in the sandbox
+     * so users can type `(+ x 1)` or `(if flag 1 0)` in the Variables pane.
+     */
+    {
+        std::string formatted;
+        std::string sandbox_err;
+        bool        violation = false;
+        if (eval_in_paused_frame(0, text, formatted, &out_value, &sandbox_err, &violation)) {
+            return true;
+        }
+        out_error = violation
+            ? "sandbox-violation: " + sandbox_err
+            : sandbox_err;
+        return false;
+    }
 }
 
 bool DapServer::matches_hit_condition(const std::string& hit_condition,

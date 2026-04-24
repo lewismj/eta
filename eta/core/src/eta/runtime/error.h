@@ -27,6 +27,7 @@ namespace eta::runtime::error {
         UndefinedGlobal,
         UserError,
         UserThrow,   ///< unhandled (raise tag value) with no matching catch frame
+        SandboxViolation, ///< mutating opcode/primitive attempted while VM is in sandbox mode
     };
 
     struct VMErrorField {

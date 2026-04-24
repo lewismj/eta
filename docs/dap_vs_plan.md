@@ -569,21 +569,43 @@ and resolves `${workspaceFolder}` etc.
 
 ---
 
-### B2 — Inline values, watch UX, code lenses
+### B2 — Inline values, watch UX, code lenses ✅ **DONE**
 
-**Inline values.** Implement
-`vscode.languages.registerInlineValuesProvider('eta', ...)`. For each
-in-range identifier, send `evaluate` (Stage A0 sandbox path) and
-decorate inline.
+**Inline values.** Implemented in
+[`editors/vscode/src/inlineValues.ts`](../editors/vscode/src/inlineValues.ts):
+`EtaInlineValuesProvider` tokenises the visible viewport (skipping
+strings/comments, syntactic heads like `defun`/`lambda`, numeric literals,
+quoted symbols and logic vars `?x`), de-duplicates per line, and emits
+`InlineValueEvaluatableExpression` for each candidate identifier. VS Code
+forwards each to the DAP server's sandboxed `evaluate` (A0).
 
-**Evaluatable expression provider.**
-`registerEvaluatableExpressionProvider` lets us recognise full
-sub-expressions (e.g. `(+ x y)` inside a `let`).
+**Evaluatable expression provider.** Implemented in
+[`editors/vscode/src/evaluatableExpression.ts`](../editors/vscode/src/evaluatableExpression.ts):
+`EtaEvaluatableExpressionProvider` returns the identifier under the cursor
+(preferred) or grows outward to the smallest enclosing s-expression (≤ 256
+chars), enabling hover-eval over arbitrary sub-forms like `(+ x y)`.
 
-**Code lens.** A `CodeLensProvider` puts:
+**Code lens.** Implemented in
+[`editors/vscode/src/codeLens.ts`](../editors/vscode/src/codeLens.ts):
+`EtaCodeLensProvider` adds **`▶ Run File`** / **`▶ Debug File`** above the
+first `(module …)` or `(begin …)` form of every `.eta` file, and
+**`▶ Run Tests in File`** / **`▶ Debug Tests in File`** for `*.test.eta`
+files (the test action delegates to the Test Explorer via the new
+`runTestsForUri` export from `testController.ts`).
 
-- **`▶ Run`** above every `(defun main ...)` form.
-- **`▶ Test`** above any `(deftest ...)` form.
+**Document links.** Added bonus in
+[`editors/vscode/src/documentLink.ts`](../editors/vscode/src/documentLink.ts):
+`EtaDocumentLinkProvider` makes every dotted module name inside
+`(import …)` clickable, resolved against `ETA_MODULE_PATH`, the document's
+own directory, and the workspace `stdlib/` folder.
+
+**Wiring.** All four providers are registered in
+[`editors/vscode/src/extension.ts`](../editors/vscode/src/extension.ts)
+under the `{ scheme: 'file', language: 'eta' }` selector. New commands
+`eta.debugFile` and `eta.runTestFile` are contributed in
+[`editors/vscode/package.json`](../editors/vscode/package.json) alongside
+the existing `eta.runFile` (which now accepts an optional URI argument
+from code-lens callers).
 
 **Document link provider.** `(import std.io)` clauses become clickable
 links resolving via `ETA_MODULE_PATH`.

@@ -241,6 +241,27 @@ private:
                                       std::string& out_error);
 
     /**
+     * Sandbox-evaluate `expr` against the paused frame's environment.
+     *
+     * Uses the tree-walking `eta::runtime::vm::Sandbox` evaluator so the
+     * live VM stack/frames/trail are never disturbed.
+     *
+     * Returns true on success and writes the formatted result to `out_str`,
+     * the raw NaN-boxed value to `*out_val` (when non-null) and clears
+     * `*out_error`. Returns false on parse / lookup / sandbox-violation
+     * failure and writes a human-readable diagnostic to `*out_error`.
+     *
+     * Caller must hold vm_mutex_ and ensure driver_ is non-null and the VM
+     * is paused.
+     */
+    bool eval_in_paused_frame(int frame_idx,
+                              const std::string& expr,
+                              std::string& out_str,
+                              uint64_t* out_val = nullptr,
+                              std::string* out_error = nullptr,
+                              bool* out_violation = nullptr);
+
+    /**
      * Expand {name} placeholders in a logpoint message using paused-scope
      * identifier lookups. Unknown placeholders are preserved verbatim.
      * Caller must hold vm_mutex_ and ensure driver_ is non-null.

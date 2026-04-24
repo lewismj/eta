@@ -29,6 +29,7 @@ target_sources(${PROJECT_NAME}
         src/eta/semantics/emitter.cpp
         src/eta/runtime/vm/vm.cpp
         src/eta/runtime/vm/bytecode_serializer.cpp
+        src/eta/runtime/vm/sandbox.cpp
         src/eta/runtime/value_formatter.cpp
         src/eta/runtime/csv_builtins.cpp
         src/eta/runtime/regex_builtins.cpp

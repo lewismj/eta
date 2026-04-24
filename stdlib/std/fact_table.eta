@@ -1,18 +1,18 @@
-;;; std/fact_table.eta - Columnar fact tables with optional hash indexes.
+;;; std/fact_table.eta  Columnar fact tables with optional hash indexes.
 ;;;
 ;;; A fact table is an in-memory, column-oriented store of fixed-arity
-;;; rows (NaN-boxed LispVals). Each column can optionally carry a hash
-;;; index for O(1) equality lookups.
+;;; rows (NaN-boxed LispVals).  Each column can optionally carry a hash
+;;; index for O(1) equality lookups.  The table is designed for the
+;;; kind of relational / causal / logic workloads typical in Eta.
 ;;;
 ;;; Low-level builtins (% prefix):
-;;;   %make-fact-table         col-name-list -> fact-table
-;;;   %fact-table-insert!      table row-list -> #t
-;;;   %fact-table-build-index! table col-idx  -> #t
-;;;   %fact-table-query        table col-idx key -> list of row indices
-;;;   %fact-table-column-names table -> list of symbols
-;;;   %fact-table-ref          table row-idx col-idx -> value
-;;;   %fact-table-row-count    table -> fixnum
-;;;   fact-table?              value -> boolean
+;;;   %make-fact-table         col-name-list  fact-table
+;;;   %fact-table-insert!      table row-list  #t
+;;;   %fact-table-build-index! table col-idx   #t
+;;;   %fact-table-query        table col-idx key  list of row indices
+;;;   %fact-table-ref          table row-idx col-idx  value
+;;;   %fact-table-row-count    table  fixnum
+;;;   fact-table?              value  boolean
 ;;;
 ;;; This module wraps them in a friendlier API.
 

@@ -176,6 +176,14 @@
                     "when": "resourceLangId == eta"
                 },
                 {
+                    "command": "eta.debugFile",
+                    "when": "resourceLangId == eta"
+                },
+                {
+                    "command": "eta.runTestFile",
+                    "when": "resourceLangId == eta && resourceFilename =~ /\\.test\\.eta$/"
+                },
+                {
                     "command": "eta.showHeapInspector"
                 },
                 {

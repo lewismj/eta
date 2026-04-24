@@ -1,4 +1,4 @@
-;;; std/stats.eta — Statistical functions for the Eta language.
+;;; std/stats.eta  Statistical functions for the Eta language.
 ;;;
 ;;; Provides descriptive statistics, confidence intervals, t-distribution,
 ;;; two-sample Welch t-test, simple and multivariate OLS regression,
@@ -39,29 +39,29 @@
     stats:ols-multi-residual-se)
   (begin
 
-    ;; ── Descriptive statistics ─────────────────────────────────────
+    ;;  Descriptive statistics 
 
-    (defun stats:mean     (xs) (%stats-mean xs))
-    (defun stats:variance (xs) (%stats-variance xs))
-    (defun stats:stddev   (xs) (%stats-stddev xs))
-    (defun stats:sem      (xs) (%stats-sem xs))
+    (define stats:mean %stats-mean)
+    (define stats:variance %stats-variance)
+    (define stats:stddev %stats-stddev)
+    (define stats:sem %stats-sem)
 
-    (defun stats:percentile (xs p) (%stats-percentile xs p))
+    (define stats:percentile %stats-percentile)
     (defun stats:median     (xs)   (%stats-percentile xs 0.5))
 
-    (defun stats:covariance  (xs ys) (%stats-covariance xs ys))
-    (defun stats:correlation (xs ys) (%stats-correlation xs ys))
+    (define stats:covariance %stats-covariance)
+    (define stats:correlation %stats-correlation)
 
     ;; Returns (lower . upper) for the mean at the given confidence level.
-    (defun stats:ci       (xs level) (%stats-ci xs level))
+    (define stats:ci %stats-ci)
     (defun stats:ci-lower (ci)       (car ci))
     (defun stats:ci-upper (ci)       (cdr ci))
 
-    (defun stats:t-cdf      (t-stat df) (%stats-t-cdf t-stat df))
-    (defun stats:t-quantile (p df)      (%stats-t-quantile p df))
+    (define stats:t-cdf %stats-t-cdf)
+    (define stats:t-quantile %stats-t-quantile)
 
     ;; Returns (t-stat p-value df mean-diff) as a list.
-    (defun stats:t-test          (xs ys)   (%stats-t-test-2 xs ys))
+    (define stats:t-test %stats-t-test-2)
     (defun stats:t-test-stat     (result)  (car result))
     (defun stats:t-test-pvalue   (result)  (cadr result))
     (defun stats:t-test-df       (result)  (caddr result))
@@ -121,10 +121,10 @@
     (defun stats:ols-p-intercept (r)
       (%ols-result-p-intercept (%as-ols-result r)))
 
-    ;; ── Multivariate / column-wise operations ──────────────────────
+    ;;  Multivariate / column-wise operations 
     ;; All accept either:
-    ;;   (fn (list seq1 seq2 ...))          — list of numeric sequences
-    ;;   (fn fact-table '(col1 col2 ...))   — fact-table + column indices
+    ;;   (fn (list seq1 seq2 ...))           list of numeric sequences
+    ;;   (fn fact-table '(col1 col2 ...))    fact-table + column indices
 
     (defun stats:mean-vec (data . rest)
       (if (null? rest)
@@ -162,7 +162,7 @@
           (%stats-ols-multi a b)
           (%stats-ols-multi a b (car rest))))
 
-    ;; ── OLS-multi accessors (result is an alist) ───────────────────
+    ;;  OLS-multi accessors (result is an alist) 
     (defun stats:ols-multi-coefficients (r) (cdr (assoc 'coefficients r)))
     (defun stats:ols-multi-std-errors   (r) (cdr (assoc 'std-errors r)))
     (defun stats:ols-multi-t-stats      (r) (cdr (assoc 't-stats r)))

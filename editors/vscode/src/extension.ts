@@ -8,6 +8,8 @@
     LogOutputChannel,
     WorkspaceFolder,
     CancellationToken,
+    languages,
+    Uri,
 } from 'vscode';
 import type {
     DebugAdapterDescriptor,
@@ -28,8 +30,12 @@ import { GCRootsTreeProvider } from './gcRootsTreeView';
 import { DisassemblyContentProvider, showDisassembly } from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
 import { ChildProcessTreeProvider } from './childProcessTreeView';
-import { registerTestController } from './testController';
+import { registerTestController, runTestsForUri } from './testController';
 import { discoverBinaries } from './binaries';
+import { EtaInlineValuesProvider } from './inlineValues';
+import { EtaEvaluatableExpressionProvider } from './evaluatableExpression';
+import { EtaCodeLensProvider } from './codeLens';
+import { EtaDocumentLinkProvider } from './documentLink';
 
 let client: LanguageClient | undefined;
 let outputChannel: LogOutputChannel;
@@ -44,6 +50,17 @@ let childProcProvider: ChildProcessTreeProvider;
 
 function log(msg: string): void {
     outputChannel?.info(msg);
+}
+
+/** Resolve the .eta program path for a Run/Debug command, falling back to the active editor. */
+function resolveEtaTarget(uri?: Uri): string | undefined {
+    if (uri && uri.scheme === 'file') return uri.fsPath;
+    const editor = window.activeTextEditor;
+    if (!editor || editor.document.languageId !== 'eta') {
+        window.showWarningMessage('Open an .eta file first.');
+        return undefined;
+    }
+    return editor.document.fileName;
 }
 
 /** Resolve ETA_MODULE_PATH from the new shared setting, legacy lsp setting, or env. */
@@ -61,7 +78,7 @@ export function activate(context: ExtensionContext) {
     context.subscriptions.push(outputChannel, programOutputChannel);
     log('Eta extension activating...');
 
-    // â”€â”€ GC Roots tree view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€ GC Roots tree view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     gcRootsProvider = new GCRootsTreeProvider();
     context.subscriptions.push(
         window.createTreeView('etaGCRoots', {
@@ -112,18 +129,34 @@ export function activate(context: ExtensionContext) {
             },
         }),
         debug.registerDebugConfigurationProvider('eta', new EtaDebugConfigurationProvider()),
-        commands.registerCommand('eta.runFile', () => {
-            const editor = window.activeTextEditor;
-            if (!editor || editor.document.languageId !== 'eta') {
-                window.showWarningMessage('Open an .eta file first.');
-                return;
-            }
+        commands.registerCommand('eta.runFile', (uri?: Uri) => {
+            const target = resolveEtaTarget(uri);
+            if (!target) return;
             debug.startDebugging(undefined, {
                 type: 'eta',
                 request: 'launch',
                 name: 'Run Eta file',
-                program: editor.document.fileName,
+                program: target,
             });
+        }),
+        commands.registerCommand('eta.debugFile', (uri?: Uri, stopOnEntry?: boolean) => {
+            const target = resolveEtaTarget(uri);
+            if (!target) return;
+            debug.startDebugging(undefined, {
+                type: 'eta',
+                request: 'launch',
+                name: 'Debug Eta file',
+                program: target,
+                stopOnEntry: stopOnEntry === true,
+            });
+        }),
+        commands.registerCommand('eta.runTestFile', async (uri?: Uri) => {
+            const target = uri ?? window.activeTextEditor?.document.uri;
+            if (!target) {
+                window.showWarningMessage('Open a *.test.eta file first.');
+                return;
+            }
+            await runTestsForUri(target);
         }),
         commands.registerCommand('eta.showHeapInspector', () => {
             HeapInspectorPanel.createOrShow(extensionCtx).refresh();
@@ -151,7 +184,16 @@ export function activate(context: ExtensionContext) {
     // â”€â”€ Test Explorer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     registerTestController(context);
 
-    // â”€â”€ Watch for configuration changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Editor providers (inline values, hover-eval, code lens, links) ──
+    const etaSelector = { scheme: 'file', language: 'eta' } as const;
+    context.subscriptions.push(
+        languages.registerInlineValuesProvider(etaSelector, new EtaInlineValuesProvider()),
+        languages.registerEvaluatableExpressionProvider(etaSelector, new EtaEvaluatableExpressionProvider()),
+        languages.registerCodeLensProvider(etaSelector, new EtaCodeLensProvider()),
+        languages.registerDocumentLinkProvider(etaSelector, new EtaDocumentLinkProvider()),
+    );
+
+    // â”€â”€ Watch for configuration changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     context.subscriptions.push(
         workspace.onDidChangeConfiguration(e => {
             if (
