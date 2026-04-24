@@ -15,6 +15,7 @@ export class DisasmLineNode {
     constructor(
         public readonly text: string,
         public readonly lineIndex: number,
+        public readonly instructionIndex: number | undefined,
         public readonly isCurrentPC: boolean,
         public readonly isHeader: boolean,
     ) {}
@@ -46,10 +47,15 @@ export class DisassemblyTreeProvider implements TreeDataProvider<DisasmLineNode>
         this.refresh();
     }
 
+    private parseInstructionIndex(line: string): number | undefined {
+        const m = line.match(/^\s*(\d+):\s/);
+        return m ? parseInt(m[1], 10) : undefined;
+    }
+
     private async fetchDisassembly(): Promise<void> {
         const session = debug.activeDebugSession;
         if (!session || session.type !== 'eta') {
-            this.lines = [new DisasmLineNode('; No active Eta debug session.', 0, false, false)];
+            this.lines = [new DisasmLineNode('; No active Eta debug session.', 0, undefined, false, false)];
             return;
         }
         try {
@@ -59,17 +65,18 @@ export class DisassemblyTreeProvider implements TreeDataProvider<DisasmLineNode>
 
             const text = result.text || '; (empty disassembly)';
             const rawLines = text.split('\n');
-            const pcLine = result.currentPC ?? -1;
+            const pcInstruction = result.currentPC ?? -1;
 
             this.lines = rawLines.map((line, i) => {
                 const trimmed = line.trimEnd();
                 if (!trimmed) return null; // skip blank lines
-                const isPC = (i === pcLine);
+                const instructionIndex = this.parseInstructionIndex(trimmed);
+                const isPC = instructionIndex !== undefined && instructionIndex === pcInstruction;
                 const isHeader = trimmed.startsWith(';') || trimmed.startsWith('==');
-                return new DisasmLineNode(trimmed, i, isPC, isHeader);
+                return new DisasmLineNode(trimmed, i, instructionIndex, isPC, isHeader);
             }).filter((n): n is DisasmLineNode => n !== null);
         } catch {
-            this.lines = [new DisasmLineNode('; Failed to fetch disassembly.', 0, false, false)];
+            this.lines = [new DisasmLineNode('; Failed to fetch disassembly.', 0, undefined, false, false)];
         }
     }
 

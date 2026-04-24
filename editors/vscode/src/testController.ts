@@ -8,51 +8,8 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import * as cp from 'child_process';
-
-// ---------------------------------------------------------------------------
-// Binary resolution
-// ---------------------------------------------------------------------------
-
-function isFile(p: string): boolean {
-    try { return fs.statSync(p).isFile(); } catch { return false; }
-}
-
-function findTestRunner(context: vscode.ExtensionContext): string | undefined {
-    const exe = process.platform === 'win32' ? 'eta_test.exe' : 'eta_test';
-
-    // 1. User config
-    const cfg = vscode.workspace.getConfiguration('eta.test');
-    const cfgPath = cfg.get<string>('runnerPath', '').trim();
-    if (cfgPath) {
-        if (isFile(cfgPath)) return cfgPath;
-        const c = path.join(cfgPath, exe);
-        if (isFile(c)) return c;
-    }
-
-    // 2. Bundled next to the extension
-    const bundled = path.join(context.extensionPath, 'bin', exe);
-    if (isFile(bundled)) return bundled;
-
-    // 3. Workspace build dirs
-    const folders = vscode.workspace.workspaceFolders ?? [];
-    for (const folder of folders) {
-        for (const rel of [
-            path.join('out', 'wsl-clang-release', 'eta', 'test_runner', exe),
-            path.join('out', 'build', 'eta', 'test_runner', exe),
-            path.join('build', 'eta', 'test_runner', exe),
-            path.join('build-release', 'eta', 'test_runner', exe),
-            path.join('out', 'msvc-release', 'eta', 'test_runner', exe),
-        ]) {
-            const c = path.join(folder.uri.fsPath, rel);
-            if (isFile(c)) return c;
-        }
-    }
-
-    // 4. PATH
-    return exe;
-}
+import { discoverBinaries } from './binaries';
 
 // ---------------------------------------------------------------------------
 // TAP parser
@@ -173,7 +130,7 @@ async function runTests(
     if (!controller) return;
     const run = controller.createTestRun(request);
 
-    const etaTest = findTestRunner(context);
+    const etaTest = discoverBinaries(context).test;
     const modulePath = vscode.workspace.getConfiguration('eta').get<string>('modulePath', '')
         || process.env['ETA_MODULE_PATH']
         || '';

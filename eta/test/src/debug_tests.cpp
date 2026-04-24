@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -474,6 +475,38 @@ BOOST_AUTO_TEST_CASE(get_frames_while_paused_nonempty) {
     t.join();
 }
 
+BOOST_AUTO_TEST_CASE(paused_instruction_index_is_available_when_stopped) {
+    DebugFixture f;
+    auto* main_fn = f.compile("(module test (define result (+ 1 2 3)))", /*file_id=*/31);
+    auto vm = f.make_vm();
+    auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);
+    BOOST_REQUIRE(install.has_value());
+
+    std::mutex mu;
+    std::condition_variable cv;
+    bool stopped = false;
+    int64_t paused_pc = -1;
+
+    vm->set_stop_callback([&](const StopEvent&) {
+        paused_pc = vm->paused_instruction_index();
+        std::lock_guard<std::mutex> lk(mu);
+        stopped = true;
+        cv.notify_one();
+    });
+    vm->request_pause();
+
+    std::thread t([&] { (void)vm->execute(*main_fn); });
+
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        BOOST_CHECK(cv.wait_for(lk, std::chrono::seconds(5), [&] { return stopped; }));
+    }
+    BOOST_CHECK_GE(paused_pc, 0);
+
+    vm->resume();
+    t.join();
+}
+
 BOOST_AUTO_TEST_CASE(get_locals_does_not_crash) {
     DebugFixture f;
     auto* main_fn = f.compile(
@@ -508,6 +541,57 @@ BOOST_AUTO_TEST_CASE(get_locals_does_not_crash) {
     vm->resume();
     t.join();
     BOOST_CHECK(stopped);
+}
+
+BOOST_AUTO_TEST_CASE(set_local_updates_paused_frame_slot) {
+    DebugFixture f;
+    const std::string src =
+        "(module test\n"
+        "  (define x 10)\n"
+        "  (define y 20)\n"
+        "  (define result (+ x y)))";
+
+    auto* main_fn = f.compile(src, /*file_id=*/32);
+    auto vm = f.make_vm();
+    auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);
+    BOOST_REQUIRE(install.has_value());
+
+    auto encoded = nanbox::ops::encode<int64_t>(777);
+    BOOST_REQUIRE(encoded.has_value());
+
+    std::mutex mu;
+    std::condition_variable cv;
+    bool stopped = false;
+    bool wrote = false;
+    int64_t readback = -1;
+
+    vm->set_stop_callback([&](const StopEvent&) {
+        auto locals_before = vm->get_locals(0);
+        if (!locals_before.empty()) {
+            wrote = vm->set_local(0, 0, *encoded);
+            auto locals_after = vm->get_locals(0);
+            if (!locals_after.empty()) {
+                auto dec = nanbox::ops::decode<int64_t>(locals_after[0].value);
+                if (dec) readback = *dec;
+            }
+        }
+        std::lock_guard<std::mutex> lk(mu);
+        stopped = true;
+        cv.notify_one();
+    });
+    vm->request_pause();
+
+    std::thread t([&] { (void)vm->execute(*main_fn); });
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        BOOST_CHECK(cv.wait_for(lk, std::chrono::seconds(5), [&] { return stopped; }));
+    }
+
+    BOOST_CHECK(wrote);
+    BOOST_CHECK_EQUAL(readback, 777);
+
+    vm->resume();
+    t.join();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -44,6 +44,11 @@ export class ChildProcessTreeProvider implements TreeDataProvider<ChildProcessNo
         this.notifyStopped();
     }
 
+    updateChildren(children: ChildProcessInfo[]): void {
+        this.children = children ?? [];
+        this._onDidChangeTreeData.fire();
+    }
+
     /** Called when the debug session ends — clear the list. */
     notifySessionEnded(): void {
         this.children = [];

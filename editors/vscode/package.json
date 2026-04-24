@@ -1,28 +1,29 @@
 {
     "name": "eta-scheme-lang",
-    "displayName": "Eta-Scheme Language",
+    "displayName": "Eta (Scheme) Language",
     "description": "Language support for the Eta-Scheme programming language",
     "version": "0.3.0",
     "publisher": "eta-schema-lang",
+    "icon": "media/eta_logo.svg",
     "repository": {
         "type": "git",
         "url": "https://github.com/eta-lang/eta"
     },
+    "bugs": {
+        "url": "https://github.com/eta-lang/eta/issues"
+    },
+    "homepage": "https://github.com/eta-lang/eta#readme",
+    "galleryBanner": {
+        "color": "#0f172a",
+        "theme": "dark"
+    },
     "engines": {
         "vscode": "^1.85.0"
     },
-    "categories": ["Programming Languages"],
+    "categories": ["Programming Languages", "Debuggers", "Snippets"],
     "keywords": ["eta", "lisp", "scheme", "functional", "logic-programming", "unification"],
     "license": "Apache-2.0",
     "activationEvents": [
-        "onLanguage:eta",
-        "onDebugResolve:eta",
-        "onCommand:eta.runFile",
-        "onCommand:eta.showHeapInspector",
-        "onCommand:eta.showDisassembly",
-        "onView:etaGCRoots",
-        "onView:etaDisassembly",
-        "onView:etaChildProcesses",
         "workspaceContains:**/*.test.eta"
     ],
     "main": "./out/extension.js",
@@ -91,6 +92,14 @@
                     "type": "string",
                     "default": "",
                     "description": "Full path to the eta_dap executable OR the directory containing it (e.g. C:\\Eta\\bin or C:\\Eta\\bin\\eta_dap.exe). If empty, searches next to eta_lsp, then workspace build output, then PATH."
+                },
+                "eta.binaries.searchPaths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "Additional directories or executable paths searched for Eta binaries. Supports ${workspaceFolder} token."
                 },
                 "eta.debug.autoShowHeap": {
                     "type": "boolean",
@@ -200,9 +209,6 @@
                 }
             ]
         },
-        "breakpoints": [
-            { "language": "eta" }
-        ],
         "debuggers": [
             {
                 "type": "eta",
@@ -220,10 +226,53 @@
                                 "description": "Absolute path to the .eta file to run.",
                                 "default": "${file}"
                             },
+                            "args": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "Command-line arguments forwarded to Eta launch handling."
+                            },
+                            "cwd": {
+                                "type": "string",
+                                "description": "Working directory for the Eta debug adapter process.",
+                                "default": "${workspaceFolder}"
+                            },
+                            "env": {
+                                "type": "object",
+                                "description": "Environment variables passed to the Eta debug adapter process.",
+                                "additionalProperties": {
+                                    "type": "string"
+                                }
+                            },
+                            "modulePath": {
+                                "type": "string",
+                                "description": "Module search path override (ETA_MODULE_PATH) for this debug session."
+                            },
                             "stopOnEntry": {
                                 "type": "boolean",
                                 "description": "Pause on the first instruction when launching.",
                                 "default": false
+                            },
+                            "etac": {
+                                "type": "boolean",
+                                "description": "Launch a precompiled .etac artifact when supported by the adapter.",
+                                "default": false
+                            },
+                            "console": {
+                                "type": "string",
+                                "enum": [
+                                    "debugConsole",
+                                    "integratedTerminal",
+                                    "externalTerminal"
+                                ],
+                                "default": "debugConsole",
+                                "description": "Preferred console target for session output."
+                            },
+                            "trace": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Enable DAP protocol tracing by launching eta_dap with --trace-protocol."
                             }
                         }
                     }

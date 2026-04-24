@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -502,6 +503,26 @@ public:
         auto canon = canon_path_key(fs::path(path));
         auto it = path_to_file_id_.find(canon);
         return it != path_to_file_id_.end() ? it->second : 0u;
+    }
+
+    /**
+     * Return every executable source line currently known for a file.
+     *
+     * The set is collected from emitted bytecode source maps across the
+     * function registry and is suitable for DAP breakpointLocations.
+     */
+    [[nodiscard]] std::set<uint32_t> valid_lines_for(uint32_t file_id) const {
+        std::set<uint32_t> lines;
+        if (file_id == 0) return lines;
+
+        for (const auto& fn : registry_.all()) {
+            for (const auto& sp : fn.source_map) {
+                if (sp.file_id == file_id && sp.start.line != 0) {
+                    lines.insert(sp.start.line);
+                }
+            }
+        }
+        return lines;
     }
 
     /// Format a runtime value for display.

@@ -1,4 +1,4 @@
-# Project Status and Next Steps
+﻿# Project Status and Next Steps
 
 [Back to README](../README.md) · [Architecture](architecture.md) ·
 [Bytecode and VM](bytecode-vm.md) · [Compiler](compiler.md) ·
@@ -119,41 +119,35 @@ advertised capability set is conservative.  The table below mirrors the
 | `completions` | ✅ | |
 | Custom `eta/heapSnapshot` | ✅ | Drives the Heap Inspector webview |
 | Custom `eta/inspectObject` | ✅ | Drives drill-down in GC Roots tree |
-| `conditionalBreakpoints` | ❌ | **Top of list to add** |
-| `functionBreakpoints` | ❌ | Wire to symbol table |
-| `setVariable` | ❌ | Useful for live REPL-during-debug |
-| `restartRequest` | ❌ | Currently requires kill + relaunch |
-| `breakpointLocations` | ❌ | Worth adding for accurate gutter clicks |
+| `conditionalBreakpoints` | ✅ | Includes `condition`/`hitCondition`/`logMessage` handling |
+| `functionBreakpoints` | ✅ | Name resolution + verification surfaced to VS Code |
+| `setVariable` | ✅ | Paused-frame locals and globals |
+| `restartRequest` | ✅ | Restart reuses cached launch arguments |
+| `breakpointLocations` | ✅ | Source-map-backed valid-line reporting |
+| `disassemble` (standard) | ✅ | Structured instruction responses for DAP `disassemble` |
 | `stepBack` | ❌ | Out of scope without time-travel |
 
 **Concrete work items:**
 
-- **Conditional breakpoints.** Plumb `condition` from `setBreakpoints`
-  into the breakpoint table; evaluate the expression in the suspended
-  frame's environment using the existing `handle_evaluate` path.
-- **Logpoints.** DAP encodes these as breakpoints with `logMessage`;
-  same plumbing as conditional, plus an `Output` event per hit.
-- **Function breakpoints.** Use the emitter's per-function entry PC
-  plus symbol-name lookup; surface VS Code's *Function Breakpoints* UI.
-- **`setVariable`.** Restricted to local frame slots and globals;
-  reuses the trail so it works correctly under backtracking.
-- **`breakpointLocations`.** Emit the set of valid line numbers per
-  source map so VS Code stops shifting clicks to the next valid line.
-- **Restart.** Re-launch the VM from the same `launch` arguments
-  without a full debug-adapter teardown.
+- **Conditional breakpoints + logpoints.** Implemented and wired through
+  `setBreakpoints` (`condition`, `hitCondition`, `logMessage`).
+- **Function breakpoints.** Implemented via symbol lookup and breakpoint
+  verification updates.
+- **`setVariable`.** Implemented for paused locals and globals.
+- **`breakpointLocations`.** Implemented via source-map line discovery.
+- **Restart.** Implemented with cached launch arguments; remaining work is
+  hard cancellation for long-running/infinite programs.
 - **Per-thread state for `spawn-thread` actors.** `threads` currently
   reports the main VM thread only; expose in-process thread actors as
   separate DAP threads so each can be paused / inspected
   independently.
-- **Test coverage.** Add a small DAP integration harness driving
-  `eta_dap` over stdin / stdout with golden JSON exchanges — there is
-  currently no automated coverage of the protocol surface.
-- **Diagnostics.** A `--trace-protocol` flag dumping every request /
-  response would eliminate a class of "did the message arrive?" bugs
-  during VS Code extension work.
+- **Test coverage.** Expand existing protocol coverage with an async
+  harness for paused-VM interaction scenarios.
+- **Diagnostics.** `--trace-protocol` is implemented; keep expanding
+  trace-driven test scenarios for new protocol surface.
 
-A `docs/dap.md` page documenting both the standard surface and the
-custom `eta/*` extensions should land alongside this work.
+`docs/dap.md` now documents the current standard surface and custom
+`eta/*` extensions.
 
 ### 2) VS Code Extension — Tightening & Polish
 
@@ -173,8 +167,8 @@ Current shipping surface (`editors/vscode/src/`):
 - **Inline values.** Implement `InlineValuesProvider` so the editor
   decorates locals with their current value during a stop event (uses
   the same `evaluate` path the hover does).
-- **Watch expressions.** Once `setVariable` lands on the DAP side, the
-  Watch view becomes round-trip-editable.
+- **Watch expressions.** `setVariable` now lands edits for paused locals
+  and globals; next step is richer expression evaluation for edit RHS.
 - **Conditional / log breakpoints UI.** Pure capability flip — once
   the DAP side advertises the relevant `supports*` flags, the
   extension needs no additional wiring.
@@ -277,8 +271,6 @@ prototype.
 
 - `docs/jupyter.md` (alongside the kernel prototype).
 - `docs/regex.md` - `std.regex` reference and performance notes.
-- `docs/dap.md` — currently the DAP surface is documented only in code
-  comments; a protocol-extension reference would help editor authors.
 - `docs/clpr.md` — split out from `clp.md` once that page exceeds a
   screen.
 
@@ -300,4 +292,5 @@ prototype.
   (`fact-table-load-csv`, `fact-table-save-csv`) - see [csv.md](csv.md).
 - REPL redefinition shadowing for new submissions, documented in
   [repl.md](repl.md).
+- DAP and VS Code reference docs: [dap.md](dap.md), [vscode.md](vscode.md).
 

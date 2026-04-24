@@ -714,11 +714,13 @@ breakpoint verification failures.
 
 1. **Icon** — 128×128 PNG from `docs/img/eta_logo.svg`.
 2. **Hero screenshots** in `editors/vscode/media/`.
-3. **`displayName`** to `"Eta Language"` (drop "Scheme").
+3. **`displayName`** to `"Eta (Scheme) Language"` .
 4. **`badges`** for build-status, version, license.
 5. **`extensionPack`** companion bundling Eta + recommended deps.
 
 ---
+
+Defer D1 and D2, only docus on D3.
 
 ### D1 — Distribution channels
 
@@ -774,7 +776,7 @@ push.
     — 2-4 days each, can ship anytime.
 12. **C1** (extension tests), **C2** (perf gates), **C3** (telemetry)
     — anytime after the corresponding feature lands.
-13. **D0–D3** (distribution + docs) — ship continuously alongside the
+13. **D3** (distribution + docs) — ship continuously alongside the
     feature work.
 
 ### Size table
