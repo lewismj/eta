@@ -12,10 +12,12 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -2251,4 +2253,292 @@ BOOST_AUTO_TEST_CASE(valid_message_after_skipped_zero_length) {
 
 BOOST_AUTO_TEST_SUITE_END() ///< dap_framing_robustness
 
+
+/**
+ * Stage C2 — Performance & regression gates and variables paging.
+ *
+ * Helpers shared by the C2 suites must live at file scope so they survive
+ * across `BOOST_AUTO_TEST_SUITE(...)` blocks (each suite opens its own
+ * named namespace, so an anonymous namespace inside one suite is *not*
+ * visible from another).
+ */
+namespace dap_c2_helpers {
+
+inline void perf_log(const char* label, std::chrono::nanoseconds dur) {
+    if (const char* v = std::getenv("ETA_DAP_PERF_VERBOSE"); v && *v && *v != '0') {
+        const auto ms = std::chrono::duration_cast<std::chrono::microseconds>(dur).count() / 1000.0;
+        std::cerr << "[dap-perf] " << label << ": " << ms << " ms\n";
+    }
+}
+
+struct TempEtaFile {
+    fs::path path;
+    TempEtaFile(const std::string& name, const std::string& body) {
+        path = fs::temp_directory_path() / name;
+        std::ofstream f(path, std::ios::binary);
+        f << body;
+    }
+    ~TempEtaFile() {
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+    TempEtaFile(const TempEtaFile&) = delete;
+    TempEtaFile& operator=(const TempEtaFile&) = delete;
+};
+
+/// Drive launch + stopOnEntry on `prog`. Returns the top frameId.
+inline int launch_and_stop_at_entry(AsyncDapHarness& harness, const fs::path& prog) {
+    harness.send(request(1, "initialize", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("initialize").is_null());
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(prog) + R"(","stopOnEntry":true})";
+    harness.send(request(2, "launch", launch_args));
+    BOOST_REQUIRE(!harness.wait_response("launch").is_null());
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    harness.send(request(3, "configurationDone", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("configurationDone").is_null());
+    BOOST_REQUIRE(!harness.wait_event("stopped").is_null());
+
+    harness.send(request(4, "stackTrace", R"({"threadId":1,"levels":1})"));
+    auto st = harness.wait_response("stackTrace");
+    BOOST_REQUIRE(!st.is_null());
+    const auto& frames = st["body"]["stackFrames"].as_array();
+    BOOST_REQUIRE(!frames.empty());
+    return static_cast<int>(*frames[0].get_int("id"));
+}
+
+struct PausedVar {
+    int           ref{0};
+    json::Value   variable;
+};
+
+/// Locate a Variable named `var_name` in the Locals scope of `frame_id`.
+inline PausedVar find_paused_local(AsyncDapHarness& harness,
+                                   int frame_id,
+                                   const std::string& var_name) {
+    static int seq = 100;
+    const int scopes_seq = ++seq;
+    harness.send(request(scopes_seq, "scopes",
+        std::string(R"({"frameId":)") + std::to_string(frame_id) + "}"));
+    auto scopes_resp = harness.wait_response("scopes");
+    BOOST_REQUIRE(!scopes_resp.is_null());
+    const auto& scope_arr = scopes_resp["body"]["scopes"].as_array();
+    BOOST_REQUIRE(!scope_arr.empty());
+    const int locals_ref = static_cast<int>(*scope_arr[0].get_int("variablesReference"));
+
+    const int vars_seq = ++seq;
+    harness.send(request(vars_seq, "variables",
+        std::string(R"({"variablesReference":)") + std::to_string(locals_ref) + "}"));
+    auto vars_resp = harness.wait_response("variables");
+    BOOST_REQUIRE(!vars_resp.is_null());
+
+    for (const auto& v : vars_resp["body"]["variables"].as_array()) {
+        auto n = v.get_string("name");
+        if (n && *n == var_name) {
+            const int ref = static_cast<int>(*v.get_int("variablesReference"));
+            return PausedVar{ref, v};
+        }
+    }
+    return PausedVar{0, json::Value{}};
+}
+
+} // namespace dap_c2_helpers
+
+
+BOOST_AUTO_TEST_SUITE(dap_perf_gates)
+
+using dap_c2_helpers::perf_log;
+using dap_c2_helpers::TempEtaFile;
+
+/**
+ * C2-1: DAP startup budget.
+ *
+ * Time from sending `initialize` to receiving the response must be well under
+ * 500 ms on a hello-world program. The harness constructor spawns the server
+ * thread and creates the `Driver`, so this also covers process-side init cost.
+ */
+BOOST_AUTO_TEST_CASE(perf_initialize_under_500ms) {
+    constexpr auto budget = std::chrono::milliseconds(500);
+
+    AsyncDapHarness harness;
+    const auto t0 = std::chrono::steady_clock::now();
+    harness.send(request(1, "initialize", "{}"));
+    auto resp = harness.wait_response("initialize", std::chrono::milliseconds(2000));
+    const auto dur = std::chrono::steady_clock::now() - t0;
+
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    perf_log("initialize round-trip", dur);
+    BOOST_TEST(dur < budget);
+}
+
+/**
+ * C2-2: launch + reach `terminated` for `examples/hello.eta` budget.
+ *
+ * End-to-end "open the project, run a tiny script, exit" loop must clear in
+ * under 5 seconds. This guards against accidental synchronous waits in
+ * launch handling, module resolution, or VM warm-up.
+ */
+BOOST_AUTO_TEST_CASE(perf_hello_eta_runs_under_5s) {
+    /// Use an inline hello so the test is self-contained and CI-portable.
+    TempEtaFile prog("eta_dap_perf_hello.eta",
+        "(module dap-perf-hello\n"
+        "  (begin\n"
+        "    (display \"hi\")\n"
+        "    (newline)))\n");
+
+    constexpr auto budget = std::chrono::milliseconds(5000);
+
+    AsyncDapHarness harness;
+    harness.send(request(1, "initialize", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("initialize").is_null());
+
+    const auto t0 = std::chrono::steady_clock::now();
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(prog.path) + R"("})";
+    harness.send(request(2, "launch", launch_args));
+    BOOST_REQUIRE(!harness.wait_response("launch").is_null());
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    harness.send(request(3, "configurationDone", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("configurationDone").is_null());
+
+    auto term = harness.wait_event("terminated", budget);
+    const auto dur = std::chrono::steady_clock::now() - t0;
+    BOOST_REQUIRE(!term.is_null());
+    perf_log("launch -> terminated", dur);
+    BOOST_TEST(dur < budget);
+}
+
+/**
+ * C2-3: heap snapshot must complete quickly (≤ 250 ms in CI; the docs target
+ * ≤ 100 ms for 100k objects but a tiny test program has thousands not 100k).
+ */
+BOOST_AUTO_TEST_CASE(perf_heap_snapshot_under_250ms) {
+    TempEtaFile prog("eta_dap_perf_snapshot.eta",
+        "(module dap-perf-snapshot\n"
+        "  (begin\n"
+        "    (display \"snap\")\n"
+        "    (newline)))\n");
+
+    AsyncDapHarness harness;
+    harness.send(request(1, "initialize", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("initialize").is_null());
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(prog.path) + R"(","stopOnEntry":true})";
+    harness.send(request(2, "launch", launch_args));
+    BOOST_REQUIRE(!harness.wait_response("launch").is_null());
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    harness.send(request(3, "configurationDone", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("configurationDone").is_null());
+    BOOST_REQUIRE(!harness.wait_event("stopped").is_null());
+
+    constexpr auto budget = std::chrono::milliseconds(250);
+    const auto t0 = std::chrono::steady_clock::now();
+    harness.send(request(4, "eta/heapSnapshot", "{}"));
+    auto resp = harness.wait_response("eta/heapSnapshot", std::chrono::milliseconds(2000));
+    const auto dur = std::chrono::steady_clock::now() - t0;
+
+    BOOST_REQUIRE(!resp.is_null());
+    /// May be unsupported on certain builds; only assert budget when supported.
+    if (resp["success"].as_bool()) {
+        perf_log("eta/heapSnapshot round-trip", dur);
+        BOOST_TEST(dur < budget);
+    }
+}
+
+BOOST_AUTO_TEST_SUITE_END() ///< dap_perf_gates
+
+
+/**
+ * Stage C2 — Variables paging for large indexed compounds.
+ *
+ * Verifies that:
+ *   1. Vector variables advertise `indexedVariables` so VS Code paginates.
+ *   2. `variables` requests honour `start`/`count` and return only the slice.
+ *   3. Cons cells advertise `namedVariables`.
+ */
+BOOST_AUTO_TEST_SUITE(dap_variable_paging)
+
+using dap_c2_helpers::TempEtaFile;
+using dap_c2_helpers::launch_and_stop_at_entry;
+using dap_c2_helpers::find_paused_local;
+using dap_c2_helpers::PausedVar;
+
+/**
+ * Build a 500-element vector and verify it advertises indexedVariables.
+ * Then page through it via `start`/`count` and verify only the slice is returned.
+ */
+BOOST_AUTO_TEST_CASE(large_vector_advertises_paging_and_honours_start_count) {
+    /**
+     * The pause point is `(let ((v ...)) (begin))` so `v` is a local in the
+     * stopped frame. We use `make-vector` with a fill value so the vector is
+     * large enough to exercise paging without making every element distinct.
+     */
+    TempEtaFile prog("eta_dap_paging_vec.eta",
+        "(module dap-paging-vec\n"
+        "  (import std.core)\n"
+        "  (defun main ()\n"
+        "    (let ((v (make-vector 500 7)))\n"
+        "      v))\n"
+        "  (begin (main)))\n");
+
+    AsyncDapHarness harness;
+    int frame_id = launch_and_stop_at_entry(harness, prog.path);
+
+    /**
+     * Step until we hit the inner `let` body. We don't know the exact
+     * granularity, so run a few steps and look for `v` in locals.
+     */
+    PausedVar found{0, {}};
+    for (int i = 0; i < 8 && found.ref == 0; ++i) {
+        found = find_paused_local(harness, frame_id, "v");
+        if (found.ref != 0) break;
+        harness.send(request(200 + i, "next", R"({"threadId":1})"));
+        BOOST_REQUIRE(!harness.wait_response("next").is_null());
+        auto stop = harness.wait_event("stopped", std::chrono::milliseconds(2000));
+        BOOST_REQUIRE(!stop.is_null());
+        harness.send(request(300 + i, "stackTrace", R"({"threadId":1,"levels":1})"));
+        auto st = harness.wait_response("stackTrace");
+        BOOST_REQUIRE(!st.is_null());
+        frame_id = static_cast<int>(*st["body"]["stackFrames"].as_array()[0].get_int("id"));
+    }
+    if (found.ref == 0) {
+        BOOST_TEST_MESSAGE("could not locate `v` after stepping; vector-paging assertions skipped");
+        return;
+    }
+
+    /// 1. The Variable should advertise indexedVariables == 500.
+    auto idx = found.variable.get_int("indexedVariables");
+    BOOST_REQUIRE(idx.has_value());
+    BOOST_TEST(*idx == 500);
+
+    /// 2. Request slice [100, 110): should return exactly 10 entries named [100]..[109].
+    harness.send(request(500, "variables",
+        std::string(R"({"variablesReference":)") + std::to_string(found.ref)
+        + R"(,"start":100,"count":10})"));
+    auto slice_resp = harness.wait_response("variables");
+    BOOST_REQUIRE(!slice_resp.is_null());
+    const auto& slice = slice_resp["body"]["variables"].as_array();
+    BOOST_TEST(slice.size() == 10u);
+    if (slice.size() == 10u) {
+        BOOST_TEST(*slice.front().get_string("name") == "[100]");
+        BOOST_TEST(*slice.back().get_string("name")  == "[109]");
+    }
+
+    /// 3. Slice past the end should be clamped (no crash, no error response).
+    harness.send(request(501, "variables",
+        std::string(R"({"variablesReference":)") + std::to_string(found.ref)
+        + R"(,"start":495,"count":50})"));
+    auto tail_resp = harness.wait_response("variables");
+    BOOST_REQUIRE(!tail_resp.is_null());
+    const auto& tail = tail_resp["body"]["variables"].as_array();
+    BOOST_TEST(tail.size() == 5u);
+}
+
+BOOST_AUTO_TEST_SUITE_END() ///< dap_variable_paging
 

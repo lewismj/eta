@@ -60,3 +60,4 @@ editors/vscode/node_modules/
 
 demo
 demo/*
+"editors/vscode/.vscode-test/" 

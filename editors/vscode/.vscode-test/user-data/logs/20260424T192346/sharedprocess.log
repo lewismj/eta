@@ -1,3 +1,0 @@
-2026-04-24 19:23:58.677 [info] Getting Manifest... github.copilot-chat
-2026-04-24 19:23:59.067 [info] Installing extension: github.copilot-chat {"productVersion":{"version":"1.117.0","date":"2026-04-21T16:12:14-07:00"},"pinned":false,"operation":3,"isApplicationScoped":true,"profileLocation":{"$mid":1,"external":"vscode-userdata:/c%3A/Users/lewis/develop/eta/editors/vscode/.vscode-test/extensions/extensions.json","path":"/C:/Users/lewis/develop/eta/editors/vscode/.vscode-test/extensions/extensions.json","scheme":"vscode-userdata"},"isBuiltin":true}
-2026-04-24 19:24:03.211 [info] Extension signature verification result for github.copilot-chat: Success. Internal Code: 0. Executed: true. Duration: 757ms.

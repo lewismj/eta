@@ -1,7 +1,0 @@
-2026-04-24 19:25:03.165 [info] Eta extension activating...
-2026-04-24 19:25:03.165 [info] [Summary]
-2026-04-24 19:25:03.165 [info]   LSP binary  : eta_lsp.exe
-2026-04-24 19:25:03.165 [info]   DAP binary  : eta_dap.exe
-2026-04-24 19:25:03.165 [info]   ETA_MODULE_PATH : C:\tmp\eta-v0.3.3-win-x64\stdlib
-2026-04-24 19:25:03.166 [info] [Starting LSP]
-2026-04-24 19:25:03.166 [info]   Command: eta_lsp.exe
