@@ -18,6 +18,7 @@
 
 #include "eta/dap/dap_io.h"
 #include "eta/dap/dap_server.h"
+#include "eta/interpreter/driver.h"
 #include "eta/util/json.h"
 
 namespace fs   = std::filesystem;
@@ -752,7 +753,265 @@ BOOST_AUTO_TEST_CASE(initialize_advertises_completions_support) {
 }
 
 /**
- * 26. Compound variable reference encoding round-trip (Bug 6 fix)
+ * 26. initialize advertises supportsBreakpointLocationsRequest
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_breakpoint_locations_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsBreakpointLocationsRequest"].as_bool() == true);
+}
+
+/**
+ * 27. initialize advertises supportsFunctionBreakpoints
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_function_breakpoints_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsFunctionBreakpoints"].as_bool() == true);
+}
+
+/**
+ * 28. initialize advertises conditional/hit/log breakpoint support
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_conditional_hit_log_breakpoint_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsConditionalBreakpoints"].as_bool() == true);
+    BOOST_TEST(resp["body"]["supportsHitConditionalBreakpoints"].as_bool() == true);
+    BOOST_TEST(resp["body"]["supportsLogPoints"].as_bool() == true);
+}
+
+/**
+ * 29. initialize advertises setVariable support
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_set_variable_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsSetVariable"].as_bool() == true);
+}
+
+/**
+ * 30. initialize advertises restart support
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_restart_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsRestartRequest"].as_bool() == true);
+}
+
+/**
+ * 31. initialize advertises standard disassemble support
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_disassemble_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsDisassembleRequest"].as_bool() == true);
+}
+
+/**
+ * 32. disassemble without a running VM returns a structured error
+ */
+BOOST_AUTO_TEST_CASE(disassemble_without_vm_returns_error) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disassemble",
+            R"({"memoryReference":"0","instructionOffset":0,"instructionCount":16})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "disassemble");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == false);
+    auto err_id = resp["body"]["error"].get_int("id");
+    BOOST_REQUIRE(err_id.has_value());
+    BOOST_TEST(*err_id == 2001);
+}
+
+/**
+ * 33. restart before launch returns an error response
+ */
+BOOST_AUTO_TEST_CASE(restart_before_launch_returns_error) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "restart", "{}"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "restart");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == false);
+}
+
+/**
+ * 34. setBreakpoints accepts condition/hitCondition/logMessage before launch
+ */
+BOOST_AUTO_TEST_CASE(set_breakpoints_with_condition_hit_and_log_before_launch) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "setBreakpoints",
+            R"({"source":{"path":"/tmp/test.eta"},)"
+            R"("breakpoints":[)"
+            R"({"line":5,"condition":"counter","hitCondition":"3"},)"
+            R"({"line":9,"logMessage":"counter={counter}"})"
+            R"(]})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "setBreakpoints");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    const auto& bps = resp["body"]["breakpoints"].as_array();
+    BOOST_REQUIRE_EQUAL(bps.size(), 2u);
+    BOOST_TEST(bps[0]["line"].as_int() == 5);
+    BOOST_TEST(bps[1]["line"].as_int() == 9);
+    BOOST_TEST(bps[0]["verified"].as_bool() == false);
+    BOOST_TEST(bps[1]["verified"].as_bool() == false);
+}
+
+/**
+ * 35. setVariable without a running/paused VM returns a structured error
+ */
+BOOST_AUTO_TEST_CASE(set_variable_without_vm_returns_error) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "setVariable",
+            R"({"variablesReference":1,"name":"x","value":"42"})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "setVariable");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == false);
+    auto err_id = resp["body"]["error"].get_int("id");
+    BOOST_REQUIRE(err_id.has_value());
+    BOOST_TEST(*err_id == 2001);
+}
+
+/**
+ * 36. setFunctionBreakpoints is accepted before launch
+ */
+BOOST_AUTO_TEST_CASE(set_function_breakpoints_before_launch) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "setFunctionBreakpoints",
+            R"({"breakpoints":[{"name":"main"},{"name":"std.io.println"}]})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "setFunctionBreakpoints");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+
+    const auto& bps = resp["body"]["breakpoints"].as_array();
+    BOOST_REQUIRE_EQUAL(bps.size(), 2u);
+    BOOST_TEST(bps[0]["id"].is_int());
+    BOOST_TEST(bps[1]["id"].is_int());
+    BOOST_TEST(bps[0]["verified"].as_bool() == false);
+    BOOST_TEST(bps[1]["verified"].as_bool() == false);
+}
+
+/**
+ * 29. breakpointLocations without an active VM returns an empty list
+ */
+BOOST_AUTO_TEST_CASE(breakpoint_locations_without_driver_returns_empty) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "breakpointLocations",
+            R"({"source":{"path":"/tmp/example.eta"},"line":1,"endLine":200})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "breakpointLocations");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    BOOST_TEST(resp["body"]["breakpoints"].is_array());
+    BOOST_TEST(resp["body"]["breakpoints"].as_array().empty());
+}
+
+/**
+ * 30. Driver valid_lines_for collects executable lines from source maps
+ */
+BOOST_AUTO_TEST_CASE(driver_valid_lines_for_collects_source_lines) {
+    const std::string src =
+        "(module dap-valid-lines\n"
+        "  (defun add1 (x)\n"
+        "    (+ x 1))\n"
+        "  (defun main ()\n"
+        "    (add1 41)))\n";
+
+    auto tmp = fs::temp_directory_path() / "eta_dap_valid_lines_test.eta";
+    {
+        std::ofstream f(tmp, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << src;
+    }
+
+    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
+    resolver.add_dir(tmp.parent_path());
+    eta::interpreter::Driver driver(std::move(resolver));
+
+    BOOST_REQUIRE(driver.run_file(tmp));
+
+    const auto file_id = driver.file_id_for_path(tmp.string());
+    BOOST_REQUIRE(file_id != 0);
+
+    const auto lines = driver.valid_lines_for(file_id);
+    BOOST_TEST(!lines.empty());
+    const bool has_expected_line =
+        lines.find(3u) != lines.end() || lines.find(5u) != lines.end();
+    BOOST_TEST(has_expected_line);
+    for (auto line : lines) {
+        BOOST_TEST(line >= 1u);
+        BOOST_TEST(line <= 5u);
+    }
+
+    fs::remove(tmp);
+}
+
+/**
+ * 31. Compound variable reference encoding round-trip (Bug 6 fix)
  *     encode_var_ref / decode_var_ref must be self-consistent, and the
  *     COMPOUND_REF_BASE must not collide with frame/scope refs.
  */

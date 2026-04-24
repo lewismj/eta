@@ -2,7 +2,11 @@
 #include "dap_io.h"
 
 #include <cctype>
+#include <charconv>
+#include <cstdlib>
 #include <filesystem>
+#include <regex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -163,6 +167,8 @@ void DapServer::dispatch(const Value& msg) {
     if (*cmd == "initialize")               handle_initialize(id, args);
     else if (*cmd == "launch")              handle_launch(id, args);
     else if (*cmd == "setBreakpoints")      handle_set_breakpoints(id, args);
+    else if (*cmd == "setFunctionBreakpoints") handle_set_function_breakpoints(id, args);
+    else if (*cmd == "breakpointLocations") handle_breakpoint_locations(id, args);
     else if (*cmd == "setExceptionBreakpoints") handle_set_exception_breakpoints(id, args);
     else if (*cmd == "configurationDone")   handle_configuration_done(id, args);
     else if (*cmd == "threads")             handle_threads(id, args);
@@ -175,9 +181,12 @@ void DapServer::dispatch(const Value& msg) {
     else if (*cmd == "stepOut")             handle_step_out(id, args);
     else if (*cmd == "pause")               handle_pause(id, args);
     else if (*cmd == "evaluate")            handle_evaluate(id, args);
+    else if (*cmd == "setVariable")         handle_set_variable(id, args);
+    else if (*cmd == "restart")             handle_restart(id, args);
     else if (*cmd == "terminate")           handle_terminate(id, args);
     else if (*cmd == "completions")         handle_completions(id, args);
     else if (*cmd == "disconnect")          handle_disconnect(id, args);
+    else if (*cmd == "disassemble")         handle_standard_disassemble(id, args);
     else if (*cmd == "eta/heapSnapshot")    handle_heap_inspector(id, args);
     else if (*cmd == "eta/inspectObject")   handle_inspect_object(id, args);
     else if (*cmd == "eta/disassemble")     handle_disassemble(id, args);
@@ -200,15 +209,18 @@ void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
          * check for it so we advertise it explicitly for maximum compatibility.
          */
         {"supportsSetBreakpoints",              true},
-        {"supportsFunctionBreakpoints",         false},
-        {"supportsConditionalBreakpoints",      false},
-        {"supportsSetVariable",                 false},
-        {"supportsRestartRequest",              false},
+        {"supportsFunctionBreakpoints",         true},
+        {"supportsConditionalBreakpoints",      true},
+        {"supportsHitConditionalBreakpoints",   true},
+        {"supportsLogPoints",                   true},
+        {"supportsSetVariable",                 true},
+        {"supportsRestartRequest",              true},
         {"supportsTerminateRequest",            true},
         {"supportsEvaluateForHovers",           true},
         {"supportsStepBack",                    false},
         {"supportsGotoTargetsRequest",          false},
-        {"supportsBreakpointLocationsRequest",  false},
+        {"supportsBreakpointLocationsRequest",  true},
+        {"supportsDisassembleRequest",          true},
         {"supportsCompletionsRequest",          true},
     }));
     /**
@@ -237,6 +249,7 @@ void DapServer::handle_launch(const Value& id, const Value& args) {
     stop_on_entry_  = args.has("stopOnEntry") && args["stopOnEntry"].is_bool()
                       && args["stopOnEntry"].as_bool();
     launched_       = true;
+    last_launch_args_ = args;
 
     send_response(id, json::object({}));
 
@@ -269,7 +282,7 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
 
     /// Normalise so it matches the driver's canon_path_key lookup
     std::string canon_path = normalize_path(*path_val);
-    pending_bps_.erase(canon_path);
+    std::vector<PendingBp> next_for_path;
 
     if (args.has("breakpoints") && args["breakpoints"].is_array()) {
         for (const auto& bp : args["breakpoints"].as_array()) {
@@ -277,8 +290,19 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
             if (!line_opt) continue;
             int line  = static_cast<int>(*line_opt);
             int bp_id = next_bp_id_++;
-
-            pending_bps_[canon_path].push_back({line, bp_id});
+            PendingBp pb;
+            pb.line = line;
+            pb.id = bp_id;
+            if (auto cond = bp.get_string("condition")) {
+                pb.condition = *cond;
+            }
+            if (auto hit_cond = bp.get_string("hitCondition")) {
+                pb.hit_condition = *hit_cond;
+            }
+            if (auto log_message = bp.get_string("logMessage")) {
+                pb.log_message = *log_message;
+            }
+            next_for_path.push_back(std::move(pb));
 
             result_bps.push_back(json::object({
                 {"verified", false},   ///< updated via "breakpoint" event once installed
@@ -297,14 +321,16 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
     }
 
     /// If the VM is already running, push immediately and notify VS Code
+    bool has_driver = false;
     {
         std::lock_guard<std::mutex> lk(vm_mutex_);
-        if (driver_) {
+        pending_bps_[canon_path] = std::move(next_for_path);
+        has_driver = (driver_ != nullptr);
+        if (has_driver) {
             install_pending_breakpoints();
         }
     }
-    /// Check if we had a driver to decide whether to notify (no lock needed for reads)
-    if (driver_) {
+    if (has_driver) {
         notify_breakpoints_verified();
         /// Mark returned breakpoints as verified in the response too
         for (auto& bp_val : result_bps) {
@@ -313,6 +339,156 @@ void DapServer::handle_set_breakpoints(const Value& id, const Value& args) {
     }
 
     send_response(id, json::object({{"breakpoints", Value(std::move(result_bps))}}));
+}
+
+static std::string trim_copy(std::string s) {
+    auto is_ws = [](unsigned char c) { return std::isspace(c) != 0; };
+    while (!s.empty() && is_ws(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+    while (!s.empty() && is_ws(static_cast<unsigned char>(s.back()))) s.pop_back();
+    return s;
+}
+
+static bool try_parse_i64(std::string_view text, int64_t& out) {
+    if (text.empty()) return false;
+    const char* begin = text.data();
+    const char* end = text.data() + text.size();
+    auto parsed = std::from_chars(begin, end, out, 10);
+    return parsed.ec == std::errc{} && parsed.ptr == end;
+}
+
+static bool iequals(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        const auto ac = static_cast<unsigned char>(a[i]);
+        const auto bc = static_cast<unsigned char>(b[i]);
+        if (std::tolower(ac) != std::tolower(bc)) return false;
+    }
+    return true;
+}
+
+/**
+ * setFunctionBreakpoints
+ */
+
+void DapServer::handle_set_function_breakpoints(const Value& id, const Value& args) {
+    std::vector<PendingFunctionBp> next_function_bps;
+
+    Array result_bps;
+    if (args.has("breakpoints") && args["breakpoints"].is_array()) {
+        for (const auto& bp : args["breakpoints"].as_array()) {
+            auto name_opt = bp.get_string("name");
+            if (!name_opt || name_opt->empty()) continue;
+
+            const int bp_id = next_bp_id_++;
+            PendingFunctionBp pfb;
+            pfb.name = *name_opt;
+            pfb.id = bp_id;
+            if (auto cond = bp.get_string("condition")) {
+                pfb.condition = *cond;
+            }
+            if (auto hit_cond = bp.get_string("hitCondition")) {
+                pfb.hit_condition = *hit_cond;
+            }
+            next_function_bps.push_back(std::move(pfb));
+
+            bool verified = false;
+            uint32_t file_id = 0;
+            uint32_t line = 0;
+            std::string message;
+            std::string source_path;
+            std::string source_name;
+            {
+                std::lock_guard<std::mutex> lk(vm_mutex_);
+                if (driver_) {
+                    verified = resolve_function_breakpoint(*name_opt, file_id, line, &message);
+                    if (verified) {
+                        if (const auto* p = driver_->path_for_file_id(file_id)) {
+                            source_path = p->string();
+                            source_name = p->filename().string();
+                        }
+                    }
+                }
+            }
+
+            Object bp_obj{
+                {"id", Value(static_cast<int64_t>(bp_id))},
+                {"verified", Value(verified)},
+            };
+            if (verified) {
+                bp_obj["line"] = Value(static_cast<int64_t>(line));
+                if (!source_path.empty()) {
+                    bp_obj["source"] = json::object({
+                        {"name", source_name},
+                        {"path", source_path},
+                    });
+                }
+            } else if (!message.empty()) {
+                bp_obj["message"] = Value(message);
+            }
+            result_bps.push_back(Value(std::move(bp_obj)));
+        }
+    }
+
+    bool has_driver = false;
+    {
+        std::lock_guard<std::mutex> lk(vm_mutex_);
+        pending_function_bps_ = std::move(next_function_bps);
+        has_driver = (driver_ != nullptr);
+        if (has_driver) {
+            install_pending_breakpoints();
+        }
+    }
+    if (has_driver) {
+        notify_breakpoints_verified();
+    }
+
+    send_response(id, json::object({{"breakpoints", Value(std::move(result_bps))}}));
+}
+
+/**
+ * breakpointLocations
+ */
+
+void DapServer::handle_breakpoint_locations(const Value& id, const Value& args) {
+    auto source_obj = args["source"];
+    auto path_val   = source_obj.get_string("path");
+    if (!path_val) {
+        send_response(id, json::object({{"breakpoints", json::array({})}}));
+        return;
+    }
+
+    auto start_line_opt = args.get_int("line");
+    if (!start_line_opt || *start_line_opt <= 0) {
+        send_response(id, json::object({{"breakpoints", json::array({})}}));
+        return;
+    }
+
+    int start_line = static_cast<int>(*start_line_opt);
+    int end_line = start_line;
+    if (auto end_line_opt = args.get_int("endLine"); end_line_opt && *end_line_opt > 0) {
+        end_line = static_cast<int>(*end_line_opt);
+    }
+    if (end_line < start_line) std::swap(start_line, end_line);
+
+    std::set<uint32_t> valid_lines;
+    {
+        std::lock_guard<std::mutex> lk(vm_mutex_);
+        if (driver_) {
+            auto file_id = driver_->file_id_for_path(*path_val);
+            valid_lines = driver_->valid_lines_for(file_id);
+        }
+    }
+
+    Array matches;
+    for (uint32_t line : valid_lines) {
+        if (line < static_cast<uint32_t>(start_line) || line > static_cast<uint32_t>(end_line))
+            continue;
+        matches.push_back(json::object({
+            {"line", Value(static_cast<int64_t>(line))},
+        }));
+    }
+
+    send_response(id, json::object({{"breakpoints", Value(std::move(matches))}}));
 }
 
 /**
@@ -343,6 +519,10 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
     send_response(id, json::object({}));
 
     if (!launched_) return; ///< no launch request yet (shouldn't happen)
+    start_vm_from_current_launch();
+}
+
+void DapServer::start_vm_from_current_launch() {
 
     /// Build the module search path using ModulePathResolver (same logic as etai / eta_lsp)
     auto resolver = interpreter::ModulePathResolver::from_args_or_env("");
@@ -370,9 +550,6 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
     drv->vm().set_stop_callback([this](const runtime::vm::StopEvent& ev) {
         using runtime::vm::StopReason;
 
-        /// Clear compound variable refs from the previous stop
-        clear_compound_refs();
-
         std::string reason_str;
         switch (ev.reason) {
             case StopReason::Breakpoint: reason_str = "breakpoint"; break;
@@ -381,6 +558,100 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
             case StopReason::Exception:  reason_str = "exception";  break;
             default:                     reason_str = "pause";      break;
         }
+
+        bool should_emit_stopped = true;
+        std::vector<std::string> deferred_output;
+
+        {
+            std::lock_guard<std::mutex> lk(vm_mutex_);
+
+            /// Clear compound variable refs from the previous stop.
+            clear_compound_refs();
+
+            if (driver_ && ev.reason == StopReason::Breakpoint) {
+                const auto current_file = ev.span.file_id;
+                const auto current_line = ev.span.start.line;
+
+                bool matched_breakpoint = false;
+                bool matched_stop_breakpoint = false;
+
+                auto consume_match = [&](int bp_id,
+                                         std::string& condition,
+                                         std::string& hit_condition,
+                                         std::string& log_message,
+                                         int& hit_count) {
+                    matched_breakpoint = true;
+                    ++hit_count;
+
+                    bool hit_ok = true;
+                    if (!hit_condition.empty()) {
+                        std::string hit_err;
+                        if (!matches_hit_condition(hit_condition, hit_count, hit_ok, hit_err)) {
+                            hit_ok = true;
+                            deferred_output.push_back(
+                                "[eta_dap] breakpoint " + std::to_string(bp_id)
+                                + ": invalid hitCondition '" + hit_condition
+                                + "' (" + hit_err + "); treating as unconditional.");
+                        }
+                    }
+                    if (!hit_ok) return;
+
+                    bool cond_ok = true;
+                    if (!condition.empty()) {
+                        std::string cond_err;
+                        if (!eval_breakpoint_condition(condition, cond_ok, cond_err)) {
+                            cond_ok = true;
+                            deferred_output.push_back(
+                                "[eta_dap] breakpoint " + std::to_string(bp_id)
+                                + ": invalid condition '" + condition
+                                + "' (" + cond_err + "); treating as unconditional.");
+                        }
+                    }
+                    if (!cond_ok) return;
+
+                    if (!log_message.empty()) {
+                        deferred_output.push_back(render_logpoint_message(log_message) + "\n");
+                        return;
+                    }
+
+                    matched_stop_breakpoint = true;
+                };
+
+                for (auto& [path, bps] : pending_bps_) {
+                    const uint32_t file_id = driver_->file_id_for_path(path);
+                    if (file_id == 0 || file_id != current_file) continue;
+
+                    for (auto& bp : bps) {
+                        if (static_cast<uint32_t>(bp.line) != current_line) continue;
+                        consume_match(bp.id, bp.condition, bp.hit_condition, bp.log_message, bp.hit_count);
+                    }
+                }
+
+                for (auto& bp : pending_function_bps_) {
+                    uint32_t file_id = 0;
+                    uint32_t line = 0;
+                    if (!resolve_function_breakpoint(bp.name, file_id, line, nullptr)) continue;
+                    if (file_id != current_file || line != current_line) continue;
+
+                    std::string no_log;
+                    consume_match(bp.id, bp.condition, bp.hit_condition, no_log, bp.hit_count);
+                }
+
+                if (matched_breakpoint && !matched_stop_breakpoint) {
+                    should_emit_stopped = false;
+                    driver_->vm().resume();
+                }
+            }
+        }
+
+        for (const auto& text : deferred_output) {
+            send_event("output", json::object({
+                {"category", "console"},
+                {"output", text},
+            }));
+        }
+
+        if (!should_emit_stopped) return;
 
         send_event("stopped", json::object({
             {"reason",            reason_str},
@@ -766,61 +1037,15 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
      * subsequent stepping.  Instead, do a safe name lookup in the current frames.
      */
     if (driver_->vm().is_paused()) {
-        const std::string& expr = *expr_opt;
-        auto frames = driver_->vm().get_frames();
-
-        /// 1. Search locals and upvalues across all frames
-        for (std::size_t fi = 0; fi < frames.size(); ++fi) {
-            for (const auto& e : driver_->vm().get_locals(fi)) {
-                if (e.name == expr) {
-                    int vr = is_compound_value(e.value) ? alloc_compound_ref(e.value) : 0;
-                    send_response(id, json::object({
-                        {"result",             Value(driver_->format_value(e.value))},
-                        {"variablesReference", Value(static_cast<int64_t>(vr))},
-                    }));
-                    return;
-                }
-            }
-            for (const auto& e : driver_->vm().get_upvalues(fi)) {
-                if (e.name == expr) {
-                    int vr = is_compound_value(e.value) ? alloc_compound_ref(e.value) : 0;
-                    send_response(id, json::object({
-                        {"result",             Value(driver_->format_value(e.value))},
-                        {"variablesReference", Value(static_cast<int64_t>(vr))},
-                    }));
-                    return;
-                }
-            }
-        }
-
-        /// 2. Search globals: exact full name ("composition.top5") first
-        const auto& gvals  = driver_->vm().globals();
-        const auto& gnames = driver_->global_names();
-        for (const auto& [slot, full_name] : gnames) {
-            if (full_name == expr && slot < gvals.size()) {
-                auto v = gvals[slot];
-                int vr = is_compound_value(v) ? alloc_compound_ref(v) : 0;
-                send_response(id, json::object({
-                    {"result",             Value(driver_->format_value(v))},
-                    {"variablesReference", Value(static_cast<int64_t>(vr))},
-                }));
-                return;
-            }
-        }
-
-        /// 3. Search globals: short name ("top5" matches "composition.top5")
-        for (const auto& [slot, full_name] : gnames) {
-            auto dot = full_name.rfind('.');
-            if (dot == std::string::npos) continue;
-            if (full_name.substr(dot + 1) == expr && slot < gvals.size()) {
-                auto v = gvals[slot];
-                int vr = is_compound_value(v) ? alloc_compound_ref(v) : 0;
-                send_response(id, json::object({
-                    {"result",             Value(driver_->format_value(v))},
-                    {"variablesReference", Value(static_cast<int64_t>(vr))},
-                }));
-                return;
-            }
+        const std::string expr = trim_copy(*expr_opt);
+        uint64_t value = runtime::nanbox::Nil;
+        if (is_identifier_expr(expr) && try_lookup_paused_name(expr, value)) {
+            int vr = is_compound_value(value) ? alloc_compound_ref(value) : 0;
+            send_response(id, json::object({
+                {"result",             Value(driver_->format_value(value))},
+                {"variablesReference", Value(static_cast<int64_t>(vr))},
+            }));
+            return;
         }
 
         send_response(id, json::object({{"result", "<not available>"}, {"variablesReference", 0}}));
@@ -835,6 +1060,185 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
         {"result",             Value(val_str)},
         {"variablesReference", 0},
     }));
+}
+
+/**
+ * setVariable
+ */
+
+void DapServer::handle_set_variable(const Value& id, const Value& args) {
+    const auto ref_opt = args.get_int("variablesReference");
+    const auto name_opt = args.get_string("name");
+    const auto value_opt = args.get_string("value");
+
+    if (!ref_opt || !name_opt || !value_opt) {
+        send_error_response(id, 2010, "setVariable requires variablesReference, name, and value");
+        return;
+    }
+
+    const int ref = static_cast<int>(*ref_opt);
+    if (ref <= 0 || ref >= COMPOUND_REF_BASE) {
+        send_error_response(id, 2011, "setVariable only supports locals/module/globals scopes");
+        return;
+    }
+
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (!driver_) {
+        send_error_response(id, 2001, "VM not running");
+        return;
+    }
+    if (!driver_->vm().is_paused()) {
+        send_error_response(id, 2002, "VM must be paused to set variable values");
+        return;
+    }
+
+    uint64_t new_value = runtime::nanbox::Nil;
+    std::string parse_error;
+    if (!parse_set_variable_value(*value_opt, new_value, parse_error)) {
+        send_error_response(id, 2012, "setVariable: " + parse_error);
+        return;
+    }
+
+    const int frame_idx = decode_var_ref_frame(ref);
+    const int scope = decode_var_ref_scope(ref);
+
+    const std::string requested_name = *name_opt;
+    std::optional<uint32_t> global_slot;
+
+    auto resolve_global_slot = [&](bool module_scope) -> std::optional<uint32_t> {
+        const auto& names = driver_->global_names();
+        const auto& globals = driver_->vm().globals();
+
+        auto exact_full = [&](const std::string& full_name) -> std::optional<uint32_t> {
+            for (const auto& [slot, name] : names) {
+                if (slot < globals.size() && name == full_name) return slot;
+            }
+            return std::nullopt;
+        };
+
+        if (module_scope) {
+            const std::string cur_mod = current_module_from_frame(static_cast<std::size_t>(frame_idx));
+            if (cur_mod.empty()) return std::nullopt;
+            if (requested_name.find('.') != std::string::npos) {
+                return exact_full(requested_name);
+            }
+            return exact_full(cur_mod + "." + requested_name);
+        }
+
+        if (requested_name.find('.') != std::string::npos) {
+            return exact_full(requested_name);
+        }
+
+        std::optional<uint32_t> found;
+        for (const auto& [slot, full_name] : names) {
+            if (slot >= globals.size()) continue;
+            const auto dot = full_name.rfind('.');
+            const std::string short_name = (dot == std::string::npos)
+                ? full_name
+                : full_name.substr(dot + 1);
+            if (short_name != requested_name) continue;
+            if (found.has_value()) return std::nullopt; ///< ambiguous short name
+            found = slot;
+        }
+        return found;
+    };
+
+    switch (scope) {
+        case 0: {
+            const auto locals = driver_->vm().get_locals(static_cast<std::size_t>(frame_idx));
+            std::optional<std::size_t> slot;
+            for (std::size_t i = 0; i < locals.size(); ++i) {
+                if (locals[i].name == requested_name) {
+                    slot = i;
+                    break;
+                }
+            }
+            if (!slot.has_value()) {
+                send_error_response(id, 2013, "setVariable: local not found: " + requested_name);
+                return;
+            }
+            if (!driver_->vm().set_local(static_cast<std::size_t>(frame_idx), *slot, new_value)) {
+                send_error_response(id, 2014, "setVariable: failed to update local slot");
+                return;
+            }
+            break;
+        }
+        case 1:
+            send_error_response(id, 2015, "setVariable: upvalues are read-only");
+            return;
+        case 2:
+            global_slot = resolve_global_slot(false);
+            break;
+        case 3:
+            global_slot = resolve_global_slot(true);
+            break;
+        default:
+            send_error_response(id, 2016, "setVariable: unsupported scope");
+            return;
+    }
+
+    if ((scope == 2 || scope == 3)) {
+        if (!global_slot.has_value()) {
+            send_error_response(id, 2017, "setVariable: global not found (or ambiguous): " + requested_name);
+            return;
+        }
+        auto& globals = driver_->vm().globals();
+        if (*global_slot >= globals.size()) {
+            send_error_response(id, 2018, "setVariable: resolved global slot is out of range");
+            return;
+        }
+        globals[*global_slot] = new_value;
+    }
+
+    const int vr = is_compound_value(new_value) ? alloc_compound_ref(new_value) : 0;
+    send_response(id, json::object({
+        {"value",              Value(driver_->format_value(new_value))},
+        {"variablesReference", Value(static_cast<int64_t>(vr))},
+    }));
+}
+
+/**
+ * restart
+ */
+
+void DapServer::handle_restart(const Value& id, const Value& /*args*/) {
+    auto program = last_launch_args_.get_string("program");
+    if (!program || program->empty()) {
+        send_error_response(id, 2019, "restart requested before launch; no previous launch arguments are available");
+        return;
+    }
+
+    send_response(id, json::object({}));
+
+    /// Best-effort graceful stop of the prior VM run.
+    {
+        std::lock_guard<std::mutex> lk(vm_mutex_);
+        if (driver_) {
+            driver_->vm().resume();
+        }
+    }
+    if (vm_thread_.joinable()) {
+        vm_thread_.join();
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(vm_mutex_);
+        driver_.reset();
+        clear_compound_refs();
+    }
+
+    script_path_ = fs::path(*program);
+    stop_on_entry_ = last_launch_args_.has("stopOnEntry")
+                     && last_launch_args_["stopOnEntry"].is_bool()
+                     && last_launch_args_["stopOnEntry"].as_bool();
+    launched_ = true;
+
+    send_event("output", json::object({
+        {"category", "console"},
+        {"output", "[eta_dap] Restart: " + script_path_.string() + "\n"},
+    }));
+
+    start_vm_from_current_launch();
 }
 
 /**
@@ -872,6 +1276,385 @@ void DapServer::handle_disconnect(const Value& id, const Value& /*args*/) {
  * Helpers
  */
 
+bool DapServer::is_identifier_expr(const std::string& expr) {
+    if (expr.empty()) return false;
+    const auto is_ident_char = [](unsigned char c) {
+        return std::isalnum(c) || c == '_' || c == '-' || c == '?' || c == '!' || c == '.';
+    };
+    for (const char c : expr) {
+        if (!is_ident_char(static_cast<unsigned char>(c))) return false;
+    }
+    return true;
+}
+
+bool DapServer::try_lookup_paused_name(const std::string& expr, uint64_t& out_val) {
+    if (!driver_) return false;
+
+    auto frames = driver_->vm().get_frames();
+
+    /// 1. Search locals and upvalues across all frames.
+    for (std::size_t fi = 0; fi < frames.size(); ++fi) {
+        for (const auto& e : driver_->vm().get_locals(fi)) {
+            if (e.name == expr) {
+                out_val = e.value;
+                return true;
+            }
+        }
+        for (const auto& e : driver_->vm().get_upvalues(fi)) {
+            if (e.name == expr) {
+                out_val = e.value;
+                return true;
+            }
+        }
+    }
+
+    /// 2. Search globals by exact full name first.
+    const auto& gvals  = driver_->vm().globals();
+    const auto& gnames = driver_->global_names();
+    for (const auto& [slot, full_name] : gnames) {
+        if (full_name == expr && slot < gvals.size()) {
+            out_val = gvals[slot];
+            return true;
+        }
+    }
+
+    /// 3. Search globals by short name.
+    for (const auto& [slot, full_name] : gnames) {
+        const auto dot = full_name.rfind('.');
+        if (dot == std::string::npos) continue;
+        if (full_name.substr(dot + 1) == expr && slot < gvals.size()) {
+            out_val = gvals[slot];
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool DapServer::eval_breakpoint_condition(const std::string& condition,
+                                          bool& out_truthy,
+                                          std::string& out_error) {
+    out_truthy = true;
+    out_error.clear();
+
+    const std::string expr = trim_copy(condition);
+    if (expr.empty()) return true;
+
+    if (expr == "#t" || iequals(expr, "true")) {
+        out_truthy = true;
+        return true;
+    }
+    if (expr == "#f" || iequals(expr, "false")) {
+        out_truthy = false;
+        return true;
+    }
+
+    int64_t n = 0;
+    if (try_parse_i64(expr, n)) {
+        out_truthy = (n != 0);
+        return true;
+    }
+
+    if (!is_identifier_expr(expr)) {
+        out_error =
+            "unsupported expression while paused; only identifiers and boolean/integer literals are supported";
+        return false;
+    }
+
+    uint64_t val = runtime::nanbox::Nil;
+    if (!try_lookup_paused_name(expr, val)) {
+        out_truthy = false;
+        return true;
+    }
+
+    out_truthy = (val != runtime::nanbox::False);
+    return true;
+}
+
+bool DapServer::parse_set_variable_value(const std::string& value_text,
+                                         uint64_t& out_value,
+                                         std::string& out_error) {
+    out_error.clear();
+    const std::string text = trim_copy(value_text);
+    if (text.empty()) {
+        out_error = "value must not be empty";
+        return false;
+    }
+
+    if (text == "#t" || iequals(text, "true")) {
+        out_value = runtime::nanbox::True;
+        return true;
+    }
+    if (text == "#f" || iequals(text, "false")) {
+        out_value = runtime::nanbox::False;
+        return true;
+    }
+    if (text == "nil" || text == "()") {
+        out_value = runtime::nanbox::Nil;
+        return true;
+    }
+
+    int64_t as_int = 0;
+    if (try_parse_i64(text, as_int)) {
+        auto enc = runtime::nanbox::ops::encode<int64_t>(as_int);
+        if (!enc) {
+            out_error = "integer out of range for Eta fixnum";
+            return false;
+        }
+        out_value = *enc;
+        return true;
+    }
+
+    if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
+        const std::string raw = text.substr(1, text.size() - 2);
+        auto sid = driver_->intern_table().intern(raw);
+        if (!sid) {
+            out_error = "failed to intern string value";
+            return false;
+        }
+        out_value = runtime::nanbox::ops::box(runtime::nanbox::Tag::String, *sid);
+        return true;
+    }
+
+    if (text.find('.') != std::string::npos ||
+        text.find('e') != std::string::npos ||
+        text.find('E') != std::string::npos) {
+        char* end = nullptr;
+        const double as_double = std::strtod(text.c_str(), &end);
+        if (end != text.c_str() && end != nullptr && *end == '\0') {
+            auto enc = runtime::nanbox::ops::encode<double>(as_double);
+            if (!enc) {
+                out_error = "invalid floating-point value";
+                return false;
+            }
+            out_value = *enc;
+            return true;
+        }
+    }
+
+    if (is_identifier_expr(text) && try_lookup_paused_name(text, out_value)) {
+        return true;
+    }
+
+    out_error =
+        "unsupported value expression while paused; use identifier or literal (#t/#f/nil/int/float/string)";
+    return false;
+}
+
+bool DapServer::matches_hit_condition(const std::string& hit_condition,
+                                      int hit_count,
+                                      bool& out_match,
+                                      std::string& out_error) {
+    out_match = true;
+    out_error.clear();
+
+    const std::string text = trim_copy(hit_condition);
+    if (text.empty()) return true;
+
+    auto require_positive = [&](int64_t n) -> bool {
+        if (n <= 0) {
+            out_error = "value must be > 0";
+            return false;
+        }
+        return true;
+    };
+
+    int64_t n = 0;
+    if (try_parse_i64(text, n)) {
+        if (!require_positive(n)) return false;
+        out_match = (hit_count == n);
+        return true;
+    }
+
+    if (text.rfind(">=", 0) == 0) {
+        if (!try_parse_i64(trim_copy(text.substr(2)), n)) {
+            out_error = "could not parse integer after '>='";
+            return false;
+        }
+        if (!require_positive(n)) return false;
+        out_match = (hit_count >= n);
+        return true;
+    }
+
+    if (text.rfind(">", 0) == 0) {
+        if (!try_parse_i64(trim_copy(text.substr(1)), n)) {
+            out_error = "could not parse integer after '>'";
+            return false;
+        }
+        if (!require_positive(n)) return false;
+        out_match = (hit_count > n);
+        return true;
+    }
+
+    if (text.rfind("==", 0) == 0) {
+        if (!try_parse_i64(trim_copy(text.substr(2)), n)) {
+            out_error = "could not parse integer after '=='";
+            return false;
+        }
+        if (!require_positive(n)) return false;
+        out_match = (hit_count == n);
+        return true;
+    }
+
+    if (text.rfind("%", 0) == 0) {
+        if (!try_parse_i64(trim_copy(text.substr(1)), n)) {
+            out_error = "could not parse integer after '%'";
+            return false;
+        }
+        if (!require_positive(n)) return false;
+        out_match = (hit_count % n) == 0;
+        return true;
+    }
+
+    out_error = "expected one of: '<n>', '== <n>', '>= <n>', '> <n>', '% <n>'";
+    return false;
+}
+
+std::string DapServer::render_logpoint_message(const std::string& templ) {
+    std::string out;
+    out.reserve(templ.size() + 32);
+
+    std::size_t i = 0;
+    while (i < templ.size()) {
+        if (templ[i] != '{') {
+            out.push_back(templ[i]);
+            ++i;
+            continue;
+        }
+
+        const std::size_t close = templ.find('}', i + 1);
+        if (close == std::string::npos) {
+            out.append(templ.substr(i));
+            break;
+        }
+
+        const std::string expr = trim_copy(templ.substr(i + 1, close - (i + 1)));
+        uint64_t val = runtime::nanbox::Nil;
+        if (!expr.empty() && is_identifier_expr(expr) && try_lookup_paused_name(expr, val)) {
+            out.append(driver_->format_value(val));
+        } else {
+            out.push_back('{');
+            out.append(expr);
+            out.push_back('}');
+        }
+        i = close + 1;
+    }
+
+    return out;
+}
+
+bool DapServer::resolve_function_breakpoint(
+    const std::string& name,
+    uint32_t& out_file_id,
+    uint32_t& out_line,
+    std::string* out_message) {
+    out_file_id = 0;
+    out_line = 0;
+
+    if (!driver_) {
+        if (out_message) *out_message = "debugger not launched";
+        return false;
+    }
+    if (name.empty()) {
+        if (out_message) *out_message = "missing function name";
+        return false;
+    }
+
+    struct Match {
+        uint32_t file_id{0};
+        uint32_t line{0};
+        std::string full_name;
+    };
+
+    std::vector<Match> exact_matches;
+    std::vector<Match> short_matches;
+
+    const auto& globals = driver_->vm().globals();
+    const auto& names = driver_->global_names();
+
+    for (const auto& [slot, full_name] : names) {
+        if (slot >= globals.size()) continue;
+
+        const auto value = globals[slot];
+        if (!runtime::nanbox::ops::is_boxed(value) ||
+            runtime::nanbox::ops::tag(value) != runtime::nanbox::Tag::HeapObject) {
+            continue;
+        }
+
+        auto* closure = driver_->heap().try_get_as<
+            runtime::memory::heap::ObjectKind::Closure, runtime::types::Closure>(
+                runtime::nanbox::ops::payload(value));
+        if (!closure || !closure->func || closure->func->source_map.empty()) {
+            continue;
+        }
+
+        const auto span = closure->func->source_map.front();
+        if (span.file_id == 0 || span.start.line == 0) continue;
+
+        Match match;
+        match.file_id = span.file_id;
+        match.line = span.start.line;
+        match.full_name = full_name;
+
+        if (full_name == name) {
+            exact_matches.push_back(match);
+        }
+
+        const auto dot = full_name.rfind('.');
+        const std::string short_name = (dot == std::string::npos)
+            ? full_name
+            : full_name.substr(dot + 1);
+        if (short_name == name) {
+            short_matches.push_back(match);
+        }
+    }
+
+    auto apply_match = [&](const Match& m) {
+        out_file_id = m.file_id;
+        out_line = m.line;
+    };
+
+    if (!exact_matches.empty()) {
+        apply_match(exact_matches.front());
+        return true;
+    }
+
+    if (short_matches.size() == 1) {
+        apply_match(short_matches.front());
+        return true;
+    }
+
+    if (short_matches.size() > 1) {
+        if (out_message) {
+            std::ostringstream oss;
+            oss << "ambiguous function breakpoint: " << name;
+            const std::size_t max_names = 4;
+            std::size_t count = 0;
+            for (const auto& m : short_matches) {
+                if (count == 0) {
+                    oss << " (matches ";
+                } else {
+                    oss << ", ";
+                }
+                oss << m.full_name;
+                ++count;
+                if (count >= max_names) break;
+            }
+            if (short_matches.size() > max_names) {
+                oss << ", ...";
+            }
+            if (count > 0) {
+                oss << ')';
+            }
+            *out_message = oss.str();
+        }
+        return false;
+    }
+
+    if (out_message) *out_message = "function not found: " + name;
+    return false;
+}
+
 void DapServer::install_pending_breakpoints() {
     if (!driver_) return;
 
@@ -883,6 +1666,14 @@ void DapServer::install_pending_breakpoints() {
 
         for (const auto& bp : bps) {
             all_locs.push_back({file_id, static_cast<uint32_t>(bp.line)});
+        }
+    }
+
+    for (const auto& bp : pending_function_bps_) {
+        uint32_t file_id = 0;
+        uint32_t line = 0;
+        if (resolve_function_breakpoint(bp.name, file_id, line, nullptr)) {
+            all_locs.push_back({file_id, line});
         }
     }
 
@@ -904,6 +1695,14 @@ void DapServer::notify_breakpoints_verified() {
 
             for (const auto& bp : bps) {
                 verified.push_back({bp.id, bp.line});
+            }
+        }
+
+        for (const auto& bp : pending_function_bps_) {
+            uint32_t file_id = 0;
+            uint32_t line = 0;
+            if (resolve_function_breakpoint(bp.name, file_id, line, nullptr)) {
+                verified.push_back({bp.id, static_cast<int>(line)});
             }
         }
     }
@@ -1096,6 +1895,115 @@ void DapServer::handle_inspect_object(const Value& id, const Value& args) {
 }
 
 /**
+ * disassemble (standard DAP request)
+ */
+
+void DapServer::handle_standard_disassemble(const Value& id, const Value& args) {
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+    if (!driver_) {
+        send_error_response(id, 2001, "VM not running");
+        return;
+    }
+    if (!driver_->vm().is_paused()) {
+        send_error_response(id, 2002, "VM must be paused to disassemble");
+        return;
+    }
+
+    const int64_t instruction_offset = args.get_int("instructionOffset").value_or(0);
+    const int64_t instruction_count = args.get_int("instructionCount").value_or(64);
+
+    bool disassemble_all = false;
+    if (auto mr = args.get_string("memoryReference")) {
+        if (*mr == "all") disassemble_all = true;
+    }
+
+    runtime::vm::Disassembler disasm(driver_->heap(), driver_->intern_table());
+    std::ostringstream oss;
+    const runtime::vm::BytecodeFunction* current_func = nullptr;
+
+    if (disassemble_all) {
+        disasm.disassemble_all(driver_->registry(), oss);
+    } else {
+        auto frames = driver_->vm().get_frames();
+        if (!frames.empty()) {
+            const auto& top = frames[0];
+            for (const auto& func : driver_->registry().all()) {
+                if (func.name == top.func_name ||
+                    (!top.func_name.empty() && func.name.find(top.func_name) != std::string::npos)) {
+                    current_func = &func;
+                    disasm.disassemble(func, oss);
+                    break;
+                }
+            }
+        }
+        if (!current_func) {
+            disasm.disassemble_all(driver_->registry(), oss);
+        }
+    }
+
+    struct ParsedLine {
+        int64_t address{0};
+        std::string instruction;
+    };
+
+    std::vector<ParsedLine> parsed;
+    std::istringstream lines(oss.str());
+    std::string line;
+    std::regex instruction_re(R"(^\s*(\d+):\s*(.*)$)");
+    while (std::getline(lines, line)) {
+        std::smatch m;
+        if (!std::regex_match(line, m, instruction_re)) continue;
+
+        int64_t addr = 0;
+        if (!try_parse_i64(m[1].str(), addr)) continue;
+
+        ParsedLine pl;
+        pl.address = addr;
+        pl.instruction = m[2].str();
+        parsed.push_back(std::move(pl));
+    }
+
+    std::size_t begin = 0;
+    if (instruction_offset > 0) {
+        begin = static_cast<std::size_t>(instruction_offset);
+        if (begin > parsed.size()) begin = parsed.size();
+    }
+    std::size_t end = parsed.size();
+    if (instruction_count >= 0) {
+        const std::size_t count = static_cast<std::size_t>(instruction_count);
+        end = (std::min)(parsed.size(), begin + count);
+    }
+
+    Array instructions;
+    for (std::size_t i = begin; i < end; ++i) {
+        Object entry{
+            {"address", Value(std::to_string(parsed[i].address))},
+            {"instruction", Value(parsed[i].instruction)},
+        };
+
+        if (current_func && parsed[i].address >= 0 &&
+            static_cast<std::size_t>(parsed[i].address) < current_func->source_map.size()) {
+            const auto sp = current_func->source_map[static_cast<std::size_t>(parsed[i].address)];
+            if (sp.file_id != 0 && sp.start.line != 0) {
+                entry["line"] = Value(static_cast<int64_t>(sp.start.line));
+                if (const auto* p = driver_->path_for_file_id(sp.file_id)) {
+                    entry["location"] = json::object({
+                        {"name", p->filename().string()},
+                        {"path", p->string()},
+                    });
+                }
+            }
+        }
+
+        instructions.push_back(Value(std::move(entry)));
+    }
+
+    send_response(id, json::object({
+        {"instructions", Value(std::move(instructions))},
+    }));
+}
+
+/**
  */
 
 void DapServer::handle_disassemble(const Value& id, const Value& args) {
@@ -1116,7 +2024,7 @@ void DapServer::handle_disassemble(const Value& id, const Value& args) {
     std::ostringstream oss;
 
     std::string function_name;
-    int64_t current_pc = -1;
+    int64_t current_pc = driver_->vm().paused_instruction_index();
 
     if (scope == "all") {
         /// Disassemble all functions in the registry

@@ -211,9 +211,29 @@ public:
         return debug_ && debug_->is_paused();
     }
 
+    /**
+     * Return the instruction index that is currently paused at, or -1 when
+     * the VM is not paused.
+     */
+    [[nodiscard]] int64_t paused_instruction_index() const noexcept {
+        if (!(debug_ && debug_->is_paused()) || !current_func_) return -1;
+        if (pc_ >= current_func_->code.size()) return -1;
+        return static_cast<int64_t>(pc_);
+    }
+
     [[nodiscard]] std::vector<FrameInfo> get_frames()                        const;
     [[nodiscard]] std::vector<VarEntry>  get_locals(std::size_t frame_index) const;
     [[nodiscard]] std::vector<VarEntry>  get_upvalues(std::size_t frame_index) const;
+    /**
+     * Write one local slot in a paused frame.
+     *
+     * @param frame_index Frame index using the same ordering as get_locals()
+     *                    (0 = innermost, 1 = caller, ...).
+     * @param slot        Local slot index in that frame.
+     * @param value       New value to store.
+     * @return true if the slot was updated; false if frame/slot is invalid.
+     */
+    bool set_local(std::size_t frame_index, std::size_t slot, LispVal value);
 
     [[nodiscard]] std::vector<GCRootInfo> enumerate_gc_roots() const;
 

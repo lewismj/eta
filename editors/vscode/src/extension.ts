@@ -1,13 +1,11 @@
-import * as path from 'path';
-import * as fs from 'fs';
-import {
+﻿import {
     workspace,
     ExtensionContext,
     window,
     debug,
     commands,
     DebugAdapterExecutable,
-    OutputChannel,
+    LogOutputChannel,
     WorkspaceFolder,
     CancellationToken,
 } from 'vscode';
@@ -31,10 +29,11 @@ import { DisassemblyContentProvider, showDisassembly } from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
 import { ChildProcessTreeProvider } from './childProcessTreeView';
 import { registerTestController } from './testController';
+import { discoverBinaries } from './binaries';
 
 let client: LanguageClient | undefined;
-let outputChannel: OutputChannel;
-let programOutputChannel: OutputChannel;
+let outputChannel: LogOutputChannel;
+let programOutputChannel: LogOutputChannel;
 let extensionCtx: ExtensionContext;
 
 // Shared providers (accessible from tracker)
@@ -44,124 +43,7 @@ let disasmTreeProvider: DisassemblyTreeProvider;
 let childProcProvider: ChildProcessTreeProvider;
 
 function log(msg: string): void {
-    outputChannel?.appendLine(msg);
-}
-
-function isFile(p: string): boolean {
-    try { return fs.statSync(p).isFile(); } catch { return false; }
-}
-
-function checkPath(label: string, p: string): boolean {
-    const found = isFile(p);
-    log(`  - ${label}: ${p} (${found ? 'FOUND' : 'not found'})`);
-    return found;
-}
-
-/** Resolve a configured path that may be either a direct binary or a directory. */
-function resolveConfigBinary(configPath: string, names: string[]): string | undefined {
-    if (isFile(configPath)) { return configPath; }
-    for (const name of names) {
-        const candidate = path.join(configPath, name);
-        if (isFile(candidate)) { return candidate; }
-    }
-    return undefined;
-}
-
-function findServerBinary(context: ExtensionContext): string | undefined {
-    log('[Checking LSP Binary]');
-    log(`  Platform: ${process.platform}`);
-
-    // 1. Check user configuration
-    const config = workspace.getConfiguration('eta.lsp');
-    const configPath = config.get<string>('serverPath', '').trim();
-    if (configPath) {
-        log(`  - Searching config: "${configPath}"`);
-        const resolved = resolveConfigBinary(configPath, ['eta_lsp.exe', 'eta_lsp']);
-        if (resolved) {
-            log(`  - Found: ${resolved}`);
-            return resolved;
-        }
-        const msg = `Eta LSP: configured serverPath "${configPath}" does not point to a valid executable.`;
-        log(`  ERROR: ${msg}`);
-        window.showWarningMessage(msg);
-        return undefined;
-    } else {
-        log(`  - Searching config: "" (not set)`);
-    }
-
-    // 2. Check bundled binary inside the extension directory
-    for (const name of ['eta_lsp', 'eta_lsp.exe']) {
-        const candidate = path.join(context.extensionPath, 'bin', name);
-        if (checkPath('bundled', candidate)) { return candidate; }
-    }
-
-    // 3. Check workspace-relative build output
-    const workspaceFolders = workspace.workspaceFolders;
-    if (workspaceFolders) {
-        for (const folder of workspaceFolders) {
-            const candidates = [
-                path.join(folder.uri.fsPath, 'out', 'wsl-clang-release', 'eta', 'lsp', 'eta_lsp'),
-                path.join(folder.uri.fsPath, 'out', 'build', 'eta', 'lsp', 'eta_lsp'),
-                path.join(folder.uri.fsPath, 'build', 'eta', 'lsp', 'eta_lsp'),
-                path.join(folder.uri.fsPath, 'out', 'wsl-clang-release', 'eta', 'lsp', 'eta_lsp.exe'),
-                path.join(folder.uri.fsPath, 'build', 'eta', 'lsp', 'eta_lsp.exe'),
-                path.join(folder.uri.fsPath, 'out', 'msvc-release', 'eta', 'lsp', 'eta_lsp.exe'),
-                path.join(folder.uri.fsPath, 'build-release', 'eta', 'lsp', 'eta_lsp.exe'),
-            ];
-            for (const c of candidates) {
-                if (checkPath('workspace', c)) { return c; }
-            }
-        }
-    }
-
-    // 4. Fall back to PATH
-    log(`  - Falling back to PATH: eta_lsp`);
-    return 'eta_lsp';
-}
-
-function findDapBinary(lspPath: string | undefined, context: ExtensionContext): string {
-    const exe = process.platform === 'win32' ? 'eta_dap.exe' : 'eta_dap';
-    log('[Checking DAP Binary]');
-    log(`  Platform: ${process.platform}, looking for: ${exe}`);
-
-    // 1. User configuration
-    const configPath = workspace.getConfiguration('eta.dap').get<string>('executablePath', '').trim();
-    if (configPath) {
-        const resolved = resolveConfigBinary(configPath, [exe]);
-        if (resolved) { log(`  - Found (config): ${resolved}`); return resolved; }
-    }
-
-    // 2. Next to the LSP binary (most common after an install)
-    if (lspPath && lspPath !== 'eta_lsp' && lspPath !== 'eta_lsp.exe') {
-        const candidate = path.join(path.dirname(lspPath), exe);
-        if (checkPath('next to LSP binary', candidate)) { return candidate; }
-    }
-
-    // 3. Bundled alongside the extension
-    const bundled = path.join(context.extensionPath, 'bin', exe);
-    if (checkPath('bundled', bundled)) { return bundled; }
-
-    // 4. Workspace build output
-    const workspaceFolders = workspace.workspaceFolders;
-    if (workspaceFolders) {
-        for (const folder of workspaceFolders) {
-            for (const rel of [
-                path.join('out', 'wsl-clang-release', 'eta', 'dap', exe),
-                path.join('out', 'build', 'eta', 'dap', exe),
-                path.join('build', 'eta', 'dap', exe),
-                path.join('build-release', 'eta', 'dap', exe),
-                path.join('out', 'msvc-release', 'eta', 'dap', exe),
-            ]) {
-                const c = path.join(folder.uri.fsPath, rel);
-                if (checkPath('workspace', c)) { return c; }
-            }
-        }
-    }
-
-    // 5. Fall back to PATH
-    log(`  WARNING: eta_dap not found in any known location; falling back to PATH lookup.`);
-    log(`  To fix: set "eta.dap.executablePath" in VS Code settings to the full path of ${exe}.`);
-    return exe;
+    outputChannel?.info(msg);
 }
 
 /** Resolve ETA_MODULE_PATH from the new shared setting, legacy lsp setting, or env. */
@@ -174,12 +56,12 @@ function resolveModulePath(): string {
 
 export function activate(context: ExtensionContext) {
     extensionCtx = context;
-    outputChannel = window.createOutputChannel('Eta Language');
-    programOutputChannel = window.createOutputChannel('Eta Output');
+    outputChannel = window.createOutputChannel('Eta Language', { log: true });
+    programOutputChannel = window.createOutputChannel('Eta Output', { log: true });
     context.subscriptions.push(outputChannel, programOutputChannel);
     log('Eta extension activating...');
 
-    // ── GC Roots tree view ──────────────────────────────────────────
+    // â”€â”€ GC Roots tree view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     gcRootsProvider = new GCRootsTreeProvider();
     context.subscriptions.push(
         window.createTreeView('etaGCRoots', {
@@ -188,13 +70,13 @@ export function activate(context: ExtensionContext) {
         }),
     );
 
-    // ── Disassembly virtual document provider ───────────────────────
+    // â”€â”€ Disassembly virtual document provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     disasmProvider = new DisassemblyContentProvider();
     context.subscriptions.push(
         workspace.registerTextDocumentContentProvider('eta-disasm', disasmProvider),
     );
 
-    // ── Disassembly tree view (debug sidebar) ────────────────────────────
+    // â”€â”€ Disassembly tree view (debug sidebar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     disasmTreeProvider = new DisassemblyTreeProvider();
     context.subscriptions.push(
         window.createTreeView('etaDisassembly', {
@@ -203,7 +85,7 @@ export function activate(context: ExtensionContext) {
         }),
     );
 
-    // ── Child process tree view (debug sidebar) ──────────────────────────
+    // â”€â”€ Child process tree view (debug sidebar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     childProcProvider = new ChildProcessTreeProvider();
     context.subscriptions.push(
         window.createTreeView('etaChildProcesses', {
@@ -212,9 +94,10 @@ export function activate(context: ExtensionContext) {
         }),
     );
 
-    // ── Always register the debug adapter ──────────────────────────
-    const serverPath = findServerBinary(context);
-    const dapPath    = findDapBinary(serverPath, context);
+    // â”€â”€ Always register the debug adapter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const binaries = discoverBinaries(context);
+    const serverPath = binaries.lsp;
+    const dapPath = binaries.dap ?? (process.platform === 'win32' ? 'eta_dap.exe' : 'eta_dap');
 
     log(`[Summary]`);
     log(`  LSP binary  : ${serverPath ?? '(none)'}`);
@@ -265,24 +148,25 @@ export function activate(context: ExtensionContext) {
         }),
     );
 
-    // ── Test Explorer ───────────────────────────────────────────
+    // â”€â”€ Test Explorer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     registerTestController(context);
 
-    // ── Watch for configuration changes ────────────────────────────
+    // â”€â”€ Watch for configuration changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     context.subscriptions.push(
         workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('eta.lsp.serverPath')) {
-                const configPath = workspace.getConfiguration('eta.lsp').get<string>('serverPath', '').trim();
-                if (configPath && !resolveConfigBinary(configPath, ['eta_lsp.exe', 'eta_lsp'])) {
-                    window.showWarningMessage(
-                        `Eta: eta.lsp.serverPath "${configPath}" is not a valid executable or directory.`
-                    );
-                }
+            if (
+                e.affectsConfiguration('eta.lsp.serverPath')
+                || e.affectsConfiguration('eta.dap.executablePath')
+                || e.affectsConfiguration('eta.binaries.searchPaths')
+            ) {
+                const refreshed = discoverBinaries(context);
+                outputChannel.info(`LSP binary resolved to: ${refreshed.lsp ?? '(none)'}`);
+                outputChannel.info(`DAP binary resolved to: ${refreshed.dap ?? '(none)'}`);
             }
         })
     );
 
-    // ── LSP setup ──────────────────────────────────────────────────
+    // â”€â”€ LSP setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const enabled = workspace.getConfiguration('eta.lsp').get<boolean>('enabled', true);
     if (!enabled) {
         log('LSP is disabled via eta.lsp.enabled = false. Skipping LSP startup.');
@@ -334,7 +218,7 @@ export function deactivate(): Thenable<void> | undefined {
     return client.stop();
 }
 
-// ── Debug configuration provider ─────────────────────────────────────────────────
+// â”€â”€ Debug configuration provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
     resolveDebugConfiguration(
@@ -363,20 +247,54 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
             return undefined;
         }
 
+        if (!Array.isArray(config.args)) {
+            config.args = [];
+        }
+        if (!config.cwd || typeof config.cwd !== 'string') {
+            config.cwd = '${workspaceFolder}';
+        }
+        if (!config.env || typeof config.env !== 'object' || Array.isArray(config.env)) {
+            config.env = {};
+        }
+        if (typeof config.stopOnEntry !== 'boolean') {
+            config.stopOnEntry = false;
+        }
+        if (typeof config.etac !== 'boolean') {
+            config.etac = false;
+        }
+        if (typeof config.trace !== 'boolean') {
+            config.trace = false;
+        }
+        if (typeof config.console !== 'string') {
+            config.console = 'debugConsole';
+        }
+        if (config.console !== 'debugConsole'
+            && config.console !== 'integratedTerminal'
+            && config.console !== 'externalTerminal') {
+            window.showWarningMessage(
+                'Eta debug: "console" must be one of debugConsole, integratedTerminal, or externalTerminal.'
+            );
+            return undefined;
+        }
+
+        if (!config.modulePath || typeof config.modulePath !== 'string') {
+            config.modulePath = resolveModulePath();
+        }
+
         return config;
     }
 }
 
-// ── Debug adapter tracker ─────────────────────────────────────────────────────
+// â”€â”€ Debug adapter tracker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class EtaDebugAdapterTracker implements DebugAdapterTracker {
     constructor(
-        private readonly channel: OutputChannel,
-        private readonly programChannel: OutputChannel,
+        private readonly channel: LogOutputChannel,
+        private readonly programChannel: LogOutputChannel,
     ) {}
 
     onWillStartSession(): void {
-        this.channel.appendLine('[DAP] Debug session starting…');
+        this.channel.appendLine('[DAP] Debug session startingâ€¦');
         this.programChannel.clear();
         this.programChannel.show(true);
 
@@ -387,7 +305,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     }
 
     onWillStopSession(): void {
-        this.channel.appendLine('[DAP] Debug session stopping…');
+        this.channel.appendLine('[DAP] Debug session stoppingâ€¦');
         childProcProvider?.notifySessionEnded();
     }
 
@@ -396,21 +314,21 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const args = message?.arguments;
         switch (cmd) {
             case 'initialize':
-                this.channel.appendLine('[DAP→] initialize');
+                this.channel.appendLine('[DAPâ†’] initialize');
                 break;
             case 'launch':
-                this.channel.appendLine(`[DAP→] launch: program="${args?.program ?? '?'}"`);
+                this.channel.appendLine(`[DAPâ†’] launch: program="${args?.program ?? '?'}"`);
                 break;
             case 'setBreakpoints': {
                 const srcPath: string = args?.source?.path ?? '?';
                 const lines: number[] = (args?.breakpoints ?? []).map((b: any) => b.line as number);
                 this.channel.appendLine(
-                    `[DAP→] setBreakpoints: ${lines.length} bp(s) in "${srcPath}" lines=[${lines.join(',')}]`
+                    `[DAPâ†’] setBreakpoints: ${lines.length} bp(s) in "${srcPath}" lines=[${lines.join(',')}]`
                 );
                 break;
             }
             case 'configurationDone':
-                this.channel.appendLine('[DAP→] configurationDone');
+                this.channel.appendLine('[DAPâ†’] configurationDone');
                 break;
             case 'continue':
             case 'next':
@@ -418,10 +336,10 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             case 'stepOut':
             case 'pause':
             case 'disconnect':
-                this.channel.appendLine(`[DAP→] ${cmd}`);
+                this.channel.appendLine(`[DAPâ†’] ${cmd}`);
                 break;
             default:
-                if (cmd) { this.channel.appendLine(`[DAP→] ${cmd}`); }
+                if (cmd) { this.channel.appendLine(`[DAPâ†’] ${cmd}`); }
         }
     }
 
@@ -437,41 +355,46 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 const output: string = message?.body?.output ?? '';
                 if (output) { this.channel.append(output); }
             } else if (event === 'initialized') {
-                this.channel.appendLine('[DAP←] initialized (adapter ready; VS Code will now send setBreakpoints)');
+                this.channel.appendLine('[DAPâ†] initialized (adapter ready; VS Code will now send setBreakpoints)');
             } else if (event === 'stopped') {
                 const reason: string = message?.body?.reason ?? '?';
                 const tid: number    = message?.body?.threadId ?? 0;
-                this.channel.appendLine(`[DAP←] stopped: reason="${reason}" threadId=${tid}`);
+                this.channel.appendLine(`[DAPâ†] stopped: reason="${reason}" threadId=${tid}`);
                 HeapInspectorPanel.current()?.notifyStopped();
                 gcRootsProvider?.notifyStopped();
                 disasmTreeProvider?.notifyStopped();
                 disasmProvider?.refresh();
                 childProcProvider?.notifyStopped();
             } else if (event === 'continued') {
-                this.channel.appendLine('[DAP←] continued');
+                this.channel.appendLine('[DAPâ†] continued');
             } else if (event === 'breakpoint') {
                 const bp  = message?.body?.breakpoint ?? {};
                 const why = message?.body?.reason ?? '?';
                 this.channel.appendLine(
-                    `[DAP←] breakpoint ${why}: id=${bp.id} verified=${bp.verified} line=${bp.line}`
+                    `[DAPâ†] breakpoint ${why}: id=${bp.id} verified=${bp.verified} line=${bp.line}`
                 );
             } else if (event === 'terminated') {
-                this.channel.appendLine('[DAP←] terminated');
+                this.channel.appendLine('[DAPâ†] terminated');
             } else if (event === 'exited') {
-                this.channel.appendLine(`[DAP←] exited: code=${message?.body?.exitCode ?? '?'}`);
+                this.channel.appendLine(`[DAPâ†] exited: code=${message?.body?.exitCode ?? '?'}`);
             }
         } else if (type === 'response') {
             const cmd     = message?.command ?? '';
             const success = message?.success ?? false;
             if (!success) {
                 this.channel.appendLine(
-                    `[DAP←] ERROR response to "${cmd}": ${JSON.stringify(message?.body ?? {})}`
+                    `[DAPâ†] ERROR response to "${cmd}": ${JSON.stringify(message?.body ?? {})}`
                 );
             } else if (cmd === 'initialize') {
                 const caps = message?.body ?? {};
                 this.channel.appendLine(
-                    `[DAP←] initialize OK — supportsConfigurationDone=${caps.supportsConfigurationDoneRequest}`
+                    `[DAPâ†] initialize OK â€” supportsConfigurationDone=${caps.supportsConfigurationDoneRequest}`
                 );
+            } else if (cmd === 'eta/childProcesses') {
+                const children = message?.body?.children;
+                if (Array.isArray(children)) {
+                    childProcProvider?.updateChildren(children);
+                }
             }
         }
     }
@@ -490,22 +413,41 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
 class EtaDebugAdapterFactory implements DebugAdapterDescriptorFactory {
     constructor(
         private readonly dapPath: string,
-        private readonly channel: OutputChannel,
+        private readonly channel: LogOutputChannel,
     ) {}
 
-    createDebugAdapterDescriptor(_session: DebugSession): DebugAdapterDescriptor {
-        const modulePath = resolveModulePath();
+    createDebugAdapterDescriptor(session: DebugSession): DebugAdapterDescriptor {
+        const launchConfig = session.configuration ?? {};
+        const modulePath = typeof launchConfig.modulePath === 'string' && launchConfig.modulePath.length > 0
+            ? launchConfig.modulePath
+            : resolveModulePath();
         const env: { [key: string]: string } = {};
         for (const [k, v] of Object.entries(process.env)) {
             if (v !== undefined) { env[k] = v; }
+        }
+        const configEnv = launchConfig.env;
+        if (configEnv && typeof configEnv === 'object' && !Array.isArray(configEnv)) {
+            for (const [k, v] of Object.entries(configEnv)) {
+                if (typeof v === 'string') env[k] = v;
+            }
         }
         if (modulePath) {
             env['ETA_MODULE_PATH'] = modulePath;
         }
 
-        this.channel.appendLine(`[DAP] Launching: ${this.dapPath}`);
-        this.channel.appendLine(`[DAP] ETA_MODULE_PATH: ${modulePath || '(not set)'}`);
+        const dapArgs: string[] = [];
+        if (launchConfig.trace === true) {
+            dapArgs.push('--trace-protocol');
+        }
 
-        return new DebugAdapterExecutable(this.dapPath, [], { env });
+        const options: { env: { [key: string]: string }; cwd?: string } = { env };
+        if (typeof launchConfig.cwd === 'string' && launchConfig.cwd.length > 0) {
+            options.cwd = launchConfig.cwd;
+        }
+
+        this.channel.info(`[DAP] Launching: ${this.dapPath}`);
+        this.channel.info(`[DAP] ETA_MODULE_PATH: ${modulePath || '(not set)'}`);
+
+        return new DebugAdapterExecutable(this.dapPath, dapArgs, options);
     }
 }

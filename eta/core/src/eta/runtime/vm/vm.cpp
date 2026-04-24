@@ -1709,6 +1709,52 @@ std::vector<VarEntry> VM::get_locals(std::size_t frame_index) const {
     return result;
 }
 
+bool VM::set_local(std::size_t frame_index, std::size_t slot, LispVal value) {
+    const BytecodeFunction* func = nullptr;
+    uint32_t frame_fp = fp_;
+
+    if (frame_index == 0) {
+        func = current_func_;
+        frame_fp = fp_;
+    } else {
+        std::size_t idx = 1;
+        for (int i = static_cast<int>(frames_.size()) - 1; i >= 0; --i) {
+            const auto& f = frames_[static_cast<std::size_t>(i)];
+            if (f.kind == FrameKind::Sentinel) break;
+            if (f.func == nullptr) continue;
+            if (idx == frame_index) {
+                func = f.func;
+                frame_fp = f.fp;
+                break;
+            }
+            ++idx;
+        }
+    }
+
+    if (!func) return false;
+
+    uint32_t num_params = func->arity + (func->has_rest ? 1 : 0);
+    uint32_t num_slots;
+    if (!func->local_names.empty()) {
+        num_slots = static_cast<uint32_t>(func->local_names.size());
+    } else if (num_params > 0) {
+        num_slots = num_params;
+    } else {
+        uint32_t headroom = 32;
+        num_slots = func->stack_size > headroom ? func->stack_size - headroom : func->stack_size;
+        uint32_t avail = static_cast<uint32_t>(stack_.size()) - frame_fp;
+        if (num_slots > avail) num_slots = avail;
+    }
+
+    if (slot >= num_slots) return false;
+
+    const std::size_t stack_idx = static_cast<std::size_t>(frame_fp) + slot;
+    if (stack_idx >= stack_.size()) return false;
+
+    stack_[stack_idx] = value;
+    return true;
+}
+
 std::vector<VarEntry> VM::get_upvalues(std::size_t frame_index) const {
     std::vector<VarEntry> result;
 

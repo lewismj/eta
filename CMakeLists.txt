@@ -5,6 +5,8 @@ project(eta LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# The project does not use C++20 modules; disable dependency scanning globally.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 enable_testing()
 

@@ -64,7 +64,10 @@ export class HeapInspectorPanel {
     public async refresh(): Promise<void> {
         const session = debug.activeDebugSession;
         if (!session || session.type !== 'eta') {
-            this.panel.webview.postMessage({ command: 'error', text: 'No active Eta debug session.' });
+            this.panel.webview.postMessage({
+                command: 'idle',
+                text: 'Start and pause an Eta debug session to inspect heap state.',
+            });
             return;
         }
 
@@ -73,7 +76,15 @@ export class HeapInspectorPanel {
             this.snapshot = snap;
             this.panel.webview.postMessage({ command: 'snapshot', data: snap });
         } catch (err: any) {
-            this.panel.webview.postMessage({ command: 'error', text: err?.message ?? String(err) });
+            const text = err?.message ?? String(err);
+            if (/must be paused/i.test(text)) {
+                this.panel.webview.postMessage({
+                    command: 'idle',
+                    text: 'Pause the VM (breakpoint or step) to inspect the heap.',
+                });
+                return;
+            }
+            this.panel.webview.postMessage({ command: 'error', text });
         }
     }
 
@@ -371,6 +382,14 @@ function getWebviewHtml(): string {
         });
     }
 
+    function renderIdle(text) {
+        document.getElementById('content').innerHTML =
+            '<div id="placeholder">' + esc(text) + '</div>';
+        const detail = document.getElementById('detail');
+        detail.style.display = 'none';
+        detail.innerHTML = '';
+    }
+
     function esc(s) {
         const d = document.createElement('div');
         d.textContent = String(s);
@@ -385,6 +404,9 @@ function getWebviewHtml(): string {
                 break;
             case 'inspectResult':
                 renderInspect(msg.data);
+                break;
+            case 'idle':
+                renderIdle(msg.text ?? 'Pause the VM to inspect the heap.');
                 break;
             case 'error':
                 document.getElementById('content').innerHTML =

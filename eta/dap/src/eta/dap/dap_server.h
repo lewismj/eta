@@ -6,9 +6,11 @@
  */
 
 #include <filesystem>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -69,8 +71,23 @@ private:
     /// Script to debug (set by "launch" request)
     std::filesystem::path script_path_;
 
-    struct PendingBp { int line; int id; };
+    struct PendingBp {
+        int line{0};
+        int id{0};
+        std::string condition;
+        std::string hit_condition;
+        std::string log_message;
+        int hit_count{0};
+    };
     std::unordered_map<std::string, std::vector<PendingBp>> pending_bps_;
+    struct PendingFunctionBp {
+        std::string name;
+        int id{0};
+        std::string condition;
+        std::string hit_condition;
+        int hit_count{0};
+    };
+    std::vector<PendingFunctionBp> pending_function_bps_;
     int next_bp_id_{1};  ///< monotonically increasing breakpoint ID assigned by adapter
 
     /// Whether to stop on first instruction (stopOnEntry)
@@ -81,6 +98,7 @@ private:
 
     /// Whether "launch" has been requested (i.e., VM thread is running/should start)
     bool launched_{false};
+    Value last_launch_args_{};
 
     /// Command name of the request currently being dispatched (used by send_response).
     std::string current_command_;
@@ -104,6 +122,8 @@ private:
     void handle_initialize(const Value& id, const Value& args);
     void handle_launch(const Value& id, const Value& args);
     void handle_set_breakpoints(const Value& id, const Value& args);
+    void handle_set_function_breakpoints(const Value& id, const Value& args);
+    void handle_breakpoint_locations(const Value& id, const Value& args);
     void handle_set_exception_breakpoints(const Value& id, const Value& args);
     void handle_configuration_done(const Value& id, const Value& args);
     void handle_threads(const Value& id, const Value& args);
@@ -116,6 +136,8 @@ private:
     void handle_step_out(const Value& id, const Value& args);
     void handle_pause(const Value& id, const Value& args);
     void handle_evaluate(const Value& id, const Value& args);
+    void handle_set_variable(const Value& id, const Value& args);
+    void handle_restart(const Value& id, const Value& args);
     void handle_terminate(const Value& id, const Value& args);
     void handle_completions(const Value& id, const Value& args);
     void handle_disconnect(const Value& id, const Value& args);
@@ -124,13 +146,25 @@ private:
     void handle_heap_inspector(const Value& id, const Value& args);
     void handle_inspect_object(const Value& id, const Value& args);
     void handle_disassemble(const Value& id, const Value& args);
+    void handle_standard_disassemble(const Value& id, const Value& args);
     void handle_child_processes(const Value& id, const Value& args);
+    void start_vm_from_current_launch();
 
     /**
      * Helpers
      * Build a JSON heap snapshot from the paused VM. Caller must hold vm_mutex_.
      */
     Value build_heap_snapshot();
+
+    /**
+     * Resolve a function-breakpoint name to a concrete file/line location.
+     * Caller must hold vm_mutex_.
+     */
+    bool resolve_function_breakpoint(
+        const std::string& name,
+        uint32_t& out_file_id,
+        uint32_t& out_line,
+        std::string* out_message = nullptr);
 
     /// Apply pending_bps_ to the running VM. Caller must hold vm_mutex_.
     void install_pending_breakpoints();
@@ -159,6 +193,52 @@ private:
     Value make_variable_json(const std::string& name, uint64_t val);
     /// Expand a compound value into child variables.
     Array expand_compound(uint64_t val);
+
+    /**
+     * Resolve a paused-frame identifier lookup. Returns true if the symbol is
+     * found in locals/upvalues/globals and assigns out_val.
+     * Caller must hold vm_mutex_ and ensure driver_ is non-null.
+     */
+    bool try_lookup_paused_name(const std::string& expr, uint64_t& out_val);
+
+    /**
+     * Evaluate a paused breakpoint condition with the lightweight debugger
+     * evaluator. Currently supports identifier lookups and boolean/integer
+     * literals. On malformed input, returns false and writes out_error.
+     * Caller must hold vm_mutex_ and ensure driver_ is non-null.
+     */
+    bool eval_breakpoint_condition(const std::string& condition,
+                                   bool& out_truthy,
+                                   std::string& out_error);
+
+    /**
+     * Parse a setVariable RHS expression into a value using the paused-frame
+     * debugger evaluator. Supports identifier lookups and simple literals.
+     * Caller must hold vm_mutex_ and ensure driver_ is non-null.
+     */
+    bool parse_set_variable_value(const std::string& value_text,
+                                  uint64_t& out_value,
+                                  std::string& out_error);
+
+    /**
+     * Evaluate hitCondition text against current hit_count.
+     * Supports "<n>", "== <n>", ">= <n>", "> <n>", and "% <n>".
+     * On malformed input, returns false and writes out_error.
+     */
+    static bool matches_hit_condition(const std::string& hit_condition,
+                                      int hit_count,
+                                      bool& out_match,
+                                      std::string& out_error);
+
+    /**
+     * Expand {name} placeholders in a logpoint message using paused-scope
+     * identifier lookups. Unknown placeholders are preserved verbatim.
+     * Caller must hold vm_mutex_ and ensure driver_ is non-null.
+     */
+    std::string render_logpoint_message(const std::string& templ);
+
+    /// Returns true if the text looks like a simple identifier.
+    static bool is_identifier_expr(const std::string& expr);
 
     /**
      * Derive the Eta module name (e.g. "composition", "std.io") that owns
