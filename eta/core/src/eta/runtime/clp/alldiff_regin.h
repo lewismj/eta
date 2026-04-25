@@ -114,7 +114,7 @@ inline bool run_regin_alldiff(std::vector<AlldiffVar>& vars,
 
     std::vector<int> match_x(n, -1);
     std::vector<int> match_v(m_vals, -1);
-    std::vector<char> visited;
+    std::vector<char> visited(m_vals, 0);
     /**
      * Recursive augmenting-path DFS (iterative form with explicit stack
      * the recursion is fine).
@@ -132,7 +132,7 @@ inline bool run_regin_alldiff(std::vector<AlldiffVar>& vars,
         return false;
     };
     for (std::size_t x = 0; x < n; ++x) {
-        visited.assign(m_vals, 0);
+        std::fill(visited.begin(), visited.end(), char{0});
         if (!try_augment(static_cast<int>(x))) return false;   ///< infeasible
     }
 

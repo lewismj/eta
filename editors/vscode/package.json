@@ -4,7 +4,7 @@
     "description": "Language support for the Eta-Scheme programming language",
     "version": "0.4.0",
     "publisher": "eta-schema-lang",
-    "icon": "media/eta_logo.svg",
+    "icon": "media/eta_logo.png",
     "repository": {
         "type": "git",
         "url": "https://github.com/eta-lang/eta"

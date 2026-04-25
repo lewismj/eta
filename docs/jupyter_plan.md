@@ -1,7 +1,7 @@
 # Jupyter Kernel Implementation Plan (`xeus-eta`)
 
 [← Back to README](../README.md) · [Next Steps](next-steps.md) ·
-[DAP Plan](dap_plan.md) · [Architecture](architecture.md) ·
+[DAP Plan](dap_vs_plan.md) · [Architecture](architecture.md) ·
 [Bytecode & VM](bytecode-vm.md)
 
 ---
@@ -35,7 +35,7 @@ The headline demo objective:
 This plan is **stage-by-stage**, each stage independently buildable
 and shippable. Every section names the concrete files to touch and
 the existing types it builds on, mirroring the format of
-[`dap_plan.md`](dap_plan.md).
+[`dap_vs_plan.md`](dap_vs_plan.md).
 
 ---
 
@@ -348,13 +348,13 @@ output cell contains `3`.
 
 | Jupyter call | Routes to |
 |---|---|
-| `complete_request_impl` | `Driver::completions_at(code, cursor_pos)` — returns `{matches, cursor_start, cursor_end}`. The LSP completion provider lives in `eta/lsp/src/eta/lsp/providers/completion.cpp`; lift the prefix-extraction logic into a shared header `eta/interpreter/src/eta/interpreter/repl_complete.h` so both the LSP and the kernel call the same code. |
+| `complete_request_impl` | `Driver::completions_at(code, cursor_pos)` — returns `{matches, cursor_start, cursor_end}`. The current LSP completion/hover logic lives in `eta/lsp/src/eta/lsp/lsp_server.cpp`; lift the prefix-extraction logic into a shared header `eta/interpreter/src/eta/interpreter/repl_complete.h` so both the LSP and the kernel call the same code. |
 | `inspect_request_impl` | `Driver::hover_at(symbol)` — returns the same Markdown the LSP hover produces. Wrapped as `{found: true, data: {"text/markdown": …}}`. |
 | `is_complete_request_impl` | `Driver::is_complete_expression(code, &indent)` → `{status: "complete"\|"incomplete", indent}`. |
 
 ### Tests
 
-- Tab-complete `(import std.to` returns `std.torch`, `std.tools`, etc.
+- Tab-complete `(import std.to` returns `std.torch`.
 - Hover on `defrel` returns the Markdown signature from
   [`docs/logic.md`](logic.md).
 - `is_complete` returns `incomplete` for an open `(let (`.
@@ -478,8 +478,8 @@ struct DisplayValue {
 
 ### MIME bundle catalogue
 
-Every kind emits **at least two** MIMEs: a structured one for the
-labextension and a plain fallback for classic Notebook.
+Each kind emits the richest MIME for the active frontend, plus
+optional fallbacks (classic Notebook, plain text, or both).
 
 | `DisplayValue.kind` | Primary MIME | Fallback MIMEs | Server-side renderer |
 |---|---|---|---|
@@ -622,6 +622,7 @@ cells starting with `%%` (cell magic) are intercepted.
 | `%env [K[=V]]` | Get/set env var |
 | `%cwd [PATH]` | Get/set chdir |
 | `%import MOD` | Sugar for `(import MOD)` |
+| `%reload MOD` | Clear module cache entry for `MOD` before re-import |
 | `%who` / `%whos` | List current globals (name + type for `%whos`) |
 | `%plot EXPR` | Coerce result to `Plot` kind |
 | `%table EXPR` | Coerce result to `FactTable` kind |
@@ -634,6 +635,7 @@ as a single switch — no plugin system in v1.
 
 - `%time (sleep 100)` reports ≥ 100 ms.
 - `%bytecode (lambda (x) (+ x 1))` outputs disassembly.
+- `%reload std.foo` invalidates `std.foo` module cache entry.
 
 ---
 
@@ -646,7 +648,7 @@ behaviour: nothing). Override to call
 `driver_->request_interrupt()`.
 
 VM hot loop already has a single null-pointer check for `debug_`
-(see [`dap_plan.md`](dap_plan.md) §"Performance"). Add one more
+(see [`dap_vs_plan.md`](dap_vs_plan.md) §"Performance"). Add one more
 test in the same slot:
 
 ```cpp
@@ -687,7 +689,7 @@ existing log buffer.
 |---|---|
 | Shared `Driver` per kernel vs. per-cell | **Shared** — matches `eta_repl`, allows iterative development. Crash recovery = "Restart kernel". |
 | Auto-imports in cell 0 | `(import std.io)` always; user-configurable list via `~/.config/eta/kernel.toml` `[autoimport]` section |
-| Working directory | Notebook directory (xeus passes via `connection_file` location) |
+| Working directory | Kernel process CWD at startup (typically the Jupyter server root); `%cwd` can override per session |
 | Module cache invalidation | `%reload std.foo` magic clears the module cache for that module |
 | Cell re-execution | Standard Jupyter — cell can mutate globals; redefinitions allowed |
 
@@ -695,7 +697,7 @@ existing log buffer.
 
 ```toml
 [autoimport]
-modules = ["std.io", "std.list", "std.stats"]
+modules = ["std.io", "std.logic", "std.stats"]
 
 [display]
 table_max_rows  = 1000
@@ -741,7 +743,7 @@ requirements:
 test:
   commands:
     - eta_jupyter --version
-    - jupyter kernelspec list | grep -q eta
+    - python -c "import json, subprocess; ks = json.loads(subprocess.check_output(['jupyter','kernelspec','list','--json'], text=True))['kernelspecs']; assert 'eta' in ks"
 ```
 
 ### PyPI wheel
@@ -777,7 +779,7 @@ GitHub Actions matrix:
 
 | OS | Build | Notebook smoke (`nbconvert --execute`) |
 |---|---|---|
-| ubuntu-latest | ✅ | ✅ all 10 notebooks |
+| ubuntu-latest | ✅ | ✅ all 11 notebooks |
 | macos-latest | ✅ | ✅ subset (skip libtorch CUDA) |
 | windows-latest | ✅ (vcpkg) | ✅ subset |
 
@@ -894,7 +896,7 @@ notebook is a blocking CI failure.
 ## Stage 12 — `docs/jupyter.md` (User-Facing Reference)
 
 A standalone reference page (sibling to
-[`dap_plan.md`](dap_plan.md)) covering:
+[`dap_vs_plan.md`](dap_vs_plan.md)) covering:
 
 - **Install:** `pip install xeus-eta` / `mamba install -c conda-forge xeus-eta` / Binder badge / Docker image
 - **Magics reference:** complete list with examples
@@ -928,7 +930,7 @@ linking to `00_index.ipynb`.
 | 8 — Interrupts / actor routing | 0, 3 | M (3–5 d) | Med (concurrency) |
 | 9 — State model | 1 | S (1–2 d) | Low |
 | 10 — Packaging | 1 | M (1 wk) | Med (CI matrix) |
-| 11 — Demo notebooks | 1, 5, 7 | M (1 wk; rolls out per stage) | Low |
+| 11 — Demo notebooks | 1, 5 (7 optional for magic-heavy cells) | M (1 wk; rolls out per stage) | Low |
 | 12 — `docs/jupyter.md` | all of above | S (2 d) | Low |
 
 ### Recommended order — **demo-first MVP**
@@ -977,7 +979,7 @@ The plan deliberately frontloads the path to a *runnable Binder demo*:
 
 Notebooks execute arbitrary code — same trust model as the Python
 kernel. We do **not** add per-cell sandboxing in v1. The Stage 0
-sandbox planned for the DAP (`docs/dap_plan.md` §"Stage 0") is
+sandbox planned for the DAP (`docs/dap_vs_plan.md` §"A0") is
 **reused for read-only inspection only**, not for cell isolation.
 
 ### Versioning
@@ -1014,7 +1016,7 @@ sandbox planned for the DAP (`docs/dap_plan.md` §"Stage 0") is
 2. The Binder badge in the README boots `00_index.ipynb` and the
    user can run `04_european_option.ipynb` end-to-end within 90 s
    of badge click.
-3. All 10 notebooks under `examples/notebooks/` execute cleanly via
+3. All 11 notebooks under `examples/notebooks/` execute cleanly via
    `nbconvert --execute` in CI on `ubuntu-latest`.
 4. The MIME catalogue (Stage 5) is documented in `docs/jupyter.md`
    with a JSON-schema sketch per type.
@@ -1043,8 +1045,7 @@ sandbox planned for the DAP (`docs/dap_plan.md` §"Stage 0") is
 | Fetch script | `cmake/FetchXeus.cmake` |
 | Driver façade | `eta/interpreter/src/eta/interpreter/driver.{h,cpp}` |
 | Repl-shared completion logic | `eta/interpreter/src/eta/interpreter/repl_complete.h` *(new, shared with LSP)* |
-| LSP completion provider | `eta/lsp/src/eta/lsp/providers/completion.cpp` |
-| LSP hover provider | `eta/lsp/src/eta/lsp/providers/hover.cpp` |
+| LSP completion + hover handlers | `eta/lsp/src/eta/lsp/lsp_server.cpp` |
 | VM hot loop | `eta/core/src/eta/runtime/vm/vm.cpp` |
 | `std.io` print sink | `stdlib/std/io.eta` |
 | Jupyter prelude helpers | `stdlib/std/jupyter.eta` *(new)* |
