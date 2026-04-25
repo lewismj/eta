@@ -419,6 +419,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     private programOutputFlushTimer: NodeJS.Timeout | undefined;
     private static readonly PROGRAM_OUTPUT_FLUSH_MS = 30;
     private static readonly PROGRAM_OUTPUT_MAX_BUFFER = 8192;
+    private static readonly DISASM_INSTR_RE = /^\s*\d+\s*:\s+\S+/m;
 
     constructor(
         private readonly channel: LogOutputChannel,
@@ -544,10 +545,17 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 const tid: number    = message?.body?.threadId ?? 0;
                 logToFile(`tracker.onDidSendMessage event=stopped reason=${reason} threadId=${tid}`);
                 this.channel.appendLine(`[DAP<-] stopped: reason="${reason}" threadId=${tid}`);
-                const autoRefresh = workspace.getConfiguration('eta.debug')
-                    .get<boolean>('autoRefreshViewsOnStop', false);
-                logToFile(`tracker.stopped autoRefreshViewsOnStop=${autoRefresh}`);
-                if (autoRefresh) {
+                const debugCfg = workspace.getConfiguration('eta.debug');
+                const autoRefreshViewsOnStop = debugCfg.get<boolean>('autoRefreshViewsOnStop', false);
+                const autoRefreshHeapOnStop = debugCfg.get<boolean>('autoRefreshHeapOnStop', false);
+                const autoRefreshDisassemblyOnStop = debugCfg.get<boolean>('autoRefreshDisassemblyOnStop', true);
+                const shouldQueueRefresh = autoRefreshViewsOnStop
+                    || autoRefreshHeapOnStop
+                    || autoRefreshDisassemblyOnStop;
+                logToFile(
+                    `tracker.stopped refreshFlags all=${autoRefreshViewsOnStop} heap=${autoRefreshHeapOnStop} disasm=${autoRefreshDisassemblyOnStop} queue=${shouldQueueRefresh}`,
+                );
+                if (shouldQueueRefresh) {
                     this.queueStoppedRefresh();
                 }
             } else if (event === 'continued') {
@@ -637,17 +645,17 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const autoShowDisasm = workspace.getConfiguration('eta.debug')
             .get<boolean>('autoShowDisassembly', false);
         const autoRefreshDisasmOnStop = workspace.getConfiguration('eta.debug')
-            .get<boolean>('autoRefreshDisassemblyOnStop', false);
+            .get<boolean>('autoRefreshDisassemblyOnStop', true);
+        const autoRefreshViewsOnStop = workspace.getConfiguration('eta.debug')
+            .get<boolean>('autoRefreshViewsOnStop', false);
         const disasmDocVisible = window.visibleTextEditors.some(
             ed => ed.document.uri.scheme === 'eta-disasm',
         );
         const providerScope = disasmProvider ? disasmProvider.currentScope() : 'current';
-        const shouldRefreshDisasmCurrent = autoRefreshDisasmOnStop && (
-            disasmViewVisible
-            || autoShowDisasm
-            || (disasmDocVisible && providerScope === 'current')
-        );
-        const shouldFetchChildren = childProcViewVisible;
+        // When disassembly auto-refresh is enabled, refresh on every stop so
+        // the first breakpoint has data even before the UI view becomes visible.
+        const shouldRefreshDisasmCurrent = autoRefreshDisasmOnStop;
+        const shouldFetchChildren = autoRefreshViewsOnStop && childProcViewVisible;
         logToFile(
             `tracker.refreshStoppedViews.flags heap=${shouldFetchHeapSnapshot} disasm=${shouldRefreshDisasmCurrent} children=${shouldFetchChildren}`,
         );
@@ -708,11 +716,29 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
 
         if (shouldRefreshDisasmCurrent) {
             if (currentDisasmResult.status === 'fulfilled') {
+                let disasmResult = currentDisasmResult.value as DisassemblyResult;
+                // First-stop race hardening: if the first response carries no
+                // instruction rows, retry once shortly after stop handling settles.
+                if (!EtaDebugAdapterTracker.DISASM_INSTR_RE.test(disasmResult?.text ?? '')) {
+                    try {
+                        await new Promise<void>(resolve => setTimeout(resolve, 20));
+                        const retry = await session.customRequest(
+                            'eta/disassemble',
+                            { scope: 'current' },
+                        ) as DisassemblyResult;
+                        if (EtaDebugAdapterTracker.DISASM_INSTR_RE.test(retry?.text ?? '')) {
+                            disasmResult = retry;
+                            logToFile('tracker.refreshStoppedViews.disasmRetry used');
+                        }
+                    } catch (err: any) {
+                        logToFile(`tracker.refreshStoppedViews.disasmRetry failed err=${err?.message ?? String(err)}`);
+                    }
+                }
                 if (disasmViewVisible) {
-                    disasmTreeProvider?.applyResult(currentDisasmResult.value);
+                    disasmTreeProvider?.applyResult(disasmResult);
                 }
                 if (disasmProvider && providerScope === 'current') {
-                    disasmProvider.applyResult(currentDisasmResult.value, 'current');
+                    disasmProvider.applyResult(disasmResult, 'current');
                 }
             } else {
                 const msg = currentDisasmResult.reason instanceof Error

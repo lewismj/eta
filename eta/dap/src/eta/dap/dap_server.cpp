@@ -2276,7 +2276,7 @@ void DapServer::handle_standard_disassemble(const Value& id, const Value& args) 
     std::vector<ParsedLine> parsed;
     std::istringstream lines(oss.str());
     std::string line;
-    std::regex instruction_re(R"(^\s*(\d+):\s*(.*)$)");
+    std::regex instruction_re(R"(^\s*(\d+)\s*:\s*(.*)$)");
     while (std::getline(lines, line)) {
         std::smatch m;
         if (!std::regex_match(line, m, instruction_re)) continue;

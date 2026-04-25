@@ -2,7 +2,7 @@
     "name": "eta-scheme-lang",
     "displayName": "Eta (Scheme) Language",
     "description": "Language support for the Eta-Scheme programming language",
-    "version": "0.4.4",
+    "version": "0.4.6",
     "publisher": "eta-schema-lang",
     "icon": "media/eta_logo.png",
     "repository": {
@@ -142,8 +142,8 @@
                 },
                 "eta.debug.autoRefreshDisassemblyOnStop": {
                     "type": "boolean",
-                    "default": false,
-                    "description": "Automatically refresh disassembly side views/documents on each stop. Keep disabled if open disassembly views impact debugger responsiveness."
+                    "default": true,
+                    "description": "Automatically refresh disassembly side views/documents on each stop."
                 },
                 "eta.debug.inlineValuesEnabled": {
                     "type": "boolean",
