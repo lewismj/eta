@@ -47,17 +47,6 @@ std::optional<LogLevel> parse_log_level(std::string_view raw) {
 
 DapTrace::DapTrace() : stream_(&std::cerr) {}
 
-DapTrace::DapTrace(const std::filesystem::path& path) : file_path_(path.string()) {
-    file_stream_.open(path, std::ios::out | std::ios::app | std::ios::binary);
-    if (file_stream_.is_open()) {
-        stream_ = &file_stream_;
-    } else {
-        stream_ = &std::cerr;
-        std::cerr << "[eta_dap] warning: could not open trace file: " << path.string()
-                  << "; falling back to stderr\n";
-    }
-}
-
 void DapTrace::record(std::string_view direction, std::string_view body) {
     if (!stream_) return;
 

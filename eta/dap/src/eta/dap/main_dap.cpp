@@ -2,7 +2,6 @@
 #include "dap_io.h"
 #include "dap_trace.h"
 
-#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -16,13 +15,12 @@ namespace {
 
 void print_usage() {
     std::cerr
-        << "Usage: eta_dap [--trace-protocol [path]] [--log-level=info|debug|trace]\n";
+        << "Usage: eta_dap [--trace-protocol] [--log-level=info|debug|trace]\n";
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    std::optional<std::string> trace_path;
     bool trace_protocol = false;
     eta::dap::LogLevel log_level = eta::dap::LogLevel::Info;
 
@@ -31,10 +29,14 @@ int main(int argc, char** argv) {
 
         if (arg == "--trace-protocol") {
             trace_protocol = true;
+            /**
+             * Legacy compatibility: consume an optional non-flag token that was
+             * previously treated as a trace file path. File logging has been
+             * removed; protocol trace now always goes to stderr.
+             */
             if (i + 1 < argc) {
                 std::string maybe_path = argv[i + 1];
                 if (maybe_path.rfind("--", 0) != 0) {
-                    trace_path = maybe_path;
                     ++i;
                 }
             }
@@ -69,11 +71,7 @@ int main(int argc, char** argv) {
 
     std::optional<eta::dap::DapTrace> trace;
     if (trace_protocol) {
-        if (trace_path.has_value()) {
-            trace.emplace(std::filesystem::path(*trace_path));
-        } else {
-            trace.emplace();
-        }
+        trace.emplace();
 
         if (trace->ready()) {
             eta::dap::set_trace_hook([&trace](std::string_view direction, std::string_view body) {

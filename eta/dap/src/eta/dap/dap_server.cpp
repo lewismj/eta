@@ -4,10 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
-#include <chrono>
-#include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -43,42 +40,8 @@ using namespace eta::json;
  * Local helpers
  */
 
-static const fs::path& dap_debug_log_path() {
-    static const fs::path path = []() {
-        if (const char* env = std::getenv("ETA_DAP_DEBUG_LOG_PATH")) {
-            if (*env != '\0') return fs::path(env);
-        }
-#ifdef _WIN32
-        return fs::path(R"(C:\tmp\dap_server_debug.txt)");
-#else
-        std::error_code ec;
-        fs::path tmp = fs::temp_directory_path(ec);
-        if (ec) tmp = fs::path("/tmp");
-        return tmp / "dap_server_debug.txt";
-#endif
-    }();
-    return path;
-}
-
-static void dap_debug_log(const std::string& text) {
-    static std::mutex log_mutex;
-    std::lock_guard<std::mutex> lk(log_mutex);
-
-    const fs::path& path = dap_debug_log_path();
-    std::error_code ec;
-    if (path.has_parent_path()) {
-        fs::create_directories(path.parent_path(), ec);
-    }
-
-    std::ofstream out(path, std::ios::app);
-    if (!out.is_open()) return;
-
-    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()
-    ).count();
-    out << now_ms << " [tid " << std::this_thread::get_id() << "] " << text << "\n";
-    out.flush();
-}
+/// Temporary file logging removed.
+#define dap_debug_log(...) ((void)0)
 
 /**
  * Normalise a source-file path to a stable key that matches the normalisation

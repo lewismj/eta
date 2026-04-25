@@ -1,11 +1,8 @@
 #pragma once
 
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace eta::dap {
@@ -28,12 +25,7 @@ public:
     /// Trace to stderr.
     DapTrace();
 
-    /// Trace to a file (append mode).
-    explicit DapTrace(const std::filesystem::path& path);
-
     [[nodiscard]] bool ready() const noexcept { return stream_ != nullptr; }
-    [[nodiscard]] bool using_stderr() const noexcept { return stream_ == &std::cerr; }
-    [[nodiscard]] const std::string& file_path() const noexcept { return file_path_; }
 
     /**
      * Record one protocol message.
@@ -43,9 +35,7 @@ public:
     void record(std::string_view direction, std::string_view body);
 
 private:
-    std::ofstream file_stream_;
     std::ostream* stream_{nullptr};
-    std::string   file_path_;
     std::mutex    write_mutex_;
 };
 

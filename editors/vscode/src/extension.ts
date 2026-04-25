@@ -29,8 +29,6 @@ import {
     ServerOptions,
     Executable,
 } from 'vscode-languageclient/node';
-import * as fs from 'fs';
-import * as path from 'path';
 import { HeapInspectorPanel } from './heapView';
 import { GCRootsTreeProvider } from './gcRootsTreeView';
 import {
@@ -63,30 +61,13 @@ let childProcProvider: ChildProcessTreeProvider;
 let gcRootsViewVisible = false;
 let disasmViewVisible = false;
 let childProcViewVisible = false;
-const VSX_DEBUG_LOG_PATH = process.env['ETA_VSX_LOG_PATH']
-    || (process.platform === 'win32'
-        ? 'C:\\tmp\\eta_vsx.txt'
-        : path.join(process.cwd(), 'eta_vsx.txt'));
-let vsxDebugLogEnabled = true;
 
 function log(msg: string): void {
     outputChannel?.info(msg);
 }
 
-function logToFile(msg: string): void {
-    if (!vsxDebugLogEnabled) {
-        return;
-    }
-    try {
-        fs.mkdirSync(path.dirname(VSX_DEBUG_LOG_PATH), { recursive: true });
-        fs.appendFileSync(
-            VSX_DEBUG_LOG_PATH,
-            `${Date.now()} [pid ${process.pid}] ${msg}\n`,
-            'utf8',
-        );
-    } catch {
-        vsxDebugLogEnabled = false;
-    }
+function logToFile(_msg: string): void {
+    /// Temporary file logging removed.
 }
 
 /** Resolve the .eta program path for a Run/Debug command, falling back to the active editor. */
@@ -114,7 +95,7 @@ export function activate(context: ExtensionContext) {
     context.subscriptions.push(outputChannel, programOutputChannel);
     log('Eta extension activating...');
     log(`Eta extension version: ${context.extension.packageJSON.version}`);
-    logToFile(`activate version=${context.extension.packageJSON.version} logPath=${VSX_DEBUG_LOG_PATH}`);
+    logToFile(`activate version=${context.extension.packageJSON.version}`);
 
     // -- GC Roots tree view -------------------------------------------
     gcRootsProvider = new GCRootsTreeProvider();
