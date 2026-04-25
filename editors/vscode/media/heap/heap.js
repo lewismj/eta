@@ -1,4 +1,4 @@
-// Eta Heap Inspector — webview script.
+// Eta Heap Inspector - webview script.
 // Communicates with HeapInspectorPanel (heapView.ts) via postMessage.
 
 (function () {
@@ -19,6 +19,33 @@
         if (bytes < 1024) return bytes + ' B';
         if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
         return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+    function asNumber(v) {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+    }
+    function asPct(part, whole) {
+        if (whole <= 0) return 0;
+        return Math.max(0, Math.min(100, (part / whole) * 100));
+    }
+    function visibleFillPct(pct) {
+        if (pct <= 0) return 0;
+        return Math.max(2.5, Math.min(100, pct));
+    }
+    function gaugeColor(cls) {
+        if (cls === 'crit') return '#f85149';
+        if (cls === 'warn') return '#d29922';
+        return '#2f81f7';
+    }
+    function gaugeSvg(pct, cls) {
+        const fill = Math.max(0, Math.min(100, pct));
+        const kind = cls && cls.length > 0 ? (' ' + cls) : '';
+        const color = gaugeColor(cls);
+        return ''
+            + '<svg class="gauge-svg" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">'
+            + '  <rect class="gauge-track" x="0" y="0" width="100" height="10" rx="0" ry="0"></rect>'
+            + '  <rect class="gauge-fill' + kind + '" x="0" y="0" width="' + fill.toFixed(2) + '" height="10" rx="0" ry="0" fill="' + color + '"></rect>'
+            + '</svg>';
     }
     function fmtSigned(n, formatter) {
         const abs = Math.abs(n);
@@ -88,32 +115,33 @@
 
     function renderGauges() {
         const snap = snapshot;
-        const pct = snap.softLimit > 0
-            ? Math.min(100, (snap.totalBytes / snap.softLimit) * 100)
-            : 0;
+        const totalBytes = asNumber(snap.totalBytes);
+        const softLimit = asNumber(snap.softLimit);
+        const pct = asPct(totalBytes, softLimit);
+        const fillPct = visibleFillPct(pct);
         const cls = pct >= 90 ? 'crit' : pct >= 70 ? 'warn' : '';
         let baseDelta = '';
         if (diffMode && baseline) {
-            const delta = snap.totalBytes - baseline.totalBytes;
+            const delta = totalBytes - asNumber(baseline.totalBytes);
             baseDelta = ' | d ' + fmtSigned(delta, fmt);
         }
 
-        const safeSoftLimit = Math.max(0, snap.softLimit || 0);
-        const freeHeadroom = Math.max(0, safeSoftLimit - snap.totalBytes);
+        const safeSoftLimit = Math.max(0, softLimit);
+        const freeHeadroom = Math.max(0, safeSoftLimit - totalBytes);
         let html = '<div class="section"><h2>Memory</h2>';
         html += '<div class="gauge-container">';
-        html += '  <div class="gauge-bar"><div class="gauge-fill ' + cls + '" style="width:' + pct.toFixed(1) + '%"></div></div>';
+        html += '  <div class="gauge-bar">' + gaugeSvg(fillPct, cls) + '</div>';
         html += '  <span class="gauge-label">' + pct.toFixed(1) + '%</span>';
         html += '</div>';
         if (safeSoftLimit > 0) {
             html += '<div class="muted gauge-stats">'
-                  + fmt(snap.totalBytes) + ' used of soft limit ' + fmt(safeSoftLimit)
+                  + fmt(totalBytes) + ' used of soft limit ' + fmt(safeSoftLimit)
                   + ' | Free headroom: ' + fmt(freeHeadroom)
                   + baseDelta
                   + '</div>';
         } else {
             html += '<div class="muted gauge-stats">'
-                  + fmt(snap.totalBytes) + ' used'
+                  + fmt(totalBytes) + ' used'
                   + baseDelta
                   + ' | Soft limit unavailable'
                   + '</div>';
@@ -122,17 +150,22 @@
 
         if (snap.consPool && snap.consPool.capacity > 0) {
             const pool = snap.consPool;
-            const poolPct = Math.min(100, (pool.live / pool.capacity) * 100);
+            const poolLive = asNumber(pool.live);
+            const poolCapacity = asNumber(pool.capacity);
+            const poolFree = asNumber(pool.free);
+            const poolBytes = asNumber(pool.bytes);
+            const poolPct = asPct(poolLive, poolCapacity);
+            const poolFillPct = visibleFillPct(poolPct);
             const poolCls = poolPct >= 90 ? 'crit' : poolPct >= 70 ? 'warn' : '';
             html += '<div class="section"><h2>Cons Pool</h2>';
             html += '<div class="gauge-container">';
-            html += '  <div class="gauge-bar"><div class="gauge-fill ' + poolCls + '" style="width:' + poolPct.toFixed(1) + '%"></div></div>';
+            html += '  <div class="gauge-bar">' + gaugeSvg(poolFillPct, poolCls) + '</div>';
             html += '  <span class="gauge-label">' + poolPct.toFixed(1) + '%</span>';
             html += '</div>';
             html += '<div class="muted gauge-stats">'
-                  + pool.live.toLocaleString() + ' / ' + pool.capacity.toLocaleString()
-                  + ' | Free: ' + pool.free.toLocaleString()
-                  + ' | ' + fmt(pool.bytes)
+                  + poolLive.toLocaleString() + ' / ' + poolCapacity.toLocaleString()
+                  + ' | Free: ' + poolFree.toLocaleString()
+                  + ' | ' + fmt(poolBytes)
                   + '</div></div>';
         }
         document.getElementById('gauges').innerHTML = html;

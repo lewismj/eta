@@ -641,7 +641,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const heapPanelVisible = heapPanel?.isVisible() ?? false;
         const shouldFetchHeapPanel = autoRefreshHeap && heapPanelVisible;
         const shouldFetchHeapSnapshot = shouldFetchHeapPanel;
-        const shouldFetchLocalMemory = gcRootsViewVisible;
+        const shouldFetchLocalMemory = true;
 
         const autoShowDisasm = workspace.getConfiguration('eta.debug')
             .get<boolean>('autoShowDisassembly', false);
@@ -722,7 +722,33 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
 
         if (shouldFetchLocalMemory) {
             if (localMemoryResult.status === 'fulfilled') {
-                const mem = localMemoryResult.value as LocalMemorySnapshot;
+                let mem = localMemoryResult.value as LocalMemorySnapshot;
+                const isProbablyEmptyMemory = (m: LocalMemorySnapshot | undefined): boolean => {
+                    if (!m) return true;
+                    const total = (m.localsTotal ?? 0) + (m.upvaluesTotal ?? 0) + (m.moduleGlobalsTotal ?? 0);
+                    const frameName = (m.frameName ?? '').trim();
+                    const moduleName = (m.moduleName ?? '').trim();
+                    return total === 0 && frameName.length === 0 && moduleName.length === 0;
+                };
+                // First-stop race hardening similar to disassembly.
+                if (isProbablyEmptyMemory(mem)) {
+                    try {
+                        await new Promise<void>(resolve => setTimeout(resolve, 20));
+                        const retry = await session.customRequest('eta/localMemory', {
+                            frameIndex: 0,
+                            includeModuleGlobals: true,
+                            maxLocals: 200,
+                            maxUpvalues: 200,
+                            maxModuleGlobals: 200,
+                        }) as LocalMemorySnapshot;
+                        if (!isProbablyEmptyMemory(retry)) {
+                            mem = retry;
+                            logToFile('tracker.refreshStoppedViews.localMemoryRetry used');
+                        }
+                    } catch (err: any) {
+                        logToFile(`tracker.refreshStoppedViews.localMemoryRetry failed err=${err?.message ?? String(err)}`);
+                    }
+                }
                 gcRootsProvider?.applyLocalMemory(mem);
             } else {
                 gcRootsProvider?.applyLocalMemory(undefined);
@@ -753,9 +779,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                         logToFile(`tracker.refreshStoppedViews.disasmRetry failed err=${err?.message ?? String(err)}`);
                     }
                 }
-                if (disasmViewVisible) {
-                    disasmTreeProvider?.applyResult(disasmResult);
-                }
+                disasmTreeProvider?.applyResult(disasmResult);
                 if (disasmProvider && providerScope === 'current') {
                     disasmProvider.applyResult(disasmResult, 'current');
                 }
@@ -763,9 +787,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 const msg = currentDisasmResult.reason instanceof Error
                     ? currentDisasmResult.reason.message
                     : String(currentDisasmResult.reason);
-                if (disasmViewVisible) {
-                    disasmTreeProvider?.applyResult(undefined);
-                }
+                disasmTreeProvider?.applyResult(undefined);
                 if (disasmProvider && providerScope === 'current') {
                     disasmProvider.applyResult(undefined, 'current');
                 }
