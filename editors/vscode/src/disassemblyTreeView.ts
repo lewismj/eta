@@ -75,7 +75,7 @@ const CONST_POOL_RE = /^\s*-- constant pool --/;
 const CODE_RE = /^\s*-- code --/;
 const INSTR_RE = /^\s*(\d+):\s+(\S+)/;
 
-function parseFunctions(text: string, currentPC: number): DisasmFunctionNode[] {
+function parseFunctions(text: string, currentPC: number, currentFunction?: string): DisasmFunctionNode[] {
     const lines = text.split('\n');
     const functions: DisasmFunctionNode[] = [];
 
@@ -86,8 +86,18 @@ function parseFunctions(text: string, currentPC: number): DisasmFunctionNode[] {
     let curConsts: string[] = [];
     let curInstrs: DisasmLineNode[] = [];
     let mode: 'header' | 'consts' | 'code' = 'header';
+    /** Have we seen a `=== name ===` header yet? Lines before the first
+     *  one (e.g. the leading `; N function(s)` comment emitted by the
+     *  disassembler) must not be folded into a phantom unnamed function. */
+    let sawHeader = false;
+    /** Once we've marked a PC line in any function we don't mark another;
+     *  PC indices are per-function and would otherwise spuriously match
+     *  the same index in every later function. When `currentFunction` is
+     *  supplied we restrict marking to that function only. */
+    let pcAssigned = false;
 
     const flush = () => {
+        if (!sawHeader) return;
         if (!curName && curHeader.length === 0 && curInstrs.length === 0) return;
         const containsPc = curInstrs.some((n) => n.isCurrentPC);
         functions.push(new DisasmFunctionNode(
@@ -113,11 +123,13 @@ function parseFunctions(text: string, currentPC: number): DisasmFunctionNode[] {
         const fh = line.match(FUNC_HEADER_RE);
         if (fh) {
             flush();
+            sawHeader = true;
             curName = fh[1];
             curHeader.push(line);
             mode = 'header';
             continue;
         }
+        if (!sawHeader) continue; // skip preamble (e.g. `; N function(s)`)
         if (CONST_POOL_RE.test(line)) { mode = 'consts'; continue; }
         if (CODE_RE.test(line))       { mode = 'code';   continue; }
 
@@ -134,7 +146,14 @@ function parseFunctions(text: string, currentPC: number): DisasmFunctionNode[] {
         if (!im) continue;
         const instructionIndex = parseInt(im[1], 10);
         const opcode = im[2];
-        const isPc = instructionIndex === currentPC;
+        const inTargetFunction = currentFunction === undefined
+            || curName === currentFunction
+            || curName.endsWith('.' + currentFunction);
+        const isPc = !pcAssigned
+            && currentPC >= 0
+            && instructionIndex === currentPC
+            && inTargetFunction;
+        if (isPc) pcAssigned = true;
         const isCallish = opcode === 'Call' || opcode === 'TailCall';
         let callTarget: number | undefined;
         if (isCallish) {
@@ -189,7 +208,7 @@ export class DisassemblyTreeProvider implements TreeDataProvider<Node> {
             }) as DisassemblyResult;
             this.latest = result;
             const text = result.text || '; (empty disassembly)';
-            const funcs = parseFunctions(text, result.currentPC ?? -1);
+            const funcs = parseFunctions(text, result.currentPC ?? -1, result.functionName);
             if (funcs.length === 0) {
                 // Fall back to flat rendering when the response carried no
                 // function header (older adapters).

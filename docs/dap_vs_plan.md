@@ -725,15 +725,77 @@ plus the new external bundle under
 
 ---
 
-### B5 — Test Controller v2
+### B5 — Test Controller v2 ✅ **DONE**
 
-1. **Parse the full TAP-13 YAML block** — `severity`, `at` (file/line)
-   → `vscode.TestMessage.location` (clickable), `expected` / `actual`
-   → diff view.
-2. **Streaming output** rather than buffering until exit.
-3. **Per-test cancellation** within a single file.
-4. **Coverage profile** — wire to a future `eta_test --coverage`.
-5. **Debug profile** — spawn under `eta_dap` with `stopOnEntry`.
+Implemented in [`editors/vscode/src/testController.ts`](../editors/vscode/src/testController.ts)
+(516 lines, up from the audited 284) with all five wishlist items live:
+
+1. **Full TAP-13 YAML diagnostics.** `TapStreamParser` extracts
+   `message`, `severity`, `at`, `expected`, and `actual` from every
+   `---`/`...` block. `parseTapAtLocation` resolves `file:line[:col]`
+   (relative paths against the test file's directory) into a
+   `vscode.Location`, which is attached to `vscode.TestMessage.location`
+   so the failure pops directly to the offending span. `expected` /
+   `actual` are mirrored onto `TestMessage.expectedOutput` /
+   `actualOutput`, lighting up the Test Explorer's built-in diff view.
+2. **Streaming output.** `TapStreamParser.feed()` is fed each `stdout`
+   chunk from `eta_test --format tap`; results are released the instant
+   their YAML block closes (or the next `ok` / `not ok` arrives). Child
+   `TestItem`s appear and turn green/red live, with raw `eta_test` text
+   forwarded to `TestRun.appendOutput` so the UI matches a real
+   terminal.
+3. **Per-test cancellation.** A `cancelSub = token.onCancellationRequested`
+   handler kills the in-flight `eta_test` process; on close, every child
+   `TestItem` whose number was *not* yet in `reportedNums` is marked
+   `skipped` (instead of failing the whole file), and the parent file
+   item is also `skipped` rather than `failed`.
+4. **Coverage profile.** `controller.createRunProfile('Coverage',
+   TestRunProfileKind.Coverage, …)` invokes `eta_test --coverage`. When
+   the runner doesn't recognise the flag (current binary), the profile
+   degrades gracefully — detects `invalid argument: --coverage` on
+   stderr, marks the file `skipped`, and prints a one-line explanation
+   to the run output instead of failing.
+5. **Debug profile.** `controller.createRunProfile('Debug',
+   TestRunProfileKind.Debug, …)` calls `vscode.debug.startDebugging`
+   with `{ type: 'eta', request: 'launch', program: <test file> }`,
+   tracks the resulting `DebugSession`, propagates run cancellation to
+   `vscode.debug.stopDebugging`, and resolves only when the session
+   terminates.
+
+**Bonus — public API for code-lens.** `runTestsForUri(uri)` is exported
+so the B2 *▶ Run Tests in File* code-lens can drive the controller
+without duplicating spawn/parse logic.
+
+**Tests** ([`editors/vscode/test/suite/`](../editors/vscode/test/suite)):
+
+- [`parseTap.test.ts`](../editors/vscode/test/suite/parseTap.test.ts)
+  covers the batch parser surface (passing/failing tests, YAML
+  extraction, CRLF, missing-dash descriptions, YAML-key gating).
+- [`tapStream.test.ts`](../editors/vscode/test/suite/tapStream.test.ts)
+  (new) drives `TapStreamParser` chunk-by-chunk — asserts that a
+  result is released the moment the next `ok` arrives, that chunks
+  split mid-line and mid-YAML reassemble correctly, that `flush()`
+  drains the in-flight test, and that `all()` returns the full
+  history. Companion suite for `parseTapAtLocation` covers
+  `file:line:col`, `file:line`, relative-path resolution against the
+  fallback URI, and unparsable input.
+
+Two pre-existing bugs surfaced by the new streaming tests were fixed
+inline:
+
+- `parseTap` previously returned only `flush()`'s result (the in-flight
+  test) instead of the full `all()` history, so a 2-test TAP stream
+  yielded a single result. Fixed to drain via `flush()` then return
+  `stream.all()`.
+- `parseTapAtLocation`'s regex `^(.*):(\d+)(?::(\d+))?$` was greedy and
+  swallowed the line number into the path component on `file:line:col`
+  inputs. Made the path capture non-greedy (`(.*?)`), preserving
+  Windows drive-letter handling (`C:\path\foo.eta:12:5`) thanks to the
+  trailing `(\d+)` anchor.
+
+> Original B5 wishlist preserved below for traceability.
+
+### B5 — Test Controller v2 (original wishlist)
 
 ---
 
