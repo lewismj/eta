@@ -257,6 +257,7 @@ void DapServer::dispatch(const Value& msg) {
         else if (*cmd == "completions")         handle_completions(id, args);
         else if (*cmd == "disconnect")          handle_disconnect(id, args);
         else if (*cmd == "disassemble")         handle_standard_disassemble(id, args);
+        else if (*cmd == "eta/localMemory")     handle_local_memory(id, args);
         else if (*cmd == "eta/heapSnapshot")    handle_heap_inspector(id, args);
         else if (*cmd == "eta/inspectObject")   handle_inspect_object(id, args);
         else if (*cmd == "eta/disassemble")     handle_disassemble(id, args);
@@ -1920,6 +1921,160 @@ void DapServer::notify_breakpoints_verified() {
             })},
         }));
     }
+}
+
+/**
+ */
+void DapServer::handle_local_memory(const Value& id, const Value& args) {
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+
+    int frame_idx = 0;
+    if (auto v = args.get_int("frameIndex")) {
+        frame_idx = std::max<int>(0, static_cast<int>(*v));
+    }
+
+    auto parse_limit = [&](const char* key, int64_t fallback) -> int64_t {
+        if (auto v = args.get_int(key)) {
+            return std::clamp<int64_t>(*v, 0, 5000);
+        }
+        return fallback;
+    };
+    const int64_t max_locals = parse_limit("maxLocals", 200);
+    const int64_t max_upvalues = parse_limit("maxUpvalues", 200);
+    const int64_t max_module_globals = parse_limit("maxModuleGlobals", 200);
+    bool include_module_globals = true;
+    if (args.has("includeModuleGlobals") && args["includeModuleGlobals"].is_bool()) {
+        include_module_globals = args["includeModuleGlobals"].as_bool();
+    }
+
+    DapThread* th = resolve_thread_arg_locked(args);
+    const int resolved_thread_id = th ? th->dap_thread_id : MAIN_THREAD_ID;
+    auto send_empty = [&](const std::string& frame_name = std::string{},
+                          const std::string& module_name = std::string{}) {
+        send_response(id, json::object({
+            {"threadId", Value(static_cast<int64_t>(resolved_thread_id))},
+            {"frameIndex", Value(static_cast<int64_t>(frame_idx))},
+            {"frameName", Value(frame_name)},
+            {"moduleName", Value(module_name)},
+            {"locals", json::array({})},
+            {"upvalues", json::array({})},
+            {"moduleGlobals", json::array({})},
+            {"localsTotal", 0},
+            {"upvaluesTotal", 0},
+            {"moduleGlobalsTotal", 0},
+            {"localsTruncated", false},
+            {"upvaluesTruncated", false},
+            {"moduleGlobalsTruncated", false},
+        }));
+    };
+
+    if (!th || !th->vm || !th->driver || !th->vm->is_paused()) {
+        send_empty();
+        return;
+    }
+
+    session::Driver& drv = *th->driver;
+    runtime::vm::VM& vm = *th->vm;
+    const auto frames = vm.get_frames();
+    if (frame_idx < 0 || static_cast<std::size_t>(frame_idx) >= frames.size()) {
+        send_empty();
+        return;
+    }
+
+    const auto& frame = frames[static_cast<std::size_t>(frame_idx)];
+    const std::string frame_name = frame.func_name.empty() ? "<anonymous>" : frame.func_name;
+    const std::string module_name = current_module_from_frame(drv, static_cast<std::size_t>(frame_idx));
+
+    auto collect_bindings = [&](const auto& entries,
+                                int64_t limit,
+                                bool hide_internal_locals,
+                                int64_t& out_total,
+                                bool& out_truncated) -> Array {
+        Array vars;
+        out_total = 0;
+        out_truncated = false;
+        for (const auto& e : entries) {
+            if (hide_internal_locals
+                && !e.name.empty()
+                && e.name[0] == '%'
+                && e.value == runtime::nanbox::Nil) {
+                continue;
+            }
+            out_total++;
+            if (limit > 0 && static_cast<int64_t>(vars.size()) >= limit) {
+                out_truncated = true;
+                continue;
+            }
+            vars.push_back(make_variable_json(drv, th->dap_thread_id, e.name, e.value));
+        }
+        return vars;
+    };
+
+    int64_t locals_total = 0;
+    int64_t upvalues_total = 0;
+    int64_t module_globals_total = 0;
+    bool locals_truncated = false;
+    bool upvalues_truncated = false;
+    bool module_globals_truncated = false;
+
+    const auto locals = vm.get_locals(static_cast<std::size_t>(frame_idx));
+    const auto upvalues = vm.get_upvalues(static_cast<std::size_t>(frame_idx));
+    Array locals_vars = collect_bindings(
+        locals, max_locals, true, locals_total, locals_truncated
+    );
+    Array upvalues_vars = collect_bindings(
+        upvalues, max_upvalues, false, upvalues_total, upvalues_truncated
+    );
+
+    Array module_globals_vars;
+    if (include_module_globals && !module_name.empty()) {
+        const auto& globals = vm.globals();
+        const auto& names = drv.global_names();
+        std::vector<std::pair<std::string, uint32_t>> module_slots;
+        module_slots.reserve(names.size());
+        for (const auto& [slot, full_name] : names) {
+            const auto dot = full_name.rfind('.');
+            if (dot == std::string::npos) continue;
+            if (full_name.substr(0, dot) != module_name) continue;
+            module_slots.push_back({full_name.substr(dot + 1), slot});
+        }
+        std::sort(
+            module_slots.begin(),
+            module_slots.end(),
+            [](const auto& a, const auto& b) {
+                if (a.first != b.first) return a.first < b.first;
+                return a.second < b.second;
+            }
+        );
+        for (const auto& [name, slot] : module_slots) {
+            if (slot >= globals.size()) continue;
+            const auto v = globals[slot];
+            if (v == runtime::nanbox::Nil) continue;
+            module_globals_total++;
+            if (max_module_globals > 0
+                && static_cast<int64_t>(module_globals_vars.size()) >= max_module_globals) {
+                module_globals_truncated = true;
+                continue;
+            }
+            module_globals_vars.push_back(make_variable_json(drv, th->dap_thread_id, name, v));
+        }
+    }
+
+    send_response(id, json::object({
+        {"threadId", Value(static_cast<int64_t>(th->dap_thread_id))},
+        {"frameIndex", Value(static_cast<int64_t>(frame_idx))},
+        {"frameName", Value(frame_name)},
+        {"moduleName", Value(module_name)},
+        {"locals", Value(std::move(locals_vars))},
+        {"upvalues", Value(std::move(upvalues_vars))},
+        {"moduleGlobals", Value(std::move(module_globals_vars))},
+        {"localsTotal", Value(locals_total)},
+        {"upvaluesTotal", Value(upvalues_total)},
+        {"moduleGlobalsTotal", Value(module_globals_total)},
+        {"localsTruncated", Value(locals_truncated)},
+        {"upvaluesTruncated", Value(upvalues_truncated)},
+        {"moduleGlobalsTruncated", Value(module_globals_truncated)},
+    }));
 }
 
 /**

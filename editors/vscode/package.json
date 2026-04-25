@@ -2,7 +2,7 @@
     "name": "eta-scheme-lang",
     "displayName": "Eta (Scheme) Language",
     "description": "Language support for the Eta-Scheme programming language",
-    "version": "0.4.6",
+    "version": "0.4.7",
     "publisher": "eta-schema-lang",
     "icon": "media/eta_logo.png",
     "repository": {
@@ -138,7 +138,7 @@
                 "eta.debug.autoRefreshHeapOnStop": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Automatically refresh heap-based side views (Heap Inspector and Memory roots) on each stop. Enable only when your eta_dap build includes bounded heap snapshot support."
+                    "description": "Automatically refresh Heap Inspector data on each stop. Enable only when your eta_dap build includes bounded heap snapshot support."
                 },
                 "eta.debug.autoRefreshDisassemblyOnStop": {
                     "type": "boolean",
@@ -196,7 +196,7 @@
             },
             {
                 "command": "eta.refreshGCRoots",
-                "title": "Refresh GC Roots",
+                "title": "Refresh Memory",
                 "icon": "$(refresh)",
                 "category": "Eta"
             },

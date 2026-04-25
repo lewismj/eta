@@ -42,7 +42,7 @@ import {
 } from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
 import { ChildProcessTreeProvider } from './childProcessTreeView';
-import type { ChildProcessInfo, HeapSnapshot } from './dapTypes';
+import type { ChildProcessInfo, HeapSnapshot, LocalMemorySnapshot } from './dapTypes';
 import { registerTestController, runTestsForUri } from './testController';
 import { discoverBinaries } from './binaries';
 import { EtaInlineValuesProvider } from './inlineValues';
@@ -551,9 +551,10 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 const autoRefreshDisassemblyOnStop = debugCfg.get<boolean>('autoRefreshDisassemblyOnStop', true);
                 const shouldQueueRefresh = autoRefreshViewsOnStop
                     || autoRefreshHeapOnStop
-                    || autoRefreshDisassemblyOnStop;
+                    || autoRefreshDisassemblyOnStop
+                    || gcRootsViewVisible;
                 logToFile(
-                    `tracker.stopped refreshFlags all=${autoRefreshViewsOnStop} heap=${autoRefreshHeapOnStop} disasm=${autoRefreshDisassemblyOnStop} queue=${shouldQueueRefresh}`,
+                    `tracker.stopped refreshFlags all=${autoRefreshViewsOnStop} heap=${autoRefreshHeapOnStop} disasm=${autoRefreshDisassemblyOnStop} mem=${gcRootsViewVisible} queue=${shouldQueueRefresh}`,
                 );
                 if (shouldQueueRefresh) {
                     this.queueStoppedRefresh();
@@ -639,8 +640,8 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const heapPanel = HeapInspectorPanel.current();
         const heapPanelVisible = heapPanel?.isVisible() ?? false;
         const shouldFetchHeapPanel = autoRefreshHeap && heapPanelVisible;
-        const shouldFetchRoots = autoRefreshHeap && gcRootsViewVisible;
-        const shouldFetchHeapSnapshot = shouldFetchHeapPanel || shouldFetchRoots;
+        const shouldFetchHeapSnapshot = shouldFetchHeapPanel;
+        const shouldFetchLocalMemory = gcRootsViewVisible;
 
         const autoShowDisasm = workspace.getConfiguration('eta.debug')
             .get<boolean>('autoShowDisassembly', false);
@@ -657,7 +658,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const shouldRefreshDisasmCurrent = autoRefreshDisasmOnStop;
         const shouldFetchChildren = autoRefreshViewsOnStop && childProcViewVisible;
         logToFile(
-            `tracker.refreshStoppedViews.flags heap=${shouldFetchHeapSnapshot} disasm=${shouldRefreshDisasmCurrent} children=${shouldFetchChildren}`,
+            `tracker.refreshStoppedViews.flags heap=${shouldFetchHeapSnapshot} localMem=${shouldFetchLocalMemory} disasm=${shouldRefreshDisasmCurrent} children=${shouldFetchChildren}`,
         );
 
         const heapPromise = shouldFetchHeapSnapshot
@@ -678,28 +679,33 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             ? session.customRequest('eta/childProcesses') as Promise<{ children: ChildProcessInfo[] }>
             : Promise.resolve(undefined);
 
-        const [heapResult, currentDisasmResult, childrenResult] = await Promise.allSettled([
+        const localMemoryPromise = shouldFetchLocalMemory
+            ? session.customRequest('eta/localMemory', {
+                frameIndex: 0,
+                includeModuleGlobals: true,
+                maxLocals: 200,
+                maxUpvalues: 200,
+                maxModuleGlobals: 200,
+            }) as Promise<LocalMemorySnapshot>
+            : Promise.resolve(undefined);
+
+        const [heapResult, currentDisasmResult, childrenResult, localMemoryResult] = await Promise.allSettled([
             heapPromise,
             disasmPromise,
             childrenPromise,
+            localMemoryPromise,
         ]);
         logToFile(
-            `tracker.refreshStoppedViews.settled heap=${heapResult.status} disasm=${currentDisasmResult.status} children=${childrenResult.status}`,
+            `tracker.refreshStoppedViews.settled heap=${heapResult.status} disasm=${currentDisasmResult.status} children=${childrenResult.status} localMem=${localMemoryResult.status}`,
         );
 
         if (shouldFetchHeapSnapshot) {
             if (heapResult.status === 'fulfilled') {
                 const snap = heapResult.value as HeapSnapshot;
-                if (shouldFetchRoots) {
-                    gcRootsProvider?.applySnapshot(snap);
-                }
                 if (shouldFetchHeapPanel && heapPanel) {
                     heapPanel.applySnapshot(snap);
                 }
             } else {
-                if (shouldFetchRoots) {
-                    gcRootsProvider?.applySnapshot(undefined);
-                }
                 const msg = heapResult.reason instanceof Error
                     ? heapResult.reason.message
                     : String(heapResult.reason);
@@ -711,6 +717,19 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                     }
                 }
                 this.channel.appendLine(`[DAP] eta/heapSnapshot refresh failed: ${msg}`);
+            }
+        }
+
+        if (shouldFetchLocalMemory) {
+            if (localMemoryResult.status === 'fulfilled') {
+                const mem = localMemoryResult.value as LocalMemorySnapshot;
+                gcRootsProvider?.applyLocalMemory(mem);
+            } else {
+                gcRootsProvider?.applyLocalMemory(undefined);
+                const msg = localMemoryResult.reason instanceof Error
+                    ? localMemoryResult.reason.message
+                    : String(localMemoryResult.reason);
+                this.channel.appendLine(`[DAP] eta/localMemory refresh failed: ${msg}`);
             }
         }
 
