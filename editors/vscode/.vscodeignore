@@ -8,4 +8,4 @@ out/src/**
 node_modules/**
 tsconfig.json
 tsconfig.test.json
-
+CMakeLists.txt

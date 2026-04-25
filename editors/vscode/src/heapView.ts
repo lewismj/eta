@@ -27,6 +27,7 @@ import type {
 
 const MAX_BFS_NODES = 4000;
 const MAX_PATHS = 5;
+const MAX_UI_ROOT_OBJECTS = 750;
 
 interface PathNode {
     objectId: number;
@@ -88,7 +89,7 @@ export class HeapInspectorPanel {
             ViewColumn.Beside,
             {
                 enableScripts: true,
-                retainContextWhenHidden: true,
+                retainContextWhenHidden: false,
                 localResourceRoots: [mediaRoot],
             },
         );
@@ -100,29 +101,38 @@ export class HeapInspectorPanel {
         await this.refresh();
     }
 
+    public applySnapshot(snap: HeapSnapshot): void {
+        this.snapshot = snap;
+        this.panel.webview.postMessage({
+            command: 'snapshot',
+            data: this.trimSnapshotForUi(snap),
+        });
+    }
+
+    public showIdle(text: string): void {
+        this.panel.webview.postMessage({ command: 'idle', text });
+    }
+
+    public showError(text: string): void {
+        this.panel.webview.postMessage({ command: 'error', text });
+    }
+
     public async refresh(): Promise<void> {
         const session = debug.activeDebugSession;
         if (!session || session.type !== 'eta') {
-            this.panel.webview.postMessage({
-                command: 'idle',
-                text: 'Start and pause an Eta debug session to inspect heap state.',
-            });
+            this.showIdle('Start and pause an Eta debug session to inspect heap state.');
             return;
         }
         try {
             const snap = await session.customRequest('eta/heapSnapshot') as HeapSnapshot;
-            this.snapshot = snap;
-            this.panel.webview.postMessage({ command: 'snapshot', data: snap });
+            this.applySnapshot(snap);
         } catch (err: any) {
             const text = err?.message ?? String(err);
             if (/must be paused/i.test(text)) {
-                this.panel.webview.postMessage({
-                    command: 'idle',
-                    text: 'Pause the VM (breakpoint or step) to inspect the heap.',
-                });
+                this.showIdle('Pause the VM (breakpoint or step) to inspect the heap.');
                 return;
             }
-            this.panel.webview.postMessage({ command: 'error', text });
+            this.showError(text);
         }
     }
 
@@ -239,6 +249,36 @@ export class HeapInspectorPanel {
         return HeapInspectorPanel.instance;
     }
 
+    public static disposeCurrent(): void {
+        HeapInspectorPanel.instance?.panel.dispose();
+    }
+
+    private trimSnapshotForUi(snap: HeapSnapshot): HeapSnapshot {
+        const roots = snap.roots.map((root) => {
+            if (root.objectIds.length <= MAX_UI_ROOT_OBJECTS) {
+                return root;
+            }
+            const trimmedIds = root.objectIds.slice(0, MAX_UI_ROOT_OBJECTS);
+            const trimmedLabels = root.labels
+                ? root.labels.slice(0, MAX_UI_ROOT_OBJECTS)
+                : undefined;
+            const uiRoot: any = {
+                ...root,
+                objectIds: trimmedIds,
+                totalCount: root.objectIds.length,
+                truncated: true,
+            };
+            if (trimmedLabels) {
+                uiRoot.labels = trimmedLabels;
+            }
+            return uiRoot;
+        });
+        return {
+            ...snap,
+            roots,
+        };
+    }
+
     // ── HTML template loader (CSP + nonce) ──────────────────────────────
     private getWebviewHtml(webview: Webview): string {
         const mediaDir = Uri.joinPath(this.extensionUri, 'media', 'heap');
@@ -260,5 +300,3 @@ export class HeapInspectorPanel {
             .replace(/\{\{jsUri}}/g, jsUri.toString());
     }
 }
-
-

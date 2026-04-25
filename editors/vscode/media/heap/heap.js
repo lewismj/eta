@@ -207,11 +207,13 @@
         let html = '<h2>GC Roots</h2><ul class="tree">';
         for (const root of snap.roots) {
             if (root.objectIds.length === 0) continue;
+            const displayedCount = root.objectIds.length;
+            const totalCount = root.totalCount || displayedCount;
 
             if (root.name === 'Globals' && root.labels && root.labels.length > 0) {
                 html += '<li>';
                 html += '<span class="toggle" data-root="Globals">Globals';
-                html += ' <span class="badge">' + root.objectIds.length + '</span></span>';
+                html += ' <span class="badge">' + totalCount + '</span></span>';
                 html += '<ul class="children" style="display:none">';
 
                 const groups = {};
@@ -243,19 +245,27 @@
                     }
                     html += '</ul></li>';
                 }
+                if (root.truncated && totalCount > displayedCount) {
+                    html += '<li class="muted">Showing first '
+                        + displayedCount + ' of ' + totalCount + ' globals.</li>';
+                }
                 html += '</ul></li>';
                 continue;
             }
 
             html += '<li>';
             html += '<span class="toggle">' + esc(root.name);
-            html += ' <span class="badge">' + root.objectIds.length + '</span></span>';
+            html += ' <span class="badge">' + totalCount + '</span></span>';
             html += '<ul class="children" style="display:none">';
             for (let i = 0; i < root.objectIds.length; i++) {
                 const oid = root.objectIds[i];
                 const label = (root.labels && root.labels[i]) ? root.labels[i] : ('Object #' + oid);
                 html += '<li><span class="obj-link" data-oid="' + oid + '">'
                       + esc(label) + ' <span class="badge">#' + oid + '</span></span></li>';
+            }
+            if (root.truncated && totalCount > displayedCount) {
+                html += '<li class="muted">Showing first ' + displayedCount
+                    + ' of ' + totalCount + ' root objects.</li>';
             }
             html += '</ul></li>';
         }

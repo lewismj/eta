@@ -116,6 +116,21 @@ export class DisassemblyContentProvider implements TextDocumentContentProvider {
         return this.scope;
     }
 
+    applyResult(result: DisassemblyResult | undefined, scope?: string): void {
+        if (scope) {
+            this.scope = scope;
+        }
+        if (!result) {
+            this.content = '; No disassembly available.';
+            this.latest = undefined;
+            this._onDidChange.fire(DisassemblyContentProvider.uri(this.scope));
+            return;
+        }
+        this.content = result.text || '; (empty disassembly)';
+        this.latest = result;
+        this._onDidChange.fire(DisassemblyContentProvider.uri(this.scope));
+    }
+
     async refresh(): Promise<string> {
         const session = debug.activeDebugSession;
         if (!session || session.type !== 'eta') {

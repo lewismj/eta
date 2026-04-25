@@ -68,6 +68,11 @@ export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
 
     private roots: GCRoot[] = [];
 
+    applySnapshot(snapshot: HeapSnapshot | undefined): void {
+        this.roots = snapshot?.roots ?? [];
+        this._onDidChangeTreeData.fire();
+    }
+
     refresh(): void {
         this.fetchSnapshot().then(() => {
             this._onDidChangeTreeData.fire();

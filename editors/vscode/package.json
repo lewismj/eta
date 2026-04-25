@@ -35,6 +35,8 @@
     ],
     "license": "Apache-2.0",
     "activationEvents": [
+        "onLanguage:eta",
+        "onDebugResolve:eta",
         "workspaceContains:**/*.test.eta"
     ],
     "main": "./out/extension.js",
@@ -127,6 +129,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "On every stopped event, also open the bytecode disassembly side-by-side and reveal the current PC line."
+                },
+                "eta.debug.autoRefreshViewsOnStop": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically refresh Heap/Memory/Disassembly debug side views on each stop. Disable this if breakpoints become unresponsive in large programs."
                 },
                 "eta.test.runnerPath": {
                     "type": "string",
@@ -260,6 +267,11 @@
                 }
             ]
         },
+        "breakpoints": [
+            {
+                "language": "eta"
+            }
+        ],
         "debuggers": [
             {
                 "type": "eta",

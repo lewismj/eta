@@ -188,6 +188,11 @@ export class DisassemblyTreeProvider implements TreeDataProvider<Node> {
         this.fetchDisassembly().then(() => this._onDidChangeTreeData.fire());
     }
 
+    applyResult(result: DisassemblyResult | undefined): void {
+        this.setFromResult(result);
+        this._onDidChangeTreeData.fire();
+    }
+
     notifyStopped(): void {
         this.refresh();
     }
@@ -206,33 +211,45 @@ export class DisassemblyTreeProvider implements TreeDataProvider<Node> {
             const result = await session.customRequest('eta/disassemble', {
                 scope: 'current',
             }) as DisassemblyResult;
-            this.latest = result;
-            const text = result.text || '; (empty disassembly)';
-            const funcs = parseFunctions(text, result.currentPC ?? -1, result.functionName);
-            if (funcs.length === 0) {
-                // Fall back to flat rendering when the response carried no
-                // function header (older adapters).
-                this.functions = [];
-                this.flatLines = text.split('\n')
-                    .map((l) => l.trimEnd())
-                    .filter((l) => l.length > 0)
-                    .map((l) => {
-                        const im = l.match(INSTR_RE);
-                        const idx = im ? parseInt(im[1], 10) : undefined;
-                        const isPc = idx !== undefined && idx === result.currentPC;
-                        const isHeader = l.startsWith(';') || l.startsWith('==');
-                        return new DisasmLineNode(l, idx, isPc, isHeader);
-                    });
-            } else {
-                this.functions = funcs;
-                this.flatLines = undefined;
-            }
+            this.setFromResult(result);
         } catch {
             this.functions = [];
             this.flatLines = [
                 new DisasmLineNode('; Failed to fetch disassembly.', undefined, false, true),
             ];
             this.latest = undefined;
+        }
+    }
+
+    private setFromResult(result: DisassemblyResult | undefined): void {
+        if (!result) {
+            this.functions = [];
+            this.flatLines = [
+                new DisasmLineNode('; No disassembly available.', undefined, false, true),
+            ];
+            this.latest = undefined;
+            return;
+        }
+        this.latest = result;
+        const text = result.text || '; (empty disassembly)';
+        const funcs = parseFunctions(text, result.currentPC ?? -1, result.functionName);
+        if (funcs.length === 0) {
+            // Fall back to flat rendering when the response carried no
+            // function header (older adapters).
+            this.functions = [];
+            this.flatLines = text.split('\n')
+                .map((l) => l.trimEnd())
+                .filter((l) => l.length > 0)
+                .map((l) => {
+                    const im = l.match(INSTR_RE);
+                    const idx = im ? parseInt(im[1], 10) : undefined;
+                    const isPc = idx !== undefined && idx === result.currentPC;
+                    const isHeader = l.startsWith(';') || l.startsWith('==');
+                    return new DisasmLineNode(l, idx, isPc, isHeader);
+                });
+        } else {
+            this.functions = funcs;
+            this.flatLines = undefined;
         }
     }
 

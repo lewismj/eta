@@ -1942,21 +1942,29 @@ Value DapServer::build_heap_snapshot(bool* out_cancelled) {
         if (root.name == "Globals") {
             auto& globals      = driver_->vm().globals();
             const auto& names  = driver_->global_names();
+            std::unordered_map<runtime::memory::heap::ObjectId, uint32_t> slot_by_oid;
+            slot_by_oid.reserve(globals.size());
+            for (std::size_t slot = 0; slot < globals.size(); ++slot) {
+                auto v = globals[slot];
+                if (!runtime::nanbox::ops::is_boxed(v)
+                    || runtime::nanbox::ops::tag(v) != runtime::nanbox::Tag::HeapObject) {
+                    continue;
+                }
+                auto oid = static_cast<runtime::memory::heap::ObjectId>(
+                    runtime::nanbox::ops::payload(v)
+                );
+                slot_by_oid.emplace(oid, static_cast<uint32_t>(slot));
+            }
 
             for (std::size_t i = 0; i < root.object_ids.size(); ++i) {
                 auto oid = root.object_ids[i];
                 std::string label;
-                /// Walk globals to find which slot holds this object ID.
-                for (std::size_t slot = 0; slot < globals.size(); ++slot) {
-                    auto v = globals[slot];
-                    if (runtime::nanbox::ops::is_boxed(v) &&
-                        runtime::nanbox::ops::tag(v) == runtime::nanbox::Tag::HeapObject &&
-                        static_cast<runtime::memory::heap::ObjectId>(runtime::nanbox::ops::payload(v)) == oid) {
-                        auto it = names.find(static_cast<uint32_t>(slot));
-                        label = (it != names.end()) ? it->second
-                                                    : "global[" + std::to_string(slot) + "]";
-                        break;
-                    }
+                auto slot_it = slot_by_oid.find(oid);
+                if (slot_it != slot_by_oid.end()) {
+                    const uint32_t slot = slot_it->second;
+                    auto it = names.find(slot);
+                    label = (it != names.end()) ? it->second
+                                                : "global[" + std::to_string(slot) + "]";
                 }
                 if (label.empty()) label = "Object #" + std::to_string(oid);
                 labels.push_back(Value(std::move(label)));

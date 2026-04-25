@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(eta LANGUAGES C CXX)
+project(eta VERSION 0.1.0 LANGUAGES C CXX)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -12,6 +13,7 @@ enable_testing()
 
 option(ETA_BUILD_JUPYTER "Build the xeus-eta Jupyter kernel scaffold" OFF)
 option(ETA_USE_VCPKG "Prefer vcpkg for optional third-party dependencies" OFF)
+option(ETA_BUILD_VSCODE_EXT "Build the VS Code extension (.vsix)" ON)
 
 if(ETA_BUILD_JUPYTER)
     include(cmake/FetchXeus.cmake)
@@ -19,9 +21,17 @@ endif()
 
 add_subdirectory(eta)
 
+# Requires Node >=20 and npm on PATH. Skip with -DETA_BUILD_VSCODE_EXT=OFF.
+if(ETA_BUILD_VSCODE_EXT)
+    add_subdirectory(editors/vscode)
+endif()
+
 # Install stdlib alongside binaries.
-# Layout: <prefix>/bin/* and <prefix>/stdlib/*.eta
 install(DIRECTORY stdlib/ DESTINATION stdlib
+    FILES_MATCHING PATTERN "*.eta")
+
+# Install example programs.
+install(DIRECTORY examples/ DESTINATION examples
     FILES_MATCHING PATTERN "*.eta")
 
 add_custom_target(eta_all)

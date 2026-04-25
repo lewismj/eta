@@ -102,7 +102,7 @@
 
     ;; d₁ = [ln(S/K) + (r + σ²/2)·T] / (σ·√T)
     (defun bs-d1 (S K r sigma T)
-      (/ (+ (log (/ S K))
+      (/ (+ (log (/ S 3))
           (* (+ r (/ (* sigma sigma) 2)) T))
         (* sigma (sqrt T))))
 

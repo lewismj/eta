@@ -32,9 +32,11 @@ import {
     EtaDisassemblyDefinitionProvider,
     showDisassembly,
     autoShowDisassemblyOnStop,
+    type DisassemblyResult,
 } from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
 import { ChildProcessTreeProvider } from './childProcessTreeView';
+import type { ChildProcessInfo, HeapSnapshot } from './dapTypes';
 import { registerTestController, runTestsForUri } from './testController';
 import { discoverBinaries } from './binaries';
 import { EtaInlineValuesProvider } from './inlineValues';
@@ -334,6 +336,9 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
 // -- Debug adapter tracker -----------------------------------------------------
 
 class EtaDebugAdapterTracker implements DebugAdapterTracker {
+    private stoppedRefreshRunning = false;
+    private stoppedRefreshQueued = false;
+
     constructor(
         private readonly channel: LogOutputChannel,
         private readonly programChannel: LogOutputChannel,
@@ -343,15 +348,11 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         this.channel.appendLine('[DAP] Debug session starting...');
         this.programChannel.clear();
         this.programChannel.show(true);
-
-        const autoShow = workspace.getConfiguration('eta.debug').get<boolean>('autoShowHeap', true);
-        if (autoShow && extensionCtx) {
-            HeapInspectorPanel.createOrShow(extensionCtx);
-        }
     }
 
     onWillStopSession(): void {
         this.channel.appendLine('[DAP] Debug session stopping...');
+        HeapInspectorPanel.disposeCurrent();
         childProcProvider?.notifySessionEnded();
     }
 
@@ -405,18 +406,12 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             } else if (event === 'stopped') {
                 const reason: string = message?.body?.reason ?? '?';
                 const tid: number    = message?.body?.threadId ?? 0;
-this.channel.appendLine(`[DAP<-] stopped: reason="${reason}" threadId=${tid}`);
-                HeapInspectorPanel.current()?.notifyStopped();
-                gcRootsProvider?.notifyStopped();
-                disasmTreeProvider?.notifyStopped();
-                if (disasmProvider) {
-                    const autoShow = workspace.getConfiguration('eta.debug')
-                        .get<boolean>('autoShowDisassembly', false);
-                    disasmProvider.refresh().then(() => {
-                        autoShowDisassemblyOnStop(disasmProvider, autoShow);
-                    });
+                this.channel.appendLine(`[DAP<-] stopped: reason="${reason}" threadId=${tid}`);
+                const autoRefresh = workspace.getConfiguration('eta.debug')
+                    .get<boolean>('autoRefreshViewsOnStop', false);
+                if (autoRefresh) {
+                    this.queueStoppedRefresh();
                 }
-                childProcProvider?.notifyStopped();
             } else if (event === 'continued') {
                 this.channel.appendLine('[DAP<-] continued');
             } else if (event === 'breakpoint') {
@@ -442,12 +437,111 @@ this.channel.appendLine(`[DAP<-] stopped: reason="${reason}" threadId=${tid}`);
                 this.channel.appendLine(
                     `[DAP<-] initialize OK - supportsConfigurationDone=${caps.supportsConfigurationDoneRequest}`
                 );
-            } else if (cmd === 'eta/childProcesses') {
-                const children = message?.body?.children;
-                if (Array.isArray(children)) {
-                    childProcProvider?.updateChildren(children);
-                }
             }
+        }
+    }
+
+    private queueStoppedRefresh(): void {
+        this.stoppedRefreshQueued = true;
+        if (this.stoppedRefreshRunning) {
+            return;
+        }
+        this.stoppedRefreshRunning = true;
+        void (async () => {
+            try {
+                while (this.stoppedRefreshQueued) {
+                    this.stoppedRefreshQueued = false;
+                    await this.refreshStoppedViews();
+                }
+            } finally {
+                this.stoppedRefreshRunning = false;
+            }
+        })();
+    }
+
+    private async refreshStoppedViews(): Promise<void> {
+        const session = debug.activeDebugSession;
+        if (!session || session.type !== 'eta') {
+            return;
+        }
+
+        const autoShowHeap = workspace.getConfiguration('eta.debug').get<boolean>('autoShowHeap', true);
+        if (autoShowHeap && extensionCtx && !HeapInspectorPanel.current()) {
+            HeapInspectorPanel.createOrShow(extensionCtx);
+        }
+        const heapPanel = HeapInspectorPanel.current();
+
+        const providerScope = disasmProvider ? disasmProvider.currentScope() : 'current';
+        const currentDisasmPromise = session.customRequest(
+            'eta/disassemble', { scope: 'current' },
+        ) as Promise<DisassemblyResult>;
+        const providerDisasmPromise = providerScope === 'current'
+            ? currentDisasmPromise
+            : session.customRequest(
+                'eta/disassemble', { scope: providerScope },
+            ) as Promise<DisassemblyResult>;
+
+        const [heapResult, currentDisasmResult, providerDisasmResult, childrenResult] =
+            await Promise.allSettled([
+                session.customRequest('eta/heapSnapshot') as Promise<HeapSnapshot>,
+                currentDisasmPromise,
+                providerDisasmPromise,
+                session.customRequest('eta/childProcesses') as Promise<{ children: ChildProcessInfo[] }>,
+            ]);
+
+        if (heapResult.status === 'fulfilled') {
+            gcRootsProvider?.applySnapshot(heapResult.value);
+            if (heapPanel) {
+                heapPanel.applySnapshot(heapResult.value);
+            }
+        } else {
+            gcRootsProvider?.applySnapshot(undefined);
+            if (heapPanel) {
+                const msg = heapResult.reason instanceof Error
+                    ? heapResult.reason.message
+                    : String(heapResult.reason);
+                if (/must be paused/i.test(msg)) {
+                    heapPanel.showIdle('Pause the VM (breakpoint or step) to inspect the heap.');
+                } else {
+                    heapPanel.showError(msg);
+                }
+                this.channel.appendLine(`[DAP] eta/heapSnapshot refresh failed: ${msg}`);
+            }
+        }
+
+        if (currentDisasmResult.status === 'fulfilled') {
+            disasmTreeProvider?.applyResult(currentDisasmResult.value);
+        } else {
+            disasmTreeProvider?.applyResult(undefined);
+            const msg = currentDisasmResult.reason instanceof Error
+                ? currentDisasmResult.reason.message
+                : String(currentDisasmResult.reason);
+            this.channel.appendLine(`[DAP] eta/disassemble(current) refresh failed: ${msg}`);
+        }
+
+        if (disasmProvider) {
+            if (providerDisasmResult.status === 'fulfilled') {
+                disasmProvider.applyResult(providerDisasmResult.value, providerScope);
+            } else {
+                disasmProvider.applyResult(undefined, providerScope);
+                const msg = providerDisasmResult.reason instanceof Error
+                    ? providerDisasmResult.reason.message
+                    : String(providerDisasmResult.reason);
+                this.channel.appendLine(`[DAP] eta/disassemble(${providerScope}) refresh failed: ${msg}`);
+            }
+            const autoShow = workspace.getConfiguration('eta.debug')
+                .get<boolean>('autoShowDisassembly', false);
+            await autoShowDisassemblyOnStop(disasmProvider, autoShow);
+        }
+
+        if (childrenResult.status === 'fulfilled') {
+            childProcProvider?.updateChildren(childrenResult.value.children ?? []);
+        } else {
+            childProcProvider?.updateChildren([]);
+            const msg = childrenResult.reason instanceof Error
+                ? childrenResult.reason.message
+                : String(childrenResult.reason);
+            this.channel.appendLine(`[DAP] eta/childProcesses refresh failed: ${msg}`);
         }
     }
 
