@@ -1,3 +1,21 @@
+/**
+ * disassemblyTreeView.ts — function-grouped bytecode disassembly in the
+ * Debug sidebar (B4-2 of docs/dap_vs_plan.md).
+ *
+ * Two-level tree:
+ *   ▾ === function-name ===          (DisasmFunctionNode, collapsible)
+ *       ▸ Constant pool (N)          (DisasmGroupNode, collapsible)
+ *         [0] 42
+ *         [1] "hello"
+ *       0: LoadConst 0  ; 42         (DisasmLineNode, leaf — current PC = ◀)
+ *       1: Add
+ *       …
+ *
+ * The function block containing the current PC is auto-expanded; all others
+ * stay collapsed for fast triage on large modules. Call / TailCall lines
+ * carry a `command` that jumps to the callee's `=== name ===` header in the
+ * companion virtual document (B4-3).
+ */
 import {
     TreeDataProvider,
     TreeItem,
@@ -6,102 +24,282 @@ import {
     Event,
     debug,
     ThemeIcon,
+    Command,
 } from 'vscode';
+import {
+    DisassemblyContentProvider,
+    inferCalleeFuncIndex,
+    findFunctionHeaderLine,
+    type DisassemblyResult,
+} from './disassemblyView';
 
-// ── Node types ────────────────────────────────────────────────────────────────
+// ── Node kinds ────────────────────────────────────────────────────────────────
 
-/** A single bytecode instruction line in the disassembly tree. */
-export class DisasmLineNode {
+type Node = DisasmFunctionNode | DisasmGroupNode | DisasmLineNode;
+
+export class DisasmFunctionNode {
+    readonly kind = 'function' as const;
     constructor(
-        public readonly text: string,
-        public readonly lineIndex: number,
-        public readonly instructionIndex: number | undefined,
-        public readonly isCurrentPC: boolean,
-        public readonly isHeader: boolean,
+        public readonly name: string,
+        public readonly funcIndex: number,
+        public readonly headerLines: string[],
+        public readonly constantPool: string[],
+        public readonly instructions: DisasmLineNode[],
+        public readonly containsPc: boolean,
     ) {}
 }
 
-// ── Disassembly response type ─────────────────────────────────────────────────
-
-interface DisassemblyResult {
-    text: string;
-    functionName: string;
-    currentPC: number;
+export class DisasmGroupNode {
+    readonly kind = 'group' as const;
+    constructor(
+        public readonly label: string,
+        public readonly children: DisasmLineNode[],
+    ) {}
 }
 
-// ── Tree data provider ───────────────────────────────────────────────────────
+export class DisasmLineNode {
+    readonly kind = 'line' as const;
+    constructor(
+        public readonly text: string,
+        public readonly instructionIndex: number | undefined,
+        public readonly isCurrentPC: boolean,
+        public readonly isHeader: boolean,
+        public readonly callTarget?: number, // func index for Call/TailCall lines
+    ) {}
+}
 
-export class DisassemblyTreeProvider implements TreeDataProvider<DisasmLineNode> {
-    private _onDidChangeTreeData = new EventEmitter<DisasmLineNode | undefined | void>();
-    readonly onDidChangeTreeData: Event<DisasmLineNode | undefined | void> = this._onDidChangeTreeData.event;
+// ── Parsing ───────────────────────────────────────────────────────────────────
 
-    private lines: DisasmLineNode[] = [];
+const FUNC_HEADER_RE = /^=== (.+?) ===$/;
+const CONST_POOL_RE = /^\s*-- constant pool --/;
+const CODE_RE = /^\s*-- code --/;
+const INSTR_RE = /^\s*(\d+):\s+(\S+)/;
+
+function parseFunctions(text: string, currentPC: number): DisasmFunctionNode[] {
+    const lines = text.split('\n');
+    const functions: DisasmFunctionNode[] = [];
+
+    /** Buffer state for the function currently being assembled. */
+    let funcIdx = 0;
+    let curName = '';
+    let curHeader: string[] = [];
+    let curConsts: string[] = [];
+    let curInstrs: DisasmLineNode[] = [];
+    let mode: 'header' | 'consts' | 'code' = 'header';
+
+    const flush = () => {
+        if (!curName && curHeader.length === 0 && curInstrs.length === 0) return;
+        const containsPc = curInstrs.some((n) => n.isCurrentPC);
+        functions.push(new DisasmFunctionNode(
+            curName,
+            funcIdx,
+            curHeader.slice(),
+            curConsts.slice(),
+            curInstrs.slice(),
+            containsPc,
+        ));
+        funcIdx++;
+        curName = '';
+        curHeader = [];
+        curConsts = [];
+        curInstrs = [];
+        mode = 'header';
+    };
+
+    for (const raw of lines) {
+        const line = raw.trimEnd();
+        if (!line) continue;
+
+        const fh = line.match(FUNC_HEADER_RE);
+        if (fh) {
+            flush();
+            curName = fh[1];
+            curHeader.push(line);
+            mode = 'header';
+            continue;
+        }
+        if (CONST_POOL_RE.test(line)) { mode = 'consts'; continue; }
+        if (CODE_RE.test(line))       { mode = 'code';   continue; }
+
+        if (mode === 'header') {
+            curHeader.push(line);
+            continue;
+        }
+        if (mode === 'consts') {
+            curConsts.push(line.replace(/^\s+/, ''));
+            continue;
+        }
+        // mode === 'code'
+        const im = line.match(INSTR_RE);
+        if (!im) continue;
+        const instructionIndex = parseInt(im[1], 10);
+        const opcode = im[2];
+        const isPc = instructionIndex === currentPC;
+        const isCallish = opcode === 'Call' || opcode === 'TailCall';
+        let callTarget: number | undefined;
+        if (isCallish) {
+            // Walk back through the in-progress instruction buffer to find the
+            // most recent LoadConst <func:M> annotation.
+            for (let k = curInstrs.length - 1; k >= 0; k--) {
+                const m = curInstrs[k].text.match(
+                    /^\s*\d+:\s+LoadConst\s+\d+\s*;\s*<func:(\d+)>/,
+                );
+                if (m) { callTarget = parseInt(m[1], 10); break; }
+            }
+        }
+        curInstrs.push(new DisasmLineNode(line, instructionIndex, isPc, false, callTarget));
+    }
+    flush();
+    return functions;
+}
+
+// ── Tree provider ─────────────────────────────────────────────────────────────
+
+export class DisassemblyTreeProvider implements TreeDataProvider<Node> {
+    private _onDidChangeTreeData = new EventEmitter<Node | undefined | void>();
+    readonly onDidChangeTreeData: Event<Node | undefined | void> = this._onDidChangeTreeData.event;
+
+    private functions: DisasmFunctionNode[] = [];
+    private flatLines: DisasmLineNode[] | undefined; // fallback when parsing yields no functions
+    private latest: DisassemblyResult | undefined;
+
+    constructor(private readonly contentProvider?: DisassemblyContentProvider) {}
 
     refresh(): void {
-        this.fetchDisassembly().then(() => {
-            this._onDidChangeTreeData.fire();
-        });
+        this.fetchDisassembly().then(() => this._onDidChangeTreeData.fire());
     }
 
     notifyStopped(): void {
         this.refresh();
     }
 
-    private parseInstructionIndex(line: string): number | undefined {
-        const m = line.match(/^\s*(\d+):\s/);
-        return m ? parseInt(m[1], 10) : undefined;
-    }
-
     private async fetchDisassembly(): Promise<void> {
         const session = debug.activeDebugSession;
         if (!session || session.type !== 'eta') {
-            this.lines = [new DisasmLineNode('; No active Eta debug session.', 0, undefined, false, false)];
+            this.functions = [];
+            this.flatLines = [
+                new DisasmLineNode('; No active Eta debug session.', undefined, false, true),
+            ];
+            this.latest = undefined;
             return;
         }
         try {
             const result = await session.customRequest('eta/disassemble', {
                 scope: 'current',
             }) as DisassemblyResult;
-
+            this.latest = result;
             const text = result.text || '; (empty disassembly)';
-            const rawLines = text.split('\n');
-            const pcInstruction = result.currentPC ?? -1;
-
-            this.lines = rawLines.map((line, i) => {
-                const trimmed = line.trimEnd();
-                if (!trimmed) return null; // skip blank lines
-                const instructionIndex = this.parseInstructionIndex(trimmed);
-                const isPC = instructionIndex !== undefined && instructionIndex === pcInstruction;
-                const isHeader = trimmed.startsWith(';') || trimmed.startsWith('==');
-                return new DisasmLineNode(trimmed, i, instructionIndex, isPC, isHeader);
-            }).filter((n): n is DisasmLineNode => n !== null);
+            const funcs = parseFunctions(text, result.currentPC ?? -1);
+            if (funcs.length === 0) {
+                // Fall back to flat rendering when the response carried no
+                // function header (older adapters).
+                this.functions = [];
+                this.flatLines = text.split('\n')
+                    .map((l) => l.trimEnd())
+                    .filter((l) => l.length > 0)
+                    .map((l) => {
+                        const im = l.match(INSTR_RE);
+                        const idx = im ? parseInt(im[1], 10) : undefined;
+                        const isPc = idx !== undefined && idx === result.currentPC;
+                        const isHeader = l.startsWith(';') || l.startsWith('==');
+                        return new DisasmLineNode(l, idx, isPc, isHeader);
+                    });
+            } else {
+                this.functions = funcs;
+                this.flatLines = undefined;
+            }
         } catch {
-            this.lines = [new DisasmLineNode('; Failed to fetch disassembly.', 0, undefined, false, false)];
+            this.functions = [];
+            this.flatLines = [
+                new DisasmLineNode('; Failed to fetch disassembly.', undefined, false, true),
+            ];
+            this.latest = undefined;
         }
     }
 
-    getTreeItem(element: DisasmLineNode): TreeItem {
-        const item = new TreeItem(element.text, TreeItemCollapsibleState.None);
-
-        if (element.isCurrentPC) {
-            item.iconPath = new ThemeIcon('debug-stackframe');
-            item.description = '◀ PC';
-        } else if (element.isHeader) {
-            item.iconPath = new ThemeIcon('symbol-function');
-        } else {
-            item.iconPath = new ThemeIcon('circle-outline');
+    getTreeItem(element: Node): TreeItem {
+        switch (element.kind) {
+            case 'function': {
+                const expanded = element.containsPc;
+                const item = new TreeItem(
+                    `=== ${element.name || '<anonymous>'} ===`,
+                    expanded ? TreeItemCollapsibleState.Expanded : TreeItemCollapsibleState.Collapsed,
+                );
+                item.iconPath = new ThemeIcon(element.containsPc ? 'debug-stackframe' : 'symbol-function');
+                item.description = `${element.instructions.length} instr` + (element.containsPc ? '  ◀ PC' : '');
+                item.tooltip = element.headerLines.join('\n');
+                item.contextValue = 'etaDisasm.function';
+                return item;
+            }
+            case 'group': {
+                const item = new TreeItem(
+                    `${element.label} (${element.children.length})`,
+                    TreeItemCollapsibleState.Collapsed,
+                );
+                item.iconPath = new ThemeIcon('symbol-array');
+                return item;
+            }
+            case 'line': {
+                const item = new TreeItem(element.text, TreeItemCollapsibleState.None);
+                if (element.isCurrentPC) {
+                    item.iconPath = new ThemeIcon('debug-stackframe');
+                    item.description = '◀ PC';
+                } else if (element.isHeader) {
+                    item.iconPath = new ThemeIcon('symbol-function');
+                } else if (element.callTarget !== undefined) {
+                    item.iconPath = new ThemeIcon('arrow-right');
+                } else {
+                    item.iconPath = new ThemeIcon('circle-outline');
+                }
+                item.tooltip = element.isCurrentPC
+                    ? `Current instruction (PC)\n${element.text}`
+                    : element.text;
+                if (element.callTarget !== undefined) {
+                    const cmd: Command = {
+                        command: 'eta.disassembly.gotoCallee',
+                        title: 'Go to callee',
+                        arguments: [element.callTarget],
+                    };
+                    item.command = cmd;
+                    item.contextValue = 'etaDisasm.call';
+                }
+                return item;
+            }
         }
-
-        item.tooltip = element.isCurrentPC
-            ? `Current instruction (PC)\n${element.text}`
-            : element.text;
-
-        return item;
     }
 
-    getChildren(element?: DisasmLineNode): DisasmLineNode[] {
-        if (element) return []; // flat list, no children
-        return this.lines;
+    getChildren(element?: Node): Node[] {
+        if (!element) {
+            if (this.functions.length > 0) return this.functions;
+            return this.flatLines ?? [];
+        }
+        if (element.kind === 'function') {
+            const out: Node[] = [];
+            if (element.constantPool.length > 0) {
+                const constLines = element.constantPool.map(
+                    (t) => new DisasmLineNode(t, undefined, false, true),
+                );
+                out.push(new DisasmGroupNode('constant pool', constLines));
+            }
+            out.push(...element.instructions);
+            return out;
+        }
+        if (element.kind === 'group') return element.children;
+        return [];
+    }
+
+    /** Return the func index whose header should be revealed in the document. */
+    findCalleeHeaderLine(funcIndex: number): { uri: string; line: number } | undefined {
+        if (!this.contentProvider || !this.latest) return undefined;
+        const line = findFunctionHeaderLine(this.latest.text, funcIndex);
+        if (line < 0) return undefined;
+        return {
+            uri: DisassemblyContentProvider.uri(this.contentProvider.currentScope()).toString(),
+            line,
+        };
     }
 }
+
+// Re-export for tests
+export { parseFunctions, inferCalleeFuncIndex };
 

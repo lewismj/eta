@@ -27,7 +27,12 @@ import {
 } from 'vscode-languageclient/node';
 import { HeapInspectorPanel } from './heapView';
 import { GCRootsTreeProvider } from './gcRootsTreeView';
-import { DisassemblyContentProvider, showDisassembly } from './disassemblyView';
+import {
+    DisassemblyContentProvider,
+    EtaDisassemblyDefinitionProvider,
+    showDisassembly,
+    autoShowDisassemblyOnStop,
+} from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
 import { ChildProcessTreeProvider } from './childProcessTreeView';
 import { registerTestController, runTestsForUri } from './testController';
@@ -401,11 +406,17 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             } else if (event === 'stopped') {
                 const reason: string = message?.body?.reason ?? '?';
                 const tid: number    = message?.body?.threadId ?? 0;
-                this.channel.appendLine(`[DAPâ†] stopped: reason="${reason}" threadId=${tid}`);
+                this.channel.appendLine(`[DAPâ†] stopped: reason="${reason}" threadId=${tid}`);
                 HeapInspectorPanel.current()?.notifyStopped();
                 gcRootsProvider?.notifyStopped();
                 disasmTreeProvider?.notifyStopped();
-                disasmProvider?.refresh();
+                if (disasmProvider) {
+                    const autoShow = workspace.getConfiguration('eta.debug')
+                        .get<boolean>('autoShowDisassembly', false);
+                    disasmProvider.refresh().then(() => {
+                        autoShowDisassemblyOnStop(disasmProvider, autoShow);
+                    });
+                }
                 childProcProvider?.notifyStopped();
             } else if (event === 'continued') {
                 this.channel.appendLine('[DAPâ†] continued');

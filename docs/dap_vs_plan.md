@@ -612,7 +612,50 @@ links resolving via `ETA_MODULE_PATH`.
 
 ---
 
-### B3 — Heap Inspector v2
+### B3 — Heap Inspector v2 ✅ **DONE**
+
+Implemented in [`editors/vscode/src/heapView.ts`](../editors/vscode/src/heapView.ts)
+plus the new external bundle under
+[`editors/vscode/media/heap/`](../editors/vscode/media/heap/)
+(`heap.html`, `heap.css`, `heap.js`):
+
+1. **Empty state, not error.** When `eta/heapSnapshot` returns
+   *"VM must be paused"*, the panel now posts an `idle` message that
+   renders a friendly "Pause the VM (breakpoint or step) to inspect
+   the heap." placeholder instead of a red error banner.
+2. **Inline HTML → external bundle.** `heap.html` / `heap.css` /
+   `heap.js` are loaded via `webview.asWebviewUri` with
+   `localResourceRoots: [media/]`. A strict, nonce-based
+   **Content-Security-Policy** is emitted —
+   `default-src 'none'; style-src ${cspSource}; script-src 'nonce-…'`
+   — and enforced by the meta tag in `heap.html`.
+3. **Theme integration.** All colours are sourced from
+   `var(--vscode-*)` tokens (editor / panel / focus / badge / progress /
+   error / git decorations); no hard-coded palette remains.
+4. **Sortable, filterable kind table.** Click any column header to
+   toggle sort (Kind / Count / Bytes, plus Δ Count / Δ Bytes in diff
+   mode). The toolbar `Filter kinds…` input narrows the table by
+   substring match in real time.
+5. **Snapshot diff mode.** A `Capture Baseline` toolbar button stores
+   the current snapshot; subsequent renders enable a `Diff` toggle that
+   adds Δ-count / Δ-bytes columns, highlights *new* kinds (✚) and
+   *removed* kinds (✖), and shows a Δ-bytes annotation on the memory
+   gauge. `Clear Baseline` resets the comparison.
+6. **Find paths to root (BFS).** Inspecting an object now exposes a
+   `Find paths to root` button. The extension performs a forward BFS
+   from every GC root in the latest snapshot, calling `eta/inspectObject`
+   on demand (with an in-session cache), bounded by `MAX_BFS_NODES =
+   4000` and stopping after `MAX_PATHS = 5` distinct paths. Results
+   render as click-through chains
+   `root → #parent → … → #target`, with a "search exhausted" notice if
+   the limit was hit.
+7. **Memory pressure gauge.** The memory bar (and the Cons Pool bar)
+   turn `--vscode-editorWarning-foreground` at ≥70 % and
+   `--vscode-errorForeground` at ≥90 %.
+
+> Original B3 wishlist preserved below for traceability.
+
+### B3 — Heap Inspector v2 (original wishlist)
 
 1. **Don't show "VM must be paused" as an error** — open in an empty
    state with a "▶ Pause to inspect" button.
@@ -626,7 +669,49 @@ links resolving via `ETA_MODULE_PATH`.
 
 ---
 
-### B4 — Disassembly view fix-up
+### B4 — Disassembly view fix-up ✅ **DONE**
+
+1. **`currentPC` is no longer hard-coded** —
+   [`dap_server.cpp:2192`](../eta/dap/src/eta/dap/dap_server.cpp) already
+   returns `driver_->vm().paused_instruction_index()` (verified against
+   [`vm.h:224`](../eta/core/src/eta/runtime/vm/vm.h)). The original audit
+   (and the cited line 1119) was stale; the **◀ PC** indicator in
+   [`disassemblyTreeView.ts`](../editors/vscode/src/disassemblyTreeView.ts)
+   lights up correctly. A unit test
+   ([`test/suite/disasm.test.ts`](../editors/vscode/test/suite/disasm.test.ts))
+   asserts the parser tags the PC line.
+2. **Grouped by function (collapsible).** Rewrote the tree provider to
+   parse the disassembly buffer into a two-level tree —
+   `=== function ===` nodes hold a *Constant pool* sub-group and the
+   instruction stream as leaves. The function block containing the PC
+   auto-expands; everything else stays collapsed for fast triage on
+   large modules. `showCollapseAll` is now enabled in
+   [`extension.ts`](../editors/vscode/src/extension.ts).
+3. **Jump-to-callee on Call / TailCall.** Two complementary entry
+   points:
+    - **Tree view:** every `Call` / `TailCall` leaf carries a
+      `command: eta.disassembly.gotoCallee` that opens the
+      all-functions disassembly side-by-side and reveals the callee's
+      `=== … ===` header. The callee index is recovered by walking
+      backward through the function's instruction stream to the most
+      recent `LoadConst N  ; <func:M>` annotation.
+    - **Editor:** a new
+      `EtaDisassemblyDefinitionProvider`
+      ([`disassemblyView.ts`](../editors/vscode/src/disassemblyView.ts))
+      registered for the `eta-disasm` URI scheme makes
+      <kbd>F12</kbd> / <kbd>Ctrl+Click</kbd> on a `Call` line jump to
+      the matching `=== … ===` header in the same buffer.
+4. **Two-pane source ↔ disassembly on stop.** New setting
+   `eta.debug.autoShowDisassembly` (default `false`). When enabled, the
+   debug-adapter tracker calls `autoShowDisassemblyOnStop` on every
+   `stopped` event — opens the disassembly side-by-side (preserving
+   focus on the source), refreshes the buffer, and re-reveals the
+   current PC line (`InCenterIfOutsideViewport`). When disabled, just
+   the PC reveal still fires for users who manually opened the view.
+
+> Original B4 wishlist preserved below for traceability.
+
+### B4 — Disassembly view fix-up (original wishlist)
 
 1. **Fix `currentPC = -1`** in `dap_server.cpp` line 1119 — surface
    real PC index. The "◀ PC" indicator (`disassemblyTreeView.ts` line
@@ -635,6 +720,8 @@ links resolving via `ETA_MODULE_PATH`.
 3. **Jump-to-callee** on `Call` / `TailCall` lines via
    `registerDefinitionProvider` for `eta-disasm` scheme.
 4. **Two-pane source ↔ disassembly** on stop events.
+
+---
 
 ---
 

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'none'; style-src {{cspSource}}; script-src 'nonce-{{nonce}}'; img-src {{cspSource}} data:;">
+    <title>Eta Heap Inspector</title>
+    <link rel="stylesheet" href="{{cssUri}}">
+</head>
+<body>
+    <header>
+        <h2>🔍 Eta Heap Inspector</h2>
+        <div class="toolbar">
+            <input type="text" id="kindFilter" placeholder="Filter kinds…" />
+            <button class="btn secondary" id="baselineBtn" title="Capture current snapshot as a comparison baseline.">Capture Baseline</button>
+            <button class="btn secondary" id="diffBtn" title="Toggle diff view against the captured baseline." disabled>Diff</button>
+            <button class="btn secondary" id="clearBaselineBtn" title="Drop the baseline snapshot." disabled>Clear Baseline</button>
+            <button class="btn" id="refreshBtn" title="Re-request a heap snapshot from the VM.">Refresh</button>
+        </div>
+    </header>
+
+    <div id="gauges"></div>
+    <div id="kinds"></div>
+    <div id="roots">
+        <div id="placeholder">Pause the VM (breakpoint / step) to inspect the heap.</div>
+    </div>
+    <div id="detail" style="display:none;"></div>
+
+    <script nonce="{{nonce}}" src="{{jsUri}}"></script>
+</body>
+</html>
+

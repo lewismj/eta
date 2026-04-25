@@ -128,6 +128,11 @@
                     "default": true,
                     "description": "Automatically show the Heap Inspector when a debug session starts."
                 },
+                "eta.debug.autoShowDisassembly": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "On every stopped event, also open the bytecode disassembly side-by-side and reveal the current PC line."
+                },
                 "eta.test.runnerPath": {
                     "type": "string",
                     "default": "",
@@ -194,6 +199,11 @@
                 "command": "eta.inspectObjectFromTree",
                 "title": "Inspect Object",
                 "category": "Eta"
+            },
+            {
+                "command": "eta.disassembly.gotoCallee",
+                "title": "Go to Callee",
+                "category": "Eta"
             }
         ],
         "menus": {
@@ -230,6 +240,10 @@
                 },
                 {
                     "command": "eta.inspectObjectFromTree",
+                    "when": "false"
+                },
+                {
+                    "command": "eta.disassembly.gotoCallee",
                     "when": "false"
                 }
             ],

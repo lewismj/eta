@@ -1,25 +1,61 @@
+/**
+ * heapView.ts — Heap Inspector v2 (B3 of docs/dap_vs_plan.md).
+ *
+ * - Loads HTML/CSS/JS from `media/heap/` via webview.asWebviewUri.
+ * - Emits a strict, nonce-based Content Security Policy.
+ * - Supports baseline capture / snapshot diff (delegated to the webview).
+ * - Implements "Find paths to root" by performing a BFS forward from every
+ *   GC root listed in the most recent snapshot, calling `eta/inspectObject`
+ *   on demand. Bounded by `MAX_BFS_NODES` to stay responsive on large heaps.
+ */
 import {
     window,
     debug,
+    Uri,
     WebviewPanel,
+    Webview,
     ViewColumn,
     ExtensionContext,
 } from 'vscode';
-import type { HeapSnapshot, ObjectInspection } from './dapTypes';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+import type {
+    HeapSnapshot,
+    ObjectInspection,
+} from './dapTypes';
 
-// ── HeapInspectorPanel ───────────────────────────────────────────────────────
+const MAX_BFS_NODES = 4000;
+const MAX_PATHS = 5;
+
+interface PathNode {
+    objectId: number;
+    kind: string;
+    preview: string;
+}
+interface FoundPath {
+    rootName: string;
+    nodes: PathNode[];
+}
+interface PathsResult {
+    paths: FoundPath[];
+    visited: number;
+    truncated: boolean;
+    error?: string;
+}
 
 export class HeapInspectorPanel {
     public static readonly viewType = 'etaHeapInspector';
 
     private static instance: HeapInspectorPanel | undefined;
     private panel: WebviewPanel;
+    private extensionUri: Uri;
     private snapshot: HeapSnapshot | undefined;
 
-    private constructor(panel: WebviewPanel) {
+    private constructor(panel: WebviewPanel, extensionUri: Uri) {
         this.panel = panel;
-        // Set HTML immediately so the webview is ready to receive messages.
-        this.panel.webview.html = getWebviewHtml();
+        this.extensionUri = extensionUri;
+        this.panel.webview.html = this.getWebviewHtml(panel.webview);
 
         panel.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.command) {
@@ -29,6 +65,9 @@ export class HeapInspectorPanel {
                 case 'inspectObject':
                     await this.inspectObject(msg.objectId);
                     break;
+                case 'findPaths':
+                    await this.findPaths(msg.objectId);
+                    break;
             }
         });
 
@@ -37,30 +76,30 @@ export class HeapInspectorPanel {
         });
     }
 
-    /** Show the panel (or reveal if already open). */
-    public static createOrShow(_context: ExtensionContext): HeapInspectorPanel {
+    public static createOrShow(ctx: ExtensionContext): HeapInspectorPanel {
         if (HeapInspectorPanel.instance) {
             HeapInspectorPanel.instance.panel.reveal(ViewColumn.Beside);
             return HeapInspectorPanel.instance;
         }
-
+        const mediaRoot = Uri.joinPath(ctx.extensionUri, 'media');
         const panel = window.createWebviewPanel(
             HeapInspectorPanel.viewType,
             'Eta Heap Inspector',
             ViewColumn.Beside,
-            { enableScripts: true, retainContextWhenHidden: true },
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true,
+                localResourceRoots: [mediaRoot],
+            },
         );
-
-        HeapInspectorPanel.instance = new HeapInspectorPanel(panel);
+        HeapInspectorPanel.instance = new HeapInspectorPanel(panel, ctx.extensionUri);
         return HeapInspectorPanel.instance;
     }
 
-    /** Called when the VM stops (breakpoint / step). */
     public async notifyStopped(): Promise<void> {
         await this.refresh();
     }
 
-    /** Request a fresh heap snapshot from the debug adapter. */
     public async refresh(): Promise<void> {
         const session = debug.activeDebugSession;
         if (!session || session.type !== 'eta') {
@@ -70,7 +109,6 @@ export class HeapInspectorPanel {
             });
             return;
         }
-
         try {
             const snap = await session.customRequest('eta/heapSnapshot') as HeapSnapshot;
             this.snapshot = snap;
@@ -88,334 +126,139 @@ export class HeapInspectorPanel {
         }
     }
 
-    /** Drill into a specific heap object. */
     public async inspectObject(objectId: number): Promise<void> {
         const session = debug.activeDebugSession;
         if (!session || session.type !== 'eta') { return; }
-
         try {
-            const obj = await session.customRequest('eta/inspectObject', { objectId }) as ObjectInspection;
+            const obj = await session.customRequest(
+                'eta/inspectObject', { objectId },
+            ) as ObjectInspection;
             this.panel.webview.postMessage({ command: 'inspectResult', data: obj });
         } catch (err: any) {
-            this.panel.webview.postMessage({ command: 'error', text: err?.message ?? String(err) });
+            this.panel.webview.postMessage({
+                command: 'error',
+                text: err?.message ?? String(err),
+            });
         }
     }
 
-
-    /** Get the singleton (if any). */
-    public static current(): HeapInspectorPanel | undefined {
-        return HeapInspectorPanel.instance;
-    }
-}
-
-// ── Static HTML ──────────────────────────────────────────────────────────────
-
-function getWebviewHtml(): string {
-    return /*html*/ `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Eta Heap Inspector</title>
-<style>
-    :root {
-        --bg: var(--vscode-editor-background);
-        --fg: var(--vscode-editor-foreground);
-        --border: var(--vscode-panel-border, #444);
-        --accent: var(--vscode-focusBorder, #007acc);
-        --badge: var(--vscode-badge-background, #4d4d4d);
-        --badge-fg: var(--vscode-badge-foreground, #fff);
-        --bar-bg: var(--vscode-progressBar-background, #0e70c0);
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-        font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
-        font-size: var(--vscode-font-size, 13px);
-        color: var(--fg);
-        background: var(--bg);
-        padding: 12px;
-    }
-    h2 { margin-bottom: 8px; font-size: 1.1em; }
-    .section { margin-bottom: 16px; }
-
-    /* Memory gauge */
-    .gauge-container {
-        display: flex; align-items: center; gap: 8px;
-        margin-bottom: 4px;
-    }
-    .gauge-bar {
-        flex: 1; height: 18px; background: var(--border);
-        border-radius: 4px; overflow: hidden;
-    }
-    .gauge-fill {
-        height: 100%; background: var(--bar-bg);
-        transition: width 0.3s;
-    }
-    .gauge-label { white-space: nowrap; min-width: 100px; text-align: right; }
-
-    /* Kind stats table */
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--border); }
-    th { opacity: 0.7; font-weight: 600; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-
-    /* Roots / object tree */
-    .tree { list-style: none; padding-left: 0; }
-    .tree li { padding: 2px 0; }
-    .tree ul { padding-left: 16px; list-style: none; }
-    .toggle {
-        cursor: pointer; user-select: none;
-        color: var(--accent);
-    }
-    .toggle::before { content: '▶ '; font-size: 0.8em; }
-    .toggle.open::before { content: '▼ '; }
-    .obj-link {
-        cursor: pointer; color: var(--accent);
-        text-decoration: underline;
-    }
-    .badge {
-        display: inline-block; padding: 0 6px;
-        border-radius: 8px; font-size: 0.85em;
-        background: var(--badge); color: var(--badge-fg);
-    }
-
-    /* Object detail pane */
-    #detail { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
-    #detail h3 { margin-bottom: 4px; }
-    .detail-row { margin: 2px 0; }
-    .detail-label { opacity: 0.7; }
-
-    .btn {
-        padding: 4px 12px; cursor: pointer;
-        background: var(--accent); color: #fff;
-        border: none; border-radius: 4px;
-        font-size: 0.9em;
-    }
-    .btn:hover { opacity: 0.85; }
-
-    .error { color: var(--vscode-errorForeground, #f44); margin: 8px 0; }
-
-    #placeholder { opacity: 0.6; margin-top: 32px; text-align: center; }
-</style>
-</head>
-<body>
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
-        <h2>🔍 Eta Heap Inspector</h2>
-        <button class="btn" id="refreshBtn">Refresh</button>
-    </div>
-    <div id="content">
-        <div id="placeholder">Pause the VM (breakpoint / step) to inspect the heap.</div>
-    </div>
-    <div id="detail" style="display:none;"></div>
-
-<script>
-    const vscode = acquireVsCodeApi();
-
-    document.getElementById('refreshBtn').addEventListener('click', () => {
-        vscode.postMessage({ command: 'refresh' });
-    });
-
-    function fmt(bytes) {
-        if (bytes < 1024) return bytes + ' B';
-        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-    }
-
-    function renderSnapshot(snap) {
-        const pct = snap.softLimit > 0
-            ? Math.min(100, (snap.totalBytes / snap.softLimit) * 100).toFixed(1)
-            : 0;
-
-        let html = '';
-
-        // ── Memory gauge ──────────────────────────────────────────────────
-        html += '<div class="section">';
-        html += '<div class="gauge-container">';
-        html += '  <span>Memory</span>';
-        html += '  <div class="gauge-bar"><div class="gauge-fill" style="width:' + pct + '%"></div></div>';
-        html += '  <span class="gauge-label">' + fmt(snap.totalBytes) + ' / ' + fmt(snap.softLimit) + ' (' + pct + '%)</span>';
-        html += '</div></div>';
-
-        // ── Cons Pool gauge (only when present) ───────────────────────────
-        if (snap.consPool && snap.consPool.capacity > 0) {
-            const pool = snap.consPool;
-            const poolPct = Math.min(100, (pool.live / pool.capacity) * 100).toFixed(1);
-            html += '<div class="section">';
-            html += '<h2>Cons Pool</h2>';
-            html += '<div class="gauge-container">';
-            html += '  <div class="gauge-bar"><div class="gauge-fill" style="width:' + poolPct + '%"></div></div>';
-            html += '  <span class="gauge-label">' + poolPct + '%</span>';
-            html += '</div>';
-            html += '<div style="opacity:0.8; font-size:0.92em;">'
-                  + pool.live.toLocaleString() + ' / ' + pool.capacity.toLocaleString()
-                  + ' · Free: ' + pool.free.toLocaleString()
-                  + ' · ' + fmt(pool.bytes)
-                  + '</div>';
-            html += '</div>';
+    /**
+     * BFS forward from every GC root recorded in the latest snapshot,
+     * memoising children via on-demand `eta/inspectObject` calls.
+     * Returns up to MAX_PATHS shortest distinct paths whose terminus equals
+     * `objectId`, or an empty list if none reachable within MAX_BFS_NODES.
+     */
+    public async findPaths(objectId: number): Promise<void> {
+        const session = debug.activeDebugSession;
+        if (!session || session.type !== 'eta' || !this.snapshot) {
+            this.panel.webview.postMessage({
+                command: 'pathsResult',
+                data: { paths: [], visited: 0, truncated: false,
+                        error: 'No active snapshot — refresh first.' } satisfies PathsResult,
+            });
+            return;
         }
 
-        // ── Per-kind table ────────────────────────────────────────────────
-        const sorted = [...snap.kinds].sort((a, b) => b.bytes - a.bytes);
-        html += '<div class="section"><h2>Object Kinds</h2><table>';
-        html += '<tr><th>Kind</th><th class="num">Count</th><th class="num">Bytes</th></tr>';
-        for (const k of sorted) {
-            html += '<tr><td>' + esc(k.kind) + '</td>';
-            html += '<td class="num">' + k.count.toLocaleString() + '</td>';
-            html += '<td class="num">' + fmt(k.bytes) + '</td></tr>';
+        const result: PathsResult = { paths: [], visited: 0, truncated: false };
+        const childCache = new Map<number, ObjectInspection>();
+        const fetchChildren = async (oid: number): Promise<ObjectInspection | undefined> => {
+            const cached = childCache.get(oid);
+            if (cached) return cached;
+            try {
+                const obj = await session.customRequest(
+                    'eta/inspectObject', { objectId: oid },
+                ) as ObjectInspection;
+                childCache.set(oid, obj);
+                return obj;
+            } catch {
+                return undefined;
+            }
+        };
+
+        // ── Initialise BFS frontier from every (root, oid) pair ──────────
+        type Step = { oid: number; rootName: string; parent?: Step };
+        const frontier: Step[] = [];
+        const visited = new Set<number>();
+        for (const root of this.snapshot.roots) {
+            for (const oid of root.objectIds) {
+                if (visited.has(oid)) continue;
+                visited.add(oid);
+                frontier.push({ oid, rootName: root.name });
+            }
         }
-        html += '</table></div>';
 
-        // ── GC Roots ─────────────────────────────────────────────────────
-        html += '<div class="section"><h2>GC Roots</h2><ul class="tree">';
-        for (const root of snap.roots) {
-            if (root.objectIds.length === 0) continue;
-
-            // ── Special handling for Globals: group by module prefix ──────
-            if (root.name === 'Globals' && root.labels && root.labels.length > 0) {
-                html += '<li>';
-                html += '<span class="toggle" data-root="Globals">Globals';
-                html += ' <span class="badge">' + root.objectIds.length + '</span></span>';
-                html += '<ul class="children" style="display:none">';
-
-                // Group labels by module prefix (everything before last '.')
-                const groups = {};
-                for (let i = 0; i < root.objectIds.length; i++) {
-                    const oid = root.objectIds[i];
-                    const label = root.labels[i] || ('Object #' + oid);
-                    const dotIdx = label.lastIndexOf('.');
-                    const mod = dotIdx > 0 ? label.substring(0, dotIdx) : '(top-level)';
-                    if (!groups[mod]) groups[mod] = [];
-                    groups[mod].push({ oid, label });
-                }
-
-                // Sort module names; put (top-level) last
-                const modNames = Object.keys(groups).sort((a, b) => {
-                    if (a === '(top-level)') return 1;
-                    if (b === '(top-level)') return -1;
-                    return a.localeCompare(b);
+        const reconstruct = async (step: Step): Promise<FoundPath> => {
+            const chain: Step[] = [];
+            for (let cur: Step | undefined = step; cur; cur = cur.parent) {
+                chain.push(cur);
+            }
+            chain.reverse();
+            const nodes: PathNode[] = [];
+            for (const c of chain) {
+                const meta = await fetchChildren(c.oid);
+                nodes.push({
+                    objectId: c.oid,
+                    kind: meta?.kind ?? 'unknown',
+                    preview: meta?.preview ?? '',
                 });
+            }
+            return { rootName: step.rootName, nodes };
+        };
 
-                for (const mod of modNames) {
-                    const items = groups[mod];
-                    html += '<li>';
-                    html += '<span class="toggle" data-root="' + esc(mod) + '">' + esc(mod);
-                    html += ' <span class="badge">' + items.length + '</span></span>';
-                    html += '<ul class="children" style="display:none">';
-                    for (let i = 0; i < items.length; i++) {
-                        const it = items[i];
-                        // Show short name (after last dot) for readability
-                        const shortName = it.label.includes('.') ? it.label.substring(it.label.lastIndexOf('.') + 1) : it.label;
-                        html += '<li><span class="obj-link" data-oid="' + it.oid + '">' + esc(shortName) + ' <span class="badge">#' + it.oid + '</span></span></li>';
-                    }
-                    html += '</ul></li>';
-                }
+        // ── BFS ───────────────────────────────────────────────────────────
+        while (frontier.length > 0 && result.paths.length < MAX_PATHS) {
+            if (result.visited >= MAX_BFS_NODES) {
+                result.truncated = true;
+                break;
+            }
+            const step = frontier.shift()!;
+            result.visited++;
 
-                html += '</ul></li>';
+            if (step.oid === objectId) {
+                result.paths.push(await reconstruct(step));
                 continue;
             }
 
-            // ── Default rendering for non-Globals roots ───────────────────
-            html += '<li>';
-            html += '<span class="toggle" data-root="' + esc(root.name) + '">' + esc(root.name);
-            html += ' <span class="badge">' + root.objectIds.length + '</span></span>';
-            html += '<ul class="children" style="display:none">';
-            for (let i = 0; i < root.objectIds.length; i++) {
-                const oid = root.objectIds[i];
-                const label = (root.labels && root.labels[i]) ? root.labels[i] : ('Object #' + oid);
-                html += '<li><span class="obj-link" data-oid="' + oid + '">' + esc(label) + ' <span class="badge">#' + oid + '</span></span></li>';
+            const meta = await fetchChildren(step.oid);
+            if (!meta) continue;
+            for (const child of meta.children) {
+                if (visited.has(child.objectId)) continue;
+                visited.add(child.objectId);
+                frontier.push({
+                    oid: child.objectId,
+                    rootName: step.rootName,
+                    parent: step,
+                });
             }
-            html += '</ul></li>';
-        }
-        html += '</ul></div>';
-
-        document.getElementById('content').innerHTML = html;
-        document.getElementById('detail').style.display = 'none';
-
-        // Toggle listeners
-        document.querySelectorAll('.toggle').forEach(el => {
-            el.addEventListener('click', () => {
-                el.classList.toggle('open');
-                const ul = el.nextElementSibling;
-                if (ul) ul.style.display = ul.style.display === 'none' ? '' : 'none';
-            });
-        });
-
-        // Object link listeners
-        document.querySelectorAll('.obj-link').forEach(el => {
-            el.addEventListener('click', () => {
-                const oid = parseInt(el.getAttribute('data-oid'), 10);
-                vscode.postMessage({ command: 'inspectObject', objectId: oid });
-            });
-        });
-    }
-
-    function renderInspect(obj) {
-        let html = '<h3>Object #' + obj.objectId + '</h3>';
-        html += '<div class="detail-row"><span class="detail-label">Kind:</span> ' + esc(obj.kind) + '</div>';
-        html += '<div class="detail-row"><span class="detail-label">Size:</span> ' + fmt(obj.size) + '</div>';
-        html += '<div class="detail-row"><span class="detail-label">Preview:</span> <code>' + esc(obj.preview) + '</code></div>';
-
-        if (obj.children && obj.children.length > 0) {
-            html += '<h3 style="margin-top:8px;">Children (' + obj.children.length + ')</h3>';
-            html += '<ul class="tree">';
-            for (const c of obj.children) {
-                html += '<li><span class="obj-link" data-oid="' + c.objectId + '">';
-                html += '#' + c.objectId + ' <span class="badge">' + esc(c.kind) + '</span> ';
-                html += esc(c.preview);
-                html += '</span></li>';
-            }
-            html += '</ul>';
-        } else {
-            html += '<div style="margin-top:4px; opacity:0.6;">No heap children.</div>';
         }
 
-        const detail = document.getElementById('detail');
-        detail.innerHTML = html;
-        detail.style.display = '';
-
-        // Child links
-        detail.querySelectorAll('.obj-link').forEach(el => {
-            el.addEventListener('click', () => {
-                const oid = parseInt(el.getAttribute('data-oid'), 10);
-                vscode.postMessage({ command: 'inspectObject', objectId: oid });
-            });
-        });
+        this.panel.webview.postMessage({ command: 'pathsResult', data: result });
     }
 
-    function renderIdle(text) {
-        document.getElementById('content').innerHTML =
-            '<div id="placeholder">' + esc(text) + '</div>';
-        const detail = document.getElementById('detail');
-        detail.style.display = 'none';
-        detail.innerHTML = '';
+    public static current(): HeapInspectorPanel | undefined {
+        return HeapInspectorPanel.instance;
     }
 
-    function esc(s) {
-        const d = document.createElement('div');
-        d.textContent = String(s);
-        return d.innerHTML;
-    }
+    // ── HTML template loader (CSP + nonce) ──────────────────────────────
+    private getWebviewHtml(webview: Webview): string {
+        const mediaDir = Uri.joinPath(this.extensionUri, 'media', 'heap');
+        const cssUri = webview.asWebviewUri(Uri.joinPath(mediaDir, 'heap.css'));
+        const jsUri = webview.asWebviewUri(Uri.joinPath(mediaDir, 'heap.js'));
+        const nonce = crypto.randomBytes(16).toString('base64');
 
-    window.addEventListener('message', e => {
-        const msg = e.data;
-        switch (msg.command) {
-            case 'snapshot':
-                renderSnapshot(msg.data);
-                break;
-            case 'inspectResult':
-                renderInspect(msg.data);
-                break;
-            case 'idle':
-                renderIdle(msg.text ?? 'Pause the VM to inspect the heap.');
-                break;
-            case 'error':
-                document.getElementById('content').innerHTML =
-                    '<div class="error">' + esc(msg.text) + '</div>';
-                break;
+        const htmlPath = path.join(mediaDir.fsPath, 'heap.html');
+        let template: string;
+        try {
+            template = fs.readFileSync(htmlPath, 'utf8');
+        } catch {
+            return '<html lang="en"><body><pre>Failed to load heap.html bundle.</pre></body></html>';
         }
-    });
-</script>
-</body>
-</html>`;
+        return template
+            .replace(/\{\{cspSource}}/g, webview.cspSource)
+            .replace(/\{\{nonce}}/g, nonce)
+            .replace(/\{\{cssUri}}/g, cssUri.toString())
+            .replace(/\{\{jsUri}}/g, jsUri.toString());
+    }
 }
+
 
