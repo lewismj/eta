@@ -1109,7 +1109,7 @@ BOOST_AUTO_TEST_CASE(inlay_hint_local_defun_call) {
     BOOST_REQUIRE(!resp.is_null());
 
     const auto& hints = resp["result"].as_array();
-    /// We expect exactly two hints — one per argument of (add 10 20).
+    /// We expect exactly two hints  -  one per argument of (add 10 20).
     /// Other call sites in the source either have no positional args (e.g. (+ x y)
     /// uses builtin operator) or are the defun signature itself which is not a call.
     int n_add_hints = 0;
@@ -1135,7 +1135,7 @@ BOOST_AUTO_TEST_CASE(inlay_hint_range_filters_results) {
         "(add 1 2)\n"
         "(add 3 4)\n";
 
-    /// Restrict the range to line 2 only — only the second (add 3 4) call
+    /// Restrict the range to line 2 only  -  only the second (add 3 4) call
     /// should produce hints.
     auto input = build_input(uri, src, {
         frame(request(31, "textDocument/inlayHint",

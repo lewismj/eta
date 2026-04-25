@@ -139,15 +139,21 @@ mkdir -p "$EDITORS_DIR"
 )
 
 # ── 5. Copy helpers + docs ───────────────────────────────────────────
-echo "▸ [5/6] Copying install script and docs..."
+echo "▸ [5/6] Copying install script, docs, and examples..."
 [ -f "$PROJECT_ROOT/scripts/install.sh" ]  && cp "$PROJECT_ROOT/scripts/install.sh" "$PREFIX/" && chmod +x "$PREFIX/install.sh"
 [ -f "$PROJECT_ROOT/docs/quickstart.md" ]  && cp "$PROJECT_ROOT/docs/quickstart.md" "$PREFIX/"
+
+# Copy examples/
+if [ -d "$PROJECT_ROOT/examples" ]; then
+    echo "  Copying examples..."
+    cp -r "$PROJECT_ROOT/examples" "$PREFIX/examples"
+fi
 
 # Make binaries executable
 chmod +x "$PREFIX/bin/"* 2>/dev/null || true
 
 # ── 5b. Prune to minimal Linux/macOS layout ──────────────────────────
-# Keep only:  bin/  editors/  stdlib/  lib/  (lib/ holds libtorch .so's
+# Keep only:  bin/  editors/  stdlib/  examples/  lib/  (lib/ holds libtorch .so's
 # when torch is enabled — RPATH is set to $ORIGIN/../lib).  Within lib/
 # we further drop CMake config packages and pkgconfig files which are
 # build-time artifacts not needed at runtime.
@@ -155,7 +161,7 @@ echo "  Pruning non-essential install directories..."
 for d in "$PREFIX"/*/; do
     name="$(basename "$d")"
     case "$name" in
-        bin|editors|stdlib|lib) ;;
+        bin|editors|stdlib|examples|lib) ;;
         *) echo "    - removing ${name}/"; rm -rf "$d" ;;
     esac
 done

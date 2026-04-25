@@ -134,6 +134,13 @@ flowchart LR
 
 ## Dependencies & Build Integration
 
+### Implementation status (April 25, 2026)
+
+- Implemented: `cmake/FetchXeus.cmake` with pinned versions and `ETA_USE_VCPKG` support.
+- Implemented: `eta/jupyter/` scaffold (`CMakeLists.txt`, source layout, resources) with a buildable `eta_jupyter` target.
+- Implemented: top-level options `ETA_BUILD_JUPYTER` (default `OFF`) and `ETA_USE_VCPKG` in `CMakeLists.txt`.
+- Implemented: conditional `add_subdirectory(jupyter)` in `eta/CMakeLists.txt` and conditional `eta_jupyter` aggregation in `eta_all`.
+
 ### `cmake/FetchXeus.cmake` *(new)*
 
 Mirrors the shape of [`cmake/FetchNng.cmake`](../cmake/FetchNng.cmake)

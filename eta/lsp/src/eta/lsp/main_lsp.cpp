@@ -1,4 +1,4 @@
-﻿#include "lsp_server.h"
+#include "lsp_server.h"
 #include <iostream>
 
 #ifdef _WIN32

@@ -547,7 +547,7 @@ void DapServer::start_vm_from_current_launch() {
         std::ostringstream msg;
         msg << "[eta_dap] Module search dirs:\n";
         if (resolver.empty()) {
-            msg << "  (none â€” prelude will not load; set eta.lsp.modulePath in VS Code settings)\n";
+            msg << "  (none  -  prelude will not load; set eta.lsp.modulePath in VS Code settings)\n";
         } else {
             for (const auto& d : resolver.dirs()) msg << "  " << d.string() << "\n";
         }
@@ -652,7 +652,7 @@ void DapServer::start_vm_from_current_launch() {
             send_event("output", json::object({
                 {"category", "important"},
                 {"output",
-                    "[eta_dap] Warning: prelude.eta not found â€” std.core, std.io, std.prelude etc. unavailable.\n"
+                    "[eta_dap] Warning: prelude.eta not found  -  std.core, std.io, std.prelude etc. unavailable.\n"
                     "[eta_dap] Set 'eta.lsp.modulePath' in VS Code settings, or set ETA_MODULE_PATH.\n"},
             }));
         } else if (!pr.loaded) {
@@ -831,7 +831,7 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
     }
     int ref = static_cast<int>(*ref_opt);
 
-    /// Compound variable expansion (cons/vector/closure) — owning thread is
+    /// Compound variable expansion (cons/vector/closure)  -  owning thread is
     /// recorded in the CompoundRef so we look up the right Driver/heap.
     if (ref >= COMPOUND_REF_BASE) {
         auto cit = compound_refs_.find(ref);
@@ -999,7 +999,7 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
     }
 
     /// Determine target thread from the optional frameId (carries threadId in
-    /// its high bits).  No frameId → main thread.
+    /// its high bits).  No frameId -> main thread.
     int thread_id = MAIN_THREAD_ID;
     if (auto fid = args.get_int("frameId")) {
         const int t = (static_cast<int>(*fid) >> 16) & 0xFFF;

@@ -2259,7 +2259,7 @@ BOOST_AUTO_TEST_SUITE_END() ///< dap_framing_robustness
 
 
 /**
- * Stage C2 — Performance & regression gates and variables paging.
+ * Stage C2  -  Performance & regression gates and variables paging.
  *
  * Helpers shared by the C2 suites must live at file scope so they survive
  * across `BOOST_AUTO_TEST_SUITE(...)` blocks (each suite opens its own
@@ -2494,7 +2494,7 @@ BOOST_AUTO_TEST_SUITE_END() ///< dap_perf_gates
 
 
 /**
- * Stage C2 — Variables paging for large indexed compounds.
+ * Stage C2  -  Variables paging for large indexed compounds.
  *
  * Verifies that:
  *   1. Vector variables advertise `indexedVariables` so VS Code paginates.

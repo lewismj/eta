@@ -399,7 +399,7 @@ public:
      * The sandbox flag is intentionally simple: it is defence-in-depth on
      * the VM execution path.  The DAP `Sandbox` itself is a tree-walking
      * evaluator that does not enter the bytecode interpreter, so it does
-     * not depend on this gate to be safe — but anything that ever reuses
+     * not depend on this gate to be safe  -  but anything that ever reuses
      * `vm.execute()` against a paused VM must set it.
      */
     void set_sandbox_mode(bool on) noexcept { sandbox_mode_ = on; }

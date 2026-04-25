@@ -227,6 +227,10 @@ front-end alongside `etai` and `eta_repl`.
 | 5 | Comm channels for Heap-Inspector / Disassembly equivalents in JupyterLab — reuse the DAP webview HTML where possible. |
 | 6 | Conda-Forge / PyPI packaging so `mamba install xeus-eta` and `jupyter labextension install` give a one-line setup. |
 
+Status (April 25, 2026): Phase 1 dependency/build scaffolding is now in-tree:
+`cmake/FetchXeus.cmake`, `eta/jupyter/` CMake target scaffolding, and
+optional top-level CMake integration behind `ETA_BUILD_JUPYTER`.
+
 **Open design questions:**
 
 - One kernel per notebook process vs. shared `Driver` across cells —

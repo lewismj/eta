@@ -2566,7 +2566,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_send_recv_round_trip) {
     BOOST_REQUIRE_MESSAGE(recv_res.has_value() && *recv_res != nanbox::False,
         "recv! failed or timed out");
     BOOST_TEST(ops::decode<int64_t>(*recv_res).value_or(-1) == 99);
-    BOOST_TEST_MESSAGE("Thread echo round-trip OK: 99 â†’ 99");
+    BOOST_TEST_MESSAGE("Thread echo round-trip OK: 99 -> 99");
 
     e.call("thread-join", {sock});
     e.call("nng-close", {sock});
@@ -2671,7 +2671,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_full_driver_round_trip) {
     stdlib_path = ETA_STDLIB_DIR;
 #endif
     if (stdlib_path.empty()) {
-        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set â€” skipping spawn-thread Driver test");
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set  -  skipping spawn-thread Driver test");
         return;
     }
 
@@ -2722,7 +2722,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
     stdlib_path = ETA_STDLIB_DIR;
 #endif
     if (stdlib_path.empty()) {
-        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set â€” skipping spawn-thread multi test");
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set  -  skipping spawn-thread multi test");
         return;
     }
 
@@ -2792,7 +2792,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_list_payload_and_quoted_constant_regression) {
     stdlib_path = ETA_STDLIB_DIR;
 #endif
     if (stdlib_path.empty()) {
-        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set â€” skipping spawn-thread list/quote regression test");
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set  -  skipping spawn-thread list/quote regression test");
         return;
     }
 
@@ -2837,7 +2837,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_portfolio_worker_shape_regression) {
     stdlib_path = ETA_STDLIB_DIR;
 #endif
     if (stdlib_path.empty()) {
-        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set â€” skipping portfolio worker-shape regression test");
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set  -  skipping portfolio worker-shape regression test");
         return;
     }
 
@@ -3292,7 +3292,7 @@ BOOST_AUTO_TEST_CASE(monitor_detects_disconnect) {
     /// recv! should return the (down ...) notification
     e.call("nng-set-option", {server, e.sym("recv-timeout"), e.fixnum(200)});
     auto msg = e.call("recv!", {server});
-    BOOST_REQUIRE_MESSAGE(msg != nanbox::False, "recv! timed out â€” no down notification");
+    BOOST_REQUIRE_MESSAGE(msg != nanbox::False, "recv! timed out  -  no down notification");
 
     /// Verify it's (down endpoint "disconnected")
     BOOST_REQUIRE(ops::is_boxed(msg) && ops::tag(msg) == Tag::HeapObject);
@@ -3302,7 +3302,7 @@ BOOST_AUTO_TEST_CASE(monitor_detects_disconnect) {
     auto sym_sv = e.intern.get_string(ops::payload(cons->car));
     BOOST_REQUIRE(sym_sv.has_value());
     BOOST_TEST(*sym_sv == "down");
-    BOOST_TEST_MESSAGE("monitor disconnect: got '" << *sym_sv << "' notification âœ“");
+    BOOST_TEST_MESSAGE("monitor disconnect: got '" << *sym_sv << "' notification [OK]");
 
     e.call("nng-close", {server});
 }
@@ -3363,7 +3363,7 @@ BOOST_AUTO_TEST_CASE(closing_normally_suppresses_down) {
         std::lock_guard<std::mutex> lk(sp->monitor_state->mu);
         BOOST_TEST(sp->monitor_state->notif_msgs.empty());
     }
-    BOOST_TEST_MESSAGE("closing_normally suppresses down notification âœ“");
+    BOOST_TEST_MESSAGE("closing_normally suppresses down notification [OK]");
 
     e.call("nng-close", {client});
 }
@@ -3383,7 +3383,7 @@ BOOST_AUTO_TEST_CASE(enable_heartbeat_creates_state) {
     BOOST_REQUIRE(sp && sp->monitor_state);
     BOOST_REQUIRE(sp->monitor_state->heartbeat != nullptr);
     BOOST_TEST(sp->monitor_state->heartbeat->interval_ms == 500);
-    BOOST_TEST_MESSAGE("enable-heartbeat created HeartbeatState âœ“");
+    BOOST_TEST_MESSAGE("enable-heartbeat created HeartbeatState [OK]");
 
     e.call("nng-close", {server});
 }
@@ -3415,7 +3415,7 @@ BOOST_AUTO_TEST_CASE(heartbeat_detects_hung_peer) {
     e.call("nng-set-option", {srvA, e.sym("recv-timeout"), e.fixnum(interval)});
     auto msg = e.call("recv!", {srvA});
     BOOST_REQUIRE_MESSAGE(msg != nanbox::False,
-        "recv! timed out â€” heartbeat did not detect hung peer");
+        "recv! timed out  -  heartbeat did not detect hung peer");
 
     /// Verify first element is symbol 'down
     auto* cons = e.heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(msg));
@@ -3430,7 +3430,7 @@ BOOST_AUTO_TEST_CASE(heartbeat_detects_hung_peer) {
             auto rsv = e.intern.get_string(ops::payload(t2->car));
             if (rsv) {
                 BOOST_TEST(*rsv == "heartbeat-timeout");
-                BOOST_TEST_MESSAGE("heartbeat-timeout received âœ“: " << *rsv);
+                BOOST_TEST_MESSAGE("heartbeat-timeout received [OK]: " << *rsv);
             }
         }
     }
@@ -3473,7 +3473,7 @@ BOOST_AUTO_TEST_CASE(heartbeat_ping_pong_transparent) {
     auto msg_a = e.call("recv!", {srvA});
     BOOST_REQUIRE_MESSAGE(msg_a != nanbox::False, "A recv! timed out");
     BOOST_TEST(ops::decode<int64_t>(msg_a).value_or(-1) == 43);
-    BOOST_TEST_MESSAGE("normal messages flow through heartbeat correctly âœ“");
+    BOOST_TEST_MESSAGE("normal messages flow through heartbeat correctly [OK]");
 
     e.call("nng-close", {srvA});
     e.call("nng-close", {srvB});
@@ -3504,7 +3504,7 @@ BOOST_AUTO_TEST_CASE(monitor_down_msg_well_formed) {
     auto sym_sv = i2.get_string(ops::payload(cons->car));
     BOOST_REQUIRE(sym_sv.has_value());
     BOOST_TEST(*sym_sv == "down");
-    BOOST_TEST_MESSAGE("monitor down message is well-formed binary âœ“");
+    BOOST_TEST_MESSAGE("monitor down message is well-formed binary [OK]");
 
     e.call("nng-close", {sock});
 }

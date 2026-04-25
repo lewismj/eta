@@ -1420,7 +1420,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
                 if (!prim)
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
-                        "map: closures require a VM context (internal error â€” VM not provided)"}});
+                        "map: closures require a VM context (internal error  -  VM not provided)"}});
                 std::vector<LispVal> call_args = {cons->car};
                 res = prim->func(call_args);
             }
@@ -1457,7 +1457,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 auto* prim = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(proc));
                 if (!prim)
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
-                        "for-each: closures require a VM context (internal error â€” VM not provided)"}});
+                        "for-each: closures require a VM context (internal error  -  VM not provided)"}});
                 std::vector<LispVal> call_args = {cons->car};
                 res = prim->func(call_args);
             }
@@ -2201,7 +2201,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     env.register_builtin("make-dual", 2, false, [](Args) -> std::expected<LispVal, RuntimeError> {
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
-            "make-dual: Dual AD has been removed â€” use tape-based AD instead"}});
+            "make-dual: Dual AD has been removed  -  use tape-based AD instead"}});
     });
 
     /**
@@ -5523,7 +5523,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto ys = stats::to_eigen(heap, args[1], "%stats-covariance");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::covariance(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-covariance: sequences must be same length (â‰¥2)"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-covariance: sequences must be same length (>=2)"}});
         return make_flonum(*r);
     });
 
@@ -5533,7 +5533,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto ys = stats::to_eigen(heap, args[1], "%stats-correlation");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::correlation(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-correlation: sequences must be same length (â‰¥2), non-constant"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-correlation: sequences must be same length (>=2), non-constant"}});
         return make_flonum(*r);
     });
 
@@ -5574,7 +5574,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto ys = stats::to_eigen(heap, args[1], "%stats-t-test-2");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::t_test_2(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-t-test-2: each sequence must have â‰¥2 elements"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-t-test-2: each sequence must have >=2 elements"}});
 
         /// Build result list: (t-stat p-value df mean-diff)
         auto v_md = make_flonum(r->mean_diff); if (!v_md) return std::unexpected(v_md.error());
@@ -5595,7 +5595,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto ys = stats::to_eigen(heap, args[1], "%stats-ols");
         if (!ys) return std::unexpected(ys.error());
         auto r = stats::ols(*xs, *ys);
-        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ols: sequences must be same length (â‰¥3)"}});
+        if (!r) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-ols: sequences must be same length (>=3)"}});
 
         auto v9 = make_flonum(r->p_intercept); if (!v9) return std::unexpected(v9.error());
         auto v8 = make_flonum(r->p_slope);     if (!v8) return std::unexpected(v8.error());

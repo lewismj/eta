@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file module_path_tests.cpp
  * @brief Unit tests for eta::interpreter::ModulePathResolver
  */

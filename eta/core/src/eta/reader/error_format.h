@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "eta/reader/parser.h"
 #include <functional>

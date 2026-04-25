@@ -175,7 +175,7 @@ parse_datum_string(std::string_view source, Heap& heap, InternTable& intern) {
                 /// LexError
                 msg += reader::lexer::to_string(err.kind);
                 if (!err.message.empty()) {
-                    msg += " â€” ";
+                    msg += "  -  ";
                     msg += err.message;
                 }
             }

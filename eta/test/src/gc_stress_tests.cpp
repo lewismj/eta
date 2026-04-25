@@ -137,7 +137,7 @@ BOOST_AUTO_TEST_CASE(quoted_constant_survives) {
             "  (begin (get-list)))";
         bool pressure_ok = driver.run_source(src);
         BOOST_REQUIRE_MESSAGE(pressure_ok,
-            "gc_sq_pressure_" << i << ": failed â€” heap may be exhausted");
+            "gc_sq_pressure_" << i << ": failed  -  heap may be exhausted");
     }
 
     /**

@@ -271,7 +271,7 @@ BOOST_AUTO_TEST_CASE(breakpoint_by_file_and_line) {
             if (sp.file_id == 11 && sp.start.line == 2) { found_line2 = true; break; }
         }
     }
-    BOOST_REQUIRE_MESSAGE(found_line2, "No instructions on line 2 â€” can't test breakpoint");
+    BOOST_REQUIRE_MESSAGE(found_line2, "No instructions on line 2  -  can't test breakpoint");
 
     auto vm = f.make_vm();
     auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);
@@ -627,7 +627,7 @@ BOOST_AUTO_TEST_CASE(breakpoint_stopped_span_correct_line) {
         }
         if (found_line3) break;
     }
-    BOOST_REQUIRE_MESSAGE(found_line3, "No instructions on line 3 â€” can't test breakpoint");
+    BOOST_REQUIRE_MESSAGE(found_line3, "No instructions on line 3  -  can't test breakpoint");
 
     auto vm = f.make_vm();
     auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);

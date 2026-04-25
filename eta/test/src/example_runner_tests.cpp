@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file example_runner_tests.cpp
  * @brief Integration tests that run every .eta file in the examples/ directory
  *
@@ -152,7 +152,7 @@ struct ExampleRunnerFixture {
      */
     bool run_example(const fs::path& file) {
         if (stdlib.empty()) {
-            BOOST_TEST_MESSAGE("stdlib directory not found â€” skipping");
+            BOOST_TEST_MESSAGE("stdlib directory not found  -  skipping");
             return false;
         }
 
@@ -191,7 +191,7 @@ BOOST_FIXTURE_TEST_SUITE(example_runner_tests, ExampleRunnerFixture)
 BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
     auto files = collect_examples();
     if (files.empty()) {
-        BOOST_TEST_MESSAGE("No example files found â€” skipping. "
+        BOOST_TEST_MESSAGE("No example files found  -  skipping. "
                            "Set ETA_EXAMPLES_DIR and ETA_STDLIB_DIR compile definitions.");
         return;
     }
@@ -208,15 +208,15 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
 #if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
         if (requires_torch(file)) {
 #ifdef ETA_TORCH_DEBUG_SKIP
-            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires torch â€” skipped in MSVC Debug)");
+            BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires torch  -  skipped in MSVC Debug)");
 #else
-            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires torch â€” skipped)");
+            BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires torch  -  skipped)");
 #endif
             continue;
         }
 #endif
         if (requires_net(file)) {
-            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires networking runtime â€” skipped)");
+            BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires networking runtime  -  skipped)");
             continue;
         }
 
@@ -224,11 +224,11 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
             bool ok = run_example(file);
             if (ok) {
                 ++passed;
-                BOOST_TEST_MESSAGE("  âœ“ " << rel.string());
+                BOOST_TEST_MESSAGE("  [OK] " << rel.string());
             } else {
                 ++failed;
                 failures.push_back(rel.string());
-                BOOST_TEST_MESSAGE("  âœ— " << rel.string());
+                BOOST_TEST_MESSAGE("  [FAIL] " << rel.string());
             }
             BOOST_CHECK_MESSAGE(ok, "Example " << rel.string() << " failed");
         }

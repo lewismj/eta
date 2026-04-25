@@ -683,91 +683,91 @@ Value LspServer::handle_hover(const Value& params) {
 
     /// Known keywords/special forms
     static const std::unordered_map<std::string, std::string> keyword_docs = {
-        {"define",       "**define** â€” Define a variable or function.\n\n`(define name expr)`\n\n`(define (name args...) body...)`"},
-        {"lambda",       "**lambda** â€” Create an anonymous function.\n\n`(lambda (args...) body...)`"},
-        {"if",           "**if** â€” Conditional expression.\n\n`(if test consequent alternate)`"},
-        {"begin",        "**begin** â€” Sequence expressions.\n\n`(begin expr...)`"},
-        {"set!",         "**set!** â€” Mutate a variable binding.\n\n`(set! name expr)`"},
-        {"quote",        "**quote** â€” Return datum without evaluation.\n\n`(quote datum)` or `'datum`"},
-        {"let",          "**let** â€” Parallel local bindings.\n\n`(let ((var init)...) body...)`"},
-        {"let*",         "**let*** â€” Sequential local bindings.\n\n`(let* ((var init)...) body...)`"},
-        {"letrec",       "**letrec** â€” Recursive local bindings.\n\n`(letrec ((var init)...) body...)`"},
-        {"letrec*",      "**letrec*** â€” Sequential recursive bindings.\n\n`(letrec* ((var init)...) body...)`"},
-        {"cond",         "**cond** â€” Multi-way conditional.\n\n`(cond (test expr...)... (else expr...))`"},
-        {"case",         "**case** â€” Dispatch on datum equality.\n\n`(case key ((datum...) expr...)... (else expr...))`"},
-        {"and",          "**and** â€” Short-circuit logical and.\n\n`(and expr...)` â†’ last truthy or `#f`"},
-        {"or",           "**or** â€” Short-circuit logical or.\n\n`(or expr...)` â†’ first truthy or `#f`"},
-        {"when",         "**when** â€” One-armed conditional.\n\n`(when test body...)`"},
-        {"unless",       "**unless** â€” Negated one-armed conditional.\n\n`(unless test body...)`"},
-        {"do",           "**do** â€” Iteration construct.\n\n`(do ((var init step)...) (test result...) body...)`"},
-        {"module",       "**module** â€” Declare a module.\n\n`(module name body...)`"},
-        {"import",       "**import** â€” Import bindings from a module.\n\n`(import module-name)`"},
-        {"export",       "**export** â€” Export bindings.\n\n`(export name...)`"},
-        {"define-syntax","**define-syntax** â€” Define a hygienic macro.\n\n`(define-syntax name (syntax-rules (literals...) clause...))`"},
-        {"syntax-rules", "**syntax-rules** â€” Hygienic macro transformer.\n\n`(syntax-rules (literals...) (pattern template)...)`"},
-        {"define-record-type", "**define-record-type** â€” Define a record type.\n\n`(define-record-type name (ctor field...) pred (field accessor [mutator])...)`"},
-        {"def",          "**def** â€” Alias for `define`.\n\n`(def name expr)` or `(def (name args...) body...)`"},
-        {"defun",        "**defun** â€” Alias for function definition.\n\n`(defun name (args...) body...)`"},
-        {"progn",        "**progn** â€” Alias for `begin`.\n\n`(progn expr...)`"},
-        {"quasiquote",   "**quasiquote** â€” Template with unquote.\n\n`` `(datum ,expr ,@splice) ``"},
-        {"call/cc",      "**call/cc** â€” Call with current continuation.\n\n`(call/cc proc)`"},
-        {"call-with-current-continuation", "**call-with-current-continuation** â€” Full name for `call/cc`.\n\n`(call-with-current-continuation proc)`"},
-        {"dynamic-wind", "**dynamic-wind** â€” Guard entry/exit of a continuation.\n\n`(dynamic-wind before thunk after)`"},
-        {"values",       "**values** â€” Return multiple values.\n\n`(values expr...)`"},
-        {"call-with-values", "**call-with-values** â€” Receive multiple values.\n\n`(call-with-values producer consumer)`"},
-        {"apply",        "**apply** â€” Apply procedure to argument list.\n\n`(apply proc arg... arg-list)`"},
+        {"define",       "**define**  -  Define a variable or function.\n\n`(define name expr)`\n\n`(define (name args...) body...)`"},
+        {"lambda",       "**lambda**  -  Create an anonymous function.\n\n`(lambda (args...) body...)`"},
+        {"if",           "**if**  -  Conditional expression.\n\n`(if test consequent alternate)`"},
+        {"begin",        "**begin**  -  Sequence expressions.\n\n`(begin expr...)`"},
+        {"set!",         "**set!**  -  Mutate a variable binding.\n\n`(set! name expr)`"},
+        {"quote",        "**quote**  -  Return datum without evaluation.\n\n`(quote datum)` or `'datum`"},
+        {"let",          "**let**  -  Parallel local bindings.\n\n`(let ((var init)...) body...)`"},
+        {"let*",         "**let***  -  Sequential local bindings.\n\n`(let* ((var init)...) body...)`"},
+        {"letrec",       "**letrec**  -  Recursive local bindings.\n\n`(letrec ((var init)...) body...)`"},
+        {"letrec*",      "**letrec***  -  Sequential recursive bindings.\n\n`(letrec* ((var init)...) body...)`"},
+        {"cond",         "**cond**  -  Multi-way conditional.\n\n`(cond (test expr...)... (else expr...))`"},
+        {"case",         "**case**  -  Dispatch on datum equality.\n\n`(case key ((datum...) expr...)... (else expr...))`"},
+        {"and",          "**and**  -  Short-circuit logical and.\n\n`(and expr...)` -> last truthy or `#f`"},
+        {"or",           "**or**  -  Short-circuit logical or.\n\n`(or expr...)` -> first truthy or `#f`"},
+        {"when",         "**when**  -  One-armed conditional.\n\n`(when test body...)`"},
+        {"unless",       "**unless**  -  Negated one-armed conditional.\n\n`(unless test body...)`"},
+        {"do",           "**do**  -  Iteration construct.\n\n`(do ((var init step)...) (test result...) body...)`"},
+        {"module",       "**module**  -  Declare a module.\n\n`(module name body...)`"},
+        {"import",       "**import**  -  Import bindings from a module.\n\n`(import module-name)`"},
+        {"export",       "**export**  -  Export bindings.\n\n`(export name...)`"},
+        {"define-syntax","**define-syntax**  -  Define a hygienic macro.\n\n`(define-syntax name (syntax-rules (literals...) clause...))`"},
+        {"syntax-rules", "**syntax-rules**  -  Hygienic macro transformer.\n\n`(syntax-rules (literals...) (pattern template)...)`"},
+        {"define-record-type", "**define-record-type**  -  Define a record type.\n\n`(define-record-type name (ctor field...) pred (field accessor [mutator])...)`"},
+        {"def",          "**def**  -  Alias for `define`.\n\n`(def name expr)` or `(def (name args...) body...)`"},
+        {"defun",        "**defun**  -  Alias for function definition.\n\n`(defun name (args...) body...)`"},
+        {"progn",        "**progn**  -  Alias for `begin`.\n\n`(progn expr...)`"},
+        {"quasiquote",   "**quasiquote**  -  Template with unquote.\n\n`` `(datum ,expr ,@splice) ``"},
+        {"call/cc",      "**call/cc**  -  Call with current continuation.\n\n`(call/cc proc)`"},
+        {"call-with-current-continuation", "**call-with-current-continuation**  -  Full name for `call/cc`.\n\n`(call-with-current-continuation proc)`"},
+        {"dynamic-wind", "**dynamic-wind**  -  Guard entry/exit of a continuation.\n\n`(dynamic-wind before thunk after)`"},
+        {"values",       "**values**  -  Return multiple values.\n\n`(values expr...)`"},
+        {"call-with-values", "**call-with-values**  -  Receive multiple values.\n\n`(call-with-values producer consumer)`"},
+        {"apply",        "**apply**  -  Apply procedure to argument list.\n\n`(apply proc arg... arg-list)`"},
         /// Exception handling
-        {"raise",        "**raise** â€” Raise an exception.\n\n`(raise tag value)`"},
-        {"catch",        "**catch** â€” Catch an exception by tag.\n\n`(catch 'tag body ...)`"},
+        {"raise",        "**raise**  -  Raise an exception.\n\n`(raise tag value)`"},
+        {"catch",        "**catch**  -  Catch an exception by tag.\n\n`(catch 'tag body ...)`"},
         /// Logic / unification
-        {"logic-var",    "**logic-var** â€” Create a fresh logic variable.\n\n`(logic-var)`"},
-        {"unify",        "**unify** â€” Unify two terms, extending the substitution.\n\n`(unify term1 term2)`"},
-        {"deref-lvar",   "**deref-lvar** â€” Walk the substitution chain for a logic variable.\n\n`(deref-lvar lvar)`"},
-        {"trail-mark",   "**trail-mark** â€” Record the current trail position.\n\n`(trail-mark)`"},
-        {"unwind-trail", "**unwind-trail** â€” Undo bindings back to a saved trail mark.\n\n`(unwind-trail mark)`"},
-        {"copy-term",    "**copy-term** â€” Deep-copy a term, freshening logic variables.\n\n`(copy-term term)`"},
+        {"logic-var",    "**logic-var**  -  Create a fresh logic variable.\n\n`(logic-var)`"},
+        {"unify",        "**unify**  -  Unify two terms, extending the substitution.\n\n`(unify term1 term2)`"},
+        {"deref-lvar",   "**deref-lvar**  -  Walk the substitution chain for a logic variable.\n\n`(deref-lvar lvar)`"},
+        {"trail-mark",   "**trail-mark**  -  Record the current trail position.\n\n`(trail-mark)`"},
+        {"unwind-trail", "**unwind-trail**  -  Undo bindings back to a saved trail mark.\n\n`(unwind-trail mark)`"},
+        {"copy-term",    "**copy-term**  -  Deep-copy a term, freshening logic variables.\n\n`(copy-term term)`"},
         /// AD / tape
-        {"make-dual",        "**make-dual** â€” Construct a dual number for forward-mode AD.\n\n`(make-dual primal tangent)`"},
-        {"dual?",            "**dual?** â€” Predicate: is the value a dual number?\n\n`(dual? val)`"},
-        {"dual-primal",      "**dual-primal** â€” Extract the primal from a dual number.\n\n`(dual-primal dual)`"},
-        {"dual-backprop",    "**dual-backprop** â€” Extract the backprop closure from a dual.\n\n`(dual-backprop dual)`"},
-        {"tape-new",         "**tape-new** â€” Create a new AD tape.\n\n`(tape-new)`"},
-        {"tape-start!",      "**tape-start!** â€” Activate a tape for recording.\n\n`(tape-start! tape)`"},
-        {"tape-stop!",       "**tape-stop!** â€” Deactivate the current tape (pops the most recent).\n\n`(tape-stop!)`"},
-        {"tape-var",         "**tape-var** â€” Create a tracked tape variable.\n\n`(tape-var tape value)`"},
-        {"tape-backward!",   "**tape-backward!** â€” Run reverse-mode backpropagation.\n\n`(tape-backward! tape root-ref)`"},
-        {"tape-adjoint",     "**tape-adjoint** â€” Read the adjoint of a tape ref.\n\n`(tape-adjoint tape ref)`"},
-        {"tape-primal",      "**tape-primal** â€” Read the primal value of a tape ref.\n\n`(tape-primal tape ref)`"},
-        {"tape-ref?",        "**tape-ref?** â€” Predicate: is the value a tape reference?\n\n`(tape-ref? val)`"},
-        {"tape-ref-index",   "**tape-ref-index** â€” Get the integer index of a tape ref.\n\n`(tape-ref-index ref)`"},
-        {"tape-size",        "**tape-size** â€” Number of recorded nodes on the tape.\n\n`(tape-size tape)`"},
-        {"tape-ref-value",   "**tape-ref-value** â€” Get the primal value stored in a tape ref.\n\n`(tape-ref-value ref)`"},
+        {"make-dual",        "**make-dual**  -  Construct a dual number for forward-mode AD.\n\n`(make-dual primal tangent)`"},
+        {"dual?",            "**dual?**  -  Predicate: is the value a dual number?\n\n`(dual? val)`"},
+        {"dual-primal",      "**dual-primal**  -  Extract the primal from a dual number.\n\n`(dual-primal dual)`"},
+        {"dual-backprop",    "**dual-backprop**  -  Extract the backprop closure from a dual.\n\n`(dual-backprop dual)`"},
+        {"tape-new",         "**tape-new**  -  Create a new AD tape.\n\n`(tape-new)`"},
+        {"tape-start!",      "**tape-start!**  -  Activate a tape for recording.\n\n`(tape-start! tape)`"},
+        {"tape-stop!",       "**tape-stop!**  -  Deactivate the current tape (pops the most recent).\n\n`(tape-stop!)`"},
+        {"tape-var",         "**tape-var**  -  Create a tracked tape variable.\n\n`(tape-var tape value)`"},
+        {"tape-backward!",   "**tape-backward!**  -  Run reverse-mode backpropagation.\n\n`(tape-backward! tape root-ref)`"},
+        {"tape-adjoint",     "**tape-adjoint**  -  Read the adjoint of a tape ref.\n\n`(tape-adjoint tape ref)`"},
+        {"tape-primal",      "**tape-primal**  -  Read the primal value of a tape ref.\n\n`(tape-primal tape ref)`"},
+        {"tape-ref?",        "**tape-ref?**  -  Predicate: is the value a tape reference?\n\n`(tape-ref? val)`"},
+        {"tape-ref-index",   "**tape-ref-index**  -  Get the integer index of a tape ref.\n\n`(tape-ref-index ref)`"},
+        {"tape-size",        "**tape-size**  -  Number of recorded nodes on the tape.\n\n`(tape-size tape)`"},
+        {"tape-ref-value",   "**tape-ref-value**  -  Get the primal value stored in a tape ref.\n\n`(tape-ref-value ref)`"},
         /// CLP
-        {"%clp-domain-z!",  "**%clp-domain-z!** â€” Set an integer domain constraint.\n\n`(%clp-domain-z! lvar lo hi)`"},
-        {"%clp-domain-fd!",  "**%clp-domain-fd!** â€” Set a finite-domain constraint.\n\n`(%clp-domain-fd! lvar domain)`"},
-        {"%clp-get-domain",  "**%clp-get-domain** â€” Query the current domain of a constrained variable.\n\n`(%clp-get-domain lvar)`"},
+        {"%clp-domain-z!",  "**%clp-domain-z!**  -  Set an integer domain constraint.\n\n`(%clp-domain-z! lvar lo hi)`"},
+        {"%clp-domain-fd!",  "**%clp-domain-fd!**  -  Set a finite-domain constraint.\n\n`(%clp-domain-fd! lvar domain)`"},
+        {"%clp-get-domain",  "**%clp-get-domain**  -  Query the current domain of a constrained variable.\n\n`(%clp-get-domain lvar)`"},
 #ifdef ETA_HAS_NNG
         /// nng / message-passing builtins
-        {"nng-socket",     "**nng-socket** â€” Create an nng socket.\n\n`(nng-socket type-sym)` where type-sym is one of: `'pair` `'pub` `'sub` `'push` `'pull` `'req` `'rep` `'surveyor` `'respondent` `'bus`"},
-        {"nng-listen",     "**nng-listen** â€” Listen on an endpoint.\n\n`(nng-listen sock endpoint)` â€” e.g. `\"tcp:///<*:5555\"`, `\"ipc:///tmp/eta.sock\"`, `\"inproc://workers\"`"},
-        {"nng-dial",       "**nng-dial** â€” Dial (connect to) an endpoint.\n\n`(nng-dial sock endpoint)`"},
-        {"nng-close",      "**nng-close** â€” Close the socket (idempotent).\n\n`(nng-close sock)`"},
-        {"nng-socket?",    "**nng-socket?** â€” Socket predicate.\n\n`(nng-socket? x)` â†’ `#t` if x is an nng socket"},
-        {"send!",          "**send!** â€” Serialize a value and send it over a socket.\n\n`(send! sock value [flag])` â€” flag: `'noblock` or `'wait`"},
-        {"recv!",          "**recv!** â€” Receive a value from a socket.\n\n`(recv! sock [flag])` â€” returns value or `#f` on timeout; flag: `'noblock` or `'wait`"},
-        {"nng-poll",       "**nng-poll** â€” Poll multiple sockets for readiness.\n\n`(nng-poll items timeout-ms)` â€” items is a list of `(socket . events)` pairs; returns list of ready sockets"},
-        {"nng-subscribe",  "**nng-subscribe** â€” Set SUB topic filter.\n\n`(nng-subscribe sock topic)` â€” topic is a string prefix"},
-        {"nng-set-option", "**nng-set-option** â€” Set a socket option.\n\n`(nng-set-option sock option value)` â€” option: `'recv-timeout` `'send-timeout` `'recv-buf-size` `'survey-time`"},
+        {"nng-socket",     "**nng-socket**  -  Create an nng socket.\n\n`(nng-socket type-sym)` where type-sym is one of: `'pair` `'pub` `'sub` `'push` `'pull` `'req` `'rep` `'surveyor` `'respondent` `'bus`"},
+        {"nng-listen",     "**nng-listen**  -  Listen on an endpoint.\n\n`(nng-listen sock endpoint)`  -  e.g. `\"tcp:///<*:5555\"`, `\"ipc:///tmp/eta.sock\"`, `\"inproc://workers\"`"},
+        {"nng-dial",       "**nng-dial**  -  Dial (connect to) an endpoint.\n\n`(nng-dial sock endpoint)`"},
+        {"nng-close",      "**nng-close**  -  Close the socket (idempotent).\n\n`(nng-close sock)`"},
+        {"nng-socket?",    "**nng-socket?**  -  Socket predicate.\n\n`(nng-socket? x)` -> `#t` if x is an nng socket"},
+        {"send!",          "**send!**  -  Serialize a value and send it over a socket.\n\n`(send! sock value [flag])`  -  flag: `'noblock` or `'wait`"},
+        {"recv!",          "**recv!**  -  Receive a value from a socket.\n\n`(recv! sock [flag])`  -  returns value or `#f` on timeout; flag: `'noblock` or `'wait`"},
+        {"nng-poll",       "**nng-poll**  -  Poll multiple sockets for readiness.\n\n`(nng-poll items timeout-ms)`  -  items is a list of `(socket . events)` pairs; returns list of ready sockets"},
+        {"nng-subscribe",  "**nng-subscribe**  -  Set SUB topic filter.\n\n`(nng-subscribe sock topic)`  -  topic is a string prefix"},
+        {"nng-set-option", "**nng-set-option**  -  Set a socket option.\n\n`(nng-set-option sock option value)`  -  option: `'recv-timeout` `'send-timeout` `'recv-buf-size` `'survey-time`"},
         /// actor model
-        {"spawn",           "**spawn** â€” Spawn a child Eta process.\n\n`(spawn module-path)` â€” launches `etai <module-path>` as a child process and returns the parent-side PAIR socket for communication"},
-        {"spawn-kill",      "**spawn-kill** â€” Forcibly terminate a spawned child.\n\n`(spawn-kill sock)` â€” sends SIGTERM; returns `#t` on success"},
-        {"spawn-wait",      "**spawn-wait** â€” Wait for a spawned child to exit.\n\n`(spawn-wait sock)` â€” blocks until child exits; returns the exit code as a fixnum"},
-        {"current-mailbox", "**current-mailbox** â€” The PAIR socket to the parent process.\n\n`(current-mailbox)` â€” returns the socket established by `--mailbox` at startup, or `()` if not a spawned child"},
+        {"spawn",           "**spawn**  -  Spawn a child Eta process.\n\n`(spawn module-path)`  -  launches `etai <module-path>` as a child process and returns the parent-side PAIR socket for communication"},
+        {"spawn-kill",      "**spawn-kill**  -  Forcibly terminate a spawned child.\n\n`(spawn-kill sock)`  -  sends SIGTERM; returns `#t` on success"},
+        {"spawn-wait",      "**spawn-wait**  -  Wait for a spawned child to exit.\n\n`(spawn-wait sock)`  -  blocks until child exits; returns the exit code as a fixnum"},
+        {"current-mailbox", "**current-mailbox**  -  The PAIR socket to the parent process.\n\n`(current-mailbox)`  -  returns the socket established by `--mailbox` at startup, or `()` if not a spawned child"},
         /// in-process actor threads
-        {"spawn-thread-with", "**spawn-thread-with** â€” Spawn an in-process actor thread.\n\n`(spawn-thread-with module-path func-name args...)` â€” launches a new OS thread with its own VM, loads the module, calls `(func-name args...)`, communicates via `inproc://` PAIR socket"},
-        {"spawn-thread",      "**spawn-thread** â€” Spawn an actor thread from a closure.\n\n`(spawn-thread thunk)` â€” use `spawn-thread-with` instead for named functions"},
-        {"thread-join",       "**thread-join** â€” Wait for an actor thread to complete.\n\n`(thread-join sock)` â€” blocks until the thread exits; returns `0` on success, `#f` if not found"},
-        {"thread-alive?",     "**thread-alive?** â€” Check if an actor thread is still running.\n\n`(thread-alive? sock)` â€” returns `#t` while the thread is executing, `#f` after it exits"},
+        {"spawn-thread-with", "**spawn-thread-with**  -  Spawn an in-process actor thread.\n\n`(spawn-thread-with module-path func-name args...)`  -  launches a new OS thread with its own VM, loads the module, calls `(func-name args...)`, communicates via `inproc://` PAIR socket"},
+        {"spawn-thread",      "**spawn-thread**  -  Spawn an actor thread from a closure.\n\n`(spawn-thread thunk)`  -  use `spawn-thread-with` instead for named functions"},
+        {"thread-join",       "**thread-join**  -  Wait for an actor thread to complete.\n\n`(thread-join sock)`  -  blocks until the thread exits; returns `0` on success, `#f` if not found"},
+        {"thread-alive?",     "**thread-alive?**  -  Check if an actor thread is still running.\n\n`(thread-alive? sock)`  -  returns `#t` while the thread is executing, `#f` after it exits"},
 #endif
     };
 
@@ -785,7 +785,7 @@ Value LspServer::handle_hover(const Value& params) {
     auto symbols = collect_symbols(source);
     for (const auto& sym : symbols) {
         if (sym.name == word) {
-            std::string doc = "**" + sym.name + "** â€” " + sym.kind +
+            std::string doc = "**" + sym.name + "**  -  " + sym.kind +
                               " (line " + std::to_string(sym.line + 1) + ")";
             return json::object({
                 {"contents", json::object({
@@ -1050,7 +1050,7 @@ Value LspServer::handle_completion(const Value& params) {
         int kind = 3; ///< Function
         if (sym.kind == "macro") kind = 15;
         if (sym.kind == "module") kind = 9;
-        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + " â€” " + sym.kind);
+        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + "  -  " + sym.kind);
         if (!sym.signature.empty()) detail += " " + sym.signature;
         items.push_back(json::object({
             {"label", sym.name},
@@ -1065,7 +1065,7 @@ Value LspServer::handle_completion(const Value& params) {
         int kind = 3;
         if (sym.kind == "macro") kind = 15;
         if (sym.kind == "module") kind = 9;
-        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + " â€” " + sym.kind);
+        std::string detail = sym.module_name.empty() ? sym.kind : (sym.module_name + "  -  " + sym.kind);
         if (!sym.signature.empty()) detail += " " + sym.signature;
         items.push_back(json::object({
             {"label", sym.name},
@@ -2755,7 +2755,7 @@ std::vector<InlayCallSite> find_inlay_call_sites(const std::string& source) {
                 } else if (parent.seen_callee && parent.in_arg_token) {
                     ++parent.inner_depth;
                 } else if (!parent.seen_callee) {
-                    /// callee position is itself a sexp (e.g. ((f x) y)) — skip
+                    /// callee position is itself a sexp (e.g. ((f x) y))  -  skip
                     parent.in_arg_token = true; parent.seen_callee = true;
                     ++parent.inner_depth;
                 }

@@ -193,7 +193,7 @@ try {
 
 
 # -- 5. Copy helpers + docs ----------------------------------------------------
-Write-Host "> [5/6] Copying install script and docs..."
+Write-Host "> [5/6] Copying install script, docs, and examples..."
 $helpers = @(
     (Join-Path $ProjectRoot "scripts\install.ps1"),
     (Join-Path $ProjectRoot "scripts\install.cmd"),
@@ -203,12 +203,20 @@ foreach ($h in $helpers) {
     if (Test-Path $h) { Copy-Item -Force $h "$Prefix\" }
 }
 
+# Copy examples/
+$ExamplesSrc  = Join-Path $ProjectRoot "examples"
+$ExamplesDest = Join-Path $Prefix "examples"
+if (Test-Path $ExamplesSrc) {
+    Write-Host "  Copying examples..."
+    Copy-Item -Recurse -Force $ExamplesSrc $ExamplesDest
+}
+
 # -- 5b. Prune to minimal Windows layout ---------------------------------------
 # On Windows everything runtime-related lives in bin\ (executables + DLLs
 # copied next to them).  Drop any include/, lib/, share/ trees that
 # third-party dependencies may have installed despite EXCLUDE_FROM_ALL.
 Write-Host "  Pruning non-essential install directories..."
-$keepNames = @('bin','editors','stdlib')
+$keepNames = @('bin','editors','stdlib','examples')
 Get-ChildItem -LiteralPath $Prefix -Directory | Where-Object { $keepNames -notcontains $_.Name } | ForEach-Object {
     Write-Host "    - removing $($_.Name)\"
     Remove-Item -LiteralPath $_.FullName -Recurse -Force

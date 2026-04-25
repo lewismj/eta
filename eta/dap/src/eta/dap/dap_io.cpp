@@ -1,4 +1,4 @@
-﻿#include "dap_io.h"
+#include "dap_io.h"
 
 #include <functional>
 #include <iostream>

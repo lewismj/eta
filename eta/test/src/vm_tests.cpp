@@ -1455,7 +1455,7 @@ BOOST_AUTO_TEST_CASE(test_error_conditional) {
 BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
     std::string src = R"(
         (module m
-          ;; atom? â€” true for anything that is not a pair (symbols, bools, nil, numbersâ€¦)
+          ;; atom?  -  true for anything that is not a pair (symbols, bools, nil, numbers...)
           ;; This is a natural prelude candidate.
           (defun atom? (x) (not (pair? x)))
 
@@ -1519,15 +1519,15 @@ BOOST_AUTO_TEST_CASE(test_boolean_simplifier) {
               (if (equal? s e) s (simplify-bool* s))))
 
           ;; Test cases
-          ;; x âˆ§ âŠ¤ = x
+          ;; x ∧ ⊤ = x
           (define t1 (simplify-bool* '(and x #t)))
-          ;; x âˆ§ âŠ¥ = âŠ¥
+          ;; x ∧ ⊥ = ⊥
           (define t2 (simplify-bool* '(and x #f)))
-          ;; (âŠ¤ âˆ§ x) âˆ¨ âŠ¥ = x
+          ;; (⊤ ∧ x) ∨ ⊥ = x
           (define t3 (simplify-bool* '(or (and #t x) #f)))
-          ;; Â¬(Â¬y) = y
+          ;; ¬(¬y) = y
           (define t4 (simplify-bool* '(not (not y))))
-          ;; Â¬(a âˆ§ b) = (Â¬a) âˆ¨ (Â¬b)   (De Morgan)
+          ;; ¬(a ∧ b) = (¬a) ∨ (¬b)   (De Morgan)
           (define t5 (simplify-bool* '(not (and a b))))
 
           ;; Verify each result
@@ -1738,16 +1738,16 @@ BOOST_AUTO_TEST_CASE(test_symbolic_diff_comprehensive) {
 
           ;; Test cases
 
-          ;; 1) d/dx (xÂ² + 3) = 2x
+          ;; 1) d/dx (x² + 3) = 2x
           (define t1 (simplify* (diff '(+ (* x x) 3) 'x)))
 
           ;; 2) d/dx (x(x+3)) = (+ (+ x 3) x)
           (define t2 (simplify* (diff '(* x (+ x 3)) 'x)))
 
-          ;; 3) d/dx sin(xÂ²) = (* (cos (* x x)) (* 2 x))
+          ;; 3) d/dx sin(x²) = (* (cos (* x x)) (* 2 x))
           (define t3 (simplify* (diff '(sin (* x x)) 'x)))
 
-          ;; 4) d/dx (x+1)Â³ = (* 3 (^ (+ x 1) 2))
+          ;; 4) d/dx (x+1)³ = (* 3 (^ (+ x 1) 2))
           (define t4 (simplify* (diff '(^ (+ x 1) 3) 'x)))
 
           ;; Verify each

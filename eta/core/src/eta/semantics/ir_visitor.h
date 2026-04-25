@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "eta/semantics/core_ir.h"
 #include <variant>

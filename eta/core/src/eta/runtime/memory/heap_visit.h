@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <eta/runtime/memory/heap.h>
 #include <eta/runtime/types/types.h>

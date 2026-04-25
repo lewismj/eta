@@ -10,6 +10,13 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 enable_testing()
 
+option(ETA_BUILD_JUPYTER "Build the xeus-eta Jupyter kernel scaffold" OFF)
+option(ETA_USE_VCPKG "Prefer vcpkg for optional third-party dependencies" OFF)
+
+if(ETA_BUILD_JUPYTER)
+    include(cmake/FetchXeus.cmake)
+endif()
+
 add_subdirectory(eta)
 
 # Install stdlib alongside binaries.
@@ -28,6 +35,7 @@ foreach(_t IN ITEMS
     etac
     eta_lsp
     eta_dap
+    eta_jupyter
     eta_core_test
     eta_test
     eta_test_runner

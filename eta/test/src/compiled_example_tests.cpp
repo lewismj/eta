@@ -297,7 +297,7 @@ BOOST_FIXTURE_TEST_SUITE(compiled_example_tests, CompiledExampleFixture)
 BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
     auto files = collect_examples();
     if (files.empty()) {
-        BOOST_TEST_MESSAGE("No example files found â€” skipping. "
+        BOOST_TEST_MESSAGE("No example files found  -  skipping. "
                            "Set ETA_EXAMPLES_DIR and ETA_STDLIB_DIR compile definitions.");
         return;
     }
@@ -313,19 +313,19 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
         auto rel = fs::relative(file, examples);
 #if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
         if (requires_torch(file)) {
-            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires torch â€” skipped)");
+            BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires torch  -  skipped)");
             continue;
         }
 #endif
         if (requires_net(file)) {
-            BOOST_TEST_MESSAGE("  âŠ˜ " << rel.string() << " (requires networking runtime â€” skipped)");
+            BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires networking runtime  -  skipped)");
             continue;
         }
         BOOST_TEST_CONTEXT("Compiled round-trip: " << rel.string()) {
             /// Run interpreted
             auto [interp_ok, interp_output] = run_interpreted(file);
             if (!interp_ok) {
-                BOOST_TEST_MESSAGE("  âš  interpreted run failed â€” skipping: " << rel.string());
+                BOOST_TEST_MESSAGE("  [WARN] interpreted run failed  -  skipping: " << rel.string());
                 continue;
             }
 
@@ -335,7 +335,7 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
             if (!comp_ok) {
                 ++failed;
                 failures.push_back(rel.string() + " (compiled run failed)");
-                BOOST_TEST_MESSAGE("  âœ— " << rel.string() << " â€” compiled run failed");
+                BOOST_TEST_MESSAGE("  [FAIL] " << rel.string() << "  -  compiled run failed");
                 BOOST_TEST_MESSAGE("  partial output (" << comp_output.size() << " bytes): ["
                     << comp_output.substr(0, 500) << "]");
                 BOOST_TEST_MESSAGE("  interp output (" << interp_output.size() << " bytes): ["
@@ -360,11 +360,11 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
             bool output_matches = skip_output_compare || (norm_interp == norm_comp);
             if (output_matches) {
                 ++passed;
-                BOOST_TEST_MESSAGE("  âœ“ " << rel.string());
+                BOOST_TEST_MESSAGE("  [OK] " << rel.string());
             } else {
                 ++failed;
                 failures.push_back(rel.string() + " (output mismatch)");
-                BOOST_TEST_MESSAGE("  âœ— " << rel.string() << " â€” output mismatch");
+                BOOST_TEST_MESSAGE("  [FAIL] " << rel.string() << "  -  output mismatch");
 
                 /// Show first difference for debugging
                 size_t diff_pos = 0;

@@ -1,4 +1,4 @@
-﻿#include <boost/test/unit_test.hpp>
+#include <boost/test/unit_test.hpp>
 
 #include <eta/runtime/memory/heap.h>
 #include <eta/runtime/memory/intern_table.h>

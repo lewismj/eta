@@ -2005,7 +2005,7 @@ BOOST_FIXTURE_TEST_CASE(tape_nested_start_stop_balancing, FunctionalTestFixture)
             (tape-start! t2)
             (tape-stop!)
             (tape-stop!)
-            ;; No tape active â€” plain arithmetic
+            ;; No tape active  -  plain arithmetic
             (define result (+ 10 20))
         )
     )");
@@ -2043,7 +2043,7 @@ BOOST_FIXTURE_TEST_CASE(tape_exception_preserves_outer_tape, FunctionalTestFixtu
             (define x (tape-var t-outer 4.0))
             (tape-start! t-outer)
 
-            ;; Inner block that throws â€” its tape-start! should be unwound
+            ;; Inner block that throws  -  its tape-start! should be unwound
             (define t-inner (tape-new))
             (define caught
                 (catch 'fail
