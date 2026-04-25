@@ -66,9 +66,6 @@ function log(msg: string): void {
     outputChannel?.info(msg);
 }
 
-function logToFile(_msg: string): void {
-    /// Temporary file logging removed.
-}
 
 /** Resolve the .eta program path for a Run/Debug command, falling back to the active editor. */
 function resolveEtaTarget(uri?: Uri): string | undefined {
@@ -95,7 +92,6 @@ export function activate(context: ExtensionContext) {
     context.subscriptions.push(outputChannel, programOutputChannel);
     log('Eta extension activating...');
     log(`Eta extension version: ${context.extension.packageJSON.version}`);
-    logToFile(`activate version=${context.extension.packageJSON.version}`);
 
     // -- GC Roots tree view -------------------------------------------
     gcRootsProvider = new GCRootsTreeProvider();
@@ -244,7 +240,6 @@ export function activate(context: ExtensionContext) {
     const inlineValuesEnabled = workspace.getConfiguration('eta.debug')
         .get<boolean>('inlineValuesEnabled', false);
     log(`Eta inline values enabled: ${inlineValuesEnabled}`);
-    logToFile(`activate inlineValuesEnabled=${inlineValuesEnabled}`);
     const editorRegistrations = [
         languages.registerEvaluatableExpressionProvider(etaSelector, new EtaEvaluatableExpressionProvider()),
         languages.registerCodeLensProvider(etaSelector, new EtaCodeLensProvider()),
@@ -442,7 +437,6 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     }
 
     onWillStartSession(): void {
-        logToFile('tracker.onWillStartSession');
         this.channel.appendLine('[DAP] Debug session starting...');
         this.programChannel.clear();
         this.programChannel.show(true);
@@ -454,7 +448,6 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     }
 
     onWillStopSession(): void {
-        logToFile('tracker.onWillStopSession');
         this.channel.appendLine('[DAP] Debug session stopping...');
         if (this.programOutputFlushTimer) {
             clearTimeout(this.programOutputFlushTimer);
@@ -470,10 +463,8 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const args = message?.arguments;
         if (cmd) {
             const reqSeq = typeof message?.seq === 'number' ? message.seq : -1;
-            logToFile(`tracker.onWillReceiveMessage cmd=${cmd} seq=${reqSeq}`);
             if (cmd === 'evaluate') {
                 const expr = typeof args?.expression === 'string' ? args.expression : '';
-                logToFile(`tracker.onWillReceiveMessage evaluate.expr.len=${expr.length}`);
             }
         }
         switch (cmd) {
@@ -519,12 +510,10 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 const output: string = message?.body?.output ?? '';
                 if (output) { this.channel.append(output); }
             } else if (event === 'initialized') {
-                logToFile('tracker.onDidSendMessage event=initialized');
                 this.channel.appendLine('[DAP<-] initialized (adapter ready; VS Code will now send setBreakpoints)');
             } else if (event === 'stopped') {
                 const reason: string = message?.body?.reason ?? '?';
                 const tid: number    = message?.body?.threadId ?? 0;
-                logToFile(`tracker.onDidSendMessage event=stopped reason=${reason} threadId=${tid}`);
                 this.channel.appendLine(`[DAP<-] stopped: reason="${reason}" threadId=${tid}`);
                 const debugCfg = workspace.getConfiguration('eta.debug');
                 const autoRefreshViewsOnStop = debugCfg.get<boolean>('autoRefreshViewsOnStop', false);
@@ -534,37 +523,28 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                     || autoRefreshHeapOnStop
                     || autoRefreshDisassemblyOnStop
                     || gcRootsViewVisible;
-                logToFile(
-                    `tracker.stopped refreshFlags all=${autoRefreshViewsOnStop} heap=${autoRefreshHeapOnStop} disasm=${autoRefreshDisassemblyOnStop} mem=${gcRootsViewVisible} queue=${shouldQueueRefresh}`,
-                );
                 if (shouldQueueRefresh) {
                     this.queueStoppedRefresh();
                 }
             } else if (event === 'continued') {
-                logToFile('tracker.onDidSendMessage event=continued');
                 this.channel.appendLine('[DAP<-] continued');
             } else if (event === 'breakpoint') {
                 const bp  = message?.body?.breakpoint ?? {};
                 const why = message?.body?.reason ?? '?';
-                logToFile(`tracker.onDidSendMessage event=breakpoint reason=${why} id=${bp.id ?? '?'} line=${bp.line ?? '?'}`);
                 this.channel.appendLine(
                     `[DAP<-] breakpoint ${why}: id=${bp.id} verified=${bp.verified} line=${bp.line}`
                 );
             } else if (event === 'terminated') {
-                logToFile('tracker.onDidSendMessage event=terminated');
                 this.channel.appendLine('[DAP<-] terminated');
             } else if (event === 'exited') {
-                logToFile(`tracker.onDidSendMessage event=exited code=${message?.body?.exitCode ?? '?'}`);
                 this.channel.appendLine(`[DAP<-] exited: code=${message?.body?.exitCode ?? '?'}`);
             }
         } else if (type === 'response') {
             const cmd     = message?.command ?? '';
             const success = message?.success ?? false;
             if (cmd) {
-                logToFile(`tracker.onDidSendMessage response cmd=${cmd} success=${success}`);
                 if (cmd === 'evaluate' && success) {
                     const result = typeof message?.body?.result === 'string' ? message.body.result : '';
-                    logToFile(`tracker.onDidSendMessage evaluate.result.len=${result.length}`);
                 }
             }
             if (!success) {
@@ -581,7 +561,6 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     }
 
     private queueStoppedRefresh(): void {
-        logToFile(`tracker.queueStoppedRefresh running=${this.stoppedRefreshRunning} queued=${this.stoppedRefreshQueued}`);
         this.stoppedRefreshQueued = true;
         if (this.stoppedRefreshRunning) {
             return;
@@ -593,20 +572,16 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 await new Promise<void>(resolve => setTimeout(resolve, 0));
                 while (this.stoppedRefreshQueued) {
                     this.stoppedRefreshQueued = false;
-                    logToFile('tracker.refreshStoppedViews.begin');
                     await this.refreshStoppedViews();
-                    logToFile('tracker.refreshStoppedViews.end');
                 }
             } finally {
                 this.stoppedRefreshRunning = false;
-                logToFile('tracker.queueStoppedRefresh.done');
             }
         })();
     }
 
     private async refreshStoppedViews(): Promise<void> {
         const session = debug.activeDebugSession;
-        logToFile(`tracker.refreshStoppedViews.activeSession type=${session?.type ?? 'none'}`);
         if (!session || session.type !== 'eta') {
             return;
         }
@@ -638,9 +613,6 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         // the first breakpoint has data even before the UI view becomes visible.
         const shouldRefreshDisasmCurrent = autoRefreshDisasmOnStop;
         const shouldFetchChildren = autoRefreshViewsOnStop && childProcViewVisible;
-        logToFile(
-            `tracker.refreshStoppedViews.flags heap=${shouldFetchHeapSnapshot} localMem=${shouldFetchLocalMemory} disasm=${shouldRefreshDisasmCurrent} children=${shouldFetchChildren}`,
-        );
 
         const heapPromise = shouldFetchHeapSnapshot
             ? session.customRequest('eta/heapSnapshot', {
@@ -676,9 +648,6 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             childrenPromise,
             localMemoryPromise,
         ]);
-        logToFile(
-            `tracker.refreshStoppedViews.settled heap=${heapResult.status} disasm=${currentDisasmResult.status} children=${childrenResult.status} localMem=${localMemoryResult.status}`,
-        );
 
         if (shouldFetchHeapSnapshot) {
             if (heapResult.status === 'fulfilled') {
@@ -724,10 +693,8 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                         }) as LocalMemorySnapshot;
                         if (!isProbablyEmptyMemory(retry)) {
                             mem = retry;
-                            logToFile('tracker.refreshStoppedViews.localMemoryRetry used');
                         }
                     } catch (err: any) {
-                        logToFile(`tracker.refreshStoppedViews.localMemoryRetry failed err=${err?.message ?? String(err)}`);
                     }
                 }
                 gcRootsProvider?.applyLocalMemory(mem);
@@ -754,10 +721,8 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                         ) as DisassemblyResult;
                         if (EtaDebugAdapterTracker.DISASM_INSTR_RE.test(retry?.text ?? '')) {
                             disasmResult = retry;
-                            logToFile('tracker.refreshStoppedViews.disasmRetry used');
                         }
                     } catch (err: any) {
-                        logToFile(`tracker.refreshStoppedViews.disasmRetry failed err=${err?.message ?? String(err)}`);
                     }
                 }
                 disasmTreeProvider?.applyResult(disasmResult);
@@ -795,7 +760,6 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     }
 
     onError(error: Error): void {
-        logToFile(`tracker.onError ${error.message}`);
         if (this.programOutputFlushTimer) {
             clearTimeout(this.programOutputFlushTimer);
             this.programOutputFlushTimer = undefined;
@@ -805,7 +769,6 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     }
 
     onExit(code: number | undefined, signal: string | undefined): void {
-        logToFile(`tracker.onExit code=${code ?? 'null'} signal=${signal ?? 'null'}`);
         if (this.programOutputFlushTimer) {
             clearTimeout(this.programOutputFlushTimer);
             this.programOutputFlushTimer = undefined;

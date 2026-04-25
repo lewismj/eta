@@ -40,8 +40,6 @@ using namespace eta::json;
  * Local helpers
  */
 
-/// Temporary file logging removed.
-#define dap_debug_log(...) ((void)0)
 
 /**
  * Normalise a source-file path to a stable key that matches the normalisation
@@ -66,11 +64,9 @@ static std::string normalize_path(const std::string& raw) {
  */
 
 DapServer::DapServer() : in_(std::cin), out_(std::cout) {
-    dap_debug_log("DapServer::DapServer() path=" + dap_debug_log_path().string());
 }
 
 DapServer::DapServer(std::istream& in, std::ostream& out) : in_(in), out_(out) {
-    dap_debug_log("DapServer::DapServer(stream,stream) path=" + dap_debug_log_path().string());
 }
 
 /**
@@ -78,7 +74,6 @@ DapServer::DapServer(std::istream& in, std::ostream& out) : in_(in), out_(out) {
  */
 
 DapServer::~DapServer() {
-    dap_debug_log("DapServer::~DapServer begin");
     /**
      * If the VM thread is still running, wake it (in case it's blocked on
      * debug_cv_ after a pause) so the thread can finish and be joined.
@@ -90,7 +85,6 @@ DapServer::~DapServer() {
     if (vm_thread_.joinable()) {
         vm_thread_.join();
     }
-    dap_debug_log("DapServer::~DapServer end");
 }
 
 /**
@@ -103,8 +97,6 @@ void DapServer::send(const Value& msg) {
 }
 
 void DapServer::send_response(const Value& id, const Value& body) {
-    const std::string req = id.is_int() ? std::to_string(id.as_int()) : "?";
-    dap_debug_log("send_response cmd=" + current_command_ + " request_seq=" + req);
     send(json::object({
         {"seq",         Value(next_seq_++)},
         {"type",        "response"},
@@ -116,13 +108,6 @@ void DapServer::send_response(const Value& id, const Value& body) {
 }
 
 void DapServer::send_error_response(const Value& id, int code, const std::string& msg) {
-    const std::string req = id.is_int() ? std::to_string(id.as_int()) : "?";
-    dap_debug_log(
-        "send_error_response cmd=" + current_command_
-        + " request_seq=" + req
-        + " code=" + std::to_string(code)
-        + " msg=" + msg
-    );
     send(json::object({
         {"seq",         Value(next_seq_++)},
         {"type",        "response"},
@@ -139,7 +124,6 @@ void DapServer::send_error_response(const Value& id, int code, const std::string
 }
 
 void DapServer::send_event(const std::string& event_name, const Value& body) {
-    dap_debug_log("send_event name=" + event_name);
     send(json::object({
         {"seq",   Value(next_seq_++)},
         {"type",  "event"},
@@ -153,20 +137,16 @@ void DapServer::send_event(const std::string& event_name, const Value& body) {
  */
 
 void DapServer::run() {
-    dap_debug_log("run() begin");
     while (running_) {
         auto msg_str = read_message(in_);
         if (!msg_str) {
-            dap_debug_log("run() read_message: EOF");
             break;
         }
-        dap_debug_log("run() read_message bytes=" + std::to_string(msg_str->size()));
 
         try {
             auto msg = json::parse(*msg_str);
             dispatch(msg);
         } catch (const std::exception& e) {
-            dap_debug_log(std::string("run() parse/dispatch exception: ") + e.what());
             std::cerr << "[eta_dap] parse error: " << e.what() << "\n";
         }
     }
@@ -175,7 +155,6 @@ void DapServer::run() {
     if (vm_thread_.joinable()) {
         vm_thread_.join();
     }
-    dap_debug_log("run() end");
 }
 
 /**
@@ -192,7 +171,6 @@ void DapServer::dispatch(const Value& msg) {
     const Value& args = msg.has("arguments") ? msg["arguments"] : Value{};
     current_command_  = *cmd;
     const std::string req = id.is_int() ? std::to_string(id.as_int()) : "?";
-    dap_debug_log("dispatch begin cmd=" + *cmd + " request_seq=" + req);
 
     try {
         if (*cmd == "initialize")               handle_initialize(id, args);
@@ -229,10 +207,8 @@ void DapServer::dispatch(const Value& msg) {
             send_response(id, json::object({}));
         }
     } catch (const std::exception& e) {
-        dap_debug_log(std::string("dispatch exception cmd=") + *cmd + " err=" + e.what());
         throw;
     }
-    dap_debug_log("dispatch end cmd=" + *cmd + " request_seq=" + req);
 }
 
 /**
@@ -562,20 +538,15 @@ void DapServer::handle_set_exception_breakpoints(const Value& id, const Value& a
  */
 
 void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/) {
-    dap_debug_log("handle_configuration_done begin launched=" + std::string(launched_ ? "true" : "false"));
     send_response(id, json::object({}));
 
     if (!launched_) {
-        dap_debug_log("handle_configuration_done early-return (launch not seen)");
         return; ///< no launch request yet (shouldn't happen)
     }
-    dap_debug_log("handle_configuration_done starting VM bootstrap");
     start_vm_from_current_launch();
-    dap_debug_log("handle_configuration_done end");
 }
 
 void DapServer::start_vm_from_current_launch() {
-    dap_debug_log("start_vm_from_current_launch begin script=" + script_path_.string());
 
     /// Build the module search path using ModulePathResolver (same logic as etai / eta_lsp)
     auto resolver = interpreter::ModulePathResolver::from_args_or_env("");
@@ -598,7 +569,6 @@ void DapServer::start_vm_from_current_launch() {
 
     /// Build the driver on the DAP thread (it will be moved-to below)
     auto drv = std::make_unique<session::Driver>(std::move(resolver));
-    dap_debug_log("start_vm_from_current_launch created Driver");
 
     /// Register stop callback BEFORE loading prelude so the hook is in place
     install_stop_callback_for(drv->vm(), MAIN_THREAD_ID);
@@ -638,12 +608,10 @@ void DapServer::start_vm_from_current_launch() {
      */
     {
         std::lock_guard<std::mutex> lk(vm_mutex_);
-        dap_debug_log("start_vm_from_current_launch acquired vm_mutex to publish driver");
         driver_ = std::move(drv);
         register_main_thread_locked();
         install_pending_breakpoints();
     }
-    dap_debug_log("start_vm_from_current_launch published driver and breakpoints");
 
 #ifdef ETA_HAS_NNG
     /**
@@ -683,17 +651,14 @@ void DapServer::start_vm_from_current_launch() {
 
     /// If stopOnEntry, request a pause immediately (before any code runs)
     if (stop_on_entry_) {
-        dap_debug_log("start_vm_from_current_launch requesting stop-on-entry pause");
         driver_->vm().request_pause();
     }
 
     /// Launch the VM on a background thread
     vm_thread_ = std::thread([this]() {
-        dap_debug_log("vm_thread begin");
         auto* drv = driver_.get();
 
         /// Load prelude
-        dap_debug_log("vm_thread loading prelude");
         auto pr = drv->load_prelude();
         if (!pr.found) {
             send_event("output", json::object({
@@ -729,9 +694,7 @@ void DapServer::start_vm_from_current_launch() {
         notify_breakpoints_verified();
 
         /// Execute the script
-        dap_debug_log("vm_thread run_file begin script=" + script_path_.string());
         bool ok = drv->run_file(script_path_);
-        dap_debug_log("vm_thread run_file end ok=" + std::string(ok ? "true" : "false"));
 
         /// Signal IDE
         if (ok) {
@@ -754,9 +717,7 @@ void DapServer::start_vm_from_current_launch() {
             }
             send_event("terminated", json::object({}));
         }
-        dap_debug_log("vm_thread end");
     });
-    dap_debug_log("start_vm_from_current_launch end (vm thread launched)");
 }
 
 /**
@@ -2946,19 +2907,13 @@ void DapServer::on_thread_stopped(int dap_thread_id, const runtime::vm::StopEven
         case StopReason::Exception:  reason_str = "exception";  break;
         default:                     reason_str = "pause";      break;
     }
-    dap_debug_log(
-        "on_thread_stopped entry tid=" + std::to_string(dap_thread_id)
-        + " reason=" + reason_str
-    );
 
     bool should_emit_stopped = true;
     bool is_main = (dap_thread_id == MAIN_THREAD_ID);
     std::vector<std::string> deferred_output;
 
-    dap_debug_log("on_thread_stopped acquiring vm_mutex");
     {
         std::lock_guard<std::mutex> lk(vm_mutex_);
-        dap_debug_log("on_thread_stopped acquired vm_mutex");
 
         /// Compound refs are owned by whichever thread paused last.  Clearing
         /// on every stop keeps the maps small and avoids stale ids leaking
@@ -3043,18 +2998,12 @@ void DapServer::on_thread_stopped(int dap_thread_id, const runtime::vm::StopEven
 
             if (matched_breakpoint && !matched_stop_breakpoint) {
                 should_emit_stopped = false;
-                dap_debug_log("on_thread_stopped auto-resume (logpoint/condition filtered stop)");
                 th->vm->resume();
             }
         }
     }
-    dap_debug_log(
-        "on_thread_stopped released vm_mutex should_emit_stopped="
-        + std::string(should_emit_stopped ? "true" : "false")
-    );
 
     for (const auto& text : deferred_output) {
-        dap_debug_log("on_thread_stopped flushing deferred output line");
         send_event("output", json::object({
             {"category", "console"},
             {"output", text},
@@ -3062,17 +3011,14 @@ void DapServer::on_thread_stopped(int dap_thread_id, const runtime::vm::StopEven
     }
 
     if (!should_emit_stopped) {
-        dap_debug_log("on_thread_stopped exit without stopped event");
         return;
     }
 
-    dap_debug_log("on_thread_stopped sending stopped event");
     send_event("stopped", json::object({
         {"reason",            reason_str},
         {"threadId",          Value(static_cast<int64_t>(dap_thread_id))},
         {"allThreadsStopped", Value(is_main)},
     }));
-    dap_debug_log("on_thread_stopped stopped event sent");
 }
 
 void DapServer::install_pending_breakpoints_on_locked(session::Driver& drv) {
