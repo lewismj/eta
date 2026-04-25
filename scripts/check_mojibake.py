@@ -119,7 +119,11 @@ def main() -> int:
     args = ap.parse_args()
 
     root = pathlib.Path(args.root)
-    files = sorted(root.rglob("*.md"))
+
+    files = sorted(
+        p for p in root.rglob("*")
+        if p.is_file() and p.suffix in {".md", ".js", ".ts"}
+    )
 
     affected = []
     for f in files:

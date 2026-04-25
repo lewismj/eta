@@ -55,11 +55,28 @@ if ($Prefix) {
 
     $BinDir    = (Resolve-Path "$Prefix\bin").Path
     $StdlibDir = (Resolve-Path "$Prefix\stdlib").Path
-    $VsixPath  = "$Prefix\editors\eta-lang.vsix"
+    $EditorsDir = "$Prefix\editors"
 } else {
-    $BinDir    = Join-Path $BundleDir "bin"
-    $StdlibDir = Join-Path $BundleDir "stdlib"
-    $VsixPath  = Join-Path $BundleDir "editors\eta-lang.vsix"
+    $BinDir     = Join-Path $BundleDir "bin"
+    $StdlibDir  = Join-Path $BundleDir "stdlib"
+    $EditorsDir = Join-Path $BundleDir "editors"
+}
+
+# Resolve the VS Code extension. The build-release script produces a
+# versioned filename like `eta-lang-0.3.0.vsix`; older bundles used the
+# unversioned `eta-lang.vsix`. Accept either, preferring the most recent
+# versioned match if multiple are present.
+$VsixPath = $null
+if (Test-Path $EditorsDir) {
+    $vsix = Get-ChildItem -Path $EditorsDir -Filter 'eta-lang-*.vsix' -File `
+        -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($vsix) {
+        $VsixPath = $vsix.FullName
+    } elseif (Test-Path (Join-Path $EditorsDir 'eta-lang.vsix')) {
+        $VsixPath = Join-Path $EditorsDir 'eta-lang.vsix'
+    }
 }
 
 Write-Host "+==============================================================+"
@@ -145,4 +162,3 @@ Write-Host ""
 Write-Host "    etai --help"
 Write-Host "    eta_repl"
 Write-Host ""
-

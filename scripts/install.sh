@@ -42,11 +42,24 @@ if [ -n "$TARGET" ]; then
     chmod +x "$TARGET/bin/"* 2>/dev/null || true
     BIN_DIR="$(cd "$TARGET/bin" && pwd)"
     STDLIB_DIR="$(cd "$TARGET/stdlib" && pwd)"
-    VSIX_PATH="$TARGET/editors/eta-lang.vsix"
+    EDITORS_DIR="$TARGET/editors"
 else
     BIN_DIR="${BUNDLE_DIR}/bin"
     STDLIB_DIR="${BUNDLE_DIR}/stdlib"
-    VSIX_PATH="${BUNDLE_DIR}/editors/eta-lang.vsix"
+    EDITORS_DIR="${BUNDLE_DIR}/editors"
+fi
+
+# Resolve the VS Code extension. The build-release script produces a
+# versioned filename like `eta-lang-0.3.0.vsix`; older bundles used the
+# unversioned `eta-lang.vsix`. Accept either, preferring the versioned
+# (most-recent) match if multiple are present.
+VSIX_PATH=""
+if [ -d "$EDITORS_DIR" ]; then
+    # shellcheck disable=SC2012
+    VSIX_PATH="$(ls -t "$EDITORS_DIR"/eta-lang-*.vsix 2>/dev/null | head -n 1)"
+    if [ -z "$VSIX_PATH" ] && [ -f "$EDITORS_DIR/eta-lang.vsix" ]; then
+        VSIX_PATH="$EDITORS_DIR/eta-lang.vsix"
+    fi
 fi
 
 echo "╔══════════════════════════════════════════════════════════════╗"

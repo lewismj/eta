@@ -1,6 +1,6 @@
 .vscode/**
 .vscode-test/**
-ne.vscode-test.mjs
+.vscode-test.mjs
 src/**
 test/**
 out/test/**
