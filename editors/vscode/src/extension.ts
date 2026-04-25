@@ -1,4 +1,4 @@
-﻿import {
+import {
     workspace,
     ExtensionContext,
     window,
@@ -68,10 +68,9 @@ function resolveEtaTarget(uri?: Uri): string | undefined {
     return editor.document.fileName;
 }
 
-/** Resolve ETA_MODULE_PATH from the new shared setting, legacy lsp setting, or env. */
+/** Resolve ETA_MODULE_PATH from the shared setting or env. */
 function resolveModulePath(): string {
     return workspace.getConfiguration('eta').get<string>('modulePath', '')
-        || workspace.getConfiguration('eta.lsp').get<string>('modulePath', '')
         || process.env['ETA_MODULE_PATH']
         || '';
 }
@@ -83,7 +82,7 @@ export function activate(context: ExtensionContext) {
     context.subscriptions.push(outputChannel, programOutputChannel);
     log('Eta extension activating...');
 
-    // â”€â”€ GC Roots tree view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- GC Roots tree view -------------------------------------------
     gcRootsProvider = new GCRootsTreeProvider();
     context.subscriptions.push(
         window.createTreeView('etaGCRoots', {
@@ -92,13 +91,13 @@ export function activate(context: ExtensionContext) {
         }),
     );
 
-    // â”€â”€ Disassembly virtual document provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Disassembly virtual document provider -----------------------
     disasmProvider = new DisassemblyContentProvider();
     context.subscriptions.push(
         workspace.registerTextDocumentContentProvider('eta-disasm', disasmProvider),
     );
 
-    // â”€â”€ Disassembly tree view (debug sidebar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Disassembly tree view (debug sidebar) ----------------------------
     disasmTreeProvider = new DisassemblyTreeProvider();
     context.subscriptions.push(
         window.createTreeView('etaDisassembly', {
@@ -107,7 +106,7 @@ export function activate(context: ExtensionContext) {
         }),
     );
 
-    // â”€â”€ Child process tree view (debug sidebar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Child process tree view (debug sidebar) --------------------------
     childProcProvider = new ChildProcessTreeProvider();
     context.subscriptions.push(
         window.createTreeView('etaChildProcesses', {
@@ -116,7 +115,7 @@ export function activate(context: ExtensionContext) {
         }),
     );
 
-    // â”€â”€ Always register the debug adapter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Always register the debug adapter --------------------------
     const binaries = discoverBinaries(context);
     const serverPath = binaries.lsp;
     const dapPath = binaries.dap ?? (process.platform === 'win32' ? 'eta_dap.exe' : 'eta_dap');
@@ -186,10 +185,10 @@ export function activate(context: ExtensionContext) {
         }),
     );
 
-    // â”€â”€ Test Explorer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Test Explorer -------------------------------------------
     registerTestController(context);
 
-    // ── Editor providers (inline values, hover-eval, code lens, links) ──
+    // -- Editor providers (inline values, hover-eval, code lens, links) --
     const etaSelector = { scheme: 'file', language: 'eta' } as const;
     context.subscriptions.push(
         languages.registerInlineValuesProvider(etaSelector, new EtaInlineValuesProvider()),
@@ -198,7 +197,7 @@ export function activate(context: ExtensionContext) {
         languages.registerDocumentLinkProvider(etaSelector, new EtaDocumentLinkProvider()),
     );
 
-    // â”€â”€ Watch for configuration changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Watch for configuration changes -------------------------------------------
     context.subscriptions.push(
         workspace.onDidChangeConfiguration(e => {
             if (
@@ -213,7 +212,7 @@ export function activate(context: ExtensionContext) {
         })
     );
 
-    // â”€â”€ LSP setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- LSP setup --------------------------------------------------
     const enabled = workspace.getConfiguration('eta.lsp').get<boolean>('enabled', true);
     if (!enabled) {
         log('LSP is disabled via eta.lsp.enabled = false. Skipping LSP startup.');
@@ -265,7 +264,7 @@ export function deactivate(): Thenable<void> | undefined {
     return client.stop();
 }
 
-// â”€â”€ Debug configuration provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Debug configuration provider -------------------------------------------------
 
 class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
     resolveDebugConfiguration(
@@ -332,7 +331,7 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
     }
 }
 
-// â”€â”€ Debug adapter tracker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Debug adapter tracker -----------------------------------------------------
 
 class EtaDebugAdapterTracker implements DebugAdapterTracker {
     constructor(
@@ -341,7 +340,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     ) {}
 
     onWillStartSession(): void {
-        this.channel.appendLine('[DAP] Debug session startingâ€¦');
+        this.channel.appendLine('[DAP] Debug session starting...');
         this.programChannel.clear();
         this.programChannel.show(true);
 
@@ -352,7 +351,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     }
 
     onWillStopSession(): void {
-        this.channel.appendLine('[DAP] Debug session stoppingâ€¦');
+        this.channel.appendLine('[DAP] Debug session stopping...');
         childProcProvider?.notifySessionEnded();
     }
 
@@ -361,21 +360,21 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const args = message?.arguments;
         switch (cmd) {
             case 'initialize':
-                this.channel.appendLine('[DAPâ†’] initialize');
+                this.channel.appendLine('[DAP->] initialize');
                 break;
             case 'launch':
-                this.channel.appendLine(`[DAPâ†’] launch: program="${args?.program ?? '?'}"`);
+                this.channel.appendLine(`[DAP->] launch: program="${args?.program ?? '?'}"`);
                 break;
             case 'setBreakpoints': {
                 const srcPath: string = args?.source?.path ?? '?';
                 const lines: number[] = (args?.breakpoints ?? []).map((b: any) => b.line as number);
                 this.channel.appendLine(
-                    `[DAPâ†’] setBreakpoints: ${lines.length} bp(s) in "${srcPath}" lines=[${lines.join(',')}]`
+                    `[DAP->] setBreakpoints: ${lines.length} bp(s) in "${srcPath}" lines=[${lines.join(',')}]`
                 );
                 break;
             }
             case 'configurationDone':
-                this.channel.appendLine('[DAPâ†’] configurationDone');
+                this.channel.appendLine('[DAP->] configurationDone');
                 break;
             case 'continue':
             case 'next':
@@ -383,10 +382,10 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             case 'stepOut':
             case 'pause':
             case 'disconnect':
-                this.channel.appendLine(`[DAPâ†’] ${cmd}`);
+                this.channel.appendLine(`[DAP->] ${cmd}`);
                 break;
             default:
-                if (cmd) { this.channel.appendLine(`[DAPâ†’] ${cmd}`); }
+                if (cmd) { this.channel.appendLine(`[DAP->] ${cmd}`); }
         }
     }
 
@@ -402,11 +401,11 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 const output: string = message?.body?.output ?? '';
                 if (output) { this.channel.append(output); }
             } else if (event === 'initialized') {
-                this.channel.appendLine('[DAPâ†] initialized (adapter ready; VS Code will now send setBreakpoints)');
+                this.channel.appendLine('[DAP<-] initialized (adapter ready; VS Code will now send setBreakpoints)');
             } else if (event === 'stopped') {
                 const reason: string = message?.body?.reason ?? '?';
                 const tid: number    = message?.body?.threadId ?? 0;
-                this.channel.appendLine(`[DAPâ†] stopped: reason="${reason}" threadId=${tid}`);
+this.channel.appendLine(`[DAP<-] stopped: reason="${reason}" threadId=${tid}`);
                 HeapInspectorPanel.current()?.notifyStopped();
                 gcRootsProvider?.notifyStopped();
                 disasmTreeProvider?.notifyStopped();
@@ -419,29 +418,29 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 }
                 childProcProvider?.notifyStopped();
             } else if (event === 'continued') {
-                this.channel.appendLine('[DAPâ†] continued');
+                this.channel.appendLine('[DAP<-] continued');
             } else if (event === 'breakpoint') {
                 const bp  = message?.body?.breakpoint ?? {};
                 const why = message?.body?.reason ?? '?';
                 this.channel.appendLine(
-                    `[DAPâ†] breakpoint ${why}: id=${bp.id} verified=${bp.verified} line=${bp.line}`
+                    `[DAP<-] breakpoint ${why}: id=${bp.id} verified=${bp.verified} line=${bp.line}`
                 );
             } else if (event === 'terminated') {
-                this.channel.appendLine('[DAPâ†] terminated');
+                this.channel.appendLine('[DAP<-] terminated');
             } else if (event === 'exited') {
-                this.channel.appendLine(`[DAPâ†] exited: code=${message?.body?.exitCode ?? '?'}`);
+                this.channel.appendLine(`[DAP<-] exited: code=${message?.body?.exitCode ?? '?'}`);
             }
         } else if (type === 'response') {
             const cmd     = message?.command ?? '';
             const success = message?.success ?? false;
             if (!success) {
                 this.channel.appendLine(
-                    `[DAPâ†] ERROR response to "${cmd}": ${JSON.stringify(message?.body ?? {})}`
+                    `[DAP<-] ERROR response to "${cmd}": ${JSON.stringify(message?.body ?? {})}`
                 );
             } else if (cmd === 'initialize') {
                 const caps = message?.body ?? {};
                 this.channel.appendLine(
-                    `[DAPâ†] initialize OK â€” supportsConfigurationDone=${caps.supportsConfigurationDoneRequest}`
+                    `[DAP<-] initialize OK - supportsConfigurationDone=${caps.supportsConfigurationDoneRequest}`
                 );
             } else if (cmd === 'eta/childProcesses') {
                 const children = message?.body?.children;

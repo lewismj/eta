@@ -1,0 +1,13 @@
+{
+  "argv": ["@CMAKE_INSTALL_PREFIX@/bin/eta_jupyter", "-f", "{connection_file}"],
+  "display_name": "Eta",
+  "language": "eta",
+  "metadata": {
+    "language_info": {
+      "name": "eta",
+      "mimetype": "text/x-eta",
+      "file_extension": ".eta",
+      "pygments_lexer": "scheme"
+    }
+  }
+}

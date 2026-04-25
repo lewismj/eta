@@ -105,11 +105,6 @@
                     "default": true,
                     "description": "Enable the Eta Language Server for diagnostics and IDE features."
                 },
-                "eta.lsp.modulePath": {
-                    "type": "string",
-                    "default": "",
-                    "description": "Deprecated — use eta.modulePath instead. Colon/semicolon-separated list of directories to search for Eta modules."
-                },
                 "eta.dap.executablePath": {
                     "type": "string",
                     "default": "",

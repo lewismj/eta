@@ -11,7 +11,6 @@ import * as fs from 'fs';
 
 function moduleSearchPaths(): string[] {
     const cfg = vscode.workspace.getConfiguration('eta').get<string>('modulePath', '')
-        || vscode.workspace.getConfiguration('eta.lsp').get<string>('modulePath', '')
         || process.env['ETA_MODULE_PATH']
         || '';
     const sep = process.platform === 'win32' ? /[;:]/ : /:/;
