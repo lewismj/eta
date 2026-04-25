@@ -13,6 +13,7 @@
 
 <p align="center">
   <a href="docs/quickstart.md">Quick Start</a> ·
+  <a href="docs/vscode.md">VS Code Extension</a> ·
   <a href="docs/build.md">Build from Source</a> ·
   <a href="docs/architecture.md">Architecture</a> ·
   <a href="docs/nanboxing.md">NaN-Boxing</a> ·
@@ -75,7 +76,7 @@ full compilation pipeline).
 | **Message Passing & Actors** | Erlang-style actor model via nng: `spawn` child processes, `send!`/`recv!` over PAIR sockets, `worker-pool` parallel fan-out, REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT, and supervision trees (`one-for-one`, `one-for-all`) — network-transparent across machines | [Networking](docs/networking.md) · [Message Passing](docs/message-passing.md) · [Supervisors](docs/supervisor.md) |
 | **End-to-End Pipeline** | All domains compose: symbolic differentiation → do-calculus identification → logic/CLP validation → libtorch neural estimation → AAD risk → CLP(R)+QP allocation | [Portfolio Engine](docs/portfolio.md) · [Causal Primer](docs/causal-factor.md) |
 
-The implementation ships as five executables and a VS Code extension:
+The implementation ships as six executables and a VS Code extension:
 
 <p align="center">
   <strong>Bytecode Compiler</strong> (<code>etac</code>)<br>
@@ -83,6 +84,7 @@ The implementation ships as five executables and a VS Code extension:
   <strong>Interactive REPL</strong> (<code>eta_repl</code>)<br>
   <strong>Language Server</strong> (<code>eta_lsp</code>)<br>
   <strong>Debug Adapter</strong> (<code>eta_dap</code>)<br>
+  <strong>Test Runner</strong> (<code>eta_test</code>)<br>
   <strong>VS Code Extension</strong>
 </p>
 
@@ -194,7 +196,10 @@ debug. The extension provides:
 - **GC Roots Tree** — expandable root categories (Stack, Globals, Frames), module-grouped globals, object drill-down
 - **Child Processes** — debug sidebar panel listing all spawned actor processes with PID, endpoint, and live/exited status
 
-<img src="docs/img/eta_example_run.png" alt="Eta example run in VS Code" width="500">
+<img src="docs/img/vsx/eta_debug_session.png" alt="Eta example run in VS Code" width="500">
+
+For the full feature tour with screenshots, see
+[VS Code Extension](docs/vscode.md).
 
 > [!TIP]
 > See [TLDR.md](TLDR.md) for a step-by-step walkthrough with screenshots,
@@ -319,6 +324,7 @@ flowchart LR
 | Page                                       | Contents                                                                                      |
 |--------------------------------------------|-----------------------------------------------------------------------------------------------|
 | **[Quick Start](docs/quickstart.md)**      | Installing, running `etai`/`etac`, REPL, modules, VS Code extension (full reference)          |
+| **[VS Code Extension](docs/vscode.md)** | Complete guide: install, configure, binary discovery, launch schema, debugging, heap/disassembly/child-process panels, Test Explorer, troubleshooting |
 | **[Build from Source](docs/build.md)**     | Prerequisites, one-script builds, manual CMake, CI, testing                                   |
 | **[Architecture](docs/architecture.md)**   | Full system diagram, phase-by-phase walkthrough, Core IR node types                           |
 | **[NaN-Boxing](docs/nanboxing.md)**        | 64-bit memory layout, bit-field breakdown, encoding/decoding examples                         |
