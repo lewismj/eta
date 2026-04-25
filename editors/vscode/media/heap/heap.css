@@ -6,6 +6,7 @@
     --badge: var(--vscode-badge-background, #4d4d4d);
     --badge-fg: var(--vscode-badge-foreground, #fff);
     --bar-bg: var(--vscode-progressBar-background, #0e70c0);
+    --bar-track: var(--vscode-input-background, #1a1a1a);
     --error: var(--vscode-errorForeground, #f44);
     --warn: var(--vscode-editorWarning-foreground, #c80);
     --add: var(--vscode-gitDecoration-addedResourceForeground, #2e8540);
@@ -65,16 +66,30 @@ input[type=text] {
     margin-bottom: 4px;
 }
 .gauge-bar {
-    flex: 1; height: 18px; background: var(--border);
-    border-radius: 4px; overflow: hidden;
+    flex: 1;
+    height: 18px;
+    background: var(--bar-track);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
 }
 .gauge-fill {
-    height: 100%; background: var(--bar-bg);
+    height: 100%;
+    min-width: 0;
+    background: var(--bar-bg);
     transition: width 0.3s, background 0.3s;
 }
 .gauge-fill.warn { background: var(--warn); }
 .gauge-fill.crit { background: var(--error); }
-.gauge-label { white-space: nowrap; min-width: 100px; text-align: right; }
+.gauge-label {
+    white-space: nowrap;
+    min-width: 56px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.gauge-stats {
+    font-size: 0.92em;
+}
 
 /* Kind stats table */
 table { width: 100%; border-collapse: collapse; }
@@ -88,6 +103,7 @@ th.sortable.sorted.asc::after { content: ' ▴'; }
 
 .delta-pos { color: var(--add); }
 .delta-neg { color: var(--del); }
+.delta-zero { color: var(--fg); opacity: 0.8; }
 tr.row-new td:first-child::before { content: '✚ '; color: var(--add); }
 tr.row-removed td:first-child::before { content: '✖ '; color: var(--del); }
 tr.row-removed { opacity: 0.65; font-style: italic; }

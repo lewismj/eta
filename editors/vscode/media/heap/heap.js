@@ -21,10 +21,11 @@
         return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
     }
     function fmtSigned(n, formatter) {
-        if (n === 0) return '·';
-        const sign = n > 0 ? '+' : '';
-        const cls = n > 0 ? 'delta-pos' : 'delta-neg';
-        return '<span class="' + cls + '">' + sign + (formatter ? formatter(n) : n.toLocaleString()) + '</span>';
+        const abs = Math.abs(n);
+        const sign = n >= 0 ? '+' : '-';
+        const cls = n > 0 ? 'delta-pos' : n < 0 ? 'delta-neg' : 'delta-zero';
+        const value = formatter ? formatter(abs) : abs.toLocaleString();
+        return '<span class="' + cls + '">' + sign + value + '</span>';
     }
     function esc(s) {
         const d = document.createElement('div');
@@ -94,15 +95,30 @@
         let baseDelta = '';
         if (diffMode && baseline) {
             const delta = snap.totalBytes - baseline.totalBytes;
-            baseDelta = ' · Δ ' + fmtSigned(delta, fmt);
+            baseDelta = ' | d ' + fmtSigned(delta, fmt);
         }
 
-        let html = '<div class="section">';
+        const safeSoftLimit = Math.max(0, snap.softLimit || 0);
+        const freeHeadroom = Math.max(0, safeSoftLimit - snap.totalBytes);
+        let html = '<div class="section"><h2>Memory</h2>';
         html += '<div class="gauge-container">';
-        html += '  <span>Memory</span>';
         html += '  <div class="gauge-bar"><div class="gauge-fill ' + cls + '" style="width:' + pct.toFixed(1) + '%"></div></div>';
-        html += '  <span class="gauge-label">' + fmt(snap.totalBytes) + ' / ' + fmt(snap.softLimit) + ' (' + pct.toFixed(1) + '%)' + baseDelta + '</span>';
-        html += '</div></div>';
+        html += '  <span class="gauge-label">' + pct.toFixed(1) + '%</span>';
+        html += '</div>';
+        if (safeSoftLimit > 0) {
+            html += '<div class="muted gauge-stats">'
+                  + fmt(snap.totalBytes) + ' used of soft limit ' + fmt(safeSoftLimit)
+                  + ' | Free headroom: ' + fmt(freeHeadroom)
+                  + baseDelta
+                  + '</div>';
+        } else {
+            html += '<div class="muted gauge-stats">'
+                  + fmt(snap.totalBytes) + ' used'
+                  + baseDelta
+                  + ' | Soft limit unavailable'
+                  + '</div>';
+        }
+        html += '</div>';
 
         if (snap.consPool && snap.consPool.capacity > 0) {
             const pool = snap.consPool;
@@ -113,10 +129,10 @@
             html += '  <div class="gauge-bar"><div class="gauge-fill ' + poolCls + '" style="width:' + poolPct.toFixed(1) + '%"></div></div>';
             html += '  <span class="gauge-label">' + poolPct.toFixed(1) + '%</span>';
             html += '</div>';
-            html += '<div class="muted" style="font-size:0.92em;">'
+            html += '<div class="muted gauge-stats">'
                   + pool.live.toLocaleString() + ' / ' + pool.capacity.toLocaleString()
-                  + ' · Free: ' + pool.free.toLocaleString()
-                  + ' · ' + fmt(pool.bytes)
+                  + ' | Free: ' + pool.free.toLocaleString()
+                  + ' | ' + fmt(pool.bytes)
                   + '</div></div>';
         }
         document.getElementById('gauges').innerHTML = html;

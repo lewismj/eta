@@ -19,6 +19,7 @@
  */
 
 #include <atomic>
+#include <cstdlib>
 #include <expected>
 #include <functional>
 #include <future>
@@ -497,20 +498,42 @@ ProcessManager::spawn(const std::string& module_path,
     child.module_path = module_path;
     child.socket      = sock_val;
 
+    std::string child_heap_soft_limit;
+    if (const char* v = std::getenv("ETA_HEAP_SOFT_LIMIT_CHILD_PROCESSES");
+        v && *v != '\0') {
+        child_heap_soft_limit = v;
+    } else if (const char* v = std::getenv("ETA_HEAP_SOFT_LIMIT_CHILD_THREADS");
+               v && *v != '\0') {
+        child_heap_soft_limit = v;
+    } else {
+        child_heap_soft_limit = "50M";
+    }
+
 #ifdef _WIN32
     /**
      * Windows
      * Propagate module search path via ETA_MODULE_PATH only if the variable
      * is not already set in the current environment.
      */
-    bool set_env_var = false;
+    bool set_module_path_env = false;
     if (!module_search_path.empty()) {
         char existing[32767];
         DWORD len = GetEnvironmentVariableA("ETA_MODULE_PATH", existing,
                                              static_cast<DWORD>(sizeof(existing)));
         if (len == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
             SetEnvironmentVariableA("ETA_MODULE_PATH", module_search_path.c_str());
-            set_env_var = true;
+            set_module_path_env = true;
+        }
+    }
+
+    bool set_heap_env = false;
+    if (!child_heap_soft_limit.empty()) {
+        char existing[32767];
+        DWORD len = GetEnvironmentVariableA("ETA_HEAP_SOFT_LIMIT", existing,
+                                            static_cast<DWORD>(sizeof(existing)));
+        if (len == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+            SetEnvironmentVariableA("ETA_HEAP_SOFT_LIMIT", child_heap_soft_limit.c_str());
+            set_heap_env = true;
         }
     }
 
@@ -530,7 +553,8 @@ ProcessManager::spawn(const std::string& module_path,
         &si, &pi);
 
     /// Restore the environment variable state
-    if (set_env_var) SetEnvironmentVariableA("ETA_MODULE_PATH", nullptr);
+    if (set_module_path_env) SetEnvironmentVariableA("ETA_MODULE_PATH", nullptr);
+    if (set_heap_env) SetEnvironmentVariableA("ETA_HEAP_SOFT_LIMIT", nullptr);
 
     if (!created) {
         return std::unexpected(RuntimeError{VMError{
@@ -556,6 +580,9 @@ ProcessManager::spawn(const std::string& module_path,
          */
         if (!module_search_path.empty()) {
             ::setenv("ETA_MODULE_PATH", module_search_path.c_str(), 0);
+        }
+        if (!child_heap_soft_limit.empty()) {
+            ::setenv("ETA_HEAP_SOFT_LIMIT", child_heap_soft_limit.c_str(), 0);
         }
 
         const char* args[] = {
