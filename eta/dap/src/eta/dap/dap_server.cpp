@@ -4,8 +4,10 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -41,6 +43,43 @@ using namespace eta::json;
  * Local helpers
  */
 
+static const fs::path& dap_debug_log_path() {
+    static const fs::path path = []() {
+        if (const char* env = std::getenv("ETA_DAP_DEBUG_LOG_PATH")) {
+            if (*env != '\0') return fs::path(env);
+        }
+#ifdef _WIN32
+        return fs::path(R"(C:\tmp\dap_server_debug.txt)");
+#else
+        std::error_code ec;
+        fs::path tmp = fs::temp_directory_path(ec);
+        if (ec) tmp = fs::path("/tmp");
+        return tmp / "dap_server_debug.txt";
+#endif
+    }();
+    return path;
+}
+
+static void dap_debug_log(const std::string& text) {
+    static std::mutex log_mutex;
+    std::lock_guard<std::mutex> lk(log_mutex);
+
+    const fs::path& path = dap_debug_log_path();
+    std::error_code ec;
+    if (path.has_parent_path()) {
+        fs::create_directories(path.parent_path(), ec);
+    }
+
+    std::ofstream out(path, std::ios::app);
+    if (!out.is_open()) return;
+
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+    out << now_ms << " [tid " << std::this_thread::get_id() << "] " << text << "\n";
+    out.flush();
+}
+
 /**
  * Normalise a source-file path to a stable key that matches the normalisation
  * used by Driver::file_id_for_path / Driver::ensure_file_id.
@@ -63,15 +102,20 @@ static std::string normalize_path(const std::string& raw) {
  * Construction
  */
 
-DapServer::DapServer() : in_(std::cin), out_(std::cout) {}
+DapServer::DapServer() : in_(std::cin), out_(std::cout) {
+    dap_debug_log("DapServer::DapServer() path=" + dap_debug_log_path().string());
+}
 
-DapServer::DapServer(std::istream& in, std::ostream& out) : in_(in), out_(out) {}
+DapServer::DapServer(std::istream& in, std::ostream& out) : in_(in), out_(out) {
+    dap_debug_log("DapServer::DapServer(stream,stream) path=" + dap_debug_log_path().string());
+}
 
 /**
  * Destruction
  */
 
 DapServer::~DapServer() {
+    dap_debug_log("DapServer::~DapServer begin");
     /**
      * If the VM thread is still running, wake it (in case it's blocked on
      * debug_cv_ after a pause) so the thread can finish and be joined.
@@ -83,6 +127,7 @@ DapServer::~DapServer() {
     if (vm_thread_.joinable()) {
         vm_thread_.join();
     }
+    dap_debug_log("DapServer::~DapServer end");
 }
 
 /**
@@ -95,6 +140,8 @@ void DapServer::send(const Value& msg) {
 }
 
 void DapServer::send_response(const Value& id, const Value& body) {
+    const std::string req = id.is_int() ? std::to_string(id.as_int()) : "?";
+    dap_debug_log("send_response cmd=" + current_command_ + " request_seq=" + req);
     send(json::object({
         {"seq",         Value(next_seq_++)},
         {"type",        "response"},
@@ -106,6 +153,13 @@ void DapServer::send_response(const Value& id, const Value& body) {
 }
 
 void DapServer::send_error_response(const Value& id, int code, const std::string& msg) {
+    const std::string req = id.is_int() ? std::to_string(id.as_int()) : "?";
+    dap_debug_log(
+        "send_error_response cmd=" + current_command_
+        + " request_seq=" + req
+        + " code=" + std::to_string(code)
+        + " msg=" + msg
+    );
     send(json::object({
         {"seq",         Value(next_seq_++)},
         {"type",        "response"},
@@ -122,6 +176,7 @@ void DapServer::send_error_response(const Value& id, int code, const std::string
 }
 
 void DapServer::send_event(const std::string& event_name, const Value& body) {
+    dap_debug_log("send_event name=" + event_name);
     send(json::object({
         {"seq",   Value(next_seq_++)},
         {"type",  "event"},
@@ -135,14 +190,20 @@ void DapServer::send_event(const std::string& event_name, const Value& body) {
  */
 
 void DapServer::run() {
+    dap_debug_log("run() begin");
     while (running_) {
         auto msg_str = read_message(in_);
-        if (!msg_str) break;
+        if (!msg_str) {
+            dap_debug_log("run() read_message: EOF");
+            break;
+        }
+        dap_debug_log("run() read_message bytes=" + std::to_string(msg_str->size()));
 
         try {
             auto msg = json::parse(*msg_str);
             dispatch(msg);
         } catch (const std::exception& e) {
+            dap_debug_log(std::string("run() parse/dispatch exception: ") + e.what());
             std::cerr << "[eta_dap] parse error: " << e.what() << "\n";
         }
     }
@@ -151,6 +212,7 @@ void DapServer::run() {
     if (vm_thread_.joinable()) {
         vm_thread_.join();
     }
+    dap_debug_log("run() end");
 }
 
 /**
@@ -166,39 +228,47 @@ void DapServer::dispatch(const Value& msg) {
     const Value& id   = msg["seq"];
     const Value& args = msg.has("arguments") ? msg["arguments"] : Value{};
     current_command_  = *cmd;
+    const std::string req = id.is_int() ? std::to_string(id.as_int()) : "?";
+    dap_debug_log("dispatch begin cmd=" + *cmd + " request_seq=" + req);
 
-    if (*cmd == "initialize")               handle_initialize(id, args);
-    else if (*cmd == "launch")              handle_launch(id, args);
-    else if (*cmd == "setBreakpoints")      handle_set_breakpoints(id, args);
-    else if (*cmd == "setFunctionBreakpoints") handle_set_function_breakpoints(id, args);
-    else if (*cmd == "breakpointLocations") handle_breakpoint_locations(id, args);
-    else if (*cmd == "setExceptionBreakpoints") handle_set_exception_breakpoints(id, args);
-    else if (*cmd == "configurationDone")   handle_configuration_done(id, args);
-    else if (*cmd == "threads")             handle_threads(id, args);
-    else if (*cmd == "stackTrace")          handle_stack_trace(id, args);
-    else if (*cmd == "scopes")              handle_scopes(id, args);
-    else if (*cmd == "variables")           handle_variables(id, args);
-    else if (*cmd == "continue")            handle_continue(id, args);
-    else if (*cmd == "next")                handle_next(id, args);
-    else if (*cmd == "stepIn")              handle_step_in(id, args);
-    else if (*cmd == "stepOut")             handle_step_out(id, args);
-    else if (*cmd == "pause")               handle_pause(id, args);
-    else if (*cmd == "evaluate")            handle_evaluate(id, args);
-    else if (*cmd == "setVariable")         handle_set_variable(id, args);
-    else if (*cmd == "restart")             handle_restart(id, args);
-    else if (*cmd == "terminate")           handle_terminate(id, args);
-    else if (*cmd == "terminateThreads")    handle_terminate_threads(id, args);
-    else if (*cmd == "cancel")              handle_cancel(id, args);
-    else if (*cmd == "completions")         handle_completions(id, args);
-    else if (*cmd == "disconnect")          handle_disconnect(id, args);
-    else if (*cmd == "disassemble")         handle_standard_disassemble(id, args);
-    else if (*cmd == "eta/heapSnapshot")    handle_heap_inspector(id, args);
-    else if (*cmd == "eta/inspectObject")   handle_inspect_object(id, args);
-    else if (*cmd == "eta/disassemble")     handle_disassemble(id, args);
-    else if (*cmd == "eta/childProcesses")  handle_child_processes(id, args);
-    else {
-        send_response(id, json::object({}));
+    try {
+        if (*cmd == "initialize")               handle_initialize(id, args);
+        else if (*cmd == "launch")              handle_launch(id, args);
+        else if (*cmd == "setBreakpoints")      handle_set_breakpoints(id, args);
+        else if (*cmd == "setFunctionBreakpoints") handle_set_function_breakpoints(id, args);
+        else if (*cmd == "breakpointLocations") handle_breakpoint_locations(id, args);
+        else if (*cmd == "setExceptionBreakpoints") handle_set_exception_breakpoints(id, args);
+        else if (*cmd == "configurationDone")   handle_configuration_done(id, args);
+        else if (*cmd == "threads")             handle_threads(id, args);
+        else if (*cmd == "stackTrace")          handle_stack_trace(id, args);
+        else if (*cmd == "scopes")              handle_scopes(id, args);
+        else if (*cmd == "variables")           handle_variables(id, args);
+        else if (*cmd == "continue")            handle_continue(id, args);
+        else if (*cmd == "next")                handle_next(id, args);
+        else if (*cmd == "stepIn")              handle_step_in(id, args);
+        else if (*cmd == "stepOut")             handle_step_out(id, args);
+        else if (*cmd == "pause")               handle_pause(id, args);
+        else if (*cmd == "evaluate")            handle_evaluate(id, args);
+        else if (*cmd == "setVariable")         handle_set_variable(id, args);
+        else if (*cmd == "restart")             handle_restart(id, args);
+        else if (*cmd == "terminate")           handle_terminate(id, args);
+        else if (*cmd == "terminateThreads")    handle_terminate_threads(id, args);
+        else if (*cmd == "cancel")              handle_cancel(id, args);
+        else if (*cmd == "completions")         handle_completions(id, args);
+        else if (*cmd == "disconnect")          handle_disconnect(id, args);
+        else if (*cmd == "disassemble")         handle_standard_disassemble(id, args);
+        else if (*cmd == "eta/heapSnapshot")    handle_heap_inspector(id, args);
+        else if (*cmd == "eta/inspectObject")   handle_inspect_object(id, args);
+        else if (*cmd == "eta/disassemble")     handle_disassemble(id, args);
+        else if (*cmd == "eta/childProcesses")  handle_child_processes(id, args);
+        else {
+            send_response(id, json::object({}));
+        }
+    } catch (const std::exception& e) {
+        dap_debug_log(std::string("dispatch exception cmd=") + *cmd + " err=" + e.what());
+        throw;
     }
+    dap_debug_log("dispatch end cmd=" + *cmd + " request_seq=" + req);
 }
 
 /**
@@ -528,13 +598,20 @@ void DapServer::handle_set_exception_breakpoints(const Value& id, const Value& a
  */
 
 void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/) {
+    dap_debug_log("handle_configuration_done begin launched=" + std::string(launched_ ? "true" : "false"));
     send_response(id, json::object({}));
 
-    if (!launched_) return; ///< no launch request yet (shouldn't happen)
+    if (!launched_) {
+        dap_debug_log("handle_configuration_done early-return (launch not seen)");
+        return; ///< no launch request yet (shouldn't happen)
+    }
+    dap_debug_log("handle_configuration_done starting VM bootstrap");
     start_vm_from_current_launch();
+    dap_debug_log("handle_configuration_done end");
 }
 
 void DapServer::start_vm_from_current_launch() {
+    dap_debug_log("start_vm_from_current_launch begin script=" + script_path_.string());
 
     /// Build the module search path using ModulePathResolver (same logic as etai / eta_lsp)
     auto resolver = interpreter::ModulePathResolver::from_args_or_env("");
@@ -557,6 +634,7 @@ void DapServer::start_vm_from_current_launch() {
 
     /// Build the driver on the DAP thread (it will be moved-to below)
     auto drv = std::make_unique<session::Driver>(std::move(resolver));
+    dap_debug_log("start_vm_from_current_launch created Driver");
 
     /// Register stop callback BEFORE loading prelude so the hook is in place
     install_stop_callback_for(drv->vm(), MAIN_THREAD_ID);
@@ -596,10 +674,12 @@ void DapServer::start_vm_from_current_launch() {
      */
     {
         std::lock_guard<std::mutex> lk(vm_mutex_);
+        dap_debug_log("start_vm_from_current_launch acquired vm_mutex to publish driver");
         driver_ = std::move(drv);
         register_main_thread_locked();
         install_pending_breakpoints();
     }
+    dap_debug_log("start_vm_from_current_launch published driver and breakpoints");
 
 #ifdef ETA_HAS_NNG
     /**
@@ -639,14 +719,17 @@ void DapServer::start_vm_from_current_launch() {
 
     /// If stopOnEntry, request a pause immediately (before any code runs)
     if (stop_on_entry_) {
+        dap_debug_log("start_vm_from_current_launch requesting stop-on-entry pause");
         driver_->vm().request_pause();
     }
 
     /// Launch the VM on a background thread
     vm_thread_ = std::thread([this]() {
+        dap_debug_log("vm_thread begin");
         auto* drv = driver_.get();
 
         /// Load prelude
+        dap_debug_log("vm_thread loading prelude");
         auto pr = drv->load_prelude();
         if (!pr.found) {
             send_event("output", json::object({
@@ -682,7 +765,9 @@ void DapServer::start_vm_from_current_launch() {
         notify_breakpoints_verified();
 
         /// Execute the script
+        dap_debug_log("vm_thread run_file begin script=" + script_path_.string());
         bool ok = drv->run_file(script_path_);
+        dap_debug_log("vm_thread run_file end ok=" + std::string(ok ? "true" : "false"));
 
         /// Signal IDE
         if (ok) {
@@ -705,7 +790,9 @@ void DapServer::start_vm_from_current_launch() {
             }
             send_event("terminated", json::object({}));
         }
+        dap_debug_log("vm_thread end");
     });
+    dap_debug_log("start_vm_from_current_launch end (vm thread launched)");
 }
 
 /**
@@ -1838,7 +1925,7 @@ void DapServer::notify_breakpoints_verified() {
 /**
  */
 
-void DapServer::handle_heap_inspector(const Value& id, const Value& /*args*/) {
+void DapServer::handle_heap_inspector(const Value& id, const Value& args) {
     if (id.is_int()) {
         const int64_t request_id = id.as_int();
         bool pre_cancelled = false;
@@ -1873,8 +1960,27 @@ void DapServer::handle_heap_inspector(const Value& id, const Value& /*args*/) {
         send_error_response(id, 2002, "VM must be paused to inspect the heap");
         return;
     }
+    HeapSnapshotOptions opts;
+    if (args.is_object()) {
+        if (args.has("includeKinds") && args["includeKinds"].is_bool()) {
+            opts.include_kinds = args["includeKinds"].as_bool();
+        }
+        if (args.has("includeRoots") && args["includeRoots"].is_bool()) {
+            opts.include_roots = args["includeRoots"].as_bool();
+        }
+        if (auto v = args.get_int("maxObjectsScanned")) {
+            opts.max_objects_scanned = std::max<int64_t>(0, *v);
+        }
+        if (auto v = args.get_int("maxKindRows")) {
+            opts.max_kind_rows = std::max<int64_t>(0, *v);
+        }
+        if (auto v = args.get_int("maxRootsPerCategory")) {
+            opts.max_roots_per_category = std::max<int64_t>(0, *v);
+        }
+    }
+
     bool cancelled = false;
-    auto body = build_heap_snapshot(&cancelled);
+    auto body = build_heap_snapshot(opts, &cancelled);
     active_heap_snapshot_request_.store(-1, std::memory_order_relaxed);
     if (cancelled) {
         send_error_response(id, 2020, "Request cancelled");
@@ -1883,66 +1989,81 @@ void DapServer::handle_heap_inspector(const Value& id, const Value& /*args*/) {
     send_response(id, body);
 }
 
-Value DapServer::build_heap_snapshot(bool* out_cancelled) {
+Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_cancelled) {
     using namespace runtime::memory::heap;
     if (out_cancelled) *out_cancelled = false;
 
     auto& heap = driver_->heap();
+    bool truncated = false;
 
     /// Per-kind statistics
     struct KindStat { int64_t count{0}; int64_t bytes{0}; };
     std::unordered_map<uint8_t, KindStat> kind_stats;
+    int64_t scanned_objects = 0;
 
     struct HeapSnapshotCancelled {};
-    try {
-        heap.for_each_entry([&](ObjectId /*id*/, HeapEntry& entry) {
-            if (cancel_active_heap_snapshot_.load(std::memory_order_relaxed)) {
-                throw HeapSnapshotCancelled{};
-            }
-            auto k = static_cast<uint8_t>(entry.header.kind);
-            kind_stats[k].count++;
-            kind_stats[k].bytes += static_cast<int64_t>(entry.size);
-        });
-    } catch (const HeapSnapshotCancelled&) {
-        if (out_cancelled) *out_cancelled = true;
-        return json::object({});
-    }
-
-    Array kinds_arr;
-    for (const auto& [k, stat] : kind_stats) {
-        kinds_arr.push_back(json::object({
-            {"kind",  Value(std::string(to_string(static_cast<ObjectKind>(k))))},
-            {"count", Value(stat.count)},
-            {"bytes", Value(stat.bytes)},
-        }));
-    }
-
-    /// GC roots
-    auto gc_roots = driver_->vm().enumerate_gc_roots();
-    Array roots_arr;
-    for (const auto& root : gc_roots) {
-        if (cancel_active_heap_snapshot_.load(std::memory_order_relaxed)) {
+    if (opts.include_kinds) {
+        try {
+            heap.for_each_entry([&](ObjectId /*id*/, HeapEntry& entry) {
+                if (cancel_active_heap_snapshot_.load(std::memory_order_relaxed)) {
+                    throw HeapSnapshotCancelled{};
+                }
+                if (opts.max_objects_scanned > 0 && scanned_objects >= opts.max_objects_scanned) {
+                    truncated = true;
+                    return;
+                }
+                scanned_objects++;
+                auto k = static_cast<uint8_t>(entry.header.kind);
+                kind_stats[k].count++;
+                kind_stats[k].bytes += static_cast<int64_t>(entry.size);
+            });
+        } catch (const HeapSnapshotCancelled&) {
             if (out_cancelled) *out_cancelled = true;
             return json::object({});
         }
-        Array ids;
-        Array labels;
-        for (std::size_t i = 0; i < root.object_ids.size(); ++i) {
-            if (cancel_active_heap_snapshot_.load(std::memory_order_relaxed)) {
-                if (out_cancelled) *out_cancelled = true;
-                return json::object({});
-            }
-            ids.push_back(Value(static_cast<int64_t>(root.object_ids[i])));
-        }
+    }
 
-        /**
-         * For the "Globals" root, resolve variable names from the Driver's
-         * of just "Object #id".
-         */
-        if (root.name == "Globals") {
-            auto& globals      = driver_->vm().globals();
-            const auto& names  = driver_->global_names();
-            std::unordered_map<runtime::memory::heap::ObjectId, uint32_t> slot_by_oid;
+    Array kinds_arr;
+    if (opts.include_kinds) {
+        std::vector<std::pair<uint8_t, KindStat>> rows;
+        rows.reserve(kind_stats.size());
+        for (const auto& kv : kind_stats) rows.push_back(kv);
+        std::sort(rows.begin(), rows.end(),
+            [](const auto& a, const auto& b) {
+                if (a.second.bytes != b.second.bytes) return a.second.bytes > b.second.bytes;
+                if (a.second.count != b.second.count) return a.second.count > b.second.count;
+                return a.first < b.first;
+            });
+        if (opts.max_kind_rows > 0
+            && static_cast<int64_t>(rows.size()) > opts.max_kind_rows) {
+            rows.resize(static_cast<std::size_t>(opts.max_kind_rows));
+            truncated = true;
+        }
+        for (const auto& [k, stat] : rows) {
+            kinds_arr.push_back(json::object({
+                {"kind",  Value(std::string(to_string(static_cast<ObjectKind>(k))))},
+                {"count", Value(stat.count)},
+                {"bytes", Value(stat.bytes)},
+            }));
+        }
+    }
+
+    /// GC roots
+    Array roots_arr;
+    if (opts.include_roots) {
+        const auto gc_roots = driver_->vm().enumerate_gc_roots();
+        const auto& names = driver_->global_names();
+
+        std::unordered_map<runtime::memory::heap::ObjectId, uint32_t> slot_by_oid;
+        bool need_global_labels = false;
+        for (const auto& root : gc_roots) {
+            if (root.name == "Globals") {
+                need_global_labels = true;
+                break;
+            }
+        }
+        if (need_global_labels) {
+            auto& globals = driver_->vm().globals();
             slot_by_oid.reserve(globals.size());
             for (std::size_t slot = 0; slot < globals.size(); ++slot) {
                 auto v = globals[slot];
@@ -1955,33 +2076,64 @@ Value DapServer::build_heap_snapshot(bool* out_cancelled) {
                 );
                 slot_by_oid.emplace(oid, static_cast<uint32_t>(slot));
             }
-
-            for (std::size_t i = 0; i < root.object_ids.size(); ++i) {
-                auto oid = root.object_ids[i];
-                std::string label;
-                auto slot_it = slot_by_oid.find(oid);
-                if (slot_it != slot_by_oid.end()) {
-                    const uint32_t slot = slot_it->second;
-                    auto it = names.find(slot);
-                    label = (it != names.end()) ? it->second
-                                                : "global[" + std::to_string(slot) + "]";
-                }
-                if (label.empty()) label = "Object #" + std::to_string(oid);
-                labels.push_back(Value(std::move(label)));
-            }
         }
 
-        if (!labels.empty()) {
-            roots_arr.push_back(json::object({
+        for (const auto& root : gc_roots) {
+            if (cancel_active_heap_snapshot_.load(std::memory_order_relaxed)) {
+                if (out_cancelled) *out_cancelled = true;
+                return json::object({});
+            }
+
+            Array ids;
+            Array labels;
+            const std::size_t total = root.object_ids.size();
+            std::size_t limit = total;
+            bool root_truncated = false;
+            if (opts.max_roots_per_category > 0
+                && static_cast<int64_t>(total) > opts.max_roots_per_category) {
+                limit = static_cast<std::size_t>(opts.max_roots_per_category);
+                root_truncated = true;
+                truncated = true;
+            }
+
+            ids.reserve(limit);
+            for (std::size_t i = 0; i < limit; ++i) {
+                if (cancel_active_heap_snapshot_.load(std::memory_order_relaxed)) {
+                    if (out_cancelled) *out_cancelled = true;
+                    return json::object({});
+                }
+                ids.push_back(Value(static_cast<int64_t>(root.object_ids[i])));
+            }
+
+            if (root.name == "Globals") {
+                labels.reserve(limit);
+                for (std::size_t i = 0; i < limit; ++i) {
+                    auto oid = root.object_ids[i];
+                    std::string label;
+                    auto slot_it = slot_by_oid.find(oid);
+                    if (slot_it != slot_by_oid.end()) {
+                        const uint32_t slot = slot_it->second;
+                        auto it = names.find(slot);
+                        label = (it != names.end()) ? it->second
+                                                    : "global[" + std::to_string(slot) + "]";
+                    }
+                    if (label.empty()) label = "Object #" + std::to_string(oid);
+                    labels.push_back(Value(std::move(label)));
+                }
+            }
+
+            Object root_obj{
                 {"name",      Value(root.name)},
                 {"objectIds", Value(std::move(ids))},
-                {"labels",    Value(std::move(labels))},
-            }));
-        } else {
-            roots_arr.push_back(json::object({
-                {"name",      Value(root.name)},
-                {"objectIds", Value(std::move(ids))},
-            }));
+            };
+            if (!labels.empty()) {
+                root_obj.insert_or_assign("labels", Value(std::move(labels)));
+            }
+            if (root_truncated) {
+                root_obj.insert_or_assign("truncated", Value(true));
+                root_obj.insert_or_assign("totalCount", Value(static_cast<int64_t>(total)));
+            }
+            roots_arr.push_back(Value(std::move(root_obj)));
         }
     }
 
@@ -1995,11 +2147,13 @@ Value DapServer::build_heap_snapshot(bool* out_cancelled) {
     });
 
     return json::object({
-        {"totalBytes",    Value(static_cast<int64_t>(heap.total_bytes()))},
-        {"softLimit",     Value(static_cast<int64_t>(heap.soft_limit()))},
-        {"kinds",         Value(std::move(kinds_arr))},
-        {"roots",         Value(std::move(roots_arr))},
-        {"consPool",      Value(std::move(cons_pool_obj))},
+        {"totalBytes",      Value(static_cast<int64_t>(heap.total_bytes()))},
+        {"softLimit",       Value(static_cast<int64_t>(heap.soft_limit()))},
+        {"kinds",           Value(std::move(kinds_arr))},
+        {"roots",           Value(std::move(roots_arr))},
+        {"consPool",        Value(std::move(cons_pool_obj))},
+        {"truncated",       Value(truncated)},
+        {"scannedObjects",  Value(scanned_objects)},
     });
 }
 
@@ -2198,10 +2352,12 @@ void DapServer::handle_disassemble(const Value& id, const Value& args) {
 
     std::string function_name;
     int64_t current_pc = driver_->vm().paused_instruction_index();
+    bool rendered = false;
 
     if (scope == "all") {
         /// Disassemble all functions in the registry
         disasm.disassemble_all(driver_->registry(), oss);
+        rendered = true;
     } else {
         /// Disassemble the current frame's function
         auto frames = driver_->vm().get_frames();
@@ -2209,22 +2365,48 @@ void DapServer::handle_disassemble(const Value& id, const Value& args) {
             const auto& top = frames[0];
             function_name = top.func_name;
 
-            /// Find the function in the registry by name
-            bool found = false;
-            for (const auto& func : driver_->registry().all()) {
-                if (func.name == top.func_name ||
-                    (!top.func_name.empty() && func.name.find(top.func_name) != std::string::npos)) {
-                    disasm.disassemble(func, oss);
-                    found = true;
+            /// Resolve the frame function without falling back to "all":
+            /// the full-registry disassembly can be very expensive and can
+            /// stall debugger responsiveness when refreshed on each stop.
+            const runtime::vm::BytecodeFunction* target = nullptr;
+            const auto& funcs = driver_->registry().all();
+
+            for (const auto& func : funcs) {
+                if (func.name == top.func_name) {
+                    target = &func;
                     break;
                 }
             }
-            if (!found) {
-                /// Fall back to disassembling all
-                disasm.disassemble_all(driver_->registry(), oss);
+            if (!target && !top.func_name.empty()) {
+                const std::string suffix = "." + top.func_name;
+                for (const auto& func : funcs) {
+                    if (func.name.ends_with(suffix)) {
+                        target = &func;
+                        break;
+                    }
+                }
             }
+            if (!target && !top.func_name.empty()) {
+                for (const auto& func : funcs) {
+                    if (func.name.find(top.func_name) != std::string::npos) {
+                        target = &func;
+                        break;
+                    }
+                }
+            }
+
+            if (target) {
+                disasm.disassemble(*target, oss);
+                rendered = true;
+            }
+        }
+    }
+
+    if (!rendered) {
+        if (!function_name.empty()) {
+            oss << "; Current function not found in registry: " << function_name << "\n";
         } else {
-            disasm.disassemble_all(driver_->registry(), oss);
+            oss << "; No active frame to disassemble.\n";
         }
     }
 
@@ -2646,13 +2828,19 @@ void DapServer::on_thread_stopped(int dap_thread_id, const runtime::vm::StopEven
         case StopReason::Exception:  reason_str = "exception";  break;
         default:                     reason_str = "pause";      break;
     }
+    dap_debug_log(
+        "on_thread_stopped entry tid=" + std::to_string(dap_thread_id)
+        + " reason=" + reason_str
+    );
 
     bool should_emit_stopped = true;
     bool is_main = (dap_thread_id == MAIN_THREAD_ID);
     std::vector<std::string> deferred_output;
 
+    dap_debug_log("on_thread_stopped acquiring vm_mutex");
     {
         std::lock_guard<std::mutex> lk(vm_mutex_);
+        dap_debug_log("on_thread_stopped acquired vm_mutex");
 
         /// Compound refs are owned by whichever thread paused last.  Clearing
         /// on every stop keeps the maps small and avoids stale ids leaking
@@ -2737,25 +2925,36 @@ void DapServer::on_thread_stopped(int dap_thread_id, const runtime::vm::StopEven
 
             if (matched_breakpoint && !matched_stop_breakpoint) {
                 should_emit_stopped = false;
+                dap_debug_log("on_thread_stopped auto-resume (logpoint/condition filtered stop)");
                 th->vm->resume();
             }
         }
     }
+    dap_debug_log(
+        "on_thread_stopped released vm_mutex should_emit_stopped="
+        + std::string(should_emit_stopped ? "true" : "false")
+    );
 
     for (const auto& text : deferred_output) {
+        dap_debug_log("on_thread_stopped flushing deferred output line");
         send_event("output", json::object({
             {"category", "console"},
             {"output", text},
         }));
     }
 
-    if (!should_emit_stopped) return;
+    if (!should_emit_stopped) {
+        dap_debug_log("on_thread_stopped exit without stopped event");
+        return;
+    }
 
+    dap_debug_log("on_thread_stopped sending stopped event");
     send_event("stopped", json::object({
         {"reason",            reason_str},
         {"threadId",          Value(static_cast<int64_t>(dap_thread_id))},
         {"allThreadsStopped", Value(is_main)},
     }));
+    dap_debug_log("on_thread_stopped stopped event sent");
 }
 
 void DapServer::install_pending_breakpoints_on_locked(session::Driver& drv) {

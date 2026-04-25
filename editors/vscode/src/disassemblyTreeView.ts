@@ -74,6 +74,7 @@ const FUNC_HEADER_RE = /^=== (.+?) ===$/;
 const CONST_POOL_RE = /^\s*-- constant pool --/;
 const CODE_RE = /^\s*-- code --/;
 const INSTR_RE = /^\s*(\d+):\s+(\S+)/;
+const MAX_TREE_TEXT_BYTES = 400_000;
 
 function parseFunctions(text: string, currentPC: number, currentFunction?: string): DisasmFunctionNode[] {
     const lines = text.split('\n');
@@ -230,8 +231,17 @@ export class DisassemblyTreeProvider implements TreeDataProvider<Node> {
             this.latest = undefined;
             return;
         }
-        this.latest = result;
         const text = result.text || '; (empty disassembly)';
+        if (text.length > MAX_TREE_TEXT_BYTES) {
+            this.functions = [];
+            this.flatLines = [
+                new DisasmLineNode('; Disassembly too large for the sidebar tree view.', undefined, false, true),
+                new DisasmLineNode('; Use "Eta: Show Disassembly" for the full text output.', undefined, false, true),
+            ];
+            this.latest = undefined;
+            return;
+        }
+        this.latest = result;
         const funcs = parseFunctions(text, result.currentPC ?? -1, result.functionName);
         if (funcs.length === 0) {
             // Fall back to flat rendering when the response carried no

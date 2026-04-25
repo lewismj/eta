@@ -124,7 +124,13 @@ export class HeapInspectorPanel {
             return;
         }
         try {
-            const snap = await session.customRequest('eta/heapSnapshot') as HeapSnapshot;
+            const snap = await session.customRequest('eta/heapSnapshot', {
+                includeKinds: true,
+                includeRoots: true,
+                maxObjectsScanned: 120000,
+                maxKindRows: 200,
+                maxRootsPerCategory: 600,
+            }) as HeapSnapshot;
             this.applySnapshot(snap);
         } catch (err: any) {
             const text = err?.message ?? String(err);
@@ -247,6 +253,10 @@ export class HeapInspectorPanel {
 
     public static current(): HeapInspectorPanel | undefined {
         return HeapInspectorPanel.instance;
+    }
+
+    public isVisible(): boolean {
+        return this.panel.visible;
     }
 
     public static disposeCurrent(): void {

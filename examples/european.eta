@@ -220,9 +220,9 @@
               (display "\n  grad(Vega):\n")
               (display "    Vega          = ")
               (println vega-val)
-              (display (if win "    Vanna (dV/dS)  = " "    Vanna (∂V/∂S) = "))
-              (println (vector-ref vg 0))
-              (display (if win "    Volga (dV/dsigma) = " "    Volga (∂V/∂σ) = "))
+              (display (if                      win "    Vanna (dV/dS)  = " "    Vanna (∂V/∂S) = "))
+              (println (vector-ref                                  vg 0))
+              (display (if  win "    Volga (dV/dsigma) = " "    Volga (∂V/∂σ) = "))
               (println (vector-ref vg 3))
 
               ;; ── 3. Schwarz's Theorem Check ──────────────────────

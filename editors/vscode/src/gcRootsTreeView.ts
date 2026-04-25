@@ -90,7 +90,13 @@ export class GCRootsTreeProvider implements TreeDataProvider<GCRootNode> {
             return;
         }
         try {
-            const snap = await session.customRequest('eta/heapSnapshot') as HeapSnapshot;
+            const snap = await session.customRequest('eta/heapSnapshot', {
+                includeKinds: false,
+                includeRoots: true,
+                maxRootsPerCategory: 600,
+                maxObjectsScanned: 0,
+                maxKindRows: 0,
+            }) as HeapSnapshot;
             this.roots = snap.roots ?? [];
         } catch {
             this.roots = [];

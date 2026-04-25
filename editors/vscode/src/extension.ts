@@ -10,6 +10,10 @@ import {
     CancellationToken,
     languages,
     Uri,
+    ViewColumn,
+    Range,
+    Selection,
+    TextEditorRevealType,
 } from 'vscode';
 import type {
     DebugAdapterDescriptor,
@@ -25,6 +29,8 @@ import {
     ServerOptions,
     Executable,
 } from 'vscode-languageclient/node';
+import * as fs from 'fs';
+import * as path from 'path';
 import { HeapInspectorPanel } from './heapView';
 import { GCRootsTreeProvider } from './gcRootsTreeView';
 import {
@@ -54,9 +60,33 @@ let gcRootsProvider: GCRootsTreeProvider;
 let disasmProvider: DisassemblyContentProvider;
 let disasmTreeProvider: DisassemblyTreeProvider;
 let childProcProvider: ChildProcessTreeProvider;
+let gcRootsViewVisible = false;
+let disasmViewVisible = false;
+let childProcViewVisible = false;
+const VSX_DEBUG_LOG_PATH = process.env['ETA_VSX_LOG_PATH']
+    || (process.platform === 'win32'
+        ? 'C:\\tmp\\eta_vsx.txt'
+        : path.join(process.cwd(), 'eta_vsx.txt'));
+let vsxDebugLogEnabled = true;
 
 function log(msg: string): void {
     outputChannel?.info(msg);
+}
+
+function logToFile(msg: string): void {
+    if (!vsxDebugLogEnabled) {
+        return;
+    }
+    try {
+        fs.mkdirSync(path.dirname(VSX_DEBUG_LOG_PATH), { recursive: true });
+        fs.appendFileSync(
+            VSX_DEBUG_LOG_PATH,
+            `${Date.now()} [pid ${process.pid}] ${msg}\n`,
+            'utf8',
+        );
+    } catch {
+        vsxDebugLogEnabled = false;
+    }
 }
 
 /** Resolve the .eta program path for a Run/Debug command, falling back to the active editor. */
@@ -83,13 +113,20 @@ export function activate(context: ExtensionContext) {
     programOutputChannel = window.createOutputChannel('Eta Output', { log: true });
     context.subscriptions.push(outputChannel, programOutputChannel);
     log('Eta extension activating...');
+    log(`Eta extension version: ${context.extension.packageJSON.version}`);
+    logToFile(`activate version=${context.extension.packageJSON.version} logPath=${VSX_DEBUG_LOG_PATH}`);
 
     // -- GC Roots tree view -------------------------------------------
     gcRootsProvider = new GCRootsTreeProvider();
+    const gcRootsView = window.createTreeView('etaGCRoots', {
+        treeDataProvider: gcRootsProvider,
+        showCollapseAll: true,
+    });
+    gcRootsViewVisible = gcRootsView.visible;
     context.subscriptions.push(
-        window.createTreeView('etaGCRoots', {
-            treeDataProvider: gcRootsProvider,
-            showCollapseAll: true,
+        gcRootsView,
+        gcRootsView.onDidChangeVisibility(e => {
+            gcRootsViewVisible = e.visible;
         }),
     );
 
@@ -101,19 +138,29 @@ export function activate(context: ExtensionContext) {
 
     // -- Disassembly tree view (debug sidebar) ----------------------------
     disasmTreeProvider = new DisassemblyTreeProvider();
+    const disasmView = window.createTreeView('etaDisassembly', {
+        treeDataProvider: disasmTreeProvider,
+        showCollapseAll: false,
+    });
+    disasmViewVisible = disasmView.visible;
     context.subscriptions.push(
-        window.createTreeView('etaDisassembly', {
-            treeDataProvider: disasmTreeProvider,
-            showCollapseAll: false,
+        disasmView,
+        disasmView.onDidChangeVisibility(e => {
+            disasmViewVisible = e.visible;
         }),
     );
 
     // -- Child process tree view (debug sidebar) --------------------------
     childProcProvider = new ChildProcessTreeProvider();
+    const childProcView = window.createTreeView('etaChildProcesses', {
+        treeDataProvider: childProcProvider,
+        showCollapseAll: false,
+    });
+    childProcViewVisible = childProcView.visible;
     context.subscriptions.push(
-        window.createTreeView('etaChildProcesses', {
-            treeDataProvider: childProcProvider,
-            showCollapseAll: false,
+        childProcView,
+        childProcView.onDidChangeVisibility(e => {
+            childProcViewVisible = e.visible;
         }),
     );
 
@@ -185,6 +232,27 @@ export function activate(context: ExtensionContext) {
         commands.registerCommand('eta.inspectObjectFromTree', (objectId: number) => {
             HeapInspectorPanel.createOrShow(extensionCtx).inspectObject(objectId);
         }),
+        commands.registerCommand('eta.disassembly.gotoCallee', async (funcIndex: number) => {
+            if (!Number.isInteger(funcIndex) || funcIndex < 0) {
+                return;
+            }
+            const target = disasmTreeProvider.findCalleeHeaderLine(funcIndex);
+            if (!target) {
+                window.showInformationMessage(`Callee function #${funcIndex} not found in current disassembly.`);
+                return;
+            }
+            const uri = Uri.parse(target.uri);
+            const doc = await workspace.openTextDocument(uri);
+            const ed = await window.showTextDocument(doc, {
+                preview: true,
+                preserveFocus: false,
+                viewColumn: ViewColumn.Beside,
+            });
+            const line = Math.max(0, Math.min(target.line, Math.max(0, doc.lineCount - 1)));
+            const range = new Range(line, 0, line, doc.lineAt(line).text.length);
+            ed.selection = new Selection(range.start, range.start);
+            ed.revealRange(range, TextEditorRevealType.InCenterIfOutsideViewport);
+        }),
     );
 
     // -- Test Explorer -------------------------------------------
@@ -192,12 +260,21 @@ export function activate(context: ExtensionContext) {
 
     // -- Editor providers (inline values, hover-eval, code lens, links) --
     const etaSelector = { scheme: 'file', language: 'eta' } as const;
-    context.subscriptions.push(
-        languages.registerInlineValuesProvider(etaSelector, new EtaInlineValuesProvider()),
+    const inlineValuesEnabled = workspace.getConfiguration('eta.debug')
+        .get<boolean>('inlineValuesEnabled', false);
+    log(`Eta inline values enabled: ${inlineValuesEnabled}`);
+    logToFile(`activate inlineValuesEnabled=${inlineValuesEnabled}`);
+    const editorRegistrations = [
         languages.registerEvaluatableExpressionProvider(etaSelector, new EtaEvaluatableExpressionProvider()),
         languages.registerCodeLensProvider(etaSelector, new EtaCodeLensProvider()),
         languages.registerDocumentLinkProvider(etaSelector, new EtaDocumentLinkProvider()),
-    );
+    ];
+    if (inlineValuesEnabled) {
+        editorRegistrations.unshift(
+            languages.registerInlineValuesProvider(etaSelector, new EtaInlineValuesProvider()),
+        );
+    }
+    context.subscriptions.push(...editorRegistrations);
 
     // -- Watch for configuration changes -------------------------------------------
     context.subscriptions.push(
@@ -338,20 +415,70 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
 class EtaDebugAdapterTracker implements DebugAdapterTracker {
     private stoppedRefreshRunning = false;
     private stoppedRefreshQueued = false;
+    private programOutputBuffer = '';
+    private programOutputFlushTimer: NodeJS.Timeout | undefined;
+    private static readonly PROGRAM_OUTPUT_FLUSH_MS = 30;
+    private static readonly PROGRAM_OUTPUT_MAX_BUFFER = 8192;
 
     constructor(
         private readonly channel: LogOutputChannel,
         private readonly programChannel: LogOutputChannel,
     ) {}
 
+    private flushProgramOutput(): void {
+        if (!this.programOutputBuffer) {
+            return;
+        }
+        this.programChannel.append(this.programOutputBuffer);
+        this.programOutputBuffer = '';
+    }
+
+    private scheduleProgramFlush(): void {
+        if (this.programOutputFlushTimer) {
+            return;
+        }
+        this.programOutputFlushTimer = setTimeout(() => {
+            this.programOutputFlushTimer = undefined;
+            this.flushProgramOutput();
+        }, EtaDebugAdapterTracker.PROGRAM_OUTPUT_FLUSH_MS);
+    }
+
+    private queueProgramOutput(text: string): void {
+        if (!text) {
+            return;
+        }
+        this.programOutputBuffer += text;
+        if (this.programOutputBuffer.length >= EtaDebugAdapterTracker.PROGRAM_OUTPUT_MAX_BUFFER) {
+            if (this.programOutputFlushTimer) {
+                clearTimeout(this.programOutputFlushTimer);
+                this.programOutputFlushTimer = undefined;
+            }
+            this.flushProgramOutput();
+            return;
+        }
+        this.scheduleProgramFlush();
+    }
+
     onWillStartSession(): void {
+        logToFile('tracker.onWillStartSession');
         this.channel.appendLine('[DAP] Debug session starting...');
         this.programChannel.clear();
         this.programChannel.show(true);
+        if (this.programOutputFlushTimer) {
+            clearTimeout(this.programOutputFlushTimer);
+            this.programOutputFlushTimer = undefined;
+        }
+        this.programOutputBuffer = '';
     }
 
     onWillStopSession(): void {
+        logToFile('tracker.onWillStopSession');
         this.channel.appendLine('[DAP] Debug session stopping...');
+        if (this.programOutputFlushTimer) {
+            clearTimeout(this.programOutputFlushTimer);
+            this.programOutputFlushTimer = undefined;
+        }
+        this.flushProgramOutput();
         HeapInspectorPanel.disposeCurrent();
         childProcProvider?.notifySessionEnded();
     }
@@ -359,6 +486,14 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     onWillReceiveMessage(message: any): void {
         const cmd: string = message?.command ?? '';
         const args = message?.arguments;
+        if (cmd) {
+            const reqSeq = typeof message?.seq === 'number' ? message.seq : -1;
+            logToFile(`tracker.onWillReceiveMessage cmd=${cmd} seq=${reqSeq}`);
+            if (cmd === 'evaluate') {
+                const expr = typeof args?.expression === 'string' ? args.expression : '';
+                logToFile(`tracker.onWillReceiveMessage evaluate.expr.len=${expr.length}`);
+            }
+        }
         switch (cmd) {
             case 'initialize':
                 this.channel.appendLine('[DAP->] initialize');
@@ -397,37 +532,51 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         if (type === 'event') {
             if (event === 'eta-output') {
                 const text: string = message?.body?.text ?? '';
-                if (text) { this.programChannel.append(text); }
+                this.queueProgramOutput(text);
             } else if (event === 'output') {
                 const output: string = message?.body?.output ?? '';
                 if (output) { this.channel.append(output); }
             } else if (event === 'initialized') {
+                logToFile('tracker.onDidSendMessage event=initialized');
                 this.channel.appendLine('[DAP<-] initialized (adapter ready; VS Code will now send setBreakpoints)');
             } else if (event === 'stopped') {
                 const reason: string = message?.body?.reason ?? '?';
                 const tid: number    = message?.body?.threadId ?? 0;
+                logToFile(`tracker.onDidSendMessage event=stopped reason=${reason} threadId=${tid}`);
                 this.channel.appendLine(`[DAP<-] stopped: reason="${reason}" threadId=${tid}`);
                 const autoRefresh = workspace.getConfiguration('eta.debug')
                     .get<boolean>('autoRefreshViewsOnStop', false);
+                logToFile(`tracker.stopped autoRefreshViewsOnStop=${autoRefresh}`);
                 if (autoRefresh) {
                     this.queueStoppedRefresh();
                 }
             } else if (event === 'continued') {
+                logToFile('tracker.onDidSendMessage event=continued');
                 this.channel.appendLine('[DAP<-] continued');
             } else if (event === 'breakpoint') {
                 const bp  = message?.body?.breakpoint ?? {};
                 const why = message?.body?.reason ?? '?';
+                logToFile(`tracker.onDidSendMessage event=breakpoint reason=${why} id=${bp.id ?? '?'} line=${bp.line ?? '?'}`);
                 this.channel.appendLine(
                     `[DAP<-] breakpoint ${why}: id=${bp.id} verified=${bp.verified} line=${bp.line}`
                 );
             } else if (event === 'terminated') {
+                logToFile('tracker.onDidSendMessage event=terminated');
                 this.channel.appendLine('[DAP<-] terminated');
             } else if (event === 'exited') {
+                logToFile(`tracker.onDidSendMessage event=exited code=${message?.body?.exitCode ?? '?'}`);
                 this.channel.appendLine(`[DAP<-] exited: code=${message?.body?.exitCode ?? '?'}`);
             }
         } else if (type === 'response') {
             const cmd     = message?.command ?? '';
             const success = message?.success ?? false;
+            if (cmd) {
+                logToFile(`tracker.onDidSendMessage response cmd=${cmd} success=${success}`);
+                if (cmd === 'evaluate' && success) {
+                    const result = typeof message?.body?.result === 'string' ? message.body.result : '';
+                    logToFile(`tracker.onDidSendMessage evaluate.result.len=${result.length}`);
+                }
+            }
             if (!success) {
                 this.channel.appendLine(
                     `[DAP<-] ERROR response to "${cmd}": ${JSON.stringify(message?.body ?? {})}`
@@ -442,6 +591,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     }
 
     private queueStoppedRefresh(): void {
+        logToFile(`tracker.queueStoppedRefresh running=${this.stoppedRefreshRunning} queued=${this.stoppedRefreshQueued}`);
         this.stoppedRefreshQueued = true;
         if (this.stoppedRefreshRunning) {
             return;
@@ -449,107 +599,170 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         this.stoppedRefreshRunning = true;
         void (async () => {
             try {
+                // Defer custom requests until after the stopped event callback unwinds.
+                await new Promise<void>(resolve => setTimeout(resolve, 0));
                 while (this.stoppedRefreshQueued) {
                     this.stoppedRefreshQueued = false;
+                    logToFile('tracker.refreshStoppedViews.begin');
                     await this.refreshStoppedViews();
+                    logToFile('tracker.refreshStoppedViews.end');
                 }
             } finally {
                 this.stoppedRefreshRunning = false;
+                logToFile('tracker.queueStoppedRefresh.done');
             }
         })();
     }
 
     private async refreshStoppedViews(): Promise<void> {
         const session = debug.activeDebugSession;
+        logToFile(`tracker.refreshStoppedViews.activeSession type=${session?.type ?? 'none'}`);
         if (!session || session.type !== 'eta') {
             return;
         }
 
-        const autoShowHeap = workspace.getConfiguration('eta.debug').get<boolean>('autoShowHeap', true);
-        if (autoShowHeap && extensionCtx && !HeapInspectorPanel.current()) {
+        const autoRefreshHeap = workspace.getConfiguration('eta.debug')
+            .get<boolean>('autoRefreshHeapOnStop', false);
+        const autoShowHeap = workspace.getConfiguration('eta.debug')
+            .get<boolean>('autoShowHeap', false);
+        if (autoShowHeap && autoRefreshHeap && extensionCtx && !HeapInspectorPanel.current()) {
             HeapInspectorPanel.createOrShow(extensionCtx);
         }
         const heapPanel = HeapInspectorPanel.current();
+        const heapPanelVisible = heapPanel?.isVisible() ?? false;
+        const shouldFetchHeapPanel = autoRefreshHeap && heapPanelVisible;
+        const shouldFetchRoots = autoRefreshHeap && gcRootsViewVisible;
+        const shouldFetchHeapSnapshot = shouldFetchHeapPanel || shouldFetchRoots;
 
+        const autoShowDisasm = workspace.getConfiguration('eta.debug')
+            .get<boolean>('autoShowDisassembly', false);
+        const autoRefreshDisasmOnStop = workspace.getConfiguration('eta.debug')
+            .get<boolean>('autoRefreshDisassemblyOnStop', false);
+        const disasmDocVisible = window.visibleTextEditors.some(
+            ed => ed.document.uri.scheme === 'eta-disasm',
+        );
         const providerScope = disasmProvider ? disasmProvider.currentScope() : 'current';
-        const currentDisasmPromise = session.customRequest(
-            'eta/disassemble', { scope: 'current' },
-        ) as Promise<DisassemblyResult>;
-        const providerDisasmPromise = providerScope === 'current'
-            ? currentDisasmPromise
-            : session.customRequest(
-                'eta/disassemble', { scope: providerScope },
-            ) as Promise<DisassemblyResult>;
+        const shouldRefreshDisasmCurrent = autoRefreshDisasmOnStop && (
+            disasmViewVisible
+            || autoShowDisasm
+            || (disasmDocVisible && providerScope === 'current')
+        );
+        const shouldFetchChildren = childProcViewVisible;
+        logToFile(
+            `tracker.refreshStoppedViews.flags heap=${shouldFetchHeapSnapshot} disasm=${shouldRefreshDisasmCurrent} children=${shouldFetchChildren}`,
+        );
 
-        const [heapResult, currentDisasmResult, providerDisasmResult, childrenResult] =
-            await Promise.allSettled([
-                session.customRequest('eta/heapSnapshot') as Promise<HeapSnapshot>,
-                currentDisasmPromise,
-                providerDisasmPromise,
-                session.customRequest('eta/childProcesses') as Promise<{ children: ChildProcessInfo[] }>,
-            ]);
+        const heapPromise = shouldFetchHeapSnapshot
+            ? session.customRequest('eta/heapSnapshot', {
+                includeKinds: shouldFetchHeapPanel,
+                includeRoots: true,
+                maxObjectsScanned: shouldFetchHeapPanel ? 120000 : 0,
+                maxKindRows: shouldFetchHeapPanel ? 200 : 0,
+                maxRootsPerCategory: 600,
+            }) as Promise<HeapSnapshot>
+            : Promise.resolve(undefined);
 
-        if (heapResult.status === 'fulfilled') {
-            gcRootsProvider?.applySnapshot(heapResult.value);
-            if (heapPanel) {
-                heapPanel.applySnapshot(heapResult.value);
-            }
-        } else {
-            gcRootsProvider?.applySnapshot(undefined);
-            if (heapPanel) {
+        const disasmPromise = shouldRefreshDisasmCurrent
+            ? session.customRequest('eta/disassemble', { scope: 'current' }) as Promise<DisassemblyResult>
+            : Promise.resolve(undefined);
+
+        const childrenPromise = shouldFetchChildren
+            ? session.customRequest('eta/childProcesses') as Promise<{ children: ChildProcessInfo[] }>
+            : Promise.resolve(undefined);
+
+        const [heapResult, currentDisasmResult, childrenResult] = await Promise.allSettled([
+            heapPromise,
+            disasmPromise,
+            childrenPromise,
+        ]);
+        logToFile(
+            `tracker.refreshStoppedViews.settled heap=${heapResult.status} disasm=${currentDisasmResult.status} children=${childrenResult.status}`,
+        );
+
+        if (shouldFetchHeapSnapshot) {
+            if (heapResult.status === 'fulfilled') {
+                const snap = heapResult.value as HeapSnapshot;
+                if (shouldFetchRoots) {
+                    gcRootsProvider?.applySnapshot(snap);
+                }
+                if (shouldFetchHeapPanel && heapPanel) {
+                    heapPanel.applySnapshot(snap);
+                }
+            } else {
+                if (shouldFetchRoots) {
+                    gcRootsProvider?.applySnapshot(undefined);
+                }
                 const msg = heapResult.reason instanceof Error
                     ? heapResult.reason.message
                     : String(heapResult.reason);
-                if (/must be paused/i.test(msg)) {
-                    heapPanel.showIdle('Pause the VM (breakpoint or step) to inspect the heap.');
-                } else {
-                    heapPanel.showError(msg);
+                if (shouldFetchHeapPanel && heapPanel) {
+                    if (/must be paused/i.test(msg)) {
+                        heapPanel.showIdle('Pause the VM (breakpoint or step) to inspect the heap.');
+                    } else {
+                        heapPanel.showError(msg);
+                    }
                 }
                 this.channel.appendLine(`[DAP] eta/heapSnapshot refresh failed: ${msg}`);
             }
         }
 
-        if (currentDisasmResult.status === 'fulfilled') {
-            disasmTreeProvider?.applyResult(currentDisasmResult.value);
-        } else {
-            disasmTreeProvider?.applyResult(undefined);
-            const msg = currentDisasmResult.reason instanceof Error
-                ? currentDisasmResult.reason.message
-                : String(currentDisasmResult.reason);
-            this.channel.appendLine(`[DAP] eta/disassemble(current) refresh failed: ${msg}`);
-        }
-
-        if (disasmProvider) {
-            if (providerDisasmResult.status === 'fulfilled') {
-                disasmProvider.applyResult(providerDisasmResult.value, providerScope);
+        if (shouldRefreshDisasmCurrent) {
+            if (currentDisasmResult.status === 'fulfilled') {
+                if (disasmViewVisible) {
+                    disasmTreeProvider?.applyResult(currentDisasmResult.value);
+                }
+                if (disasmProvider && providerScope === 'current') {
+                    disasmProvider.applyResult(currentDisasmResult.value, 'current');
+                }
             } else {
-                disasmProvider.applyResult(undefined, providerScope);
-                const msg = providerDisasmResult.reason instanceof Error
-                    ? providerDisasmResult.reason.message
-                    : String(providerDisasmResult.reason);
-                this.channel.appendLine(`[DAP] eta/disassemble(${providerScope}) refresh failed: ${msg}`);
+                const msg = currentDisasmResult.reason instanceof Error
+                    ? currentDisasmResult.reason.message
+                    : String(currentDisasmResult.reason);
+                if (disasmViewVisible) {
+                    disasmTreeProvider?.applyResult(undefined);
+                }
+                if (disasmProvider && providerScope === 'current') {
+                    disasmProvider.applyResult(undefined, 'current');
+                }
+                this.channel.appendLine(`[DAP] eta/disassemble(current) refresh failed: ${msg}`);
             }
-            const autoShow = workspace.getConfiguration('eta.debug')
-                .get<boolean>('autoShowDisassembly', false);
-            await autoShowDisassemblyOnStop(disasmProvider, autoShow);
         }
 
-        if (childrenResult.status === 'fulfilled') {
-            childProcProvider?.updateChildren(childrenResult.value.children ?? []);
-        } else {
-            childProcProvider?.updateChildren([]);
-            const msg = childrenResult.reason instanceof Error
-                ? childrenResult.reason.message
-                : String(childrenResult.reason);
-            this.channel.appendLine(`[DAP] eta/childProcesses refresh failed: ${msg}`);
+        if (disasmProvider && autoShowDisasm && autoRefreshDisasmOnStop) {
+            await autoShowDisassemblyOnStop(disasmProvider, true);
+        }
+
+        if (shouldFetchChildren) {
+            if (childrenResult.status === 'fulfilled') {
+                const payload = childrenResult.value as { children: ChildProcessInfo[] } | undefined;
+                childProcProvider?.updateChildren(payload?.children ?? []);
+            } else {
+                childProcProvider?.updateChildren([]);
+                const msg = childrenResult.reason instanceof Error
+                    ? childrenResult.reason.message
+                    : String(childrenResult.reason);
+                this.channel.appendLine(`[DAP] eta/childProcesses refresh failed: ${msg}`);
+            }
         }
     }
 
     onError(error: Error): void {
+        logToFile(`tracker.onError ${error.message}`);
+        if (this.programOutputFlushTimer) {
+            clearTimeout(this.programOutputFlushTimer);
+            this.programOutputFlushTimer = undefined;
+        }
+        this.flushProgramOutput();
         this.channel.appendLine(`[DAP] Adapter error: ${error.message}`);
     }
 
     onExit(code: number | undefined, signal: string | undefined): void {
+        logToFile(`tracker.onExit code=${code ?? 'null'} signal=${signal ?? 'null'}`);
+        if (this.programOutputFlushTimer) {
+            clearTimeout(this.programOutputFlushTimer);
+            this.programOutputFlushTimer = undefined;
+        }
+        this.flushProgramOutput();
         this.channel.appendLine(
             `[DAP] Adapter exited (code=${code ?? 'null'}, signal=${signal ?? 'null'}).`
         );

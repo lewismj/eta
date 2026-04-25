@@ -2,7 +2,7 @@
     "name": "eta-scheme-lang",
     "displayName": "Eta (Scheme) Language",
     "description": "Language support for the Eta-Scheme programming language",
-    "version": "0.4.0",
+    "version": "0.4.4",
     "publisher": "eta-schema-lang",
     "icon": "media/eta_logo.png",
     "repository": {
@@ -122,8 +122,8 @@
                 },
                 "eta.debug.autoShowHeap": {
                     "type": "boolean",
-                    "default": true,
-                    "description": "Automatically show the Heap Inspector when a debug session starts."
+                    "default": false,
+                    "description": "Automatically show the Heap Inspector when a debug session starts (when heap auto-refresh is enabled)."
                 },
                 "eta.debug.autoShowDisassembly": {
                     "type": "boolean",
@@ -133,7 +133,22 @@
                 "eta.debug.autoRefreshViewsOnStop": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Automatically refresh Heap/Memory/Disassembly debug side views on each stop. Disable this if breakpoints become unresponsive in large programs."
+                    "description": "Automatically refresh debug side views on each stop. Disabled by default for debugger responsiveness; enable only if your eta_dap build handles stop-time custom requests reliably."
+                },
+                "eta.debug.autoRefreshHeapOnStop": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically refresh heap-based side views (Heap Inspector and Memory roots) on each stop. Enable only when your eta_dap build includes bounded heap snapshot support."
+                },
+                "eta.debug.autoRefreshDisassemblyOnStop": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically refresh disassembly side views/documents on each stop. Keep disabled if open disassembly views impact debugger responsiveness."
+                },
+                "eta.debug.inlineValuesEnabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable inline values in the editor while paused. Disabled by default because stop-time evaluate requests can impact debug responsiveness on large programs."
                 },
                 "eta.test.runnerPath": {
                     "type": "string",

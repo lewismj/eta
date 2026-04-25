@@ -216,7 +216,17 @@ private:
      * Helpers
      * Build a JSON heap snapshot from the paused VM. Caller must hold vm_mutex_.
      */
-    Value build_heap_snapshot(bool* out_cancelled = nullptr);
+    struct HeapSnapshotOptions {
+        bool include_kinds{true};
+        bool include_roots{true};
+        int64_t max_objects_scanned{250000};
+        int64_t max_kind_rows{256};
+        int64_t max_roots_per_category{750};
+    };
+    Value build_heap_snapshot(
+        const HeapSnapshotOptions& opts,
+        bool* out_cancelled = nullptr
+    );
 
     /**
      * Resolve a function-breakpoint name to a concrete file/line location.
