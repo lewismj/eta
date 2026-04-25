@@ -67,6 +67,11 @@ using eta::interpreter::register_all_primitives;
  */
 class Driver {
 public:
+    static constexpr std::size_t DEFAULT_HEAP_SOFT_LIMIT_BYTES =
+        150u * 1024u * 1024u;
+    static constexpr std::size_t DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES =
+        50u * 1024u * 1024u;
+
     /**
      * Parse a human-readable heap size from an environment variable.
      *
@@ -78,7 +83,7 @@ public:
      */
     static std::size_t parse_heap_env_var(
         const char*  env_var,
-        std::size_t  default_val = 4u * 1024u * 1024u) noexcept
+        std::size_t  default_val = DEFAULT_HEAP_SOFT_LIMIT_BYTES) noexcept
     {
         const char* s = std::getenv(env_var);
         if (!s || s[0] == '\0') return default_val;
@@ -109,7 +114,7 @@ public:
     }
 
     explicit Driver(ModulePathResolver resolver,
-                    std::size_t heap_bytes = 4 * 1024 * 1024,
+                    std::size_t heap_bytes = DEFAULT_HEAP_SOFT_LIMIT_BYTES,
                     std::string etai_path  = {})
         : resolver_(std::move(resolver)),
           heap_(heap_bytes),
@@ -178,9 +183,11 @@ public:
         {
             try {
                 auto resolver = ModulePathResolver::from_path_string(module_search_path);
-                const auto child_heap =
-                    Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
-                        Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT"));
+                const auto child_heap = Driver::parse_heap_env_var(
+                    "ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
+                    Driver::parse_heap_env_var(
+                        "ETA_HEAP_SOFT_LIMIT",
+                        Driver::DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES));
                 Driver child(std::move(resolver), child_heap);
                 child.load_prelude();
 
@@ -234,9 +241,11 @@ public:
         {
             try {
                 auto resolver = ModulePathResolver::from_path_string(module_search_path);
-                const auto child_heap =
-                    Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
-                        Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT"));
+                const auto child_heap = Driver::parse_heap_env_var(
+                    "ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
+                    Driver::parse_heap_env_var(
+                        "ETA_HEAP_SOFT_LIMIT",
+                        Driver::DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES));
                 Driver child(std::move(resolver), child_heap);
                 child.load_prelude();
 

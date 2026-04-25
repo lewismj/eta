@@ -42,6 +42,30 @@ export interface ObjectInspection {
     children: ObjectChild[];
 }
 
+export interface DebugVariable {
+    name: string;
+    value: string;
+    variablesReference: number;
+    indexedVariables?: number;
+    namedVariables?: number;
+}
+
+export interface LocalMemorySnapshot {
+    threadId: number;
+    frameIndex: number;
+    frameName: string;
+    moduleName: string;
+    locals: DebugVariable[];
+    upvalues: DebugVariable[];
+    moduleGlobals: DebugVariable[];
+    localsTotal: number;
+    upvaluesTotal: number;
+    moduleGlobalsTotal: number;
+    localsTruncated: boolean;
+    upvaluesTruncated: boolean;
+    moduleGlobalsTruncated: boolean;
+}
+
 export interface ChildProcessInfo {
     pid: number;
     endpoint: string;

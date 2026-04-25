@@ -42,7 +42,7 @@ import {
 } from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
 import { ChildProcessTreeProvider } from './childProcessTreeView';
-import type { ChildProcessInfo, HeapSnapshot } from './dapTypes';
+import type { ChildProcessInfo, HeapSnapshot, LocalMemorySnapshot } from './dapTypes';
 import { registerTestController, runTestsForUri } from './testController';
 import { discoverBinaries } from './binaries';
 import { EtaInlineValuesProvider } from './inlineValues';
@@ -419,6 +419,7 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
     private programOutputFlushTimer: NodeJS.Timeout | undefined;
     private static readonly PROGRAM_OUTPUT_FLUSH_MS = 30;
     private static readonly PROGRAM_OUTPUT_MAX_BUFFER = 8192;
+    private static readonly DISASM_INSTR_RE = /^\s*\d+\s*:\s+\S+/m;
 
     constructor(
         private readonly channel: LogOutputChannel,
@@ -544,10 +545,18 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 const tid: number    = message?.body?.threadId ?? 0;
                 logToFile(`tracker.onDidSendMessage event=stopped reason=${reason} threadId=${tid}`);
                 this.channel.appendLine(`[DAP<-] stopped: reason="${reason}" threadId=${tid}`);
-                const autoRefresh = workspace.getConfiguration('eta.debug')
-                    .get<boolean>('autoRefreshViewsOnStop', false);
-                logToFile(`tracker.stopped autoRefreshViewsOnStop=${autoRefresh}`);
-                if (autoRefresh) {
+                const debugCfg = workspace.getConfiguration('eta.debug');
+                const autoRefreshViewsOnStop = debugCfg.get<boolean>('autoRefreshViewsOnStop', false);
+                const autoRefreshHeapOnStop = debugCfg.get<boolean>('autoRefreshHeapOnStop', false);
+                const autoRefreshDisassemblyOnStop = debugCfg.get<boolean>('autoRefreshDisassemblyOnStop', true);
+                const shouldQueueRefresh = autoRefreshViewsOnStop
+                    || autoRefreshHeapOnStop
+                    || autoRefreshDisassemblyOnStop
+                    || gcRootsViewVisible;
+                logToFile(
+                    `tracker.stopped refreshFlags all=${autoRefreshViewsOnStop} heap=${autoRefreshHeapOnStop} disasm=${autoRefreshDisassemblyOnStop} mem=${gcRootsViewVisible} queue=${shouldQueueRefresh}`,
+                );
+                if (shouldQueueRefresh) {
                     this.queueStoppedRefresh();
                 }
             } else if (event === 'continued') {
@@ -631,25 +640,25 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const heapPanel = HeapInspectorPanel.current();
         const heapPanelVisible = heapPanel?.isVisible() ?? false;
         const shouldFetchHeapPanel = autoRefreshHeap && heapPanelVisible;
-        const shouldFetchRoots = autoRefreshHeap && gcRootsViewVisible;
-        const shouldFetchHeapSnapshot = shouldFetchHeapPanel || shouldFetchRoots;
+        const shouldFetchHeapSnapshot = shouldFetchHeapPanel;
+        const shouldFetchLocalMemory = true;
 
         const autoShowDisasm = workspace.getConfiguration('eta.debug')
             .get<boolean>('autoShowDisassembly', false);
         const autoRefreshDisasmOnStop = workspace.getConfiguration('eta.debug')
-            .get<boolean>('autoRefreshDisassemblyOnStop', false);
+            .get<boolean>('autoRefreshDisassemblyOnStop', true);
+        const autoRefreshViewsOnStop = workspace.getConfiguration('eta.debug')
+            .get<boolean>('autoRefreshViewsOnStop', false);
         const disasmDocVisible = window.visibleTextEditors.some(
             ed => ed.document.uri.scheme === 'eta-disasm',
         );
         const providerScope = disasmProvider ? disasmProvider.currentScope() : 'current';
-        const shouldRefreshDisasmCurrent = autoRefreshDisasmOnStop && (
-            disasmViewVisible
-            || autoShowDisasm
-            || (disasmDocVisible && providerScope === 'current')
-        );
-        const shouldFetchChildren = childProcViewVisible;
+        // When disassembly auto-refresh is enabled, refresh on every stop so
+        // the first breakpoint has data even before the UI view becomes visible.
+        const shouldRefreshDisasmCurrent = autoRefreshDisasmOnStop;
+        const shouldFetchChildren = autoRefreshViewsOnStop && childProcViewVisible;
         logToFile(
-            `tracker.refreshStoppedViews.flags heap=${shouldFetchHeapSnapshot} disasm=${shouldRefreshDisasmCurrent} children=${shouldFetchChildren}`,
+            `tracker.refreshStoppedViews.flags heap=${shouldFetchHeapSnapshot} localMem=${shouldFetchLocalMemory} disasm=${shouldRefreshDisasmCurrent} children=${shouldFetchChildren}`,
         );
 
         const heapPromise = shouldFetchHeapSnapshot
@@ -670,28 +679,33 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             ? session.customRequest('eta/childProcesses') as Promise<{ children: ChildProcessInfo[] }>
             : Promise.resolve(undefined);
 
-        const [heapResult, currentDisasmResult, childrenResult] = await Promise.allSettled([
+        const localMemoryPromise = shouldFetchLocalMemory
+            ? session.customRequest('eta/localMemory', {
+                frameIndex: 0,
+                includeModuleGlobals: true,
+                maxLocals: 200,
+                maxUpvalues: 200,
+                maxModuleGlobals: 200,
+            }) as Promise<LocalMemorySnapshot>
+            : Promise.resolve(undefined);
+
+        const [heapResult, currentDisasmResult, childrenResult, localMemoryResult] = await Promise.allSettled([
             heapPromise,
             disasmPromise,
             childrenPromise,
+            localMemoryPromise,
         ]);
         logToFile(
-            `tracker.refreshStoppedViews.settled heap=${heapResult.status} disasm=${currentDisasmResult.status} children=${childrenResult.status}`,
+            `tracker.refreshStoppedViews.settled heap=${heapResult.status} disasm=${currentDisasmResult.status} children=${childrenResult.status} localMem=${localMemoryResult.status}`,
         );
 
         if (shouldFetchHeapSnapshot) {
             if (heapResult.status === 'fulfilled') {
                 const snap = heapResult.value as HeapSnapshot;
-                if (shouldFetchRoots) {
-                    gcRootsProvider?.applySnapshot(snap);
-                }
                 if (shouldFetchHeapPanel && heapPanel) {
                     heapPanel.applySnapshot(snap);
                 }
             } else {
-                if (shouldFetchRoots) {
-                    gcRootsProvider?.applySnapshot(undefined);
-                }
                 const msg = heapResult.reason instanceof Error
                     ? heapResult.reason.message
                     : String(heapResult.reason);
@@ -706,21 +720,74 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             }
         }
 
+        if (shouldFetchLocalMemory) {
+            if (localMemoryResult.status === 'fulfilled') {
+                let mem = localMemoryResult.value as LocalMemorySnapshot;
+                const isProbablyEmptyMemory = (m: LocalMemorySnapshot | undefined): boolean => {
+                    if (!m) return true;
+                    const total = (m.localsTotal ?? 0) + (m.upvaluesTotal ?? 0) + (m.moduleGlobalsTotal ?? 0);
+                    const frameName = (m.frameName ?? '').trim();
+                    const moduleName = (m.moduleName ?? '').trim();
+                    return total === 0 && frameName.length === 0 && moduleName.length === 0;
+                };
+                // First-stop race hardening similar to disassembly.
+                if (isProbablyEmptyMemory(mem)) {
+                    try {
+                        await new Promise<void>(resolve => setTimeout(resolve, 20));
+                        const retry = await session.customRequest('eta/localMemory', {
+                            frameIndex: 0,
+                            includeModuleGlobals: true,
+                            maxLocals: 200,
+                            maxUpvalues: 200,
+                            maxModuleGlobals: 200,
+                        }) as LocalMemorySnapshot;
+                        if (!isProbablyEmptyMemory(retry)) {
+                            mem = retry;
+                            logToFile('tracker.refreshStoppedViews.localMemoryRetry used');
+                        }
+                    } catch (err: any) {
+                        logToFile(`tracker.refreshStoppedViews.localMemoryRetry failed err=${err?.message ?? String(err)}`);
+                    }
+                }
+                gcRootsProvider?.applyLocalMemory(mem);
+            } else {
+                gcRootsProvider?.applyLocalMemory(undefined);
+                const msg = localMemoryResult.reason instanceof Error
+                    ? localMemoryResult.reason.message
+                    : String(localMemoryResult.reason);
+                this.channel.appendLine(`[DAP] eta/localMemory refresh failed: ${msg}`);
+            }
+        }
+
         if (shouldRefreshDisasmCurrent) {
             if (currentDisasmResult.status === 'fulfilled') {
-                if (disasmViewVisible) {
-                    disasmTreeProvider?.applyResult(currentDisasmResult.value);
+                let disasmResult = currentDisasmResult.value as DisassemblyResult;
+                // First-stop race hardening: if the first response carries no
+                // instruction rows, retry once shortly after stop handling settles.
+                if (!EtaDebugAdapterTracker.DISASM_INSTR_RE.test(disasmResult?.text ?? '')) {
+                    try {
+                        await new Promise<void>(resolve => setTimeout(resolve, 20));
+                        const retry = await session.customRequest(
+                            'eta/disassemble',
+                            { scope: 'current' },
+                        ) as DisassemblyResult;
+                        if (EtaDebugAdapterTracker.DISASM_INSTR_RE.test(retry?.text ?? '')) {
+                            disasmResult = retry;
+                            logToFile('tracker.refreshStoppedViews.disasmRetry used');
+                        }
+                    } catch (err: any) {
+                        logToFile(`tracker.refreshStoppedViews.disasmRetry failed err=${err?.message ?? String(err)}`);
+                    }
                 }
+                disasmTreeProvider?.applyResult(disasmResult);
                 if (disasmProvider && providerScope === 'current') {
-                    disasmProvider.applyResult(currentDisasmResult.value, 'current');
+                    disasmProvider.applyResult(disasmResult, 'current');
                 }
             } else {
                 const msg = currentDisasmResult.reason instanceof Error
                     ? currentDisasmResult.reason.message
                     : String(currentDisasmResult.reason);
-                if (disasmViewVisible) {
-                    disasmTreeProvider?.applyResult(undefined);
-                }
+                disasmTreeProvider?.applyResult(undefined);
                 if (disasmProvider && providerScope === 'current') {
                     disasmProvider.applyResult(undefined, 'current');
                 }

@@ -36,9 +36,9 @@ export interface DisassemblyResult {
 
 const FUNC_HEADER_RE = /^=== (.+?) ===$/;
 /** A `LoadConst N  ; <func:M>` line — second capture is the function index. */
-const LOADCONST_FUNC_RE = /^\s*\d+:\s+LoadConst\s+\d+\s*;\s*<func:(\d+)>/;
-const CALL_RE = /^\s*\d+:\s+(?:Call|TailCall)\b/;
-const INSTR_RE = /^\s*(\d+):\s/;
+const LOADCONST_FUNC_RE = /^\s*\d+\s*:\s+LoadConst\s+\d+\s*;\s*<func:(\d+)>/;
+const CALL_RE = /^\s*\d+\s*:\s+(?:Call|TailCall)\b/;
+const INSTR_RE = /^\s*(\d+)\s*:\s/;
 
 /** Find the first instruction line whose index equals currentPC, scoped to functionName. */
 export function findPcLine(text: string, currentPC: number, functionName: string): number {

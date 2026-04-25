@@ -73,7 +73,7 @@ export class DisasmLineNode {
 const FUNC_HEADER_RE = /^=== (.+?) ===$/;
 const CONST_POOL_RE = /^\s*-- constant pool --/;
 const CODE_RE = /^\s*-- code --/;
-const INSTR_RE = /^\s*(\d+):\s+(\S+)/;
+const INSTR_RE = /^\s*(\d+)\s*:\s+(\S+)/;
 const MAX_TREE_TEXT_BYTES = 400_000;
 
 function parseFunctions(text: string, currentPC: number, currentFunction?: string): DisasmFunctionNode[] {
@@ -162,7 +162,7 @@ function parseFunctions(text: string, currentPC: number, currentFunction?: strin
             // most recent LoadConst <func:M> annotation.
             for (let k = curInstrs.length - 1; k >= 0; k--) {
                 const m = curInstrs[k].text.match(
-                    /^\s*\d+:\s+LoadConst\s+\d+\s*;\s*<func:(\d+)>/,
+                    /^\s*\d+\s*:\s+LoadConst\s+\d+\s*;\s*<func:(\d+)>/,
                 );
                 if (m) { callTarget = parseInt(m[1], 10); break; }
             }
