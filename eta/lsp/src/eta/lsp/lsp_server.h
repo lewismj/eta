@@ -147,6 +147,8 @@ private:
     Value handle_selection_range(const Value& params);
     Value handle_semantic_tokens_full(const Value& params);
     Value handle_formatting(const Value& params);
+    Value handle_document_highlight(const Value& params);
+    Value handle_inlay_hint(const Value& params);
 
     /// Diagnostics
     void validate_document(const std::string& uri);

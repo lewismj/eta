@@ -2,7 +2,7 @@
     "name": "eta-scheme-lang",
     "displayName": "Eta (Scheme) Language",
     "description": "Language support for the Eta-Scheme programming language",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "publisher": "eta-schema-lang",
     "icon": "media/eta_logo.svg",
     "repository": {

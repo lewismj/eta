@@ -660,7 +660,50 @@ links resolving via `ETA_MODULE_PATH`.
 
 ---
 
-### B7 — Snippets, grammar, language config refresh
+### B7 — Snippets, grammar, language config refresh ✅ **DONE**
+
+The 217-line `snippets/eta.json` predated several language additions; it
+has been refreshed to **42 snippets** in
+[`editors/vscode/snippets/eta.json`](../editors/vscode/snippets/eta.json),
+adding: `defrel` / `tabled` / `findall` / `run*` / `run1` / `run-n` /
+`conde` / `fresh` / `freeze` / `dif`, `clp-domain` / `clp-solve` /
+`clp-all-different` / `clpr-maximize` / `clpb-solve`,
+`one-for-one` / `one-for-all`, `spawn-thread` / `spawn-thread-with` with
+mailbox patterns, `define-record-type` upgraded with predicate +
+accessors + setters, `grad` / `tape` (reverse-mode AD), `tensor` /
+`backward` (torch), and `test-group`.
+
+**Grammar** ([`syntaxes/eta.tmLanguage.json`](../editors/vscode/syntaxes/eta.tmLanguage.json))
+gained dedicated scopes for:
+
+- `?identifier` logic-variable convention → `variable.other.logic.eta`
+- `clp:*` / `clpr:*` / `clpb:*` namespace heads → `support.function.clp.eta`
+- relational forms (`defrel`, `tabled`, `conde`, `fresh`, `run*`,
+  `findall`, `freeze`, `dif`, `==`, `membero`, …) →
+  `keyword.control.relational.eta`
+- supervisor strategies (`one-for-one`, `one-for-all`,
+  `supervisor-poll`) → `keyword.control.supervisor.eta`
+- torch / training-loop helpers → `support.function.torch.eta`
+- AAD entry points (`grad`, `forward`, `backward`) →
+  `support.function.ad.eta`
+- test-framework forms (`test`, `test-group`, `assert-*`) →
+  `support.function.test.eta`
+
+**Language config** ([`language-configuration.json`](../editors/vscode/language-configuration.json))
+adds form-aware `onEnterRules` for `(let ((` / `(letrec ((` /
+`(fluid-let` binding lists, `(cond` / `(case` / `(conde` clauses, and
+body-introducing heads (`define`, `define-syntax`, `defun`, `defrel`,
+`lambda`, `when`, `unless`, `module`, `with-socket`, `spawn-thread*`,
+`fresh`, `run*` / `run1` / `run-n`). The existing `wordPattern`
+already permits `?` and `!` in identifiers (used by `null?`, `set!`,
+`tape-stop!`, etc.), so it is unchanged.
+
+Eta's macro system is hygienic R5RS-style **`(define-syntax NAME
+(syntax-rules () …))`** — there is no `defmacro`. A
+[`snippets.test.ts`](../editors/vscode/test/suite/snippets.test.ts) unit
+test guards the snippets file against ever advertising it.
+
+> Original B7 wishlist preserved below for traceability.
 
 The 217-line `snippets/eta.json` predates several language additions:
 

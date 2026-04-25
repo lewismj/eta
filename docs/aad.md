@@ -1,6 +1,6 @@
 # Adjoint Algorithmic Differentiation (AAD)
 
-[Back to README](../README.md) | [Examples](examples.md) | [Modules](modules.md) | [ADR 0001](adr/0001-aad-taperef-and-error-tags.md)
+[Back to README](../README.md) | [Examples](examples.md) | [Modules](modules.md)
 
 ---
 
@@ -157,12 +157,51 @@ The current API remains scalar-focused (no tensor-aware tape extension here).
 
 ## Stdlib Helpers
 
-`std.aad` provides:
+`std.aad` layers ergonomic helpers on top of tape primitives.
 
-- Piecewise wrappers: `ad-abs`, `ad-max`, `ad-min`, `ad-relu`, `ad-clamp`
-- Smooth alternatives: `softplus`, `smooth-abs`, `smooth-clamp`
-- Gradient tools: `grad`, `check-grad`, `check-grad-report`
-- Checkpoint API: `with-checkpoint` (MVP API surface)
+### Piecewise helpers (policy-aware)
+
+These helpers delegate to taped piecewise primitives and obey
+`set-aad-nondiff-policy!` at kinks:
+
+| Helper | Form | Typical use |
+|---|---|---|
+| `ad-abs` | `(ad-abs x)` | absolute value terms in objectives |
+| `ad-max` | `(ad-max a b ...)` | lower-bounding / ReLU-style gating |
+| `ad-min` | `(ad-min a b ...)` | upper-bounding values |
+| `ad-relu` | `(ad-relu x)` | `max(0, x)` activations |
+| `ad-clamp` | `(ad-clamp x lo hi)` | box constraints |
+
+Example policy effect at a kink (`x = 0`):
+
+```eta
+(set-aad-nondiff-policy! 'zero-subgrad)
+(grad (lambda (x) (ad-relu x)) '(0.0)) ; deterministic zero gradient
+
+(set-aad-nondiff-policy! 'strict)
+(grad (lambda (x) (ad-relu x)) '(0.0)) ; raises :ad/nondiff-strict
+```
+
+### Smooth helpers (branch-free approximations)
+
+Use these when you want stable gradients near kinks:
+
+- `softplus(x, beta)` approximates `max(0, x)`; larger `beta` is sharper.
+- `smooth-abs(x, epsilon)` approximates `abs(x)`; `epsilon` controls rounding near zero.
+- `smooth-clamp(x, lo, hi, beta)` approximates `clamp` with smooth transitions.
+
+```eta
+(grad (lambda (x) (softplus x 8.0)) '(0.0))
+(grad (lambda (x) (smooth-abs x 1e-3)) '(0.0))
+```
+
+### Gradient utilities
+
+- `grad(f, vals)` returns `(primal-value gradient-vector)`.
+- `check-grad(f, vals, [rtol], [atol], [step-scale])` returns pass/fail.
+- `check-grad-report(...)` returns
+  `[ok, max-error, aad-grad, fd-grad, rtol, atol, step-scale]`.
+- `with-checkpoint(thunk)` is currently a passthrough API (MVP surface).
 
 Gradient checker defaults:
 

@@ -8,7 +8,7 @@
             "  (begin",
             "    $0))"
         ],
-        "description": "Module skeleton with import and begin"
+        "description": "Module skeleton with import, export, and begin"
     },
     "Function Definition": {
         "prefix": "defun",
@@ -98,15 +98,16 @@
         "prefix": "define-record-type",
         "body": [
             "(define-record-type ${1:name}",
-            "  (${2:make-name} ${3:field1})",
-            "  ${4:name?}",
-            "  (${3:field1} ${5:name-field1}))"
+            "  (${2:make-${1:name}} ${3:field1} ${4:field2})",
+            "  ${5:${1:name}?}",
+            "  (${3:field1} ${1:name}-${3:field1} set-${1:name}-${3:field1}!)",
+            "  (${4:field2} ${1:name}-${4:field2} set-${1:name}-${4:field2}!))$0"
         ],
-        "description": "Record type definition"
+        "description": "Record type with predicate, accessors, and setters"
     },
     "Import": {
         "prefix": "import",
-        "body": "(import ${1:module-name})",
+        "body": "(import ${1|std.prelude,std.io,std.core,std.collections,std.math,std.logic,std.freeze,std.clp,std.clpr,std.clpb,std.db,std.aad,std.torch,std.stats,std.regex,std.csv,std.net,std.supervisor,std.test,std.time|})",
         "description": "Import bindings from a module"
     },
     "Catch": {
@@ -141,6 +142,7 @@
         ],
         "description": "Iteration construct"
     },
+
     "Regex Compile": {
         "prefix": "regex-compile",
         "body": "(define ${1:rx} (regex:compile \"${2:pattern}\" ${3:'icase}))",
@@ -169,6 +171,7 @@
         ],
         "description": "Collect all regex match payloads"
     },
+
     "CSV Open Reader": {
         "prefix": "csv-open-reader",
         "body": [
@@ -232,6 +235,29 @@
         ],
         "description": "Spawn a child process, send a message, receive the result, and clean up"
     },
+    "Spawn Thread": {
+        "prefix": "spawn-thread",
+        "body": [
+            "(define ${1:t}",
+            "  (spawn-thread",
+            "    (lambda ()",
+            "      (let loop ()",
+            "        (let ((${2:msg} (recv! (current-mailbox) 'wait)))",
+            "          ${3:(display msg) (newline)}",
+            "          (loop))))))",
+            "$0"
+        ],
+        "description": "Spawn an in-process actor thread with a recv loop on its mailbox"
+    },
+    "Spawn Thread With": {
+        "prefix": "spawn-thread-with",
+        "body": [
+            "(define ${1:t} (spawn-thread-with ${2:state}",
+            "  (lambda (${3:state} ${4:msg})",
+            "    ${0:(values state)})))"
+        ],
+        "description": "Spawn an actor with explicit state-passing receive loop"
+    },
     "Send/Recv": {
         "prefix": "send-recv",
         "body": [
@@ -265,6 +291,195 @@
             "$0"
         ],
         "description": "Receive the parent socket inside a spawned child process"
+    },
+
+    "Supervisor One-For-One": {
+        "prefix": "one-for-one",
+        "body": [
+            "(one-for-one",
+            "  (list",
+            "    (list '${1:child-name} \"${2:child.eta}\" ${3:'()})",
+            "    $0))"
+        ],
+        "description": "Restart-on-crash supervisor: only the failed child restarts"
+    },
+    "Supervisor One-For-All": {
+        "prefix": "one-for-all",
+        "body": [
+            "(one-for-all",
+            "  (list",
+            "    (list '${1:child-name} \"${2:child.eta}\" ${3:'()})",
+            "    $0))"
+        ],
+        "description": "Restart-on-crash supervisor: any failure restarts every child"
+    },
+
+    "Logic findall": {
+        "prefix": "findall",
+        "body": [
+            "(define ${1:q} (logic-var))",
+            "(define ${2:results}",
+            "  (findall (lambda () (deref-lvar ${1:q}))",
+            "    ${3:(some-goal ${1:q})}))",
+            "$0"
+        ],
+        "description": "Collect all solutions of a logic goal into a list"
+    },
+    "Logic run*": {
+        "prefix": "run*",
+        "body": [
+            "(run* (${1:q})",
+            "  ${0:(== ${1:q} 'value)})"
+        ],
+        "description": "Run a relational query and collect every answer"
+    },
+    "Logic run1": {
+        "prefix": "run1",
+        "body": [
+            "(run1 (${1:q})",
+            "  ${0:(== ${1:q} 'value)})"
+        ],
+        "description": "Run a relational query and return the first answer"
+    },
+    "Logic run-n": {
+        "prefix": "run-n",
+        "body": [
+            "(run-n ${1:5} (${2:q})",
+            "  ${0:(== ${2:q} 'value)})"
+        ],
+        "description": "Run a relational query bounded to N answers"
+    },
+    "Logic conde": {
+        "prefix": "conde",
+        "body": [
+            "(conde",
+            "  (${1:goal-1a} ${2:goal-1b})",
+            "  (${3:goal-2a} ${4:goal-2b}))$0"
+        ],
+        "description": "Disjunction of conjunctions (miniKanren-style)"
+    },
+    "Logic fresh": {
+        "prefix": "fresh",
+        "body": [
+            "(fresh (${1:x} ${2:y})",
+            "  ${0:(== ${1:x} ${2:y})})"
+        ],
+        "description": "Introduce fresh logic variables in a goal scope"
+    },
+    "Logic defrel": {
+        "prefix": "defrel",
+        "body": [
+            "(defrel '(${1:name} ${2:?a} ${3:?b}))$0"
+        ],
+        "description": "Declare a relation in the in-memory deductive database"
+    },
+    "Logic tabled": {
+        "prefix": "tabled",
+        "body": [
+            "(tabled '${1:relation} ${2:arity})$0"
+        ],
+        "description": "Mark a relation as tabled (memoised) for SLG-style evaluation"
+    },
+    "Logic freeze": {
+        "prefix": "freeze",
+        "body": [
+            "(freeze ${1:lvar}",
+            "  (lambda ()",
+            "    ${0:(== ${1:lvar} 'fired)}))"
+        ],
+        "description": "Suspend a goal until the logic variable is bound"
+    },
+    "Logic dif": {
+        "prefix": "dif",
+        "body": "(dif ${1:x} ${2:y})$0",
+        "description": "Constructive inequality constraint between two terms"
+    },
+
+    "CLP(FD) Domain": {
+        "prefix": "clp-domain",
+        "body": "(clp:domain ${1:var} ${2:0} ${3:9})$0",
+        "description": "Restrict an FD variable to an integer interval"
+    },
+    "CLP(FD) Solve": {
+        "prefix": "clp-solve",
+        "body": [
+            "(clp:labeling ${1:vars} 'strategy '${2|ff,leftmost,middle-out|})$0"
+        ],
+        "description": "Search for solutions to posted FD constraints"
+    },
+    "CLP(FD) All Different": {
+        "prefix": "clp-all-different",
+        "body": "(clp:all-different ${1:vars})$0",
+        "description": "Pairwise-distinct constraint over a list of FD variables"
+    },
+    "CLP(R) Linear Maximize": {
+        "prefix": "clpr-maximize",
+        "body": [
+            "(import std.clpr)",
+            "(define ${1:weights} (list ${2:(clp:r-var) (clp:r-var)}))",
+            "(clp:r=  (dot '(1 1) ${1:weights}) 1.0)",
+            "(clp:r-maximize (dot ${3:returns} ${1:weights}))$0"
+        ],
+        "description": "Linear-programming maximisation skeleton with simplex backend"
+    },
+    "CLP(B) Boolean Solve": {
+        "prefix": "clpb-solve",
+        "body": [
+            "(import std.clpb)",
+            "(define ${1:vars} (list ${2:(clp:b-var) (clp:b-var)}))",
+            "(clp:b-sat ${3:formula})",
+            "(clp:b-labeling ${1:vars})$0"
+        ],
+        "description": "Boolean SAT/labelling skeleton on top of CLP(B)"
+    },
+
+    "AAD Gradient": {
+        "prefix": "grad",
+        "body": [
+            "(grad (lambda (${1:x} ${2:y}) ${3:(+ (* ${1:x} ${2:y}) (sin ${1:x}))})",
+            "      '(${4:2} ${5:3}))$0"
+        ],
+        "description": "Reverse-mode gradient of a numeric function (std.aad)"
+    },
+    "AAD Tape Block": {
+        "prefix": "tape",
+        "body": [
+            "(let ((${1:tape} (tape-new)))",
+            "  (let ((${2:x} (tape-var ${1:tape} ${3:1.0})))",
+            "    (tape-start! ${1:tape})",
+            "    (let ((${4:out} ${5:(* ${2:x} ${2:x})}))",
+            "      (tape-stop!)",
+            "      (tape-backward! ${1:tape} ${4:out})",
+            "      (list (tape-primal ${1:tape} ${4:out})",
+            "            (tape-adjoint ${1:tape} ${2:x})))))$0"
+        ],
+        "description": "Low-level reverse-mode AD tape: var, record, backward, read adjoint"
+    },
+
+    "Torch Tensor": {
+        "prefix": "tensor",
+        "body": "(tensor ${1:'((1.0 2.0) (3.0 4.0))})$0",
+        "description": "Build a tensor from a nested numeric list"
+    },
+    "Torch Backward": {
+        "prefix": "backward",
+        "body": [
+            "(define ${1:x} (requires-grad! (tensor ${2:1.0})))",
+            "(define ${3:y} ${4:(* ${1:x} ${1:x})})",
+            "(backward ${3:y})",
+            "(grad ${1:x})$0"
+        ],
+        "description": "Construct a leaf tensor, run forward, backprop, read gradient"
+    },
+
+    "Test Group": {
+        "prefix": "test-group",
+        "body": [
+            "(test-group \"${1:group name}\"",
+            "  (test \"${2:case name}\"",
+            "    (assert-equal ${3:expected} ${4:actual}))$0)"
+        ],
+        "description": "Test group with an initial assert-equal case (std.test)"
     }
 }
 

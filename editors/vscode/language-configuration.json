@@ -30,11 +30,28 @@
     },
     "onEnterRules": [
         {
+            "comment": "Inside an open `(let ((` / `(let* ((` / `(letrec ((` binding list, line up new bindings with the first one.",
+            "beforeText": "^\\s*\\((?:let\\*?|letrec\\*?|fluid-let)\\s+\\(.*$",
+            "action": { "indent": "indent" }
+        },
+        {
+            "comment": "Inside `(cond` clauses, indent each clause two spaces past `cond`.",
+            "beforeText": "^\\s*\\((?:cond|case|conde|conda|condu)\\b.*$",
+            "action": { "indent": "indent" }
+        },
+        {
+            "comment": "After a binding head like `(define`, `(defun`, `(lambda`, `(when`, `(unless`, indent the body.",
+            "beforeText": "^\\s*\\((?:define|define-syntax|defun|def|defrel|lambda|when|unless|begin|module|with-socket|spawn-thread|spawn-thread-with|fresh|run\\*|run1|run-n)\\b.*$",
+            "action": { "indent": "indent" }
+        },
+        {
+            "comment": "Generic: an unmatched open paren on the line increases indent.",
             "beforeText": "^.*\\([^)]*$",
             "action": { "indent": "indent" }
         },
         {
-            "beforeText": "^\\s*\\)\\s*$",
+            "comment": "A line containing only closing parens outdents the next line.",
+            "beforeText": "^\\s*\\)+\\s*$",
             "action": { "indent": "outdent" }
         }
     ],

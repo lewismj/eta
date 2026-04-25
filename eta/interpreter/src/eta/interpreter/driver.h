@@ -159,7 +159,7 @@ public:
          * for each actor thread.
          */
         eta::nng::ProcessManager::ThreadWorkerFn thread_worker_fn =
-            [module_search_path](
+            [module_search_path, this](
                 const std::string& th_module_path,
                 const std::string& th_func_name,
                 const std::string& th_endpoint,
@@ -185,6 +185,19 @@ public:
                     return;
                 }
 
+                /**
+                 * Notify any DAP debug listener now that the child VM/Driver
+                 * exist and have loaded source.  This lets the adapter install
+                 * its per-thread stop callback and breakpoints before the
+                 * spawn-thread function actually starts running user code.
+                 */
+                std::string th_name = fs::path(th_module_path).stem().string();
+                if (!th_func_name.empty()) th_name += " (" + th_func_name + ")";
+                proc_mgr_.notify_thread_started(
+                    static_cast<void*>(&child.vm()),
+                    static_cast<void*>(&child),
+                    std::move(th_name));
+
                 /// Build and evaluate: (func-name arg1 arg2 ...)
                 std::string call_src = "(" + th_func_name;
                 for (const auto& a : th_text_args) {
@@ -193,6 +206,7 @@ public:
                 }
                 call_src += ")";
                 child.run_source(call_src);
+                proc_mgr_.notify_thread_exited(static_cast<void*>(&child.vm()));
             } catch (...) {}
             alive->store(false, std::memory_order_release);
         };
@@ -203,7 +217,7 @@ public:
          * creates the Closure heap object, and calls it via call_value().
          */
         eta::nng::ProcessManager::ClosureWorkerFn closure_worker_fn =
-            [module_search_path](
+            [module_search_path, this](
                 const std::string& th_endpoint,
                 eta::nng::ProcessManager::SerializedClosure sc,
                 std::shared_ptr<std::atomic<bool>> alive) noexcept
@@ -282,9 +296,14 @@ public:
                 }
 
                 /// Call the thunk with 0 arguments
+                proc_mgr_.notify_thread_started(
+                    static_cast<void*>(&child.vm()),
+                    static_cast<void*>(&child),
+                    "(spawn-thread)");
                 auto result = child.vm().call_value(*closure_val, {});
                 if (!result) {
                 }
+                proc_mgr_.notify_thread_exited(static_cast<void*>(&child.vm()));
             } catch (const std::exception&) {
             } catch (...) {
             }

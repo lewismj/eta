@@ -11,6 +11,7 @@
         { "include": "#quote-abbrev" },
         { "include": "#vector-literal" },
         { "include": "#bytevector-literal" },
+        { "include": "#logic-var" },
         { "include": "#paren-expression" },
         { "include": "#symbol" }
     ],
@@ -86,6 +87,11 @@
         "bytevector-literal": {
             "name": "punctuation.definition.bytevector.eta",
             "match": "#u8\\("
+        },
+        "logic-var": {
+            "comment": "Logic-variable convention used in miniKanren-style code and comments",
+            "name": "variable.other.logic.eta",
+            "match": "(?<![\\w!?\\-+/*<>=#%])\\?[A-Za-z_][\\w!?\\-+/*<>=#%]*"
         },
         "paren-expression": {
             "begin": "\\(",
@@ -216,6 +222,48 @@
                     "match": "(?<=\\()\\s*(nng-socket|nng-listen|nng-dial|nng-close|nng-socket\\?|send!|recv!|nng-poll|nng-subscribe|nng-set-option|spawn|spawn-kill|spawn-wait|current-mailbox|spawn-thread-with|spawn-thread|thread-join|thread-alive\\?|with-socket|request-reply|worker-pool|pub-sub|survey)(?=[\\s()\\[\\]])",
                     "captures": {
                         "1": { "name": "support.function.nng.eta" }
+                    }
+                },
+                {
+                    "comment": "Supervisor strategies (std.supervisor)",
+                    "match": "(?<=\\()\\s*(one-for-one|one-for-all|supervisor-poll)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.supervisor.eta" }
+                    }
+                },
+                {
+                    "comment": "Relational logic / miniKanren forms (std.logic, std.db, std.freeze)",
+                    "match": "(?<=\\()\\s*(defrel|tabled|tabled-clause|conde|conda|condu|fresh|run|run\\*|run1|run-n|findall|solve|succeeds\\?|freeze|dif|==|==o|membero|onceo|failo|succeedo|naf|conj|disj|conj2-goalsets|fresh-vars|copy-term\\*)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "keyword.control.relational.eta" }
+                    }
+                },
+                {
+                    "comment": "CLP namespace heads (clp:* / clpr:* / clpb:*)",
+                    "match": "(?<=\\()\\s*(clp(?:r|b)?:[A-Za-z][\\w!?\\-+/*<>=]*)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.clp.eta" }
+                    }
+                },
+                {
+                    "comment": "Optimizer / training-loop helpers (std.torch)",
+                    "match": "(?<=\\()\\s*(adam|sgd|optim-zero-grad!|zero-grad!|step!|train!|train-step!|backward|requires-grad!|requires-grad\\?|parameters|nn-to-cpu|nn-to-gpu|nn-to-device|to-cpu|to-gpu|to-device|gpu-available\\?|gpu-count|sequential|linear|relu-layer|sigmoid-layer|softmax|sigmoid|relu|softplus|cross-entropy-loss|mse-loss|l1-loss|dropout|tensor|tensor\\?|tensor-load|tensor-save|tensor-print|with-checkpoint|check-grad|check-grad-report)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.torch.eta" }
+                    }
+                },
+                {
+                    "comment": "AAD high-level entry points (std.aad)",
+                    "match": "(?<=\\()\\s*(grad|forward|backward)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.ad.eta" }
+                    }
+                },
+                {
+                    "comment": "Test framework (std.test)",
+                    "match": "(?<=\\()\\s*(test|test-group|assert|assert-equal|assert-not-equal|assert-true|assert-false|assert-approx-equal|print-tap|print-junit|print-summary)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.test.eta" }
                     }
                 }
             ]

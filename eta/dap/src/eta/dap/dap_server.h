@@ -21,12 +21,30 @@
 #include "eta/util/json.h"
 
 namespace eta::interpreter { class Driver; }
+namespace eta::runtime::vm { class VM; struct StopEvent; }
 
 namespace eta::dap {
 
 using eta::json::Value;
 using eta::json::Object;
 using eta::json::Array;
+
+/**
+ * One row in the DAP per-thread registry.  The registry tracks the main VM
+ * (always dap_thread_id == 1) plus every actor thread spawned via
+ * spawn-thread / spawn-thread-with.  Per-threadId DAP requests
+ * (stackTrace, scopes, variables, continue, ...) look up their target
+ * through the registry rather than going to driver_->vm() directly.
+ */
+struct DapThread {
+    int                              dap_thread_id{0};
+    std::string                      name;
+    interpreter::Driver*             driver{nullptr};   ///< owning Driver (parent for main, child for actors)
+    runtime::vm::VM*                 vm{nullptr};       ///< &driver->vm()
+    int                              pm_index{-1};      ///< process-manager index, or -1 for main
+    bool                             is_main{false};
+    bool                             alive{true};
+};
 
 class DapServer {
 public:
@@ -48,18 +66,40 @@ public:
     void run();
 
     /**
-     * Variable reference packing: encode (frame_index, scope) into a single int.
-     * scope 0 = locals, scope 1 = upvalues
-     * +1 offset ensures the result is always >= 1: DAP treats variablesReference == 0
-     * as "not expandable", so frame 0 / scope 0 (top-frame locals) would silently
-     * suppress the variables request without this offset.
+     * Variable reference packing.
+     *
+     * Layout of the encoded integer (1-based; 0 means "not expandable"):
+     *   bits  0-7  : scope (locals=0, upvalues=1, globals=2, module=3)
+     *   bits  8-19 : frame index (up to 4096)
+     *   bits 20-27 : dap thread id (up to 256; 0 maps to the main thread, id 1)
+     *
+     * The `+1` offset ensures the result is always >= 1: DAP treats
+     * variablesReference == 0 as "not expandable", so frame 0 / scope 0 /
+     * thread 1 (main) would silently suppress the variables request without
+     * this offset.
+     *
+     * Compound variable references start at COMPOUND_REF_BASE which is well
+     * above the maximum frame/scope encoding.
      */
-    static int encode_var_ref(int frame, int scope) { return ((frame << 8) | (scope & 0xFF)) + 1; }
-    static int decode_var_ref_frame(int ref) { return (ref - 1) >> 8; }
+    static int encode_var_ref(int frame, int scope) { return encode_var_ref(1, frame, scope); }
+    static int encode_var_ref(int thread_id, int frame, int scope) {
+        const int t = (thread_id == 1) ? 0 : thread_id;
+        return ((t << 20) | ((frame & 0xFFF) << 8) | (scope & 0xFF)) + 1;
+    }
+    static int decode_var_ref_thread(int ref) {
+        const int t = ((ref - 1) >> 20) & 0xFF;
+        return t == 0 ? 1 : t;
+    }
+    static int decode_var_ref_frame(int ref) { return ((ref - 1) >> 8) & 0xFFF; }
     static int decode_var_ref_scope(int ref) { return (ref - 1) & 0xFF; }
 
-    /// Compound variable references start at this value.
-    static constexpr int COMPOUND_REF_BASE = 10000;
+    /**
+     * Compound variable references start at this value.
+     *
+     * Sized large enough to leave room for ((thread<<20)|(frame<<8)|scope)+1
+     * encodings of every frame/scope/threadId combination we can produce.
+     */
+    static constexpr int COMPOUND_REF_BASE = 1 << 28;
 
 private:
     /// Injected I/O
@@ -116,6 +156,18 @@ private:
     std::thread vm_thread_;
     std::mutex  vm_mutex_;    ///< guards driver_ / VM state access from DAP thread
     std::mutex  output_mutex_; ///< serialises send() calls from DAP + VM threads
+
+    /**
+     * Per-thread registry.  Always contains the main thread (id == 1) once
+     * the VM has been launched; gains entries for actor threads as they
+     * publish themselves through ProcessManager::ThreadDebugListener.
+     *
+     * Guarded by vm_mutex_ (already serialises driver_ access).
+     */
+    std::unordered_map<int, DapThread> threads_by_id_;
+    std::unordered_map<runtime::vm::VM*, int> id_by_vm_;
+    int next_dap_thread_id_{2};   ///< id 1 is reserved for the main VM
+    static constexpr int MAIN_THREAD_ID = 1;
 
     /// Transport
     void send(const Value& msg);
@@ -191,44 +243,52 @@ private:
      * closure) stored in compound_refs_.  Cleared on each stop event.
      */
     int next_compound_ref_{COMPOUND_REF_BASE};
-    std::unordered_map<int, uint64_t> compound_refs_;
+    struct CompoundRef {
+        uint64_t value{0};
+        int      dap_thread_id{MAIN_THREAD_ID}; ///< owning thread (for heap/format lookup)
+    };
+    std::unordered_map<int, CompoundRef> compound_refs_;
 
     /// Allocate a compound variablesReference for a NaN-boxed value.
-    int alloc_compound_ref(uint64_t val);
+    int alloc_compound_ref(uint64_t val, int dap_thread_id = MAIN_THREAD_ID);
     /// Clear compound refs (called on each stop/continue cycle).
     void clear_compound_refs();
     /// Check if a value is a compound type that can be expanded.
     bool is_compound_value(uint64_t val) const;
     /// Build a variable JSON object, assigning a compound ref if expandable.
-    Value make_variable_json(const std::string& name, uint64_t val);
+    Value make_variable_json(interpreter::Driver& drv, int dap_thread_id,
+                             const std::string& name, uint64_t val);
     /// Expand a compound value into child variables.
     /// `start`/`count` follow the DAP `variables` paging convention:
     ///   start <= 0 and count <= 0 mean "return everything".
-    Array expand_compound(uint64_t val, int start = 0, int count = 0);
+    Array expand_compound(interpreter::Driver& drv, int dap_thread_id,
+                          uint64_t val, int start = 0, int count = 0);
 
     /**
      * Resolve a paused-frame identifier lookup. Returns true if the symbol is
      * found in locals/upvalues/globals and assigns out_val.
-     * Caller must hold vm_mutex_ and ensure driver_ is non-null.
+     * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    bool try_lookup_paused_name(const std::string& expr, uint64_t& out_val);
+    bool try_lookup_paused_name(interpreter::Driver& drv, const std::string& expr, uint64_t& out_val);
 
     /**
      * Evaluate a paused breakpoint condition with the lightweight debugger
      * evaluator. Currently supports identifier lookups and boolean/integer
      * literals. On malformed input, returns false and writes out_error.
-     * Caller must hold vm_mutex_ and ensure driver_ is non-null.
+     * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    bool eval_breakpoint_condition(const std::string& condition,
+    bool eval_breakpoint_condition(interpreter::Driver& drv,
+                                   const std::string& condition,
                                    bool& out_truthy,
                                    std::string& out_error);
 
     /**
      * Parse a setVariable RHS expression into a value using the paused-frame
      * debugger evaluator. Supports identifier lookups and simple literals.
-     * Caller must hold vm_mutex_ and ensure driver_ is non-null.
+     * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    bool parse_set_variable_value(const std::string& value_text,
+    bool parse_set_variable_value(interpreter::Driver& drv,
+                                  const std::string& value_text,
                                   uint64_t& out_value,
                                   std::string& out_error);
 
@@ -253,10 +313,10 @@ private:
      * `*out_error`. Returns false on parse / lookup / sandbox-violation
      * failure and writes a human-readable diagnostic to `*out_error`.
      *
-     * Caller must hold vm_mutex_ and ensure driver_ is non-null and the VM
-     * is paused.
+     * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    bool eval_in_paused_frame(int frame_idx,
+    bool eval_in_paused_frame(interpreter::Driver& drv,
+                              int frame_idx,
                               const std::string& expr,
                               std::string& out_str,
                               uint64_t* out_val = nullptr,
@@ -266,9 +326,9 @@ private:
     /**
      * Expand {name} placeholders in a logpoint message using paused-scope
      * identifier lookups. Unknown placeholders are preserved verbatim.
-     * Caller must hold vm_mutex_ and ensure driver_ is non-null.
+     * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    std::string render_logpoint_message(const std::string& templ);
+    std::string render_logpoint_message(interpreter::Driver& drv, const std::string& templ);
 
     /// Returns true if the text looks like a simple identifier.
     static bool is_identifier_expr(const std::string& expr);
@@ -278,7 +338,33 @@ private:
      * the function executing in the given frame index (0 = innermost).
      * Must be called with vm_mutex_ held.
      */
-    std::string current_module_from_frame(std::size_t frame_idx);
+    std::string current_module_from_frame(interpreter::Driver& drv, std::size_t frame_idx);
+
+    /**
+     * Per-thread registry helpers (all require vm_mutex_).
+     */
+    /// Look up by dap_thread_id; returns nullptr if not registered or marked dead.
+    DapThread* find_thread_locked(int dap_thread_id);
+    /// Resolve "threadId" arg from a request (defaults to MAIN_THREAD_ID).
+    DapThread* resolve_thread_arg_locked(const Value& args);
+    /// Register the main VM (id == MAIN_THREAD_ID).  Idempotent.
+    void register_main_thread_locked();
+    /// Register a new actor thread; allocates a fresh dap_thread_id.
+    /// Returns the assigned id.  Caller must NOT hold vm_mutex_ (we lock here).
+    int  register_actor_thread(interpreter::Driver* drv, runtime::vm::VM* vm,
+                               int pm_index, std::string name);
+    /// Mark an actor thread exited; emits a "thread exited" event.
+    void unregister_actor_thread(runtime::vm::VM* vm);
+    /// Install the per-VM stop callback for `dap_thread_id` on `vm`.
+    void install_stop_callback_for(runtime::vm::VM& vm, int dap_thread_id);
+    /// Install all currently-pending breakpoints on a (possibly child) VM.
+    /// Caller must hold vm_mutex_.
+    void install_pending_breakpoints_on_locked(interpreter::Driver& drv);
+    /// Build the JSON `Source` object for a span owned by `drv`.
+    Value source_json_for(interpreter::Driver& drv, uint32_t file_id);
+
+    /// Stop callback dispatched per VM.
+    void on_thread_stopped(int dap_thread_id, const runtime::vm::StopEvent& ev);
 };
 
 } ///< namespace eta::dap

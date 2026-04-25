@@ -373,6 +373,12 @@ void LspServer::dispatch(const Value& msg) {
     } else if (method == "textDocument/formatting") {
         auto result = handle_formatting(params);
         if (has_id) send_response(id, result);
+    } else if (method == "textDocument/documentHighlight") {
+        auto result = handle_document_highlight(params);
+        if (has_id) send_response(id, result);
+    } else if (method == "textDocument/inlayHint") {
+        auto result = handle_inlay_hint(params);
+        if (has_id) send_response(id, result);
     } else {
         if (has_id) {
             send_error(id, -32601, "Method not found: " + method);
@@ -410,6 +416,10 @@ Value LspServer::handle_initialize(const Value& /*params*/) {
             {"selectionRangeProvider", true},
             {"workspaceSymbolProvider", true},
             {"documentFormattingProvider", true},
+            {"documentHighlightProvider", true},
+            {"inlayHintProvider", json::object({
+                {"resolveProvider", false},
+            })},
             {"semanticTokensProvider", json::object({
                 {"legend", json::object({
                     {"tokenTypes", json::array({
@@ -2595,6 +2605,269 @@ std::vector<LspServer::SymbolInfo> LspServer::collect_symbols(const std::string&
     }
 
     return result;
+}
+
+/**
+ * textDocument/documentHighlight
+ *
+ * Returns DocumentHighlight ranges for every occurrence of the symbol at
+ * the requested position in the current document.  Kind is advertised as
+ * Text (1) since the parser does not currently distinguish read-vs-write
+ * usages.
+ */
+Value LspServer::handle_document_highlight(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    auto line      = params["position"].get_int("line").value_or(0);
+    auto character = params["position"].get_int("character").value_or(0);
+
+    const auto& source = it->second.content;
+    auto word = word_at_position(source, line, character);
+    if (word.empty()) return Value(Array{});
+
+    auto occurrences = find_all_occurrences(source, word);
+    Array result;
+    for (const auto& r : occurrences) {
+        result.push_back(json::object({
+            {"range", range_to_json(r)},
+            {"kind",  1}, ///< Text
+        }));
+    }
+    return Value(std::move(result));
+}
+
+/**
+ * textDocument/inlayHint
+ *
+ * For every call site `(callee arg0 arg1 ...)` whose callee resolves to a
+ * known defun in the current document, prelude or a module-path file,
+ * emit a "name:" hint immediately before each positional argument.  Hints
+ * are filtered to the requested range.
+ */
+namespace {
+
+/**
+ * Extract param names from a captured signature like "(f g)" or "(x . rest)".
+ * Skips outer parens, splits on whitespace, ignores dotted-rest markers and
+ * any token starting with '&' (Common-Lisp keyword params).
+ */
+std::vector<std::string> parse_inlay_param_names(const std::string& signature) {
+    std::vector<std::string> out;
+    if (signature.size() < 2) return out;
+    std::size_t i   = (signature.front() == '(') ? 1u : 0u;
+    std::size_t end = signature.size();
+    if (end > 0 && signature[end - 1] == ')') --end;
+
+    std::string tok;
+    auto flush = [&]() {
+        if (tok.empty()) return;
+        if (tok != "." && tok[0] != '&') out.push_back(tok);
+        tok.clear();
+    };
+    int depth = 0;
+    for (; i < end; ++i) {
+        char c = signature[i];
+        if (c == '(') { ++depth; flush(); continue; }
+        if (c == ')') { --depth; flush(); continue; }
+        if (depth > 0) continue;
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            flush();
+        } else {
+            tok += c;
+        }
+    }
+    flush();
+    return out;
+}
+
+struct InlayCallSiteArg {
+    int64_t line{0};
+    int64_t character{0};
+};
+
+struct InlayCallSite {
+    std::string                   callee;
+    std::vector<InlayCallSiteArg> args;
+};
+
+/**
+ * Forward-scan source emitting one InlayCallSite per `(callee a b ...)` form.
+ * Tracks line/column, double-quoted strings, ';' line comments and paren
+ * depth.  The position recorded for each argument is the first character of
+ * that argument (the outermost '(' if the argument is itself a sexp).
+ */
+std::vector<InlayCallSite> find_inlay_call_sites(const std::string& source) {
+    std::vector<InlayCallSite> out;
+
+    int64_t line = 0;
+    int64_t col  = 0;
+    bool in_string       = false;
+    bool in_line_comment = false;
+
+    struct Frame {
+        bool          seen_callee{false};
+        bool          in_arg_token{false};
+        int           inner_depth{0}; ///< nesting depth of the *current* argument
+        InlayCallSite site;
+    };
+    std::vector<Frame> stack;
+
+    auto end_token = [&](Frame& f) {
+        if (f.in_arg_token) {
+            if (!f.seen_callee) f.seen_callee = true;
+            f.in_arg_token = false;
+        }
+    };
+
+    for (std::size_t i = 0; i < source.size(); ++i) {
+        char c = source[i];
+
+        if (c == '\n') {
+            in_line_comment = false;
+            in_string = false;
+            for (auto& f : stack) end_token(f);
+            ++line; col = 0;
+            continue;
+        }
+        if (in_line_comment) { ++col; continue; }
+        if (in_string) {
+            if (c == '\\' && i + 1 < source.size()) { ++i; col += 2; continue; }
+            if (c == '"') in_string = false;
+            ++col; continue;
+        }
+
+        if (c == ';') { in_line_comment = true; ++col; continue; }
+        if (c == '"') {
+            in_string = true;
+            for (auto& f : stack) end_token(f);
+            ++col; continue;
+        }
+
+        if (c == '(') {
+            if (!stack.empty()) {
+                Frame& parent = stack.back();
+                if (parent.seen_callee && !parent.in_arg_token) {
+                    parent.site.args.push_back({line, col});
+                    parent.in_arg_token = true;
+                    ++parent.inner_depth;
+                } else if (parent.seen_callee && parent.in_arg_token) {
+                    ++parent.inner_depth;
+                } else if (!parent.seen_callee) {
+                    /// callee position is itself a sexp (e.g. ((f x) y)) — skip
+                    parent.in_arg_token = true; parent.seen_callee = true;
+                    ++parent.inner_depth;
+                }
+            }
+            stack.push_back(Frame{});
+            ++col; continue;
+        }
+        if (c == ')') {
+            if (!stack.empty()) {
+                Frame f = std::move(stack.back());
+                stack.pop_back();
+                if (!f.site.callee.empty() && !f.site.args.empty()) {
+                    out.push_back(std::move(f.site));
+                }
+                if (!stack.empty()) {
+                    Frame& parent = stack.back();
+                    if (parent.inner_depth > 0) --parent.inner_depth;
+                    if (parent.inner_depth == 0) parent.in_arg_token = false;
+                }
+            }
+            ++col; continue;
+        }
+        if (c == ' ' || c == '\t' || c == '\r') {
+            if (!stack.empty()) {
+                Frame& f = stack.back();
+                if (f.inner_depth == 0) end_token(f);
+            }
+            ++col; continue;
+        }
+
+        if (!stack.empty()) {
+            Frame& f = stack.back();
+            if (f.inner_depth == 0) {
+                if (!f.seen_callee) {
+                    if (!f.in_arg_token) f.in_arg_token = true;
+                    f.site.callee += c;
+                } else if (!f.in_arg_token) {
+                    f.site.args.push_back({line, col});
+                    f.in_arg_token = true;
+                }
+            }
+        }
+        ++col;
+    }
+    return out;
+}
+
+} ///< anonymous namespace
+
+Value LspServer::handle_inlay_hint(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    int64_t r_start_line = params["range"]["start"].get_int("line").value_or(0);
+    int64_t r_start_char = params["range"]["start"].get_int("character").value_or(0);
+    int64_t r_end_line   = params["range"]["end"].get_int("line").value_or(INT64_MAX);
+    int64_t r_end_char   = params["range"]["end"].get_int("character").value_or(INT64_MAX);
+
+    const auto& source = it->second.content;
+
+    /// Build callee -> param-names index.  Document-local definitions take
+    /// precedence over prelude / module-path so user shadowing wins.
+    std::unordered_map<std::string, std::vector<std::string>> param_index;
+    auto add_syms = [&](const std::vector<SymbolInfo>& syms) {
+        for (const auto& s : syms) {
+            if (s.signature.empty()) continue;
+            if (param_index.count(s.name)) continue;
+            auto names = parse_inlay_param_names(s.signature);
+            if (!names.empty()) param_index[s.name] = std::move(names);
+        }
+    };
+
+    auto local = collect_symbols(source, /*capture_signature=*/true);
+    add_syms(local);
+    if (!completion_cache_loaded_) load_completion_cache();
+    add_syms(prelude_symbols_);
+    add_syms(module_path_symbols_);
+
+    auto in_range = [&](int64_t l, int64_t c) {
+        if (l < r_start_line) return false;
+        if (l == r_start_line && c < r_start_char) return false;
+        if (l > r_end_line) return false;
+        if (l == r_end_line && c > r_end_char) return false;
+        return true;
+    };
+
+    Array result;
+    auto sites = find_inlay_call_sites(source);
+    for (const auto& site : sites) {
+        auto pit = param_index.find(site.callee);
+        if (pit == param_index.end()) continue;
+        const auto& names = pit->second;
+        if (names.empty()) continue;
+
+        const std::size_t n = std::min(site.args.size(), names.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            const auto& a = site.args[i];
+            if (!in_range(a.line, a.character)) continue;
+            result.push_back(json::object({
+                {"position", json::object({
+                    {"line",      a.line},
+                    {"character", a.character},
+                })},
+                {"label",        names[i] + ":"},
+                {"kind",         2},     ///< Parameter
+                {"paddingRight", true},
+            }));
+        }
+    }
+
+    return Value(std::move(result));
 }
 
 } ///< namespace eta::lsp

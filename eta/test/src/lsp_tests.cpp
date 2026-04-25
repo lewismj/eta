@@ -1003,6 +1003,183 @@ BOOST_AUTO_TEST_CASE(enclosing_sexp_ranges_nested) {
     BOOST_TEST(ranges[0].end.character == 9);     ///< ')' of (c) at index 8, +1 = 9
 }
 
+/**
+ * B6.a  initialize advertises documentHighlightProvider
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_document_highlight) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "shutdown"))
+      + frame(notification("exit"));
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 1);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["result"]["capabilities"]["documentHighlightProvider"].as_bool() == true);
+}
+
+/**
+ * B6.b  initialize advertises inlayHintProvider (object form, resolveProvider:false)
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_inlay_hint) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "shutdown"))
+      + frame(notification("exit"));
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 1);
+    BOOST_REQUIRE(!resp.is_null());
+    const auto& cap = resp["result"]["capabilities"]["inlayHintProvider"];
+    BOOST_REQUIRE(!cap.is_null());
+    BOOST_TEST(cap["resolveProvider"].as_bool() == false);
+}
+
+/**
+ * B6.c  documentHighlight returns one range per occurrence of the symbol
+ *       under the cursor (kind == 1, Text).
+ */
+BOOST_AUTO_TEST_CASE(document_highlight_returns_occurrences) {
+    const std::string uri = "file:///test/highlight.eta";
+    /// `foo` appears 3 times, `bar` appears once.
+    const std::string src =
+        "(defun foo (x) (+ x foo))\n"
+        "(define bar (foo 1))\n";
+
+    /// Cursor on the `foo` in `(foo 1)` (line 1, char 13)
+    auto input = build_input(uri, src, {
+        frame(request(20, "textDocument/documentHighlight",
+            R"({"textDocument":{"uri":")" + uri +
+            R"("},"position":{"line":1,"character":13}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 20);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& hi = resp["result"].as_array();
+    BOOST_REQUIRE_EQUAL(hi.size(), 3u);
+    for (const auto& h : hi) {
+        BOOST_TEST(h["kind"].as_int() == 1);
+        BOOST_REQUIRE(!h["range"].is_null());
+    }
+}
+
+/**
+ * B6.d  documentHighlight returns an empty array when the cursor is on
+ *       whitespace / outside any symbol.
+ */
+BOOST_AUTO_TEST_CASE(document_highlight_empty_on_whitespace) {
+    const std::string uri = "file:///test/highlight_empty.eta";
+    const std::string src = "(defun foo (x) x)\n";
+
+    /// Position 6 is the space between `defun` and `foo`.
+    auto input = build_input(uri, src, {
+        frame(request(21, "textDocument/documentHighlight",
+            R"({"textDocument":{"uri":")" + uri +
+            R"("},"position":{"line":0,"character":6}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 21);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["result"].as_array().empty());
+}
+
+/**
+ * B6.e  inlayHint emits one "name:" parameter hint per positional argument
+ *       at a call site whose callee is a document-local defun.
+ */
+BOOST_AUTO_TEST_CASE(inlay_hint_local_defun_call) {
+    const std::string uri = "file:///test/inlay_local.eta";
+    /// `add` defined with two named params on line 0; called with two args on line 1.
+    const std::string src =
+        "(defun add (x y) (+ x y))\n"
+        "(add 10 20)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(30, "textDocument/inlayHint",
+            R"({"textDocument":{"uri":")" + uri +
+            R"("},"range":{"start":{"line":0,"character":0},)"
+            R"("end":{"line":2,"character":0}}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 30);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& hints = resp["result"].as_array();
+    /// We expect exactly two hints — one per argument of (add 10 20).
+    /// Other call sites in the source either have no positional args (e.g. (+ x y)
+    /// uses builtin operator) or are the defun signature itself which is not a call.
+    int n_add_hints = 0;
+    for (const auto& h : hints) {
+        BOOST_TEST(h["kind"].as_int() == 2); ///< Parameter
+        auto label = h.get_string("label").value_or("");
+        if (label == "x:" || label == "y:") {
+            int line = static_cast<int>(h["position"].get_int("line").value_or(-1));
+            if (line == 1) ++n_add_hints;
+        }
+    }
+    BOOST_TEST(n_add_hints == 2);
+}
+
+/**
+ * B6.f  inlayHint range filter: only hints whose position lies inside the
+ *       requested range are returned.
+ */
+BOOST_AUTO_TEST_CASE(inlay_hint_range_filters_results) {
+    const std::string uri = "file:///test/inlay_range.eta";
+    const std::string src =
+        "(defun add (x y) (+ x y))\n"
+        "(add 1 2)\n"
+        "(add 3 4)\n";
+
+    /// Restrict the range to line 2 only — only the second (add 3 4) call
+    /// should produce hints.
+    auto input = build_input(uri, src, {
+        frame(request(31, "textDocument/inlayHint",
+            R"({"textDocument":{"uri":")" + uri +
+            R"("},"range":{"start":{"line":2,"character":0},)"
+            R"("end":{"line":3,"character":0}}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 31);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& hints = resp["result"].as_array();
+    int line2_hints = 0;
+    int other_hints = 0;
+    for (const auto& h : hints) {
+        int line = static_cast<int>(h["position"].get_int("line").value_or(-1));
+        if (line == 2) ++line2_hints;
+        else           ++other_hints;
+    }
+    BOOST_TEST(other_hints == 0);
+    BOOST_TEST(line2_hints == 2);
+}
+
+/**
+ * B6.g  inlayHint returns no hints for an unknown callee.
+ */
+BOOST_AUTO_TEST_CASE(inlay_hint_unknown_callee_no_hints) {
+    const std::string uri = "file:///test/inlay_unknown.eta";
+    const std::string src = "(no-such-function 1 2 3)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(32, "textDocument/inlayHint",
+            R"({"textDocument":{"uri":")" + uri +
+            R"("},"range":{"start":{"line":0,"character":0},)"
+            R"("end":{"line":1,"character":0}}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 32);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["result"].as_array().empty());
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 

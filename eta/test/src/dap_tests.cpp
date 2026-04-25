@@ -1413,9 +1413,12 @@ BOOST_AUTO_TEST_CASE(variables_without_vm_returns_empty) {
  */
 BOOST_AUTO_TEST_CASE(variables_compound_ref_out_of_range) {
     /// Use a ref >= COMPOUND_REF_BASE but without a running VM
+    const std::string args =
+        std::string("{\"variablesReference\":")
+        + std::to_string(eta::dap::DapServer::COMPOUND_REF_BASE + 42) + "}";
     std::string input =
         frame(request(1, "initialize", "{}"))
-      + frame(request(2, "variables", R"({"variablesReference":10042})"))
+      + frame(request(2, "variables", args))
       + frame(request(3, "disconnect", "{}"));
 
     auto msgs = run_server(input);
@@ -1444,7 +1447,7 @@ BOOST_AUTO_TEST_CASE(scopes_refs_below_compound_base) {
         auto ref = s.get_int("variablesReference");
         BOOST_REQUIRE(ref.has_value());
         BOOST_TEST(*ref > 0);
-        BOOST_TEST(*ref < 10000);  ///< below COMPOUND_REF_BASE
+        BOOST_TEST(*ref < eta::dap::DapServer::COMPOUND_REF_BASE);  ///< below COMPOUND_REF_BASE
     }
 }
 

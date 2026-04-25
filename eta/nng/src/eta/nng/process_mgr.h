@@ -159,6 +159,75 @@ public:
         bool        alive{false};
     };
 
+    /**
+     * Debug listener: invoked by the Driver-supplied worker lambda after a
+     * child VM/Driver have been constructed (Started) and just before the
+     * worker thread exits (Exited).  Used by the DAP server to attach a
+     * per-thread stop callback and to route per-threadId requests to the
+     * correct child VM.
+     *
+     * `vm` and `driver` are opaque pointers (so this header has no
+     * dependency on interpreter::Driver / runtime::vm::VM).  The DAP server
+     * casts them back to the concrete types.  Pointers are only valid
+     * between the matching Started and Exited events.
+     */
+    struct ThreadDebugEvent {
+        enum class Kind { Started, Exited };
+        Kind        kind{Kind::Started};
+        int         index{-1};            ///< process-manager-local thread index
+        void*       vm{nullptr};          ///< runtime::vm::VM*  (Started only)
+        void*       driver{nullptr};      ///< interpreter::Driver* (Started only)
+        std::string name;                 ///< friendly name (Started only)
+    };
+    using ThreadDebugListener = std::function<void(const ThreadDebugEvent&)>;
+
+    /// Install / replace the debug listener.  May be called from any thread.
+    void set_debug_listener(ThreadDebugListener fn) {
+        std::lock_guard<std::mutex> lk(mu_);
+        debug_listener_ = std::move(fn);
+    }
+
+    /// Returns a copy of the current debug listener (may be empty).
+    ThreadDebugListener debug_listener_copy() const {
+        std::lock_guard<std::mutex> lk(mu_);
+        return debug_listener_;
+    }
+
+    /**
+     * Called by the Driver-supplied worker lambda from inside the spawned
+     * thread, *after* it has constructed the child VM/Driver.
+     *
+     * Looks up the current thread's process-manager index from a thread-local
+     * cookie installed by spawn_thread_with / spawn_thread, then invokes the
+     * debug listener (if any) with a Started event.  Safe to call when no
+     * listener is installed.
+     */
+    void notify_thread_started(void* vm, void* driver, std::string name) {
+        ThreadDebugListener cb = debug_listener_copy();
+        if (!cb) return;
+        ThreadDebugEvent ev;
+        ev.kind   = ThreadDebugEvent::Kind::Started;
+        ev.index  = current_thread_index();
+        ev.vm     = vm;
+        ev.driver = driver;
+        ev.name   = std::move(name);
+        try { cb(ev); } catch (...) {}
+    }
+
+    /// Counterpart of notify_thread_started, called just before worker exit.
+    void notify_thread_exited(void* vm = nullptr) {
+        ThreadDebugListener cb = debug_listener_copy();
+        if (!cb) return;
+        ThreadDebugEvent ev;
+        ev.kind  = ThreadDebugEvent::Kind::Exited;
+        ev.index = current_thread_index();
+        ev.vm    = vm;
+        try { cb(ev); } catch (...) {}
+    }
+
+    /// Returns the process-manager index for the *current* worker thread, or -1.
+    static int current_thread_index() noexcept { return current_thread_index_tls_(); }
+
     /// Lifecycle
 
     ProcessManager() = default;
@@ -289,6 +358,18 @@ private:
     std::vector<ThreadHandle> threads_;
     ThreadWorkerFn            worker_factory_;
     ClosureWorkerFn           closure_worker_factory_;
+    ThreadDebugListener       debug_listener_;
+
+    /**
+     * Thread-local cookie holding the process-manager index of the *current*
+     * worker thread.  Populated by the thread wrapper in spawn_thread_with /
+     * spawn_thread before invoking the user-supplied factory; read by
+     * current_thread_index() / notify_thread_*.
+     */
+    static int& current_thread_index_tls_() noexcept {
+        thread_local int idx = -1;
+        return idx;
+    }
 
     /**
      * Return a pointer to the ChildHandle whose socket == sock_val.
@@ -632,8 +713,10 @@ ProcessManager::spawn_thread_with(const std::string& module_path,
     auto alive_ptr = th.alive_;  ///< shared with the thread
     ThreadWorkerFn factory_copy = worker_factory_;
 
+    const int spawned_index = static_cast<int>(threads_.size());
     th.thread = std::thread([factory_copy, module_path, func_name,
-                              endpoint, text_args, alive_ptr]() mutable {
+                              endpoint, text_args, alive_ptr, spawned_index]() mutable {
+        current_thread_index_tls_() = spawned_index;
         try {
             factory_copy(module_path, func_name, endpoint,
                          std::move(text_args), alive_ptr);
@@ -698,7 +781,9 @@ ProcessManager::spawn_thread(SerializedClosure sc, Heap& heap, InternTable& /*in
     auto alive_ptr = th.alive_;
     ClosureWorkerFn factory_copy = closure_worker_factory_;
 
-    th.thread = std::thread([factory_copy, endpoint, sc = std::move(sc), alive_ptr]() mutable {
+    const int spawned_index = static_cast<int>(threads_.size());
+    th.thread = std::thread([factory_copy, endpoint, sc = std::move(sc), alive_ptr, spawned_index]() mutable {
+        current_thread_index_tls_() = spawned_index;
         try {
             factory_copy(endpoint, std::move(sc), alive_ptr);
         } catch (...) {}
