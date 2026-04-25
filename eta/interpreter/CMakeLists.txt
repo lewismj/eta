@@ -8,6 +8,7 @@ add_executable(etai
 
 target_include_directories(etai
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
 )
 
 target_link_libraries(etai PRIVATE eta_core eta_torch eta_nng eta_stats)
@@ -50,6 +51,7 @@ add_executable(eta_repl
 
 target_include_directories(eta_repl
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
 )
 
 target_link_libraries(eta_repl PRIVATE eta_core eta_torch eta_nng eta_stats)

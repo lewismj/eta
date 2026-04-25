@@ -227,6 +227,21 @@ endif()
 **Why first.** Every stage downstream calls into `Driver`. We need
 to identify gaps before building on top.
 
+### Implementation status (April 25, 2026)
+
+- Implemented: `Driver::is_complete_expression(...)` with support for nested
+  `#|...|#` comments, unterminated strings, parenthesis depth, and
+  dot-prefixed continuation lines.
+- Implemented: `Driver::request_interrupt()` and VM-side interrupt checks in
+  the same hot-loop branch as the debug hook.
+- Implemented: `eta::session::DisplayValue` and
+  `Driver::eval_to_display(...)` with structured tags (including tensor
+  detection).
+- Implemented: `Driver::set_stream_sinks(...)` and
+  `Driver::on_actor_lifecycle(...)` surface APIs.
+- Implemented: `eta/test/src/driver_jupyter_test.cpp` with
+  completeness, interrupt, and display-tag regressions.
+
 ### Existing surface (already used by `eta_repl`)
 
 | API | Used for |
@@ -240,15 +255,15 @@ to identify gaps before building on top.
 
 | New API | Purpose | File |
 |---|---|---|
-| `bool Driver::is_complete_expression(const std::string& src, std::string* indent_hint)` | `is_complete_request_impl` — must handle unbalanced parens, unterminated strings, dot-prefixed continuation, `#\|...\|#` block comments | `eta/interpreter/src/eta/interpreter/driver.{h,cpp}` |
-| `void Driver::request_interrupt()` | Sets `vm_.interrupt_flag_`; checked in the same null-test slot as `debug_` (re-uses the DAP hook with zero hot-loop cost) | `driver.{h,cpp}`, `eta/core/src/eta/runtime/vm/vm.{h,cpp}` |
-| `DisplayValue Driver::eval_to_display(const std::string& src)` | Returns a discriminated union (see Stage 5) instead of a formatted string | `driver.{h,cpp}` + new `display.h` |
-| `Driver::set_stream_sinks(StreamSink stdout_sink, StreamSink stderr_sink)` | Routes `(println …)` to xeus iopub instead of process stdout | `driver.{h,cpp}`, `stdlib/std/io.eta` (publish hook) |
-| `Driver::on_actor_lifecycle(std::function<void(ActorEvent)>)` | Live actor widget feed | `driver.{h,cpp}` |
+| `bool Driver::is_complete_expression(const std::string& src, std::string* indent_hint)` | `is_complete_request_impl` — must handle unbalanced parens, unterminated strings, dot-prefixed continuation, `#\|...\|#` block comments | `eta/session/src/eta/session/driver.h` |
+| `void Driver::request_interrupt()` | Sets `vm_.interrupt_flag_`; checked in the same null-test slot as `debug_` (re-uses the DAP hook with zero hot-loop cost) | `eta/session/src/eta/session/driver.h`, `eta/core/src/eta/runtime/vm/vm.{h,cpp}` |
+| `DisplayValue Driver::eval_to_display(const std::string& src)` | Returns a discriminated union (see Stage 5) instead of a formatted string | `eta/session/src/eta/session/driver.h` + `eta/session/src/eta/session/eval_display.h` |
+| `Driver::set_stream_sinks(StreamSink stdout_sink, StreamSink stderr_sink)` | Routes `(println …)` to xeus iopub instead of process stdout | `eta/session/src/eta/session/driver.h`, `stdlib/std/io.eta` (publish hook) |
+| `Driver::on_actor_lifecycle(std::function<void(ActorEvent)>)` | Live actor widget feed | `eta/session/src/eta/session/driver.h` |
 
 ### Tests
 
-Add `eta/test/src/interpreter/driver_jupyter_test.cpp`:
+Add `eta/test/src/driver_jupyter_test.cpp`:
 
 - `is_complete_expression("(+ 1")` → `false`, indent hint `"  "`.
 - `is_complete_expression("(+ 1 2)")` → `true`.
@@ -303,7 +318,7 @@ protected:
     void shutdown_request_impl() override;
 
 private:
-    std::unique_ptr<eta::interpreter::Driver> driver_;
+    std::unique_ptr<eta::session::Driver> driver_;
     std::mutex driver_mu_;
 };
 ```
@@ -1050,7 +1065,7 @@ sandbox planned for the DAP (`docs/dap_vs_plan.md` §"A0") is
 | Kernelspec template | `eta/jupyter/resources/kernel.json.in` |
 | Kernel CMake | `eta/jupyter/CMakeLists.txt` |
 | Fetch script | `cmake/FetchXeus.cmake` |
-| Driver façade | `eta/interpreter/src/eta/interpreter/driver.{h,cpp}` |
+| Driver facade | `eta/session/src/eta/session/driver.h` |
 | Repl-shared completion logic | `eta/interpreter/src/eta/interpreter/repl_complete.h` *(new, shared with LSP)* |
 | LSP completion + hover handlers | `eta/lsp/src/eta/lsp/lsp_server.cpp` |
 | VM hot loop | `eta/core/src/eta/runtime/vm/vm.cpp` |
@@ -1063,4 +1078,6 @@ sandbox planned for the DAP (`docs/dap_vs_plan.md` §"A0") is
 | Binder | `binder/{apt.txt,environment.yml,postBuild}` |
 | Docker | `docker/jupyter/Dockerfile` |
 | Conda recipe | `recipes/xeus-eta/meta.yaml` |
+
+
 

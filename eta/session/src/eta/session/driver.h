@@ -8,12 +8,15 @@
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -29,11 +32,14 @@
 #include "eta/runtime/vm/disassembler.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/builtin_names.h"
+#include "eta/runtime/port.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/diagnostic/diagnostic.h"
 
 /// Single source of truth for live primitive registration order:
 #include "eta/interpreter/all_primitives.h"
+#include "eta/session/eval_display.h"
+#include "eta/interpreter/repl_wrap.h"
 
 #include <nng/nng.h>
 #include <nng/protocol/pair0/pair.h>
@@ -44,9 +50,13 @@
 
 #include "eta/interpreter/module_path.h"
 
-namespace eta::interpreter {
+namespace eta::session {
 
 namespace fs = std::filesystem;
+using eta::interpreter::ModulePathResolver;
+using eta::interpreter::PriorModule;
+using eta::interpreter::wrap_repl_submission;
+using eta::interpreter::register_all_primitives;
 
 /**
  * @brief Compilation + execution driver for the eta language.
@@ -457,6 +467,252 @@ public:
         return run_source_impl(std::string(source), /*file_id=*/0, result, result_binding);
     }
 
+    using StreamSink = std::function<void(std::string_view)>;
+
+    struct ActorEvent {
+        enum class Kind {
+            Started,
+            Exited,
+        };
+        Kind kind{Kind::Started};
+        int index{-1};
+        std::string name;
+    };
+
+    /**
+     * @brief Evaluate REPL input and return a formatted output string.
+     *
+     * The source is split into top-level forms and wrapped into an internal
+     * module so globals persist across calls with normal REPL shadowing rules.
+     *
+     * @param source Source text submitted by the caller.
+     * @param out Receives formatted output for the final expression (if any).
+     * @return true on success, false on error (diagnostics are populated).
+     */
+    bool eval_string(std::string source, std::string& out) {
+        out.clear();
+        auto forms = split_toplevel_forms(source);
+        if (forms.empty()) return true;
+
+        auto wrapped = wrap_repl_submission(
+            forms, repl_counter_++, has_module("std.prelude"), repl_modules_);
+
+        runtime::nanbox::LispVal result{runtime::nanbox::Nil};
+        const bool ok = wrapped.last_is_expr
+            ? run_source(wrapped.source, &result, wrapped.result_name)
+            : run_source(wrapped.source);
+        if (!ok) return false;
+
+        repl_modules_.push_back(PriorModule{wrapped.module_name, wrapped.user_defines});
+        if (wrapped.last_is_expr && result != runtime::nanbox::Nil) {
+            out = format_value(result, runtime::FormatMode::Write);
+        }
+        return true;
+    }
+
+    /**
+     * @brief Check whether @p src forms a complete evaluable expression.
+     *
+     * Completeness accounts for nested block comments, string literals with
+     * escapes, and parenthesis depth.
+     *
+     * @param src Source text to inspect.
+     * @param indent_hint Optional indentation hint for continuation prompts.
+     * @return true when the source is complete, false when more input is needed.
+     */
+    [[nodiscard]] bool is_complete_expression(const std::string& src,
+                                              std::string* indent_hint = nullptr) const {
+        int paren_depth = 0;
+        int block_comment_depth = 0;
+        bool in_string = false;
+        bool in_line_comment = false;
+        bool escape = false;
+
+        if (indent_hint) indent_hint->clear();
+
+        for (std::size_t i = 0; i < src.size(); ++i) {
+            const char c = src[i];
+            const char next = (i + 1 < src.size()) ? src[i + 1] : '\0';
+
+            if (in_line_comment) {
+                if (c == '\n') in_line_comment = false;
+                continue;
+            }
+
+            if (block_comment_depth > 0) {
+                if (c == '#' && next == '|') {
+                    ++block_comment_depth;
+                    ++i;
+                    continue;
+                }
+                if (c == '|' && next == '#') {
+                    --block_comment_depth;
+                    ++i;
+                }
+                continue;
+            }
+
+            if (in_string) {
+                if (escape) {
+                    escape = false;
+                    continue;
+                }
+                if (c == '\\') {
+                    escape = true;
+                    continue;
+                }
+                if (c == '"') in_string = false;
+                continue;
+            }
+
+            if (c == ';') {
+                in_line_comment = true;
+                continue;
+            }
+
+            if (c == '#' && next == '|') {
+                ++block_comment_depth;
+                ++i;
+                continue;
+            }
+
+            if (c == '"') {
+                in_string = true;
+                continue;
+            }
+
+            if (c == '(') ++paren_depth;
+            else if (c == ')' && paren_depth > 0) --paren_depth;
+        }
+
+        bool dot_prefixed_continuation = false;
+        std::size_t line_start = 0;
+        while (line_start <= src.size()) {
+            std::size_t line_end = src.find('\n', line_start);
+            if (line_end == std::string::npos) line_end = src.size();
+
+            std::string_view line(src.data() + line_start, line_end - line_start);
+            const auto first_non_ws = line.find_first_not_of(" \t\r");
+            if (first_non_ws != std::string_view::npos) {
+                auto trimmed = line.substr(first_non_ws);
+                if (!trimmed.empty() && trimmed.front() != ';') {
+                    dot_prefixed_continuation = (trimmed.front() == '.');
+                }
+            }
+
+            if (line_end == src.size()) break;
+            line_start = line_end + 1;
+        }
+
+        const bool complete =
+            (paren_depth == 0) &&
+            !in_string &&
+            (block_comment_depth == 0) &&
+            !dot_prefixed_continuation;
+
+        if (!complete && indent_hint) {
+            if (paren_depth > 0) {
+                indent_hint->assign(static_cast<std::size_t>(paren_depth) * 2u, ' ');
+            } else if (dot_prefixed_continuation) {
+                *indent_hint = "  ";
+            } else {
+                indent_hint->clear();
+            }
+        }
+
+        return complete;
+    }
+
+    /**
+     * @brief Request interruption of the currently executing VM run.
+     */
+    void request_interrupt() {
+        vm_.request_interrupt();
+    }
+
+    /**
+     * @brief Evaluate source and return a structured display value.
+     *
+     * @param source Source text to evaluate.
+     * @return Structured display payload for front-end rendering.
+     */
+    [[nodiscard]] DisplayValue eval_to_display(const std::string& source) {
+        auto forms = split_toplevel_forms(source);
+        if (forms.empty()) return DisplayValue{};
+
+        auto wrapped = wrap_repl_submission(
+            forms, repl_counter_++, has_module("std.prelude"), repl_modules_);
+
+        runtime::nanbox::LispVal result{runtime::nanbox::Nil};
+        const bool ok = wrapped.last_is_expr
+            ? run_source(wrapped.source, &result, wrapped.result_name)
+            : run_source(wrapped.source);
+        if (!ok) {
+            return DisplayValue{
+                .tag = DisplayTag::Error,
+                .text = diagnostics_to_string(),
+            };
+        }
+
+        repl_modules_.push_back(PriorModule{wrapped.module_name, wrapped.user_defines});
+        if (!wrapped.last_is_expr || result == runtime::nanbox::Nil) {
+            return DisplayValue{
+                .tag = DisplayTag::Text,
+                .text = {},
+            };
+        }
+
+        return DisplayValue{
+            .tag = classify_display_tag(result),
+            .text = format_value(result, runtime::FormatMode::Write),
+        };
+    }
+
+    /**
+     * @brief Override VM stdout/stderr routing with callback sinks.
+     *
+     * Passing an empty sink leaves the current port unchanged.
+     */
+    void set_stream_sinks(StreamSink stdout_sink, StreamSink stderr_sink) {
+        if (stdout_sink) {
+            set_output_port(std::make_shared<runtime::CallbackPort>(
+                [sink = std::move(stdout_sink)](const std::string& text) {
+                    sink(text);
+                }));
+        }
+        if (stderr_sink) {
+            set_error_port(std::make_shared<runtime::CallbackPort>(
+                [sink = std::move(stderr_sink)](const std::string& text) {
+                    sink(text);
+                }));
+        }
+    }
+
+    /**
+     * @brief Register a listener for actor lifecycle events.
+     *
+     * Events are emitted for spawned actor threads as they start and exit.
+     */
+    void on_actor_lifecycle(std::function<void(const ActorEvent&)> on_event) {
+        if (!on_event) {
+            proc_mgr_.set_debug_listener({});
+            return;
+        }
+
+        proc_mgr_.set_debug_listener(
+            [cb = std::move(on_event)](const eta::nng::ProcessManager::ThreadDebugEvent& ev) {
+                ActorEvent out;
+                out.kind = (ev.kind == eta::nng::ProcessManager::ThreadDebugEvent::Kind::Started)
+                    ? ActorEvent::Kind::Started
+                    : ActorEvent::Kind::Exited;
+                out.index = ev.index;
+                out.name = ev.name;
+                try {
+                    cb(out);
+                } catch (...) {}
+            });
+    }
+
     /// Access the diagnostic engine (for printing / LSP forwarding).
     [[nodiscard]] diagnostic::DiagnosticEngine& diagnostics() noexcept { return diag_engine_; }
     [[nodiscard]] const diagnostic::DiagnosticEngine& diagnostics() const noexcept { return diag_engine_; }
@@ -715,6 +971,95 @@ public:
     }
 
 private:
+    [[nodiscard]] std::string diagnostics_to_string() const {
+        std::ostringstream oss;
+        diag_engine_.print_all(oss, /*use_color=*/false, file_resolver());
+        return oss.str();
+    }
+
+    [[nodiscard]] DisplayTag classify_display_tag(runtime::nanbox::LispVal value) const {
+        using runtime::memory::heap::ObjectKind;
+        if (!runtime::nanbox::ops::is_boxed(value) ||
+            runtime::nanbox::ops::tag(value) != runtime::nanbox::Tag::HeapObject) {
+            return DisplayTag::Text;
+        }
+
+        const auto id = runtime::nanbox::ops::payload(value);
+        if (heap_.try_get_as<ObjectKind::Tensor, void>(id)) return DisplayTag::Tensor;
+        if (heap_.try_get_as<ObjectKind::FactTable, void>(id)) return DisplayTag::FactTable;
+        return DisplayTag::Text;
+    }
+
+    /**
+     * Split input into top-level forms using parenthesis depth.
+     *
+     * This mirrors the REPL form splitting behaviour used by main_repl.cpp.
+     */
+    static std::vector<std::string> split_toplevel_forms(const std::string& input) {
+        std::vector<std::string> forms;
+        int depth = 0;
+        bool in_string = false;
+        bool escape = false;
+        std::size_t form_start = std::string::npos;
+
+        for (std::size_t i = 0; i < input.size(); ++i) {
+            const char c = input[i];
+
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (c == '\\' && in_string) {
+                escape = true;
+                continue;
+            }
+            if (c == '"') {
+                in_string = !in_string;
+                if (form_start == std::string::npos) form_start = i;
+                continue;
+            }
+            if (in_string) continue;
+
+            if (std::isspace(static_cast<unsigned char>(c))) {
+                if (depth == 0 && form_start != std::string::npos) {
+                    forms.push_back(input.substr(form_start, i - form_start));
+                    form_start = std::string::npos;
+                }
+                continue;
+            }
+
+            if (c == ';') {
+                if (depth == 0 && form_start != std::string::npos) {
+                    forms.push_back(input.substr(form_start, i - form_start));
+                    form_start = std::string::npos;
+                }
+                while (i < input.size() && input[i] != '\n') ++i;
+                continue;
+            }
+
+            if (form_start == std::string::npos) form_start = i;
+
+            if (c == '(') {
+                ++depth;
+            } else if (c == ')') {
+                --depth;
+                if (depth == 0) {
+                    forms.push_back(input.substr(form_start, i + 1 - form_start));
+                    form_start = std::string::npos;
+                }
+            }
+        }
+
+        if (form_start != std::string::npos) {
+            auto trailing = input.substr(form_start);
+            if (trailing.find_first_not_of(" \t\n\r") != std::string::npos) {
+                forms.push_back(trailing);
+            }
+        }
+
+        return forms;
+    }
+
     void collect_garbage_with_registry_roots() {
         auto roots = heap_.make_external_root_frame();
         for (const auto& func : registry_.all()) {
@@ -805,6 +1150,8 @@ private:
     std::unordered_set<std::string> loading_modules_;
 
     std::unordered_map<uint32_t, std::string> global_names_;
+    int repl_counter_{0};
+    std::vector<PriorModule> repl_modules_;
 
     /**
      * Normalise a path to a stable lowercase key used in path_to_file_id_.
@@ -1187,5 +1534,5 @@ private:
     }
 };
 
-} ///< namespace eta::interpreter
+} ///< namespace eta::session
 

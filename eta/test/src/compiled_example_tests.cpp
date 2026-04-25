@@ -22,7 +22,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "eta/interpreter/driver.h"
+#include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
@@ -174,7 +174,7 @@ struct CompiledExampleFixture {
 
         eta::interpreter::ModulePathResolver resolver({stdlib});
         resolver.add_dir(file.parent_path());
-        eta::interpreter::Driver driver(std::move(resolver), 8 * 1024 * 1024);
+        eta::session::Driver driver(std::move(resolver), 8 * 1024 * 1024);
 
         auto out_port = std::make_shared<eta::runtime::StringPort>(
             eta::runtime::StringPort::Mode::Output);
@@ -202,7 +202,7 @@ struct CompiledExampleFixture {
 
         eta::interpreter::ModulePathResolver comp_resolver({stdlib});
         comp_resolver.add_dir(file.parent_path());
-        eta::interpreter::Driver compiler(std::move(comp_resolver), 8 * 1024 * 1024);
+        eta::session::Driver compiler(std::move(comp_resolver), 8 * 1024 * 1024);
 
         auto prelude = compiler.load_prelude();
         if (!prelude.loaded) return {false, ""};
@@ -259,7 +259,7 @@ struct CompiledExampleFixture {
         /// Step 2: Load and run the .etac (replicating etai logic)
         eta::interpreter::ModulePathResolver run_resolver({stdlib});
         run_resolver.add_dir(file.parent_path());
-        eta::interpreter::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+        eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
 
         auto out_port = std::make_shared<eta::runtime::StringPort>(
             eta::runtime::StringPort::Mode::Output);
@@ -400,5 +400,6 @@ BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
 
 

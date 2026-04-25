@@ -9,6 +9,7 @@ set_target_properties(eta_test PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 target_include_directories(eta_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
 )
 
 target_link_libraries(eta_test PRIVATE eta_core eta_torch eta_nng eta_stats)

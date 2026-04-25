@@ -243,5 +243,5 @@ as expected.
 | [`optimization_pipeline.h`](../eta/core/src/eta/semantics/optimization_pipeline.h) | `OptimizationPipeline` — composable IR pass runner. |
 | [`constant_folding.h`](../eta/core/src/eta/semantics/passes/constant_folding.h) | Constant folding pass. |
 | [`dead_code_elimination.h`](../eta/core/src/eta/semantics/passes/dead_code_elimination.h) | Dead code elimination pass. |
-| [`driver.h`](../eta/interpreter/src/eta/interpreter/driver.h) | `Driver::run_etac_file` — fast-load path in the interpreter. |
+| [`driver.h`](../eta/session/src/eta/session/driver.h) | `Driver::run_etac_file` — fast-load path in the interpreter. |
 

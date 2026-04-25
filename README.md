@@ -249,7 +249,7 @@ eta-<version>-<platform>/
 ## Compilation Pipeline
 
 Every Eta source file flows through six phases before execution.
-The [`Driver`](eta/interpreter/src/eta/interpreter/driver.h) class
+The [`Driver`](eta/session/src/eta/session/driver.h) class
 orchestrates the full pipeline and owns the runtime state:
 
 ```mermaid

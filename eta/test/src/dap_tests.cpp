@@ -28,7 +28,7 @@
 
 #include "eta/dap/dap_io.h"
 #include "eta/dap/dap_server.h"
-#include "eta/interpreter/driver.h"
+#include "eta/session/driver.h"
 #include "eta/util/json.h"
 
 namespace fs   = std::filesystem;
@@ -1326,7 +1326,7 @@ BOOST_AUTO_TEST_CASE(driver_valid_lines_for_collects_source_lines) {
 
     auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
     resolver.add_dir(tmp.parent_path());
-    eta::interpreter::Driver driver(std::move(resolver));
+    eta::session::Driver driver(std::move(resolver));
 
     BOOST_REQUIRE(driver.run_file(tmp));
 
@@ -1545,7 +1545,7 @@ BOOST_AUTO_TEST_CASE(async_conditional_breakpoint_pauses_on_truthy_hit) {
     {
         auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
         resolver.add_dir(tmp.parent_path());
-        eta::interpreter::Driver driver(std::move(resolver));
+        eta::session::Driver driver(std::move(resolver));
         BOOST_REQUIRE(driver.run_file(tmp));
         const auto file_id = driver.file_id_for_path(tmp.string());
         BOOST_REQUIRE(file_id != 0);
@@ -1765,7 +1765,7 @@ BOOST_AUTO_TEST_CASE(async_function_breakpoint_pauses_on_function_entry) {
     {
         auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
         resolver.add_dir(tmp.parent_path());
-        eta::interpreter::Driver driver(std::move(resolver));
+        eta::session::Driver driver(std::move(resolver));
         BOOST_REQUIRE(driver.run_file(tmp));
         const auto file_id = driver.file_id_for_path(tmp.string());
         BOOST_REQUIRE(file_id != 0);
@@ -1941,7 +1941,7 @@ BOOST_AUTO_TEST_CASE(async_evaluate_uses_sandbox_for_compound_expression) {
     {
         auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
         resolver.add_dir(tmp.parent_path());
-        eta::interpreter::Driver driver(std::move(resolver));
+        eta::session::Driver driver(std::move(resolver));
         BOOST_REQUIRE(driver.run_file(tmp));
         const auto file_id = driver.file_id_for_path(tmp.string());
         BOOST_REQUIRE(file_id != 0);
@@ -2105,7 +2105,7 @@ BOOST_AUTO_TEST_CASE(async_conditional_bp_uses_sandbox_for_compound_expression) 
     {
         auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
         resolver.add_dir(tmp.parent_path());
-        eta::interpreter::Driver driver(std::move(resolver));
+        eta::session::Driver driver(std::move(resolver));
         BOOST_REQUIRE(driver.run_file(tmp));
         const auto file_id = driver.file_id_for_path(tmp.string());
         BOOST_REQUIRE(file_id != 0);
@@ -2585,4 +2585,5 @@ BOOST_AUTO_TEST_CASE(large_vector_advertises_paging_and_honours_start_count) {
 }
 
 BOOST_AUTO_TEST_SUITE_END() ///< dap_variable_paging
+
 

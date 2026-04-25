@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-#include "eta/interpreter/driver.h"
+#include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/interpreter/repl_wrap.h"
 #include "eta/runtime/nanbox.h"
@@ -39,7 +39,7 @@ static fs::path stdlib_dir() {
 }
 
 struct ReplHarness {
-    eta::interpreter::Driver driver;
+    eta::session::Driver driver;
     bool prelude_available{false};
     int repl_counter{0};
     std::vector<eta::interpreter::PriorModule> prior_modules;
@@ -153,3 +153,4 @@ BOOST_AUTO_TEST_CASE(selective_import_preserves_unshadowed_names) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+

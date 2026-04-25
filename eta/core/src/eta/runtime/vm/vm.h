@@ -212,6 +212,7 @@ public:
         if (debug_) debug_->step_in_instruction(frames_.size());
     }
     void request_pause() { if (debug_) debug_->request_pause(); }
+    void request_interrupt() noexcept { interrupt_flag_.store(true, std::memory_order_release); }
 
     [[nodiscard]] bool is_paused() const noexcept {
         return debug_ && debug_->is_paused();
@@ -466,6 +467,7 @@ private:
     /// Debug state (null when not debugging)
     std::unique_ptr<DebugState> debug_;
     std::vector<BreakLocation>  pending_breakpoints_;  ///< queued before set_stop_callback
+    std::atomic<bool> interrupt_flag_{false};
 
     /**
      * When true, mutating opcodes (StoreGlobal/StoreUpval/PatchClosureUpval)

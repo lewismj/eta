@@ -5,7 +5,7 @@
 #include <sstream>
 #include <string>
 
-#include "eta/interpreter/driver.h"
+#include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/disassembler.h"
@@ -87,7 +87,7 @@ int main(int argc, char* argv[]) {
     resolver.add_dir(fs::absolute(file_path).parent_path());
 
     /// Create driver
-    eta::interpreter::Driver driver(std::move(resolver));
+    eta::session::Driver driver(std::move(resolver));
     auto resolve = driver.file_resolver();
 
     /// Configure optimization pipeline
@@ -164,4 +164,5 @@ int main(int argc, char* argv[]) {
               << module_entries.size() << " module(s))\n";
     return 0;
 }
+
 

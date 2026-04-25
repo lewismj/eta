@@ -20,7 +20,7 @@
 
 #include "eta/util/json.h"
 
-namespace eta::interpreter { class Driver; }
+namespace eta::session { class Driver; }
 namespace eta::runtime::vm { class VM; struct StopEvent; }
 
 namespace eta::dap {
@@ -39,7 +39,7 @@ using eta::json::Array;
 struct DapThread {
     int                              dap_thread_id{0};
     std::string                      name;
-    interpreter::Driver*             driver{nullptr};   ///< owning Driver (parent for main, child for actors)
+    session::Driver*             driver{nullptr};   ///< owning Driver (parent for main, child for actors)
     runtime::vm::VM*                 vm{nullptr};       ///< &driver->vm()
     int                              pm_index{-1};      ///< process-manager index, or -1 for main
     bool                             is_main{false};
@@ -152,7 +152,7 @@ private:
     std::atomic<bool> cancel_active_heap_snapshot_{false};
 
     /// The driver and its execution thread
-    std::unique_ptr<interpreter::Driver> driver_;
+    std::unique_ptr<session::Driver> driver_;
     std::thread vm_thread_;
     std::mutex  vm_mutex_;    ///< guards driver_ / VM state access from DAP thread
     std::mutex  output_mutex_; ///< serialises send() calls from DAP + VM threads
@@ -256,12 +256,12 @@ private:
     /// Check if a value is a compound type that can be expanded.
     bool is_compound_value(uint64_t val) const;
     /// Build a variable JSON object, assigning a compound ref if expandable.
-    Value make_variable_json(interpreter::Driver& drv, int dap_thread_id,
+    Value make_variable_json(session::Driver& drv, int dap_thread_id,
                              const std::string& name, uint64_t val);
     /// Expand a compound value into child variables.
     /// `start`/`count` follow the DAP `variables` paging convention:
     ///   start <= 0 and count <= 0 mean "return everything".
-    Array expand_compound(interpreter::Driver& drv, int dap_thread_id,
+    Array expand_compound(session::Driver& drv, int dap_thread_id,
                           uint64_t val, int start = 0, int count = 0);
 
     /**
@@ -269,7 +269,7 @@ private:
      * found in locals/upvalues/globals and assigns out_val.
      * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    bool try_lookup_paused_name(interpreter::Driver& drv, const std::string& expr, uint64_t& out_val);
+    bool try_lookup_paused_name(session::Driver& drv, const std::string& expr, uint64_t& out_val);
 
     /**
      * Evaluate a paused breakpoint condition with the lightweight debugger
@@ -277,7 +277,7 @@ private:
      * literals. On malformed input, returns false and writes out_error.
      * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    bool eval_breakpoint_condition(interpreter::Driver& drv,
+    bool eval_breakpoint_condition(session::Driver& drv,
                                    const std::string& condition,
                                    bool& out_truthy,
                                    std::string& out_error);
@@ -287,7 +287,7 @@ private:
      * debugger evaluator. Supports identifier lookups and simple literals.
      * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    bool parse_set_variable_value(interpreter::Driver& drv,
+    bool parse_set_variable_value(session::Driver& drv,
                                   const std::string& value_text,
                                   uint64_t& out_value,
                                   std::string& out_error);
@@ -315,7 +315,7 @@ private:
      *
      * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    bool eval_in_paused_frame(interpreter::Driver& drv,
+    bool eval_in_paused_frame(session::Driver& drv,
                               int frame_idx,
                               const std::string& expr,
                               std::string& out_str,
@@ -328,7 +328,7 @@ private:
      * identifier lookups. Unknown placeholders are preserved verbatim.
      * Caller must hold vm_mutex_ and ensure drv.vm() is paused.
      */
-    std::string render_logpoint_message(interpreter::Driver& drv, const std::string& templ);
+    std::string render_logpoint_message(session::Driver& drv, const std::string& templ);
 
     /// Returns true if the text looks like a simple identifier.
     static bool is_identifier_expr(const std::string& expr);
@@ -338,7 +338,7 @@ private:
      * the function executing in the given frame index (0 = innermost).
      * Must be called with vm_mutex_ held.
      */
-    std::string current_module_from_frame(interpreter::Driver& drv, std::size_t frame_idx);
+    std::string current_module_from_frame(session::Driver& drv, std::size_t frame_idx);
 
     /**
      * Per-thread registry helpers (all require vm_mutex_).
@@ -351,7 +351,7 @@ private:
     void register_main_thread_locked();
     /// Register a new actor thread; allocates a fresh dap_thread_id.
     /// Returns the assigned id.  Caller must NOT hold vm_mutex_ (we lock here).
-    int  register_actor_thread(interpreter::Driver* drv, runtime::vm::VM* vm,
+    int  register_actor_thread(session::Driver* drv, runtime::vm::VM* vm,
                                int pm_index, std::string name);
     /// Mark an actor thread exited; emits a "thread exited" event.
     void unregister_actor_thread(runtime::vm::VM* vm);
@@ -359,13 +359,14 @@ private:
     void install_stop_callback_for(runtime::vm::VM& vm, int dap_thread_id);
     /// Install all currently-pending breakpoints on a (possibly child) VM.
     /// Caller must hold vm_mutex_.
-    void install_pending_breakpoints_on_locked(interpreter::Driver& drv);
+    void install_pending_breakpoints_on_locked(session::Driver& drv);
     /// Build the JSON `Source` object for a span owned by `drv`.
-    Value source_json_for(interpreter::Driver& drv, uint32_t file_id);
+    Value source_json_for(session::Driver& drv, uint32_t file_id);
 
     /// Stop callback dispatched per VM.
     void on_thread_stopped(int dap_thread_id, const runtime::vm::StopEvent& ev);
 };
 
 } ///< namespace eta::dap
+
 

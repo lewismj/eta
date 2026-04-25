@@ -167,7 +167,7 @@ public:
      * correct child VM.
      *
      * `vm` and `driver` are opaque pointers (so this header has no
-     * dependency on interpreter::Driver / runtime::vm::VM).  The DAP server
+     * dependency on session::Driver / runtime::vm::VM).  The DAP server
      * casts them back to the concrete types.  Pointers are only valid
      * between the matching Started and Exited events.
      */
@@ -176,7 +176,7 @@ public:
         Kind        kind{Kind::Started};
         int         index{-1};            ///< process-manager-local thread index
         void*       vm{nullptr};          ///< runtime::vm::VM*  (Started only)
-        void*       driver{nullptr};      ///< interpreter::Driver* (Started only)
+        void*       driver{nullptr};      ///< session::Driver* (Started only)
         std::string name;                 ///< friendly name (Started only)
     };
     using ThreadDebugListener = std::function<void(const ThreadDebugEvent&)>;
@@ -867,4 +867,3 @@ inline bool ProcessManager::terminate_thread_by_index(int index) {
 }
 
 } ///< namespace eta::nng
-

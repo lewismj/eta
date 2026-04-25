@@ -9,7 +9,7 @@
 Eta's compiler is structured as a **six-stage pipeline** that transforms
 UTF-8 source text into stack-based bytecode and executes it on a virtual
 machine. All phases are orchestrated by the
-[`Driver`](../eta/interpreter/src/eta/interpreter/driver.h) class, which
+[`Driver`](../eta/session/src/eta/session/driver.h) class, which
 owns the full runtime state and supports incremental execution (each REPL
 input shares the same VM globals and linker state).
 

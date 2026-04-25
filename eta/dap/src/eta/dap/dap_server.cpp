@@ -14,7 +14,7 @@
 #include <unordered_set>
 
 /// Eta interpreter
-#include "eta/interpreter/driver.h"
+#include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/vm/vm.h"
@@ -556,7 +556,7 @@ void DapServer::start_vm_from_current_launch() {
 
 
     /// Build the driver on the DAP thread (it will be moved-to below)
-    auto drv = std::make_unique<interpreter::Driver>(std::move(resolver));
+    auto drv = std::make_unique<session::Driver>(std::move(resolver));
 
     /// Register stop callback BEFORE loading prelude so the hook is in place
     install_stop_callback_for(drv->vm(), MAIN_THREAD_ID);
@@ -612,7 +612,7 @@ void DapServer::start_vm_from_current_launch() {
             using Kind = eta::nng::ProcessManager::ThreadDebugEvent::Kind;
             if (ev.kind == Kind::Started) {
                 register_actor_thread(
-                    static_cast<interpreter::Driver*>(ev.driver),
+                    static_cast<session::Driver*>(ev.driver),
                     static_cast<runtime::vm::VM*>(ev.vm),
                     ev.index,
                     ev.name);
@@ -748,7 +748,7 @@ void DapServer::handle_stack_trace(const Value& id, const Value& args) {
         return;
     }
 
-    interpreter::Driver& drv = *th->driver;
+    session::Driver& drv = *th->driver;
     auto frames = th->vm->get_frames();
     Array frames_arr;
     int frame_idx = 0;
@@ -863,7 +863,7 @@ void DapServer::handle_variables(const Value& id, const Value& args) {
         send_response(id, json::object({{"variables", json::array({})}}));
         return;
     }
-    interpreter::Driver& drv = *th->driver;
+    session::Driver& drv = *th->driver;
     runtime::vm::VM& vm = *th->vm;
 
     if (scope == 3) {
@@ -1011,7 +1011,7 @@ void DapServer::handle_evaluate(const Value& id, const Value& args) {
         send_response(id, json::object({{"result", "<not available>"}, {"variablesReference", 0}}));
         return;
     }
-    interpreter::Driver& drv = *th->driver;
+    session::Driver& drv = *th->driver;
     runtime::vm::VM& vm = *th->vm;
 
     /**
@@ -1096,7 +1096,7 @@ void DapServer::handle_set_variable(const Value& id, const Value& args) {
         send_error_response(id, 2002, "VM must be paused to set variable values");
         return;
     }
-    interpreter::Driver& drv = *th->driver;
+    session::Driver& drv = *th->driver;
     runtime::vm::VM& vm = *th->vm;
 
     uint64_t new_value = runtime::nanbox::Nil;
@@ -1345,7 +1345,7 @@ bool DapServer::is_identifier_expr(const std::string& expr) {
     return true;
 }
 
-bool DapServer::try_lookup_paused_name(interpreter::Driver& drv, const std::string& expr, uint64_t& out_val) {
+bool DapServer::try_lookup_paused_name(session::Driver& drv, const std::string& expr, uint64_t& out_val) {
     auto frames = drv.vm().get_frames();
 
     /// 1. Search locals and upvalues across all frames.
@@ -1387,7 +1387,7 @@ bool DapServer::try_lookup_paused_name(interpreter::Driver& drv, const std::stri
     return false;
 }
 
-bool DapServer::eval_breakpoint_condition(interpreter::Driver& drv,
+bool DapServer::eval_breakpoint_condition(session::Driver& drv,
                                           const std::string& condition,
                                           bool& out_truthy,
                                           std::string& out_error) {
@@ -1437,7 +1437,7 @@ bool DapServer::eval_breakpoint_condition(interpreter::Driver& drv,
     return true;
 }
 
-bool DapServer::eval_in_paused_frame(interpreter::Driver& drv,
+bool DapServer::eval_in_paused_frame(session::Driver& drv,
                                      int /*frame_idx*/,
                                      const std::string& expr,
                                      std::string& out_str,
@@ -1476,7 +1476,7 @@ bool DapServer::eval_in_paused_frame(interpreter::Driver& drv,
     return true;
 }
 
-bool DapServer::parse_set_variable_value(interpreter::Driver& drv,
+bool DapServer::parse_set_variable_value(session::Driver& drv,
                                          const std::string& value_text,
                                          uint64_t& out_value,
                                          std::string& out_error) {
@@ -1625,7 +1625,7 @@ bool DapServer::matches_hit_condition(const std::string& hit_condition,
     return false;
 }
 
-std::string DapServer::render_logpoint_message(interpreter::Driver& drv, const std::string& templ) {
+std::string DapServer::render_logpoint_message(session::Driver& drv, const std::string& templ) {
     std::string out;
     out.reserve(templ.size() + 32);
 
@@ -2263,7 +2263,7 @@ bool DapServer::is_compound_value(uint64_t val) const {
     }
 }
 
-Value DapServer::make_variable_json(interpreter::Driver& drv, int dap_thread_id,
+Value DapServer::make_variable_json(session::Driver& drv, int dap_thread_id,
                                     const std::string& name, uint64_t val) {
     using namespace runtime::nanbox;
     using namespace runtime::memory::heap;
@@ -2319,7 +2319,7 @@ Value DapServer::make_variable_json(interpreter::Driver& drv, int dap_thread_id,
     return obj;
 }
 
-Array DapServer::expand_compound(interpreter::Driver& drv, int dap_thread_id,
+Array DapServer::expand_compound(session::Driver& drv, int dap_thread_id,
                                  uint64_t val, int start, int count) {
     using namespace runtime::nanbox;
     using namespace runtime::memory::heap;
@@ -2472,7 +2472,7 @@ void DapServer::handle_completions(const Value& id, const Value& args) {
  * current_module_from_frame
  */
 
-std::string DapServer::current_module_from_frame(interpreter::Driver& drv, std::size_t frame_idx) {
+std::string DapServer::current_module_from_frame(session::Driver& drv, std::size_t frame_idx) {
     auto frames = drv.vm().get_frames();
     if (frame_idx >= frames.size()) return "";
     const std::string& fn = frames[frame_idx].func_name;
@@ -2560,7 +2560,7 @@ void DapServer::register_main_thread_locked() {
     /// send_event uses output_mutex_, not vm_mutex_.)
 }
 
-int DapServer::register_actor_thread(interpreter::Driver* drv,
+int DapServer::register_actor_thread(session::Driver* drv,
                                      runtime::vm::VM* vm,
                                      int pm_index,
                                      std::string name) {
@@ -2653,7 +2653,7 @@ void DapServer::on_thread_stopped(int dap_thread_id, const runtime::vm::StopEven
 
         DapThread* th = find_thread_locked(dap_thread_id);
         if (th && th->driver && ev.reason == StopReason::Breakpoint) {
-            interpreter::Driver& drv = *th->driver;
+            session::Driver& drv = *th->driver;
             const auto current_file = ev.span.file_id;
             const auto current_line = ev.span.start.line;
 
@@ -2750,7 +2750,7 @@ void DapServer::on_thread_stopped(int dap_thread_id, const runtime::vm::StopEven
     }));
 }
 
-void DapServer::install_pending_breakpoints_on_locked(interpreter::Driver& drv) {
+void DapServer::install_pending_breakpoints_on_locked(session::Driver& drv) {
     std::vector<runtime::vm::BreakLocation> all_locs;
     for (const auto& [path, bps] : pending_bps_) {
         uint32_t file_id = drv.file_id_for_path(path);
@@ -2762,7 +2762,7 @@ void DapServer::install_pending_breakpoints_on_locked(interpreter::Driver& drv) 
     drv.vm().set_breakpoints(std::move(all_locs));
 }
 
-Value DapServer::source_json_for(interpreter::Driver& drv, uint32_t file_id) {
+Value DapServer::source_json_for(session::Driver& drv, uint32_t file_id) {
     if (file_id == 0) return Value{};
     if (auto* path = drv.path_for_file_id(file_id)) {
         return json::object({
@@ -2774,4 +2774,6 @@ Value DapServer::source_json_for(interpreter::Driver& drv, uint32_t file_id) {
 }
 
 } ///< namespace eta::dap
+
+
 

@@ -10,7 +10,8 @@ add_executable(eta_dap
 
 target_include_directories(eta_dap
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    # driver.h is header-only; make it visible to the DAP server
+    # Driver is header-only; make session headers visible to the DAP server.
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
 )
 

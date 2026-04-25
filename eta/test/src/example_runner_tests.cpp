@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-#include "eta/interpreter/driver.h"
+#include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/port.h"
 
@@ -159,7 +159,7 @@ struct ExampleRunnerFixture {
         eta::interpreter::ModulePathResolver resolver({stdlib});
         /// Also add the example's own directory so sibling imports work
         resolver.add_dir(file.parent_path());
-        eta::interpreter::Driver driver(std::move(resolver), 8 * 1024 * 1024);
+        eta::session::Driver driver(std::move(resolver), 8 * 1024 * 1024);
 
         /// Suppress stdout from examples: redirect to a string port
         auto null_port = std::make_shared<eta::runtime::StringPort>(
@@ -245,4 +245,5 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
 

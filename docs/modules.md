@@ -16,7 +16,7 @@ exports, imports with filtering, and incremental REPL execution.
 **Key sources:**
 [`module_linker.h`](../eta/core/src/eta/reader/module_linker.h) ·
 [`expander.h`](../eta/core/src/eta/reader/expander.h) ·
-[`driver.h`](../eta/interpreter/src/eta/interpreter/driver.h)
+[`driver.h`](../eta/session/src/eta/session/driver.h)
 
 ---
 

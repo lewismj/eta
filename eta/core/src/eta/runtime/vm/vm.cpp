@@ -656,12 +656,19 @@ std::expected<void, RuntimeError> VM::run_loop() {
         }
 
         /**
-         * Debug hook
-         * Zero-cost when debug_ is null (non-debug runs).
+         * Debug hook and cooperative interrupt check.
+         * Both share the same fast-path branch to avoid extra hot-loop work.
          */
-        if (debug_) {
-            const auto sp = current_func_->span_at(pc_);
-            debug_->check_and_wait(sp, frames_.size());
+        if (debug_ || interrupt_flag_.load(std::memory_order_relaxed)) {
+            if (interrupt_flag_.exchange(false, std::memory_order_acq_rel)) {
+                return std::unexpected(RuntimeError{
+                    VMError{RuntimeErrorCode::UserError, "Execution interrupted"}
+                });
+            }
+            if (debug_) {
+                const auto sp = current_func_->span_at(pc_);
+                debug_->check_and_wait(sp, frames_.size());
+            }
         }
         const auto& instr = current_func_->code[pc_++];
         const auto instr_span = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0)

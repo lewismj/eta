@@ -28,7 +28,7 @@
 #include <eta/nng/process_mgr.h>
 #include <eta/nng/wire_format.h>
 
-#include <eta/interpreter/driver.h>
+#include <eta/session/driver.h>
 #include <eta/interpreter/module_path.h>
 
 #include <eta/runtime/nanbox.h>
@@ -51,6 +51,7 @@ using namespace eta::runtime::memory::intern;
 using namespace eta::runtime::memory::factory;
 using namespace eta::runtime;
 using namespace eta::runtime::types;
+using eta::session::Driver;
 
 namespace {
     template <typename T, typename E>
@@ -74,7 +75,7 @@ namespace {
         }, err);
     }
 
-    static bool diagnostics_contain(const eta::interpreter::Driver& driver,
+    static bool diagnostics_contain(const eta::session::Driver& driver,
                                     std::string_view needle) {
         for (const auto& diag : driver.diagnostics().diagnostics()) {
             if (diag.message.find(needle) != std::string::npos) return true;
@@ -3510,3 +3511,4 @@ BOOST_AUTO_TEST_CASE(monitor_down_msg_well_formed) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+

@@ -9,6 +9,7 @@ add_executable(etac
 target_include_directories(etac
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
 )
 
 target_link_libraries(etac PRIVATE eta_core eta_torch eta_nng eta_stats)

@@ -41,17 +41,17 @@
     (define branch-tape #f)
     (defun branch-primal (x)
       (if (and branch-tape (tape-ref? x))
-          (tape-ref-value-of branch-tape x)
-          x))
+        (tape-ref-value-of branch-tape x)
+        x))
 
     (defun grad (f vals)
       (let ((tape (tape-new))
-            (n    (length vals)))
+          (n    (length vals)))
         (let ((vars (letrec ((mk (lambda (vs acc)
-                                   (if (null? vs) (reverse acc)
-                                       (mk (cdr vs)
-                                           (cons (tape-var tape (car vs)) acc))))))
-                      (mk vals '()))))
+                      (if (null? vs) (reverse acc)
+                        (mk (cdr vs)
+                          (cons (tape-var tape (car vs)) acc))))))
+                (mk vals '()))))
           (set! branch-tape tape)
           (tape-start! tape)
           (let ((output (apply f vars)))
@@ -60,11 +60,11 @@
             (tape-backward! tape output)
             (let ((grad-vec (make-vector n 0)))
               (letrec ((collect (lambda (vs i)
-                                  (if (null? vs) grad-vec
-                                      (begin
-                                        (vector-set! grad-vec i
-                                          (tape-adjoint tape (car vs)))
-                                        (collect (cdr vs) (+ i 1)))))))
+                      (if (null? vs) grad-vec
+                        (begin
+                          (vector-set! grad-vec i
+                            (tape-adjoint tape (car vs)))
+                          (collect (cdr vs) (+ i 1)))))))
                 (collect vars 0))
               (list (tape-primal tape output) grad-vec))))))
 
@@ -84,14 +84,14 @@
     (defun norm-cdf (x)
       (let ((xv (branch-primal x)))
         (if (< xv 0)
-            (- 1.0 (norm-cdf (* -1 x)))
-            (let ((t (/ 1.0 (+ 1.0 (* 0.2316419 x)))))
-              (- 1.0 (* (* inv-sqrt-2pi (exp (* -0.5 (* x x))))
-                        (* t (+ 0.319381530
-                                (* t (+ -0.356563782
-                                        (* t (+ 1.781477937
-                                                (* t (+ -1.821255978
-                                                        (* t 1.330274429)))))))))))))))
+          (- 1.0 (norm-cdf (* -1 x)))
+          (let ((t (/ 1.0 (+ 1.0 (* 0.2316419 x)))))
+            (- 1.0 (* (* inv-sqrt-2pi (exp (* -0.5 (* x x))))
+                (* t (+ 0.319381530
+                    (* t (+ -0.356563782
+                        (* t (+ 1.781477937
+                            (* t (+ -1.821255978
+                                (* t 1.330274429)))))))))))))))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §3  Black-Scholes Building Blocks
@@ -103,17 +103,17 @@
     ;; d₁ = [ln(S/K) + (r + σ²/2)·T] / (σ·√T)
     (defun bs-d1 (S K r sigma T)
       (/ (+ (log (/ S K))
-            (* (+ r (/ (* sigma sigma) 2)) T))
-         (* sigma (sqrt T))))
+          (* (+ r (/ (* sigma sigma) 2)) T))
+        (* sigma (sqrt T))))
 
     ;; C = S·Φ(d₁) − K·e^{-rT}·Φ(d₂)
     (defun bs-call-price (S K r sigma T)
       (let ((d1  (bs-d1 S K r sigma T))
-            (svt (* sigma (sqrt T))))
+          (svt (* sigma (sqrt T))))
         (let ((d2 (- d1 svt)))
           (- (* S (norm-cdf d1))
-             (* (* K (exp (* -1 (* r T))))
-                (norm-cdf d2))))))
+            (* (* K (exp (* -1 (* r T))))
+              (norm-cdf d2))))))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §4  Second-Order Greeks (Grad-on-Greek)
@@ -144,29 +144,30 @@
     (define win (eq? (platform) 'Win32))
 
     (display (if win "==================================================\n"
-                     "══════════════════════════════════════════════════\n"))
+        "══════════════════════════════════════════════════\n"))
     (display " European Option Greeks with Tape-Based AAD\n")
     (display (if win "==================================================\n\n"
-                     "══════════════════════════════════════════════════\n\n"))
+        "══════════════════════════════════════════════════\n\n"))
+
 
     (display "Market parameters:\n")
     (display "  S     = 100.0  (spot)\n")
     (display "  K     =  90.0  (strike)\n")
     (display "  r     =  3%    (risk-free rate)\n")
     (display (if win "  sigma =  30%   (volatility)\n"
-                     "  σ     =  30%   (volatility)\n"))
+        "  σ     =  30%   (volatility)\n"))
     (display "  T     =  0.5   (maturity, years)\n\n")
 
     ;; ── 1. First-Order Greeks ─────────────────────────────────────
 
     (display (if win "\n-- First-Order Greeks (single backward pass) --\n\n"
-                     "\n── First-Order Greeks (single backward pass) ──────\n\n"))
+        "\n── First-Order Greeks (single backward pass) ──────\n\n"))
 
     (let ((result (grad (lambda (S K r sigma T)
-                          (bs-call-price S K r sigma T))
-                        params)))
+              (bs-call-price S K r sigma T))
+            params)))
       (let ((price (car result))
-            (g     (cadr result)))
+          (g     (cadr result)))
         (display "  Price   = ")
         (println price)
         (display "\n")
@@ -186,17 +187,19 @@
         (display "    Theta (per day)     = ")
         (println (* -1 (/ (vector-ref g 4) 365.25)))))
 
+
+
     ;; ── 2. Second-Order Greeks via grad-on-Greek ──────────────────
 
     (display (if win "\n\n-- Second-Order Greeks (grad-on-Greek) --\n\n"
-                     "\n\n── Second-Order Greeks (grad-on-Greek) ─────────────\n\n"))
+        "\n\n── Second-Order Greeks (grad-on-Greek) ─────────────\n\n"))
 
     ;; grad(Delta) → Gamma (∂Δ/∂S), Vanna via ∂Δ/∂σ
     (let ((delta-result (grad (lambda (S K r sigma T)
-                                (bs-delta-fn S K r sigma T))
-                              params)))
+              (bs-delta-fn S K r sigma T))
+            params)))
       (let ((delta-val (car delta-result))
-            (dg        (cadr delta-result)))
+          (dg        (cadr delta-result)))
         (display "  grad(Delta):\n")
         (display "    Delta         = ")
         (println delta-val)
@@ -210,10 +213,10 @@
 
           ;; grad(Vega) → Vanna via ∂V/∂S, Volga (∂V/∂σ)
           (let ((vega-result (grad (lambda (S K r sigma T)
-                                     (bs-vega-fn S K r sigma T))
-                                   params)))
+                    (bs-vega-fn S K r sigma T))
+                  params)))
             (let ((vega-val (car vega-result))
-                  (vg       (cadr vega-result)))
+                (vg       (cadr vega-result)))
               (display "\n  grad(Vega):\n")
               (display "    Vega          = ")
               (println vega-val)
@@ -224,22 +227,22 @@
 
               ;; ── 3. Schwarz's Theorem Check ──────────────────────
               (display (if win "\n\n-- Schwarz's Theorem Check --\n\n"
-                               "\n\n── Schwarz's Theorem Check ─────────────────────────\n\n"))
+                  "\n\n── Schwarz's Theorem Check ─────────────────────────\n\n"))
               (display (if win "  Vanna (dDelta/dsigma) = "
-                               "  Vanna (∂Δ/∂σ)        = "))
+                  "  Vanna (∂Δ/∂σ)        = "))
               (println vanna-from-delta)
               (display (if win "  Vanna (dVega/dS)      = "
-                               "  Vanna (∂V/∂S)         = "))
+                  "  Vanna (∂V/∂S)         = "))
               (println (vector-ref vg 0))
               (display (if win "  Difference            = "
-                               "  Difference            = "))
+                  "  Difference            = "))
               (println (- vanna-from-delta (vector-ref vg 0)))
               (display "  (Should be ~0 by Schwarz's theorem)\n"))))))
 
     ;; ── 4. Summary Table ──────────────────────────────────────────
 
     (display (if win "\n-- Summary --\n\n"
-                     "\n── Summary ─────────────────────────────────────────\n\n"))
+        "\n── Summary ─────────────────────────────────────────\n\n"))
     (display "  Greek      | AD Value\n")
     (display "  -----------+-----------\n")
 
@@ -260,7 +263,7 @@
         (display "  Vanna      | ") (println (vector-ref g3 0))
         (display "  Volga      | ") (println (vector-ref g3 3))))
 
-    
+
     ;; ════════════════════════════════════════════════════════════════
     ;; §6  How Tape-Based AD Works
     ;; ════════════════════════════════════════════════════════════════
@@ -282,7 +285,7 @@
 
 
     (display (if win "\n\n-- Tape-Based AD Architecture --\n\n"
-                     "\n\n── Tape-Based AD Architecture ──────────────────────\n\n"))
+        "\n\n── Tape-Based AD Architecture ──────────────────────\n\n"))
     (display "  The tape (Wengert list) records ~32 bytes per operation.\n")
     (display "  No closures allocated — recording happens at the C++ level.\n")
     (display "  The backward sweep accumulates adjoints in a single pass.\n\n")
@@ -291,5 +294,5 @@
     (display "    - One backward sweep yields all 5 first-order Greeks\n")
     (display "    - Second-order Greeks via nested grad calls\n")
 
-  ))
+))
 

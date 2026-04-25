@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "eta/interpreter/driver.h"
+#include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/vm/disassembler.h"
 
@@ -110,8 +110,8 @@ int main(int argc, char* argv[]) {
     }
 #endif
     const std::size_t heap_bytes =
-        eta::interpreter::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
-    eta::interpreter::Driver driver(std::move(resolver), heap_bytes, self_path);
+        eta::session::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
+    eta::session::Driver driver(std::move(resolver), heap_bytes, self_path);
 
     auto resolve = driver.file_resolver();
 
@@ -181,4 +181,5 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
 

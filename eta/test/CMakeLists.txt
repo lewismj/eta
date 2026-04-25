@@ -44,7 +44,8 @@ set(SOURCES
         src/clp_qp_solver_tests.cpp
         src/clp_fm_tests.cpp
         src/clp_simplex_tests.cpp
-        src/builtin_sync_tests.cpp)
+        src/builtin_sync_tests.cpp
+        src/driver_jupyter_test.cpp)
 
 # libtorch ships release binaries only (_ITERATOR_DEBUG_LEVEL=0).
 # MSVC Debug builds use _ITERATOR_DEBUG_LEVEL=2 which causes ABI mismatch and
@@ -97,9 +98,10 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 eta_copy_torch_dlls(${PROJECT_NAME})
 eta_copy_nng_dlls(${PROJECT_NAME})
 
-# Expose interpreter (driver.h), DAP, and LSP headers
+# Expose session driver, interpreter helpers, DAP, and LSP headers.
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../lsp/src
 )

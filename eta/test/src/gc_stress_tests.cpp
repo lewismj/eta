@@ -31,7 +31,7 @@
 #include <eta/runtime/nanbox.h>
 
 /// Driver (for quoted_constant_survives)
-#include <eta/interpreter/driver.h>
+#include <eta/session/driver.h>
 #include <eta/interpreter/module_path.h>
 
 /**
@@ -107,7 +107,7 @@ BOOST_AUTO_TEST_SUITE(gc_stress_tests)
 BOOST_AUTO_TEST_CASE(quoted_constant_survives) {
     eta::interpreter::ModulePathResolver resolver{};
     /// 64 KiB heap forces several GC collections during the pressure loop.
-    eta::interpreter::Driver driver(std::move(resolver), 64 * 1024);
+    eta::session::Driver driver(std::move(resolver), 64 * 1024);
 
     /**
      * --- Step 1: define a function whose body references a quoted constant ---
@@ -371,4 +371,5 @@ BOOST_AUTO_TEST_CASE(multithread_gc_isolation) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
 

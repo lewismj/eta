@@ -35,7 +35,7 @@
 #include <string>
 #include <vector>
 
-#include "eta/interpreter/driver.h"
+#include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/port.h"
 
@@ -304,13 +304,13 @@ int main(int argc, char* argv[]) {
 
     for (const auto& test_file : test_files) {
         const std::size_t heap_bytes =
-            eta::interpreter::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
+            eta::session::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
 
         /// Fresh resolver per file: includes the file's own directory
         auto resolver = base_resolver;
         resolver.add_dir(fs::absolute(test_file).parent_path());
 
-        eta::interpreter::Driver driver(resolver, heap_bytes);
+        eta::session::Driver driver(resolver, heap_bytes);
 
         /// Redirect VM output to a StringPort
         auto sp = std::make_shared<eta::runtime::StringPort>(
@@ -411,4 +411,5 @@ int main(int argc, char* argv[]) {
         return total_failures > 0 ? 1 : 0;
     }
 }
+
 
