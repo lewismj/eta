@@ -112,6 +112,10 @@ eta-v0.2.0-<platform>/
     eta_repl(.exe)          # Interactive REPL
     eta_lsp(.exe)           # Language Server (JSON-RPC over stdio)
     eta_dap(.exe)           # Debug Adapter (DAP over stdio, used by VS Code)
+    eta_jupyter(.exe)       # Jupyter kernel executable (`--install` writes kernelspec)
+    resources/
+      logo-32x32.png        # Kernel logo copied by `eta_jupyter --install`
+      logo-64x64.png
   stdlib/
     prelude.eta             # Auto-loaded standard library
     std/
@@ -129,6 +133,12 @@ eta-v0.2.0-<platform>/
 The binaries automatically locate `stdlib/` relative to themselves
 (`<exe>/../stdlib/`), so no environment variables are needed when
 using the installed layout.
+
+To register the bundled Jupyter kernel in your current user environment:
+
+```bash
+eta_jupyter --install --user
+```
 
 ---
 

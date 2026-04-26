@@ -147,13 +147,27 @@ if ($CodeExe -and (Test-Path $VsixPath)) {
 # -- 4. Smoke test -------------------------------------------------------------
 Write-Host ""
 Write-Host "> Verifying..."
-foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe")) {
+foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe", "eta_jupyter.exe")) {
     $p = Join-Path $BinDir $bin
     if (Test-Path $p) {
         Write-Host "  [OK] $bin"
     } else {
         Write-Host "  [FAIL] $bin -- not found"
     }
+}
+
+Write-Host ""
+Write-Host "> Jupyter kernel setup:"
+$EtaJupyterExe = Join-Path $BinDir "eta_jupyter.exe"
+if (Test-Path $EtaJupyterExe) {
+    $JupyterCmd = Get-Command jupyter -ErrorAction SilentlyContinue
+    if (-not $JupyterCmd) {
+        Write-Host "    python -m pip install jupyterlab"
+    }
+    Write-Host "    `"$EtaJupyterExe`" --install --user"
+    Write-Host "    jupyter lab"
+} else {
+    Write-Host "    eta_jupyter.exe not found in $BinDir; kernel install unavailable."
 }
 
 Write-Host ""

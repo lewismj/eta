@@ -11,7 +11,7 @@
 # bin/ is added to PATH and ETA_MODULE_PATH is set in your shell rc.
 #
 # When called with a <prefix>, files are copied:
-#   <prefix>/bin/         ← etac, etai, eta_repl, eta_lsp, eta_dap
+#   <prefix>/bin/         ← etac, etai, eta_repl, eta_lsp, eta_dap, eta_jupyter
 #   <prefix>/stdlib/      ← prelude.eta, std/*.eta
 #   <prefix>/editors/     ← VS Code extension (optional)
 # ──────────────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ fi
 # ── 4. Smoke test ─────────────────────────────────────────────────────
 echo
 echo "▸ Verifying..."
-for bin in etac etai eta_repl eta_lsp eta_dap; do
+for bin in etac etai eta_repl eta_lsp eta_dap eta_jupyter; do
     p="${BIN_DIR}/${bin}"
     if [ -x "$p" ]; then
         echo "  ✓ ${bin}"
@@ -126,6 +126,18 @@ for bin in etac etai eta_repl eta_lsp eta_dap; do
     fi
 done
 
+echo
+echo "▸ Jupyter kernel setup:"
+if [ -x "${BIN_DIR}/eta_jupyter" ]; then
+    if ! command -v jupyter &>/dev/null; then
+        echo "    python -m pip install jupyterlab"
+    fi
+    echo "    \"${BIN_DIR}/eta_jupyter\" --install --user"
+    echo "    jupyter lab"
+else
+    echo "    eta_jupyter not found in ${BIN_DIR}; kernel install unavailable."
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────
 echo
 echo "✓ Done!  Open a new terminal (or run: source ${RC_FILE}) then try:"
@@ -133,4 +145,3 @@ echo ""
 echo "    etai --help"
 echo "    eta_repl"
 echo ""
-

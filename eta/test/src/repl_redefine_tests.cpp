@@ -152,5 +152,40 @@ BOOST_AUTO_TEST_CASE(selective_import_preserves_unshadowed_names) {
     BOOST_TEST(repl.eval_int("(+ a b)") == 12);
 }
 
+BOOST_AUTO_TEST_CASE(define_record_type_persists_across_submissions) {
+    ReplHarness repl;
+    repl.require_submit(
+        "(define-record-type <counter> "
+        "(make-counter value) "
+        "counter? "
+        "(value counter-value set-counter-value!))");
+
+    BOOST_TEST(repl.eval_int("(counter-value (make-counter 41))") == 41);
+    BOOST_TEST(repl.eval_int("(if (counter? (make-counter 0)) 1 0)") == 1);
+
+    repl.require_submit("(define c (make-counter 1))");
+    repl.require_submit("(set-counter-value! c 7)");
+    BOOST_TEST(repl.eval_int("(counter-value c)") == 7);
+}
+
+BOOST_AUTO_TEST_CASE(set_mutates_prior_binding_across_submissions) {
+    ReplHarness repl;
+    repl.require_submit("(define x 1)");
+    repl.require_submit("(set! x 2)");
+    BOOST_TEST(repl.eval_int("x") == 2);
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_wind_cleanup_runs_with_cross_submission_set) {
+    ReplHarness repl;
+    repl.require_submit("(define cleanup-called #f)");
+    repl.require_submit(
+        "(catch 'resource-error "
+        "  (dynamic-wind "
+        "    (lambda () (set! cleanup-called #f)) "
+        "    (lambda () (raise 'resource-error \"boom\")) "
+        "    (lambda () (set! cleanup-called #t))))");
+    BOOST_TEST(repl.eval_int("(if cleanup-called 1 0)") == 1);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
