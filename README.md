@@ -28,7 +28,7 @@
 
 | Area | Guides |
 |---|---|
-| **Foundations** | [Basics](docs/examples.md) · [Regex](docs/regex.md) · [Time](docs/time.md) · [CSV](docs/csv.md) |
+| **Foundations** | [Basics](docs/examples.md) · [Regex](docs/regex.md) · [Time](docs/time.md) · [CSV](docs/csv.md) · [Networking](docs/networking.md) · [Actors / Message Passing](docs/message-passing.md) |
 | **Logic & Constraints** | [Logic Programming](docs/logic.md) · [CLP](docs/clp.md) · [Fact Tables](docs/fact-table.md) |
 | **Numerics & ML** | [AAD](docs/aad.md) · [Eigen — Linear Algebra & Stats](docs/stats.md) · [LibTorch — Neural Networks](docs/torch.md) |
 | **Causal** | [Causal Inference & Do-Calculus](docs/causal.md) |
