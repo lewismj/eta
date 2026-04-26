@@ -35,7 +35,7 @@ jobs:
       - name: Install system packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build nodejs npm
+          sudo apt-get install -y build-essential cmake ninja-build nodejs npm uuid-dev
 
       - name: Install Boost via vcpkg
         env:
