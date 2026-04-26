@@ -85,6 +85,6 @@
           (cons 'encoding
                 (list
                   (cons 'x (list (cons 'field "x") (cons 'type "quantitative")))
-                  (cons 'y (list (cons 'field "y") (cons 'type "quantitative")))))))))
+                  (cons 'y (list (cons 'field "y") (cons 'type "quantitative"))))))))
 
   ))

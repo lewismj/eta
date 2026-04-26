@@ -129,10 +129,16 @@ done
 echo
 echo "▸ Jupyter kernel setup:"
 if [ -x "${BIN_DIR}/eta_jupyter" ]; then
+    echo "▸ Installing Eta kernelspec (--user)..."
+    if "${BIN_DIR}/eta_jupyter" --install --user; then
+        echo "  ✓ Kernel installed."
+    else
+        echo "  ✗ Kernel auto-install failed."
+        echo "    Run manually: \"${BIN_DIR}/eta_jupyter\" --install --user"
+    fi
     if ! command -v jupyter &>/dev/null; then
         echo "    python -m pip install jupyterlab"
     fi
-    echo "    \"${BIN_DIR}/eta_jupyter\" --install --user"
     echo "    jupyter lab"
 else
     echo "    eta_jupyter not found in ${BIN_DIR}; kernel install unavailable."

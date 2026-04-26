@@ -207,6 +207,14 @@ BOOST_AUTO_TEST_CASE(eval_to_display_tags_jupyter_wrapper_values) {
     BOOST_TEST(static_cast<int>(vega.tag) == static_cast<int>(eta::session::DisplayTag::VegaLite));
 }
 
+BOOST_AUTO_TEST_CASE(eval_to_display_import_std_jupyter_module) {
+    eta::session::Driver driver(make_resolver());
+    require_prelude(driver);
+
+    const auto imported = driver.eval_to_display("(import std.jupyter)");
+    BOOST_TEST(static_cast<int>(imported.tag) != static_cast<int>(eta::session::DisplayTag::Error));
+}
+
 BOOST_AUTO_TEST_CASE(eval_to_display_persists_imports_between_calls) {
     eta::session::Driver driver(make_resolver());
     require_prelude(driver);

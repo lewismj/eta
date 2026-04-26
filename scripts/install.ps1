@@ -160,11 +160,21 @@ Write-Host ""
 Write-Host "> Jupyter kernel setup:"
 $EtaJupyterExe = Join-Path $BinDir "eta_jupyter.exe"
 if (Test-Path $EtaJupyterExe) {
+    Write-Host "  Installing Eta kernelspec (--user)..."
+    try {
+        & $EtaJupyterExe --install --user
+        if ($LASTEXITCODE -ne 0) {
+            throw "eta_jupyter exited with code $LASTEXITCODE"
+        }
+        Write-Host "  [OK] Kernel installed."
+    } catch {
+        Write-Host "  [WARN] Kernel auto-install failed: $($_.Exception.Message)"
+        Write-Host "    Run manually: `"$EtaJupyterExe`" --install --user"
+    }
     $JupyterCmd = Get-Command jupyter -ErrorAction SilentlyContinue
     if (-not $JupyterCmd) {
         Write-Host "    python -m pip install jupyterlab"
     }
-    Write-Host "    `"$EtaJupyterExe`" --install --user"
     Write-Host "    jupyter lab"
 } else {
     Write-Host "    eta_jupyter.exe not found in $BinDir; kernel install unavailable."

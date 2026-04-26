@@ -212,7 +212,44 @@ private:
     throw std::runtime_error("invalid install mode");
 }
 
-void write_kernel_json(const fs::path& destination, const fs::path& exe_path) {
+[[nodiscard]] bool is_stdlib_root(const fs::path& dir) {
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec) || ec) return false;
+    const auto prelude = dir / "prelude.eta";
+    const auto jupyter_mod = dir / "std" / "jupyter.eta";
+    return fs::is_regular_file(prelude, ec) && !ec &&
+           fs::is_regular_file(jupyter_mod, ec) && !ec;
+}
+
+[[nodiscard]] std::optional<std::string> detect_module_path_env(const fs::path& exe_path) {
+#ifdef ETA_STDLIB_DIR
+    {
+        fs::path compiled(ETA_STDLIB_DIR);
+        if (!compiled.empty() && is_stdlib_root(compiled)) {
+            return fs::weakly_canonical(compiled).string();
+        }
+    }
+#endif
+
+    auto cur = exe_path.parent_path();
+    for (int i = 0; i < 8 && !cur.empty(); ++i) {
+        const auto candidate = cur / "stdlib";
+        if (is_stdlib_root(candidate)) {
+            return fs::weakly_canonical(candidate).string();
+        }
+        cur = cur.parent_path();
+    }
+
+    if (const char* env = std::getenv("ETA_MODULE_PATH"); env && env[0] != '\0') {
+        return std::string(env);
+    }
+
+    return std::nullopt;
+}
+
+void write_kernel_json(const fs::path& destination,
+                       const fs::path& exe_path,
+                       const std::optional<std::string>& module_path_env) {
     nl::json j = {
         {"argv", nl::json::array({exe_path.string(), "-f", "{connection_file}"})},
         {"display_name", "Eta"},
@@ -226,6 +263,11 @@ void write_kernel_json(const fs::path& destination, const fs::path& exe_path) {
             }},
         }},
     };
+    if (module_path_env && !module_path_env->empty()) {
+        j["env"] = nl::json::object({
+            {"ETA_MODULE_PATH", *module_path_env},
+        });
+    }
 
     std::ofstream out(destination / "kernel.json", std::ios::out | std::ios::binary | std::ios::trunc);
     if (!out) {
@@ -262,7 +304,7 @@ int install_kernelspec(const InstallOptions& options, const fs::path& exe_path) 
         throw std::runtime_error("failed to create kernelspec directory: " + destination.string());
     }
 
-    write_kernel_json(destination, exe_path);
+    write_kernel_json(destination, exe_path, detect_module_path_env(exe_path));
     copy_kernel_assets(destination, exe_path);
     std::cout << "installed kernelspec to " << destination.string() << '\n';
     return 0;
