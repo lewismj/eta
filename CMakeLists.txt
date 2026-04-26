@@ -11,20 +11,12 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 enable_testing()
 
-option(ETA_BUILD_JUPYTER "Build the xeus-eta Jupyter kernel scaffold" OFF)
-option(ETA_USE_VCPKG "Prefer vcpkg for optional third-party dependencies" OFF)
-option(ETA_BUILD_VSCODE_EXT "Build the VS Code extension (.vsix)" ON)
-
-if(ETA_BUILD_JUPYTER)
-    include(cmake/FetchXeus.cmake)
-endif()
+include(cmake/FetchXeus.cmake)
 
 add_subdirectory(eta)
 
-# Requires Node >=20 and npm on PATH. Skip with -DETA_BUILD_VSCODE_EXT=OFF.
-if(ETA_BUILD_VSCODE_EXT)
-    add_subdirectory(editors/vscode)
-endif()
+# VS Code extension targets self-disable when Node/npm are unavailable.
+add_subdirectory(editors/vscode)
 
 # Install stdlib alongside binaries.
 install(DIRECTORY stdlib/ DESTINATION stdlib

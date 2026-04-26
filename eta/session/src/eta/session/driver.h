@@ -40,6 +40,7 @@
 #include "eta/interpreter/all_primitives.h"
 #include "eta/session/eval_display.h"
 #include "eta/interpreter/repl_wrap.h"
+#include "eta/interpreter/repl_complete.h"
 
 #include <nng/nng.h>
 #include <nng/protocol/pair0/pair.h>
@@ -167,179 +168,19 @@ public:
                 module_search_path += d.string();
             }
         }
-
-        /**
-         * The lambda captures only the module search path string (value, not ref),
-         * so it is safe to use from any thread. It creates a fresh Driver + VM
-         * for each actor thread.
-         */
-        eta::nng::ProcessManager::ThreadWorkerFn thread_worker_fn =
-            [module_search_path, this](
-                const std::string& th_module_path,
-                const std::string& th_func_name,
-                const std::string& th_endpoint,
-                std::vector<std::string> th_text_args,
-                std::shared_ptr<std::atomic<bool>> alive) noexcept
-        {
-            try {
-                auto resolver = ModulePathResolver::from_path_string(module_search_path);
-                const auto child_heap = Driver::parse_heap_env_var(
-                    "ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
-                    Driver::parse_heap_env_var(
-                        "ETA_HEAP_SOFT_LIMIT",
-                        Driver::DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES));
-                Driver child(std::move(resolver), child_heap);
-                child.load_prelude();
-
-                if (!child.install_mailbox(th_endpoint)) {
-                    alive->store(false, std::memory_order_release);
-                    return;
-                }
-
-                /// Load the target module
-                if (!child.run_file(fs::path(th_module_path))) {
-                    alive->store(false, std::memory_order_release);
-                    return;
-                }
-
-                /**
-                 * Notify any DAP debug listener now that the child VM/Driver
-                 * exist and have loaded source.  This lets the adapter install
-                 * its per-thread stop callback and breakpoints before the
-                 * spawn-thread function actually starts running user code.
-                 */
-                std::string th_name = fs::path(th_module_path).stem().string();
-                if (!th_func_name.empty()) th_name += " (" + th_func_name + ")";
-                proc_mgr_.notify_thread_started(
-                    static_cast<void*>(&child.vm()),
-                    static_cast<void*>(&child),
-                    std::move(th_name));
-
-                /// Build and evaluate: (func-name arg1 arg2 ...)
-                std::string call_src = "(" + th_func_name;
-                for (const auto& a : th_text_args) {
-                    call_src += " ";
-                    call_src += a;
-                }
-                call_src += ")";
-                child.run_source(call_src);
-                proc_mgr_.notify_thread_exited(static_cast<void*>(&child.vm()));
-            } catch (...) {}
-            alive->store(false, std::memory_order_release);
-        };
-
-        /**
-         * Receives a SerializedClosure, deserializes the bytecode into the
-         * child Driver's registry, reconstructs captures (upvalues + globals),
-         * creates the Closure heap object, and calls it via call_value().
-         */
-        eta::nng::ProcessManager::ClosureWorkerFn closure_worker_fn =
-            [module_search_path, this](
-                const std::string& th_endpoint,
-                eta::nng::ProcessManager::SerializedClosure sc,
-                std::shared_ptr<std::atomic<bool>> alive) noexcept
-        {
-            try {
-                auto resolver = ModulePathResolver::from_path_string(module_search_path);
-                const auto child_heap = Driver::parse_heap_env_var(
-                    "ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
-                    Driver::parse_heap_env_var(
-                        "ETA_HEAP_SOFT_LIMIT",
-                        Driver::DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES));
-                Driver child(std::move(resolver), child_heap);
-                child.load_prelude();
-
-                if (!child.install_mailbox(th_endpoint)) {
-                    alive->store(false, std::memory_order_release);
-                    return;
-                }
-
-                /// Deserialize the function registry from the etac-format blob
-                runtime::vm::BytecodeSerializer ser(child.heap(), child.intern_table());
-                std::istringstream iss(std::string(sc.funcs_bytes.begin(),
-                                                   sc.funcs_bytes.end()),
-                                      std::ios::binary);
-                auto etac_res = ser.deserialize(iss, /*expected_builtins=*/0);
-                if (!etac_res) {
-                    alive->store(false, std::memory_order_release);
-                    return;
-                }
-                auto& etac = *etac_res;
-
-                /// Rebase and register the functions in the child's registry
-                uint32_t base_idx = static_cast<uint32_t>(child.registry().size());
-                for (const auto& func : etac.registry.all()) {
-                    runtime::vm::BytecodeFunction copy = func;
-                    copy.rebase_func_indices(static_cast<int32_t>(base_idx));
-                    child.registry().add(std::move(copy));
-                }
-
-                auto capture_payload = eta::nng::deserialize_spawn_capture(
-                    std::span<const uint8_t>(sc.captures_bytes),
-                    child.heap(),
-                    child.intern_table(),
-                    [&child, base_idx](uint32_t remapped_idx)
-                        -> const runtime::vm::BytecodeFunction*
-                    {
-                        return child.registry().get(base_idx + remapped_idx);
-                    },
-                    [&child](uint32_t slot) -> std::optional<runtime::nanbox::LispVal>
-                    {
-                        const auto& globals = child.vm().globals();
-                        if (slot >= globals.size()) return std::nullopt;
-                        return globals[slot];
-                    });
-                if (!capture_payload) {
-                    alive->store(false, std::memory_order_release);
-                    return;
-                }
-
-                /// Hydrate captured globals before executing the thunk.
-                auto& globals = child.vm().globals();
-                for (const auto& cg : capture_payload->globals) {
-                    if (globals.size() <= cg.slot) globals.resize(cg.slot + 1, runtime::nanbox::Nil);
-                    globals[cg.slot] = cg.value;
-                }
-
-                /// Reconstruct the Closure heap object in the child's heap
-                const auto* entry_func = child.registry().get(base_idx);
-                if (!entry_func) {
-                    alive->store(false, std::memory_order_release);
-                    return;
-                }
-                auto closure_val = runtime::memory::factory::make_closure(
-                    child.heap(), entry_func, std::move(capture_payload->upvals));
-                if (!closure_val) {
-                    alive->store(false, std::memory_order_release);
-                    return;
-                }
-
-                /// Call the thunk with 0 arguments
-                proc_mgr_.notify_thread_started(
-                    static_cast<void*>(&child.vm()),
-                    static_cast<void*>(&child),
-                    "(spawn-thread)");
-                auto result = child.vm().call_value(*closure_val, {});
-                if (!result) {
-                }
-                proc_mgr_.notify_thread_exited(static_cast<void*>(&child.vm()));
-            } catch (const std::exception&) {
-            } catch (...) {
-            }
-            alive->store(false, std::memory_order_release);
-        };
+        module_search_path_ = std::move(module_search_path);
 
         /// nng networking + actor-model primitives
         eta::nng::register_nng_primitives(
             builtins_, heap_, intern_table_,
             &proc_mgr_, etai_path_, &mailbox_val_,
-            module_search_path, std::move(thread_worker_fn),
+            module_search_path_, {},
             &registry_, &vm_.globals());
 
         /// Step 3: Verify every pre-registered slot now has a real implementation.
         builtins_.verify_all_patched();
 
-        proc_mgr_.set_closure_factory(std::move(closure_worker_fn));
+        install_actor_worker_factories();
 
 
         /// Wire up function resolver
@@ -397,6 +238,64 @@ public:
     /// Check whether a module with the given name has been executed.
     [[nodiscard]] bool has_module(const std::string& name) const {
         return executed_modules_.contains(name);
+    }
+
+    /**
+     * @brief Remove cached linker/execution state for one module.
+     *
+     * This clears the module from the executed-module set, removes matching
+     * top-level module forms from the accumulated linker input, and drops any
+     * recorded global binding names for that module.
+     *
+     * @return true when any cached entry was removed.
+     */
+    bool clear_module_cache(const std::string& module_name) {
+        bool changed = false;
+
+        if (executed_modules_.erase(module_name) > 0) {
+            changed = true;
+        }
+
+        const auto before_forms = accumulated_forms_.size();
+        accumulated_forms_.erase(
+            std::remove_if(
+                accumulated_forms_.begin(),
+                accumulated_forms_.end(),
+                [&module_name](const reader::parser::SExprPtr& form) {
+                    auto* module = form->template as<reader::parser::ModuleForm>();
+                    if (module) return module->name == module_name;
+
+                    auto* lst = form->template as<reader::parser::List>();
+                    if (!lst || lst->elems.size() < 2) return false;
+                    if (!reader::utils::is_symbol_named(lst->elems[0], "module")) return false;
+                    auto* name = lst->elems[1]->template as<reader::parser::Symbol>();
+                    return name && name->name == module_name;
+                }),
+            accumulated_forms_.end());
+        if (accumulated_forms_.size() != before_forms) {
+            changed = true;
+        }
+
+        const std::string prefix = module_name + ".";
+        for (auto it = global_names_.begin(); it != global_names_.end();) {
+            if (it->second == module_name || it->second.starts_with(prefix)) {
+                it = global_names_.erase(it);
+                changed = true;
+            } else {
+                ++it;
+            }
+        }
+
+        repl_modules_.erase(
+            std::remove_if(
+                repl_modules_.begin(),
+                repl_modules_.end(),
+                [&module_name](const PriorModule& prior) {
+                    return prior.name == module_name;
+                }),
+            repl_modules_.end());
+
+        return changed;
     }
 
     /**
@@ -517,6 +416,146 @@ public:
             out = format_value(result, runtime::FormatMode::Write);
         }
         return true;
+    }
+
+    /**
+     * @brief Completion payload for front-ends.
+     */
+    struct CompletionResult {
+        std::vector<std::string> matches;
+        std::size_t cursor_start{0};
+        std::size_t cursor_end{0};
+    };
+
+    /**
+     * @brief Collect completion matches at @p cursor_pos in @p source.
+     *
+     * Matches are sourced from keywords, builtin primitives, currently loaded
+     * module/global bindings, and module names discoverable on the module path.
+     */
+    [[nodiscard]] CompletionResult completions_at(const std::string& source,
+                                                  std::size_t cursor_pos) const {
+        if (cursor_pos > source.size()) cursor_pos = source.size();
+
+        const auto tok = interpreter::repl_complete::token_at(source, cursor_pos);
+        CompletionResult out{
+            .matches = {},
+            .cursor_start = tok.start,
+            .cursor_end = tok.end,
+        };
+
+        std::string prefix;
+        if (!tok.text.empty() && tok.start <= cursor_pos && cursor_pos <= tok.end) {
+            prefix = source.substr(tok.start, cursor_pos - tok.start);
+        } else {
+            out.cursor_start = cursor_pos;
+            out.cursor_end = cursor_pos;
+        }
+
+        std::unordered_set<std::string> candidates;
+        auto add_candidate = [&candidates](std::string name) {
+            if (!name.empty()) candidates.insert(std::move(name));
+        };
+
+        for (const char* kw : {
+                 "define", "lambda", "if", "begin", "set!", "quote",
+                 "let", "let*", "letrec", "letrec*", "cond", "case",
+                 "and", "or", "when", "unless", "do",
+                 "module", "import", "export",
+                 "define-syntax", "syntax-rules", "define-record-type",
+                 "def", "defun", "progn", "quasiquote",
+                 "call/cc", "dynamic-wind", "values", "call-with-values",
+                 "apply", "raise", "catch",
+                 "logic-var", "unify", "deref-lvar", "trail-mark", "unwind-trail", "copy-term",
+             }) {
+            add_candidate(kw);
+        }
+
+        for (const auto& spec : builtins_.specs()) {
+            add_candidate(spec.name);
+        }
+
+        for (const auto& [_, qualified] : global_names_) {
+            add_candidate(qualified);
+            const auto dot = qualified.find_last_of('.');
+            if (dot != std::string::npos && dot + 1 < qualified.size()) {
+                add_candidate(qualified.substr(dot + 1));
+            }
+        }
+
+        for (auto& mod : discover_module_names()) {
+            add_candidate(std::move(mod));
+        }
+
+        out.matches.reserve(candidates.size());
+        for (const auto& name : candidates) {
+            if (prefix.empty() || name.starts_with(prefix)) {
+                out.matches.push_back(name);
+            }
+        }
+        std::sort(out.matches.begin(), out.matches.end());
+        return out;
+    }
+
+    /**
+     * @brief Return Markdown hover text for a symbol.
+     *
+     * Returns an empty string when no hover content is available.
+     */
+    [[nodiscard]] std::string hover_at(const std::string& symbol) const {
+        if (symbol.empty()) return {};
+
+        static const std::unordered_map<std::string, std::string> keyword_docs = {
+            {"define", "**define**  -  Define a variable or function.\n\n`(define name expr)`"},
+            {"lambda", "**lambda**  -  Create an anonymous function.\n\n`(lambda (args...) body...)`"},
+            {"if", "**if**  -  Conditional expression.\n\n`(if test consequent alternate)`"},
+            {"begin", "**begin**  -  Sequence expressions.\n\n`(begin expr...)`"},
+            {"module", "**module**  -  Declare a module.\n\n`(module name body...)`"},
+            {"import", "**import**  -  Import bindings from a module.\n\n`(import module-name)`"},
+            {"export", "**export**  -  Export bindings.\n\n`(export name...)`"},
+            {"defun", "**defun**  -  Alias for function definition.\n\n`(defun name (args...) body...)`"},
+            {"raise", "**raise**  -  Raise an exception.\n\n`(raise tag value)`"},
+            {"catch", "**catch**  -  Catch an exception by tag.\n\n`(catch 'tag body ...)`"},
+            {"logic-var", "**logic-var**  -  Create a fresh logic variable.\n\n`(logic-var)`"},
+            {"unify", "**unify**  -  Unify two terms.\n\n`(unify term1 term2)`"},
+        };
+
+        if (auto it = keyword_docs.find(symbol); it != keyword_docs.end()) {
+            return it->second;
+        }
+
+        for (const auto& spec : builtins_.specs()) {
+            if (symbol == spec.name) {
+                std::string doc = "**" + symbol + "**  -  builtin primitive.";
+                doc += "\n\n`arity: " + std::to_string(spec.arity);
+                if (spec.has_rest) doc += "+";
+                doc += "`";
+                return doc;
+            }
+        }
+
+        for (const auto& [_, qualified] : global_names_) {
+            if (qualified == symbol) {
+                const auto dot = qualified.find_last_of('.');
+                if (dot != std::string::npos) {
+                    const auto mod = qualified.substr(0, dot);
+                    const auto name = qualified.substr(dot + 1);
+                    return "**" + name + "**  -  binding from `" + mod + "`.";
+                }
+                return "**" + qualified + "**  -  module binding.";
+            }
+
+            const auto dot = qualified.find_last_of('.');
+            if (dot != std::string::npos && dot + 1 < qualified.size()) {
+                const auto short_name = qualified.substr(dot + 1);
+                if (short_name == symbol) {
+                    const auto mod = qualified.substr(0, dot);
+                    return "**" + short_name + "**  -  binding from `" + mod + "`.";
+                }
+            }
+        }
+
+        return {};
     }
 
     /**
@@ -660,6 +699,7 @@ public:
             return DisplayValue{
                 .tag = DisplayTag::Error,
                 .text = diagnostics_to_string(),
+                .value = runtime::nanbox::Nil,
             };
         }
 
@@ -668,12 +708,14 @@ public:
             return DisplayValue{
                 .tag = DisplayTag::Text,
                 .text = {},
+                .value = runtime::nanbox::Nil,
             };
         }
 
         return DisplayValue{
             .tag = classify_display_tag(result),
             .text = format_value(result, runtime::FormatMode::Write),
+            .value = result,
         };
     }
 
@@ -683,6 +725,9 @@ public:
      * Passing an empty sink leaves the current port unchanged.
      */
     void set_stream_sinks(StreamSink stdout_sink, StreamSink stderr_sink) {
+        auto stdout_for_children = stdout_sink;
+        auto stderr_for_children = stderr_sink;
+
         if (stdout_sink) {
             set_output_port(std::make_shared<runtime::CallbackPort>(
                 [sink = std::move(stdout_sink)](const std::string& text) {
@@ -695,6 +740,14 @@ public:
                     sink(text);
                 }));
         }
+
+        /**
+         * Capture the active sink routing in the spawn-thread factories so child
+         * actor output keeps publishing to the same notebook cell stream.
+         */
+        install_actor_worker_factories(
+            std::move(stdout_for_children),
+            std::move(stderr_for_children));
     }
 
     /**
@@ -986,8 +1039,69 @@ private:
         return oss.str();
     }
 
+    /**
+     * Discover dotted module names from all resolver search directories.
+     */
+    [[nodiscard]] std::vector<std::string> discover_module_names() const {
+        std::vector<std::string> out;
+        std::unordered_set<std::string> seen;
+
+        for (const auto& root : resolver_.dirs()) {
+            std::error_code ec;
+            if (!fs::is_directory(root, ec) || ec) continue;
+
+            fs::recursive_directory_iterator it(
+                root,
+                fs::directory_options::skip_permission_denied,
+                ec);
+            fs::recursive_directory_iterator end;
+            if (ec) continue;
+
+            while (it != end) {
+                const auto entry = *it;
+                it.increment(ec);
+                if (ec) {
+                    ec.clear();
+                    continue;
+                }
+
+                if (!entry.is_regular_file(ec) || ec) {
+                    ec.clear();
+                    continue;
+                }
+
+                const auto path = entry.path();
+                if (path.extension() != ".eta") continue;
+
+                auto rel = fs::relative(path, root, ec);
+                if (ec) {
+                    ec.clear();
+                    continue;
+                }
+
+                auto mod = rel.generic_string();
+                if (!mod.ends_with(".eta")) continue;
+                mod.resize(mod.size() - 4);
+                std::replace(mod.begin(), mod.end(), '/', '.');
+
+                if (!mod.empty() && seen.insert(mod).second) {
+                    out.push_back(std::move(mod));
+                }
+            }
+        }
+
+        return out;
+    }
+
     [[nodiscard]] DisplayTag classify_display_tag(runtime::nanbox::LispVal value) const {
         using runtime::memory::heap::ObjectKind;
+        std::string mime;
+        if (try_unpack_jupyter_display(value, &mime, nullptr)) {
+            if (auto tag = display_tag_for_mime(mime); tag != DisplayTag::Text) {
+                return tag;
+            }
+        }
+
         if (!runtime::nanbox::ops::is_boxed(value) ||
             runtime::nanbox::ops::tag(value) != runtime::nanbox::Tag::HeapObject) {
             return DisplayTag::Text;
@@ -997,6 +1111,62 @@ private:
         if (heap_.try_get_as<ObjectKind::Tensor, void>(id)) return DisplayTag::Tensor;
         if (heap_.try_get_as<ObjectKind::FactTable, void>(id)) return DisplayTag::FactTable;
         return DisplayTag::Text;
+    }
+
+    [[nodiscard]] static DisplayTag display_tag_for_mime(std::string_view mime) {
+        if (mime == "text/html") return DisplayTag::Html;
+        if (mime == "text/markdown") return DisplayTag::Markdown;
+        if (mime == "text/latex") return DisplayTag::Latex;
+        if (mime == "image/svg+xml") return DisplayTag::Svg;
+        if (mime == "image/png") return DisplayTag::Png;
+        if (mime == "application/vnd.vegalite.v5+json") return DisplayTag::VegaLite;
+        if (mime == "application/vnd.eta.tensor+json") return DisplayTag::Tensor;
+        if (mime == "application/vnd.eta.facttable+json") return DisplayTag::FactTable;
+        return DisplayTag::Text;
+    }
+
+    [[nodiscard]] bool try_decode_string(runtime::nanbox::LispVal value,
+                                         std::string* out) const {
+        if (!out) return false;
+        using runtime::nanbox::Tag;
+        if (!runtime::nanbox::ops::is_boxed(value)) return false;
+
+        const auto tag = runtime::nanbox::ops::tag(value);
+        if (tag == Tag::String || tag == Tag::Symbol) {
+            auto sv = intern_table_.get_string(runtime::nanbox::ops::payload(value));
+            if (!sv) return false;
+            *out = std::string(*sv);
+            return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] bool try_unpack_jupyter_display(runtime::nanbox::LispVal value,
+                                                  std::string* mime_out,
+                                                  runtime::nanbox::LispVal* payload_out) const {
+        using runtime::memory::heap::ObjectKind;
+        using runtime::types::Vector;
+        using runtime::nanbox::Tag;
+
+        if (!runtime::nanbox::ops::is_boxed(value) ||
+            runtime::nanbox::ops::tag(value) != Tag::HeapObject) {
+            return false;
+        }
+
+        const auto id = runtime::nanbox::ops::payload(value);
+        auto* vec = heap_.try_get_as<ObjectKind::Vector, Vector>(id);
+        if (!vec || vec->elements.size() < 3) return false;
+
+        std::string marker;
+        if (!try_decode_string(vec->elements[0], &marker)) return false;
+        if (marker != "jupyter-display") return false;
+
+        std::string mime;
+        if (!try_decode_string(vec->elements[1], &mime)) return false;
+
+        if (mime_out) *mime_out = std::move(mime);
+        if (payload_out) *payload_out = vec->elements[2];
+        return true;
     }
 
     /**
@@ -1069,6 +1239,178 @@ private:
         return forms;
     }
 
+    /**
+     * Install worker factories for spawn-thread and spawn-thread-with.
+     *
+     * The callback sinks are captured by value at installation time, so a
+     * spawned actor thread keeps writing to the stream routing that was active
+     * in the spawning evaluation context.
+     */
+    void install_actor_worker_factories(StreamSink stdout_sink = {},
+                                        StreamSink stderr_sink = {}) {
+        eta::nng::ProcessManager::ThreadWorkerFn thread_worker_fn =
+            [module_search_path = module_search_path_, this, stdout_sink, stderr_sink](
+                const std::string& th_module_path,
+                const std::string& th_func_name,
+                const std::string& th_endpoint,
+                std::vector<std::string> th_text_args,
+                std::shared_ptr<std::atomic<bool>> alive) noexcept
+        {
+            try {
+                auto resolver = ModulePathResolver::from_path_string(module_search_path);
+                const auto child_heap = Driver::parse_heap_env_var(
+                    "ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
+                    Driver::parse_heap_env_var(
+                        "ETA_HEAP_SOFT_LIMIT",
+                        Driver::DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES));
+                Driver child(std::move(resolver), child_heap);
+                child.load_prelude();
+
+                if (stdout_sink || stderr_sink) {
+                    child.set_stream_sinks(stdout_sink, stderr_sink);
+                }
+
+                if (!child.install_mailbox(th_endpoint)) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                /// Load the target module
+                if (!child.run_file(fs::path(th_module_path))) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                /**
+                 * Notify any DAP debug listener now that the child VM/Driver
+                 * exist and have loaded source.  This lets the adapter install
+                 * its per-thread stop callback and breakpoints before the
+                 * spawn-thread function actually starts running user code.
+                 */
+                std::string th_name = fs::path(th_module_path).stem().string();
+                if (!th_func_name.empty()) th_name += " (" + th_func_name + ")";
+                proc_mgr_.notify_thread_started(
+                    static_cast<void*>(&child.vm()),
+                    static_cast<void*>(&child),
+                    std::move(th_name));
+
+                /// Build and evaluate: (func-name arg1 arg2 ...)
+                std::string call_src = "(" + th_func_name;
+                for (const auto& a : th_text_args) {
+                    call_src += " ";
+                    call_src += a;
+                }
+                call_src += ")";
+                child.run_source(call_src);
+                proc_mgr_.notify_thread_exited(static_cast<void*>(&child.vm()));
+            } catch (...) {}
+            alive->store(false, std::memory_order_release);
+        };
+
+        eta::nng::ProcessManager::ClosureWorkerFn closure_worker_fn =
+            [module_search_path = module_search_path_, this, stdout_sink, stderr_sink](
+                const std::string& th_endpoint,
+                eta::nng::ProcessManager::SerializedClosure sc,
+                std::shared_ptr<std::atomic<bool>> alive) noexcept
+        {
+            try {
+                auto resolver = ModulePathResolver::from_path_string(module_search_path);
+                const auto child_heap = Driver::parse_heap_env_var(
+                    "ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
+                    Driver::parse_heap_env_var(
+                        "ETA_HEAP_SOFT_LIMIT",
+                        Driver::DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES));
+                Driver child(std::move(resolver), child_heap);
+                child.load_prelude();
+
+                if (stdout_sink || stderr_sink) {
+                    child.set_stream_sinks(stdout_sink, stderr_sink);
+                }
+
+                if (!child.install_mailbox(th_endpoint)) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                /// Deserialize the function registry from the etac-format blob
+                runtime::vm::BytecodeSerializer ser(child.heap(), child.intern_table());
+                std::istringstream iss(std::string(sc.funcs_bytes.begin(),
+                                                   sc.funcs_bytes.end()),
+                                      std::ios::binary);
+                auto etac_res = ser.deserialize(iss, /*expected_builtins=*/0);
+                if (!etac_res) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+                auto& etac = *etac_res;
+
+                /// Rebase and register the functions in the child's registry
+                uint32_t base_idx = static_cast<uint32_t>(child.registry().size());
+                for (const auto& func : etac.registry.all()) {
+                    runtime::vm::BytecodeFunction copy = func;
+                    copy.rebase_func_indices(static_cast<int32_t>(base_idx));
+                    child.registry().add(std::move(copy));
+                }
+
+                auto capture_payload = eta::nng::deserialize_spawn_capture(
+                    std::span<const uint8_t>(sc.captures_bytes),
+                    child.heap(),
+                    child.intern_table(),
+                    [&child, base_idx](uint32_t remapped_idx)
+                        -> const runtime::vm::BytecodeFunction*
+                    {
+                        return child.registry().get(base_idx + remapped_idx);
+                    },
+                    [&child](uint32_t slot) -> std::optional<runtime::nanbox::LispVal>
+                    {
+                        const auto& globals = child.vm().globals();
+                        if (slot >= globals.size()) return std::nullopt;
+                        return globals[slot];
+                    });
+                if (!capture_payload) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                /// Hydrate captured globals before executing the thunk.
+                auto& globals = child.vm().globals();
+                for (const auto& cg : capture_payload->globals) {
+                    if (globals.size() <= cg.slot) globals.resize(cg.slot + 1, runtime::nanbox::Nil);
+                    globals[cg.slot] = cg.value;
+                }
+
+                /// Reconstruct the Closure heap object in the child's heap.
+                const auto* entry_func = child.registry().get(base_idx);
+                if (!entry_func) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+                auto closure_val = runtime::memory::factory::make_closure(
+                    child.heap(), entry_func, std::move(capture_payload->upvals));
+                if (!closure_val) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
+                /// Call the thunk with 0 arguments.
+                proc_mgr_.notify_thread_started(
+                    static_cast<void*>(&child.vm()),
+                    static_cast<void*>(&child),
+                    "(spawn-thread)");
+                auto result = child.vm().call_value(*closure_val, {});
+                if (!result) {
+                }
+                proc_mgr_.notify_thread_exited(static_cast<void*>(&child.vm()));
+            } catch (const std::exception&) {
+            } catch (...) {
+            }
+            alive->store(false, std::memory_order_release);
+        };
+
+        proc_mgr_.set_worker_factory(std::move(thread_worker_fn));
+        proc_mgr_.set_closure_factory(std::move(closure_worker_fn));
+    }
+
     void collect_garbage_with_registry_roots() {
         auto roots = heap_.make_external_root_frame();
         for (const auto& func : registry_.all()) {
@@ -1097,6 +1439,7 @@ private:
     eta::nng::ProcessManager         proc_mgr_;
     runtime::nanbox::LispVal         mailbox_val_{runtime::nanbox::Nil};
     std::string                      etai_path_;
+    std::string                      module_search_path_;
 
     /**
      * Auto-detect the path to the etai binary at startup.

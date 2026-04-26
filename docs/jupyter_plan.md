@@ -136,10 +136,10 @@ flowchart LR
 
 ### Implementation status (April 25, 2026)
 
-- Implemented: `cmake/FetchXeus.cmake` with pinned versions and `ETA_USE_VCPKG` support.
+- Implemented: `cmake/FetchXeus.cmake` with pinned versions and automatic use of preinstalled packages when available.
 - Implemented: `eta/jupyter/` scaffold (`CMakeLists.txt`, source layout, resources) with a buildable `eta_jupyter` target.
-- Implemented: top-level options `ETA_BUILD_JUPYTER` (default `OFF`) and `ETA_USE_VCPKG` in `CMakeLists.txt`.
-- Implemented: conditional `add_subdirectory(jupyter)` in `eta/CMakeLists.txt` and conditional `eta_jupyter` aggregation in `eta_all`.
+- Implemented: unconditional top-level `FetchXeus.cmake` integration in `CMakeLists.txt` (Jupyter stack is required).
+- Implemented: unconditional `add_subdirectory(jupyter)` in `eta/CMakeLists.txt` and `eta_jupyter` aggregation in `eta_all`.
 
 ### `cmake/FetchXeus.cmake` *(new)*
 
@@ -181,7 +181,7 @@ FetchContent_MakeAvailable(libzmq cppzmq nlohmann_json xeus xeus-zmq)
 |---|---|
 | Linux | Default. `apt install libssl-dev pkg-config` may be needed for libzmq's curve support. |
 | macOS | Same. Apple Silicon: confirm libzmq builds universal; gate `-DZMQ_BUILD_TESTS=OFF`. |
-| Windows | Prefer `vcpkg install libzmq cppzmq xeus xeus-zmq` and `find_package` instead of FetchContent — ZMQ's CMake on Windows has historical breakage. `FetchXeus.cmake` should detect `ETA_USE_VCPKG=ON` and switch paths. |
+| Windows | Prefer `vcpkg install libzmq cppzmq xeus xeus-zmq` so `find_package` can resolve preinstalled binaries. |
 
 ### `eta/jupyter/CMakeLists.txt` *(new)*
 
@@ -212,12 +212,8 @@ install(FILES resources/logo-32x32.png resources/logo-64x64.png
 ### Top-level `CMakeLists.txt`
 
 ```cmake
-option(ETA_BUILD_JUPYTER "Build the xeus-eta Jupyter kernel" ON)
-
-if(ETA_BUILD_JUPYTER)
-    include(cmake/FetchXeus.cmake)
-    add_subdirectory(eta/jupyter)
-endif()
+include(cmake/FetchXeus.cmake)
+add_subdirectory(eta/jupyter)
 ```
 
 ---
@@ -366,6 +362,21 @@ output cell contains `3`.
 
 **Builds on:** Stage 0 (`is_complete_expression`).
 
+### Implementation status (April 25, 2026)
+
+- Implemented: shared token extraction helper at
+  `eta/interpreter/src/eta/interpreter/repl_complete.h`.
+- Implemented: LSP token lookup now uses the shared helper for
+  completion/hover cursor extraction.
+- Implemented: `Driver::completions_at(...)` and `Driver::hover_at(...)`
+  with candidates from keywords, builtins, loaded globals/modules, and
+  module-path discovery.
+- Implemented: Jupyter `complete_request_impl`,
+  `inspect_request_impl`, and `is_complete_request_impl` wired to the
+  driver APIs.
+- Implemented tests: completion and hover regressions in
+  `eta/test/src/driver_jupyter_test.cpp`.
+
 ### Wiring
 
 | Jupyter call | Routes to |
@@ -387,6 +398,17 @@ output cell contains `3`.
 
 **Goal.** `(println "hi")` shows up incrementally in the cell, not
 buffered until completion.
+
+### Implementation status (April 25, 2026)
+
+- Implemented: `Driver::set_stream_sinks(stdout_sink, stderr_sink)` via
+  `runtime::CallbackPort` wiring to VM current output/error ports.
+- Implemented: `EtaInterpreter::execute_request_impl` installs request-scoped
+  stream sinks that publish Jupyter `stream` messages (`stdout`/`stderr`).
+- Implemented: output and error ports are restored after each request so
+  stream routing does not leak between executions.
+- Implemented tests: stdout/stderr sink routing regression in
+  `eta/test/src/driver_jupyter_test.cpp`.
 
 ### Approach
 
@@ -416,11 +438,24 @@ buffered until completion.
 
 ## Stage 4 — Errors & Tracebacks
 
+### Implementation status (April 25, 2026)
+
+- Implemented: execution failures are mapped to Jupyter error replies with
+  `status`, `ename`, `evalue`, and `traceback`.
+- Implemented: `ename` selection from diagnostic codes (runtime and
+  compile/parse phases) for stable front-end error categorization.
+- Implemented: traceback payload includes formatted diagnostics and VM frame
+  stack entries (`file:line:column` plus function names).
+- Implemented: iopub error publication via `publish_execution_error(...)`
+  in addition to shell error replies.
+- Implemented tests: runtime user-error diagnostic regression in
+  `eta/test/src/driver_jupyter_test.cpp`.
+
 ### Approach
 
-`EtaInterpreter::execute_request_impl` wraps the eval call in
-`try/catch (eta::runtime::Exception& e)`. The exception already
-carries `span` + `kind` + `message`; format it like the REPL does:
+`EtaInterpreter::execute_request_impl` evaluates through
+`Driver::eval_string(...)`, then maps driver diagnostics and VM frame
+information into Jupyter's `error` payload fields.
 
 ```
 RuntimeError: division by zero
@@ -436,9 +471,9 @@ Map to Jupyter `error` reply:
 ```cpp
 return {
   {"status",    "error"},
-  {"ename",     to_string(e.kind())},     // "RuntimeError"
-  {"evalue",    e.message()},
-  {"traceback", ansi_lines}                 // vector<string>
+  {"ename",     diagnostic_name},
+  {"evalue",    diagnostic_message},
+  {"traceback", traceback_lines}
 };
 ```
 
@@ -460,6 +495,25 @@ Julia, R) renders matplotlib PNGs and pandas tables. Eta will do
 **tensors, fact tables, causal DAGs, CLP domains, logic
 substitutions, and Vega-Lite plots, with classic-Notebook fallbacks
 that don't need a labextension installed**.
+
+### Implementation status (April 26, 2026)
+
+- Implemented: `EtaInterpreter::execute_request_impl` now evaluates through
+  `Driver::eval_to_display(...)` and publishes MIME bundles from
+  `eta/jupyter/src/eta/jupyter/display.cpp`.
+- Implemented: rich MIME output for
+  `application/vnd.eta.tensor+json`,
+  `application/vnd.eta.facttable+json`,
+  `text/html`,
+  `text/markdown`,
+  `text/latex`,
+  `image/svg+xml`,
+  `image/png`,
+  and `application/vnd.vegalite.v5+json` with `text/plain` fallback.
+- Implemented: `stdlib/std/jupyter.eta` helper wrappers producing
+  `jupyter-display` payload markers.
+- Implemented tests: additional display-tag coverage in
+  `eta/test/src/driver_jupyter_test.cpp`.
 
 ### `DisplayValue` discriminated union
 
@@ -584,6 +638,24 @@ path) and JupyterLab with the labextension installed.
 explorer, and Tensor slicer as live JupyterLab widgets — all
 reusing logic already shipped for the DAP webviews.
 
+### Implementation status (April 26, 2026)
+
+- Implemented interpreter-side comm targets: `eta.heap`, `eta.disasm`,
+  `eta.actors`, `eta.dag`, and `eta.tensor`.
+- Implemented payload builders and HTML fallback renderers in
+  `eta/jupyter/src/eta/jupyter/comm/*`.
+- Implemented notebook display mapping for:
+  `application/vnd.eta.heap+json`,
+  `application/vnd.eta.disasm+json`,
+  `application/vnd.eta.actors+json`,
+  `application/vnd.eta.dag+json`,
+  `application/vnd.eta.tensor-explorer+json`.
+- Implemented `std.jupyter` helpers:
+  `jupyter:heap`, `jupyter:disasm`, `jupyter:actors`, `jupyter:dag`,
+  `jupyter:tensor-explorer`.
+- Implemented actor lifecycle push updates via
+  `Driver::on_actor_lifecycle`.
+
 ### Comm targets
 
 | Target | Server handler | Front-end widget | Eta helper |
@@ -634,6 +706,17 @@ Dispatched in `EtaInterpreter::execute_request_impl` **before** the
 code is handed to `Driver`. Lines starting with `%` (line magic) or
 cells starting with `%%` (cell magic) are intercepted.
 
+### Implementation status (April 26, 2026)
+
+- Implemented parser and dispatch model in
+  `eta/jupyter/src/eta/jupyter/magics.{h,cpp}`.
+- Implemented all planned line/cell magics in
+  `EtaInterpreter::execute_request_impl`:
+  `%time`, `%timeit`, `%bytecode`, `%load`, `%run`, `%env`, `%cwd`,
+  `%import`, `%reload`, `%who`, `%whos`, `%plot`, `%table`, `%%trace`.
+- Implemented `%reload` cache invalidation through
+  `Driver::clear_module_cache`.
+
 | Magic | Behaviour |
 |---|---|
 | `%time EXPR` | Evaluate once, prepend wall-time + GC-time to the result |
@@ -665,27 +748,24 @@ as a single switch — no plugin system in v1.
 
 ### Interrupts
 
-`xeus::xinterpreter` calls `interrupt_request_impl` (default
-behaviour: nothing). Override to call
-`driver_->request_interrupt()`.
+`xeus` 5.1 does not expose `interrupt_request_impl` on
+`xinterpreter`. The kernel therefore uses a signal-driven interrupt
+pump in `main_jupyter.cpp`:
 
-VM hot loop already has a single null-pointer check for `debug_`
-(see [`dap_vs_plan.md`](dap_vs_plan.md) §"Performance"). Add one more
-test in the same slot:
+- signal handler sets an atomic interrupt flag (`SIGINT`/`SIGTERM`)
+- background pump polls that flag and calls
+  `EtaInterpreter::request_interrupt()`
+- interpreter forwards to `Driver::request_interrupt()`
 
-```cpp
-if (UNLIKELY(debug_ || interrupt_flag_.load(std::memory_order_relaxed))) {
-    if (interrupt_flag_.load()) throw runtime::InterruptException{};
-    debug_->check_and_wait(span, depth);
-}
-```
-
-Cost: one additional load per opcode, predictably false → free.
+VM hot-loop interrupt checks remain in the same branch as debug checks
+(`eta/core/src/eta/runtime/vm/vm.cpp`) and return a runtime
+interruption error.
 
 ### Actor stdout routing
 
 `spawn-thread` actors capture the **current iopub sinks** at spawn
-time via thread-local plumbing in `Driver::set_stream_sinks`. Their
+time via sink-aware worker factory installation in
+`Driver::set_stream_sinks`. Their
 `println` output therefore lands in the originating cell even after
 that cell has finished evaluating. (Document this behaviour in the
 user-facing `docs/jupyter.md`.)
@@ -701,9 +781,35 @@ existing log buffer.
 - `(spawn-thread (lambda () (println "hi")))` output lands in the
   spawning cell's output area.
 
+### Implementation status (April 26, 2026)
+
+- Implemented cooperative interrupt request forwarding:
+  `EtaInterpreter::request_interrupt()` -> `Driver::request_interrupt()`
+  -> VM interrupt flag.
+- Implemented kernel signal bridge in `main_jupyter.cpp` to route
+  OS-level interrupts to the interpreter while a cell is running.
+- Implemented spawn-thread sink inheritance by rebuilding actor worker
+  factories in `Driver::set_stream_sinks` and applying captured sinks
+  in child drivers at worker start.
+
 ---
 
 ## Stage 9 — State Model & Cell Semantics
+
+### Implementation status (April 26, 2026)
+
+- Implemented: kernel configuration loader at
+  `eta/jupyter/src/eta/jupyter/kernel_config.{h,cpp}` for
+  `~/.config/eta/kernel.toml` (plus `ETA_KERNEL_CONFIG` override).
+- Implemented: startup state application in
+  `EtaInterpreter::configure_impl`:
+  sets `ETA_KERNEL=1`, applies auto-import modules, and keeps a shared
+  `Driver` for notebook-wide state.
+- Implemented: configurable display controls from `kernel.toml`
+  (`table_max_rows`, `tensor_preview`, `plot_theme`) wired into rich
+  display rendering.
+- Implemented tests: kernel config parser coverage in
+  `eta/test/src/jupyter_kernel_config_test.cpp`.
 
 ### Decisions
 
@@ -733,6 +839,17 @@ hard_kill_after_seconds = 30   # if soft interrupt fails
 ---
 
 ## Stage 10 — Packaging & Distribution
+
+### Implementation status (April 26, 2026)
+
+- Implemented: runtime kernelspec installer flow in
+  `eta_jupyter` (`--install`, `--user`, `--prefix`, `--sys-prefix`).
+- Implemented: packaging scaffolds:
+  `binder/{apt.txt,environment.yml,postBuild}`,
+  `docker/jupyter/Dockerfile`,
+  and `recipes/xeus-eta/meta.yaml`.
+- Implemented: build wiring for kernel config support in
+  `eta/jupyter/CMakeLists.txt`.
 
 ### conda-forge recipe
 

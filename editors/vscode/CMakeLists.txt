@@ -17,7 +17,6 @@ cmake_minimum_required(VERSION 3.20)
 #       Copies the .vsix to <prefix>/editors/eta-lang.vsix alongside the
 #       binaries (OPTIONAL — silently skipped if eta_vsix was never built).
 #
-# Opt out with:  cmake … -DETA_BUILD_VSCODE_EXT=OFF
 # ============================================================================
 
 # ── Find required tools ──────────────────────────────────────────────────────
@@ -70,8 +69,7 @@ if(NOT ETA_NODE_EXE OR NOT ETA_NPM_EXE)
     message(STATUS
         "eta_vsix: VS Code extension targets skipped.  "
         "Options: install Node >=20 so it is on PATH, "
-        "set ETA_NODE_EXE / ETA_NPM_EXE as CMake cache variables, "
-        "or pass -DETA_BUILD_VSCODE_EXT=OFF to silence this.")
+        "or set ETA_NODE_EXE / ETA_NPM_EXE as CMake cache variables.")
     return()
 endif()
 

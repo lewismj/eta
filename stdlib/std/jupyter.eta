@@ -1,0 +1,90 @@
+;;; std/jupyter.eta - notebook-focused display helpers.
+;;;
+;;; These helpers package values into a vector marker consumed by
+;;; eta_jupyter. Non-kernel front-ends can ignore the marker and treat
+;;; the values as ordinary data.
+
+(module std.jupyter
+  (export
+    jupyter:display
+    jupyter:html
+    jupyter:markdown
+    jupyter:latex
+    jupyter:svg
+    jupyter:png
+    jupyter:vega
+    jupyter:table
+    jupyter:tensor
+    jupyter:plot
+    jupyter:heap
+    jupyter:disasm
+    jupyter:actors
+    jupyter:dag
+    jupyter:tensor-explorer)
+  (begin
+
+    (defun %jupyter-wrap (mime payload)
+      (vector 'jupyter-display mime payload))
+
+    (defun jupyter:display (obj)
+      obj)
+
+    (defun jupyter:html (text)
+      (%jupyter-wrap "text/html" text))
+
+    (defun jupyter:markdown (text)
+      (%jupyter-wrap "text/markdown" text))
+
+    (defun jupyter:latex (text)
+      (%jupyter-wrap "text/latex" text))
+
+    (defun jupyter:svg (svg)
+      (%jupyter-wrap "image/svg+xml" svg))
+
+    (defun jupyter:png (bytes)
+      (%jupyter-wrap "image/png" bytes))
+
+    (defun jupyter:vega (spec)
+      (%jupyter-wrap "application/vnd.vegalite.v5+json" spec))
+
+    (defun jupyter:table (fact-table)
+      (%jupyter-wrap "application/vnd.eta.facttable+json" fact-table))
+
+    (defun jupyter:tensor (tensor)
+      (%jupyter-wrap "application/vnd.eta.tensor+json" tensor))
+
+    (defun jupyter:heap ()
+      (%jupyter-wrap "application/vnd.eta.heap+json" '()))
+
+    (defun jupyter:disasm (query)
+      (%jupyter-wrap "application/vnd.eta.disasm+json" query))
+
+    (defun jupyter:actors ()
+      (%jupyter-wrap "application/vnd.eta.actors+json" '()))
+
+    (defun jupyter:dag (graph)
+      (%jupyter-wrap "application/vnd.eta.dag+json" graph))
+
+    (defun jupyter:tensor-explorer (tensor)
+      (%jupyter-wrap "application/vnd.eta.tensor-explorer+json" tensor))
+
+    (defun %zip-xy (xs ys)
+      (if (or (null? xs) (null? ys))
+          '()
+          (cons
+            (list (cons 'x (car xs)) (cons 'y (car ys)))
+            (%zip-xy (cdr xs) (cdr ys)))))
+
+    (defun jupyter:plot (kind xs ys)
+      (jupyter:vega
+        (list
+          (cons '$schema "https://vega.github.io/schema/vega-lite/v5.json")
+          (cons 'description "Eta plot")
+          (cons 'mark (if (eq? kind 'scatter) "point" "line"))
+          (cons 'data (list (cons 'values (%zip-xy xs ys))))
+          (cons 'encoding
+                (list
+                  (cons 'x (list (cons 'field "x") (cons 'type "quantitative")))
+                  (cons 'y (list (cons 'field "y") (cons 'type "quantitative")))))))))
+
+  ))

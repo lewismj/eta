@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────────
 # FetchNng.cmake — Fetch nng (nanomsg-next-gen) via FetchContent
 #
-# Called by eta/CMakeLists.txt when ETA_BUILD_NNG is ON.
+# Called by eta/CMakeLists.txt to fetch the required nng dependency.
 # Downloads nng from GitHub and makes the `nng` target available.
 #
 # On Windows/MSVC nng is built as a SHARED library (DLL) to avoid

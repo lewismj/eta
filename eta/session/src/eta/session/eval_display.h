@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "eta/runtime/nanbox.h"
+
 namespace eta::session {
 
 /**
@@ -11,6 +13,12 @@ enum class DisplayTag {
     Text,
     Tensor,
     FactTable,
+    Html,
+    Markdown,
+    Latex,
+    Svg,
+    Png,
+    VegaLite,
     Error,
 };
 
@@ -20,6 +28,7 @@ enum class DisplayTag {
 struct DisplayValue {
     DisplayTag tag{DisplayTag::Text};
     std::string text;
+    runtime::nanbox::LispVal value{runtime::nanbox::Nil};
 };
 
 } ///< namespace eta::session

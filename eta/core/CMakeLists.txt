@@ -41,15 +41,8 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/clp/real_store.cpp
 )
 
-option(ETA_CLP_QP_BACKEND "Enable the CLP(R) convex QP backend" ON)
-if(ETA_CLP_QP_BACKEND)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_CLP_QP_BACKEND=1)
-endif()
-
-option(ETA_CLP_FM_ORACLE "Enable FM-vs-Simplex oracle checks for CLP(R)" OFF)
-if(ETA_CLP_FM_ORACLE)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_CLP_FM_ORACLE=1)
-endif()
+# Convex QP support is part of the required core runtime surface.
+target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_CLP_QP_BACKEND=1)
 
 # BMI2/PEXT support check
 if(NOT MSVC)

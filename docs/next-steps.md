@@ -229,7 +229,7 @@ front-end alongside `etai` and `eta_repl`.
 
 Status (April 25, 2026): Phase 1 dependency/build scaffolding is now in-tree:
 `cmake/FetchXeus.cmake`, `eta/jupyter/` CMake target scaffolding, and
-optional top-level CMake integration behind `ETA_BUILD_JUPYTER`.
+top-level CMake integration as a required dependency.
 
 **Open design questions:**
 

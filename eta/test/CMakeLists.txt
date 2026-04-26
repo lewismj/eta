@@ -45,7 +45,9 @@ set(SOURCES
         src/clp_fm_tests.cpp
         src/clp_simplex_tests.cpp
         src/builtin_sync_tests.cpp
-        src/driver_jupyter_test.cpp)
+        src/driver_jupyter_test.cpp
+        src/jupyter_kernel_config_test.cpp
+        src/jupyter_magics_test.cpp)
 
 # libtorch ships release binaries only (_ITERATOR_DEBUG_LEVEL=0).
 # MSVC Debug builds use _ITERATOR_DEBUG_LEVEL=2 which causes ABI mismatch and
@@ -87,6 +89,8 @@ target_sources(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_io.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_server.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../lsp/src/eta/lsp/lsp_server.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../jupyter/src/eta/jupyter/kernel_config.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../jupyter/src/eta/jupyter/magics.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src/eta/interpreter/repl_wrap.cpp
 )
 
@@ -103,6 +107,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../jupyter/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../lsp/src
 )
 
