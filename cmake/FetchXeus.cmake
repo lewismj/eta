@@ -30,6 +30,9 @@ endif()
 set(ZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_STATIC OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED ON CACHE BOOL "" FORCE)
+# libzmq's MSVC precompiled-header flags (/Yu precompiled.hpp) break IDE
+# compiler-probing that compiles temp source files outside libzmq's src dir.
+set(ENABLE_PRECOMPILED OFF CACHE BOOL "" FORCE)
 set(ENABLE_CURVE    OFF CACHE BOOL "" FORCE)
 set(WITH_DOCS       OFF CACHE BOOL "" FORCE)
 set(CPPZMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
