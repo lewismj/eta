@@ -66,7 +66,9 @@ Notebook helpers are available from `std.jupyter`:
 - `(jupyter:heap)`
 - `(jupyter:disasm query)`
 - `(jupyter:actors)`
-- `(jupyter:dag graph-json)`
+- `(jupyter:dag graph)` where `graph` is either:
+  - graph-json shape: `((nodes ...) (edges ...))`
+  - edge-list shape: `((a -> b) (b -> c) ...)`
 - `(jupyter:tensor-explorer tensor-json)`
 
 When the labextension is not installed, these helpers still render an HTML

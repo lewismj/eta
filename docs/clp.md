@@ -146,6 +146,18 @@ calling `goal-thunk` and tightening the cost domain.
 | `(clp:real-open x lo hi)` | Open interval `(lo, hi)` |
 | `(clp:real-half-open x lo hi)` | Half-open `[lo, hi)` |
 
+> **Box constraints reach the LP/QP solver.** All three domain
+> constructors install the interval into both stores: the propagator
+> domain (consulted by `clp:r-feasible?` and `clp:domain-r`) **and**
+> the simplex bound store read by `%clp-r-minimize` /
+> `%clp-r-maximize` / `%clp-r-qp-*`. A single `(clp:real x 0.0 1.0)`
+> is therefore enough to enforce `0 ≤ x ≤ 1` end-to-end — no extra
+> `clp:r>=` / `clp:r<=` pair is required. Open / half-open variants
+> map to strict simplex bounds (`Bound::strict = true`); the LP/QP
+> backends shave the value by an internal epsilon when reading them.
+> If a tighter bound has already been posted on the variable, the
+> tighter side is preserved.
+
 Accessors:
 
 - `clp:domain-r`, `clp:domain-r?`

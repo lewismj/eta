@@ -1,0 +1,40 @@
+;;; stdlib/tests/jupyter.test.eta -- Unit tests for std.jupyter helpers.
+
+(module jupyter.tests
+  (import std.test std.jupyter)
+  (begin
+
+    (define suite
+      (make-group "jupyter"
+        (list
+          (make-test "jupyter:dag converts edge list to graph object"
+            (lambda ()
+              (let* ((wrapped (jupyter:dag '((sentiment -> macro_growth)
+                                             (sentiment -> asset_return)
+                                             (macro_growth -> asset_return))))
+                     (payload (vector-ref wrapped 2)))
+                (assert-equal 'jupyter-display (vector-ref wrapped 0))
+                (assert-equal "application/vnd.eta.dag+json" (vector-ref wrapped 1))
+                (assert-equal
+                  '((nodes (((id sentiment) (label sentiment))
+                            ((id macro_growth) (label macro_growth))
+                            ((id asset_return) (label asset_return))))
+                    (edges (((from sentiment) (to macro_growth))
+                            ((from sentiment) (to asset_return))
+                            ((from macro_growth) (to asset_return)))))
+                  payload))))
+
+          (make-test "jupyter:dag preserves explicit graph-json input"
+            (lambda ()
+              (let* ((graph '((nodes (((id a) (label a))))
+                              (edges (((from a) (to a))))))
+                     (payload (vector-ref (jupyter:dag graph) 2)))
+                (assert-equal graph payload))))
+
+          (make-test "jupyter:dag handles empty edge list"
+            (lambda ()
+              (let ((payload (vector-ref (jupyter:dag '()) 2)))
+                (assert-equal '((nodes ()) (edges ())) payload)))))))
+
+    (print-tap (run suite))))
+

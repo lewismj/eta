@@ -62,8 +62,71 @@
     (defun jupyter:actors ()
       (%jupyter-wrap "application/vnd.eta.actors+json" '()))
 
+    ;; Accept either:
+    ;;   1) canonical graph-json object/alist shape
+    ;;   2) edge list shape: '((a -> b) (b -> c) ...)
+    (defun %dag-edge? (edge)
+      (and (pair? edge)
+           (pair? (cdr edge))
+           (pair? (cdr (cdr edge)))
+           (null? (cdr (cdr (cdr edge))))
+           (symbol? (car edge))
+           (eq? (car (cdr edge)) '->)
+           (symbol? (car (cdr (cdr edge))))))
+
+    (defun %dag-edge-list? (graph)
+      (letrec ((loop (lambda (xs)
+                       (if (null? xs)
+                           #t
+                           (and (pair? xs)
+                                (%dag-edge? (car xs))
+                                (loop (cdr xs)))))))
+        (loop graph)))
+
+    (defun %dag-member? (x xs)
+      (if (null? xs)
+          #f
+          (or (eq? x (car xs))
+              (%dag-member? x (cdr xs)))))
+
+    (defun %dag-adjoin-rev (x xs)
+      (if (%dag-member? x xs) xs (cons x xs)))
+
+    (defun %dag-collect-nodes-rev (edges acc)
+      (if (null? edges)
+          acc
+          (let* ((e (car edges))
+                 (from (car e))
+                 (to (car (cdr (cdr e)))))
+            (%dag-collect-nodes-rev
+              (cdr edges)
+              (%dag-adjoin-rev to (%dag-adjoin-rev from acc))))))
+
+    (defun %dag-node-objects (nodes)
+      (map (lambda (n)
+             (list (list 'id n)
+                   (list 'label n)))
+           nodes))
+
+    (defun %dag-edge-objects (edges)
+      (map (lambda (e)
+             (let ((from (car e))
+                   (to (car (cdr (cdr e)))))
+               (list (list 'from from)
+                     (list 'to to))))
+           edges))
+
+    (defun %dag-edges->graph-json (edges)
+      (let ((nodes (reverse (%dag-collect-nodes-rev edges '()))))
+        (list
+          (list 'nodes (%dag-node-objects nodes))
+          (list 'edges (%dag-edge-objects edges)))))
+
     (defun jupyter:dag (graph)
-      (%jupyter-wrap "application/vnd.eta.dag+json" graph))
+      (%jupyter-wrap "application/vnd.eta.dag+json"
+                     (if (%dag-edge-list? graph)
+                         (%dag-edges->graph-json graph)
+                         graph)))
 
     (defun jupyter:tensor-explorer (tensor)
       (%jupyter-wrap "application/vnd.eta.tensor-explorer+json" tensor))

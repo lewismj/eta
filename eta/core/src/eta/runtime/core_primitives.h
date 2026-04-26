@@ -2343,7 +2343,52 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             if (dom.empty())
                 return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserError,
                     "%clp-domain-r!: empty domain"}});
+
+            // Mirror the interval into RealStore::simplex_bounds so the LP/QP
+            // backends see the box constraint. Without this, callers must post
+            // an additional clp:r>= / clp:r<= pair for the optimizer to
+            // respect the declared domain — a footgun the original two-store
+            // design accidentally exposed (see docs/clp.md "Bound stores").
+            //
+            // Strict (open) flags map to Bound::strict=true; LP/QP shave the
+            // value by kRealSimplexEps when reading a strict bound (see
+            // build_qp_model and optimize_real_objective in this file).
+            //
+            // If a tighter bound already exists for this var (from an earlier
+            // clp:r<= / clp:r>= or another clp:real), keep the tighter side.
+            std::optional<clp::Bound> new_lo;
+            if (std::isfinite(dom.lo)) {
+                new_lo = clp::Bound{ .value = dom.lo, .strict = dom.lo_open };
+            }
+            std::optional<clp::Bound> new_hi;
+            if (std::isfinite(dom.hi)) {
+                new_hi = clp::Bound{ .value = dom.hi, .strict = dom.hi_open };
+            }
+            if (const auto* prev = vm->real_store().simplex_bounds(id)) {
+                auto tighter_lower = [](const clp::Bound& a, const clp::Bound& b) {
+                    if (a.value > b.value) return a;
+                    if (a.value < b.value) return b;
+                    return clp::Bound{ .value = a.value, .strict = a.strict || b.strict };
+                };
+                auto tighter_upper = [](const clp::Bound& a, const clp::Bound& b) {
+                    if (a.value < b.value) return a;
+                    if (a.value > b.value) return b;
+                    return clp::Bound{ .value = a.value, .strict = a.strict || b.strict };
+                };
+                if (prev->lo.has_value()) {
+                    new_lo = new_lo.has_value()
+                        ? std::optional<clp::Bound>{ tighter_lower(*new_lo, *prev->lo) }
+                        : prev->lo;
+                }
+                if (prev->hi.has_value()) {
+                    new_hi = new_hi.has_value()
+                        ? std::optional<clp::Bound>{ tighter_upper(*new_hi, *prev->hi) }
+                        : prev->hi;
+                }
+            }
+
             vm->trail_set_domain(id, std::move(dom));
+            vm->trail_assert_simplex_bound(id, std::move(new_lo), std::move(new_hi));
             return True;
         });
 

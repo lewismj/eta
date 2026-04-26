@@ -451,10 +451,8 @@
       (clp:real we 0.0 1.0)
       (clp:real wf 0.0 1.0)
       (clp:real wh 0.0 1.0)
-      (clp:r>= wt 0.0) (clp:r<= wt 1.0)
-      (clp:r>= we 0.0) (clp:r<= we 1.0)
-      (clp:r>= wf 0.0) (clp:r<= wf 1.0)
-      (clp:r>= wh 0.0) (clp:r<= wh 1.0)
+      ;; clp:real installs both the propagator domain and the LP/QP box
+      ;; constraint, so 0 <= w_i <= 1 is enforced end-to-end.
       (clp:r<= wt tech-cap)
       (clp:r<= we energy-cap)
       (clp:r>= wh healthcare-min)
@@ -1147,10 +1145,9 @@
           (clp:real we 0.0 1.0)
           (clp:real wf 0.0 1.0)
           (clp:real wh 0.0 1.0)
-          (clp:r>= wt 0.0) (clp:r<= wt 1.0)
-          (clp:r>= we 0.0) (clp:r<= we 1.0)
-          (clp:r>= wf 0.0) (clp:r<= wf 1.0)
-          (clp:r>= wh 0.0) (clp:r<= wh 1.0)
+          ;; Box constraints 0 <= w_i <= 1 are now installed by clp:real
+          ;; itself (mirrored into the simplex bound store), so no extra
+          ;; clp:r>= / clp:r<= rows are needed for the QP backend.
           (clp:r= (dot-expr ones ws) 1.0)
           (clp:r<= wt tech-limit)
           (clp:r<= we energy-limit)

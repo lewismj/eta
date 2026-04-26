@@ -37,15 +37,19 @@
 
     ;; -- Domain constructors -------------------------------------------------
 
-    ;; Closed interval [lo, hi].
+    ;; Closed interval [lo, hi].  Installs the interval as both a
+    ;; propagator domain and an LP/QP box constraint, so a single call
+    ;; constrains x in feasibility checks and in optimisation.
     (defun clp:real (var lo hi)
       (%clp-domain-r! var lo hi #f #f))
 
-    ;; Fully-open interval (lo, hi).
+    ;; Fully-open interval (lo, hi).  Same dual install as clp:real;
+    ;; the LP/QP backends treat the bounds as strict (shaved by an
+    ;; internal epsilon).
     (defun clp:real-open (var lo hi)
       (%clp-domain-r! var lo hi #t #t))
 
-    ;; Half-open interval [lo, hi).
+    ;; Half-open interval [lo, hi).  Same dual install as clp:real.
     (defun clp:real-half-open (var lo hi)
       (%clp-domain-r! var lo hi #f #t))
 
