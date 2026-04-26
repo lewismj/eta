@@ -411,7 +411,10 @@ public:
             : run_source(wrapped.source);
         if (!ok) return false;
 
-        repl_modules_.push_back(PriorModule{wrapped.module_name, wrapped.user_defines});
+        repl_modules_.push_back(PriorModule{
+            wrapped.module_name,
+            wrapped.user_defines,
+            wrapped.user_imports});
         if (wrapped.last_is_expr && result != runtime::nanbox::Nil) {
             out = format_value(result, runtime::FormatMode::Write);
         }
@@ -703,7 +706,10 @@ public:
             };
         }
 
-        repl_modules_.push_back(PriorModule{wrapped.module_name, wrapped.user_defines});
+        repl_modules_.push_back(PriorModule{
+            wrapped.module_name,
+            wrapped.user_defines,
+            wrapped.user_imports});
         if (!wrapped.last_is_expr || result == runtime::nanbox::Nil) {
             return DisplayValue{
                 .tag = DisplayTag::Text,

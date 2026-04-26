@@ -229,12 +229,13 @@ ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
     if (forms.empty()) return result;
 
     std::string body;
-    std::string user_imports; ///< Explicit user import forms.
+    std::string user_imports_text; ///< Explicit user import forms from this submission.
 
     for (std::size_t i = 0; i < forms.size(); ++i) {
         const bool is_last = (i == forms.size() - 1);
         if (is_import(forms[i])) {
-            user_imports += "  " + forms[i] + "\n";
+            result.user_imports.push_back(forms[i]);
+            user_imports_text += "  " + forms[i] + "\n";
         } else if (is_definition(forms[i])) {
             auto names = extract_defined_names(forms[i]);
             result.user_defines.insert(
@@ -255,6 +256,19 @@ ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
     std::string imports;
     if (prelude_available) {
         imports += "  (import std.prelude)\n";
+    }
+
+    /**
+     * Replay historical explicit imports so imported names survive across
+     * REPL/Jupyter submissions, even when a later cell only references them.
+     */
+    std::unordered_set<std::string> replay_seen;
+    for (const auto& prior : prior_modules) {
+        for (const auto& import_form : prior.imports) {
+            if (import_form.empty()) continue;
+            if (!replay_seen.insert(import_form).second) continue;
+            imports += "  " + import_form + "\n";
+        }
     }
 
     std::unordered_set<std::string> shadowed(result.user_defines.begin(), result.user_defines.end());
@@ -293,7 +307,7 @@ ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
     result.source = "(module " + result.module_name + "\n"
                     + exports
                     + imports
-                    + user_imports
+                    + user_imports_text
                     + "  (begin\n"
                     + body
                     + "  ))";

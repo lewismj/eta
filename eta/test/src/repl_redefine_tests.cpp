@@ -79,7 +79,9 @@ struct ReplHarness {
 
         if (ok) {
             prior_modules.push_back(eta::interpreter::PriorModule{
-                wrapped.module_name, wrapped.user_defines});
+                wrapped.module_name,
+                wrapped.user_defines,
+                wrapped.user_imports});
         }
         return ok;
     }
@@ -150,6 +152,18 @@ BOOST_AUTO_TEST_CASE(selective_import_preserves_unshadowed_names) {
     repl.require_submit(std::vector<std::string>{"(define a 1)", "(define b 2)"});
     repl.require_submit("(define a 10)");
     BOOST_TEST(repl.eval_int("(+ a b)") == 12);
+}
+
+BOOST_AUTO_TEST_CASE(imported_names_survive_across_submissions) {
+    ReplHarness repl;
+    repl.require_submit("(import (only std.aad grad))");
+
+    eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
+    const bool ok = repl.submit(
+        "(grad (lambda (x y) (+ (* x y) (sin x))) '(2 3))",
+        &value);
+    BOOST_REQUIRE_MESSAGE(ok, "expected imported `grad` to persist:\n" + repl.diagnostics_string());
+    BOOST_TEST(value != eta::runtime::nanbox::Nil);
 }
 
 BOOST_AUTO_TEST_CASE(define_record_type_persists_across_submissions) {
