@@ -62,5 +62,7 @@ demo
 demo/*
 editors/vscode/.vscode-test/
 
+examples/notebooks/.ipynb_checkpoints/
+
 
 
