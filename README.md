@@ -95,14 +95,14 @@ The implementation ships as seven executables, a VS Code extension, and a Jupyte
 Download the latest [release](https://github.com/lewismj/eta/releases)
 for your platform, unpack it, and run the installer:
 
-| Platform     | Archive                            |
-|--------------|------------------------------------|
-| Windows x64  | `eta-v0.2.0-win-x64.zip`          |
-| Linux x86_64 | `eta-v0.2.0-linux-x86_64.tar.gz`  |
+| Platform     | Archive                          |
+|--------------|----------------------------------|
+| Windows x64  | `eta-v0.4.0-win-x64.zip`         |
+| Linux x86_64 | `eta-v0.4.0-linux-x86_64.tar.gz` |
 
 ```bash
 # Windows                              # Linux / macOS
-cd eta-v0.2.0-win-x64                  cd eta-v0.2.0-linux-x86_64
+cd eta-v0.2.0-win-x64                  cd eta-v0.4.0-linux-x86_64
 .\install.cmd                          chmod +x install.sh && ./install.sh
 ```
 
