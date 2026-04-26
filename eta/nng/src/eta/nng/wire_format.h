@@ -117,7 +117,7 @@ struct BinaryWriter {
     const Heap& heap;
     const InternTable& intern;
     bool strict{false};
-    std::string error_msg;
+    std::string error_msg{};
 
     void write_u8(uint8_t v) {
         buf.push_back(v);

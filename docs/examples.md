@@ -163,7 +163,7 @@ Core language features: values, expressions, bindings, and data structures.
   (+ a b))                ; => 30
 
 (let* ((a 1) (b (+ a 1)) (c (+ a b)))
-  c)                      ; => 4
+  c)                      ; => 3
 
 ;; Pairs & lists
 (cons 1 2)                ; => (1 . 2)

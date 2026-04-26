@@ -113,6 +113,25 @@ cmake --build "$BUILD_DIR" -j"$JOBS"
 echo "▸ [3/6] Installing to ${PREFIX}..."
 cmake --install "$BUILD_DIR"
 
+# Verify required runtime binaries are present in the bundle.
+echo "  Verifying runtime binaries..."
+for bin in etac etai eta_repl eta_lsp eta_dap eta_jupyter; do
+    p="${PREFIX}/bin/${bin}"
+    if [ ! -x "$p" ]; then
+        echo "error: missing required binary: ${p}" >&2
+        exit 1
+    fi
+done
+
+# Keep Jupyter kernelspec logos next to eta_jupyter so `eta_jupyter --install`
+# can copy them on target machines (without source-tree paths).
+JUPYTER_RES_SRC="${PROJECT_ROOT}/eta/jupyter/resources"
+if [ -d "$JUPYTER_RES_SRC" ]; then
+    mkdir -p "${PREFIX}/bin/resources"
+    cp -f "${JUPYTER_RES_SRC}/logo-32x32.png" "${PREFIX}/bin/resources/" 2>/dev/null || true
+    cp -f "${JUPYTER_RES_SRC}/logo-64x64.png" "${PREFIX}/bin/resources/" 2>/dev/null || true
+fi
+
 # ── 4. Build VS Code extension ───────────────────────────────────────
 VSCODE_SRC="${PROJECT_ROOT}/editors/vscode"
 EDITORS_DIR="${PREFIX}/editors"
@@ -191,4 +210,3 @@ echo "    tar xzf $(basename "$ARCHIVE_PATH")"
 echo "    cd ${BUNDLE_NAME}"
 echo "    ./install.sh"
 echo "════════════════════════════════════════════════════════════════"
-

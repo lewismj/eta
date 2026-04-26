@@ -129,7 +129,7 @@ public:
      * @param str The string to write.
      * @return An error if the write failed.
      */
-    virtual std::expected<void, error::RuntimeError> write_string(const std::string& str) {
+    virtual std::expected<void, error::RuntimeError> write_string(const std::string& /*str*/) {
         return std::unexpected(error::RuntimeError{
             error::VMError{error::RuntimeErrorCode::TypeError, "Port is not writable"}
         });

@@ -273,7 +273,9 @@ int main(int argc, char* argv[]) {
 
         if (ok) {
             prior_modules.push_back(eta::interpreter::PriorModule{
-                wrapped.module_name, wrapped.user_defines});
+                wrapped.module_name,
+                wrapped.user_defines,
+                wrapped.user_imports});
 
             /// Print the result unless it's the void/unspecified value (Nil)
             if (wrapped.last_is_expr && result != eta::runtime::nanbox::Nil) {

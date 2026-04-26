@@ -111,6 +111,11 @@ void VM::collect_garbage() {
             visit(cf.tag);
             visit(cf.closure);
         }
+        if (pending_exception_transfer_) {
+            visit(pending_exception_transfer_->closure);
+            visit(pending_exception_transfer_->payload);
+        }
+        for (auto thunk : pending_unwind_thunks_) visit(thunk);
         /**
          * Mark logic-variable trail (prevents live unbound vars from being swept
          * during an active unification / backtracking context)
@@ -257,6 +262,23 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
         roots.push_back({"Catch Stack", std::move(ids)});
     }
 
+    {
+        std::vector<ObjectId> ids;
+        if (pending_exception_transfer_) {
+            for (LispVal v : {pending_exception_transfer_->closure, pending_exception_transfer_->payload}) {
+                if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject) {
+                    ids.push_back(static_cast<ObjectId>(ops::payload(v)));
+                }
+            }
+        }
+        for (LispVal v : pending_unwind_thunks_) {
+            if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject) {
+                ids.push_back(static_cast<ObjectId>(ops::payload(v)));
+            }
+        }
+        if (!ids.empty()) roots.push_back({"Exception Transfer", std::move(ids)});
+    }
+
     roots.push_back({"Trail Stack", [&]() {
         std::vector<ObjectId> ids;
         ids.reserve(trail_stack_.size());
@@ -304,6 +326,7 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
 }
 
 std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
+    clear_exception_transfer();
     /**
      * Push a sentinel frame to mark the bottom of this execution call.
      * This prevents CallCC from capturing frames above the point where execute() was called.
@@ -1302,6 +1325,11 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
         }
     }
 
+    if (return_frame.kind == FrameKind::ExceptionUnwind) {
+        /// Returned from a dynamic-wind unwind thunk; result is discarded.
+        return resume_exception_transfer();
+    }
+
     if (return_frame.kind == FrameKind::CallWithValuesConsumer) {
         LispVal consumer = return_frame.extra;
         uint32_t old_size = static_cast<uint32_t>(stack_.size());
@@ -2044,26 +2072,7 @@ std::expected<void, RuntimeError> VM::do_runtime_error(const RuntimeError& err, 
 
         auto payload = build_runtime_error_payload(err, *specific_tag, span);
         if (!payload) return std::unexpected(err);
-
-        /// Pop all catch frames from this one upward.
-        catch_stack_.resize(static_cast<std::size_t>(i));
-
-        /// Restore VM frame state.
-        frames_.resize(cf.frame_count);
-        winding_stack_.resize(cf.wind_count);
-        active_tapes_.resize(cf.tape_count);
-
-        /// Restore stack to the saved top, then push the caught payload.
-        stack_.resize(cf.stack_top);
-        push(*payload);
-
-        /// Restore execution context to the function containing SetupCatch.
-        current_func_    = cf.func;
-        fp_              = cf.fp;
-        current_closure_ = cf.closure;
-        pc_              = cf.handler_pc;
-
-        return {};
+        return begin_exception_transfer(cf, *payload, static_cast<std::size_t>(i));
     }
 
     if (debug_) debug_->notify_exception(runtime_error_message(err), span);
@@ -2082,25 +2091,7 @@ std::expected<void, RuntimeError> VM::do_throw(LispVal tag, LispVal value,
         /// Match if tags are equal (same symbol) OR the catch frame is a catch-all (Nil tag).
         bool matches = (cf.tag == Nil) || values_eqv(cf.tag, tag);
         if (matches) {
-            /// Pop all catch frames from this one upward.
-            catch_stack_.resize(static_cast<std::size_t>(i));
-
-            /// Restore VM frame state.
-            frames_.resize(cf.frame_count);
-            winding_stack_.resize(cf.wind_count);
-            active_tapes_.resize(cf.tape_count);
-
-            /// Restore stack to the saved top, then push the caught value.
-            stack_.resize(cf.stack_top);
-            push(value);
-
-            /// Restore execution context to the function containing SetupCatch.
-            current_func_    = cf.func;
-            fp_              = cf.fp;
-            current_closure_ = cf.closure;
-            pc_              = cf.handler_pc;
-
-            return {};
+            return begin_exception_transfer(cf, value, static_cast<std::size_t>(i));
         }
     }
 
@@ -2114,6 +2105,110 @@ std::expected<void, RuntimeError> VM::do_throw(LispVal tag, LispVal value,
     if (debug_) debug_->notify_exception(msg, span);
 
     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UserThrow, msg}});
+}
+
+void VM::clear_exception_transfer() noexcept {
+    pending_exception_transfer_.reset();
+    pending_unwind_thunks_.clear();
+    pending_unwind_index_ = 0;
+}
+
+std::expected<void, RuntimeError> VM::resume_exception_transfer() {
+    if (!pending_exception_transfer_) {
+        return std::unexpected(RuntimeError{
+            VMError{RuntimeErrorCode::InternalError, "missing pending exception transfer"}});
+    }
+
+    while (pending_unwind_index_ < pending_unwind_thunks_.size()) {
+        LispVal thunk = pending_unwind_thunks_[pending_unwind_index_++];
+        auto dispatch = dispatch_callee(thunk, 0, false);
+        if (!dispatch) {
+            clear_exception_transfer();
+            return std::unexpected(dispatch.error());
+        }
+
+        if (dispatch->action == DispatchAction::SetupFrame) {
+            setup_frame(dispatch->func, dispatch->closure, 0, FrameKind::ExceptionUnwind);
+            return {};
+        }
+
+        if (dispatch->action == DispatchAction::NonLocalTransfer) {
+            /**
+             * An unwind thunk performed its own non-local transfer (e.g. raise).
+             * The original transfer is abandoned.
+             */
+            clear_exception_transfer();
+            return {};
+        }
+
+        /// Primitive thunk path: ignore result and continue to next thunk.
+        if (!stack_.empty()) pop();
+    }
+
+    const auto state = *pending_exception_transfer_;
+    clear_exception_transfer();
+
+    /// Restore VM frame state to the matching catch handler.
+    frames_.resize(state.frame_count);
+    winding_stack_.resize(state.wind_count);
+    active_tapes_.resize(state.tape_count);
+
+    /// Restore stack to the saved top, then push the caught payload.
+    stack_.resize(state.stack_top);
+    push(state.payload);
+
+    /// Restore execution context to the function containing SetupCatch.
+    current_func_    = state.func;
+    fp_              = state.fp;
+    current_closure_ = state.closure;
+    pc_              = state.handler_pc;
+    return {};
+}
+
+std::expected<void, RuntimeError> VM::begin_exception_transfer(const CatchFrame& cf,
+                                                               LispVal payload,
+                                                               std::size_t matched_catch_index) {
+    /// Pop all catch frames from this one upward.
+    catch_stack_.resize(matched_catch_index);
+
+    if (winding_stack_.size() <= cf.wind_count) {
+        /// Fast path: no dynamic-wind frames to exit.
+        frames_.resize(cf.frame_count);
+        winding_stack_.resize(cf.wind_count);
+        active_tapes_.resize(cf.tape_count);
+
+        stack_.resize(cf.stack_top);
+        push(payload);
+
+        current_func_    = cf.func;
+        fp_              = cf.fp;
+        current_closure_ = cf.closure;
+        pc_              = cf.handler_pc;
+        return {};
+    }
+
+    pending_exception_transfer_ = PendingExceptionTransfer{
+        .func = cf.func,
+        .handler_pc = cf.handler_pc,
+        .fp = cf.fp,
+        .closure = cf.closure,
+        .frame_count = cf.frame_count,
+        .stack_top = cf.stack_top,
+        .wind_count = cf.wind_count,
+        .tape_count = cf.tape_count,
+        .payload = payload,
+    };
+
+    pending_unwind_thunks_.clear();
+    pending_unwind_thunks_.reserve(winding_stack_.size() - cf.wind_count);
+    for (int32_t idx = static_cast<int32_t>(winding_stack_.size()) - 1;
+         idx >= static_cast<int32_t>(cf.wind_count);
+         --idx) {
+        pending_unwind_thunks_.push_back(winding_stack_[static_cast<std::size_t>(idx)].after);
+    }
+    pending_unwind_index_ = 0;
+
+    return resume_exception_transfer();
 }
 
 /**

@@ -1,8 +1,8 @@
 # ──────────────────────────────────────────────────────────────────────────
 # FetchLibtorch.cmake — Auto-download pre-built libtorch if not found
 #
-# Called by eta/CMakeLists.txt when ETA_BUILD_TORCH is ON but
-# find_package(Torch) failed. Downloads the official pre-built archive
+# Called by eta/CMakeLists.txt when find_package(Torch) failed.
+# Downloads the official pre-built archive
 # from https://download.pytorch.org and sets Torch_DIR so a subsequent
 # find_package(Torch) succeeds.
 #

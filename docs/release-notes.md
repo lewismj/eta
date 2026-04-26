@@ -39,5 +39,5 @@ BUILD_DIR=./out/wsl-clang-release GATE=1 ./scripts/qp-benchmark.sh
 
 ### Backend Default
 
-- `ETA_CLP_QP_BACKEND` remains enabled by default (`ON`) in
+- `ETA_CLP_QP_BACKEND` is now compiled in unconditionally in
   `eta/core/CMakeLists.txt`.

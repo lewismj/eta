@@ -102,7 +102,7 @@
 
     ;; d₁ = [ln(S/K) + (r + σ²/2)·T] / (σ·√T)
     (defun bs-d1 (S K r sigma T)
-      (/ (+ (log (/ S 3))
+      (/ (+ (log (/ S K))
           (* (+ r (/ (* sigma sigma) 2)) T))
         (* sigma (sqrt T))))
 
@@ -287,7 +287,7 @@
     (display (if win "\n\n-- Tape-Based AD Architecture --\n\n"
         "\n\n── Tape-Based AD Architecture ──────────────────────\n\n"))
     (display "  The tape (Wengert list) records ~32 bytes per operation.\n")
-    (display "  No closures allocated — recording happens at the C++ level.\n")
+    (display "  No closures allocated, recording happens at the C++ level.\n")
     (display "  The backward sweep accumulates adjoints in a single pass.\n\n")
     (display "  For this BS pricing example:\n")
     (display "    - ~30 elementary operations recorded per evaluation\n")

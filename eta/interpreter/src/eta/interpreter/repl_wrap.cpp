@@ -1,29 +1,204 @@
 #include "eta/interpreter/repl_wrap.h"
 
 #include <cctype>
-#include <cstring>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
 namespace eta::interpreter {
 
+namespace {
+
+static void skip_ws_and_comments(std::string_view input, std::size_t& pos) {
+    while (pos < input.size()) {
+        const char c = input[pos];
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            ++pos;
+            continue;
+        }
+        if (c == ';') {
+            while (pos < input.size() && input[pos] != '\n') ++pos;
+            continue;
+        }
+        break;
+    }
+}
+
+static std::string read_symbol(std::string_view input, std::size_t& pos) {
+    skip_ws_and_comments(input, pos);
+    if (pos >= input.size()) return {};
+
+    const char c = input[pos];
+    if (c == '(' || c == ')' || c == '"' || c == ';') return {};
+
+    const std::size_t start = pos;
+    while (pos < input.size()) {
+        const char ch = input[pos];
+        if (std::isspace(static_cast<unsigned char>(ch)) || ch == '(' || ch == ')' || ch == ';') {
+            break;
+        }
+        ++pos;
+    }
+    return std::string(input.substr(start, pos - start));
+}
+
+/// Skip a balanced list where `pos` points at '('.
+static void skip_list(std::string_view input, std::size_t& pos) {
+    if (pos >= input.size() || input[pos] != '(') return;
+
+    int depth = 0;
+    bool in_string = false;
+    bool escape = false;
+
+    while (pos < input.size()) {
+        const char c = input[pos++];
+        if (in_string) {
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (c == '\\') {
+                escape = true;
+                continue;
+            }
+            if (c == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if (c == '"') {
+            in_string = true;
+            continue;
+        }
+
+        if (c == ';') {
+            while (pos < input.size() && input[pos] != '\n') ++pos;
+            continue;
+        }
+
+        if (c == '(') {
+            ++depth;
+            continue;
+        }
+        if (c == ')') {
+            --depth;
+            if (depth == 0) return;
+        }
+    }
+}
+
+static std::string form_head(const std::string& input) {
+    std::size_t pos = 0;
+    skip_ws_and_comments(input, pos);
+    if (pos >= input.size() || input[pos] != '(') return {};
+    ++pos;
+    return read_symbol(input, pos);
+}
+
 /// Detect whether a (trimmed) input line starts with a definition form.
 static bool is_definition(const std::string& input) {
-    auto pos = input.find_first_not_of(" \t\n\r");
-    if (pos == std::string::npos || input[pos] != '(') return false;
-    pos++; ///< Skip '('.
-    pos = input.find_first_not_of(" \t\n\r", pos);
-    if (pos == std::string::npos) return false;
+    const auto head = form_head(input);
+    return head == "define" ||
+           head == "def" ||
+           head == "defun" ||
+           head == "define-syntax" ||
+           head == "define-record-type";
+}
 
-    for (const char* kw : {"define ", "define\t", "define\n",
-                           "defun ", "defun\t", "defun\n",
-                           "def ", "def\t", "def\n",
-                           "define-syntax ", "define-syntax\t", "define-syntax\n"}) {
-        std::string_view rest(input.data() + pos, input.size() - pos);
-        if (rest.starts_with(kw)) return true;
+static void push_unique(std::vector<std::string>& out,
+                        std::unordered_set<std::string>& seen,
+                        std::string name) {
+    if (name.empty()) return;
+    if (seen.insert(name).second) {
+        out.push_back(std::move(name));
     }
-    return false;
+}
+
+/**
+ * Extract names introduced by top-level definition forms.
+ *
+ * For `define-record-type`, this returns constructor/predicate/accessor/mutator
+ * names so they can be exported from synthesized REPL modules.
+ */
+static std::vector<std::string> extract_defined_names(const std::string& input) {
+    std::vector<std::string> out;
+    std::unordered_set<std::string> seen;
+
+    std::size_t pos = 0;
+    skip_ws_and_comments(input, pos);
+    if (pos >= input.size() || input[pos] != '(') return out;
+    ++pos;
+
+    const auto head = read_symbol(input, pos);
+    if (head.empty()) return out;
+
+    if (head == "define" || head == "def") {
+        skip_ws_and_comments(input, pos);
+        if (pos < input.size() && input[pos] == '(') {
+            ++pos;
+            push_unique(out, seen, read_symbol(input, pos));
+        } else {
+            push_unique(out, seen, read_symbol(input, pos));
+        }
+        return out;
+    }
+
+    if (head == "defun" || head == "define-syntax") {
+        push_unique(out, seen, read_symbol(input, pos));
+        return out;
+    }
+
+    if (head == "define-record-type") {
+        /// Type name (ignored): `(define-record-type <type> ...)`.
+        (void)read_symbol(input, pos);
+
+        /// Constructor spec: `(<ctor> field...)`.
+        skip_ws_and_comments(input, pos);
+        if (pos < input.size() && input[pos] == '(') {
+            ++pos;
+            push_unique(out, seen, read_symbol(input, pos));
+            while (pos < input.size() && input[pos] != ')') {
+                if (input[pos] == '(') {
+                    skip_list(input, pos);
+                } else {
+                    ++pos;
+                }
+            }
+            if (pos < input.size() && input[pos] == ')') ++pos;
+        }
+
+        /// Predicate symbol.
+        push_unique(out, seen, read_symbol(input, pos));
+
+        /// Field specs: `(field accessor)` or `(field accessor mutator)`.
+        while (true) {
+            skip_ws_and_comments(input, pos);
+            if (pos >= input.size() || input[pos] == ')') break;
+
+            if (input[pos] != '(') {
+                ++pos;
+                continue;
+            }
+
+            ++pos; ///< Skip '(' of field spec.
+            (void)read_symbol(input, pos); ///< field name (not a definition)
+            push_unique(out, seen, read_symbol(input, pos)); ///< accessor
+            push_unique(out, seen, read_symbol(input, pos)); ///< optional mutator
+
+            while (pos < input.size() && input[pos] != ')') {
+                if (input[pos] == '(') {
+                    skip_list(input, pos);
+                } else {
+                    ++pos;
+                }
+            }
+            if (pos < input.size() && input[pos] == ')') ++pos;
+        }
+    }
+
+    return out;
 }
 
 /// Detect whether a form is an `(import ...)` directive.
@@ -41,42 +216,7 @@ static bool is_import(const std::string& input) {
     return false;
 }
 
-/**
- * Extract the defined name from a `(define name ...)` or `(defun name ...)`
- * form. Returns an empty string for non-definition forms.
- */
-static std::string extract_define_name(const std::string& input) {
-    auto pos = input.find_first_not_of(" \t\n\r");
-    if (pos == std::string::npos || input[pos] != '(') return {};
-    pos++;
-    pos = input.find_first_not_of(" \t\n\r", pos);
-    if (pos == std::string::npos) return {};
-
-    std::string_view rest(input.data() + pos, input.size() - pos);
-    for (const char* kw : {"define", "defun", "def"}) {
-        if (rest.starts_with(kw)) {
-            pos += std::strlen(kw);
-            break;
-        }
-    }
-
-    pos = input.find_first_not_of(" \t\n\r", pos);
-    if (pos == std::string::npos) return {};
-
-    /// The name might be a function shorthand form: `(f x y)`.
-    if (input[pos] == '(') {
-        pos++;
-        pos = input.find_first_not_of(" \t\n\r", pos);
-        if (pos == std::string::npos) return {};
-    }
-
-    auto end = pos;
-    while (end < input.size() && !std::isspace(static_cast<unsigned char>(input[end]))
-           && input[end] != ')' && input[end] != '(') {
-        ++end;
-    }
-    return input.substr(pos, end - pos);
-}
+} ///< namespace
 
 ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
                                     int repl_id,
@@ -89,15 +229,17 @@ ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
     if (forms.empty()) return result;
 
     std::string body;
-    std::string user_imports; ///< Explicit user import forms.
+    std::string user_imports_text; ///< Explicit user import forms from this submission.
 
     for (std::size_t i = 0; i < forms.size(); ++i) {
         const bool is_last = (i == forms.size() - 1);
         if (is_import(forms[i])) {
-            user_imports += "  " + forms[i] + "\n";
+            result.user_imports.push_back(forms[i]);
+            user_imports_text += "  " + forms[i] + "\n";
         } else if (is_definition(forms[i])) {
-            auto name = extract_define_name(forms[i]);
-            if (!name.empty()) result.user_defines.push_back(name);
+            auto names = extract_defined_names(forms[i]);
+            result.user_defines.insert(
+                result.user_defines.end(), names.begin(), names.end());
             body += "    " + forms[i] + "\n";
         } else if (is_last) {
             body += "    (define " + result.result_name + " " + forms[i] + ")\n";
@@ -114,6 +256,19 @@ ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
     std::string imports;
     if (prelude_available) {
         imports += "  (import std.prelude)\n";
+    }
+
+    /**
+     * Replay historical explicit imports so imported names survive across
+     * REPL/Jupyter submissions, even when a later cell only references them.
+     */
+    std::unordered_set<std::string> replay_seen;
+    for (const auto& prior : prior_modules) {
+        for (const auto& import_form : prior.imports) {
+            if (import_form.empty()) continue;
+            if (!replay_seen.insert(import_form).second) continue;
+            imports += "  " + import_form + "\n";
+        }
     }
 
     std::unordered_set<std::string> shadowed(result.user_defines.begin(), result.user_defines.end());
@@ -152,7 +307,7 @@ ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
     result.source = "(module " + result.module_name + "\n"
                     + exports
                     + imports
-                    + user_imports
+                    + user_imports_text
                     + "  (begin\n"
                     + body
                     + "  ))";
@@ -160,4 +315,3 @@ ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
 }
 
 } ///< namespace eta::interpreter
-

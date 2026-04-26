@@ -127,7 +127,7 @@ struct Diagnostic {
         Span span;
         std::string label;
     };
-    std::vector<RelatedSpan> related;
+    std::vector<RelatedSpan> related{};
 
     /// Builder methods for fluent construction
     Diagnostic& with_severity(Severity s) { severity = s; return *this; }

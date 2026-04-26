@@ -143,6 +143,29 @@ Write-Host "> [3/6] Installing to $Prefix..."
 & cmake --install $BuildDir --config Release
 if ($LASTEXITCODE -ne 0) { throw "CMake install failed" }
 
+# Verify required runtime binaries are present in the bundle.
+Write-Host "  Verifying runtime binaries..."
+foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe", "eta_jupyter.exe")) {
+    $p = Join-Path $Prefix "bin\$bin"
+    if (-not (Test-Path $p)) {
+        throw "Missing required binary after install: $p"
+    }
+}
+
+# Keep Jupyter kernelspec logos next to eta_jupyter so `eta_jupyter --install`
+# can copy them on target machines (without source-tree paths).
+$JupyterResSrc = Join-Path $ProjectRoot "eta\jupyter\resources"
+if (Test-Path $JupyterResSrc) {
+    $JupyterResDest = Join-Path $Prefix "bin\resources"
+    New-Item -ItemType Directory -Force -Path $JupyterResDest | Out-Null
+    foreach ($logo in @("logo-32x32.png", "logo-64x64.png")) {
+        $src = Join-Path $JupyterResSrc $logo
+        if (Test-Path $src) {
+            Copy-Item -Force $src (Join-Path $JupyterResDest $logo)
+        }
+    }
+}
+
 # -- 4. Build VS Code extension ------------------------------------------------
 # @vscode/vsce requires Node >=20.18.1 (via cheerio/undici transitive deps).
 $NodeExe = Get-Command node -ErrorAction SilentlyContinue

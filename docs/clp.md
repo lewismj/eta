@@ -226,12 +226,11 @@ Representative user-error tags:
 - `clp.r.qp.numeric-failure`
 - `clp.r.qp.backend-unavailable`
 
-### QP Backend Flag
+### QP Backend Availability
 
-`ETA_CLP_QP_BACKEND` controls the runtime QP backend and is enabled by default:
+`ETA_CLP_QP_BACKEND` is compiled in as part of the required core runtime:
 
-- CMake option: `option(ETA_CLP_QP_BACKEND ... ON)`
-- when disabled, quadratic objectives return `clp.r.qp.backend-unavailable`
+- convex quadratic objectives are supported when PSD/NSD checks pass
 - linear optimization (`clp:r-minimize`/`clp:r-maximize`) is unaffected
 
 ### Backend Notes
@@ -240,7 +239,7 @@ Representative user-error tags:
 - Non-linear terms (`var * var`) are rejected in linear optimization paths.
 - CLP(R) posting uses a simplex backend (`clp/simplex.*`).
 - Convex QP optimization uses the active-set backend (`clp/qp_solver.*`).
-- Optional FM cross-checks can be enabled with `ETA_CLP_FM_ORACLE`.
+- FM-vs-Simplex oracle cross-checks are disabled in the default build.
 
 ---
 

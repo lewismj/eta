@@ -61,6 +61,7 @@ enum class FrameKind : uint8_t {
     DynamicWindBody,
     DynamicWindAfter,
     DynamicWindCleanup,
+    ExceptionUnwind,
     Sentinel,
     ContinuationJump,
 };
@@ -131,6 +132,19 @@ struct CatchFrame {
     uint32_t                    stack_top;    ///< stack_.size() before pushing caught value
     std::size_t                 wind_count;   ///< winding_stack_.size() to restore to
     std::size_t                 tape_count;   ///< active_tapes_.size() to restore to
+};
+
+/// Deferred state for entering a catch handler after dynamic-wind unwind.
+struct PendingExceptionTransfer {
+    const BytecodeFunction* func{nullptr};
+    uint32_t                handler_pc{0};
+    uint32_t                fp{0};
+    LispVal                 closure{nanbox::Nil};
+    std::size_t             frame_count{0};
+    uint32_t                stack_top{0};
+    std::size_t             wind_count{0};
+    std::size_t             tape_count{0};
+    LispVal                 payload{nanbox::Nil};
 };
 
 /// Result of dispatch_callee helper
@@ -416,6 +430,9 @@ private:
     std::vector<WindFrame> winding_stack_;
     std::vector<LispVal> temp_roots_;
     std::vector<CatchFrame> catch_stack_;  ///< live exception handlers
+    std::optional<PendingExceptionTransfer> pending_exception_transfer_;
+    std::vector<LispVal> pending_unwind_thunks_;
+    std::size_t pending_unwind_index_{0};
     std::vector<TrailEntry> trail_stack_;  ///< logic-var / CLP attribute trail for backtracking
     clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
     clp::RealStore real_store_;             ///< CLP(R) posted constraint log
@@ -585,6 +602,11 @@ private:
      */
     std::expected<void, RuntimeError> do_throw(LispVal tag, LispVal value,
                                                 reader::lexer::Span span);
+    std::expected<void, RuntimeError> begin_exception_transfer(const CatchFrame& cf,
+                                                               LispVal payload,
+                                                               std::size_t matched_catch_index);
+    std::expected<void, RuntimeError> resume_exception_transfer();
+    void clear_exception_transfer() noexcept;
 
     /**
      * Unification helpers

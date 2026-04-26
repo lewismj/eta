@@ -91,6 +91,16 @@ jobs:
         run: |
           PREFIX=${{ github.workspace }}/dist/${{ env.BUNDLE }}
 
+          # Ensure required binaries are present.
+          for bin in etac etai eta_repl eta_lsp eta_dap eta_jupyter; do
+            test -x "$PREFIX/bin/$bin"
+          done
+
+          # Keep kernel logos next to eta_jupyter for runtime --install.
+          mkdir -p "$PREFIX/bin/resources"
+          cp eta/jupyter/resources/logo-32x32.png "$PREFIX/bin/resources/" || true
+          cp eta/jupyter/resources/logo-64x64.png "$PREFIX/bin/resources/" || true
+
           mkdir -p "$PREFIX/editors"
           cp "editors/vscode/eta-lang-${{ env.VSIX_LABEL }}.vsix" "$PREFIX/editors/"
 
@@ -179,6 +189,18 @@ jobs:
         shell: pwsh
         run: |
           $prefix = "${{ github.workspace }}\dist\${{ env.BUNDLE }}"
+
+          # Ensure required binaries are present.
+          foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe", "eta_jupyter.exe")) {
+            $path = Join-Path $prefix "bin\$bin"
+            if (-not (Test-Path $path)) { throw "Missing required binary: $path" }
+          }
+
+          # Keep kernel logos next to eta_jupyter for runtime --install.
+          $resDest = Join-Path $prefix "bin\resources"
+          New-Item -ItemType Directory -Force $resDest | Out-Null
+          Copy-Item "eta\jupyter\resources\logo-32x32.png" $resDest -ErrorAction SilentlyContinue
+          Copy-Item "eta\jupyter\resources\logo-64x64.png" $resDest -ErrorAction SilentlyContinue
 
           New-Item -ItemType Directory -Force "$prefix\editors" | Out-Null
           Copy-Item "editors\vscode\eta-lang-${{ env.VSIX_LABEL }}.vsix" "$prefix\editors\"

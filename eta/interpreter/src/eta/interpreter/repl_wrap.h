@@ -10,7 +10,8 @@ namespace eta::interpreter {
  */
 struct PriorModule {
     std::string name;                  ///< Synthesized module name (e.g. "__repl_14")
-    std::vector<std::string> exports;  ///< User-defined names exported by this module
+    std::vector<std::string> exports;  ///< Live user-defined names exported by this module
+    std::vector<std::string> imports;  ///< Explicit `(import ...)` forms submitted in this module
 };
 
 /**
@@ -21,6 +22,7 @@ struct ReplWrapResult {
     std::string module_name;           ///< Synthesized module name (e.g. "__repl_15")
     std::string result_name;           ///< Result binding name, or empty if no final expression
     std::vector<std::string> user_defines;
+    std::vector<std::string> user_imports;
     bool last_is_expr{false};
 };
 
@@ -38,4 +40,3 @@ ReplWrapResult wrap_repl_submission(
     const std::vector<PriorModule>& prior_modules);
 
 } ///< namespace eta::interpreter
-

@@ -22,6 +22,7 @@
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/builtin_names.h"
+#include "eta/interpreter/repl_complete.h"
 
 namespace eta::lsp {
 
@@ -1482,31 +1483,39 @@ Range LspServer::span_to_range(uint32_t start_line, uint32_t start_col,
 
 std::string LspServer::word_at_position(const std::string& text,
                                          int64_t line, int64_t character) {
-    std::istringstream iss(text);
-    std::string current_line;
-    for (int64_t i = 0; i <= line; ++i) {
-        if (!std::getline(iss, current_line)) return {};
+    if (line < 0 || character < 0) return {};
+
+    std::size_t offset = 0;
+    int64_t current_line = 0;
+    while (current_line < line) {
+        const auto nl = text.find('\n', offset);
+        if (nl == std::string::npos) return {};
+        offset = nl + 1;
+        ++current_line;
     }
 
-    if (character < 0 || character >= static_cast<int64_t>(current_line.size()))
+    const auto line_end = text.find('\n', offset);
+    const std::size_t line_len = (line_end == std::string::npos)
+        ? (text.size() - offset)
+        : (line_end - offset);
+
+    if (static_cast<std::size_t>(character) > line_len) return {};
+    offset += static_cast<std::size_t>(character);
+
+    const bool at_line_end = static_cast<std::size_t>(character) == line_len;
+    const bool on_symbol =
+        (offset < text.size()) && interpreter::repl_complete::is_symbol_char(text[offset]);
+    const bool left_symbol =
+        (offset > 0) && interpreter::repl_complete::is_symbol_char(text[offset - 1]);
+    const bool on_space =
+        (offset < text.size()) &&
+        std::isspace(static_cast<unsigned char>(text[offset]));
+    if (!on_symbol && !(left_symbol && (at_line_end || !on_space))) {
         return {};
+    }
 
-    auto is_sym_char = [](char c) -> bool {
-        if (c <= ' ') return false;
-        if (c == '(' || c == ')' || c == '[' || c == ']' ||
-            c == '"' || c == ';' || c == '#') return false;
-        return true;
-    };
-
-    auto col = static_cast<std::size_t>(character);
-    if (!is_sym_char(current_line[col])) return {};
-
-    std::size_t start = col;
-    while (start > 0 && is_sym_char(current_line[start - 1])) --start;
-    std::size_t end = col;
-    while (end < current_line.size() && is_sym_char(current_line[end])) ++end;
-
-    return current_line.substr(start, end - start);
+    const auto tok = interpreter::repl_complete::token_at(text, offset);
+    return tok.text;
 }
 
 /**

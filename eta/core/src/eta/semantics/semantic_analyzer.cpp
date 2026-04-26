@@ -52,7 +52,13 @@ struct AnalysisContext {
                                        Span span, uint32_t global_slot) {
         core::BindingId id = next_id();
         scope.table[name] = id;
-        mod.bindings.push_back(BindingInfo{BindingInfo::Kind::Import, name, false,
+        /**
+         * REPL/Jupyter submissions are wrapped as synthetic modules (__repl_N).
+         * To preserve interactive semantics, names imported from prior REPL
+         * modules must remain assignable via set! across submissions.
+         */
+        const bool mutable_import = origin.from_module.rfind("__repl_", 0) == 0;
+        mod.bindings.push_back(BindingInfo{BindingInfo::Kind::Import, name, mutable_import,
                                            static_cast<std::uint16_t>(global_slot), span, origin});
         return id;
     }
