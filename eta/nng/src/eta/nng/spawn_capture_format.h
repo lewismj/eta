@@ -91,10 +91,10 @@ struct SpawnCaptureWriter {
     SpawnClosureFuncIndexFn closure_func_index;
     SpawnGlobalRefSlotFn global_ref_slot;
 
-    std::unordered_map<ObjectId, uint32_t> closure_ids;
-    std::vector<ClosureNode> closures;
-    std::unordered_set<ObjectId> active_containers;
-    std::string error_msg;
+    std::unordered_map<ObjectId, uint32_t> closure_ids{};
+    std::vector<ClosureNode> closures{};
+    std::unordered_set<ObjectId> active_containers{};
+    std::string error_msg{};
 
     static void write_u8(std::vector<uint8_t>& out, uint8_t v) {
         out.push_back(v);
@@ -270,8 +270,8 @@ struct SpawnCaptureReader {
     SpawnResolveFuncFn resolve_func;
     SpawnResolveGlobalFn resolve_global;
 
-    std::vector<LispVal> closures;
-    std::vector<uint32_t> closure_upval_counts;
+    std::vector<LispVal> closures{};
+    std::vector<uint32_t> closure_upval_counts{};
 
     static std::unexpected<RuntimeError> err(std::string msg) {
         return std::unexpected(RuntimeError{VMError{

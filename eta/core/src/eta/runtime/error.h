@@ -38,8 +38,8 @@ namespace eta::runtime::error {
     struct VMError {
         RuntimeErrorCode code;
         std::string message;
-        std::string tag_override;
-        std::vector<VMErrorField> fields;
+        std::string tag_override{};
+        std::vector<VMErrorField> fields{};
     };
 
     //! Internal runtime error, the Compiler/VM can add Span information.

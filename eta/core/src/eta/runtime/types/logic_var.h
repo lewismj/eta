@@ -28,7 +28,7 @@ namespace eta::runtime::types {
         std::optional<LispVal>                            binding;
         std::string                                       name;
         std::unordered_map<memory::intern::InternId,
-                           LispVal>                       attrs;
+                           LispVal>                       attrs{};
     };
 
 }
