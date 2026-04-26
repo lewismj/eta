@@ -207,6 +207,18 @@ BOOST_AUTO_TEST_CASE(eval_to_display_tags_jupyter_wrapper_values) {
     BOOST_TEST(static_cast<int>(vega.tag) == static_cast<int>(eta::session::DisplayTag::VegaLite));
 }
 
+BOOST_AUTO_TEST_CASE(eval_to_display_persists_imports_between_calls) {
+    eta::session::Driver driver(make_resolver());
+    require_prelude(driver);
+
+    const auto first = driver.eval_to_display("(import (only std.aad grad))");
+    BOOST_TEST(static_cast<int>(first.tag) != static_cast<int>(eta::session::DisplayTag::Error));
+
+    const auto second = driver.eval_to_display(
+        "(grad (lambda (x y) (+ (* x y) (sin x))) '(2 3))");
+    BOOST_TEST(static_cast<int>(second.tag) != static_cast<int>(eta::session::DisplayTag::Error));
+}
+
 BOOST_AUTO_TEST_CASE(set_stream_sinks_routes_stdout_and_stderr) {
     eta::session::Driver driver(make_resolver());
     require_prelude(driver);

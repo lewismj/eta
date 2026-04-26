@@ -31,6 +31,7 @@
     ;; f    — a function of N arguments (receives tape-ref values)
     ;; vals — a list of N numeric input values
     ;; Returns: (primal-value gradient-vector)
+    ;; grad has moved to std.aad, but we keep this here for demonstration purposes.
     (defun grad (f vals)
       (let ((tape (tape-new))
             (n    (length vals)))
