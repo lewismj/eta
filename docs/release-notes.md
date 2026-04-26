@@ -4,6 +4,51 @@
 
 ---
 
+## 2026-04-26
+
+### Jupyter Kernel (`eta_jupyter`)
+
+A native xeus-based Jupyter kernel now ships alongside the existing
+executables. The kernel embeds the same `Driver` used by `etai` and
+`eta_repl`, so notebook cells share the language semantics — modules,
+macros, AAD, libtorch, CLP, causal, actors — with no FFI hop.
+
+**Highlights:**
+
+- New executable `eta_jupyter` built from `eta/jupyter/` against
+  `xeus` + `xeus-zmq` (vendored via `cmake/FetchXeus.cmake`); listed in
+  the standard `eta_all` target.
+- Runtime kernelspec installation:
+
+  ```powershell
+  eta_jupyter --install --user
+  eta_jupyter --install --sys-prefix
+  eta_jupyter --install --prefix <path>
+  ```
+
+- Rich display MIME bundles (with `text/plain` fallback) for tensors,
+  fact tables, and heap snapshots:
+  `application/vnd.eta.tensor+json`,
+  `application/vnd.eta.facttable+json`,
+  `application/vnd.eta.heap+json`.
+- `(import std.jupyter)` exposes `jupyter:table`, `jupyter:plot`, and
+  `jupyter:dag` rich-display helpers used by the showcase notebooks.
+- Three showcase notebooks under `examples/notebooks/`:
+  `LanguageBasics.ipynb`, `AAD.ipynb`, `Portfolio.ipynb`.
+- Docs: [docs/jupyter.md](jupyter.md).
+
+### Documentation
+
+- Top-level `README.md` re-pitched: notebook links surfaced under
+  Featured Examples, install / REPL / VS Code / build sections folded
+  into `<details>` blocks, duplicated directory trees moved to
+  `docs/quickstart.md` and `docs/build.md`, doc table trimmed to top
+  hits with the full index living in `docs/index.md`.
+- `docs/aad.md` and `docs/examples.md` link directly to their
+  notebook equivalents.
+
+---
+
 ## 2026-04-20
 
 ### CLP(R) Convex QP Stage 6 Rollout Gate

@@ -166,6 +166,12 @@ BOOST_AUTO_TEST_CASE(imported_names_survive_across_submissions) {
     BOOST_TEST(value != eta::runtime::nanbox::Nil);
 }
 
+BOOST_AUTO_TEST_CASE(explicit_core_import_after_prelude_is_allowed) {
+    ReplHarness repl;
+    repl.require_submit("(import std.core)");
+    BOOST_TEST(repl.eval_int("(identity 7)") == 7);
+}
+
 BOOST_AUTO_TEST_CASE(define_record_type_persists_across_submissions) {
     ReplHarness repl;
     repl.require_submit(

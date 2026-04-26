@@ -152,6 +152,7 @@ namespace eta::reader::linker {
             const std::unordered_map<std::string, std::vector<PendingImport>>& pending;
             std::unordered_map<std::string, State> states;
             std::vector<std::string> path;
+            std::vector<std::string> topo_order; ///< dependencies first (post-order DFS)
 
             LinkResult<void> visit(const std::string& name) {
                 auto& state = states[name];
@@ -177,126 +178,133 @@ namespace eta::reader::linker {
                 }
                 path.pop_back();
                 state = Visited;
+                topo_order.push_back(name);
                 return {};
             }
         };
     }
 
     LinkResult<void> ModuleLinker::link() {
-        CycleDetector detector{pending_, {}, {}};
+        CycleDetector detector{pending_, {}, {}, {}};
         for (const auto& [name, _] : modules_) {
             if (auto res = detector.visit(name); !res) return res;
         }
 
-        for (auto& [target_name, imports] : pending_) {
-            auto tIt = modules_.find(target_name); if (tIt == modules_.end()) continue; ///< defensive
+        /// Process modules in dependency order so re-export provenance is available.
+        for (const auto& target_name : detector.topo_order) {
+            auto tIt = modules_.find(target_name);
+            if (tIt == modules_.end()) continue; ///< can happen for unknown imported modules
             ModuleTable& tgt = tIt->second;
 
-            for (const auto& pi : imports) {
-                auto sIt = modules_.find(pi.spec.module);
-                if (sIt == modules_.end()) {
-                    return std::unexpected(LinkError{LinkError::Kind::UnknownModule, pi.where,
-                        std::string("unknown module in import: ") + pi.spec.module});
-                }
-                const ModuleTable& src = sIt->second;
-
-                /// Build map: local -> remote (start from all exports for this clause)
-                std::unordered_map<std::string, std::string> map; map.reserve(src.exports.size());
-                for (const auto& ex : src.exports) map.emplace(ex, ex);
-
-                auto ensure_exported = [&](const std::string& name, const char* ctx) -> LinkResult<void> {
-                    if (!src.exports.contains(name)) {
-                        std::ostringstream oss; oss << "import " << ctx << ": name '" << name << "' is not exported by module '" << src.name << "'";
-                        return std::unexpected(LinkError{LinkError::Kind::NameNotExported, pi.where, oss.str()});
+            if (auto pit = pending_.find(target_name); pit != pending_.end()) {
+                const auto& imports = pit->second;
+                for (const auto& pi : imports) {
+                    auto sIt = modules_.find(pi.spec.module);
+                    if (sIt == modules_.end()) {
+                        return std::unexpected(LinkError{LinkError::Kind::UnknownModule, pi.where,
+                            std::string("unknown module in import: ") + pi.spec.module});
                     }
-                    return {};
-                };
+                    const ModuleTable& src = sIt->second;
 
-                switch (pi.spec.kind) {
-                    case ImportSpec::Kind::Plain:
-                        /// keep full export set
-                        break;
-                    case ImportSpec::Kind::Only: {
-                        std::unordered_map<std::string, std::string> filtered; filtered.reserve(pi.spec.ids.size());
-                        for (const auto& id : pi.spec.ids) {
-                            if (auto ok = ensure_exported(id, "only"); !ok) return ok;
-                            filtered.emplace(id, id);
+                    /// Build map: local -> remote (start from all exports for this clause)
+                    std::unordered_map<std::string, std::string> map; map.reserve(src.exports.size());
+                    for (const auto& ex : src.exports) map.emplace(ex, ex);
+
+                    auto ensure_exported = [&](const std::string& name, const char* ctx) -> LinkResult<void> {
+                        if (!src.exports.contains(name)) {
+                            std::ostringstream oss; oss << "import " << ctx << ": name '" << name << "' is not exported by module '" << src.name << "'";
+                            return std::unexpected(LinkError{LinkError::Kind::NameNotExported, pi.where, oss.str()});
                         }
-                        map.swap(filtered);
-                        break;
-                    }
-                    case ImportSpec::Kind::Except: {
-                        for (const auto& id : pi.spec.ids) { map.erase(id); }
-                        break;
-                    }
-                    case ImportSpec::Kind::Rename: {
-                        /// Validate each old name is exported
-                        for (const auto& [oldn, newn] : pi.spec.renames) {
-                            (void)newn;
-                            if (auto ok = ensure_exported(oldn, "rename"); !ok) return ok;
-                        }
-                        /// Apply renames strictly to the current map (do not re-add filtered-out names)
-                        for (const auto& [oldn, newn] : pi.spec.renames) {
-                            auto it = map.find(oldn);
-                            if (it == map.end()) {
-                                std::ostringstream oss; oss << "rename: name '" << oldn << "' is not in the current import set";
-                                return std::unexpected(LinkError{LinkError::Kind::NameNotExported, pi.where, oss.str()});
+                        return {};
+                    };
+
+                    switch (pi.spec.kind) {
+                        case ImportSpec::Kind::Plain:
+                            /// keep full export set
+                            break;
+                        case ImportSpec::Kind::Only: {
+                            std::unordered_map<std::string, std::string> filtered; filtered.reserve(pi.spec.ids.size());
+                            for (const auto& id : pi.spec.ids) {
+                                if (auto ok = ensure_exported(id, "only"); !ok) return ok;
+                                filtered.emplace(id, id);
                             }
-                            auto remote = it->second; ///< remember remote source name
-                            map.erase(it);
-                            if (map.contains(newn)) {
-                                return std::unexpected(LinkError{LinkError::Kind::ConflictingImport, pi.where,
-                                    std::string("rename produces duplicate local name '") + newn + "'"});
+                            map.swap(filtered);
+                            break;
+                        }
+                        case ImportSpec::Kind::Except: {
+                            for (const auto& id : pi.spec.ids) { map.erase(id); }
+                            break;
+                        }
+                        case ImportSpec::Kind::Rename: {
+                            /// Validate each old name is exported
+                            for (const auto& [oldn, newn] : pi.spec.renames) {
+                                (void)newn;
+                                if (auto ok = ensure_exported(oldn, "rename"); !ok) return ok;
                             }
-                            map.emplace(newn, remote);
+                            /// Apply renames strictly to the current map (do not re-add filtered-out names)
+                            for (const auto& [oldn, newn] : pi.spec.renames) {
+                                auto it = map.find(oldn);
+                                if (it == map.end()) {
+                                    std::ostringstream oss; oss << "rename: name '" << oldn << "' is not in the current import set";
+                                    return std::unexpected(LinkError{LinkError::Kind::NameNotExported, pi.where, oss.str()});
+                                }
+                                auto remote = it->second; ///< remember remote source name
+                                map.erase(it);
+                                if (map.contains(newn)) {
+                                    return std::unexpected(LinkError{LinkError::Kind::ConflictingImport, pi.where,
+                                        std::string("rename produces duplicate local name '") + newn + "'"});
+                                }
+                                map.emplace(newn, remote);
+                            }
+                            break;
                         }
-                        break;
-                    }
-                    case ImportSpec::Kind::Prefix: {
-                        /// Prepend prefix to every local name; remote stays the same
-                        std::unordered_map<std::string, std::string> prefixed;
-                        prefixed.reserve(map.size());
-                        for (const auto& [local, remote] : map) {
-                            prefixed.emplace(pi.spec.prefix + local, remote);
+                        case ImportSpec::Kind::Prefix: {
+                            /// Prepend prefix to every local name; remote stays the same
+                            std::unordered_map<std::string, std::string> prefixed;
+                            prefixed.reserve(map.size());
+                            for (const auto& [local, remote] : map) {
+                                prefixed.emplace(pi.spec.prefix + local, remote);
+                            }
+                            map.swap(prefixed);
+                            break;
                         }
-                        map.swap(prefixed);
-                        break;
                     }
-                }
 
-                /// Commit to target.visible with conflict checks; record provenance
-                for (const auto& [local, remote] : map) {
-                    if (tgt.defined.contains(local)) {
-                        return std::unexpected(LinkError{LinkError::Kind::ConflictingImport, pi.where,
-                            std::string("imported name '") + local + "' conflicts with local define in module '" + tgt.name + "'"});
-                    }
-                    if (tgt.import_origins.contains(local)) {
-                        const auto& prev = tgt.import_origins.at(local);
-
-                        /// If this is the same binding (same module + same remote name), treat as idempotent.
-                        if (prev.from_module == src.name && prev.remote_name == remote) {
-                            continue;
+                    /// Commit to target.visible with conflict checks; record provenance
+                    for (const auto& [local, remote] : map) {
+                        if (tgt.defined.contains(local)) {
+                            return std::unexpected(LinkError{LinkError::Kind::ConflictingImport, pi.where,
+                                std::string("imported name '") + local + "' conflicts with local define in module '" + tgt.name + "'"});
                         }
+                        ImportOrigin canonical_origin{src.name, remote, pi.where};
+                        if (auto transitive = src.import_origins.find(remote);
+                            transitive != src.import_origins.end()) {
+                            canonical_origin = transitive->second;
+                            canonical_origin.where = pi.where;
+                        }
+                        if (tgt.import_origins.contains(local)) {
+                            const auto& prev = tgt.import_origins.at(local);
 
-                        std::ostringstream oss; oss << "conflicting imports for '" << local << "' from '" << prev.from_module << "' and '" << src.name << "'";
-                        return std::unexpected(LinkError{LinkError::Kind::ConflictingImport, pi.where, oss.str()});
+                            /// Same final origin => idempotent import (including re-export + direct import).
+                            if (prev.from_module == canonical_origin.from_module &&
+                                prev.remote_name == canonical_origin.remote_name) {
+                                continue;
+                            }
+
+                            std::ostringstream oss;
+                            oss << "conflicting imports for '" << local << "' from '"
+                                << prev.from_module << "' and '" << canonical_origin.from_module << "'";
+                            return std::unexpected(LinkError{LinkError::Kind::ConflictingImport, pi.where, oss.str()});
+                        }
+                        tgt.visible.insert(local);
+                        tgt.import_origins.emplace(local, std::move(canonical_origin));
                     }
-                    tgt.visible.insert(local);
-                    tgt.import_origins.emplace(local, ImportOrigin{src.name, remote, pi.where});
                 }
             }
 
             /// Make locals visible too (after imports, to allow conflict checks above)
             for (const auto& d : tgt.defined) tgt.visible.insert(d);
             tgt.state = ModuleState::Linked;
-        }
-
-        /// Ensure all modules (even those without imports) get linked
-        for (auto& [name, mt] : modules_) {
-            if (mt.state == ModuleState::Indexed) {
-                for (const auto& d : mt.defined) mt.visible.insert(d);
-                mt.state = ModuleState::Linked;
-            }
         }
 
         /// Validate exports: every exported name must be visible (locally defined OR imported)

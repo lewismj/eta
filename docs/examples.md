@@ -4,6 +4,11 @@
 [Architecture](architecture.md) · [Modules & Stdlib](modules.md) ·
 [Networking](networking.md) · [Message Passing](message-passing.md)
 
+> 📓 **Interactive notebook:**
+> [`examples/notebooks/LanguageBasics.ipynb`](../examples/notebooks/LanguageBasics.ipynb) —
+> S-expressions, modules, macros, and the REPL workflow as a runnable
+> Jupyter notebook (xeus-eta kernel).
+
 ---
 
 A tour of the example programs in [`examples/`](../examples/).  Each file

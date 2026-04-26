@@ -3,19 +3,21 @@
 [Back to README](../README.md) · [Architecture](architecture.md) ·
 [Bytecode and VM](bytecode-vm.md) · [Compiler](compiler.md) ·
 [Runtime and GC](runtime.md) · [Modules and Stdlib](modules.md) ·
-[Logic](logic.md) · [CLP](clp.md) · [Release Notes](release-notes.md)
+[Logic](logic.md) · [CLP](clp.md) · [Jupyter](jupyter.md) ·
+[Release Notes](release-notes.md)
 
 ---
 
 ## Overview
 
 This page tracks what is delivered in the current Eta baseline, and the
-focused work items that are genuinely outstanding.  As of April 2026
+focused work items that are genuinely outstanding. As of April 2026
 the core language, runtime, GC, logic substrate, CLP family
-(Z / FD / R / B), networking + actor model, and stdlib are all shipped
-and tested.  The remaining roadmap is dominated by **tooling** — the
-DAP, the VS Code extension, and a Jupyter kernel — plus a small number
-of engine follow-ons.
+(Z / FD / R / B), networking + actor model, libtorch bindings, stdlib,
+LSP, DAP, VS Code extension, and Jupyter kernel are all shipped and
+tested. The remaining roadmap is dominated by **packaging / polish**
+(conda-forge for the Jupyter kernel, Binder, CI publish for the VS Code
+extension) plus a small number of engine follow-ons.
 
 ---
 
@@ -77,173 +79,88 @@ of engine follow-ons.
   with `ColPivHouseholderQR`); `std.stats` descriptive stats, CIs,
   t-tests, OLS over lists.
 
-### Tooling & Tests
+### Tooling, Notebooks & Tests
 
 - LSP server with parse / analysis-driven diagnostics, completions,
   hover.
-- DAP server (`eta_dap`) with breakpoints, step over / in / out,
-  call-stack and locals inspection, `evaluate` (incl. hover),
-  `completions`, plus custom `eta/heapSnapshot` and
-  `eta/inspectObject` protocol extensions.
-- VS Code extension (`eta-scheme-lang` v0.3.0) with TextMate grammar,
+- DAP server (`eta_dap`) with breakpoints (line, conditional,
+  hit-count, logpoints, function), step over / in / out (incl.
+  instruction granularity), call-stack and locals inspection,
+  `evaluate` (incl. hover), `completions`, `setVariable`, `restart`,
+  `cancel`, `breakpointLocations`, `terminateThreads`, plus custom
+  `eta/heapSnapshot` and `eta/inspectObject` extensions.
+- VS Code extension (`eta-scheme-lang`) with TextMate grammar,
   snippets, language-configuration, debug views (Heap Inspector,
   Disassembly, GC Roots, Child Processes), and a Test Controller for
   `*.test.eta`.
+- Jupyter kernel (`eta_jupyter`) — xeus-based, embeds the `Driver`
+  directly; `--install` writes the kernelspec; rich-display MIME
+  bundles for tensors, fact tables, heap snapshots; three showcase
+  notebooks under `examples/notebooks/`. See [jupyter.md](jupyter.md).
 - C++ unit suite (`eta_core_test`) and stdlib test runner (`eta_test`)
   wired into CTest (`eta_stdlib_tests`) plus the convenience target
   `eta_rebuild_and_test`.
+- Async DAP harness (`eta/test/src/dap_tests.cpp`) covering the
+  paused-session round trip.
 - QP rollout gate: `eta_qp_bench` benchmark plus
   `qp-benchmark.{ps1,sh}` with `--gate` thresholds (see
   [release-notes.md](release-notes.md)).
 
 ---
 
-## Focus Areas — Tooling
+## Outstanding Work
 
-These are the three deliverables most likely to shift Eta's day-to-day
-usability for new users.
+The list is short and mostly about distribution.
 
-### 1) DAP Server — Review & Capability Expansion
+### 1) Jupyter — Packaging & JupyterLab Front-End
 
-The `eta_dap` adapter is functional for the common debug loop, but its
-advertised capability set is conservative.  The table below mirrors the
-`initialize` response in
-[`dap_server.cpp`](../eta/dap/src/eta/dap/dap_server.cpp):
+The kernel itself is shipped and the three showcase notebooks run
+end-to-end. What's left:
 
-| Capability | State | Notes |
-|---|---|---|
-| `setBreakpoints` (line) | ✅ | Source-map keyed |
-| `configurationDone` | ✅ | Deferred-initialization flow (intentional, see comment in `dap_server.cpp`) |
-| `terminate` | ✅ | |
-| `evaluateForHovers` | ✅ | |
-| `completions` | ✅ | |
-| Custom `eta/heapSnapshot` | ✅ | Drives the Heap Inspector webview |
-| Custom `eta/inspectObject` | ✅ | Drives drill-down in GC Roots tree |
-| `conditionalBreakpoints` | ✅ | Includes `condition`/`hitCondition`/`logMessage` handling |
-| `functionBreakpoints` | ✅ | Name resolution + verification surfaced to VS Code |
-| `setVariable` | ✅ | Paused-frame locals and globals |
-| `restartRequest` | ✅ | Restart reuses cached launch arguments |
-| `breakpointLocations` | ✅ | Source-map-backed valid-line reporting |
-| `disassemble` (standard) | ✅ | Structured instruction responses for DAP `disassemble` |
-| `cancelRequest` | ✅ | `cancel` request accepted; heap snapshot cancellation returns error 2020 |
-| `steppingGranularity` | ✅ | `next`/`stepIn` support instruction-granularity stepping |
-| `terminateThreadsRequest` | ✅ | Best-effort actor-thread termination via mailbox close + detach |
-| `stepBack` | ❌ | Out of scope without time-travel |
+- **Conda-forge package.** `recipes/xeus-eta/meta.yaml` is drafted but
+  not yet submitted upstream. Until that lands, Binder cannot
+  `mamba install xeus-eta`; the workaround is the Dockerfile path
+  documented in [`docs/eta_plan.md` §2](eta_plan.md).
+- **Binder enablement.** Once either the conda-forge package or the
+  in-tree `binder/` Dockerfile is verified end-to-end, add three
+  Binder badges (Basics, AAD, Portfolio) to the top of the README.
+  Placeholder is already reserved in `README.md`.
+- **JupyterLab labextension.** Comm channels for Heap-Inspector and
+  Disassembly equivalents in JupyterLab — reuse the existing DAP
+  webview HTML where possible.
+- **Per-notebook crash isolation.** Currently one shared `Driver` per
+  kernel process (matches `eta_repl` semantics). Decide whether to
+  offer a per-cell sandbox mode for long-running notebooks that load
+  GPU tensors.
 
-**Concrete work items:**
+### 2) DAP / VS Code — Polish
 
-- **Conditional breakpoints + logpoints.** Implemented and wired through
-  `setBreakpoints` (`condition`, `hitCondition`, `logMessage`).
-- **Function breakpoints.** Implemented via symbol lookup and breakpoint
-  verification updates.
-- **`setVariable`.** Implemented for paused locals and globals.
-- **`breakpointLocations`.** Implemented via source-map line discovery.
-- **Restart + cancel.** Restart is implemented with cached launch arguments,
-  and `cancel` is implemented for request-cancellation plumbing (including
-  heap snapshot cancellation responses).
-- **Stepping granularity.** Instruction-level stepping is implemented for
-  `next` and `stepIn` via DAP `granularity: "instruction"`.
-- **TerminateThreads.** Implemented as best-effort actor-thread termination.
-- **Per-thread state for `spawn-thread` actors.** `threads` now lists actor
-  threads, but stop/stack/evaluate control is still routed through the main VM;
-  finish full per-thread pause/inspect/step routing.
-- **Test coverage.** Async DAP harness support is now in place in
-  `eta/test/src/dap_tests.cpp` with a paused-session round trip
-  (`initialize` -> `launch stopOnEntry` -> `configurationDone` ->
-  `stopped` -> `continue` -> `terminated`); continue expanding paused-VM
-  interaction scenarios on top of this harness.
-- **Diagnostics.** `--trace-protocol` is implemented; keep expanding
-  trace-driven test scenarios for new protocol surface.
+The DAP advertised capability set is now broad; the remaining items
+are UX polish:
 
-`docs/dap.md` now documents the current standard surface and custom
-`eta/*` extensions.
-
-### 2) VS Code Extension — Tightening & Polish
-
-Current shipping surface (`editors/vscode/src/`):
-
-- `extension.ts` — entry point, LSP / DAP wiring
-- `heapView.ts` — Heap Inspector webview
-- `disassemblyView.ts` + `disassemblyTreeView.ts` — bytecode + tree
-- `gcRootsTreeView.ts` — GC roots drill-down
-- `childProcessTreeView.ts` — spawned actors
-- `testController.ts` — VS Code Test Explorer integration for
-  `*.test.eta`
-- `dapTypes.ts` — DAP message typings
-
-**Concrete work items:**
-
+- **Per-thread state for `spawn-thread` actors.** `threads` lists
+  actor threads, but stop / stack / evaluate is still routed through
+  the main VM. Finish full per-thread pause / inspect / step routing.
 - **Inline values.** Implement `InlineValuesProvider` so the editor
-  decorates locals with their current value during a stop event (uses
-  the same `evaluate` path the hover does).
-- **Watch expressions.** `setVariable` now lands edits for paused locals
-  and globals; next step is richer expression evaluation for edit RHS.
-- **Conditional / log breakpoints UI.** Pure capability flip — once
-  the DAP side advertises the relevant `supports*` flags, the
-  extension needs no additional wiring.
+  decorates locals with their current value during a stop event.
+- **Watch expressions.** Richer expression evaluation for `setVariable`
+  edit RHS.
 - **Debug Console / REPL improvements.**
   - Multi-line input via `Shift+Enter` with persistent history.
   - Auto-import of `std.io` so `(println …)` works out of the box.
 - **Heap Inspector polish.** Sortable columns, search / filter, and a
-  *snapshot diff* mode (compare two snapshots to find leaks). Currently
-  the view is read-only and refresh-only.
-- **Disassembly view.** Add (a) follow-symbol / jump-to-callee on
-  `Call` / `TailCall`, (b) two-pane view with source on the left and
-  bytecode on the right for the current PC.
+  *snapshot diff* mode (compare two snapshots to find leaks).
+- **Disassembly view.** Follow-symbol / jump-to-callee on `Call` /
+  `TailCall`, and a two-pane source ↔ bytecode view for the current PC.
 - **Test Controller.** Surface per-assertion failure locations using
   `*.test.eta` source maps — failures currently show only the test
   name.
 - **Snippets refresh.** `snippets/eta.json` predates `clpr`, `clpb`,
-  `freeze`, `dif`, `defrel`, supervision — add canonical templates.
-- **README + screenshots.** `editors/vscode/README.md` is the
-  Marketplace-facing page; align it with the main README's shipped
-  feature list.
-- **CI publish.** Add a workflow that builds the `.vsix` on tag push
-  so the bundle layout's `editors/eta-lang-<version>.vsix` is
-  reproducible rather than hand-built.
-
-### 3) Jupyter Kernel via [xeus](https://github.com/jupyter-xeus/xeus)
-
-Goal: a `xeus-eta` kernel so notebooks become a first-class Eta
-front-end alongside `etai` and `eta_repl`.
-
-**Why xeus over a Python wrapper:**
-
-- xeus is a C++ implementation of the Jupyter messaging protocol —
-  Eta already lives in C++, so the kernel can embed `Driver` directly
-  without an FFI hop.
-- Async I/O, comm targets, and rich `display_data` are first-class.
-- Existing precedents (`xeus-cling`, `xeus-python`, `xeus-lua`,
-  `xeus-cpp`) provide a working blueprint.
-
-**Implementation outline:**
-
-| Phase | Deliverable |
-|---|---|
-| 1 | New executable `eta_jupyter` (`eta/jupyter/`) linking `eta_core` + `xeus` + `xeus-zmq`. CMake `find_package(xeus)` / `find_package(xeus-zmq)` (or a `cmake/FetchXeus.cmake` mirroring the existing `FetchNng.cmake`). |
-| 2 | `EtaInterpreter : public xeus::xinterpreter` overriding `execute_request_impl`, `complete_request_impl`, `inspect_request_impl`, `is_complete_request_impl`. Thin wrapper around the existing `Driver` REPL surface used by `eta_repl`. |
-| 3 | Kernel-spec installation: `eta_jupyter --install` writes `kernels/eta/kernel.json` to the Jupyter data dir. |
-| 4 | Rich display: detect when a result is a `FactTable` / tensor / DAG and emit `application/vnd.eta.facttable+json` plus an HTML fallback. |
-| 5 | Comm channels for Heap-Inspector / Disassembly equivalents in JupyterLab — reuse the DAP webview HTML where possible. |
-| 6 | Conda-Forge / PyPI packaging so `mamba install xeus-eta` and `jupyter labextension install` give a one-line setup. |
-
-Status (April 25, 2026): Phase 1 dependency/build scaffolding is now in-tree:
-`cmake/FetchXeus.cmake`, `eta/jupyter/` CMake target scaffolding, and
-top-level CMake integration as a required dependency.
-
-**Open design questions:**
-
-- One kernel per notebook process vs. shared `Driver` across cells —
-  shared is simpler and matches `eta_repl`, but loses crash isolation.
-- Auto-load `(import std.io)` in cell 0?  `etai` does, `eta_repl`
-  does; notebooks probably should too.
-- How to expose `spawn` / actor processes from a notebook cell —
-  likely via the existing inproc transport, with a
-  `(jupyter:show pid)` widget surfacing the Child Processes tree
-  contents.
-
-A `docs/jupyter.md` design page should land alongside the first
-prototype.
+  `freeze`, `dif`, `defrel`, supervision, `std.jupyter` — add canonical
+  templates.
+- **CI publish.** Add a workflow that builds the `.vsix` on tag push so
+  the bundle layout's `editors/eta-lang-<version>.vsix` is reproducible
+  rather than hand-built.
 
 ---
 
@@ -282,15 +199,26 @@ prototype.
 
 ### Documentation
 
-- `docs/jupyter.md` (alongside the kernel prototype).
-- `docs/regex.md` - `std.regex` reference and performance notes.
+- `docs/index.md` — the umbrella index referenced from the trimmed
+  README documentation table; needs to gather every existing page into
+  a single landing.
 - `docs/clpr.md` — split out from `clp.md` once that page exceeds a
   screen.
+- More notebook-led tutorials under `examples/notebooks/` (xVA, SABR,
+  causal-factor primer).
 
 ---
 
 ## Recently Completed (was on this list, now shipped)
 
+- ✅ Jupyter kernel (`eta_jupyter`) via xeus, with three showcase
+  notebooks and rich-display MIME bundles — see
+  [jupyter.md](jupyter.md) and the
+  [release notes](release-notes.md#2026-04-26).
+- ✅ DAP capability expansion: conditional / function breakpoints,
+  logpoints, `setVariable`, `restart`, `cancel`, `breakpointLocations`,
+  `terminateThreads`, instruction-granularity stepping, async test
+  harness.
 - ✅ CLP(R) full Stage 6 rollout (linear + convex QP) — see
   [release-notes.md](release-notes.md).
 - ✅ CLP(B) Boolean propagation (`std.clpb`).
@@ -301,9 +229,12 @@ prototype.
 - ✅ Finalizers & guardians.
 - ✅ Causal portfolio decision engine showcase
   ([portfolio.md](portfolio.md)).
-- Native CSV subsystem (`std.csv`) and fact-table CSV bridge
-  (`fact-table-load-csv`, `fact-table-save-csv`) - see [csv.md](csv.md).
-- REPL redefinition shadowing for new submissions, documented in
+- ✅ Native CSV subsystem (`std.csv`) and fact-table CSV bridge
+  (`fact-table-load-csv`, `fact-table-save-csv`) — see
+  [csv.md](csv.md).
+- ✅ REPL redefinition shadowing for new submissions, documented in
   [repl.md](repl.md).
-- DAP and VS Code reference docs: [dap.md](dap.md), [vscode.md](vscode.md).
+- ✅ DAP and VS Code reference docs: [dap.md](dap.md),
+  [vscode.md](vscode.md).
+- ✅ Regex reference: [regex.md](regex.md).
 

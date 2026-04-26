@@ -123,6 +123,26 @@ BOOST_AUTO_TEST_CASE(linker_reexport_imported_name) {
     BOOST_CHECK(M2.visible.contains("b"));
 }
 
+BOOST_AUTO_TEST_CASE(linker_reexport_plus_direct_import_is_idempotent) {
+    auto forms = parse_and_expand(
+        "(module base (define a 1) (export a))\n"
+        "(module mid (import base) (export a))\n"
+        "(module user (import mid base) (define y a))");
+    reader::ModuleLinker L;
+    auto idx = L.index_modules(std::span<const reader::parser::SExprPtr>(forms.data(), forms.size()));
+    BOOST_REQUIRE(idx.has_value());
+    auto lk = L.link();
+    BOOST_REQUIRE_MESSAGE(lk.has_value(), link_error_msg(lk));
+
+    auto user = L.get("user"); BOOST_REQUIRE(user.has_value());
+    const auto& M = user->get();
+    BOOST_CHECK(M.visible.contains("a"));
+    BOOST_CHECK(M.visible.contains("y"));
+    BOOST_REQUIRE(M.import_origins.contains("a"));
+    BOOST_CHECK_EQUAL(M.import_origins.at("a").from_module, "base");
+    BOOST_CHECK_EQUAL(M.import_origins.at("a").remote_name, "a");
+}
+
 BOOST_AUTO_TEST_CASE(linker_circular_imports) {
     auto forms = parse_and_expand("(module A (export a) (import B) (define a 1))\n(module B (export b) (import A) (define b a))");
     reader::ModuleLinker L;

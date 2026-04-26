@@ -2,6 +2,10 @@
 
 [Back to README](../README.md) | [Examples](examples.md) | [Modules](modules.md)
 
+> 📓 **Interactive notebook:**
+> [`examples/notebooks/AAD.ipynb`](../examples/notebooks/AAD.ipynb) —
+> the same walkthrough as a runnable Jupyter notebook (xeus-eta kernel).
+
 ---
 
 ## Contents
