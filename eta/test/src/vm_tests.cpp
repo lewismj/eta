@@ -516,6 +516,34 @@ BOOST_AUTO_TEST_CASE(test_dynamic_wind_with_call_cc_clean) {
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 22);
 }
 
+BOOST_AUTO_TEST_CASE(test_dynamic_wind_runs_after_on_explicit_raise) {
+    std::string src =
+        "(module m "
+        "  (define cleanup-called #f) "
+        "  (catch 'resource-error "
+        "    (dynamic-wind "
+        "      (lambda () (set! cleanup-called #f)) "
+        "      (lambda () (raise 'resource-error \"boom\")) "
+        "      (lambda () (set! cleanup-called #t)))) "
+        "  (define result (if cleanup-called 1 0)))";
+    LispVal res = run(src);
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1);
+}
+
+BOOST_AUTO_TEST_CASE(test_dynamic_wind_runs_after_on_runtime_error_catch) {
+    std::string src =
+        "(module m "
+        "  (define cleanup-called #f) "
+        "  (catch 'runtime.error "
+        "    (dynamic-wind "
+        "      (lambda () (set! cleanup-called #f)) "
+        "      (lambda () (car 42)) "
+        "      (lambda () (set! cleanup-called #t)))) "
+        "  (define result (if cleanup-called 1 0)))";
+    LispVal res = run(src);
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1);
+}
+
 /**
  * Closures and higher-order functions
  */
