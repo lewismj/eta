@@ -22,19 +22,18 @@
   <a href="docs/release-notes.md">Release Notes</a>
 </p>
 <br>
-<p align="center">
-<strong>Language Guides</strong></p>
-<p align="center">
-  <a href="docs/examples.md">Basics</a> ·
-  <a href="docs/aad.md">AAD</a> ·
-  <a href="docs/logic.md">Logic Programming – Unification and Backtracking</a> ·
-  <a href="docs/clp.md">Constraint Logic Programming</a> ·
-  <a href="docs/causal.md">Causal Inference & Do-Calculus</a> ·
-  <a href="docs/fact-table.md">Fact Tables</a> ·
-  <a href="docs/stats.md">Eigen: Linear Algebra, Statistics</a> ·
-  <a href="docs/csv.md">CSV</a> ·
-  <a href="docs/torch.md">LibTorch: Neural Networks</a>
-</p>
+<p align="center"><strong>Language Guides</strong></p>
+
+<div align="center">
+
+| Area | Guides |
+|---|---|
+| **Foundations** | [Basics](docs/examples.md) · [Regex](docs/regex.md) · [Time](docs/time.md) · [CSV](docs/csv.md) |
+| **Logic & Constraints** | [Logic Programming](docs/logic.md) · [CLP](docs/clp.md) · [Fact Tables](docs/fact-table.md) |
+| **Numerics & ML** | [AAD](docs/aad.md) · [Eigen — Linear Algebra & Stats](docs/stats.md) · [LibTorch — Neural Networks](docs/torch.md) |
+| **Causal** | [Causal Inference & Do-Calculus](docs/causal.md) |
+</div>
+
 <br>
 <p align="center">
 <strong>Featured Examples</strong></p>
