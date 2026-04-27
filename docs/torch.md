@@ -21,7 +21,7 @@ etai examples/torch.eta
 > [!NOTE]
 > libtorch is a required dependency.  If not found by `find_package(Torch)`
 > the build system downloads the official pre-built CPU archive automatically
-> (~200 MB).  Pass `-DETA_TORCH_BACKEND=cu121` to select a CUDA variant (~2 GB).
+> (~200 MB).  Pass `-DETA_TORCH_BACKEND=cu126` to select a CUDA variant (~2 GB).
 
 ---
 
@@ -453,13 +453,13 @@ Tensors and modules can be moved between CPU and GPU:
 
 ```bash
 cmake -B build                                       # CPU-only (auto-downloads libtorch)
-cmake -B build -DETA_TORCH_BACKEND=cu121             # CUDA 12.1
+cmake -B build -DETA_TORCH_BACKEND=cu126             # CUDA 12.6
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `ETA_TORCH_BACKEND` | `cpu` | libtorch variant: `cpu`, `cu118`, `cu121`, or `cu124` |
-| `ETA_LIBTORCH_VER` | `2.5.1` | libtorch version to download |
+| `ETA_TORCH_BACKEND` | `cpu` | libtorch variant: `cpu`, `cu126`, `cu128`, or `cu130` |
+| `ETA_LIBTORCH_VER` | `2.11.0` | libtorch version to download |
 
 libtorch is downloaded automatically if not found by `find_package(Torch)`.
 The build system fetches the official pre-built archive from

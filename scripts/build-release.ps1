@@ -35,7 +35,7 @@
     .\scripts\build-release.cmd -VcpkgRoot C:\src\vcpkg
     .\scripts\build-release.cmd "C:\eta-release" -VcpkgRoot C:\src\vcpkg
     .\scripts\build-release.cmd -EnableTorch
-    .\scripts\build-release.cmd -EnableTorch -TorchBackend cu124
+    .\scripts\build-release.cmd -EnableTorch -TorchBackend cu126
 #>
 [CmdletBinding()]
 param(
@@ -52,7 +52,7 @@ param(
     [switch]$EnableTorch,
 
     [Parameter()]
-    [ValidateSet("cpu", "cu118", "cu121", "cu124")]
+    [ValidateSet("cpu", "cu126", "cu128", "cu130")]
     [string]$TorchBackend = "cpu"
 )
 
@@ -61,6 +61,69 @@ $ErrorActionPreference = "Stop"
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = (Resolve-Path "$ScriptDir\..").Path
 $BuildDir    = Join-Path $ProjectRoot "build-release"
+
+function Copy-VsRuntimeDllsToBin {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BuildDir,
+        [Parameter(Mandatory = $true)]
+        [string]$BinDir
+    )
+
+    $CachePath = Join-Path $BuildDir "CMakeCache.txt"
+    if (-not (Test-Path $CachePath)) {
+        Write-Host "  [WARN] CMakeCache.txt not found; skipping MSVC runtime DLL copy." -ForegroundColor Yellow
+        return
+    }
+
+    $CompilerLine = Get-Content $CachePath | Where-Object { $_ -like "CMAKE_CXX_COMPILER:FILEPATH=*" } | Select-Object -First 1
+    if (-not $CompilerLine) {
+        Write-Host "  [WARN] CMAKE_CXX_COMPILER not found in cache; skipping MSVC runtime DLL copy." -ForegroundColor Yellow
+        return
+    }
+
+    $CompilerPath = ($CompilerLine -split "=", 2)[1]
+    $CompilerPath = [System.IO.Path]::GetFullPath(($CompilerPath -replace '/', '\'))
+    if ($CompilerPath -notmatch "^(?<vcroot>.+\\VC)\\Tools\\MSVC\\(?<ver>[^\\]+)\\bin\\") {
+        Write-Host "  [WARN] Could not derive VC redist path from compiler '$CompilerPath'; skipping runtime DLL copy." -ForegroundColor Yellow
+        return
+    }
+
+    $VcRoot = $Matches["vcroot"]
+    $MsvcVer = $Matches["ver"]
+    $RedistBase = Join-Path $VcRoot "Redist\MSVC"
+    if (-not (Test-Path $RedistBase)) {
+        Write-Host "  [WARN] VC redist base not found at '$RedistBase'; skipping runtime DLL copy." -ForegroundColor Yellow
+        return
+    }
+
+    $CandidateRoots = New-Object System.Collections.Generic.List[string]
+    $CandidateRoots.Add((Join-Path $RedistBase $MsvcVer))
+    Get-ChildItem -Path $RedistBase -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' -and $_.Name -ne $MsvcVer } |
+        Sort-Object Name -Descending |
+        ForEach-Object { $CandidateRoots.Add($_.FullName) }
+
+    foreach ($Root in $CandidateRoots) {
+        $X64Dir = Join-Path $Root "x64"
+        if (-not (Test-Path $X64Dir)) { continue }
+
+        $CrtDir = Get-ChildItem -Path $X64Dir -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if (-not $CrtDir) { continue }
+
+        $Dlls = Get-ChildItem -Path $CrtDir.FullName -File -Filter "*.dll" -ErrorAction SilentlyContinue
+        if (-not $Dlls) { continue }
+
+        foreach ($Dll in $Dlls) {
+            Copy-Item -Force $Dll.FullName (Join-Path $BinDir $Dll.Name)
+        }
+        Write-Host "  Copied $($Dlls.Count) MSVC runtime DLL(s) from '$($CrtDir.FullName)'"
+        return
+    }
+
+    Write-Host "  [WARN] No Microsoft.VC*.CRT runtime directory found under '$RedistBase'; skipping runtime DLL copy." -ForegroundColor Yellow
+}
 
 # ── Detect platform ──────────────────────────────────────────────────
 $Arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
@@ -152,9 +215,12 @@ foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_d
     }
 }
 
+# Bundle the MSVC runtime DLLs into bin/ for clean-machine execution.
+$BinPath = Join-Path $Prefix "bin"
+Copy-VsRuntimeDllsToBin -BuildDir $BuildDir -BinDir $BinPath
+
 # Verify xeus runtime DLLs landed in bin/ — without these eta_jupyter.exe
 # fails to start with STATUS_DLL_NOT_FOUND (0xC0000135 / -1073741515).
-$BinPath = Join-Path $Prefix "bin"
 $HasXeus    = Test-Path (Join-Path $BinPath "xeus.dll")
 $HasXeusZmq = Test-Path (Join-Path $BinPath "xeus-zmq.dll")
 $HasZmq     = [bool](Get-ChildItem -Path $BinPath -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)

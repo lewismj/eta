@@ -68,7 +68,12 @@ private:
     /**
      * @brief Handle kernel shutdown.
      */
-    void shutdown_request_impl() override;
+    nl::json shutdown_request_impl(bool restart) override;
+
+    /**
+     * @brief Handle kernel interrupt requests.
+     */
+    nl::json interrupt_request_impl() override;
 
     /**
      * @brief Format the driver's diagnostics as plain text.

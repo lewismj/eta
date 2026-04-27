@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────
-# FetchEigen.cmake — Fetch Eigen 3.4.0 (header-only) via FetchContent
+# FetchEigen.cmake — Fetch Eigen 5.0.0 (header-only) via FetchContent
 #
 # Called unconditionally by eta/CMakeLists.txt.  Eigen is a required
 # dependency — eta_core links it PUBLIC so all downstream targets
@@ -14,7 +14,7 @@ include(FetchContent)
 FetchContent_Declare(
     eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG        3.4.0
+    GIT_TAG        5.0.0
     GIT_SHALLOW    TRUE
     # EXCLUDE_FROM_ALL (CMake ≥ 3.28) keeps Eigen out of the default `all`
     # target AND — importantly — disables Eigen's own install() rules so
@@ -40,5 +40,5 @@ FetchContent_MakeAvailable(eigen)
 set(CMAKE_WARN_DEPRECATED "${_eta_prev_cmake_warn_deprecated}")
 unset(_eta_prev_cmake_warn_deprecated)
 
-message(STATUS "Eigen 3.4.0 fetched — Eigen3::Eigen target available")
+message(STATUS "Eigen 5.0.0 fetched — Eigen3::Eigen target available")
 

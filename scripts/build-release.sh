@@ -41,7 +41,7 @@ while [ $# -gt 0 ]; do
             echo "                          Auto-detected from git / CMakeLists.txt."
             echo "  -t, --torch             Enable libtorch bindings."
             echo "                          libtorch is auto-downloaded if not installed."
-            echo "  --torch-backend BACK    cpu (default), cu118, cu121, or cu124."
+            echo "  --torch-backend BACK    cpu (default), cu126, cu128, or cu130."
             echo "                          CUDA variants need an NVIDIA driver ≥ that CUDA"
             echo "                          version but do NOT need the CUDA toolkit."
             echo "  install-dir             Directory for the bundle."

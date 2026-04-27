@@ -18,7 +18,9 @@ endif()
 
 # ── libtorch (always required) ────────────────────────────────────────────
 set(ETA_TORCH_BACKEND "cpu" CACHE STRING
-    "libtorch backend for auto-download: cpu, cu118, cu121, or cu124")
+    "libtorch backend for auto-download: cpu, cu126, cu128, or cu130")
+set(ETA_LIBTORCH_VER "2.11.0" CACHE STRING
+    "libtorch version for auto-download fallback")
 
 find_package(Torch QUIET)
 if(Torch_FOUND)
@@ -51,16 +53,16 @@ function(eta_copy_torch_dlls target)
 endfunction()
 
 # ── nng (always required) ─────────────────────────────────────────────────
-message(STATUS "Fetching nng (nanomsg-next-gen) v1.9.0 ...")
+message(STATUS "Fetching nng (nanomsg-next-gen) v1.11 ...")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchNng.cmake")
 if(NOT TARGET nng)
     message(FATAL_ERROR "nng fetch FAILED — nng is a required dependency")
 endif()
 
 # ── Eigen (always required for stats primitives) ──────────────────────────
-message(STATUS "Fetching Eigen 3.4.0 (header-only) ...")
+message(STATUS "Fetching Eigen 5.0.0 (header-only) ...")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchEigen.cmake")
-message(STATUS "Fetching csv-parser 2.3.0 ...")
+message(STATUS "Fetching csv-parser 4.0.0 ...")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchCsvParser.cmake")
 if(NOT TARGET csv::parser)
     message(FATAL_ERROR "csv-parser fetch FAILED - csv::parser target missing")

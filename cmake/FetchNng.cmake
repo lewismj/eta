@@ -24,7 +24,7 @@ endif()
 FetchContent_Declare(
     nng
     GIT_REPOSITORY https://github.com/nanomsg/nng.git
-    GIT_TAG        v1.9.0
+    GIT_TAG        v1.11
     # EXCLUDE_FROM_ALL (CMake ≥ 3.28) suppresses nng's own install() rules
     # (which would otherwise drop headers into include/ and a CMake
     # config package into lib/cmake/nng/ in the release bundle).  We
@@ -54,7 +54,7 @@ if(WIN32)
 endif()
 
 if(MSVC AND TARGET nng)
-    # nng v1.9.0 triggers C4022 in win_tcpconn.c on CancelIoEx calls.
+    # nng triggers C4022 in win_tcpconn.c on CancelIoEx calls.
     # Keep suppression local to third-party nng sources.
     target_compile_options(nng PRIVATE
         $<$<COMPILE_LANGUAGE:C>:/wd4022>)

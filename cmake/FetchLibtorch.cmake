@@ -7,8 +7,8 @@
 # find_package(Torch) succeeds.
 #
 # Options consumed:
-#   ETA_TORCH_BACKEND   "cpu" (default), "cu118", "cu121", or "cu124"
-#   ETA_LIBTORCH_VER    Version string, e.g. "2.5.1" (default)
+#   ETA_TORCH_BACKEND   "cpu" (default), "cu126", "cu128", or "cu130"
+#   ETA_LIBTORCH_VER    Version string, e.g. "2.11.0" (default)
 #
 # The download is cached in ${CMAKE_BINARY_DIR}/_libtorch_dl/ so
 # re-configures don't re-download.
@@ -23,12 +23,12 @@
 
 if(NOT DEFINED ETA_TORCH_BACKEND)
     set(ETA_TORCH_BACKEND "cpu" CACHE STRING
-        "libtorch backend: cpu, cu118, cu121, or cu124")
+        "libtorch backend: cpu, cu126, cu128, or cu130")
 endif()
 
 if(NOT DEFINED ETA_LIBTORCH_VER)
-    set(ETA_LIBTORCH_VER "2.5.1" CACHE STRING
-        "libtorch version to download (e.g. 2.5.1)")
+    set(ETA_LIBTORCH_VER "2.11.0" CACHE STRING
+        "libtorch version to download (e.g. 2.11.0)")
 endif()
 
 # ── Build the download URL ────────────────────────────────────────────
@@ -47,24 +47,32 @@ endif()
 
 # Platform-specific archive name
 if(WIN32)
-    set(_lt_archive "libtorch-win-shared-with-deps-${_lt_ver}%2B${_lt_suffix}.zip")
+    set(_lt_archives
+        "libtorch-win-shared-with-deps-${_lt_ver}%2B${_lt_suffix}.zip")
     set(_lt_ext "zip")
 elseif(APPLE)
     # macOS: PyTorch provides arm64 or x86_64 CPU-only builds
     if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-        set(_lt_archive "libtorch-macos-arm64-${_lt_ver}.zip")
+        set(_lt_archives "libtorch-macos-arm64-${_lt_ver}.zip")
     else()
-        set(_lt_archive "libtorch-macos-x86_64-${_lt_ver}.zip")
+        set(_lt_archives "libtorch-macos-x86_64-${_lt_ver}.zip")
     endif()
     set(_lt_channel "cpu")
     set(_lt_ext "zip")
 else()
-    # Linux — use cxx11 ABI by default (matches modern distros / GCC ≥ 5)
-    set(_lt_archive "libtorch-cxx11-abi-shared-with-deps-${_lt_ver}%2B${_lt_suffix}.zip")
+    # Linux naming changed in recent releases. Try current archive name first,
+    # then the older cxx11-abi archive for backwards compatibility.
+    set(_lt_archives
+        "libtorch-shared-with-deps-${_lt_ver}%2B${_lt_suffix}.zip"
+        "libtorch-cxx11-abi-shared-with-deps-${_lt_ver}%2B${_lt_suffix}.zip")
     set(_lt_ext "zip")
 endif()
 
-set(_lt_url "https://download.pytorch.org/libtorch/${_lt_channel}/${_lt_archive}")
+set(_lt_urls "")
+foreach(_lt_archive IN LISTS _lt_archives)
+    list(APPEND _lt_urls "https://download.pytorch.org/libtorch/${_lt_channel}/${_lt_archive}")
+endforeach()
+list(GET _lt_urls 0 _lt_url)
 
 # ── Download + extract ────────────────────────────────────────────────
 
@@ -89,19 +97,31 @@ if(NOT EXISTS "${_lt_stamp}")
         file(REMOVE_RECURSE "${_lt_root}")
     endif()
 
-    file(DOWNLOAD
-        "${_lt_url}" "${_lt_zip}"
-        SHOW_PROGRESS
-        STATUS _lt_dl_status
-        TLS_VERIFY ON
-    )
-    list(GET _lt_dl_status 0 _lt_dl_code)
-    list(GET _lt_dl_status 1 _lt_dl_msg)
-    if(NOT _lt_dl_code EQUAL 0)
+    set(_lt_dl_ok FALSE)
+    set(_lt_dl_msg "")
+    foreach(_lt_try_url IN LISTS _lt_urls)
+        file(REMOVE "${_lt_zip}")
+        file(DOWNLOAD
+            "${_lt_try_url}" "${_lt_zip}"
+            SHOW_PROGRESS
+            STATUS _lt_dl_status
+            TLS_VERIFY ON
+        )
+        list(GET _lt_dl_status 0 _lt_dl_code)
+        list(GET _lt_dl_status 1 _lt_dl_msg)
+        if(_lt_dl_code EQUAL 0)
+            set(_lt_dl_ok TRUE)
+            set(_lt_url "${_lt_try_url}")
+            break()
+        endif()
+    endforeach()
+
+    if(NOT _lt_dl_ok)
         message(WARNING
             "Failed to download libtorch:\n"
-            "  URL:    ${_lt_url}\n"
-            "  Error:  ${_lt_dl_msg}\n"
+            "  Tried URLs:\n"
+            "    ${_lt_urls}\n"
+            "  Last error: ${_lt_dl_msg}\n"
             "\n"
             "You can download manually and set -DTorch_DIR=<path>/libtorch/share/cmake/Torch\n"
             "or -DCMAKE_PREFIX_PATH=<path>/libtorch")

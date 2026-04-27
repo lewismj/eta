@@ -40,7 +40,7 @@ Additional flags:
 
 # Enable libtorch bindings (auto-downloads libtorch)
 ./scripts/build-release.sh -t
-./scripts/build-release.sh -t --torch-backend cu124   # CUDA 12.4
+./scripts/build-release.sh -t --torch-backend cu126   # CUDA 12.6
 ```
 
 ### Windows (PowerShell)
@@ -59,7 +59,7 @@ Additional flags:
 
 # Enable libtorch bindings
 .\scripts\build-release.ps1 -EnableTorch
-.\scripts\build-release.ps1 -EnableTorch -TorchBackend cu124
+.\scripts\build-release.ps1 -EnableTorch -TorchBackend cu126
 ```
 
 ---
@@ -90,13 +90,13 @@ By default the build downloads the CPU-only libtorch archive automatically.
 To select a CUDA variant:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DETA_TORCH_BACKEND=cu124
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DETA_TORCH_BACKEND=cu126
 cmake --build build -j$(nproc)
 ```
 
 The `FetchLibtorch.cmake` module downloads the correct libtorch archive for
 your platform and caches it in the build directory.  Supported backends:
-`cpu` (default), `cu118`, `cu121`, `cu124`.
+`cpu` (default), `cu126`, `cu128`, `cu130`.
 
 ---
 

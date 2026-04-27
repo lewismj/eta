@@ -11,11 +11,11 @@ if(POLICY CMP0169)
 endif()
 
 # Version pins for the xeus dependency stack.
-set(ETA_XEUS_TAG          "5.1.1"  CACHE STRING "xeus version")
-set(ETA_XEUS_ZMQ_TAG      "3.0.0"  CACHE STRING "xeus-zmq version")
+set(ETA_XEUS_TAG          "6.0.5"  CACHE STRING "xeus version")
+set(ETA_XEUS_ZMQ_TAG      "4.0.0"  CACHE STRING "xeus-zmq version")
 set(ETA_LIBZMQ_TAG        "v4.3.5" CACHE STRING "libzmq version")
 set(ETA_CPPZMQ_TAG        "v4.10.0" CACHE STRING "cppzmq version")
-set(ETA_NLOHMANN_JSON_TAG "v3.11.3" CACHE STRING "nlohmann_json version")
+set(ETA_NLOHMANN_JSON_TAG "v3.12.0" CACHE STRING "nlohmann_json version")
 
 # Prefer preinstalled packages when the full stack is available.
 find_package(nlohmann_json CONFIG QUIET)
