@@ -17,10 +17,13 @@
 > tape, (e) compresses the WWR-hot exposure as a convex QP over CLP(R)
 > reals, and (f) verifies determinism by replaying a worker shard.
 
-In one sentence: *causally-shocked CVA, AAD-decomposed, ranked by
-elasticity, hedged via convex QP, derived symbolically onto the same
-tape, supervised by deterministic actors — one program, one tape, one
-file tree.*
+The system computes CVA for a portfolio under structural macroeconomic shocks using a
+causal model (SCM), calculates all risk sensitivities in a single reverse-mode AAD pass,
+ranks counterparties by exposure to those shocks using elasticity measures, 
+and produces hedge recommendations by solving a convex optimisation problem. 
+It also supports symbolic differentiation of pricing formulas, with all components 
+running in a single framework.
+
 
 **What goes in**
 
