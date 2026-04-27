@@ -72,6 +72,17 @@
                     (assert-true (number? (stats:ci-upper ci))))))))
 
           ;; ── OLS simple regression ─────────────────────────────────
+          (make-group "normal-quantile"
+            (list
+              (make-test "normal-quantile at p=0.5 is 0"
+                (lambda ()
+                  (assert-approx-equal 0.0
+                    (stats:normal-quantile 0.5) 1e-12)))
+              (make-test "normal-quantile 97.5% is about 1.96"
+                (lambda ()
+                  (assert-approx-equal 1.959963984540054
+                    (stats:normal-quantile 0.975) 1e-8)))))
+
           (make-group "ols"
             (list
               (make-test "slope of y=2x is 2"

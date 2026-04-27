@@ -243,6 +243,71 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::dot(a->tensor.flatten(), b->tensor.flatten()));
     });
 
+    /// Linear algebra / distributions
+
+    /// (torch/cholesky cov)
+    env.register_builtin("torch/cholesky", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto* cov = get_tensor(heap, args[0]);
+        if (!cov) return std::unexpected(torch_error("torch/cholesky: tensor required"));
+
+        if (cov->tensor.dim() < 2)
+            return std::unexpected(torch_error("torch/cholesky: expected a matrix or batch of matrices"));
+        auto n = cov->tensor.size(-1);
+        auto m = cov->tensor.size(-2);
+        if (n != m)
+            return std::unexpected(torch_error("torch/cholesky: covariance matrix must be square"));
+
+        try {
+            return factory::make_tensor(heap, ::torch::linalg_cholesky(cov->tensor));
+        } catch (const c10::Error& e) {
+            return std::unexpected(torch_error(std::string("torch/cholesky: ") + e.what()));
+        }
+    });
+
+    /**
+     * (torch/mvnormal mean cov)
+     *   Draw one sample from N(mean, cov), where cov is SPD.
+     *   Supports vector/batched-vector means and matrix/batched-matrix covariances.
+     */
+    env.register_builtin("torch/mvnormal", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto* mean = get_tensor(heap, args[0]);
+        auto* cov  = get_tensor(heap, args[1]);
+        if (!mean || !cov) return std::unexpected(torch_error("torch/mvnormal: tensor arguments required"));
+
+        if (cov->tensor.dim() < 2)
+            return std::unexpected(torch_error("torch/mvnormal: covariance must be a matrix or batch of matrices"));
+        auto d = cov->tensor.size(-1);
+        if (cov->tensor.size(-2) != d)
+            return std::unexpected(torch_error("torch/mvnormal: covariance matrix must be square"));
+        if (mean->tensor.dim() < 1)
+            return std::unexpected(torch_error("torch/mvnormal: mean must be a vector or batch of vectors"));
+        if (mean->tensor.size(-1) != d)
+            return std::unexpected(torch_error("torch/mvnormal: mean dimension must match covariance size"));
+
+        if (mean->tensor.dim() + 1 != cov->tensor.dim())
+            return std::unexpected(torch_error("torch/mvnormal: expected cov rank = mean rank + 1"));
+        for (int64_t i = 0; i < mean->tensor.dim() - 1; ++i) {
+            if (mean->tensor.size(i) != cov->tensor.size(i))
+                return std::unexpected(torch_error("torch/mvnormal: batch dimensions of mean and covariance must match"));
+        }
+        if (mean->tensor.device() != cov->tensor.device())
+            return std::unexpected(torch_error("torch/mvnormal: mean and covariance must be on the same device"));
+        if (mean->tensor.scalar_type() != cov->tensor.scalar_type())
+            return std::unexpected(torch_error("torch/mvnormal: mean and covariance must have the same dtype"));
+
+        if (!mean->tensor.is_floating_point() || !cov->tensor.is_floating_point())
+            return std::unexpected(torch_error("torch/mvnormal: mean and covariance must be floating-point tensors"));
+
+        try {
+            auto chol = ::torch::linalg_cholesky(cov->tensor);
+            auto eps = ::torch::randn(mean->tensor.sizes(), mean->tensor.options());
+            auto sample = mean->tensor + ::torch::matmul(chol, eps.unsqueeze(-1)).squeeze(-1);
+            return factory::make_tensor(heap, std::move(sample));
+        } catch (const c10::Error& e) {
+            return std::unexpected(torch_error(std::string("torch/mvnormal: ") + e.what()));
+        }
+    });
+
     /// Unary ops
 
     /// (torch/neg t)

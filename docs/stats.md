@@ -25,7 +25,7 @@ The package covers:
 | Descriptive statistics | `stats:mean`, `stats:variance`, `stats:stddev`, `stats:sem`, `stats:percentile`, `stats:median` |
 | Bivariate | `stats:covariance`, `stats:correlation` |
 | Confidence intervals | `stats:ci`, `stats:ci-lower`, `stats:ci-upper` |
-| t-Distribution | `stats:t-cdf`, `stats:t-quantile` |
+| Distribution utilities | `stats:normal-quantile`, `stats:t-cdf`, `stats:t-quantile` |
 | Welch t-test | `stats:t-test` + accessors |
 | Simple OLS | `stats:ols` + accessors |
 | Column-wise ops | `stats:mean-vec`, `stats:var-vec`, `stats:quantile-vec` |
@@ -120,10 +120,11 @@ Returns a four-element list `(t-stat p-value df mean-diff)`.
 
 ---
 
-## T-Distribution Utilities
+## Distribution Utilities
 
 | Function | Signature | Returns |
 |----------|-----------|---------|
+| `stats:normal-quantile` | `(p)` | Inverse CDF of `N(0,1)` |
 | `stats:t-cdf` | `(t df)` | CDF of the t-distribution |
 | `stats:t-quantile` | `(p df)` | Inverse CDF (quantile function) |
 
@@ -305,7 +306,8 @@ All statistics are exposed through the single **`std.stats`** Eta module,
 which wraps two sets of `%stats-*` C++ builtins:
 
 - **Univariate / bivariate** (`core_primitives.h`) — `%stats-mean`,
-  `%stats-variance`, `%stats-covariance`, `%stats-ols`, `%stats-t-test-2`,
+  `%stats-variance`, `%stats-normal-quantile`, `%stats-covariance`,
+  `%stats-ols`, `%stats-t-test-2`,
   etc.  Each calls `stats::to_eigen()` (from `stats_extract.h`) to convert
   any numeric sequence into an `Eigen::VectorXd`, then delegates to the
   pure-math functions in `stats_math.h`.
@@ -364,11 +366,10 @@ Equity fund (monthly %):
 
 | Component | File |
 |-----------|------|
-| Pure math (mean, variance, OLS, t-CDF, betainc, …) | [`eta/core/src/eta/runtime/stats_math.h`](../eta/core/src/eta/runtime/stats_math.h) |
+| Pure math (mean, variance, normal/t quantiles, OLS, betainc, …) | [`eta/core/src/eta/runtime/stats_math.h`](../eta/core/src/eta/runtime/stats_math.h) |
 | Polymorphic input extraction (list / vector / fact-table → `Eigen::VectorXd`) | [`eta/core/src/eta/runtime/stats_extract.h`](../eta/core/src/eta/runtime/stats_extract.h) |
 | `%stats-mean`, `%stats-ols`, `%stats-t-test-2`, … (univariate/bivariate) | [`eta/core/src/eta/runtime/core_primitives.h`](../eta/core/src/eta/runtime/core_primitives.h) |
 | `%stats-mean-vec`, `%stats-cov-matrix`, `%stats-ols-multi`, … (multivariate) | [`eta/stats/src/eta/stats/stats_primitives.h`](../eta/stats/src/eta/stats/stats_primitives.h) |
 | `stats:mean`, `stats:cov-matrix`, `stats:ols-multi`, … (Eta wrappers) | [`stdlib/std/stats.eta`](../stdlib/std/stats.eta) |
 | Eigen fetch | [`cmake/FetchEigen.cmake`](../cmake/FetchEigen.cmake) |
 | Example | [`examples/stats.eta`](../examples/stats.eta) |
-

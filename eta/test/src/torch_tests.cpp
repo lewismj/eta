@@ -309,6 +309,10 @@ BOOST_AUTO_TEST_CASE(register_torch_primitives_smoke) {
     /// Check some names are registered
     auto idx = env.lookup("torch/ones");
     BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/cholesky");
+    BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/mvnormal");
+    BOOST_TEST(idx.has_value());
     idx = env.lookup("nn/linear");
     BOOST_TEST(idx.has_value());
     idx = env.lookup("optim/adam");
@@ -322,6 +326,10 @@ BOOST_AUTO_TEST_CASE(register_torch_builtin_names_smoke) {
     register_torch_primitives(env, heap, intern, nullptr);
 
     auto idx = env.lookup("torch/tensor");
+    BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/cholesky");
+    BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/mvnormal");
     BOOST_TEST(idx.has_value());
     idx = env.lookup("nn/forward");
     BOOST_TEST(idx.has_value());
@@ -966,6 +974,46 @@ BOOST_AUTO_TEST_CASE(prim_torch_dot_via_env) {
     BOOST_TEST(tp->tensor.item<double>() == 32.0);  ///< 1*4 + 2*5 + 3*6
 }
 
+BOOST_AUTO_TEST_CASE(prim_torch_cholesky_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto cov = expect_ok(tf::make_tensor(heap,
+        torch::tensor({{4.0, 2.0}, {2.0, 3.0}}, torch::kFloat64)));
+
+    auto result = expect_ok(env.specs()[*env.lookup("torch/cholesky")].func({cov}));
+    auto* lp = get_tensor(heap, result);
+    BOOST_REQUIRE(lp);
+
+    /// Lower-triangular reconstruction check: cov ~= L * L^T.
+    auto recon = torch::matmul(lp->tensor, lp->tensor.transpose(-1, -2));
+    auto* cp = get_tensor(heap, cov);
+    BOOST_REQUIRE(cp);
+    BOOST_TEST(torch::allclose(recon, cp->tensor, 1e-10, 1e-10));
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_mvnormal_via_env) {
+    ::torch::manual_seed(1337);
+
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mean = expect_ok(tf::make_tensor(heap,
+        torch::tensor({0.0, 1.0}, torch::kFloat64)));
+    auto cov = expect_ok(tf::make_tensor(heap,
+        torch::tensor({{1.0, 0.2}, {0.2, 2.0}}, torch::kFloat64)));
+
+    auto result = expect_ok(env.specs()[*env.lookup("torch/mvnormal")].func({mean, cov}));
+    auto* sp = get_tensor(heap, result);
+    BOOST_REQUIRE(sp);
+    BOOST_TEST(sp->tensor.sizes() == std::vector<int64_t>({2}));
+    BOOST_TEST(torch::isfinite(sp->tensor).all().item<bool>());
+}
+
 /// Unary ops via env
 
 BOOST_AUTO_TEST_CASE(prim_unary_ops_via_env) {
@@ -1406,6 +1454,17 @@ BOOST_AUTO_TEST_CASE(prim_error_paths) {
     /// nn/sequential with non-module arg
     auto r6 = env.specs()[*env.lookup("nn/sequential")].func({fixnum});
     BOOST_TEST(!r6.has_value());
+
+    /// torch/cholesky with non-square matrix
+    auto nonsquare = expect_ok(tf::make_tensor(heap, torch::ones({2, 3}, torch::kFloat64)));
+    auto r7 = env.specs()[*env.lookup("torch/cholesky")].func({nonsquare});
+    BOOST_TEST(!r7.has_value());
+
+    /// torch/mvnormal with shape mismatch mean/covariance
+    auto mean = expect_ok(tf::make_tensor(heap, torch::ones({3}, torch::kFloat64)));
+    auto cov = expect_ok(tf::make_tensor(heap, torch::eye(2, torch::kFloat64)));
+    auto r8 = env.specs()[*env.lookup("torch/mvnormal")].func({mean, cov});
+    BOOST_TEST(!r8.has_value());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

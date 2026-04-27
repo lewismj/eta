@@ -314,9 +314,9 @@ The prelude auto-loads the following modules:
 | **`std.causal`** | `dag:*`, `do:identify`, `do:estimate-effect` — causal inference engine |
 | **`std.csv`** | `csv:open-reader`, `csv:read-record`, `csv:read-typed-row`, `csv:open-writer`, `csv:save-file` |
 | **`std.fact_table`** | `make-fact-table`, `fact-table-insert!`, `fact-table-query`, `fact-table-fold` — columnar fact tables |
-| **`std.stats`** | Descriptive stats, CIs, t-tests, OLS regression (Eigen-backed) |
+| **`std.stats`** | Descriptive stats, normal/t quantiles, CIs, t-tests, OLS regression (Eigen-backed) |
 | **`std.time`** | Wall-clock + monotonic time, UTC/local parts, ISO-8601 formatting |
-| **`std.torch`** | `tensor`, `forward`, `train-step!`, `sgd`, `adam` — libtorch neural networks |
+| **`std.torch`** | `tensor`, `cholesky`, `mvnormal`, `forward`, `train-step!`, `sgd`, `adam` — libtorch neural networks |
 | **`std.net`** | `spawn`, `send!`, `recv!`, `monitor`, `worker-pool`, `with-socket`, `request-reply`, `pub-sub`, `survey` — Erlang-style actors & nng |
 | **`std.supervisor`** | `one-for-one`, `one-for-all` — supervision trees over actor processes |
 | **`std.test`** | `assert-equal`, `assert-true`, `run-tests` — lightweight test framework |
@@ -360,4 +360,3 @@ internals, networking design, release notes, roadmap):
 ## License
 
 See [LICENSE](LICENSE) for details.
-

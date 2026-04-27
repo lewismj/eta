@@ -20,7 +20,7 @@
     stats:percentile stats:median
     stats:covariance stats:correlation
     stats:ci stats:ci-lower stats:ci-upper
-    stats:t-cdf stats:t-quantile
+    stats:t-cdf stats:t-quantile stats:normal-quantile
     stats:t-test stats:t-test-stat stats:t-test-pvalue
     stats:t-test-df stats:t-test-mean-diff
     stats:ols stats:ols-slope stats:ols-intercept stats:ols-r2
@@ -59,6 +59,7 @@
 
     (define stats:t-cdf %stats-t-cdf)
     (define stats:t-quantile %stats-t-quantile)
+    (define stats:normal-quantile %stats-normal-quantile)
 
     ;; Returns (t-stat p-value df mean-diff) as a list.
     (define stats:t-test %stats-t-test-2)

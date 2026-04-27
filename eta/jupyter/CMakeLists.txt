@@ -55,6 +55,23 @@ if(NOT MSVC)
 endif()
 
 install(TARGETS eta_jupyter RUNTIME DESTINATION bin)
+
+# On Windows, xeus / xeus-zmq / libzmq are built as shared libraries via
+# FetchContent (see cmake/FetchXeus.cmake). Their DLLs are copied next to
+# eta_jupyter.exe at build time (POST_BUILD above), but xeus's own install
+# rules are suppressed (CMAKE_SKIP_INSTALL_RULES) to avoid export-set
+# validation failures against in-tree third-party targets. We therefore have
+# to install the runtime DLLs explicitly so they ship alongside
+# eta_jupyter.exe in release bundles -- otherwise launching the kernel fails
+# with STATUS_DLL_NOT_FOUND (exit code 0xC0000135 / -1073741515).
+if(WIN32)
+    foreach(_dep IN ITEMS xeus xeus-zmq libzmq)
+        if(TARGET ${_dep})
+            install(FILES $<TARGET_FILE:${_dep}> DESTINATION bin)
+        endif()
+    endforeach()
+endif()
+
 install(FILES resources/kernel.json.in DESTINATION share/jupyter/kernels/eta)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/logo-32x32.png")

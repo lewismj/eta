@@ -1,0 +1,47 @@
+;;; stdlib/tests/torch.test.eta - Unit tests for std.torch
+
+(module torch.tests
+  (import std.test std.core std.torch)
+  (begin
+
+    (define suite
+      (make-group "std.torch"
+        (list
+
+          (make-test "cholesky returns lower-triangular factor"
+            (lambda ()
+              (let* ((cov (reshape (from-list '(4.0 2.0
+                                                2.0 3.0))
+                                   '(2 2)))
+                     (l (cholesky cov))
+                     (flat (to-list l)))
+                (assert-equal '(2 2) (shape l))
+                (assert-approx-equal 0.0 (list-ref flat 1) 1e-10))))
+
+          (make-test "cholesky factor reconstructs covariance"
+            (lambda ()
+              (let* ((cov (reshape (from-list '(4.0 2.0
+                                                2.0 3.0))
+                                   '(2 2)))
+                     (l (cholesky cov))
+                     (recon (matmul l (transpose l 0 1)))
+                     (vals (to-list recon)))
+                (assert-approx-equal 4.0 (list-ref vals 0) 1e-8)
+                (assert-approx-equal 2.0 (list-ref vals 1) 1e-8)
+                (assert-approx-equal 2.0 (list-ref vals 2) 1e-8)
+                (assert-approx-equal 3.0 (list-ref vals 3) 1e-8))))
+
+          (make-test "mvnormal returns one sample with mean shape"
+            (lambda ()
+              (let* ((mean (from-list '(0.0 1.0)))
+                     (cov (reshape (from-list '(1.0 0.2
+                                                0.2 2.0))
+                                   '(2 2)))
+                     (sample (mvnormal mean cov))
+                     (vals (to-list sample)))
+                (assert-equal '(2) (shape sample))
+                (assert-true (number? (list-ref vals 0)))
+                (assert-true (number? (list-ref vals 1)))))))))
+
+    (print-tap (run suite))))
+

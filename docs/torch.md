@@ -371,6 +371,13 @@ Tensors and modules can be moved between CPU and GPU:
 | `matmul` | Matrix multiplication |
 | `dot` | Dot product (flattened) |
 
+### Linear Algebra and Sampling
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `cholesky` | `(cov)` | Cholesky factor of a square SPD covariance matrix |
+| `mvnormal` | `(mean cov)` | Draw one sample from `N(mean, cov)` |
+
 ### Unary Operations
 
 | Function | Description |
@@ -489,6 +496,9 @@ pass/fail summary.
 | [`optimizers.eta`](../examples/torch_tests/optimizers.eta) | `sgd`, `adam`, `step!`, `optim-zero-grad!`, `optimizer?` |
 | [`device_info.eta`](../examples/torch_tests/device_info.eta) | `gpu-available?`, `gpu-count`, `device`, `to-device`, `to-cpu` |
 | [`training.eta`](../examples/torch_tests/training.eta) | `train-step!`, SGD/Adam convergence, sequential network training |
+
+The stdlib test suite also includes [`stdlib/tests/torch.test.eta`](../stdlib/tests/torch.test.eta),
+which validates `cholesky` and `mvnormal` via the Eta test runner.
 
 ### Running the tests
 

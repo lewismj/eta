@@ -475,7 +475,7 @@ variants), and numeric estimators (`do:estimate-effect`,
 (import std.stats)
 ```
 
-Descriptive statistics, distributions, bivariate measures, OLS
+Descriptive statistics, distribution quantiles, bivariate measures, OLS
 (returns a `%ols-result` record with backward-compatible
 nine-element list accessors), multivariate regression, and
 column-wise operations over lists, vectors, or fact-table columns.
@@ -617,6 +617,7 @@ imported explicitly when needed: `std.regex`, `std.clpb`, `std.clpr`,
 |----------|---------------|
 | **Tensor creation** | `tensor`, `ones`, `zeros`, `randn`, `arange`, `linspace`, `from-list` |
 | **Arithmetic** | `t+`, `t-`, `t*`, `t/`, `matmul`, `dot` |
+| **Linear algebra/sampling** | `cholesky`, `mvnormal` |
 | **Unary ops** | `neg`, `tabs`, `texp`, `tlog`, `tsqrt`, `relu`, `sigmoid`, `ttanh`, `softmax` |
 | **Shape** | `shape`, `reshape`, `transpose`, `squeeze`, `unsqueeze`, `cat` |
 | **Reductions** | `tsum`, `mean`, `tmax`, `tmin`, `argmax`, `argmin` |

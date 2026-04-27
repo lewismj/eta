@@ -18,6 +18,7 @@
     tensor ones zeros randn arange linspace from-list
     tensor?
     t+ t- t* t/ matmul dot
+    cholesky mvnormal
     neg tabs texp tlog tsqrt relu sigmoid ttanh softmax
     shape reshape transpose squeeze unsqueeze cat
     tsum mean tmax tmin argmax argmin
@@ -58,6 +59,8 @@
     (define t/ torch/div)
     (define matmul torch/matmul)
     (define dot torch/dot)
+    (define cholesky torch/cholesky)
+    (define mvnormal torch/mvnormal)
 
     ;; -- Unary ops -----------------------------------------------------------
     (define neg torch/neg)

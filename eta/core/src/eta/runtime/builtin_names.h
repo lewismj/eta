@@ -303,6 +303,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%stats-correlation",      2, false);
     r("%stats-t-cdf",            2, false);
     r("%stats-t-quantile",       2, false);
+    r("%stats-normal-quantile",  1, false);
     r("%stats-ci",               2, false);
     r("%stats-t-test-2",         2, false);
     r("%stats-ols",              2, false);
@@ -390,6 +391,8 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("torch/div",       2, false);
     r("torch/matmul",    2, false);
     r("torch/dot",       2, false);
+    r("torch/cholesky",  1, false);
+    r("torch/mvnormal",  2, false);
 
     /// Unary
     r("torch/neg",       1, false);

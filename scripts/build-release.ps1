@@ -152,6 +152,19 @@ foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_d
     }
 }
 
+# Verify xeus runtime DLLs landed in bin/ — without these eta_jupyter.exe
+# fails to start with STATUS_DLL_NOT_FOUND (0xC0000135 / -1073741515).
+$BinPath = Join-Path $Prefix "bin"
+$HasXeus    = Test-Path (Join-Path $BinPath "xeus.dll")
+$HasXeusZmq = Test-Path (Join-Path $BinPath "xeus-zmq.dll")
+$HasZmq     = [bool](Get-ChildItem -Path $BinPath -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+if (-not ($HasXeus -and $HasXeusZmq -and $HasZmq)) {
+    Write-Host "  [WARN] xeus runtime DLLs missing from bin\ -- eta_jupyter will not run on a clean machine:" -ForegroundColor Yellow
+    if (-not $HasXeus)    { Write-Host "         - xeus.dll" }
+    if (-not $HasXeusZmq) { Write-Host "         - xeus-zmq.dll" }
+    if (-not $HasZmq)     { Write-Host "         - libzmq*.dll" }
+}
+
 # Keep Jupyter kernelspec logos next to eta_jupyter so `eta_jupyter --install`
 # can copy them on target machines (without source-tree paths).
 $JupyterResSrc = Join-Path $ProjectRoot "eta\jupyter\resources"

@@ -5,6 +5,7 @@
 #include <eta/runtime/factory.h>
 #include <eta/runtime/nanbox.h>
 #include <eta/runtime/builtin_env.h>
+#include <eta/runtime/core_primitives.h>
 #include <eta/runtime/numeric_value.h>
 #include <eta/runtime/types/fact_table.h>
 #include <eta/runtime/stats_math.h>
@@ -492,6 +493,38 @@ BOOST_AUTO_TEST_CASE(eigen_t_quantile_roundtrip) {
     double p = stats::t_cdf(t, df);
     double t_back = stats::t_quantile(p, df);
     BOOST_TEST(std::abs(t_back - t) < 1e-6);
+}
+
+BOOST_AUTO_TEST_CASE(eigen_normal_quantile_roundtrip) {
+    auto normal_cdf = [](double x) -> double {
+        return 0.5 * (1.0 + std::erf(x / std::sqrt(2.0)));
+    };
+
+    const std::vector<double> ps = {0.001, 0.01, 0.5, 0.9, 0.99, 0.999};
+    for (double p : ps) {
+        double z = stats::normal_quantile(p);
+        double p_back = normal_cdf(z);
+        BOOST_TEST(std::abs(p_back - p) < 1e-9);
+    }
+    BOOST_TEST(std::abs(stats::normal_quantile(0.5)) < 1e-12);
+}
+
+BOOST_AUTO_TEST_CASE(core_builtin_normal_quantile_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_core_primitives(env, heap, intern, nullptr);
+
+    auto idx = env.lookup("%stats-normal-quantile");
+    BOOST_REQUIRE(idx.has_value());
+
+    auto p = *ops::encode(0.975);
+    auto result = env.specs()[*idx].func({p});
+    BOOST_REQUIRE(result.has_value());
+
+    auto zv = classify_numeric(*result, heap);
+    BOOST_REQUIRE(zv.is_valid());
+    BOOST_TEST(std::abs(zv.as_double() - 1.959963984540054) < 1e-8);
 }
 
 BOOST_AUTO_TEST_CASE(eigen_ols_perfect_fit) {

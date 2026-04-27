@@ -5598,6 +5598,13 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return make_flonum(stats::t_quantile(pv.as_double(), dv.as_double()));
     });
 
+    env.register_builtin("%stats-normal-quantile", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto pv = classify_numeric(args[0], heap);
+        if (!pv.is_valid())
+            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%stats-normal-quantile: argument must be a number"}});
+        return make_flonum(stats::normal_quantile(pv.as_double()));
+    });
+
     env.register_builtin("%stats-ci", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto xs = stats::to_eigen(heap, args[0], "%stats-ci");
         if (!xs) return std::unexpected(xs.error());
