@@ -40,6 +40,7 @@
 <p align="center">
   <a href="docs/portfolio.md">Causal Decision Engine for Portfolio Optimisation</a>
   (<a href="examples/notebooks/Portfolio.ipynb">Notebook</a>)
+  <a href="docs/xva-wwr.md">Wrong Way Risk via do(...) interventions</a>
 </p>
 
 <!--

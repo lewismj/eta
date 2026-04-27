@@ -35,6 +35,8 @@
 > of the number of risk factors. The path from this example to a
 > realistic engine is mostly **adding finance** (exposure simulator,
 > curves, netting/CSA) rather than changing the runtime.
+> 
+> See [wrong-way risk](xva-wwr.md) Wrong-Way Risk using `do`-calculus.
 
 ---
 

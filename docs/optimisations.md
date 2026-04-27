@@ -37,6 +37,11 @@ those opcodes are decoded by `vm.cpp` but **never emitted** by
 through a generic `LoadGlobal` + `Call` + primitive-dispatch path that
 allocates a `std::vector<LispVal>` per call.
 
+So, in current compiler output, `etac` does not generate `OpCode::Add`
+`/Sub` `/Mul` `/Div` `/Eq` `/Cons` `/Car` `/Cdr` for ordinary runtime
+calls. That is an explicit optimisation miss (aside from cases removed
+entirely by constant folding).
+
 ## Shortlist (best ROI first)
 
 1. Primitive specialisation pass: lower known-builtin calls to the
