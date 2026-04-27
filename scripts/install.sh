@@ -129,6 +129,28 @@ done
 echo
 echo "▸ Jupyter kernel setup:"
 if [ -x "${BIN_DIR}/eta_jupyter" ]; then
+    # Sanity-check that the xeus shared libraries shipped alongside the
+    # executable.  Without them, eta_jupyter fails to start with
+    # "error while loading shared libraries: libxeus.so.N: cannot open
+    # shared object file: No such file or directory".
+    case "$(uname -s)" in
+        Darwin*) _libext="dylib" ;;
+        *)       _libext="so"    ;;
+    esac
+    LIB_DIR="$(dirname "$BIN_DIR")/lib"
+    _missing=""
+    ls "${LIB_DIR}/"libxeus.*"${_libext}"*     >/dev/null 2>&1 || _missing="${_missing} libxeus.${_libext}"
+    ls "${LIB_DIR}/"libxeus-zmq.*"${_libext}"* >/dev/null 2>&1 || _missing="${_missing} libxeus-zmq.${_libext}"
+    ls "${LIB_DIR}/"libzmq.*"${_libext}"*      >/dev/null 2>&1 || _missing="${_missing} libzmq.${_libext}"
+    if [ -n "$_missing" ]; then
+        echo "  [WARN] Missing xeus runtime libraries in ${LIB_DIR} :"
+        for m in $_missing; do echo "         - $m"; done
+        echo "         eta_jupyter will fail to start with:"
+        echo "         'error while loading shared libraries'"
+        echo "         Rebuild from source (this bundle is missing required runtime libs)."
+    fi
+    unset _libext _missing LIB_DIR
+
     echo "▸ Installing Eta kernelspec (--user)..."
     if "${BIN_DIR}/eta_jupyter" --install --user; then
         echo "  ✓ Kernel installed."

@@ -41,7 +41,19 @@
                      (vals (to-list sample)))
                 (assert-equal '(2) (shape sample))
                 (assert-true (number? (list-ref vals 0)))
-                (assert-true (number? (list-ref vals 1)))))))))
+                (assert-true (number? (list-ref vals 1))))))
+
+          (make-test "manual-seed makes randn deterministic"
+            (lambda ()
+              (manual-seed 20260427)
+              (let ((a (to-list (randn '(2 2)))))
+                (manual-seed 20260427)
+                (let ((b (to-list (randn '(2 2)))))
+                  (assert-approx-equal (list-ref a 0) (list-ref b 0) 1e-12)
+                  (assert-approx-equal (list-ref a 1) (list-ref b 1) 1e-12)
+                  (assert-approx-equal (list-ref a 2) (list-ref b 2) 1e-12)
+                  (assert-approx-equal (list-ref a 3) (list-ref b 3) 1e-12)))))
+
+          )))
 
     (print-tap (run suite))))
-

@@ -123,6 +123,24 @@ for bin in etac etai eta_repl eta_lsp eta_dap eta_jupyter; do
     fi
 done
 
+# Verify xeus runtime shared libs landed in lib/ -- without these
+# eta_jupyter fails to start with "libxeus.so.N: cannot open shared
+# object file: No such file or directory" on a clean target machine.
+echo "  Verifying xeus runtime libraries..."
+case "$(uname -s)" in
+    Darwin*) _libext="dylib" ;;
+    *)       _libext="so"    ;;
+esac
+_missing=""
+ls "${PREFIX}/lib/"libxeus.*"${_libext}"*       >/dev/null 2>&1 || _missing="${_missing} libxeus.${_libext}"
+ls "${PREFIX}/lib/"libxeus-zmq.*"${_libext}"*   >/dev/null 2>&1 || _missing="${_missing} libxeus-zmq.${_libext}"
+ls "${PREFIX}/lib/"libzmq.*"${_libext}"*        >/dev/null 2>&1 || _missing="${_missing} libzmq.${_libext}"
+if [ -n "$_missing" ]; then
+    echo "  [WARN] xeus runtime libraries missing from lib/ -- eta_jupyter will not run on a clean machine:" >&2
+    for m in $_missing; do echo "         - $m" >&2; done
+fi
+unset _libext _missing
+
 # Keep Jupyter kernelspec logos next to eta_jupyter so `eta_jupyter --install`
 # can copy them on target machines (without source-tree paths).
 JUPYTER_RES_SRC="${PROJECT_ROOT}/eta/jupyter/resources"

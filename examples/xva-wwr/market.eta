@@ -1,0 +1,74 @@
+;;; examples/xva-wwr/market.eta -- Market data and causal shock sensitivities.
+
+(module market
+  (export
+    base-risk-free-rate
+    factor-correlation
+    baseline-curves
+    hazard-rates
+    recovery-rates
+    cp-sensitivity)
+  (import std.core)
+  (import std.collections)
+  (begin
+
+    (defun cp-name (i)
+      (if (< i 10)
+          (string-append "CP-0" (number->string i))
+          (string-append "CP-" (number->string i))))
+
+    (define base-risk-free-rate 0.0325)
+
+    ;; Correlation matrix for {oil, usd-10y, eur-usd}.
+    (define factor-correlation
+      '((1.00  0.35 -0.20)
+        (0.35  1.00  0.30)
+        (-0.20 0.30  1.00)))
+
+    ;; Baseline expected-exposure levels by counterparty.
+    (defun base-ee (i)
+      (+ 80000 (* 12000 (modulo i 11))))
+
+    (define baseline-curves
+      (map* (lambda (i) (cons (cp-name i) (base-ee i))) (iota 30 1)))
+
+    ;; Baseline hazard and recovery terms.
+    (defun base-hazard (i)
+      (+ 0.012 (* 0.0015 (modulo i 8))))
+
+    (defun base-recovery (i)
+      (- 0.45 (* 0.02 (modulo i 4))))
+
+    (define hazard-rates
+      (map* (lambda (i) (cons (cp-name i) (base-hazard i))) (iota 30 1)))
+
+    (define recovery-rates
+      (map* (lambda (i) (cons (cp-name i) (base-recovery i))) (iota 30 1)))
+
+    ;; Counterparty shock betas for causal interventions.
+    (defun cp-betas (i)
+      (let ((oil    (+ 0.20 (* 0.06 (modulo i 5))))
+            (usd10  (+ 0.10 (* 0.04 (modulo (+ i 2) 4))))
+            (fx     (+ 0.08 (* 0.05 (modulo (+ i 1) 6)))))
+        (list
+          (cons 'oil
+                (cond
+                  ((= i 17)  2.91)
+                  ((= i 9)   2.07)
+                  ((= i 31) -0.62)
+                  (else oil)))
+          (cons 'usd-10y
+                (cond
+                  ((= i 4)   1.22)
+                  ((= i 12) -0.48)
+                  (else usd10)))
+          (cons 'eur-usd
+                (cond
+                  ((= i 22)  1.94)
+                  (else fx))))))
+
+    (define cp-sensitivity
+      (map* (lambda (i) (cons (cp-name i) (cp-betas i))) (iota 30 1)))
+
+  ))
+

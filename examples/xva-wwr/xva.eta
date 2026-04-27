@@ -1,0 +1,65 @@
+;;; examples/xva-wwr/xva.eta -- CVA aggregation and one-pass AAD greeks.
+
+(module xva
+  (export cva-table total-cva cva-with-greeks top-contributors)
+  (import std.core)
+  (import std.collections)
+  (import std.aad)
+  (import market)
+  (begin
+
+    (defun assoc-num (key alist fallback)
+      (let ((v (assoc-ref key alist)))
+        (if (number? v) v fallback)))
+
+    (defun discount-factor (discount-shift t)
+      (exp (* -1 (* (+ base-risk-free-rate discount-shift) t))))
+
+    (defun cva-curve (curve hazard recovery discount-shift fx-shift)
+      (let loop ((rest curve) (step 1) (acc 0.0))
+        (if (null? rest)
+            acc
+            (let* ((t (* 0.25 step))
+                   (ee (car rest))
+                   (pd (* hazard 0.25))
+                   (df (discount-factor discount-shift t))
+                   (fx-mult (+ 1.0 fx-shift))
+                   (bucket (* (- 1.0 recovery) ee df pd fx-mult)))
+              (loop (cdr rest) (+ step 1) (+ acc bucket))))))
+
+    (defun cva-table (ee-curves hazards recoveries discount-shift fx-shift)
+      (map*
+        (lambda (entry)
+          (let* ((cp (car entry))
+                 (curve (cdr entry))
+                 (haz (assoc-num cp hazards 0.02))
+                 (rec (assoc-num cp recoveries 0.45)))
+            (cons cp (cva-curve curve haz rec discount-shift fx-shift))))
+        ee-curves))
+
+    (defun total-cva (table)
+      (foldl (lambda (acc entry) (+ acc (cdr entry))) 0.0 table))
+
+    (defun shift-map (alist delta lo hi)
+      (map*
+        (lambda (entry)
+          (let ((v (+ (cdr entry) delta)))
+            (cons (car entry) (max lo (min hi v)))))
+        alist))
+
+    ;; (cva-with-greeks ee-curves '(hazard-shift recovery-shift discount-shift fx-shift))
+    ;; -> (value grad-vector)
+    (defun cva-with-greeks (ee-curves market-scalars)
+      (grad
+        (lambda (hazard-shift recovery-shift discount-shift fx-shift)
+          (let* ((hazards    (shift-map hazard-rates hazard-shift 1e-5 0.80))
+                 (recoveries (shift-map recovery-rates recovery-shift 0.01 0.95))
+                 (table      (cva-table ee-curves hazards recoveries discount-shift fx-shift)))
+            (total-cva table)))
+        market-scalars))
+
+    (defun top-contributors (table n)
+      (take (sort (lambda (a b) (> (cdr a) (cdr b))) table) n))
+
+  ))
+

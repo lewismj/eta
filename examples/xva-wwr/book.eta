@@ -1,0 +1,45 @@
+;;; examples/xva-wwr/book.eta -- Deterministic demo book and CSA terms.
+
+(module book
+  (export counterparties csa-terms make-book)
+  (import std.core)
+  (import std.collections)
+  (begin
+
+    (defun cp-name (i)
+      (if (< i 10)
+          (string-append "CP-0" (number->string i))
+          (string-append "CP-" (number->string i))))
+
+    (defun make-counterparties (n)
+      (map* cp-name (iota n 1)))
+
+    (define counterparties (make-counterparties 30))
+
+    (defun make-trade (idx)
+      (let* ((cp-index (+ 1 (modulo (- idx 1) 30)))
+             (cp (cp-name cp-index))
+             (notional (+ 1000000 (* 25000 (modulo idx 9))))
+             (maturity (+ 1 (modulo idx 10)))
+             (fixed-rate (+ 0.015 (* 0.001 (modulo idx 7)))))
+        (list
+          (cons 'id idx)
+          (cons 'cp cp)
+          (cons 'notional notional)
+          (cons 'maturity-years maturity)
+          (cons 'fixed-rate fixed-rate))))
+
+    (defun make-book ()
+      (map* make-trade (iota 200 1)))
+
+    (defun make-csa (idx)
+      (list
+        (cons 'cp (cp-name idx))
+        (cons 'threshold (+ 250000 (* 10000 (modulo idx 5))))
+        (cons 'mta 50000)
+        (cons 'mpor-days 10)))
+
+    (define csa-terms (map* make-csa (iota 30 1)))
+
+  ))
+

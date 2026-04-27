@@ -167,6 +167,15 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         return factory::make_tensor(heap, ::torch::randn(shape, ::torch::kFloat64));
     });
 
+    /// (torch/manual-seed seed)
+    env.register_builtin("torch/manual-seed", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto seed = to_int64(args[0], heap);
+        if (!seed || *seed < 0)
+            return std::unexpected(torch_error("torch/manual-seed: non-negative integer seed required"));
+        ::torch::manual_seed(static_cast<uint64_t>(*seed));
+        return args[0];
+    });
+
     /// (torch/arange start end step)
     env.register_builtin("torch/arange", 3, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto s = to_double(args[0], heap), e = to_double(args[1], heap), st = to_double(args[2], heap);

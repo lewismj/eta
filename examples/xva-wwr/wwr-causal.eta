@@ -1,0 +1,205 @@
+;;; examples/xva-wwr/wwr-causal.eta -- SCM sampling and counterfactual CVA sweep.
+
+(module wwr-causal
+  (export scm scm:topo-sort scm:sample cva-under-do counterfactual-sweep)
+  (import std.core)
+  (import std.collections)
+  (import market)
+  (import paths)
+  (import xva)
+  (begin
+
+    (define scm
+      '((oil -> usd-rates)
+        (oil -> fx-usd)
+        (oil -> energy-credit)
+        (usd-rates -> exposure)
+        (fx-usd -> exposure)
+        (energy-credit -> hazard)))
+
+    (defun assoc-num (key alist fallback)
+      (let ((v (assoc-ref key alist)))
+        (if (number? v) v fallback)))
+
+    (defun abs-val (x)
+      (if (< x 0) (* -1 x) x))
+
+    (defun member-eq? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((eq? x (car xs)) #t)
+        (else (member-eq? x (cdr xs)))))
+
+    (defun add-unique (x xs)
+      (if (member-eq? x xs) xs (cons x xs)))
+
+    (defun remove-first (x xs)
+      (cond
+        ((null? xs) '())
+        ((eq? x (car xs)) (cdr xs))
+        (else (cons (car xs) (remove-first x (cdr xs))))))
+
+    (defun scm:nodes (edges)
+      (let loop ((rest edges) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let* ((e (car rest))
+                   (src (car e))
+                   (dst (caddr e)))
+              (loop (cdr rest)
+                    (add-unique dst (add-unique src acc)))))))
+
+    (defun scm:parents-of (node edges)
+      (map* car (filter (lambda (e) (eq? (caddr e) node)) edges)))
+
+    (defun node-ready? (node edges placed)
+      (every? (lambda (p) (member-eq? p placed))
+              (scm:parents-of node edges)))
+
+    ;; Topological sort for edge triples '(src -> dst).
+    (defun scm:topo-sort (edges)
+      (let ((nodes (scm:nodes edges)))
+        (let loop ((remaining nodes) (placed '()))
+          (if (null? remaining)
+              (reverse placed)
+              (let ((ready (filter (lambda (n) (node-ready? n edges placed)) remaining)))
+                (if (null? ready)
+                    (reverse placed)
+                    (let ((n (car ready)))
+                      (loop (remove-first n remaining)
+                            (cons n placed)))))))))
+
+    ;; Mechanism format:
+    ;;   (cons var (list parents coeffs intercept sigma))
+    (defun mechanism-edges (mechanisms)
+      (foldl
+        (lambda (acc entry)
+          (let ((var (car entry))
+                (parents (car (cdr entry))))
+            (append (map* (lambda (p) (list p '-> var)) parents) acc)))
+        '()
+        mechanisms))
+
+    (defun dot (xs ys)
+      (if (or (null? xs) (null? ys))
+          0.0
+          (+ (* (car xs) (car ys))
+             (dot (cdr xs) (cdr ys)))))
+
+    (defun mechanism-value (v m env exogenous)
+      (let* ((parents (car m))
+             (coeffs (cadr m))
+             (intercept (caddr m))
+             (sigma (car (cdr (cdr (cdr m)))))
+             (noise (assoc-num v exogenous 0.0))
+             (parent-vals (map* (lambda (p) (assoc-num p env 0.0)) parents)))
+        (+ intercept (+ (dot coeffs parent-vals) (* sigma noise)))))
+
+    (defun sample-node-value (v env mechanisms exogenous interventions)
+      (let ((forced (assoc-ref v interventions)))
+        (if (number? forced)
+            forced
+            (let ((m (assoc-ref v mechanisms)))
+              (if m
+                  (mechanism-value v m env exogenous)
+                  (assoc-num v exogenous 0.0))))))
+
+    ;; Draw one SCM sample via topo-order and linear-Gaussian mechanisms.
+    (defun scm:sample (mechanisms exogenous interventions)
+      (let* ((edges (mechanism-edges mechanisms))
+             (order (scm:topo-sort edges)))
+        (let loop ((vars order) (env '()))
+          (if (null? vars)
+              (reverse env)
+              (let ((v (car vars))
+                    (value (sample-node-value (car vars) env mechanisms exogenous interventions)))
+                (loop (cdr vars) (cons (cons v value) env)))))))
+
+    (defun cp-beta (cp var)
+      (let ((betas (assoc-ref cp cp-sensitivity)))
+        (if betas (assoc-num var betas 0.0) 0.0)))
+
+    (defun adjust-hazards (do-var do-value)
+      (map*
+        (lambda (entry)
+          (let* ((cp (car entry))
+                 (hazard (cdr entry))
+                 (beta (cp-beta cp do-var)))
+            (cons cp (* hazard (exp (* beta do-value))))))
+        hazard-rates))
+
+    ;; Returns (total-cva . per-cp-table).
+    (defun cva-under-do (do-var do-value base-curves)
+      (let* ((tilt (list (cons do-var do-value)))
+             (ee (simulate-paths-tilted base-curves '() factor-correlation
+                                        1000 12 0.25 20260427 tilt))
+             (hazards (adjust-hazards do-var do-value))
+             (table (cva-table ee hazards recovery-rates 0.0 0.0)))
+        (cons (total-cva table) table)))
+
+    (defun table-value (cp table fallback)
+      (assoc-num cp table fallback))
+
+    (defun elasticity-table (down-table up-table span)
+      (map*
+        (lambda (entry)
+          (let* ((cp (car entry))
+                 (down (max 1e-12 (cdr entry)))
+                 (up (max 1e-12 (table-value cp up-table down)))
+                 (eps (/ (- (log up) (log down)) span)))
+            (cons cp eps)))
+        down-table))
+
+    (defun remove-cp (cp xs)
+      (filter (lambda (entry) (not (equal? (car entry) cp))) xs))
+
+    (defun merge-one-elasticity (acc entry)
+      (let* ((cp (car entry))
+             (eps (cdr entry))
+             (old (assoc-ref cp acc)))
+        (if (or (not (number? old))
+                (> (abs-val eps) (abs-val old)))
+            (cons (cons cp eps) (remove-cp cp acc))
+            acc)))
+
+    (defun merge-elasticity (acc eps-table)
+      (foldl merge-one-elasticity acc eps-table))
+
+    ;; queries: '((oil -0.30 0.30) (usd-10y -0.01 0.01) ...)
+    ;; Returns an alist with rows and ranked elasticity buckets.
+    (defun counterfactual-sweep (queries base-curves)
+      (let loop ((rest queries) (rows '()) (eps-acc '()))
+        (if (null? rest)
+            (let* ((wrong-way (take
+                                (sort (lambda (a b) (> (cdr a) (cdr b)))
+                                      (filter (lambda (e) (> (cdr e) 0.0)) eps-acc))
+                                3))
+                   (right-way (take
+                                (sort (lambda (a b) (< (cdr a) (cdr b)))
+                                      (filter (lambda (e) (< (cdr e) 0.0)) eps-acc))
+                                3))
+                   (insensitive (take
+                                  (sort (lambda (a b) (< (abs-val (cdr a)) (abs-val (cdr b))))
+                                        eps-acc)
+                                  3)))
+              (list
+                (cons 'rows (reverse rows))
+                (cons 'wrong-way wrong-way)
+                (cons 'right-way right-way)
+                (cons 'insensitive insensitive)))
+            (let* ((q (car rest))
+                   (var (car q))
+                   (down-shock (cadr q))
+                   (up-shock (caddr q))
+                   (down (cva-under-do var down-shock base-curves))
+                   (up (cva-under-do var up-shock base-curves))
+                   (eps (elasticity-table (cdr down) (cdr up) (- up-shock down-shock)))
+                   (row (list
+                          (cons 'var var)
+                          (cons 'book-down (car down))
+                          (cons 'book-up (car up)))))
+              (loop (cdr rest)
+                    (cons row rows)
+                    (merge-elasticity eps-acc eps))))))
+
+  ))

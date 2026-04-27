@@ -615,7 +615,7 @@ imported explicitly when needed: `std.regex`, `std.clpb`, `std.clpr`,
 
 | Category | Key Functions |
 |----------|---------------|
-| **Tensor creation** | `tensor`, `ones`, `zeros`, `randn`, `arange`, `linspace`, `from-list` |
+| **Tensor creation** | `tensor`, `ones`, `zeros`, `randn`, `manual-seed`, `arange`, `linspace`, `from-list` |
 | **Arithmetic** | `t+`, `t-`, `t*`, `t/`, `matmul`, `dot` |
 | **Linear algebra/sampling** | `cholesky`, `mvnormal` |
 | **Unary ops** | `neg`, `tabs`, `texp`, `tlog`, `tsqrt`, `relu`, `sigmoid`, `ttanh`, `softmax` |

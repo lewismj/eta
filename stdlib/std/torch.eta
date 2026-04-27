@@ -15,7 +15,7 @@
 (module std.torch
   (export
     ;; Re-export core torch builtins for single-import convenience
-    tensor ones zeros randn arange linspace from-list
+    tensor ones zeros randn manual-seed arange linspace from-list
     tensor?
     t+ t- t* t/ matmul dot
     cholesky mvnormal
@@ -45,6 +45,7 @@
     (define ones torch/ones)
     (define zeros torch/zeros)
     (define randn torch/randn)
+    (define manual-seed torch/manual-seed)
     (define arange torch/arange)
     (define linspace torch/linspace)
     (define from-list torch/from-list)

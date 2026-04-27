@@ -1014,6 +1014,30 @@ BOOST_AUTO_TEST_CASE(prim_torch_mvnormal_via_env) {
     BOOST_TEST(torch::isfinite(sp->tensor).all().item<bool>());
 }
 
+BOOST_AUTO_TEST_CASE(prim_torch_manual_seed_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto mk_int = [](int64_t v) { return expect_ok(ops::encode(v)); };
+    auto two = mk_int(2);
+    auto shape_tail = expect_ok(make_cons(heap, two, Nil));
+    auto shape = expect_ok(make_cons(heap, two, shape_tail));
+    auto seed = mk_int(20260427);
+
+    expect_ok(env.specs()[*env.lookup("torch/manual-seed")].func({seed}));
+    auto s1 = expect_ok(env.specs()[*env.lookup("torch/randn")].func({shape}));
+    expect_ok(env.specs()[*env.lookup("torch/manual-seed")].func({seed}));
+    auto s2 = expect_ok(env.specs()[*env.lookup("torch/randn")].func({shape}));
+
+    auto* t1 = get_tensor(heap, s1);
+    auto* t2 = get_tensor(heap, s2);
+    BOOST_REQUIRE(t1);
+    BOOST_REQUIRE(t2);
+    BOOST_TEST(torch::allclose(t1->tensor, t2->tensor, 0.0, 0.0));
+}
+
 /// Unary ops via env
 
 BOOST_AUTO_TEST_CASE(prim_unary_ops_via_env) {
@@ -1465,6 +1489,10 @@ BOOST_AUTO_TEST_CASE(prim_error_paths) {
     auto cov = expect_ok(tf::make_tensor(heap, torch::eye(2, torch::kFloat64)));
     auto r8 = env.specs()[*env.lookup("torch/mvnormal")].func({mean, cov});
     BOOST_TEST(!r8.has_value());
+
+    /// torch/manual-seed with a negative seed
+    auto r9 = env.specs()[*env.lookup("torch/manual-seed")].func({expect_ok(ops::encode(int64_t(-1)))});
+    BOOST_TEST(!r9.has_value());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

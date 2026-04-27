@@ -377,6 +377,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("torch/ones",      1, false);
     r("torch/zeros",     1, false);
     r("torch/randn",     1, false);
+    r("torch/manual-seed", 1, false);
     r("torch/arange",    3, false);
     r("torch/linspace",  3, false);
     r("torch/from-list", 1, false);

@@ -1,0 +1,49 @@
+;;; examples/xva-wwr/main.eta -- Compact orchestrator for the xva-wow modules.
+
+(module main
+  (export run-demo)
+  (import std.core)
+  (import book)
+  (import market)
+  (import paths)
+  (import xva)
+  (import wwr-causal)
+  (import symbolic)
+  (import compress)
+  (import workers)
+  (begin
+
+    (define default-queries
+      '((oil -0.30 0.30)
+        (usd-10y -0.01 0.01)
+        (eur-usd -0.15 0.15)))
+
+    ;; Returns a structured summary without side effects so tests can
+    ;; load this file safely in both interpreted and compiled modes.
+    (defun run-demo ()
+      (let* ((trades (make-book))
+             (ee (simulate-paths baseline-curves '() factor-correlation
+                                 5000 12 0.25 20260427))
+             (baseline-table (cva-table ee hazard-rates recovery-rates 0.0 0.0))
+             (baseline-total (total-cva baseline-table))
+             (greeks (cva-with-greeks ee '(0.0 0.0 0.0 0.0)))
+             (sweep (counterfactual-sweep default-queries baseline-curves))
+             (expr '(* notional (/ (- 1 (exp (* -1 (* r tau)))) r)))
+             (dexpr (D expr 'r))
+             (lowered (lower-expression dexpr '(notional r tau)))
+             (kernel-value (lowered 1000000 0.03 2.5))
+             (sigma3 (matrix-prefix simm-ir-delta-covariance 3))
+             (preview-obj (objective-value '(0.10 -0.20 0.05) sigma3 0.15))
+             (shard-check (rerun-shard-and-check 2)))
+        (list
+          (cons 'book-size (length trades))
+          (cons 'baseline-cva baseline-total)
+          (cons 'top3 (top-contributors baseline-table 3))
+          (cons 'greeks greeks)
+          (cons 'counterfactual sweep)
+          (cons 'symbolic-nodes (node-count dexpr))
+          (cons 'symbolic-value kernel-value)
+          (cons 'compression-preview preview-obj)
+          (cons 'shard-check shard-check)))))
+
+  )

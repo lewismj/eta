@@ -359,6 +359,7 @@ Tensors and modules can be moved between CPU and GPU:
 | `ones` | `(shape)` | Tensor filled with 1.0 |
 | `zeros` | `(shape)` | Tensor filled with 0.0 |
 | `randn` | `(shape)` | Tensor from normal distribution |
+| `manual-seed` | `(seed)` | Set torch RNG seed for reproducible sampling |
 | `arange` | `(start end step)` | Range tensor |
 | `linspace` | `(start end n)` | Evenly spaced points |
 | `from-list` | `(list)` | Flat list → 1-D tensor |
