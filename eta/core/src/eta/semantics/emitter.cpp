@@ -12,6 +12,24 @@ using namespace runtime::memory::factory;
 using namespace runtime::nanbox;
 using namespace runtime::types;
 
+namespace {
+
+runtime::vm::OpCode opcode_for_primitive(core::PrimitiveKind kind) {
+    switch (kind) {
+        case core::PrimitiveKind::Cons: return runtime::vm::OpCode::Cons;
+        case core::PrimitiveKind::Car:  return runtime::vm::OpCode::Car;
+        case core::PrimitiveKind::Cdr:  return runtime::vm::OpCode::Cdr;
+        case core::PrimitiveKind::Add:  return runtime::vm::OpCode::Add;
+        case core::PrimitiveKind::Sub:  return runtime::vm::OpCode::Sub;
+        case core::PrimitiveKind::Mul:  return runtime::vm::OpCode::Mul;
+        case core::PrimitiveKind::Div:  return runtime::vm::OpCode::Div;
+        case core::PrimitiveKind::Eq:   return runtime::vm::OpCode::Eq;
+    }
+    return OpCode::Nop;
+}
+
+} ///< namespace
+
 /**
  * Top-level emit
  */
@@ -55,6 +73,8 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
             emit_var(n, ctx, span);
         else if constexpr (std::is_same_v<T, core::Call>)
             emit_call(n, node->tail, ctx, span);
+        else if constexpr (std::is_same_v<T, core::PrimitiveCall>)
+            emit_primitive_call(n, ctx, span);
         else if constexpr (std::is_same_v<T, core::If>)
             emit_if(n, ctx, span);
         else if constexpr (std::is_same_v<T, core::Begin>)
@@ -173,6 +193,22 @@ void Emitter::emit_call(const core::Call& n, bool tail, Context& ctx, const Span
     emit_node(n.callee, ctx);
     ctx.emit_instr(tail ? OpCode::TailCall : OpCode::Call,
                    static_cast<uint32_t>(n.args.size()), span);
+}
+
+void Emitter::emit_primitive_call(const core::PrimitiveCall& n, Context& ctx, const Span& span) {
+    for (const auto* arg : n.args) emit_node(arg, ctx);
+
+    const auto op = opcode_for_primitive(n.kind);
+    switch (n.kind) {
+        case core::PrimitiveKind::Car:
+        case core::PrimitiveKind::Cdr:
+            assert(n.args.size() == 1);
+            break;
+        default:
+            assert(n.args.size() == 2);
+            break;
+    }
+    ctx.emit_instr(op, 0, span);
 }
 
 void Emitter::emit_if(const core::If& n, Context& ctx, const Span& span) {

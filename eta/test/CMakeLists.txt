@@ -81,6 +81,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 # Inject the path to the etai binary for spawn tests.
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_ETAI_PATH="$<TARGET_FILE:etai>"
+    ETA_ETAC_PATH="$<TARGET_FILE:etac>"
 )
 
 # Pull in the DAP server implementation (not main_dap.cpp) so dap_tests.cpp

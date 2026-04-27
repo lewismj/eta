@@ -57,7 +57,7 @@ Usage: etac [options] <file.eta> [-o <file.etac>]
 | Flag | Description |
 |------|-------------|
 | `-o <output>` | Output file path. Defaults to `<input>.etac`. |
-| `-O`, `--optimize` | Enable IR optimization passes (constant folding, dead code elimination). |
+| `-O`, `--optimize` | Enable IR optimization passes (constant folding, primitive specialisation, dead code elimination). |
 | `-O0` | Disable optimization (default). |
 | `--disasm` | Print disassembly to stdout instead of writing a `.etac` file. |
 | `--no-debug` | Strip debug info (source maps) from the output, producing a smaller file. |
@@ -116,8 +116,9 @@ currently implemented:
 
 | Pass | Description |
 |------|-------------|
-| **Constant Folding** | Evaluates compile-time-constant expressions (arithmetic on literals, boolean simplification) and replaces them with their result. |
-| **Dead Code Elimination** | Removes unreachable branches and unused bindings from the Core IR. |
+| **Constant Folding** | Evaluates compile-time-constant arithmetic expressions and replaces them with their result. |
+| **Primitive Specialisation** | Lowers proven builtin calls to dedicated VM opcodes (`Add/Sub/Mul/Div/Eq/Cons/Car/Cdr`). |
+| **Dead Code Elimination** | Removes pure non-tail expressions in `begin` blocks. |
 
 Passes are composable — the pipeline runs them in sequence and can be
 extended with additional passes in the future.

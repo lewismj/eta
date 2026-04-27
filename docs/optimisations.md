@@ -6,7 +6,7 @@ and the VM. Items are ordered by expected payoff per unit of work.
 
 ## Current state (April 2026)
 
-Two passes exist under
+Three passes exist under
 [`eta/core/src/eta/semantics/passes/`](../eta/core/src/eta/semantics/passes):
 
 - **`ConstantFolding`** - folds binary `+ - * /` only when both operands
@@ -16,11 +16,15 @@ Two passes exist under
 - **`DeadCodeElimination`** - removes pure (`Const`/`Var`/`Quote`)
   non-tail expressions inside a `Begin`; collapses single-element
   `Begin`s.
+- **`PrimitiveSpecialisation`** - lowers eligible builtin calls to
+  dedicated primitive IR nodes that emit VM opcodes
+  (`Add/Sub/Mul/Div/Eq/Cons/Car/Cdr`).
 
 The optimisation pipeline is wired and active under `etac -O`:
 
-- `main_etac.cpp` registers `ConstantFolding` and `DeadCodeElimination`
-  when `-O` / `--optimize` is set.
+- `main_etac.cpp` registers `ConstantFolding`,
+  `PrimitiveSpecialisation`, and `DeadCodeElimination` when
+  `-O` / `--optimize` is set.
 - `Driver::run_source_impl` executes
   `optimization_pipeline_.run_all(sem_mods)` between semantic analysis and
   bytecode emission.
@@ -31,29 +35,25 @@ arithmetic by global binding name only. If user code rebinds
 `+`/`-`/`*`/`/`, `-O` can fold using builtin semantics even when runtime
 call target differs.
 
-A search for `OpCode::Add` / `OpCode::Cons` / `OpCode::Car` etc. shows
-those opcodes are decoded by `vm.cpp` but **never emitted** by
-`emitter.cpp`. Every `(+ a b)`, `(car xs)`, `(cons a b)` currently goes
-through a generic `LoadGlobal` + `Call` + primitive-dispatch path that
-allocates a `std::vector<LispVal>` per call.
+For calls proven to target immutable builtins with supported arity,
+`etac -O` now emits dedicated opcodes (`Add/Sub/Mul/Div/Eq/Cons/Car/Cdr`)
+instead of generic `LoadGlobal` + `Call`.
 
-So, in current compiler output, `etac` does not generate `OpCode::Add`
-`/Sub` `/Mul` `/Div` `/Eq` `/Cons` `/Car` `/Cdr` for ordinary runtime
-calls. That is an explicit optimisation miss (aside from cases removed
-entirely by constant folding).
+Calls that are not proven safe (shadowed names, unsupported arity, or
+non-builtin/global targets) still take the generic call path.
 
 ## Shortlist (best ROI first)
 
-1. Primitive specialisation pass: lower known-builtin calls to the
-   existing `Add/Sub/Mul/Div/Eq/Cons/Car/Cdr` opcodes.
-2. Self-recursive tail call -> backward `Jump` in the emitter.
-3. Drop the `shared_lock` on `BytecodeFunctionRegistry::get` and pass
+1. Self-recursive tail call -> backward `Jump` in the emitter.
+2. Drop the `shared_lock` on `BytecodeFunctionRegistry::get` and pass
    `std::span<LispVal>` to primitives (zero-copy).
-4. Harden and extend `ConstantFolding` (builtin-identity checks, n-ary,
+3. Harden and extend `ConstantFolding` (builtin-identity checks, n-ary,
    comparisons, identities, fixpoint loop).
-5. Constant + copy propagation through `let`-bindings.
+4. Constant + copy propagation through `let`-bindings.
+5. Extend primitive specialisation coverage (more builtins/arity forms)
+   where semantic proof is straightforward.
 
-Items 1-3 alone should produce a multi-x speedup on arithmetic-heavy
+Items 1-2 alone should produce a multi-x speedup on arithmetic-heavy
 workloads (AAD primal, Monte Carlo path generation in pure Eta) without
 introducing any new opcodes or new IR.
 
@@ -61,31 +61,28 @@ introducing any new opcodes or new IR.
 
 ## Detailed items
 
-### 1. Specialise primitive calls into existing opcodes
+### 1. Primitive call specialisation status and next extensions
 
-**Where**: new pass under
+**Where**: implemented in
 `eta/core/src/eta/semantics/passes/primitive_specialisation.h`,
 consumed by the existing emitter.
 
 [`bytecode.h`](../eta/core/src/eta/runtime/vm/bytecode.h) defines
 dedicated opcodes `Add`, `Sub`, `Mul`, `Div`, `Eq`, `Cons`, `Car`,
-`Cdr`. The VM cases already implement them. The emitter never produces
-them - every primitive call goes through:
-
-1. `LoadGlobal` to fetch the closure,
-2. `Call` -> `dispatch_callee` -> primitive arity check,
-3. allocation of `std::vector<LispVal> args` and copy of operands,
-4. primitive loop/dispatch work,
-5. result boxing.
-
-Add a pass that, when:
+`Cdr`. The pass currently lowers calls when:
 
 - the callee is a `Var` with `Address::Global`,
-- the binding name is one of `+ - * / = car cdr cons`,
-- the global is provably builtin and unshadowed,
+- the target global slot is a known immutable builtin,
 - and the arity matches,
 
-lowers the `Call` directly to the matching opcode.
+to `PrimitiveCall`, which the emitter lowers to the matching opcode.
+
+Remaining work in this area:
+
+- extend coverage to additional builtins with fixed arity where opcode
+  equivalents exist or can be added cheaply,
+- evaluate whether selected variadic builtin forms should lower to
+  specialised opcodes after argument normalization.
 
 ### 2. Harden and extend constant folding
 
@@ -200,18 +197,17 @@ emit specialised opcodes.
 
 ## Suggested rollout order
 
-1. Primitive specialisation pass.
-2. Self-recursive tail-call -> jump (emitter only, no new opcode).
-3. Drop the `shared_lock` on `BytecodeFunctionRegistry::get`; pass
+1. Self-recursive tail-call -> jump (emitter only, no new opcode).
+2. Drop the `shared_lock` on `BytecodeFunctionRegistry::get`; pass
    `span<LispVal>` to primitives.
-4. Harden `ConstantFolding` correctness under builtin shadowing.
-5. Extend folding (n-ary/comparisons/identities/fixpoint) plus
+3. Harden `ConstantFolding` correctness under builtin shadowing.
+4. Extend folding (n-ary/comparisons/identities/fixpoint) plus
    constant/copy propagation through let-bindings.
-6. Bytecode peephole.
-7. Dead-store elimination + frame shrinking.
-8. AAD-specific flonum fast path + active-tape flag.
-9. Closure elimination for non-escaping lambdas.
-10. Constant pool / quote interning.
-11. Flow-sensitive type specialisation.
+5. Bytecode peephole.
+6. Dead-store elimination + frame shrinking.
+7. AAD-specific flonum fast path + active-tape flag.
+8. Closure elimination for non-escaping lambdas.
+9. Constant pool / quote interning.
+10. Flow-sensitive type specialisation.
 
 Each step is independently shippable and benchmarkable.

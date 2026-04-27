@@ -83,6 +83,31 @@ struct CallCC { Node* consumer; };
 struct Apply { Node* proc; std::vector<Node*> args; };
 
 /**
+ * @brief Primitive operation kind lowered from a known builtin call.
+ */
+enum class PrimitiveKind : std::uint8_t {
+    Cons,
+    Car,
+    Cdr,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+};
+
+/**
+ * @brief Specialized primitive call node.
+ *
+ * Represents a builtin primitive call that has been proven safe to lower to
+ * a dedicated VM opcode.
+ */
+struct PrimitiveCall {
+    PrimitiveKind kind;
+    std::vector<Node*> args;
+};
+
+/**
  * @brief Exception raise: (raise 'tag value) or (raise value)
  *
  * tag_name: the symbol name to raise with (empty = no tag / catch-all raise)
@@ -149,13 +174,14 @@ using NodeData = std::variant<  Var,
                                 If,
                                 Begin,
                                 Set,
-                                Lambda,
-                                Call,
-                                DynamicWind,
-                                Values,
-                                CallWithValues,
-                                CallCC,
-                                Apply,
+                                 Lambda,
+                                 Call,
+                                 PrimitiveCall,
+                                 DynamicWind,
+                                 Values,
+                                 CallWithValues,
+                                 CallCC,
+                                 Apply,
                                 Raise,
                                 Guard,
                                 MakeLogicVar,

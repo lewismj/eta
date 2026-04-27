@@ -135,6 +135,7 @@ private:
     void emit_const(const core::Const& n, Context& ctx, const Span& span);
     void emit_var(const core::Var& n, Context& ctx, const Span& span);
     void emit_call(const core::Call& n, bool tail, Context& ctx, const Span& span);
+    void emit_primitive_call(const core::PrimitiveCall& n, Context& ctx, const Span& span);
     void emit_if(const core::If& n, Context& ctx, const Span& span);
     void emit_begin(const core::Begin& n, Context& ctx, const Span& span);
     void emit_lambda_node(const core::Lambda& n, const Span& span, Context& ctx);

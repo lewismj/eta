@@ -87,11 +87,7 @@ unifies them in one semantic substrate.
 | Reproducibility relies on operator discipline | Identical inputs → different prints | Seeded torch RNG + actor shard replay with hash assert (§10) |
 
 > [!IMPORTANT]
-> The deeper claim is not that any one component is novel — it is
-> that **all of them share a single semantic substrate**. Symbolic
-> algebra, AAD, convex QP, supervised actors, and `do(...)`
-> interventions live in one program, on one tape, in one file tree.
-> Most production xVA stacks fail at exactly this seam.
+> All components — symbolic,  AAD, optimisation, and causal interventions — run in one unified system.
 
 ### What Breaks If You Remove a Component
 
@@ -286,7 +282,7 @@ etai examples/xva-wwr/main.eta
   a CLP(R)-feasible polytope; `clp:rq-minimize` returns the optimum.
 - **Deterministic** — seeded torch RNG plus a deterministic reduction
   order make the shard hash assertable in CI.
-- **No fact table, no Prolog, no FVA/MVA/KVA** — this demo is
+- **No FVA/MVA/KVA** — this demo is
   intentionally tight; out-of-scope items live in the
   [xVA plan](xva_plan.md).
 

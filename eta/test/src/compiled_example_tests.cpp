@@ -13,12 +13,21 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <atomic>
+#include <cerrno>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
+#ifdef _WIN32
+#include <process.h>
+#endif
 #include <regex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -26,6 +35,9 @@
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
+#include "eta/semantics/passes/constant_folding.h"
+#include "eta/semantics/passes/dead_code_elimination.h"
+#include "eta/semantics/passes/primitive_specialisation.h"
 
 namespace fs = std::filesystem;
 
@@ -38,6 +50,76 @@ namespace fs = std::filesystem;
 #ifndef ETA_STDLIB_DIR
 #define ETA_STDLIB_DIR ""
 #endif
+
+static std::string etac_binary_path() {
+#ifdef ETA_ETAC_PATH
+    return ETA_ETAC_PATH;
+#else
+    return {};
+#endif
+}
+
+struct TempFileGuard {
+    fs::path path;
+
+    explicit TempFileGuard(const fs::path& p)
+        : path(p)
+    {}
+
+    ~TempFileGuard() {
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+
+    TempFileGuard(const TempFileGuard&) = delete;
+    TempFileGuard& operator=(const TempFileGuard&) = delete;
+};
+
+static fs::path unique_temp_file_path(const std::string& prefix,
+                                      const std::string& extension) {
+    static std::atomic<uint64_t> sequence{0};
+    const auto now_ns =
+        std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    const auto tid_hash =
+        static_cast<uint64_t>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+
+    for (int attempt = 0; attempt < 32; ++attempt) {
+        const auto seq =
+            sequence.fetch_add(1, std::memory_order_relaxed);
+        const auto candidate = fs::temp_directory_path()
+            / (prefix + "_" + std::to_string(now_ns)
+                + "_" + std::to_string(tid_hash)
+                + "_" + std::to_string(seq)
+                + extension);
+        std::error_code ec;
+        if (!fs::exists(candidate, ec)) return candidate;
+    }
+
+    const auto fallback_seq =
+        sequence.fetch_add(1, std::memory_order_relaxed);
+    return fs::temp_directory_path()
+        / (prefix + "_fallback_" + std::to_string(fallback_seq) + extension);
+}
+
+[[maybe_unused]] static std::string shell_quote(const std::string& s) {
+#ifdef _WIN32
+    std::string out = "\"";
+    for (char c : s) {
+        if (c == '"') out += "\\\"";
+        else out += c;
+    }
+    out += "\"";
+    return out;
+#else
+    std::string out = "'";
+    for (char c : s) {
+        if (c == '\'') out += "'\\''";
+        else out += c;
+    }
+    out += "'";
+    return out;
+#endif
+}
 
 static fs::path examples_dir() {
     fs::path p(ETA_EXAMPLES_DIR);
@@ -197,12 +279,19 @@ struct CompiledExampleFixture {
      *
      * Uses compile_file() to avoid executing code during compilation.
      */
-    std::pair<bool, std::string> run_compiled(const fs::path& file) {
+    std::pair<bool, std::string> run_compiled(const fs::path& file, bool optimize) {
         if (stdlib.empty()) return {false, ""};
 
         eta::interpreter::ModulePathResolver comp_resolver({stdlib});
         comp_resolver.add_dir(file.parent_path());
         eta::session::Driver compiler(std::move(comp_resolver), 8 * 1024 * 1024);
+
+        if (optimize) {
+            auto& pipeline = compiler.optimization_pipeline();
+            pipeline.add_pass(std::make_unique<eta::semantics::passes::ConstantFolding>());
+            pipeline.add_pass(std::make_unique<eta::semantics::passes::PrimitiveSpecialisation>());
+            pipeline.add_pass(std::make_unique<eta::semantics::passes::DeadCodeElimination>());
+        }
 
         auto prelude = compiler.load_prelude();
         if (!prelude.loaded) return {false, ""};
@@ -242,7 +331,10 @@ struct CompiledExampleFixture {
         uint64_t source_hash = eta::runtime::vm::BytecodeSerializer::hash_source(src_buf.str());
 
         /// Serialize to a temp file
-        auto temp_etac = fs::temp_directory_path() / "eta_roundtrip_test.etac";
+        auto temp_etac = unique_temp_file_path(
+            optimize ? "eta_roundtrip_test_O" : "eta_roundtrip_test_O0",
+            ".etac");
+        [[maybe_unused]] TempFileGuard temp_etac_guard(temp_etac);
         {
             eta::runtime::vm::BytecodeSerializer serializer(
                 compiler.heap(), compiler.intern_table());
@@ -270,12 +362,10 @@ struct CompiledExampleFixture {
 
         auto run_prelude = runner.load_prelude();
         if (!run_prelude.loaded) {
-            fs::remove(temp_etac);
             return {false, ""};
         }
 
         bool ok = runner.run_etac_file(temp_etac);
-        fs::remove(temp_etac);
 
         if (!ok) {
             /// Collect diagnostic messages for debugging
@@ -288,6 +378,225 @@ struct CompiledExampleFixture {
         }
         return {ok, out_port->get_string()};
     }
+
+    [[nodiscard]] bool can_run_etac_cli() const {
+        const auto etac = etac_binary_path();
+        if (etac.empty()) return false;
+        if (etac.find("$<") != std::string::npos) return false;
+
+        std::error_code ec;
+        const fs::path p(etac);
+        if (fs::exists(p, ec) && fs::is_regular_file(p, ec)) return true;
+        if (p.is_absolute()) return false;
+
+        const fs::path resolved = fs::current_path(ec) / p;
+        return fs::exists(resolved, ec) && fs::is_regular_file(resolved, ec);
+    }
+
+    /**
+     * Compile via external etac CLI, then load and execute the emitted .etac.
+     */
+    std::pair<bool, std::string> run_compiled_via_etac_cli(const fs::path& file, bool optimize) {
+        if (stdlib.empty()) return {false, ""};
+        const auto etac = etac_binary_path();
+        if (etac.empty()) return {false, "missing ETA_ETAC_PATH"};
+
+        auto temp_etac = unique_temp_file_path(
+            optimize ? "eta_roundtrip_cli_O" : "eta_roundtrip_cli_O0",
+            ".etac");
+        [[maybe_unused]] TempFileGuard temp_etac_guard(temp_etac);
+#ifdef _WIN32
+        std::vector<std::wstring> args;
+        args.reserve(7);
+        args.push_back(fs::path(etac).wstring());
+        if (optimize) args.emplace_back(L"-O");
+        args.emplace_back(L"--path");
+        args.push_back(stdlib.wstring());
+        args.push_back(file.wstring());
+        args.emplace_back(L"-o");
+        args.push_back(temp_etac.wstring());
+
+        std::vector<const wchar_t*> argv;
+        argv.reserve(args.size() + 1);
+        for (const auto& arg : args) argv.push_back(arg.c_str());
+        argv.push_back(nullptr);
+
+        errno = 0;
+        const int rc = _wspawnvp(_P_WAIT, args.front().c_str(), argv.data());
+        if (rc != 0) {
+            if (rc == -1) {
+                return {false,
+                        "etac CLI failed (spawn error: "
+                            + std::to_string(errno) + ")"};
+            }
+            return {false, "etac CLI failed (rc=" + std::to_string(rc) + ")"};
+        }
+#else
+        auto temp_log = unique_temp_file_path(
+            optimize ? "eta_roundtrip_cli_O" : "eta_roundtrip_cli_O0",
+            ".log");
+        [[maybe_unused]] TempFileGuard temp_log_guard(temp_log);
+
+        const std::string mode_flag = optimize ? "-O " : "";
+        const std::string cmd =
+            shell_quote(etac) + " " + mode_flag
+            + "--path " + shell_quote(stdlib.string()) + " "
+            + shell_quote(file.string()) + " -o " + shell_quote(temp_etac.string())
+            + " > " + shell_quote(temp_log.string()) + " 2>&1";
+
+        const int rc = std::system(cmd.c_str());
+        if (rc != 0) {
+            std::string log_text;
+            std::ifstream in(temp_log);
+            if (in) {
+                std::ostringstream buf;
+                buf << in.rdbuf();
+                log_text = buf.str();
+            }
+            return {false, "etac CLI failed (rc=" + std::to_string(rc) + ")\n" + log_text};
+        }
+#endif
+
+        eta::interpreter::ModulePathResolver run_resolver({stdlib});
+        run_resolver.add_dir(file.parent_path());
+        eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+
+        auto out_port = std::make_shared<eta::runtime::StringPort>(
+            eta::runtime::StringPort::Mode::Output);
+        auto err_port = std::make_shared<eta::runtime::StringPort>(
+            eta::runtime::StringPort::Mode::Output);
+        runner.set_output_port(out_port);
+        runner.set_error_port(err_port);
+
+        auto run_prelude = runner.load_prelude();
+        if (!run_prelude.loaded) {
+            return {false, ""};
+        }
+
+        const bool ok = runner.run_etac_file(temp_etac);
+
+        if (!ok) {
+            std::string diag_msg;
+            for (const auto& diag : runner.diagnostics().diagnostics()) {
+                diag_msg += diag.message + "\n";
+            }
+            return {false, diag_msg.empty() ? out_port->get_string() : diag_msg};
+        }
+        return {ok, out_port->get_string()};
+    }
+
+    void check_compiled_examples_match_interpreted_output(bool optimize, bool via_etac_cli) {
+        auto files = collect_examples();
+        if (files.empty()) {
+            BOOST_TEST_MESSAGE("No example files found  -  skipping. "
+                               "Set ETA_EXAMPLES_DIR and ETA_STDLIB_DIR compile definitions.");
+            return;
+        }
+
+        BOOST_TEST_MESSAGE("Found " << files.size() << " example files for compiled round-trip test");
+        BOOST_TEST_MESSAGE("stdlib: " << stdlib.string());
+        BOOST_TEST_MESSAGE("examples: " << examples.string());
+        BOOST_TEST_MESSAGE("mode: " << (optimize ? "-O" : "-O0/default"));
+        BOOST_TEST_MESSAGE("backend: " << (via_etac_cli ? "etac CLI" : "in-process compile"));
+
+        int passed = 0, failed = 0;
+        std::vector<std::string> failures;
+
+        for (const auto& file : files) {
+            auto rel = fs::relative(file, examples);
+#if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
+            if (requires_torch(file)) {
+                BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires torch  -  skipped)");
+                continue;
+            }
+#endif
+            if (requires_net(file)) {
+                BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires networking runtime  -  skipped)");
+                continue;
+            }
+            BOOST_TEST_CONTEXT("Compiled round-trip (" << (optimize ? "-O" : "-O0/default")
+                                                       << ", "
+                                                       << (via_etac_cli ? "etac CLI" : "in-process")
+                                                       << "): " << rel.string()) {
+                /// Run interpreted
+                auto [interp_ok, interp_output] = run_interpreted(file);
+                if (!interp_ok) {
+                    BOOST_TEST_MESSAGE("  [WARN] interpreted run failed  -  skipping: " << rel.string());
+                    continue;
+                }
+
+                /// Compile and run
+                auto [comp_ok, comp_output] = via_etac_cli
+                    ? run_compiled_via_etac_cli(file, optimize)
+                    : run_compiled(file, optimize);
+
+                if (!comp_ok) {
+                    ++failed;
+                    failures.push_back(rel.string() + " (compiled run failed)");
+                    BOOST_TEST_MESSAGE("  [FAIL] " << rel.string() << "  -  compiled run failed");
+                    BOOST_TEST_MESSAGE("  partial output (" << comp_output.size() << " bytes): ["
+                        << comp_output.substr(0, 500) << "]");
+                    BOOST_TEST_MESSAGE("  interp output (" << interp_output.size() << " bytes): ["
+                        << interp_output.substr(0, 500) << "]");
+                    BOOST_CHECK_MESSAGE(false, "Compiled run failed for " << rel.string());
+                    continue;
+                }
+
+                /**
+                 * Compare output (normalize logic variable names which have
+                 * non-deterministic heap IDs)
+                 */
+                auto norm_interp = normalize_logic_vars(interp_output);
+                auto norm_comp   = normalize_logic_vars(comp_output);
+
+                /**
+                 * Torch examples involve random weight initialization so
+                 * training loss values differ between runs.  For those files
+                 * we only verify the compiled run succeeds without crashing.
+                 */
+                bool skip_output_compare = requires_torch(file);
+                bool output_matches = skip_output_compare || (norm_interp == norm_comp);
+                if (output_matches) {
+                    ++passed;
+                    BOOST_TEST_MESSAGE("  [OK] " << rel.string());
+                } else {
+                    ++failed;
+                    failures.push_back(rel.string() + " (output mismatch)");
+                    BOOST_TEST_MESSAGE("  [FAIL] " << rel.string() << "  -  output mismatch");
+
+                    /// Show first difference for debugging
+                    size_t diff_pos = 0;
+                    while (diff_pos < norm_interp.size() &&
+                           diff_pos < norm_comp.size() &&
+                           norm_interp[diff_pos] == norm_comp[diff_pos]) {
+                        ++diff_pos;
+                    }
+                    auto context_start = diff_pos > 40 ? diff_pos - 40 : 0;
+                    auto interp_snippet = norm_interp.substr(
+                        context_start, std::min<size_t>(80, norm_interp.size() - context_start));
+                    auto comp_snippet = norm_comp.substr(
+                        context_start, std::min<size_t>(80, norm_comp.size() - context_start));
+                    BOOST_TEST_MESSAGE("    first diff at byte " << diff_pos);
+                    BOOST_TEST_MESSAGE("    interpreted: ..." << interp_snippet << "...");
+                    BOOST_TEST_MESSAGE("    compiled:    ..." << comp_snippet << "...");
+                }
+                BOOST_CHECK_MESSAGE(output_matches,
+                    "Output mismatch for compiled " << rel.string());
+            }
+        }
+
+        BOOST_TEST_MESSAGE("");
+        BOOST_TEST_MESSAGE("Compiled round-trip results (" << (optimize ? "-O" : "-O0/default")
+                                                           << "): "
+                           << passed << " passed, " << failed << " failed out of "
+                           << files.size());
+        if (!failures.empty()) {
+            BOOST_TEST_MESSAGE("Failures:");
+            for (const auto& f : failures) {
+                BOOST_TEST_MESSAGE("  - " << f);
+            }
+        }
+    }
 };
 
 /// Test suite
@@ -295,108 +604,19 @@ struct CompiledExampleFixture {
 BOOST_FIXTURE_TEST_SUITE(compiled_example_tests, CompiledExampleFixture)
 
 BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output) {
-    auto files = collect_examples();
-    if (files.empty()) {
-        BOOST_TEST_MESSAGE("No example files found  -  skipping. "
-                           "Set ETA_EXAMPLES_DIR and ETA_STDLIB_DIR compile definitions.");
+    check_compiled_examples_match_interpreted_output(false, false);
+}
+
+BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output_optimized) {
+    check_compiled_examples_match_interpreted_output(true, false);
+}
+
+BOOST_AUTO_TEST_CASE(compiled_examples_match_interpreted_output_optimized_etac_cli) {
+    if (!can_run_etac_cli()) {
+        BOOST_TEST_MESSAGE("ETA_ETAC_PATH not set (or etac binary missing) - skipping etac CLI round-trip test.");
         return;
     }
-
-    BOOST_TEST_MESSAGE("Found " << files.size() << " example files for compiled round-trip test");
-    BOOST_TEST_MESSAGE("stdlib: " << stdlib.string());
-    BOOST_TEST_MESSAGE("examples: " << examples.string());
-
-    int passed = 0, failed = 0;
-    std::vector<std::string> failures;
-
-    for (const auto& file : files) {
-        auto rel = fs::relative(file, examples);
-#if !defined(ETA_HAS_TORCH) || defined(ETA_TORCH_DEBUG_SKIP)
-        if (requires_torch(file)) {
-            BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires torch  -  skipped)");
-            continue;
-        }
-#endif
-        if (requires_net(file)) {
-            BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires networking runtime  -  skipped)");
-            continue;
-        }
-        BOOST_TEST_CONTEXT("Compiled round-trip: " << rel.string()) {
-            /// Run interpreted
-            auto [interp_ok, interp_output] = run_interpreted(file);
-            if (!interp_ok) {
-                BOOST_TEST_MESSAGE("  [WARN] interpreted run failed  -  skipping: " << rel.string());
-                continue;
-            }
-
-            /// Compile and run
-            auto [comp_ok, comp_output] = run_compiled(file);
-
-            if (!comp_ok) {
-                ++failed;
-                failures.push_back(rel.string() + " (compiled run failed)");
-                BOOST_TEST_MESSAGE("  [FAIL] " << rel.string() << "  -  compiled run failed");
-                BOOST_TEST_MESSAGE("  partial output (" << comp_output.size() << " bytes): ["
-                    << comp_output.substr(0, 500) << "]");
-                BOOST_TEST_MESSAGE("  interp output (" << interp_output.size() << " bytes): ["
-                    << interp_output.substr(0, 500) << "]");
-                BOOST_CHECK_MESSAGE(false, "Compiled run failed for " << rel.string());
-                continue;
-            }
-
-            /**
-             * Compare output (normalize logic variable names which have
-             * non-deterministic heap IDs)
-             */
-            auto norm_interp = normalize_logic_vars(interp_output);
-            auto norm_comp   = normalize_logic_vars(comp_output);
-
-            /**
-             * Torch examples involve random weight initialization so
-             * training loss values differ between runs.  For those files
-             * we only verify the compiled run succeeds without crashing.
-             */
-            bool skip_output_compare = requires_torch(file);
-            bool output_matches = skip_output_compare || (norm_interp == norm_comp);
-            if (output_matches) {
-                ++passed;
-                BOOST_TEST_MESSAGE("  [OK] " << rel.string());
-            } else {
-                ++failed;
-                failures.push_back(rel.string() + " (output mismatch)");
-                BOOST_TEST_MESSAGE("  [FAIL] " << rel.string() << "  -  output mismatch");
-
-                /// Show first difference for debugging
-                size_t diff_pos = 0;
-                while (diff_pos < norm_interp.size() &&
-                       diff_pos < norm_comp.size() &&
-                       norm_interp[diff_pos] == norm_comp[diff_pos]) {
-                    ++diff_pos;
-                }
-                auto context_start = diff_pos > 40 ? diff_pos - 40 : 0;
-                auto interp_snippet = norm_interp.substr(
-                    context_start, std::min<size_t>(80, norm_interp.size() - context_start));
-                auto comp_snippet = norm_comp.substr(
-                    context_start, std::min<size_t>(80, norm_comp.size() - context_start));
-                BOOST_TEST_MESSAGE("    first diff at byte " << diff_pos);
-                BOOST_TEST_MESSAGE("    interpreted: ..." << interp_snippet << "...");
-                BOOST_TEST_MESSAGE("    compiled:    ..." << comp_snippet << "...");
-            }
-            BOOST_CHECK_MESSAGE(output_matches,
-                "Output mismatch for compiled " << rel.string());
-        }
-    }
-
-    BOOST_TEST_MESSAGE("");
-    BOOST_TEST_MESSAGE("Compiled round-trip results: "
-                       << passed << " passed, " << failed << " failed out of "
-                       << files.size());
-    if (!failures.empty()) {
-        BOOST_TEST_MESSAGE("Failures:");
-        for (const auto& f : failures) {
-            BOOST_TEST_MESSAGE("  - " << f);
-        }
-    }
+    check_compiled_examples_match_interpreted_output(true, true);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

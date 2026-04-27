@@ -251,7 +251,7 @@ Lambda "add1":
 ```
 
 > [!NOTE]
-> `(+ x 1)` is in tail position but uses the specialized `Add` opcode
+> With `etac -O`, `(+ x 1)` in tail position is lowered to the specialized
 > rather than a `TailCall` to the `+` builtin — the emitter optimizes known
 > arithmetic into dedicated opcodes.
 

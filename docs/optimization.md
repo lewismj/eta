@@ -26,8 +26,9 @@ flowchart LR
 
     subgraph OPT_PASSES ["Passes (in order)"]
         CF["Constant\nFolding"]
+        PS["Primitive\nSpecialisation"]
         DCE["Dead Code\nElimination"]
-        CF --> DCE
+        CF --> PS --> DCE
     end
 
     OPT -.-> CF
@@ -67,6 +68,7 @@ node types before bytecode emission:
 | `Set` | Mutation (`set!`) — writes to a resolved address. |
 | `Lambda` | Function: parameters, captured upvalues, body. |
 | `Call` | Function call: callee + argument list. |
+| `PrimitiveCall` | Specialised builtin call lowered to a dedicated VM opcode. |
 | `Apply` | `(apply proc args ...)` — spread-call. |
 | `CallCC` | `(call/cc consumer)` — first-class continuation capture. |
 | `Values` / `CallWithValues` | Multiple-return-value support. |
@@ -112,9 +114,10 @@ registration order over each module:
 ```cpp
 OptimizationPipeline pipeline;
 pipeline.add_pass(std::make_unique<ConstantFolding>());
+pipeline.add_pass(std::make_unique<PrimitiveSpecialisation>());
 pipeline.add_pass(std::make_unique<DeadCodeElimination>());
 
-pipeline.run_all(modules);  // runs both passes, in order, on every module
+pipeline.run_all(modules);  // runs all passes, in order, on every module
 ```
 
 The pipeline also exposes introspection helpers:
@@ -182,6 +185,24 @@ builtin `+`, `-`, `*`, `/` primitives where **both** arguments are
 
 **Effect on bytecode:** A folded expression emits a single `LoadConst`
 instruction instead of `LoadConst` + `LoadConst` + `LoadGlobal` + `Call`.
+
+### Primitive Specialisation
+
+**Name:** `primitive-specialisation`
+
+Lowers eligible builtin calls to dedicated primitive opcodes.
+
+Current lowering targets:
+
+- Binary: `+`, `-`, `*`, `/`, `=`, `cons`
+- Unary: `car`, `cdr`
+
+Lowering only applies when the callee resolves to a proven immutable
+builtin global with matching arity. Calls that fail those checks remain
+generic `Call`/`TailCall`.
+
+**Effect on bytecode:** Replaces `LoadGlobal` + `Call` with direct opcode
+instructions (`Add`, `Sub`, `Mul`, `Div`, `Eq`, `Cons`, `Car`, `Cdr`).
 
 ### Dead Code Elimination
 
@@ -274,6 +295,7 @@ private:
 if (optimize) {
     auto& pipeline = driver.optimization_pipeline();
     pipeline.add_pass(std::make_unique<ConstantFolding>());
+    pipeline.add_pass(std::make_unique<PrimitiveSpecialisation>());
     pipeline.add_pass(std::make_unique<DeadCodeElimination>());
     pipeline.add_pass(std::make_unique<MyPass>());  // ← new
 }
@@ -287,7 +309,7 @@ if (optimize) {
 > [!TIP]
 > Pass ordering matters. Constant folding can create new dead code
 > (e.g. `(begin (+ 1 2) x)` → `(begin 3 x)` → `x`), so running DCE
-> after folding is more effective than the reverse.
+> after folding and primitive specialisation is more effective than the reverse.
 
 ---
 
@@ -300,7 +322,8 @@ if (optimize) {
 | [`ir_visitor.h`](../eta/core/src/eta/semantics/ir_visitor.h) | `IRVisitor<Derived>` — CRTP depth-first tree walker. |
 | [`core_ir.h`](../eta/core/src/eta/semantics/core_ir.h) | Core IR node types (`Node`, `NodeData` variant). |
 | [`constant_folding.h`](../eta/core/src/eta/semantics/passes/constant_folding.h) | Constant folding pass. |
+| [`primitive_specialisation.h`](../eta/core/src/eta/semantics/passes/primitive_specialisation.h) | Primitive-call specialisation pass. |
 | [`dead_code_elimination.h`](../eta/core/src/eta/semantics/passes/dead_code_elimination.h) | Dead code elimination pass. |
-| [`optimization_tests.cpp`](../eta/test/src/optimization_tests.cpp) | Unit tests for the pipeline, visitor, and both passes. |
+| [`optimization_tests.cpp`](../eta/test/src/optimization_tests.cpp) | Unit tests for the pipeline, visitor, and optimisation passes. |
 | [`main_etac.cpp`](../eta/compiler/src/eta/compiler/main_etac.cpp) | `etac` entry point — pass registration under `-O`. |
 

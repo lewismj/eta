@@ -47,6 +47,8 @@ struct IRVisitor {
             } else if constexpr (std::is_same_v<T, core::Call>) {
                 val.callee = derived->visit(val.callee, false);
                 for (auto*& a : val.args) a = derived->visit(a, false);
+            } else if constexpr (std::is_same_v<T, core::PrimitiveCall>) {
+                for (auto*& a : val.args) a = derived->visit(a, false);
             } else if constexpr (std::is_same_v<T, core::Set>) {
                 val.value = derived->visit(val.value, false);
             } else if constexpr (std::is_same_v<T, core::DynamicWind>) {
