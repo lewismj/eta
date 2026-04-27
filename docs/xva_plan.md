@@ -1,4 +1,4 @@
-# Plan: XVA "Elite-Tier Wow" Demo for Eta
+# Plan: XVA Demo for Eta
 
 A single ~1 200 LoC demo (`examples/xva-wow/`, one `main.eta`) built
 around **one headline idea**, with the supporting machinery shown
