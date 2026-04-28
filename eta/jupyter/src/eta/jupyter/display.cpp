@@ -23,6 +23,7 @@
 #include "eta/runtime/types/bytevector.h"
 #include "eta/runtime/types/cons.h"
 #include "eta/runtime/types/fact_table.h"
+#include "eta/runtime/types/hash_map.h"
 #include "eta/runtime/types/vector.h"
 #include "eta/session/driver.h"
 #include "eta/session/eval_display.h"
@@ -316,6 +317,15 @@ struct WrapperPayload {
     return *out != nullptr;
 }
 
+[[nodiscard]] bool try_get_hash_map(eta::session::Driver& driver,
+                                    LispVal value,
+                                    eta::runtime::types::HashMap** out) {
+    using eta::runtime::memory::heap::ObjectKind;
+    if (!out || !is_boxed(value) || tag(value) != Tag::HeapObject) return false;
+    *out = driver.heap().try_get_as<ObjectKind::HashMap, eta::runtime::types::HashMap>(payload(value));
+    return *out != nullptr;
+}
+
 [[nodiscard]] bool try_get_tensor(eta::session::Driver& driver,
                                   LispVal value,
                                   eta::torch_bindings::TensorPtr** out) {
@@ -466,6 +476,77 @@ struct WrapperPayload {
     return oss.str();
 }
 
+[[nodiscard]] std::size_t hash_map_preview_limit(const RenderOptions& options) {
+    const auto configured = options.table_max_rows == 0 ? std::size_t{50} : options.table_max_rows;
+    return (std::min<std::size_t>)(50u, configured);
+}
+
+[[nodiscard]] nl::json hash_map_json(eta::session::Driver& driver,
+                                     const eta::runtime::types::HashMap& hm,
+                                     std::size_t row_limit) {
+    nl::json out = nl::json::object();
+    out["version"] = 1;
+    out["size"] = hm.size;
+
+    nl::json rows = nl::json::array();
+    std::size_t emitted = 0;
+    for (std::size_t i = 0; i < hm.state.size(); ++i) {
+        if (!eta::runtime::types::hash_slot_occupied(hm, i)) continue;
+        if (emitted >= row_limit) break;
+        rows.push_back(nl::json::object({
+            {"key", lisp_to_json(driver, hm.keys[i], 0u)},
+            {"value", lisp_to_json(driver, hm.values[i], 0u)},
+        }));
+        ++emitted;
+    }
+
+    out["entries"] = std::move(rows);
+    out["truncated"] = hm.size > emitted;
+    return out;
+}
+
+[[nodiscard]] std::string hash_map_html(eta::session::Driver& driver,
+                                        const eta::runtime::types::HashMap& hm,
+                                        std::size_t row_limit) {
+    std::ostringstream oss;
+    const bool truncated = hm.size > row_limit;
+
+    if (truncated) {
+        oss << "<details class=\"eta-hash-map\" open>";
+        oss << "<summary><strong>HashMap</strong> size=" << hm.size
+            << " (showing first " << row_limit << ")</summary>";
+    } else {
+        oss << "<div class=\"eta-hash-map\">";
+        oss << "<div><strong>HashMap</strong> size=" << hm.size << "</div>";
+    }
+
+    oss << "<table border=\"1\" cellspacing=\"0\" cellpadding=\"3\">"
+        << "<thead><tr><th>Key</th><th>Value</th></tr></thead><tbody>";
+
+    std::size_t emitted = 0;
+    for (std::size_t i = 0; i < hm.state.size(); ++i) {
+        if (!eta::runtime::types::hash_slot_occupied(hm, i)) continue;
+        if (emitted >= row_limit) break;
+        oss << "<tr>";
+        oss << "<td>" << html_escape(driver.format_value(hm.keys[i], eta::runtime::FormatMode::Write)) << "</td>";
+        oss << "<td>" << html_escape(driver.format_value(hm.values[i], eta::runtime::FormatMode::Write)) << "</td>";
+        oss << "</tr>";
+        ++emitted;
+    }
+
+    if (emitted == 0) {
+        oss << "<tr><td colspan=\"2\">(empty)</td></tr>";
+    }
+
+    oss << "</tbody></table>";
+    if (truncated) {
+        oss << "</details>";
+    } else {
+        oss << "</div>";
+    }
+    return oss.str();
+}
+
 void ensure_plain_text(RenderResult& out, const eta::session::DisplayValue& value) {
     if (!value.text.empty() && !out.data.contains("text/plain")) {
         out.data["text/plain"] = value.text;
@@ -541,6 +622,18 @@ void render_wrapper(RenderResult& out,
             out.data["text/html"] = fact_table_html(driver, *ft, options.table_max_rows);
         } else {
             out.data["text/plain"] = "invalid fact-table payload";
+        }
+        return;
+    }
+
+    if (wrapper.mime == "application/vnd.eta.hashmap+json") {
+        eta::runtime::types::HashMap* hm = nullptr;
+        if (try_get_hash_map(driver, wrapper.payload, &hm)) {
+            const auto row_limit = hash_map_preview_limit(options);
+            out.data["application/vnd.eta.hashmap+json"] = hash_map_json(driver, *hm, row_limit);
+            out.data["text/html"] = hash_map_html(driver, *hm, row_limit);
+        } else {
+            out.data["text/plain"] = "invalid hash-map payload";
         }
         return;
     }
@@ -632,6 +725,13 @@ RenderResult render_display_value(eta::session::Driver& driver,
             out.data["application/vnd.eta.facttable+json"] =
                 fact_table_json(driver, *ft, options.table_max_rows);
             out.data["text/html"] = fact_table_html(driver, *ft, options.table_max_rows);
+        }
+    } else {
+        eta::runtime::types::HashMap* hm = nullptr;
+        if (try_get_hash_map(driver, value.value, &hm)) {
+            const auto row_limit = hash_map_preview_limit(options);
+            out.data["application/vnd.eta.hashmap+json"] = hash_map_json(driver, *hm, row_limit);
+            out.data["text/html"] = hash_map_html(driver, *hm, row_limit);
         }
     }
 

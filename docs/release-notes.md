@@ -21,12 +21,17 @@ Highlights:
     `hash-set-remove`, `hash-set-contains?`, `hash-set-union`,
     `hash-set-intersect`, `hash-set-diff`, `hash-set->list`, `list->hash-set`.
 - Value formatting now prints `#hashmap{...}` and `#hashset{...}`.
+- Jupyter rich display now includes `HashMap` HTML/JSON previews
+  (`application/vnd.eta.hashmap+json`) with capped first-N rendering.
 - New stdlib modules:
   - `std.hashmap`
   - `std.hashset`
+- `std.db` tabled relation caches now use hash maps for status/answer lookup.
+- `std.regex` adds `regex:match-groups-hash` for named-group map access.
 - New stdlib tests:
   - `stdlib/tests/hashmap.test.eta`
   - `stdlib/tests/hashset.test.eta`
+  - `stdlib/tests/regex.test.eta` coverage for `regex:match-groups-hash`
 - New C++ runtime tests:
   - `eta/test/src/hash_map_tests.cpp`
 

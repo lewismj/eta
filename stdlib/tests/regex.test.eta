@@ -92,6 +92,18 @@
               (assert-equal "\\.\\^\\$\\|\\(\\)\\[\\]\\{\\}\\*\\+\\?\\\\"
                             (regex:quote ".^$|()[]{}*+?\\"))))
 
+          (make-test "named-groups hash accessor"
+            (lambda ()
+              (let* ((m (regex:search "(?<user>[a-z]+)-(?<id>\\d+)" "xxalice-42yy" 2))
+                     (groups (regex:match-groups-hash m))
+                     (span (hash-map-ref groups 'user #f)))
+                (assert-true (hash-map? groups))
+                (assert-true span)
+                (assert-equal "alice"
+                              (substring (regex-match-text m)
+                                         0
+                                         (- (cdr span) (car span)))))))
+
           (make-test "log-line filtering idiom"
             (lambda ()
               (let ((lines '("INFO boot"

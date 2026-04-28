@@ -8,6 +8,7 @@
     regex:match? regex:search regex:find-all
     regex:replace regex:replace-fn regex:split
     regex:quote
+    regex:match-groups-hash
     regex-match? regex-match-start regex-match-end
     regex-match-text regex-match-group regex-match-named
     regex-match-span regex-match-group-span)
@@ -90,6 +91,9 @@
                   (substring (__regex-match-input m) (car span) (cdr span))
                   #f))
             #f)))
+
+    (defun regex:match-groups-hash (m)
+      (list->hash-map (__regex-match-named-groups m)))
 
     (defun regex-match-text (m)
       (substring (__regex-match-input m)

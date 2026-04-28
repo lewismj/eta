@@ -17,9 +17,20 @@
         (fx-usd -> exposure)
         (energy-credit -> hazard)))
 
-    (defun assoc-num (key alist fallback)
-      (let ((v (assoc-ref key alist)))
+    (defun assoc-val (key table)
+      (if (hash-map? table)
+          (hash-map-ref table key #f)
+          (assoc-ref key table)))
+
+    (defun assoc-num (key table fallback)
+      (let ((v (assoc-val key table)))
         (if (number? v) v fallback)))
+
+    (defun ensure-hash-map (table)
+      (cond
+        ((hash-map? table) table)
+        ((null? table) (make-hash-map))
+        (else (list->hash-map table))))
 
     (defun abs-val (x)
       (if (< x 0) (* -1 x) x))
@@ -72,13 +83,16 @@
     ;; Mechanism format:
     ;;   (cons var (list parents coeffs intercept sigma))
     (defun mechanism-edges (mechanisms)
-      (foldl
-        (lambda (acc entry)
-          (let ((var (car entry))
-                (parents (car (cdr entry))))
-            (append (map* (lambda (p) (list p '-> var)) parents) acc)))
-        '()
-        mechanisms))
+      (let ((entries (if (hash-map? mechanisms)
+                         (hash-map->list mechanisms)
+                         mechanisms)))
+        (foldl
+          (lambda (acc entry)
+            (let ((var (car entry))
+                  (parents (car (cdr entry))))
+              (append (map* (lambda (p) (list p '-> var)) parents) acc)))
+          '()
+          entries)))
 
     (defun dot (xs ys)
       (if (or (null? xs) (null? ys))
@@ -96,27 +110,34 @@
         (+ intercept (+ (dot coeffs parent-vals) (* sigma noise)))))
 
     (defun sample-node-value (v env mechanisms exogenous interventions)
-      (let ((forced (assoc-ref v interventions)))
+      (let ((forced (assoc-val v interventions)))
         (if (number? forced)
             forced
-            (let ((m (assoc-ref v mechanisms)))
+            (let ((m (assoc-val v mechanisms)))
               (if m
                   (mechanism-value v m env exogenous)
                   (assoc-num v exogenous 0.0))))))
 
     ;; Draw one SCM sample via topo-order and linear-Gaussian mechanisms.
     (defun scm:sample (mechanisms exogenous interventions)
-      (let* ((edges (mechanism-edges mechanisms))
+      (let* ((mechanisms* (ensure-hash-map mechanisms))
+             (exogenous* (ensure-hash-map exogenous))
+             (interventions* (ensure-hash-map interventions))
+             (edges (mechanism-edges mechanisms))
              (order (scm:topo-sort edges)))
-        (let loop ((vars order) (env '()))
+        (let loop ((vars order)
+                   (env (make-hash-map))
+                   (rows '()))
           (if (null? vars)
-              (reverse env)
+              (reverse rows)
               (let ((v (car vars))
-                    (value (sample-node-value (car vars) env mechanisms exogenous interventions)))
-                (loop (cdr vars) (cons (cons v value) env)))))))
+                    (value (sample-node-value (car vars) env mechanisms* exogenous* interventions*)))
+                (loop (cdr vars)
+                      (hash-map-assoc env v value)
+                      (cons (cons v value) rows)))))))
 
     (defun cp-beta (cp var betas)
-      (let ((b (assoc-ref cp betas)))
+      (let ((b (assoc-val cp betas)))
         (cond
           ((not (cp-betas? b)) 0.0)
           ((eq? var 'oil) (cp-betas-oil b))
@@ -155,16 +176,13 @@
             (cons cp eps)))
         down-table))
 
-    (defun remove-cp (cp xs)
-      (filter (lambda (entry) (not (equal? (car entry) cp))) xs))
-
     (defun merge-one-elasticity (acc entry)
       (let* ((cp (car entry))
              (eps (cdr entry))
-             (old (assoc-ref cp acc)))
+             (old (hash-map-ref acc cp #f)))
         (if (or (not (number? old))
                 (> (abs-val eps) (abs-val old)))
-            (cons (cons cp eps) (remove-cp cp acc))
+            (hash-map-assoc acc cp eps)
             acc)))
 
     (defun merge-elasticity (acc eps-table)
@@ -173,20 +191,21 @@
     ;; queries: '((oil -0.30 0.30) (usd-10y -0.01 0.01) ...)
     ;; Returns an alist with rows and ranked elasticity buckets.
     (defun counterfactual-sweep (queries base-curves betas)
-      (let loop ((rest queries) (rows '()) (eps-acc '()))
+      (let loop ((rest queries) (rows '()) (eps-acc (make-hash-map)))
         (if (null? rest)
-            (let* ((wrong-way
+            (let* ((eps-list (hash-map->list eps-acc))
+                   (wrong-way
                      (take 3
                            (sort (lambda (a b) (> (cdr a) (cdr b)))
-                                 (filter (lambda (e) (> (cdr e) 0.0)) eps-acc))))
+                                 (filter (lambda (e) (> (cdr e) 0.0)) eps-list))))
                    (right-way
                      (take 3
                            (sort (lambda (a b) (< (cdr a) (cdr b)))
-                                 (filter (lambda (e) (< (cdr e) 0.0)) eps-acc))))
+                                 (filter (lambda (e) (< (cdr e) 0.0)) eps-list))))
                    (insensitive
                      (take 3
                            (sort (lambda (a b) (< (abs-val (cdr a)) (abs-val (cdr b))))
-                                 eps-acc))))
+                                 eps-list))))
               (list
                 (cons 'rows (reverse rows))
                 (cons 'wrong-way wrong-way)

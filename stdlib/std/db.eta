@@ -30,11 +30,11 @@
     (define *db-tabled* '())
 
     ;; Variant-table cache:
-    ;;   status  : ((key . 'working/'done) ...)
-    ;;   answers : ((key . (answer1 answer2 ...)) ...)
+    ;;   status  : hash-map key -> 'working/'done
+    ;;   answers : hash-map key -> (answer1 answer2 ...)
     ;; where each answer is a copied argument vector (proper list).
-    (define *db-table-status* '())
-    (define *db-table-answers* '())
+    (define *db-table-status* (make-hash-map))
+    (define *db-table-answers* (make-hash-map))
 
     (define (rel-key name arity) (cons name arity))
 
@@ -48,33 +48,18 @@
       (set! *db-registry* (cons (cons key ft) *db-registry*))
       ft)
 
-    (define (alist-get entries key default)
-      (cond
-        ((null? entries) default)
-        ((equal? key (car (car entries))) (cdr (car entries)))
-        (else (alist-get (cdr entries) key default))))
-
-    (define (alist-set entries key value)
-      (cond
-        ((null? entries) (list (cons key value)))
-        ((equal? key (car (car entries)))
-         (cons (cons key value) (cdr entries)))
-        (else
-         (cons (car entries)
-               (alist-set (cdr entries) key value)))))
-
     (define (table-status key)
-      (alist-get *db-table-status* key 'new))
+      (hash-map-ref *db-table-status* key 'new))
 
     (define (set-table-status! key status)
-      (set! *db-table-status* (alist-set *db-table-status* key status))
+      (set! *db-table-status* (hash-map-assoc *db-table-status* key status))
       status)
 
     (define (table-answers key)
-      (alist-get *db-table-answers* key '()))
+      (hash-map-ref *db-table-answers* key '()))
 
     (define (set-table-answers! key answers)
-      (set! *db-table-answers* (alist-set *db-table-answers* key answers))
+      (set! *db-table-answers* (hash-map-assoc *db-table-answers* key answers))
       answers)
 
     (define (table-answer-member? answer answers)
@@ -93,8 +78,8 @@
 
     (define (invalidate-table-cache!)
       ;; Conservatively flush all tabled answers on any DB mutation.
-      (set! *db-table-status* '())
-      (set! *db-table-answers* '())
+      (set! *db-table-status* (make-hash-map))
+      (set! *db-table-answers* (make-hash-map))
       #t)
 
     (define (tabled-rel? name arity)

@@ -376,6 +376,7 @@ Regex helpers backed by C++ `std::regex` (ECMAScript syntax). The API accepts ei
 | `regex:replace-fn` | `(regex-or-pattern input fn) -> string` | Callback replacement form |
 | `regex:split` | `(regex-or-pattern input) -> vector` | Regex delimiter split |
 | `regex:quote` | `(s) -> string` | Escape regex metacharacters |
+| `regex:match-groups-hash` | `(match) -> hash-map` | Named capture groups as a hash map of `name -> (start . end)` |
 
 For the full reference and performance notes, see [regex.md](regex.md).
 

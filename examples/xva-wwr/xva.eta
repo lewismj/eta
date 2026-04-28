@@ -8,8 +8,10 @@
   (import market)
   (begin
 
-    (defun assoc-num (key alist fallback)
-      (let ((v (assoc-ref key alist)))
+    (defun assoc-num (key table fallback)
+      (let ((v (if (hash-map? table)
+                   (hash-map-ref table key #f)
+                   (assoc-ref key table))))
         (if (number? v) v fallback)))
 
     (defun discount-factor (discount-shift t)
@@ -28,14 +30,16 @@
               (loop (cdr rest) (+ step 1) (+ acc bucket))))))
 
     (defun cva-table (ee-curves hazards recoveries discount-shift fx-shift)
-      (map*
-        (lambda (entry)
-          (let* ((cp (car entry))
-                 (curve (cdr entry))
-                 (haz (assoc-num cp hazards 0.02))
-                 (rec (assoc-num cp recoveries 0.45)))
-            (cons cp (cva-curve curve haz rec discount-shift fx-shift))))
-        ee-curves))
+      (let* ((hazards* (if (hash-map? hazards) hazards (list->hash-map hazards)))
+             (recoveries* (if (hash-map? recoveries) recoveries (list->hash-map recoveries))))
+        (map*
+          (lambda (entry)
+            (let* ((cp (car entry))
+                   (curve (cdr entry))
+                   (haz (assoc-num cp hazards* 0.02))
+                   (rec (assoc-num cp recoveries* 0.45)))
+              (cons cp (cva-curve curve haz rec discount-shift fx-shift))))
+          ee-curves)))
 
     (defun total-cva (table)
       (foldl (lambda (acc entry) (+ acc (cdr entry))) 0.0 table))

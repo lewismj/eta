@@ -286,7 +286,7 @@ a delivery order.
 
 | Capability | Clojure | Eta today | Gap |
 |---|---|---|---|
-| **Hash map / set** | `{:a 1}`, `#{1 2}` (persistent) | alists only | **Big** — every non-trivial dict is O(n) |
+| **Hash map / set** | `{:a 1}`, `#{1 2}` (persistent) | native `hash-map` / `hash-set` + `std.hashmap` / `std.hashset` | Medium — reader literals / HAMT / transients deferred |
 | **Atom / ref / agent** (CAS cells) | `atom`, `ref`, `agent` | none | Big — actors fill some of this, not all |
 | **getenv / setenv** | `(System/getenv ...)` | none | Big — no env-var driven config |
 | **argv / command-line** | `*command-line-args*` | none | Big — scripts cannot read flags |
@@ -336,26 +336,24 @@ Eta as a Python replacement.
 
 #### Phase H2 — Hash Map / Set + Atom (concurrency primitive)
 
-The single largest data-structure gap.
+Hash map and hash set are now shipped. The remaining H2 gap is Atom.
 
-- **Hash map** as a first-class value, not built on alists. Suggested:
-  initial implementation = open-addressing immutable map with a
-  copy-on-write `assoc` (Bagwell HAMT can come later if profiling
-  warrants it).
-  - `make-hash-map`, `hash-map?`, `hash-map-ref`, `hash-map-assoc`,
-    `hash-map-dissoc`, `hash-map-keys`, `hash-map-values`,
-    `hash-map-size`, `hash-map->list`, `list->hash-map`.
-  - `hash` generic over symbol / string / number / bytevector.
-- **Hash set** — same backing store, no values. `make-hash-set`,
-  `hash-set?`, `hash-set-add`, `hash-set-remove`, `hash-set-contains?`,
-  `hash-set-union`, `hash-set-intersect`, `hash-set-diff`.
+- **Hash map** shipped as a first-class immutable value:
+  `make-hash-map`, `hash-map?`, `hash-map-ref`, `hash-map-assoc`,
+  `hash-map-dissoc`, `hash-map-keys`, `hash-map-values`,
+  `hash-map-size`, `hash-map->list`, `list->hash-map`,
+  `hash-map-fold`, and `hash`.
+- **Hash set** shipped on the same backing model:
+  `make-hash-set`, `hash-set?`, `hash-set-add`, `hash-set-remove`,
+  `hash-set-contains?`, `hash-set-union`, `hash-set-intersect`,
+  `hash-set-diff`.
 - **Atom** — single-cell mutable reference with CAS:
   - `(atom v)`, `atom?`, `(deref a)`, `(reset! a v)`,
     `(swap! a fn args …)`, `(compare-and-set! a old new)`.
   - Backed by `std::atomic<LispVal>` (boxed) with the existing GC
     barrier. No watcher chain in v1; add later if needed.
-- **Stdlib** — `std.hashmap`, `std.hashset`, `std.atom`. ~800 LoC
-  C++ + tests + docs.
+- **Stdlib** now includes `std.hashmap` and `std.hashset`; `std.atom`
+  remains outstanding with the Atom runtime work.
 
 > **Why hash map before HTTP / JSON.** JSON parsing returns a hash
 > map. HTTP libraries return responses as hash maps. There is no
@@ -448,6 +446,11 @@ useful but each is also pure quality-of-life on top of H1–H4.
 
 ## Recently Completed (was on this list, now shipped)
 
+- ✅ Hash map / hash set runtime delivery: native `HashMap` / `HashSet`
+  object kinds, core builtins, stdlib wrappers (`std.hashmap`,
+  `std.hashset`), docs, snippets, and test coverage across
+  `eta_core_test` and `eta_stdlib_tests`. See
+  [release-notes.md](release-notes.md#2026-04-28).
 - ✅ Optimisation pipeline expansion: `PrimitiveSpecialisation` lowers
   proven builtin call sites to dedicated VM opcodes; self-recursive
   tail calls (unary) lower to backward `Jump`; lock-free function

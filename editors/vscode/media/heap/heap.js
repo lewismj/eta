@@ -13,6 +13,10 @@
     let kindSort = { key: 'bytes', dir: 'desc' };
     let kindFilter = '';
     let diffMode = false;
+    const kindLabels = {
+        HashMap: 'HashMap',
+        HashSet: 'HashSet',
+    };
 
     // ─── Helpers ──────────────────────────────────────────────────────────
     function fmt(bytes) {
@@ -58,6 +62,9 @@
         const d = document.createElement('div');
         d.textContent = String(s == null ? '' : s);
         return d.innerHTML;
+    }
+    function kindLabel(kind) {
+        return kindLabels[kind] || kind;
     }
 
     // ─── Header / toolbar wiring ──────────────────────────────────────────
@@ -223,7 +230,7 @@
         for (const r of rows) {
             const cls = r.status === 'new' ? ' class="row-new"' : r.status === 'removed' ? ' class="row-removed"' : '';
             html += '<tr' + cls + '>';
-            html += '<td>' + esc(r.kind) + '</td>';
+            html += '<td>' + esc(kindLabel(r.kind)) + '</td>';
             html += '<td class="num">' + r.count.toLocaleString() + '</td>';
             if (diffMode && baseline) {
                 html += '<td class="num">' + fmtSigned(r.dCount) + '</td>';
