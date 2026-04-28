@@ -115,25 +115,30 @@
                     (value (sample-node-value (car vars) env mechanisms exogenous interventions)))
                 (loop (cdr vars) (cons (cons v value) env)))))))
 
-    (defun cp-beta (cp var)
-      (let ((betas (assoc-ref cp cp-sensitivity)))
-        (if betas (assoc-num var betas 0.0) 0.0)))
+    (defun cp-beta (cp var betas)
+      (let ((b (assoc-ref cp betas)))
+        (cond
+          ((not (cp-betas? b)) 0.0)
+          ((eq? var 'oil) (cp-betas-oil b))
+          ((eq? var 'usd-10y) (cp-betas-usd-10y b))
+          ((eq? var 'eur-usd) (cp-betas-eur-usd b))
+          (else 0.0))))
 
-    (defun adjust-hazards (do-var do-value)
+    (defun adjust-hazards (do-var do-value betas)
       (map*
         (lambda (entry)
           (let* ((cp (car entry))
                  (hazard (cdr entry))
-                 (beta (cp-beta cp do-var)))
+                 (beta (cp-beta cp do-var betas)))
             (cons cp (* hazard (exp (* beta do-value))))))
         hazard-rates))
 
     ;; Returns (total-cva . per-cp-table).
-    (defun cva-under-do (do-var do-value base-curves)
+    (defun cva-under-do (do-var do-value base-curves betas)
       (let* ((tilt (list (cons do-var do-value)))
              (ee (simulate-paths-tilted base-curves '() factor-correlation
                                         1000 12 0.25 20260427 tilt))
-             (hazards (adjust-hazards do-var do-value))
+             (hazards (adjust-hazards do-var do-value betas))
              (table (cva-table ee hazards recovery-rates 0.0 0.0)))
         (cons (total-cva table) table)))
 
@@ -167,21 +172,21 @@
 
     ;; queries: '((oil -0.30 0.30) (usd-10y -0.01 0.01) ...)
     ;; Returns an alist with rows and ranked elasticity buckets.
-    (defun counterfactual-sweep (queries base-curves)
+    (defun counterfactual-sweep (queries base-curves betas)
       (let loop ((rest queries) (rows '()) (eps-acc '()))
         (if (null? rest)
-            (let* ((wrong-way (take
-                                (sort (lambda (a b) (> (cdr a) (cdr b)))
-                                      (filter (lambda (e) (> (cdr e) 0.0)) eps-acc))
-                                3))
-                   (right-way (take
-                                (sort (lambda (a b) (< (cdr a) (cdr b)))
-                                      (filter (lambda (e) (< (cdr e) 0.0)) eps-acc))
-                                3))
-                   (insensitive (take
-                                  (sort (lambda (a b) (< (abs-val (cdr a)) (abs-val (cdr b))))
-                                        eps-acc)
-                                  3)))
+            (let* ((wrong-way
+                     (take 3
+                           (sort (lambda (a b) (> (cdr a) (cdr b)))
+                                 (filter (lambda (e) (> (cdr e) 0.0)) eps-acc))))
+                   (right-way
+                     (take 3
+                           (sort (lambda (a b) (< (cdr a) (cdr b)))
+                                 (filter (lambda (e) (< (cdr e) 0.0)) eps-acc))))
+                   (insensitive
+                     (take 3
+                           (sort (lambda (a b) (< (abs-val (cdr a)) (abs-val (cdr b))))
+                                 eps-acc))))
               (list
                 (cons 'rows (reverse rows))
                 (cons 'wrong-way wrong-way)
@@ -191,8 +196,8 @@
                    (var (car q))
                    (down-shock (cadr q))
                    (up-shock (caddr q))
-                   (down (cva-under-do var down-shock base-curves))
-                   (up (cva-under-do var up-shock base-curves))
+                   (down (cva-under-do var down-shock base-curves betas))
+                   (up (cva-under-do var up-shock base-curves betas))
                    (eps (elasticity-table (cdr down) (cdr up) (- up-shock down-shock)))
                    (row (list
                           (cons 'var var)

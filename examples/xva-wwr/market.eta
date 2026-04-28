@@ -2,6 +2,12 @@
 
 (module market
   (export
+    cp-name
+    make-cp-betas
+    cp-betas?
+    cp-betas-oil
+    cp-betas-usd-10y
+    cp-betas-eur-usd
     base-risk-free-rate
     factor-correlation
     baseline-curves
@@ -16,6 +22,13 @@
       (if (< i 10)
           (string-append "CP-0" (number->string i))
           (string-append "CP-" (number->string i))))
+
+    (define-record-type <cp-betas>
+      (make-cp-betas oil usd-10y eur-usd)
+      cp-betas?
+      (oil cp-betas-oil)
+      (usd-10y cp-betas-usd-10y)
+      (eur-usd cp-betas-eur-usd))
 
     (define base-risk-free-rate 0.0325)
 
@@ -50,25 +63,21 @@
       (let ((oil    (+ 0.20 (* 0.06 (modulo i 5))))
             (usd10  (+ 0.10 (* 0.04 (modulo (+ i 2) 4))))
             (fx     (+ 0.08 (* 0.05 (modulo (+ i 1) 6)))))
-        (list
-          (cons 'oil
-                (cond
-                  ((= i 17)  2.91)
-                  ((= i 9)   2.07)
-                  ((= i 31) -0.62)
-                  (else oil)))
-          (cons 'usd-10y
-                (cond
-                  ((= i 4)   1.22)
-                  ((= i 12) -0.48)
-                  (else usd10)))
-          (cons 'eur-usd
-                (cond
-                  ((= i 22)  1.94)
-                  (else fx))))))
+        (make-cp-betas
+          (cond
+            ((= i 17)  2.91)
+            ((= i 9)   2.07)
+            ((= i 31) -0.62)
+            (else oil))
+          (cond
+            ((= i 4)   1.22)
+            ((= i 12) -0.48)
+            (else usd10))
+          (cond
+            ((= i 22)  1.94)
+            (else fx)))))
 
     (define cp-sensitivity
       (map* (lambda (i) (cons (cp-name i) (cp-betas i))) (iota 30 1)))
 
   ))
-

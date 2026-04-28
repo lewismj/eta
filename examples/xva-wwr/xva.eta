@@ -59,7 +59,6 @@
         market-scalars))
 
     (defun top-contributors (table n)
-      (take (sort (lambda (a b) (> (cdr a) (cdr b))) table) n))
+      (take n (sort (lambda (a b) (> (cdr a) (cdr b))) table)))
 
   ))
-
