@@ -1,7 +1,7 @@
 <!--[eta_logo.svg](docs/img/eta.svg) -->
 
 <p align="center">
-  <img src="docs/img/eta.svg" alt="Eta logo" width="180">
+  <img src="docs/img/eta.svg" alt="Eta logo" width="120">
 </p>
 
 <h1 align="center">η (Eta)</h1>
