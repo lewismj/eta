@@ -80,8 +80,7 @@ elasticity into per-factor β contributions, stress-tests the ranking
 under β-perturbation, and contrasts the result against a
 correlation-only WWR baseline. A determinism / shard-replay check
 runs in CI; it lives in the
-[Technical Appendix](#technical-appendix--deterministic-shard-replay)
-because it is plumbing, not a desk-facing result.
+[Technical Appendix](#technical-appendix--deterministic-shard-replay).
 
 **What comes out**
 
@@ -1090,8 +1089,7 @@ below.
 
 §7 names CP-17 as the dominant wrong-way exposure with `ε = +3.726`.
 That single number is the right *headline*, but it is not enough to
-**act** on. A trading desk needs three more things before it touches
-the book:
+**act** on.  Useful diagnostics include:
 
 1. **What is driving the elasticity?** A scalar ε is a sum of
    per-factor contributions; the desk hedges the *factor*, not the ε.
@@ -1224,7 +1222,7 @@ f(r) \;=\; N \cdot A(r, \tau), \qquad
 A(r, \tau) \;=\; \frac{1 - e^{-r\tau}}{r}.
 $$
 
-The desk needs its **IR-Delta** $\partial f / \partial r$ — the rate
+We require **IR-Delta** $\partial f / \partial r$ — the rate
 sensitivity of the leg. Built as a quoted S-expression, simplified by
 the symbolic engine, differentiated by `D`, and **lowered to a
 closure** that records onto the active AAD tape via plain arithmetic:
@@ -1302,7 +1300,7 @@ After `simplify*`, the differentiated expression's AST settles at
 
 ## §9 — Compression QP on a SIMM Σ Block
 
-Once §7 names the wrong-way counterparties, the desk needs an
+Once §7 names the wrong-way counterparties, the next requirements is an 
 *actionable* unwind set. `compress.eta` formulates this as a strictly
 convex quadratic on the CLP(R)-feasible polytope:
 
@@ -1432,15 +1430,6 @@ preview value. To exercise it standalone:
 ---
 
 ## Technical Appendix — Deterministic Shard Replay
-
-> **Why this is in an appendix.** Reproducibility is plumbing, not a
-> desk-facing result. It belongs in the CI contract for the demo, not
-> in the WWR narrative. This appendix documents the load-bearing
-> assertion (a seeded shard replays bit-for-bit) and the helper used
-> to exercise it.
-
-The demo bakes the determinism assertion into a single helper so CI
-can exercise it without the full actor / supervisor wiring:
 
 ```scheme
 (defun run-path-shard (shard-id)
