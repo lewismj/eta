@@ -26,7 +26,7 @@
 
 ### Runtime Model
 
-Eta is built around a stack-based VM that serves as a unified runtime for all language subsystems:
+Eta is built around a **stack-based VM** that serves as a unified runtime for all language subsystems:
 
 *   **Modern Scheme Core:** Nan-boxing, tail-call optimization (TCO), first-class continuations (`call/cc`), hygienic `syntax-rules` macros, and a module system.
 *   **Native Logic Programming:** Built-in structural unification and backtracking via dedicated VM opcodes, enabling Prolog-style reasoning directly within the language.
