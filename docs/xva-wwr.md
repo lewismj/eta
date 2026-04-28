@@ -12,21 +12,45 @@
 >directionality or concentration under stress, and does not distinguish between 
 >correlation and causation.
 
->This system instead evaluates CVA under structural macroeconomic shocks using a 
->causal model (SCM). Wrong-way risk is analysed via explicit interventions (do-operations) 
->on macro factors (e.g. oil, rates, FX), so the reported CVA reflects how the portfolio 
->responds when those drivers are actively moved, rather than merely observed to co-move.
+>This system instead evaluates CVA under macroeconomic shocks routed through an
+>**assumed** structural causal model (SCM). Wrong-way risk is analysed via explicit
+>interventions (`do(...)` operations) on macro factors (e.g. oil, rates, FX), so the
+>reported CVA reflects how the portfolio responds when those drivers are actively
+>moved under the SCM mechanism, rather than merely observed to co-move.
 
-
-The system computes CVA for a portfolio under these structural shocks, calculates full 
-risk sensitivities in a single reverse-mode AAD pass, ranks counterparties by their 
-causal exposure using elasticity measures, and produces hedge recommendations via 
+The system computes CVA for a portfolio under these shocks, calculates full
+risk sensitivities in a single reverse-mode AAD pass, ranks counterparties by their
+elasticity to each `do(...)` shock, and produces hedge recommendations via
 convex optimisation.
 
-Structural relationships (e.g. macro → hazard/exposure) can be calibrated from data, so 
-the wrong-way risk analysis is grounded in an estimated causal model rather than 
-assumed correlations. Symbolic differentiation of pricing functions is supported, and
-all components run within a single framework.
+Structural relationships (e.g. macro → hazard/exposure) are *recovered from a
+synthetic shock × hazard panel* in this demo, so the wrong-way analysis is
+self-consistent against its own data-generating process. Symbolic differentiation
+of pricing functions is supported, and all components run within a single framework.
+
+> [!CAUTION]
+> **What this demo is and is not.**
+> *Is*: a self-consistent end-to-end pipeline (book → SCM → CVA → `do(...)` →
+> elasticity → hedge QP) on a synthetic data-generating process (DGP), with
+> deterministic seeds and a recoverability check on the SCM β's.
+> *Is not*: an empirically identified SCM. The DAG (§6), the linear-Gaussian
+> hazard mechanism (§3a), the exogeneity of the macro shocks, and the
+> static-exposure assumption are all **asserted**, not estimated from real
+> data. Every "causal" claim below is conditional on those assumptions
+> holding; on real macro/credit panels they typically do not, and an
+> identification step (instrument, back-door adjustment, or sensitivity
+> analysis to unmeasured confounding) would be required before the same
+> language is defensible. The near-zero ML training loss in §3a (≈ 0.0025)
+> is the expected behaviour of an invertible synthetic DGP regressed onto
+> the same model class — it is a self-consistency check, not evidence of
+> empirical fit.
+>
+> *Units*: every CVA / exposure figure in this document is in **base
+> currency units** (treat as USD for concreteness); the demo's notional
+> scale is `1 000 000 + 25 000 · (idx mod 9)` per trade across 200 trades,
+> so the baseline book CVA of `118 302` corresponds to roughly 0.06 % of
+> aggregate notional. Percentage moves quoted under `do(...)` shocks are
+> relative to that baseline.
 
 
 
@@ -72,23 +96,27 @@ stage that produced it.
 
 ```scheme
 (run-demo)
+;; All monetary figures in base currency units (treat as USD).
 ;; => ((book-size . 200)
-;;     (baseline-cva . 118302)
+;;     (baseline-cva . 118302)                         ; book CVA, base ccy
 ;;     (top3 ((CP-?? . ...) ...))
-;;     (greeks (130253 #(0 0 -212503 130253)))
+;;     (greeks (130253                                  ; CVA value at seed
+;;              #(0 0 -212503 130253)))                 ; ∂CVA/∂(Δλ, ΔR, Δr, Δfx)
 ;;     (counterfactual ((rows ...)
 ;;                      (wrong-way ...) (right-way ...) (insensitive ...)))
 ;;     (beta-recovery ((rows ...) (max-error . 0.006) (worst-cp . "CP-23")))
 ;;     (training-trace ((epoch . 1) (loss . 1.085)) ...)
-;;     (training-loss . 0.00248)
+;;     (training-loss . 0.00248)                        ; expected ~0 on synthetic DGP
 ;;     (stage-report ((book ...) (ml-training ...) (ml-recovery ...)
 ;;                    (baseline ...) (counterfactual ...) (symbolic ...)
 ;;                    (compression ...) (determinism ...)))
 ;;     (symbolic-nodes . 29)
-;;     (symbolic-value . -2.97306e+06)
-;;     (compression-preview . 0.01005)
+;;     (symbolic-value . -2.97306e+06)                  ; ∂(annuity·N)/∂r at (1e6,0.03,2.5)
+;;     (compression-preview . 0.01005)                  ; preview of QP objective
 ;;     (hedge ((dv01 0.10 -0.20 0.05) (lambda . 0.15)
-;;             (objective . -8.996e-04) (delta -0.0262 0.0435 -0.0136)))
+;;             (objective . -8.996e-04)                 ; regularised QP value (sign is
+;;                                                      ; not a CVA — see §9)
+;;             (delta -0.0262 0.0435 -0.0136)))
 ;;     (shard-check ((first . 4.96368e7) (second . 4.96368e7) (match . #t))))
 ```
 
@@ -384,9 +412,12 @@ would put in a deck.
 
 ## Headline Properties 
 
-- **Causally-grounded WWR** — stress CVA is `do(m)` re-pricing on the
-  same `cva-table`, not a static correlation multiplier. Identification
-  is conditional on the assumed SCM.
+- **WWR via `do(...)` on an assumed SCM** — stress CVA is `do(m)` re-pricing
+  on the same `cva-table`, not a static correlation multiplier. Identification
+  is **conditional on the assumed SCM**: in this demo the macro shocks are
+  exogenous Gaussians by construction, so the back-door set is empty *under
+  the DGP*. On real data, identification requires an additional argument
+  (instrument or back-door adjustment); see the caveat box at the top.
 - **One backward pass** — `cva-with-greeks` returns the value and the
   full risk-factor gradient in one tape sweep (no bump-and-revalue).
 - **Same tape, symbolic + numeric** — `lower-expression` walks the
@@ -519,10 +550,7 @@ negative rates β):
 > (max error ≤ 0.05) — i.e. the SCM is **self-consistent against its
 > own DGP**. In production you would feed the learner real CDS panel
 > data; the training machinery is unchanged, only the data feeder
-> swaps from `randn` to `fact-table-load-csv`. See
-> [`docs/wwr_ml_addendum.md`](wwr_ml_addendum.md) for the full
-> design discussion (record promotion of `<cp-betas>`, FactTable
-> trade-book story, real-data identification caveats).
+> swaps from `randn` to `fact-table-load-csv`.
 
 ---
 
@@ -635,31 +663,47 @@ row $i$ is the sensitivity vector for CP-$i$.
 | Loss | $\lVert Y - z\hat{B}^{\top}\rVert_2^2$ | `mse-loss` |
 | Optimiser | Adam, lr = 0.05, 300 epochs | `(adam model 0.05)` |
 
-### Identification — *why this regression is structural*
+### Identification — *what this regression does and does not show*
 
 > [!NOTE]
-> A regression of $\Delta\log\lambda$ on macro variables is, in
-> general, **associational**. It estimates a *structural* coefficient
-> only if there is no back-door path between the regressor and the
-> noise. Two regimes:
+> A regression of $\Delta\log\lambda$ on macro variables is, in general,
+> **associational**. It coincides with a *structural* coefficient only
+> when the regressors are exogenous to the noise (no back-door, no
+> simultaneity, no omitted confounder). Two regimes:
 >
-> - **Synthetic data (the demo).** $z_t$ is drawn from `randn` — iid
->   Gaussian, exogenous to $\varepsilon$ by construction. The
->   back-door / front-door criteria from
->   [`stdlib/std/causal.eta`](../stdlib/std/causal.eta) report the
->   empty adjustment set, so the OLS / `nn.Linear` coefficient *is*
->   the structural β.
+> - **Synthetic data (this demo).** $z_t$ is drawn from `randn` — iid
+>   Gaussian, exogenous to $\varepsilon$ **by construction of the DGP**.
+>   Under that DGP the back-door / front-door criteria from
+>   [`stdlib/std/causal.eta`](../stdlib/std/causal.eta) report the empty
+>   adjustment set, so the OLS / `nn.Linear` coefficient coincides with
+>   the literal SCM β that generated the panel:
 >
 >   ```scheme
 >   (do:identify scm 'hazard 'oil)
 >   ;; => (adjust () (regress-on (oil)))
 >   ```
 >
-> - **Real data.** Observed macro shocks correlate with omitted
->   variables (sentiment, regime, monetary policy). The training code
->   is unchanged; only the data feeder swaps from `randn` to a
->   joined CDS-quote × macro-shock `FactTable`, and the identification
->   step gains an instrument or an explicit back-door adjustment set.
+>   This is a **recoverability check** on the SCM (does the learner
+>   recover the literals it was generated from?), not an empirical
+>   identification result. The `nn.Linear(3, 30)` is a linear regression
+>   with 30 outputs — there is no hidden capacity, and a near-zero
+>   training loss is the expected outcome of regressing a synthetic
+>   linear-Gaussian DGP onto its own model class. Treat the residual
+>   `≈ 0.0025` as confirming the implementation is wired correctly,
+>   not as evidence of empirical fit.
+>
+> - **Real data.** Observed macro shocks correlate with omitted variables
+>   (sentiment, regime, monetary policy), and credit/market systems carry
+>   feedback that violates the static-exposure assumption. The training
+>   code is unchanged — only the data feeder swaps from `randn` to a
+>   joined CDS-quote × macro-shock `FactTable` — but the identification
+>   step then needs at minimum (a) an explicit back-door adjustment set
+>   or instrument, (b) a placebo / permutation test, and (c) a
+>   sensitivity analysis to unmeasured confounding. None of those are
+>   in this demo. The `do(...)` machinery in §6/§7 still runs, but the
+>   reported elasticities should then be read as
+>   *scenario sensitivities under the assumed SCM*, not as identified
+>   causal effects.
 
 ### Code path
 
@@ -701,8 +745,11 @@ epochs, lr = 0.05:
           shock x hazard panel.
   MATH:   Delta log lambda_i = beta_i . z_t + eps_i,  eps_i ~ N(0, sigma^2)
           estimator: nn.Linear(3, 30), MSE loss, Adam optimiser.
-  CAUSAL: z_t drawn iid from N(0, I) -> exogenous by construction;
-          back-door set is empty so OLS beta IS the structural beta.
+  CAUSAL: z_t drawn iid from N(0, I) -> exogenous to eps_i by construction
+          of the synthetic DGP; back-door set under the assumed SCM is
+          empty, so OLS beta coincides with the literal SCM beta that
+          generated the panel. This is a recoverability check on synthetic
+          data, NOT an empirical identification result on real markets.
 
     Epochs:                             300
     Learning rate:                      0.050
@@ -733,7 +780,11 @@ The headline line is the **CP-17 row**:
 
 > True β(CP-17, oil) = **2.910** ; learned β̂(CP-17, oil) = **2.910**
 > (recovery error 0.0026). The "this CP explodes under an oil shock"
-> claim of §7 is no longer asserted — it is *reproduced from data*.
+> claim of §7 is reproduced *from a synthetic panel drawn from the
+> literal SCM* — i.e. the demo's stress numbers and its calibration
+> step are mutually self-consistent. On real CDS panel data the same
+> claim would require the identification machinery flagged in the
+> caveat box above.
 
 ### What §3a unlocks
 
@@ -799,7 +850,7 @@ are the differentiation variables for §5.
   (foldl (lambda (acc entry) (+ acc (cdr entry))) 0.0 table))
 ```
 
-**Worked check (CP-01, first bucket, seeded run):**
+**Worked check (CP-01, first bucket, seeded run; all monetary figures in base currency units):**
 
 | Quantity | Value |
 |---|---:|
@@ -811,7 +862,7 @@ are the differentiation variables for §5.
 | $\Delta\text{PD}_1$ | $0.0135 \cdot 0.25 = 0.003375$ |
 | Bucket | $\approx 160.66$ |
 | Full 12-bucket CP-01 CVA | **2 018.99** |
-| Book CVA | **118 302** |
+| Book CVA | **118 302** (≈ 0.06 % of aggregate notional) |
 
 ---
 
@@ -848,7 +899,9 @@ The two clamps on `shift-map` (hazard ∈ [10⁻⁵, 0.80], recovery ∈ [0.01, 
 are intentionally non-tight so the gradient is exact at the seed point —
 no clamp activates and the `max`/`min` derivatives are well-defined.
 
-**Sample gradient at the seed point** (`market-scalars = '(0 0 0 0)`):
+**Sample gradient at the seed point** (`market-scalars = '(0 0 0 0)`).
+The returned tuple is `(value . #(∂CVA/∂Δλ ∂CVA/∂ΔR ∂CVA/∂Δr ∂CVA/∂Δfx))`;
+all entries are in base currency units per unit shift in the named scalar:
 
 ```text
 value     = 118 302
@@ -1198,6 +1251,14 @@ $$
 At $N = 10^6$, $r = 0.03$, $\tau = 2.5$ this evaluates to
 $-2.973057996 \times 10^6$ — bit-equal to the lowered kernel.
 
+**Finite-difference cross-check.** Bumping `r` by $h = 10^{-6}$ and
+evaluating the original $f$ either side gives
+$(f(r{+}h) - f(r{-}h))/(2h) = -2.97306 \times 10^6$, matching the
+symbolic / lowered value to seven significant figures. The check is
+one line and lives next to the kernel call — it is the standard
+"never trust an AAD or symbolic derivative without a finite-difference
+sanity check" hygiene step.
+
 The differentiation engine itself ([`symbolic.eta`](../examples/xva-wwr/symbolic.eta))
 is one screen of code:
 
@@ -1256,8 +1317,12 @@ $$
 \quad \text{s.t.} \quad \delta_i \in [-1, 1]
 $$
 
-Σ is a 10×10 SIMM-style IR-delta correlation literal; the demo uses the
-3×3 prefix:
+Σ is a 10×10 SIMM-*style* IR-delta correlation literal — a stylised
+positive-definite block whose entries are loosely shaped after a SIMM
+IR-delta bucket but **not** calibrated to the official ISDA SIMM
+parameters, and not aligned 1-to-1 with named SIMM tenor buckets.
+The demo uses the 3×3 leading prefix to keep the QP small enough to
+print:
 
 ```scheme
 (define simm-ir-delta-covariance
@@ -1347,6 +1412,14 @@ solve-compression-qp dv01=(0.10, -0.20, 0.05) lambda_f=0.15
 > activate, at which point the active-set sweep clamps the dominant
 > bucket and re-solves on the residual. The witness is what gets sent
 > to the booking system.
+>
+> **On the negative `J(δ*)`.** $J(\delta) = \tfrac12\delta^{\top}\Sigma\delta + \lambda_f\,\text{dv01}^{\top}\delta$
+> is *not* a CVA and not a loss in any P&L sense. The quadratic term is
+> a residual-risk penalty (always $\geq 0$) and the linear term is a
+> funding-carry pull that is signed; the optimum is wherever those two
+> balance, and the resulting value can be of either sign or shifted by
+> a constant. Compare runs by *difference in $J$* under different `dv01`
+> or $\lambda_f$, not by the absolute level.
 
 The solve is wired into the demo: `main.eta` now invokes
 `solve-compression-qp '(0.10 -0.20 0.05) 0.15` and stores the result
@@ -1412,6 +1485,18 @@ shard hash shown here.
 > map from `(iota 30 1)`). If you swap `foldl` for a parallel reduction
 > the hash changes — and that change is the *correct* CI signal that
 > determinism has been broken.
+
+> [!CAUTION]
+> **Determinism is not correctness.** A green `(match . #t)` only proves
+> that the same seed produces the same numbers across two runs of the
+> same binary. It says nothing about whether the SCM is well specified,
+> whether the βs are right, or whether the Monte Carlo estimator has
+> converged. The model-correctness checks belong in §3a (recoverability
+> on the synthetic DGP), §4 (worked closed-form bucket on CP-01),
+> §5 (clamp-branch diagnostic on the AAD gradient), §7c (β-perturbation
+> stability of the WWR ranking), and §8 (finite-difference cross-check
+> of the symbolic / lowered kernel). Treat the shard hash as the
+> *reproducibility floor*, not as a substitute for those.
 
 ---
 
