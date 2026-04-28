@@ -152,6 +152,30 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
+    std::expected<LispVal, RuntimeError> make_hash_map(Heap& heap, types::HashMap map) {
+        return make_heap_object<types::HashMap, ObjectKind::HashMap>(heap, std::move(map));
+    }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_hash_map(Heap& heap,
+                                                       const std::size_t requested_capacity,
+                                                       const std::uint64_t seed) {
+        return make_hash_map(heap, types::make_empty_hash_map(requested_capacity, seed));
+    }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_hash_set(Heap& heap, types::HashSet set) {
+        return make_heap_object<types::HashSet, ObjectKind::HashSet>(heap, std::move(set));
+    }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_hash_set(Heap& heap,
+                                                       const std::size_t requested_capacity,
+                                                       const std::uint64_t seed) {
+        return make_hash_set(heap, types::make_empty_hash_set(requested_capacity, seed));
+    }
+
+    inline_always
     std::expected<LispVal, RuntimeError> make_csv_reader(Heap& heap, types::CsvReader reader) {
         return make_heap_object<types::CsvReader, ObjectKind::CsvReader>(heap, std::move(reader));
     }

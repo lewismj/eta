@@ -1,6 +1,39 @@
 # Release Notes
 
-[<- Back to README](../README.md)
+[<- Back to README](README.md)
+
+---
+
+## 2026-04-28
+
+### Hash Maps and Hash Sets
+
+Eta now ships native hash-map/hash-set runtime values and builtins in the core runtime.
+
+Highlights:
+
+- New runtime object kinds: `HashMap` and `HashSet`, including GC traversal and sandbox equality support.
+- New core builtins:
+  - Hash maps: `hash-map`, `make-hash-map`, `hash-map?`, `hash-map-ref`,
+    `hash-map-assoc`, `hash-map-dissoc`, `hash-map-keys`, `hash-map-values`,
+    `hash-map-size`, `hash-map->list`, `list->hash-map`, `hash-map-fold`, `hash`.
+  - Hash sets: `make-hash-set`, `hash-set`, `hash-set?`, `hash-set-add`,
+    `hash-set-remove`, `hash-set-contains?`, `hash-set-union`,
+    `hash-set-intersect`, `hash-set-diff`, `hash-set->list`, `list->hash-set`.
+- Value formatting now prints `#hashmap{...}` and `#hashset{...}`.
+- New stdlib modules:
+  - `std.hashmap`
+  - `std.hashset`
+- New stdlib tests:
+  - `stdlib/tests/hashmap.test.eta`
+  - `stdlib/tests/hashset.test.eta`
+- New C++ runtime tests:
+  - `eta/test/src/hash_map_tests.cpp`
+
+Documentation updates:
+
+- Added [docs/hashmap.md](hashmap.md).
+- Added module reference entries in [docs/modules.md](modules.md).
 
 ---
 

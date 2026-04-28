@@ -298,6 +298,66 @@ re-exports a curated subset for one-line import:
 
 ---
 
+### `std.hashmap` — Hash Map Helpers
+
+```scheme
+(import std.hashmap)
+```
+
+Runtime primitives:
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `hash-map` | `(k1 v1 k2 v2 ...) -> map` | Construct a map from key/value pairs |
+| `make-hash-map` | `() -> map` | Empty hash map |
+| `hash-map?` | `(x) -> bool` | Hash map predicate |
+| `hash-map-ref` | `(m k [default]) -> value` | Lookup with optional default |
+| `hash-map-assoc` | `(m k v) -> map` | Return a map with `k` bound to `v` |
+| `hash-map-dissoc` | `(m k) -> map` | Return a map without `k` |
+| `hash-map-keys` | `(m) -> list` | Keys as a list |
+| `hash-map-values` | `(m) -> list` | Values as a list |
+| `hash-map-size` | `(m) -> int` | Number of entries |
+| `hash-map->list` | `(m) -> list` | Association-list form `((k . v) ...)` |
+| `list->hash-map` | `(xs) -> map` | Build from alist or flat key/value list |
+| `hash-map-fold` | `(f init m) -> value` | Fold with `(f acc k v)` |
+| `hash` | `(x) -> int` | Generic hash function |
+
+Convenience wrappers:
+
+`hash-map-empty?`, `hash-map-contains?`, `hash-map-update`,
+`hash-map-update-with-default`, `hash-map-merge`, `hash-map-merge-with`,
+`hash-map-map`, `hash-map-filter`, `hash-map->alist`, `alist->hash-map`.
+
+---
+
+### `std.hashset` — Hash Set Helpers
+
+```scheme
+(import std.hashset)
+```
+
+Runtime primitives:
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `make-hash-set` | `() -> set` | Empty hash set |
+| `hash-set` | `(x1 x2 ...) -> set` | Construct a set from values |
+| `hash-set?` | `(x) -> bool` | Hash set predicate |
+| `hash-set-add` | `(s x) -> set` | Add an element |
+| `hash-set-remove` | `(s x) -> set` | Remove an element |
+| `hash-set-contains?` | `(s x) -> bool` | Membership check |
+| `hash-set-union` | `(a b) -> set` | Union |
+| `hash-set-intersect` | `(a b) -> set` | Intersection |
+| `hash-set-diff` | `(a b) -> set` | Difference `a \ b` |
+| `hash-set->list` | `(s) -> list` | Set elements as a list |
+| `list->hash-set` | `(xs) -> set` | Build from list |
+
+Convenience wrappers:
+
+`hash-set-empty?`, `hash-set-size`, `hash-set-subset?`, `hash-set-equal?`.
+
+---
+
 ### `std.regex` — Regular Expressions
 
 ```scheme

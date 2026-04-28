@@ -43,6 +43,8 @@ namespace eta::runtime::memory::heap {
         NNModule,        ///< libtorch nn::Module (wraps shared_ptr<torch::nn::Module>)
         Optimizer,       ///< libtorch optimizer (wraps shared_ptr<torch::optim::Optimizer>)
         FactTable,       ///< Columnar fact table with per-column hash indexes
+        HashMap,         ///< Immutable hash-map (open-addressing table)
+        HashSet,         ///< Immutable hash-set
         CsvReader,       ///< CSV reader handle (opaque parser state + interned columns)
         CsvWriter,       ///< CSV writer handle (opaque stream + CSV options)
         Regex,           ///< Compiled regular expression object
@@ -68,6 +70,8 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(NNModule)
         ETA_ENUM_CASE(Optimizer)
         ETA_ENUM_CASE(FactTable)
+        ETA_ENUM_CASE(HashMap)
+        ETA_ENUM_CASE(HashSet)
         ETA_ENUM_CASE(CsvReader)
         ETA_ENUM_CASE(CsvWriter)
         ETA_ENUM_CASE(Regex)

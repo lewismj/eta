@@ -91,6 +91,24 @@ namespace eta::runtime::memory::gc {
             for (auto v : ft.rule_column) callback(v);
         }
 
+        void visit_hash_map(const types::HashMap& hm) override {
+            const auto slots = hm.state.size();
+            for (std::size_t i = 0; i < slots; ++i) {
+                if (hm.state[i] != static_cast<std::uint8_t>(types::HashSlotState::Occupied)) continue;
+                callback(hm.keys[i]);
+                callback(hm.values[i]);
+            }
+        }
+
+        void visit_hash_set(const types::HashSet& hs) override {
+            const auto& table = hs.table;
+            const auto slots = table.state.size();
+            for (std::size_t i = 0; i < slots; ++i) {
+                if (table.state[i] != static_cast<std::uint8_t>(types::HashSlotState::Occupied)) continue;
+                callback(table.keys[i]);
+            }
+        }
+
         void visit_csv_reader(const types::CsvReader& reader) override {
             for (auto sym : reader.column_symbols) callback(sym);
         }

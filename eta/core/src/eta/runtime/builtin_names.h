@@ -175,6 +175,32 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("vector?",       1, false);
     r("make-vector",   2, false);
 
+    /// Hash-map / hash-set primitives
+    r("hash-map",           0, true);
+    r("make-hash-map",      0, false);
+    r("hash-map?",          1, false);
+    r("hash-map-ref",       2, true);
+    r("hash-map-assoc",     3, false);
+    r("hash-map-dissoc",    2, false);
+    r("hash-map-keys",      1, false);
+    r("hash-map-values",    1, false);
+    r("hash-map-size",      1, false);
+    r("hash-map->list",     1, false);
+    r("list->hash-map",     1, false);
+    r("hash-map-fold",      3, false);
+    r("hash",               1, false);
+    r("make-hash-set",      0, false);
+    r("hash-set",           0, true);
+    r("hash-set?",          1, false);
+    r("hash-set-add",       2, false);
+    r("hash-set-remove",    2, false);
+    r("hash-set-contains?", 2, false);
+    r("hash-set-union",     2, false);
+    r("hash-set-intersect", 2, false);
+    r("hash-set-diff",      2, false);
+    r("hash-set->list",     1, false);
+    r("list->hash-set",     1, false);
+
     /// Misc
     r("error",      1, true);
     r("platform",   0, false);

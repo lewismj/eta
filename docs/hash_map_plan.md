@@ -1,6 +1,6 @@
 # Hash Map / Hash Set — Implementation Plan (Phase H2a)
 
-[Back to README](../README.md) · [Architecture](architecture.md) ·
+[Back to README](README.md) · [Architecture](architecture.md) ·
 [Runtime and GC](runtime.md) · [Modules and Stdlib](modules.md) ·
 [Optimisations](optimisations.md) · [Next Steps](next-steps.md)
 

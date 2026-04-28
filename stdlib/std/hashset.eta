@@ -1,0 +1,29 @@
+;;; std/hashset.eta - Hash set helpers over runtime hash-set primitives.
+
+(module std.hashset
+  (export
+    hash-set-empty?
+    hash-set-size
+    hash-set-subset?
+    hash-set-equal?)
+  (begin
+
+    (defun hash-set-size (s)
+      (length (hash-set->list s)))
+
+    (defun hash-set-empty? (s)
+      (= 0 (hash-set-size s)))
+
+    (defun hash-set-subset? (left right)
+      (letrec ((loop (lambda (xs)
+                       (if (null? xs)
+                           #t
+                           (and (hash-set-contains? right (car xs))
+                                (loop (cdr xs)))))))
+        (loop (hash-set->list left))))
+
+    (defun hash-set-equal? (a b)
+      (and (= (hash-set-size a) (hash-set-size b))
+           (hash-set-subset? a b)))
+
+  ))

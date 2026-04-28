@@ -4,20 +4,35 @@
 [Bytecode and VM](bytecode-vm.md) · [Compiler](compiler.md) ·
 [Runtime and GC](runtime.md) · [Modules and Stdlib](modules.md) ·
 [Logic](logic.md) · [CLP](clp.md) · [Jupyter](jupyter.md) ·
-[Release Notes](release-notes.md)
+[Optimisations](optimisations.md) · [Release Notes](release-notes.md)
 
 ---
 
 ## Overview
 
 This page tracks what is delivered in the current Eta baseline, and the
-focused work items that are genuinely outstanding. As of April 2026
+focused work items that are genuinely outstanding. As of **April 2026**
 the core language, runtime, GC, logic substrate, CLP family
 (Z / FD / R / B), networking + actor model, libtorch bindings, stdlib,
 LSP, DAP, VS Code extension, and Jupyter kernel are all shipped and
-tested. The remaining roadmap is dominated by **packaging / polish**
-(conda-forge for the Jupyter kernel, Binder, CI publish for the VS Code
-extension) plus a small number of engine follow-ons.
+tested. The optimisation pipeline (`etac -O`) now ships
+`ConstantFolding`, `PrimitiveSpecialisation`, and `DeadCodeElimination`,
+plus a lock-free function-registry read path and self-recursive
+tail-call → backward-jump emission (see
+[optimisations.md](optimisations.md)).
+
+The remaining roadmap splits into three buckets:
+
+1. **Distribution / packaging polish** — conda-forge, Binder badges,
+   CI publish for the `.vsix`.
+2. **Engine follow-ons** — further optimiser passes, generational GC,
+   per-thread DAP routing.
+3. **Hosted-platform layer** *(new phase, see end of doc)* — the
+   functionality a script needs from its host OS: hash maps, atoms,
+   `getenv`, argv, filesystem, subprocess, JSON, structured logging,
+   HTTP, FFI, condition system. This is the largest *capability* gap
+   between Eta and a comparable hosted language (Clojure, Racket,
+   Common Lisp, Chez).
 
 ---
 
@@ -26,11 +41,20 @@ extension) plus a small number of engine follow-ons.
 ### Language & VM
 
 - Stable end-to-end pipeline: lexer → parser → expander → module linker
-  → semantic analyzer → emitter → VM.
+  → semantic analyzer → optimisation pipeline → emitter → VM.
 - `etac` AOT bytecode compiler producing `.etac`; `etai` loads `.etac`
   directly with full source-map support.
-- Optimisation pipeline (constant folding, DCE) integrated and gated
-  behind `-O`.
+- Optimisation pipeline (`etac -O`):
+  - `ConstantFolding` — binary `+ - * /` over numeric literals (callee
+    name-resolved; hardening planned).
+  - `PrimitiveSpecialisation` — proven-builtin call sites lower to
+    dedicated VM opcodes (`Add`, `Sub`, `Mul`, `Div`, `Eq`, `Cons`,
+    `Car`, `Cdr`).
+  - `DeadCodeElimination` — pure non-tail `Begin` operands collapsed.
+- VM: self-recursive tail calls in unary form lower to a backward
+  `Jump` (no `TailCall` overhead). Function registry uses a lock-free
+  read path; primitive dispatch forwards arguments as
+  `std::span<const LispVal>` over the VM stack (zero-copy).
 - Bytecode serializer / disassembler aligned to the same opcode set
   used by the VM.
 
@@ -44,6 +68,8 @@ extension) plus a small number of engine follow-ons.
   simplex bounds.
 - Finalizers and guardian queues with documented resurrection semantics
   ([finalizers.md](finalizers.md)).
+- Exception machinery: `raise` / `catch` are first-class special forms
+  in the reader and semantic analyzer.
 
 ### Logic & Constraints
 
@@ -79,6 +105,22 @@ extension) plus a small number of engine follow-ons.
   with `ColPivHouseholderQR`); `std.stats` descriptive stats, CIs,
   t-tests, OLS over lists.
 
+### I/O — what already exists
+
+- Text + binary file ports: `open-input-file`, `open-output-file`,
+  `open-input-bytevector`, `open-output-bytevector`,
+  `get-output-bytevector`, `read-u8`, `write-u8`, `binary-port?`,
+  `port?`, `input-port?`, `output-port?`, `close-port` family.
+- String ports: `open-input-string`, `open-output-string`,
+  `get-output-string`.
+- Current-port redirection: `current-input-port`,
+  `current-output-port`, `current-error-port`, with
+  `set-current-{input,output,error}-port!` and the `with-*-port`
+  wrappers in `std.io`.
+- Native CSV codec (`std.csv`) and `regex` bindings (`std.regex`).
+- Time primitives (`std.time`) — wall, monotonic, sleep, ISO-8601
+  formatting, calendar parts.
+
 ### Tooling, Notebooks & Tests
 
 - LSP server with parse / analysis-driven diagnostics, completions,
@@ -88,16 +130,19 @@ extension) plus a small number of engine follow-ons.
   instruction granularity), call-stack and locals inspection,
   `evaluate` (incl. hover), `completions`, `setVariable`, `restart`,
   `cancel`, `breakpointLocations`, `terminateThreads`, plus custom
-  `eta/heapSnapshot` and `eta/inspectObject` extensions.
+  `eta/heapSnapshot`, `eta/inspectObject`, `eta/disassemble`,
+  `eta/localMemory`, `eta/childProcesses` extensions.
 - VS Code extension (`eta-scheme-lang`) with TextMate grammar,
   snippets, language-configuration, debug views (Heap Inspector,
-  Disassembly, GC Roots, Child Processes), and a Test Controller for
-  `*.test.eta`.
+  Disassembly, GC Roots, Child Processes), inline-values provider
+  (off by default), evaluatable-expression hover, code-lens, document
+  links, jump-to-callee on `Call` / `TailCall` instructions, and a
+  Test Controller for `*.test.eta`.
 - Jupyter kernel (`eta_jupyter`) — xeus-based, embeds the `Driver`
   directly; `--install` writes the kernelspec; rich-display MIME
   bundles for tensors, fact tables, heap snapshots; three showcase
   notebooks under `examples/notebooks/`. See [jupyter.md](jupyter.md).
-- C++ unit suite (`eta_core_test`) and stdlib test runner (`eta_test`)
+- C++ unit suite (`eta_core_test`) and stdlib test runner (`eta_test`
   wired into CTest (`eta_stdlib_tests`) plus the convenience target
   `eta_rebuild_and_test`.
 - Async DAP harness (`eta/test/src/dap_tests.cpp`) covering the
@@ -108,7 +153,7 @@ extension) plus a small number of engine follow-ons.
 
 ---
 
-## Outstanding Work
+## Outstanding Work — Distribution & Polish
 
 The list is short and mostly about distribution.
 
@@ -135,14 +180,14 @@ end-to-end. What's left:
 
 ### 2) DAP / VS Code — Polish
 
-The DAP advertised capability set is now broad; the remaining items
-are UX polish:
+The DAP advertised capability set is now broad and most of last
+quarter's polish list shipped (inline-values provider,
+evaluatable-expression hover, code-lens, document links,
+jump-to-callee, child-processes view). Remaining items are narrower:
 
 - **Per-thread state for `spawn-thread` actors.** `threads` lists
   actor threads, but stop / stack / evaluate is still routed through
   the main VM. Finish full per-thread pause / inspect / step routing.
-- **Inline values.** Implement `InlineValuesProvider` so the editor
-  decorates locals with their current value during a stop event.
 - **Watch expressions.** Richer expression evaluation for `setVariable`
   edit RHS.
 - **Debug Console / REPL improvements.**
@@ -150,31 +195,40 @@ are UX polish:
   - Auto-import of `std.io` so `(println …)` works out of the box.
 - **Heap Inspector polish.** Sortable columns, search / filter, and a
   *snapshot diff* mode (compare two snapshots to find leaks).
-- **Disassembly view.** Follow-symbol / jump-to-callee on `Call` /
-  `TailCall`, and a two-pane source ↔ bytecode view for the current PC.
 - **Test Controller.** Surface per-assertion failure locations using
   `*.test.eta` source maps — failures currently show only the test
   name.
 - **Snippets refresh.** `snippets/eta.json` predates `clpr`, `clpb`,
-  `freeze`, `dif`, `defrel`, supervision, `std.jupyter` — add canonical
-  templates.
+  `freeze`, `dif`, `defrel`, supervision, `std.jupyter`, and the
+  hosted-platform modules listed below — add canonical templates as
+  each ships.
 - **CI publish.** Add a workflow that builds the `.vsix` on tag push so
   the bundle layout's `editors/eta-lang-<version>.vsix` is reproducible
-  rather than hand-built.
+  rather than hand-built. Bundle-script DLL sanity check now matches
+  both `xeus.dll` and the FetchContent-prefixed `libxeus.dll` family
+  (fixed April 2026; see release notes).
 
 ---
 
 ## Engine Follow-ons (Lower Priority)
 
-### Performance
+### Performance — track [optimisations.md](optimisations.md)
 
-- Repeatable benchmark harness in CI (the QP gate is a good template
-  for a general benchmark format).
-- Optimiser passes beyond constant folding + DCE: function inlining,
-  beta-reduction of trivial closures, interprocedural constant
-  propagation.
-- VM dispatch: super-instructions for hot opcode pairs and inline
-  caches for global lookups.
+The optimisation plan is now a separate, prioritised document. The
+short version:
+
+- **Done.** Constant folding (binary), DCE, primitive specialisation,
+  self-recursive tail-call → backward jump (unary), lock-free function
+  registry, zero-copy primitive arg dispatch.
+- **Next** (in rollout order): harden constant folding under builtin
+  shadowing → n-ary folding + algebraic identities + constant/copy
+  propagation through `let` → bytecode peephole → dead-store /
+  frame-shrink → AAD flonum fast path → closure elimination for
+  non-escaping lambdas → constant-pool / quote interning →
+  flow-sensitive type specialisation.
+- **Benchmarking.** Repeatable harness in CI (the QP gate is a good
+  template for a general benchmark format covering AAD primal, CLP(R)
+  feasibility, Monte Carlo, and stdlib hot paths).
 
 ### Runtime & GC
 
@@ -209,8 +263,203 @@ are UX polish:
 
 ---
 
+## Next Phase — Hosted-Platform Layer (proposal)
+
+Eta today is a strong **language and runtime**: VM, GC, logic, CLP,
+AAD, libtorch, actors, Jupyter. What it is **not yet** is a strong
+**hosted platform** — the things a script needs from its operating
+system to replace Python or Ruby for everyday automation. This
+section enumerates the gap by comparing against Clojure (the closest
+relative on the JVM side), R7RS-large, and Common Lisp, and proposes
+a delivery order.
+
+> **Why this is the next phase.** Every other runway item
+> (`generational GC`, `WAM bytecode`, `distributed supervision`) is
+> incremental — it makes existing workloads faster or larger. The
+> hosted-platform gap is *categorical*: until it lands you cannot
+> write a deploy script, a config-file processor, an HTTP webhook, or
+> a Jupyter notebook that ingests live data without dropping into
+> another language. Closing the gap unlocks an order of magnitude
+> more use-cases per delivered LoC than any of the engine follow-ons.
+
+### Capability matrix — what's missing vs Clojure
+
+| Capability | Clojure | Eta today | Gap |
+|---|---|---|---|
+| **Hash map / set** | `{:a 1}`, `#{1 2}` (persistent) | alists only | **Big** — every non-trivial dict is O(n) |
+| **Atom / ref / agent** (CAS cells) | `atom`, `ref`, `agent` | none | Big — actors fill some of this, not all |
+| **getenv / setenv** | `(System/getenv ...)` | none | Big — no env-var driven config |
+| **argv / command-line** | `*command-line-args*` | none | Big — scripts cannot read flags |
+| **Filesystem ops** | `clojure.java.io` | `open-input-file` only | Big — no `file-exists?`, `delete-file`, `list-directory`, `make-directory`, `current-directory`, `path-join`, `temp-file` |
+| **Subprocess / `exec`** | `clojure.java.shell/sh` | none | Big — no way to call `git`, `python`, etc. |
+| **JSON parser / serialiser** | `clojure.data.json`, `cheshire` | none | Big — every config / API integration needs this |
+| **`format` / `printf`** | `(format "%.3f" x)` | string ports + `display` | Medium — verbose for numeric reports |
+| **HTTP client** | `clj-http`, `hato` | nng raw sockets only | Medium |
+| **HTTP server** | `ring` | nng REQ/REP only | Medium |
+| **FFI / dlopen** | JNI / native-image | none | Medium — torch/nng are hard-linked |
+| **Condition / restart system** | `ex-info` / `ex-data` | `raise`/`catch` | Medium — works, but no restart frames |
+| **Structured logging** | `tools.logging`, `mulog` | `display` to stderr | Medium — production observability |
+| **Persistent vector / list / map** | core | mutable vectors, immutable lists, no maps | Medium — concurrency-relevant |
+| **Protocols / multimethods** | `defprotocol`, `defmulti` | none | Smaller — generic dispatch via cond/case today |
+| **Transducers** | core | none | Smaller — `map`/`filter`/`foldl` cover most cases |
+| **call/cc** | none (JVM limit) | not yet | Smaller — niche; aligns with R7RS |
+| **delay / force / streams** | `delay`/`force`, `lazy-seq` | none | Smaller |
+| **Destructuring `let`** | `(let [{:keys [a b]} m] ...)` | none | Smaller — quality-of-life |
+
+### Delivery order (proposal)
+
+Each layer is independently shippable, independently benchmarkable,
+and unlocks a distinct class of script. Recommended order:
+
+#### Phase H1 — Process & Filesystem (highest ROI)
+
+The thing that is missing 100% of the time when someone tries to use
+Eta as a Python replacement.
+
+- **Builtins** (under `os_primitives.h` or similar):
+  - `getenv`, `setenv!`, `unsetenv!`, `environment-variables`
+  - `command-line-arguments` (already collected by `etai`/`etac` for
+    flags; expose to the program)
+  - `exit`, `current-directory`, `change-directory!`
+  - `file-exists?`, `directory?`, `delete-file`, `make-directory`,
+    `list-directory`, `path-join`, `path-split`, `path-normalize`,
+    `temp-file`, `temp-directory`
+  - `file-modification-time`, `file-size`
+- **Subprocess** — wrap `boost::process` or std::process equivalent:
+  - `process-run` (blocking, returns `(status stdout stderr)`)
+  - `process-spawn` (non-blocking, returns a process handle)
+  - `process-wait`, `process-kill`, `process-pid`, `process-stdin-port`
+  - Stdio piping that lands as plain Eta ports so existing
+    `read-line` / `read-u8` works unchanged.
+- **Stdlib** — `std.os`, `std.fs`, `std.process`. ~600 LoC C++ +
+  ~200 LoC Eta wrappers + tests + docs page.
+
+#### Phase H2 — Hash Map / Set + Atom (concurrency primitive)
+
+The single largest data-structure gap.
+
+- **Hash map** as a first-class value, not built on alists. Suggested:
+  initial implementation = open-addressing immutable map with a
+  copy-on-write `assoc` (Bagwell HAMT can come later if profiling
+  warrants it).
+  - `make-hash-map`, `hash-map?`, `hash-map-ref`, `hash-map-assoc`,
+    `hash-map-dissoc`, `hash-map-keys`, `hash-map-values`,
+    `hash-map-size`, `hash-map->list`, `list->hash-map`.
+  - `hash` generic over symbol / string / number / bytevector.
+- **Hash set** — same backing store, no values. `make-hash-set`,
+  `hash-set?`, `hash-set-add`, `hash-set-remove`, `hash-set-contains?`,
+  `hash-set-union`, `hash-set-intersect`, `hash-set-diff`.
+- **Atom** — single-cell mutable reference with CAS:
+  - `(atom v)`, `atom?`, `(deref a)`, `(reset! a v)`,
+    `(swap! a fn args …)`, `(compare-and-set! a old new)`.
+  - Backed by `std::atomic<LispVal>` (boxed) with the existing GC
+    barrier. No watcher chain in v1; add later if needed.
+- **Stdlib** — `std.hashmap`, `std.hashset`, `std.atom`. ~800 LoC
+  C++ + tests + docs.
+
+> **Why hash map before HTTP / JSON.** JSON parsing returns a hash
+> map. HTTP libraries return responses as hash maps. There is no
+> point shipping JSON / HTTP without the data type they naturally
+> produce.
+
+#### Phase H3 — JSON, Format, Logging
+
+The "make it usable for real work" layer, on top of H1+H2.
+
+- **`std.json`** — `json:read` (port → value), `json:read-string`,
+  `json:write`, `json:write-string`. RFC 8259, decodes objects to
+  hash maps, arrays to vectors, numbers to flonums (with an option
+  to keep integers exact). Pure-C++ implementation; nlohmann_json is
+  already a dependency via xeus.
+- **`std.format`** — `format` à la SLIB / Common Lisp tiny subset:
+  `~a` (display), `~s` (write), `~d` (decimal), `~f` (float with
+  precision), `~e` (scientific), `~%` (newline), `~~`. Useful for
+  reports and log messages. ~200 LoC pure Eta on top of string ports.
+- **`std.log`** — structured logger:
+  - levels (`trace`/`debug`/`info`/`warn`/`error`),
+  - per-module level filtering,
+  - JSON-line and human formatters,
+  - default sink = `current-error-port`, configurable to a file port,
+  - `(log:info "fitted" '((symbol . AAPL) (rmse . 0.012)))` style
+    structured payloads (alist or hash map),
+  - timestamp + level + module + payload, deterministic field order.
+  - Output channel routes through the active port so `eta_jupyter`
+    surfaces logs as cell output without further wiring.
+
+#### Phase H4 — HTTP & FFI
+
+- **`std.http`** — minimal HTTP client (boost::beast or curl) with
+  blocking `(http:get url [headers])` / `(http:post url body
+  [headers])` returning a hash map `{(status . n) (headers . hm)
+  (body . bytevector)}`. A blocking client is enough to unblock
+  webhook ingest, REST-API consumption, and notebook-time data
+  pulls; a server can come later via the same library.
+- **`std.ffi`** — `dlopen` / `dlsym` thin wrapper. Two layers:
+  - low-level `(ffi:open "libfoo.so")`,
+    `(ffi:symbol lib "fn_name" '(int double *char) 'int)` returning a
+    callable;
+  - high-level `define-foreign` macro that desugars to the above.
+  Risk: GC-safety of foreign callbacks. Scope v1 to *outbound* calls
+  only — Eta calling C — and document that callbacks coming back into
+  Eta are out of scope.
+
+#### Phase H5 — Condition / restart system + protocols + transducers
+
+The "feels like a mature Lisp" finishing layer. Each is independently
+useful but each is also pure quality-of-life on top of H1–H4.
+
+- **Condition / restart system** (Common Lisp `cerror` / `restart-case`
+  family) — replaces today's `raise`/`catch` with a richer model that
+  separates *signalling* a condition from *handling* it from
+  *recovering* via a named restart. Useful in actor supervisors and
+  REPL workflows.
+- **`defprotocol` / `defmethod`** — generic dispatch on the type of
+  the first argument (single dispatch in v1). Backed by a small
+  vtable indexed off the heap-object kind. Used internally by
+  `display`, `write`, `=`, etc. could be exposed.
+- **Transducers** — `(map f)`, `(filter p)`, `(take n)` returning
+  reducing-function transformers; `transduce` driver. ~200 LoC pure
+  Eta; useful when combined with channels or large fact-table scans.
+- **Destructuring `let`** — alist / vector / hash-map binding form
+  desugared by the expander.
+
+### Effort / risk table
+
+| Phase | Effort (eng-weeks) | Risk | Unblocks |
+|---|---|---|---|
+| H1 Process & FS | 2 | Low | scripts, deploy, test runners that shell out |
+| H2 Hashmap / Set / Atom | 3 | Medium (GC barrier on Atom; HAMT later) | every dict-shaped workload |
+| H3 JSON / Format / Log | 2 | Low | configs, observability, REST consumers |
+| H4 HTTP / FFI | 3 | Medium (HTTP TLS; FFI safety) | webhook receivers, telemetry, third-party C libs |
+| H5 Conditions / Protocols / Transducers | 3 | Medium (restart frames touch the VM stack) | mature Lisp surface |
+| **Total** | **~13 weeks** | | |
+
+### Non-goals (deferred deliberately)
+
+- **`call/cc`** — not on the path; full first-class continuations
+  interact poorly with the existing trail / unwind discipline.
+  Consider only if a concrete user lands.
+- **Lazy sequences / streams** — partially covered by tabled relations
+  in `std.db`; full SRFI-41 streams not justified.
+- **JIT** — not on the runway; `etac -O` plus PrimitiveSpecialisation
+  buys most of what a baseline JIT would.
+
+---
+
 ## Recently Completed (was on this list, now shipped)
 
+- ✅ Optimisation pipeline expansion: `PrimitiveSpecialisation` lowers
+  proven builtin call sites to dedicated VM opcodes; self-recursive
+  tail calls (unary) lower to backward `Jump`; lock-free function
+  registry read path; zero-copy primitive arg dispatch via
+  `std::span<const LispVal>`. See [optimisations.md](optimisations.md).
+- ✅ VS Code / DAP polish round 1: inline-values provider,
+  evaluatable-expression hover, code-lens, document links,
+  jump-to-callee on `Call`/`TailCall` instructions, child-processes
+  tree view.
+- ✅ Release-bundle DLL sanity check now matches both the vcpkg
+  (`xeus.dll`) and FetchContent (`libxeus.dll`) naming conventions
+  on Windows; false-positive "missing DLL" warnings removed.
 - ✅ Jupyter kernel (`eta_jupyter`) via xeus, with three showcase
   notebooks and rich-display MIME bundles — see
   [jupyter.md](jupyter.md) and the

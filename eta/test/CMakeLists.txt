@@ -36,6 +36,7 @@ set(SOURCES
         src/csv_reader_tests.cpp
         src/csv_writer_tests.cpp
         src/csv_fact_table_tests.cpp
+        src/hash_map_tests.cpp
         src/regex_tests.cpp
         src/nng_tests.cpp
         src/clp_linear_tests.cpp
@@ -100,6 +101,14 @@ target_link_libraries(${PROJECT_NAME} PRIVATE eta_core eta_torch eta_nng eta_sta
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
+
+if(MSVC)
+    target_link_libraries(${PROJECT_NAME} PRIVATE msvcprt)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        _USE_STD_VECTOR_ALGORITHMS=0
+        _USE_STD_STRING_VIEW_ALGORITHMS=0)
+endif()
+
 eta_copy_torch_dlls(${PROJECT_NAME})
 eta_copy_nng_dlls(${PROJECT_NAME})
 

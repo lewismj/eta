@@ -1,0 +1,71 @@
+;;; stdlib/tests/hashset.test.eta - Tests for std.hashset wrappers.
+
+(module hashset.tests
+  (import std.test std.hashset)
+  (begin
+
+    (define test-empty-constructor
+      (make-test "hash-set empty constructor and predicate"
+        (lambda ()
+          (let ((s (make-hash-set)))
+            (assert-true (hash-set? s))
+            (assert-true (hash-set-empty? s))
+            (assert-equal 0 (hash-set-size s))))))
+
+    (define test-add-remove-contains
+      (make-test "hash-set add/remove/contains"
+        (lambda ()
+          (let* ((s0 (make-hash-set))
+                 (s1 (hash-set-add s0 'a))
+                 (s2 (hash-set-add s1 'b))
+                 (s3 (hash-set-remove s2 'a)))
+            (assert-true (hash-set-contains? s2 'a))
+            (assert-true (hash-set-contains? s2 'b))
+            (assert-false (hash-set-contains? s3 'a))
+            (assert-true (hash-set-contains? s3 'b))
+            (assert-equal 1 (hash-set-size s3))))))
+
+    (define test-algebra
+      (make-test "hash-set union/intersect/diff"
+        (lambda ()
+          (let* ((a (hash-set 1 2 3))
+                 (b (hash-set 3 4))
+                 (u (hash-set-union a b))
+                 (i (hash-set-intersect a b))
+                 (d (hash-set-diff a b)))
+            (assert-equal 4 (hash-set-size u))
+            (assert-true (hash-set-contains? u 4))
+            (assert-equal 1 (hash-set-size i))
+            (assert-true (hash-set-contains? i 3))
+            (assert-equal 2 (hash-set-size d))
+            (assert-true (hash-set-contains? d 1))
+            (assert-true (hash-set-contains? d 2))
+            (assert-false (hash-set-contains? d 3))))))
+
+    (define test-roundtrip-and-equality
+      (make-test "hash-set list roundtrip and equality"
+        (lambda ()
+          (let* ((s1 (hash-set 'x 'y 'z))
+                 (s2 (list->hash-set (hash-set->list s1))))
+            (assert-true (hash-set-equal? s1 s2))
+            (assert-true (hash-set-subset? s2 s1))
+            (assert-true (hash-set-subset? s1 s2))))))
+
+    (define test-subset
+      (make-test "hash-set subset relation"
+        (lambda ()
+          (let* ((a (hash-set 1 2))
+                 (b (hash-set 1 2 3)))
+            (assert-true (hash-set-subset? a b))
+            (assert-false (hash-set-subset? b a))))))
+
+    (define suite
+      (make-group "std.hashset"
+        (list
+          test-empty-constructor
+          test-add-remove-contains
+          test-algebra
+          test-roundtrip-and-equality
+          test-subset)))
+
+    (print-tap (run suite))))

@@ -12,6 +12,8 @@
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/runtime/types/cons.h"
+#include "eta/runtime/types/hash_map.h"
+#include "eta/runtime/types/hash_set.h"
 
 namespace eta::runtime::vm {
 
@@ -393,12 +395,60 @@ private:
         if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return nullptr;
         return heap_.try_get_as<memory::heap::ObjectKind::Cons, types::Cons>(ops::payload(v));
     }
+    const types::HashMap* try_get_hash_map(LispVal v) const noexcept {
+        if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return nullptr;
+        return heap_.try_get_as<memory::heap::ObjectKind::HashMap, types::HashMap>(ops::payload(v));
+    }
+    const types::HashSet* try_get_hash_set(LispVal v) const noexcept {
+        if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return nullptr;
+        return heap_.try_get_as<memory::heap::ObjectKind::HashSet, types::HashSet>(ops::payload(v));
+    }
 
     bool values_equal(LispVal a, LispVal b) const noexcept {
         if (a == b) return true;
+
         const auto* ca = try_get_cons(a);
         const auto* cb = try_get_cons(b);
         if (ca && cb) return values_equal(ca->car, cb->car) && values_equal(ca->cdr, cb->cdr);
+
+        const auto* hma = try_get_hash_map(a);
+        const auto* hmb = try_get_hash_map(b);
+        if (hma && hmb) {
+            if (hma->size != hmb->size) return false;
+            for (std::size_t i = 0; i < hma->state.size(); ++i) {
+                if (hma->state[i] != static_cast<std::uint8_t>(types::HashSlotState::Occupied)) continue;
+                bool found = false;
+                for (std::size_t j = 0; j < hmb->state.size(); ++j) {
+                    if (hmb->state[j] != static_cast<std::uint8_t>(types::HashSlotState::Occupied)) continue;
+                    if (!values_equal(hma->keys[i], hmb->keys[j])) continue;
+                    if (!values_equal(hma->values[i], hmb->values[j])) return false;
+                    found = true;
+                    break;
+                }
+                if (!found) return false;
+            }
+            return true;
+        }
+
+        const auto* hsa = try_get_hash_set(a);
+        const auto* hsb = try_get_hash_set(b);
+        if (hsa && hsb) {
+            if (hsa->table.size != hsb->table.size) return false;
+            for (std::size_t i = 0; i < hsa->table.state.size(); ++i) {
+                if (hsa->table.state[i] != static_cast<std::uint8_t>(types::HashSlotState::Occupied)) continue;
+                bool found = false;
+                for (std::size_t j = 0; j < hsb->table.state.size(); ++j) {
+                    if (hsb->table.state[j] != static_cast<std::uint8_t>(types::HashSlotState::Occupied)) continue;
+                    if (values_equal(hsa->table.keys[i], hsb->table.keys[j])) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return false;
+            }
+            return true;
+        }
+
         return false;
     }
 

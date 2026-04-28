@@ -245,7 +245,12 @@ void Emitter::emit_primitive_call(const core::PrimitiveCall& n, Context& ctx, co
         case core::PrimitiveKind::Cdr:
             assert(n.args.size() == 1);
             break;
-        default:
+        case core::PrimitiveKind::Cons:
+        case core::PrimitiveKind::Add:
+        case core::PrimitiveKind::Sub:
+        case core::PrimitiveKind::Mul:
+        case core::PrimitiveKind::Div:
+        case core::PrimitiveKind::Eq:
             assert(n.args.size() == 2);
             break;
     }

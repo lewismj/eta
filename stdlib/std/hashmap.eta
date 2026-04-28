@@ -1,0 +1,73 @@
+;;; std/hashmap.eta - Hash map helpers over runtime hash-map primitives.
+
+(module std.hashmap
+  (export
+    hash-map-empty?
+    hash-map-contains?
+    hash-map-update
+    hash-map-update-with-default
+    hash-map-merge
+    hash-map-merge-with
+    hash-map-map
+    hash-map-filter
+    hash-map->alist
+    alist->hash-map)
+  (begin
+
+    (defun hash-map-empty? (m)
+      (= 0 (hash-map-size m)))
+
+    (defun hash-map-contains? (m k)
+      (hash-map-fold
+        (lambda (found key _value)
+          (or found (equal? key k)))
+        #f
+        m))
+
+    (defun hash-map-update (m k fn)
+      (hash-map-assoc m k (fn (hash-map-ref m k))))
+
+    (defun hash-map-update-with-default (m k fn default)
+      (hash-map-assoc m k (fn (hash-map-ref m k default))))
+
+    ;; Right map wins on key conflicts.
+    (defun hash-map-merge (left right)
+      (hash-map-fold
+        (lambda (acc key value)
+          (hash-map-assoc acc key value))
+        left
+        right))
+
+    ;; Resolve conflicts with f(old-value, new-value).
+    (defun hash-map-merge-with (f left right)
+      (hash-map-fold
+        (lambda (acc key value)
+          (if (hash-map-contains? acc key)
+              (hash-map-assoc acc key (f (hash-map-ref acc key) value))
+              (hash-map-assoc acc key value)))
+        left
+        right))
+
+    (defun hash-map-map (fn m)
+      (hash-map-fold
+        (lambda (acc key value)
+          (hash-map-assoc acc key (fn key value)))
+        (make-hash-map)
+        m))
+
+    (defun hash-map-filter (pred m)
+      (hash-map-fold
+        (lambda (acc key value)
+          (if (pred key value)
+              (hash-map-assoc acc key value)
+              acc))
+        (make-hash-map)
+        m))
+
+    (defun hash-map->alist (m)
+      (hash-map->list m))
+
+    (defun alist->hash-map (al)
+      (list->hash-map al))
+
+  ))

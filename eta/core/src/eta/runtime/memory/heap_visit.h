@@ -22,6 +22,8 @@ namespace eta::runtime::memory::heap {
         virtual R visit_primitive(const eta::runtime::types::Primitive& p) = 0;
         virtual R visit_guardian(const eta::runtime::types::Guardian& g) = 0;
         virtual R visit_fact_table(const eta::runtime::types::FactTable& ft) = 0;
+        virtual R visit_hash_map(const eta::runtime::types::HashMap& hm) = 0;
+        virtual R visit_hash_set(const eta::runtime::types::HashSet& hs) = 0;
         virtual R visit_csv_reader(const eta::runtime::types::CsvReader& reader) = 0;
         virtual R visit_compound_term(const eta::runtime::types::CompoundTerm& ct) = 0;
 
@@ -43,6 +45,8 @@ namespace eta::runtime::memory::heap {
             case Primitive:    return v.visit_primitive(*static_cast<const eta::runtime::types::Primitive*>(payload));
             case Guardian:     return v.visit_guardian(*static_cast<const eta::runtime::types::Guardian*>(payload));
             case FactTable:    return v.visit_fact_table(*static_cast<const eta::runtime::types::FactTable*>(payload));
+            case HashMap:      return v.visit_hash_map(*static_cast<const eta::runtime::types::HashMap*>(payload));
+            case HashSet:      return v.visit_hash_set(*static_cast<const eta::runtime::types::HashSet*>(payload));
             case CsvReader:    return v.visit_csv_reader(*static_cast<const eta::runtime::types::CsvReader*>(payload));
             case CompoundTerm: return v.visit_compound_term(*static_cast<const eta::runtime::types::CompoundTerm*>(payload));
 

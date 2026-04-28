@@ -20,7 +20,7 @@ jupyter lab
 
 ## Running on Binder
 
-Click any of the badges in the top-level [`README.md`](../../README.md). The
+Click any of the badges in the top-level [`README.md`](../../docs/README.md). The
 Binder image is built from [`../../binder/Dockerfile`](../../binder/Dockerfile);
 first launch after a commit takes ~20 minutes, subsequent launches are
 instant.

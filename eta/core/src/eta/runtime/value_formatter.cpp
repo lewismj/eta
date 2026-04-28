@@ -178,6 +178,37 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return out;
         }
 
+        /// Hash map
+        if (auto* hm = heap.try_get_as<ObjectKind::HashMap, types::HashMap>(id)) {
+            std::string out = "#hashmap{";
+            bool first = true;
+            for (std::size_t i = 0; i < hm->state.size(); ++i) {
+                if (hm->state[i] != static_cast<std::uint8_t>(types::HashSlotState::Occupied)) continue;
+                if (!first) out += ", ";
+                out += format_value(hm->keys[i], mode, heap, intern_table);
+                out += " ";
+                out += format_value(hm->values[i], mode, heap, intern_table);
+                first = false;
+            }
+            out += "}";
+            return out;
+        }
+
+        /// Hash set
+        if (auto* hs = heap.try_get_as<ObjectKind::HashSet, types::HashSet>(id)) {
+            std::string out = "#hashset{";
+            bool first = true;
+            const auto& table = hs->table;
+            for (std::size_t i = 0; i < table.state.size(); ++i) {
+                if (table.state[i] != static_cast<std::uint8_t>(types::HashSlotState::Occupied)) continue;
+                if (!first) out += " ";
+                out += format_value(table.keys[i], mode, heap, intern_table);
+                first = false;
+            }
+            out += "}";
+            return out;
+        }
+
         /// ByteVector
         if (auto* bv = heap.try_get_as<ObjectKind::ByteVector, types::ByteVector>(id)) {
             std::string out = "#u8(";

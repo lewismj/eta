@@ -107,7 +107,7 @@
     },
     "Import": {
         "prefix": "import",
-        "body": "(import ${1|std.prelude,std.io,std.core,std.collections,std.math,std.logic,std.freeze,std.clp,std.clpr,std.clpb,std.db,std.aad,std.torch,std.stats,std.regex,std.csv,std.net,std.supervisor,std.test,std.time|})",
+        "body": "(import ${1|std.prelude,std.io,std.core,std.collections,std.math,std.logic,std.freeze,std.clp,std.clpr,std.clpb,std.db,std.aad,std.torch,std.stats,std.hashmap,std.hashset,std.regex,std.csv,std.net,std.supervisor,std.test,std.time|})",
         "description": "Import bindings from a module"
     },
     "Catch": {
@@ -197,6 +197,28 @@
             "$0"
         ],
         "description": "Write one record with explicit column ordering"
+    },
+
+    "Hash Map": {
+        "prefix": "hash-map",
+        "body": "(hash-map ${1:'key1} ${2:value1} ${3:'key2} ${4:value2})",
+        "description": "Construct a hash map from key/value pairs"
+    },
+    "Hash Set": {
+        "prefix": "hash-set",
+        "body": "(hash-set ${1:value1} ${2:value2} ${3:value3})",
+        "description": "Construct a hash set from values"
+    },
+    "Hash Map Fold": {
+        "prefix": "hash-map-fold",
+        "body": [
+            "(hash-map-fold",
+            "  (lambda (${1:acc} ${2:key} ${3:value})",
+            "    ${4:acc})",
+            "  ${5:init}",
+            "  ${6:map})"
+        ],
+        "description": "Fold a hash map with accumulator, key, and value"
     },
 
     "Import Net": {
