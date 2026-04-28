@@ -266,6 +266,44 @@ BOOST_AUTO_TEST_CASE(emit_tail_call) {
     BOOST_CHECK(has_opcode(OpCode::TailCall));
 }
 
+BOOST_AUTO_TEST_CASE(emit_self_tail_call_uses_jump) {
+    auto* f = compile(
+        "(module m "
+        "  (define result"
+        "    (letrec ((loop (lambda (n)"
+        "                     (if (eq? n 0) 42 (loop (- n 1))))))"
+        "      (loop 12))))");
+    BOOST_REQUIRE(f);
+    bool saw_backward_jump = false;
+    bool backward_jump_in_function_without_tail_call = false;
+    for (const auto& func : registry.all()) {
+        bool has_backward_jump = false;
+        bool has_tail_call = false;
+        for (const auto& instr : func.code) {
+            if (instr.opcode == OpCode::TailCall) has_tail_call = true;
+            if (instr.opcode == OpCode::Jump && instr.arg > 0x7FFFFFFFu) {
+                saw_backward_jump = true;
+                has_backward_jump = true;
+            }
+        }
+        if (has_backward_jump && !has_tail_call) {
+            backward_jump_in_function_without_tail_call = true;
+        }
+    }
+    BOOST_CHECK(saw_backward_jump);
+    BOOST_CHECK(backward_jump_in_function_without_tail_call);
+}
+
+BOOST_AUTO_TEST_CASE(emit_non_self_tail_call_stays_tail_call) {
+    auto* f = compile(
+        "(module m "
+        "  (define (even n) (if (eq? n 0) #t (odd (- n 1)))) "
+        "  (define (odd n)  (if (eq? n 0) #f (even (- n 1)))) "
+        "  (define result (even 8)))");
+    BOOST_REQUIRE(f);
+    BOOST_CHECK(has_opcode(OpCode::TailCall));
+}
+
 BOOST_AUTO_TEST_CASE(emit_non_tail_position_uses_call) {
     compile("(module m (define (f x) x) (define (g x) (+ (f x) 1)))");
     /// (f x) is in non-tail position due to (+ ... 1)

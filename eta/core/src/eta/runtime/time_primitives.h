@@ -35,7 +35,7 @@ using namespace eta::runtime::memory::intern;
 using namespace eta::runtime::memory::factory;
 using namespace eta::runtime::error;
 
-using Args = const std::vector<LispVal>&;
+using Args = std::span<const LispVal>;
 
 inline RuntimeError time_type_error(const std::string& message) {
     return RuntimeError{VMError{RuntimeErrorCode::TypeError, message}};

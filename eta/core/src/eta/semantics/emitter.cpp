@@ -3,7 +3,9 @@
 #include "eta/runtime/nanbox.h"
 #include "eta/runtime/types/types.h"
 
+#include <algorithm>
 #include <cassert>
+#include <limits>
 
 namespace eta::semantics {
 
@@ -187,7 +189,46 @@ void Emitter::emit_var(const core::Var& n, Context& ctx, const Span& span) {
     emit_address_load(n.addr, ctx, span);
 }
 
+bool Emitter::try_emit_self_tail_jump(const core::Call& n, Context& ctx, const Span& span) {
+    if (active_lambda_stack_.empty()) return false;
+    if (n.args.size() != 1) return false;
+
+    const auto& lambda_ctx = active_lambda_stack_.back();
+    if (lambda_ctx.has_rest) return false;
+    if (n.args.size() != lambda_ctx.param_slots.size()) return false;
+
+    const auto* callee_var = std::get_if<core::Var>(&n.callee->data);
+    if (!callee_var) return false;
+    const auto* callee_upval = std::get_if<core::Address::Upval>(&callee_var->addr.where);
+    if (!callee_upval) return false;
+
+    const auto it = std::find(lambda_ctx.self_upval_slots.begin(),
+                              lambda_ctx.self_upval_slots.end(),
+                              callee_upval->slot);
+    if (it == lambda_ctx.self_upval_slots.end()) return false;
+
+    for (const auto* arg : n.args) {
+        emit_node(arg, ctx);
+    }
+
+    for (std::size_t i = n.args.size(); i > 0; --i) {
+        ctx.emit_instr(OpCode::StoreLocal, lambda_ctx.param_slots[i - 1], span);
+    }
+
+    const uint32_t jump_idx = static_cast<uint32_t>(ctx.func.code.size());
+    const int64_t rel64 =
+        static_cast<int64_t>(lambda_ctx.entry_pc) - static_cast<int64_t>(jump_idx + 1);
+    assert(rel64 >= std::numeric_limits<int32_t>::min() &&
+           rel64 <= std::numeric_limits<int32_t>::max());
+
+    const auto rel = static_cast<int32_t>(rel64);
+    ctx.emit_instr(OpCode::Jump, static_cast<uint32_t>(rel), span);
+    return true;
+}
+
 void Emitter::emit_call(const core::Call& n, bool tail, Context& ctx, const Span& span) {
+    if (tail && try_emit_self_tail_jump(n, ctx, span)) return;
+
     for (const auto* arg : n.args)
         emit_node(arg, ctx);
     emit_node(n.callee, ctx);
@@ -287,6 +328,23 @@ void Emitter::emit_lambda_node(const core::Lambda& n, const Span& span, Context&
 }
 
 void Emitter::emit_set(const core::Set& n, Context& ctx, const Span& span) {
+    if (const auto* lam = std::get_if<core::Lambda>(&n.value->data)) {
+        if (const auto* target_local = std::get_if<core::Address::Local>(&n.target.where)) {
+            std::vector<std::uint16_t> self_upval_slots;
+            for (std::size_t i = 0; i < lam->upval_sources.size(); ++i) {
+                if (const auto* src_local =
+                        std::get_if<core::Address::Local>(&lam->upval_sources[i].where)) {
+                    if (src_local->slot == target_local->slot) {
+                        self_upval_slots.push_back(static_cast<std::uint16_t>(i));
+                    }
+                }
+            }
+            if (!self_upval_slots.empty()) {
+                pending_self_upval_slots_[lam] = std::move(self_upval_slots);
+            }
+        }
+    }
+
     emit_node(n.value, ctx);
     emit_address_store(n.target, ctx, span);
 
@@ -469,7 +527,25 @@ uint32_t Emitter::emit_lambda(const core::Lambda& lambda,
             ctx.func.upval_names[i] = sem_.bindings[uid.id].name;
     }
 
+    ActiveLambdaContext lambda_ctx;
+    lambda_ctx.entry_pc = static_cast<uint32_t>(ctx.func.code.size());
+    lambda_ctx.has_rest = lambda.arity.has_rest;
+    lambda_ctx.param_slots.reserve(lambda.params.size());
+    for (const auto& pid : lambda.params) {
+        if (pid.id < sem_.bindings.size()) {
+            lambda_ctx.param_slots.push_back(sem_.bindings[pid.id].slot);
+        }
+    }
+
+    if (auto it = pending_self_upval_slots_.find(&lambda);
+        it != pending_self_upval_slots_.end()) {
+        lambda_ctx.self_upval_slots = std::move(it->second);
+        pending_self_upval_slots_.erase(it);
+    }
+
+    active_lambda_stack_.push_back(std::move(lambda_ctx));
     emit_node(lambda.body, ctx);
+    active_lambda_stack_.pop_back();
     ctx.emit_instr(OpCode::Return, 0, span);
 
     return registry_.add(std::move(ctx.func));

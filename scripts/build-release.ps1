@@ -221,13 +221,17 @@ Copy-VsRuntimeDllsToBin -BuildDir $BuildDir -BinDir $BinPath
 
 # Verify xeus runtime DLLs landed in bin/ — without these eta_jupyter.exe
 # fails to start with STATUS_DLL_NOT_FOUND (0xC0000135 / -1073741515).
-$HasXeus    = Test-Path (Join-Path $BinPath "xeus.dll")
-$HasXeusZmq = Test-Path (Join-Path $BinPath "xeus-zmq.dll")
+# The DLL names vary by build: MSVC FetchContent produces libxeus.dll /
+# libxeus-zmq.dll; vcpkg / conda produce xeus.dll / xeus-zmq.dll.
+$HasXeus    = (Test-Path (Join-Path $BinPath "xeus.dll")) -or
+              (Test-Path (Join-Path $BinPath "libxeus.dll"))
+$HasXeusZmq = (Test-Path (Join-Path $BinPath "xeus-zmq.dll")) -or
+              (Test-Path (Join-Path $BinPath "libxeus-zmq.dll"))
 $HasZmq     = [bool](Get-ChildItem -Path $BinPath -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
 if (-not ($HasXeus -and $HasXeusZmq -and $HasZmq)) {
     Write-Host "  [WARN] xeus runtime DLLs missing from bin\ -- eta_jupyter will not run on a clean machine:" -ForegroundColor Yellow
-    if (-not $HasXeus)    { Write-Host "         - xeus.dll" }
-    if (-not $HasXeusZmq) { Write-Host "         - xeus-zmq.dll" }
+    if (-not $HasXeus)    { Write-Host "         - xeus.dll / libxeus.dll" }
+    if (-not $HasXeusZmq) { Write-Host "         - xeus-zmq.dll / libxeus-zmq.dll" }
     if (-not $HasZmq)     { Write-Host "         - libzmq*.dll" }
 }
 

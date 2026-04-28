@@ -1,4 +1,5 @@
 #include <boost/test/unit_test.hpp>
+#include <span>
 
 #include <eta/runtime/memory/heap.h>
 #include <eta/runtime/memory/mark_sweep_gc.h>
@@ -149,7 +150,7 @@ BOOST_AUTO_TEST_CASE(dead_finalized_object_is_queued_and_rescued) {
     auto obj = expect_ok(make_vector(heap, {}));
     auto proc = expect_ok(make_primitive(
         heap,
-        [](const std::vector<LispVal>&) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
+        [](std::span<const LispVal>) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
             return Nil;
         },
         1,
@@ -185,7 +186,7 @@ BOOST_AUTO_TEST_CASE(finalizer_table_is_ephemeron_like_for_keys) {
     auto obj = expect_ok(make_vector(heap, {}));
     auto proc = expect_ok(make_primitive(
         heap,
-        [](const std::vector<LispVal>&) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
+        [](std::span<const LispVal>) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
             return Nil;
         },
         1,
@@ -219,7 +220,7 @@ BOOST_AUTO_TEST_CASE(pending_finalizers_survive_subsequent_gc_cycles) {
     auto obj = expect_ok(make_vector(heap, {}));
     auto proc = expect_ok(make_primitive(
         heap,
-        [](const std::vector<LispVal>&) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
+        [](std::span<const LispVal>) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
             return Nil;
         },
         1,
@@ -465,7 +466,7 @@ BOOST_AUTO_TEST_CASE(retains_primitive_gc_roots) {
     /// Create a primitive with a captured heap object in gc_roots
     auto prim = expect_ok(make_primitive(
         heap,
-        [](const std::vector<LispVal>&) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
+        [](std::span<const LispVal>) -> std::expected<LispVal, eta::runtime::error::RuntimeError> {
             return Nil;
         },
         0,          ///< arity

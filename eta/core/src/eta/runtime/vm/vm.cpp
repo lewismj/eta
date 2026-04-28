@@ -1,6 +1,5 @@
 #include "vm.h"
 #include <algorithm>
-#include <iostream>
 #include "eta/runtime/factory.h"
 #include "eta/runtime/ad_error.h"
 #include "eta/runtime/types/types.h"
@@ -643,13 +642,18 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
             }
         }
 
-        std::vector<LispVal> args;
-        for (uint32_t i = 0; i < argc; ++i) {
-            args.push_back(stack_[stack_.size() - argc + i]);
+        if (stack_.size() < argc) [[unlikely]] {
+            return std::unexpected(RuntimeError{
+                VMError{RuntimeErrorCode::InvalidInstruction,
+                        "Primitive call stack underflow"}});
         }
-        stack_.resize(stack_.size() - argc);
 
-        auto res = prim->func(args);
+        const std::size_t args_start = stack_.size() - argc;
+        const std::span<const LispVal> args_span{stack_.data() + args_start,
+                                                 static_cast<std::size_t>(argc)};
+
+        auto res = prim->func(args_span);
+        stack_.resize(args_start);
         if (!res) {
             auto handled = do_runtime_error(res.error(), call_span);
             if (!handled) return std::unexpected(handled.error());
@@ -850,9 +854,31 @@ std::expected<void, RuntimeError> VM::run_loop() {
             case OpCode::Dup:
                 push(stack_.back());
                 break;
-            case OpCode::Jump:
-                pc_ += instr.arg;
+            case OpCode::Jump: {
+                const auto rel = static_cast<int32_t>(instr.arg);
+                const auto target_pc =
+                    static_cast<int64_t>(pc_) + static_cast<int64_t>(rel);
+                if (target_pc < 0 ||
+                    target_pc > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+                    return std::unexpected(RuntimeError{
+                        VMError{RuntimeErrorCode::InvalidInstruction,
+                                "Jump: target out of range"}});
+                }
+
+                /**
+                 * Self-tail recursion lowered to a backward Jump targets the
+                 * lambda entry. Keep the active frame shape consistent with
+                 * TailCall frame reuse by trimming transient stack growth.
+                 */
+                if (rel < 0 && target_pc == 0) {
+                    const uint32_t needed_size =
+                        std::max(current_func_->stack_size, current_func_->arity);
+                    stack_.resize(fp_ + needed_size, Nil);
+                }
+
+                pc_ = static_cast<uint32_t>(target_pc);
                 break;
+            }
             case OpCode::JumpIfFalse: {
                 LispVal v = pop();
                 if (v == False) pc_ += instr.arg;

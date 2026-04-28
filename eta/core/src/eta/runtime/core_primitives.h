@@ -74,7 +74,7 @@ namespace eta::runtime {
  */
 inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& intern_table,
                                      vm::VM* vm = nullptr) {
-    using Args = const std::vector<LispVal>&;
+    using Args = std::span<const LispVal>;
 
     /**
      * AD TapeRef helper
@@ -2195,7 +2195,7 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     env.register_builtin("dual-backprop", 1, false, [&heap](Args) -> std::expected<LispVal, RuntimeError> {
         /// Return a no-op backpropagator
         return make_primitive(heap,
-            [](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> { return Nil; },
+            [](Args) -> std::expected<LispVal, RuntimeError> { return Nil; },
             1, false);
     });
 

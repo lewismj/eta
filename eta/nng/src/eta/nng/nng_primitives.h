@@ -65,7 +65,7 @@ using namespace eta::runtime::memory::heap;
 using namespace eta::runtime::memory::intern;
 using namespace eta::runtime::error;
 using namespace eta::runtime::memory::factory;
-using Args = const std::vector<LispVal>&;
+using Args = std::span<const LispVal>;
 
 /// Helpers
 

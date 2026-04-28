@@ -31,7 +31,7 @@ using namespace eta::runtime::memory::factory;
 using namespace eta::runtime::error;
 
 namespace {
-using Args = const std::vector<LispVal>&;
+using Args = std::span<const LispVal>;
 
 enum class CsvQuotePolicy : std::uint8_t {
     Minimal,
