@@ -163,21 +163,19 @@ if (Test-Path $EtaJupyterExe) {
     # Sanity-check that the xeus shared libraries shipped alongside the
     # executable. Missing DLLs surface as STATUS_DLL_NOT_FOUND (-1073741515 /
     # 0xC0000135) when eta_jupyter is launched, which is otherwise opaque.
-    $MissingDlls = @()
-    foreach ($dll in @("xeus.dll", "xeus-zmq.dll", "libzmq-mt-4_3_5.dll", "libzmq.dll")) {
-        if (Test-Path (Join-Path $BinDir $dll)) { } else { $MissingDlls += $dll }
-    }
-    # libzmq's filename varies by build (libzmq.dll vs libzmq-mt-4_3_5.dll);
-    # only warn if BOTH variants are absent.
-    $HasAnyZmq = (Test-Path (Join-Path $BinDir "libzmq.dll")) -or
-                 (Get-ChildItem -Path $BinDir -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
-    $HasXeus    = Test-Path (Join-Path $BinDir "xeus.dll")
-    $HasXeusZmq = Test-Path (Join-Path $BinDir "xeus-zmq.dll")
+    # The DLL names vary by build: MSVC FetchContent produces libxeus.dll /
+    # libxeus-zmq.dll; vcpkg / conda produce xeus.dll / xeus-zmq.dll.
+    $HasXeus    = (Test-Path (Join-Path $BinDir "xeus.dll")) -or
+                  (Test-Path (Join-Path $BinDir "libxeus.dll"))
+    $HasXeusZmq = (Test-Path (Join-Path $BinDir "xeus-zmq.dll")) -or
+                  (Test-Path (Join-Path $BinDir "libxeus-zmq.dll"))
+    $HasAnyZmq  = (Test-Path (Join-Path $BinDir "libzmq.dll")) -or
+                  [bool](Get-ChildItem -Path $BinDir -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
 
     if (-not ($HasXeus -and $HasXeusZmq -and $HasAnyZmq)) {
         Write-Host "  [WARN] Missing xeus runtime DLLs in $BinDir :" -ForegroundColor Yellow
-        if (-not $HasXeus)    { Write-Host "         - xeus.dll" }
-        if (-not $HasXeusZmq) { Write-Host "         - xeus-zmq.dll" }
+        if (-not $HasXeus)    { Write-Host "         - xeus.dll / libxeus.dll" }
+        if (-not $HasXeusZmq) { Write-Host "         - xeus-zmq.dll / libxeus-zmq.dll" }
         if (-not $HasAnyZmq)  { Write-Host "         - libzmq*.dll" }
         Write-Host "         eta_jupyter will fail to start with STATUS_DLL_NOT_FOUND."
         Write-Host "         Rebuild from source (this bundle is missing required runtime DLLs)."
@@ -194,7 +192,7 @@ if (Test-Path $EtaJupyterExe) {
         Write-Host "  [WARN] Kernel auto-install failed: $($_.Exception.Message)"
         if ($LASTEXITCODE -eq -1073741515) {
             Write-Host "         Exit code -1073741515 (0xC0000135) = STATUS_DLL_NOT_FOUND." -ForegroundColor Yellow
-            Write-Host "         eta_jupyter.exe is missing one or more required DLLs (xeus / xeus-zmq / libzmq)."
+            Write-Host "         eta_jupyter.exe is missing one or more required DLLs (xeus / libxeus / xeus-zmq / libxeus-zmq / libzmq)."
         }
         Write-Host "    Run manually: `"$EtaJupyterExe`" --install --user"
     }

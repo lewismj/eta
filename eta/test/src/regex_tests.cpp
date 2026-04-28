@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -340,7 +341,7 @@ BOOST_AUTO_TEST_CASE(regex_replace_replace_fn_split_and_quote) {
 
     auto callback = make_primitive(
         heap,
-        [&heap, &intern_table](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
+        [&heap, &intern_table](std::span<const LispVal>) -> std::expected<LispVal, RuntimeError> {
             return make_string(heap, intern_table, "#");
         },
         1,

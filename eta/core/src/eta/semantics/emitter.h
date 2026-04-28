@@ -5,7 +5,7 @@
 #include <functional>
 #include <deque>
 #include <mutex>
-#include <shared_mutex>
+#include <vector>
 #include "eta/semantics/core_ir.h"
 #include "eta/runtime/vm/bytecode.h"
 #include "eta/semantics/semantic_analyzer.h"
@@ -19,13 +19,13 @@ namespace eta::semantics {
  * Registry to own BytecodeFunction objects with stable addresses.
  * Solves the dangling pointer issue when storing BytecodeFunction* in Closures.
  * Functions are accessed by index (uint32_t) rather than raw pointers for type safety.
- * Thread-safe for concurrent add/get operations.
+ * Append-only registry with stable function addresses.
  */
 class BytecodeFunctionRegistry {
 public:
     BytecodeFunctionRegistry() = default;
 
-    /// Move-only (shared_mutex is not movable, so we transfer the data manually).
+    /// Move-only (`std::mutex` is not movable, so we transfer the data manually).
     BytecodeFunctionRegistry(BytecodeFunctionRegistry&& other) noexcept
         : functions_(std::move(other.functions_)) {}
 
@@ -50,10 +50,9 @@ public:
 
     /**
      * Get a function by index. Returns nullptr if index is out of bounds.
-     * Thread-safe: uses shared lock (allows concurrent reads).
+     * Lock-free read path; callers must not race with registry mutation.
      */
     const runtime::vm::BytecodeFunction* get(uint32_t index) const {
-        std::shared_lock lock(mutex_);
         if (index < functions_.size()) {
             return &functions_[index];
         }
@@ -80,12 +79,12 @@ public:
 
     /// Thread-safe size query
     std::size_t size() const {
-        std::shared_lock lock(mutex_);
+        std::unique_lock lock(mutex_);
         return functions_.size();
     }
 
 private:
-    mutable std::shared_mutex mutex_;
+    mutable std::mutex mutex_;
     std::deque<runtime::vm::BytecodeFunction> functions_;
 };
 
@@ -154,6 +153,18 @@ private:
     void emit_trail_mark(const core::TrailMark& n, Context& ctx, const Span& span);
     void emit_unwind_trail(const core::UnwindTrail& n, Context& ctx, const Span& span);
     void emit_copy_term(const core::CopyTerm& n, Context& ctx, const Span& span);
+
+    struct ActiveLambdaContext {
+        std::uint32_t entry_pc{0};
+        std::vector<std::uint16_t> param_slots;
+        std::vector<std::uint16_t> self_upval_slots;
+        bool has_rest{false};
+    };
+
+    bool try_emit_self_tail_jump(const core::Call& n, Context& ctx, const Span& span);
+
+    std::vector<ActiveLambdaContext> active_lambda_stack_;
+    std::unordered_map<const core::Lambda*, std::vector<std::uint16_t>> pending_self_upval_slots_;
 };
 
 } ///< namespace eta::semantics

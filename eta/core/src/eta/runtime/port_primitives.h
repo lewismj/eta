@@ -48,7 +48,7 @@ using namespace eta::runtime::error;
  *   - write-char
  */
 inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& intern_table, vm::VM& vm) {
-    using Args = const std::vector<LispVal>&;
+    using Args = std::span<const LispVal>;
 
     /// Helper to extract port from a LispVal
     auto get_port = [&heap](LispVal val) -> std::expected<types::PortObject*, RuntimeError> {

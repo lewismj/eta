@@ -1,5 +1,6 @@
 #include <boost/test/unit_test.hpp>
 
+#include <span>
 #include <unordered_set>
 
 #include <eta/runtime/memory/heap.h>
@@ -115,11 +116,11 @@ BOOST_AUTO_TEST_CASE(patch_mode_basic_mechanics) {
     env.begin_patching();
 
     /// Patch with real funcs (matching metadata)
-    PrimitiveFunc foo_fn = [](const std::vector<nanbox::LispVal>&)
+    PrimitiveFunc foo_fn = [](std::span<const nanbox::LispVal>)
         -> std::expected<nanbox::LispVal, error::RuntimeError> {
         return nanbox::Nil;
     };
-    PrimitiveFunc bar_fn = [](const std::vector<nanbox::LispVal>&)
+    PrimitiveFunc bar_fn = [](std::span<const nanbox::LispVal>)
         -> std::expected<nanbox::LispVal, error::RuntimeError> {
         return nanbox::True;
     };

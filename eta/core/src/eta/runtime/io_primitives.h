@@ -33,7 +33,7 @@ using namespace eta::runtime::error;
  *   - newline (port-aware version)
  */
 inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& intern_table, vm::VM& vm) {
-    using Args = const std::vector<LispVal>&;
+    using Args = std::span<const LispVal>;
 
     /// Helper to extract port from a LispVal
     auto get_port = [&heap](LispVal val) -> std::expected<types::PortObject*, RuntimeError> {
@@ -48,7 +48,7 @@ inline void register_io_primitives(BuiltinEnvironment& env, Heap& heap, InternTa
     };
 
     /// Helper to write a formatted value to a port (or stdout fallback)
-    auto write_to_port = [&vm, get_port](const std::string& output, const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
+    auto write_to_port = [&vm, get_port](const std::string& output, Args args) -> std::expected<LispVal, RuntimeError> {
         LispVal port_val = args.size() > 1 ? args[1] : vm.current_output_port();
 
         auto port_obj = get_port(port_val);

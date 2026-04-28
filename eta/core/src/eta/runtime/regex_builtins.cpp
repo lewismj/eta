@@ -30,7 +30,7 @@ using namespace eta::runtime::memory::factory;
 using namespace eta::runtime::error;
 
 namespace {
-using Args = const std::vector<LispVal>&;
+using Args = std::span<const LispVal>;
 
 inline constexpr const char* kRegexErrorTag = "runtime.regex-error";
 

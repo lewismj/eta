@@ -2,6 +2,7 @@
 #include <iostream>
 #include <algorithm>
 #include <functional>
+#include <span>
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
@@ -486,6 +487,30 @@ BOOST_AUTO_TEST_CASE(test_tail_call_recursion) {
         "  (define result (loop 2000)))";
     LispVal res = run(src);
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+BOOST_AUTO_TEST_CASE(test_named_let_self_tail_recursion) {
+    std::string src =
+        "(module m "
+        "  (define result "
+        "    (let loop ((n 5000) (acc 0)) "
+        "      (if (eq? n 0) "
+        "          acc "
+        "          (loop (- n 1) (+ acc 1))))))";
+    LispVal res = run(src);
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 5000);
+}
+
+BOOST_AUTO_TEST_CASE(test_named_let_unary_self_tail_recursion) {
+    std::string src =
+        "(module m "
+        "  (define result "
+        "    (let loop ((n 7000)) "
+        "      (if (eq? n 0) "
+        "          1 "
+        "          (loop (- n 1))))))";
+    LispVal res = run(src);
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 1);
 }
 
 BOOST_AUTO_TEST_CASE(test_dynamic_wind_basic) {
@@ -2667,7 +2692,7 @@ BOOST_FIXTURE_TEST_CASE(pending_finalizer_executes_once_and_mutates_state, Final
 
     auto proc = make_primitive(
         heap,
-        [&call_count, expected_obj = *obj](const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
+        [&call_count, expected_obj = *obj](std::span<const LispVal> args) -> std::expected<LispVal, RuntimeError> {
             if (args.size() != 1u || args[0] != expected_obj) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError,
@@ -2708,7 +2733,7 @@ BOOST_FIXTURE_TEST_CASE(failing_finalizer_does_not_block_later_entries, Finalize
 
     auto bad_proc = make_primitive(
         heap,
-        [&failing_calls](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
+        [&failing_calls](std::span<const LispVal>) -> std::expected<LispVal, RuntimeError> {
             ++failing_calls;
             return std::unexpected(RuntimeError{VMError{
                 RuntimeErrorCode::UserError,
@@ -2721,7 +2746,7 @@ BOOST_FIXTURE_TEST_CASE(failing_finalizer_does_not_block_later_entries, Finalize
 
     auto good_proc = make_primitive(
         heap,
-        [&succeeding_calls](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
+        [&succeeding_calls](std::span<const LispVal>) -> std::expected<LispVal, RuntimeError> {
             ++succeeding_calls;
             return Nil;
         },
@@ -2753,7 +2778,7 @@ BOOST_FIXTURE_TEST_CASE(non_resurrected_finalized_object_is_reclaimed_later, Fin
 
     auto proc = make_primitive(
         heap,
-        [](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
+        [](std::span<const LispVal>) -> std::expected<LispVal, RuntimeError> {
             return Nil;
         },
         1,
@@ -2789,7 +2814,7 @@ BOOST_FIXTURE_TEST_CASE(resurrected_finalized_object_survives_next_collection, F
 
     auto proc = make_primitive(
         heap,
-        [&vm, &call_count](const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
+        [&vm, &call_count](std::span<const LispVal> args) -> std::expected<LispVal, RuntimeError> {
             if (args.size() != 1u) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError,
@@ -2841,7 +2866,7 @@ BOOST_FIXTURE_TEST_CASE(finalizer_and_guardian_on_same_object_deliver_once_each,
     int finalizer_calls = 0;
     auto proc = make_primitive(
         heap,
-        [&finalizer_calls, expected_obj = *obj](const std::vector<LispVal>& args) -> std::expected<LispVal, RuntimeError> {
+        [&finalizer_calls, expected_obj = *obj](std::span<const LispVal> args) -> std::expected<LispVal, RuntimeError> {
             if (args.size() != 1u || args[0] != expected_obj) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError,
@@ -2897,7 +2922,7 @@ BOOST_FIXTURE_TEST_CASE(cyclic_finalizable_objects_are_reclaimed_after_finalizer
     int finalizer_calls = 0;
     auto proc = make_primitive(
         heap,
-        [&finalizer_calls](const std::vector<LispVal>&) -> std::expected<LispVal, RuntimeError> {
+        [&finalizer_calls](std::span<const LispVal>) -> std::expected<LispVal, RuntimeError> {
             ++finalizer_calls;
             return Nil;
         },

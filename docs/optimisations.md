@@ -197,9 +197,9 @@ emit specialised opcodes.
 
 ## Suggested rollout order
 
-1. Self-recursive tail-call -> jump (emitter only, no new opcode).
+1. Self-recursive tail-call -> jump (emitter only, no new opcode). [done]
 2. Drop the `shared_lock` on `BytecodeFunctionRegistry::get`; pass
-   `span<LispVal>` to primitives.
+   `span<const LispVal>` to primitives. [done]
 3. Harden `ConstantFolding` correctness under builtin shadowing.
 4. Extend folding (n-ary/comparisons/identities/fixpoint) plus
    constant/copy propagation through let-bindings.
@@ -211,3 +211,28 @@ emit specialised opcodes.
 10. Flow-sensitive type specialisation.
 
 Each step is independently shippable and benchmarkable.
+
+### Step 1 implementation notes
+
+- Tail-position calls that target the current closure's self-capture upvalue
+  are now lowered in the emitter to:
+  - evaluate arguments left-to-right,
+  - `StoreLocal` each parameter slot in reverse order,
+  - emit a backward `Jump` to the lambda entry.
+- This keeps self-recursive loops in constant stack space without introducing
+  any new VM opcode.
+- The optimisation is currently enabled for unary self recursion only; wider
+  arity handling remains disabled until the multi-argument path is proven
+  stable under the full stdlib workload.
+- Non-self tail calls (including mutual recursion) continue to emit
+  `TailCall`.
+
+### Step 2 implementation notes
+
+- `BytecodeFunctionRegistry::get` now uses a lock-free read path.
+- Primitive dispatch now forwards arguments as `std::span<const LispVal>`
+  over the VM stack instead of materialising a temporary `std::vector`.
+- VM primitive dispatch checks for stack underflow before slicing arguments
+  and pops arguments from the VM stack after primitive evaluation.
+- No behavioural regressions were observed in `eta_core_test` and
+  `eta_stdlib_tests` after this change.
