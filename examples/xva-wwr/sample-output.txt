@@ -157,7 +157,7 @@
 
   Reading: counterparty CP-17 is the dominant wrong-way exposure;
   re-pricing under do(oil=+0.30) inflates book CVA materially
-  while the leave-one-out greek and ML-recovered SCM betas
+  while the single-pass AAD greek vector and ML-recovered SCM betas
   remain consistent with the analytic / hand-coded baselines.
 
 

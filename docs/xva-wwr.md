@@ -38,7 +38,7 @@ all components run within a single framework.
 - A symbolic swap-leg expression `f(r) = N · (1 − e^{−rτ}) / r`
 - A 3×3 covariance prefix from a SIMM-style 10×10 IR-delta block
 
-**What happens (nine sections + diagnostics, one binary, ~35 s)**
+**What happens (nine sections + diagnostics, one binary, fixed-seed reproducible run)**
 
 1. Build a deterministic book and market state (§1, §2)
 2. **Calibrate the SCM βs by ML on a synthetic shock × hazard panel (§3a)**
@@ -63,24 +63,32 @@ because it is plumbing, not a desk-facing result.
 
 A single association list with the baseline CVA, the AAD gradient
 vector, per-shock book CVA, ranked elasticity buckets, the symbolic
-node count and lowered-kernel value, the QP objective value, the
-ML-recovered β alist, the training trace, and the shard-replay match
-flag — every value traceable back to the stage that produced it.
+node count and lowered-kernel value, the QP preview objective **and
+the solved hedge** (`'hedge` — DV01s, λ, optimum, δ\* witness), the
+ML-recovered β alist, the training trace, the shard-replay match
+flag, and a structured **`'stage-report`** alist that the friendly
+renderer in `report.eta` walks — every value traceable back to the
+stage that produced it.
 
 ```scheme
 (run-demo)
 ;; => ((book-size . 200)
 ;;     (baseline-cva . 118302)
 ;;     (top3 ((CP-?? . ...) ...))
-;;     (greeks (118302 #(0 0 -212503 130253)))
+;;     (greeks (130253 #(0 0 -212503 130253)))
 ;;     (counterfactual ((rows ...)
 ;;                      (wrong-way ...) (right-way ...) (insensitive ...)))
 ;;     (beta-recovery ((rows ...) (max-error . 0.006) (worst-cp . "CP-23")))
-;;     (training-loss . 0.00248)
 ;;     (training-trace ((epoch . 1) (loss . 1.085)) ...)
-;;     (symbolic-nodes . 11)
-;;     (symbolic-value . -2.973057996e6)
+;;     (training-loss . 0.00248)
+;;     (stage-report ((book ...) (ml-training ...) (ml-recovery ...)
+;;                    (baseline ...) (counterfactual ...) (symbolic ...)
+;;                    (compression ...) (determinism ...)))
+;;     (symbolic-nodes . 29)
+;;     (symbolic-value . -2.97306e+06)
 ;;     (compression-preview . 0.01005)
+;;     (hedge ((dv01 0.10 -0.20 0.05) (lambda . 0.15)
+;;             (objective . -8.996e-04) (delta -0.0262 0.0435 -0.0136)))
 ;;     (shard-check ((first . 4.96368e7) (second . 4.96368e7) (match . #t))))
 ```
 
@@ -238,12 +246,12 @@ etai examples/xva-wwr/main.eta
          (panel   (generate-shock-panel 500 0.05 20260427))
          (fit     (learn-cp-betas-with-trace
                     (car panel) (cdr panel) 300 0.05 25))
-         (model   (assoc-ref 'model fit))
-         (final-loss    (assoc-ref 'final-loss fit))
+         (model          (assoc-ref 'model fit))
+         (final-loss     (assoc-ref 'final-loss fit))
          (training-trace (assoc-ref 'trace fit))
-         (learned-betas (learned-cp-sensitivity model))
-         (recovery      (beta-recovery-report learned-betas))
-         ;; --- §3 .. §10 ---
+         (learned-betas  (learned-cp-sensitivity model))
+         (recovery       (beta-recovery-report learned-betas))
+         ;; --- §3 .. §9 ---
          (ee (simulate-paths baseline-curves '()           ; §3
                              factor-correlation
                              5000 12 0.25 20260427))
@@ -261,7 +269,37 @@ etai examples/xva-wwr/main.eta
          (sigma3 (matrix-prefix simm-ir-delta-covariance 3))
          (preview-obj (objective-value '(0.10 -0.20 0.05)  ; §9
                                        sigma3 0.15))
-         (shard-check (rerun-shard-and-check 2)))          ; §10
+         ;; --- Hedge solve: actual unwind set from the convex QP ---
+         (hedge-dv01      '(0.10 -0.20 0.05))
+         (hedge-lambda    0.15)
+         (hedge-result    (solve-compression-qp hedge-dv01 hedge-lambda))
+         (hedge-objective (car  hedge-result))
+         (hedge-witness   (cadr hedge-result))
+         (hedge
+           (list (cons 'dv01      hedge-dv01)
+                 (cons 'lambda    hedge-lambda)
+                 (cons 'objective hedge-objective)
+                 (cons 'delta     hedge-witness)))
+         (shard-check (rerun-shard-and-check 2))           ; appendix
+         ;; --- Structured stage-by-stage report (consumed by report.eta) ---
+         (stage-report
+           (list (cons 'book           (list (cons 'book-size
+                                                   (fact-table-row-count trades))))
+                 (cons 'ml-training    (list (cons 'epochs       (assoc-ref 'epochs fit))
+                                             (cons 'lr           (assoc-ref 'lr fit))
+                                             (cons 'report-every (assoc-ref 'report-every fit))
+                                             (cons 'final-loss   final-loss)
+                                             (cons 'checkpoints  (length training-trace))))
+                 (cons 'ml-recovery    recovery)
+                 (cons 'baseline       (list (cons 'baseline-cva baseline-total)
+                                             (cons 'top3   (top-contributors baseline-table 3))
+                                             (cons 'greeks greeks)))
+                 (cons 'counterfactual sweep)
+                 (cons 'symbolic       (list (cons 'nodes (node-count dexpr))
+                                             (cons 'value kernel-value)))
+                 (cons 'compression    (list (cons 'preview preview-obj)
+                                             (cons 'hedge   hedge)))
+                 (cons 'determinism    shard-check))))
     (list
       (cons 'book-size            (fact-table-row-count trades))
       (cons 'baseline-cva         baseline-total)
@@ -269,11 +307,13 @@ etai examples/xva-wwr/main.eta
       (cons 'greeks               greeks)
       (cons 'counterfactual       sweep)
       (cons 'beta-recovery        recovery)
-      (cons 'training-loss        final-loss)
       (cons 'training-trace       training-trace)
+      (cons 'training-loss        final-loss)
+      (cons 'stage-report         stage-report)
       (cons 'symbolic-nodes       (node-count dexpr))
       (cons 'symbolic-value       kernel-value)
       (cons 'compression-preview  preview-obj)
+      (cons 'hedge                hedge)
       (cons 'shard-check          shard-check))))
 ```
 
@@ -287,153 +327,9 @@ reading. The Headline box at the end is the one-screen summary you
 would put in a deck.
 
 ```text
-============================================================================
-  xVA Wrong-Way Risk - Demo run
-  Causal CVA with ML-calibrated SCM betas
-============================================================================
-
-[1/8]  Trade book
-----------------------------------------------------------------------------
-  WHAT:   Synthetic IRS / FXF / OPT trades across 30 counterparties.
-  WHY:    Per-CP exposure feeders for the CVA pipeline.
-  HOW:    make-book -> FactTable, indexed by `cp` (column 0).
-
-    Book size:                          200 trades
-
-[2/8]  SCM calibration (ML) - learning the betas
-----------------------------------------------------------------------------
-  WHAT:   Recover beta_{i,var} sensitivities of d log lambda_i to the
-          macro shock vector (oil, usd-10y, eur-usd) from a synthetic
-          shock x hazard panel.
-  WHY:    Turns the headline 'CP-17 explodes under oil' from an
-          asserted literal into a number recovered from data - the SCM
-          becomes self-consistent against its own DGP.
-  MATH:   Delta log lambda_i = beta_i . z_t + eps_i,  eps_i ~ N(0, sigma^2)
-          estimator: nn.Linear(3, 30), MSE loss, Adam optimiser.
-  CAUSAL: z_t drawn iid from N(0, I) -> exogenous by construction;
-          back-door set is empty so OLS beta IS the structural beta.
-
-    Epochs:                             300
-    Learning rate:                      0.050
-    Final MSE:                          0.002475
-    Checkpoints logged:                 13
-
-    --- training trace (loss vs epoch) ---
-      epoch          loss
-          1      1.085496
-         25      0.181745
-         50      0.027979
-         75      0.004396
-        100      0.002527
-        125      0.002480
-        150      0.002476
-        175      0.002475
-        200      0.002475
-        225      0.002475
-        250      0.002475
-        275      0.002475
-        300      0.002475
-
-    --- beta recovery (true vs learned, four named CPs) ---
-    CP        b(oil)  ^b(oil)   b(10y)  ^b(10y)   b(eur)  ^b(eur)   max-err
-    CP-17      2.910    2.910    0.220    0.219    0.080    0.077   0.00262
-    CP-09      2.070    2.068    0.220    0.221    0.280    0.283   0.00285
-    CP-22      0.320    0.323    0.100    0.102    1.940    1.943   0.00303
-    CP-12      0.320    0.318   -0.480   -0.481    0.130    0.129   0.00191
-
-    Worst-recovered CP:                 CP-23   max |b - ^b| = 0.00601   (tol 0.050  PASS)
-
-[3/8]  Baseline CVA
-----------------------------------------------------------------------------
-  WHAT:   Expected loss = E[ exposure x default x (1 - recovery) ]
-          under no shocks, summed across all counterparties.
-  WHY:    Reference number; counterfactuals in stage 4 measure
-          deviations from this anchor.
-  HOW:    5,000 Monte-Carlo paths x 12 monthly steps over each CP's
-          exposure curve, discounted and probability-weighted.
-
-    Total baseline CVA:                 118,302
-
-    --- top 3 contributors ---
-    CP-07           6,419.38
-    CP-21           6,339.81
-    CP-30           6,219.00
-
-    Greeks (delta, vega):               (130253 #(0 0 -212503 130253))
-
-[4/8]  Counterfactual sweep - do(var = +/- shock)
-----------------------------------------------------------------------------
-  WHAT:   Re-price the book under a do-intervention on each macro
-          driver, then derive a per-CP elasticity
-            eps = (log CVA_up - log CVA_down) / Delta_shock.
-  WHY:    Sign of eps is the *causal* WWR test:
-            eps > 0  -> wrong-way   (CP defaults *more* when MtM is up)
-            eps < 0  -> right-way   (natural hedge)
-            eps ~ 0  -> insensitive
-  CAUSAL: SCM:  oil -> usd-rates,  oil -> fx-usd,
-                oil -> energy-credit -> hazard
-          Back-door set empty under the SCM, so do(oil = .) is
-          identifiable from observational regression betas.
-
-    --- book CVA under do-interventions ---
-    var             do(-shock)      do(+shock)        spread
-    oil                 78,946         169,135        +90189
-    usd-10y            116,554         118,375         +1821
-    eur-usd            104,825         131,112        +26287
-
-    *** WRONG-WAY (top 3 by |eps|, eps > 0) ***
-      >> CP-17     eps = +3.726    <-- LARGEST WWR EXPOSURE
-         CP-09     eps = +2.884
-         CP-22     eps = +2.444
-
-    --- right-way (eps < 0) ---
-      (none)
-
-    --- insensitive (smallest |eps|) ---
-      CP-30     eps = +1.013
-      CP-10     eps = +1.016
-      CP-20     eps = +1.017
-
-[5/8]  Symbolic AAD - delta of an annuity kernel
-----------------------------------------------------------------------------
-  WHAT:   Differentiate V = N * (1 - exp(-r*tau)) / r   wrt r
-          symbolically, then lower the AST to a closure and evaluate.
-  WHY:    Bumpless IR-Delta greek; structurally equivalent to AAD but
-          the gradient program is a value, not a tape.
-  MATH:   dV/dr = -N*tau*exp(-r*tau)/r - N*(1 - exp(-r*tau))/r^2
-
-    AST node count:                     29
-    Value @ (N=1e6, r=0.03, tau=2.5):   -2.97306e+06
-
-[6/8]  Compression preview - SIMM IR-Delta objective
-----------------------------------------------------------------------------
-  WHAT:   Quadratic objective x' Sigma x evaluated on a 3-D prefix of
-          the SIMM IR-Delta covariance matrix.
-  WHY:    Smoke-test that the linear-algebra path runs end-to-end.
-
-    Preview value:                      0.010050
-
-[7/8]  Determinism check - re-run shard 2
-----------------------------------------------------------------------------
-  WHAT:   Run the same Monte-Carlo shard twice and compare.
-  WHY:    All seeds are explicit; the demo must be bit-reproducible.
-
-    First run:                          4.96368e+07
-    Second run:                         4.96368e+07
-    Match:                              yes  (PASS)
-
-[8/8]  Headline
-----------------------------------------------------------------------------
-  +------------------------------------------------------------------------+
-  | Baseline CVA               118,302                                     |
-  | ML beta recovery max-err   0.00601   (tol 0.050  PASS)                 |
-  | Largest WWR exposure       CP-17   eps = +3.726                        |
-  | do(oil = +0.30) book CVA   169,135   (+43.0% vs baseline)              |
-  +------------------------------------------------------------------------+
-
   Reading: counterparty CP-17 is the dominant wrong-way exposure;
   re-pricing under do(oil=+0.30) inflates book CVA materially
-  while the leave-one-out greek and ML-recovered SCM betas
+  while the single-pass AAD greek vector and ML-recovered SCM betas
   remain consistent with the analytic / hand-coded baselines.
 ```
 
@@ -457,9 +353,23 @@ would put in a deck.
 (beta-recovery        ((rows ...) (max-error . 0.00601) (worst-cp . "CP-23")))
 (training-loss        . 0.002475)
 (training-trace       (((epoch . 1) (loss . 1.0855)) ... ((epoch . 300) (loss . 0.002475))))
+(stage-report         ((book           ((book-size . 200)))
+                       (ml-training    ((epochs . 300) (lr . 0.05) (report-every . 25)
+                                        (final-loss . 0.002475) (checkpoints . 13)))
+                       (ml-recovery    ((rows ...) (max-error . 0.00601) (worst-cp . "CP-23")))
+                       (baseline       ((baseline-cva . 118302) (top3 ...) (greeks ...)))
+                       (counterfactual ((rows ...) (wrong-way ...) (right-way ()) (insensitive ...)))
+                       (symbolic       ((nodes . 29) (value . -2.97306e+06)))
+                       (compression    ((preview . 0.01005)
+                                        (hedge   ((dv01 0.10 -0.20 0.05) (lambda . 0.15)
+                                                  (objective . -8.996e-04)
+                                                  (delta -0.0262 0.0435 -0.0136)))))
+                       (determinism    ((first . 4.96368e+07) (second . 4.96368e+07) (match . #t)))))
 (symbolic-nodes       . 29)
 (symbolic-value       . -2.97306e+06)
 (compression-preview  . 0.01005)
+(hedge                ((dv01 0.10 -0.20 0.05) (lambda . 0.15)
+                       (objective . -8.996e-04) (delta -0.0262 0.0435 -0.0136)))
 (shard-check          ((first . 4.96368e+07) (second . 4.96368e+07) (match . #t)))
 ```
 
@@ -579,7 +489,8 @@ $$
 
 Per-counterparty **shock βs** with three named outliers handcrafted to
 make the demo's headline counterparties recognisable (CP-17 is the
-energy-heavy name; CP-22 is FX-heavy; CP-12 is the right-way name):
+energy-heavy name; CP-22 is FX-heavy; CP-12 carries a notable
+negative rates β):
 
 ```scheme
 (defun cp-betas (i)
@@ -588,7 +499,7 @@ energy-heavy name; CP-22 is FX-heavy; CP-12 is the right-way name):
         (fx    (+ 0.08 (* 0.05 (modulo (+ i 1) 6)))))
     (list
       (cons 'oil     (cond ((= i 17)  2.91) ((= i 9)   2.07)
-                           ((= i 31) -0.62) (else oil)))
+                           (else oil)))
       (cons 'usd-10y (cond ((= i 4)   1.22) ((= i 12) -0.48) (else usd10)))
       (cons 'eur-usd (cond ((= i 22)  1.94) (else fx))))))
 
@@ -1121,7 +1032,7 @@ elasticity by an order of magnitude over `usd-10y` units, and the
 asymmetric pair identifies a left-tail explosion (`+42.97%` from a
 30 % oil shock) the correlation-only WWR multiplier would silently
 spread across factors — see
-[§8 Comparison vs Correlation-Based WWR](#8b--comparison-vs-correlation-based-wwr)
+[§7b Comparison vs Correlation-Based WWR](#7b--comparison-vs-correlation-based-wwr)
 below.
 
 ---
@@ -1143,7 +1054,7 @@ the book:
 This section answers all three, on the same artifact returned by
 `run-demo`.
 
-### §8a — Sensitivity Decomposition (per-factor β contributions)
+### §7a — Sensitivity Decomposition (per-factor β contributions)
 
 The per-CP elasticity is the sum of three factor contributions
 weighted by the SCM's hazard transform:
@@ -1187,7 +1098,7 @@ identical at the headline level into **two different hedge
 prescriptions**. A correlation-only WWR add-on (next subsection)
 cannot do this because it has no per-factor object to attribute to.
 
-### §8b — Comparison vs Correlation-Based WWR
+### §7b — Comparison vs Correlation-Based WWR
 
 The industry-default WWR add-on multiplies baseline CVA by a
 correlation-derived factor (typically derived from a fitted ρ between
@@ -1213,7 +1124,7 @@ this?"* — has a one-line answer:
 > the left tail. Causal WWR concentrates it onto the right
 > counterparty and prices the asymmetric tail.
 
-### §8c — Stability / Robustness Check
+### §7c — Stability / Robustness Check
 
 A WWR call that flips under a small β perturbation is noise. The demo
 re-runs the elasticity sweep with each β scaled by ±10 % (uniform
@@ -1327,8 +1238,8 @@ evaluates the expression in an environment of bound argument values:
 > already does AAD"; the answer is "JAX cannot host CAS on the same
 > tape without a separate compilation step".
 
-After `simplify*`, the differentiated expression collapses from the
-naive ~25 nodes to **11 nodes** (`(node-count dexpr) ⇒ 11`).
+After `simplify*`, the differentiated expression's AST settles at
+**29 nodes** (`(node-count dexpr) ⇒ 29`).
 
 ---
 
@@ -1381,8 +1292,14 @@ for the constrained optimum:
     (call-with-values
       (lambda () (clp:rq-minimize objective))
       (lambda (optimum witness)
-        (unwind-trail mark)                         ; restore CLP store
-        (list optimum witness)))))
+        ;; Bind the QP witness onto the logic vars, deref to plain
+        ;; floats while the bindings are still live, THEN unwind the
+        ;; trail. Doing the unwind first leaves `delta` unbound and
+        ;; later derefs would return a non-number.
+        (%apply-qp-witness! witness)
+        (let ((delta-vals (map* (lambda (v) (deref-lvar v)) delta)))
+          (unwind-trail mark)                        ; restore CLP store
+          (list optimum delta-vals))))))
 ```
 
 > [!NOTE]
@@ -1510,7 +1427,7 @@ shard hash shown here.
 | §5 AAD | $\partial \text{CVA}/\partial \Delta r = -212\,503$ at the seed point; clamp branches inert |
 | §6 do(...) | `cva-under-do` re-runs `cva-table` on tilted EE + transformed hazards |
 | §7 Sweep | Asymmetric oil pair (-30/+30) reproduces +42.97% / −33.27%; ε_book(oil) ≈ 1.27; CP-17 flagged as `>> LARGEST WWR EXPOSURE` |
-| §8 Symbolic | `(node-count dexpr) ⇒ 11`; `(lowered 1e6 0.03 2.5) ⇒ -2.973058e6` matches analytic |
+| §8 Symbolic | `(node-count dexpr) ⇒ 29`; `(lowered 1e6 0.03 2.5) ⇒ -2.973058e6` matches analytic |
 | §9 Compression | `objective-value '(0.10 -0.20 0.05) sigma3 0.15` ⇒ `0.01005`; QP solve converges; `solve-compression-qp` returns `δ* ≈ (-0.026, +0.043, -0.014)` at `J* ≈ -8.99e-04` |
 | Shard replay (appendix) | `(rerun-shard-and-check 2)` ⇒ `(match . #t)` for seed `20260429` |
 
@@ -1562,6 +1479,19 @@ elasticities, QP feasibility) should remain identical.
 | `clp:rq-minimize` | CLP(R) convex-QP solver; returns `(opt . witness)` |
 
 ## Appendix C — Source Layout
+
+> [!NOTE]
+> Two files are the authoritative references when the doc and code
+> drift:
+>
+> - [`examples/xva-wwr/main.eta`](../examples/xva-wwr/main.eta)
+>   defines the **artifact shape** returned by `(run-demo)`.
+> - [`examples/xva-wwr/report.eta`](../examples/xva-wwr/report.eta)
+>   defines the **human-readable report structure** rendered by
+>   `(main)`.
+>
+> If a code block in this document disagrees with either file, the
+> file wins.
 
 | Component | File |
 |---|---|

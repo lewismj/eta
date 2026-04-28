@@ -473,7 +473,7 @@
                 " is the dominant wrong-way exposure;"))
             (println "  Reading: no counterparty exceeds the wrong-way threshold;"))
         (println "  re-pricing under do(oil=+0.30) inflates book CVA materially")
-        (println "  while the leave-one-out greek and ML-recovered SCM betas")
+        (println "  while the single-pass AAD greek vector and ML-recovered SCM betas")
         (println "  remain consistent with the analytic / hand-coded baselines.")))
 
     ;; -----------------------------------------------------------------
