@@ -80,19 +80,21 @@ etai --version
 
 ## The Toolchain
 
-Eta ships with a comprehensive suite of tools for development, debugging, and research:
+Eta ships with a set of tools for development, debugging, and research:
 
-| Tool | Purpose |
-| :--- | :--- |
-| **`etac`** | **Ahead-of-Time Compiler:** Compiles `.eta` source to optimized `.etac` bytecode. |
-| **`etai`** | **Interpreter:** Executes `.eta` source files or pre-compiled `.etac` bytecode. |
-| **`eta_repl`** | **Interactive REPL:** A powerful environment for live experimentation. |
-| **`eta_lsp`** | **Language Server:** Provides IDE features like live diagnostics and auto-completion. |
-| **`eta_dap`** | **Debug Adapter:** Enables full-featured debugging (breakpoints, stepping) in VS Code. |
-| **`eta_jupyter`** | **Jupyter Kernel:** Native support for interactive notebooks with rich data visualization. |
+| Tool              | Purpose                                                                                                            |
+| :---------------- | :----------------------------------------------------------------------------------------------------------------- |
+| **`etac`**        | **Ahead-of-Time Compiler:** Compiles `.eta` source code into optimized `.etac` bytecode.                           |
+| **`etai`**        | **Interpreter:** Executes `.eta` source files or pre-compiled `.etac` bytecode.                                    |
+| **`eta_repl`**    | **Interactive REPL:** A live environment for experimentation and evaluation.                                       |
+| **`eta_lsp`**     | **Language Server:** Provides IDE features such as diagnostics, auto-completion, and navigation.                   |
+| **`eta_dap`**     | **Debug Adapter:** Enables full-featured debugging (breakpoints, stepping, inspection) in VS Code.                 |
+| **`eta_jupyter`** | **Jupyter Kernel:** Native support for interactive notebooks and rich data visualization.                          |
+| **`eta_test`**    | **Test Runner:** Event-driven test execution system with VS Code Test Explorer integration and TAP output support. |
 
-### IDE Experience
-The **VS Code Extension** (installed automatically) provides IDE support, including a **Heap Inspector**, **Live Disassembly View**, and a **GC Roots Tree** to visualize the internal state of the VM during execution.
+
+The VS Code Extension provides IDE support, including a **Heap Inspector**, **Disassembly View**, and a **GC Roots Tree** to visualize 
+the internal state of the VM during execution.
 
 ---
 
