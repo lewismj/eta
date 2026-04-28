@@ -16,6 +16,8 @@
 ;;;   std.math        - no dependencies
 ;;;   std.aad         - std.core
 ;;;   std.io          - no dependencies
+;;;   std.os          - no dependencies
+;;;   std.fs          - no dependencies
 ;;;   std.collections - no dependencies
 ;;;   std.logic       - std.collections
 ;;;   std.clp         - std.collections, std.logic
@@ -24,12 +26,16 @@
 ;;;   std.db          - std.collections, std.fact_table, std.logic
 ;;;   std.stats       - no dependencies
 ;;;   std.time        - no dependencies
+;;;   std.os          - no dependencies
+;;;   std.fs          - no dependencies
 ;;;   std.net         - no dependencies
 (module std.prelude
   (import std.core)
   (import std.math)
   (import std.aad)
   (import std.io)
+  (import std.os)
+  (import std.fs)
   (import std.collections)
   (import std.logic)
   (import std.clp)
@@ -70,6 +76,28 @@
     with-output-to-port
     with-input-from-port
     with-error-to-port
+    ;; -- std.os ---------------------------------------------------------
+    os:getenv
+    os:setenv!
+    os:unsetenv!
+    os:environment-variables
+    os:command-line-arguments
+    os:exit
+    os:current-directory
+    os:change-directory!
+    ;; -- std.fs ---------------------------------------------------------
+    fs:file-exists?
+    fs:directory?
+    fs:delete-file
+    fs:make-directory
+    fs:list-directory
+    fs:path-join
+    fs:path-split
+    fs:path-normalize
+    fs:temp-file
+    fs:temp-directory
+    fs:file-modification-time
+    fs:file-size
     ;; ── std.collections ─────────────────────────────────────────────
     map* map2 zip-with map-indexed
     filter foldl foldr reduce

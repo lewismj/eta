@@ -12,7 +12,7 @@
 namespace fs = std::filesystem;
 
 static void print_usage(const char* prog) {
-    std::cerr << "Usage: " << prog << " [options] <file.eta|file.etac>\n"
+    std::cerr << "Usage: " << prog << " [options] <file.eta|file.etac> [--] [arg ...]\n"
               << "\n"
               << "Options:\n"
               << "  --path <dirs>       Search path for .eta modules (";
@@ -32,12 +32,24 @@ static void print_usage(const char* prog) {
 int main(int argc, char* argv[]) {
     std::string cli_path;
     std::string input_file;
+    std::vector<std::string> program_args;
     std::string mailbox_endpoint;  ///< --mailbox <url>  (spawned child mode)
     bool disasm_mode = false;
+    bool parsing_program_args = false;
 
     /// Parse CLI arguments
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
+
+        if (parsing_program_args) {
+            program_args.push_back(arg);
+            continue;
+        }
+
+        if (arg == "--") {
+            parsing_program_args = true;
+            continue;
+        }
 
         if (arg == "--help" || arg == "-h") {
             print_usage(argv[0]);
@@ -71,9 +83,7 @@ int main(int argc, char* argv[]) {
         if (input_file.empty()) {
             input_file = arg;
         } else {
-            std::cerr << "error: unexpected argument: " << arg << "\n";
-            print_usage(argv[0]);
-            return 1;
+            program_args.push_back(arg);
         }
     }
 
@@ -111,7 +121,7 @@ int main(int argc, char* argv[]) {
 #endif
     const std::size_t heap_bytes =
         eta::session::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
-    eta::session::Driver driver(std::move(resolver), heap_bytes, self_path);
+    eta::session::Driver driver(std::move(resolver), heap_bytes, self_path, std::move(program_args));
 
     auto resolve = driver.file_resolver();
 

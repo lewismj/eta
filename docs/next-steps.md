@@ -28,11 +28,12 @@ The remaining roadmap splits into three buckets:
 2. **Engine follow-ons** — further optimiser passes, generational GC,
    per-thread DAP routing.
 3. **Hosted-platform layer** *(new phase, see end of doc)* — the
-   functionality a script needs from its host OS: hash maps, atoms,
-   `getenv`, argv, filesystem, subprocess, JSON, structured logging,
-   HTTP, FFI, condition system. This is the largest *capability* gap
-   between Eta and a comparable hosted language (Clojure, Racket,
-   Common Lisp, Chez).
+   functionality a script needs from its host OS. Hash maps, sets,
+   `getenv`, argv, filesystem are now shipped (`std.hashmap`,
+   `std.hashset`, `std.os`, `std.fs`); the remaining gaps are atoms,
+   subprocess, JSON, structured logging, HTTP, FFI, and a condition
+   system. This is the largest *capability* gap between Eta and a
+   comparable hosted language (Clojure, Racket, Common Lisp, Chez).
 
 ---
 
@@ -288,9 +289,9 @@ a delivery order.
 |---|---|---|---|
 | **Hash map / set** | `{:a 1}`, `#{1 2}` (persistent) | native `hash-map` / `hash-set` + `std.hashmap` / `std.hashset` | Medium — reader literals / HAMT / transients deferred |
 | **Atom / ref / agent** (CAS cells) | `atom`, `ref`, `agent` | none | Big — actors fill some of this, not all |
-| **getenv / setenv** | `(System/getenv ...)` | none | Big — no env-var driven config |
-| **argv / command-line** | `*command-line-args*` | none | Big — scripts cannot read flags |
-| **Filesystem ops** | `clojure.java.io` | `open-input-file` only | Big — no `file-exists?`, `delete-file`, `list-directory`, `make-directory`, `current-directory`, `path-join`, `temp-file` |
+| **getenv / setenv** | `(System/getenv ...)` | `os:getenv` / `os:setenv!` / `os:unsetenv!` / `os:environment-variables` (`std.os`) | Closed |
+| **argv / command-line** | `*command-line-args*` | `os:command-line-arguments` (`std.os`) | Closed |
+| **Filesystem ops** | `clojure.java.io` | full `std.fs` (`fs:file-exists?`, `fs:directory?`, `fs:delete-file`, `fs:make-directory`, `fs:list-directory`, `fs:path-join`, `fs:path-split`, `fs:path-normalize`, `fs:temp-file`, `fs:temp-directory`, `fs:file-modification-time`, `fs:file-size`) | Closed |
 | **Subprocess / `exec`** | `clojure.java.shell/sh` | none | Big — no way to call `git`, `python`, etc. |
 | **JSON parser / serialiser** | `clojure.data.json`, `cheshire` | none | Big — every config / API integration needs this |
 | **`format` / `printf`** | `(format "%.3f" x)` | string ports + `display` | Medium — verbose for numeric reports |
@@ -316,23 +317,26 @@ and unlocks a distinct class of script. Recommended order:
 The thing that is missing 100% of the time when someone tries to use
 Eta as a Python replacement.
 
-- **Builtins** (under `os_primitives.h` or similar):
+- **Builtins** (in `os_primitives.h`) — **shipped April 2026**:
   - `getenv`, `setenv!`, `unsetenv!`, `environment-variables`
-  - `command-line-arguments` (already collected by `etai`/`etac` for
-    flags; expose to the program)
+  - `command-line-arguments` (collected by `etai`/`etac`, surfaced to
+    the program)
   - `exit`, `current-directory`, `change-directory!`
   - `file-exists?`, `directory?`, `delete-file`, `make-directory`,
     `list-directory`, `path-join`, `path-split`, `path-normalize`,
     `temp-file`, `temp-directory`
   - `file-modification-time`, `file-size`
-- **Subprocess** — wrap `boost::process` or std::process equivalent:
+- **Stdlib** — `std.os` and `std.fs` shipped (see
+  [`os.md`](guide/reference/os.md), [`fs.md`](guide/reference/fs.md)).
+- **Subprocess** — *still outstanding*. Wrap `boost::process` or
+  `std::process` equivalent:
   - `process-run` (blocking, returns `(status stdout stderr)`)
   - `process-spawn` (non-blocking, returns a process handle)
   - `process-wait`, `process-kill`, `process-pid`, `process-stdin-port`
   - Stdio piping that lands as plain Eta ports so existing
     `read-line` / `read-u8` works unchanged.
-- **Stdlib** — `std.os`, `std.fs`, `std.process`. ~600 LoC C++ +
-  ~200 LoC Eta wrappers + tests + docs page.
+- **Stdlib** — `std.process` for the subprocess layer (~600 LoC C++ +
+  ~200 LoC Eta wrappers + tests + docs page).
 
 #### Phase H2 — Hash Map / Set + Atom (concurrency primitive)
 
@@ -426,6 +430,7 @@ useful but each is also pure quality-of-life on top of H1–H4.
 | Phase | Effort (eng-weeks) | Risk | Unblocks |
 |---|---|---|---|
 | H1 Process & FS | 2 | Low | scripts, deploy, test runners that shell out |
+| H1 already shipped: `std.os` + `std.fs` (env, argv, cwd, exit, paths, temp, stat). Subprocess (`std.process`) is the remaining slice. |
 | H2 Hashmap / Set / Atom | 3 | Medium (GC barrier on Atom; HAMT later) | every dict-shaped workload |
 | H3 JSON / Format / Log | 2 | Low | configs, observability, REST consumers |
 | H4 HTTP / FFI | 3 | Medium (HTTP TLS; FFI safety) | webhook receivers, telemetry, third-party C libs |
@@ -446,6 +451,17 @@ useful but each is also pure quality-of-life on top of H1–H4.
 
 ## Recently Completed (was on this list, now shipped)
 
+- ✅ Hosted-platform Phase H1 — Filesystem + OS primitives: native
+  builtins (`file-exists?`, `directory?`, `delete-file`,
+  `make-directory`, `list-directory`, `path-join`, `path-split`,
+  `path-normalize`, `temp-file`, `temp-directory`,
+  `file-modification-time`, `file-size`, `getenv`, `setenv!`,
+  `unsetenv!`, `environment-variables`, `command-line-arguments`,
+  `exit`, `current-directory`, `change-directory!`) plus the
+  `std.fs` and `std.os` stdlib wrappers and reference docs
+  ([`fs.md`](guide/reference/fs.md), [`os.md`](guide/reference/os.md)).
+  See [release-notes.md](release-notes.md#2026-04-29). Subprocess
+  (`std.process`) is the remaining H1 slice.
 - ✅ Hash map / hash set runtime delivery: native `HashMap` / `HashSet`
   object kinds, core builtins, stdlib wrappers (`std.hashmap`,
   `std.hashset`), docs, snippets, and test coverage across

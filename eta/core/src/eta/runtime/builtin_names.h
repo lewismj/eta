@@ -5,8 +5,8 @@
  * @brief Analysis-only builtin registration for the LSP and other tools
  *        that need to know builtin names/arities but do NOT execute code.
  *
- * Registers every builtin that the runtime provides (core + port + io +
- * torch + stats + nng) into a BuiltinEnvironment using null PrimitiveFuncs.
+ * Registers every builtin that the runtime provides (core + port + io + os +
+ * time + torch + stats + nng) into a BuiltinEnvironment using null PrimitiveFuncs.
  * The SemanticAnalyzer only reads names/arities from the env to pre-allocate
  *
  * REGISTRATION ORDER must stay in sync with all_primitives.h / driver.h:
@@ -379,6 +379,31 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("display", 1, true);
     r("write",   1, true);
     r("newline", 0, true);
+
+    /**
+     * os_primitives.h  (must match registration order exactly)
+     */
+
+    r("getenv",                  1, false);
+    r("setenv!",                 2, false);
+    r("unsetenv!",               1, false);
+    r("environment-variables",   0, false);
+    r("command-line-arguments",  0, false);
+    r("exit",                    0, true);
+    r("current-directory",       0, false);
+    r("change-directory!",       1, false);
+    r("file-exists?",            1, false);
+    r("directory?",              1, false);
+    r("delete-file",             1, false);
+    r("make-directory",          1, false);
+    r("list-directory",          1, false);
+    r("path-join",               1, true);
+    r("path-split",              1, false);
+    r("path-normalize",          1, false);
+    r("temp-file",               0, false);
+    r("temp-directory",          0, false);
+    r("file-modification-time",  1, false);
+    r("file-size",               1, false);
 
     /**
      * time_primitives.h  (must match registration order exactly)

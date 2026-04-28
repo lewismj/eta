@@ -1,7 +1,7 @@
 # Eta — Building from Source
 
 [← Back to README](../README.md) · [Quick Start](quickstart.md) ·
-[Compiler (`etac`)](compiler.md) · [Architecture](architecture.md)
+[Compiler (`etac`)](guide/reference/compiler.md) · [Architecture](architecture.md)
 
 ---
 

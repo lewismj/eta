@@ -116,7 +116,8 @@ public:
 
     explicit Driver(ModulePathResolver resolver,
                     std::size_t heap_bytes = DEFAULT_HEAP_SOFT_LIMIT_BYTES,
-                    std::string etai_path  = {})
+                    std::string etai_path  = {},
+                    std::vector<std::string> command_line_arguments = {})
         : resolver_(std::move(resolver)),
           heap_(heap_bytes),
           intern_table_(),
@@ -124,6 +125,7 @@ public:
           builtins_(),
           vm_(heap_, intern_table_),
           diag_engine_(),
+          command_line_arguments_(std::move(command_line_arguments)),
           next_file_id_(1) ///< 0 is reserved for REPL / anonymous input
     {
         /**
@@ -136,7 +138,7 @@ public:
         heap_.set_gc_callback([this]() { collect_garbage_with_registry_roots(); });
 
         /**
-         * Register all core + port + io + time + torch + stats primitives.
+         * Register all core + port + io + os + time + torch + stats primitives.
          * NNG follows with driver-specific arguments.
          * Step 1: Populate all slots with metadata (name/arity/has_rest) + null funcs.
          *         builtin_names.h is the Single Source of Truth for slot order.
@@ -144,7 +146,8 @@ public:
         runtime::register_builtin_names(builtins_);
         ///         validate metadata and install the real func.
         builtins_.begin_patching();
-        register_all_primitives(builtins_, heap_, intern_table_, vm_);
+        register_all_primitives(
+            builtins_, heap_, intern_table_, vm_, command_line_arguments_);
 
 
         /// Detect etai binary path if not explicitly supplied
@@ -1446,6 +1449,7 @@ private:
     runtime::nanbox::LispVal         mailbox_val_{runtime::nanbox::Nil};
     std::string                      etai_path_;
     std::string                      module_search_path_;
+    std::vector<std::string>         command_line_arguments_;
 
     /**
      * Auto-detect the path to the etai binary at startup.

@@ -1,0 +1,26 @@
+;;; std/os.eta - Operating-system primitives.
+
+(module std.os
+  (export
+    os:getenv
+    os:setenv!
+    os:unsetenv!
+    os:environment-variables
+    os:command-line-arguments
+    os:exit
+    os:current-directory
+    os:change-directory!)
+  (begin
+
+    (define os:getenv getenv)
+    (define os:setenv! setenv!)
+    (define os:unsetenv! unsetenv!)
+    (define os:environment-variables environment-variables)
+    (define os:command-line-arguments command-line-arguments)
+    (define os:current-directory current-directory)
+    (define os:change-directory! change-directory!)
+
+    (defun os:exit args
+      (apply exit args))
+
+  ))

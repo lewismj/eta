@@ -256,7 +256,7 @@ The emitter's key decisions:
 [`vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp)
 
 The VM is a stack-based interpreter with a frame stack. See
-[Bytecode & VM](bytecode-vm.md) for full details.
+[Bytecode & VM](guide/reference/bytecode-vm.md) for full details.
 
 ---
 

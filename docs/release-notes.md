@@ -4,6 +4,65 @@
 
 ---
 
+## 2026-04-29
+
+### Filesystem & OS Primitives (`std.fs`, `std.os`)
+
+The first half of hosted-platform Phase H1 ships: native filesystem
+and operating-system builtins, with thin Eta stdlib wrappers and
+reference documentation. Subprocess support (`std.process`) remains
+outstanding.
+
+Highlights:
+
+- New native builtins (registered from
+  `eta/core/src/eta/runtime/os_primitives.h`):
+  - **Filesystem:** `file-exists?`, `directory?`, `delete-file`,
+    `make-directory`, `list-directory`, `path-join`, `path-split`,
+    `path-normalize`, `temp-file`, `temp-directory`,
+    `file-modification-time`, `file-size`.
+  - **OS / process:** `getenv`, `setenv!`, `unsetenv!`,
+    `environment-variables`, `command-line-arguments`, `exit`,
+    `current-directory`, `change-directory!`.
+- New stdlib modules:
+  - `std.fs` — re-exports the filesystem builtins under the `fs:`
+    prefix.
+  - `std.os` — re-exports the process / environment builtins under
+    the `os:` prefix.
+- Both modules are auto-imported by `std.prelude`, so the `fs:` and
+  `os:` names are available with the standard `(import std.prelude)`
+  pull-in. Direct import still works for users who prefer a smaller
+  surface:
+
+  ```scheme
+  (import std.fs std.os)
+  ```
+
+- `command-line-arguments` is wired through `etai` and `etac` so
+  scripts can read flags passed after the source file path.
+- Path values round-trip through `std::filesystem` and use the
+  platform-preferred separator on output (`\` on Windows, `/`
+  elsewhere).
+- `temp-file` / `temp-directory` allocate unique paths under the
+  system temp root and create the file/directory before returning;
+  cleanup is the caller's responsibility.
+
+Documentation updates:
+
+- New reference pages: [docs/guide/reference/fs.md](guide/reference/fs.md)
+  and [docs/guide/reference/os.md](guide/reference/os.md).
+- [docs/guide/language_guide.md](guide/language_guide.md) — section 13
+  renamed to "I/O, Filesystem & OS" with subsections covering
+  `std.fs` and `std.os`.
+- [docs/guide/reference/modules.md](guide/reference/modules.md) — new
+  module entries for `std.fs` and `std.os`; opt-in module list
+  updated.
+- [docs/next-steps.md](next-steps.md) — Phase H1 capability matrix
+  updated, FS + OS marked closed, subprocess called out as the
+  remaining slice.
+
+---
+
 ## 2026-04-28
 
 ### Hash Maps and Hash Sets

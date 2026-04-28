@@ -27,8 +27,8 @@ instant.
 
 ## Long-form companion docs
 
-- AAD: [`docs/aad.md`](../../docs/aad.md)
-- Portfolio: [`docs/portfolio.md`](../../docs/portfolio.md)
-- Causal engine: [`docs/causal.md`](../../docs/causal.md)
-- LibTorch bindings: [`docs/torch.md`](../../docs/torch.md)
+- AAD: [`docs/guide/reference/aad.md`](../../docs/guide/reference/aad.md)
+- Portfolio: [`docs/portfolio.md`](../../docs/featured_examples/portfolio.md)
+- Causal engine: [`docs/guide/reference/causal.md`](../../docs/guide/reference/causal.md)
+- LibTorch bindings: [`docs/guide/reference/torch.md`](../../docs/guide/reference/torch.md)
 

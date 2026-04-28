@@ -12,10 +12,10 @@
 
 <p align="center">
   <a href="docs/quickstart.md">Quick Start</a> ·
-  <a href="docs/vscode.md">VS Code</a> ·
-  <a href="docs/jupyter.md">Jupyter</a> ·
-  <a href="docs/architecture.md">Architecture</a> ·
-  <a href="docs/index.md">Documentation</a>
+  <a href="docs/guide/language_guide.md">Language Guide</a> ·
+  <a href="docs/guide/reference/vscode.md">VS Code</a> ·
+  <a href="docs/guide/reference/jupyter.md">Jupyter</a> ·
+  <a href="docs/architecture.md">Architecture</a>
 </p>
 
 ---
@@ -33,13 +33,12 @@ Eta is built around a **stack-based VM** that serves as a unified runtime for al
 *   **Differentiable Programming:** Native reverse-mode Automatic Differentiation (AAD) integrated into the runtime for transparent gradient computation with zero closure overhead.
 *   **Machine Learning & Numerics:** First-class C++ bindings to **libtorch** for neural networks and **Eigen** for linear algebra and statistics.
 *   **Actor-Model Concurrency:** Erlang-style actors and message passing via **nng**, providing network-transparent parallelism and supervision trees.
-*   **Causal Inference:** A built-in library for Pearl's do-calculus. See [causal](docs/causal.md) for supported identification and intervention operators.
+*   **Causal Inference:** A built-in library for Pearl's do-calculus. See [causal](docs/guide/reference/causal.md) for supported identification and intervention operators.
 
 ## Featured Examples
 
-* Causal Decision Engine for Portfolio Optimisation [docs](docs/portfolio.md) · [notebook](examples/notebooks/Portfolio.ipynb)
-
-* Wrong Way Risk via do-interventions [docs](docs/xva-wwr.md)
+* Causal Decision Engine for Portfolio Optimisation — [docs](docs/featured_examples/portfolio.md) · [notebook](examples/notebooks/Portfolio.ipynb)
+* Wrong-Way Risk via do-interventions — [docs](docs/featured_examples/xva-wwr.md)
 
 ---
 
@@ -120,10 +119,12 @@ Eta allows you to mix paradigms easily. In this snippet, we define a mathematica
 
 ## Explore More
 
-*   **[Language Guide](docs/examples.md):** A tour through Eta's syntax and core libraries.
-*   **[Standard Library](docs/modules.md):** Reference for logic, math, torch, actors, and more.
-*   **[Architecture](docs/architecture.md):** Deep dive into the NaN-boxed VM and compilation pipeline.
-*   **[Causal Inference Primer](docs/causal.md):** Introduction to Pearl's do-calculus in Eta.
+*   **[Language Guide](docs/guide/language_guide.md)** — structured tour of the language, with deep dives into syntax, macros, logic, AAD, concurrency, and tooling.
+*   **[Examples Tour](docs/guide/examples-tour.md)** — guided reading order for everything in [`examples/`](examples/).
+*   **[Standard Library Reference](docs/guide/reference/modules.md)** — modules for logic, math, torch, actors, and more.
+*   **[Architecture](docs/architecture.md)** — NaN-boxed VM and compilation pipeline.
+*   **[Causal Inference Primer](docs/guide/reference/causal.md)** — Pearl's do-calculus in Eta.
+*   **[Release Notes](docs/release-notes.md)** — version history.
 
 ---
 *License: [LICENSE.txt](LICENSE.txt)*

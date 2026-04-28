@@ -1,8 +1,8 @@
-﻿# Eta — Quick Start
+# Eta — Quick Start
 
 [<- Back to README](../README.md) · [Build from Source](build.md) ·
-[Language Guide](examples.md) · [Compiler (`etac`)](compiler.md) ·
-[REPL](repl.md)
+[Language Guide](guide/examples-tour.md) · [Compiler (`etac`)](guide/reference/compiler.md) ·
+[REPL](guide/reference/repl.md)
 
 ---
 
@@ -28,7 +28,7 @@ cd eta-v0.2.0-linux-x86_64
 To install into a custom prefix instead of using the bundle in-place:
 
 ```bash
-./install.sh /usr/local       # copies bin/, stdlib/ → /usr/local/
+./install.sh /usr/local       # copies bin/, stdlib/ ? /usr/local/
 ```
 
 ### Windows
@@ -65,8 +65,8 @@ or **compile ahead-of-time** then run the bytecode.
 
 ### Interpret from Source — `etai`
 
-`etai` compiles an `.eta` file in-memory (lex → parse → expand → link →
-analyze → emit) and executes it immediately:
+`etai` compiles an `.eta` file in-memory (lex ? parse ? expand ? link ?
+analyze ? emit) and executes it immediately:
 
 ```bash
 etai examples/hello.eta
@@ -92,7 +92,7 @@ resulting bytecode to a compact binary `.etac` file instead of executing
 it:
 
 ```bash
-etac examples/hello.eta                       # → examples/hello.etac
+etac examples/hello.eta                       # ? examples/hello.etac
 etai examples/hello.etac                      # run from bytecode (instant load)
 ```
 
@@ -136,7 +136,7 @@ Both `etac` and `etai` support `--disasm`:
 | `etai --disasm file.etac` | Load a pre-compiled `.etac` file and dump its bytecode. |
 
 > [!TIP]
-> See [Compiler (`etac`)](compiler.md) for the full binary format
+> See [Compiler (`etac`)](guide/reference/compiler.md) for the full binary format
 > specification and optimization pass details.
 
 ---
@@ -156,25 +156,25 @@ The REPL auto-loads `std.prelude`, which re-exports every name from
 be imported by hand):
 
 ```
-η> (atom? 42)
+?> (atom? 42)
 #t
-η> (even? 6)
+?> (even? 6)
 #t
-η> (filter (lambda (x) (> x 3)) (range 1 7))
+?> (filter (lambda (x) (> x 3)) (range 1 7))
 (4 5 6)
 ```
 
 You can define and use your own functions interactively:
 
 ```
-η> (defun square (x) (* x x))
-η> (square 7)
+?> (defun square (x) (* x x))
+?> (square 7)
 => 49
 ```
 
 Redefining a name is supported. New submissions see the latest definition,
 while functions compiled earlier keep the bindings they were compiled with.
-See [REPL](repl.md) for details.
+See [REPL](guide/reference/repl.md) for details.
 
 You can import user-defined modules too. Use `--path` to tell the REPL
 where to find your `.eta` files:
@@ -184,8 +184,8 @@ eta_repl --path ./mylibs
 ```
 
 ```
-η> (import greeting)
-η> (say-hello "REPL")
+?> (import greeting)
+?> (say-hello "REPL")
 Hello, REPL!
 ```
 
@@ -197,24 +197,24 @@ Hello, REPL!
 
 | Module               | Description                              |
 |----------------------|------------------------------------------|
-| `std.core`           | `atom?`, `compose`, `flip`, `iota`, …    |
-| `std.math`           | `pi`, `e`, `even?`, `gcd`, `expt`, …     |
+| `std.core`           | `atom?`, `compose`, `flip`, `iota`, —    |
+| `std.math`           | `pi`, `e`, `even?`, `gcd`, `expt`, —     |
 | `std.io`             | `println`, `eprintln`, `read-line`, port helpers |
-| `std.collections`    | `filter`, `foldl`, `sort`, `range`, …     |
-| `std.logic`          | `==`, `copy-term`, `naf`, `findall`, …    |
-| `std.clp`            | `clp:=`, `clp:all-different`, `clp:solve`, … |
-| `std.clpb`           | Boolean CLP — `clp:and`, `clp:sat?`, … *(opt-in)* |
-| `std.clpr`           | Real-interval CLP — `clp:r=`, `clp:r-minimize`, … *(opt-in)* |
+| `std.collections`    | `filter`, `foldl`, `sort`, `range`, —     |
+| `std.logic`          | `==`, `copy-term`, `naf`, `findall`, —    |
+| `std.clp`            | `clp:=`, `clp:all-different`, `clp:solve`, — |
+| `std.clpb`           | Boolean CLP → `clp:and`, `clp:sat?`, — *(opt-in)* |
+| `std.clpr`           | Real-interval CLP → `clp:r=`, `clp:r-minimize`, — *(opt-in)* |
 | `std.causal`         | `dag:*`, `do:identify`, `do:estimate-effect` |
-| `std.fact_table`     | `make-fact-table`, `fact-table-query`, …  |
+| `std.fact_table`     | `make-fact-table`, `fact-table-query`, —  |
 | `std.db`             | `defrel`, `assert`, `retract`, `call-rel`, `tabled` |
-| `std.stats`          | `stats:mean`, `stats:ols`, distributions, … |
+| `std.stats`          | `stats:mean`, `stats:ols`, distributions, — |
 | `std.time`           | `time:now-ms`, `time:elapsed-ms`, `time:format-iso8601-utc`, ... |
-| `std.net`            | `with-socket`, `request-reply`, `worker-pool`, … |
+| `std.net`            | `with-socket`, `request-reply`, `worker-pool`, — |
 | `std.freeze`         | `freeze`, `dif` *(opt-in)*                |
 | `std.supervisor`     | `one-for-one`, `one-for-all` *(opt-in)*   |
-| `std.torch`          | `tensor`, `forward`, `train-step!`, … *(opt-in)* |
-| `std.test`           | `make-test`, `assert-equal`, `run`, … *(opt-in)* |
+| `std.torch`          | `tensor`, `forward`, `train-step!`, — *(opt-in)* |
+| `std.test`           | `make-test`, `assert-equal`, `run`, — *(opt-in)* |
 | `std.prelude`        | Re-exports the non-opt-in modules above   |
 
 ### Writing a Module
@@ -346,17 +346,17 @@ The extension looks for the LSP binary in the following order:
 
 ### Running & Debugging
 
-1. Open the `examples/` folder from the release bundle (**File → Open Folder**).
+1. Open the `examples/` folder from the release bundle (**File ? Open Folder**).
 2. Open any `.eta` file — syntax highlighting and diagnostics activate automatically.
 3. **Run from terminal:** `etai hello.eta` in the integrated terminal.
-4. **Debug with F5:** press **F5** (or **Run → Start Debugging**) — the extension launches `eta_dap` automatically.
+4. **Debug with F5:** press **F5** (or **Run ? Start Debugging**) — the extension launches `eta_dap` automatically.
 
 #### Breakpoints & Stepping
 
 1. Click the gutter to set a breakpoint (red dot).
 2. Press **F5** to start debugging.
 3. When the VM hits a breakpoint it pauses. Use the standard controls:
-   - **F10** Step Over · **F11** Step In · **Shift+F11** Step Out · **F5** Continue
+   - **F10** Step Over — **F11** Step In — **Shift+F11** Step Out — **F5** Continue
 4. Inspect local variables, the call stack, and evaluate expressions in the Debug Console.
 
 Script output (`display`, `newline`, etc.) appears in the **Eta Output**
@@ -382,7 +382,7 @@ debugging.
 The Disassembly View shows the bytecode of the currently executing
 function (or all loaded functions) while debugging.
 
-- **Sidebar panel:** The **Disassembly** panel appears in the Debug sidebar when an Eta debug session is active. It shows each bytecode instruction as a tree item, with a `â—€ PC` marker on the current program counter. It auto-refreshes on every step/breakpoint.
+- **Sidebar panel:** The **Disassembly** panel appears in the Debug sidebar when an Eta debug session is active. It shows each bytecode instruction as a tree item, with a `◀ PC` marker on the current program counter. It auto-refreshes on every step/breakpoint.
 - **Full-document view:** Open the Command Palette and run:
   - **Eta: Show Disassembly** — disassembly of the current function.
   - **Eta: Show Disassembly (All Functions)** — disassembly of every loaded function.

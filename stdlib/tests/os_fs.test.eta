@@ -1,0 +1,61 @@
+;;; stdlib/tests/os_fs.test.eta - Unit tests for std.os and std.fs.
+
+(module os-fs.tests
+  (import std.test std.os std.fs)
+  (begin
+
+    (define env-name "ETA_STDLIB_OS_FS_TEST_VAR")
+
+    (define suite
+      (make-group "std.os + std.fs"
+        (list
+
+          (make-test "command-line arguments returns a list"
+            (lambda ()
+              (let ((args (os:command-line-arguments)))
+                (assert-true (or (null? args) (pair? args))))))
+
+          (make-test "environment variable round-trip"
+            (lambda ()
+              (os:unsetenv! env-name)
+              (assert-equal #f (os:getenv env-name))
+              (os:setenv! env-name "eta")
+              (assert-equal "eta" (os:getenv env-name))
+              (os:unsetenv! env-name)
+              (assert-equal #f (os:getenv env-name))))
+
+          (make-test "current-directory and change-directory!"
+            (lambda ()
+              (let ((cwd (os:current-directory))
+                    (tmp (fs:temp-directory)))
+                (os:change-directory! tmp)
+                (assert-true (string? (os:current-directory)))
+                (os:change-directory! cwd)
+                (assert-equal cwd (os:current-directory)))))
+
+          (make-test "filesystem metadata primitives"
+            (lambda ()
+              (let ((tmp-file (fs:temp-file)))
+                (assert-true (fs:file-exists? tmp-file))
+                (assert-true (number? (fs:file-size tmp-file)))
+                (assert-true (number? (fs:file-modification-time tmp-file)))
+                (fs:delete-file tmp-file)
+                (assert-equal #f (fs:file-exists? tmp-file)))))
+
+          (make-test "directory operations and listing"
+            (lambda ()
+              (let* ((base (fs:temp-directory))
+                     (child (fs:path-join base "child")))
+                (fs:make-directory child)
+                (assert-true (fs:directory? child))
+                (assert-true (member "child" (fs:list-directory base))))))
+
+          (make-test "path operations produce expected shapes"
+            (lambda ()
+              (let ((joined (fs:path-join "a" "b" "c.txt")))
+                (assert-true (string? joined))
+                (assert-true (pair? (fs:path-split joined))))
+              (assert-true (string? (fs:path-normalize "a/./b/../c")))))
+          )))
+
+    (print-tap (run suite))))

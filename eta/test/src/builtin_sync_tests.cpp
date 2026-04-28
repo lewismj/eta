@@ -7,7 +7,9 @@
 #include <eta/runtime/memory/intern_table.h>
 #include <eta/runtime/builtin_env.h>
 #include <eta/runtime/builtin_names.h>
+#include <eta/runtime/os_primitives.h>
 #include <eta/runtime/time_primitives.h>
+#include <eta/runtime/vm/vm.h>
 #include <eta/torch/torch_primitives.h>
 #include <eta/stats/stats_primitives.h>
 
@@ -21,19 +23,35 @@ BOOST_AUTO_TEST_SUITE(builtin_sync_tests)
  * Verify that register_builtin_names() (the SSoT) contains entries for
  * every builtin that the runtime modules register.
  *
- * We check time, torch, and stats individually (they accept a null VM
+ * We check os, time, torch, and stats individually (os requires a live VM;
+ * the others accept a null VM
  * pointer).
  * Port/IO/NNG require a live VM or driver-specific args, so full end-to-end
  * coverage is provided by the Driver constructor's verify_all_patched() call.
  */
-BOOST_AUTO_TEST_CASE(names_ssot_contains_time_torch_and_stats) {
+BOOST_AUTO_TEST_CASE(names_ssot_contains_os_time_torch_and_stats) {
     /// 1. Names-only environment via the SSoT
     BuiltinEnvironment names_env;
     register_builtin_names(names_env);
 
-    /// 2. Time primitives
+    /// 2. OS primitives
     Heap heap(1ull << 22);
     InternTable intern;
+    vm::VM vm(heap, intern);
+
+    BuiltinEnvironment os_env;
+    register_os_primitives(os_env, heap, intern, vm);
+
+    for (size_t i = 0; i < os_env.size(); ++i) {
+        auto idx = names_env.lookup(os_env.specs()[i].name);
+        BOOST_TEST_CONTEXT("os builtin: " << os_env.specs()[i].name) {
+            BOOST_REQUIRE(idx.has_value());
+            BOOST_TEST(names_env.specs()[*idx].arity == os_env.specs()[i].arity);
+            BOOST_TEST(names_env.specs()[*idx].has_rest == os_env.specs()[i].has_rest);
+        }
+    }
+
+    /// 3. Time primitives
     BuiltinEnvironment time_env;
     register_time_primitives(time_env, heap, intern, nullptr);
 
@@ -46,7 +64,7 @@ BOOST_AUTO_TEST_CASE(names_ssot_contains_time_torch_and_stats) {
         }
     }
 
-    /// 3. Torch primitives
+    /// 4. Torch primitives
     BuiltinEnvironment torch_env;
     eta::torch_bindings::register_torch_primitives(torch_env, heap, intern, nullptr);
 
@@ -60,7 +78,7 @@ BOOST_AUTO_TEST_CASE(names_ssot_contains_time_torch_and_stats) {
         }
     }
 
-    /// 4. Stats primitives
+    /// 5. Stats primitives
     BuiltinEnvironment stats_env;
     eta::stats_bindings::register_stats_primitives(stats_env, heap, intern, nullptr);
 
