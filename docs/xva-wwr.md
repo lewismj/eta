@@ -729,8 +729,7 @@ row $i$ is the sensitivity vector for CP-$i$.
 
 `<cp-betas>` is a **record type** (the only record in the pipeline —
 the βs are the only object whose schema is fixed, named, and consulted
-on every shock). Everything else stays an alist; see
-[`docs/wwr_ml_addendum.md` §10](wwr_ml_addendum.md) for the rationale.
+on every shock). Everything else stays an alist.
 
 ### Sample output
 
@@ -795,9 +794,6 @@ The headline line is the **CP-17 row**:
 | **Identification report** — `(do:identify scm 'hazard 'oil)` printed before §6 | `stdlib/std/causal.eta` |
 | **Recalibration sensitivity** — perturb the DGP (more noise, dropped column, deliberate confounder) and watch recovery error grow | swap the `noise-sigma` arg of `generate-shock-panel` |
 
-See [`docs/wwr_ml_addendum.md`](wwr_ml_addendum.md) for the full
-design discussion (record promotion, FactTable trade-book story,
-real-data identification caveats, effort/risk table).
 
 ---
 
@@ -1591,7 +1587,6 @@ elasticities, QP feasibility) should remain identical.
 | Compression QP | [`examples/xva-wwr/compress.eta`](../examples/xva-wwr/compress.eta) |
 | Deterministic shard replay | [`examples/xva-wwr/workers.eta`](../examples/xva-wwr/workers.eta) |
 | **Friendly stage-by-stage report** | [`examples/xva-wwr/report.eta`](../examples/xva-wwr/report.eta) |
-| **ML design / discussion** | [`docs/wwr_ml_addendum.md`](wwr_ml_addendum.md) |
 | AAD tape (VM, C++) | [`eta/core/src/eta/runtime/vm/vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) |
 | CLP(R) constraint store | [`eta/core/src/eta/runtime/clp/`](../eta/core/src/eta/runtime/clp) |
 | libtorch wrappers | [`stdlib/std/torch.eta`](../stdlib/std/torch.eta) |
