@@ -84,9 +84,21 @@
       (+ (* 0.5 (quad-value delta sigma))
          (* funding-lambda (foldl (lambda (acc x) (+ acc x)) 0.0 delta))))
 
+    ;; Bind every (var . value) pair in `witness` to its numeric
+    ;; optimum, so the deltas can be deref'd to plain floats.
+    (defun %apply-qp-witness! (witness)
+      (if (null? witness)
+          #t
+          (begin
+            (unify (car (car witness)) (cdr (car witness)))
+            (%apply-qp-witness! (cdr witness)))))
+
     ;; Solve:
     ;;   min  0.5 * delta^T * Sigma * delta + lambda * 1^T delta
     ;; s.t.  -1 <= delta_i <= 1
+    ;;
+    ;; Returns (list optimum delta-values) where delta-values is a
+    ;; plain list of floats (the unwind set), one per dv01 bucket.
     (defun solve-compression-qp (dv01 funding-lambda)
       (let* ((n (length dv01))
              (sigma (matrix-prefix simm-ir-delta-covariance n))
@@ -99,7 +111,13 @@
         (call-with-values
           (lambda () (clp:rq-minimize objective))
           (lambda (optimum witness)
-            (unwind-trail mark)
-            (list optimum witness)))))
+            ;; Bind logic vars to their optimal values, deref to plain
+            ;; floats, THEN unwind the trail.  Doing the unwind first
+            ;; leaves `delta` unbound and any later deref returns a
+            ;; non-number, which downstream printers reject.
+            (%apply-qp-witness! witness)
+            (let ((delta-vals (map* (lambda (v) (deref-lvar v)) delta)))
+              (unwind-trail mark)
+              (list optimum delta-vals))))))
 
   ))

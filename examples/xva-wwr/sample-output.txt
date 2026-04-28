@@ -1,0 +1,163 @@
+
+============================================================================
+  xVA Wrong-Way Risk - Demo run
+  Causal CVA with ML-calibrated SCM betas
+============================================================================
+
+[1/8]  Trade book
+----------------------------------------------------------------------------
+  WHAT:   Synthetic IRS / FXF / OPT trades across 30 counterparties.
+  WHY:    Per-CP exposure feeders for the CVA pipeline.
+  HOW:    make-book -> FactTable, indexed by `cp` (column 0).
+
+    Book size:                          200 trades
+
+[2/8]  SCM calibration (ML) - learning the betas
+----------------------------------------------------------------------------
+  WHAT:   Recover beta_{i,var} sensitivities of d log lambda_i to the
+          macro shock vector (oil, usd-10y, eur-usd) from a synthetic
+          shock x hazard panel.
+  WHY:    Turns the headline 'CP-17 explodes under oil' from an
+          asserted literal into a number recovered from data - the SCM
+          becomes self-consistent against its own DGP.
+  MATH:   Delta log lambda_i = beta_i . z_t + eps_i,  eps_i ~ N(0, sigma^2)
+          estimator: nn.Linear(3, 30), MSE loss, Adam optimiser.
+  CAUSAL: z_t drawn iid from N(0, I) -> exogenous by construction;
+          back-door set is empty so OLS beta IS the structural beta.
+
+    Epochs:                             300
+    Learning rate:                      0.050
+    Final MSE:                          0.002475
+    Checkpoints logged:                 13
+
+    --- training trace (loss vs epoch) ---
+      epoch          loss
+          1      1.085496
+         25      0.181745
+         50      0.027979
+         75      0.004396
+        100      0.002527
+        125      0.002480
+        150      0.002476
+        175      0.002475
+        200      0.002475
+        225      0.002475
+        250      0.002475
+        275      0.002475
+        300      0.002475
+
+    --- beta recovery (true vs learned, four named CPs) ---
+    CP        b(oil)  ^b(oil)   b(10y)  ^b(10y)   b(eur)  ^b(eur)   max-err
+    CP-17      2.910    2.910    0.220    0.219    0.080    0.077   0.00262
+    CP-09      2.070    2.068    0.220    0.221    0.280    0.283   0.00285
+    CP-22      0.320    0.323    0.100    0.102    1.940    1.943   0.00303
+    CP-12      0.320    0.318   -0.480   -0.481    0.130    0.129   0.00191
+
+    Worst-recovered CP:                 CP-23   max |b - ^b| = 0.00601   (tol 0.050  PASS)
+
+[3/8]  Baseline CVA
+----------------------------------------------------------------------------
+  WHAT:   Expected loss = E[ exposure x default x (1 - recovery) ]
+          under no shocks, summed across all counterparties.
+  WHY:    Reference number; counterfactuals in stage 4 measure
+          deviations from this anchor.
+  HOW:    5,000 Monte-Carlo paths x 12 monthly steps over each CP's
+          exposure curve, discounted and probability-weighted.
+
+    Total baseline CVA:                 118,302
+
+    --- top 3 contributors ---
+    CP-07           6,419.38
+    CP-21           6,339.81
+    CP-30           6,219.00
+
+    Greeks (delta, vega):               (130253 #(0 0 -212503 130253))
+
+[4/8]  Counterfactual sweep - do(var = +/- shock)
+----------------------------------------------------------------------------
+  WHAT:   Re-price the book under a do-intervention on each macro
+          driver, then derive a per-CP elasticity
+            eps = (log CVA_up - log CVA_down) / Delta_shock.
+  WHY:    Sign of eps is the *causal* WWR test:
+            eps > 0  -> wrong-way   (CP defaults *more* when MtM is up)
+            eps < 0  -> right-way   (natural hedge)
+            eps ~ 0  -> insensitive
+  CAUSAL: SCM:  oil -> usd-rates,  oil -> fx-usd,
+                oil -> energy-credit -> hazard
+          Back-door set empty under the SCM, so do(oil = .) is
+          identifiable from observational regression betas.
+
+    --- book CVA under do-interventions ---
+    var             do(-shock)      do(+shock)        spread
+    oil                 78,946         169,135        +90189
+    usd-10y            116,554         118,375         +1821
+    eur-usd            104,825         131,112        +26287
+
+    *** WRONG-WAY (top 3 by |eps|, eps > 0) ***
+      >> CP-17     eps = +3.726    <-- LARGEST WWR EXPOSURE
+         CP-09     eps = +2.884
+         CP-22     eps = +2.444
+
+    --- right-way (eps < 0) ---
+      (none)
+
+    --- insensitive (smallest |eps|) ---
+      CP-30     eps = +1.013
+      CP-10     eps = +1.016
+      CP-20     eps = +1.017
+
+[5/8]  Symbolic AAD - IR-Delta of a swap-leg annuity factor
+----------------------------------------------------------------------------
+  WHAT:   Differentiate the swap-leg annuity factor
+            V(r) = N * (1 - exp(-r*tau)) / r        (PV of a unit fixed leg)
+          with respect to the rate r, symbolically; then lower the AST
+          to a closure and evaluate it.
+  WHY:    Bumpless IR-Delta greek; structurally equivalent to AAD but
+          the gradient program is a value (a closure), not a tape.
+  MATH:   dV/dr = -N*tau*exp(-r*tau)/r - N*(1 - exp(-r*tau))/r^2
+
+    AST node count:                     29
+    Value @ (N=1e6, r=0.03, tau=2.5):   -2.97306e+06
+
+[6/8]  Compression - SIMM IR-Delta hedge solve
+----------------------------------------------------------------------------
+  WHAT:   Quadratic objective 0.5 d' Sigma d + lambda * dv01 . d on a
+          3-D prefix of the SIMM IR-Delta covariance matrix.
+  WHY:    Turns 'CP-17 widened by X%' into an actual unwind vector the
+          booking system can act on. Witness is the hedge.
+
+    Preview value (smoke test):         0.010050
+
+    --- hedge solve: solve-compression-qp (3-bucket prefix) ---
+    lambda (funding):                   0.150
+    Objective at optimum:               -0.000899
+
+    bucket          dv01      delta*
+    IR-1          +0.100     -0.0262
+    IR-2          -0.200     +0.0435
+    IR-3          +0.050     -0.0136
+
+[7/8]  Determinism check - re-run shard 2
+----------------------------------------------------------------------------
+  WHAT:   Run the same Monte-Carlo shard twice and compare.
+  WHY:    All seeds are explicit; the demo must be bit-reproducible.
+
+    First run:                          4.96368e+07
+    Second run:                         4.96368e+07
+    Match:                              yes  (PASS)
+
+[8/8]  Headline
+----------------------------------------------------------------------------
+  +------------------------------------------------------------------------+
+  | Baseline CVA               118,302                                     |
+  | ML beta recovery max-err   0.00601   (tol 0.050  PASS)                 |
+  | Largest WWR exposure       CP-17   eps = +3.726                        |
+  | do(oil = +0.30) book CVA   169,135   (+43.0% vs baseline)              |
+  +------------------------------------------------------------------------+
+
+  Reading: counterparty CP-17 is the dominant wrong-way exposure;
+  re-pricing under do(oil=+0.30) inflates book CVA materially
+  while the leave-one-out greek and ML-recovered SCM betas
+  remain consistent with the analytic / hand-coded baselines.
+
+

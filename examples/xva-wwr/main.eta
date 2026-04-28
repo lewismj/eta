@@ -14,6 +14,7 @@
   (import symbolic)
   (import compress)
   (import workers)
+  (import report)
   (begin
 
     (define default-queries
@@ -81,6 +82,18 @@
              (kernel-value (lowered 1000000 0.03 2.5))
              (sigma3 (matrix-prefix simm-ir-delta-covariance 3))
              (preview-obj (objective-value '(0.10 -0.20 0.05) sigma3 0.15))
+             ;; --- Hedge solve: actual unwind set from the convex QP ----
+             (hedge-dv01      '(0.10 -0.20 0.05))
+             (hedge-lambda    0.15)
+             (hedge-result    (solve-compression-qp hedge-dv01 hedge-lambda))
+             (hedge-objective (car  hedge-result))
+             (hedge-witness   (cadr hedge-result))
+             (hedge
+               (list
+                 (cons 'dv01      hedge-dv01)
+                 (cons 'lambda    hedge-lambda)
+                 (cons 'objective hedge-objective)
+                 (cons 'delta     hedge-witness)))
              (shard-check (rerun-shard-and-check 2))
              (stage-report
                (list
@@ -107,7 +120,8 @@
                          (cons 'value kernel-value)))
                  (cons 'compression
                        (list
-                         (cons 'preview preview-obj)))
+                         (cons 'preview preview-obj)
+                         (cons 'hedge   hedge)))
                  (cons 'determinism shard-check))))
         (list
           (cons 'book-size (fact-table-row-count trades))
@@ -122,15 +136,13 @@
           (cons 'symbolic-nodes (node-count dexpr))
           (cons 'symbolic-value kernel-value)
           (cons 'compression-preview preview-obj)
+          (cons 'hedge hedge)
           (cons 'shard-check shard-check))))
 
     ;; Optional CLI hook: etai auto-invokes (defun main ...).
     (defun main ()
       (let ((out (run-demo)))
-        (print-stage-report out)
-        (println "")
-        (println "compressed-output:")
-        (println out)
+        (print-friendly-report out)
         out))
 
   ))
