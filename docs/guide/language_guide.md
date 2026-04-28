@@ -39,11 +39,10 @@
 21. [libtorch / Neural Networks](#21-libtorch--neural-networks)
 22. [Concurrency & Distribution](#22-concurrency--distribution)
 23. [Quantitative Finance Examples](#23-quantitative-finance-examples)
-24. [Program Synthesis](#24-program-synthesis)
-25. [Tooling](#25-tooling)
-26. [Runtime Internals (overview)](#26-runtime-internals-overview)
-27. [Examples Index](#27-examples-index)
-28. [Further Reading](#28-further-reading)
+24. [Tooling](#24-tooling)
+25. [Runtime Internals (overview)](#25-runtime-internals-overview)
+26. [Examples Index](#26-examples-index)
+27. [Further Reading](#27-further-reading)
 
 ---
 
@@ -611,16 +610,7 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 ---
 
-## 24. Program Synthesis
-
-Symbolic search using unification and the constraint solvers — see
-[`program_synthesis.md`](./reference/program_synthesis.md) and
-[`examples/send-more-money.eta`](../../examples/send-more-money.eta),
-[`examples/nqueens.eta`](../../examples/nqueens.eta).
-
----
-
-## 25. Tooling
+## 24. Tooling
 
 | Topic                        | Reference                                              |
 | :--------------------------- | :----------------------------------------------------- |
@@ -633,7 +623,7 @@ Symbolic search using unification and the constraint solvers — see
 
 ---
 
-## 26. Runtime Internals (overview)
+## 25. Runtime Internals (overview)
 
 <details>
 <summary><b>NaN-boxing</b></summary>
@@ -673,7 +663,7 @@ For the architectural overview, read [`architecture.md`](../architecture.md).
 
 ---
 
-## 27. Examples Index
+## 26. Examples Index
 
 A curated walk through everything in [`examples/`](../../examples/):
 beginner programs, symbolic & logic, AAD & finance, concurrency, causal
@@ -683,7 +673,7 @@ beginner programs, symbolic & logic, AAD & finance, concurrency, causal
 
 ---
 
-## 28. Further Reading
+## 27. Further Reading
 
 - [`architecture.md`](../architecture.md) — pipeline overview
 - [`eta_plan.md`](../eta_plan.md) — language roadmap

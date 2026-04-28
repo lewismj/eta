@@ -44,7 +44,7 @@ chapter there links into the relevant pages here.
 | [`networking.md`](./networking.md)                   | nng primitives        |
 | [`network-message-passing.md`](./network-message-passing.md) | Cross-machine actors |
 | [`supervisor.md`](./supervisor.md)                   | `std.supervisor`      |
-| [`program_synthesis.md`](./program_synthesis.md)     | Synthesis utilities   |
+
 
 ## Tooling
 

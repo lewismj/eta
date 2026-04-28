@@ -18,6 +18,16 @@
   <a href="docs/architecture.md">Architecture</a>
 </p>
 
+<p align="center">
+  <strong>Featured Examples</strong><br>
+  Causal Decision Engine for Portfolio Optimisation 
+  <a href="docs/featured_examples/portfolio.md">docs</a> ·
+  <a href="examples/notebooks/Portfolio.ipynb">notebook</a><br>
+  Wrong-Way Risk via do-interventions 
+  <a href="docs/featured_examples/xva-wwr.md">docs</a>
+</p>
+
+
 ---
 
 ## The Language
@@ -28,17 +38,12 @@
 
 Eta is built around a **stack-based VM** that serves as a unified runtime for all language subsystems:
 
-*   **Modern Scheme Core:** Nan-boxing, tail-call optimization (TCO), hygienic `syntax-rules` macros, and a module system.
-*   **Native Logic Programming:** Built-in structural unification and backtracking via dedicated VM opcodes, enabling Prolog-style reasoning directly within the language.
-*   **Differentiable Programming:** Native reverse-mode Automatic Differentiation (AAD) integrated into the runtime for transparent gradient computation with zero closure overhead.
-*   **Machine Learning & Numerics:** First-class C++ bindings to **libtorch** for neural networks and **Eigen** for linear algebra and statistics.
-*   **Actor-Model Concurrency:** Erlang-style actors and message passing via **nng**, providing network-transparent parallelism and supervision trees.
+*   **Modern Scheme Core:** Nan-boxing, tail-call optimization (TCO), hygienic `syntax-rules` macros, and a module system. See [Language Guide](docs/guide/language_guide.md) for details.
+*   **Native Logic Programming:** Built-in structural unification and backtracking via dedicated VM opcodes, enabling [Prolog-style](docs/guide/reference/logic.md) reasoning directly within the language.
+*   **Differentiable Programming:** Native reverse-mode Automatic Differentiation [(AAD)](docs/guide/reference/aad.md) integrated into the runtime for transparent gradient computation with zero closure overhead.
+*   **Machine Learning & Numerics:** First-class C++ bindings to [**libtorch**](docs/guide/reference/torch.md) for neural networks and **Eigen** for linear algebra and [statistics](docs/guide/reference/stats.md).
+*   **Actor-Model Concurrency:** Erlang-style [actors](docs/guide/reference/network-message-passing.md) and message passing via **nng**, providing network-transparent parallelism and supervision trees.
 *   **Causal Inference:** A built-in library for Pearl's do-calculus. See [causal](docs/guide/reference/causal.md) for supported identification and intervention operators.
-
-## Featured Examples
-
-* Causal Decision Engine for Portfolio Optimisation — [docs](docs/featured_examples/portfolio.md) · [notebook](examples/notebooks/Portfolio.ipynb)
-* Wrong-Way Risk via do-interventions — [docs](docs/featured_examples/xva-wwr.md)
 
 ---
 
