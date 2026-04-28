@@ -28,7 +28,7 @@
 
 Eta is built around a **stack-based VM** that serves as a unified runtime for all language subsystems:
 
-*   **Modern Scheme Core:** Nan-boxing, tail-call optimization (TCO), first-class continuations (`call/cc`), hygienic `syntax-rules` macros, and a module system.
+*   **Modern Scheme Core:** Nan-boxing, tail-call optimization (TCO), hygienic `syntax-rules` macros, and a module system.
 *   **Native Logic Programming:** Built-in structural unification and backtracking via dedicated VM opcodes, enabling Prolog-style reasoning directly within the language.
 *   **Differentiable Programming:** Native reverse-mode Automatic Differentiation (AAD) integrated into the runtime for transparent gradient computation with zero closure overhead.
 *   **Machine Learning & Numerics:** First-class C++ bindings to **libtorch** for neural networks and **Eigen** for linear algebra and statistics.
