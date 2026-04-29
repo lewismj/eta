@@ -29,6 +29,89 @@
     (defun %directed-edge? (e)   (eq? (%edge-kind e) '->))
     (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
 
+    (defun %symbol<? (a b)
+      (string<? (symbol->string a) (symbol->string b)))
+
+    (defun %district<? (a b)
+      (let ((ha (if (null? a) "" (symbol->string (car a))))
+            (hb (if (null? b) "" (symbol->string (car b)))))
+        (if (string=? ha hb)
+            (< (length a) (length b))
+            (string<? ha hb))))
+
+    (defun %edge<? (a b)
+      (let* ((af (symbol->string (%edge-from a)))
+             (bf (symbol->string (%edge-from b)))
+             (ak (symbol->string (%edge-kind a)))
+             (bk (symbol->string (%edge-kind b)))
+             (at (symbol->string (%edge-to a)))
+             (bt (symbol->string (%edge-to b))))
+        (cond
+          ((string<? af bf) #t)
+          ((string<? bf af) #f)
+          ((string<? ak bk) #t)
+          ((string<? bk ak) #f)
+          (else (string<? at bt)))))
+
+    (defun %set->sorted-symbol-list (s)
+      (sort %symbol<? (hash-set->list s)))
+
+    (defun %set->sorted-edge-list (s)
+      (sort %edge<? (hash-set->list s)))
+
+    (defun %map-set-add (m k v)
+      (hash-map-assoc m k
+                      (hash-set-add (hash-map-ref m k (make-hash-set))
+                                    v)))
+
+    (defun %map-set-values (m k)
+      (hash-set->list (hash-map-ref m k (make-hash-set))))
+
+    (defun %push-all (xs stack)
+      (foldl (lambda (acc x) (cons x acc)) stack xs))
+
+    (defun %closure-set (next seeds)
+      (let loop ((stack seeds) (seen (make-hash-set)))
+        (if (null? stack)
+            seen
+            (let ((v (car stack)))
+              (if (hash-set-contains? seen v)
+                  (loop (cdr stack) seen)
+                  (loop (%push-all (next v) (cdr stack))
+                        (hash-set-add seen v)))))))
+
+    ;; ADMG index tuple:
+    ;;   (nodes-set bidirected-neighbors-map directed-parents-map)
+    (defun %admg-build-index (g)
+      (let loop ((rest g)
+                 (nodes (make-hash-set))
+                 (bidir (make-hash-map))
+                 (parents (make-hash-map)))
+        (if (null? rest)
+            (list nodes bidir parents)
+            (let* ((e (car rest))
+                   (u (%edge-from e))
+                   (v (%edge-to e))
+                   (nodes2 (hash-set-add (hash-set-add nodes u) v))
+                   (bidir2 (if (%bidirected-edge? e)
+                               (%map-set-add (%map-set-add bidir u v) v u)
+                               bidir))
+                   (parents2 (if (%directed-edge? e)
+                                 (%map-set-add parents v u)
+                                 parents)))
+              (loop (cdr rest) nodes2 bidir2 parents2)))))
+
+    (defun %index-nodes (idx)   (car idx))
+    (defun %index-bidir (idx)   (cadr idx))
+    (defun %index-parents (idx) (caddr idx))
+
+    ;; DAG children adjacency map built once per call.
+    (defun %dag-build-children-index (dag)
+      (foldl (lambda (acc e)
+               (%map-set-add acc (%edge-from e) (%edge-to e)))
+             (make-hash-map)
+             dag))
+
     (defun admg:directed (g)
       (filter %directed-edge? g))
 
@@ -36,48 +119,40 @@
       (filter %bidirected-edge? g))
 
     (defun admg:nodes (g)
-      (foldr (lambda (e acc)
-               (%adjoin (%edge-from e)
-                        (%adjoin (%edge-to e) acc)))
-             '()
-             g))
+      (%set->sorted-symbol-list (%index-nodes (%admg-build-index g))))
 
     ;; -- Districts (c-components) ----------------------------------------
 
-    (defun %bidirected-neighbors (g node)
-      (foldl (lambda (acc e)
-               (cond
-                 ((eq? (%edge-from e) node) (%adjoin (%edge-to e) acc))
-                 ((eq? (%edge-to e) node) (%adjoin (%edge-from e) acc))
-                 (else acc)))
-             '()
-             (admg:bidirected g)))
-
-    (defun %bfs-closure (next seeds)
-      (let loop ((queue seeds) (seen '()))
-        (if (null? queue)
-            (reverse seen)
-            (let ((v (car queue)))
-              (if (%member? v seen)
-                  (loop (cdr queue) seen)
-                  (let ((nbrs (next v)))
-                    (loop (append (cdr queue) nbrs)
-                          (cons v seen))))))))
-
     ;; Bidirected-connected component containing `v`.
     (defun admg:district (g v)
-      (if (%member? v (admg:nodes g))
-          (%bfs-closure (lambda (u) (%bidirected-neighbors g u)) (list v))
-          (error 'unknown-variable v)))
+      (let* ((idx (%admg-build-index g))
+             (nodes-set (%index-nodes idx))
+             (bidir (%index-bidir idx)))
+        (if (hash-set-contains? nodes-set v)
+            (%set->sorted-symbol-list
+              (%closure-set (lambda (u) (%map-set-values bidir u))
+                            (list v)))
+            (error 'unknown-variable v))))
 
     ;; District partition induced by <-> reachability.
     (defun admg:districts (g)
-      (let loop ((remaining (admg:nodes g)) (acc '()))
-        (if (null? remaining)
-            (reverse acc)
-            (let ((d (admg:district g (car remaining))))
-              (loop (filter (lambda (n) (not (%member? n d))) remaining)
-                    (cons d acc))))))
+      (let* ((idx (%admg-build-index g))
+             (nodes-set (%index-nodes idx))
+             (bidir (%index-bidir idx))
+             (todo (%set->sorted-symbol-list nodes-set)))
+        (let loop ((rest todo) (remaining nodes-set) (acc '()))
+          (if (null? rest)
+              (sort %district<? (reverse acc))
+              (let ((n (car rest)))
+                (if (not (hash-set-contains? remaining n))
+                    (loop (cdr rest) remaining acc)
+                    (let* ((d-set (%closure-set
+                                    (lambda (u) (%map-set-values bidir u))
+                                    (list n)))
+                           (remaining2 (hash-set-diff remaining d-set)))
+                      (loop (cdr rest)
+                            remaining2
+                            (cons (%set->sorted-symbol-list d-set) acc)))))))))
 
     (defun admg:c-component  (g v) (admg:district g v))
     (defun admg:c-components (g)   (admg:districts g))
@@ -91,47 +166,32 @@
         ((list? x) x)
         (else (error "admg: expected symbol or list"))))
 
-    (defun %assert-vars (g vs)
+    (defun %assert-vars (nodes-set vs)
       (if (null? vs)
           '()
           (begin
-            (if (%member? (car vs) (admg:nodes g))
+            (if (hash-set-contains? nodes-set (car vs))
                 'ok
                 (error 'unknown-variable (car vs)))
-            (%assert-vars g (cdr vs)))))
-
-    (defun %directed-parents (g node)
-      (map* %edge-from
-            (filter (lambda (e)
-                      (and (%directed-edge? e)
-                           (eq? (%edge-to e) node)))
-                    g)))
-
-    (defun %ancestor-closure (g seeds)
-      (let loop ((queue seeds) (seen '()))
-        (if (null? queue)
-            (reverse seen)
-            (let ((v (car queue)))
-              (if (%member? v seen)
-                  (loop (cdr queue) seen)
-                  (loop (append (cdr queue) (%directed-parents g v))
-                        (cons v seen)))))))
+            (%assert-vars nodes-set (cdr vs)))))
 
     ;; Directed ancestors in the ADMG (bidirected edges are ignored).
     (defun admg:ancestors (g v)
-      (let ((vs (%as-node-set v)))
-        (%assert-vars g vs)
-        (foldl (lambda (acc node)
-                 (foldl (lambda (acc2 x) (%adjoin x acc2))
-                        acc
-                        (%ancestor-closure g (%directed-parents g node))))
-               '()
-               vs)))
+      (let* ((idx (%admg-build-index g))
+             (nodes-set (%index-nodes idx))
+             (parents (%index-parents idx))
+             (vs (%as-node-set v)))
+        (%assert-vars nodes-set vs)
+        (let loop ((rest vs) (acc (make-hash-set)))
+          (if (null? rest)
+              (%set->sorted-symbol-list acc)
+              (let* ((node (car rest))
+                     (anc (%closure-set
+                           (lambda (u) (%map-set-values parents u))
+                           (%map-set-values parents node))))
+                (loop (cdr rest) (hash-set-union acc anc)))))))
 
     ;; -- Latent projection ------------------------------------------------
-
-    (defun %adjoin-edge (e es)
-      (if (%member? e es) es (cons e es)))
 
     (defun %ordered-pair (a b)
       (if (string<? (symbol->string a) (symbol->string b))
@@ -140,53 +200,54 @@
 
     ;; Observed targets reachable from observed source via latent-only
     ;; internal nodes.
-    (defun %projected-directed-targets (dag latents src)
-      (let loop ((queue (dag:children dag src))
-                 (seen-lat '())
-                 (targets '()))
-        (if (null? queue)
-            (reverse targets)
-            (let ((n (car queue)))
-              (if (%member? n latents)
-                  (if (%member? n seen-lat)
-                      (loop (cdr queue) seen-lat targets)
-                      (loop (append (cdr queue) (dag:children dag n))
-                            (cons n seen-lat)
+    (defun %projected-directed-targets (children-map latents-set src)
+      (let loop ((stack (%map-set-values children-map src))
+                 (seen-lat (make-hash-set))
+                 (targets (make-hash-set)))
+        (if (null? stack)
+            targets
+            (let ((n (car stack)))
+              (if (hash-set-contains? latents-set n)
+                  (if (hash-set-contains? seen-lat n)
+                      (loop (cdr stack) seen-lat targets)
+                      (loop (%push-all (%map-set-values children-map n) (cdr stack))
+                            (hash-set-add seen-lat n)
                             targets))
-                  (loop (cdr queue) seen-lat (%adjoin n targets)))))))
+                  (loop (cdr stack) seen-lat (hash-set-add targets n)))))))
 
-    (defun admg:%project-directed (dag latents obs)
+    (defun admg:%project-directed (children-map latents-set obs-set obs-list)
       (foldl
-        (lambda (acc src)
-          (foldl (lambda (acc2 dst)
-                   (if (or (eq? src dst)
-                           (not (%member? dst obs)))
-                       acc2
-                       (%adjoin-edge (list src '-> dst) acc2)))
-                 acc
-                 (%projected-directed-targets dag latents src)))
-        '()
-        obs))
+       (lambda (acc src)
+         (foldl (lambda (acc2 dst)
+                  (if (or (eq? src dst)
+                          (not (hash-set-contains? obs-set dst)))
+                      acc2
+                      (hash-set-add acc2 (list src '-> dst))))
+                acc
+                (hash-set->list
+                  (%projected-directed-targets children-map latents-set src))))
+       (make-hash-set)
+       obs-list))
 
     ;; Observed descendants of a latent source through latent-only chains.
-    (defun %latent-observed-descendants (dag latents latent-root)
-      (let loop ((queue (list latent-root))
-                 (seen-lat '())
-                 (targets '()))
-        (if (null? queue)
-            (reverse targets)
-            (let ((n (car queue)))
-              (if (%member? n seen-lat)
-                  (loop (cdr queue) seen-lat targets)
-                   (let* ((kids (dag:children dag n))
-                          (next-lat (filter (lambda (k) (%member? k latents)) kids))
-                          (obs-kids (filter (lambda (k) (not (%member? k latents))) kids))
-                          (targets2 (foldl (lambda (acc x) (%adjoin x acc))
-                                           targets
-                                           obs-kids)))
-                     (loop (append (cdr queue) next-lat)
-                           (cons n seen-lat)
-                           targets2)))))))
+    (defun %latent-observed-descendants (children-map latents-set latent-root)
+      (let loop ((stack (list latent-root))
+                 (seen-lat (make-hash-set))
+                 (targets (make-hash-set)))
+        (if (null? stack)
+            targets
+            (let ((n (car stack)))
+              (if (hash-set-contains? seen-lat n)
+                  (loop (cdr stack) seen-lat targets)
+                  (let* ((kids (%map-set-values children-map n))
+                         (next-lat (filter (lambda (k) (hash-set-contains? latents-set k)) kids))
+                         (obs-kids (filter (lambda (k) (not (hash-set-contains? latents-set k))) kids))
+                         (targets2 (foldl (lambda (acc x) (hash-set-add acc x))
+                                          targets
+                                          obs-kids)))
+                    (loop (%push-all next-lat (cdr stack))
+                          (hash-set-add seen-lat n)
+                          targets2)))))))
 
     (defun %pairs (xs)
       (if (null? xs)
@@ -194,35 +255,39 @@
           (append (map* (lambda (y) (list (car xs) y)) (cdr xs))
                   (%pairs (cdr xs)))))
 
-    (defun admg:%project-bidirected (dag latents obs)
-      (let* ((all (dag:nodes dag))
-             (present-latents (filter (lambda (l) (%member? l all)) latents)))
+    (defun admg:%project-bidirected (children-map all-set latents-set obs-set latents-list)
+      (let ((present-latents (filter (lambda (l) (hash-set-contains? all-set l))
+                                     latents-list)))
         (foldl
-          (lambda (acc latent)
-            (let* ((targets (filter (lambda (n) (%member? n obs))
-                                    (%latent-observed-descendants dag latents latent)))
-                    (edges (map* (lambda (p)
-                                   (let* ((u (car p))
-                                          (v (cadr p))
-                                          (ord (%ordered-pair u v)))
-                                     (list (car ord) '<-> (cadr ord))))
-                                 (%pairs targets))))
-              (foldl (lambda (acc2 e) (%adjoin-edge e acc2))
-                     acc
-                     edges)))
-          '()
-          present-latents)))
+         (lambda (acc latent)
+           (let* ((targets (hash-set-intersect
+                             (%latent-observed-descendants
+                               children-map latents-set latent)
+                             obs-set))
+                  (edges (map* (lambda (p)
+                                 (let* ((u (car p))
+                                        (v (cadr p))
+                                        (ord (%ordered-pair u v)))
+                                   (list (car ord) '<-> (cadr ord))))
+                               (%pairs (hash-set->list targets)))))
+             (foldl (lambda (acc2 e) (hash-set-add acc2 e))
+                    acc
+                    edges)))
+         (make-hash-set)
+         present-latents)))
 
     ;; Latent projection (Verma-Pearl) from (DAG, latent set) to ADMG over
     ;; observed nodes.
     (defun admg:project (dag latents)
-      (let* ((obs (filter (lambda (n) (not (%member? n latents)))
-                          (dag:nodes dag)))
-             (dir (admg:%project-directed dag latents obs))
-             (bid (admg:%project-bidirected dag latents obs)))
-        (foldl (lambda (acc e) (%adjoin-edge e acc))
-               '()
-               (append dir bid))))
+      (let* ((all (dag:nodes dag))
+             (all-set (list->hash-set all))
+             (latents-set (list->hash-set latents))
+             (obs-set (hash-set-diff all-set latents-set))
+             (obs-list (%set->sorted-symbol-list obs-set))
+             (children-map (%dag-build-children-index dag))
+             (dir (admg:%project-directed children-map latents-set obs-set obs-list))
+             (bid (admg:%project-bidirected children-map all-set latents-set obs-set latents)))
+        (%set->sorted-edge-list (hash-set-union dir bid))))
 
     ;; -- Moralization -----------------------------------------------------
 
@@ -233,51 +298,51 @@
                         (cdr parents))
                   (%marriage-links (cdr parents)))))
 
-    (defun admg:%add-marriages (subg)
+    (defun admg:%add-marriages (subg parents-map nodes-set)
       (foldl (lambda (acc node)
-               (append (%marriage-links (%directed-parents subg node)) acc))
+               (append (%marriage-links (%set->sorted-symbol-list
+                                          (hash-map-ref parents-map node (make-hash-set))))
+                       acc))
              subg
-             (admg:nodes subg)))
+             (%set->sorted-symbol-list nodes-set)))
 
     (defun admg:%undirected (g)
-      (reverse
-        (foldl (lambda (acc e)
-                 (let* ((u (%edge-from e))
-                        (v (%edge-to e))
-                        (ord (%ordered-pair u v))
-                        (edge (list (car ord) '-- (cadr ord))))
-                   (if (eq? u v)
-                       acc
-                       (%adjoin-edge edge acc))))
-               '()
-               g)))
+      (let ((out
+              (foldl (lambda (acc e)
+                       (let* ((u (%edge-from e))
+                              (v (%edge-to e))
+                              (ord (%ordered-pair u v))
+                              (edge (list (car ord) '-- (cadr ord))))
+                         (if (eq? u v)
+                             acc
+                             (hash-set-add acc edge))))
+                     (make-hash-set)
+                     g)))
+        (%set->sorted-edge-list out)))
 
     ;; Ancestral moral graph for a target set `s`.
     (defun admg:moralize (g s)
-      (let* ((target (%as-node-set s)))
-        (%assert-vars g target)
-        (let* ((anc (foldl (lambda (acc v)
-                             (foldl (lambda (acc2 x) (%adjoin x acc2))
-                                    (%adjoin v acc)
-                                    (admg:ancestors g v)))
-                           '()
-                           target))
-               (subg (filter (lambda (e)
-                               (and (%member? (%edge-from e) anc)
-                                    (%member? (%edge-to e) anc)))
-                             g))
-               (moral (admg:%add-marriages subg)))
-          (admg:%undirected moral))))
+      (let* ((idx (%admg-build-index g))
+             (nodes-set (%index-nodes idx))
+             (parents (%index-parents idx))
+             (target (%as-node-set s)))
+        (%assert-vars nodes-set target)
+        (let loop ((rest target) (anc (make-hash-set)))
+          (if (null? rest)
+              (let* ((subg (filter (lambda (e)
+                                     (and (hash-set-contains? anc (%edge-from e))
+                                          (hash-set-contains? anc (%edge-to e))))
+                                   g))
+                     (sub-idx (%admg-build-index subg))
+                     (moral (admg:%add-marriages subg
+                                                 (%index-parents sub-idx)
+                                                 (%index-nodes sub-idx))))
+                (admg:%undirected moral))
+              (let* ((v (car rest))
+                     (anc-v (%closure-set
+                             (lambda (u) (%map-set-values parents u))
+                             (%map-set-values parents v)))
+                     (anc2 (hash-set-union anc (hash-set-add anc-v v))))
+                (loop (cdr rest) anc2)))))
 
-    ;; -- Local set helpers ------------------------------------------------
-
-    (defun %member? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((equal? x (car xs)) #t)
-        (else (%member? x (cdr xs)))))
-
-    (defun %adjoin (x xs)
-      (if (%member? x xs) xs (cons x xs)))
-
-  ))
+  )))
