@@ -55,6 +55,11 @@ endfunction()
 # ── nng (always required) ─────────────────────────────────────────────────
 message(STATUS "Fetching nng (nanomsg-next-gen) v1.11 ...")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchNng.cmake")
+message(STATUS "Fetching spdlog 1.17.0 ...")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchSpdlog.cmake")
+if(NOT TARGET spdlog::spdlog)
+    message(FATAL_ERROR "spdlog fetch FAILED - spdlog::spdlog target missing")
+endif()
 if(NOT TARGET nng)
     message(FATAL_ERROR "nng fetch FAILED — nng is a required dependency")
 endif()
@@ -86,6 +91,28 @@ function(eta_copy_nng_dlls target)
     endif()
 endfunction()
 
+function(eta_spdlog_target out_var)
+    if(TARGET spdlog)
+        set(${out_var} spdlog PARENT_SCOPE)
+    elseif(TARGET spdlog::spdlog)
+        set(${out_var} spdlog::spdlog PARENT_SCOPE)
+    else()
+        set(${out_var} "" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(eta_copy_log_dlls target)
+    eta_spdlog_target(_eta_spdlog_target)
+    if(WIN32 AND _eta_spdlog_target)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:${_eta_spdlog_target}>
+                $<TARGET_FILE_DIR:${target}>
+            COMMENT "Copying spdlog DLL to ${target} output dir"
+        )
+    endif()
+endfunction()
+
 # On Linux/macOS, set RPATH so installed binaries find libtorch in ../lib.
 # Must be set before add_subdirectory() so it applies to all executable targets.
 if(NOT WIN32)
@@ -97,6 +124,7 @@ add_subdirectory(core)
 add_subdirectory(torch)
 add_subdirectory(nng)
 add_subdirectory(stats)
+add_subdirectory(log)
 add_subdirectory(interpreter)
 add_subdirectory(compiler)
 add_subdirectory(lsp)
@@ -128,4 +156,9 @@ add_custom_target(eta_rebuild_and_test
 # Install nng DLL on Windows
 if(WIN32 AND TARGET nng)
     install(FILES $<TARGET_FILE:nng> DESTINATION bin)
+endif()
+
+eta_spdlog_target(_eta_install_spdlog_target)
+if(WIN32 AND _eta_install_spdlog_target)
+    install(FILES $<TARGET_FILE:${_eta_install_spdlog_target}> DESTINATION bin)
 endif()

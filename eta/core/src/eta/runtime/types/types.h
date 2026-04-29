@@ -19,3 +19,4 @@
 #include "csv.h"
 #include "compound.h"
 #include "regex.h"
+#include "log_types.h"

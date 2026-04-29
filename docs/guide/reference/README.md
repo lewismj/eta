@@ -35,6 +35,10 @@ chapter there links into the relevant pages here.
 | [`hashmap.md`](./hashmap.md)                         | `std.hashmap`         |
 | [`regex.md`](./regex.md)                             | `std.regex`           |
 | [`csv.md`](./csv.md)                                 | `std.csv`             |
+| [`json.md`](./json.md)                               | `std.json`            |
+| [`fs.md`](./fs.md)                                   | `std.fs`              |
+| [`os.md`](./os.md)                                   | `std.os`              |
+| [`log.md`](./log.md)                                 | `std.log`             |
 | [`time.md`](./time.md)                               | `std.time`            |
 | [`stats.md`](./stats.md)                             | `std.stats`           |
 | [`aad.md`](./aad.md)                                 | `std.aad`             |

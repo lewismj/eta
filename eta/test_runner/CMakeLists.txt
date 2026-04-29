@@ -12,7 +12,7 @@ target_include_directories(eta_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
 )
 
-target_link_libraries(eta_test PRIVATE eta_core eta_torch eta_nng eta_stats)
+target_link_libraries(eta_test PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
 target_compile_definitions(eta_test PRIVATE
     ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1
     ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
@@ -20,6 +20,7 @@ target_compile_definitions(eta_test PRIVATE
 
 eta_copy_torch_dlls(eta_test)
 eta_copy_nng_dlls(eta_test)
+eta_copy_log_dlls(eta_test)
 
 if(NOT MSVC)
     target_link_libraries(eta_test PRIVATE stdc++ m)

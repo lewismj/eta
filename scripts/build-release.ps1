@@ -219,6 +219,13 @@ foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_d
 $BinPath = Join-Path $Prefix "bin"
 Copy-VsRuntimeDllsToBin -BuildDir $BuildDir -BinDir $BinPath
 
+# spdlog is required by std.log at runtime when built as a shared library.
+$HasSpdlog = [bool](Get-ChildItem -Path $BinPath -Filter "spdlog*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+if (-not $HasSpdlog) {
+    Write-Host "  [WARN] spdlog runtime DLL missing from bin\\ -- std.log features may fail at runtime:" -ForegroundColor Yellow
+    Write-Host "         - spdlog*.dll"
+}
+
 # Verify xeus runtime DLLs landed in bin/ — without these eta_jupyter.exe
 # fails to start with STATUS_DLL_NOT_FOUND (0xC0000135 / -1073741515).
 # The DLL names vary by build: MSVC FetchContent produces libxeus.dll /

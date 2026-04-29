@@ -205,6 +205,16 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
+    std::expected<LispVal, RuntimeError> make_log_sink(Heap& heap, types::LogSink sink) {
+        return make_heap_object<types::LogSink, ObjectKind::LogSink>(heap, std::move(sink));
+    }
+
+    inline_always
+    std::expected<LispVal, RuntimeError> make_log_logger(Heap& heap, types::LogLogger logger) {
+        return make_heap_object<types::LogLogger, ObjectKind::LogLogger>(heap, std::move(logger));
+    }
+
+    inline_always
     std::expected<LispVal, RuntimeError> make_compound(Heap& heap, LispVal functor,
                                                        std::vector<LispVal> args) {
         return make_heap_object<types::CompoundTerm, ObjectKind::CompoundTerm>(

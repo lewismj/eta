@@ -32,6 +32,7 @@ foreach(_t IN ITEMS
     eta_torch
     eta_nng
     eta_stats
+    eta_log
     etai
     eta_repl
     etac

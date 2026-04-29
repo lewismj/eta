@@ -1,0 +1,166 @@
+;;; std/log.eta - Logging helpers backed by %log-* runtime primitives.
+
+(module std.log
+  (import std.core)
+  (export
+    log:trace
+    log:debug
+    log:info
+    log:warn
+    log:error
+    log:critical
+    log:default
+    log:set-default!
+    log:get-logger
+    log:make-logger
+    log:make-stdout-sink
+    log:make-stderr-sink
+    log:make-file-sink
+    log:make-rotating-sink
+    log:make-daily-sink
+    log:make-port-sink
+    log:make-error-port-sink
+    log:set-level!
+    log:level
+    log:set-global-level!
+    log:set-pattern!
+    log:set-formatter!
+    log:flush!
+    log:flush-on!
+    log:shutdown!)
+  (begin
+
+    (defun log:strip-leading-colon (s)
+      (if (and (> (string-length s) 0)
+               (eq? (string-ref s 0) #\:))
+          (substring s 1 (string-length s))
+          s))
+
+    (defun log:normalize-opt-key (k)
+      (cond
+        ((symbol? k) (string->symbol (log:strip-leading-colon (symbol->string k))))
+        ((string? k) (string->symbol (log:strip-leading-colon k)))
+        (#t (error "log: option key must be a symbol or string"))))
+
+    (defun log:opts->alist (opts)
+      (letrec ((loop (lambda (xs acc)
+                       (if (null? xs)
+                           (reverse acc)
+                           (if (null? (cdr xs))
+                               (error "log: options must be key/value pairs")
+                               (loop (cdr (cdr xs))
+                                     (cons (cons (log:normalize-opt-key (car xs))
+                                                 (car (cdr xs)))
+                                           acc)))))))
+        (loop opts '())))
+
+    (defun log:validate-options (opts allowed)
+      (letrec ((loop (lambda (xs)
+                       (if (null? xs)
+                           '()
+                           (if (member (car (car xs)) allowed)
+                               (loop (cdr xs))
+                               (error "log: unknown option key"))))))
+        (loop opts)))
+
+    (defun log:option-ref (opts key default)
+      (let ((entry (assq key opts)))
+        (if entry (cdr entry) default)))
+
+    (defun log:default ()
+      (%log-default-logger))
+
+    (defun log:set-default! (logger)
+      (%log-set-default! logger))
+
+    (defun log:get-logger (name)
+      (%log-get-logger name))
+
+    (defun log:make-logger (name sinks)
+      (%log-make-logger name sinks))
+
+    (defun log:make-stdout-sink opts
+      (let ((alist (log:opts->alist opts)))
+        (log:validate-options alist '(color?))
+        (%log-make-stdout-sink (log:option-ref alist 'color? #t) 'stdout)))
+
+    (defun log:make-stderr-sink opts
+      (let ((alist (log:opts->alist opts)))
+        (log:validate-options alist '(color?))
+        (%log-make-stdout-sink (log:option-ref alist 'color? #t) 'stderr)))
+
+    (defun log:make-file-sink (path . opts)
+      (let ((alist (log:opts->alist opts)))
+        (log:validate-options alist '(truncate?))
+        (%log-make-file-sink path (log:option-ref alist 'truncate? #f))))
+
+    (defun log:make-rotating-sink (path max-size max-files)
+      (%log-make-rotating-sink path max-size max-files))
+
+    (defun log:make-daily-sink (path hour minute max-files)
+      (%log-make-daily-sink path hour minute max-files))
+
+    (defun log:make-port-sink (port)
+      (%log-make-port-sink port))
+
+    (defun log:make-error-port-sink ()
+      (%log-make-current-error-sink))
+
+    (defun log:set-level! (logger level)
+      (%log-set-level! logger level))
+
+    (defun log:level (logger)
+      (%log-level logger))
+
+    (defun log:set-global-level! (level)
+      (%log-set-global-level! level))
+
+    (defun log:set-pattern! (logger pattern)
+      (%log-set-pattern! logger pattern))
+
+    (defun log:set-formatter! (logger formatter)
+      (%log-set-formatter! logger formatter))
+
+    (defun log:flush! (logger)
+      (%log-flush! logger))
+
+    (defun log:flush-on! (logger level)
+      (%log-flush-on! logger level))
+
+    (defun log:shutdown! ()
+      (%log-shutdown!))
+
+    (defun log:emit-level (level args)
+      (cond
+        ((null? args)
+          (error "log: expected (msg [payload]) or (logger msg [payload])"))
+        ((null? (cdr args))
+          (%log-emit (log:default) level (car args) '()))
+        ((null? (cdr (cdr args)))
+          (if (string? (car args))
+              (%log-emit (log:default) level (car args) (car (cdr args)))
+              (%log-emit (car args) level (car (cdr args)) '())))
+        ((null? (cdr (cdr (cdr args))))
+          (%log-emit (car args) level (car (cdr args)) (car (cdr (cdr args)))))
+        (#t
+          (error "log: expected (msg [payload]) or (logger msg [payload])"))))
+
+    (defun log:trace args
+      (log:emit-level 'trace args))
+
+    (defun log:debug args
+      (log:emit-level 'debug args))
+
+    (defun log:info args
+      (log:emit-level 'info args))
+
+    (defun log:warn args
+      (log:emit-level 'warn args))
+
+    (defun log:error args
+      (log:emit-level 'error args))
+
+    (defun log:critical args
+      (log:emit-level 'critical args))
+
+  ))

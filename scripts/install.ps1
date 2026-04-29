@@ -156,6 +156,13 @@ foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_d
     }
 }
 
+$HasSpdlog = [bool](Get-ChildItem -Path $BinDir -Filter "spdlog*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+if ($HasSpdlog) {
+    Write-Host "  [OK] spdlog*.dll"
+} else {
+    Write-Host "  [WARN] spdlog runtime DLL missing; std.log features may fail." -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "> Jupyter kernel setup:"
 $EtaJupyterExe = Join-Path $BinDir "eta_jupyter.exe"

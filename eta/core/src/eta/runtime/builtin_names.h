@@ -6,7 +6,7 @@
  *        that need to know builtin names/arities but do NOT execute code.
  *
  * Registers every builtin that the runtime provides (core + port + io + os +
- * time + torch + stats + nng) into a BuiltinEnvironment using null PrimitiveFuncs.
+ * time + torch + stats + log + nng) into a BuiltinEnvironment using null PrimitiveFuncs.
  * The SemanticAnalyzer only reads names/arities from the env to pre-allocate
  *
  * REGISTRATION ORDER must stay in sync with all_primitives.h / driver.h:
@@ -537,6 +537,29 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%stats-cor-matrix",   1, true);
     r("%stats-quantile-vec", 2, true);
     r("%stats-ols-multi",    2, true);
+
+    /**
+     * log_primitives.h  (must match registration order exactly)
+     */
+    r("%log-make-stdout-sink",        2, false);
+    r("%log-make-file-sink",          2, false);
+    r("%log-make-rotating-sink",      3, false);
+    r("%log-make-daily-sink",         4, false);
+    r("%log-make-port-sink",          1, false);
+    r("%log-make-current-error-sink", 0, false);
+    r("%log-make-logger",             2, false);
+    r("%log-get-logger",              1, false);
+    r("%log-default-logger",          0, false);
+    r("%log-set-default!",            1, false);
+    r("%log-set-level!",              2, false);
+    r("%log-level",                   1, false);
+    r("%log-set-global-level!",       1, false);
+    r("%log-set-pattern!",            2, false);
+    r("%log-set-formatter!",          2, false);
+    r("%log-flush!",                  1, false);
+    r("%log-flush-on!",               2, false);
+    r("%log-emit",                    4, false);
+    r("%log-shutdown!",               0, false);
 
     /**
      * nng_primitives.h  (must match registration order exactly)

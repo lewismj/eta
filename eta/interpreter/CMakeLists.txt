@@ -11,10 +11,11 @@ target_include_directories(etai
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
 )
 
-target_link_libraries(etai PRIVATE eta_core eta_torch eta_nng eta_stats)
+target_link_libraries(etai PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
 target_compile_definitions(etai PRIVATE ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
 eta_copy_torch_dlls(etai)
 eta_copy_nng_dlls(etai)
+eta_copy_log_dlls(etai)
 
 # Platform-specific libraries
 if(NOT MSVC)
@@ -54,10 +55,11 @@ target_include_directories(eta_repl
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
 )
 
-target_link_libraries(eta_repl PRIVATE eta_core eta_torch eta_nng eta_stats)
+target_link_libraries(eta_repl PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
 target_compile_definitions(eta_repl PRIVATE ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
 eta_copy_torch_dlls(eta_repl)
 eta_copy_nng_dlls(eta_repl)
+eta_copy_log_dlls(eta_repl)
 
 # Platform-specific libraries
 if(NOT MSVC)

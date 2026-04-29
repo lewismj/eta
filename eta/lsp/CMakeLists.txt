@@ -11,10 +11,11 @@ target_include_directories(eta_lsp
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
 )
 
-target_link_libraries(eta_lsp PRIVATE eta_core eta_torch eta_nng eta_stats)
+target_link_libraries(eta_lsp PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
 target_compile_definitions(eta_lsp PRIVATE ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
 eta_copy_torch_dlls(eta_lsp)
 eta_copy_nng_dlls(eta_lsp)
+eta_copy_log_dlls(eta_lsp)
 
 # Platform-specific libraries
 if(NOT MSVC)

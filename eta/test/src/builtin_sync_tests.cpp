@@ -12,6 +12,7 @@
 #include <eta/runtime/vm/vm.h>
 #include <eta/torch/torch_primitives.h>
 #include <eta/stats/stats_primitives.h>
+#include <eta/log/log_primitives.h>
 
 using namespace eta::runtime;
 using namespace eta::runtime::memory::heap;
@@ -23,13 +24,13 @@ BOOST_AUTO_TEST_SUITE(builtin_sync_tests)
  * Verify that register_builtin_names() (the SSoT) contains entries for
  * every builtin that the runtime modules register.
  *
- * We check os, time, torch, and stats individually (os requires a live VM;
+ * We check os, time, torch, stats, and log individually (os/log require a live VM;
  * the others accept a null VM
  * pointer).
  * Port/IO/NNG require a live VM or driver-specific args, so full end-to-end
  * coverage is provided by the Driver constructor's verify_all_patched() call.
  */
-BOOST_AUTO_TEST_CASE(names_ssot_contains_os_time_torch_and_stats) {
+BOOST_AUTO_TEST_CASE(names_ssot_contains_os_time_torch_stats_and_log) {
     /// 1. Names-only environment via the SSoT
     BuiltinEnvironment names_env;
     register_builtin_names(names_env);
@@ -88,6 +89,19 @@ BOOST_AUTO_TEST_CASE(names_ssot_contains_os_time_torch_and_stats) {
             BOOST_REQUIRE(idx.has_value());
             BOOST_TEST(names_env.specs()[*idx].arity == stats_env.specs()[i].arity);
             BOOST_TEST(names_env.specs()[*idx].has_rest == stats_env.specs()[i].has_rest);
+        }
+    }
+
+    /// 6. Log primitives
+    BuiltinEnvironment log_env;
+    eta::log::register_log_primitives(log_env, heap, intern, &vm);
+
+    for (size_t i = 0; i < log_env.size(); ++i) {
+        auto idx = names_env.lookup(log_env.specs()[i].name);
+        BOOST_TEST_CONTEXT("log builtin: " << log_env.specs()[i].name) {
+            BOOST_REQUIRE(idx.has_value());
+            BOOST_TEST(names_env.specs()[*idx].arity == log_env.specs()[i].arity);
+            BOOST_TEST(names_env.specs()[*idx].has_rest == log_env.specs()[i].has_rest);
         }
     }
 }

@@ -5,7 +5,7 @@
  * @brief Single source of truth for ALL live primitive registrations.
  *
  * Every executable that runs Eta code must call register_all_primitives()
- * (which handles core + port + io + os + time + torch + stats), then call
+ * (which handles core + port + io + os + time + torch + stats + log), then call
  * eta::nng::register_nng_primitives() with driver-specific arguments.
  *
  * Canonical registration order  (MUST match builtin_names.h exactly):
@@ -16,7 +16,8 @@
  *   5. time_primitives.h
  *   6. torch_primitives.h
  *   7. stats_primitives.h
- *   8. nng_primitives.h  (registered separately by the Driver)
+ *   8. log_primitives.h
+ *   9. nng_primitives.h  (registered separately by the Driver)
  *
  * For analysis-only tools (LSP), builtin_names.h provides null-func
  */
@@ -28,6 +29,7 @@
 #include "eta/runtime/time_primitives.h"
 #include <eta/torch/torch_primitives.h>
 #include <eta/stats/stats_primitives.h>
+#include <eta/log/log_primitives.h>
 #include <span>
 #include <string>
 /**
@@ -38,7 +40,7 @@
 namespace eta::interpreter {
 
 /**
- * Register all core+port+io+os+time+torch+stats primitive implementations.
+ * Register all core+port+io+os+time+torch+stats+log primitive implementations.
  *
  * Call nng::register_nng_primitives() after this with the appropriate
  * driver-specific arguments to complete the full builtin set.
@@ -58,6 +60,7 @@ inline void register_all_primitives(
     runtime::register_time_primitives(env, heap, intern, &vm);
     torch_bindings::register_torch_primitives(env, heap, intern, &vm);
     stats_bindings::register_stats_primitives(env, heap, intern, &vm);
+    eta::log::register_log_primitives(env, heap, intern, &vm);
 }
 
 } ///< namespace eta::interpreter

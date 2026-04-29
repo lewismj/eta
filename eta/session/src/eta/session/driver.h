@@ -48,6 +48,7 @@
 #include <eta/nng/nng_factory.h>
 #include <eta/nng/nng_primitives.h>
 #include <eta/nng/process_mgr.h>
+#include <eta/log/log_state.h>
 
 #include "eta/interpreter/module_path.h"
 
@@ -138,7 +139,7 @@ public:
         heap_.set_gc_callback([this]() { collect_garbage_with_registry_roots(); });
 
         /**
-         * Register all core + port + io + os + time + torch + stats primitives.
+         * Register all core + port + io + os + time + torch + stats + log primitives.
          * NNG follows with driver-specific arguments.
          * Step 1: Populate all slots with metadata (name/arity/has_rest) + null funcs.
          *         builtin_names.h is the Single Source of Truth for slot order.
@@ -197,6 +198,10 @@ public:
     Driver& operator=(const Driver&) = delete;
     Driver(Driver&&) = delete;
     Driver& operator=(Driver&&) = delete;
+
+    ~Driver() {
+        eta::log::global_log_state().erase_vm(vm_);
+    }
 
     /// Result of a load_prelude() call.
     struct PreludeResult {

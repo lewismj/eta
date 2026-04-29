@@ -1,0 +1,109 @@
+;;; stdlib/tests/log.test.eta - Tests for std.log wrappers.
+
+(module log.tests
+  (import std.test std.log std.io std.fs)
+  (begin
+
+    (defun log:test-contains? (text needle)
+      (let ((n (string-length text))
+            (m (string-length needle)))
+        (if (= m 0)
+            #t
+            (if (< n m)
+                #f
+                (letrec ((loop (lambda (i)
+                                 (if (> i (- n m))
+                                     #f
+                                     (if (string=? (substring text i (+ i m)) needle)
+                                         #t
+                                         (loop (+ i 1)))))))
+                  (loop 0))))))
+
+    (define suite
+      (make-group "std.log"
+        (list
+
+          (make-test "level wrappers support default and explicit logger forms"
+            (lambda ()
+              (let ((p (open-output-string)))
+                (with-error-to-port p
+                  (lambda ()
+                    (let* ((sink (log:make-error-port-sink))
+                           (default-logger (log:make-logger "std.log.default" (list sink)))
+                           (explicit-logger (log:make-logger "std.log.explicit" (list sink))))
+                      (log:set-pattern! default-logger "%v")
+                      (log:set-pattern! explicit-logger "%v")
+                      (log:set-default! default-logger)
+                      (log:info "default-message")
+                      (log:info explicit-logger "explicit-message")
+                      (log:flush! default-logger)
+                      (log:flush! explicit-logger))))
+                (let ((out (get-output-string p)))
+                  (assert-true (log:test-contains? out "default-message") "missing default-message")
+                  (assert-true (log:test-contains? out "explicit-message") "missing explicit-message")))))
+
+          (make-test "error-port sink respects with-error-to-port redirection"
+            (lambda ()
+              (let ((p (open-output-string)))
+                (with-error-to-port p
+                  (lambda ()
+                    (let* ((sink (log:make-error-port-sink))
+                           (logger (log:make-logger "std.log.redirect" (list sink))))
+                      (log:set-pattern! logger "%v")
+                      (log:warn logger "redirected")
+                      (log:flush! logger))))
+                (assert-true (log:test-contains? (get-output-string p) "redirected") "missing redirected output"))))
+
+          (make-test "set-level filters lower-severity emits"
+            (lambda ()
+              (let ((p (open-output-string)))
+                (with-error-to-port p
+                  (lambda ()
+                    (let* ((sink (log:make-error-port-sink))
+                           (logger (log:make-logger "std.log.filter" (list sink))))
+                      (log:set-pattern! logger "%v")
+                      (log:set-level! logger 'error)
+                      (log:info logger "drop-me")
+                      (log:error logger "keep-me")
+                      (log:flush! logger))))
+                (let ((out (get-output-string p)))
+                  (assert-false (log:test-contains? out "drop-me") "drop-me should be filtered")
+                  (assert-true (log:test-contains? out "keep-me") "missing keep-me")))))
+
+          (make-test "formatter switch covers human and json output"
+            (lambda ()
+              (let ((p (open-output-string)))
+                (with-error-to-port p
+                  (lambda ()
+                    (let* ((sink (log:make-error-port-sink))
+                           (logger (log:make-logger "std.log.formatter" (list sink))))
+                      (log:set-pattern! logger "%v")
+                      (log:info logger "human-line" '((code . 7)))
+                      (log:set-formatter! logger 'json)
+                      (log:info logger "json-line" '((code . 7)))
+                      (log:flush! logger))))
+                (let ((out (get-output-string p)))
+                  (assert-true (log:test-contains? out "human-line code=7") "missing human formatter output")
+                  (assert-true (log:test-contains? out "\"msg\":\"json-line\"") "missing json msg field")
+                  (assert-true (log:test-contains? out "\"code\":7") "missing json payload field")))))
+
+          (make-test "file and rotating sinks produce output files"
+            (lambda ()
+              (let* ((file-path (fs:temp-file))
+                     (rotating-path (fs:temp-file))
+                     (file-sink (log:make-file-sink file-path 'truncate? #t))
+                     (rotating-sink (log:make-rotating-sink rotating-path 4096 2))
+                     (file-logger (log:make-logger "std.log.file" (list file-sink)))
+                     (rotating-logger (log:make-logger "std.log.rotating" (list rotating-sink))))
+                (log:set-pattern! file-logger "%v")
+                (log:set-pattern! rotating-logger "%v")
+                (log:info file-logger "file-output")
+                (log:info rotating-logger "rotating-output")
+                (log:flush! file-logger)
+                (log:flush! rotating-logger)
+                (assert-true (> (fs:file-size file-path) 0) "file sink did not write bytes")
+                (assert-true (> (fs:file-size rotating-path) 0) "rotating sink did not write bytes"))))
+
+          )))
+
+    (print-tap (run suite))))

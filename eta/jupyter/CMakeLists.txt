@@ -22,7 +22,7 @@ target_include_directories(eta_jupyter
 )
 
 target_link_libraries(eta_jupyter
-    PRIVATE eta_core eta_torch eta_nng eta_stats
+    PRIVATE eta_core eta_torch eta_nng eta_stats eta_log
             xeus xeus-zmq nlohmann_json::nlohmann_json
 )
 
@@ -34,6 +34,7 @@ target_compile_definitions(eta_jupyter PRIVATE
 
 eta_copy_torch_dlls(eta_jupyter)
 eta_copy_nng_dlls(eta_jupyter)
+eta_copy_log_dlls(eta_jupyter)
 
 # xeus, xeus-zmq, and libzmq are shared in the FetchContent build and must be
 # available next to eta_jupyter on Windows.

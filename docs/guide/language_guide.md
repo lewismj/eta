@@ -29,20 +29,22 @@
 11. [Strings, Symbols & Regex](#11-strings-symbols--regex)
 12. [Collections](#12-collections)
 13. [I/O, Filesystem & OS](#13-io-filesystem--os)
-14. [Time, Freeze & Finalizers](#14-time-freeze--finalizers)
-15. [Logic Programming & Unification](#15-logic-programming--unification)
-16. [Constraint Logic Programming](#16-constraint-logic-programming)
-17. [Datalog & Fact Tables](#17-datalog--fact-tables)
-18. [Causal Inference](#18-causal-inference)
-19. [Automatic Differentiation (AAD)](#19-automatic-differentiation-aad)
-20. [Statistics & Linear Algebra](#20-statistics--linear-algebra)
-21. [libtorch / Neural Networks](#21-libtorch--neural-networks)
-22. [Concurrency & Distribution](#22-concurrency--distribution)
-23. [Quantitative Finance Examples](#23-quantitative-finance-examples)
-24. [Tooling](#24-tooling)
-25. [Runtime Internals (overview)](#25-runtime-internals-overview)
-26. [Examples Index](#26-examples-index)
-27. [Further Reading](#27-further-reading)
+14. [JSON](#14-json)
+15. [Logging](#15-logging)
+16. [Time, Freeze & Finalizers](#16-time-freeze--finalizers)
+17. [Logic Programming & Unification](#17-logic-programming--unification)
+18. [Constraint Logic Programming](#18-constraint-logic-programming)
+19. [Datalog & Fact Tables](#19-datalog--fact-tables)
+20. [Causal Inference](#20-causal-inference)
+21. [Automatic Differentiation (AAD)](#21-automatic-differentiation-aad)
+22. [Statistics & Linear Algebra](#22-statistics--linear-algebra)
+23. [libtorch / Neural Networks](#23-libtorch--neural-networks)
+24. [Concurrency & Distribution](#24-concurrency--distribution)
+25. [Quantitative Finance Examples](#25-quantitative-finance-examples)
+26. [Tooling](#26-tooling)
+27. [Runtime Internals (overview)](#27-runtime-internals-overview)
+28. [Examples Index](#28-examples-index)
+29. [Further Reading](#29-further-reading)
 
 ---
 
@@ -360,38 +362,9 @@ Built-ins: `display`, `write`, `newline`, `write-string`, `read-char`,
   (lambda () (println "captured")))
 ```
 
-CSV via [`std.csv`](./reference/csv.md), Datalog via [`std.db`](./reference/db.md),
-JSON via [`std.json`](./reference/json.md).
-
-### JSON (`std.json`)
-
-`std.json` is a thin wrapper over the native JSON codec implemented
-in `eta/core/src/eta/util/json.h` (a hand-written, RFC 8259 parser and
-serialiser with no third-party dependency). Objects decode to hash
-maps, arrays to vectors, numbers default to flonums (pass
-`'keep-integers-exact? #t` to keep integer-typed numbers as fixnums),
-`true`/`false` to `#t`/`#f`, and `null` to `'()`.
-
-```scheme
-(import std.json std.io)
-(define cfg (json:read-string "{\"name\":\"eta\",\"n\":7}"
-                              'keep-integers-exact? #t))
-(println (hash-map-ref cfg "name"))     ; "eta"
-(println (hash-map-ref cfg "n"))        ; 7
-
-(println (json:write-string (hash-map "ok" #t "xs" #(1 2 3))))
-;; => {"ok":true,"xs":[1,2,3]}
-```
-
-| Function              | Signature                                  | Notes                                        |
-| :-------------------- | :----------------------------------------- | :------------------------------------------- |
-| `json:read`           | `(port [opts ...]) -> value`               | Reads from any input port.                   |
-| `json:read-string`    | `(string [opts ...]) -> value`             | Convenience for in-memory text.              |
-| `json:write`          | `(value [port]) -> '()`                    | Defaults to `(current-output-port)`.         |
-| `json:write-string`   | `(value) -> string`                        | Returns the serialised form.                 |
-
-Options are alternating keyword/value pairs; the only key recognised
-in v1 is `'keep-integers-exact?`.
+CSV via [`std.csv`](./reference/csv.md), Datalog via
+[`std.db`](./reference/db.md). JSON has its own section (§14), and
+structured logging has its own section (§15).
 
 ### Filesystem (`std.fs`)
 
@@ -452,7 +425,82 @@ script's own command line, current working directory, and a clean
 
 ---
 
-## 14. Time, Freeze & Finalizers
+## 14. JSON
+
+`std.json` is a thin wrapper over the native JSON codec implemented in
+`eta/core/src/eta/util/json.h` (a hand-written, RFC 8259 parser and
+serialiser with no third-party dependency). Objects decode to hash
+maps, arrays to vectors, numbers default to flonums (pass
+`'keep-integers-exact? #t` to keep integer-typed numbers as fixnums),
+`true` / `false` to `#t` / `#f`, and `null` to `'()`.
+
+```scheme
+(import std.json std.io)
+(define cfg (json:read-string "{\"name\":\"eta\",\"n\":7}"
+                              'keep-integers-exact? #t))
+(println (hash-map-ref cfg "name"))     ; "eta"
+(println (hash-map-ref cfg "n"))        ; 7
+
+(println (json:write-string (hash-map "ok" #t "xs" #(1 2 3))))
+;; => {"ok":true,"xs":[1,2,3]}
+```
+
+| Function              | Signature                          | Notes                                |
+| :-------------------- | :--------------------------------- | :----------------------------------- |
+| `json:read`           | `(port [opts ...]) -> value`       | Reads from any input port.           |
+| `json:read-string`    | `(string [opts ...]) -> value`     | Convenience for in-memory text.      |
+| `json:write`          | `(value [port]) -> '()`            | Defaults to `(current-output-port)`. |
+| `json:write-string`   | `(value) -> string`                | Returns the serialised form.         |
+
+Options are alternating keyword/value pairs; the only key recognised
+in v1 is `'keep-integers-exact?`.
+
+> **Reference:** [`json.md`](./reference/json.md).
+
+---
+
+## 15. Logging
+
+`std.log` is the structured-logging façade over the bundled
+[`spdlog`](https://github.com/gabime/spdlog) runtime. Build a sink, wrap
+it in a named logger, and emit records at one of six severity levels;
+records carry a free-form message plus an optional payload alist that is
+rendered either as `key=value` (human formatter) or as JSON.
+
+```scheme
+(import std.log)
+
+(let* ((sink   (log:make-stdout-sink))
+       (logger (log:make-logger "app" (list sink))))
+  (log:set-default! logger)
+  (log:info "service started" '((port . 8080)))
+  (log:warn logger "slow query" '((ms . 412)))
+  (log:flush! logger))
+```
+
+Each level wrapper (`log:trace`, `log:debug`, `log:info`, `log:warn`,
+`log:error`, `log:critical`) accepts `(msg)`, `(msg payload)`,
+`(logger msg)`, or `(logger msg payload)`.
+
+| Helper                         | Purpose                                                       |
+| :----------------------------- | :------------------------------------------------------------ |
+| `log:make-logger`              | Create a named logger fanning out to one or more sinks        |
+| `log:make-stdout-sink` / `…-stderr-sink` | Coloured console sink (toggle with `'color? #f`)    |
+| `log:make-file-sink`           | Plain file sink (`'truncate? #t` for fresh files)             |
+| `log:make-rotating-sink`       | Size-rotated file (bytes per file, retained file count)       |
+| `log:make-daily-sink`          | Daily-rotated file at `(hour, minute)` local time             |
+| `log:make-port-sink` / `…-error-port-sink` | Routes through a Scheme output port (or `current-error-port`) |
+| `log:set-level!` / `log:set-global-level!` | Per-logger or process-wide threshold (`trace`…`off`) |
+| `log:set-pattern!`             | spdlog format string for the line layout                      |
+| `log:set-formatter!`           | `'human` (default) or `'json`                                 |
+| `log:flush!` / `log:flush-on!` | Manual flush, or auto-flush above a level                     |
+| `log:shutdown!`                | Drain and dispose every registered logger at exit             |
+
+> **Reference:** [`log.md`](./reference/log.md).
+
+---
+
+## 16. Time, Freeze & Finalizers
 
 `std.time` exposes `time:now-ms`, `time:monotonic-ms`, `time:sleep-ms`,
 `time:utc-parts`, `time:format-iso8601-utc`, `time:elapsed-ms` — see
@@ -704,12 +752,10 @@ beginner programs, symbolic & logic, AAD & finance, concurrency, causal
 
 ---
 
-## 27. Further Reading
+## 29. Further Reading
 
 - [`architecture.md`](../architecture.md) — pipeline overview
 - [`eta_plan.md`](../eta_plan.md) — language roadmap
 - [`next-steps.md`](../next-steps.md) — short-term work items
 - [`release-notes.md`](../release-notes.md) — version history
-- [`std_lib_tests.md`](../std_lib_tests.md) — stdlib test layout
-- [`hash_map_plan.md`](../hash_map_plan.md) — hash-map design notes
 

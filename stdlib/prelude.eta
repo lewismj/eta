@@ -38,6 +38,7 @@
   (import std.os)
   (import std.fs)
   (import std.json)
+  (import std.log)
   (import std.collections)
   (import std.logic)
   (import std.clp)
@@ -105,6 +106,32 @@
     json:read-string
     json:write
     json:write-string
+    ;; -- std.log --------------------------------------------------------
+    log:trace
+    log:debug
+    log:info
+    log:warn
+    log:error
+    log:critical
+    log:default
+    log:set-default!
+    log:get-logger
+    log:make-logger
+    log:make-stdout-sink
+    log:make-stderr-sink
+    log:make-file-sink
+    log:make-rotating-sink
+    log:make-daily-sink
+    log:make-port-sink
+    log:make-error-port-sink
+    log:set-level!
+    log:level
+    log:set-global-level!
+    log:set-pattern!
+    log:set-formatter!
+    log:flush!
+    log:flush-on!
+    log:shutdown!
     ;; ── std.collections ─────────────────────────────────────────────
     map* map2 zip-with map-indexed
     filter foldl foldr reduce

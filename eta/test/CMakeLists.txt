@@ -40,6 +40,7 @@ set(SOURCES
         src/hash_map_tests.cpp
         src/regex_tests.cpp
         src/json_tests.cpp
+        src/log_tests.cpp
         src/nng_tests.cpp
         src/clp_linear_tests.cpp
         src/clp_qp_linearize_tests.cpp
@@ -99,7 +100,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 )
 
 # Always link all runtime libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE eta_core eta_torch eta_nng eta_stats)
+target_link_libraries(${PROJECT_NAME} PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
@@ -113,6 +114,7 @@ endif()
 
 eta_copy_torch_dlls(${PROJECT_NAME})
 eta_copy_nng_dlls(${PROJECT_NAME})
+eta_copy_log_dlls(${PROJECT_NAME})
 
 # Expose session driver, interpreter helpers, DAP, and LSP headers.
 target_include_directories(${PROJECT_NAME} PRIVATE

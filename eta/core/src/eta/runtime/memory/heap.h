@@ -48,6 +48,8 @@ namespace eta::runtime::memory::heap {
         CsvReader,       ///< CSV reader handle (opaque parser state + interned columns)
         CsvWriter,       ///< CSV writer handle (opaque stream + CSV options)
         Regex,           ///< Compiled regular expression object
+        LogSink,         ///< Logging sink wrapper (spdlog sink + sink traits)
+        LogLogger,       ///< Logging logger wrapper (spdlog logger + formatter mode)
         NngSocket,       ///< nng socket (wraps NngSocketPtr from eta/nng/)
         CompoundTerm,    ///< Structured logic term: functor symbol + argument list
     };
@@ -75,6 +77,8 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(CsvReader)
         ETA_ENUM_CASE(CsvWriter)
         ETA_ENUM_CASE(Regex)
+        ETA_ENUM_CASE(LogSink)
+        ETA_ENUM_CASE(LogLogger)
         ETA_ENUM_CASE(NngSocket)
         ETA_ENUM_CASE(CompoundTerm)
     ETA_ENUM_TO_STRING_END("Unknown")

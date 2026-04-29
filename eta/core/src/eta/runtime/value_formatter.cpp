@@ -309,6 +309,19 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return out;
         }
 
+        /// Log sink
+        if (heap.try_get_as<ObjectKind::LogSink, types::LogSink>(id)) {
+            return "#<log-sink>";
+        }
+
+        /// Log logger
+        if (auto* logger = heap.try_get_as<ObjectKind::LogLogger, types::LogLogger>(id)) {
+            if (!logger->name.empty()) {
+                return "#<logger:" + logger->name + ">";
+            }
+            return "#<logger>";
+        }
+
         /// Fact table
         if (auto* ft = heap.try_get_as<ObjectKind::FactTable, types::FactTable>(id)) {
             return "#<fact-table " + std::to_string(ft->col_names.size())
