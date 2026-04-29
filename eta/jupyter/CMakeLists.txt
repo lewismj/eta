@@ -38,6 +38,7 @@ eta_copy_nng_dlls(eta_jupyter)
 # xeus, xeus-zmq, and libzmq are shared in the FetchContent build and must be
 # available next to eta_jupyter on Windows.
 if(WIN32)
+    # Copy in-tree FetchContent DLLs so eta_jupyter is runnable from the build tree.
     foreach(_dep IN ITEMS xeus xeus-zmq libzmq)
         if(TARGET ${_dep})
             add_custom_command(TARGET eta_jupyter POST_BUILD
@@ -48,6 +49,16 @@ if(WIN32)
             )
         endif()
     endforeach()
+    # libuv is a direct runtime dependency of xeus-zmq 4.x. It arrives via
+    # find_package (vcpkg / system) so it is an imported target, not in-tree.
+    if(TARGET LibUV::LibUV)
+        add_custom_command(TARGET eta_jupyter POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:LibUV::LibUV>
+                $<TARGET_FILE_DIR:eta_jupyter>
+            COMMENT "Copying libuv (uv.dll) to eta_jupyter output dir"
+        )
+    endif()
 endif()
 
 if(NOT MSVC)
@@ -56,22 +67,29 @@ endif()
 
 install(TARGETS eta_jupyter RUNTIME DESTINATION bin)
 
-# ── Bundle xeus / xeus-zmq / libzmq runtime libs into the install tree ──────
+# ── Bundle xeus / xeus-zmq / libzmq / libuv runtime libs into the install tree ─
 #
-# xeus / xeus-zmq / libzmq are linked dynamically by eta_jupyter and must be
+# These libraries are linked dynamically by eta_jupyter and must be
 # co-located with the executable in the release bundle, otherwise launching
 # the kernel fails with:
 #   * Windows : STATUS_DLL_NOT_FOUND (exit 0xC0000135 / -1073741515)
 #   * Linux   : "error while loading shared libraries: libxeus.so.N"
 #   * macOS   : "dyld: Library not loaded: @rpath/libxeus.N.dylib"
 #
+# Required DLLs (Windows):
+#   libxeus.dll / xeus.dll        -- xeus core
+#   libxeus-zmq.dll / xeus-zmq.dll-- xeus ZMQ transport
+#   libzmq-*.dll                  -- ZeroMQ
+#   uv.dll                        -- libuv (direct dep of xeus-zmq 4.x)
+#   OpenSSL::Crypto (optional)    -- if libzmq built with CURVE
+#
 # This must work for two build paths:
 #   1. FetchContent build (cmake/FetchXeus.cmake) -> non-imported targets
 #      named  xeus / xeus-zmq / libzmq.  xeus's own install rules are
 #      suppressed (CMAKE_SKIP_INSTALL_RULES) so we copy build artefacts.
 #   2. find_package(... CONFIG) build (vcpkg / conda / system) -> imported
-#      targets named  xeus::xeus / xeus::xeus-zmq.  libzmq usually has no
-#      CMake target at all and must be located on disk.
+#      targets named  xeus::xeus / xeus::xeus-zmq.  libzmq and libuv have
+#      no CMake target and must be located on disk.
 
 # Resolve a runtime library to *either* a CMake target name (when the dep
 # was built in-tree via FetchContent and we want the install rule to use a
@@ -124,6 +142,15 @@ if(TARGET OpenSSL::Crypto)
     _eta_resolve_runtime_lib(_eta_openssl_crypto_tgt _eta_openssl_crypto_lib OpenSSL::Crypto)
 endif()
 
+# libuv (uv.dll) is a direct runtime dependency of xeus-zmq 4.x.
+# It is found by xeus-zmq's own find_package(LibUV) and arrives here as an
+# imported target.  Without it, eta_jupyter fails with STATUS_DLL_NOT_FOUND.
+set(_eta_libuv_tgt "")
+set(_eta_libuv_lib "")
+if(TARGET LibUV::LibUV)
+    _eta_resolve_runtime_lib(_eta_libuv_tgt _eta_libuv_lib LibUV::LibUV)
+endif()
+
 if(WIN32)
     # Windows: DLLs go next to the .exe; loader searches the application
     # directory before PATH so no further configuration is required.
@@ -133,7 +160,8 @@ if(WIN32)
             "${_eta_xeus_tgt}"
             "${_eta_xeus_zmq_tgt}"
             "${_eta_libzmq_tgt}"
-            "${_eta_openssl_crypto_tgt}")
+            "${_eta_openssl_crypto_tgt}"
+            "${_eta_libuv_tgt}")
         if(_t)
             install(FILES "$<TARGET_FILE:${_t}>" DESTINATION bin)
         endif()
@@ -146,7 +174,8 @@ if(WIN32)
             "${_eta_xeus_lib}"
             "${_eta_xeus_zmq_lib}"
             "${_eta_libzmq_lib}"
-            "${_eta_openssl_crypto_lib}")
+            "${_eta_openssl_crypto_lib}"
+            "${_eta_libuv_lib}")
         if(_lib AND _lib MATCHES "\\.dll$")
             install(FILES "${_lib}" DESTINATION bin)
         endif()
@@ -176,6 +205,22 @@ if(WIN32)
         endforeach()
     endif()
 
+    # 4. libuv disk-search fallback for vcpkg / conda (no CMake target).
+    #    uv.dll is a direct runtime dependency of xeus-zmq 4.x.
+    if(_eta_xeus_lib AND NOT _eta_libuv_lib AND NOT _eta_libuv_tgt)
+        get_filename_component(_eta_xeus_dir "${_eta_xeus_lib}" DIRECTORY)
+        set(_eta_uv_search_dirs "${_eta_xeus_dir}")
+        if(EXISTS "${_eta_xeus_dir}/../bin")
+            list(APPEND _eta_uv_search_dirs "${_eta_xeus_dir}/../bin")
+        endif()
+        foreach(_dir IN LISTS _eta_uv_search_dirs)
+            file(GLOB _eta_uv_dlls "${_dir}/uv.dll" "${_dir}/libuv*.dll")
+            foreach(_d IN LISTS _eta_uv_dlls)
+                install(FILES "${_d}" DESTINATION bin)
+            endforeach()
+        endforeach()
+    endif()
+
 elseif(APPLE)
     # macOS: ship .dylib siblings into lib/, set rpath relative to executable.
     set_property(TARGET eta_jupyter APPEND PROPERTY
@@ -186,7 +231,8 @@ elseif(APPLE)
             "${_eta_xeus_tgt}"
             "${_eta_xeus_zmq_tgt}"
             "${_eta_libzmq_tgt}"
-            "${_eta_openssl_crypto_tgt}")
+            "${_eta_openssl_crypto_tgt}"
+            "${_eta_libuv_tgt}")
         if(_t)
             install(FILES "$<TARGET_FILE:${_t}>" DESTINATION lib)
             install(FILES "$<TARGET_SONAME_FILE:${_t}>" DESTINATION lib OPTIONAL)
@@ -198,7 +244,8 @@ elseif(APPLE)
             "${_eta_xeus_lib}"
             "${_eta_xeus_zmq_lib}"
             "${_eta_libzmq_lib}"
-            "${_eta_openssl_crypto_lib}")
+            "${_eta_openssl_crypto_lib}"
+            "${_eta_libuv_lib}")
         if(_lib)
             get_filename_component(_dir  "${_lib}" DIRECTORY)
             get_filename_component(_name "${_lib}" NAME_WE)
@@ -223,7 +270,8 @@ elseif(UNIX)
             "${_eta_xeus_tgt}"
             "${_eta_xeus_zmq_tgt}"
             "${_eta_libzmq_tgt}"
-            "${_eta_openssl_crypto_tgt}")
+            "${_eta_openssl_crypto_tgt}"
+            "${_eta_libuv_tgt}")
         if(_t)
             install(FILES "$<TARGET_FILE:${_t}>" DESTINATION lib)
             install(FILES "$<TARGET_SONAME_FILE:${_t}>" DESTINATION lib OPTIONAL)
@@ -235,7 +283,8 @@ elseif(UNIX)
             "${_eta_xeus_lib}"
             "${_eta_xeus_zmq_lib}"
             "${_eta_libzmq_lib}"
-            "${_eta_openssl_crypto_lib}")
+            "${_eta_openssl_crypto_lib}"
+            "${_eta_libuv_lib}")
         if(_lib)
             get_filename_component(_dir  "${_lib}" DIRECTORY)
             get_filename_component(_name "${_lib}" NAME_WE)

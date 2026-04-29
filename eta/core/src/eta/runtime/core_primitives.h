@@ -29,6 +29,7 @@
 #include "eta/runtime/util/siphash.h"
 #include "eta/runtime/csv_builtins.h"
 #include "eta/runtime/regex_builtins.h"
+#include "eta/runtime/json_builtins.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/types/logic_var.h"
 #include "eta/runtime/types/tape.h"
@@ -2017,6 +2018,11 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
      * Regex primitives: %regex-*
      */
     register_regex_builtins(env, heap, intern_table, vm);
+
+    /**
+     * JSON primitives: %json-*
+     */
+    register_json_builtins(env, heap, intern_table);
 
     env.register_builtin("char->integer", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::Char)

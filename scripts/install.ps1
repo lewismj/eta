@@ -165,18 +165,21 @@ if (Test-Path $EtaJupyterExe) {
     # 0xC0000135) when eta_jupyter is launched, which is otherwise opaque.
     # The DLL names vary by build: MSVC FetchContent produces libxeus.dll /
     # libxeus-zmq.dll; vcpkg / conda produce xeus.dll / xeus-zmq.dll.
+    # uv.dll (libuv) is a direct runtime dependency of xeus-zmq 4.x.
     $HasXeus    = (Test-Path (Join-Path $BinDir "xeus.dll")) -or
                   (Test-Path (Join-Path $BinDir "libxeus.dll"))
     $HasXeusZmq = (Test-Path (Join-Path $BinDir "xeus-zmq.dll")) -or
                   (Test-Path (Join-Path $BinDir "libxeus-zmq.dll"))
     $HasAnyZmq  = (Test-Path (Join-Path $BinDir "libzmq.dll")) -or
                   [bool](Get-ChildItem -Path $BinDir -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+    $HasUv      = (Test-Path (Join-Path $BinDir "uv.dll"))
 
-    if (-not ($HasXeus -and $HasXeusZmq -and $HasAnyZmq)) {
+    if (-not ($HasXeus -and $HasXeusZmq -and $HasAnyZmq -and $HasUv)) {
         Write-Host "  [WARN] Missing xeus runtime DLLs in $BinDir :" -ForegroundColor Yellow
         if (-not $HasXeus)    { Write-Host "         - xeus.dll / libxeus.dll" }
         if (-not $HasXeusZmq) { Write-Host "         - xeus-zmq.dll / libxeus-zmq.dll" }
         if (-not $HasAnyZmq)  { Write-Host "         - libzmq*.dll" }
+        if (-not $HasUv)      { Write-Host "         - uv.dll  (libuv -- required by xeus-zmq 4.x)" }
         Write-Host "         eta_jupyter will fail to start with STATUS_DLL_NOT_FOUND."
         Write-Host "         Rebuild from source (this bundle is missing required runtime DLLs)."
     }
@@ -192,7 +195,8 @@ if (Test-Path $EtaJupyterExe) {
         Write-Host "  [WARN] Kernel auto-install failed: $($_.Exception.Message)"
         if ($LASTEXITCODE -eq -1073741515) {
             Write-Host "         Exit code -1073741515 (0xC0000135) = STATUS_DLL_NOT_FOUND." -ForegroundColor Yellow
-            Write-Host "         eta_jupyter.exe is missing one or more required DLLs (xeus / libxeus / xeus-zmq / libxeus-zmq / libzmq)."
+            Write-Host "         eta_jupyter.exe is missing one or more required DLLs."
+            Write-Host "         Required: xeus / libxeus, xeus-zmq / libxeus-zmq, libzmq*.dll, uv.dll"
         }
         Write-Host "    Run manually: `"$EtaJupyterExe`" --install --user"
     }

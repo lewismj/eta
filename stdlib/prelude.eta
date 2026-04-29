@@ -18,6 +18,7 @@
 ;;;   std.io          - no dependencies
 ;;;   std.os          - no dependencies
 ;;;   std.fs          - no dependencies
+;;;   std.json        - no dependencies
 ;;;   std.collections - no dependencies
 ;;;   std.logic       - std.collections
 ;;;   std.clp         - std.collections, std.logic
@@ -36,6 +37,7 @@
   (import std.io)
   (import std.os)
   (import std.fs)
+  (import std.json)
   (import std.collections)
   (import std.logic)
   (import std.clp)
@@ -98,6 +100,11 @@
     fs:temp-directory
     fs:file-modification-time
     fs:file-size
+    ;; -- std.json -------------------------------------------------------
+    json:read
+    json:read-string
+    json:write
+    json:write-string
     ;; ── std.collections ─────────────────────────────────────────────
     map* map2 zip-with map-indexed
     filter foldl foldr reduce

@@ -29,11 +29,12 @@ The remaining roadmap splits into three buckets:
    per-thread DAP routing.
 3. **Hosted-platform layer** *(new phase, see end of doc)* — the
    functionality a script needs from its host OS. Hash maps, sets,
-   `getenv`, argv, filesystem are now shipped (`std.hashmap`,
-   `std.hashset`, `std.os`, `std.fs`); the remaining gaps are atoms,
-   subprocess, JSON, structured logging, HTTP, FFI, and a condition
-   system. This is the largest *capability* gap between Eta and a
-   comparable hosted language (Clojure, Racket, Common Lisp, Chez).
+   `getenv`, argv, filesystem and JSON are now shipped (`std.hashmap`,
+   `std.hashset`, `std.os`, `std.fs`, `std.json`); the remaining gaps
+   are atoms, subprocess, structured logging, HTTP, FFI, and a
+   condition system. This is the largest *capability* gap between Eta
+   and a comparable hosted language (Clojure, Racket, Common Lisp,
+   Chez).
 
 ---
 
@@ -293,7 +294,7 @@ a delivery order.
 | **argv / command-line** | `*command-line-args*` | `os:command-line-arguments` (`std.os`) | Closed |
 | **Filesystem ops** | `clojure.java.io` | full `std.fs` (`fs:file-exists?`, `fs:directory?`, `fs:delete-file`, `fs:make-directory`, `fs:list-directory`, `fs:path-join`, `fs:path-split`, `fs:path-normalize`, `fs:temp-file`, `fs:temp-directory`, `fs:file-modification-time`, `fs:file-size`) | Closed |
 | **Subprocess / `exec`** | `clojure.java.shell/sh` | none | Big — no way to call `git`, `python`, etc. |
-| **JSON parser / serialiser** | `clojure.data.json`, `cheshire` | none | Big — every config / API integration needs this |
+| **JSON parser / serialiser** | `clojure.data.json`, `cheshire` | `json:read` / `json:read-string` / `json:write` / `json:write-string` (`std.json`, RFC 8259, hash-map / vector decode, optional integer-exact mode) | Closed |
 | **`format` / `printf`** | `(format "%.3f" x)` | string ports + `display` | Medium — verbose for numeric reports |
 | **HTTP client** | `clj-http`, `hato` | nng raw sockets only | Medium |
 | **HTTP server** | `ring` | nng REQ/REP only | Medium |
@@ -368,11 +369,13 @@ Hash map and hash set are now shipped. The remaining H2 gap is Atom.
 
 The "make it usable for real work" layer, on top of H1+H2.
 
-- **`std.json`** — `json:read` (port → value), `json:read-string`,
-  `json:write`, `json:write-string`. RFC 8259, decodes objects to
-  hash maps, arrays to vectors, numbers to flonums (with an option
-  to keep integers exact). Pure-C++ implementation; nlohmann_json is
-  already a dependency via xeus.
+- **`std.json`** — **shipped April 2026.** `json:read` (port → value),
+  `json:read-string`, `json:write`, `json:write-string`. RFC 8259
+  via a hand-written in-tree codec (`eta/core/src/eta/util/json.h`,
+  no third-party dependency); decodes objects to hash maps, arrays
+  to vectors, numbers to flonums. Pass `'keep-integers-exact? #t` to
+  preserve integer-typed JSON numbers as fixnums. Auto-imported by
+  `std.prelude`. See [`json.md`](guide/reference/json.md).
 - **`std.format`** — `format` à la SLIB / Common Lisp tiny subset:
   `~a` (display), `~s` (write), `~d` (decimal), `~f` (float with
   precision), `~e` (scientific), `~%` (newline), `~~`. Useful for
@@ -433,6 +436,7 @@ useful but each is also pure quality-of-life on top of H1–H4.
 | H1 already shipped: `std.os` + `std.fs` (env, argv, cwd, exit, paths, temp, stat). Subprocess (`std.process`) is the remaining slice. |
 | H2 Hashmap / Set / Atom | 3 | Medium (GC barrier on Atom; HAMT later) | every dict-shaped workload |
 | H3 JSON / Format / Log | 2 | Low | configs, observability, REST consumers |
+| H3 already shipped: `std.json` (RFC 8259, hash-map / vector decode, integer-exact mode). `std.format` and `std.log` remain. |
 | H4 HTTP / FFI | 3 | Medium (HTTP TLS; FFI safety) | webhook receivers, telemetry, third-party C libs |
 | H5 Conditions / Protocols / Transducers | 3 | Medium (restart frames touch the VM stack) | mature Lisp surface |
 | **Total** | **~13 weeks** | | |
@@ -451,6 +455,14 @@ useful but each is also pure quality-of-life on top of H1–H4.
 
 ## Recently Completed (was on this list, now shipped)
 
+- ✅ Hosted-platform Phase H3 (slice 1) — `std.json`: native JSON
+  reader / writer implemented in-tree (`eta/core/src/eta/util/json.h`,
+  no third-party dependency), hash-map / vector decode with optional
+  integer-exact mode, port and string variants
+  (`json:read`, `json:read-string`, `json:write`, `json:write-string`).
+  Auto-imported by `std.prelude`. Tests in
+  `stdlib/tests/json.test.eta`; reference at
+  [`json.md`](guide/reference/json.md).
 - ✅ Hosted-platform Phase H1 — Filesystem + OS primitives: native
   builtins (`file-exists?`, `directory?`, `delete-file`,
   `make-directory`, `list-directory`, `path-join`, `path-split`,

@@ -699,6 +699,29 @@ Native CSV API backed by `vincentlaucsb/csv-parser`.
 
 ---
 
+### `std.json` — Native JSON Reader/Writer
+
+```scheme
+(import std.json)
+```
+
+RFC 8259 JSON codec implemented in-tree (`eta/core/src/eta/util/json.h`,
+no third-party dependency). Objects decode to hash
+maps, arrays to vectors, numbers default to flonums (with an opt-in
+`'keep-integers-exact?` flag for integer fidelity). Auto-imported by
+`std.prelude`.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `json:read` | `(port [opts ...]) -> value` | Read one JSON document from an input port |
+| `json:read-string` | `(string [opts ...]) -> value` | Parse a JSON string |
+| `json:write` | `(value [port]) -> '()` | Write JSON to a port (default: current-output-port) |
+| `json:write-string` | `(value) -> string` | Serialise to a string |
+
+> **📖 Full documentation:** [JSON](json.md)
+
+---
+
 ### `std.prelude` — Convenience Re-Export
 
 ```scheme
@@ -706,9 +729,9 @@ Native CSV API backed by `vincentlaucsb/csv-parser`.
 ```
 
 Re-exports public names from `std.core`, `std.math`, `std.aad`, `std.io`,
-`std.os`, `std.fs`, `std.collections`, `std.logic`, `std.clp`,
-`std.causal`, `std.fact_table`, `std.db`, `std.stats`, `std.time`, and
-`std.net` in a single import for convenience.
+`std.os`, `std.fs`, `std.json`, `std.collections`, `std.logic`,
+`std.clp`, `std.causal`, `std.fact_table`, `std.db`, `std.stats`,
+`std.time`, and `std.net` in a single import for convenience.
 
 The prelude intentionally does not re-export `std.aad`'s `grad` symbol to avoid
 name conflicts with example-local gradient drivers.

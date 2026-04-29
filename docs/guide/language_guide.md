@@ -360,7 +360,38 @@ Built-ins: `display`, `write`, `newline`, `write-string`, `read-char`,
   (lambda () (println "captured")))
 ```
 
-CSV via [`std.csv`](./reference/csv.md), Datalog via [`std.db`](./reference/db.md).
+CSV via [`std.csv`](./reference/csv.md), Datalog via [`std.db`](./reference/db.md),
+JSON via [`std.json`](./reference/json.md).
+
+### JSON (`std.json`)
+
+`std.json` is a thin wrapper over the native JSON codec implemented
+in `eta/core/src/eta/util/json.h` (a hand-written, RFC 8259 parser and
+serialiser with no third-party dependency). Objects decode to hash
+maps, arrays to vectors, numbers default to flonums (pass
+`'keep-integers-exact? #t` to keep integer-typed numbers as fixnums),
+`true`/`false` to `#t`/`#f`, and `null` to `'()`.
+
+```scheme
+(import std.json std.io)
+(define cfg (json:read-string "{\"name\":\"eta\",\"n\":7}"
+                              'keep-integers-exact? #t))
+(println (hash-map-ref cfg "name"))     ; "eta"
+(println (hash-map-ref cfg "n"))        ; 7
+
+(println (json:write-string (hash-map "ok" #t "xs" #(1 2 3))))
+;; => {"ok":true,"xs":[1,2,3]}
+```
+
+| Function              | Signature                                  | Notes                                        |
+| :-------------------- | :----------------------------------------- | :------------------------------------------- |
+| `json:read`           | `(port [opts ...]) -> value`               | Reads from any input port.                   |
+| `json:read-string`    | `(string [opts ...]) -> value`             | Convenience for in-memory text.              |
+| `json:write`          | `(value [port]) -> '()`                    | Defaults to `(current-output-port)`.         |
+| `json:write-string`   | `(value) -> string`                        | Returns the serialised form.                 |
+
+Options are alternating keyword/value pairs; the only key recognised
+in v1 is `'keep-integers-exact?`.
 
 ### Filesystem (`std.fs`)
 

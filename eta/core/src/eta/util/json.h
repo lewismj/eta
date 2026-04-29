@@ -161,6 +161,9 @@ public:
         skip_ws();
         auto v = parse_value();
         skip_ws();
+        if (pos_ != input_.size()) {
+            error("trailing characters after JSON value");
+        }
         return v;
     }
 
@@ -185,6 +188,49 @@ private:
         skip_ws();
         if (advance() != c)
             error(std::string("expected '") + c + "'");
+    }
+
+    static bool is_hex_digit(char c) {
+        return (c >= '0' && c <= '9')
+            || (c >= 'a' && c <= 'f')
+            || (c >= 'A' && c <= 'F');
+    }
+
+    char32_t parse_hex4() {
+        if (pos_ + 4 > input_.size()) error("incomplete unicode escape");
+        char32_t code = 0;
+        for (int i = 0; i < 4; ++i) {
+            const char c = input_[pos_ + i];
+            if (!is_hex_digit(c)) error("invalid unicode escape");
+            code <<= 4;
+            if (c >= '0' && c <= '9') code |= static_cast<char32_t>(c - '0');
+            else if (c >= 'a' && c <= 'f') code |= static_cast<char32_t>(10 + (c - 'a'));
+            else code |= static_cast<char32_t>(10 + (c - 'A'));
+        }
+        pos_ += 4;
+        return code;
+    }
+
+    static void append_utf8(std::string& out, const char32_t cp) {
+        if (cp <= 0x7F) {
+            out.push_back(static_cast<char>(cp));
+            return;
+        }
+        if (cp <= 0x7FF) {
+            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            return;
+        }
+        if (cp <= 0xFFFF) {
+            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            return;
+        }
+        out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
     }
 
     Value parse_value() {
@@ -219,25 +265,30 @@ private:
                     case 'r':  result += '\r'; break;
                     case 't':  result += '\t'; break;
                     case 'u': {
-                        if (pos_ + 4 > input_.size()) error("incomplete unicode escape");
-                        std::string hex(input_.substr(pos_, 4));
-                        pos_ += 4;
-                        auto cp = static_cast<char32_t>(std::stoul(hex, nullptr, 16));
-                        if (cp < 0x80) {
-                            result += static_cast<char>(cp);
-                        } else if (cp < 0x800) {
-                            result += static_cast<char>(0xC0 | (cp >> 6));
-                            result += static_cast<char>(0x80 | (cp & 0x3F));
-                        } else {
-                            result += static_cast<char>(0xE0 | (cp >> 12));
-                            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-                            result += static_cast<char>(0x80 | (cp & 0x3F));
+                        char32_t cp = parse_hex4();
+                        if (cp >= 0xD800 && cp <= 0xDBFF) {
+                            if (pos_ + 6 > input_.size() || input_[pos_] != '\\' || input_[pos_ + 1] != 'u') {
+                                error("incomplete unicode surrogate pair");
+                            }
+                            pos_ += 2;
+                            const char32_t lo = parse_hex4();
+                            if (lo < 0xDC00 || lo > 0xDFFF) {
+                                error("invalid unicode surrogate pair");
+                            }
+                            cp = static_cast<char32_t>(
+                                0x10000 + (((cp - 0xD800) << 10) | (lo - 0xDC00)));
+                        } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                            error("invalid unicode surrogate pair");
                         }
+                        append_utf8(result, cp);
                         break;
                     }
-                    default: result += e; break;
+                    default: error("invalid escape sequence");
                 }
             } else {
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    error("unescaped control character in string");
+                }
                 result += c;
             }
         }
@@ -246,23 +297,43 @@ private:
 
     Value parse_number() {
         std::size_t start = pos_;
-        if (peek() == '-') advance();
-        while (pos_ < input_.size() && input_[pos_] >= '0' && input_[pos_] <= '9') advance();
+        if (peek() == '-') {
+            advance();
+            if (!(peek() >= '0' && peek() <= '9')) error("invalid number");
+        }
+
+        if (peek() == '0') {
+            advance();
+            if (peek() >= '0' && peek() <= '9') {
+                error("leading zeros are not allowed");
+            }
+        } else if (peek() >= '1' && peek() <= '9') {
+            while (peek() >= '0' && peek() <= '9') advance();
+        } else {
+            error("invalid number");
+        }
+
         bool is_float = false;
         if (peek() == '.') {
             is_float = true;
             advance();
-            while (pos_ < input_.size() && input_[pos_] >= '0' && input_[pos_] <= '9') advance();
+            if (!(peek() >= '0' && peek() <= '9')) error("invalid number");
+            while (peek() >= '0' && peek() <= '9') advance();
         }
         if (peek() == 'e' || peek() == 'E') {
             is_float = true;
             advance();
             if (peek() == '+' || peek() == '-') advance();
-            while (pos_ < input_.size() && input_[pos_] >= '0' && input_[pos_] <= '9') advance();
+            if (!(peek() >= '0' && peek() <= '9')) error("invalid number");
+            while (peek() >= '0' && peek() <= '9') advance();
         }
-        std::string num_str(input_.substr(start, pos_ - start));
-        if (is_float) return Value(std::stod(num_str));
-        return Value(static_cast<int64_t>(std::stoll(num_str)));
+        const std::string num_str(input_.substr(start, pos_ - start));
+        try {
+            if (is_float) return Value(std::stod(num_str));
+            return Value(static_cast<int64_t>(std::stoll(num_str)));
+        } catch (const std::exception&) {
+            error("invalid number");
+        }
     }
 
     Value parse_bool() {

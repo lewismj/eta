@@ -1,0 +1,63 @@
+;;; stdlib/tests/json.test.eta - Tests for std.json wrappers.
+
+(module json.tests
+  (import std.test std.json)
+  (begin
+
+    (define test-read-string-default
+      (make-test "json:read-string defaults numbers to flonums"
+        (lambda ()
+          (let* ((obj (json:read-string "{\"a\":1,\"b\":[2,3.5],\"ok\":true,\"z\":null}"))
+                 (arr (hash-map-ref obj "b")))
+            (assert-true (hash-map? obj))
+            (assert-approx-equal 1.0 (hash-map-ref obj "a") 1e-12)
+            (assert-true (vector? arr))
+            (assert-approx-equal 2.0 (vector-ref arr 0) 1e-12)
+            (assert-approx-equal 3.5 (vector-ref arr 1) 1e-12)
+            (assert-equal #t (hash-map-ref obj "ok"))
+            (assert-equal '() (hash-map-ref obj "z"))))))
+
+    (define test-read-string-keep-exact
+      (make-test "json:read-string keep-integers-exact? preserves integers"
+        (lambda ()
+          (let* ((obj (json:read-string "{\"x\":1,\"arr\":[2,3.25]}" 'keep-integers-exact? #t))
+                 (arr (hash-map-ref obj "arr")))
+            (assert-equal 1 (hash-map-ref obj "x"))
+            (assert-equal 2 (vector-ref arr 0))
+            (assert-approx-equal 3.25 (vector-ref arr 1) 1e-12)))))
+
+    (define test-read-from-port
+      (make-test "json:read reads from a port"
+        (lambda ()
+          (let* ((p (open-input-string "{\"msg\":\"ok\",\"n\":7}"))
+                 (obj (json:read p 'keep-integers-exact? #t)))
+            (assert-equal "ok" (hash-map-ref obj "msg"))
+            (assert-equal 7 (hash-map-ref obj "n"))))))
+
+    (define test-write-and-roundtrip
+      (make-test "json:write-string round-trips hash-map content"
+        (lambda ()
+          (let* ((src (hash-map "name" "eta" 'count 2))
+                 (text (json:write-string src))
+                 (dst (json:read-string text 'keep-integers-exact? #t)))
+            (assert-equal "eta" (hash-map-ref dst "name"))
+            (assert-equal 2 (hash-map-ref dst "count"))))))
+
+    (define test-write-to-port
+      (make-test "json:write writes to the provided output port"
+        (lambda ()
+          (let ((p (open-output-string)))
+            (json:write (hash-map "a" 1) p)
+            (assert-equal "{\"a\":1}" (get-output-string p))))))
+
+    (define suite
+      (make-group "std.json"
+        (list
+          test-read-string-default
+          test-read-string-keep-exact
+          test-read-from-port
+          test-write-and-roundtrip
+          test-write-to-port)))
+
+    (print-tap (run suite))))
+

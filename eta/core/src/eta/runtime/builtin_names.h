@@ -163,6 +163,12 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("%regex-cache-stats", 0, false);
     r("%regex-cache-reset!", 0, false);
 
+    /// JSON operations
+    r("%json-read",         2, false);
+    r("%json-read-string",  2, false);
+    r("%json-write",        2, false);
+    r("%json-write-string", 1, false);
+
     /// Char operations
     r("char->integer",   1, false);
     r("integer->char",   1, false);

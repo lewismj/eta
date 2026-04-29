@@ -4,6 +4,50 @@
 
 ---
 
+## 2026-04-29 (later)
+
+### JSON (`std.json`)
+
+The first slice of hosted-platform Phase H3 ships: a native JSON
+codec implemented in-tree (`eta/core/src/eta/util/json.h`), with no
+third-party dependency.
+
+Highlights:
+
+- New native builtins: `%json-read`, `%json-read-string`,
+  `%json-write`, `%json-write-string`.
+- New stdlib module `std.json` with the user-facing API:
+  - `json:read` — read one JSON document from any input port.
+  - `json:read-string` — parse a JSON string.
+  - `json:write` — write a value as JSON to a port (defaults to
+    `(current-output-port)`).
+  - `json:write-string` — serialise to a string.
+- Reader option `'keep-integers-exact?` (default `#f`) preserves
+  integer-typed JSON numbers as fixnums; otherwise all numbers
+  decode to flonums for predictable arithmetic.
+- Type mapping: object → hash map, array → vector, `true`/`false` →
+  `#t`/`#f`, `null` → `'()`. Decoded objects use the same `HashMap`
+  runtime kind as `std.hashmap`, so all `hash-map-*` builtins apply
+  without conversion.
+- `std.json` is auto-imported by `std.prelude`.
+- New stdlib tests in `stdlib/tests/json.test.eta` covering
+  default and integer-exact decoding, port-based reads, and a
+  hash-map round trip.
+
+Documentation updates:
+
+- New reference page [docs/guide/reference/json.md](guide/reference/json.md).
+- [docs/guide/language_guide.md](guide/language_guide.md) — section 13
+  ("I/O, Filesystem & OS") gains a JSON subsection alongside the
+  filesystem / OS coverage.
+- [docs/guide/reference/modules.md](guide/reference/modules.md) — new
+  `std.json` module entry; prelude re-export list updated.
+- [docs/next-steps.md](next-steps.md) — Phase H3 capability matrix
+  flipped to "Closed" for JSON; `std.format` and `std.log` remain
+  as the unfinished H3 slices.
+
+---
+
 ## 2026-04-29
 
 ### Filesystem & OS Primitives (`std.fs`, `std.os`)

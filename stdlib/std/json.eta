@@ -1,0 +1,57 @@
+;;; std/json.eta - JSON helpers backed by %json-* runtime primitives.
+
+(module std.json
+  (export
+    json:read
+    json:read-string
+    json:write
+    json:write-string)
+  (begin
+
+    (defun json:strip-leading-colon (s)
+      (if (and (> (string-length s) 0)
+               (eq? (string-ref s 0) #\:))
+          (substring s 1 (string-length s))
+          s))
+
+    (defun json:normalize-opt-key (k)
+      (cond
+        ((symbol? k) (string->symbol (json:strip-leading-colon (symbol->string k))))
+        ((string? k) (string->symbol (json:strip-leading-colon k)))
+        (#t (error "json: option key must be a symbol or string"))))
+
+    (defun json:boolean? (x)
+      (or (eq? x #t) (eq? x #f)))
+
+    (defun json:read-options->keep-exact (opts)
+      (letrec ((loop (lambda (xs keep)
+                       (if (null? xs)
+                           keep
+                           (if (null? (cdr xs))
+                               (error "json: options must be key/value pairs")
+                               (let ((key (json:normalize-opt-key (car xs)))
+                                     (value (car (cdr xs))))
+                                 (if (eq? key 'keep-integers-exact?)
+                                     (if (json:boolean? value)
+                                         (loop (cdr (cdr xs)) value)
+                                         (error "json: keep-integers-exact? must be #t or #f"))
+                                     (error "json: unknown option key"))))))))
+        (loop opts #f)))
+
+    (defun json:read (port . opts)
+      (%json-read port (json:read-options->keep-exact opts)))
+
+    (defun json:read-string (str . opts)
+      (%json-read-string str (json:read-options->keep-exact opts)))
+
+    (defun json:write (value . rest)
+      (if (and (pair? rest) (pair? (cdr rest)))
+          (error "json:write: expected value and optional port")
+          (let ((port (if (null? rest) (current-output-port) (car rest))))
+            (%json-write value port))))
+
+    (defun json:write-string (value)
+      (%json-write-string value))
+
+  ))
+

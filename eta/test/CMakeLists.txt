@@ -39,6 +39,7 @@ set(SOURCES
         src/csv_fact_table_tests.cpp
         src/hash_map_tests.cpp
         src/regex_tests.cpp
+        src/json_tests.cpp
         src/nng_tests.cpp
         src/clp_linear_tests.cpp
         src/clp_qp_linearize_tests.cpp
