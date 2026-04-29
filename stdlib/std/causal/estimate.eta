@@ -1,0 +1,275 @@
+;;; std/causal/estimate.eta -- Causal effect estimation backends.
+;;;
+;;; This module provides a pragmatic M9a slice:
+;;;   - stratified propensity scores
+;;;   - g-formula ATE
+;;;   - IPW ATE
+;;;   - AIPW ATE
+;;;   - bootstrap confidence intervals
+;;;
+;;; Input data format: list of observations, each an alist:
+;;;   '((x . 1) (z . 0) (y . 2.3) ...)
+
+(module std.causal.estimate
+  (import std.core)
+  (import std.collections)
+  (import std.stats)
+  (import std.time)
+  (export
+    do:ate
+    do:ate-ipw
+    do:ate-gformula
+    do:ate-aipw
+    do:bootstrap-ci
+    do:propensity-score)
+  (begin
+
+    ;; -- Public API --------------------------------------------------------
+
+    ;; Default ATE estimator (AIPW).
+    (defun do:ate (data y x z)
+      (do:ate-aipw data y x z))
+
+    ;; G-formula ATE using nonparametric stratified outcome means.
+    ;; Assumes binary treatment X in {0,1}.
+    (defun do:ate-gformula (data y x z)
+      (let* ((stats (%stratum-stats data y x z))
+             (n (length data)))
+        (if (= n 0)
+            0.0
+            (foldl (lambda (acc s)
+                     (let* ((n-z (%stats-n s))
+                            (p-z (/ (* 1.0 n-z) n))
+                            (mu1 (%stats-mu1 s))
+                            (mu0 (%stats-mu0 s)))
+                       (+ acc (* p-z (- mu1 mu0)))))
+                   0.0
+                   stats))))
+
+    ;; IPW ATE with stratified empirical propensity scores.
+    ;; Assumes binary treatment X in {0,1}.
+    (defun do:ate-ipw (data y x z)
+      (let* ((stats (%stratum-stats data y x z))
+             (acc
+               (foldl (lambda (acc0 obs)
+                        (let* ((num1 (list-ref acc0 0))
+                               (den1 (list-ref acc0 1))
+                               (num0 (list-ref acc0 2))
+                               (den0 (list-ref acc0 3))
+                               (xv (%as-binary (%obs-get obs x) x))
+                               (yv (%obs-get obs y))
+                               (s (%find-stats stats (%z-key obs z)))
+                               (e (%clip-prob (%stats-propensity s))))
+                          (if (= xv 1.0)
+                              (list (+ num1 (/ yv e))
+                                    (+ den1 (/ 1.0 e))
+                                    num0
+                                    den0)
+                              (list num1
+                                    den1
+                                    (+ num0 (/ yv (- 1.0 e)))
+                                    (+ den0 (/ 1.0 (- 1.0 e)))))))
+                      '(0.0 0.0 0.0 0.0)
+                      data))
+             (num1 (list-ref acc 0))
+             (den1 (list-ref acc 1))
+             (num0 (list-ref acc 2))
+             (den0 (list-ref acc 3))
+             (mu1 (if (= den1 0.0) 0.0 (/ num1 den1)))
+             (mu0 (if (= den0 0.0) 0.0 (/ num0 den0))))
+        (- mu1 mu0)))
+
+    ;; AIPW ATE with stratified nuisance models.
+    ;; Assumes binary treatment X in {0,1}.
+    (defun do:ate-aipw (data y x z)
+      (let* ((n (length data))
+             (stats (%stratum-stats data y x z)))
+        (if (= n 0)
+            0.0
+            (/ (foldl (lambda (acc obs)
+                        (let* ((xv (%as-binary (%obs-get obs x) x))
+                               (yv (%obs-get obs y))
+                               (s (%find-stats stats (%z-key obs z)))
+                               (e (%clip-prob (%stats-propensity s)))
+                               (mu1 (%stats-mu1 s))
+                               (mu0 (%stats-mu0 s))
+                               (ipw1 (* xv (/ (- yv mu1) e)))
+                               (ipw0 (* (- 1.0 xv) (/ (- yv mu0) (- 1.0 e)))))
+                          (+ acc (+ (- mu1 mu0) (- ipw1 ipw0)))))
+                      0.0
+                      data)
+               n))))
+
+    ;; Stratified empirical propensity score for each observation.
+    ;; Returns probabilities aligned with input data order.
+    (defun do:propensity-score (data x z)
+      (let ((stats (%stratum-stats data 'y x z)))
+        (map* (lambda (obs)
+                (%clip-prob
+                  (%stats-propensity
+                    (%find-stats stats (%z-key obs z)))))
+              data)))
+
+    ;; Percentile bootstrap CI for any scalar estimator:
+    ;;   estimator: (lambda (sample) -> number)
+    ;;   n-boot: number of bootstrap resamples
+    ;;   alpha: tail area (e.g. 0.05 => 95% CI)
+    ;; Optional 5th argument: RNG seed (integer).
+    ;; Returns (lower . upper).
+    (defun do:bootstrap-ci (estimator data n-boot alpha . rest)
+      (if (or (<= n-boot 0) (<= alpha 0.0) (>= alpha 1.0))
+          (error "do:bootstrap-ci: expected n-boot>0 and 0<alpha<1")
+          (let* ((seed0 (if (null? rest)
+                            (time:now-ms)
+                            (car rest)))
+                 (result
+                   (let loop ((i n-boot) (seed seed0) (thetas '()))
+                     (if (= i 0)
+                         (cons (reverse thetas) seed)
+                         (let* ((sample+seed (%bootstrap-sample data seed))
+                                (sample (car sample+seed))
+                                (seed2 (cdr sample+seed))
+                                (theta (estimator sample)))
+                           (loop (- i 1) seed2 (cons theta thetas)))))))
+            (let* ((thetas (car result))
+                   (lo-p (/ alpha 2.0))
+                   (hi-p (- 1.0 (/ alpha 2.0)))
+                   (lo (stats:percentile thetas lo-p))
+                   (hi (stats:percentile thetas hi-p)))
+              (cons lo hi)))))
+
+    ;; -- Internal helpers --------------------------------------------------
+
+    (defun %obs-get (obs var)
+      (let ((p (assq var obs)))
+        (if p
+            (cdr p)
+            (error 'unknown-variable var))))
+
+    (defun %as-binary (v x-name)
+      (cond
+        ((equal? v 1) 1.0)
+        ((equal? v 0) 0.0)
+        ((eq? v #t) 1.0)
+        ((eq? v #f) 0.0)
+        (else (error 'non-binary-treatment x-name v))))
+
+    (defun %clip-prob (p)
+      (let ((eps 1e-6))
+        (cond
+          ((< p eps) eps)
+          ((> p (- 1.0 eps)) (- 1.0 eps))
+          (else p))))
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (defun %adjoin (x xs)
+      (if (%member? x xs) xs (cons x xs)))
+
+    ;; Project a z-stratum key from an observation.
+    (defun %z-key (obs z)
+      (map* (lambda (zv) (cons zv (%obs-get obs zv))) z))
+
+    (defun %key-value (key z-name)
+      (let ((p (assq z-name key)))
+        (if p
+            (cdr p)
+            #f)))
+
+    (defun %key-equal? (a b)
+      (and (= (length a) (length b))
+           (every? (lambda (kv)
+                     (equal? (cdr kv) (%key-value b (car kv))))
+                   a)))
+
+    (defun %rows-for-key (data z key)
+      (filter (lambda (obs)
+                (%key-equal? (%z-key obs z) key))
+              data))
+
+    (defun %mean-or (sum n fallback)
+      (if (= n 0) fallback (/ (* 1.0 sum) n)))
+
+    (defun %global-mean-y (data y x xval)
+      (let* ((rows (filter (lambda (obs)
+                             (= (%as-binary (%obs-get obs x) x) xval))
+                           data))
+             (n (length rows))
+             (sumy (foldl (lambda (acc obs) (+ acc (%obs-get obs y))) 0.0 rows)))
+        (%mean-or sumy n 0.0)))
+
+    ;; Stats record: (key n n1 mu1 mu0 propensity)
+    (defun %make-stats (key n n1 mu1 mu0 p)
+      (list key n n1 mu1 mu0 p))
+
+    (defun %stats-key        (s) (list-ref s 0))
+    (defun %stats-n          (s) (list-ref s 1))
+    (defun %stats-mu1        (s) (list-ref s 3))
+    (defun %stats-mu0        (s) (list-ref s 4))
+    (defun %stats-propensity (s) (list-ref s 5))
+
+    (defun %find-stats (stats key)
+      (let loop ((ss stats))
+        (if (null? ss)
+            (error "do: estimator internal error: missing z-stratum")
+            (if (%key-equal? (%stats-key (car ss)) key)
+                (car ss)
+                (loop (cdr ss))))))
+
+    ;; Build per-stratum nuisance statistics once for all estimators.
+    (defun %stratum-stats (data y x z)
+      (let* ((keys (reverse
+                     (foldl (lambda (acc obs)
+                              (%adjoin (%z-key obs z) acc))
+                            '()
+                            data)))
+             (global-mu1 (%global-mean-y data y x 1.0))
+             (global-mu0 (%global-mean-y data y x 0.0)))
+        (map* (lambda (key)
+                (let* ((rows (%rows-for-key data z key))
+                       (n (length rows))
+                       (n1 (count (lambda (obs)
+                                    (= (%as-binary (%obs-get obs x) x) 1.0))
+                                  rows))
+                       (n0 (- n n1))
+                       (sum1 (foldl (lambda (acc obs)
+                                      (if (= (%as-binary (%obs-get obs x) x) 1.0)
+                                          (+ acc (%obs-get obs y))
+                                          acc))
+                                    0.0
+                                    rows))
+                       (sum0 (foldl (lambda (acc obs)
+                                      (if (= (%as-binary (%obs-get obs x) x) 0.0)
+                                          (+ acc (%obs-get obs y))
+                                          acc))
+                                    0.0
+                                    rows))
+                       (p (if (= n 0) 0.5 (/ (* 1.0 n1) n)))
+                       (mu1 (%mean-or sum1 n1 global-mu1))
+                       (mu0 (%mean-or sum0 n0 global-mu0)))
+                  (%make-stats key n n1 mu1 mu0 p)))
+              keys)))
+
+    ;; Pseudorandom generator (Park-Miller minimal standard LCG).
+    (defun %lcg-next (seed)
+      (let ((s (if (<= seed 0) 1 seed)))
+        (modulo (* 48271 s) 2147483647)))
+
+    ;; Returns (sample . next-seed).
+    (defun %bootstrap-sample (data seed)
+      (let ((n (length data)))
+        (if (= n 0)
+            (cons '() seed)
+            (let loop ((i n) (s seed) (acc '()))
+              (if (= i 0)
+                  (cons (reverse acc) s)
+                  (let* ((s2 (%lcg-next s))
+                         (idx (modulo s2 n))
+                         (obs (list-ref data idx)))
+                    (loop (- i 1) s2 (cons obs acc))))))))
+
+  ))

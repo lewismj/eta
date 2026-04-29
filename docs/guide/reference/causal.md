@@ -93,8 +93,8 @@ Nodes and their roles:
 ### The Three Rules
 
 Pearl's do-calculus provides three rules that transform interventional
-quantities into observational ones.  `std.causal` implements each rule as
-a relational query over a DAG.
+quantities into observational ones.  Eta includes a worked implementation
+of these rules in `examples/do-calculus/do-rules.eta`.
 
 **Rule 1 — Insertion/deletion of observations:**
 
@@ -288,6 +288,30 @@ this purpose, using plain Eta arithmetic:
 ;; => sample mean of stock-return in the tech stratum
 ```
 
+### Estimation Backends (M9a)
+
+For practical ATE estimation from binary-treatment observational data:
+
+```scheme
+(import std.causal.estimate)
+```
+
+Available APIs:
+
+| Function | Description |
+| -------- | ----------- |
+| `(do:ate data y x z)` | Default ATE estimator (AIPW) |
+| `(do:ate-gformula data y x z)` | Stratified g-formula |
+| `(do:ate-ipw data y x z)` | Inverse-probability weighting |
+| `(do:ate-aipw data y x z)` | Augmented IPW (doubly robust form) |
+| `(do:propensity-score data x z)` | Stratified empirical propensity scores |
+| `(do:bootstrap-ci estimator data n-boot alpha [seed])` | Percentile bootstrap CI |
+
+Current scope:
+- Binary treatment `x` in `{0,1}` or `{#f,#t}`
+- Strata-based nuisance models (no TMLE yet)
+- Bootstrap confidence intervals available via `do:bootstrap-ci`
+
 ### End-to-End Example
 
 ```scheme
@@ -361,20 +385,18 @@ analysis:
 ## Limitations
 
 > [!IMPORTANT]
-> **Numerical estimation** currently uses a *plug-in estimator*:
-> sample means and proportions, giving an unbiased point estimate
-> but **no confidence intervals or hypothesis tests**.
+> Eta now includes two estimation layers:
 > 
-> Production-quality causal inference requires:
+> - `std.causal` plug-in adjustment (`do:estimate-effect`)
+> - `std.causal.estimate` M9a estimators (`do:ate-gformula`, `do:ate-ipw`,
+>   `do:ate-aipw`, `do:bootstrap-ci`)
 > 
-> - Bootstrap or influence-function standard errors
-> - Doubly-robust estimation (combines outcome model + propensity score)
-> - Regression-based adjustment for continuous confounders
+> Remaining gaps for full M9:
 > 
-> These methods require BLAS/LAPACK matrix operations or a library such
-> as **libtorch** or **Eigen**.  In Eta, they are implemented through the
-> native runtime integration layer so `do:estimate-effect` can use
-> vectorised regression instead of loop-based accumulators.
+> - TMLE is not yet implemented.
+> - No influence-function/analytic standard errors yet.
+> - Continuous-treatment and richer model-based nuisance estimation are
+>   still pending.
 
 ---
 
@@ -384,6 +406,7 @@ analysis:
 | Component                            | File                                                                                |
 | ------------------------------------ | ----------------------------------------------------------------------------------- |
 | DAG utilities, do-calculus engine    | [`stdlib/std/causal.eta`](../../../stdlib/std/causal.eta)                                 |
+| Estimation backends (M9a)            | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
 | Three rules implementation           | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |
 | Full identification demo             | [`examples/do-calculus/demo.eta`](../../../examples/do-calculus/demo.eta)                 |

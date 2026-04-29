@@ -535,6 +535,12 @@ separate submodule:
 (import std.causal.admg)
 ```
 
+Estimation backends (g-formula, IPW, AIPW, bootstrap CI) are available in:
+
+```scheme
+(import std.causal.estimate)
+```
+
 ---
 
 ### `std.stats` — Statistics & Linear Models

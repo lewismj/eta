@@ -1,0 +1,97 @@
+;;; stdlib/tests/causal-estimate.test.eta -- Tests for std.causal.estimate
+
+(module causal.estimate.tests
+  (import std.test std.causal.estimate std.core std.collections)
+  (begin
+
+    (defun make-row (x z y)
+      (list (cons 'x x) (cons 'z z) (cons 'y y)))
+
+    (defun repeat-row (n row)
+      (let loop ((i 0) (acc '()))
+        (if (= i n)
+            (reverse acc)
+            (loop (+ i 1) (cons row acc)))))
+
+    ;; Synthetic confounded sample:
+    ;;   Z affects both treatment assignment and outcome.
+    ;;   Structural effect of X on Y is exactly +2.
+    (defun make-confounded-data ()
+      (append
+        ;; z=0: mostly controls
+        (repeat-row 70 (make-row 0 0 0))
+        (repeat-row 30 (make-row 1 0 2))
+        ;; z=1: mostly treated
+        (repeat-row 30 (make-row 0 1 10))
+        (repeat-row 70 (make-row 1 1 12))))
+
+    (defun mean (xs)
+      (if (null? xs)
+          0.0
+          (/ (foldl (lambda (acc x) (+ acc x)) 0.0 xs)
+             (length xs))))
+
+    (defun treatment (obs) (cdr (assq 'x obs)))
+    (defun outcome (obs)   (cdr (assq 'y obs)))
+    (defun confounder (obs) (cdr (assq 'z obs)))
+
+    (defun naive-diff (data)
+      (let* ((treated (filter (lambda (o) (= (treatment o) 1)) data))
+             (control (filter (lambda (o) (= (treatment o) 0)) data))
+             (mu1 (mean (map* outcome treated)))
+             (mu0 (mean (map* outcome control))))
+        (- mu1 mu0)))
+
+    (define data (make-confounded-data))
+
+    (define suite
+      (make-group "std.causal.estimate"
+        (list
+          (make-test "naive difference is confounded"
+            (lambda ()
+              (assert-approx-equal 6.0 (naive-diff data) 1e-12)))
+
+          (make-test "propensity scores match z-stratified treatment rates"
+            (lambda ()
+              (let* ((ps (do:propensity-score data 'x '(z)))
+                     (z0 (map* car
+                               (filter (lambda (zp) (= (cdr zp) 0))
+                                       (zip ps (map* confounder data)))))
+                     (z1 (map* car
+                               (filter (lambda (zp) (= (cdr zp) 1))
+                                       (zip ps (map* confounder data))))))
+                (assert-approx-equal 0.3 (mean z0) 1e-12)
+                (assert-approx-equal 0.7 (mean z1) 1e-12))))
+
+          (make-test "g-formula recovers true ATE"
+            (lambda ()
+              (assert-approx-equal 2.0
+                                   (do:ate-gformula data 'y 'x '(z))
+                                   1e-9)))
+
+          (make-test "IPW recovers true ATE"
+            (lambda ()
+              (assert-approx-equal 2.0
+                                   (do:ate-ipw data 'y 'x '(z))
+                                   1e-9)))
+
+          (make-test "AIPW recovers true ATE"
+            (lambda ()
+              (assert-approx-equal 2.0
+                                   (do:ate-aipw data 'y 'x '(z))
+                                   1e-9)))
+
+          (make-test "bootstrap CI contains true effect"
+            (lambda ()
+              (let* ((ci (do:bootstrap-ci
+                           (lambda (b) (do:ate-aipw b 'y 'x '(z)))
+                           data
+                           200
+                           0.05
+                           20260429))
+                     (lo (car ci))
+                     (hi (cdr ci)))
+                (assert-true (<= lo 2.0))
+                (assert-true (>= hi 2.0))))))))
+
+    (print-tap (run suite))))
