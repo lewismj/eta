@@ -535,6 +535,12 @@ separate submodule:
 (import std.causal.admg)
 ```
 
+Generalized adjustment/front-door/IV helpers are available in:
+
+```scheme
+(import std.causal.adjustment)
+```
+
 Estimation backends (g-formula, IPW, AIPW, bootstrap CI) are available in:
 
 ```scheme

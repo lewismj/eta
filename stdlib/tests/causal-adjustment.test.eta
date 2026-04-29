@@ -1,0 +1,47 @@
+;;; stdlib/tests/causal-adjustment.test.eta -- Tests for std.causal.adjustment
+
+(module causal.adjustment.tests
+  (import std.test std.causal.adjustment std.core std.collections)
+  (begin
+
+    (define suite
+      (make-group "std.causal.adjustment"
+        (list
+          (make-test "front-door criterion holds on smoking -> tar -> cancer"
+            (lambda ()
+              (assert-true
+                (front-door?
+                  '((s -> t) (t -> c) (s <-> c))
+                  's 'c '(t)))))
+
+          (make-test "front-door formula builds canonical estimand"
+            (lambda ()
+              (assert-equal
+                '(sum (t)
+                   (prod (P (t s))
+                         (sum (s*)
+                              (prod (P (c s* t))
+                                    (P (s*))))))
+                (do:front-door-formula 'c 's '(t)))))
+
+          (make-test "generalized adjustment accepts confounder and rejects empty set"
+            (lambda ()
+              (let ((g '((z -> x) (z -> y) (x -> y))))
+                (assert-true (dag:gac? g 'x 'y '(z)))
+                (assert-false (dag:gac? g 'x 'y '())))))
+
+          (make-test "M-bias minimal adjustments keep empty set and reject collider"
+            (lambda ()
+              (let* ((g '((u1 -> x) (u2 -> y) (u1 -> z) (u2 -> z)))
+                     (sets (dag:minimal-adjustments g 'x 'y '(z))))
+                (assert-true (member '() sets))
+                (assert-false (member '(z) sets)))))
+
+          (make-test "IV criterion detects valid instrument with latent confounding"
+            (lambda ()
+              (assert-true
+                (iv? '((z -> x) (x -> y) (x <-> y))
+                     'z 'x 'y)))))))
+
+    (print-tap (run suite))))
+

@@ -296,6 +296,24 @@ The returned AST uses:
 
 ---
 
+## Adjustment, Front-Door, and IV
+
+For generalized adjustment enumeration and structural criteria checks:
+
+```scheme
+(import std.causal.adjustment)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(dag:gac? g x y z)` | Generalized adjustment criterion check on mixed graphs |
+| `(dag:minimal-adjustments g x y observed)` | Enumerate minimal valid adjustment sets from `observed` |
+| `(front-door? g x y m)` | Front-door criterion check for mediator set `m` |
+| `(do:front-door-formula y x m)` | Return canonical front-door estimand AST |
+| `(iv? g z x y)` | Instrumental-variable criterion check |
+
+---
+
 ## Numeric Estimation
 
 ### The Back-Door Adjustment Formula
@@ -441,6 +459,7 @@ analysis:
 | Component                            | File                                                                                |
 | ------------------------------------ | ----------------------------------------------------------------------------------- |
 | DAG utilities, do-calculus engine    | [`stdlib/std/causal.eta`](../../../stdlib/std/causal.eta)                                 |
+| Adjustment/front-door/IV helpers     | [`stdlib/std/causal/adjustment.eta`](../../../stdlib/std/causal/adjustment.eta)           |
 | ADMG ID/IDC algorithms               | [`stdlib/std/causal/identify.eta`](../../../stdlib/std/causal/identify.eta)               |
 | Estimation backends (M9a)            | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |

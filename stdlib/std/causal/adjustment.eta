@@ -1,0 +1,440 @@
+;;; std/causal/adjustment.eta -- Adjustment criteria and structural detectors.
+;;;
+;;; Public API:
+;;;   (dag:gac? g x y z)
+;;;     Generalized adjustment check on mixed graphs with directed (`->`)
+;;;     and bidirected (`<->`) edges.
+;;;   (dag:minimal-adjustments g x y observed)
+;;;     Enumerate minimal valid adjustment sets from observed variables.
+;;;   (front-door? g x y m)
+;;;     Front-door criterion check for mediator set `m`.
+;;;   (do:front-door-formula y x m)
+;;;     Canonical front-door estimand AST.
+;;;   (iv? g z x y)
+;;;     Instrumental-variable criterion check.
+
+(module std.causal.adjustment
+  (import std.core)
+  (import std.collections)
+  (import std.causal)
+  (export
+    dag:gac?
+    dag:minimal-adjustments
+    front-door?
+    do:front-door-formula
+    iv?)
+  (begin
+
+    ;; -- Basic helpers ----------------------------------------------------
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (defun %adjoin (x xs)
+      (if (%member? x xs) xs (cons x xs)))
+
+    (defun %set-union (a b)
+      (foldl (lambda (acc x) (%adjoin x acc)) a b))
+
+    (defun %set-diff (a b)
+      (filter (lambda (x) (not (%member? x b))) a))
+
+    (defun %subset? (a b)
+      (every? (lambda (x) (%member? x b)) a))
+
+    (defun %proper-subset? (a b)
+      (and (%subset? a b) (< (length a) (length b))))
+
+    (defun %normalize-vars (vars)
+      (let loop ((rest vars) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let ((v (car rest)))
+              (if (%member? v acc)
+                  (loop (cdr rest) acc)
+                  (loop (cdr rest) (cons v acc)))))))
+
+    (defun %as-node-set (x)
+      (cond
+        ((null? x) '())
+        ((symbol? x) (list x))
+        ((list? x) (%normalize-vars x))
+        (else (error "expected symbol or list of symbols"))))
+
+    (defun %assert-vars (nodes vs)
+      (if (null? vs)
+          'ok
+          (begin
+            (if (%member? (car vs) nodes)
+                'ok
+                (error 'unknown-variable (car vs)))
+            (%assert-vars nodes (cdr vs)))))
+
+    (defun %find (pred xs)
+      (cond
+        ((null? xs) #f)
+        ((pred (car xs)) (car xs))
+        (else (%find pred (cdr xs)))))
+
+    (defun %contains-set? (sets s)
+      (any? (lambda (x) (equal? x s)) sets))
+
+    ;; -- Mixed-graph helpers ----------------------------------------------
+
+    (defun %edge-from (e) (car e))
+    (defun %edge-kind (e) (cadr e))
+    (defun %edge-to (e) (caddr e))
+
+    (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
+
+    (defun %mixed-edge? (e)
+      (and (list? e)
+           (= (length e) 3)
+           (or (%directed-edge? e) (%bidirected-edge? e))))
+
+    (defun %graph-nodes (g)
+      (foldl (lambda (acc e)
+               (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
+             '()
+             g))
+
+    (defun %directed-only (g)
+      (filter %directed-edge? g))
+
+    (defun %bidirected-only (g)
+      (filter %bidirected-edge? g))
+
+    (defun %assert-mixed-graph (g)
+      (if (every? %mixed-edge? g)
+          (let ((d (%directed-only g)))
+            (if (dag:valid? d)
+                g
+                (error 'invalid-admg g)))
+          (error 'invalid-admg g)))
+
+    (defun %edge-member? (e edges)
+      (any? (lambda (x) (equal? e x)) edges))
+
+    (defun %edge-adjoin (e edges)
+      (if (%edge-member? e edges) edges (cons e edges)))
+
+    (defun %children (dag node)
+      (foldl (lambda (acc e)
+               (if (and (eq? (%edge-kind e) '->)
+                        (eq? (%edge-from e) node))
+                   (%adjoin (%edge-to e) acc)
+                   acc))
+             '()
+             dag))
+
+    (defun %neighbors (dag node)
+      (foldl (lambda (acc e)
+               (cond
+                 ((eq? (%edge-from e) node) (%adjoin (%edge-to e) acc))
+                 ((eq? (%edge-to e) node) (%adjoin (%edge-from e) acc))
+                 (else acc)))
+             '()
+             dag))
+
+    (defun %has-directed-edge? (dag from to)
+      (any? (lambda (e)
+              (and (eq? (%edge-kind e) '->)
+                   (eq? (%edge-from e) from)
+                   (eq? (%edge-to e) to)))
+            dag))
+
+    (defun %filter-present (nodes xs)
+      (filter (lambda (x) (%member? x nodes)) xs))
+
+    ;; d-separation helper that tolerates isolates removed by edge-only DAG
+    ;; representations (e.g., after graph mutilation).
+    (defun %d-separated-lite? (dag x-set y-set z-set)
+      (let* ((nodes (dag:nodes dag))
+             (x2 (%filter-present nodes x-set))
+             (y2 (%filter-present nodes y-set))
+             (z2 (%filter-present nodes z-set)))
+        (if (or (null? x2) (null? y2))
+            #t
+            (dag:d-separated? dag x2 y2 z2))))
+
+    ;; -- ADMG -> DAG expansion for d-separation checks --------------------
+
+    (defun %fresh-latent (used idx)
+      (let ((n (string->symbol
+                 (string-append "__u" (number->string idx)))))
+        (if (%member? n used)
+            (%fresh-latent used (+ idx 1))
+            n)))
+
+    (defun %admg->latent-dag (g)
+      (let* ((directed (%directed-only g))
+             (bidirected (%bidirected-only g))
+             (used0 (%graph-nodes g)))
+        (let loop ((rest bidirected)
+                   (used used0)
+                   (idx 0)
+                   (acc directed))
+          (if (null? rest)
+              (reverse acc)
+              (let* ((e (car rest))
+                     (u (%edge-from e))
+                     (v (%edge-to e))
+                     (latent (%fresh-latent used idx))
+                     (acc1 (%edge-adjoin (list latent '-> u) acc))
+                     (acc2 (%edge-adjoin (list latent '-> v) acc1)))
+                (loop (cdr rest)
+                      (%adjoin latent used)
+                      (+ idx 1)
+                      acc2))))))
+
+    ;; -- Path enumeration / activity --------------------------------------
+
+    (defun %all-simple-undirected-paths (dag src dst)
+      (letrec ((dfs (lambda (curr visited path-rev)
+                      (if (eq? curr dst)
+                          (list (reverse path-rev))
+                          (let ((nexts (filter (lambda (n)
+                                                 (not (%member? n visited)))
+                                               (%neighbors dag curr))))
+                            (foldr append
+                                   '()
+                                   (map* (lambda (n)
+                                           (dfs n
+                                                (%adjoin n visited)
+                                                (cons n path-rev)))
+                                         nexts)))))))
+        (dfs src (list src) (list src))))
+
+    (defun %all-directed-paths (dag src dst)
+      (letrec ((dfs (lambda (curr visited path-rev)
+                      (if (eq? curr dst)
+                          (list (reverse path-rev))
+                          (let ((nexts (filter (lambda (n)
+                                                 (not (%member? n visited)))
+                                               (%children dag curr))))
+                            (foldr append
+                                   '()
+                                   (map* (lambda (n)
+                                           (dfs n
+                                                (%adjoin n visited)
+                                                (cons n path-rev)))
+                                         nexts)))))))
+        (dfs src (list src) (list src))))
+
+    (defun %path-collider? (dag a b c)
+      (and (%has-directed-edge? dag a b)
+           (%has-directed-edge? dag c b)))
+
+    (defun %desc-or-self-in-z? (dag node z-set)
+      (or (%member? node z-set)
+          (any? (lambda (d) (%member? d z-set))
+                (dag:descendants dag node))))
+
+    ;; d-separation path activity on DAG paths.
+    (defun %path-active? (dag path z-set)
+      (if (< (length path) 3)
+          #t
+          (letrec ((walk (lambda (a b rest)
+                           (if (null? rest)
+                               #t
+                               (let* ((c (car rest))
+                                      (collider? (%path-collider? dag a b c))
+                                      (open? (if collider?
+                                                 (%desc-or-self-in-z? dag b z-set)
+                                                 (not (%member? b z-set)))))
+                                 (and open? (walk b c (cdr rest))))))))
+            (walk (car path) (cadr path) (cdr (cdr path))))))
+
+    (defun %causal-directed-path? (dag path)
+      (if (< (length path) 2)
+          #f
+          (let loop ((a (car path)) (rest (cdr path)))
+            (if (null? rest)
+                #t
+                (let ((b (car rest)))
+                  (and (%has-directed-edge? dag a b)
+                       (loop b (cdr rest))))))))
+
+    ;; -- GAC helpers ------------------------------------------------------
+
+    (defun %proper-causal-paths (dag x-set y-set)
+      (foldr append
+             '()
+             (map* (lambda (x)
+                     (foldr append
+                            '()
+                            (map* (lambda (y)
+                                    (%all-directed-paths dag x y))
+                                  y-set)))
+                   x-set)))
+
+    (defun %proper-non-causal-paths (dag x-set y-set)
+      (filter (lambda (p)
+                (not (%causal-directed-path? dag p)))
+              (foldr append
+                     '()
+                     (map* (lambda (x)
+                             (foldr append
+                                    '()
+                                    (map* (lambda (y)
+                                            (%all-simple-undirected-paths dag x y))
+                                          y-set)))
+                           x-set))))
+
+    (defun %proper-forbidden-nodes (dag x-set y-set)
+      (let* ((causal-paths (%proper-causal-paths dag x-set y-set))
+             (causal-nodes
+               (foldl (lambda (acc p)
+                        (foldl (lambda (acc2 v)
+                                 (if (%member? v x-set)
+                                     acc2
+                                     (%adjoin v acc2)))
+                               acc
+                               p))
+                      '()
+                      causal-paths)))
+        (foldl (lambda (acc v)
+                 (%set-union (%adjoin v acc) (dag:descendants dag v)))
+               '()
+               causal-nodes)))
+
+    (defun dag:gac? (g x y z)
+      (%assert-mixed-graph g)
+      (let* ((nodes (%graph-nodes g))
+             (x-set (%as-node-set x))
+             (y-set (%as-node-set y))
+             (z-set (%as-node-set z)))
+        (%assert-vars nodes x-set)
+        (%assert-vars nodes y-set)
+        (%assert-vars nodes z-set)
+        (if (or (null? x-set) (null? y-set))
+            #f
+            (let* ((dag* (%admg->latent-dag g))
+                   (forbidden (%proper-forbidden-nodes dag* x-set y-set))
+                   (non-causal-paths (%proper-non-causal-paths dag* x-set y-set)))
+              (and
+                (every? (lambda (zi) (not (%member? zi forbidden))) z-set)
+                (every? (lambda (p) (not (%path-active? dag* p z-set)))
+                        non-causal-paths))))))
+
+    ;; -- Minimal adjustment-set enumeration -------------------------------
+
+    (defun %choose-k (xs k)
+      (cond
+        ((= k 0) (list '()))
+        ((null? xs) '())
+        ((< k 0) '())
+        (else
+         (append
+           (map* (lambda (s) (cons (car xs) s))
+                 (%choose-k (cdr xs) (- k 1)))
+           (%choose-k (cdr xs) k)))))
+
+    (defun %subsets-all (xs)
+      (letrec ((loop (lambda (k acc)
+                       (if (> k (length xs))
+                           acc
+                           (loop (+ k 1)
+                                 (append acc (%choose-k xs k)))))))
+        (loop 0 '())))
+
+    (defun %minimal-sets (sets)
+      (filter
+        (lambda (s)
+          (not (any? (lambda (t) (%proper-subset? t s)) sets)))
+        sets))
+
+    (defun dag:minimal-adjustments (g x y observed)
+      (%assert-mixed-graph g)
+      (let* ((nodes (%graph-nodes g))
+             (x-set (%as-node-set x))
+             (y-set (%as-node-set y))
+             (obs-set (%as-node-set observed)))
+        (%assert-vars nodes x-set)
+        (%assert-vars nodes y-set)
+        (%assert-vars nodes obs-set)
+        (let* ((cands (%set-diff (%set-diff obs-set x-set) y-set))
+               (valid
+                 (filter (lambda (z-set)
+                           (dag:gac? g x-set y-set z-set))
+                         (%subsets-all cands))))
+          (%minimal-sets valid))))
+
+    ;; -- Front-door / IV criteria ----------------------------------------
+
+    (defun %path-intersects? (path nodes)
+      (any? (lambda (n) (%member? n nodes)) path))
+
+    (defun %fresh-star (base used idx)
+      (let* ((s0 (symbol->string base))
+             (name (if (= idx 0)
+                       (string->symbol (string-append s0 "*"))
+                       (string->symbol
+                         (string-append s0 "*" (number->string idx))))))
+        (if (%member? name used)
+            (%fresh-star base used (+ idx 1))
+            name)))
+
+    ;; Front-door criterion for mediator set `m`.
+    ;; `x` and `y` are expected to be symbols.
+    (defun front-door? (g x y m)
+      (%assert-mixed-graph g)
+      (if (or (not (symbol? x)) (not (symbol? y)))
+          (error "front-door?: expected symbol x and y")
+          (let* ((nodes (%graph-nodes g))
+                 (m-set (%as-node-set m)))
+            (%assert-vars nodes (list x y))
+            (%assert-vars nodes m-set)
+            (if (null? m-set)
+                #f
+                (let* ((dir (%directed-only g))
+                       (x-y-paths (%all-directed-paths dir x y))
+                       (dag* (%admg->latent-dag g)))
+                  (and
+                    (not (null? x-y-paths))
+                    (every? (lambda (p) (%path-intersects? p m-set))
+                            x-y-paths)
+                    (every? (lambda (mi)
+                              (dag:satisfies-backdoor? dag* x mi '()))
+                            m-set)
+                    (every? (lambda (mi)
+                              (dag:satisfies-backdoor? dag* mi y (list x)))
+                            m-set)))))))
+
+    ;; Canonical front-door estimand:
+    ;;   sum_m P(m|x) * sum_x* P(y|x*,m) P(x*)
+    (defun do:front-door-formula (y x m)
+      (let* ((m-set (%as-node-set m))
+             (used (%set-union m-set (list y x)))
+             (x-star (%fresh-star x used 0)))
+        (if (null? m-set)
+            (error "do:front-door-formula: expected non-empty mediator set")
+            (list 'sum
+                  m-set
+                  (list 'prod
+                        (list 'P (append m-set (list x)))
+                        (list 'sum
+                              (list x-star)
+                              (list 'prod
+                                    (list 'P (append (list y x-star) m-set))
+                                    (list 'P (list x-star)))))))))
+
+    ;; Instrumental-variable criterion:
+    ;;   1) z -> x
+    ;;   2) z _||_ y in G_{do(x)}
+    ;;   3) z not independent of x
+    (defun iv? (g z x y)
+      (%assert-mixed-graph g)
+      (let ((nodes (%graph-nodes g)))
+        (%assert-vars nodes (list z x y))
+        (let ((dag* (%admg->latent-dag g)))
+          (and (%has-directed-edge? g z x)
+               (%d-separated-lite? (dag:mutilate-do dag* (list x))
+                                   (list z) (list y) '())
+               (not (%d-separated-lite? dag* (list z) (list x) '()))))))
+
+  ))
