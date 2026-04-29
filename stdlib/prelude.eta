@@ -23,6 +23,7 @@
 ;;;   std.logic       - std.collections
 ;;;   std.clp         - std.collections, std.logic
 ;;;   std.causal      - std.core, std.collections, std.io
+;;;   std.causal.identify - std.core, std.collections, std.causal, std.causal.admg
 ;;;   std.fact_table  - no dependencies
 ;;;   std.db          - std.collections, std.fact_table, std.logic
 ;;;   std.stats       - no dependencies
@@ -43,6 +44,7 @@
   (import std.logic)
   (import std.clp)
   (import std.causal)
+  (import std.causal.identify)
   (import std.fact_table)
   (import std.db)
   (import std.stats)
@@ -167,6 +169,8 @@
     dag:has-path?
     dag:add-edge dag:remove-edge dag:flip-edge
     dag:d-connected? dag:d-separated?
+    dag:mutilate-do dag:mutilate-see
+    do-rule1-applies? do-rule2-applies? do-rule3-applies?
     dag:satisfies-backdoor?
     dag:adjustment-sets
     dag:adjustment-sets-observed
@@ -178,6 +182,7 @@
     do:estimate-effect
     do:conditional-mean
     do:marginal-prob
+    id
     ;; ── std.fact_table ──────────────────────────────────────────────
     make-fact-table
     fact-table?

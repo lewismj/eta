@@ -1,0 +1,49 @@
+;;; stdlib/tests/causal-id.test.eta -- Tests for std.causal.identify
+
+(module causal.id.tests
+  (import std.test std.causal.identify std.core std.collections)
+  (begin
+
+    (defun fail-hedge? (expr)
+      (and (pair? expr)
+           (eq? (car expr) 'fail)
+           (pair? (cadr expr))
+           (eq? (car (cadr expr)) 'hedge)))
+
+    (define suite
+      (make-group "std.causal.identify"
+        (list
+          (make-test "ID returns direct conditional for x->y"
+            (lambda ()
+              (assert-equal '(P (y x))
+                            (id '((x -> y)) '(y) '(x)))))
+
+          (make-test "ID returns front-door estimand on canonical graph"
+            (lambda ()
+              (let ((g '((x -> m) (m -> y) (x <-> y))))
+                (assert-equal
+                  '(sum (m)
+                     (prod (P (m x))
+                           (sum (x*)
+                                (prod (P (y x* m))
+                                      (P (x*))))))
+                  (id g '(y) '(x))))))
+
+          (make-test "ID reports hedge on bow graph"
+            (lambda ()
+              (let ((r (id '((x -> y) (x <-> y)) '(y) '(x))))
+                (assert-true (fail-hedge? r)))))
+
+          (make-test "ID reports non-identifiable IV graph"
+            (lambda ()
+              (let ((r (id '((z -> x) (x -> y) (x <-> y)) '(y) '(x))))
+                (assert-true (fail-hedge? r)))))
+
+          (make-test "ID returns an estimand on napkin graph"
+            (lambda ()
+              (let ((r (id '((w1 -> w2) (w2 -> x) (x -> y) (w1 <-> x) (w1 <-> y))
+                           '(y)
+                           '(x))))
+                (assert-false (fail-hedge? r))))))))
+
+    (print-tap (run suite))))

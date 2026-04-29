@@ -77,6 +77,45 @@
                 (lambda ()
                   (assert-true (dag:d-connected? collider-dag 'a 'b '(d)))))))
 
+          (make-group "do-calculus rule predicates"
+            (list
+              (make-test "mutilate-do removes incoming edges to intervention nodes"
+                (lambda ()
+                  (assert-equal '((x -> y))
+                                (dag:mutilate-do
+                                  '((z -> x) (x -> y))
+                                  '(x)))))
+              (make-test "mutilate-see removes outgoing edges from observation nodes"
+                (lambda ()
+                  (assert-equal '((z -> x))
+                                (dag:mutilate-see
+                                  '((z -> x) (x -> y))
+                                  '(x)))))
+              (make-test "rule 1 holds when z is blocked after intervention on x"
+                (lambda ()
+                  (assert-true (do-rule1-applies?
+                                 '((w -> z) (z -> x) (x -> y))
+                                 '(y)
+                                 '(x)
+                                 '(z)
+                                 '()))))
+              (make-test "rule 2 holds when observing z equals intervening on z"
+                (lambda ()
+                  (assert-true (do-rule2-applies?
+                                 '((x -> z) (x -> y) (z -> y))
+                                 '(y)
+                                 '(x)
+                                 '(z)
+                                 '()))))
+              (make-test "rule 3 is false when intervention target remains causally relevant"
+                (lambda ()
+                  (assert-false (do-rule3-applies?
+                                  '((w -> z) (z -> y))
+                                  '(y)
+                                  '()
+                                  '(z)
+                                  '()))))))
+
           (make-group "back-door"
             (list
               (make-test "empty set fails back-door criterion when confounding exists"
@@ -139,7 +178,7 @@
                     (assert-equal '(direct) (assoc-ref 'result details))
                     (assert-equal '() (assoc-ref 'chosen-z details)))))))
 
-          (make-group "M0 regressions"
+          (make-group "estimation and DAG validation regressions"
             (list
               (make-test "do:estimate-effect marginalises over z strata"
                 (lambda ()
@@ -169,5 +208,6 @@
                          (ic (index-of 'c order)))
                     (assert-true (< ia ib))
                     (assert-true (< ib ic)))))))))
+          )
 
-    (print-tap (run suite)))))
+    (print-tap (run suite))))

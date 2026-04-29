@@ -26,7 +26,13 @@
 (module do-rules
   (import std.io)
   (import std.collections)
-  (import (except std.causal dag:d-separated?))
+  (import (except std.causal
+                  dag:d-separated?
+                  dag:mutilate-do
+                  dag:mutilate-see
+                  do-rule1-applies?
+                  do-rule2-applies?
+                  do-rule3-applies?))
   (import std.logic)
   (begin
 

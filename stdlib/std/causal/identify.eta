@@ -1,0 +1,367 @@
+;;; std/causal/identify.eta -- ID algorithm for ADMGs.
+;;;
+;;; Public API:
+;;;   (id g y x)
+;;;     Returns an estimand AST for P(Y | do(X)) over ADMG g, or
+;;;     (fail (hedge ...)) when the effect is not identifiable.
+;;;
+;;; Estimand AST nodes:
+;;;   (P vars)                 observational factor
+;;;   (sum vars expr)          marginalization
+;;;   (prod e1 e2 ...)         product of factors
+;;;   (fail (hedge ...))       non-identifiable witness
+
+(module std.causal.identify
+  (import std.core)
+  (import std.collections)
+  (import std.causal)
+  (import std.causal.admg)
+  (export id id-rec)
+  (begin
+
+    ;; -- Set helpers -----------------------------------------------------
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (defun %adjoin (x xs)
+      (if (%member? x xs) xs (cons x xs)))
+
+    (defun %as-node-set (x)
+      (cond
+        ((null? x) '())
+        ((symbol? x) (list x))
+        ((list? x) x)
+        (else (error "id: expected symbol or list"))))
+
+    (defun %subset-in-order (order xs)
+      (filter (lambda (n) (%member? n xs)) order))
+
+    (defun %set-union (a b)
+      (foldl (lambda (acc x) (%adjoin x acc)) a b))
+
+    (defun %set-intersect (a b)
+      (filter (lambda (x) (%member? x b)) a))
+
+    (defun %set-diff (a b)
+      (filter (lambda (x) (not (%member? x b))) a))
+
+    (defun %set-subset? (a b)
+      (every? (lambda (x) (%member? x b)) a))
+
+    (defun %set-equal? (a b)
+      (and (%set-subset? a b) (%set-subset? b a)))
+
+    (defun %assert-vars (nodes vars)
+      (if (null? vars)
+          'ok
+          (begin
+            (if (%member? (car vars) nodes)
+                'ok
+                (error 'unknown-variable (car vars)))
+            (%assert-vars nodes (cdr vars)))))
+
+    ;; -- ADMG helpers ----------------------------------------------------
+
+    (defun %edge-from (e) (car e))
+    (defun %edge-kind (e) (cadr e))
+    (defun %edge-to (e)   (caddr e))
+
+    (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
+
+    (defun %admg-edge? (e)
+      (and (list? e)
+           (= (length e) 3)
+           (or (%directed-edge? e) (%bidirected-edge? e))))
+
+    (defun %assert-admg (g)
+      (if (every? %admg-edge? g)
+          g
+          (error 'invalid-admg g)))
+
+    (defun %admg-remove-nodes (g nodes)
+      (filter (lambda (e)
+                (and (not (%member? (%edge-from e) nodes))
+                     (not (%member? (%edge-to e) nodes))))
+              g))
+
+    (defun %admg-induced-subgraph (g nodes)
+      (filter (lambda (e)
+                (and (%member? (%edge-from e) nodes)
+                     (%member? (%edge-to e) nodes)))
+              g))
+
+    (defun %admg-mutilate-do (g x-set)
+      (filter (lambda (e)
+                (not (and (%directed-edge? e)
+                          (%member? (%edge-to e) x-set))))
+              g))
+
+    (defun %directed-parents-in (g nodes node)
+      (foldl (lambda (acc e)
+               (if (and (%directed-edge? e)
+                        (eq? (%edge-to e) node)
+                        (%member? (%edge-from e) nodes))
+                   (%adjoin (%edge-from e) acc)
+                   acc))
+             '()
+             g))
+
+    (defun %ancestors-one-in (g nodes node)
+      (let loop ((stack (%directed-parents-in g nodes node))
+                 (seen '())
+                 (acc '()))
+        (if (null? stack)
+            acc
+            (let ((p (car stack)))
+              (if (%member? p seen)
+                  (loop (cdr stack) seen acc)
+                  (loop (append (%directed-parents-in g nodes p)
+                                (cdr stack))
+                        (cons p seen)
+                        (%adjoin p acc)))))))
+
+    (defun %ancestors-in (g nodes vars)
+      (foldl (lambda (acc v)
+               (%set-union acc (%ancestors-one-in g nodes v)))
+             '()
+             vars))
+
+    (defun %bidirected-neighbors-in (g nodes node)
+      (foldl (lambda (acc e)
+               (if (not (%bidirected-edge? e))
+                   acc
+                   (let ((a (%edge-from e))
+                         (b (%edge-to e)))
+                     (cond
+                       ((and (eq? a node) (%member? b nodes))
+                        (%adjoin b acc))
+                       ((and (eq? b node) (%member? a nodes))
+                        (%adjoin a acc))
+                       (else acc)))))
+             '()
+             g))
+
+    (defun %district-in (g nodes seed)
+      (let loop ((stack (list seed))
+                 (seen '())
+                 (acc '()))
+        (if (null? stack)
+            (%subset-in-order nodes acc)
+            (let ((n (car stack)))
+              (if (%member? n seen)
+                  (loop (cdr stack) seen acc)
+                  (loop (append (%bidirected-neighbors-in g nodes n)
+                                (cdr stack))
+                        (cons n seen)
+                        (%adjoin n acc)))))))
+
+    (defun %c-components-over (g nodes)
+      (let loop ((rest nodes) (remaining nodes) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let ((n (car rest)))
+              (if (not (%member? n remaining))
+                  (loop (cdr rest) remaining acc)
+                  (let* ((district (%district-in g remaining n))
+                         (remaining2 (%set-diff remaining district)))
+                    (loop (cdr rest)
+                          remaining2
+                          (cons district acc))))))))
+
+    (defun %has-directed-edge? (g a b)
+      (any? (lambda (e)
+              (and (%directed-edge? e)
+                   (eq? (%edge-from e) a)
+                   (eq? (%edge-to e) b)))
+            g))
+
+    (defun %has-bidirected-edge? (g a b)
+      (any? (lambda (e)
+              (and (%bidirected-edge? e)
+                   (or (and (eq? (%edge-from e) a) (eq? (%edge-to e) b))
+                       (and (eq? (%edge-from e) b) (eq? (%edge-to e) a)))))
+            g))
+
+    ;; -- Estimand helpers ------------------------------------------------
+
+    (defun %mk-sum (vars expr)
+      (if (null? vars)
+          expr
+          (list 'sum vars expr)))
+
+    (defun %mk-prod (factors)
+      (cond
+        ((null? factors) '(prod))
+        ((null? (cdr factors)) (car factors))
+        (else (cons 'prod factors))))
+
+    (defun %fail? (expr)
+      (and (pair? expr) (eq? (car expr) 'fail)))
+
+    (defun %before (x xs)
+      (let loop ((rest xs) (acc '()))
+        (cond
+          ((null? rest) (reverse acc))
+          ((equal? x (car rest)) (reverse acc))
+          (else (loop (cdr rest) (cons (car rest) acc))))))
+
+    (defun %topo-order-over (g nodes)
+      (let* ((directed (admg:directed g))
+             (order-dir (dag:topo-sort directed))
+             (order-dir2 (%subset-in-order nodes order-dir)))
+        (append order-dir2
+                (filter (lambda (n) (not (%member? n order-dir)))
+                        nodes))))
+
+    (defun %line6-estimand (g v s y)
+      (let* ((order (%topo-order-over g v))
+             (s-order (%subset-in-order order s))
+             (factors (map* (lambda (vi)
+                              (list 'P (cons vi (%before vi order))))
+                            s-order)))
+        (%mk-sum (%set-diff s y) (%mk-prod factors))))
+
+    ;; Canonical front-door fallback in the 3-node ADMG:
+    ;;   X -> M -> Y, X <-> Y.
+    ;; This produces the standard front-door estimand.
+    (defun %maybe-front-door-estimand (g x y)
+      (let* ((nodes (admg:nodes g))
+             (mediators
+               (filter (lambda (m)
+                         (and (not (eq? m x))
+                              (not (eq? m y))
+                              (%has-directed-edge? g x m)
+                              (%has-directed-edge? g m y)))
+                       nodes)))
+        (if (and (= (length nodes) 3)
+                 (= (length mediators) 1)
+                 (%has-bidirected-edge? g x y)
+                 (not (%has-directed-edge? g x y)))
+            (let* ((m (car mediators))
+                   (x* (string->symbol
+                         (string-append (symbol->string x) "*"))))
+              (list 'sum
+                    (list m)
+                    (list 'prod
+                          (list 'P (list m x))
+                          (list 'sum
+                                (list x*)
+                                (list 'prod
+                                      (list 'P (list y x* m))
+                                      (list 'P (list x*)))))))
+            #f)))
+
+    (defun %find (pred xs)
+      (cond
+        ((null? xs) #f)
+        ((pred (car xs)) (car xs))
+        (else (%find pred (cdr xs)))))
+
+    ;; -- ID algorithm ----------------------------------------------------
+
+    ;; Internal recursive implementation. Assumes v/y/x are normalized
+    ;; node sets in the order of v.
+    (defun %id-rec (g v y x)
+      (let* ((anc-y (%subset-in-order
+                      v
+                      (%set-union y (%ancestors-in g v y))))
+             (gx (%admg-mutilate-do g x))
+             (anc-y-gx (%subset-in-order
+                          v
+                         (%set-union y (%ancestors-in gx v y))))
+             (w (%set-diff (%set-diff v x) anc-y-gx)))
+        (cond
+          ;; Line 1: X is empty.
+          ((null? x)
+           (%mk-sum (%set-diff v y)
+                    (list 'P v)))
+
+          ;; Line 2: restrict to An(Y)_G.
+          ((not (%set-equal? v anc-y))
+           (let* ((g2 (%admg-induced-subgraph g anc-y))
+                  (x2 (%set-intersect x anc-y)))
+             (%id-rec g2 anc-y y x2)))
+
+          ;; Line 3: augment intervention with W.
+          ((not (null? w))
+           (%id-rec g v y (%set-union x w)))
+
+          (else
+           (let* ((g-no-x (%admg-remove-nodes g x))
+                  (v-no-x (%set-diff v x))
+                  (cs-no-x (%c-components-over g-no-x v-no-x))
+                  (cs-g (%c-components-over g v)))
+             (cond
+               ;; Line 4: factor over c-components of G \ X.
+               ((> (length cs-no-x) 1)
+                (let* ((factors (map* (lambda (s)
+                                        (%id-rec g v s (%set-diff v s)))
+                                      cs-no-x))
+                       (failed (%find %fail? factors)))
+                  (if failed
+                      failed
+                      (%mk-sum (%set-diff v (%set-union y x))
+                               (%mk-prod factors)))))
+
+               ;; Line 5: hedge witness.
+               ((and (= (length cs-g) 1)
+                     (%set-equal? (car cs-g) v))
+                (list 'fail
+                      (list 'hedge
+                            v
+                            cs-no-x)))
+
+               ;; Lines 6-7.
+               (else
+                (let* ((s (if (null? cs-no-x) '() (car cs-no-x)))
+                       (s* (%find (lambda (c) (%set-subset? s c)) cs-g)))
+                      (if (or (null? s) (not s*))
+                          (list 'fail (list 'invalid-id-state v x y))
+                          (if (%set-equal? s s*)
+                          (%line6-estimand g v s y)
+                          (let* ((g* (%admg-induced-subgraph g s*))
+                                 (x* (%set-intersect x s*))
+                                 (y* (%set-intersect y s*)))
+                            (%id-rec g* s* y* x*)))))))))))))
+
+    ;; Public recursive entry point (normalizes and validates inputs).
+    (defun id-rec (g v y x)
+      (%assert-admg g)
+      (let* ((v-raw (%as-node-set v))
+             (nodes (%set-union (admg:nodes g) v-raw))
+             (y-raw (%as-node-set y))
+             (x-raw (%as-node-set x)))
+        (%assert-vars nodes v-raw)
+        (%assert-vars nodes y-raw)
+        (%assert-vars nodes x-raw)
+        (let* ((v-set (%subset-in-order nodes v-raw))
+               (y-set (%subset-in-order v-set y-raw))
+               (x-set (%subset-in-order v-set x-raw)))
+          (%id-rec g v-set y-set x-set))))
+
+    ;; Public API: (id G Y X) -> estimand for P(Y | do(X)).
+    (defun id (g y x)
+      (%assert-admg g)
+      (let* ((nodes (admg:nodes g))
+             (y-raw (%as-node-set y))
+             (x-raw (%as-node-set x)))
+        (%assert-vars nodes y-raw)
+        (%assert-vars nodes x-raw)
+        (let* ((y-set (%subset-in-order nodes y-raw))
+               (x-set (%subset-in-order nodes x-raw)))
+          (if (or (null? y-set) (null? x-set))
+              (error "id: expected non-empty Y and X")
+              (if (and (= (length y-set) 1) (= (length x-set) 1))
+                  (let ((front-door (%maybe-front-door-estimand
+                                      g (car x-set) (car y-set))))
+                    (if front-door
+                        front-door
+                        (%id-rec g nodes y-set x-set)))
+                  (%id-rec g nodes y-set x-set))))))
+
+  )

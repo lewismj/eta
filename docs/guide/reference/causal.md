@@ -93,8 +93,14 @@ Nodes and their roles:
 ### The Three Rules
 
 Pearl's do-calculus provides three rules that transform interventional
-quantities into observational ones.  Eta includes a worked implementation
-of these rules in `examples/do-calculus/do-rules.eta`.
+quantities into observational ones.  Eta exposes these directly in
+`std.causal` via:
+
+- `dag:mutilate-do`
+- `dag:mutilate-see`
+- `do-rule1-applies?`
+- `do-rule2-applies?`
+- `do-rule3-applies?`
 
 **Rule 1 — Insertion/deletion of observations:**
 
@@ -217,6 +223,11 @@ edge-list format:
 | `(dag:flip-edge dag from to)`                                | Return DAG with `from -> to` flipped to `to -> from`                |
 | `(dag:d-connected? dag x-or-set y-or-set z-set)`             | True if any active path exists between X and Y given `z-set`        |
 | `(dag:d-separated? dag x-or-set y-or-set z-set)`             | True if all paths between X and Y are blocked by `z-set`            |
+| `(dag:mutilate-do dag x-set)`                                | Remove all incoming edges to nodes in `x-set`                       |
+| `(dag:mutilate-see dag x-set)`                               | Remove all outgoing edges from nodes in `x-set`                     |
+| `(do-rule1-applies? dag y x z w)`                            | Rule 1 applicability check                                           |
+| `(do-rule2-applies? dag y x z w)`                            | Rule 2 applicability check                                           |
+| `(do-rule3-applies? dag y x z w)`                            | Rule 3 applicability check                                           |
 | `(dag:satisfies-backdoor? dag x y z-set)`                    | Back-door criterion check                                           |
 | `(dag:adjustment-sets dag x y [max-size])`                   | Enumerate valid back-door adjustment sets, minimal first            |
 | `(dag:adjustment-sets-observed dag x y observed [max-size])` | Enumerate valid sets restricted to observed variables               |
@@ -258,6 +269,27 @@ For mixed graphs with latent confounding, import:
 | `(admg:project dag latents)` | Latent projection from DAG to ADMG over observed nodes |
 | `(admg:ancestors g v-or-set)` | Directed ancestors (ignores bidirected edges) |
 | `(admg:moralize g s)` | Ancestral moralization to an undirected graph |
+
+---
+
+## ID on ADMGs
+
+To identify effects in mixed graphs with latent confounding:
+
+```scheme
+(import std.causal.identify)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(id g y x)` | Returns an estimand AST for `P(Y | do(X))` or `(fail (hedge ...))` |
+
+The returned AST uses:
+
+- `(P vars)` for factors
+- `(sum vars expr)` for marginalization
+- `(prod e1 e2 ...)` for products
+- `(fail (hedge ...))` for non-identifiable queries
 
 ---
 
@@ -406,9 +438,10 @@ analysis:
 | Component                            | File                                                                                |
 | ------------------------------------ | ----------------------------------------------------------------------------------- |
 | DAG utilities, do-calculus engine    | [`stdlib/std/causal.eta`](../../../stdlib/std/causal.eta)                                 |
+| ADMG ID algorithm                    | [`stdlib/std/causal/identify.eta`](../../../stdlib/std/causal/identify.eta)               |
 | Estimation backends (M9a)            | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
-| Three rules implementation           | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |
+| Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |
 | Full identification demo             | [`examples/do-calculus/demo.eta`](../../../examples/do-calculus/demo.eta)                 |
 | CSV module                           | [`stdlib/std/csv.eta`](../../../stdlib/std/csv.eta)                                         |
 | Back-door estimator                  | [`examples/causal-factor/adjustment.eta`](../../../examples/causal-factor/adjustment.eta) |

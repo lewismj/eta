@@ -34,6 +34,8 @@
     dag:valid? dag:cyclic? dag:topo-sort
     dag:add-edge dag:remove-edge dag:flip-edge
     dag:d-connected? dag:d-separated?
+    dag:mutilate-do dag:mutilate-see
+    do-rule1-applies? do-rule2-applies? do-rule3-applies?
     ;; Causal identification (symbolic)
     dag:satisfies-backdoor?
     dag:adjustment-sets
@@ -218,6 +220,89 @@
     ;; True if all paths between X and Y are blocked by Z.
     (defun dag:d-separated? (dag x y z-set)
       (not (dag:d-connected? dag x y z-set)))
+
+    ;; Return DAG with all incoming edges to X removed.
+    (defun dag:mutilate-do (dag x-set)
+      (begin
+        (%assert-dag-edges dag)
+        (let ((x-nodes (%as-node-set x-set)))
+          (%assert-vars dag x-nodes)
+          (filter (lambda (e)
+                    (not (%member? (%dag-edge-to e) x-nodes)))
+                  dag))))
+
+    ;; Return DAG with all outgoing edges from X removed.
+    (defun dag:mutilate-see (dag x-set)
+      (begin
+        (%assert-dag-edges dag)
+        (let ((x-nodes (%as-node-set x-set)))
+          (%assert-vars dag x-nodes)
+          (filter (lambda (e)
+                    (not (%member? (%dag-edge-from e) x-nodes)))
+                  dag))))
+
+    ;; Rule 1 (insertion/deletion of observations):
+    ;;   P(y | do(x), z, w) = P(y | do(x), w)
+    ;; iff Y and Z are d-separated given X,UW in G_{X-bar}.
+    (defun do-rule1-applies? (dag y-set x-set z-set w-set)
+      (begin
+        (%assert-valid-dag dag)
+        (let* ((y-nodes (%as-node-set y-set))
+               (x-nodes (%as-node-set x-set))
+               (z-nodes (%as-node-set z-set))
+               (w-nodes (%as-node-set w-set)))
+          (%assert-vars dag y-nodes)
+          (%assert-vars dag x-nodes)
+          (%assert-vars dag z-nodes)
+          (%assert-vars dag w-nodes)
+          (dag:d-separated? (dag:mutilate-do dag x-nodes)
+                            y-nodes
+                            z-nodes
+                            (%set-union x-nodes w-nodes)))))
+
+    ;; Rule 2 (action/observation exchange):
+    ;;   P(y | do(x), do(z), w) = P(y | do(x), z, w)
+    ;; iff Y and Z are d-separated given X,UW in G_{X-bar, Z-underline}.
+    (defun do-rule2-applies? (dag y-set x-set z-set w-set)
+      (begin
+        (%assert-valid-dag dag)
+        (let* ((y-nodes (%as-node-set y-set))
+               (x-nodes (%as-node-set x-set))
+               (z-nodes (%as-node-set z-set))
+               (w-nodes (%as-node-set w-set))
+               (g (dag:mutilate-see (dag:mutilate-do dag x-nodes) z-nodes)))
+          (%assert-vars dag y-nodes)
+          (%assert-vars dag x-nodes)
+          (%assert-vars dag z-nodes)
+          (%assert-vars dag w-nodes)
+          (dag:d-separated? g
+                            y-nodes
+                            z-nodes
+                            (%set-union x-nodes w-nodes)))))
+
+    ;; Rule 3 (insertion/deletion of actions).
+    (defun do-rule3-applies? (dag y-set x-set z-set w-set)
+      (begin
+        (%assert-valid-dag dag)
+        (let* ((y-nodes (%as-node-set y-set))
+               (x-nodes (%as-node-set x-set))
+               (z-nodes (%as-node-set z-set))
+               (w-nodes (%as-node-set w-set))
+               (gx (dag:mutilate-do dag x-nodes))
+               (z-w (filter (lambda (z)
+                              (not (any? (lambda (w)
+                                           (%member? z (dag:ancestors gx w)))
+                                         w-nodes)))
+                            z-nodes))
+               (g (dag:mutilate-do gx z-w)))
+          (%assert-vars dag y-nodes)
+          (%assert-vars dag x-nodes)
+          (%assert-vars dag z-nodes)
+          (%assert-vars dag w-nodes)
+          (dag:d-separated? g
+                            y-nodes
+                            z-nodes
+                            (%set-union x-nodes w-nodes)))))
 
     ;; (dag:satisfies-backdoor? dag x y z-set)
     ;;
@@ -592,14 +677,14 @@
 
     ;; Transitive closure helper over next-fn.
     (defun %dag-transitive (dag next-fn node visited)
-      (let ((nexts (filter (lambda (n) (not (%member? n visited)))
-                           (next-fn dag node))))
-        (foldl (lambda (acc n)
-                 (if (%member? n acc)
-                     acc
-                     (%dag-transitive dag next-fn n (%adjoin n acc))))
-               (foldr %adjoin visited nexts)
-               nexts)))
+      (let loop ((stack (next-fn dag node)) (seen visited))
+        (if (null? stack)
+            seen
+            (let ((n (car stack)))
+              (if (%member? n seen)
+                  (loop (cdr stack) seen)
+                  (loop (append (next-fn dag n) (cdr stack))
+                        (%adjoin n seen)))))))
 
     ;; Directed reachability (DFS): from -> to with forbidden nodes removed.
     (defun %dag-reachable? (dag from to forbidden visited)
@@ -741,6 +826,12 @@
 
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
+
+    (defun %set-union (a b)
+      (foldl (lambda (acc x) (%adjoin x acc)) a b))
+
+    (defun %set-diff (a b)
+      (filter (lambda (x) (not (%member? x b))) a))
 
     (defun %as-node-set (x)
       (cond
