@@ -1,5 +1,4 @@
-<!--[eta_logo.svg](docs/img/eta.svg) -->
-
+<!--
 <p align="center">
   <img src="docs/img/eta.svg" alt="Eta logo" width="120">
 </p>
@@ -9,6 +8,17 @@
 <p align="center">
   <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
 </p>
+-->
+
+<div align="center" style="display: flex; justify-content: center; align-items: center; gap: 20px;">
+  <img src="docs/img/eta.svg" alt="Eta logo" width="120">
+  <div style="text-align: left;">
+    <h1 style="margin: 0;">η (Eta)</h1>
+    <p style="margin: 6px 0 0 0;">
+      <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
+    </p>
+  </div>
+</div>
 
 <p align="center">
   <a href="docs/quickstart.md">Quick Start</a> ·
