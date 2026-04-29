@@ -1,6 +1,6 @@
 import re
 
-path = r'C:\Users\lewis\develop\eta\editors\vscode\src\extension.ts'
+path = r'/editors/vscode/src/extension.ts'
 with open(path, 'r', encoding='utf-8') as f:
     text = f.read()
 

@@ -1,0 +1,283 @@
+;;; std/causal/admg.eta -- ADMG helpers and latent projection.
+;;;
+;;; ADMG edge format:
+;;;   (u -> v)   directed
+;;;   (u <-> v)  bidirected (latent confounding)
+;;;
+;;; This module extends std.causal DAG operations to mixed graphs used by
+;;; identification algorithms.
+
+(module std.causal.admg
+  (import std.core)
+  (import std.collections)
+  (import std.causal)
+  (export
+    admg:directed admg:bidirected admg:nodes
+    admg:district admg:districts
+    admg:project
+    admg:moralize
+    admg:ancestors
+    admg:c-component admg:c-components)
+  (begin
+
+    ;; -- Edge helpers -----------------------------------------------------
+
+    (defun %edge-from (e) (car e))
+    (defun %edge-kind (e) (cadr e))
+    (defun %edge-to (e) (caddr e))
+
+    (defun %directed-edge? (e)   (eq? (%edge-kind e) '->))
+    (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
+
+    (defun admg:directed (g)
+      (filter %directed-edge? g))
+
+    (defun admg:bidirected (g)
+      (filter %bidirected-edge? g))
+
+    (defun admg:nodes (g)
+      (foldr (lambda (e acc)
+               (%adjoin (%edge-from e)
+                        (%adjoin (%edge-to e) acc)))
+             '()
+             g))
+
+    ;; -- Districts (c-components) ----------------------------------------
+
+    (defun %bidirected-neighbors (g node)
+      (foldl (lambda (acc e)
+               (cond
+                 ((eq? (%edge-from e) node) (%adjoin (%edge-to e) acc))
+                 ((eq? (%edge-to e) node) (%adjoin (%edge-from e) acc))
+                 (else acc)))
+             '()
+             (admg:bidirected g)))
+
+    (defun %bfs-closure (next seeds)
+      (let loop ((queue seeds) (seen '()))
+        (if (null? queue)
+            (reverse seen)
+            (let ((v (car queue)))
+              (if (%member? v seen)
+                  (loop (cdr queue) seen)
+                  (let ((nbrs (next v)))
+                    (loop (append (cdr queue) nbrs)
+                          (cons v seen))))))))
+
+    ;; Bidirected-connected component containing `v`.
+    (defun admg:district (g v)
+      (if (%member? v (admg:nodes g))
+          (%bfs-closure (lambda (u) (%bidirected-neighbors g u)) (list v))
+          (error 'unknown-variable v)))
+
+    ;; District partition induced by <-> reachability.
+    (defun admg:districts (g)
+      (let loop ((remaining (admg:nodes g)) (acc '()))
+        (if (null? remaining)
+            (reverse acc)
+            (let ((d (admg:district g (car remaining))))
+              (loop (filter (lambda (n) (not (%member? n d))) remaining)
+                    (cons d acc))))))
+
+    (defun admg:c-component  (g v) (admg:district g v))
+    (defun admg:c-components (g)   (admg:districts g))
+
+    ;; -- Ancestors --------------------------------------------------------
+
+    (defun %as-node-set (x)
+      (cond
+        ((null? x) '())
+        ((symbol? x) (list x))
+        ((list? x) x)
+        (else (error "admg: expected symbol or list"))))
+
+    (defun %assert-vars (g vs)
+      (if (null? vs)
+          '()
+          (begin
+            (if (%member? (car vs) (admg:nodes g))
+                'ok
+                (error 'unknown-variable (car vs)))
+            (%assert-vars g (cdr vs)))))
+
+    (defun %directed-parents (g node)
+      (map* %edge-from
+            (filter (lambda (e)
+                      (and (%directed-edge? e)
+                           (eq? (%edge-to e) node)))
+                    g)))
+
+    (defun %ancestor-closure (g seeds)
+      (let loop ((queue seeds) (seen '()))
+        (if (null? queue)
+            (reverse seen)
+            (let ((v (car queue)))
+              (if (%member? v seen)
+                  (loop (cdr queue) seen)
+                  (loop (append (cdr queue) (%directed-parents g v))
+                        (cons v seen)))))))
+
+    ;; Directed ancestors in the ADMG (bidirected edges are ignored).
+    (defun admg:ancestors (g v)
+      (let ((vs (%as-node-set v)))
+        (%assert-vars g vs)
+        (foldl (lambda (acc node)
+                 (foldl (lambda (acc2 x) (%adjoin x acc2))
+                        acc
+                        (%ancestor-closure g (%directed-parents g node))))
+               '()
+               vs)))
+
+    ;; -- Latent projection ------------------------------------------------
+
+    (defun %adjoin-edge (e es)
+      (if (%member? e es) es (cons e es)))
+
+    (defun %ordered-pair (a b)
+      (if (string<? (symbol->string a) (symbol->string b))
+          (list a b)
+          (list b a)))
+
+    ;; Observed targets reachable from observed source via latent-only
+    ;; internal nodes.
+    (defun %projected-directed-targets (dag latents src)
+      (let loop ((queue (dag:children dag src))
+                 (seen-lat '())
+                 (targets '()))
+        (if (null? queue)
+            (reverse targets)
+            (let ((n (car queue)))
+              (if (%member? n latents)
+                  (if (%member? n seen-lat)
+                      (loop (cdr queue) seen-lat targets)
+                      (loop (append (cdr queue) (dag:children dag n))
+                            (cons n seen-lat)
+                            targets))
+                  (loop (cdr queue) seen-lat (%adjoin n targets)))))))
+
+    (defun admg:%project-directed (dag latents obs)
+      (foldl
+        (lambda (acc src)
+          (foldl (lambda (acc2 dst)
+                   (if (or (eq? src dst)
+                           (not (%member? dst obs)))
+                       acc2
+                       (%adjoin-edge (list src '-> dst) acc2)))
+                 acc
+                 (%projected-directed-targets dag latents src)))
+        '()
+        obs))
+
+    ;; Observed descendants of a latent source through latent-only chains.
+    (defun %latent-observed-descendants (dag latents latent-root)
+      (let loop ((queue (list latent-root))
+                 (seen-lat '())
+                 (targets '()))
+        (if (null? queue)
+            (reverse targets)
+            (let ((n (car queue)))
+              (if (%member? n seen-lat)
+                  (loop (cdr queue) seen-lat targets)
+                   (let* ((kids (dag:children dag n))
+                          (next-lat (filter (lambda (k) (%member? k latents)) kids))
+                          (obs-kids (filter (lambda (k) (not (%member? k latents))) kids))
+                          (targets2 (foldl (lambda (acc x) (%adjoin x acc))
+                                           targets
+                                           obs-kids)))
+                     (loop (append (cdr queue) next-lat)
+                           (cons n seen-lat)
+                           targets2)))))))
+
+    (defun %pairs (xs)
+      (if (null? xs)
+          '()
+          (append (map* (lambda (y) (list (car xs) y)) (cdr xs))
+                  (%pairs (cdr xs)))))
+
+    (defun admg:%project-bidirected (dag latents obs)
+      (let* ((all (dag:nodes dag))
+             (present-latents (filter (lambda (l) (%member? l all)) latents)))
+        (foldl
+          (lambda (acc latent)
+            (let* ((targets (filter (lambda (n) (%member? n obs))
+                                    (%latent-observed-descendants dag latents latent)))
+                    (edges (map* (lambda (p)
+                                   (let* ((u (car p))
+                                          (v (cadr p))
+                                          (ord (%ordered-pair u v)))
+                                     (list (car ord) '<-> (cadr ord))))
+                                 (%pairs targets))))
+              (foldl (lambda (acc2 e) (%adjoin-edge e acc2))
+                     acc
+                     edges)))
+          '()
+          present-latents)))
+
+    ;; Latent projection (Verma-Pearl) from (DAG, latent set) to ADMG over
+    ;; observed nodes.
+    (defun admg:project (dag latents)
+      (let* ((obs (filter (lambda (n) (not (%member? n latents)))
+                          (dag:nodes dag)))
+             (dir (admg:%project-directed dag latents obs))
+             (bid (admg:%project-bidirected dag latents obs)))
+        (foldl (lambda (acc e) (%adjoin-edge e acc))
+               '()
+               (append dir bid))))
+
+    ;; -- Moralization -----------------------------------------------------
+
+    (defun %marriage-links (parents)
+      (if (null? parents)
+          '()
+          (append (map* (lambda (p2) (list (car parents) '-> p2))
+                        (cdr parents))
+                  (%marriage-links (cdr parents)))))
+
+    (defun admg:%add-marriages (subg)
+      (foldl (lambda (acc node)
+               (append (%marriage-links (%directed-parents subg node)) acc))
+             subg
+             (admg:nodes subg)))
+
+    (defun admg:%undirected (g)
+      (reverse
+        (foldl (lambda (acc e)
+                 (let* ((u (%edge-from e))
+                        (v (%edge-to e))
+                        (ord (%ordered-pair u v))
+                        (edge (list (car ord) '-- (cadr ord))))
+                   (if (eq? u v)
+                       acc
+                       (%adjoin-edge edge acc))))
+               '()
+               g)))
+
+    ;; Ancestral moral graph for a target set `s`.
+    (defun admg:moralize (g s)
+      (let* ((target (%as-node-set s)))
+        (%assert-vars g target)
+        (let* ((anc (foldl (lambda (acc v)
+                             (foldl (lambda (acc2 x) (%adjoin x acc2))
+                                    (%adjoin v acc)
+                                    (admg:ancestors g v)))
+                           '()
+                           target))
+               (subg (filter (lambda (e)
+                               (and (%member? (%edge-from e) anc)
+                                    (%member? (%edge-to e) anc)))
+                             g))
+               (moral (admg:%add-marriages subg)))
+          (admg:%undirected moral))))
+
+    ;; -- Local set helpers ------------------------------------------------
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (defun %adjoin (x xs)
+      (if (%member? x xs) xs (cons x xs)))
+
+  ))

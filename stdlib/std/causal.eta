@@ -19,7 +19,7 @@
 ;;;   P(Y | do(X)) = Sum_z P(Y | X, Z) * P(Z)
 ;;;
 ;;; Numeric estimation of causal effects is available via:
-;;;   (do:estimate-effect y-var x-var x-val z-set z-val data)
+;;;   (do:estimate-effect y-var x-var x-val z-set data)
 ;;; where `data` is a list of observation records (association lists).
 
 (module std.causal
@@ -31,6 +31,7 @@
     dag:nodes dag:parents dag:children
     dag:ancestors dag:descendants dag:non-descendants
     dag:has-path?
+    dag:valid? dag:cyclic? dag:topo-sort
     dag:add-edge dag:remove-edge dag:flip-edge
     dag:d-connected? dag:d-separated?
     ;; Causal identification (symbolic)
@@ -52,8 +53,36 @@
     ;;
     ;; Each edge is (from -> to); `->` is the symbol at position 1.
 
+    (defun %dag-edge? (edge)
+      (and (list? edge)
+           (= (length edge) 3)
+           (eq? (cadr edge) '->)))
+
+    (defun %assert-dag-edges (dag)
+      (if (every? %dag-edge? dag)
+          dag
+          (error 'invalid-dag dag)))
+
+    (defun %assert-valid-dag (dag)
+      (if (dag:valid? dag)
+          dag
+          (error 'invalid-dag dag)))
+
     (defun %dag-edge-from (edge) (car edge))
     (defun %dag-edge-to (edge) (car (cdr (cdr edge))))   ; skip '->'
+
+    ;; Raw accessors (no validation).
+    (defun %dag-parents-raw (dag node)
+      (filter (lambda (n) (not (eq? n node)))
+              (map* %dag-edge-from
+                    (filter (lambda (e) (eq? (%dag-edge-to e) node))
+                            dag))))
+
+    (defun %dag-children-raw (dag node)
+      (filter (lambda (n) (not (eq? n node)))
+              (map* %dag-edge-to
+                    (filter (lambda (e) (eq? (%dag-edge-from e) node))
+                            dag))))
 
     ;; All nodes that appear in any edge (union of sources and targets).
     (defun dag:nodes (dag)
@@ -68,36 +97,86 @@
 
     ;; Direct parents of `node` (nodes with an edge pointing to node).
     (defun dag:parents (dag node)
-      (filter (lambda (n) (not (eq? n node)))
-              (map* %dag-edge-from
-                    (filter (lambda (e) (eq? (%dag-edge-to e) node))
-                            dag))))
+      (begin
+        (%assert-dag-edges dag)
+        (%assert-var dag node)
+        (%dag-parents-raw dag node)))
 
     ;; Direct children of `node` (nodes with an edge from node).
     (defun dag:children (dag node)
-      (filter (lambda (n) (not (eq? n node)))
-              (map* %dag-edge-to
-                    (filter (lambda (e) (eq? (%dag-edge-from e) node))
-                            dag))))
+      (begin
+        (%assert-dag-edges dag)
+        (%assert-var dag node)
+        (%dag-children-raw dag node)))
 
     ;; All ancestors of `node` (transitive closure of parents).
     (defun dag:ancestors (dag node)
-      (%dag-transitive dag dag:parents node '()))
+      (begin
+        (%assert-dag-edges dag)
+        (%assert-var dag node)
+        (%dag-transitive dag %dag-parents-raw node '())))
 
     ;; All descendants of `node` (transitive closure of children).
     (defun dag:descendants (dag node)
-      (%dag-transitive dag dag:children node '()))
+      (begin
+        (%assert-dag-edges dag)
+        (%assert-var dag node)
+        (%dag-transitive dag %dag-children-raw node '())))
 
     ;; All nodes that are not descendants of `node` (and not `node` itself).
     (defun dag:non-descendants (dag node)
-      (let ((desc (%adjoin node (dag:descendants dag node))))
-        (filter (lambda (n) (not (%member? n desc)))
-                (dag:nodes dag))))
+      (begin
+        (%assert-dag-edges dag)
+        (%assert-var dag node)
+        (let ((desc (%adjoin node (dag:descendants dag node))))
+          (filter (lambda (n) (not (%member? n desc)))
+                  (dag:nodes dag)))))
 
     ;; Is there a directed path from `from` to `to`, not passing through
     ;; any node in `forbidden`?
     (defun dag:has-path? (dag from to forbidden)
-      (%dag-reachable? dag from to forbidden '()))
+      (begin
+        (%assert-dag-edges dag)
+        (%assert-var dag from)
+        (%assert-var dag to)
+        (%assert-vars dag forbidden)
+        (%dag-reachable? dag from to forbidden '())))
+
+    ;; True iff `dag` is well-formed and acyclic.
+    (defun dag:valid? (dag)
+      (and (every? %dag-edge? dag)
+           (not (dag:cyclic? dag))))
+
+    ;; True iff `dag` contains a directed cycle.
+    (defun dag:cyclic? (dag)
+      (begin
+        (%assert-dag-edges dag)
+        (any? (lambda (n) (%member? n (dag:descendants dag n)))
+              (dag:nodes dag))))
+
+    ;; Topological order of DAG nodes.
+    ;; Raises (error 'cyclic-graph dag) if the graph has a cycle.
+    (defun dag:topo-sort (dag)
+      (begin
+        (%assert-dag-edges dag)
+        (if (dag:cyclic? dag)
+            (error 'cyclic-graph dag)
+            (let* ((nodes (dag:nodes dag))
+                   (indeg (%dag-indegrees dag nodes))
+                   (queue (filter (lambda (n) (= (%assoc-get indeg n 0) 0))
+                                  nodes)))
+              (let loop ((q queue) (curr indeg) (order '()))
+                (if (null? q)
+                    (if (= (length order) (length nodes))
+                        (reverse order)
+                        (error 'cyclic-graph dag))
+                    (let* ((n (car q))
+                           (step (%dag-reduce-indegree dag n curr))
+                           (next-indeg (car step))
+                           (ready (cadr step)))
+                      (loop (append (cdr q) ready)
+                            next-indeg
+                            (cons n order)))))))))
 
     ;; Return `dag` with edge (from -> to) added if missing.
     (defun dag:add-edge (dag from to)
@@ -120,9 +199,21 @@
     ;; -- Causal identification --------------------------------------------
 
     ;; True if there is at least one active path between X and Y given Z.
+    ;; Accepts symbols or node-sets for X and Y.
     (defun dag:d-connected? (dag x y z-set)
-      (any? (lambda (path) (%path-active? dag path z-set))
-            (%dag-all-simple-paths dag x y)))
+      (begin
+        (%assert-dag-edges dag)
+        (let* ((x-set (%as-node-set x))
+               (y-set (%as-node-set y))
+               (z-nodes (%as-node-set z-set)))
+          (%assert-vars dag x-set)
+          (%assert-vars dag y-set)
+          (%assert-vars dag z-nodes)
+          (if (or (null? x-set) (null? y-set))
+              #f
+              (let ((reachable (%bayes-ball dag x-set z-nodes)))
+                (any? (lambda (target) (%member? target reachable))
+                      y-set))))))
 
     ;; True if all paths between X and Y are blocked by Z.
     (defun dag:d-separated? (dag x y z-set)
@@ -137,27 +228,36 @@
     ;; Back-door paths are undirected simple paths from X to Y whose first
     ;; edge is into X.
     (defun dag:satisfies-backdoor? (dag x y z-set)
-      (and
-        (every? (lambda (z)
-                  (not (%member? z (dag:descendants dag x))))
-                z-set)
-        (every? (lambda (path)
-                  (not (%path-active? dag path z-set)))
-                (%dag-backdoor-node-paths dag x y))))
+      (begin
+        (%assert-valid-dag dag)
+        (%assert-var dag x)
+        (%assert-var dag y)
+        (%assert-vars dag z-set)
+        (and
+          (every? (lambda (z)
+                    (not (%member? z (dag:descendants dag x))))
+                  z-set)
+          (every? (lambda (path)
+                    (not (%path-active? dag path z-set)))
+                  (%dag-backdoor-node-paths dag x y)))))
 
     ;; (dag:adjustment-sets dag x y [max-size])
     ;;
     ;; Enumerate valid back-door adjustment sets in non-decreasing set size.
     ;; Candidate variables come from non-descendants(X), excluding X and Y.
     (defun dag:adjustment-sets (dag x y . rest)
-      (let* ((cands (%adjustment-candidates dag x y))
-             (max-k (if (null? rest)
-                        (length cands)
-                        (%normalize-max-size (car rest) (length cands))))
-             (subsets (%subsets-up-to-size cands max-k)))
-        (filter (lambda (z)
-                  (dag:satisfies-backdoor? dag x y z))
-                subsets)))
+      (begin
+        (%assert-valid-dag dag)
+        (%assert-var dag x)
+        (%assert-var dag y)
+        (let* ((cands (%adjustment-candidates dag x y))
+               (max-k (if (null? rest)
+                          (length cands)
+                          (%normalize-max-size (car rest) (length cands))))
+               (subsets (%subsets-up-to-size cands max-k)))
+          (filter (lambda (z)
+                    (dag:satisfies-backdoor? dag x y z))
+                  subsets))))
 
     ;; (dag:adjustment-sets-observed dag x y observed [max-size])
     ;;
@@ -165,15 +265,20 @@
     ;; are eligible for adjustment.  Useful when DAG variants include latent
     ;; variables that must not appear in Z.
     (defun dag:adjustment-sets-observed (dag x y observed . rest)
-      (let* ((all-cands (%adjustment-candidates dag x y))
-             (cands (filter (lambda (n) (%member? n observed)) all-cands))
-             (max-k (if (null? rest)
-                        (length cands)
-                        (%normalize-max-size (car rest) (length cands))))
-             (subsets (%subsets-up-to-size cands max-k)))
-        (filter (lambda (z)
-                  (dag:satisfies-backdoor? dag x y z))
-                subsets)))
+      (begin
+        (%assert-valid-dag dag)
+        (%assert-var dag x)
+        (%assert-var dag y)
+        (%assert-vars dag observed)
+        (let* ((all-cands (%adjustment-candidates dag x y))
+               (cands (filter (lambda (n) (%member? n observed)) all-cands))
+               (max-k (if (null? rest)
+                          (length cands)
+                          (%normalize-max-size (car rest) (length cands))))
+               (subsets (%subsets-up-to-size cands max-k)))
+          (filter (lambda (z)
+                    (dag:satisfies-backdoor? dag x y z))
+                  subsets))))
 
     ;; (do:identify-details dag y x [max-size])
     ;;
@@ -184,86 +289,95 @@
     ;;   (all-z-sets . (Z1 Z2 ...))
     ;;   (assumptions . (...))
     (defun do:identify-details (dag y x . rest)
-      (let* ((max-k (if (null? rest) #f (car rest)))
-             (backdoor-paths (%dag-backdoor-node-paths dag x y))
-             (z-sets (if max-k
-                         (dag:adjustment-sets dag x y max-k)
-                         (dag:adjustment-sets dag x y))))
-        (cond
-          ((null? backdoor-paths)
-           (list
-             (cons 'status 'direct)
-             (cons 'result '(direct))
-             (cons 'chosen-z '())
-             (cons 'all-z-sets (list '()))
-             (cons 'assumptions (%identify-assumptions))))
-          ((null? z-sets)
-           (list
-             (cons 'status 'unidentified)
-             (cons 'result #f)
-             (cons 'chosen-z #f)
-             (cons 'all-z-sets '())
-             (cons 'assumptions (%identify-assumptions))))
-          (else
-           (let ((z (car z-sets)))
-             (if (null? z)
-                 (list
-                   (cons 'status 'direct)
-                   (cons 'result '(direct))
-                   (cons 'chosen-z z)
-                   (cons 'all-z-sets z-sets)
-                   (cons 'assumptions (%identify-assumptions)))
-                 (list
-                   (cons 'status 'adjust)
-                   (cons 'result (list 'adjust z
-                                       (list 'P y x z)
-                                       (list 'P z)))
-                   (cons 'chosen-z z)
-                   (cons 'all-z-sets z-sets)
-                   (cons 'assumptions (%identify-assumptions)))))))))
+      (begin
+        (%assert-valid-dag dag)
+        (%assert-var dag x)
+        (%assert-var dag y)
+        (let* ((max-k (if (null? rest) #f (car rest)))
+               (backdoor-paths (%dag-backdoor-node-paths dag x y))
+               (z-sets (if max-k
+                           (dag:adjustment-sets dag x y max-k)
+                           (dag:adjustment-sets dag x y))))
+          (cond
+            ((null? backdoor-paths)
+             (list
+               (cons 'status 'direct)
+               (cons 'result '(direct))
+               (cons 'chosen-z '())
+               (cons 'all-z-sets (list '()))
+               (cons 'assumptions (%identify-assumptions))))
+            ((null? z-sets)
+             (list
+               (cons 'status 'unidentified)
+               (cons 'result #f)
+               (cons 'chosen-z #f)
+               (cons 'all-z-sets '())
+               (cons 'assumptions (%identify-assumptions))))
+            (else
+             (let ((z (car z-sets)))
+               (if (null? z)
+                   (list
+                     (cons 'status 'direct)
+                     (cons 'result '(direct))
+                     (cons 'chosen-z z)
+                     (cons 'all-z-sets z-sets)
+                     (cons 'assumptions (%identify-assumptions)))
+                   (list
+                     (cons 'status 'adjust)
+                     (cons 'result (list 'adjust z
+                                         (list 'P y x z)
+                                         (list 'P z)))
+                     (cons 'chosen-z z)
+                     (cons 'all-z-sets z-sets)
+                     (cons 'assumptions (%identify-assumptions))))))))))
 
     ;; (do:identify-details-observed dag y x observed [max-size])
     ;;
     ;; Like do:identify-details, but restricts adjustment-set search to
     ;; variables listed in `observed`.
     (defun do:identify-details-observed (dag y x observed . rest)
-      (let* ((max-k (if (null? rest) #f (car rest)))
-             (backdoor-paths (%dag-backdoor-node-paths dag x y))
-             (z-sets (if max-k
-                         (dag:adjustment-sets-observed dag x y observed max-k)
-                         (dag:adjustment-sets-observed dag x y observed))))
-        (cond
-          ((null? backdoor-paths)
-           (list
-             (cons 'status 'direct)
-             (cons 'result '(direct))
-             (cons 'chosen-z '())
-             (cons 'all-z-sets (list '()))
-             (cons 'assumptions (%identify-assumptions-observed))))
-          ((null? z-sets)
-           (list
-             (cons 'status 'unidentified)
-             (cons 'result #f)
-             (cons 'chosen-z #f)
-             (cons 'all-z-sets '())
-             (cons 'assumptions (%identify-assumptions-observed))))
-          (else
-           (let ((z (car z-sets)))
-             (if (null? z)
-                 (list
-                   (cons 'status 'direct)
-                   (cons 'result '(direct))
-                   (cons 'chosen-z z)
-                   (cons 'all-z-sets z-sets)
-                   (cons 'assumptions (%identify-assumptions-observed)))
-                 (list
-                   (cons 'status 'adjust)
-                   (cons 'result (list 'adjust z
-                                       (list 'P y x z)
-                                       (list 'P z)))
-                   (cons 'chosen-z z)
-                   (cons 'all-z-sets z-sets)
-                   (cons 'assumptions (%identify-assumptions-observed)))))))))
+      (begin
+        (%assert-valid-dag dag)
+        (%assert-var dag x)
+        (%assert-var dag y)
+        (%assert-vars dag observed)
+        (let* ((max-k (if (null? rest) #f (car rest)))
+               (backdoor-paths (%dag-backdoor-node-paths dag x y))
+               (z-sets (if max-k
+                           (dag:adjustment-sets-observed dag x y observed max-k)
+                           (dag:adjustment-sets-observed dag x y observed))))
+          (cond
+            ((null? backdoor-paths)
+             (list
+               (cons 'status 'direct)
+               (cons 'result '(direct))
+               (cons 'chosen-z '())
+               (cons 'all-z-sets (list '()))
+               (cons 'assumptions (%identify-assumptions-observed))))
+            ((null? z-sets)
+             (list
+               (cons 'status 'unidentified)
+               (cons 'result #f)
+               (cons 'chosen-z #f)
+               (cons 'all-z-sets '())
+               (cons 'assumptions (%identify-assumptions-observed))))
+            (else
+             (let ((z (car z-sets)))
+               (if (null? z)
+                   (list
+                     (cons 'status 'direct)
+                     (cons 'result '(direct))
+                     (cons 'chosen-z z)
+                     (cons 'all-z-sets z-sets)
+                     (cons 'assumptions (%identify-assumptions-observed)))
+                   (list
+                     (cons 'status 'adjust)
+                     (cons 'result (list 'adjust z
+                                         (list 'P y x z)
+                                         (list 'P z)))
+                     (cons 'chosen-z z)
+                     (cons 'all-z-sets z-sets)
+                     (cons 'assumptions (%identify-assumptions-observed))))))))))
 
     ;; (do:identify dag y x [max-size])
     ;;
@@ -316,44 +430,165 @@
 
     ;; -- Numeric estimation (pure Eta, no FFI) ---------------------------
 
-    ;; (do:estimate-effect y-var x-var x-val z-set z-val data)
+    ;; (do:estimate-effect y-var x-var x-val z-set data)
+    ;; (do:estimate-effect y-var x-var x-val z-set z-val data) ; legacy arity
     ;;
     ;; Estimate E[Y | do(X=x-val)] using:
     ;;   Sum_z E[Y | X=x-val, Z=z] * P(Z=z)
-    (defun do:estimate-effect (y-var x-var x-val z-set z-val data)
+    (defun do:estimate-effect (y-var x-var x-val z-set . rest)
+      (cond
+        ((= (length rest) 1)
+         (do:%estimate-effect-marginal y-var x-var x-val z-set (car rest)))
+        ((= (length rest) 2)
+         (do:%estimate-effect-single y-var x-var x-val z-set
+                                     (car rest)
+                                     (cadr rest)))
+        (else
+         (error "do:estimate-effect: expected (y x x-val z-set data) or (y x x-val z-set z-val data)"))))
+
+    ;; Legacy one-stratum contribution (kept for compatibility).
+    (defun do:%estimate-effect-single (y-var x-var x-val z-set z-val data)
       (let* ((stratum (filter (lambda (obs)
                                 (and (equal? (%obs-get obs x-var) x-val)
                                      (%obs-matches-z obs z-set z-val)))
                               data))
              (p-z (do:marginal-prob data z-set z-val)))
         (if (null? stratum)
-            0
+            0.0
             (* (do:conditional-mean stratum y-var) p-z))))
+
+    ;; Full back-door adjustment sum over all observed Z-tuples.
+    (defun do:%estimate-effect-marginal (y-var x-var x-val z-set data)
+      (let ((z-values (%distinct-tuples data z-set)))
+        (foldl (lambda (acc z-val)
+                 (+ acc (do:%estimate-effect-single
+                          y-var x-var x-val z-set z-val data)))
+               0.0
+               z-values)))
 
     ;; (do:conditional-mean data y-var)
     ;; Compute sample mean of y-var in `data`.
     (defun do:conditional-mean (data y-var)
       (if (null? data)
-          0
+          0.0
           (let* ((n (length data))
                  (ysum (foldl (lambda (acc obs)
                                 (+ acc (%obs-get obs y-var)))
                               0
                               data)))
-            (/ ysum n))))
+            (/ (* 1.0 ysum) n))))
 
     ;; (do:marginal-prob data z-set z-val)
     ;; Estimate P(Z=z-val) from sample.
     (defun do:marginal-prob (data z-set z-val)
       (if (null? data)
-          0
+          0.0
           (let* ((n (length data))
                  (matches (count (lambda (obs)
                                    (%obs-matches-z obs z-set z-val))
                                  data)))
-            (/ matches n))))
+            (/ (* 1.0 matches) n))))
 
     ;; -- Internal graph helpers ------------------------------------------
+
+    ;; Association-list lookup with default.
+    (defun %assoc-get (alist key default)
+      (let ((entry (assq key alist)))
+        (if entry (cdr entry) default)))
+
+    ;; Association-list update (insert-or-replace).
+    (defun %assoc-set (alist key val)
+      (cond
+        ((null? alist) (list (cons key val)))
+        ((eq? key (car (car alist)))
+         (cons (cons key val) (cdr alist)))
+        (else
+         (cons (car alist) (%assoc-set (cdr alist) key val)))))
+
+    ;; Initial indegree map for Kahn's algorithm.
+    (defun %dag-indegrees (dag nodes)
+      (let ((base (map* (lambda (n) (cons n 0)) nodes)))
+        (foldl (lambda (acc e)
+                 (let* ((dst (%dag-edge-to e))
+                        (deg (%assoc-get acc dst 0)))
+                   (%assoc-set acc dst (+ deg 1))))
+               base
+               dag)))
+
+    ;; Reduce indegrees of children after removing `node`.
+    ;; Returns (list next-indegree newly-ready).
+    (defun %dag-reduce-indegree (dag node indeg)
+      (let loop ((children (%dag-children-raw dag node))
+                 (curr indeg)
+                 (ready '()))
+        (if (null? children)
+            (list curr (reverse ready))
+            (let* ((child (car children))
+                   (deg (%assoc-get curr child 0))
+                   (next-deg (- deg 1))
+                   (next-map (%assoc-set curr child next-deg))
+                   (next-ready (if (= next-deg 0)
+                                   (%adjoin child ready)
+                                   ready)))
+              (loop (cdr children) next-map next-ready)))))
+
+    ;; Ancestors(Z) union Z.
+    (defun %ancestor-closure (dag z-set)
+      (foldl (lambda (acc z)
+               (foldl (lambda (acc2 x) (%adjoin x acc2))
+                      (%adjoin z acc)
+                      (dag:ancestors dag z)))
+             '()
+             z-set))
+
+    (defun %as-up-states (nodes)
+      (map* (lambda (n) (cons n 'up)) nodes))
+
+    (defun %as-down-states (nodes)
+      (map* (lambda (n) (cons n 'down)) nodes))
+
+    ;; Transition rules for Bayes-ball.
+    (defun %bayes-ball-step (dag node dir observed? anc-z)
+      (cond
+        ((eq? dir 'up)
+         (if observed?
+             (%as-up-states (%dag-parents-raw dag node))
+             (append (%as-up-states (%dag-parents-raw dag node))
+                     (%as-down-states (%dag-children-raw dag node)))))
+        ((eq? dir 'down)
+         (append
+           (if observed?
+               '()
+               (%as-down-states (%dag-children-raw dag node)))
+           (if (%member? node anc-z)
+               (%as-up-states (%dag-parents-raw dag node))
+               '())))
+        (else '())))
+
+    ;; Bayes-ball reachability from start set given observed set Z.
+    (defun %bayes-ball (dag start z-set)
+      (let* ((anc-z (%ancestor-closure dag z-set))
+             (queue (foldl (lambda (acc s)
+                             (append acc (list (cons s 'up) (cons s 'down))))
+                           '()
+                           start)))
+        (let loop ((q queue) (visited '()) (reachable '()))
+          (if (null? q)
+              (reverse reachable)
+              (let* ((state (car q))
+                     (node (car state))
+                     (dir (cdr state)))
+                (if (%member? state visited)
+                    (loop (cdr q) visited reachable)
+                    (let* ((visited2 (cons state visited))
+                           (observed? (%member? node z-set))
+                           (reachable2 (if observed?
+                                           reachable
+                                           (%adjoin node reachable)))
+                           (next (%bayes-ball-step dag node dir observed? anc-z)))
+                      (loop (append (cdr q) next)
+                            visited2
+                            reachable2))))))))
 
     ;; Transitive closure helper over next-fn.
     (defun %dag-transitive (dag next-fn node visited)
@@ -376,7 +611,7 @@
          (let ((new-visited (%adjoin from visited)))
            (any? (lambda (child)
                    (%dag-reachable? dag child to forbidden new-visited))
-                  (dag:children dag from))))))
+                  (%dag-children-raw dag from))))))
 
     ;; True iff there is a directed edge from -> to.
     (defun %dag-has-edge? (dag from to)
@@ -389,8 +624,8 @@
     (defun %dag-neighbors (dag node)
       (foldl (lambda (acc n) (%adjoin n acc))
              '()
-             (append (dag:parents dag node)
-                     (dag:children dag node))))
+             (append (%dag-parents-raw dag node)
+                     (%dag-children-raw dag node))))
 
     ;; Enumerate all simple undirected node paths between src and dst.
     (defun %dag-all-simple-paths (dag src dst)
@@ -507,6 +742,25 @@
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
+    (defun %as-node-set (x)
+      (cond
+        ((null? x) '())
+        ((symbol? x) (list x))
+        ((list? x) x)
+        (else (error "expected symbol or list of symbols"))))
+
+    (defun %assert-var (dag v)
+      (if (%member? v (dag:nodes dag))
+          v
+          (error 'unknown-variable v)))
+
+    (defun %assert-vars (dag vs)
+      (if (null? vs)
+          '()
+          (begin
+            (%assert-var dag (car vs))
+            (%assert-vars dag (cdr vs)))))
+
     ;; -- Observation record helpers --------------------------------------
 
     (defun %obs-get (obs var)
@@ -517,5 +771,17 @@
                 (equal? (%obs-get obs z-var)
                         (%obs-get z-val z-var)))
               z-set))
+
+    (defun %obs-project-z (obs z-set)
+      (map* (lambda (z-var)
+              (cons z-var (%obs-get obs z-var)))
+            z-set))
+
+    (defun %distinct-tuples (data z-set)
+      (reverse
+        (foldl (lambda (acc obs)
+                 (%adjoin (%obs-project-z obs z-set) acc))
+               '()
+               data)))
 
   ))

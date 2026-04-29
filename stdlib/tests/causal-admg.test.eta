@@ -1,0 +1,39 @@
+;;; stdlib/tests/causal-admg.test.eta -- Tests for std.causal.admg
+
+(module causal.admg.tests
+  (import std.test std.causal.admg std.core std.collections)
+  (begin
+
+    (defun contains-edge? (g edge)
+      (any? (lambda (e) (equal? e edge)) g))
+
+    (defun subset? (a b)
+      (every? (lambda (x) (member x b)) a))
+
+    (defun set-equal? (a b)
+      (and (subset? a b) (subset? b a)))
+
+    (define suite
+      (make-group "std.causal.admg"
+        (list
+          (make-test "district groups bidirected-connected nodes"
+            (lambda ()
+              (let ((g '((a -> b) (b -> c) (a <-> c))))
+                (assert-true (set-equal? (admg:district g 'a) '(a c)))
+                (assert-true (set-equal? (admg:district g 'b) '(b))))))
+
+          (make-test "ancestors ignores bidirected edges"
+            (lambda ()
+              (let ((g '((a <-> b) (b -> c) (d -> b))))
+                (assert-true (set-equal? (admg:ancestors g 'c) '(b d)))
+                (assert-false (member 'a (admg:ancestors g 'c))))))
+
+          (make-test "latent projection of bow graph yields directed and bidirected edge"
+            (lambda ()
+              ;; latent u with u->x, u->y and directed x->y
+              (let* ((dag '((u -> x) (u -> y) (x -> y)))
+                     (g (admg:project dag '(u))))
+                (assert-true (contains-edge? g '(x -> y)))
+                (assert-true (contains-edge? g '(x <-> y)))))))))
+
+    (print-tap (run suite))))

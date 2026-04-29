@@ -528,6 +528,13 @@ variants), and numeric estimators (`do:estimate-effect`,
 
 > **📖 Full documentation:** [Causal Inference](causal.md)
 
+ADMG-specific helpers (districts and latent projection) are in a
+separate submodule:
+
+```scheme
+(import std.causal.admg)
+```
+
 ---
 
 ### `std.stats` — Statistics & Linear Models

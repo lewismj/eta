@@ -1,0 +1,50 @@
+;;; stdlib/tests/causal-dsep.test.eta -- Bayes-ball regression tests
+
+(module causal.dsep.tests
+  (import std.test std.causal std.core std.collections)
+  (begin
+
+    (defun node-sym (i)
+      (string->symbol (string-append "n" (number->string i))))
+
+    (defun make-chain (n)
+      (let loop ((i 0) (acc '()))
+        (if (>= (+ i 1) n)
+            (reverse acc)
+            (loop (+ i 1)
+                  (cons (list (node-sym i) '-> (node-sym (+ i 1))) acc)))))
+
+    ;; Pearl-style small graph:
+    ;; a -> b -> c -> d, e -> b, e -> d
+    (define p
+      '((a -> b)
+        (b -> c)
+        (c -> d)
+        (e -> b)
+        (e -> d)))
+
+    (define suite
+      (make-group "std.causal d-separation"
+        (list
+          (make-test "chain a-b-c is blocked by conditioning on b"
+            (lambda ()
+              (assert-true (dag:d-separated? p '(a) '(c) '(b)))))
+
+          (make-test "fork is open without conditioning"
+            (lambda ()
+              (assert-true (dag:d-connected? p '(b) '(d) '()))))
+
+          (make-test "conditioning on collider opens path"
+            (lambda ()
+              (assert-true (dag:d-connected? p '(a) '(e) '(b)))))
+
+          (make-test "symbol form remains supported"
+            (lambda ()
+              (assert-true (dag:d-connected? p 'b 'd '()))))
+
+          (make-test "Bayes-ball handles long chains"
+            (lambda ()
+              (let ((big (make-chain 1000)))
+                (assert-true (dag:d-separated? big '(n0) '(n999) '(n500)))))))))
+
+    (print-tap (run suite))))

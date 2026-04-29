@@ -29,6 +29,13 @@
     (defun contains-edge? (dag edge)
       (any? (lambda (e) (equal? e edge)) dag))
 
+    (defun index-of (x xs)
+      (let loop ((rest xs) (i 0))
+        (cond
+          ((null? rest) #f)
+          ((equal? x (car rest)) i)
+          (else (loop (cdr rest) (+ i 1))))))
+
     (define suite
       (make-group "std.causal"
         (list
@@ -130,6 +137,37 @@
                   (let ((details (do:identify-details direct-dag 'y 'x)))
                     (assert-equal 'direct (assoc-ref 'status details))
                     (assert-equal '(direct) (assoc-ref 'result details))
-                    (assert-equal '() (assoc-ref 'chosen-z details)))))))))
+                    (assert-equal '() (assoc-ref 'chosen-z details)))))))
+
+          (make-group "M0 regressions"
+            (list
+              (make-test "do:estimate-effect marginalises over z strata"
+                (lambda ()
+                  (let ((d '(((x . 1) (z . 0) (y . 4))
+                             ((x . 1) (z . 1) (y . 8))
+                             ((x . 0) (z . 0) (y . 1))
+                             ((x . 0) (z . 1) (y . 2)))))
+                    (assert-approx-equal 6.0
+                                         (do:estimate-effect 'y 'x 1 '(z) d)
+                                         1e-12))))
+              (make-test "do:marginal-prob performs floating-point division"
+                (lambda ()
+                  (assert-approx-equal (/ 2.0 3.0)
+                                       (do:marginal-prob
+                                         '(((z . 0)) ((z . 1)) ((z . 1)))
+                                         '(z)
+                                         '((z . 1)))
+                                       1e-12)))
+              (make-test "dag:cyclic? detects a two-node cycle"
+                (lambda ()
+                  (assert-true (dag:cyclic? '((a -> b) (b -> a))))))
+              (make-test "dag:topo-sort yields a valid linear extension"
+                (lambda ()
+                  (let* ((order (dag:topo-sort '((a -> b) (b -> c) (a -> c))))
+                         (ia (index-of 'a order))
+                         (ib (index-of 'b order))
+                         (ic (index-of 'c order)))
+                    (assert-true (< ia ib))
+                    (assert-true (< ib ic)))))))))
 
     (print-tap (run suite)))))

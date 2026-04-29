@@ -190,6 +190,9 @@ Observed-set-restricted identification (useful for latent-confounder stress DAGs
 ;; => ((status . unidentified) ...)
 ```
 
+`dag:d-connected?` and `dag:d-separated?` are implemented with
+Bayes-ball traversal, so reachability queries scale linearly with graph size.
+
 ---
 
 ## DAG Graph Utilities
@@ -206,11 +209,14 @@ edge-list format:
 | `(dag:descendants dag n)`                                    | Transitive effects (BFS)                                            |
 | `(dag:non-descendants dag n)`                                | All nodes except descendants of `n`                                 |
 | `(dag:has-path? dag a b forbidden)`                          | Path from `a` to `b` not through `forbidden`                        |
+| `(dag:valid? dag)`                                            | True when edges are well-formed and acyclic                         |
+| `(dag:cyclic? dag)`                                           | True when a directed cycle exists                                   |
+| `(dag:topo-sort dag)`                                         | Topological order (raises `cyclic-graph` on cyclic input)           |
 | `(dag:add-edge dag from to)`                                 | Return DAG with `from -> to` inserted                               |
 | `(dag:remove-edge dag from to)`                              | Return DAG with `from -> to` removed                                |
 | `(dag:flip-edge dag from to)`                                | Return DAG with `from -> to` flipped to `to -> from`                |
-| `(dag:d-connected? dag x y z-set)`                           | True if any active path exists between `x` and `y` given `z-set`    |
-| `(dag:d-separated? dag x y z-set)`                           | True if all paths between `x` and `y` are blocked by `z-set`        |
+| `(dag:d-connected? dag x-or-set y-or-set z-set)`             | True if any active path exists between X and Y given `z-set`        |
+| `(dag:d-separated? dag x-or-set y-or-set z-set)`             | True if all paths between X and Y are blocked by `z-set`            |
 | `(dag:satisfies-backdoor? dag x y z-set)`                    | Back-door criterion check                                           |
 | `(dag:adjustment-sets dag x y [max-size])`                   | Enumerate valid back-door adjustment sets, minimal first            |
 | `(dag:adjustment-sets-observed dag x y observed [max-size])` | Enumerate valid sets restricted to observed variables               |
@@ -234,6 +240,27 @@ edge-list format:
 
 ---
 
+## ADMG Utilities
+
+For mixed graphs with latent confounding, import:
+
+```scheme
+(import std.causal.admg)
+```
+
+`std.causal.admg` provides:
+
+| Function | Description |
+| -------- | ----------- |
+| `(admg:directed g)` | Directed edges in an ADMG |
+| `(admg:bidirected g)` | Bidirected edges (`<->`) |
+| `(admg:district g v)` / `(admg:districts g)` | Bidirected-connected components |
+| `(admg:project dag latents)` | Latent projection from DAG to ADMG over observed nodes |
+| `(admg:ancestors g v-or-set)` | Directed ancestors (ignores bidirected edges) |
+| `(admg:moralize g s)` | Ancestral moralization to an undirected graph |
+
+---
+
 ## Numeric Estimation
 
 ### The Back-Door Adjustment Formula
@@ -247,6 +274,12 @@ E[Y | do(X=x)] = Σ_s  E[Y | X=x, sector=s]  ·  P(sector=s)
 
 `std.causal` provides `do:estimate-effect` and `do:conditional-mean` for
 this purpose, using plain Eta arithmetic:
+
+```scheme
+(do:estimate-effect y-var x-var x-val z-set data)
+;; legacy arity also accepted:
+;; (do:estimate-effect y-var x-var x-val z-set z-val data)
+```
 
 ```scheme
 (do:conditional-mean
@@ -278,9 +311,9 @@ this purpose, using plain Eta arithmetic:
     ;; Numeric estimation: CATE for beta=1.4 vs beta=0.9
     (define cate
       (- (do:estimate-effect 'stock-return 'market-beta 1.4
-                             '(sector) '((sector . tech))    data)
+                             '(sector) data)
          (do:estimate-effect 'stock-return 'market-beta 0.9
-                             '(sector) '((sector . energy))  data)))
+                             '(sector) data)))
     (print "Adjusted CATE: ")
     (println cate)))
 ```
