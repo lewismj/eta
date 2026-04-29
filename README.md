@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">η (Eta)</h1>
 
-<hr style="border: none; height: 1px; background: linear-gradient(to right, transparent, #e6e6e6, transparent);">
+<hr style="border: none; border-top: 1px solid #f0f0f0;">
 
 <p align="center">
   <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
@@ -26,7 +26,8 @@
   <a href="docs/featured_examples/xva-wwr.md">docs</a>
 </p>
 
-<hr style="border: none; height: 1px; background: linear-gradient(to right, transparent, #e6e6e6, transparent);">
+<hr style="border: none; border-top: 1px solid #f0f0f0;">
+
 
 ## The Language
 
