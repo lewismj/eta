@@ -87,6 +87,18 @@
           Back-door set empty under the SCM, so do(oil = .) is
           identifiable from observational regression betas.
 
+    Identification status:              direct
+    Rule checks (R1,R2,R3):             #t, #t, #t
+    IDC status P(hazard | do(oil), usd-rates):ident
+    ADMG bow status:                    fail
+    ADMG front-door status:             ident
+    ADMG front-door IDC status:         ident
+
+    Note on statuses:
+      - ident/direct: effect is identifiable under the assumed SCM.
+      - fail: that causal query is non-identifiable for that motif;
+              this is a modelling-analysis limitation signal, not a runtime error.
+
     --- book CVA under do-interventions ---
     var             do(-shock)      do(+shock)        spread
     oil                 78,946         169,135        +90189
@@ -159,5 +171,4 @@
   re-pricing under do(oil=+0.30) inflates book CVA materially
   while the single-pass AAD greek vector and ML-recovered SCM betas
   remain consistent with the analytic / hand-coded baselines.
-
 

@@ -1,0 +1,43 @@
+;;; stdlib/tests/causal-idc.test.eta -- Tests for IDC and estimand simplification
+
+(module causal.idc.tests
+  (import std.test std.causal.identify std.core std.collections)
+  (begin
+
+    (defun fail-hedge? (expr)
+      (and (pair? expr)
+           (eq? (car expr) 'fail)
+           (pair? (cadr expr))
+           (eq? (car (cadr expr)) 'hedge)))
+
+    (define suite
+      (make-group "std.causal.identify IDC"
+        (list
+          (make-test "IDC returns conditional direct estimand"
+            (lambda ()
+              (assert-equal '(P (y x z))
+                            (idc '((x -> y) (z -> y))
+                                 '(y)
+                                 '(x)
+                                 '(z)))))
+
+          (make-test "IDC on bow graph still reports hedge"
+            (lambda ()
+              (assert-true
+                (fail-hedge? (idc '((x -> y) (x <-> y))
+                                  '(y)
+                                  '(x)
+                                  '())))))
+
+          (make-test "do:simplify removes empty summation"
+            (lambda ()
+              (assert-equal '(P (y))
+                            (do:simplify '(sum () (P (y)))))))
+
+          (make-test "do:simplify collapses trivial conditioning"
+            (lambda ()
+              (assert-equal '(P (y x))
+                            (do:simplify '(cond-on (prod (P (y x)))
+                                                   (P ())))))))))
+
+    (print-tap (run suite))))

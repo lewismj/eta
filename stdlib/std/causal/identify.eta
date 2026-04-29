@@ -1,14 +1,19 @@
-;;; std/causal/identify.eta -- ID algorithm for ADMGs.
+;;; std/causal/identify.eta -- ID/IDC algorithms for ADMGs.
 ;;;
 ;;; Public API:
 ;;;   (id g y x)
 ;;;     Returns an estimand AST for P(Y | do(X)) over ADMG g, or
 ;;;     (fail (hedge ...)) when the effect is not identifiable.
+;;;   (idc g y x z)
+;;;     Returns an estimand AST for P(Y | do(X), Z) over ADMG g.
+;;;   (do:simplify estimand)
+;;;     Simplifies the estimand AST algebraically.
 ;;;
 ;;; Estimand AST nodes:
 ;;;   (P vars)                 observational factor
 ;;;   (sum vars expr)          marginalization
 ;;;   (prod e1 e2 ...)         product of factors
+;;;   (cond-on expr cond)      conditional expression
 ;;;   (fail (hedge ...))       non-identifiable witness
 
 (module std.causal.identify
@@ -16,7 +21,7 @@
   (import std.collections)
   (import std.causal)
   (import std.causal.admg)
-  (export id id-rec)
+  (export id id-rec idc do:simplify)
   (begin
 
     ;; -- Set helpers -----------------------------------------------------
@@ -100,6 +105,110 @@
                 (not (and (%directed-edge? e)
                           (%member? (%edge-to e) x-set))))
               g))
+
+    (defun %admg-mutilate-see (g x-set)
+      (filter (lambda (e)
+                (not (and (%directed-edge? e)
+                          (%member? (%edge-from e) x-set))))
+              g))
+
+    ;; DAG-only Bayes-ball utilities used by IDC Rule 2 checks.
+    ;; These helpers intentionally tolerate isolated nodes that may not
+    ;; appear in any edge list after graph mutilation.
+
+    (defun %dag-parents-raw (dag node)
+      (foldl (lambda (acc e)
+               (if (and (%directed-edge? e)
+                        (eq? (%edge-to e) node))
+                   (%adjoin (%edge-from e) acc)
+                   acc))
+             '()
+             dag))
+
+    (defun %dag-children-raw (dag node)
+      (foldl (lambda (acc e)
+               (if (and (%directed-edge? e)
+                        (eq? (%edge-from e) node))
+                   (%adjoin (%edge-to e) acc)
+                   acc))
+             '()
+             dag))
+
+    (defun %dag-ancestors-lite (dag node)
+      (let loop ((stack (%dag-parents-raw dag node))
+                 (seen '()))
+        (if (null? stack)
+            seen
+            (let ((n (car stack)))
+              (if (%member? n seen)
+                  (loop (cdr stack) seen)
+                  (loop (append (%dag-parents-raw dag n) (cdr stack))
+                        (%adjoin n seen)))))))
+
+    (defun %ancestor-closure-lite (dag z-set)
+      (foldl (lambda (acc z)
+               (foldl (lambda (acc2 a) (%adjoin a acc2))
+                      (%adjoin z acc)
+                      (%dag-ancestors-lite dag z)))
+             '()
+             z-set))
+
+    (defun %as-up-states (nodes)
+      (map* (lambda (n) (cons n 'up)) nodes))
+
+    (defun %as-down-states (nodes)
+      (map* (lambda (n) (cons n 'down)) nodes))
+
+    (defun %bayes-ball-step-lite (dag node dir observed? anc-z)
+      (cond
+        ((eq? dir 'up)
+         (if observed?
+             (%as-up-states (%dag-parents-raw dag node))
+             (append (%as-up-states (%dag-parents-raw dag node))
+                     (%as-down-states (%dag-children-raw dag node)))))
+        ((eq? dir 'down)
+         (append
+           (if observed?
+               '()
+               (%as-down-states (%dag-children-raw dag node)))
+           (if (%member? node anc-z)
+               (%as-up-states (%dag-parents-raw dag node))
+               '())))
+        (else '())))
+
+    (defun %bayes-ball-lite (dag start z-set)
+      (let* ((anc-z (%ancestor-closure-lite dag z-set))
+             (queue (foldl (lambda (acc s)
+                             (append acc (list (cons s 'up) (cons s 'down))))
+                           '()
+                           start)))
+        (let loop ((q queue) (visited '()) (reachable '()))
+          (if (null? q)
+              reachable
+              (let* ((state (car q))
+                     (node (car state))
+                     (dir (cdr state)))
+                (if (%member? state visited)
+                    (loop (cdr q) visited reachable)
+                    (let* ((visited2 (cons state visited))
+                           (observed? (%member? node z-set))
+                           (reachable2 (if observed?
+                                           reachable
+                                           (%adjoin node reachable)))
+                           (next (%bayes-ball-step-lite dag node dir observed? anc-z)))
+                      (loop (append (cdr q) next) visited2 reachable2))))))))
+
+    (defun %dag-d-connected-lite? (dag x-set y-set z-set)
+      (if (or (null? x-set) (null? y-set))
+          #f
+          (let ((reachable (%bayes-ball-lite dag x-set z-set)))
+            (any? (lambda (target) (%member? target reachable)) y-set))))
+
+    (defun %rule2-applies-dag-lite? (g y-set x-set z-set w-set)
+      (let* ((gx (%admg-mutilate-do g x-set))
+             (g2 (%admg-mutilate-see gx z-set))
+             (cond-set (%set-union x-set w-set)))
+        (not (%dag-d-connected-lite? g2 y-set z-set cond-set))))
 
     (defun %directed-parents-in (g nodes node)
       (foldl (lambda (acc e)
@@ -203,6 +312,30 @@
     (defun %fail? (expr)
       (and (pair? expr) (eq? (car expr) 'fail)))
 
+    (defun %prob-vars (expr)
+      (if (and (pair? expr)
+               (eq? (car expr) 'P)
+               (pair? (cdr expr))
+               (list? (cadr expr)))
+          (cadr expr)
+          #f))
+
+    (defun %empty-prob? (expr)
+      (let ((vars (%prob-vars expr)))
+        (and vars (null? vars))))
+
+    (defun %normalize-vars (vars)
+      (let loop ((rest vars) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let ((v (car rest)))
+              (if (%member? v acc)
+                  (loop (cdr rest) acc)
+                  (loop (cdr rest) (cons v acc)))))))
+
+    (defun %graph-has-bidirected? (g)
+      (any? %bidirected-edge? g))
+
     (defun %before (x xs)
       (let loop ((rest xs) (acc '()))
         (cond
@@ -213,7 +346,7 @@
     (defun %topo-order-over (g nodes)
       (let* ((directed (admg:directed g))
              (order-dir (dag:topo-sort directed))
-             (order-dir2 (%subset-in-order nodes order-dir)))
+             (order-dir2 (%subset-in-order order-dir nodes)))
         (append order-dir2
                 (filter (lambda (n) (not (%member? n order-dir)))
                         nodes))))
@@ -261,6 +394,87 @@
         ((null? xs) #f)
         ((pred (car xs)) (car xs))
         (else (%find pred (cdr xs)))))
+
+    ;; -- Estimand simplifier --------------------------------------------
+
+    (defun do:simplify (estimand)
+      (cond
+        ((not (pair? estimand)) estimand)
+        ((eq? (car estimand) 'fail) estimand)
+
+        ((eq? (car estimand) 'sum)
+         (if (or (null? (cdr estimand))
+                 (null? (cdr (cdr estimand))))
+             estimand
+             (let* ((vars (%normalize-vars (cadr estimand)))
+                    (expr (do:simplify (caddr estimand))))
+               (cond
+                 ((null? vars) expr)
+                 ((%fail? expr) expr)
+                 ((and (pair? expr)
+                       (eq? (car expr) 'sum)
+                       (pair? (cdr expr))
+                       (pair? (cdr (cdr expr))))
+                  (do:simplify
+                    (list 'sum
+                          (%set-union vars (%normalize-vars (cadr expr)))
+                          (caddr expr))))
+                 (else
+                  (list 'sum vars expr))))))
+
+        ((eq? (car estimand) 'prod)
+         (let loop ((rest (cdr estimand)) (acc '()))
+           (if (null? rest)
+               (let ((factors (reverse acc)))
+                 (cond
+                   ((null? factors) '(prod))
+                   ((null? (cdr factors)) (car factors))
+                   (else (cons 'prod factors))))
+               (let ((factor (do:simplify (car rest))))
+                 (if (and (pair? factor) (eq? (car factor) 'prod))
+                     (loop (append (cdr factor) (cdr rest)) acc)
+                     (loop (cdr rest) (cons factor acc)))))))
+
+        ((eq? (car estimand) 'cond-on)
+         (if (or (null? (cdr estimand))
+                 (null? (cdr (cdr estimand))))
+             estimand
+             (let* ((numerator (do:simplify (cadr estimand)))
+                    (conditioning (do:simplify (caddr estimand))))
+               (cond
+                 ((%fail? numerator) numerator)
+                 ((%empty-prob? conditioning) numerator)
+                 (else (list 'cond-on numerator conditioning))))))
+
+        (else estimand)))
+
+    ;; -- IDC algorithm ---------------------------------------------------
+
+    (defun %idc-moveable (g y x z)
+      (if (%graph-has-bidirected? g)
+          #f
+          (%find
+            (lambda (zi)
+              (%rule2-applies-dag-lite? g
+                                        y
+                                        (%set-union x (%set-diff z (list zi)))
+                                        (list zi)
+                                        '()))
+            z)))
+
+    (defun %idc-rec (g y x z)
+      (let ((moveable (%idc-moveable g y x z)))
+        (if moveable
+            (%idc-rec g y
+                      (%set-union x (list moveable))
+                      (%set-diff z (list moveable)))
+            (let ((joint (id g (%set-union y z) x)))
+              (if (%fail? joint)
+                  joint
+                  (do:simplify
+                    (if (null? z)
+                        joint
+                        (list 'cond-on joint (list 'P z)))))))))
 
     ;; -- ID algorithm ----------------------------------------------------
 
@@ -363,5 +577,22 @@
                         front-door
                         (%id-rec g nodes y-set x-set)))
                   (%id-rec g nodes y-set x-set))))))
+
+    ;; Public API: (idc G Y X Z) -> estimand for P(Y | do(X), Z).
+    (defun idc (g y x z)
+      (%assert-admg g)
+      (let* ((nodes (admg:nodes g))
+             (y-raw (%as-node-set y))
+             (x-raw (%as-node-set x))
+             (z-raw (%as-node-set z)))
+        (%assert-vars nodes y-raw)
+        (%assert-vars nodes x-raw)
+        (%assert-vars nodes z-raw)
+        (let* ((y-set (%subset-in-order nodes y-raw))
+               (x-set (%subset-in-order nodes x-raw))
+               (z-set (%set-diff (%subset-in-order nodes z-raw) x-set)))
+          (if (or (null? y-set) (null? x-set))
+              (error "idc: expected non-empty Y and X")
+              (%idc-rec g y-set x-set z-set)))))
 
   )

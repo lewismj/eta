@@ -321,8 +321,17 @@
                     (any->string (assoc-ref 'rule2 audit))
                     ", "
                     (any->string (assoc-ref 'rule3 audit))))
+              (kv "IDC status P(hazard | do(oil), usd-rates):"
+                  (any->string (assoc-ref 'idc-hazard-rates-status audit)))
               (kv "ADMG bow status:" (any->string (assoc-ref 'bow-status audit)))
-              (kv "ADMG front-door status:" (any->string (assoc-ref 'front-door-status audit)))))
+              (kv "ADMG front-door status:" (any->string (assoc-ref 'front-door-status audit)))
+              (kv "ADMG front-door IDC status:"
+                  (any->string (assoc-ref 'front-door-idc-status audit)))
+              (newline)
+              (println "    Note on statuses:")
+              (println "      - ident/direct: effect is identifiable under the assumed SCM.")
+              (println "      - fail: that causal query is non-identifiable for that motif;")
+              (println "              this is a modelling-analysis limitation signal, not a runtime error.")))
         (newline)
         (println "    --- book CVA under do-interventions ---")
         (println

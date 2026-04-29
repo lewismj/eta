@@ -272,7 +272,7 @@ For mixed graphs with latent confounding, import:
 
 ---
 
-## ID on ADMGs
+## ID and IDC on ADMGs
 
 To identify effects in mixed graphs with latent confounding:
 
@@ -283,12 +283,15 @@ To identify effects in mixed graphs with latent confounding:
 | Function | Description |
 | -------- | ----------- |
 | `(id g y x)` | Returns an estimand AST for `P(Y | do(X))` or `(fail (hedge ...))` |
+| `(idc g y x z)` | Returns an estimand AST for `P(Y | do(X), Z)` or `(fail (hedge ...))` |
+| `(do:simplify estimand)` | Simplifies estimand ASTs by collapsing trivial sums, products, and conditionals |
 
 The returned AST uses:
 
 - `(P vars)` for factors
 - `(sum vars expr)` for marginalization
 - `(prod e1 e2 ...)` for products
+- `(cond-on expr cond)` for conditional forms
 - `(fail (hedge ...))` for non-identifiable queries
 
 ---
@@ -320,7 +323,7 @@ this purpose, using plain Eta arithmetic:
 ;; => sample mean of stock-return in the tech stratum
 ```
 
-### Estimation Backends (M9a)
+### Estimation Backends 
 
 For practical ATE estimation from binary-treatment observational data:
 
@@ -423,7 +426,7 @@ analysis:
 > - `std.causal.estimate` M9a estimators (`do:ate-gformula`, `do:ate-ipw`,
 >   `do:ate-aipw`, `do:bootstrap-ci`)
 > 
-> Remaining gaps for full M9:
+> Remaining gaps for:
 > 
 > - TMLE is not yet implemented.
 > - No influence-function/analytic standard errors yet.
@@ -438,7 +441,7 @@ analysis:
 | Component                            | File                                                                                |
 | ------------------------------------ | ----------------------------------------------------------------------------------- |
 | DAG utilities, do-calculus engine    | [`stdlib/std/causal.eta`](../../../stdlib/std/causal.eta)                                 |
-| ADMG ID algorithm                    | [`stdlib/std/causal/identify.eta`](../../../stdlib/std/causal/identify.eta)               |
+| ADMG ID/IDC algorithms               | [`stdlib/std/causal/identify.eta`](../../../stdlib/std/causal/identify.eta)               |
 | Estimation backends (M9a)            | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
 | Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |

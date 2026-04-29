@@ -99,6 +99,12 @@ stage that produced it.
 ;; => ((book-size . 200)
 ;;     (baseline-cva . 118302)                         ; book CVA, base ccy
 ;;     (top3 ((CP-?? . ...) ...))
+;;     (causal-audit ((identify-status . direct)
+;;                    (rule1 . #t) (rule2 . #t) (rule3 . #t)
+;;                    (idc-hazard-rates-status . ident)
+;;                    (bow-status . fail)
+;;                    (front-door-status . ident)
+;;                    (front-door-idc-status . ident) ...))
 ;;     (greeks (130253                                  ; CVA value at seed
 ;;              #(0 0 -212503 130253)))                 ; ∂CVA/∂(Δλ, ΔR, Δr, Δfx)
 ;;     (counterfactual ((rows ...)
@@ -107,7 +113,7 @@ stage that produced it.
 ;;     (training-trace ((epoch . 1) (loss . 1.085)) ...)
 ;;     (training-loss . 0.00248)                        ; expected ~0 on synthetic DGP
 ;;     (stage-report ((book ...) (ml-training ...) (ml-recovery ...)
-;;                    (baseline ...) (counterfactual ...) (symbolic ...)
+;;                    (baseline ...) (causal-audit ...) (counterfactual ...) (symbolic ...)
 ;;                    (compression ...) (determinism ...)))
 ;;     (symbolic-nodes . 29)
 ;;     (symbolic-value . -2.97306e+06)                  ; ∂(annuity·N)/∂r at (1e6,0.03,2.5)
@@ -118,6 +124,9 @@ stage that produced it.
 ;;             (delta -0.0262 0.0435 -0.0136)))
 ;;     (shard-check ((first . 4.96368e7) (second . 4.96368e7) (match . #t))))
 ```
+
+The values above were regenerated from `examples/xva-wwr/main.eta`
+with seed `20260427`.
 
 `run-demo` is intentionally side-effect-free; the **friendly
 stage-by-stage report** below is produced by `(main)`, which calls
@@ -370,6 +379,12 @@ would put in a deck.
 (baseline-cva         . 118302)
 (top3                 ((CP-07 . 6419.38) (CP-21 . 6339.81) (CP-30 . 6219)))
 (greeks               (130253 #(0 0 -212503 130253)))
+(causal-audit         ((identify-status . direct)
+                       (rule1 . #t) (rule2 . #t) (rule3 . #t)
+                       (idc-hazard-rates-status . ident)
+                       (bow-status . fail)
+                       (front-door-status . ident)
+                       (front-door-idc-status . ident) ...))
 (counterfactual       ((rows
                          ((var . oil)     (book-down . 78946)  (book-up . 169135))
                          ((var . usd-10y) (book-down . 116554) (book-up . 118375))
@@ -385,6 +400,7 @@ would put in a deck.
                                         (final-loss . 0.002475) (checkpoints . 13)))
                        (ml-recovery    ((rows ...) (max-error . 0.00601) (worst-cp . "CP-23")))
                        (baseline       ((baseline-cva . 118302) (top3 ...) (greeks ...)))
+                       (causal-audit   ((identify-status . direct) (rule1 . #t) ...))
                        (counterfactual ((rows ...) (wrong-way ...) (right-way ()) (insensitive ...)))
                        (symbolic       ((nodes . 29) (value . -2.97306e+06)))
                        (compression    ((preview . 0.01005)
@@ -790,11 +806,16 @@ The headline line is the **CP-17 row**:
 |---|---|
 | **Standard errors on β** — sandwich estimator off the same backward pass | `parameters`, `mse-loss` already in scope |
 | **Hypothesis-test WWR** — "wrong-way" becomes a signed t-test on β > 0 | builds on `learned-cp-sensitivity` |
-| **Causal audit report** — `scm:causal-audit` (identify status + Rule 1/2/3 checks + ADMG bow/front-door statuses) printed before §6 | `stdlib/std/causal.eta`, `stdlib/std/causal/identify.eta` |
+| **Causal audit report** — `scm:causal-audit` (identify status + Rule 1/2/3 checks + IDC statuses + ADMG bow/front-door statuses) printed before §6 | `stdlib/std/causal.eta`, `stdlib/std/causal/identify.eta` |
 | **Recalibration sensitivity** — perturb the DGP (more noise, dropped column, deliberate confounder) and watch recovery error grow | swap the `noise-sigma` arg of `generate-shock-panel` |
 
 
 ---
+
+Latest seeded run (`20260427`) causal-audit statuses now include:
+`identify-status = direct`, `rule1/2/3 = #t`,
+`idc-hazard-rates-status = ident`, `bow-status = fail`,
+`front-door-status = ident`, and `front-door-idc-status = ident`.
 
 ## 4 — CVA Aggregation
 
@@ -1037,6 +1058,21 @@ The sweep merges per-CP elasticities across all shocks, keeping the
                             (cons 'book-up   (car up))) rows)
                 (merge-elasticity eps-acc eps))))))
 ```
+
+Audit lines printed immediately before the sweep table in the same run:
+
+```text
+Identification status:              direct
+Rule checks (R1,R2,R3):             #t, #t, #t
+IDC status P(hazard | do(oil), usd-rates):ident
+ADMG bow status:                    fail
+ADMG front-door status:             ident
+ADMG front-door IDC status:         ident
+```
+
+Interpretation: `ident` / `direct` means identifiable under the assumed SCM.
+`fail` means that specific causal query is non-identifiable for that motif
+(an analysis/model limitation signal), not an execution failure.
 
 **Sweep results (seeded run, baseline 118 302):**
 
@@ -1590,7 +1626,7 @@ elasticities, QP feasibility) should remain identical.
 | **CSA-aware netting** | Wire `csa-terms` (threshold/MTA/MPoR) into bucket reduction | Realistic collateralised exposure |
 | **Full supervisor §10** | Replace `rerun-shard-and-check` with one `path-worker` actor under `std.supervisor` | Demonstrates fault recovery, not just determinism |
 | **FVA / KVA** | Add funding-spread and capital-charge buckets to `cva-curve` | Two more sensitivities through the same AAD tape |
-| **Richer causal audit** | Extend `scm:causal-audit` with additional estimand diagnostics in the stage report | Deeper traceability from identification assumptions to stress outputs |
+| **Richer causal audit rendering** | Extend report rendering to print full simplified ID/IDC estimands (not just status lines) | Deeper traceability from identification assumptions to stress outputs |
 | **Distributed sweep** | `counterfactual-sweep` over `worker-pool` + IPC | True OS-level parallel scenarios with fault isolation |
 | **Real CDS curve** | Replace `base-hazard` closed form with bootstrapped CDS panel data | Production-grade hazard term structures |
 
