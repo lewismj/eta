@@ -1,24 +1,14 @@
-<!--
 <p align="center">
   <img src="docs/img/eta.svg" alt="Eta logo" width="120">
 </p>
-
 <h1 align="center">η (Eta)</h1>
+
+<hr style="border: none; height: 1px; background: linear-gradient(to right, transparent, #e6e6e6, transparent);">
+
 
 <p align="center">
   <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
 </p>
--->
-
-<div align="center" style="display: flex; justify-content: center; align-items: center; gap: 20px;">
-  <img src="docs/img/eta.svg" alt="Eta logo" width="120">
-  <div style="text-align: left;">
-    <h1 style="margin: 0;">η (Eta)</h1>
-    <p style="margin: 6px 0 0 0;">
-      <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
-    </p>
-  </div>
-</div>
 
 <p align="center">
   <a href="docs/quickstart.md">Quick Start</a> ·
@@ -36,7 +26,6 @@
   Wrong-Way Risk via do-interventions 
   <a href="docs/featured_examples/xva-wwr.md">docs</a>
 </p>
-
 
 ---
 
