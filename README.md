@@ -1,9 +1,36 @@
+<div align="center" style="display: flex; justify-content: center; align-items: center; gap: 20px;">
+  <img src="docs/img/eta.svg" alt="Eta logo" width="120">
+  <div style="text-align: left;">
+    <h1 style="margin: 0;">η (Eta)</h1>
+    <p style="margin: 6px 0 0 0;">
+      <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
+    </p>
+  </div>
+</div>
+
+<p align="center">
+  <a href="docs/quickstart.md">Quick Start</a> ·
+  <a href="docs/guide/language_guide.md">Language Guide</a> ·
+  <a href="docs/guide/reference/vscode.md">VS Code</a> ·
+  <a href="docs/guide/reference/jupyter.md">Jupyter</a> ·
+  <a href="docs/architecture.md">Architecture</a>
+</p>
+
+<p align="center">
+  <strong>Featured Examples</strong><br>
+  Causal Decision Engine for Portfolio Optimisation 
+  <a href="docs/featured_examples/portfolio.md">docs</a> ·
+  <a href="examples/notebooks/Portfolio.ipynb">notebook</a><br>
+  Wrong-Way Risk via do-interventions 
+  <a href="docs/featured_examples/xva-wwr.md">docs</a>
+</p>
+
+<!--
 <p align="center">
   <img src="docs/img/eta.svg" alt="Eta logo" width="120">
 </p>
 <h1 align="center">η (Eta)</h1>
 
-<hr style="border: none; border-top: 1px solid #f0f0f0;">
 
 <p align="center">
   <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
@@ -25,8 +52,9 @@
   Wrong-Way Risk via do-interventions 
   <a href="docs/featured_examples/xva-wwr.md">docs</a>
 </p>
+-->
 
-<hr style="border: none; border-top: 1px solid #f0f0f0;">
+---
 
 
 ## The Language
