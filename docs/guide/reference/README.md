@@ -27,6 +27,7 @@ chapter there links into the relevant pages here.
 | :--------------------------------------------------- | :-------------------- |
 | [`logic.md`](./logic.md)                             | `std.logic`           |
 | [`clp.md`](./clp.md)                                 | `std.clp` (CLP(FD))   |
+| [`clpr.md`](./clpr.md)                               | `std.clpr` (CLP(R))   |
 | [`clpb.md`](./clpb.md)                               | `std.clpb` (CLP(B))   |
 | [`freeze.md`](./freeze.md)                           | `std.freeze`          |
 | [`db.md`](./db.md)                                   | `std.db` (Datalog)    |
