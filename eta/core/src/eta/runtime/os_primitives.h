@@ -41,6 +41,10 @@
 #include "eta/runtime/string_view.h"
 #include "eta/runtime/vm/vm.h"
 
+#ifndef _WIN32
+extern char** environ;
+#endif
+
 namespace eta::runtime {
 
 using namespace eta::runtime::error;
@@ -230,8 +234,7 @@ collect_environment_variables() {
     }
     ::FreeEnvironmentStringsA(block);
 #else
-    extern char** environ;
-    char** envp = environ;
+    char** envp = ::environ;
     if (!envp) {
         return out;
     }
