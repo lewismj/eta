@@ -790,7 +790,7 @@ The headline line is the **CP-17 row**:
 |---|---|
 | **Standard errors on β** — sandwich estimator off the same backward pass | `parameters`, `mse-loss` already in scope |
 | **Hypothesis-test WWR** — "wrong-way" becomes a signed t-test on β > 0 | builds on `learned-cp-sensitivity` |
-| **Identification report** — `(do:identify scm 'hazard 'oil)` printed before §6 | `stdlib/std/causal.eta` |
+| **Causal audit report** — `scm:causal-audit` (identify status + Rule 1/2/3 checks + ADMG bow/front-door statuses) printed before §6 | `stdlib/std/causal.eta`, `stdlib/std/causal/identify.eta` |
 | **Recalibration sensitivity** — perturb the DGP (more noise, dropped column, deliberate confounder) and watch recovery error grow | swap the `noise-sigma` arg of `generate-shock-panel` |
 
 
@@ -1590,7 +1590,7 @@ elasticities, QP feasibility) should remain identical.
 | **CSA-aware netting** | Wire `csa-terms` (threshold/MTA/MPoR) into bucket reduction | Realistic collateralised exposure |
 | **Full supervisor §10** | Replace `rerun-shard-and-check` with one `path-worker` actor under `std.supervisor` | Demonstrates fault recovery, not just determinism |
 | **FVA / KVA** | Add funding-spread and capital-charge buckets to `cva-curve` | Two more sensitivities through the same AAD tape |
-| **Identification report** | `(do:identify scm 'cva 'oil)` printed before §6 | Makes the back-door / front-door reasoning explicit |
+| **Richer causal audit** | Extend `scm:causal-audit` with additional estimand diagnostics in the stage report | Deeper traceability from identification assumptions to stress outputs |
 | **Distributed sweep** | `counterfactual-sweep` over `worker-pool` + IPC | True OS-level parallel scenarios with fault isolation |
 | **Real CDS curve** | Replace `base-hazard` closed form with bootstrapped CDS panel data | Production-grade hazard term structures |
 
@@ -1607,4 +1607,3 @@ elasticities, QP feasibility) should remain identical.
 | libtorch | [`stdlib/std/torch.eta`](../../stdlib/std/torch.eta) |
 | VM execution engine | [`eta/core/src/eta/runtime/vm/vm.cpp`](../../eta/core/src/eta/runtime/vm/vm.cpp) |
 | Compiler (`etac`) | [`docs/compiler.md`](../guide/reference/compiler.md) |
-

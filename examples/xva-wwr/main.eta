@@ -75,6 +75,7 @@
              (baseline-table (cva-table ee hazard-rates recovery-rates 0.0 0.0))
              (baseline-total (total-cva baseline-table))
              (greeks (cva-with-greeks ee '(0.0 0.0 0.0 0.0)))
+             (causal-audit (scm:causal-audit))
              (sweep (counterfactual-sweep default-queries baseline-curves learned-betas))
              (expr '(* notional (/ (- 1 (exp (* -1 (* r tau)))) r)))
              (dexpr (D expr 'r))
@@ -113,6 +114,7 @@
                          (cons 'baseline-cva baseline-total)
                          (cons 'top3 (top-contributors baseline-table 3))
                          (cons 'greeks greeks)))
+                 (cons 'causal-audit causal-audit)
                  (cons 'counterfactual sweep)
                  (cons 'symbolic
                        (list
@@ -128,6 +130,7 @@
           (cons 'baseline-cva baseline-total)
           (cons 'top3 (top-contributors baseline-table 3))
           (cons 'greeks greeks)
+          (cons 'causal-audit causal-audit)
           (cons 'counterfactual sweep)
           (cons 'beta-recovery recovery)
           (cons 'training-trace training-trace)

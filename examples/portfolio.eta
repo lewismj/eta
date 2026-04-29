@@ -49,6 +49,7 @@
   (import std.collections)
   (import std.fact_table)
   (import std.causal)
+  (import std.causal.identify)
   (import std.logic)
   (import std.clp)
   (import std.clpr)
@@ -384,6 +385,11 @@
         (display "        └──────────────────────────────────────────→────┘\n")))
     (display "\n")
 
+    (defun %id-status (estimand)
+      (if (and (pair? estimand) (eq? (car estimand) 'fail))
+          'fail
+          'ident))
+
     ;; Identify P(asset_return | do(macro_growth))
     (define identify-details
       (do:identify-details market-dag 'asset_return 'macro_growth))
@@ -399,6 +405,44 @@
     (define z-set (assoc-ref 'chosen-z identify-details))
     (define identify-status (assoc-ref 'status identify-details))
     (define valid-sets (assoc-ref 'all-z-sets identify-details))
+    (define rule1-sector-rate
+      (do-rule1-applies? market-dag
+                         '(sector_perf)
+                         '(macro_growth)
+                         '(interest_rate)
+                         '()))
+    (define rule2-return-rate
+      (do-rule2-applies? market-dag
+                         '(asset_return)
+                         '(macro_growth)
+                         '(interest_rate)
+                         '(sentiment sector_perf)))
+    (define rule3-return-rate
+      (do-rule3-applies? market-dag
+                         '(asset_return)
+                         '(macro_growth)
+                         '(interest_rate)
+                         '(sector_perf)))
+    (define admg-bow-id
+      (id '((macro_growth -> asset_return)
+            (macro_growth <-> asset_return))
+          '(asset_return)
+          '(macro_growth)))
+    (define admg-front-door-id
+      (id '((macro_growth -> sector_perf)
+            (sector_perf -> asset_return)
+            (macro_growth <-> asset_return))
+          '(asset_return)
+          '(macro_growth)))
+    (define admg-bow-status (%id-status admg-bow-id))
+    (define admg-front-door-status (%id-status admg-front-door-id))
+    (define causal-audit
+      (list
+        (cons 'rule1 rule1-sector-rate)
+        (cons 'rule2 rule2-return-rate)
+        (cons 'rule3 rule3-return-rate)
+        (cons 'admg-bow-status admg-bow-status)
+        (cons 'admg-front-door-status admg-front-door-status)))
 
     (display "  Adjustment set Z = ") (println z-set)
 
@@ -407,6 +451,18 @@
     (display "    status: ") (println identify-status)
     (display "    Valid back-door adjustment sets (minimal first):\n")
     (display "      ") (println valid-sets)
+    (display "\n  Do-calculus rule probes (same structural DAG):\n")
+    (display "    Rule 1 (sector_perf independent of interest_rate | macro_growth): ")
+    (println rule1-sector-rate)
+    (display "    Rule 2 (do(interest_rate) <-> observe(interest_rate) for asset_return): ")
+    (println rule2-return-rate)
+    (display "    Rule 3 (drop do(interest_rate) for asset_return | macro_growth,sector_perf): ")
+    (println rule3-return-rate)
+    (display "\n  ADMG identification stress probes:\n")
+    (display "    Bow graph status (macro_growth -> asset_return, macro_growth <-> asset_return): ")
+    (println admg-bow-status)
+    (display "    Front-door status (macro_growth -> sector_perf -> asset_return, macro_growth <-> asset_return): ")
+    (println admg-front-door-status)
 
     (display "\n  Sentiment confounds macro and asset return.\n")
     (display "  The back-door path macro <- sentiment -> return\n")
@@ -2768,6 +2824,7 @@
               (sigma-hybrid-structural-weight sigma-hybrid-structural-weight)
               (optimization-mode mode)))
           (dag dag)
+          (causal-audit causal-audit)
           (tau base-returns)
           (tau-min (assoc-ref 'tau-min stage2))
           (tau-max (assoc-ref 'tau-max stage2))

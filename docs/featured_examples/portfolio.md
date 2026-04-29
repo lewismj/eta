@@ -222,6 +222,9 @@ artifact plus a `(dynamic-control ...)` block (§9).
 ;;                  (sigma-hybrid-structural-weight . 0.70)
 ;;                  (optimization-mode . nominal|worst-case|uncertainty-penalty))
 ;;     (dag ((sentiment -> macro_growth) ...))
+;;     (causal-audit ((rule1 . #t|#f) (rule2 . #t|#f) (rule3 . #t|#f)
+;;                    (admg-bow-status . ident|fail)
+;;                    (admg-front-door-status . ident|fail)))
 ;;     (tau τ-tech τ-energy τ-finance τ-healthcare)
 ;;     (tau-min ...)  (tau-max ...)
 ;;     (sigma-base σ11 σ12 ... σ44)        ; upper-triangular Σ(0.5)
@@ -413,6 +416,8 @@ conditioning on `sentiment`.
 > ```
 > `findall` then enumerates *all* valid adjustment sets via trail-based
 > backtracking, confirming `{sentiment}` is the unique minimal set.
+> The Stage 2 report also includes Rule 1/2/3 probes and two ADMG stress
+> motifs (bow and front-door) in a compact causal-audit block.
 
 ```
 P(asset_return | do(macro_growth)) =

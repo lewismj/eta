@@ -292,6 +292,7 @@
 
     (defun render-counterfactual (artifact)
       (let* ((sweep (assoc-ref 'counterfactual artifact))
+             (audit (assoc-ref 'causal-audit artifact))
              (rows (assoc-ref 'rows sweep))
              (wrong (assoc-ref 'wrong-way sweep))
              (right (assoc-ref 'right-way sweep))
@@ -309,6 +310,19 @@
         (bullet ""        "      oil -> energy-credit -> hazard")
         (bullet ""        "Back-door set empty under the SCM, so do(oil = .) is")
         (bullet ""        "identifiable from observational regression betas.")
+        (if audit
+            (begin
+              (newline)
+              (kv "Identification status:" (any->string (assoc-ref 'identify-status audit)))
+              (kv "Rule checks (R1,R2,R3):"
+                  (string-append
+                    (any->string (assoc-ref 'rule1 audit))
+                    ", "
+                    (any->string (assoc-ref 'rule2 audit))
+                    ", "
+                    (any->string (assoc-ref 'rule3 audit))))
+              (kv "ADMG bow status:" (any->string (assoc-ref 'bow-status audit)))
+              (kv "ADMG front-door status:" (any->string (assoc-ref 'front-door-status audit)))))
         (newline)
         (println "    --- book CVA under do-interventions ---")
         (println

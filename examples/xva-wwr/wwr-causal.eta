@@ -1,9 +1,12 @@
 ;;; examples/xva-wwr/wwr-causal.eta -- SCM sampling and counterfactual CVA sweep.
 
 (module wwr-causal
-  (export scm scm:topo-sort scm:sample cva-under-do counterfactual-sweep)
+  (export scm scm:topo-sort scm:sample scm:causal-audit
+          cva-under-do counterfactual-sweep)
   (import std.core)
   (import std.collections)
+  (import std.causal)
+  (import std.causal.identify)
   (import market)
   (import paths)
   (import xva)
@@ -50,6 +53,11 @@
         ((eq? x (car xs)) (cdr xs))
         (else (cons (car xs) (remove-first x (cdr xs))))))
 
+    (defun %id-status (estimand)
+      (if (and (pair? estimand) (eq? (car estimand) 'fail))
+          'fail
+          'ident))
+
     (defun scm:nodes (edges)
       (let loop ((rest edges) (acc '()))
         (if (null? rest)
@@ -79,6 +87,33 @@
                     (let ((n (car ready)))
                       (loop (remove-first n remaining)
                             (cons n placed)))))))))
+
+    ;; Causal audit over the xVA SCM and two ADMG stress motifs:
+    ;;   1) bow graph (non-identifiable)
+    ;;   2) front-door pattern (identifiable)
+    (defun scm:causal-audit ()
+      (let* ((details (do:identify-details scm 'hazard 'oil))
+             (rule1 (do-rule1-applies? scm '(hazard) '(oil) '(usd-rates) '()))
+             (rule2 (do-rule2-applies? scm '(exposure) '(oil) '(usd-rates) '()))
+             (rule3 (do-rule3-applies? scm '(hazard) '(oil) '(usd-rates) '()))
+             (bow-id (id '((oil -> hazard) (oil <-> hazard))
+                         '(hazard)
+                         '(oil)))
+             (front-door-id (id '((oil -> energy-credit)
+                                  (energy-credit -> hazard)
+                                  (oil <-> hazard))
+                                '(hazard)
+                                '(oil))))
+        (list
+          (cons 'identify-status (assoc-ref 'status details))
+          (cons 'identify-result (assoc-ref 'result details))
+          (cons 'rule1 rule1)
+          (cons 'rule2 rule2)
+          (cons 'rule3 rule3)
+          (cons 'bow-status (%id-status bow-id))
+          (cons 'bow-estimand bow-id)
+          (cons 'front-door-status (%id-status front-door-id))
+          (cons 'front-door-estimand front-door-id))))
 
     ;; Mechanism format:
     ;;   (cons var (list parents coeffs intercept sigma))
