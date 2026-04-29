@@ -5,7 +5,6 @@
 
 <hr style="border: none; height: 1px; background: linear-gradient(to right, transparent, #e6e6e6, transparent);">
 
-
 <p align="center">
   <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
 </p>
@@ -27,7 +26,7 @@
   <a href="docs/featured_examples/xva-wwr.md">docs</a>
 </p>
 
----
+<hr style="border: none; height: 1px; background: linear-gradient(to right, transparent, #e6e6e6, transparent);">
 
 ## The Language
 
