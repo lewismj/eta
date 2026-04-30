@@ -1,4 +1,4 @@
-﻿# Eta â€” Quick Install & Run
+﻿# Eta Quick Install & Run
 
 The fastest way to get started is to download a pre-built release, run the installer, and try the examples.
 
@@ -44,8 +44,8 @@ C:\tmp\eta-v0.2.0-win-x64>.\install.cmd
 |  Eta Installer (Windows)                                     |
 +==============================================================+
 
-  bin     : C:\tmp\eta-v0.2.0-win-x64\bin
-  stdlib  : C:\tmp\eta-v0.2.0-win-x64\stdlib
+  bin     : C:\tmp\eta-v0.5.0-win-x64\bin
+  stdlib  : C:\tmp\eta-v0.5.0-win-x64\stdlib
 
 > Eta already on user PATH -- skipping.
 > ETA_MODULE_PATH already set -- skipping.
