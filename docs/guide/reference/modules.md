@@ -541,7 +541,7 @@ Generalized adjustment/front-door/IV helpers are available in:
 (import std.causal.adjustment)
 ```
 
-Estimation backends (g-formula, IPW, AIPW, bootstrap CI) are available in:
+Estimation backends (g-formula, IPW, AIPW, TMLE, bootstrap CI, sensitivity metrics) are available in:
 
 ```scheme
 (import std.causal.estimate)

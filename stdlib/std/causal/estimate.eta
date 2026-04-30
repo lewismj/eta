@@ -1,11 +1,13 @@
 ;;; std/causal/estimate.eta -- Causal effect estimation backends.
 ;;;
-;;; This module provides a pragmatic M9a slice:
+;;; This module provides practical backends for:
 ;;;   - stratified propensity scores
 ;;;   - g-formula ATE
 ;;;   - IPW ATE
 ;;;   - AIPW ATE
+;;;   - TMLE ATE
 ;;;   - bootstrap confidence intervals
+;;;   - sensitivity metrics (E-value and Rosenbaum-style bounds)
 ;;;
 ;;; Input data format: list of observations, each an alist:
 ;;;   '((x . 1) (z . 0) (y . 2.3) ...)
@@ -20,8 +22,11 @@
     do:ate-ipw
     do:ate-gformula
     do:ate-aipw
+    do:ate-tmle
     do:bootstrap-ci
-    do:propensity-score)
+    do:propensity-score
+    do:e-value
+    do:rosenbaum-bound)
   (begin
 
     ;; -- Public API --------------------------------------------------------
@@ -100,10 +105,50 @@
                       data)
                n))))
 
+    ;; TMLE ATE with one-step fluctuation under an identity-link update.
+    ;; Assumes binary treatment X in {0,1}.
+    (defun do:ate-tmle (data y x z)
+      (let* ((n (length data))
+             (stats (%stratum-stats data y x z)))
+        (if (= n 0)
+            0.0
+            (let* ((eps-num+den
+                     (foldl (lambda (acc obs)
+                              (let* ((num (car acc))
+                                     (den (cdr acc))
+                                     (xv (%as-binary (%obs-get obs x) x))
+                                     (yv (%obs-get obs y))
+                                     (s (%find-stats stats (%z-key obs z)))
+                                     (e (%clip-prob (%stats-propensity s)))
+                                     (mu1 (%stats-mu1 s))
+                                     (mu0 (%stats-mu0 s))
+                                     (q (+ (* xv mu1) (* (- 1.0 xv) mu0)))
+                                     (h (- (/ xv e)
+                                           (/ (- 1.0 xv) (- 1.0 e))))
+                                     (resid (- yv q)))
+                                (cons (+ num (* h resid))
+                                      (+ den (* h h)))))
+                            (cons 0.0 0.0)
+                            data))
+                   (eps-num (car eps-num+den))
+                   (eps-den (cdr eps-num+den))
+                   (eps (if (= eps-den 0.0) 0.0 (/ eps-num eps-den))))
+              (/ (foldl (lambda (acc obs)
+                          (let* ((s (%find-stats stats (%z-key obs z)))
+                                 (e (%clip-prob (%stats-propensity s)))
+                                 (mu1 (%stats-mu1 s))
+                                 (mu0 (%stats-mu0 s))
+                                 (mu1* (+ mu1 (/ eps e)))
+                                 (mu0* (- mu0 (/ eps (- 1.0 e)))))
+                            (+ acc (- mu1* mu0*))))
+                        0.0
+                        data)
+                 n)))))
+
     ;; Stratified empirical propensity score for each observation.
     ;; Returns probabilities aligned with input data order.
     (defun do:propensity-score (data x z)
-      (let ((stats (%stratum-stats data 'y x z)))
+      (let ((stats (%stratum-propensity-stats data x z)))
         (map* (lambda (obs)
                 (%clip-prob
                   (%stats-propensity
@@ -137,6 +182,25 @@
                    (lo (stats:percentile thetas lo-p))
                    (hi (stats:percentile thetas hi-p)))
               (cons lo hi)))))
+
+    ;; VanderWeele and Ding E-value for risk ratios.
+    ;; Accepts any positive risk ratio; protective effects (<1) are inverted.
+    (defun do:e-value (rr)
+      (if (<= rr 0.0)
+          (error "do:e-value: expected rr > 0")
+          (let ((rr* (if (< rr 1.0) (/ 1.0 rr) rr)))
+            (+ rr* (sqrt (* rr* (- rr* 1.0)))))))
+
+    ;; Rosenbaum-style multiplicative sensitivity envelope around a ratio
+    ;; estimand (typically odds ratio or risk ratio):
+    ;;   lower = ratio / gamma, upper = ratio * gamma, gamma >= 1.
+    ;; Returns (lower . upper).
+    (defun do:rosenbaum-bound (ratio gamma)
+      (if (<= ratio 0.0)
+          (error "do:rosenbaum-bound: expected ratio > 0")
+          (if (< gamma 1.0)
+              (error "do:rosenbaum-bound: expected gamma >= 1")
+              (cons (/ ratio gamma) (* ratio gamma)))))
 
     ;; -- Internal helpers --------------------------------------------------
 
@@ -252,6 +316,23 @@
                        (mu1 (%mean-or sum1 n1 global-mu1))
                        (mu0 (%mean-or sum0 n0 global-mu0)))
                   (%make-stats key n n1 mu1 mu0 p)))
+              keys)))
+
+    ;; Build per-stratum propensity-only statistics.
+    (defun %stratum-propensity-stats (data x z)
+      (let ((keys (reverse
+                    (foldl (lambda (acc obs)
+                             (%adjoin (%z-key obs z) acc))
+                           '()
+                           data))))
+        (map* (lambda (key)
+                (let* ((rows (%rows-for-key data z key))
+                       (n (length rows))
+                       (n1 (count (lambda (obs)
+                                    (= (%as-binary (%obs-get obs x) x) 1.0))
+                                  rows))
+                       (p (if (= n 0) 0.5 (/ (* 1.0 n1) n))))
+                  (%make-stats key n n1 0.0 0.0 p)))
               keys)))
 
     ;; Pseudorandom generator (Park-Miller minimal standard LCG).

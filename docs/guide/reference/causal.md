@@ -431,12 +431,15 @@ Available APIs:
 | `(do:ate-gformula data y x z)` | Stratified g-formula |
 | `(do:ate-ipw data y x z)` | Inverse-probability weighting |
 | `(do:ate-aipw data y x z)` | Augmented IPW (doubly robust form) |
+| `(do:ate-tmle data y x z)` | One-step targeted minimum loss estimator |
 | `(do:propensity-score data x z)` | Stratified empirical propensity scores |
 | `(do:bootstrap-ci estimator data n-boot alpha [seed])` | Percentile bootstrap CI |
+| `(do:e-value rr)` | E-value for risk-ratio sensitivity analysis |
+| `(do:rosenbaum-bound ratio gamma)` | Multiplicative sensitivity envelope `(lower . upper)` |
 
-Current scope:
+Notes:
 - Binary treatment `x` in `{0,1}` or `{#f,#t}`
-- Strata-based nuisance models (no TMLE yet)
+- Strata-based nuisance models
 - Bootstrap confidence intervals available via `do:bootstrap-ci`
 
 ### End-to-End Example
@@ -515,17 +518,16 @@ analysis:
 > Eta now includes two estimation layers:
 > 
 > - `std.causal` plug-in adjustment (`do:estimate-effect`)
-> - `std.causal.estimate` M9a estimators (`do:ate-gformula`, `do:ate-ipw`,
->   `do:ate-aipw`, `do:bootstrap-ci`)
+> - `std.causal.estimate` estimators (`do:ate-gformula`, `do:ate-ipw`,
+>   `do:ate-aipw`, `do:ate-tmle`, `do:bootstrap-ci`, `do:e-value`,
+>   `do:rosenbaum-bound`)
 > 
-> Remaining gaps for:
+> Remaining gaps:
 > 
-> - TMLE is not yet implemented.
 > - No influence-function/analytic standard errors yet.
-> - Continuous-treatment and richer model-based nuisance estimation are
->   still pending.
+> - Continuous-treatment and richer model-based nuisance estimation.
 > - Mediation estimands currently rely on observed treatment/mediator
->   support and do not yet include sensitivity analysis modules.
+>   support and have separate estimation assumptions.
 
 ---
 
@@ -540,7 +542,7 @@ analysis:
 | Mediation effect estimators          | [`stdlib/std/causal/mediation.eta`](../../../stdlib/std/causal/mediation.eta)             |
 | Transportability helpers             | [`stdlib/std/causal/transport.eta`](../../../stdlib/std/causal/transport.eta)             |
 | Counterfactual helpers               | [`stdlib/std/causal/counterfactual.eta`](../../../stdlib/std/causal/counterfactual.eta)   |
-| Estimation backends (M9a)            | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
+| Estimation backends                  | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
 | Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |
 | Full identification demo             | [`examples/do-calculus/demo.eta`](../../../examples/do-calculus/demo.eta)                 |

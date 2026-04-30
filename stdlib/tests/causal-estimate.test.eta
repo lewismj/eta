@@ -7,6 +7,9 @@
     (defun make-row (x z y)
       (list (cons 'x x) (cons 'z z) (cons 'y y)))
 
+    (defun make-row-xz (x z)
+      (list (cons 'x x) (cons 'z z)))
+
     (defun repeat-row (n row)
       (let loop ((i 0) (acc '()))
         (if (= i n)
@@ -63,6 +66,23 @@
                 (assert-approx-equal 0.3 (mean z0) 1e-12)
                 (assert-approx-equal 0.7 (mean z1) 1e-12))))
 
+          (make-test "propensity scores do not require an outcome column"
+            (lambda ()
+              (let* ((data-xz (append
+                                (repeat-row 2 (make-row-xz 0 0))
+                                (repeat-row 1 (make-row-xz 1 0))
+                                (repeat-row 1 (make-row-xz 0 1))
+                                (repeat-row 3 (make-row-xz 1 1))))
+                     (ps (do:propensity-score data-xz 'x '(z)))
+                     (z0 (map* car
+                               (filter (lambda (zp) (= (cdr zp) 0))
+                                       (zip ps (map* confounder data-xz)))))
+                     (z1 (map* car
+                               (filter (lambda (zp) (= (cdr zp) 1))
+                                       (zip ps (map* confounder data-xz))))))
+                (assert-approx-equal (/ 1.0 3.0) (mean z0) 1e-12)
+                (assert-approx-equal 0.75 (mean z1) 1e-12))))
+
           (make-test "g-formula recovers true ATE"
             (lambda ()
               (assert-approx-equal 2.0
@@ -81,6 +101,18 @@
                                    (do:ate-aipw data 'y 'x '(z))
                                    1e-9)))
 
+          (make-test "TMLE recovers true ATE"
+            (lambda ()
+              (assert-approx-equal 2.0
+                                   (do:ate-tmle data 'y 'x '(z))
+                                   1e-9)))
+
+          (make-test "TMLE matches AIPW on stratified synthetic sample"
+            (lambda ()
+              (assert-approx-equal (do:ate-aipw data 'y 'x '(z))
+                                   (do:ate-tmle data 'y 'x '(z))
+                                   1e-9)))
+
           (make-test "bootstrap CI contains true effect"
             (lambda ()
               (let* ((ci (do:bootstrap-ci
@@ -92,6 +124,24 @@
                      (lo (car ci))
                      (hi (cdr ci)))
                 (assert-true (<= lo 2.0))
-                (assert-true (>= hi 2.0))))))))
+                (assert-true (>= hi 2.0)))))
+
+          (make-test "E-value for RR=2 is approximately 3.4142"
+            (lambda ()
+              (assert-approx-equal 3.414213562373095
+                                   (do:e-value 2.0)
+                                   1e-9)))
+
+          (make-test "E-value handles protective effects by inversion"
+            (lambda ()
+              (assert-approx-equal 3.414213562373095
+                                   (do:e-value 0.5)
+                                   1e-9)))
+
+          (make-test "Rosenbaum bound returns multiplicative sensitivity envelope"
+            (lambda ()
+              (let ((b (do:rosenbaum-bound 2.0 1.5)))
+                (assert-approx-equal (/ 2.0 1.5) (car b) 1e-12)
+                (assert-approx-equal 3.0 (cdr b) 1e-12)))))))
 
     (print-tap (run suite))))
