@@ -893,4 +893,545 @@ the union of DoWhy + Ananke + Y0, with the unique advantages of native
 AAD, libtorch integration, and CLP-based bound reasoning that no other
 toolkit currently combines.
 
-<!-- Implementation note (2026-04-30): M0, M1, M2, M3, M4, M5, M6, M7, and M8 are implemented in-tree. -->
+---
+
+## Extension milestones — HTE / ACIC-23-class capability
+
+M0–M9 cover **identification** and **average-effect estimation** under
+known graphs. They are not sufficient for a competitive entry to
+benchmarks such as ACIC 2023 (Zalando), where the deliverable is
+**heterogeneous treatment effect (CATE) estimation** with calibrated
+inference and policy-value scoring. The four milestones below close
+that gap. They assume M9 is already in place and reuse its
+`%stratum-stats` / `%clip-prob` machinery where it makes sense.
+
+### Cross-cutting design: the *regressor / classifier* abstraction
+
+Every milestone below consumes a uniform learner protocol so that
+nuisance and CATE models can be swapped between OLS, `std.torch` MLPs,
+gradient-boosted trees (M13), or user-supplied closures.
+
+```scheme
+;; A learner-spec is a small alist:
+;;   ((fit     . (lambda (X-matrix y-vector) -> model))
+;;    (predict . (lambda (model X-matrix) -> y-hat-vector))
+;;    (kind    . regressor|classifier))
+;;
+;; Helpers shipped alongside each milestone:
+(stats:make-ols-regressor)                        ; std.stats
+(torch:make-mlp-regressor in widths epochs lr)    ; std.torch
+(torch:make-mlp-classifier in widths epochs lr)   ; std.torch (sigmoid head)
+(forest:make-rf-regressor n-trees min-leaf)       ; M13
+```
+
+`%matrix-of` / `%vector-of` (already private helpers in M9 pseudocode)
+become public `causal:design-matrix` and `causal:response-vector` so
+every learner sees the same column layout.
+
+---
+
+## M12 — CATE meta-learners (S / T / X / R / DR) (P0, 1–2 weeks)
+
+The **core deliverable** of ACIC23-style benchmarks. Each learner is a
+thin function over the regressor protocol; the heavy lifting is done by
+the wrapped models.
+
+### `stdlib/std/causal/cate.eta`
+
+```scheme
+(module std.causal.cate
+  (import std.core) (import std.collections)
+  (import std.stats) (import std.causal.estimate)
+  (export
+    ;; Constructors — return an opaque <cate-model>.
+    cate:fit-s-learner   ;; one regressor on (Y, [X Z])
+    cate:fit-t-learner   ;; two regressors, one per arm
+    cate:fit-x-learner   ;; Künzel et al. 2019
+    cate:fit-r-learner   ;; Nie & Wager 2021 (orthogonal loss)
+    cate:fit-dr-learner  ;; Kennedy 2020 (DR pseudo-outcome)
+    ;; Use sites
+    cate:predict cate:ate cate:rank
+    ;; Diagnostics
+    cate:residual-r2 cate:propensity-overlap)
+  (begin
+
+    ;; --- T-learner (simplest baseline) -----------------------------
+    (defun cate:fit-t-learner (data y x z reg-spec)
+      (let* ((d1 (filter (lambda (o) (= (%obs-get o x) 1)) data))
+             (d0 (filter (lambda (o) (= (%obs-get o x) 0)) data))
+             (m1 (%fit-regressor reg-spec (%design d1 z) (%response d1 y)))
+             (m0 (%fit-regressor reg-spec (%design d0 z) (%response d0 y))))
+        (list 'cate-model 't-learner reg-spec z m0 m1)))
+
+    ;; --- S-learner -------------------------------------------------
+    (defun cate:fit-s-learner (data y x z reg-spec)
+      (let ((m (%fit-regressor reg-spec (%design data (cons x z))
+                                       (%response data y))))
+        (list 'cate-model 's-learner reg-spec (cons x z) x m)))
+
+    ;; --- X-learner (Künzel et al. 2019) ---------------------------
+    ;;   1. fit μ0, μ1 on each arm
+    ;;   2. impute pseudo-outcomes:
+    ;;        D1 = Y - μ̂0(Z)   on treated
+    ;;        D0 = μ̂1(Z) - Y   on control
+    ;;   3. fit τ̂0, τ̂1 by regressing D0, D1 on Z
+    ;;   4. propensity-weighted combination:
+    ;;        τ̂(z) = ĝ(z)·τ̂0(z) + (1-ĝ(z))·τ̂1(z)
+    (defun cate:fit-x-learner (data y x z reg-spec cls-spec)
+      (let* ((d1   (filter (lambda (o) (= (%obs-get o x) 1)) data))
+             (d0   (filter (lambda (o) (= (%obs-get o x) 0)) data))
+             (mu1  (%fit-regressor reg-spec (%design d1 z) (%response d1 y)))
+             (mu0  (%fit-regressor reg-spec (%design d0 z) (%response d0 y)))
+             (D1   (map* (lambda (o) (- (%obs-get o y)
+                                        (%predict-one reg-spec mu0 (%row o z))))
+                         d1))
+             (D0   (map* (lambda (o) (- (%predict-one reg-spec mu1 (%row o z))
+                                        (%obs-get o y)))
+                         d0))
+             (tau1 (%fit-regressor reg-spec (%design d1 z) D1))
+             (tau0 (%fit-regressor reg-spec (%design d0 z) D0))
+             (g    (%fit-classifier cls-spec (%design data z)
+                                              (%response data x))))
+        (list 'cate-model 'x-learner reg-spec cls-spec z tau0 tau1 g)))
+
+    ;; --- R-learner (Nie & Wager 2021) -----------------------------
+    ;;   minimise  Σ ((Y - μ̂(Z)) - (X - ê(Z))·τ(Z))²
+    ;;   nuisances μ̂, ê **must** be cross-fit (uses crossfit:nuisance from M14).
+    (defun cate:fit-r-learner (data y x z reg-spec . opts)
+      (let* ((k       (or (assoc-ref 'k opts) 5))
+             (seed    (or (assoc-ref 'seed opts) 0))
+             (mu-hat  (crossfit:nuisance reg-spec data (cons x z) y k seed))
+             (e-hat   (crossfit:nuisance reg-spec data z x k seed))
+             ;; Pseudo-residuals and weights:
+             ;;   ỹ_i = Y_i - μ̂_i ;  x̃_i = X_i - ê_i
+             ;;   target = ỹ_i / x̃_i ;   weight = x̃_i²
+             (rows    (map* (lambda (o mu e)
+                              (let* ((yt (- (%obs-get o y) mu))
+                                     (xt (- (%obs-get o x) e))
+                                     (xt* (if (< (abs-val xt) 1e-6) 1e-6 xt)))
+                                (cons (cons (%row o z) (/ yt xt*))
+                                      (* xt xt))))
+                            data mu-hat e-hat))
+             (X       (map* caar rows))
+             (Y*      (map* cdar rows))
+             (W       (map* cdr  rows))
+             (tau     (%fit-regressor-weighted reg-spec X Y* W)))
+        (list 'cate-model 'r-learner reg-spec z tau)))
+
+    ;; --- DR-learner (Kennedy 2020) --------------------------------
+    ;;   φ(Z) = μ̂1(Z) - μ̂0(Z)
+    ;;          + X·(Y - μ̂1(Z))/ê(Z)
+    ;;          - (1-X)·(Y - μ̂0(Z))/(1-ê(Z))
+    ;;   τ̂ = regress φ on Z (cross-fit nuisances).
+    (defun cate:fit-dr-learner (data y x z reg-spec cls-spec . opts)
+      (let* ((k      (or (assoc-ref 'k opts) 5))
+             (seed   (or (assoc-ref 'seed opts) 0))
+             (mu1    (crossfit:nuisance-arm reg-spec data y x z 1 k seed))
+             (mu0    (crossfit:nuisance-arm reg-spec data y x z 0 k seed))
+             (e-hat  (crossfit:nuisance cls-spec data z x k seed))
+             (phi    (map* (lambda (o m1 m0 e)
+                             (let* ((xv (%obs-get o x))
+                                    (yv (%obs-get o y))
+                                    (e* (%clip-prob e)))
+                               (+ (- m1 m0)
+                                  (- (/ (* xv (- yv m1)) e*)
+                                     (/ (* (- 1 xv) (- yv m0)) (- 1 e*))))))
+                           data mu1 mu0 e-hat))
+             (tau    (%fit-regressor reg-spec (%design data z) phi)))
+        (list 'cate-model 'dr-learner reg-spec z tau)))
+
+    ;; --- Common interface ------------------------------------------
+    (defun cate:predict (model row)
+      ;; Row is a single observation alist; returns scalar τ̂(z).
+      (case (cadr model)
+        ((t-learner)
+         (let* ((reg (caddr model)) (z (cadddr model))
+                (m0 (cadr (cdddr model))) (m1 (caddr (cdddr model))))
+           (- (%predict-one reg m1 (%row row z))
+              (%predict-one reg m0 (%row row z)))))
+        ((s-learner)
+         (let* ((reg (caddr model)) (cols (cadddr model))
+                (xn  (cadr (cdddr model))) (m (caddr (cdddr model))))
+           (- (%predict-one reg m (%row-with row cols xn 1))
+              (%predict-one reg m (%row-with row cols xn 0)))))
+        ((x-learner)  (%predict-x  model row))
+        ((r-learner)  (%predict-r  model row))
+        ((dr-learner) (%predict-dr model row))
+        (else (error 'unknown-cate-model (cadr model)))))
+
+    (defun cate:ate (model data)
+      (stats:mean (map* (lambda (o) (cate:predict model o)) data)))
+
+    (defun cate:rank (model data)
+      ;; Returns (sorted-data . tau-hats) descending by τ̂; for Qini etc.
+      ...)
+    ))
+```
+
+### Tests (`causal-cate.test.eta`)
+
+```scheme
+(test "T-learner recovers constant CATE on additive linear DGP"
+  (let* ((d (%simulate-cate-linear 5000 1.5))
+         (m (cate:fit-t-learner d 'y 'x '(z1 z2 z3) (stats:make-ols-regressor))))
+    (assert-near (cate:ate m d) 1.5 0.10)))
+
+(test "X-learner beats T-learner under treatment imbalance"
+  (let* ((d  (%simulate-cate-imbalanced 5000 0.85))
+         (mt (cate:fit-t-learner d 'y 'x '(z1 z2 z3)
+              (stats:make-ols-regressor)))
+         (mx (cate:fit-x-learner d 'y 'x '(z1 z2 z3)
+              (stats:make-ols-regressor) (stats:make-logistic))))
+    (assert (< (policy:pehe (%true-cate d) (cate:rank mx d))
+               (policy:pehe (%true-cate d) (cate:rank mt d))))))
+
+(test "R-learner: orthogonal moment ⇒ unbiased CATE under DGP-A"
+  (let* ((d (%simulate-acic 4000))
+         (m (cate:fit-r-learner d 'y 'x '(z1 z2 z3 z4 z5)
+                                (torch:make-mlp-regressor 5 '(64 32) 200 1e-3)
+                                'k 5 'seed 42)))
+    (assert (< (policy:pehe (%true-cate d) (cate:rank m d)) 0.20))))
+
+(test "DR-learner doubly robust: correct when EITHER nuisance is right"
+  ...)
+```
+
+---
+
+## M13 — Trees, random forests, and Causal Forest (P1, 2–3 weeks)
+
+Without a tree learner the meta-learners above can only ride on linear /
+NN backbones, which are not competitive on the typical ACIC tabular DGP.
+This milestone adds a from-scratch CART, a bagged forest, and the
+**causal forest** (Athey, Tibshirani & Wager 2019) as a bespoke CATE
+estimator.
+
+### Layered modules
+
+```text
+stdlib/std/ml/tree.eta            ;; Regression CART with optional honesty
+stdlib/std/ml/forest.eta          ;; Bagging wrapper (parallel via std.net)
+stdlib/std/causal/forest.eta      ;; Causal/Generalized Random Forest
+```
+
+### `stdlib/std/ml/tree.eta`
+
+```scheme
+(module std.ml.tree
+  (import std.core) (import std.collections) (import std.stats)
+  (export
+    tree:fit                ;; (tree:fit X y 'min-leaf 5 'max-depth 8 'honest? #t)
+    tree:predict
+    tree:leaves             ;; for forest-weighted neighbour estimation
+    tree:leaf-membership)   ;; row → leaf-id  (used by causal forest)
+  (begin
+    ;; Standard greedy CART: variance-reduction split criterion,
+    ;; categorical features handled by ordering on response mean.
+    ;; If 'honest?  #t, the predictions in each leaf are computed
+    ;; from a separate split of the training data (Athey & Imbens 2016).
+    ...))
+```
+
+### `stdlib/std/ml/forest.eta`
+
+```scheme
+(module std.ml.forest
+  (import std.core) (import std.ml.tree) (import std.net)
+  (export forest:fit forest:predict forest:fit-parallel
+          forest:make-rf-regressor)
+  (begin
+    ;; Bag of `n-trees` CARTs over bootstrap samples,
+    ;; mtry random feature subsample at each split, optional
+    ;; parallel fit via worker pool from std.net.
+    ...))
+```
+
+### `stdlib/std/causal/forest.eta`
+
+```scheme
+(module std.causal.forest
+  (import std.core) (import std.ml.tree) (import std.causal.estimate)
+  (export
+    forest:fit-causal-forest
+    forest:predict-cate
+    forest:variable-importance
+    forest:local-aipw)
+  (begin
+
+    ;; Athey-Tibshirani-Wager 2019: each tree is grown by maximising
+    ;; the heterogeneity in treatment-effect *gradient* across child
+    ;; nodes (analogous to the τ-loss split criterion).
+    ;;   - honest sample-splitting per tree
+    ;;   - leaves give a *weight* α_i(z) for every training row i
+    ;;   - τ̂(z) is solved per query as a weighted local moment:
+    ;;        Σᵢ αᵢ(z) ψ_i(τ; μ̂, ê) = 0
+    ;;   - ψ is the AIPW score from M9 / DR pseudo-outcome from M12
+    ;;
+    ;; n-trees:    typically 500–2000
+    ;; min-leaf:   honest leaf size (5–10)
+    ;; subsample:  fraction per tree (0.5)
+    (defun forest:fit-causal-forest (data y x z . opts)
+      (let* ((n-trees   (or (assoc-ref 'n-trees opts) 500))
+             (min-leaf  (or (assoc-ref 'min-leaf opts) 5))
+             (subsample (or (assoc-ref 'subsample opts) 0.5))
+             (seed      (or (assoc-ref 'seed opts) 0))
+             (trees     (%cf-fit-trees data y x z n-trees min-leaf subsample seed)))
+        (list 'causal-forest data y x z trees)))
+
+    (defun forest:predict-cate (cf row)
+      ;; α-weighted local AIPW solve at the query row.
+      ...)
+    ))
+```
+
+### Stretch: BART
+
+A native BART implementation is ≥ 1500 LoC and a research project of
+its own. Two pragmatic options live behind one switch:
+
+```scheme
+;; (a) Wrap an external binary (R-bart, BartPy) via std.os + JSON IPC.
+(causal:fit-bart data y x z 'engine 'external 'binary "/usr/bin/bart")
+;; (b) Pure-Eta minimal BART (sum-of-stumps with backfitting MCMC) —
+;;     adequate for sanity checks, not for leaderboards.
+(causal:fit-bart data y x z 'engine 'native 'n-trees 50 'n-iter 200)
+```
+
+### Tests (`causal-forest.test.eta`, `ml-tree.test.eta`)
+
+```scheme
+(test "CART recovers piecewise-constant signal within FP tolerance" ...)
+(test "Random forest beats single tree on Friedman-1" ...)
+(test "Causal forest CATE PEHE < linear T-learner on ACIC23-A" ...)
+(test "Honest forests yield narrower CIs at fixed coverage" ...)
+```
+
+---
+
+## M14 — Cross-fitting / Double Machine Learning (DML) (P0, 1 week)
+
+The harness everything else plugs into. Without K-fold cross-fitting,
+M9's AIPW/TMLE and M12's R/DR-learners do not enjoy their
+asymptotic guarantees on flexible nuisance models.
+
+### `stdlib/std/causal/crossfit.eta`
+
+```scheme
+(module std.causal.crossfit
+  (import std.core) (import std.collections) (import std.stats)
+  (import std.causal.estimate)
+  (export
+    crossfit:k-folds
+    crossfit:nuisance        ;; OOF predictions for one (X,y) pair
+    crossfit:nuisance-arm    ;; per-treatment-arm OOF predictions
+    crossfit:dml-plr         ;; Chernozhukov 2018 partially linear regression
+    crossfit:dml-irm         ;; interactive regression model (binary X)
+    crossfit:influence-se
+    crossfit:dml-ci)
+  (begin
+
+    ;; Deterministic K-fold partition; uses LCG seed from M9.
+    (defun crossfit:k-folds (n k seed)
+      ;; Returns list of (train-indices . test-indices), length k.
+      ...)
+
+    ;; Out-of-fold predictions of `y` given features `cols`.
+    (defun crossfit:nuisance (learner-spec data cols y k seed)
+      (let* ((n     (length data))
+             (folds (crossfit:k-folds n k seed))
+             (preds (make-vector n 0.0)))
+        (for-each
+          (lambda (fold)
+            (let* ((train (%select data (car fold)))
+                   (test  (%select data (cdr fold)))
+                   (model (%fit-regressor learner-spec
+                                          (%design train cols)
+                                          (%response train y)))
+                   (yhat  (%predict learner-spec model
+                                    (%design test cols))))
+              (%scatter! preds (cdr fold) yhat)))
+          folds)
+        (vector->list preds)))
+
+    ;; Per-arm OOF predictions: μ̂_a(Z) trained only on rows with X = a.
+    (defun crossfit:nuisance-arm (learner-spec data y x z arm k seed)
+      ...)
+
+    ;; --- DML PLR (Chernozhukov et al. 2018) ----------------------
+    ;;   Y = θ·X + g(Z) + ε  ;  X = m(Z) + η
+    ;;   ψ_i = (Y_i - g̃_i)·(X_i - m̃_i)
+    ;;   θ̂   = Σψ_i / Σ(X_i - m̃_i)²
+    ;;   σ̂²  = (1/n²) Σ (ψ_i - θ̂·(X_i - m̃_i)²)²  /  (mean(X-m̃)²)²
+    (defun crossfit:dml-plr (data y x z reg-mu reg-m k seed)
+      (let* ((mu  (crossfit:nuisance reg-mu data z y k seed))
+             (m   (crossfit:nuisance reg-m  data z x k seed))
+             (yt  (map* (lambda (o gi) (- (%obs-get o y) gi)) data mu))
+             (xt  (map* (lambda (o mi) (- (%obs-get o x) mi)) data m))
+             (num (foldl + 0.0 (map* * yt xt)))
+             (den (foldl + 0.0 (map* * xt xt)))
+             (theta (/ num den))
+             (psi  (map* (lambda (yi xi) (* xi (- yi (* theta xi)))) yt xt))
+             (se   (crossfit:influence-se psi den (length data))))
+        (list (cons 'theta theta)
+              (cons 'se    se)
+              (cons 'ci    (crossfit:dml-ci theta se 0.05)))))
+
+    ;; --- DML IRM (binary X) -------------------------------------
+    ;;   Doubly-robust score with cross-fit μ̂_a(Z), ê(Z)
+    (defun crossfit:dml-irm (data y x z reg-mu cls-e k seed)
+      ...)
+    ))
+```
+
+### Tests (`causal-crossfit.test.eta`)
+
+```scheme
+(test "K-folds partition is exact and stratification-stable"
+  (let ((f (crossfit:k-folds 1000 5 42)))
+    (assert (= 5 (length f)))
+    (assert (= 1000 (foldl + 0 (map* (lambda (p) (length (cdr p))) f))))))
+
+(test "OOF predictions never train on themselves"
+  ...)
+
+(test "DML PLR: θ̂ ≈ 1.0 with ±0.05 SE on 5000-row linear DGP"
+  (let* ((d (%simulate-plr 5000 1.0))
+         (r (crossfit:dml-plr d 'y 'x '(z1 z2 z3 z4 z5)
+                              (torch:make-mlp-regressor 5 '(64) 200 1e-3)
+                              (torch:make-mlp-regressor 5 '(64) 200 1e-3)
+                              5 42)))
+    (assert-near (assoc-ref 'theta r) 1.0 0.05)
+    (let ((ci (assoc-ref 'ci r)))
+      (assert (and (<= (car ci) 1.0) (>= (cadr ci) 1.0))))))
+
+(test "DML IRM matches AIPW within MC error" ...)
+```
+
+---
+
+## M15 — Uplift / Qini / policy-value scoring (P1, 3–5 days)
+
+The evaluation layer. Without it you cannot submit, score, or
+self-rank in any HTE benchmark.
+
+### `stdlib/std/causal/policy.eta`
+
+```scheme
+(module std.causal.policy
+  (import std.core) (import std.collections) (import std.stats)
+  (import std.causal.cate) (import std.causal.estimate)
+  (export
+    ;; Ranking metrics
+    policy:qini-curve policy:qini-coefficient
+    policy:auuc policy:cumulative-gain-curve
+    ;; Policy values
+    policy:value-ipw     ;; inverse-propensity (Horvitz-Thompson) estimator
+    policy:value-aipw    ;; doubly-robust evaluator
+    policy:rank-by-cate
+    ;; Synthetic-truth metrics (for calibrated DGPs)
+    policy:pehe policy:ate-rmse policy:ate-bias
+    ;; Policy construction
+    policy:greedy-treat-positive    ;; π(z) = 1{τ̂(z) > 0}
+    policy:greedy-budget            ;; treat top-k under a budget)
+  (begin
+
+    ;; Qini curve: (k, uplift_k) for k = 1..n, where
+    ;;   uplift_k = (Σ_{i≤k, X=1} Y_i)/N_T - (N1_k/N0_k)·(Σ_{i≤k, X=0} Y_i)/N_C
+    (defun policy:qini-curve (cate-preds y x)
+      (let* ((triples (%sort-desc-by-cate cate-preds y x))
+             (n       (length triples)))
+        (let loop ((i 1) (rest triples) (acc-t 0.0) (acc-c 0.0)
+                   (n1 0) (n0 0) (curve '()))
+          (if (null? rest)
+              (reverse curve)
+              (let* ((row (car rest))
+                     (yi  (cadr row)) (xi (caddr row))
+                     (acc-t* (+ acc-t (* xi yi)))
+                     (acc-c* (+ acc-c (* (- 1 xi) yi)))
+                     (n1*    (+ n1 xi))
+                     (n0*    (+ n0 (- 1 xi)))
+                     (uplift (- (if (= n1* 0) 0.0 (/ acc-t* n1*))
+                                (if (= n0* 0) 0.0 (/ acc-c* n0*)))))
+                (loop (+ i 1) (cdr rest) acc-t* acc-c* n1* n0*
+                      (cons (cons i (* (/ i 1.0 n) uplift)) curve)))))))
+
+    (defun policy:qini-coefficient (curve)
+      ;; Trapezoidal area between Qini curve and the random-targeting line.
+      ...)
+
+    (defun policy:auuc (curve)
+      ;; Normalised area under the cumulative uplift curve, in [0,1].
+      ...)
+
+    ;; Doubly-robust off-policy evaluation (Dudík et al. 2014).
+    ;;   V̂(π) = (1/n) Σ [ μ̂_{π(z)}(z) +
+    ;;           1{X = π(z)}·(Y - μ̂_X(z)) / ê(z; π(z)) ]
+    (defun policy:value-aipw (data y x z policy-fn mu1 mu0 e-hat)
+      (stats:mean
+        (map* (lambda (o m1 m0 e)
+                (let* ((zrow (%row o z))
+                       (a    (policy-fn zrow))
+                       (mua  (if (= a 1) m1 m0))
+                       (xv   (%obs-get o x))
+                       (yv   (%obs-get o y))
+                       (e*   (%clip-prob (if (= a 1) e (- 1 e)))))
+                  (+ mua (if (= xv a) (/ (- yv mua) e*) 0.0))))
+              data mu1 mu0 e-hat)))
+
+    ;; PEHE for synthetic ground truth.
+    (defun policy:pehe (true-cate pred-cate)
+      (sqrt (stats:mean (map* (lambda (t p) (let ((d (- t p))) (* d d)))
+                              true-cate pred-cate))))
+    ))
+```
+
+### Tests (`causal-policy.test.eta`)
+
+```scheme
+(test "Qini coefficient is 0 for random ranking (within MC noise)"
+  (let* ((d (%simulate-rct 2000))
+         (rand (map* (lambda (_) (random)) d))
+         (curve (policy:qini-curve rand
+                                   (map* (lambda (o) (%obs-get o 'y)) d)
+                                   (map* (lambda (o) (%obs-get o 'x)) d))))
+    (assert-near (policy:qini-coefficient curve) 0.0 0.05)))
+
+(test "AIPW policy value coincides with on-policy mean on RCT"
+  ...)
+
+(test "PEHE: T-learner > X-learner > DR-learner on ACIC23-DGP-A"
+  ...)
+```
+
+---
+
+### Updated milestone summary (extension rows)
+
+| ID | Scope | LoC est. | Tests | Risk |
+|---:|---|---:|---:|---|
+| M12 | CATE meta-learners (S/T/X/R/DR) | 500 | 25 | Med |
+| M13 | CART + RF + Causal Forest | 1100 | 30 | High |
+| M14 | Cross-fitting / DML harness | 350 | 18 | Low |
+| M15 | Uplift / Qini / policy value | 300 | 15 | Low |
+|     | **Extension subtotal** | **~2250** | **~88** | |
+
+### Updated acceptance criteria (extension)
+
+8. **CATE PEHE on synthetic DGP-A** (linear-Gaussian with constant τ):
+   T-/X-/R-/DR-learner all within 10 % of optimal Bayes risk.
+9. **Cross-fit DML PLR**: 95 % CI coverage ≥ 0.93 over 200 reps at
+   *n = 5000* with MLP nuisances.
+10. **Causal forest** PEHE on Friedman-style heterogeneous DGP within
+    20 % of `grf` reference numbers.
+11. **End-to-end ACIC-class run** (load CSV → cross-fit MLP nuisances →
+    DR-learner → Qini + PEHE + AIPW policy value) completes in
+    ≤ 5 min for *n = 10 000*, *d = 30*.
+
+When M12–M15 land alongside the existing M0–M9, the stack covers the
+full ACIC23 surface: identification (M3/M4), nuisance estimation
+(M9 + M14), heterogeneous-effect modelling (M12 + M13), and
+leaderboard scoring (M15).
+
+---
+
+<!-- Implementation note (2026-04-30): M0, M1, M2, M3, M4, M5, M6, M7, M8, and M9 are implemented in-tree (see `stdlib/std/causal.eta`, `stdlib/std/causal/*.eta`, and `stdlib/tests/causal-*.test.eta`). M10 (structure learning), M11 (rendering), and the HTE extension milestones M12–M15 (CATE meta-learners, causal forest, cross-fitting/DML, Qini/policy evaluation) remain outstanding. -->

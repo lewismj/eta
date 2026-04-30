@@ -2,7 +2,7 @@
 
 [← Back to README](../../../README.md) ·
 [Portfolio Engine](../../featured_examples/portfolio.md) · [Logic Programming](logic.md) ·
-[CLP](clp.md) · [AAD](aad.md) · [xVA](xva.md) · [Project Status](../../next-steps.md)
+[CLP](clp.md) · [AAD](aad.md) · [xVA](xva.md)
 
 > [!TIP]
 > **See also**
@@ -388,6 +388,29 @@ Current scope:
 
 ---
 
+## Structure Learning
+
+For data-driven structure learning helpers:
+
+```scheme
+(import std.causal.learn)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(learn:ci-test:fisher-z data x y z alpha)` | Partial-correlation conditional-independence test returning `(independent? . p-value)` |
+| `(learn:ci-test:chi2 data x y z alpha)` | Discrete chi-square conditional-independence test returning `(independent? . p-value)` |
+| `(learn:pc data alpha ci-test)` | PC skeleton + collider orientation + Meek propagation, returned as a CPDAG |
+| `(learn:fci data alpha ci-test)` | Latent-confounding hook; currently delegates to `learn:pc` |
+| `(learn:ges data [alpha [ci-test]])` | Score-search hook; currently delegates to `learn:pc` |
+| `(learn:notears data lambda1 max-iter)` | Continuous-learning hook with correlation thresholding and transitive reduction |
+
+CPDAG edge format:
+- directed edge: `(u -> v)`
+- undirected edge: `(u -- v)`
+
+---
+
 ## Numeric Estimation
 
 ### The Back-Door Adjustment Formula
@@ -542,6 +565,7 @@ analysis:
 | Mediation effect estimators          | [`stdlib/std/causal/mediation.eta`](../../../stdlib/std/causal/mediation.eta)             |
 | Transportability helpers             | [`stdlib/std/causal/transport.eta`](../../../stdlib/std/causal/transport.eta)             |
 | Counterfactual helpers               | [`stdlib/std/causal/counterfactual.eta`](../../../stdlib/std/causal/counterfactual.eta)   |
+| Structure learning helpers           | [`stdlib/std/causal/learn.eta`](../../../stdlib/std/causal/learn.eta)                     |
 | Estimation backends                  | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
 | Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |

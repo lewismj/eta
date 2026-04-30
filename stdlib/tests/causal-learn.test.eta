@@ -1,0 +1,132 @@
+;;; stdlib/tests/causal-learn.test.eta -- Tests for std.causal.learn
+
+(module causal.learn.tests
+  (import std.test
+          std.causal.learn
+          std.core
+          std.collections)
+  (begin
+
+    (defun contains-edge? (g edge)
+      (any? (lambda (e) (equal? e edge)) g))
+
+    (defun undirected-edge (a b)
+      (if (string<? (symbol->string a) (symbol->string b))
+          (list a '-- b)
+          (list b '-- a)))
+
+    (defun connected? (g a b)
+      (or (contains-edge? g (list a '-> b))
+          (contains-edge? g (list b '-> a))
+          (contains-edge? g (undirected-edge a b))))
+
+    (defun make-chain-data (n)
+      (let loop ((i 0) (acc '()))
+        (if (= i n)
+            (reverse acc)
+            (let* ((a (- (* 1.0 i) (/ n 2.0)))
+                   (noise-b (if (= (modulo i 2) 0) 0.15 -0.15))
+                   (b (+ (* 0.9 a) noise-b))
+                   (noise-c (if (= (modulo i 3) 0) 0.10 -0.10))
+                   (c (+ (* 0.9 b) noise-c)))
+              (loop (+ i 1)
+                    (cons (list (cons 'a a)
+                                (cons 'b b)
+                                (cons 'c c))
+                          acc))))))
+
+    (defun make-row-xyz (x y z)
+      (list (cons 'x x) (cons 'y y) (cons 'z z)))
+
+    (defun repeat-row (n row)
+      (let loop ((i 0) (acc '()))
+        (if (= i n)
+            acc
+            (loop (+ i 1) (cons row acc)))))
+
+    (defun make-chi2-independent-data ()
+      (append
+        (repeat-row 25 (make-row-xyz 0 0 0))
+        (repeat-row 25 (make-row-xyz 0 1 0))
+        (repeat-row 25 (make-row-xyz 1 0 0))
+        (repeat-row 25 (make-row-xyz 1 1 0))
+        (repeat-row 25 (make-row-xyz 0 0 1))
+        (repeat-row 25 (make-row-xyz 0 1 1))
+        (repeat-row 25 (make-row-xyz 1 0 1))
+        (repeat-row 25 (make-row-xyz 1 1 1))))
+
+    (defun make-chi2-dependent-data ()
+      (append
+        (repeat-row 45 (make-row-xyz 0 0 0))
+        (repeat-row 5  (make-row-xyz 0 1 0))
+        (repeat-row 5  (make-row-xyz 1 0 0))
+        (repeat-row 45 (make-row-xyz 1 1 0))
+        (repeat-row 42 (make-row-xyz 0 0 1))
+        (repeat-row 8  (make-row-xyz 0 1 1))
+        (repeat-row 8  (make-row-xyz 1 0 1))
+        (repeat-row 42 (make-row-xyz 1 1 1))))
+
+    (define chain-data (make-chain-data 240))
+
+    (define suite
+      (make-group "std.causal.learn"
+        (list
+          (make-test "fisher-z detects marginal dependence on chain endpoints"
+            (lambda ()
+              (let ((r (learn:ci-test:fisher-z chain-data 'a 'c '() 0.05)))
+                (assert-false (car r))
+                (assert-true (< (cdr r) 0.05)))))
+
+          (make-test "fisher-z detects conditional independence through mediator"
+            (lambda ()
+              (let ((r (learn:ci-test:fisher-z chain-data 'a 'c '(b) 0.05)))
+                (assert-true (car r))
+                (assert-true (> (cdr r) 0.05)))))
+
+          (make-test "chi2 marks independent strata as conditionally independent"
+            (lambda ()
+              (let ((r (learn:ci-test:chi2
+                         (make-chi2-independent-data)
+                         'x
+                         'y
+                         '(z)
+                         0.05)))
+                (assert-true (car r)))))
+
+          (make-test "chi2 marks diagonal contingency as dependent"
+            (lambda ()
+              (let ((r (learn:ci-test:chi2
+                         (make-chi2-dependent-data)
+                         'x
+                         'y
+                         '(z)
+                         0.05)))
+                (assert-false (car r)))))
+
+          (make-test "PC recovers chain skeleton and removes long edge"
+            (lambda ()
+              (let ((g (learn:pc chain-data 0.01 learn:ci-test:fisher-z)))
+                (assert-true (connected? g 'a 'b))
+                (assert-true (connected? g 'b 'c))
+                (assert-false (connected? g 'a 'c)))))
+
+          (make-test "FCI hook matches PC on observed-only chain data"
+            (lambda ()
+              (assert-equal (learn:pc chain-data 0.01 learn:ci-test:fisher-z)
+                            (learn:fci chain-data 0.01 learn:ci-test:fisher-z))))
+
+          (make-test "GES hook supports defaults and explicit ci-test"
+            (lambda ()
+              (let ((g0 (learn:ges chain-data))
+                    (g1 (learn:ges chain-data 0.01 learn:ci-test:fisher-z)))
+                (assert-true (connected? g0 'a 'b))
+                (assert-true (connected? g1 'b 'c)))))
+
+          (make-test "NOTEARS hook returns sparse chain DAG"
+            (lambda ()
+              (let ((g (learn:notears chain-data 0.2 100)))
+                (assert-true (contains-edge? g '(a -> b)))
+                (assert-true (contains-edge? g '(b -> c)))
+                (assert-false (contains-edge? g '(a -> c)))))))))
+
+    (print-tap (run suite))))
