@@ -1,0 +1,341 @@
+;;; std/causal/transport.eta -- Transportability and selection-bias helpers.
+;;;
+;;; Public API:
+;;;   (s-node? n)
+;;;     True when `n` is an S-node marker symbol (name starts with "S").
+;;;   (do:sBD? g x y z s-nodes)
+;;;     Selection back-door criterion:
+;;;       1) Z satisfies back-door for (X,Y)
+;;;       2) Y is d-separated from each S in `s-nodes` given X and Z
+;;;   (do:transport g* g y x)
+;;;     Pragmatic sID-style transport query. Returns:
+;;;       - an ID estimand AST when target identification is immediate, or
+;;;       - a transport adjustment estimand
+;;;           (sum z (prod (P* (y x ...z)) (P z)))
+;;;         when s-backdoor transport applies, or
+;;;       - (fail (transport ...)) witness.
+;;;
+;;; Notes:
+;;;   - `P*` denotes source-domain interventional information.
+;;;   - Bidirected edges are expanded to latent parents for d-separation checks.
+
+(module std.causal.transport
+  (import std.core)
+  (import std.collections)
+  (import std.causal)
+  (import std.causal.identify)
+  (import std.causal.adjustment)
+  (export s-node? do:sBD? do:transport)
+  (begin
+
+    ;; -- Set and list helpers -------------------------------------------
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (defun %adjoin (x xs)
+      (if (%member? x xs) xs (cons x xs)))
+
+    (defun %set-diff (a b)
+      (filter (lambda (x) (not (%member? x b))) a))
+
+    (defun %normalize-vars (vars)
+      (let loop ((rest vars) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let ((v (car rest)))
+              (if (%member? v acc)
+                  (loop (cdr rest) acc)
+                  (loop (cdr rest) (cons v acc)))))))
+
+    (defun %as-node-set (x)
+      (cond
+        ((null? x) '())
+        ((symbol? x) (list x))
+        ((list? x) (%normalize-vars x))
+        (else (error "expected symbol or list of symbols"))))
+
+    (defun %as-single-node (x where)
+      (let ((xs (%as-node-set x)))
+        (if (= (length xs) 1)
+            (car xs)
+            (error (string-append where ": expected symbol or singleton list")))))
+
+    (defun %assert-vars (nodes vs)
+      (if (null? vs)
+          'ok
+          (begin
+            (if (%member? (car vs) nodes)
+                'ok
+                (error 'unknown-variable (car vs)))
+            (%assert-vars nodes (cdr vs)))))
+
+    (defun %find (pred xs)
+      (cond
+        ((null? xs) #f)
+        ((pred (car xs)) (car xs))
+        (else (%find pred (cdr xs)))))
+
+    (defun %fail? (expr)
+      (and (pair? expr) (eq? (car expr) 'fail)))
+
+    ;; -- Mixed graph helpers --------------------------------------------
+
+    (defun %edge-from (e) (car e))
+    (defun %edge-kind (e) (cadr e))
+    (defun %edge-to (e) (caddr e))
+
+    (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
+
+    (defun %mixed-edge? (e)
+      (and (list? e)
+           (= (length e) 3)
+           (or (%directed-edge? e) (%bidirected-edge? e))))
+
+    (defun %graph-nodes (g)
+      (foldl (lambda (acc e)
+               (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
+             '()
+             g))
+
+    (defun %directed-only (g)
+      (filter %directed-edge? g))
+
+    (defun %bidirected-only (g)
+      (filter %bidirected-edge? g))
+
+    (defun %assert-mixed-graph (g)
+      (if (every? %mixed-edge? g)
+          (let ((d (%directed-only g)))
+            (if (dag:valid? d)
+                g
+                (error 'invalid-admg g)))
+          (error 'invalid-admg g)))
+
+    (defun %remove-nodes (g nodes)
+      (filter (lambda (e)
+                (and (not (%member? (%edge-from e) nodes))
+                     (not (%member? (%edge-to e) nodes))))
+              g))
+
+    ;; Expand bidirected edges into explicit latent parents so we can reuse
+    ;; DAG-based d-separation and back-door checks.
+    (defun %fresh-latent (used idx)
+      (let ((n (string->symbol
+                 (string-append "__u" (number->string idx)))))
+        (if (%member? n used)
+            (%fresh-latent used (+ idx 1))
+            n)))
+
+    (defun %edge-member? (e edges)
+      (any? (lambda (x) (equal? e x)) edges))
+
+    (defun %edge-adjoin (e edges)
+      (if (%edge-member? e edges) edges (cons e edges)))
+
+    (defun %admg->latent-dag (g)
+      (let* ((directed (%directed-only g))
+             (bidirected (%bidirected-only g))
+             (used0 (%graph-nodes g)))
+        (let loop ((rest bidirected)
+                   (used used0)
+                   (idx 0)
+                   (acc directed))
+          (if (null? rest)
+              (reverse acc)
+              (let* ((e (car rest))
+                     (u (%edge-from e))
+                     (v (%edge-to e))
+                     (latent (%fresh-latent used idx))
+                     (acc1 (%edge-adjoin (list latent '-> u) acc))
+                     (acc2 (%edge-adjoin (list latent '-> v) acc1)))
+                (loop (cdr rest)
+                      (%adjoin latent used)
+                      (+ idx 1)
+                      acc2))))))
+
+    ;; Path-based d-separation check used for selection-node invariance
+    ;; predicates. This keeps behavior aligned with path blocking semantics
+    ;; for the small diagrams used in transport checks.
+    (defun %dag-parents-raw (dag node)
+      (foldl (lambda (acc e)
+               (if (and (%directed-edge? e)
+                        (eq? (%edge-to e) node))
+                   (%adjoin (%edge-from e) acc)
+                   acc))
+             '()
+             dag))
+
+    (defun %dag-children-raw (dag node)
+      (foldl (lambda (acc e)
+               (if (and (%directed-edge? e)
+                        (eq? (%edge-from e) node))
+                   (%adjoin (%edge-to e) acc)
+                   acc))
+             '()
+             dag))
+
+    (defun %dag-neighbors (dag node)
+      (foldl (lambda (acc n) (%adjoin n acc))
+             '()
+             (append (%dag-parents-raw dag node)
+                     (%dag-children-raw dag node))))
+
+    (defun %dag-has-directed-edge? (dag from to)
+      (any? (lambda (e)
+              (and (%directed-edge? e)
+                   (eq? (%edge-from e) from)
+                   (eq? (%edge-to e) to)))
+            dag))
+
+    (defun %all-simple-undirected-paths (dag src dst)
+      (letrec ((dfs (lambda (curr visited path-rev)
+                      (if (eq? curr dst)
+                          (list (reverse path-rev))
+                          (let ((nexts (filter (lambda (n)
+                                                 (not (%member? n visited)))
+                                               (%dag-neighbors dag curr))))
+                            (foldr append
+                                   '()
+                                   (map* (lambda (n)
+                                           (dfs n
+                                                (%adjoin n visited)
+                                                (cons n path-rev)))
+                                         nexts)))))))
+        (dfs src (list src) (list src))))
+
+    (defun %path-collider? (dag a b c)
+      (and (%dag-has-directed-edge? dag a b)
+           (%dag-has-directed-edge? dag c b)))
+
+    (defun %desc-or-self-in-z? (dag node z-set)
+      (or (%member? node z-set)
+          (any? (lambda (d) (%member? d z-set))
+                (dag:descendants dag node))))
+
+    (defun %path-active? (dag path z-set)
+      (if (< (length path) 3)
+          #t
+          (letrec ((walk (lambda (a b rest)
+                           (if (null? rest)
+                               #t
+                               (let* ((c (car rest))
+                                      (collider? (%path-collider? dag a b c))
+                                      (open? (if collider?
+                                                 (%desc-or-self-in-z? dag b z-set)
+                                                 (not (%member? b z-set)))))
+                                 (and open? (walk b c (cdr rest))))))))
+            (walk (car path) (cadr path) (cdr (cdr path))))))
+
+    (defun %d-connected-path? (dag x-set y-set z-set)
+      (any? (lambda (x)
+              (any? (lambda (y)
+                      (any? (lambda (path)
+                              (%path-active? dag path z-set))
+                            (%all-simple-undirected-paths dag x y)))
+                    y-set))
+            x-set))
+
+    (defun %d-separated-path? (dag x-set y-set z-set)
+      (not (%d-connected-path? dag x-set y-set z-set)))
+
+    ;; -- Transport helpers ----------------------------------------------
+
+    (defun s-node? (n)
+      (and (symbol? n)
+           (> (string-length (symbol->string n)) 0)
+           (let ((c (string-ref (symbol->string n) 0)))
+             (or (eqv? c #\S) (eqv? c #\s)))))
+
+    (defun %graph-s-nodes (g)
+      (filter s-node? (%graph-nodes g)))
+
+    (defun %selection-invariant? (g y-node x-node z-set s-set)
+      (let* ((dag* (%admg->latent-dag g))
+             (cond-set (append (list x-node) z-set)))
+        (every? (lambda (s)
+                  (%d-separated-path? dag*
+                                      (list y-node)
+                                      (list s)
+                                      cond-set))
+                s-set)))
+
+    (defun %transport-adjustment-estimand (y-node x-node z-set)
+      (let ((z (%normalize-vars z-set)))
+        (if (null? z)
+            (list 'P* (list y-node x-node))
+            (list 'sum
+                  z
+                  (list 'prod
+                        (list 'P* (append (list y-node x-node) z))
+                        (list 'P z))))))
+
+    ;; Selection back-door criterion.
+    (defun do:sBD? (g x y z s-nodes)
+      (%assert-mixed-graph g)
+      (let* ((x-node (%as-single-node x "do:sBD?"))
+             (y-node (%as-single-node y "do:sBD?"))
+             (z-set (%as-node-set z))
+             (s-set (%as-node-set s-nodes))
+             (nodes (%graph-nodes g))
+             (dag* (%admg->latent-dag g)))
+        (%assert-vars nodes (list x-node y-node))
+        (%assert-vars nodes z-set)
+        (%assert-vars nodes s-set)
+        (if (not (every? s-node? s-set))
+            (error "do:sBD?: expected only S-nodes in s-nodes")
+            (and (dag:satisfies-backdoor? dag* x-node y-node z-set)
+                 (%selection-invariant? g y-node x-node z-set s-set)))))
+
+    ;; Pragmatic transport query. This is conservative by design:
+    ;;   1) If no S-nodes exist, return target-domain ID.
+    ;;   2) If Y is selection-invariant given X, return target-domain ID.
+    ;;   3) Otherwise, try s-backdoor transport adjustment.
+    ;;   4) If target-domain ID is still available, return it.
+    ;;   5) Else return a transport failure witness.
+    (defun do:transport (g* g y x)
+      (%assert-mixed-graph g*)
+      (%assert-mixed-graph g)
+      (let* ((x-node (%as-single-node x "do:transport"))
+             (y-node (%as-single-node y "do:transport"))
+             (nodes* (%graph-nodes g*))
+             (nodes-target (%graph-nodes g))
+             (s-nodes (%graph-s-nodes g*))
+             (target (%remove-nodes g (%graph-s-nodes g)))
+             (target-id (do:simplify (id target (list y-node) (list x-node)))))
+        (%assert-vars nodes* (list x-node y-node))
+        (%assert-vars nodes-target (list x-node y-node))
+        (cond
+          ((null? s-nodes)
+           target-id)
+
+          ((%selection-invariant? g* y-node x-node '() s-nodes)
+           target-id)
+
+          (else
+           (let* ((observed (%set-diff (%graph-nodes target)
+                                       (list x-node y-node)))
+                  (cands (dag:minimal-adjustments target
+                                                  x-node
+                                                  y-node
+                                                  observed))
+                  (z-sbd (%find (lambda (z-set)
+                                  (do:sBD? g* x-node y-node z-set s-nodes))
+                                cands)))
+             (cond
+               (z-sbd
+                (%transport-adjustment-estimand y-node x-node z-sbd))
+               ((not (%fail? target-id))
+                target-id)
+               (else
+                (list 'fail
+                      (list 'transport
+                            (list 'x x-node)
+                            (list 'y y-node)
+                            (list 's-nodes s-nodes))))))))))
+
+  ))

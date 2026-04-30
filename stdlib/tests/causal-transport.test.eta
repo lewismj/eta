@@ -1,0 +1,61 @@
+;;; stdlib/tests/causal-transport.test.eta -- Tests for std.causal.transport
+
+(module causal.transport.tests
+  (import std.test
+          std.causal.transport
+          std.causal.identify
+          std.core
+          std.collections)
+  (begin
+
+    (defun transport-fail? (expr)
+      (and (pair? expr)
+           (eq? (car expr) 'fail)
+           (pair? (cadr expr))
+           (eq? (car (cadr expr)) 'transport)))
+
+    (define suite
+      (make-group "std.causal.transport"
+        (list
+          (make-test "s-node? detects S-prefixed symbols"
+            (lambda ()
+              (assert-true (s-node? 'S))
+              (assert-true (s-node? 'S1))
+              (assert-false (s-node? 'x))
+              (assert-false (s-node? 'node-s))))
+
+          (make-test "sBD holds with valid adjustment set and selection invariance"
+            (lambda ()
+              (let ((g '((z -> x) (z -> y) (x -> y) (S -> z))))
+                (assert-true (do:sBD? g 'x 'y '(z) '(S)))
+                (assert-false (do:sBD? g 'x 'y '() '(S))))))
+
+          (make-test "sBD fails when S-node points to outcome"
+            (lambda ()
+              (let ((g '((z -> x) (z -> y) (x -> y) (S -> y))))
+                (assert-false (do:sBD? g 'x 'y '(z) '(S))))))
+
+          (make-test "transport falls back to ID when no S-nodes are present"
+            (lambda ()
+              (let ((g '((z -> x) (z -> y) (x -> y))))
+                (assert-equal (id g '(y) '(x))
+                              (do:transport g g 'y 'x)))))
+
+          (make-test "transport returns s-backdoor adjustment estimand when applicable"
+            (lambda ()
+              (let ((g* '((z -> x) (z -> y) (x -> y) (S -> z)))
+                    (g  '((z -> x) (z -> y) (x -> y))))
+                (assert-equal
+                  '(sum (z)
+                        (prod (P* (y x z))
+                              (P (z))))
+                  (do:transport g* g 'y 'x)))))
+
+          (make-test "transport reports failure when neither sBD nor target ID applies"
+            (lambda ()
+              (let* ((g* '((x -> y) (x <-> y) (S -> y)))
+                     (g  '((x -> y) (x <-> y)))
+                     (r  (do:transport g* g 'y 'x)))
+                (assert-true (transport-fail? r))))))))
+
+    (print-tap (run suite))))

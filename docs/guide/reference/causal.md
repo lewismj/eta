@@ -335,6 +335,35 @@ values and mediator-treatment strata.
 
 ---
 
+## Transportability and Selection Bias
+
+For selection-diagram checks and transport queries:
+
+```scheme
+(import std.causal.transport)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(s-node? n)` | True when `n` is an S-node marker (symbol name starts with `S`) |
+| `(do:sBD? g x y z s-nodes)` | Selection back-door criterion check |
+| `(do:transport g* g y x)` | Transport query: returns target ID estimand, transport-adjustment estimand, or `(fail (transport ...))` |
+
+`do:transport` uses a conservative workflow:
+- return target-domain ID when no S-nodes are present;
+- return target-domain ID when `Y` is selection-invariant given `X`;
+- otherwise try an s-backdoor adjustment set `Z`;
+- otherwise return a transport failure witness.
+
+When s-backdoor transport applies, the returned estimand uses `P*` for
+source-domain interventional information:
+
+```scheme
+(sum (z) (prod (P* (y x z)) (P (z))))
+```
+
+---
+
 ## Numeric Estimation
 
 ### The Back-Door Adjustment Formula
@@ -485,6 +514,7 @@ analysis:
 | Adjustment/front-door/IV helpers     | [`stdlib/std/causal/adjustment.eta`](../../../stdlib/std/causal/adjustment.eta)           |
 | ADMG ID/IDC algorithms               | [`stdlib/std/causal/identify.eta`](../../../stdlib/std/causal/identify.eta)               |
 | Mediation effect estimators          | [`stdlib/std/causal/mediation.eta`](../../../stdlib/std/causal/mediation.eta)             |
+| Transportability helpers             | [`stdlib/std/causal/transport.eta`](../../../stdlib/std/causal/transport.eta)             |
 | Estimation backends (M9a)            | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
 | Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |
