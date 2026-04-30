@@ -1311,23 +1311,24 @@ is one screen of code:
 (defun D (expr var) (simplify* (diff expr var)))
 ```
 
-`lower-expression` is even smaller — it returns a closure that
-evaluates the expression in an environment of bound argument values:
+`lower-expression` is even smaller — it builds a `lambda` form whose
+body is the symbolic expression and hands it to `eval`, which compiles
+and returns a closure over the named arguments:
 
 ```scheme
 (defun lower-expression (expr vars)
-  (lambda args
-    (eval-expression expr (zip vars args))))
+  (eval (list 'lambda vars expr)))
 ```
 
 > [!IMPORTANT]
 > **Why this is the load-bearing claim.** The closure produced by
-> `lower-expression` does plain `+ - * /` over its arguments. If those
-> arguments are `TapeRef`s for an active AD tape, the same arithmetic
-> records onto **that tape** — no source-to-source step, no separate
-> kernel build, no Python bridge. The objection answered is "JAX
-> already does AAD"; the answer is "JAX cannot host CAS on the same
-> tape without a separate compilation step".
+> `eval` does plain `+ - * /` over its arguments. If those arguments
+> are `TapeRef`s for an active AD tape, the same arithmetic records
+> onto **that tape** — no source-to-source step, no separate kernel
+> build, no Python bridge. `eval` ([reference](../guide/reference/eval.md))
+> compiles the lambda once and reuses it on every call. The objection
+> answered is "JAX already does AAD"; the answer is "JAX cannot host
+> CAS on the same tape without a separate compilation step".
 
 After `simplify*`, the differentiated expression's AST settles at
 **29 nodes** (`(node-count dexpr) ⇒ 29`).

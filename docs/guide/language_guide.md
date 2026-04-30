@@ -113,7 +113,22 @@ Equality has three flavours: `eq?` (identity), `eqv?` (numeric/char
 equivalence), `equal?` (structural). The numeric tower is fixnum +
 double, with NaN-box tagging — see [`nanboxing.md`](./reference/nanboxing.md).
 
-> **Deep dive:** [`syntax-and-values.md`](./syntax-and-values.md).
+Because code is just S-expression data, `eval` compiles and executes
+any expression at runtime against the current lexical environment.
+This is fundamental: it is how the symbolic engine in `examples/xva-wwr`
+lowers a differentiated expression onto the active AAD tape, how the
+REPL evaluates user input, and how macros and quasi-quotation compose
+with runtime metaprogramming.
+
+```scheme
+(eval '(+ 1 2))                          ; => 3
+(let ((x 10)) (eval '(+ x 5)))           ; => 15
+(define f (eval '(lambda (a b) (* a b)))) ; build a closure from data
+(f 3 4)                                  ; => 12
+```
+
+> **Deep dives:** [`syntax-and-values.md`](./syntax-and-values.md),
+> [`eval`](./reference/eval.md).
 
 ---
 
