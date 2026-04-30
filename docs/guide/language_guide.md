@@ -594,8 +594,7 @@ or a libtorch model).
 (do:identify dag 'X 'Y)        ; => back-door adjustment formula
 ```
 
-> **References:** [`causal.md`](./reference/causal.md),
-> [`causal-factor.md`](./reference/causal-factor.md);
+> **References:** [`causal.md`](./reference/causal.md);
 > example: [`examples/causal_demo.eta`](../../examples/causal_demo.eta).
 
 ---

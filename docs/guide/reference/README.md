@@ -44,7 +44,6 @@ chapter there links into the relevant pages here.
 | [`aad.md`](./aad.md)                                 | `std.aad`             |
 | [`torch.md`](./torch.md)                             | `std.torch`           |
 | [`causal.md`](./causal.md)                           | `std.causal`          |
-| [`causal-factor.md`](./causal-factor.md)             | Causal factor primer  |
 | [`message-passing.md`](./message-passing.md)         | Actor model           |
 | [`networking.md`](./networking.md)                   | nng primitives        |
 | [`network-message-passing.md`](./network-message-passing.md) | Cross-machine actors |

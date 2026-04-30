@@ -31,7 +31,7 @@ The remaining roadmap splits into three buckets:
    functionality a script needs from its host OS. Hash maps, sets,
    `getenv`, argv, filesystem and JSON are now shipped (`std.hashmap`,
    `std.hashset`, `std.os`, `std.fs`, `std.json`); the remaining gaps
-   are atoms, subprocess, structured logging, HTTP, FFI, and a
+   are atoms, subprocess, HTTP, FFI, and a
    condition system. This is the largest *capability* gap between Eta
    and a comparable hosted language (Clojure, Racket, Common Lisp,
    Chez).
@@ -261,7 +261,7 @@ short version:
 - `docs/clpr.md` — split out from `clp.md` once that page exceeds a
   screen.
 - More notebook-led tutorials under `examples/notebooks/` (xVA, SABR,
-  causal-factor primer).
+  causal primer based on `examples/causal_demo.eta`).
 
 ---
 
@@ -300,7 +300,7 @@ a delivery order.
 | **HTTP server** | `ring` | nng REQ/REP only | Medium |
 | **FFI / dlopen** | JNI / native-image | none | Medium — torch/nng are hard-linked |
 | **Condition / restart system** | `ex-info` / `ex-data` | `raise`/`catch` | Medium — works, but no restart frames |
-| **Structured logging** | `tools.logging`, `mulog` | `display` to stderr | Medium — production observability |
+| **Structured logging** | `tools.logging`, `mulog` | `std.log` (levels, per-logger filters, stdout/stderr/file/rotating/daily/port sinks, pattern + custom formatters) | Closed |
 | **Persistent vector / list / map** | core | mutable vectors, immutable lists, no maps | Medium — concurrency-relevant |
 | **Protocols / multimethods** | `defprotocol`, `defmulti` | none | Smaller — generic dispatch via cond/case today |
 | **Transducers** | core | none | Smaller — `map`/`filter`/`foldl` cover most cases |
@@ -380,16 +380,16 @@ The "make it usable for real work" layer, on top of H1+H2.
   `~a` (display), `~s` (write), `~d` (decimal), `~f` (float with
   precision), `~e` (scientific), `~%` (newline), `~~`. Useful for
   reports and log messages. ~200 LoC pure Eta on top of string ports.
-- **`std.log`** — structured logger:
-  - levels (`trace`/`debug`/`info`/`warn`/`error`),
-  - per-module level filtering,
-  - JSON-line and human formatters,
-  - default sink = `current-error-port`, configurable to a file port,
-  - `(log:info "fitted" '((symbol . AAPL) (rmse . 0.012)))` style
-    structured payloads (alist or hash map),
-  - timestamp + level + module + payload, deterministic field order.
-  - Output channel routes through the active port so `eta_jupyter`
-    surfaces logs as cell output without further wiring.
+- **`std.log`** — **shipped April 2026.** Structured logger with
+  levels (`trace`/`debug`/`info`/`warn`/`error`/`critical`), per-logger
+  level filtering, multiple sink kinds (stdout, stderr, file,
+  size-based rotating, daily, arbitrary port), configurable pattern
+  via `log:set-pattern!`, custom formatter callbacks via
+  `log:set-formatter!`, `log:flush!` / `log:flush-on!` controls, and
+  `log:shutdown!` for clean teardown. The default logger writes to the
+  active error port so `eta_jupyter` surfaces logs as cell output
+  without further wiring. Tests in `stdlib/tests/log.test.eta`;
+  reference at [`log.md`](guide/reference/log.md).
 
 #### Phase H4 — HTTP & FFI
 
@@ -436,7 +436,7 @@ useful but each is also pure quality-of-life on top of H1–H4.
 | H1 already shipped: `std.os` + `std.fs` (env, argv, cwd, exit, paths, temp, stat). Subprocess (`std.process`) is the remaining slice. |
 | H2 Hashmap / Set / Atom | 3 | Medium (GC barrier on Atom; HAMT later) | every dict-shaped workload |
 | H3 JSON / Format / Log | 2 | Low | configs, observability, REST consumers |
-| H3 already shipped: `std.json` (RFC 8259, hash-map / vector decode, integer-exact mode). `std.format` and `std.log` remain. |
+| H3 already shipped: `std.json` (RFC 8259, hash-map / vector decode, integer-exact mode) and `std.log` (levels, filters, sinks, patterns, custom formatters). `std.format` remains. |
 | H4 HTTP / FFI | 3 | Medium (HTTP TLS; FFI safety) | webhook receivers, telemetry, third-party C libs |
 | H5 Conditions / Protocols / Transducers | 3 | Medium (restart frames touch the VM stack) | mature Lisp surface |
 | **Total** | **~13 weeks** | | |
@@ -455,6 +455,14 @@ useful but each is also pure quality-of-life on top of H1–H4.
 
 ## Recently Completed (was on this list, now shipped)
 
+- ✅ Hosted-platform Phase H3 (slice 2) — `std.log`: structured logger
+  with `trace`/`debug`/`info`/`warn`/`error`/`critical` levels,
+  per-logger level filters, multiple sink kinds (stdout, stderr, file,
+  size-based rotating, daily, port), configurable pattern + custom
+  formatter callbacks, `log:flush!` / `log:flush-on!` controls, and
+  `log:shutdown!` for clean teardown. Backed by `%log-*` runtime
+  primitives. Tests in `stdlib/tests/log.test.eta`; reference at
+  [`log.md`](guide/reference/log.md).
 - ✅ Hosted-platform Phase H3 (slice 1) — `std.json`: native JSON
   reader / writer implemented in-tree (`eta/core/src/eta/util/json.h`,
   no third-party dependency), hash-map / vector decode with optional

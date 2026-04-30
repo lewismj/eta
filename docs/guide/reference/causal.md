@@ -1,16 +1,16 @@
 # Causal Inference — `std.causal` Reference
 
-[← Back to README](../../../README.md) · [Causal Primer](causal-factor.md) ·
+[← Back to README](../../../README.md) ·
 [Portfolio Engine](../../featured_examples/portfolio.md) · [Logic Programming](logic.md) ·
 [CLP](clp.md) · [AAD](aad.md) · [xVA](xva.md) · [Project Status](../../next-steps.md)
 
 > [!TIP]
 > **See also**
 >
-> - [`causal-factor.md`](causal-factor.md) — gentle primer that walks the
->   small `causal_demo.eta` end-to-end (3-node DAG, single confounder)
->   with VM-internals sidebars on unification, trail, and CLP forward
->   checking.
+> - [`examples/causal_demo.eta`](../../../examples/causal_demo.eta) — gentle
+>   end-to-end primer (3-node DAG, single confounder) combining symbolic
+>   differentiation, do-calculus identification, `findall` + CLP
+>   validation, and a libtorch neural ATE.
 > - [`portfolio.md`](../../featured_examples/portfolio.md) — full institutional pipeline:
 >   6-node macro DAG, AAD risk sensitivities, CLP(R) + QP allocation,
 >   scenario stress, dynamic control.
@@ -21,7 +21,8 @@
 
 This page is the **API reference** for Eta's causal inference layer:
 the `std.causal` module plus the supporting `examples/do-calculus/`
-and `examples/causal-factor/` programs.
+programs and the [`examples/causal_demo.eta`](../../../examples/causal_demo.eta)
+primer.
 
 The layer combines:
 
@@ -379,7 +380,7 @@ Current scope:
 
     ;; Embedded toy data: 30 observations
     ;; (sector market-beta stock-return)
-    (define data '(...))   ; see examples/causal-factor/analysis.eta
+    (define data '(...))   ; see examples/causal_demo.eta for the DGP
 
     ;; Symbolic identification
     (define formula (do:identify dag 'stock-return 'market-beta))
@@ -395,10 +396,10 @@ Current scope:
     (println cate)))
 ```
 
-Run the full example:
+Run the full primer:
 
 ```bash
-etai examples/causal-factor/analysis.eta
+etai examples/causal_demo.eta
 ```
 
 ---
@@ -466,7 +467,6 @@ analysis:
 | Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |
 | Full identification demo             | [`examples/do-calculus/demo.eta`](../../../examples/do-calculus/demo.eta)                 |
 | CSV module                           | [`stdlib/std/csv.eta`](../../../stdlib/std/csv.eta)                                         |
-| Back-door estimator                  | [`examples/causal-factor/adjustment.eta`](../../../examples/causal-factor/adjustment.eta) |
-| Finance analysis                     | [`examples/causal-factor/analysis.eta`](../../../examples/causal-factor/analysis.eta)     |
+| End-to-end primer (causal + NN ATE)  | [`examples/causal_demo.eta`](../../../examples/causal_demo.eta)                           |
 | CLP binding for `clp(Z)` / `clp(FD)` | [`stdlib/std/clp.eta`](../../../stdlib/std/clp.eta)                                       |
 | C++ constraint store                 | [`clp/constraint_store.h`](../../../eta/core/src/eta/runtime/clp/constraint_store.h)      |

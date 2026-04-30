@@ -97,9 +97,8 @@ sections build on each other and culminate in
 
 | Example                                                  | Role                                          | Walkthrough |
 | :------------------------------------------------------- | :-------------------------------------------- | :---------- |
-| [`causal_demo.eta`](../../examples/causal_demo.eta)      | Primer: symbolic + causal + CLP + libtorch    | [`causal-factor.md`](./reference/causal-factor.md) |
+| [`causal_demo.eta`](../../examples/causal_demo.eta)      | Primer: symbolic + causal + CLP + libtorch    | [`causal.md`](./reference/causal.md) |
 | [`do-calculus/`](../../examples/do-calculus/)            | Worked do-calculus identification problems    | [`causal.md`](./reference/causal.md) |
-| [`causal-factor/`](../../examples/causal-factor/)        | Factor-model causal estimation                | [`causal-factor.md`](./reference/causal-factor.md) |
 | [`fact-table.eta`](../../examples/fact-table.eta)        | Columnar fact tables for analytics            | [`fact-table.md`](./reference/fact-table.md) |
 | [`portfolio-lp.eta`](../../examples/portfolio-lp.eta)    | LP construction via `std.clpr`                | — |
 | [`portfolio.eta`](../../examples/portfolio.eta)          | End-to-end causal portfolio engine            | [`featured_examples/portfolio.md`](../featured_examples/portfolio.md) |
