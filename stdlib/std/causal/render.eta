@@ -1,0 +1,392 @@
+;;; std/causal/render.eta -- Rendering helpers for causal graphs.
+;;;
+;;; Public API:
+;;;   (dag:->dot g [opts])
+;;;     Render mixed graph edges to Graphviz DOT.
+;;;     Supported edge kinds: ->, <->, --.
+;;;     Options:
+;;;       (title . "Causal DAG")  ; default title
+;;;       (rankdir . "LR")        ; Graphviz rank direction
+;;;   (dag:->mermaid g)
+;;;     Render mixed graph edges to Mermaid flowchart syntax.
+;;;   (dag:->latex g)
+;;;     Render mixed graph edges to a compact LaTeX math expression.
+;;;   (define-dag g)
+;;;     Validate and normalize a graph literal.
+;;;     Accepted edge kinds: -> and <->.
+
+(module std.causal.render
+  (import std.core)
+  (import std.collections)
+  (import std.causal)
+  (import std.io)
+  (export
+    dag:->dot
+    dag:->mermaid
+    dag:->latex
+    define-dag)
+  (begin
+
+    ;; -- Basic helpers ---------------------------------------------------
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (defun %adjoin (x xs)
+      (if (%member? x xs) xs (cons x xs)))
+
+    (defun %symbol<? (a b)
+      (string<? (symbol->string a) (symbol->string b)))
+
+    (defun %ordered-pair (a b)
+      (if (%symbol<? a b) (list a b) (list b a)))
+
+    (defun %edge-from (e) (car e))
+    (defun %edge-kind (e) (cadr e))
+    (defun %edge-to (e) (caddr e))
+
+    (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
+    (defun %undirected-edge? (e) (eq? (%edge-kind e) '--))
+
+    (defun %render-kind? (k)
+      (or (eq? k '->)
+          (eq? k '<->)
+          (eq? k '--)))
+
+    (defun %edge-shape? (e)
+      (and (list? e)
+           (= (length e) 3)
+           (symbol? (%edge-from e))
+           (symbol? (%edge-to e))
+           (%render-kind? (%edge-kind e))))
+
+    (defun %edge-valid? (e)
+      (and (%edge-shape? e)
+           (not (eq? (%edge-from e) (%edge-to e)))))
+
+    (defun %define-dag-edge? (e)
+      (and (%edge-valid? e)
+           (or (%directed-edge? e)
+               (%bidirected-edge? e))))
+
+    (defun %normalize-render-edge (e)
+      (let ((u (%edge-from e))
+            (k (%edge-kind e))
+            (v (%edge-to e)))
+        (if (or (eq? k '<->) (eq? k '--))
+            (let ((ord (%ordered-pair u v)))
+              (list (car ord) k (cadr ord)))
+            e)))
+
+    (defun %edge-member? (edge edges)
+      (any? (lambda (e) (equal? edge e)) edges))
+
+    (defun %edge-adjoin (edge edges)
+      (if (%edge-member? edge edges) edges (cons edge edges)))
+
+    (defun %normalize-render-graph (g)
+      (reverse
+        (foldl (lambda (acc e)
+                 (%edge-adjoin (%normalize-render-edge e) acc))
+               '()
+               g)))
+
+    (defun %edge<? (a b)
+      (let* ((af (symbol->string (%edge-from a)))
+             (bf (symbol->string (%edge-from b)))
+             (ak (symbol->string (%edge-kind a)))
+             (bk (symbol->string (%edge-kind b)))
+             (at (symbol->string (%edge-to a)))
+             (bt (symbol->string (%edge-to b))))
+        (cond
+          ((string<? af bf) #t)
+          ((string<? bf af) #f)
+          ((string<? ak bk) #t)
+          ((string<? bk ak) #f)
+          (else (string<? at bt)))))
+
+    (defun %sort-edges (edges)
+      (sort %edge<? edges))
+
+    (defun %graph-nodes (g)
+      (sort %symbol<?
+            (foldl (lambda (acc e)
+                     (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
+                   '()
+                   g)))
+
+    (defun %directed-only (g)
+      (filter %directed-edge? g))
+
+    (defun %assert-render-graph (g)
+      (if (every? %edge-valid? g)
+          (let ((dg (%directed-only g)))
+            (if (dag:valid? dg)
+                g
+                (error 'invalid-dag g)))
+          (error 'invalid-graph g)))
+
+    (defun %assert-define-dag (g)
+      (if (every? %define-dag-edge? g)
+          (let ((dg (%directed-only g)))
+            (if (dag:valid? dg)
+                g
+                (error 'invalid-dag g)))
+          (error 'invalid-graph g)))
+
+    (defun %pair-list? (xs)
+      (if (null? xs)
+          #t
+          (and (pair? (car xs))
+               (%pair-list? (cdr xs)))))
+
+    (defun %normalize-opts (opts-rest)
+      (cond
+        ((null? opts-rest) '())
+        ((and (= (length opts-rest) 1)
+              (list? (car opts-rest))
+              (%pair-list? (car opts-rest)))
+         (car opts-rest))
+        ((%pair-list? opts-rest) opts-rest)
+        (else (error "dag:->dot: expected alist options"))))
+
+    (defun %opt-ref (opts key default)
+      (let ((entry (assq key opts)))
+        (if entry (cdr entry) default)))
+
+    (defun %value->string (x)
+      (if (string? x) x (display->string x)))
+
+    (defun %dot-quote (sym)
+      (string-append "\""
+                     (%escape-dot-string (symbol->string sym))
+                     "\""))
+
+    (defun %escape-dot-string (s)
+      (let ((p (open-output-string))
+            (n (string-length s)))
+        (let loop ((i 0))
+          (if (>= i n)
+              (get-output-string p)
+              (let ((c (string-ref s i)))
+                (cond
+                  ((eqv? c #\\)
+                   (display "\\\\" p)
+                   (loop (+ i 1)))
+                  ((eqv? c #\")
+                   (display "\\\"" p)
+                   (loop (+ i 1)))
+                  (else
+                   (display c p)
+                   (loop (+ i 1)))))))))
+
+    (defun %escape-mermaid-label (s)
+      (let ((p (open-output-string))
+            (n (string-length s)))
+        (let loop ((i 0))
+          (if (>= i n)
+              (get-output-string p)
+              (let ((c (string-ref s i)))
+                (cond
+                  ((eqv? c #\\)
+                   (display "\\\\" p)
+                   (loop (+ i 1)))
+                  ((eqv? c #\")
+                   (display "\\\"" p)
+                   (loop (+ i 1)))
+                  (else
+                   (display c p)
+                   (loop (+ i 1)))))))))
+
+    (defun %escape-latex-string (s)
+      (let ((p (open-output-string))
+            (n (string-length s)))
+        (let loop ((i 0))
+          (if (>= i n)
+              (get-output-string p)
+              (let ((c (string-ref s i)))
+                (cond
+                  ((eqv? c #\\)
+                   (display "\\textbackslash{}" p)
+                   (loop (+ i 1)))
+                  ((eqv? c #\_)
+                   (display "\\_" p)
+                   (loop (+ i 1)))
+                  ((eqv? c #\{)
+                   (display "\\{" p)
+                   (loop (+ i 1)))
+                  ((eqv? c #\})
+                   (display "\\}" p)
+                   (loop (+ i 1)))
+                  ((eqv? c #\%)
+                   (display "\\%" p)
+                   (loop (+ i 1)))
+                  ((eqv? c #\&)
+                   (display "\\&" p)
+                   (loop (+ i 1)))
+                  ((eqv? c #\$)
+                   (display "\\$" p)
+                   (loop (+ i 1)))
+                  ((eqv? c #\#)
+                   (display "\\#" p)
+                   (loop (+ i 1)))
+                  (else
+                   (display c p)
+                   (loop (+ i 1)))))))))
+
+    (defun %node-id-map (nodes)
+      (let loop ((rest nodes) (idx 0) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (loop (cdr rest)
+                  (+ idx 1)
+                  (cons (cons (car rest)
+                              (string-append "n" (number->string idx)))
+                        acc)))))
+
+    (defun %id-of (id-map node)
+      (let ((entry (assq node id-map)))
+        (if entry
+            (cdr entry)
+            (error 'unknown-variable node))))
+
+    (defun %join-strings (xs sep)
+      (if (null? xs)
+          ""
+          (let loop ((rest (cdr xs)) (acc (car xs)))
+            (if (null? rest)
+                acc
+                (loop (cdr rest)
+                      (string-append acc sep (car rest)))))))
+
+    (defun %latex-node (s)
+      (string-append "\\texttt{"
+                     (%escape-latex-string (symbol->string s))
+                     "}"))
+
+    (defun %latex-edge (e)
+      (let ((u (%latex-node (%edge-from e)))
+            (v (%latex-node (%edge-to e))))
+        (cond
+          ((%directed-edge? e)   (string-append u " \\to " v))
+          ((%bidirected-edge? e) (string-append u " \\leftrightarrow " v))
+          (else                  (string-append u " - " v)))))
+
+    ;; -- Public renderers ------------------------------------------------
+
+    (defun dag:->dot (g . opts-rest)
+      (let* ((validated (%assert-render-graph g))
+             (graph (%sort-edges (%normalize-render-graph validated)))
+             (opts (%normalize-opts opts-rest))
+             (title (%value->string (%opt-ref opts 'title "Causal DAG")))
+             (rankdir (%value->string (%opt-ref opts 'rankdir "LR")))
+             (p (open-output-string)))
+        (display "digraph \"" p)
+        (display (%escape-dot-string title) p)
+        (display "\" {" p)
+        (newline p)
+        (display "  rankdir=" p)
+        (display rankdir p)
+        (display ";" p)
+        (newline p)
+        (let loop ((rest graph))
+          (if (null? rest)
+              'ok
+              (let* ((e (car rest))
+                     (u (%dot-quote (%edge-from e)))
+                     (v (%dot-quote (%edge-to e))))
+                (display "  " p)
+                (cond
+                  ((%directed-edge? e)
+                   (display u p)
+                   (display " -> " p)
+                   (display v p)
+                   (display ";" p))
+                  ((%bidirected-edge? e)
+                   (display u p)
+                   (display " -> " p)
+                   (display v p)
+                   (display " [dir=both, style=dashed];" p))
+                  (else
+                   (display u p)
+                   (display " -> " p)
+                   (display v p)
+                   (display " [dir=none];" p)))
+                (newline p)
+                (loop (cdr rest)))))
+        (display "}" p)
+        (get-output-string p)))
+
+    (defun dag:->mermaid (g)
+      (let* ((validated (%assert-render-graph g))
+             (graph (%sort-edges (%normalize-render-graph validated)))
+             (nodes (%graph-nodes graph))
+             (id-map (%node-id-map nodes))
+             (p (open-output-string)))
+        (display "flowchart LR" p)
+        (newline p)
+        (let loop-nodes ((rest nodes))
+          (if (null? rest)
+              'ok
+              (let* ((node (car rest))
+                     (id (%id-of id-map node)))
+                (display "  " p)
+                (display id p)
+                (display "[\"" p)
+                (display (%escape-mermaid-label (symbol->string node)) p)
+                (display "\"]" p)
+                (newline p)
+                (loop-nodes (cdr rest)))))
+        (let loop-edges ((rest graph))
+          (if (null? rest)
+              'ok
+              (let* ((e (car rest))
+                     (u (%id-of id-map (%edge-from e)))
+                     (v (%id-of id-map (%edge-to e))))
+                (cond
+                  ((%directed-edge? e)
+                   (display "  " p)
+                   (display u p)
+                   (display " --> " p)
+                   (display v p)
+                   (newline p))
+                  ((%bidirected-edge? e)
+                   (display "  " p)
+                   (display u p)
+                   (display " -.-> " p)
+                   (display v p)
+                   (newline p)
+                   (display "  " p)
+                   (display v p)
+                   (display " -.-> " p)
+                   (display u p)
+                   (newline p))
+                  (else
+                   (display "  " p)
+                   (display u p)
+                   (display " --- " p)
+                   (display v p)
+                   (newline p)))
+                (loop-edges (cdr rest)))))
+        (get-output-string p)))
+
+    (defun dag:->latex (g)
+      (let* ((validated (%assert-render-graph g))
+             (graph (%sort-edges (%normalize-render-graph validated)))
+             (pieces (map* %latex-edge graph)))
+        (if (null? pieces)
+            "\\[\n\\mathcal{G} = \\emptyset\n\\]"
+            (string-append "\\[\n\\mathcal{G} = \\{ "
+                           (%join-strings pieces ",\\; ")
+                           " \\}\n\\]"))))
+
+    ;; -- Validation helper ----------------------------------------------
+
+    (defun define-dag (g)
+      (%normalize-render-graph (%assert-define-dag g)))
+
+  ))

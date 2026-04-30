@@ -411,6 +411,31 @@ CPDAG edge format:
 
 ---
 
+## Graph Rendering
+
+For graph rendering and graph-literal validation helpers:
+
+```scheme
+(import std.causal.render)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(dag:->dot g [opts])` | Render a mixed graph as Graphviz DOT (`->`, `<->`, `--`) |
+| `(dag:->mermaid g)` | Render a mixed graph as Mermaid `flowchart LR` text |
+| `(dag:->latex g)` | Render a mixed graph as a compact LaTeX expression |
+| `(define-dag g)` | Validate and normalize a directed/bidirected graph literal |
+
+DOT options:
+- `(title . "...")` sets the graph title (`"Causal DAG"` by default)
+- `(rankdir . "...")` sets Graphviz rank direction (`"LR"` by default)
+
+Rendering conventions:
+- bidirected edge `(u <-> v)` is rendered as a dashed bidirectional edge
+- undirected edge `(u -- v)` is rendered without arrowheads
+
+---
+
 ## Numeric Estimation
 
 ### The Back-Door Adjustment Formula
@@ -566,6 +591,7 @@ analysis:
 | Transportability helpers             | [`stdlib/std/causal/transport.eta`](../../../stdlib/std/causal/transport.eta)             |
 | Counterfactual helpers               | [`stdlib/std/causal/counterfactual.eta`](../../../stdlib/std/causal/counterfactual.eta)   |
 | Structure learning helpers           | [`stdlib/std/causal/learn.eta`](../../../stdlib/std/causal/learn.eta)                     |
+| Graph rendering helpers              | [`stdlib/std/causal/render.eta`](../../../stdlib/std/causal/render.eta)                   |
 | Estimation backends                  | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
 | Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |

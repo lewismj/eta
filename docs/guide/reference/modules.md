@@ -547,6 +547,12 @@ Estimation backends (g-formula, IPW, AIPW, TMLE, bootstrap CI, sensitivity metri
 (import std.causal.estimate)
 ```
 
+Graph rendering helpers (DOT, Mermaid, LaTeX, literal validation) are available in:
+
+```scheme
+(import std.causal.render)
+```
+
 ---
 
 ### `std.stats` — Statistics & Linear Models
