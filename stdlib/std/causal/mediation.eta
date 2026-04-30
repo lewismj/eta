@@ -1,0 +1,173 @@
+;;; std/causal/mediation.eta -- Mediation effect estimators.
+;;;
+;;; Public API:
+;;;   (mediation-formula data y x m treatment-for-y treatment-for-m)
+;;;     Cross-world mediation mean:
+;;;       Sum_m E[Y | X=treatment-for-y, M=m] * P(M=m | X=treatment-for-m)
+;;;   (do:nde g y x m data x* x)
+;;;     Natural direct effect: E[Y(x, M(x*))] - E[Y(x*, M(x*))]
+;;;   (do:nie g y x m data x* x)
+;;;     Natural indirect effect: E[Y(x, M(x))] - E[Y(x, M(x*))]
+;;;   (do:cde g y x m data m-val x* x)
+;;;     Controlled direct effect at fixed mediator value(s) m-val:
+;;;       E[Y | X=x, M=m-val] - E[Y | X=x*, M=m-val]
+
+(module std.causal.mediation
+  (import std.core)
+  (import std.collections)
+  (export mediation-formula do:nde do:nie do:cde)
+  (begin
+
+    ;; -- Public API ------------------------------------------------------
+
+    ;; Cross-world mediation mean for mediator set M.
+    (defun mediation-formula (data y x m treatment-for-y treatment-for-m)
+      (let ((m-vars (%as-node-set m)))
+        (%assert-data data "mediation-formula")
+        (%assert-non-empty-mediator m-vars "mediation-formula")
+        (%assert-x-support data x treatment-for-m "mediation-formula")
+        (foldl (lambda (acc m-val)
+                 (let ((p-m (%mediator-prob data x m-vars m-val treatment-for-m)))
+                   (if (= p-m 0.0)
+                       acc
+                       (+ acc (* (%mean-for-x-and-m data y x treatment-for-y m-val
+                                                    "mediation-formula")
+                                 p-m)))))
+               0.0
+               (%distinct-tuples data m-vars))))
+
+    ;; Natural direct effect.
+    (defun do:nde (g y x m data x* x1)
+      (- (mediation-formula data y x m x1 x*)
+         (mediation-formula data y x m x* x*)))
+
+    ;; Natural indirect effect.
+    (defun do:nie (g y x m data x* x1)
+      (- (mediation-formula data y x m x1 x1)
+         (mediation-formula data y x m x1 x*)))
+
+    ;; Controlled direct effect at mediator value(s) m-val.
+    (defun do:cde (g y x m data m-val x* x1)
+      (let* ((m-vars (%as-node-set m))
+             (m-tuple (%normalize-m-value m-vars m-val)))
+        (%assert-data data "do:cde")
+        (%assert-non-empty-mediator m-vars "do:cde")
+        (- (%mean-for-x-and-m data y x x1 m-tuple "do:cde")
+           (%mean-for-x-and-m data y x x* m-tuple "do:cde"))))
+
+    ;; -- Helpers ---------------------------------------------------------
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (defun %adjoin (x xs)
+      (if (%member? x xs) xs (cons x xs)))
+
+    (defun %normalize-vars (vars)
+      (let loop ((rest vars) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let ((v (car rest)))
+              (if (%member? v acc)
+                  (loop (cdr rest) acc)
+                  (loop (cdr rest) (cons v acc)))))))
+
+    (defun %as-node-set (x)
+      (cond
+        ((null? x) '())
+        ((symbol? x) (list x))
+        ((list? x) (%normalize-vars x))
+        (else (error "expected symbol or list of symbols"))))
+
+    (defun %assert-data (data where)
+      (if (null? data)
+          (error (string-append where ": expected non-empty data"))
+          'ok))
+
+    (defun %assert-non-empty-mediator (m-vars where)
+      (if (null? m-vars)
+          (error (string-append where ": expected non-empty mediator set"))
+          'ok))
+
+    (defun %obs-get (obs var)
+      (let ((p (assq var obs)))
+        (if p
+            (cdr p)
+            (error 'unknown-variable var))))
+
+    (defun %obs-matches-tuple (obs tuple)
+      (every? (lambda (kv)
+                (equal? (%obs-get obs (car kv))
+                        (cdr kv)))
+              tuple))
+
+    (defun %project-tuple (obs vars)
+      (map* (lambda (v) (cons v (%obs-get obs v))) vars))
+
+    (defun %distinct-tuples (data vars)
+      (reverse
+        (foldl (lambda (acc obs)
+                 (%adjoin (%project-tuple obs vars) acc))
+               '()
+               data)))
+
+    (defun %rows-with-x (data x x-val)
+      (filter (lambda (obs)
+                (equal? (%obs-get obs x) x-val))
+              data))
+
+    (defun %assert-x-support (data x x-val where)
+      (if (null? (%rows-with-x data x x-val))
+          (error (string-append where ": no rows with requested treatment value"))
+          'ok))
+
+    (defun %mediator-prob (data x m-vars m-tuple x-val)
+      (let* ((rows-x (%rows-with-x data x x-val))
+             (n-x (length rows-x)))
+        (if (= n-x 0)
+            0.0
+            (/ (* 1.0
+                  (count (lambda (obs)
+                           (%obs-matches-tuple obs m-tuple))
+                         rows-x))
+               n-x))))
+
+    (defun %mean (xs)
+      (if (null? xs)
+          0.0
+          (/ (foldl (lambda (acc v) (+ acc v)) 0.0 xs)
+             (length xs))))
+
+    (defun %mean-for-x-and-m (data y x x-val m-tuple where)
+      (let ((rows (filter (lambda (obs)
+                            (and (equal? (%obs-get obs x) x-val)
+                                 (%obs-matches-tuple obs m-tuple)))
+                          data)))
+        (if (null? rows)
+            (error (string-append where
+                                  ": positivity violation for treatment/mediator stratum"))
+            (%mean (map* (lambda (obs) (%obs-get obs y)) rows)))))
+
+    (defun %pairs? (xs)
+      (every? (lambda (x) (and (pair? x) (symbol? (car x)))) xs))
+
+    (defun %normalize-m-value (m-vars m-val)
+      (cond
+        ((and (= (length m-vars) 1)
+              (not (and (list? m-val) (%pairs? m-val))))
+         (list (cons (car m-vars) m-val)))
+        ((and (list? m-val) (%pairs? m-val))
+         (map* (lambda (mv)
+                 (let ((p (assq mv m-val)))
+                   (if p
+                       (cons mv (cdr p))
+                       (error "do:cde: mediator assignment missing variable"))))
+               m-vars))
+        ((and (list? m-val) (= (length m-val) (length m-vars)))
+         (map2 (lambda (mv vv) (cons mv vv)) m-vars m-val))
+        (else (error "do:cde: expected mediator value tuple matching mediator set"))))
+
+  ))

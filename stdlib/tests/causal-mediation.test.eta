@@ -1,0 +1,65 @@
+;;; stdlib/tests/causal-mediation.test.eta -- Tests for std.causal.mediation
+
+(module causal.mediation.tests
+  (import std.test std.causal.mediation std.core std.collections)
+  (begin
+
+    (defun make-row (x m y)
+      (list (cons 'x x) (cons 'm m) (cons 'y y)))
+
+    (defun repeat-row (n row)
+      (let loop ((i 0) (acc '()))
+        (if (= i n)
+            (reverse acc)
+            (loop (+ i 1) (cons row acc)))))
+
+    ;; Linear mediation data-generating process:
+    ;;   m ~ Bernoulli(p_x), with p_0=0.2 and p_1=0.8
+    ;;   E[Y | x,m] = 1.0 + 0.7*x + 1.2*m
+    (defun make-linear-mediation-data ()
+      (append
+        (repeat-row 40 (make-row 0 0 1.0))
+        (repeat-row 10 (make-row 0 1 2.2))
+        (repeat-row 10 (make-row 1 0 1.7))
+        (repeat-row 40 (make-row 1 1 2.9))))
+
+    (defun mean (xs)
+      (if (null? xs)
+          0.0
+          (/ (foldl (lambda (acc x) (+ acc x)) 0.0 xs)
+             (length xs))))
+
+    (defun treatment (obs) (cdr (assq 'x obs)))
+    (defun outcome (obs)   (cdr (assq 'y obs)))
+
+    (defun total-effect (data)
+      (let* ((treated (filter (lambda (o) (= (treatment o) 1)) data))
+             (control (filter (lambda (o) (= (treatment o) 0)) data))
+             (mu1 (mean (map* outcome treated)))
+             (mu0 (mean (map* outcome control))))
+        (- mu1 mu0)))
+
+    (define data (make-linear-mediation-data))
+
+    (define suite
+      (make-group "std.causal.mediation"
+        (list
+          (make-test "mediation-formula computes cross-world mean"
+            (lambda ()
+              (assert-approx-equal 1.94
+                                   (mediation-formula data 'y 'x '(m) 1 0)
+                                   1e-12)))
+          (make-test "NDE + NIE equals total effect on linear mediation data"
+            (lambda ()
+              (let* ((te (total-effect data))
+                     (nde (do:nde '() 'y 'x '(m) data 0 1))
+                     (nie (do:nie '() 'y 'x '(m) data 0 1)))
+                (assert-approx-equal te (+ nde nie) 1e-12)
+                (assert-approx-equal 0.7 nde 1e-12)
+                (assert-approx-equal 0.72 nie 1e-12))))
+          (make-test "controlled direct effect is stable across mediator levels"
+            (lambda ()
+              (assert-approx-equal 0.7 (do:cde '() 'y 'x '(m) data 0 0 1) 1e-12)
+              (assert-approx-equal 0.7 (do:cde '() 'y 'x '(m) data 1 0 1) 1e-12))))))
+
+    (print-tap (run suite))))

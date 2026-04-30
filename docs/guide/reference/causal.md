@@ -315,6 +315,26 @@ For generalized adjustment enumeration and structural criteria checks:
 
 ---
 
+## Mediation Analysis
+
+For natural and controlled direct/indirect effect decomposition:
+
+```scheme
+(import std.causal.mediation)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(mediation-formula data y x m treatment-for-y treatment-for-m)` | Cross-world mediation mean `Sum_m E[Y|X=treatment-for-y, M=m] * P(M=m|X=treatment-for-m)` |
+| `(do:nde g y x m data x* x)` | Natural direct effect `E[Y(x, M(x*))] - E[Y(x*, M(x*))]` |
+| `(do:nie g y x m data x* x)` | Natural indirect effect `E[Y(x, M(x))] - E[Y(x, M(x*))]` |
+| `(do:cde g y x m data m-val x* x)` | Controlled direct effect at fixed mediator value(s) |
+
+The mediation helpers enforce data support checks for requested treatment
+values and mediator-treatment strata.
+
+---
+
 ## Numeric Estimation
 
 ### The Back-Door Adjustment Formula
@@ -451,6 +471,8 @@ analysis:
 > - No influence-function/analytic standard errors yet.
 > - Continuous-treatment and richer model-based nuisance estimation are
 >   still pending.
+> - Mediation estimands currently rely on observed treatment/mediator
+>   support and do not yet include sensitivity analysis modules.
 
 ---
 
@@ -462,6 +484,7 @@ analysis:
 | DAG utilities, do-calculus engine    | [`stdlib/std/causal.eta`](../../../stdlib/std/causal.eta)                                 |
 | Adjustment/front-door/IV helpers     | [`stdlib/std/causal/adjustment.eta`](../../../stdlib/std/causal/adjustment.eta)           |
 | ADMG ID/IDC algorithms               | [`stdlib/std/causal/identify.eta`](../../../stdlib/std/causal/identify.eta)               |
+| Mediation effect estimators          | [`stdlib/std/causal/mediation.eta`](../../../stdlib/std/causal/mediation.eta)             |
 | Estimation backends (M9a)            | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
 | Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |
