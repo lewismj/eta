@@ -118,44 +118,23 @@
     (defun D (expr var)
       (simplify* (diff expr var)))
 
-    (defun pow (x y)
-      (exp (* y (log x))))
-
-    (defun ensure-hash-map (env)
+    (defun ensure-alist (env)
       (cond
-        ((hash-map? env) env)
-        ((null? env) (make-hash-map))
-        (else (list->hash-map env))))
+        ((hash-map? env) (hash-map->list env))
+        ((null? env) '())
+        (else env)))
 
     (defun eval-expression (expr env)
-      (let ((env* (ensure-hash-map env)))
-        (letrec ((eval* (lambda (e)
-                          (cond
-                            ((number? e) e)
-                            ((symbol? e) (hash-map-ref env* e #f))
-                            ((eq? (op e) '+) (+ (eval* (a1 e))
-                                                (eval* (a2 e))))
-                            ((eq? (op e) '-) (- (eval* (a1 e))
-                                                (eval* (a2 e))))
-                            ((eq? (op e) '*) (* (eval* (a1 e))
-                                                (eval* (a2 e))))
-                            ((eq? (op e) '/) (/ (eval* (a1 e))
-                                                (eval* (a2 e))))
-                            ((eq? (op e) 'sqrt) (sqrt (eval* (a1 e))))
-                            ((eq? (op e) 'exp) (exp (eval* (a1 e))))
-                            ((eq? (op e) 'log) (log (eval* (a1 e))))
-                            ((eq? (op e) 'sin) (sin (eval* (a1 e))))
-                            ((eq? (op e) 'cos) (cos (eval* (a1 e))))
-                            ((eq? (op e) '^)   (pow (eval* (a1 e))
-                                                     (eval* (a2 e))))
-                            (else 0)))))
-          (eval* expr))))
+      (let* ((env* (ensure-alist env))
+             (vars (map* car env*))
+             (vals (map* cdr env*))
+             (fn (lower-expression expr vars)))
+        (apply fn vals)))
 
     ;; Lower a symbolic expression to a closure. If called with TapeRef inputs,
     ;; this closure records onto the active AAD tape through plain arithmetic.
     (defun lower-expression (expr vars)
-      (lambda args
-        (eval-expression expr (list->hash-map (zip vars args)))))
+      (eval (list 'lambda vars expr)))
 
     (defun node-count (expr)
       (if (atom? expr)
