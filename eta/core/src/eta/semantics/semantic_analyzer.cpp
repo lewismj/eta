@@ -526,6 +526,66 @@ const std::unordered_map<std::string_view, SpecialFormHandler>& get_form_handler
     return handlers;
 }
 
+void collect_symbol_names_from_datum(
+    const SExprPtr& datum,
+    std::vector<std::string>& ordered_names,
+    std::unordered_set<std::string>& seen) {
+    if (!datum) return;
+
+    if (const auto* sym = datum->as<Symbol>()) {
+        if (!sym->name.empty() && seen.insert(sym->name).second) {
+            ordered_names.push_back(sym->name);
+        }
+        return;
+    }
+
+    if (const auto* lst = datum->as<List>()) {
+        for (const auto& elem : lst->elems) {
+            collect_symbol_names_from_datum(elem, ordered_names, seen);
+        }
+        if (lst->dotted && lst->tail) {
+            collect_symbol_names_from_datum(lst->tail, ordered_names, seen);
+        }
+        return;
+    }
+
+    if (const auto* reader_form = datum->as<ReaderForm>()) {
+        if (reader_form->expr) {
+            collect_symbol_names_from_datum(reader_form->expr, ordered_names, seen);
+        }
+    }
+}
+
+void capture_eval_quoted_lexicals(const List& eval_form, Scope& scope, AnalysisContext& ctx) {
+    if (eval_form.elems.size() != 2 || !eval_form.elems[1]) return;
+
+    const SExprPtr* quoted_datum = nullptr;
+    if (const auto* arg_list = eval_form.elems[1]->as<List>()) {
+        if (!arg_list->dotted &&
+            arg_list->elems.size() == 2 &&
+            arg_list->elems[0] &&
+            arg_list->elems[0]->is<Symbol>() &&
+            arg_list->elems[0]->as<Symbol>()->name == "quote") {
+            quoted_datum = &arg_list->elems[1];
+        }
+    } else if (const auto* rf = eval_form.elems[1]->as<ReaderForm>()) {
+        if (rf->kind == QuoteKind::Quote && rf->expr) {
+            quoted_datum = &rf->expr;
+        }
+    }
+
+    if (!quoted_datum || !*quoted_datum) return;
+
+    std::vector<std::string> symbol_names;
+    std::unordered_set<std::string> seen;
+    collect_symbol_names_from_datum(*quoted_datum, symbol_names, seen);
+
+    for (const auto& symbol_name : symbol_names) {
+        auto lookup_res = lookup(symbol_name, &scope, ctx, eval_form.span);
+        if (!lookup_res) continue;
+    }
+}
+
 /**
  * Analyze a list form (application or special form).
  * Uses handler registry for extensibility and maintainability.
@@ -541,6 +601,10 @@ SemResult<core::Node*> analyze_list(const List* lst, Scope& scope, AnalysisConte
         auto it = handlers.find(head->name);
         if (it != handlers.end()) {
             return it->second(lst, scope, ctx);
+        }
+
+        if (head->name == "eval") {
+            capture_eval_quoted_lexicals(*lst, scope, ctx);
         }
     }
 

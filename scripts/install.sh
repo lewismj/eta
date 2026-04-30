@@ -30,7 +30,7 @@ if [ -n "$TARGET" ]; then
     echo "▸ Copying files to ${TARGET}..."
     mkdir -p "$TARGET/bin" "$TARGET/stdlib"
     cp -f "$BUNDLE_DIR/bin/"*           "$TARGET/bin/"        2>/dev/null || true
-    cp -rf "$BUNDLE_DIR/stdlib/"*       "$TARGET/stdlib/"     2>/dev/null || true
+    cp -Rf "$BUNDLE_DIR/stdlib/."       "$TARGET/stdlib/"     2>/dev/null || true
     if [ -d "$BUNDLE_DIR/lib" ]; then
         mkdir -p "$TARGET/lib"
         cp -rf "$BUNDLE_DIR/lib/"*      "$TARGET/lib/"        2>/dev/null || true

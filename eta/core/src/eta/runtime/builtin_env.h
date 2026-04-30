@@ -167,6 +167,24 @@ public:
         return std::nullopt;
     }
 
+    /**
+     * @brief Overwrite a previously registered builtin implementation.
+     *
+     * Used by the Driver to install context-dependent primitives after the
+     * initial patch/verification pass.
+     */
+    void overwrite_func(std::string_view name, PrimitiveFunc func) {
+        for (auto& spec : specs_) {
+            if (spec.name == name) {
+                spec.func = std::move(func);
+                return;
+            }
+        }
+        std::cerr << "BuiltinEnvironment overwrite error: unknown builtin '"
+                  << name << "'\n";
+        std::abort();
+    }
+
 private:
     std::vector<BuiltinSpec> specs_;
     bool patching_ = false;

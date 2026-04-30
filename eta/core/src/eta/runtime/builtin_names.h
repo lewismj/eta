@@ -346,6 +346,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
      */
     r("register-prop-attr!",   1, false);
     r("%clp-prop-queue-size",  0, false);
+    r("eval",                  1, false);
 
     /**
      * port_primitives.h  (must match registration order exactly)

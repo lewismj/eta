@@ -43,7 +43,8 @@ if ($Prefix) {
     New-Item -ItemType Directory -Force -Path "$Prefix\stdlib" | Out-Null
 
     Copy-Item -Recurse -Force "$BundleDir\bin\*"    "$Prefix\bin\"
-    Copy-Item -Recurse -Force "$BundleDir\stdlib\*" "$Prefix\stdlib\"
+    Get-ChildItem -LiteralPath (Join-Path $BundleDir "stdlib") -Force |
+        Copy-Item -Recurse -Force -Destination (Join-Path $Prefix "stdlib")
     if (Test-Path "$BundleDir\lib") {
         New-Item -ItemType Directory -Force -Path "$Prefix\lib" | Out-Null
         Copy-Item -Recurse -Force "$BundleDir\lib\*" "$Prefix\lib\"

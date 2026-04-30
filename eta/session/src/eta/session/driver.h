@@ -14,6 +14,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -184,6 +185,49 @@ public:
         /// Step 3: Verify every pre-registered slot now has a real implementation.
         builtins_.verify_all_patched();
 
+        builtins_.overwrite_func("eval",
+            [this](std::span<const runtime::nanbox::LispVal> args)
+                -> std::expected<runtime::nanbox::LispVal, runtime::error::RuntimeError>
+            {
+                using runtime::error::RuntimeError;
+                using runtime::error::RuntimeErrorCode;
+                using runtime::error::VMError;
+                using runtime::memory::heap::ObjectKind;
+                using runtime::nanbox::LispVal;
+                using runtime::nanbox::Tag;
+
+                if (args.size() != 1) {
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::InvalidArity,
+                        "eval: expected 1 argument"}});
+                }
+
+                const LispVal expr = args[0];
+                bool should_eval = false;
+                if (runtime::nanbox::ops::is_boxed(expr)) {
+                    const auto tag = runtime::nanbox::ops::tag(expr);
+                    if (tag == Tag::Symbol) {
+                        should_eval = true;
+                    } else if (tag == Tag::HeapObject) {
+                        const auto id = runtime::nanbox::ops::payload(expr);
+                        should_eval = (heap_.try_get_as<ObjectKind::Cons, void>(id) != nullptr);
+                    }
+                }
+                if (!should_eval) return expr;
+
+                auto lexical_bindings = collect_eval_lexical_bindings();
+                const std::string expr_source = format_value(expr, runtime::FormatMode::Write);
+
+                auto closure_res = [&]() -> std::expected<LispVal, RuntimeError> {
+                    runtime::vm::VM::ExecutionScope scope(vm_);
+                    return compile_eval_lambda(expr_source, lexical_bindings);
+                }();
+                if (!closure_res) {
+                    return std::unexpected(closure_res.error());
+                }
+                return invoke_eval_lambda(*closure_res, lexical_bindings);
+            });
+
         install_actor_worker_factories();
 
 
@@ -222,6 +266,14 @@ public:
         std::vector<std::string> imports;    ///< Non-prelude module dependencies
         uint32_t base_func_idx{0};   ///< first function index in the registry for this compilation
         uint32_t end_func_idx{0};    ///< one past the last function index
+    };
+
+    /**
+     * @brief Captured lexical binding used when evaluating an expression.
+     */
+    struct EvalBinding {
+        std::string name;
+        runtime::nanbox::LispVal value{runtime::nanbox::Nil};
     };
 
     /**
@@ -383,6 +435,71 @@ public:
         return run_source_impl(std::string(source), /*file_id=*/0, result, result_binding);
     }
 
+    /**
+     * @brief Compile an eval expression into a closure with lexical parameters.
+     *
+     * The generated module/function names are unique per Driver instance.
+     */
+    std::expected<runtime::nanbox::LispVal, runtime::error::RuntimeError>
+    compile_eval_lambda(std::string_view expr_source,
+                        std::span<const EvalBinding> lexical_bindings) {
+        const uint64_t eval_id = eval_counter_++;
+        const std::string module_name = "__eta.eval." + std::to_string(eval_id);
+        const std::string fn_name = "__eta_eval_fn_" + std::to_string(eval_id);
+
+        struct TemporaryExecutedModuleGuard {
+            std::unordered_set<std::string>& executed_modules;
+            std::vector<std::string> inserted_modules;
+
+            ~TemporaryExecutedModuleGuard() {
+                for (const auto& name : inserted_modules) {
+                    executed_modules.erase(name);
+                }
+            }
+        };
+
+        TemporaryExecutedModuleGuard executed_guard{executed_modules_};
+        executed_guard.inserted_modules.reserve(active_module_init_stack_.size());
+        for (const auto& active_module_name : active_module_init_stack_) {
+            if (executed_modules_.insert(active_module_name).second) {
+                executed_guard.inserted_modules.push_back(active_module_name);
+            }
+        }
+
+        std::ostringstream source;
+        source << "(module " << module_name << "\n"
+               << "  (define " << fn_name << "\n"
+               << "    (lambda (";
+        for (std::size_t i = 0; i < lexical_bindings.size(); ++i) {
+            if (i > 0) source << ' ';
+            source << lexical_bindings[i].name;
+        }
+        source << ")\n"
+               << "      " << expr_source << ")))";
+
+        runtime::nanbox::LispVal closure = runtime::nanbox::Nil;
+        if (!run_source_impl(source.str(), /*file_id=*/0, &closure, fn_name)) {
+            return std::unexpected(runtime::error::RuntimeError{runtime::error::VMError{
+                runtime::error::RuntimeErrorCode::UserError,
+                diagnostics_to_string()}});
+        }
+        return closure;
+    }
+
+    /**
+     * @brief Invoke a previously compiled eval closure with captured lexical values.
+     */
+    std::expected<runtime::nanbox::LispVal, runtime::error::RuntimeError>
+    invoke_eval_lambda(runtime::nanbox::LispVal closure,
+                       std::span<const EvalBinding> lexical_bindings) {
+        std::vector<runtime::nanbox::LispVal> args;
+        args.reserve(lexical_bindings.size());
+        for (const auto& binding : lexical_bindings) {
+            args.push_back(binding.value);
+        }
+        return vm_.call_value(closure, std::move(args));
+    }
+
     using StreamSink = std::function<void(std::string_view)>;
 
     struct ActorEvent {
@@ -525,6 +642,7 @@ public:
             {"import", "**import**  -  Import bindings from a module.\n\n`(import module-name)`"},
             {"export", "**export**  -  Export bindings.\n\n`(export name...)`"},
             {"defun", "**defun**  -  Alias for function definition.\n\n`(defun name (args...) body...)`"},
+            {"eval", "**eval**  -  Evaluate an expression in the current lexical and global environment.\n\n`(eval expr)`"},
             {"raise", "**raise**  -  Raise an exception.\n\n`(raise tag value)`"},
             {"catch", "**catch**  -  Catch an exception by tag.\n\n`(catch 'tag body ...)`"},
             {"logic-var", "**logic-var**  -  Create a fresh logic variable.\n\n`(logic-var)`"},
@@ -1047,6 +1165,35 @@ public:
     }
 
 private:
+    [[nodiscard]] static bool is_synthetic_eval_binding_name(std::string_view name) {
+        if (name.empty() || name.size() < 2) return false;
+        const char prefix = name.front();
+        if (prefix != '%' && prefix != '&') return false;
+        return std::all_of(name.begin() + 1, name.end(), [](unsigned char ch) {
+            return std::isdigit(ch) != 0;
+        });
+    }
+
+    [[nodiscard]] std::vector<EvalBinding> collect_eval_lexical_bindings() const {
+        std::vector<EvalBinding> bindings;
+        std::unordered_set<std::string> seen;
+
+        auto append = [&](const std::vector<runtime::vm::VarEntry>& vars) {
+            for (const auto& var : vars) {
+                if (var.name.empty() || is_synthetic_eval_binding_name(var.name)) continue;
+                if (!seen.insert(var.name).second) continue;
+                bindings.push_back(EvalBinding{var.name, var.value});
+            }
+        };
+
+        const auto frames = vm_.get_frames();
+        for (std::size_t frame_index = 0; frame_index < frames.size(); ++frame_index) {
+            append(vm_.get_locals(frame_index));
+            append(vm_.get_upvalues(frame_index));
+        }
+        return bindings;
+    }
+
     [[nodiscard]] std::string diagnostics_to_string() const {
         std::ostringstream oss;
         diag_engine_.print_all(oss, /*use_color=*/false, file_resolver());
@@ -1518,6 +1665,8 @@ private:
 
     std::unordered_map<uint32_t, std::string> global_names_;
     int repl_counter_{0};
+    uint64_t eval_counter_{0};
+    std::vector<std::string> active_module_init_stack_;
     std::vector<PriorModule> repl_modules_;
 
     /**
@@ -1833,6 +1982,22 @@ private:
             }
 
             if (execute) {
+                struct ActiveModuleInitGuard {
+                    std::vector<std::string>& active_module_init_stack;
+
+                    explicit ActiveModuleInitGuard(
+                        std::vector<std::string>& stack,
+                        const std::string& module_name)
+                        : active_module_init_stack(stack) {
+                        active_module_init_stack.push_back(module_name);
+                    }
+
+                    ~ActiveModuleInitGuard() {
+                        active_module_init_stack.pop_back();
+                    }
+                };
+
+                ActiveModuleInitGuard active_module_guard(active_module_init_stack_, mod.name);
                 auto exec_res = vm_.execute(*init_func);
                 if (!exec_res) {
                     /// Rollback: remove the forms we just added so future

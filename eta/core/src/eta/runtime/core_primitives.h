@@ -6554,6 +6554,17 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
                 "%clp-prop-queue-size: queue size out of fixnum range"}});
             return *enc;
         });
+
+    /**
+     * Eval is installed by Driver after primitive registration so it can
+     * capture lexical environment and delegate compilation through Driver.
+     */
+    env.register_builtin("eval", 1, false,
+        [](Args /*args*/) -> std::expected<LispVal, RuntimeError> {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::InternalError,
+                "eval: runtime stub invoked before driver installation"}});
+        });
 }
 
 } ///< namespace eta::runtime

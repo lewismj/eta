@@ -1,0 +1,74 @@
+;;; stdlib/tests/eval.test.eta -- Tests for eval.
+
+(module eval.tests
+  (import std.test std.core)
+  (begin
+
+    (defun payload-tag (p) (car (cdr p)))
+
+    (define suite
+      (make-group "eval"
+        (list
+          (make-test "self-evaluating values return unchanged"
+            (lambda ()
+              (assert-equal 42 (eval 42))
+              (assert-equal "hello" (eval "hello"))))
+
+          (make-test "quoted list is evaluated"
+            (lambda ()
+              (assert-equal 3 (eval '(+ 1 2)))))
+
+          (make-test "lexical local binding is visible"
+            (lambda ()
+              (let ((x 10))
+                (assert-equal 15 (eval '(+ x 5))))))
+
+          (make-test "lexical upvalue binding is visible"
+            (lambda ()
+              (let ((x 10))
+                (let ((f (lambda (y) (eval '(+ x y)))))
+                  (assert-equal 17 (f 7))))))
+
+          (make-test "locals shadow upvalues"
+            (lambda ()
+              (let ((x 100))
+                (let ((f (lambda (x) (eval 'x))))
+                  (assert-equal 7 (f 7))))))
+
+          (make-test "nested eval succeeds"
+            (lambda ()
+              (assert-equal 15 (eval '(eval '(+ 10 5))))))
+
+          (make-test "runtime tag is preserved"
+            (lambda ()
+              (let ((p (catch 'runtime.type-error (eval '(car 1)))))
+                (assert-equal 'runtime.type-error (payload-tag p)))))
+
+          (make-test "user tag is preserved"
+            (lambda ()
+              (assert-equal 7 (catch 'my-tag (eval '(raise 'my-tag 7))))))
+
+          (make-test "compile errors surface as runtime.user-error"
+            (lambda ()
+              (let ((p (catch 'runtime.user-error (eval '(undefined-eval-function 1)))))
+                (assert-equal 'runtime.user-error (payload-tag p)))))
+
+          (make-test "reentrant recursion remains stable"
+            (lambda ()
+              (letrec ((step (lambda (n acc)
+                               (if (= n 0)
+                                   acc
+                                   (step (- n 1) (eval `(+ ,acc 1)))))))
+                (assert-equal 80 (step 80 0)))))
+
+          (make-test "gc pressure during eval preserves outer values"
+            (lambda ()
+              (let ((data (list 1 2 3 4 5)))
+                (let loop ((i 0))
+                  (if (= i 60)
+                      (assert-equal '(1 2 3 4 5) data)
+                      (begin
+                        (eval '(make-vector 8192 0))
+                        (loop (+ i 1)))))))))))
+
+    (print-tap (run suite))))

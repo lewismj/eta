@@ -24,6 +24,25 @@ using namespace eta::runtime::memory::value_visit;
 using namespace eta::runtime::memory::factory;
 using namespace eta::runtime::types;
 
+namespace {
+
+constexpr std::string_view kNonLocalTransferSentinel = "__eta.non_local_transfer__";
+
+[[nodiscard]] bool is_non_local_transfer_error(const RuntimeError& err) {
+    if (const auto* vm_err = std::get_if<VMError>(&err)) {
+        return vm_err->code == RuntimeErrorCode::InternalError &&
+               vm_err->message == kNonLocalTransferSentinel;
+    }
+    return false;
+}
+
+[[nodiscard]] RuntimeError make_non_local_transfer_error() {
+    return RuntimeError{VMError{RuntimeErrorCode::InternalError,
+                                std::string(kNonLocalTransferSentinel)}};
+}
+
+} ///< namespace
+
 VM::VM(Heap& heap, InternTable& intern_table)
     : heap_(heap), intern_table_(intern_table), gc_(std::make_unique<memory::gc::MarkSweepGC>()) {
     stack_.reserve(1024);
@@ -48,6 +67,70 @@ VM::VM(Heap& heap, InternTable& intern_table)
 }
 
 VM::~VM() = default;
+
+VM::ExecutionScope::ExecutionScope(VM& vm)
+    : vm_(vm) {
+    if (vm_.is_executing()) {
+        vm_.save_execution_state();
+        saved_ = true;
+    }
+}
+
+VM::ExecutionScope::~ExecutionScope() {
+    if (saved_) {
+        vm_.restore_execution_state();
+    }
+}
+
+void VM::save_execution_state() {
+    ExecutionSnapshot snapshot;
+    snapshot.stack = std::move(stack_);
+    snapshot.frames = std::move(frames_);
+    snapshot.winding_stack = std::move(winding_stack_);
+    snapshot.temp_roots = std::move(temp_roots_);
+    snapshot.catch_stack = std::move(catch_stack_);
+    snapshot.pending_exception_transfer = std::move(pending_exception_transfer_);
+    snapshot.pending_unwind_thunks = std::move(pending_unwind_thunks_);
+    snapshot.pending_unwind_index = pending_unwind_index_;
+    snapshot.current_func = current_func_;
+    snapshot.pc = pc_;
+    snapshot.fp = fp_;
+    snapshot.current_closure = current_closure_;
+    saved_executions_.push_back(std::move(snapshot));
+
+    clear_exception_transfer();
+    stack_.clear();
+    frames_.clear();
+    winding_stack_.clear();
+    temp_roots_.clear();
+    catch_stack_.clear();
+    pending_unwind_thunks_.clear();
+    pending_unwind_index_ = 0;
+    current_func_ = nullptr;
+    pc_ = 0;
+    fp_ = 0;
+    current_closure_ = nanbox::Nil;
+}
+
+void VM::restore_execution_state() {
+    if (saved_executions_.empty()) return;
+
+    ExecutionSnapshot snapshot = std::move(saved_executions_.back());
+    saved_executions_.pop_back();
+
+    stack_ = std::move(snapshot.stack);
+    frames_ = std::move(snapshot.frames);
+    winding_stack_ = std::move(snapshot.winding_stack);
+    temp_roots_ = std::move(snapshot.temp_roots);
+    catch_stack_ = std::move(snapshot.catch_stack);
+    pending_exception_transfer_ = std::move(snapshot.pending_exception_transfer);
+    pending_unwind_thunks_ = std::move(snapshot.pending_unwind_thunks);
+    pending_unwind_index_ = snapshot.pending_unwind_index;
+    current_func_ = snapshot.current_func;
+    pc_ = snapshot.pc;
+    fp_ = snapshot.fp;
+    current_closure_ = snapshot.current_closure;
+}
 
 bool VM::values_eqv(LispVal a, LispVal b) const {
     /// Fast path: bit-identical values are always equal (handles Nil, True, False, small Fixnums, same heap IDs)
@@ -80,41 +163,68 @@ void VM::collect_garbage() {
     gc_collections_++;
 
     gc_->collect(heap_, [&](auto&& visit) {
-        /// Mark stack
-        for (auto v : stack_) visit(v);
+        auto mark_execution_state =
+            [&](const std::vector<LispVal>& stack,
+                const std::vector<Frame>& frames,
+                const std::vector<WindFrame>& winding_stack,
+                const std::vector<LispVal>& temp_roots,
+                const std::vector<CatchFrame>& catch_stack,
+                const std::optional<PendingExceptionTransfer>& pending_exception_transfer,
+                const std::vector<LispVal>& pending_unwind_thunks,
+                LispVal current_closure) {
+                for (auto v : stack) visit(v);
+                visit(current_closure);
+                for (const auto& f : frames) {
+                    visit(f.closure);
+                    visit(f.extra);
+                }
+                for (const auto& w : winding_stack) {
+                    visit(w.before);
+                    visit(w.body);
+                    visit(w.after);
+                }
+                for (auto v : temp_roots) visit(v);
+                for (const auto& cf : catch_stack) {
+                    visit(cf.tag);
+                    visit(cf.closure);
+                }
+                if (pending_exception_transfer) {
+                    visit(pending_exception_transfer->closure);
+                    visit(pending_exception_transfer->payload);
+                }
+                for (auto thunk : pending_unwind_thunks) visit(thunk);
+            };
+
+        mark_execution_state(
+            stack_,
+            frames_,
+            winding_stack_,
+            temp_roots_,
+            catch_stack_,
+            pending_exception_transfer_,
+            pending_unwind_thunks_,
+            current_closure_);
+
+        for (const auto& snapshot : saved_executions_) {
+            mark_execution_state(
+                snapshot.stack,
+                snapshot.frames,
+                snapshot.winding_stack,
+                snapshot.temp_roots,
+                snapshot.catch_stack,
+                snapshot.pending_exception_transfer,
+                snapshot.pending_unwind_thunks,
+                snapshot.current_closure);
+        }
+
         /// Mark globals
         for (auto v : globals_) visit(v);
-        /// Mark current execution state
-        visit(current_closure_);
-        /// Mark frames
-        for (const auto& f : frames_) {
-            visit(f.closure);
-            visit(f.extra);
-        }
-        /// Mark winding stack
-        for (const auto& w : winding_stack_) {
-            visit(w.before);
-            visit(w.body);
-            visit(w.after);
-        }
-        /// Mark temporary roots
-        for (auto v : temp_roots_) visit(v);
         /// Mark external roots registered by non-VM heap reconstruction helpers
         for (auto v : heap_.external_roots()) visit(v);
         /// Mark current ports
         visit(current_input_);
         visit(current_output_);
         visit(current_error_);
-        /// Mark catch frame tags and closures
-        for (const auto& cf : catch_stack_) {
-            visit(cf.tag);
-            visit(cf.closure);
-        }
-        if (pending_exception_transfer_) {
-            visit(pending_exception_transfer_->closure);
-            visit(pending_exception_transfer_->payload);
-        }
-        for (auto thunk : pending_unwind_thunks_) visit(thunk);
         /**
          * Mark logic-variable trail (prevents live unbound vars from being swept
          * during an active unification / backtracking context)
@@ -278,6 +388,40 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
         if (!ids.empty()) roots.push_back({"Exception Transfer", std::move(ids)});
     }
 
+    {
+        std::vector<ObjectId> ids;
+        for (const auto& snapshot : saved_executions_) {
+            auto append = [&](LispVal v) {
+                if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject) {
+                    ids.push_back(static_cast<ObjectId>(ops::payload(v)));
+                }
+            };
+
+            for (auto v : snapshot.stack) append(v);
+            append(snapshot.current_closure);
+            for (const auto& f : snapshot.frames) {
+                append(f.closure);
+                append(f.extra);
+            }
+            for (const auto& w : snapshot.winding_stack) {
+                append(w.before);
+                append(w.body);
+                append(w.after);
+            }
+            for (auto v : snapshot.temp_roots) append(v);
+            for (const auto& cf : snapshot.catch_stack) {
+                append(cf.tag);
+                append(cf.closure);
+            }
+            if (snapshot.pending_exception_transfer) {
+                append(snapshot.pending_exception_transfer->closure);
+                append(snapshot.pending_exception_transfer->payload);
+            }
+            for (auto thunk : snapshot.pending_unwind_thunks) append(thunk);
+        }
+        if (!ids.empty()) roots.push_back({"Saved Executions", std::move(ids)});
+    }
+
     roots.push_back({"Trail Stack", [&]() {
         std::vector<ObjectId> ids;
         ids.reserve(trail_stack_.size());
@@ -325,6 +469,7 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
 }
 
 std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
+    ExecuteDepthScope depth_scope(*this);
     clear_exception_transfer();
     /**
      * Push a sentinel frame to mark the bottom of this execution call.
@@ -400,6 +545,8 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
             }
     }
 
+    ExecuteDepthScope depth_scope(*this);
+
     /// Save full outer execution context
     const BytecodeFunction* saved_func    = current_func_;
     const uint32_t          saved_pc      = pc_;
@@ -464,6 +611,18 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
         restore();
         process_finalizers_if_host();
         return std::unexpected(run_res.error());
+    }
+
+    /**
+     * A non-local transfer (raise/catch or runtime catch) may unwind past
+     * this synthetic call boundary. In that case, control has already moved
+     * to a handler frame and this helper must not synthesize a return value.
+     */
+    if (!host_call &&
+        (current_func_ != nullptr || frames_.size() != saved_frames)) {
+        temp_roots_.resize(saved_temp_roots);
+        process_finalizers_if_host();
+        return std::unexpected(make_non_local_transfer_error());
     }
 
     /// On success: stack has nested_sp items + 1 result on top.
@@ -655,6 +814,9 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
         auto res = prim->func(args_span);
         stack_.resize(args_start);
         if (!res) {
+            if (is_non_local_transfer_error(res.error())) {
+                return DispatchResult{DispatchAction::NonLocalTransfer, nullptr, 0};
+            }
             auto handled = do_runtime_error(res.error(), call_span);
             if (!handled) return std::unexpected(handled.error());
             return DispatchResult{DispatchAction::NonLocalTransfer, nullptr, 0};

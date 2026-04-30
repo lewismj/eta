@@ -13,6 +13,7 @@ set(SOURCES
         src/module_linker_tests.cpp
         src/semantics_tests.cpp
         src/vm_tests.cpp
+        src/eval_tests.cpp
         src/eta_test.cpp
         src/emitter_tests.cpp
         src/port_tests.cpp

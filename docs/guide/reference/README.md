@@ -14,6 +14,7 @@ chapter there links into the relevant pages here.
 | :----------------------------------------- | :----------------------------------------------- |
 | [`modules.md`](./modules.md)               | Module system, `import` / `export` clause forms  |
 | [`runtime.md`](./runtime.md)               | VM data model, GC, intern table                  |
+| [`eval.md`](./eval.md)                     | Runtime expression evaluation with lexical scope  |
 | [`bytecode-vm.md`](./bytecode-vm.md)       | Bytecode opcode catalogue                        |
 | [`compiler.md`](./compiler.md)             | `etac` AOT compiler                              |
 | [`nanboxing.md`](./nanboxing.md)           | NaN-boxed value layout                           |

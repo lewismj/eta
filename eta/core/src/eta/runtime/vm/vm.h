@@ -166,6 +166,36 @@ using FunctionResolver = std::function<const BytecodeFunction*(uint32_t)>;
 
 class VM {
 public:
+    struct ExecutionSnapshot {
+        std::vector<LispVal> stack;
+        std::vector<Frame> frames;
+        std::vector<WindFrame> winding_stack;
+        std::vector<LispVal> temp_roots;
+        std::vector<CatchFrame> catch_stack;
+        std::optional<PendingExceptionTransfer> pending_exception_transfer;
+        std::vector<LispVal> pending_unwind_thunks;
+        std::size_t pending_unwind_index{0};
+        const BytecodeFunction* current_func{nullptr};
+        uint32_t pc{0};
+        uint32_t fp{0};
+        LispVal current_closure{nanbox::Nil};
+    };
+
+    class ExecutionScope {
+    public:
+        explicit ExecutionScope(VM& vm);
+        ~ExecutionScope();
+
+        ExecutionScope(const ExecutionScope&) = delete;
+        ExecutionScope& operator=(const ExecutionScope&) = delete;
+        ExecutionScope(ExecutionScope&&) = delete;
+        ExecutionScope& operator=(ExecutionScope&&) = delete;
+
+    private:
+        VM& vm_;
+        bool saved_{false};
+    };
+
     VM(Heap& heap, InternTable& intern_table);
     ~VM();
 
@@ -278,6 +308,13 @@ public:
     std::expected<LispVal, RuntimeError> execute(const BytecodeFunction& main);
 
     std::expected<LispVal, RuntimeError> call_value(LispVal proc, std::vector<LispVal> args);
+
+    void save_execution_state();
+    void restore_execution_state();
+    [[nodiscard]] bool is_executing() const noexcept { return execute_depth_ > 0; }
+    [[nodiscard]] const std::vector<ExecutionSnapshot>& saved_executions() const noexcept {
+        return saved_executions_;
+    }
 
     /// operand is a TapeRef, enabling tape-based reverse-mode AD.
     std::expected<LispVal, RuntimeError> tape_binary_op(OpCode op, LispVal a, LispVal b);
@@ -421,6 +458,14 @@ public:
     [[nodiscard]] bool is_sandbox_mode() const noexcept { return sandbox_mode_; }
 
 private:
+    struct ExecuteDepthScope {
+        VM& vm;
+        explicit ExecuteDepthScope(VM& in_vm) : vm(in_vm) { ++vm.execute_depth_; }
+        ~ExecuteDepthScope() {
+            if (vm.execute_depth_ > 0) --vm.execute_depth_;
+        }
+    };
+
     Heap& heap_;
     InternTable& intern_table_;
     FunctionResolver func_resolver_;
@@ -433,6 +478,7 @@ private:
     std::optional<PendingExceptionTransfer> pending_exception_transfer_;
     std::vector<LispVal> pending_unwind_thunks_;
     std::size_t pending_unwind_index_{0};
+    std::vector<ExecutionSnapshot> saved_executions_;
     std::vector<TrailEntry> trail_stack_;  ///< logic-var / CLP attribute trail for backtracking
     clp::ConstraintStore constraint_store_; ///< CLP domain store (trailed alongside bindings)
     clp::RealStore real_store_;             ///< CLP(R) posted constraint log
@@ -473,6 +519,7 @@ private:
     uint32_t pc_{0};
     uint32_t fp_{0};
     LispVal current_closure_{0};
+    std::size_t execute_depth_{0};
 
     std::unique_ptr<memory::gc::MarkSweepGC> gc_;
     std::size_t gc_collections_{0};  ///< DEBUG: count GC runs

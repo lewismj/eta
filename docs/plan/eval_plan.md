@@ -1,569 +1,346 @@
-# `eval` — Implementation Plan
+# `eval` - Implementation Plan (Revised)
 
-**Status:** Proposed · **Priority:** P1 · **Effort:** ~5 days
-**Revision:** 3 — reentrant from day one (no v1/v2 split). Addresses VM
-state-snapshot, GC reachability, error tagging, registration, and tests.
+**Status:** Proposed  
+**Priority:** P1  
+**Effort:** ~6 days  
+**Revision:** 4 (strict tag preservation, dedicated eval API, lexical-environment execution)
 
 ---
 
 ## Motivation
 
-Eta is a homoiconic Lisp.  `quote` and `quasiquote` let programs treat code
-as data; without `eval` the reverse direction is missing.
+Eta is homoiconic (`quote`/`quasiquote` produce code data), so `eval` is required for the reverse direction.
 
-- `do:simplify` returns an estimand AST.  With `eval`:
-  ```scheme
-  (eval (do:simplify (id g '(y) '(x))))
-  ```
-- Symbolic differentiator output (`causal_demo.eta`) becomes directly
-  executable.
-- Programmatic code generation in Jupyter notebooks becomes natural.
-- `define-dag`-style macros can emit and run code at runtime.
+This revision is driven by three hard requirements:
+
+1. Preserve original error tags across `eval` (no `eval-error` umbrella tag).
+2. Do not route through REPL wrapping helpers.
+3. Evaluate in the current environment, including lexical bindings:
+
+```scheme
+(let ((x 10))
+  (eval '(+ x 5)))   ;; => 15
+```
 
 ---
 
-## Design
-
-### API (v1, full)
+## Public API
 
 ```scheme
 (eval expr)
 ```
 
-`expr` is any Eta value (typically a quoted list).  Behaviour:
+`expr` is any Eta value (typically a quoted list).
 
-| `expr`                 | Result                               |
-|------------------------|--------------------------------------|
-| Self-evaluating value  | Returned unchanged                   |
-| Quoted list / pair     | Compiled and executed; result returned |
-| Symbol                 | Treated as a variable reference; resolved in current session |
-| Anything else          | Returned unchanged                   |
+### Behavior
+
+| `expr` | Result |
+|---|---|
+| Self-evaluating value (number, string, bool, etc.) | Returned unchanged |
+| Symbol | Resolved in current lexical environment first, then globals/builtins |
+| List / pair | Evaluated in current lexical environment |
+| Other values | Returned unchanged |
 
 Examples:
 
 ```scheme
-(eval '(+ 1 2))                       ;; => 3
-(eval (list '* 3 4))                  ;; => 12
-(eval `(define x ,(+ 1 2)))           ;; defines x = 3 in session
-(eval 42)                             ;; => 42
-(eval "hello")                        ;; => "hello"
-
-;; From inside a function — works (reentrant):
-(define (square-via-eval n)
-  (eval `(* ,n ,n)))
-(square-via-eval 7)                   ;; => 49
+(eval '(+ 1 2))                         ;; => 3
+(let ((x 10)) (eval '(+ x 5)))         ;; => 15
+(let ((x 10)) (let ((f (lambda (y) (eval '(+ x y))))) (f 7)))  ;; => 17
 ```
 
-Errors propagate as catchable Eta exceptions tagged `'eval-error`:
+---
+
+## Error Semantics (Strict)
+
+`eval` must **not** normalize tags.
+
+- User raises keep their original tag:
 
 ```scheme
-(catch 'eval-error
-  (eval '(undefined-fn 1 2)))
+(catch 'my-tag
+  (eval '(raise 'my-tag 7)))           ;; catches 'my-tag
 ```
 
-### Deferred (independent follow-ups, not blocked on this work)
+- VM/runtime errors keep their existing runtime tags (`runtime.type-error`, `runtime.invalid-arity`, etc.).
+- Parse/expand/link/semantic failures from eval compilation are surfaced as normal runtime user errors (`runtime.user-error`) with diagnostic text; no eval-specific tag is introduced.
 
-- `(eval expr env)` — needs first-class environment objects.
-- `(compile expr)` — needs first-class closure pre-allocation.
-
-These are independent of reentrancy and can land later without an API break.
+There is no `'eval-error` in this design.
 
 ---
 
 ## Architecture
 
-### The reentrancy problem and its solution
+### 1) Reentrant `execute()` remains required
 
-The VM's per-execution state is stored in `VM` member variables, not on the
-C++ call stack:
+`Driver` compilation still executes module init functions via `vm_.execute(...)`.  
+Calling this from inside a running primitive still requires VM execution-state snapshot/restore.
 
-| Field | Reason |
-|---|---|
-| `current_func_`, `pc_`, `fp_`, `current_closure_` | active frame |
-| `stack_` | operand stack (resized at `execute()` entry per `main.stack_size`) |
-| `frames_` | call frames (a sentinel `FrameKind::Sentinel` is pushed at `execute()` entry) |
-| `catch_stack_` | live exception handlers |
-| `winding_stack_` | dynamic-wind frames |
-| `pending_unwind_thunks_` + `pending_unwind_index_` | in-flight unwind |
-| `pending_exception_transfer_` | cross-frame raise |
-| `temp_roots_` | GC roots for in-flight primitives |
+We keep the `ExecutionSnapshot` + `saved_executions_` design, with one correction:
 
-`VM::execute` (`vm.cpp` line 327) pushes a sentinel frame, resets the active
-fields, resizes `stack_`, then enters `run_loop`.  Calling `execute` again
-from inside a primitive while the outer `run_loop` is still on the C++ stack
-overwrites these fields and corrupts the outer execution.
+- Reentrancy guard is based on explicit execution depth, not only `current_func_ != nullptr`.
+  - Add `execute_depth_` in `VM`.
+  - Increment/decrement via RAII at `execute()` entry/exit.
+  - `is_executing()` becomes `execute_depth_ > 0`.
 
-**Solution.** A typed `ExecutionSnapshot` saves and restores exactly the
-fields that `execute()` rewrites on entry.  Trail, constraint store, real
-store, attribute store, globals, and heap are *not* snapshotted — they are
-either trail-bound (and the eval'd code's writes are intentionally retained
-as session state) or shared by design.
+This avoids false negatives in windows where `current_func_` is null but `execute()` has not fully exited yet.
+
+### 2) Dedicated Driver eval API (no REPL wrapping)
+
+Add a direct API in `Driver` for eval compilation/invocation, separate from `eval_string` and `wrap_repl_submission`.
+
+Proposed internal types:
 
 ```cpp
-// vm.h — public:
-struct ExecutionSnapshot {
-    const BytecodeFunction*               func;
-    uint32_t                              pc;
-    uint32_t                              fp;
-    LispVal                               closure;
-    std::vector<LispVal>                  stack;
-    std::vector<Frame>                    frames;
-    std::vector<CatchFrame>               catch_stack;
-    std::vector<WindFrame>                winding_stack;
-    std::vector<LispVal>                  pending_unwind_thunks;
-    std::size_t                           pending_unwind_index;
-    std::optional<PendingExceptionTransfer> pending_exception_transfer;
-    std::vector<LispVal>                  temp_roots;
-};
-
-void save_execution_state();
-void restore_execution_state();
-```
-
-`save_execution_state` *moves* the live vectors into a new snapshot pushed
-onto a member stack and resets the live members to a clean baseline.
-`restore_execution_state` pops and moves them back.  Per-call cost is O(1)
-moves rather than O(stack-size) copies.
-
-### GC reachability of saved state
-
-The snapshot holds `LispVal`s that may point to heap objects.  The GC root
-scan only looks at `VM` member fields, so the snapshot stack must itself be a
-member:
-
-```cpp
-// vm.h — private:
-std::vector<ExecutionSnapshot> saved_executions_;
-```
-
-`save_execution_state` pushes onto `saved_executions_`; `restore_execution_state`
-pops.  The GC's existing root scan is extended to also walk every `LispVal`
-inside every active snapshot:
-
-```cpp
-// In MarkSweepGC::mark_roots (or wherever VM roots are enumerated):
-for (const auto& snap : vm.saved_executions()) {
-    for (LispVal v : snap.stack)         mark_root(v);
-    for (LispVal v : snap.temp_roots)    mark_root(v);
-    for (LispVal v : snap.pending_unwind_thunks) mark_root(v);
-    for (const Frame& f : snap.frames)   mark_frame(f);
-    for (const CatchFrame& cf : snap.catch_stack) mark_root(cf.handler);
-    for (const WindFrame& wf : snap.winding_stack) {
-        mark_root(wf.before); mark_root(wf.after);
-    }
-    if (snap.pending_exception_transfer)
-        mark_root(snap.pending_exception_transfer->payload);
-    if (snap.closure != Nil) mark_root(snap.closure);
-}
-```
-
-Factor the live-field walk into a helper that takes references to the
-relevant vectors so it can be reused for snapshots — avoids two copies of
-the marking logic.
-
-### Trail handling
-
-The trail (`trail_stack_`), constraint store, attribute store, and CLP real
-store are **not** snapshotted.  Reasoning:
-
-- Logic-var bindings made by eval'd code that are *intentional* (top-level
-  `(unify x 3)`) should persist as session state — the same way they
-  persist when typed at the REPL.
-- Trail entries from inside the eval'd code that have *not* been committed
-  by an outer choice-point are still associated with positions later than
-  any pre-`eval` trail mark, so existing `unwind-trail` / `findall`
-  scaffolding behaves correctly.
-
-If a future test demonstrates breakage we can add an optional
-`(eval/sandbox expr)` variant that snapshot-and-restores the trail too.
-
-### Error tagging
-
-Compile-time and VM errors inside `eval`'d code are normalised to the symbol
-tag `'eval-error` with the diagnostic text as payload, so user code can
-`catch` reliably:
-
-```scheme
-(catch 'eval-error
-  (eval '(undefined-fn 1 2)))
-```
-
-User `(error 'my-tag "...")` calls inside the eval'd code propagate with
-their *original* tag, not `'eval-error` — only un-tagged compile/VM errors
-get the umbrella tag.  Implementation: `run_source` returns success/failure;
-on failure we wrap into `'eval-error`; on success the user's own `raise`
-value already carries the right tag because `RuntimeError::tag_override`
-survives unwinding through `run_source`.
-
-### Registration
-
-`eval` needs `Driver::run_source`, which is not available from
-`all_primitives.h`.  One canonical strategy:
-
-1. Add `r("eval", 1, false);` at the **end of the core block** in
-   `builtin_names.h` — preserves `builtin_count` for `.etac` version checks.
-2. Add an unreachable stub in `core_primitives.h` (overwritten in step 3).
-3. After `verify_all_patched()` in the `Driver` constructor, call the new
-   `BuiltinEnvironment::overwrite_func("eval", ...)` to install the real
-   closure that captures `this`.
-
-Same pattern as the NNG primitives that capture `&registry_`,
-`&vm_.globals()`, etc.
-
-### Thread safety
-
-Each `spawn-thread` worker owns its own `Driver` and `VM`.  `eval` from a
-worker compiles + executes in that child's context with its own
-`saved_executions_` stack.  No cross-thread synchronisation needed.
-
-### Why not export `eval` from `std.core`
-
-Builtins live in global slots and are not module-level bindings.  Adding
-`eval` to `std.core`'s `(export ...)` list would fail at semantic analysis
-with "unknown export".  Builtins are visible in every module without
-`import` — same as `+`, `cons`, `error`.  No `std.core` change required.
-
----
-
-## Implementation steps
-
-### Step 1 — `ExecutionSnapshot` + `saved_executions_`
-
-```cpp
-// vm.h — public:
-struct ExecutionSnapshot { /* fields as above */ };
-
-void save_execution_state();
-void restore_execution_state();
-
-[[nodiscard]] const std::vector<ExecutionSnapshot>& saved_executions() const noexcept {
-    return saved_executions_;
-}
-[[nodiscard]] bool is_executing() const noexcept {
-    return current_func_ != nullptr;
-}
-
-// vm.h — private:
-std::vector<ExecutionSnapshot> saved_executions_;
-```
-
-```cpp
-// vm.cpp:
-void VM::save_execution_state() {
-    ExecutionSnapshot s{};
-    s.func                       = current_func_;
-    s.pc                         = pc_;
-    s.fp                         = fp_;
-    s.closure                    = current_closure_;
-    s.stack                      = std::move(stack_);
-    s.frames                     = std::move(frames_);
-    s.catch_stack                = std::move(catch_stack_);
-    s.winding_stack              = std::move(winding_stack_);
-    s.pending_unwind_thunks      = std::move(pending_unwind_thunks_);
-    s.pending_unwind_index       = pending_unwind_index_;
-    s.pending_exception_transfer = std::move(pending_exception_transfer_);
-    s.temp_roots                 = std::move(temp_roots_);
-
-    // Reset live fields to baseline (execute() will repopulate them).
-    current_func_           = nullptr;
-    pc_                     = 0;
-    fp_                     = 0;
-    current_closure_        = Nil;
-    stack_.clear();
-    frames_.clear();
-    catch_stack_.clear();
-    winding_stack_.clear();
-    pending_unwind_thunks_.clear();
-    pending_unwind_index_   = 0;
-    pending_exception_transfer_.reset();
-    temp_roots_.clear();
-
-    saved_executions_.push_back(std::move(s));
-}
-
-void VM::restore_execution_state() {
-    assert(!saved_executions_.empty() && "restore_execution_state without save");
-    auto s = std::move(saved_executions_.back());
-    saved_executions_.pop_back();
-    current_func_               = s.func;
-    pc_                         = s.pc;
-    fp_                         = s.fp;
-    current_closure_            = s.closure;
-    stack_                      = std::move(s.stack);
-    frames_                     = std::move(s.frames);
-    catch_stack_                = std::move(s.catch_stack);
-    winding_stack_              = std::move(s.winding_stack);
-    pending_unwind_thunks_      = std::move(s.pending_unwind_thunks);
-    pending_unwind_index_       = s.pending_unwind_index;
-    pending_exception_transfer_ = std::move(s.pending_exception_transfer);
-    temp_roots_                 = std::move(s.temp_roots);
-}
-```
-
-RAII helper used by the `eval` primitive:
-
-```cpp
-struct ExecutionScope {
-    runtime::vm::VM& vm;
-    bool active;
-    explicit ExecutionScope(runtime::vm::VM& v)
-        : vm(v), active(v.is_executing())
-    { if (active) vm.save_execution_state(); }
-    ~ExecutionScope() { if (active) vm.restore_execution_state(); }
+struct EvalBinding {
+    std::string name;
+    runtime::nanbox::LispVal value;
 };
 ```
 
-### Step 2 — extend GC root enumeration
-
-Locate the function that currently walks `vm_.stack()`, `vm_.frames()`,
-`vm_.globals()`, etc., and add a loop over `vm.saved_executions()` mirroring
-the live-field walk.  Factor the per-set walk into a helper.
-
-### Step 3 — `BuiltinEnvironment::overwrite_func`
-
 ```cpp
-// builtin_env.h:
-void overwrite_func(std::string_view name, PrimitiveFunc func) {
-    auto idx = lookup(name);
-    assert(idx.has_value() && "overwrite_func: unknown builtin");
-    specs_[*idx].func = std::move(func);
-}
+// Compile EXPR source into a callable closure with lexical params.
+std::expected<runtime::nanbox::LispVal, runtime::error::RuntimeError>
+compile_eval_lambda(std::string_view expr_source,
+                    std::span<const EvalBinding> lexical_bindings);
+
+// Invoke compiled eval closure with binding values.
+std::expected<runtime::nanbox::LispVal, runtime::error::RuntimeError>
+invoke_eval_lambda(runtime::nanbox::LispVal closure,
+                   std::span<const EvalBinding> lexical_bindings);
 ```
 
-### Step 4 — `builtin_names.h`
+`compile_eval_lambda` uses `run_source_impl` directly (not REPL wrapper).
 
-Add at the end of the core-primitives block:
+### 3) Lexical environment capture
 
-```cpp
-r("eval", 1, false);
-```
+At eval call time, capture visible lexical names/values from the current VM frame:
 
-### Step 5 — `core_primitives.h` stub
+- `vm.get_locals(0)` (highest precedence)
+- `vm.get_upvalues(0)` (next precedence)
 
-```cpp
-env.patch("eval", [](std::span<const LispVal>) -> std::expected<LispVal, RuntimeError> {
-    return std::unexpected(RuntimeError{VMError{
-        RuntimeErrorCode::InternalError,
-        "eval: stub — Driver did not install the real implementation"}});
-});
-```
+Filtering rules:
 
-### Step 6 — `Driver` installs the real `eval`
+- Drop empty names.
+- Drop synthetic placeholders (`%<n>`, `&<n>`).
+- Deduplicate by name, keeping first (locals shadow upvalues).
 
-After `builtins_.verify_all_patched()`:
+### 4) How lexical evaluation is implemented
 
-```cpp
-builtins_.overwrite_func("eval",
-    [this](std::span<const runtime::nanbox::LispVal> args)
-        -> std::expected<runtime::nanbox::LispVal,
-                         runtime::error::RuntimeError>
-    {
-        using runtime::nanbox::LispVal, runtime::nanbox::Nil;
-        using runtime::error::RuntimeError;
-        using runtime::error::VMError;
-        using runtime::error::RuntimeErrorCode;
+Given `expr_source` (from write-format of `expr`) and captured bindings:
 
-        if (args.size() != 1)
-            return std::unexpected(RuntimeError{VMError{
-                RuntimeErrorCode::InvalidArity, "eval: expected 1 argument"}});
-
-        // Render the argument as source text (write representation).
-        std::string src = format_value(args[0], runtime::FormatMode::Write);
-
-        // Reentrant: snapshot outer VM execution state, restore on exit.
-        ExecutionScope scope(vm_);
-
-        LispVal result = Nil;
-        if (!run_source(src, &result)) {
-            std::ostringstream oss;
-            diag_engine_.print_all(oss, /*use_color=*/false, file_resolver());
-            return std::unexpected(RuntimeError{VMError{
-                RuntimeErrorCode::UserError, oss.str(),
-                /*tag_override=*/"eval-error"}});
-        }
-        return result;
-    });
-```
-
-`Driver::run_source` already calls `vm_.execute(...)`, which now operates on
-the cleared baseline.  When it returns, `ExecutionScope`'s destructor
-restores the outer context — including on the unexpected/error path.
-
-### Step 7 — Eta tests (`stdlib/tests/eval.test.eta`)
+1. Generate a temporary module and function:
 
 ```scheme
-(module eval-tests
-  (import std.core)
-  (import std.test)
-  (begin
-
-    (test "eval: self-evaluating literal"
-      (assert-equal (eval 42) 42))
-
-    (test "eval: quoted list arithmetic"
-      (assert-equal (eval '(+ 1 2)) 3))
-
-    (test "eval: constructed call"
-      (assert-equal (eval (list '* 3 4)) 12))
-
-    (test "eval: quasiquoted expression"
-      (let ((n 7))
-        (assert-equal (eval `(* ,n ,n)) 49)))
-
-    (test "eval: define persists in session"
-      (eval '(define %eval-test-x 99))
-      (assert-equal %eval-test-x 99))
-
-    (test "eval: nested eval"
-      (assert-equal (eval '(eval '(+ 10 5))) 15))
-
-    (test "eval: string is self-evaluating"
-      (assert-equal (eval "hello") "hello"))
-
-    ;; Reentrant — called from inside a running VM frame.
-    (test "eval: reentrant inside lambda"
-      (let ((f (lambda (n) (eval `(* ,n ,n)))))
-        (assert-equal (f 6) 36)))
-
-    ;; Reentrant — eval inside a deep recursion.
-    (test "eval: reentrant inside recursion"
-      (letrec ((depth (lambda (k acc)
-                        (if (= k 0) acc
-                            (depth (- k 1) (eval `(+ ,acc 1)))))))
-        (assert-equal (depth 100 0) 100)))
-
-    ;; Stack of saved executions: nested eval inside a lambda.
-    (test "eval: nested reentrant"
-      (let ((f (lambda ()
-                 (eval '(eval '(+ 2 3))))))
-        (assert-equal (f) 5)))
-
-    ;; Tag normalisation: compile error -> 'eval-error.
-    (test "eval: compile error raises eval-error"
-      (let ((tag #f))
-        (catch (lambda (t _) (set! tag t))
-          (eval '(undefined-function-xyz)))
-        (assert-equal tag 'eval-error)))
-
-    ;; User-tagged errors propagate untouched (NOT renamed to eval-error).
-    (test "eval: user tag preserved"
-      (let ((tag #f))
-        (catch (lambda (t _) (set! tag t))
-          (eval '(error 'my-tag "oops")))
-        (assert-equal tag 'my-tag)))
-
-    ;; GC stress while reentrant: the snapshot must keep stack values alive.
-    (test "eval: GC during reentrant eval preserves outer stack"
-      (let ((data (list 1 2 3 4 5)))
-        (eval '(begin
-                 (define (alloc-much) (make-vector 10000 0))
-                 (alloc-much) (alloc-much) (alloc-much)))
-        (assert-equal data '(1 2 3 4 5))))
-
-    ;; Causal estimand AST round-trip.
-    (test "eval: causal-style AST"
-      (let* ((ast '(begin (define %et-result (* 6 7)) %et-result)))
-        (assert-equal (eval ast) 42)))
-
-  ))
+(module __eta.eval.N
+  (define __eta_eval_fn_N
+    (lambda (x y z ...)
+      <expr_source>)))
 ```
 
-### Step 8 — C++ unit test (`eta/test/src/vm_eval_tests.cpp`)
+2. Compile+execute that module through the dedicated Driver API.
+3. Retrieve `__eta_eval_fn_N` as a closure.
+4. Invoke closure with captured binding values using `vm_.call_value`.
 
-Focused gtest that exercises the snapshot mechanism in isolation of the
-Driver:
-- `save_execution_state` clears live members.
-- `restore_execution_state` round-trips identical bytes.
-- Two concurrent snapshots stack correctly (LIFO).
-- `saved_executions()` count grows / shrinks as expected.
-- GC root walk visits values inside an active snapshot — allocate a unique
-  heap object, snapshot with it pinned in the outer `stack_`, force a GC,
-  restore, assert the object is still alive and its bit-pattern intact.
+This avoids serializing runtime values into source text. Lexical values are passed as real runtime values.
 
-### Step 9 — `hover_at` docstring
+### 5) Error propagation path
 
-```cpp
-{"eval",
- "**eval**  -  Compile and evaluate an expression in the current session "
- "environment.\n\n"
- "`(eval expr)`\n\n"
- "EXPR is typically a quoted list.  Self-evaluating values are returned "
- "unchanged.  Reentrant: safe to call from inside any function.  "
- "Compile / VM errors are caught with `(catch 'eval-error ...)`; user "
- "`raise`/`error` calls inside the evaluated code propagate with their "
- "original tag.\n\n"
- "**Note:** `eval` is a builtin — available without `(import ...)`."},
-```
+- Compilation-stage failures in `compile_eval_lambda`:
+  - convert diagnostics to `RuntimeError{VMError{RuntimeErrorCode::UserError, ...}}`
+  - no `tag_override`.
+- Runtime failures from `vm_.execute` and `vm_.call_value`:
+  - propagate unchanged (`return std::unexpected(err);`)
+  - preserves original runtime/user tags.
+
+### 6) GC reachability for saved executions
+
+Saved snapshots remain in `vm.saved_executions()` and are marked during GC root scan.
+
+When walking snapshot state, mark the actual VM fields:
+
+- `stack`, `temp_roots`, `pending_unwind_thunks`
+- `frames`: `closure` and `extra`
+- `catch_stack`: `tag` and `closure`
+- `winding_stack`: `before`, `body`, `after`
+- `pending_exception_transfer`: `closure`, `payload`
+- `current_closure` in snapshot (if non-nil)
+
+Factor live and snapshot root marking through shared helpers to avoid divergence.
+
+### 7) Registration strategy
+
+Keep existing patch-mode registration pattern:
+
+1. Add `r("eval", 1, false);` at end of core section in `builtin_names.h`.
+2. Add `eval` stub in `core_primitives.h` (must never run in practice).
+3. Add `BuiltinEnvironment::overwrite_func(name, func)`.
+4. In `Driver` constructor, after `verify_all_patched()`, overwrite `eval` with closure capturing `this`.
 
 ---
 
-## File change summary
+## Implementation Steps
+
+### Step 1 - VM execution snapshot support
+
+In `vm.h`/`vm.cpp`:
+
+- Add `ExecutionSnapshot`.
+- Add `saved_executions_`.
+- Add `save_execution_state()` / `restore_execution_state()`.
+- Add `execute_depth_` and update `is_executing()`.
+- Add RAII `ExecutionScope` helper for compile-time reentrant `execute()` calls.
+
+### Step 2 - Extend GC root walk
+
+In VM GC root enumeration (`VM::collect_garbage` root callback):
+
+- Mark all `saved_executions_` contents as described above.
+- Refactor with helper lambdas for live/snapshot traversal parity.
+
+### Step 3 - Builtin overwrite hook
+
+In `builtin_env.h`:
+
+```cpp
+void overwrite_func(std::string_view name, PrimitiveFunc func);
+```
+
+Validate name exists; replace function pointer in-place.
+
+### Step 4 - Register `eval` name and runtime stub
+
+- `builtin_names.h`: append `r("eval", 1, false);` in the core block.
+- `core_primitives.h`: add unreachable stub returning internal error text.
+
+### Step 5 - Add Driver lexical-binding capture helper
+
+In `driver.h`:
+
+- Add helper to collect lexical bindings from `vm_.get_locals(0)` and `vm_.get_upvalues(0)`.
+- Deduplicate and filter placeholders.
+
+### Step 6 - Add dedicated Driver eval APIs
+
+In `driver.h`:
+
+- `compile_eval_lambda(...)`:
+  - render temporary module source
+  - call `run_source_impl(...)` directly
+  - retrieve generated function binding as closure
+  - on diagnostics failure, return `RuntimeErrorCode::UserError` with diagnostics text
+- `invoke_eval_lambda(...)`:
+  - collect argument values from `EvalBinding`s
+  - call `vm_.call_value(...)`
+
+No REPL wrapping helpers are used.
+
+### Step 7 - Install real `eval` in Driver
+
+After `verify_all_patched()`:
+
+```cpp
+builtins_.overwrite_func("eval", [this](std::span<const LispVal> args) -> std::expected<LispVal, RuntimeError> { ... });
+```
+
+Primitive flow:
+
+1. Arity check.
+2. Fast path self-evaluating values.
+3. Capture lexical bindings.
+4. Render expr to write-source.
+5. Enter `ExecutionScope` and call `compile_eval_lambda`.
+6. Exit scope (outer VM state restored).
+7. Call `invoke_eval_lambda`.
+8. Return value or propagate error unchanged.
+
+### Step 8 - Eta tests (`stdlib/tests/eval.test.eta`)
+
+Add/replace tests to cover:
+
+- self-evaluating literals
+- quoted-list evaluation
+- lexical local lookup:
+  - `(let ((x 10)) (eval '(+ x 5))) => 15`
+- upvalue lookup:
+  - eval inside lambda closes over outer `x`
+- local-over-upvalue precedence
+- nested eval
+- strict tag preservation:
+  - runtime tag preserved (e.g. `runtime.type-error`)
+  - user tag preserved (`my-tag`)
+- compile-path failure is `runtime.user-error` (no `eval-error`)
+- reentrant recursion stress
+- GC stress while reentrant compile path runs
+
+### Step 9 - C++ unit tests
+
+Add focused tests for:
+
+- `save_execution_state`/`restore_execution_state` round-trip.
+- snapshot LIFO nesting.
+- `execute_depth_` behavior around `execute()`.
+- GC roots include saved snapshots.
+- Driver eval API compiles via direct path (not REPL wrappers).
+
+### Step 10 - Docs and tooling
+
+- `hover_at` docstring for `eval` must not mention `eval-error`.
+- Update reference docs to describe strict tag preservation and lexical-environment behavior.
+- Add editor snippet for `(eval expr)` if desired.
+
+---
+
+## File Change Summary
 
 | File | Change |
 |---|---|
-| `eta/core/src/eta/runtime/vm/vm.h` | `ExecutionSnapshot`, `save/restore_execution_state`, `saved_executions_`, `is_executing()` |
-| `eta/core/src/eta/runtime/vm/vm.cpp` | Implementations (no change to `execute()` itself; it already resets cleanly) |
-| `eta/core/src/eta/runtime/memory/gc/mark_sweep.cpp` (or wherever GC roots are enumerated) | Walk `vm.saved_executions()` during root marking |
+| `eta/core/src/eta/runtime/vm/vm.h` | `ExecutionSnapshot`, `saved_executions_`, `execute_depth_`, save/restore API |
+| `eta/core/src/eta/runtime/vm/vm.cpp` | save/restore implementation, `is_executing` depth semantics, GC root walk for snapshots |
 | `eta/core/src/eta/runtime/builtin_env.h` | `overwrite_func(name, func)` |
-| `eta/core/src/eta/runtime/builtin_names.h` | `r("eval", 1, false);` at end of core block |
-| `eta/core/src/eta/runtime/core_primitives.h` | Unreachable stub for `eval` |
-| `eta/session/src/eta/session/driver.h` | `ExecutionScope` RAII; install reentrant `eval` after `verify_all_patched()`; add `"eval"` to `keyword_docs` |
-| `stdlib/tests/eval.test.eta` | New — 13 tests including reentrancy, nesting, tag preservation, GC stress |
-| `eta/test/src/vm_eval_tests.cpp` | New — C++ unit test for snapshot mechanism |
-| `docs/guide/reference/eval.md` | New reference page |
-| `docs/guide/reference/README.md` | Add `eval.md` row |
-| `editors/vscode/snippets/eta.json` | Add `eval` snippet |
-
-*No change to `stdlib/std/core.eta` — builtins are globally visible without export.*
+| `eta/core/src/eta/runtime/builtin_names.h` | add `eval` builtin name metadata |
+| `eta/core/src/eta/runtime/core_primitives.h` | add eval stub placeholder |
+| `eta/session/src/eta/session/driver.h` | lexical binding capture, `compile_eval_lambda`, `invoke_eval_lambda`, real eval install |
+| `stdlib/tests/eval.test.eta` | revised tests for lexical env + strict tag preservation |
+| `eta/test/src/*` | C++ unit tests for snapshot/depth/eval API behavior |
+| `docs/guide/reference/eval.md` | reference page |
+| `docs/guide/reference/README.md` | index entry |
+| `editors/vscode/snippets/eta.json` | optional eval snippet |
 
 ---
 
-## Acceptance criteria
+## Acceptance Criteria
 
-1. All 13 tests in `eval.test.eta` pass, including all reentrancy and
-   nesting scenarios.
-2. C++ unit test passes: snapshot/restore round-trip, LIFO nesting, GC root
-   walk into snapshots.
-3. `(eval '(+ 1 2))` returns `3` in `etai` REPL, Jupyter cell, script
-   entry-point, **and** from inside any function/lambda.
-4. `(define f (lambda () (eval '(* 6 7))))` followed by `(f)` returns `42`.
-5. Compile errors in eval'd code raise `'eval-error`.
-6. User `(error 'my-tag "...")` inside eval'd code raises `'my-tag` (not
-   renamed).
-7. GC during reentrant `eval` does not free objects reachable only from the
-   outer snapshot's stack/frames.
-8. `eval` from a `spawn-thread` worker evaluates in the child VM without
-   touching the parent.
-9. `.etac` files compiled before this change are detected as mismatched
-   (`builtin_count` changed); clear error message emitted.
-10. `hover_at("eval")` returns the documented markdown in LSP / VS Code.
+1. `(let ((x 10)) (eval '(+ x 5)))` returns `15`.
+2. Eval inside lambda sees upvalues from lexical scope.
+3. Runtime errors inside eval preserve existing runtime tags.
+4. `(raise 'my-tag ...)` inside eval is catchable as `'my-tag` (unchanged).
+5. No code path emits or relies on `'eval-error`.
+6. Eval compilation path does not use REPL wrapping helpers.
+7. Reentrant eval from inside running VM frames is safe (no frame/stack corruption).
+8. GC during reentrant compile/eval does not free snapshot-reachable values.
+9. `.etac` builtin-count mismatch behavior remains correct after adding `eval`.
+10. Hover/docs match implemented semantics.
 
 ---
 
-## Non-goals (this iteration)
+## Non-goals (This Iteration)
 
-- `(eval expr env)` — needs first-class environment objects.
-- `(compile expr)` — needs callable closure pre-allocation.
-- `load` / `load-relative` — covered by `(import ...)` and
-  `Driver::run_file`.
-- `eval-when` — compile-time evaluation hooks; separate concern.
-- Sandboxed `eval` (no session mutation) — defer until a concrete need
-  emerges; would be a separate `eval/sandbox` builtin that additionally
-  snapshots and rolls back trail/globals/constraint store.
-- Security boundary for untrusted input — `eval` has full session access;
-  document and leave to callers.
+- `(eval expr env)` API with first-class environment objects.
+- Sandboxed eval variants.
+- Global performance optimizations for repeated eval compilation (cache/JIT).
+- Full write-through mutation of outer lexical slots via nested `set!` inside eval.
+  - v1 guarantees lexical name resolution for reads.
 
 ---
 
-## Risks and mitigations
+## Risks and Mitigations
 
 | Risk | Mitigation |
 |---|---|
-| GC misses values inside a snapshot → use-after-free | C++ unit test explicitly forces GC with reachable-only-via-snapshot objects |
-| Snapshot vector copy is O(stack-size) per `eval` call | Snapshots use `std::move`; only baseline-clear costs are paid (vector `clear()` is O(0) for trivially-destructible elements; `Frame`/`LispVal` are trivial) |
-| Trail not snapshotted → eval'd `unify` leaks into outer search | Documented; if a real test fails we add `eval/sandbox` |
-| `pending_exception_transfer_` left in a bad state by failed eval | RAII `ExecutionScope` destructor restores it unconditionally |
-| `frames_` sentinel pushed by inner `execute()` not popped on error | Not an issue: snapshot replaces `frames_` wholesale on restore |
-| `BytecodeFunction*` in snapshot dangles if its module is hot-reloaded mid-eval | Out of scope; modules are not hot-reloaded mid-`eval` in current Driver |
-| `process_pending_finalizers()` in inner `execute()` runs Eta finalizers that themselves call `eval` | Already supported — finalizers run via `call_value`, which sees `current_func_ == nullptr` after the inner `execute()` returns; `ExecutionScope` is reentrant |
+| Snapshot roots missed -> use-after-free | Explicit snapshot root tests + shared live/snapshot marking helpers |
+| Reentrancy guard misses `execute` window | `execute_depth_` instead of `current_func_`-only checks |
+| Lexical placeholder names leak into params | filter `%<n>` / `&<n>` and empty names before lambda generation |
+| Compilation diagnostics lose context | propagate full `diagnostics_to_string()` in `runtime.user-error` |
+| Repeated eval compilation overhead | acceptable for v1; profile and add cache as follow-up if needed |
 
