@@ -11,6 +11,8 @@
 >   end-to-end primer (3-node DAG, single confounder) combining symbolic
 >   differentiation, do-calculus identification, `findall` + CLP
 >   validation, and a libtorch neural ATE.
+> - [`causal-counterfactual.md`](./causal-counterfactual.md) - focused
+>   counterfactual reference for twin networks, ID*, IDC*, and ETT.
 > - [`portfolio.md`](../../featured_examples/portfolio.md) — full institutional pipeline:
 >   6-node macro DAG, AAD risk sensitivities, CLP(R) + QP allocation,
 >   scenario stress, dynamic control.
@@ -364,6 +366,28 @@ source-domain interventional information:
 
 ---
 
+## Counterfactual Queries
+
+For counterfactual graph transforms and pragmatic ID*/IDC* wrappers:
+
+```scheme
+(import std.causal.counterfactual)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(twin-network g intervened-vars)` | Build a twin network with primed counterfactual copies and shared latent links for non-intervened variables |
+| `(id* g gamma)` | Counterfactual identification entry point for conjunctions of `Y_X` events |
+| `(idc* g gamma delta)` | Conditional counterfactual identification entry point |
+| `(do:ett g y x x*)` | Effect of treatment on the treated query `P(Y_x | X=x*)` |
+
+Current scope:
+- `id*`/`idc*` normalize counterfactual event syntax and reuse `std.causal.identify` (`id`/`idc`) for estimand construction.
+- `gamma` is represented as a list of events `(Y X)` where `X` is a symbol or symbol list.
+- `delta` is represented as assignment-like entries where the first element names the conditioned variable.
+
+---
+
 ## Numeric Estimation
 
 ### The Back-Door Adjustment Formula
@@ -515,6 +539,7 @@ analysis:
 | ADMG ID/IDC algorithms               | [`stdlib/std/causal/identify.eta`](../../../stdlib/std/causal/identify.eta)               |
 | Mediation effect estimators          | [`stdlib/std/causal/mediation.eta`](../../../stdlib/std/causal/mediation.eta)             |
 | Transportability helpers             | [`stdlib/std/causal/transport.eta`](../../../stdlib/std/causal/transport.eta)             |
+| Counterfactual helpers               | [`stdlib/std/causal/counterfactual.eta`](../../../stdlib/std/causal/counterfactual.eta)   |
 | Estimation backends (M9a)            | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
 | Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |

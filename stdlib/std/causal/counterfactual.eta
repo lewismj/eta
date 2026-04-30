@@ -1,0 +1,273 @@
+;;; std/causal/counterfactual.eta -- Counterfactual graph transforms and queries.
+;;;
+;;; Public API:
+;;;   (twin-network g intervened-vars)
+;;;     Build a twin network by duplicating the graph into a counterfactual
+;;;     world with primed variable names. Incoming causal mechanisms for
+;;;     intervened variables are removed in the counterfactual world.
+;;;   (id* g gamma)
+;;;     Pragmatic ID* entry point for conjunctions of events Y_X.
+;;;     Delegates to ID after extracting outcome and intervention variables.
+;;;   (idc* g gamma delta)
+;;;     Pragmatic IDC* entry point for conditional counterfactuals.
+;;;     Delegates to IDC with conditioning variables extracted from `delta`.
+;;;   (do:ett g y x x*)
+;;;     Effect of treatment on the treated query:
+;;;       P(Y_x | X=x*)
+
+(module std.causal.counterfactual
+  (import std.core)
+  (import std.collections)
+  (import std.causal.identify)
+  (export twin-network id* idc* do:ett)
+  (begin
+
+    ;; -- Set helpers -----------------------------------------------------
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (defun %adjoin (x xs)
+      (if (%member? x xs) xs (cons x xs)))
+
+    (defun %set-diff (a b)
+      (filter (lambda (x) (not (%member? x b))) a))
+
+    (defun %normalize-vars (vars)
+      (let loop ((rest vars) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let ((v (car rest)))
+              (if (%member? v acc)
+                  (loop (cdr rest) acc)
+                  (loop (cdr rest) (cons v acc)))))))
+
+    (defun %as-node-set (x)
+      (cond
+        ((null? x) '())
+        ((symbol? x) (list x))
+        ((list? x) (%normalize-vars x))
+        (else (error "expected symbol or list of symbols"))))
+
+    (defun %assert-vars (nodes vars)
+      (if (null? vars)
+          'ok
+          (begin
+            (if (%member? (car vars) nodes)
+                'ok
+                (error 'unknown-variable (car vars)))
+            (%assert-vars nodes (cdr vars)))))
+
+    ;; -- Graph helpers ---------------------------------------------------
+
+    (defun %edge-from (e) (car e))
+    (defun %edge-kind (e) (cadr e))
+    (defun %edge-to (e) (caddr e))
+
+    (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
+
+    (defun %mixed-edge? (e)
+      (and (list? e)
+           (= (length e) 3)
+           (or (%directed-edge? e) (%bidirected-edge? e))))
+
+    (defun %assert-admg (g)
+      (if (every? %mixed-edge? g)
+          g
+          (error 'invalid-admg g)))
+
+    (defun %graph-nodes (g)
+      (foldl (lambda (acc e)
+               (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
+             '()
+             g))
+
+    (defun %edge-member? (e edges)
+      (any? (lambda (x) (equal? x e)) edges))
+
+    (defun %edge-adjoin (e edges)
+      (if (%edge-member? e edges) edges (cons e edges)))
+
+    ;; -- Counterfactual naming ------------------------------------------
+
+    (defun %fresh-cf-symbol (name used idx)
+      (let ((candidate
+              (if (= idx 0)
+                  (string->symbol (string-append name "'"))
+                  (string->symbol
+                    (string-append name "'" (number->string idx))))))
+        (if (%member? candidate used)
+            (%fresh-cf-symbol name used (+ idx 1))
+            candidate)))
+
+    (defun %cf-map (nodes)
+      (let loop ((rest nodes) (used nodes) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let* ((v (car rest))
+                   (v* (%fresh-cf-symbol (symbol->string v) used 0)))
+              (loop (cdr rest)
+                    (%adjoin v* used)
+                    (cons (cons v v*) acc))))))
+
+    (defun %cf-node (map var)
+      (let ((p (assq var map)))
+        (if p
+            (cdr p)
+            (error "missing counterfactual node mapping"))))
+
+    ;; -- Twin-network construction --------------------------------------
+
+    (defun %counterfactual-world-edges (g cf-map x-set)
+      (let loop ((rest g) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let* ((e (car rest))
+                   (a (%edge-from e))
+                   (k (%edge-kind e))
+                   (b (%edge-to e))
+                   (a* (%cf-node cf-map a))
+                   (b* (%cf-node cf-map b)))
+              (cond
+                ((%directed-edge? e)
+                 ;; do(X=...) removes incoming mechanisms into X in the
+                 ;; counterfactual world, so edges into X' are omitted.
+                 (if (%member? b x-set)
+                     (loop (cdr rest) acc)
+                     (loop (cdr rest)
+                           (%edge-adjoin (list a* '-> b*) acc))))
+                ((%bidirected-edge? e)
+                 ;; Intervened variables are detached from exogenous
+                 ;; disturbances in the counterfactual copy.
+                 (if (or (%member? a x-set) (%member? b x-set))
+                     (loop (cdr rest) acc)
+                     (loop (cdr rest)
+                           (%edge-adjoin (list a* '<-> b*) acc))))
+                (else
+                 (loop (cdr rest) acc)))))))
+
+    (defun %cross-world-latent-links (nodes cf-map x-set)
+      (foldl (lambda (acc v)
+               (if (%member? v x-set)
+                   acc
+                   (%edge-adjoin (list v '<-> (%cf-node cf-map v)) acc)))
+             '()
+             nodes))
+
+    ;; Build twin network over a mixed graph.
+    (defun twin-network (g intervened-vars)
+      (%assert-admg g)
+      (let* ((x-set (%as-node-set intervened-vars))
+             (nodes (%graph-nodes g))
+             (_ (%assert-vars nodes x-set))
+             (cf-map (%cf-map nodes))
+             (cf-edges (%counterfactual-world-edges g cf-map x-set))
+             (bridges (%cross-world-latent-links nodes cf-map x-set)))
+        (reverse
+          (foldl (lambda (acc e) (%edge-adjoin e acc))
+                 '()
+                 (append g cf-edges bridges)))))
+
+    ;; -- Counterfactual query normalization ------------------------------
+
+    (defun %gamma-event? (event)
+      (and (list? event)
+           (>= (length event) 2)
+           (symbol? (car event))
+           (let ((ix (cadr event)))
+             (or (null? ix)
+                 (symbol? ix)
+                 (and (list? ix) (every? symbol? ix))))))
+
+    (defun %normalize-gamma (gamma where)
+      (if (and (list? gamma) (every? %gamma-event? gamma))
+          gamma
+          (error (string-append where
+                                ": expected gamma as list of (Y X) events"))))
+
+    (defun %event-interventions (event where)
+      (let ((ix (cadr event)))
+        (cond
+          ((null? ix) '())
+          ((symbol? ix) (list ix))
+          ((and (list? ix) (every? symbol? ix)) (%normalize-vars ix))
+          (else
+           (error (string-append where
+                                 ": expected intervention symbols"))))))
+
+    (defun %gamma-y-vars (gamma)
+      (%normalize-vars (map* car gamma)))
+
+    (defun %gamma-x-vars (gamma where)
+      (%normalize-vars
+        (foldl (lambda (acc event)
+                 (append acc (%event-interventions event where)))
+               '()
+               gamma)))
+
+    (defun %delta-var (d where)
+      (cond
+        ((symbol? d) d)
+        ((and (list? d) (not (null? d)) (symbol? (car d))) (car d))
+        (else
+         (error (string-append where
+                               ": expected delta entries as symbols or (V value)")))))
+
+    (defun %delta-z-vars (delta where)
+      (if (list? delta)
+          (%normalize-vars (map* (lambda (d) (%delta-var d where)) delta))
+          (error (string-append where
+                                ": expected delta as a list of assignments"))))
+
+    ;; -- Counterfactual identification API ------------------------------
+
+    ;; Pragmatic ID*: normalize gamma and reduce to ID.
+    (defun id* (g gamma)
+      (%assert-admg g)
+      (let* ((gamma* (%normalize-gamma gamma "id*"))
+             (y-set (%gamma-y-vars gamma*))
+             (x-set (%gamma-x-vars gamma* "id*"))
+             (nodes (%graph-nodes g)))
+        (%assert-vars nodes y-set)
+        (%assert-vars nodes x-set)
+        (if (null? y-set)
+            (error "id*: expected at least one counterfactual outcome")
+            (if (null? x-set)
+                (list 'P y-set)
+                (do:simplify (id g y-set x-set))))))
+
+    ;; Pragmatic IDC*: normalize (gamma, delta) and reduce to IDC.
+    (defun idc* (g gamma delta)
+      (%assert-admg g)
+      (let* ((gamma* (%normalize-gamma gamma "idc*"))
+             (y-set (%gamma-y-vars gamma*))
+             (x-set (%gamma-x-vars gamma* "idc*"))
+             (z-set (%delta-z-vars delta "idc*"))
+             (nodes (%graph-nodes g)))
+        (%assert-vars nodes y-set)
+        (%assert-vars nodes x-set)
+        (%assert-vars nodes z-set)
+        (if (null? y-set)
+            (error "idc*: expected at least one counterfactual outcome")
+            (if (null? x-set)
+                (if (null? z-set)
+                    (list 'P y-set)
+                    (list 'cond-on
+                          (list 'P (%normalize-vars (append y-set z-set)))
+                          (list 'P z-set)))
+                (do:simplify (idc g y-set x-set (%set-diff z-set x-set)))))))
+
+    ;; Effect of treatment on the treated.
+    (defun do:ett (g y x x*)
+      (if (not (symbol? y))
+          (error "do:ett: expected symbol for outcome variable")
+          (if (not (symbol? x))
+              (error "do:ett: expected symbol for treatment variable")
+              (idc* g (list (list y x))
+                    (list (list x x*))))))
+
+  ))

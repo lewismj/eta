@@ -1,0 +1,51 @@
+;;; stdlib/tests/causal-counterfactual.test.eta -- Tests for std.causal.counterfactual
+
+(module causal.counterfactual.tests
+  (import std.test
+          std.causal.counterfactual
+          std.causal.identify
+          std.core
+          std.collections)
+  (begin
+
+    (defun fail? (expr)
+      (and (pair? expr)
+           (eq? (car expr) 'fail)))
+
+    (defun edge-member? (edge g)
+      (any? (lambda (e) (equal? e edge)) g))
+
+    (defun prime (v)
+      (string->symbol (string-append (symbol->string v) "'")))
+
+    (define suite
+      (make-group "std.causal.counterfactual"
+        (list
+          (make-test "twin-network duplicates graph and removes incoming edges to intervened copy"
+            (lambda ()
+              (let* ((g '((z -> x) (x -> y) (z <-> y)))
+                     (tw (twin-network g '(x))))
+                (assert-true (edge-member? '(z -> x) tw))
+                (assert-true (edge-member? (list (prime 'x) '-> (prime 'y)) tw))
+                (assert-false (edge-member? (list (prime 'z) '-> (prime 'x)) tw))
+                (assert-true (edge-member? (list 'z '<-> (prime 'z)) tw))
+                (assert-false (edge-member? (list 'x '<-> (prime 'x)) tw)))))
+
+          (make-test "id* on front-door graph matches ID estimand"
+            (lambda ()
+              (let ((g '((x -> m) (m -> y) (x <-> y))))
+                (assert-equal (do:simplify (id g '(y) '(x)))
+                              (id* g '((y x)))))))
+
+          (make-test "idc* uses conditioning variables from delta assignments"
+            (lambda ()
+              (let ((g '((x -> y) (z -> y))))
+                (assert-equal (do:simplify (idc g '(y) '(x) '(z)))
+                              (idc* g '((y x)) '((z 1)))))))
+
+          (make-test "ETT identifiable in front-door graph"
+            (lambda ()
+              (let ((g '((x -> m) (m -> y) (x <-> y))))
+                (assert-false (fail? (do:ett g 'y 'x 0)))))))))
+
+    (print-tap (run suite))))
