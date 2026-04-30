@@ -44,7 +44,8 @@ chapter there links into the relevant pages here.
 | [`stats.md`](./stats.md)                             | `std.stats`           |
 | [`aad.md`](./aad.md)                                 | `std.aad`             |
 | [`torch.md`](./torch.md)                             | `std.torch`           |
-| [`causal.md`](./causal.md)                           | `std.causal`          |
+| [`causal.md`](./causal.md)                           | `std.causal` (+ `.admg`, `.identify`, `.adjustment`, `.mediation`, `.transport`, `.estimate`, `.learn`, `.render`) |
+| [`causal-counterfactual.md`](./causal-counterfactual.md) | `std.causal.counterfactual` |
 | [`message-passing.md`](./message-passing.md)         | Actor model           |
 | [`networking.md`](./networking.md)                   | nng primitives        |
 | [`network-message-passing.md`](./network-message-passing.md) | Cross-machine actors |

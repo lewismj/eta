@@ -13,7 +13,12 @@ target_include_directories(etac
 )
 
 target_link_libraries(etac PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
-target_compile_definitions(etac PRIVATE ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
+target_compile_definitions(etac PRIVATE
+    ETA_HAS_TORCH=1
+    ETA_HAS_NNG=1
+    ETA_HAS_STATS=1
+    ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
+)
 eta_copy_torch_dlls(etac)
 eta_copy_nng_dlls(etac)
 eta_copy_log_dlls(etac)

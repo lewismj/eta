@@ -597,20 +597,49 @@ columnar store with hash-indexed lookups for analytics workloads — see
 
 ## 18. Causal Inference
 
-`std.causal` implements Pearl's do-calculus on user-defined DAGs:
-back-door / front-door identification, instrumental variables, and
-conditional ATE estimation. Identification is symbolic; estimation
-plugs into any conditional-expectation oracle (closed form, regression,
-or a libtorch model).
+The `std.causal` family is a research-grade causal-inference stack:
+ADMGs with bidirected edges, linear-time d-separation (Bayes-ball),
+Pearl's three rules, the **ID** and **IDC** algorithms (Shpitser &
+Pearl) with hedge witnesses, generalised adjustment / front-door /
+IV criteria, mediation (NDE / NIE / CDE), transportability,
+counterfactuals (twin networks, ID*, ETT), AIPW / TMLE / IPW /
+g-formula estimators with bootstrap CIs, PC / FCI / NOTEARS-style
+structure learning, and DOT / Mermaid / LaTeX rendering.
+
+A graph is just an edge list — `->` is a directed edge, `<->` an
+unobserved-confounder bidirected edge:
 
 ```scheme
-(import std.causal)
-(define dag (causal:dag '((Z X) (X Y) (Z Y))))
-(do:identify dag 'X 'Y)        ; => back-door adjustment formula
+(import std.causal std.causal.identify)
+
+(define finance-dag
+  '((sector      -> market-beta)
+    (sector      -> stock-return)
+    (market-beta -> stock-return)))
+
+(do:identify finance-dag 'stock-return 'market-beta)
+;; => (adjust (sector) (P stock-return market-beta (sector)) (P (sector)))
+
+(id '((x -> m) (m -> y) (x <-> y)) '(y) '(x))
+;; => (sum (m) (prod (P (m x)) (sum (x*) (prod (P (y x* m)) (P (x*))))))
 ```
 
-> **References:** [`causal.md`](./reference/causal.md);
-> example: [`examples/causal_demo.eta`](../../examples/causal_demo.eta).
+| Module | Scope |
+| :----- | :---- |
+| `std.causal`                  | DAG utilities, do-calculus rules, back-door identification, plug-in adjustment |
+| `std.causal.admg`             | ADMGs, bidirected edges, latent projection, c-components |
+| `std.causal.identify`         | ID / IDC algorithms, hedge detection, estimand simplifier |
+| `std.causal.adjustment`       | Generalised adjustment, front-door, IV |
+| `std.causal.mediation`        | Natural / controlled direct & indirect effects |
+| `std.causal.transport`        | Selection diagrams, sBD criterion, transport queries |
+| `std.causal.counterfactual`   | Twin networks, ID* / IDC*, effect-of-treatment-on-treated |
+| `std.causal.estimate`         | g-formula, IPW, AIPW, TMLE, bootstrap CIs, sensitivity |
+| `std.causal.learn`            | PC / FCI / GES / NOTEARS structure learning, CI tests |
+| `std.causal.render`           | DOT, Mermaid, LaTeX renderers; `define-dag` macro |
+
+> **Reference:** [`causal.md`](./reference/causal.md);
+> counterfactual deep-dive [`causal-counterfactual.md`](./reference/causal-counterfactual.md);
+> end-to-end example [`examples/causal_demo.eta`](../../examples/causal_demo.eta).
 
 ---
 

@@ -807,7 +807,10 @@ The headline line is the **CP-17 row**:
 | **Standard errors on β** — sandwich estimator off the same backward pass | `parameters`, `mse-loss` already in scope |
 | **Hypothesis-test WWR** — "wrong-way" becomes a signed t-test on β > 0 | builds on `learned-cp-sensitivity` |
 | **Causal audit report** — `scm:causal-audit` (identify status + Rule 1/2/3 checks + IDC statuses + ADMG bow/front-door statuses) printed before §6 | `stdlib/std/causal.eta`, `stdlib/std/causal/identify.eta` |
-| **Recalibration sensitivity** — perturb the DGP (more noise, dropped column, deliberate confounder) and watch recovery error grow | swap the `noise-sigma` arg of `generate-shock-panel` |
+| **Recalibration sensitivity** — perturb the DGP (more noise, dropped column, deliberate confounder) and watch recoverability error grow | swap the `noise-sigma` arg of `generate-shock-panel` |
+| **Doubly-robust β check** — re-estimate the per-CP elasticity via `do:ate-aipw` on the synthetic panel and bracket it with `do:bootstrap-ci` | `stdlib/std/causal/estimate.eta` |
+| **Structure-learning recoverability** — recover the SCM skeleton from the same panel via `learn:pc` / `learn:notears`; flag the run if the recovered CPDAG is not Markov-equivalent to `scm` | `stdlib/std/causal/learn.eta` |
+| **Unmeasured-confounding bound** — VanderWeele E-value and Rosenbaum bound on the headline ε(CP-17) so the deck can quote *how strong* an omitted driver would have to be to overturn the result | `(do:e-value 3.726)`, `(do:rosenbaum-bound 3.726 1.5)` |
 
 
 ---
@@ -954,6 +957,25 @@ oil ──→ usd-rates ───┐
   │                                   ├──→ CVA
   └──→ energy-credit ──→ hazard ──────┘
 ```
+
+> [!TIP]
+> **The causal-audit block is replayable.** The status lines printed
+> before §6 come from the same `std.causal.identify` surface; each can
+> be re-evaluated directly against the SCM literal:
+>
+> ```scheme
+> (import std.causal.identify)
+>
+> (id scm '(hazard) '(oil))                 ;; identifiable, returns estimand
+> (id '((oil -> hazard) (oil <-> hazard))   ;; bow stress motif
+>     '(hazard) '(oil))
+> ;; => (fail (hedge ...))                  ;; auditable witness, not a silent #f
+> ```
+>
+> Programmatic rendering of the SCM (Mermaid / DOT / LaTeX) and the
+> compile-time-validated `define-dag` form are covered in
+> [Appendix D](#appendix-d--visualisation); they are presentation
+> conveniences and are kept out of the intervention-semantics narrative.
 
 A `do(var = value)` intervention surgically removes the incoming edges
 to `var`, sets it to `value`, and re-runs the downstream mechanisms.
@@ -1244,6 +1266,45 @@ sweep is one line:
 > preserved across **every** perturbation, and rank inversions occur
 > in **1.5 %** of draws (always between CP-09 and CP-22, never
 > displacing CP-17). The headline survives.
+
+### 7d — Causal-Toolkit Cross-Checks
+
+§7c addresses *parameter* noise on the βs. Two further questions need
+the wider `std.causal` surface — sensitivity analysis and structure
+learning:
+
+1. **Could an unmeasured confounder explain ε(CP-17) away?** —
+   `do:e-value` / `do:rosenbaum-bound` from `std.causal.estimate` give
+   scalar sensitivity envelopes, so the headline can be quoted *with*
+   a robustness number rather than as a point estimate.
+2. **Does the assumed SCM skeleton survive a structure-learning
+   sanity check?** — `learn:pc` / `learn:notears` from
+   `std.causal.learn` re-derive the skeleton from the same shock ×
+   hazard panel as §3a; if the recovered CPDAG is not Markov-equivalent
+   to `scm`, the SCM and the data-generating process disagree even
+   before §6 is run.
+
+```scheme
+(import std.causal.estimate std.causal.learn)
+
+;; (1) Sensitivity: how strong would an omitted driver have to be?
+(do:e-value 3.726)               ;; => ~6.93   (large; ε is robust)
+(do:rosenbaum-bound 3.726 1.5)   ;; => (lower . upper) bracket at Γ = 1.5
+
+;; (2) Recover the SCM skeleton from the same panel used in §3a.
+(define panel (generate-shock-panel 500 0.05 20260427))
+(define obs   (panel->obs panel))                 ; project to alist rows
+(define cpdag (learn:pc obs 0.01 learn:ci-test:fisher-z))
+;; Expect (oil -- usd-rates), (oil -- fx-usd), (oil -- energy-credit),
+;; (energy-credit -- hazard) etc.; collider orientation around `hazard`
+;; reproduces the literal `scm` up to Markov equivalence.
+```
+
+The two checks turn §7c's parameter-stability story into a fully
+defensible **structural** stability story: ε(CP-17) survives β
+perturbation (§7c), survives plausible unmeasured confounding
+(`do:e-value`), and the SCM that licenses the `do(...)` interpretation
+is empirically *consistent* with the synthetic panel (`learn:pc`).
 
 ---
 
@@ -1619,6 +1680,36 @@ elasticities, QP feasibility) should remain identical.
 
 ---
 
+## Appendix D — Visualisation
+
+The §6 SCM ASCII diagram can be regenerated from the same edge-list
+literal that drives identification, via `std.causal.render`:
+
+```scheme
+(import std.causal.render)
+
+(define-dag scm
+  (oil           -> usd-rates)
+  (oil           -> fx-usd)
+  (oil           -> energy-credit)
+  (usd-rates     -> exposure)
+  (fx-usd        -> exposure)
+  (energy-credit -> hazard))
+
+(display (dag:->mermaid scm))                                  ; notebook / dashboard
+(display (dag:->dot     scm '((title . "WWR SCM") (rankdir . "LR"))))
+(display (dag:->latex   scm))                                  ; paper-ready
+```
+
+`define-dag` is the compile-time-validated form: malformed edges and
+cycles are rejected at expansion. The runtime APIs above also accept
+any edge-list literal directly. Rendering is a presentation
+convenience — it does not participate in identification, intervention
+semantics or estimation, and the headline numbers in §6 / §7 are
+unchanged whether the graph is hand-drawn or machine-emitted.
+
+---
+
 ## Future Extensions
 
 | Extension | Effort | Impact |
@@ -1630,6 +1721,8 @@ elasticities, QP feasibility) should remain identical.
 | **Richer causal audit rendering** | Extend report rendering to print full simplified ID/IDC estimands (not just status lines) | Deeper traceability from identification assumptions to stress outputs |
 | **Distributed sweep** | `counterfactual-sweep` over `worker-pool` + IPC | True OS-level parallel scenarios with fault isolation |
 | **Real CDS curve** | Replace `base-hazard` closed form with bootstrapped CDS panel data | Production-grade hazard term structures |
+| **CATE meta-learner per CP** | Layer an S/T/X/R/DR meta-learner on top of the AIPW pseudo-outcome already wired in §7d | Per-counterparty heterogeneous WWR sensitivity, not just an average ε |
+| **Cross-fitted DML for ε** | Wrap §3a's panel in a Double-ML cross-fitting loop with MLP nuisances | Asymptotically valid CIs for the headline elasticity without bootstrapping |
 
 ---
 
@@ -1639,6 +1732,7 @@ elasticities, QP feasibility) should remain identical.
 |---|---|
 | **xVA WWR Demo** | [`examples/xva-wwr/main.eta`](../../examples/xva-wwr/main.eta) |
 | Causal infrastructure | [`stdlib/std/causal.eta`](../../stdlib/std/causal.eta) |
+| ID/IDC, ADMG, adjustment, learn, render, estimate | [`stdlib/std/causal/`](../../stdlib/std/causal) |
 | AAD primitives | [`stdlib/std/aad.eta`](../../stdlib/std/aad.eta) |
 | CLP(R) | [`stdlib/std/clpr.eta`](../../stdlib/std/clpr.eta) |
 | libtorch | [`stdlib/std/torch.eta`](../../stdlib/std/torch.eta) |

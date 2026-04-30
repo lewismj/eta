@@ -21,18 +21,31 @@
 
 ## Overview
 
-This page is the **API reference** for Eta's causal inference layer:
-the `std.causal` module plus the supporting `examples/do-calculus/`
-programs and the [`examples/causal_demo.eta`](../../../examples/causal_demo.eta)
-primer.
+This page is the **API reference** for Eta's causal-inference stack.
+The implementation is research-grade and covers Pearl's identification
+and estimation surface end-to-end:
 
-The layer combines:
+| Layer | Module | Status |
+| :---- | :----- | :----- |
+| DAG utilities, do-calculus rules, back-door identification, plug-in adjustment | `std.causal`               | ✅ |
+| ADMGs, bidirected edges, latent projection, c-components                       | `std.causal.admg`          | ✅ |
+| ID / IDC algorithms, hedge detection, estimand simplifier                      | `std.causal.identify`      | ✅ |
+| Generalised adjustment, front-door, instrumental variables                     | `std.causal.adjustment`    | ✅ |
+| Mediation (NDE / NIE / CDE)                                                    | `std.causal.mediation`     | ✅ |
+| Selection diagrams, sBD criterion, transport queries                           | `std.causal.transport`     | ✅ |
+| Twin networks, ID* / IDC*, effect-of-treatment-on-the-treated                  | `std.causal.counterfactual`| ✅ |
+| g-formula, IPW, AIPW, TMLE, bootstrap CIs, E-value, Rosenbaum bounds           | `std.causal.estimate`      | ✅ |
+| PC / FCI / GES / NOTEARS structure learning + CI tests                         | `std.causal.learn`         | ✅ |
+| DOT, Mermaid and LaTeX rendering, `define-dag` macro                           | `std.causal.render`        | ✅ |
 
-- **`std.logic`** — structural unification and backtracking (symbolic
-  reasoning over causal graphs)
-- **`std.clp`** — constraint logic programming (bounding probability
-  estimands, feasibility checks)
-- **`std.causal`** — DAG utilities + Pearl's do-calculus engine
+The layer also composes with:
+
+- **`std.logic`** — structural unification and backtracking
+- **`std.clp`** / **`std.clpr`** — bounding probability estimands and
+  feasibility checks
+- **`std.stats`** — Fisher-z residualisation for CI tests, OLS / GLS for
+  outcome and propensity models
+- **`std.torch`** — neural propensity / outcome models for `std.causal.estimate`
 
 The finance-oriented running example estimates the **causal effect of
 market-beta exposure on excess stock returns**, adjusting for sector
@@ -297,6 +310,34 @@ The returned AST uses:
 - `(cond-on expr cond)` for conditional forms
 - `(fail (hedge ...))` for non-identifiable queries
 
+### Worked examples
+
+```scheme
+(import std.causal.identify)
+
+;; Direct effect — trivial conditional.
+(id '((x -> y)) '(y) '(x))
+;; => (P (y x))
+
+;; Front-door (X -> M -> Y, X <-> Y latent confounder).
+(id '((x -> m) (m -> y) (x <-> y)) '(y) '(x))
+;; => (sum (m)
+;;      (prod (P (m x))
+;;            (sum (x*) (prod (P (y x* m)) (P (x*))))))
+
+;; Bow graph — non-identifiable, returns a hedge witness.
+(id '((x -> y) (x <-> y)) '(y) '(x))
+;; => (fail (hedge ...))
+
+;; Napkin graph — identifiable through W1, W2.
+(id '((w1 -> w2) (w2 -> x) (x -> y) (w1 <-> x) (w1 <-> y)) '(y) '(x))
+;; => (sum ...)   ; not a hedge
+
+;; IDC: condition on Z.
+(idc '((x -> y) (z -> y)) '(y) '(x) '(z))
+;; => (P (y x z))
+```
+
 ---
 
 ## Adjustment, Front-Door, and IV
@@ -368,7 +409,7 @@ source-domain interventional information:
 
 ## Counterfactual Queries
 
-For counterfactual graph transforms and pragmatic ID*/IDC* wrappers:
+For counterfactual graph transforms and ID*/IDC* wrappers:
 
 ```scheme
 (import std.causal.counterfactual)
@@ -381,10 +422,8 @@ For counterfactual graph transforms and pragmatic ID*/IDC* wrappers:
 | `(idc* g gamma delta)` | Conditional counterfactual identification entry point |
 | `(do:ett g y x x*)` | Effect of treatment on the treated query `P(Y_x | X=x*)` |
 
-Current scope:
-- `id*`/`idc*` normalize counterfactual event syntax and reuse `std.causal.identify` (`id`/`idc`) for estimand construction.
-- `gamma` is represented as a list of events `(Y X)` where `X` is a symbol or symbol list.
-- `delta` is represented as assignment-like entries where the first element names the conditioned variable.
+Event syntax and a fuller worked example live on the
+[counterfactual reference page](./causal-counterfactual.md).
 
 ---
 
@@ -408,6 +447,75 @@ For data-driven structure learning helpers:
 CPDAG edge format:
 - directed edge: `(u -> v)`
 - undirected edge: `(u -- v)`
+
+### Worked example
+
+```scheme
+(import std.causal.learn)
+
+;; Linear-Gaussian chain  a -> b -> c.
+(define chain-data
+  (let loop ((i 0) (acc '()))
+    (if (= i 240)
+        (reverse acc)
+        (let* ((a (- (* 1.0 i) 120.0))
+               (b (+ (* 0.9 a) (if (even? i) 0.15 -0.15)))
+               (c (+ (* 0.9 b) (if (zero? (modulo i 3)) 0.10 -0.10))))
+          (loop (+ i 1)
+                (cons (list (cons 'a a) (cons 'b b) (cons 'c c))
+                      acc))))))
+
+(learn:pc chain-data 0.01 learn:ci-test:fisher-z)
+;; => CPDAG containing (a -- b) (b -- c) ; long edge a-c removed.
+
+(learn:notears chain-data 0.2 100)
+;; => ((a -> b) (b -> c))   ; transitive a->c reduced away.
+
+(learn:ci-test:fisher-z chain-data 'a 'c '(b) 0.05)
+;; => (#t . p-value)   ; conditionally independent given the mediator.
+```
+
+---
+
+## Rendering and the `define-dag` macro
+
+For visualisation and validated graph literals:
+
+```scheme
+(import std.causal.render)
+```
+
+| Function / form | Description |
+| --------------- | ----------- |
+| `(dag:->dot g [opts])` | Graphviz DOT (directed `->`, dashed bidirected `<->`, undirected `--`). Options alist supports `(title . "...")` and `(rankdir . "LR")` |
+| `(dag:->mermaid g)`    | Mermaid `flowchart LR` with deterministic node ids |
+| `(dag:->latex g)`      | Compact LaTeX math expression with `\to` and `\leftrightarrow` |
+| `(define-dag name edge ...)` | Macro that validates edges (`->` and `<->`) and acyclicity at expansion time |
+
+```scheme
+(define-dag finance-dag
+  (sector      -> market-beta)
+  (sector      -> stock-return)
+  (market-beta -> stock-return))
+
+(dag:->mermaid '((a -> b) (a <-> c) (b -- c)))
+;; flowchart LR
+;;   n0["a"]
+;;   n1["b"]
+;;   n2["c"]
+;;   n0 --> n1
+;;   n0 -.-> n2
+;;   n2 -.-> n0
+;;   n1 --- n2
+
+(dag:->dot finance-dag '((title . "Finance DAG") (rankdir . "TB")))
+;; digraph "Finance DAG" {
+;;   rankdir=TB;
+;;   "market-beta" -> "stock-return";
+;;   "sector" -> "market-beta";
+;;   "sector" -> "stock-return";
+;; }
+```
 
 ---
 
@@ -438,47 +546,48 @@ Rendering conventions:
 
 ## Numeric Estimation
 
-### The Back-Door Adjustment Formula
+Once an estimand is identified, two estimation surfaces are available:
 
-Once `do:identify` returns the adjustment formula, it can be evaluated
-numerically against observational data:
+1. **Plug-in stratified adjustment** — bundled in `std.causal`,
+   evaluates the back-door formula directly from the data.
+2. **Modern estimators** — in `std.causal.estimate`:
+   g-formula, IPW, AIPW, TMLE, plus bootstrap CIs and sensitivity tools.
+
+### 1. Plug-in adjustment (`std.causal`)
+
+For the finance DAG the back-door formula is
 
 ```
 E[Y | do(X=x)] = Σ_s  E[Y | X=x, sector=s]  ·  P(sector=s)
 ```
 
-`std.causal` provides `do:estimate-effect` and `do:conditional-mean` for
-this purpose, using plain Eta arithmetic:
+`std.causal` evaluates it with plain Eta arithmetic:
 
 ```scheme
 (do:estimate-effect y-var x-var x-val z-set data)
 ;; legacy arity also accepted:
 ;; (do:estimate-effect y-var x-var x-val z-set z-val data)
-```
 
-```scheme
 (do:conditional-mean
-  (filter (lambda (obs) (= (assq 'sector obs) 'tech)) data)
+  (filter (lambda (obs) (eq? (cdr (assq 'sector obs)) 'tech)) data)
   'stock-return)
 ;; => sample mean of stock-return in the tech stratum
 ```
 
-### Estimation Backends 
+### 2. Modern estimators (`std.causal.estimate`)
 
-For practical ATE estimation from binary-treatment observational data:
+For practical ATE estimation on binary-treatment observational data:
 
 ```scheme
 (import std.causal.estimate)
 ```
-
-Available APIs:
 
 | Function | Description |
 | -------- | ----------- |
 | `(do:ate data y x z)` | Default ATE estimator (AIPW) |
 | `(do:ate-gformula data y x z)` | Stratified g-formula |
 | `(do:ate-ipw data y x z)` | Inverse-probability weighting |
-| `(do:ate-aipw data y x z)` | Augmented IPW (doubly robust form) |
+| `(do:ate-aipw data y x z)` | Augmented IPW (doubly robust) |
 | `(do:ate-tmle data y x z)` | One-step targeted minimum loss estimator |
 | `(do:propensity-score data x z)` | Stratified empirical propensity scores |
 | `(do:bootstrap-ci estimator data n-boot alpha [seed])` | Percentile bootstrap CI |
@@ -486,11 +595,12 @@ Available APIs:
 | `(do:rosenbaum-bound ratio gamma)` | Multiplicative sensitivity envelope `(lower . upper)` |
 
 Notes:
-- Binary treatment `x` in `{0,1}` or `{#f,#t}`
-- Strata-based nuisance models
-- Bootstrap confidence intervals available via `do:bootstrap-ci`
+- Binary treatment `x` in `{0,1}` or `{#f,#t}`.
+- Strata-based nuisance models; for richer nuisance fits plug `std.torch`
+  or `std.stats` regressors into your own wrapper.
+- `do:bootstrap-ci` is generic over any of the estimators above.
 
-### End-to-End Example
+### End-to-end example
 
 ```scheme
 (module causal-demo
@@ -560,22 +670,31 @@ analysis:
 
 ---
 
-## Limitations
+## Status & Roadmap
 
 > [!IMPORTANT]
-> Eta now includes two estimation layers:
-> 
-> - `std.causal` plug-in adjustment (`do:estimate-effect`)
-> - `std.causal.estimate` estimators (`do:ate-gformula`, `do:ate-ipw`,
->   `do:ate-aipw`, `do:ate-tmle`, `do:bootstrap-ci`, `do:e-value`,
->   `do:rosenbaum-bound`)
-> 
-> Remaining gaps:
-> 
-> - No influence-function/analytic standard errors yet.
-> - Continuous-treatment and richer model-based nuisance estimation.
-> - Mediation estimands currently rely on observed treatment/mediator
->   support and have separate estimation assumptions.
+> Milestones **M0 – M11** of the
+> [`causal_plan.md`](../../plan/causal_plan.md) are implemented in-tree:
+> ADMGs and latent projection, linear-time d-separation, the three
+> rules, ID / IDC with hedge witnesses, generalised adjustment /
+> front-door / IV, mediation, transportability, counterfactuals,
+> AIPW / TMLE / IPW / g-formula estimation with bootstrap CIs and
+> sensitivity, PC / FCI / GES / NOTEARS-style structure learning,
+> and DOT / Mermaid / LaTeX rendering.
+>
+> Outstanding (extension milestones **M12 – M15** in the plan):
+>
+> - **CATE meta-learners** (S / T / X / R / DR-learner)
+> - **Trees, random forests, and Causal Forest**
+> - **Cross-fitting / Double Machine Learning** harness (DML PLR / IRM)
+> - **Uplift / Qini / policy-value scoring**
+>
+> Smaller open items inside the implemented surface:
+>
+> - Influence-function / analytic standard errors (currently bootstrap only).
+> - Continuous-treatment estimators.
+> - Native FCI orientation rules and a full GES score search
+>   (`learn:fci` and `learn:ges` currently delegate to `learn:pc`).
 
 ---
 
@@ -591,8 +710,10 @@ analysis:
 | Transportability helpers             | [`stdlib/std/causal/transport.eta`](../../../stdlib/std/causal/transport.eta)             |
 | Counterfactual helpers               | [`stdlib/std/causal/counterfactual.eta`](../../../stdlib/std/causal/counterfactual.eta)   |
 | Structure learning helpers           | [`stdlib/std/causal/learn.eta`](../../../stdlib/std/causal/learn.eta)                     |
-| Graph rendering helpers              | [`stdlib/std/causal/render.eta`](../../../stdlib/std/causal/render.eta)                   |
+| Structure learning helpers           | [`stdlib/std/causal/learn.eta`](../../../stdlib/std/causal/learn.eta)                     |
 | Estimation backends                  | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
+| Rendering (DOT / Mermaid / LaTeX) and `define-dag` macro | [`stdlib/std/causal/render.eta`](../../../stdlib/std/causal/render.eta) |
+| Counterfactual reference page        | [`causal-counterfactual.md`](./causal-counterfactual.md)                                  |
 | DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
 | Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |
 | Full identification demo             | [`examples/do-calculus/demo.eta`](../../../examples/do-calculus/demo.eta)                 |

@@ -424,6 +424,34 @@ P(asset_return | do(macro_growth)) =
   Σ_{sentiment} P(asset_return | macro_growth, sentiment) · P(sentiment)
 ```
 
+> [!TIP]
+> **Beyond `do:identify` — using the rest of `std.causal`.** The same
+> DAG is a first-class citizen of the full identification stack:
+>
+> ```scheme
+> (import std.causal std.causal.identify std.causal.adjustment)
+>
+> ;; ID on the ADMG promoted from market-dag (sentiment treated as latent).
+> (id (admg:project market-dag '(sentiment))
+>     '(asset_return) '(macro_growth))
+> ;; => (sum (sentiment) (prod (P (asset_return macro_growth sentiment))
+> ;;                           (P (sentiment))))
+>
+> ;; Enumerate every minimal back-door set; we expect exactly {sentiment}.
+> (dag:minimal-adjustments market-dag 'macro_growth 'asset_return
+>                          '(sentiment sector_perf interest_rate))
+> ;; => ((sentiment))
+>
+> ;; Front-door / IV are *not* available on this graph — useful negative
+> ;; checks that the identification story really does rest on back-door.
+> (front-door? market-dag 'macro_growth 'asset_return '(sector_perf)) ;; => #f
+> (iv?         market-dag 'sentiment    'macro_growth 'asset_return)  ;; => #f
+> ```
+>
+> Programmatic rendering of the DAG (Mermaid / DOT / LaTeX) is covered
+> separately in [Appendix D](#appendix-d--visualisation); it is a
+> presentation concern and is kept out of the identification narrative.
+
 ### Identification Assumptions
 
 The causal estimand is identified **only if**:
@@ -565,11 +593,28 @@ that it has recovered exact parameters.
 | **Naive OLS** | return ~ macro only | ≈ 2.2 (≈ 2.8× inflated) |
 | **OLS-controlled** | return ~ macro + sentiment | ≈ 0.79 |
 | **NN + back-door** | back-door adjusted (marginalise sentiment) | ≈ 0.79 |
+| **AIPW (`do:ate-aipw`)** | doubly-robust, `Z = {sentiment}` | ≈ 0.79  (95% bootstrap CI ≈ [0.71, 0.87]) |
 | **DGP structural** | true causal effect | 0.6 + 0.2·β ≈ 0.79 at avg β |
 
 The large gap between naive OLS and the causal estimates is the
 back-door path `macro ← sentiment → return` doing real damage. Both
-controlled OLS and NN + back-door close it.
+controlled OLS, NN + back-door, **and the doubly-robust AIPW
+estimator from `std.causal.estimate`** close it — and AIPW additionally
+attaches a percentile CI via `do:bootstrap-ci`, so the agreement can be
+*tested*, not just inspected.
+
+```scheme
+(import std.causal.estimate)
+
+;; Discretise macro_growth into a binary "high" treatment for AIPW.
+(define obs (fact-table->alist universe))
+(define theta-hat (do:ate-aipw obs 'asset_return 'macro_growth_hi '(sentiment)))
+(define ci (do:bootstrap-ci
+             (lambda (b) (do:ate-aipw b 'asset_return 'macro_growth_hi
+                                         '(sentiment)))
+             obs 500 0.05 42))
+;; => theta-hat ≈ 0.79 ;  ci ≈ (0.71 . 0.87)
+```
 
 The naive coefficient comes straight from the fact table:
 
@@ -861,6 +906,52 @@ The full report is embedded in the artifact as
 `(stress-validation ...)` — robustness claims are auditable and
 machine-checkable rather than narrative.
 
+### Sensitivity to unmeasured confounding
+
+The `latent-confounding` regime above asks "what if the DAG omits a
+hidden driver?" — `std.causal.estimate` provides two scalar bounds
+that quantify exactly *how strong* such an omission would have to be
+to overturn the headline:
+
+```scheme
+(import std.causal.estimate)
+
+;; VanderWeele E-value: minimum risk-ratio an unmeasured confounder
+;; would need on BOTH treatment and outcome to nullify the AIPW estimate.
+(do:e-value 1.79)            ;; rr ≈ 0.79 + 1 → E ≈ 3.0  (i.e. moderate-strong)
+
+;; Rosenbaum-style multiplicative envelope at Γ = 1.5.
+(do:rosenbaum-bound 1.79 1.5) ;; => (lower . upper) bracket on the effect.
+```
+
+A *small* E-value (close to 1) would mean the back-door story is
+fragile to omitted variables; the value computed here means an
+unobserved factor would need to be ~3× more associated with both
+`macro_growth` and `asset_return` than `sentiment` is — which the §0
+DGP rules out by construction.
+
+### Recovering the DAG from data
+
+The §2 DAG is *asserted* — but it can also be *recovered* from the
+same fact table as a self-consistency check (parallel to xVA's §3a
+recoverability), using the constraint-based PC algorithm exposed by
+`std.causal.learn`:
+
+```scheme
+(import std.causal.learn)
+
+(define obs (fact-table->alist universe))
+(define cpdag (learn:pc obs 0.05 learn:ci-test:fisher-z))
+;; cpdag should contain (sentiment -- macro_growth), (macro_growth -- asset_return),
+;; etc.; collider orientation around `asset_return` reproduces the assumed DAG up
+;; to Markov equivalence.
+```
+
+If `learn:pc` returns a CPDAG whose Markov-equivalence class contains
+`market-dag`, the structural assumption is at least *consistent* with
+the observed correlation pattern — turning the DAG from an unchecked
+prior into a falsifiable claim.
+
 ---
 
 ## 9 — Dynamic Causal Control
@@ -995,6 +1086,29 @@ preserve the existing population-moment semantics.
 
 ---
 
+## Appendix D — Visualisation
+
+The §2 ASCII DAG can be regenerated programmatically from the same
+edge-list literal that drives identification, via `std.causal.render`:
+
+```scheme
+(import std.causal.render)
+
+(dag:->mermaid market-dag)
+;; flowchart LR
+;;   n0["asset_return"] ...  n4 --> n0  (etc.)
+
+(dag:->dot     market-dag '((title . "Market DAG") (rankdir . "LR")))
+(dag:->latex   market-dag)
+```
+
+`define-dag` provides a compile-time validated form (rejects malformed
+edges and cycles at expansion); the runtime APIs above accept any
+edge-list literal directly. Rendering is a presentation convenience —
+it does not participate in identification or estimation.
+
+---
+
 ## Future Extensions
 
 | Extension | Effort | Impact |
@@ -1007,6 +1121,8 @@ preserve the existing population-moment semantics.
 | **Richer structural Σ** | Add liquidity / spread / crowding drivers | Higher-fidelity stress covariance |
 | **Scenario-aware §6** | Pass Σ(m) into scoring; jointly optimise across macro scenarios | Regime-robust allocation |
 | **Distributed scenarios** | `worker-pool` over TCP for cross-host stress testing | Scale to thousands of paths |
+| **CATE per-asset** | Layer an S/T/X/R/DR meta-learner on top of the existing back-door formula | Heterogeneous expected return per (sector, regime) cell instead of a single ATE |
+| **Causal forest** | Reuse the AIPW pseudo-outcome already wired in §4 as the response for a forest-based CATE estimator | Non-linear conditional treatment effects without leaving the convex-QP regime |
 
 ---
 
@@ -1017,6 +1133,7 @@ preserve the existing population-moment semantics.
 | **Portfolio Demo** | [`examples/portfolio.eta`](../examples/portfolio.eta) |
 | Fact table module | [`stdlib/std/fact_table.eta`](../stdlib/std/fact_table.eta) |
 | Causal DAG & do-calculus | [`stdlib/std/causal.eta`](../stdlib/std/causal.eta) |
+| ID/IDC, ADMG, adjustment, learn, render, estimate | [`stdlib/std/causal/`](../stdlib/std/causal) |
 | Logic programming | [`stdlib/std/logic.eta`](../stdlib/std/logic.eta) |
 | CLP(Z)/CLP(FD) and CLP(R) | [`stdlib/std/clp.eta`](../stdlib/std/clp.eta), [`stdlib/std/clpr.eta`](../stdlib/std/clpr.eta) |
 | libtorch wrappers | [`stdlib/std/torch.eta`](../stdlib/std/torch.eta) |

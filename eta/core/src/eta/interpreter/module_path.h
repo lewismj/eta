@@ -59,8 +59,8 @@ public:
 
     /**
      * Construct from CLI --path argument, falling back to ETA_MODULE_PATH env var.
-     * Always appends the bundled stdlib directory (<exe>/../stdlib/) as a
-     * last-resort search path so the prelude is found automatically.
+     * Also appends compile-time and bundled stdlib fallbacks as last-resort
+     * search paths so the prelude is found automatically.
      */
     static ModulePathResolver from_args_or_env(const std::string& cli_path) {
         ModulePathResolver resolver{{}};
@@ -72,6 +72,10 @@ public:
                 resolver = from_path_string(env);
             }
         }
+        /// Append build-tree stdlib when injected by CMake for developer binaries.
+#ifdef ETA_STDLIB_DIR
+        resolver.add_dir(fs::path(ETA_STDLIB_DIR));
+#endif
         /// Append the bundled stdlib directory relative to the executable.
         auto stdlib = bundled_stdlib_dir();
         if (stdlib) {

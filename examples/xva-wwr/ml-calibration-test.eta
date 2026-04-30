@@ -1,6 +1,8 @@
 ;;; examples/xva-wwr/ml-calibration-test.eta -- WWR ML calibration regression tests.
 ;;;
-;;; Run with ETA_MODULE_PATH including this folder and stdlib:
+;;; Run with ETA_MODULE_PATH pointing to the repo-local stdlib
+;;; (use an absolute path so launch cwd does not matter):
+;;;   PowerShell: $env:ETA_MODULE_PATH=(Resolve-Path ./stdlib).Path
 ;;;   etai examples/xva-wwr/ml-calibration-test.eta
 
 (module xva-wwr-ml-calibration-test
@@ -41,6 +43,11 @@
                        (max-error (assoc-ref 'max-error report))
                        (cp17 (assoc-ref "CP-17" learned))
                        (cp17-oil (cp-betas-oil cp17)))
+                  (println (list
+                             (cons 'diag "ml-calibration")
+                             (cons 'loss loss)
+                             (cons 'max-error max-error)
+                             (cons 'cp17-oil cp17-oil)))
                   (assert-true (number? loss) "loss must be numeric")
                   (assert-true (< loss 0.01) "training loss should be below 0.01")
                   (assert-true (< max-error 0.06) "max beta error should stay below 0.06")
@@ -54,6 +61,11 @@
                        (rows (assoc-ref 'rows recovery))
                        (loss (assoc-ref 'training-loss demo-output))
                        (max-error (assoc-ref 'max-error recovery)))
+                  (println (list
+                             (cons 'diag "run-demo")
+                             (cons 'book-size book-size)
+                             (cons 'training-loss loss)
+                             (cons 'max-error max-error)))
                   (assert-equal 200 book-size "book-size should be 200")
                   (assert-true (pair? rows) "beta-recovery rows should be populated")
                   (assert-true (number? loss) "training-loss should be numeric")
