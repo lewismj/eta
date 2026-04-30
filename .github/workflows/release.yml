@@ -196,6 +196,26 @@ jobs:
             if (-not (Test-Path $path)) { throw "Missing required binary: $path" }
           }
 
+          # Ensure eta_jupyter runtime dependencies are bundled.
+          $binDir = Join-Path $prefix "bin"
+          $hasXeus    = (Test-Path (Join-Path $binDir "xeus.dll")) -or
+                        (Test-Path (Join-Path $binDir "libxeus.dll"))
+          $hasXeusZmq = (Test-Path (Join-Path $binDir "xeus-zmq.dll")) -or
+                        (Test-Path (Join-Path $binDir "libxeus-zmq.dll"))
+          $hasZmq     = [bool](Get-ChildItem -Path $binDir -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+          $hasUv      = (Test-Path (Join-Path $binDir "uv.dll"))
+          $hasCrypto  = [bool](Get-ChildItem -Path $binDir -Filter "libcrypto*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+          if (-not ($hasXeus -and $hasXeusZmq -and $hasZmq -and $hasUv -and $hasCrypto)) {
+            throw "Missing eta_jupyter runtime DLLs in bundle bin\ (xeus/xeus-zmq/libzmq/uv/libcrypto)."
+          }
+
+          # Portable zip should include MSVC runtime DLLs for clean machines.
+          foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
+            if (-not (Test-Path (Join-Path $binDir $dll))) {
+              throw "Missing MSVC runtime DLL in bundle bin\: $dll"
+            }
+          }
+
           # Keep kernel logos next to eta_jupyter for runtime --install.
           $resDest = Join-Path $prefix "bin\resources"
           New-Item -ItemType Directory -Force $resDest | Out-Null

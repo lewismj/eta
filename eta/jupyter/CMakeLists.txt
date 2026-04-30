@@ -222,6 +222,38 @@ if(WIN32)
         endforeach()
     endif()
 
+    # 5. OpenSSL runtime fallback for package-manager builds where
+    #    OpenSSL::Crypto resolves to an import library (.lib) but not the
+    #    runtime DLL path at configure time.
+    if((NOT _eta_openssl_crypto_tgt) OR
+       (_eta_openssl_crypto_lib AND NOT _eta_openssl_crypto_lib MATCHES "\\.dll$"))
+        set(_eta_openssl_search_dirs "")
+        foreach(_seed IN ITEMS
+                "${_eta_xeus_lib}"
+                "${_eta_xeus_zmq_lib}"
+                "${_eta_openssl_crypto_lib}")
+            if(_seed)
+                get_filename_component(_seed_dir "${_seed}" DIRECTORY)
+                if(EXISTS "${_seed_dir}")
+                    list(APPEND _eta_openssl_search_dirs "${_seed_dir}")
+                endif()
+                if(EXISTS "${_seed_dir}/../bin")
+                    list(APPEND _eta_openssl_search_dirs "${_seed_dir}/../bin")
+                endif()
+            endif()
+        endforeach()
+        if(DEFINED OPENSSL_ROOT_DIR AND OPENSSL_ROOT_DIR AND EXISTS "${OPENSSL_ROOT_DIR}/bin")
+            list(APPEND _eta_openssl_search_dirs "${OPENSSL_ROOT_DIR}/bin")
+        endif()
+        list(REMOVE_DUPLICATES _eta_openssl_search_dirs)
+        foreach(_dir IN LISTS _eta_openssl_search_dirs)
+            file(GLOB _eta_openssl_dlls "${_dir}/libcrypto*.dll" "${_dir}/libssl*.dll")
+            foreach(_d IN LISTS _eta_openssl_dlls)
+                install(FILES "${_d}" DESTINATION bin)
+            endforeach()
+        endforeach()
+    endif()
+
 elseif(APPLE)
     # macOS: ship .dylib siblings into lib/, set rpath relative to executable.
     set_property(TARGET eta_jupyter APPEND PROPERTY

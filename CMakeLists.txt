@@ -9,6 +9,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # The project does not use C++20 modules; disable dependency scanning globally.
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
+# GitHub Actions release jobs package from `cmake --install` directly, so
+# ensure the MSVC runtime DLLs are installed into bin/ for portable bundles.
+if(WIN32)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION "bin")
+    include(InstallRequiredSystemLibraries)
+endif()
+
 enable_testing()
 
 include(cmake/FetchXeus.cmake)
