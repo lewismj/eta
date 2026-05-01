@@ -104,6 +104,13 @@
                   (assert-approx-equal 200.0 (list-ref flat 2) 1e-10)
                   (assert-approx-equal 2.0 (list-ref flat 3) 1e-10)))))
 
+          (make-test "fact-table->tensor rejects non-numeric cells"
+            (lambda ()
+              (let ((ft (make-fact-table 'x 'y)))
+                (fact-table-insert! ft 1 "bad")
+                (let ((p (catch 'runtime.error (fact-table->tensor ft '(0 1)))))
+                  (assert-equal 'runtime-error (car p))))))
+
           (make-test "column-l2-norm computes axis-wise norms"
             (lambda ()
               (let* ((m (reshape (from-list '(3.0 4.0

@@ -149,6 +149,7 @@ export function activate(context: ExtensionContext) {
     log(`[Summary]`);
     log(`  LSP binary  : ${serverPath ?? '(none)'}`);
     log(`  DAP binary  : ${dapPath}`);
+    log(`  TEST binary : ${binaries.test ?? '(none)'}`);
 
     const factory = new EtaDebugAdapterFactory(dapPath, outputChannel);
     context.subscriptions.push(
@@ -258,11 +259,13 @@ export function activate(context: ExtensionContext) {
             if (
                 e.affectsConfiguration('eta.lsp.serverPath')
                 || e.affectsConfiguration('eta.dap.executablePath')
+                || e.affectsConfiguration('eta.test.runnerPath')
                 || e.affectsConfiguration('eta.binaries.searchPaths')
             ) {
                 const refreshed = discoverBinaries(context);
                 outputChannel.info(`LSP binary resolved to: ${refreshed.lsp ?? '(none)'}`);
                 outputChannel.info(`DAP binary resolved to: ${refreshed.dap ?? '(none)'}`);
+                outputChannel.info(`TEST binary resolved to: ${refreshed.test ?? '(none)'}`);
             }
         })
     );

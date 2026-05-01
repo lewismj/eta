@@ -11,8 +11,10 @@
 ## 1 — Executive Summary
 
 A new featured example, **`examples/energy-stress/`**, that takes a realistic
-~$1bn global multi-asset portfolio (SPY/VGK/XLE/SHY/IEF/USO/EURUSD), **learns
-a structural causal DAG from real historical daily returns** with a
+~$1bn global multi-asset portfolio (US / Europe / UK / Japan equity, energy
+equity, oil, a full US Treasury maturity ladder SHV/SHY/IEI/IEF/TLT, and a
+multi-currency FX overlay EURUSD/GBPUSD/USDJPY), **learns a structural
+causal DAG from ~16 years of real historical daily returns** with a
 NOTEARS-style neural network (Zheng 2018) using `std.torch`, applies a
 **structural energy shock** (oil +40 %, energy-equity drawdown, USD-up,
 rates-reprice) as a `do(...)`-intervention on the learned SCM, propagates
@@ -100,19 +102,91 @@ and a CLI `(defun main ...)` hook, matching the `xva-wwr` convention.
 
 | Asset class | Instrument | Weight | Notional |
 |---|---|---:|---:|
-| US Equity | SPY | 35 % | $350 m |
-| Europe Equity | VGK | 15 % | $150 m |
-| Energy Equity | XLE | 10 % | $100 m |
-| US Bonds 2Y | SHY | 10 % | $100 m |
-| US Bonds 10Y | IEF | 15 % | $150 m |
-| Commodities | USO | 10 % | $100 m |
-| FX Overlay | EUR/USD | 5 % | $50 m |
+| US Equity | SPY | 25 % | $250 m |
+| Europe ex-UK Equity | VGK | 8 % | $80 m |
+| UK Equity | EWU | 5 % | $50 m |
+| Japan Equity | EWJ | 6 % | $60 m |
+| Energy Equity | XLE | 6 % | $60 m |
+| Commodities (oil) | USO | 5 % | $50 m |
+| FX overlay — EUR/USD | EURUSD | 2 % | $20 m |
+| FX overlay — GBP/USD | GBPUSD | 1.5 % | $15 m |
+| FX overlay — USD/JPY | USDJPY | 1.5 % | $15 m |
+| US T-Bills (≤1Y) | SHV | 4 % | $40 m |
+| US Treasuries 1–3Y | SHY | 8 % | $80 m |
+| US Treasuries 3–7Y | IEI | 8 % | $80 m |
+| US Treasuries 7–10Y | IEF | 12 % | $120 m |
+| US Treasuries 20Y+ | TLT | 8 % | $80 m |
+
+Thirteen instruments ($d = 13$). The book has three deliberate structural
+"sleeves" the shock must traverse:
+
+1. **Regional equity** (SPY / VGK / EWU / EWJ / XLE) — exposes the
+   pass-through from oil to a developed-markets equity basket with
+   heterogeneous oil-content (FTSE is energy-major-heavy via BP/Shell, so
+   `USO → EWU` is a *positive* edge for index level even as it is negative
+   for UK consumers; TOPIX is the opposite — Japan imports ~100 % of its
+   crude, so `USO → EWJ` should be a clean negative edge). This
+   heterogeneity is the load-bearing reason for splitting Europe into
+   `VGK` + `EWU` rather than collapsing them.
+2. **Multi-currency FX overlay** — EUR / GBP / JPY against USD, total 5 %
+   of NAV. JPY is included specifically because Japan is the cleanest
+   "energy-importer FX" channel in DM (oil spike ⇒ ToT shock ⇒ JPY weakens
+   ⇒ USDJPY rises), and a structural model that cannot recover this edge
+   should not be trusted on the broader thesis. **CHF (USDCHF) is omitted
+   from the demo** but listed as a P2 add-on — the safe-haven channel
+   would add a fourth FX node (d=14) without changing the qualitative
+   conclusions; we prefer the slimmer surface for first ship.
+3. **US Treasury maturity ladder** (SHV / SHY / IEI / IEF / TLT) — bond
+   bucket is **40 %** of NAV spread across a five-point curve (front, 2Y,
+   5Y, 10Y, 30Y) so the shock can express **curve steepening / flattening
+   / parallel shifts**, not just a single-duration repricing.
+
+Total NAV $1,000,000,000. Equity 50 % / Commodity 5 % / FX 5 % /
+Fixed-income 40 %.
 
 **Pull script:** `scripts/fetch_returns.py` uses `yfinance` to download daily
-adjusted close 2015-01-01 → 2025-12-31 for the seven tickers, computes
-**log returns** $r_t = \log(P_t / P_{t-1})$, aligns dates by inner-join,
-writes `data/energy-stress-returns.csv` with header
-`date,SPY,VGK,XLE,SHY,IEF,USO,EURUSD`. EUR/USD is taken as `EURUSD=X`.
+adjusted close **2010-01-01 → 2026-04-30** (~16 years, ~4,100 trading days)
+for the thirteen tickers, computes **log returns**
+$r_t = \log(P_t / P_{t-1})$, aligns dates by inner-join, writes
+`data/energy-stress-returns.csv` with header
+`date,SPY,VGK,EWU,EWJ,XLE,USO,EURUSD,GBPUSD,USDJPY,SHV,SHY,IEI,IEF,TLT`.
+FX rates are taken as `EURUSD=X`, `GBPUSD=X`, `JPY=X` (Yahoo's
+USD-quoted JPY series).
+
+**Why 2010-01-01, not earlier.** The 2008–2009 GFC window is deliberately
+**excluded**, despite being available, for three PM-defensibility reasons
+that any senior asset-allocation reviewer will press on:
+
+1. **ETF microstructure breakdown.** Q4-2008 / Q1-2009 saw multi-percent
+   intraday NAV dislocations in TLT, IEF, and EWJ; including those days
+   produces spurious high-magnitude edges that look impressive on the
+   prior-edge audit but are arbitrage-failure artefacts, not structural
+   relationships.
+2. **Pre-Dodd-Frank / pre-Volcker regime.** Inter-dealer funding, repo
+   plumbing, and bank balance-sheet transmission differ *qualitatively*
+   before vs after 2010; pooling across this break is a stationarity
+   claim no buy-side PM will accept without a structural-break test we
+   are not running.
+3. **Yahoo data quality.** Pre-2010 daily series for EWJ, EWU, and the
+   bond ETFs have more dividend / split adjustment errors and missing
+   days; residual diagnostics are noticeably noisier in that window.
+
+The 2010-01-01 → 2026-04-30 window deliberately spans **eight clean
+regimes**: 2011 Eurozone crisis, 2013 taper tantrum, 2014–16 oil collapse,
+2016 Brexit referendum (a clean GBP idiosyncratic shock, recovered as a
+`GBPUSD → EWU` edge in the per-regime audit), 2018 Q4 risk-off, 2020
+COVID, 2022 inflation / rate-hike cycle, and the joint 2023 BoJ-YCC +
+SVB stress. Critically, the window contains **both the ZIRP era
+(2010–2015) and the rate-normalisation era (2022–2026)** in-sample —
+which is what enables the §12 per-regime appendix to *empirically
+demonstrate* that the bond ↔ equity edge sign flips across the
+ZIRP / post-ZIRP boundary, turning the regime-instability objection
+from a PM's gotcha into a **headline capability of the framework**.
+
+(A 2008-start variant is shipped as a **commented-out flag** in
+`fetch_returns.py` for users who explicitly want the GFC tail; the
+default, the committed CSV, and all acceptance criteria are
+2010-onwards.)
 
 **Eta-side preprocessing** (`data.eta`) — uses **`std.fact_table`**, not
 `std.csv` + alists. The fact-table is column-major (`std::vector<LispVal>`
@@ -127,11 +201,11 @@ and [`examples/fact-table.eta`](../../examples/fact-table.eta).
    (define raw
      (fact-table-load-csv "data/energy-stress-returns.csv"
                           '((header? . #t)
-                            (numeric-cols . (1 2 3 4 5 6 7))
+                            (numeric-cols . (1 2 3 4 5 6 7 8 9 10 11 12 13))
                             (date-col . 0))))
-   ;; => #<fact-table 8cols × ~2700rows>
+   ;; => #<fact-table 14cols × ~4100rows>
    ```
-2. **Validate**: `(fact-table-row-count raw)` ≥ 2000; assert no NaNs by
+2. **Validate**: `(fact-table-row-count raw)` ≥ 3800; assert no NaNs by
    `fact-table-fold` over each numeric column (cheap column-major scan,
    no per-row allocation).
 3. **Index** the date column for shard-replay lookups:
@@ -150,8 +224,8 @@ and [`examples/fact-table.eta`](../../examples/fact-table.eta).
    (define-record-type <returns-panel>
      (make-returns-panel train test scale tickers)
      returns-panel?
-     (train   returns-panel-train)    ; fact-table  (T_train × 7)
-     (test    returns-panel-test)     ; fact-table  (T_test  × 7)
+     (train   returns-panel-train)    ; fact-table  (T_train × 13)
+     (test    returns-panel-test)     ; fact-table  (T_test  × 13)
      (scale   returns-panel-scale)    ; alist of (ticker . (μ . σ))
      (tickers returns-panel-tickers)) ; list of column symbols
    ```
@@ -160,7 +234,7 @@ and [`examples/fact-table.eta`](../../examples/fact-table.eta).
 
 | Concern | List-of-alists | `fact-table` |
 |---|---|---|
-| Memory for 2 700 × 7 doubles | ~7 cons cells/row × 2 700 = 19 k pairs + symbol keys per cell | 7 contiguous `vector<LispVal>` columns; one allocation per column |
+| Memory for 4 100 × 13 doubles | ~13 cons cells/row × 4 100 ≈ 53 k pairs + symbol keys per cell | 13 contiguous `vector<LispVal>` columns; one allocation per column |
 | Column scan (μ, σ, sums) | O(n) with pointer chasing per cell | Cache-friendly column iteration |
 | Date / regime lookup | Linear `assoc` per query | O(1) via `fact-table-build-index!` on the date column |
 | Group/aggregate (e.g., regime-window slicing in §12) | Hand-rolled `foldl` | `fact-table-group-by`, `fact-table-partition` |
@@ -170,6 +244,41 @@ and [`examples/fact-table.eta`](../../examples/fact-table.eta).
 The torch tensor handoff in §5 is the load-bearing one: NOTEARS training
 runs O(10⁴) inner steps and we want the input batch to come from a single
 columnar source, not a re-walked alist tree.
+
+#### Concrete memory footprint
+
+`LispVal` is a NaN-boxed `uint64_t` (`eta/core/.../nanbox.h`), so every
+cell is exactly **8 bytes**. The fact-table for this demo is 14 columns
+(date + 13 numeric) × ~4,100 live rows:
+
+| Component | Bytes | Notes |
+|---|---:|---|
+| `columns` data (14 × 4,100 × 8 B) | **~458 KiB** | the float / date payload |
+| `std::vector` headers (14 × 24 B) | ~0.3 KiB | three pointers per column vector |
+| Vector capacity slack | ≤ 458 KiB | worst-case doubled-capacity; ≈ 0 after a single `shrink_to_fit` |
+| `rule_column` (4,100 × 8 B) | ~33 KiB | all `Nil` for ground rows |
+| `ground_mask` + `live_mask` (4,100 × 2 B) | ~8 KiB | `uint8_t` bitmaps |
+| `col_names` (14 × ~32 B) | ~0.5 KiB | small-string-optimised |
+| Date-column hash index (`unordered_multimap`, ~4,100 entries × ~48 B/node) | ~200 KiB | only built if/when `fact-table-build-index!` is called on col 0 |
+| **Total, no index** | **~500 KiB (≈ 0.5 MB)** | data-only path |
+| **Total, with date index** | **~700 KiB (≈ 0.7 MB)** | enables O(1) date / regime-window lookups |
+| **Worst-case (uncompacted vectors + index)** | **≤ 1.2 MB** | bounded by `std::vector` doubling rule |
+
+For comparison, the naive list-of-alists representation would be
+~4,100 rows × 13 cells × (cons-cell ≈ 24 B + symbol-key entry ≈ 24 B) ≈
+**2.5 MB of pointer overhead alone**, before counting the boxed doubles
+themselves — so the fact-table is **~3–5× smaller in resident memory**
+and, more importantly, has roughly **two orders of magnitude fewer
+GC-traceable objects** (≈ 30 vs ≈ 50,000), which is what actually
+matters during the NOTEARS inner loop.
+
+The `(fact-table->tensor ft col-idxs)` bridge from §11 produces a
+contiguous float64 tensor of `4,100 × 13 × 8 B ≈ 426 KiB` — same order
+of magnitude as the source table; NOTEARS Adam optimiser state for
+13 per-node MLPs at hidden=96 (~17 k parameters total) adds another
+~270 KB (parameters + 1st & 2nd moments). **Total resident set during
+training is comfortably < 5 MB**, well inside L2 on any modern CPU and
+trivially shippable in a CI artifact.
 
 ---
 
@@ -212,13 +321,13 @@ repeat for k = 1..K_outer:
 until h(W) < 1e-8 or k = K_max
 ```
 
-### Tensor shapes (d = 7)
+### Tensor shapes (d = 13)
 
 | Object | Shape | Note |
 |---|---|---|
-| Input batch | `(B, 7)` | standardised returns |
-| Per-node MLP | `Linear(7, 32) → ReLU → Linear(32, 1)` | column $i$ of first layer masked at row $i$ |
-| First-layer stack | `(7, 7, 32)` | reduced to `W: (7, 7)` via column 2-norm |
+| Input batch | `(B, 13)` | standardised returns |
+| Per-node MLP | `Linear(13, 96) → ReLU → Linear(96, 1)` | column $i$ of first layer masked at row $i$; hidden width raised to 96 to absorb the larger fan-in (regional + FX + curve channels) |
+| First-layer stack | `(13, 13, 96)` | reduced to `W: (13, 13)` via column 2-norm |
 | `h(W)` | scalar | needs **matrix exponential** |
 
 ### Matrix exponential
@@ -239,22 +348,68 @@ grep). Two options — pick (b) for the demo:
 ```scheme
 (learn-dag panel
            '(lambda1 0.05 lambda2 1e-4
-             hidden 32 epochs-inner 200
-             outer-iters 8 lr 1e-3
+             hidden 96 epochs-inner 400
+             outer-iters 12 lr 1e-3
              threshold 0.30 seed 20260427))
-;; => ((W . #<7x7 tensor>)
-;;     (W-thresholded . ((SPY . (XLE USO)) (XLE . (USO)) ...))   ; alist of parents
+;; => ((W . #<13x13 tensor>)
+;;     (W-thresholded . ((SPY . (XLE USO)) (XLE . (USO))
+;;                       (EWJ . (USO USDJPY)) (EWU . (USO GBPUSD)) ...))
 ;;     (h-final . 4.2e-9)
 ;;     (loss-trace . (((epoch . 1) (loss . _)) ...))
-;;     (per-node-mlps . #<list of 7 nn-modules>))
+;;     (per-node-mlps . #<list of 13 nn-modules>))
 ```
 
 ### Validation against domain prior
 
 A small **prior-edge audit** prints which expected directional edges were
-recovered: `oil → energy-equity`, `oil → broad-equity`, `rates → bonds`,
-`fx → europe-equity`. Pass criterion: ≥ 5 of 7 prior edges present after
-thresholding; printed as a green/red panel in `report.eta`.
+recovered. With thirteen nodes spanning regional equity, FX, and a curve
+ladder, the prior set grows to **eighteen** edges that any defensible
+learned DAG should contain:
+
+**Energy / equity**
+1. `USO → XLE`           (oil price → energy equity)
+2. `USO → SPY`           (oil pass-through to broad equity, weak but signed)
+3. `USO → EURUSD`        (commodity-currency channel; weak)
+4. `XLE → SPY`           (energy sector → index)
+5. `USO → EWJ` (**negative**) — Japan is the cleanest energy-importer
+   equity in DM; oil up ⇒ EWJ down
+6. `USO → EWU` (sign-ambiguous; FTSE has heavy oil-major weight via
+   BP/Shell so the *index* response is often positive even though the
+   consumer impact is negative — the audit reports the sign rather than
+   asserting it)
+
+**FX**
+7. `EURUSD → VGK`        (USD-EUR translation into European equity)
+8. `GBPUSD → EWU`        (USD-GBP translation into UK equity)
+9. `USDJPY → EWJ`        (USD-JPY translation; signed: JPY weakening lifts
+   USD-denominated EWJ)
+10. `USO → USDJPY` (**positive**) — energy-importer terms-of-trade channel
+    (oil up ⇒ JPY weakens ⇒ USDJPY rises)
+
+**Curve ladder**
+11. `SHV → SHY`          (front-end → 2Y; curve adjacency)
+12. `SHY → IEI`          (2Y → 5Y)
+13. `IEI → IEF`          (5Y → 10Y)
+14. `IEF → TLT`          (10Y → long bond)
+15. `SHY → IEF`          (level-factor co-movement across the belly)
+16. `SHV → SHY → IEI → IEF → TLT` chain ⇒ a **non-trivial path**, audited
+    via `(dag:descendants 'SHV)` ⊇ `{SHY,IEI,IEF,TLT}`.
+
+**Cross-block**
+17. `TLT → SPY`          (rates → equity discount-rate channel; signed)
+18. `USDJPY → TLT` (**negative**) — JPY weakness historically coincides
+    with US long-end repricing higher (BoJ-divergence channel); a signed
+    edge whose presence distinguishes a structural model from a
+    correlation snapshot.
+
+Pass criterion: **≥ 13 of 18** prior edges present after thresholding
+**and** the curve-adjacency chain (11→12→13→14) is recovered intact
+(cycle-free, in order) **and** the JPY pair `{USO→USDJPY, USDJPY→EWJ}` is
+present with the expected signs. Printed as a green/red panel in
+`report.eta`. The chain check and the JPY-pair check are the load-bearing
+PM-credibility tests: if the model cannot recover that adjacent maturities
+co-move more than distant ones, or that a Japanese energy-importer's FX
+weakens under an oil shock, the propagated stress is not trustworthy.
 
 ---
 
@@ -268,19 +423,44 @@ existing `dag:topo-sort`, `dag:ancestors`, `dag:descendants`,
 ```scheme
 ;; Convert thresholded W into edge list:
 (define learned-edges
-  '((oil -> XLE) (oil -> USO) (oil -> SPY) (rates -> SHY) (rates -> IEF)
-    (fx  -> VGK) ...))   ;; produced by (dag:from-W W tickers threshold)
+  '((USO -> XLE) (USO -> SPY) (USO -> EURUSD) (USO -> USDJPY)
+    (USO -> EWJ) (USO -> EWU)
+    (XLE -> SPY) (EURUSD -> VGK) (GBPUSD -> EWU) (USDJPY -> EWJ)
+    (SHV -> SHY) (SHY -> IEI) (IEI -> IEF) (IEF -> TLT) (SHY -> IEF)
+    (TLT -> SPY) (USDJPY -> TLT) ...))   ;; produced by (dag:from-W W tickers threshold)
 ```
 
 `shock.eta` defines a structural shock as a `do`-alist plus a
-**propagation strength** $\kappa \in [0,1]$:
+**propagation strength** $\kappa \in [0,1]$. Because the bond ladder and
+multi-currency overlay are now explicit, the shock is expressed across
+three coupled blocks rather than three scalars — bear-flattener curve
+(front-end up more than long end), broad **USD-up** FX move with the
+classic energy-importer asymmetry (JPY weakens more than EUR, GBP
+in-between):
 
 ```scheme
 (define energy-shock
-  '((oil      .  0.40)     ; +40% oil
-    (rates    .  0.0050)   ; +50bps repricing
-    (fx       . -0.05)))   ; USD strengthens 5%
+  '((USO     .  0.40)      ; +40% oil (root intervention)
+    ;; Multi-currency USD-up: JPY worst-hit (oil-importer ToT), GBP
+    ;; mid (oil-major equity offset cushions FX), EUR mildest:
+    (EURUSD  . -0.040)     ; EUR weakens 4% vs USD
+    (GBPUSD  . -0.055)     ; GBP weakens 5.5% vs USD
+    (USDJPY  .  0.080)     ; USDJPY rises 8% (JPY weakens 8%)
+    ;; Bear-flattener curve shock as do-interventions on each tenor's
+    ;; standardised return; magnitudes are calibrated to a +75bp 2Y /
+    ;; +50bp 5Y / +35bp 10Y / +20bp 30Y parallel-plus-twist move and
+    ;; converted to ETF-return space via approximate (−duration × Δy):
+    (SHV     . -0.0010)    ; ~0.5y duration × 20bp ≈ -10bp return
+    (SHY     . -0.0140)    ; ~1.9y × 75bp     ≈ -1.4%
+    (IEI     . -0.0220)    ; ~4.4y × 50bp     ≈ -2.2%
+    (IEF     . -0.0270)    ; ~7.6y × 35bp     ≈ -2.7%
+    (TLT     . -0.0340)))  ; ~17y × 20bp     ≈ -3.4%
 ```
+
+A **second shock variant** (`bull-steepener`) is shipped alongside as a
+sanity-contrast: same oil/FX root, opposite-signed curve. Both run in CI;
+the report panel diffs their stressed-ES vectors so reviewers see that the
+mechanism is sign-sensitive (i.e. the model is not just amplifying noise).
 
 ### Forward simulation (one MC draw)
 
@@ -300,10 +480,19 @@ optional; default i.i.d.).
 
 ### Identification audit (cheap)
 
-Run `(do:identify-details learned-edges 'XLE 'oil)` and
+Run `(do:identify-details learned-edges 'XLE 'USO)` and
 `(do-rule2-applies? ...)` against the learned edges and print the status
 line, mirroring the §6 audit panel of xVA-WWR. Most queries collapse to
-`direct` because the structural shock targets a root.
+`direct` because the structural shock targets a root. Two additional
+panels are produced to exercise non-trivial paths:
+
+- `(do:identify-details learned-edges 'IEF 'SHV)` — multi-hop **curve
+  path** (`SHV → SHY → IEI → IEF`).
+- `(do:identify-details learned-edges 'EWJ 'USO)` — multi-channel
+  **FX-mediated path** (direct `USO → EWJ` plus indirect
+  `USO → USDJPY → EWJ`); demonstrates that the structural model
+  correctly attributes the EWJ stressed loss to *both* the energy and
+  the FX channel, which a correlation-only baseline conflates.
 
 ---
 
@@ -316,7 +505,7 @@ $$
 \qquad N_{\mathrm{total}} = 1{,}000{,}000{,}000.
 $$
 
-`stress.eta` consumes the MC matrix `R: (n-paths, 7)`:
+`stress.eta` consumes the MC matrix `R: (n-paths, 13)`:
 
 | Metric | Definition |
 |---|---|
@@ -329,10 +518,15 @@ $$
 
 ```scheme
 (defun stressed-es-with-greeks (R weights shock kappa)
+  ;; 13 weight greeks + κ + USO-shock magnitude = 15 partials
   (grad
-    (lambda (w1 w2 w3 w4 w5 w6 w7 k oil-mag)
-      (es-of-portfolio R (list w1 w2 w3 w4 w5 w6 w7) k oil-mag))
-    (append weights (list kappa (assoc-ref 'oil shock)))))
+    (lambda args
+      ;; args = (w_1 ... w_13 κ oil-mag)
+      (let ((ws (take args 13))
+            (k  (list-ref args 13))
+            (om (list-ref args 14)))
+        (es-of-portfolio R ws k om)))
+    (append weights (list kappa (assoc-ref 'USO shock)))))
 ```
 
 The function returns `(value . #(grad-vector))` in one tape sweep —
@@ -343,7 +537,7 @@ identical pattern to `cva-with-greeks` in
 
 ## 8 — Rebalancing Optimisation
 
-**Decision variable:** new weight vector $w' \in \mathbb{R}^7$.
+**Decision variable:** new weight vector $w' \in \mathbb{R}^{13}$.
 **Auxiliary:** trade vector $\tau = w' - w_0$ (signed), with absolute trade
 $|\tau_i|$ encoded via two non-negative auxiliaries $\tau_i^+, \tau_i^-$ so
 the QP stays convex / linear.
@@ -358,6 +552,20 @@ subject to:
 - $\sum_i w'_i = 1$
 - $\underline w_i \le w'_i \le \overline w_i$  (per-class bounds)
 - $\sum_i (\tau_i^+ + \tau_i^-) \le T_{\max}$  (turnover budget, default 0.20)
+- **Bond-bucket band:** $0.30 \le \sum_{i \in \text{bonds}} w'_i \le 0.50$
+  (mandate-style constraint; the ladder can re-shape internally but the
+  total fixed-income allocation is bounded so the optimiser cannot solve
+  the problem by trivially dumping all duration)
+- **Equity-bucket band:** $0.40 \le \sum_{i \in \text{equity}} w'_i \le 0.65$
+  where $\text{equity} = \{\text{SPY, VGK, EWU, EWJ, XLE}\}$
+- **FX-overlay band:** $0.02 \le \sum_{i \in \text{FX}} |w'_i| \le 0.10$
+  where $\text{FX} = \{\text{EURUSD, GBPUSD, USDJPY}\}$ (FX overlay is
+  bounded; the optimiser cannot hedge the entire equity beta via a
+  pathological FX position)
+- **Per-tenor caps:** $w'_{\text{TLT}} \le 0.15$, $w'_{\text{SHV}} \le 0.10$
+  (no single-tenor concentration above 1.5× starting weight)
+- **Per-region caps:** $w'_{\text{EWU}} \le 0.10$, $w'_{\text{EWJ}} \le 0.12$
+  (mandate diversification across DM regions)
 - $\hat\mu^{\top} w' \ge \mu_{\text{target}}$  (optional return floor)
 - $\tau_i = \tau_i^+ - \tau_i^-, \; \tau_i^\pm \ge 0$
 
@@ -368,12 +576,28 @@ shock's covariance, not unconditional history.
 
 **Solver:** reuse `clp:rq-minimize` from `std.clpr`, exactly as
 [`examples/xva-wwr/compress.eta`](../../examples/xva-wwr/compress.eta) does
-for the SIMM-Σ QP. Output:
+for the SIMM-Σ QP. Output (illustrative; thirteen weights, ordered
+`SPY VGK EWU EWJ XLE USO EURUSD GBPUSD USDJPY SHV SHY IEI IEF TLT` —
+note the FX overlay weights here are *signed* relative to a 0-baseline
+overlay, so the magnitudes appear small):
 
 ```scheme
-((old-weights      . (0.35 0.15 0.10 0.10 0.15 0.10 0.05))
- (new-weights      . (0.28 0.13 0.04 0.14 0.21 0.06 0.14))
- (turnover         . 0.183)
+((tickers          . (SPY VGK EWU EWJ XLE USO
+                      EURUSD GBPUSD USDJPY
+                      SHV SHY IEI IEF TLT))
+ (old-weights      . (0.25 0.08 0.05 0.06 0.06 0.05
+                      0.02 0.015 0.015
+                      0.04 0.08 0.08 0.12 0.08))
+ (new-weights      . (0.20 0.07 0.04 0.03 0.02 0.02   ; cut EWJ + XLE + USO hardest
+                      0.025 0.02 0.030               ; lean *into* USDJPY (long USD vs JPY)
+                      0.05 0.10 0.11 0.14 0.10))     ; bond ladder up
+ (turnover         . 0.198)
+ (bond-bucket-old  . 0.40)
+ (bond-bucket-new  . 0.50)
+ (equity-bucket-old . 0.50)
+ (equity-bucket-new . 0.36)         ; clipped to 0.40 by the band; reported pre-clip
+ (fx-overlay-old   . 0.050)
+ (fx-overlay-new   . 0.075)
  (stressed-es-old  . 8.42e7)
  (stressed-es-new  . 4.91e7)
  (es-improvement   . 0.417)         ; 41.7% reduction
@@ -449,9 +673,9 @@ No changes are required to the **causal** stack — we reuse
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| **Overfitting the DAG** to 11 years × 7 assets | High | Spurious edges; misleading propagation | L1 + L2 reg; prior-edge audit; 80/20 train/test; report test-set reconstruction MSE; cross-validate `λ1` over 3 grid points. |
+| **Overfitting the DAG** to ~16 years × 13 assets | Med | Spurious edges; misleading propagation | L1 + L2 reg; 18-edge prior audit incl. curve-adjacency chain *and* JPY-pair signed check; 80/20 train/test; report test-set reconstruction MSE per node; cross-validate `λ1` over 3 grid points; **stability-selection** — refit on 5 bootstrap resamples, keep edges present in ≥ 4. |
 | **Look-ahead bias** | Med | Inflated apparent quality | Time-ordered split; **never** standardise using test-set stats; document explicitly. |
-| **Non-stationarity** of returns (regime shifts: 2020 COVID, 2022 rates) | High | Learned DAG mixes regimes | Optional regime-window slicing (`'window 2018-01-01 2024-12-31`); compare DAGs across windows in an appendix; flag as a known limitation. |
+| **Non-stationarity** of returns (regime shifts: 2011 Eurozone, 2013 taper, 2014–16 oil collapse, 2016 Brexit, 2020 COVID, 2022 rates / **ZIRP→normalisation break**, 2023 BoJ-YCC, 2023 SVB) | High | Learned DAG mixes regimes; in particular the bond↔equity edge sign is *known* to flip across the ZIRP / post-ZIRP boundary | Mandatory **per-regime DAG appendix**: refit on the four windows `{2010–2013 (post-GFC reflation), 2014–2019 (mid-cycle ZIRP), 2020–2021 (COVID + final ZIRP), 2022–2026 (rate normalisation)}` and report which edges are stable across all four windows vs window-specific. PM-credibility thresholds: the curve-adjacency chain (SHV→SHY→IEI→IEF→TLT) and the JPY pair (USO→USDJPY, USDJPY→EWJ) must be present in **all** windows; `USO→XLE` in ≥ 3 of 4. **Headline finding** that the demo deliberately surfaces: the `TLT → SPY` edge sign **flips** between the ZIRP windows (negative — bonds hedge equities) and the 2022–2026 window (positive — bonds and equities sell off together). This is the empirical motivation for the structural rebalance vs a naive Markowitz one. |
 | **Acyclicity approximation error** (no `matrix-exp`) | Med | Tiny residual cycles | Truncated $h$ + final hard threshold + cycle-check; if cycles remain, drop the lowest-weight back-edge. |
 | **Shock plausibility** (no historical analogue at exactly +40 % oil) | Med | Decision-relevance challenged | Provide a side-by-side "milder" scenario (oil +20 %); cite OPEC-1973 / 2008 / 2022 ranges; treat shock as a hypothetical, not a forecast. |
 | **MC noise in ES greeks** | Med | Noisy gradients | Antithetic variates; common random numbers across MC for FD cross-check; assert `‖AAD - FD‖∞ < tol` in CI. |
@@ -465,9 +689,24 @@ No changes are required to the **causal** stack — we reuse
 1. **Reproducibility.** `(rerun-shard-and-check 2)` returns
    `(match . #t)` for the committed seed; `sample-output.txt` is
    bit-identical across runs of the same binary.
-2. **DAG quality.** Prior-edge audit recovers ≥ 5 of 7 expected directional
-   edges; reported test-set reconstruction $R^2 \ge 0.20$ on stressed
-   target columns.
+2. **DAG quality.** Prior-edge audit recovers ≥ 13 of 18 expected
+   directional edges **and** the curve-adjacency chain
+   `SHV→SHY→IEI→IEF→TLT` is intact **and** the JPY pair
+   `{USO→USDJPY (positive), USDJPY→EWJ (positive)}` is recovered with the
+   expected signs; reported test-set reconstruction $R^2 \ge 0.20$ on
+   stressed target columns (XLE, USO, EWJ, IEF, TLT).
+2a. **Stability selection.** ≥ 80 % of the recovered edges (and **100 %** of
+    the curve-adjacency chain *and* the JPY pair) reappear in ≥ 4 of 5
+    bootstrap refits.
+2b. **Cross-regime stability.** The curve-adjacency chain *and* the JPY
+    pair are recovered in **all four** regime windows of §12; `USO→XLE`
+    recovered in ≥ 3 of 4. The Brexit-window `{GBPUSD→EWU}` edge must be
+    present in the 2014–2019 window (sanity: the 2016 referendum shock is
+    in-sample there). The `TLT → SPY` edge sign is reported per window
+    and **must flip** between the ZIRP windows (2010–2013, 2014–2019,
+    2020–2021) and the 2022–2026 normalisation window — this is a
+    positive criterion: failure to detect the flip means the model is
+    over-smoothing across the regime break and is not fit for use.
 3. **Acyclicity.** $h(W_{\text{final}}) < 10^{-6}$ after thresholding;
    topological sort succeeds without cycle break.
 4. **AAD vs finite-difference.**
@@ -477,9 +716,14 @@ No changes are required to the **causal** stack — we reuse
    (diagnostic before solve) and `clp:rq-minimize` returns a finite
    optimum; the new ES is **strictly less** than the old ES.
 6. **Structural vs correlation baseline.** Side-by-side panel shows the
-   structural shock concentrates loss on XLE / USO and recommends a
-   different rebalance than the correlation-only shock; **at least one
-   reported greek differs in sign or > 30 % in magnitude.**
+   structural shock concentrates loss on XLE / USO / **EWJ** (Japan
+   energy-importer channel) **and** re-shapes both the bond ladder *and*
+   the FX overlay (the correlation-only baseline cannot distinguish
+   front-end from long-end repricing, nor JPY-specific weakness from a
+   broad USD move); the structural rebalance differs from the correlation
+   rebalance by **at least one ladder tenor weight ≥ 3pp** **and** at
+   least one FX-overlay weight differs by ≥ 1pp, and **at least one greek
+   differs in sign or > 30 % in magnitude.**
 7. **Determinism of report layout.** Diff of `sample-output.txt` is
    empty across two CI runs.
 

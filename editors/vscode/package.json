@@ -153,7 +153,7 @@
                 "eta.test.runnerPath": {
                     "type": "string",
                     "default": "",
-                    "description": "Path to the eta_test executable OR the directory containing it. If empty, searches workspace build output directories and then PATH."
+                    "description": "Path to the eta_test executable OR the directory containing it (e.g. C:\\Eta\\bin or C:\\Eta\\bin\\eta_test.exe). If empty, searches next to resolved eta_lsp/eta_dap, then workspace build output, then PATH."
                 }
             }
         },

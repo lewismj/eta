@@ -168,18 +168,39 @@ export function discoverBinaries(context: ExtensionContext): EtaBinaries {
         );
     }
 
-    const test = discoverBinary(
+    const testFromConfig = resolveConfigBinary(
         workspace.getConfiguration('eta.test').get<string>('runnerPath', '').trim(),
         testNames,
-        [
-            path.join('out', 'wsl-clang-release', 'eta', 'test_runner', testNames[0]),
-            path.join('out', 'build', 'eta', 'test_runner', testNames[0]),
-            path.join('build', 'eta', 'test_runner', testNames[0]),
-            path.join('out', 'msvc-release', 'eta', 'test_runner', testNames[0]),
-            path.join('build-release', 'eta', 'test_runner', testNames[0]),
-        ],
-        context.extensionPath,
     );
+    let test: string | undefined;
+    if (testFromConfig) {
+        test = testFromConfig;
+    } else if (lsp && isFile(lsp)) {
+        const nextToLsp = path.join(path.dirname(lsp), testNames[0]);
+        if (isFile(nextToLsp)) {
+            test = nextToLsp;
+        }
+    }
+    if (!test && dap && isFile(dap)) {
+        const nextToDap = path.join(path.dirname(dap), testNames[0]);
+        if (isFile(nextToDap)) {
+            test = nextToDap;
+        }
+    }
+    if (!test) {
+        test = discoverBinary(
+            '',
+            testNames,
+            [
+                path.join('out', 'wsl-clang-release', 'eta', 'test_runner', testNames[0]),
+                path.join('out', 'build', 'eta', 'test_runner', testNames[0]),
+                path.join('build', 'eta', 'test_runner', testNames[0]),
+                path.join('out', 'msvc-release', 'eta', 'test_runner', testNames[0]),
+                path.join('build-release', 'eta', 'test_runner', testNames[0]),
+            ],
+            context.extensionPath,
+        );
+    }
 
     const etac = discoverBinary(
         '',

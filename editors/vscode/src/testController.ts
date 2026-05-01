@@ -417,8 +417,9 @@ async function runOneFile(
             cancelSub.dispose();
             run.failed(item, new vscode.TestMessage(
                 `Failed to start eta_test: ${err.message}\n` +
-                `Searched for: ${etaTest}\n` +
-                `Set eta.test.runnerPath in settings to the full path.`,
+                `Resolved runner: ${etaTest}\n` +
+                `If this is not an absolute path, VS Code could not resolve it from PATH.\n` +
+                `Set eta.test.runnerPath to the eta_test executable or its directory.`,
             ));
             resolve();
         });
