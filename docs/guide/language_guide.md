@@ -435,8 +435,35 @@ script's own command line, current working directory, and a clean
 | `os:change-directory!`           | `chdir` equivalent                                |
 | `os:exit`                        | Terminate the process with an optional status code |
 
+### Command-line arguments (`std.args`)
+
+`std.args` is an `argparse`-style parser: declare a tuple spec, hand it
+`argv`, and get back a hash map keyed by symbol (with a `'positional`
+entry for non-option arguments). Supports `flag`, `string`, `int`,
+`float`, and `list` value kinds; `--name value`, `--name=value`,
+short flags, and `--` to forward the rest as positional. Optional
+`parse` / `validate` lambdas, `choices`, `required?`, and a `count`
+action cover the awkward cases.
+
+```scheme
+(import std.args std.io)
+
+(define spec
+  '((verbose (--verbose -v) flag)
+    (out     (--out -o)     string "a.out")
+    (jobs    (--jobs -j)    int    1)
+    (tag     (--tag)        list)))
+
+(define r (args:parse-command-line spec))
+(when (args:get r 'verbose) (println "loud mode"))
+(println (args:get r 'positional))
+```
+
+Runnable demo: [`examples/args.eta`](../../examples/args.eta).
+
 > **Deep dive:** [`io.md`](./io.md). **References:**
-> [`fs.md`](./reference/fs.md), [`os.md`](./reference/os.md).
+> [`fs.md`](./reference/fs.md), [`os.md`](./reference/os.md),
+> [`args.md`](./reference/args.md).
 
 ---
 

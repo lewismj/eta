@@ -1,0 +1,53 @@
+;;; args.eta -- Tuple-style std.args demo.
+;;;
+;;; Run: etai examples/args.eta
+
+(module args-example
+  (import std.io std.args)
+  (begin
+
+    (define parse-level
+      (lambda (raw)
+        (let ((n (string->number raw)))
+          (if (and (number? n) (integer? n))
+              n
+              (error "level must be an integer")))))
+
+    (define level-in-range?
+      (lambda (n)
+        (and (>= n 0) (<= n 5))))
+
+    (define spec
+      (list
+        '(v (--verbose -v) flag)
+        '(o (--out -o)     string "report.txt")
+        '(n (--num)        int    0)
+        '(t (--tag)        list)
+        (list 'level
+              (list '--level)
+              'int
+              1
+              (list
+                (cons 'parse parse-level)
+                (cons 'validate level-in-range?)))))
+
+    (defun run-demo ()
+      (args:parse
+        spec
+        '("-v" "--out=demo.txt" "--num" "3"
+          "--tag" "risk" "--tag" "stress"
+          "--level=4"
+          "--" "-z")))
+
+    (defun summarize (r)
+      (list
+        (cons 'verbose (args:get r 'v))
+        (cons 'out (args:get r 'o))
+        (cons 'num (args:get r 'n))
+        (cons 'tag (args:get r 't))
+        (cons 'level (args:get r 'level))
+        (cons 'positional (args:get r 'positional))))
+
+    (define result (summarize (run-demo)))
+    (println result)))
+

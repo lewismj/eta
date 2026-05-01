@@ -1,0 +1,101 @@
+;;; stdlib/tests/args.test.eta -- Tests for std.args.
+
+(module args.tests
+  (import std.test std.args)
+  (begin
+
+    (defun args:test-contains? (text needle)
+      (let ((n (string-length text))
+            (m (string-length needle)))
+        (if (= m 0)
+            #t
+            (if (< n m)
+                #f
+                (letrec ((loop (lambda (i)
+                                 (if (> i (- n m))
+                                     #f
+                                     (if (string=? (substring text i (+ i m)) needle)
+                                         #t
+                                         (loop (+ i 1)))))))
+                  (loop 0))))))
+
+    (define tuple-spec
+      '((v (--verbose -v) flag)
+        (o (--out -o)     string "x")
+        (n (--num)        int    0)
+        (t (--tag)        list)))
+
+    (define parse-level
+      (lambda (raw)
+        (let ((n (string->number raw)))
+          (if (and (number? n) (integer? n))
+              n
+              (error "level must be an integer")))))
+
+    (define level-in-range?
+      (lambda (n)
+        (and (>= n 0) (<= n 5))))
+
+    (define lambda-spec
+      (list
+        (list 'lvl
+              (list '--level '-l)
+              'int
+              1
+              (list
+                (cons 'parse parse-level)
+                (cons 'validate level-in-range?)))))
+
+    (define suite
+      (make-group "std.args"
+        (list
+
+          (make-test "tuple spec parses flags/scalars/lists/positionals"
+            (lambda ()
+              (let ((r (args:parse tuple-spec
+                         '("-v" "--out=y" "--num" "3"
+                           "--tag" "a" "--tag" "b" "--" "-z"))))
+                (assert-equal #t          (args:get r 'v))
+                (assert-equal "y"         (args:get r 'o))
+                (assert-equal 3           (args:get r 'n))
+                (assert-equal '("a" "b")  (args:get r 't))
+                (assert-equal '("-z")     (args:get r 'positional)))))
+
+          (make-test "missing value does not consume next option token"
+            (lambda ()
+              (let ((p (catch 'runtime.error
+                         (args:parse
+                           '((n (--num -n) int)
+                             (m (--msg -m) string))
+                           '("--num" "--msg" "ok")))))
+                (assert-equal 'runtime-error (car p)))))
+
+          (make-test "negative numbers are accepted as int option values"
+            (lambda ()
+              (let ((r (args:parse
+                         '((n (--num -n) int)
+                           (m (--msg -m) string))
+                         '("--num" "-3" "--msg" "ok"))))
+                (assert-equal -3 (args:get r 'n))
+                (assert-equal "ok" (args:get r 'm)))))
+
+          (make-test "tuple opts support parse/validate lambdas"
+            (lambda ()
+              (let ((good (args:parse lambda-spec '("--level=4")))
+                    (bad  (catch 'runtime.error
+                            (args:parse lambda-spec '("--level" "9")))))
+                (assert-equal 4 (args:get good 'lvl))
+                (assert-equal 'runtime-error (car bad)))))
+
+          (make-test "help string includes usage and declared flags"
+            (lambda ()
+              (let ((h (args:help tuple-spec "demo")))
+                (assert-true (args:test-contains? h "usage: demo"))
+                (assert-true (args:test-contains? h "--verbose"))
+                (assert-true (args:test-contains? h "--out"))
+                (assert-true (args:test-contains? h "default \"x\"")))))
+
+          )))
+
+    (print-tap (run suite))))
+

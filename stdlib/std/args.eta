@@ -1,0 +1,522 @@
+;;; std/args.eta - Tiny argparse-style command-line parser (pure Eta).
+;;;
+;;; Tuple-style spec (primary form):
+;;;   (key flags type)
+;;;   (key flags type default)
+;;;   (key flags type default opts)
+;;;   (key flags type opts)
+;;;
+;;; Example:
+;;;   '((v (--verbose -v) flag)
+;;;     (o (--out -o)     string "x")
+;;;     (n (--num)        int    0)
+;;;     (t (--tag)        list))
+;;;
+;;; Optional opts is an alist with keys:
+;;;   required? help metavar choices parse validate action
+;;;
+;;; - parse:    (lambda (raw-string) value)
+;;; - validate: (lambda (value) #t)  ; or raises
+;;; - action:   set | append | count
+
+(module std.args
+  (import std.hashmap std.os)
+  (export
+    args:parse
+    args:parse-command-line
+    args:get
+    args:help)
+  (begin
+
+    ;; ----- small helpers ----------------------------------------------------
+
+    (define args:%opt-keys
+      '(required? help metavar choices parse validate action))
+
+    (defun args:list? (x)
+      (cond
+        ((null? x) #t)
+        ((pair? x) (args:list? (cdr x)))
+        (else #f)))
+
+    (defun args:member-equal? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (args:member-equal? x (cdr xs)))))
+
+    (defun args:every? (pred xs)
+      (cond
+        ((null? xs) #t)
+        ((pred (car xs)) (args:every? pred (cdr xs)))
+        (else #f)))
+
+    (defun args:pair-value (p)
+      ;; Accept dotted pairs (k . v) and 2-element lists (k v).
+      (let ((tail (cdr p)))
+        (if (pair? tail)
+            (if (null? (cdr tail))
+                (car tail)
+                tail)
+            tail)))
+
+    (defun args:alist-ref (alist key default)
+      (let loop ((xs alist))
+        (cond
+          ((null? xs) default)
+          ((and (pair? (car xs))
+                (equal? key (car (car xs))))
+           (args:pair-value (car xs)))
+          (else (loop (cdr xs))))))
+
+    (defun args:opts-alist? (x)
+      (and (args:list? x)
+           (args:every?
+             (lambda (entry)
+               (and (pair? entry)
+                    (symbol? (car entry))
+                    (args:member-equal? (car entry) args:%opt-keys)))
+             x)))
+
+    (defun args:starts-with? (s pfx)
+      (let ((ls (string-length s))
+            (lp (string-length pfx)))
+        (if (< ls lp)
+            #f
+            (string=? (substring s 0 lp) pfx))))
+
+    (defun args:index-of-eq (s)
+      ;; Return index of first #\= in s, or -1.
+      (letrec ((n (string-length s))
+               (loop (lambda (i)
+                       (cond
+                         ((>= i n) -1)
+                         ((eq? (string-ref s i) #\=) i)
+                         (else (loop (+ i 1)))))))
+        (loop 0)))
+
+    (defun args:split-eq (s)
+      ;; "--foo=bar" -> (cons "--foo" "bar"), "--foo" -> (cons "--foo" #f)
+      (let ((i (args:index-of-eq s)))
+        (if (< i 0)
+            (cons s #f)
+            (cons (substring s 0 i)
+                  (substring s (+ i 1) (string-length s))))))
+
+    (defun args:option? (tok)
+      (and (> (string-length tok) 0)
+           (eq? (string-ref tok 0) #\-)
+           (not (string=? tok "-"))))
+
+    (defun args:flag->string (f)
+      (cond
+        ((string? f) f)
+        ((symbol? f) (symbol->string f))
+        (else (error "args: flag must be a symbol or string"))))
+
+    (defun args:flags->strings (flags)
+      (if (null? flags)
+          '()
+          (cons (args:flag->string (car flags))
+                (args:flags->strings (cdr flags)))))
+
+    (defun args:scalar-type? (t)
+      (or (eq? t 'string)
+          (eq? t 'int)
+          (eq? t 'float)))
+
+    ;; ----- normalized spec representation -----------------------------------
+    ;; [0]=key [1]=flags [2]=kind [3]=item-type [4]=default [5]=required?
+    ;; [6]=help [7]=metavar [8]=choices [9]=parser [10]=validator [11]=action
+
+    (defun args:spec-key       (s) (list-ref s 0))
+    (defun args:spec-flags     (s) (list-ref s 1))
+    (defun args:spec-kind      (s) (list-ref s 2))
+    (defun args:spec-item-type (s) (list-ref s 3))
+    (defun args:spec-default   (s) (list-ref s 4))
+    (defun args:spec-required? (s) (list-ref s 5))
+    (defun args:spec-help      (s) (list-ref s 6))
+    (defun args:spec-metavar   (s) (list-ref s 7))
+    (defun args:spec-choices   (s) (list-ref s 8))
+    (defun args:spec-parser    (s) (list-ref s 9))
+    (defun args:spec-validator (s) (list-ref s 10))
+    (defun args:spec-action    (s) (list-ref s 11))
+
+    (defun args:default-for (kind action)
+      (cond
+        ((eq? action 'count) 0)
+        ((eq? kind 'flag) #f)
+        ((eq? kind 'list) '())
+        ((eq? action 'append) '())
+        (else '())))
+
+    (defun args:normalize-type (raw)
+      ;; Returns (kind . item-type)
+      (cond
+        ((eq? raw 'flag)   (cons 'flag 'flag))
+        ((eq? raw 'string) (cons 'string 'string))
+        ((eq? raw 'int)    (cons 'int 'int))
+        ((eq? raw 'float)  (cons 'float 'float))
+        ((eq? raw 'list)   (cons 'list 'string))
+        ((and (pair? raw)
+              (eq? (car raw) 'list)
+              (pair? (cdr raw))
+              (null? (cdr (cdr raw)))
+              (args:scalar-type? (car (cdr raw))))
+         (cons 'list (car (cdr raw))))
+        (else
+         (error "args: invalid type in spec"))))
+
+    (defun args:normalize-action (kind action)
+      (let ((a (if (eq? action #f)
+                   (cond
+                     ((eq? kind 'flag) 'set)
+                     ((eq? kind 'list) 'append)
+                     (else 'set))
+                   action)))
+        (cond
+          ((eq? kind 'flag)
+           (if (or (eq? a 'set) (eq? a 'count))
+               a
+               (error "args: flag action must be set or count")))
+          ((or (eq? a 'set) (eq? a 'append))
+           a)
+          (else
+           (error "args: action must be set, append, or count")))))
+
+    (defun args:normalize-one (raw)
+      (if (or (not (pair? raw))
+              (null? (cdr raw))
+              (null? (cdr (cdr raw))))
+          (error "args: each spec must be (key flags type [default] [opts])")
+          (let* ((key   (car raw))
+                 (flags (args:flags->strings (car (cdr raw))))
+                 (tpair (args:normalize-type (car (cdr (cdr raw)))))
+                 (kind  (car tpair))
+                 (item-type (cdr tpair))
+                 (tail  (cdr (cdr (cdr raw))))
+                 (default #f)
+                 (has-default? #f)
+                 (opts '()))
+            (cond
+              ((null? tail)
+               'ok)
+              ((null? (cdr tail))
+               (if (args:opts-alist? (car tail))
+                   (set! opts (car tail))
+                   (begin
+                     (set! default (car tail))
+                     (set! has-default? #t))))
+              ((null? (cdr (cdr tail)))
+               (begin
+                 (set! default (car tail))
+                 (set! has-default? #t)
+                 (if (args:opts-alist? (car (cdr tail)))
+                     (set! opts (car (cdr tail)))
+                     (error "args: opts must be an alist"))))
+              (else
+               (error "args: spec has too many fields")))
+
+            (let* ((required? (args:alist-ref opts 'required? #f))
+                   (help      (args:alist-ref opts 'help ""))
+                   (metavar   (args:alist-ref opts 'metavar ""))
+                   (choices   (args:alist-ref opts 'choices #f))
+                   (parser    (args:alist-ref opts 'parse #f))
+                   (validator (args:alist-ref opts 'validate #f))
+                   (action0   (args:alist-ref opts 'action #f))
+                   (action    (args:normalize-action kind action0))
+                   (defv      (if has-default?
+                                  default
+                                  (args:default-for kind action))))
+              (list key
+                    flags
+                    kind
+                    item-type
+                    defv
+                    required?
+                    help
+                    metavar
+                    choices
+                    parser
+                    validator
+                    action)))))
+
+    (defun args:normalize-specs (specs)
+      (let loop ((rest specs) (acc '()) (seen-keys '()) (seen-flags '()))
+        (if (null? rest)
+            (reverse acc)
+            (let* ((s (args:normalize-one (car rest)))
+                   (k (args:spec-key s))
+                   (flags (args:spec-flags s)))
+              (if (args:member-equal? k seen-keys)
+                  (error "args: duplicate spec key")
+                  (let flag-loop ((fs flags) (sf seen-flags))
+                    (if (null? fs)
+                        (loop (cdr rest)
+                              (cons s acc)
+                              (cons k seen-keys)
+                              sf)
+                        (if (args:member-equal? (car fs) sf)
+                            (error "args: duplicate flag in specs")
+                            (flag-loop (cdr fs) (cons (car fs) sf))))))))))
+
+    ;; ----- lookup ------------------------------------------------------------
+
+    (defun args:flag-in? (flag flags)
+      (cond
+        ((null? flags) #f)
+        ((string=? flag (car flags)) #t)
+        (else (args:flag-in? flag (cdr flags)))))
+
+    (defun args:find-spec (specs flag)
+      ;; Linear scan; specs are usually small.
+      (cond
+        ((null? specs) '())
+        ((args:flag-in? flag (args:spec-flags (car specs))) (car specs))
+        (else (args:find-spec (cdr specs) flag))))
+
+    (defun args:seen-add (seen key)
+      (if (args:member-equal? key seen)
+          seen
+          (cons key seen)))
+
+    ;; ----- coercion ----------------------------------------------------------
+
+    (defun args:coerce-basic (type raw key)
+      (cond
+        ((eq? type 'string) raw)
+        ((eq? type 'int)
+         (let ((n (string->number raw)))
+           (if (and (number? n) (integer? n))
+               n
+               (error "args: expected integer value"))))
+        ((eq? type 'float)
+         (let ((n (string->number raw)))
+           (if (number? n)
+               n
+               (error "args: expected numeric value"))))
+        (else
+         (error "args: cannot coerce type"))))
+
+    (defun args:coerce (spec raw)
+      (let* ((kind      (args:spec-kind spec))
+             (item-type (args:spec-item-type spec))
+             (parser    (args:spec-parser spec))
+             (validator (args:spec-validator spec))
+             (choices   (args:spec-choices spec))
+             (key       (args:spec-key spec))
+             (base-type (if (eq? kind 'list) item-type kind))
+             (v0 (if parser
+                     (parser raw)
+                     (args:coerce-basic base-type raw key))))
+        (if (and (not (eq? choices #f))
+                 (not (args:member-equal? v0 choices)))
+            (error "args: value not in allowed choices")
+            (begin
+              (if validator
+                  (if (validator v0)
+                      v0
+                      (error "args: validation failed"))
+                  v0)))))
+
+    ;; ----- defaults ----------------------------------------------------------
+
+    (defun args:install-defaults (specs acc)
+      (if (null? specs)
+          acc
+          (args:install-defaults
+            (cdr specs)
+            (hash-map-assoc acc
+                            (args:spec-key (car specs))
+                            (args:spec-default (car specs))))))
+
+    ;; ----- value-taking guards ----------------------------------------------
+
+    (defun args:number-token? (tok)
+      (let ((n (string->number tok)))
+        (number? n)))
+
+    (defun args:int-token? (tok)
+      (let ((n (string->number tok)))
+        (and (number? n) (integer? n))))
+
+    (defun args:option-value-token-allowed? (spec tok)
+      ;; If token looks like an option, only allow it as a value for numeric
+      ;; targets when it is a valid negative/number literal.
+      (let* ((kind (args:spec-kind spec))
+             (item-type (args:spec-item-type spec))
+             (base-type (if (eq? kind 'list) item-type kind)))
+        (cond
+          ((eq? base-type 'int) (args:int-token? tok))
+          ((eq? base-type 'float) (args:number-token? tok))
+          (else #f))))
+
+    (defun args:take-value (spec flag inline rest)
+      (cond
+        (inline (cons inline rest))
+        ((null? rest) (error "args: missing value for option"))
+        ((string=? (car rest) "--") (error "args: missing value for option"))
+        ((and (args:option? (car rest))
+              (not (args:option-value-token-allowed? spec (car rest))))
+         (error "args: missing value for option"))
+        (else
+         (cons (car rest) (cdr rest)))))
+
+    ;; ----- main parser -------------------------------------------------------
+
+    (defun args:add-positional (acc tok)
+      ;; Keep positional list reversed during parse, reverse in finalize.
+      (hash-map-assoc acc 'positional
+                      (cons tok (hash-map-ref acc 'positional '()))))
+
+    (defun args:consume (spec specs flag inline rest acc seen)
+      (let ((kind   (args:spec-kind spec))
+            (action (args:spec-action spec))
+            (key    (args:spec-key spec)))
+        (cond
+          ((eq? kind 'flag)
+           (if inline
+               (error "args: flag does not accept a value")
+               (let ((next-val (if (eq? action 'count)
+                                   (+ (hash-map-ref acc key 0) 1)
+                                   #t)))
+                 (args:loop specs
+                            rest
+                            (hash-map-assoc acc key next-val)
+                            (args:seen-add seen key)
+                            #f))))
+          (else
+           (let* ((pair (args:take-value spec flag inline rest))
+                  (raw  (car pair))
+                  (next (cdr pair))
+                  (val  (args:coerce spec raw)))
+             (if (eq? action 'append)
+                 (args:loop
+                   specs
+                   next
+                   (hash-map-assoc acc key
+                                   (append (hash-map-ref acc key '())
+                                           (list val)))
+                   (args:seen-add seen key)
+                   #f)
+                 (args:loop
+                   specs
+                   next
+                   (hash-map-assoc acc key val)
+                   (args:seen-add seen key)
+                   #f)))))))
+
+    ;; rest? = #t means we've seen `--`; everything is positional.
+    (defun args:loop (specs tokens acc seen rest?)
+      (if (null? tokens)
+          (args:finalize specs acc seen)
+          (let ((tok (car tokens))
+                (more (cdr tokens)))
+            (cond
+              (rest?
+               (args:loop specs more (args:add-positional acc tok) seen #t))
+              ((string=? tok "--")
+               (args:loop specs more acc seen #t))
+              ((not (args:option? tok))
+               (args:loop specs more (args:add-positional acc tok) seen #f))
+              (else
+               (let* ((parts  (args:split-eq tok))
+                      (flag   (car parts))
+                      (inline (cdr parts))
+                      (spec   (args:find-spec specs flag)))
+                 (if (null? spec)
+                     (error "args: unknown option")
+                     (args:consume spec specs flag inline more acc seen))))))))
+
+    (defun args:required-check (specs seen)
+      (if (null? specs)
+          #t
+          (let* ((s (car specs))
+                 (required? (args:spec-required? s))
+                 (key (args:spec-key s))
+                 (flags (args:spec-flags s))
+                 (primary (if (null? flags)
+                              (symbol->string key)
+                              (car flags))))
+            (if (and required? (not (args:member-equal? key seen)))
+                (error "args: missing required option")
+                (args:required-check (cdr specs) seen)))))
+
+    (defun args:finalize (specs acc seen)
+      (args:required-check specs seen)
+      (hash-map-assoc acc 'positional
+                      (reverse (hash-map-ref acc 'positional '()))))
+
+    (defun args:parse (specs argv)
+      (let* ((nspecs (args:normalize-specs specs))
+             (acc0   (args:install-defaults
+                       nspecs
+                       (hash-map-assoc (make-hash-map) 'positional '()))))
+        (args:loop nspecs argv acc0 '() #f)))
+
+    ;; ----- public conveniences ----------------------------------------------
+
+    (defun args:parse-command-line (specs)
+      (args:parse specs (os:command-line-arguments)))
+
+    (defun args:get args
+      (apply hash-map-ref args))
+
+    ;; ----- help text ---------------------------------------------------------
+
+    (defun args:type->string (spec)
+      (let ((kind (args:spec-kind spec))
+            (item (args:spec-item-type spec)))
+        (cond
+          ((eq? kind 'list)
+           (string-append "list<" (symbol->string item) ">"))
+          (else
+           (symbol->string kind)))))
+
+    (defun args:write-flags (flags port)
+      (cond
+        ((null? flags) #f)
+        (else
+         (display (car flags) port)
+         (if (null? (cdr flags))
+             #f
+             (begin
+               (display ", " port)
+               (args:write-flags (cdr flags) port))))))
+
+    (defun args:help args
+      ;; (args:help specs [program-name])
+      (let* ((specs-in (if (null? args)
+                           (error "args:help expects specs")
+                           (car args)))
+             (name (if (or (null? (cdr args))
+                           (null? (car (cdr args))))
+                       "program"
+                       (car (cdr args))))
+             (specs (args:normalize-specs specs-in))
+             (p (open-output-string)))
+        (display "usage: " p)
+        (display name p)
+        (display " [options] [--] [positional ...]\n" p)
+        (for-each
+          (lambda (s)
+            (display "  " p)
+            (args:write-flags (args:spec-flags s) p)
+            (display "  : " p)
+            (display (args:type->string s) p)
+            (display "  (default " p)
+            (write (args:spec-default s) p)
+            (display ")" p)
+            (if (args:spec-required? s)
+                (display " [required]" p)
+                #f)
+            (if (> (string-length (args:spec-help s)) 0)
+                (begin
+                  (display "  - " p)
+                  (display (args:spec-help s) p))
+                #f)
+            (newline p))
+          specs)
+        (get-output-string p)))
+
+  ))

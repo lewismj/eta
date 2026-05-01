@@ -17,6 +17,7 @@
 ;;;   std.aad         - std.core
 ;;;   std.io          - no dependencies
 ;;;   std.os          - no dependencies
+;;;   std.args        - std.hashmap, std.os
 ;;;   std.fs          - no dependencies
 ;;;   std.json        - no dependencies
 ;;;   std.collections - no dependencies
@@ -37,6 +38,7 @@
   (import std.aad)
   (import std.io)
   (import std.os)
+  (import std.args)
   (import std.fs)
   (import std.json)
   (import std.log)
@@ -90,6 +92,11 @@
     os:exit
     os:current-directory
     os:change-directory!
+    ;; -- std.args -------------------------------------------------------
+    args:parse
+    args:parse-command-line
+    args:get
+    args:help
     ;; -- std.fs ---------------------------------------------------------
     fs:file-exists?
     fs:directory?
