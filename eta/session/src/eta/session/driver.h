@@ -1112,9 +1112,30 @@ public:
          * (constructor does this, but defensive)
          */
 
+        uint32_t accounted_globals = static_cast<uint32_t>(vm_.globals().size());
+
         /// Execute each module's _init function
         for (const auto& mod : etac.modules) {
-            if (executed_modules_.contains(mod.name)) continue;
+            if (executed_modules_.contains(mod.name)) {
+                if (mod.total_globals > accounted_globals) {
+                    accounted_globals = mod.total_globals;
+                }
+                continue;
+            }
+
+            /**
+             * .etac modules are loaded without source forms, but later dynamic
+             * eval/compilation still re-analyzes accumulated_forms_. Reserve
+             * equivalent global slots up front so synthetic eval modules cannot
+             * overlap and clobber this compiled module's globals.
+             */
+            if (mod.total_globals > accounted_globals) {
+                const auto reserve_slots = mod.total_globals - accounted_globals;
+                if (!append_etac_global_reservation(reserve_slots)) {
+                    return false;
+                }
+                accounted_globals = mod.total_globals;
+            }
 
             auto& globals = vm_.globals();
             if (globals.size() < mod.total_globals)
@@ -1198,6 +1219,51 @@ private:
         std::ostringstream oss;
         diag_engine_.print_all(oss, /*use_color=*/false, file_resolver());
         return oss.str();
+    }
+
+    /**
+     * Reserve a contiguous global-slot range in accumulated_forms_ so future
+     * source/eval compilations preserve slot layout after loading .etac modules.
+     *
+     * The placeholder module is marked executed and never run; it only exists to
+     * keep semantic global allocation in sync with already-loaded compiled code.
+     */
+    bool append_etac_global_reservation(uint32_t slots_to_reserve) {
+        if (slots_to_reserve == 0) return true;
+
+        const std::string reserve_module_name =
+            "__eta.etac.reserve." + std::to_string(etac_reserve_counter_++);
+
+        std::ostringstream source;
+        source << "(module " << reserve_module_name << "\n";
+        for (uint32_t i = 0; i < slots_to_reserve; ++i) {
+            source << "  (define __eta_etac_slot_" << i << " '())\n";
+        }
+        source << ")";
+
+        reader::lexer::Lexer lex(/*file_id=*/0, source.str());
+        reader::parser::Parser parser(lex);
+        auto parsed_res = parser.parse_toplevel();
+        if (!parsed_res) {
+            auto& err = parsed_res.error();
+            std::visit([this](auto&& e) {
+                diag_engine_.emit(diagnostic::to_diagnostic(e));
+            }, err);
+            return false;
+        }
+
+        reader::expander::Expander expander;
+        auto expanded_res = expander.expand_many(*parsed_res);
+        if (!expanded_res) {
+            diag_engine_.emit(diagnostic::to_diagnostic(expanded_res.error()));
+            return false;
+        }
+
+        for (auto& f : *expanded_res) {
+            accumulated_forms_.push_back(reader::parser::deep_copy(f));
+        }
+        executed_modules_.insert(reserve_module_name);
+        return true;
     }
 
     /**
@@ -1666,6 +1732,7 @@ private:
     std::unordered_map<uint32_t, std::string> global_names_;
     int repl_counter_{0};
     uint64_t eval_counter_{0};
+    uint64_t etac_reserve_counter_{0};
     std::vector<std::string> active_module_init_stack_;
     std::vector<PriorModule> repl_modules_;
 
