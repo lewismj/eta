@@ -1,0 +1,191 @@
+<#
+.SYNOPSIS
+    Validate (and optionally hydrate) a Windows Eta install bundle.
+
+.DESCRIPTION
+    Mirrors the "Assemble bundle" step of .github/workflows/release.yml so the
+    same checks can be run locally against a `cmake --install` prefix without
+    pushing to CI.
+
+    Performs three things:
+      1. Verifies the required executables exist in <Prefix>\bin\.
+      2. Best-effort copies OpenSSL runtime DLLs (libcrypto*/libssl*) from
+         vcpkg's installed bin and from build/_deps into <Prefix>\bin\ when
+         they are not already present.
+      3. Verifies the eta_jupyter runtime DLL set is complete:
+            xeus / xeus-zmq / libzmq* / uv / libcrypto*
+         plus the MSVC redistributable runtime (msvcp140 / vcruntime140 /
+         vcruntime140_1).
+
+    Exit codes:
+        0  bundle looks good
+        1  one or more required artefacts missing
+        2  invalid arguments (e.g. prefix does not exist)
+
+.PARAMETER Prefix
+    The install prefix produced by `cmake --install`. Required.
+
+.PARAMETER VcpkgDir
+    Optional path to a vcpkg checkout (e.g. D:\a\_temp\vcpkg). Used to source
+    OpenSSL DLLs from <VcpkgDir>\installed\x64-windows\bin when they are
+    missing from the bundle.
+
+.PARAMETER DepsDir
+    Optional path to the CMake build/_deps directory used to source any DLLs
+    produced by FetchContent (xeus, xeus-zmq, libzmq, libuv, openssl).
+
+.PARAMETER NoCopy
+    If supplied, only validate; do not attempt to copy missing DLLs in.
+
+.EXAMPLE
+    pwsh -File scripts/check-windows-bundle.ps1 `
+        -Prefix C:\Users\lewis\develop\eta\dist\eta-v0.5.1-win-x64
+
+.EXAMPLE
+    pwsh -File scripts/check-windows-bundle.ps1 `
+        -Prefix D:\a\eta\eta\dist\eta-v0.5.1-win-x64 `
+        -VcpkgDir D:\a\_temp\vcpkg `
+        -DepsDir D:\a\eta\eta\build\_deps
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string] $Prefix,
+
+    [string] $VcpkgDir,
+
+    [string] $DepsDir,
+
+    [switch] $NoCopy
+)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path $Prefix)) {
+    Write-Error "Install prefix does not exist: $Prefix"
+    exit 2
+}
+
+$binDir = Join-Path $Prefix 'bin'
+if (-not (Test-Path $binDir)) {
+    Write-Error "Bundle bin\ directory missing: $binDir"
+    exit 1
+}
+
+Write-Host "=== Validating bundle: $Prefix ==="
+
+# ── 1. Required executables ─────────────────────────────────────────────────
+$requiredExes = @(
+    'etac.exe', 'etai.exe', 'eta_repl.exe',
+    'eta_lsp.exe', 'eta_dap.exe', 'eta_jupyter.exe'
+)
+$missingExes = @()
+foreach ($exe in $requiredExes) {
+    $p = Join-Path $binDir $exe
+    if (-not (Test-Path $p)) { $missingExes += $exe }
+}
+
+# ── 2. Optional OpenSSL hydration from vcpkg / _deps ────────────────────────
+function Add-CandidateDlls {
+    param(
+        [System.Collections.ArrayList] $Acc,
+        [string] $Root,
+        [string[]] $Filters,
+        [switch] $Recurse
+    )
+    if (-not $Root) { return }
+    if (-not (Test-Path $Root)) { return }
+    foreach ($f in $Filters) {
+        $items = if ($Recurse) {
+            Get-ChildItem -Path $Root -Recurse -Filter $f -File -ErrorAction SilentlyContinue
+        } else {
+            Get-ChildItem -Path $Root -Filter $f -File -ErrorAction SilentlyContinue
+        }
+        foreach ($i in $items) { [void] $Acc.Add($i) }
+    }
+}
+
+if (-not $NoCopy) {
+    $opensslCandidates = New-Object System.Collections.ArrayList
+    if ($VcpkgDir) {
+        $vcpkgBin = Join-Path $VcpkgDir 'installed\x64-windows\bin'
+        Add-CandidateDlls -Acc $opensslCandidates -Root $vcpkgBin -Filters @('libcrypto*.dll', 'libssl*.dll')
+    }
+    Add-CandidateDlls -Acc $opensslCandidates -Root $DepsDir -Filters @('libcrypto*.dll', 'libssl*.dll') -Recurse
+
+    $unique = $opensslCandidates | Sort-Object FullName -Unique
+    foreach ($dll in $unique) {
+        $dest = Join-Path $binDir $dll.Name
+        if (-not (Test-Path $dest)) {
+            Write-Host "Copying $($dll.FullName) -> $binDir"
+            Copy-Item -Force $dll.FullName $binDir -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# ── 3. Required runtime DLL set ─────────────────────────────────────────────
+function Test-AnyDll {
+    param([string] $Dir, [string[]] $Patterns)
+    foreach ($pat in $Patterns) {
+        if ($pat -match '[*?]') {
+            $hit = Get-ChildItem -Path $Dir -Filter $pat -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { return $true }
+        } else {
+            if (Test-Path (Join-Path $Dir $pat)) { return $true }
+        }
+    }
+    return $false
+}
+
+$dllChecks = @(
+    @{ Label = 'xeus'      ; Patterns = @('xeus.dll', 'libxeus.dll') }
+    @{ Label = 'xeus-zmq'  ; Patterns = @('xeus-zmq.dll', 'libxeus-zmq.dll') }
+    @{ Label = 'libzmq'    ; Patterns = @('libzmq*.dll', 'zmq*.dll') }
+    @{ Label = 'libuv'     ; Patterns = @('uv.dll', 'libuv*.dll') }
+    @{ Label = 'libcrypto' ; Patterns = @('libcrypto*.dll') }
+)
+
+$missingDlls = @()
+foreach ($c in $dllChecks) {
+    if (-not (Test-AnyDll -Dir $binDir -Patterns $c.Patterns)) {
+        $missingDlls += "$($c.Label) ($($c.Patterns -join ' / '))"
+    }
+}
+
+# ── 4. MSVC redistributable runtime ─────────────────────────────────────────
+$msvcDlls = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')
+$missingMsvc = @()
+foreach ($d in $msvcDlls) {
+    if (-not (Test-Path (Join-Path $binDir $d))) { $missingMsvc += $d }
+}
+
+# ── Report ─────────────────────────────────────────────────────────────────
+$ok = $true
+if ($missingExes.Count -gt 0) {
+    $ok = $false
+    Write-Host "[FAIL] Missing executables: $($missingExes -join ', ')"
+}
+if ($missingDlls.Count -gt 0) {
+    $ok = $false
+    Write-Host "[FAIL] Missing eta_jupyter runtime DLLs: $($missingDlls -join ', ')"
+}
+if ($missingMsvc.Count -gt 0) {
+    $ok = $false
+    Write-Host "[FAIL] Missing MSVC runtime DLLs: $($missingMsvc -join ', ')"
+}
+
+if ($ok) {
+    Write-Host "[OK] Bundle bin\ contains all required artefacts."
+    exit 0
+}
+
+Write-Host ""
+Write-Host "Current bin\ contents:"
+Get-ChildItem -Path $binDir -File |
+    Sort-Object Name |
+    Select-Object Name, Length |
+    Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+
+exit 1
+

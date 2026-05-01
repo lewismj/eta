@@ -173,25 +173,29 @@ if (Test-Path $EtaJupyterExe) {
     # 0xC0000135) when eta_jupyter is launched, which is otherwise opaque.
     # The DLL names vary by build: MSVC FetchContent produces libxeus.dll /
     # libxeus-zmq.dll; vcpkg / conda produce xeus.dll / xeus-zmq.dll.
-    # uv.dll (libuv) is a direct runtime dependency of xeus-zmq 4.x.
+    # uv.dll / libuv*.dll (libuv) is a direct runtime dependency of xeus-zmq 4.x.
     $HasXeus    = (Test-Path (Join-Path $BinDir "xeus.dll")) -or
                   (Test-Path (Join-Path $BinDir "libxeus.dll"))
     $HasXeusZmq = (Test-Path (Join-Path $BinDir "xeus-zmq.dll")) -or
                   (Test-Path (Join-Path $BinDir "libxeus-zmq.dll"))
     $HasAnyZmq  = (Test-Path (Join-Path $BinDir "libzmq.dll")) -or
-                  [bool](Get-ChildItem -Path $BinDir -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
-    $HasUv      = (Test-Path (Join-Path $BinDir "uv.dll"))
+                  [bool](Get-ChildItem -Path $BinDir -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1) -or
+                  [bool](Get-ChildItem -Path $BinDir -Filter "zmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+    $HasUv      = (Test-Path (Join-Path $BinDir "uv.dll")) -or
+                  [bool](Get-ChildItem -Path $BinDir -Filter "libuv*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
     $HasCrypto  = [bool](Get-ChildItem -Path $BinDir -Filter "libcrypto*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
 
-    if (-not ($HasXeus -and $HasXeusZmq -and $HasAnyZmq -and $HasUv -and $HasCrypto)) {
+    if (-not ($HasXeus -and $HasXeusZmq -and $HasAnyZmq -and $HasUv)) {
         Write-Host "  [WARN] Missing xeus runtime DLLs in $BinDir :" -ForegroundColor Yellow
         if (-not $HasXeus)    { Write-Host "         - xeus.dll / libxeus.dll" }
         if (-not $HasXeusZmq) { Write-Host "         - xeus-zmq.dll / libxeus-zmq.dll" }
-        if (-not $HasAnyZmq)  { Write-Host "         - libzmq*.dll" }
-        if (-not $HasUv)      { Write-Host "         - uv.dll  (libuv -- required by xeus-zmq 4.x)" }
-        if (-not $HasCrypto)  { Write-Host "         - libcrypto*.dll  (OpenSSL runtime dependency of xeus-zmq)" }
+        if (-not $HasAnyZmq)  { Write-Host "         - libzmq*.dll / zmq*.dll" }
+        if (-not $HasUv)      { Write-Host "         - uv.dll / libuv*.dll  (libuv -- required by xeus-zmq 4.x)" }
         Write-Host "         eta_jupyter will fail to start with STATUS_DLL_NOT_FOUND."
         Write-Host "         Rebuild from source (this bundle is missing required runtime DLLs)."
+    }
+    if (-not $HasCrypto) {
+        Write-Host "  [WARN] libcrypto*.dll not found in $BinDir -- this is only required when libzmq/xeus-zmq is built with OpenSSL/CURVE support." -ForegroundColor Yellow
     }
 
     Write-Host "  Installing Eta kernelspec (--user)..."
@@ -206,7 +210,8 @@ if (Test-Path $EtaJupyterExe) {
         if ($LASTEXITCODE -eq -1073741515) {
             Write-Host "         Exit code -1073741515 (0xC0000135) = STATUS_DLL_NOT_FOUND." -ForegroundColor Yellow
             Write-Host "         eta_jupyter.exe is missing one or more required DLLs."
-            Write-Host "         Required: xeus / libxeus, xeus-zmq / libxeus-zmq, libzmq*.dll, uv.dll, libcrypto*.dll"
+            Write-Host "         Required: xeus / libxeus, xeus-zmq / libxeus-zmq, libzmq*.dll / zmq*.dll, uv.dll / libuv*.dll"
+            Write-Host "         Optional (build-dependent): libcrypto*.dll"
         }
         Write-Host "    Run manually: `"$EtaJupyterExe`" --install --user"
     }

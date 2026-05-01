@@ -146,7 +146,7 @@ jobs:
           $vcpkg = "${{ runner.temp }}\vcpkg"
           git clone --depth 1 https://github.com/microsoft/vcpkg.git $vcpkg
           & "$vcpkg\bootstrap-vcpkg.bat" -disableMetrics
-          & "$vcpkg\vcpkg" install boost-test:x64-windows boost-unordered:x64-windows
+          & "$vcpkg\vcpkg" install boost-test:x64-windows boost-unordered:x64-windows openssl:x64-windows
           echo "VCPKG_DIR=$vcpkg" >> $env:GITHUB_ENV
 
       - name: Configure
@@ -185,36 +185,52 @@ jobs:
           npx vsce package -o "eta-lang-${label}.vsix" --skip-license
           echo "VSIX_LABEL=${label}" >> $env:GITHUB_ENV
 
+      - name: Diagnose install tree
+        shell: pwsh
+        if: always()
+        run: |
+          $prefix = "${{ github.workspace }}\dist\${{ env.BUNDLE }}"
+          Write-Host "=== install prefix: $prefix ==="
+          if (Test-Path $prefix) {
+            Get-ChildItem -Path $prefix -Recurse -File |
+              Select-Object @{n='Rel';e={$_.FullName.Substring($prefix.Length+1)}}, Length |
+              Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+          } else {
+            Write-Host "[WARN] install prefix does not exist"
+          }
+          Write-Host "=== install_manifest.txt ==="
+          $manifest = "${{ github.workspace }}\build\install_manifest.txt"
+          if (Test-Path $manifest) { Get-Content $manifest | Write-Host } else { Write-Host "(no manifest)" }
+          Write-Host "=== build/_deps DLL inventory ==="
+          $deps = "${{ github.workspace }}\build\_deps"
+          if (Test-Path $deps) {
+            Get-ChildItem -Path $deps -Recurse -Include *.dll -ErrorAction SilentlyContinue |
+              Select-Object FullName | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+          }
+          Write-Host "=== vcpkg installed bin DLLs ==="
+          $vcpkgBin = "${{ env.VCPKG_DIR }}\installed\x64-windows\bin"
+          if (Test-Path $vcpkgBin) {
+            Get-ChildItem -Path $vcpkgBin -Filter *.dll | Select-Object Name | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+          } else {
+            Write-Host "(no vcpkg x64-windows bin)"
+          }
+
       - name: Assemble bundle
         shell: pwsh
         run: |
           $prefix = "${{ github.workspace }}\dist\${{ env.BUNDLE }}"
 
-          # Ensure required binaries are present.
-          foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe", "eta_jupyter.exe")) {
-            $path = Join-Path $prefix "bin\$bin"
-            if (-not (Test-Path $path)) { throw "Missing required binary: $path" }
-          }
+          # Validate required binaries + hydrate/verify runtime DLLs.
+          # Logic lives in scripts/check-windows-bundle.ps1 so it can be
+          # reproduced 1:1 locally against an existing install prefix.
+          & "${{ github.workspace }}\scripts\check-windows-bundle.ps1" `
+              -Prefix  $prefix `
+              -VcpkgDir "${{ env.VCPKG_DIR }}" `
+              -DepsDir  "${{ github.workspace }}\build\_deps"
+          if ($LASTEXITCODE -ne 0) { throw "check-windows-bundle.ps1 failed (exit $LASTEXITCODE)" }
 
-          # Ensure eta_jupyter runtime dependencies are bundled.
           $binDir = Join-Path $prefix "bin"
-          $hasXeus    = (Test-Path (Join-Path $binDir "xeus.dll")) -or
-                        (Test-Path (Join-Path $binDir "libxeus.dll"))
-          $hasXeusZmq = (Test-Path (Join-Path $binDir "xeus-zmq.dll")) -or
-                        (Test-Path (Join-Path $binDir "libxeus-zmq.dll"))
-          $hasZmq     = [bool](Get-ChildItem -Path $binDir -Filter "libzmq*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
-          $hasUv      = (Test-Path (Join-Path $binDir "uv.dll"))
-          $hasCrypto  = [bool](Get-ChildItem -Path $binDir -Filter "libcrypto*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
-          if (-not ($hasXeus -and $hasXeusZmq -and $hasZmq -and $hasUv -and $hasCrypto)) {
-            throw "Missing eta_jupyter runtime DLLs in bundle bin\ (xeus/xeus-zmq/libzmq/uv/libcrypto)."
-          }
 
-          # Portable zip should include MSVC runtime DLLs for clean machines.
-          foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
-            if (-not (Test-Path (Join-Path $binDir $dll))) {
-              throw "Missing MSVC runtime DLL in bundle bin\: $dll"
-            }
-          }
 
           # Keep kernel logos next to eta_jupyter for runtime --install.
           $resDest = Join-Path $prefix "bin\resources"

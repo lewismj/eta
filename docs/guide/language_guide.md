@@ -237,7 +237,7 @@ mutable, O(1) indexed), hash maps and hash sets — see §12.
 
 Eta has no built-in `match` form. Idiomatic dispatch uses `cond` with
 predicate guards or, for symbolic data, structural unification from
-`std.logic` (§15).
+`std.logic` (§17).
 
 ```scheme
 (defun shape-area (s)
@@ -534,7 +534,7 @@ for object-lifetime hooks.
 
 ---
 
-## 15. Logic Programming & Unification
+## 17. Logic Programming & Unification
 
 Logic variables (`logic-var`), structural unification (`==`), and the
 search combinators (`findall`, `run1`, `succeeds?`, `naf`) are first
@@ -560,7 +560,7 @@ exception handling and CLP propagation compose with it cleanly.
 
 ---
 
-## 16. Constraint Logic Programming
+## 18. Constraint Logic Programming
 
 Three CLP domains are bundled:
 
@@ -585,7 +585,7 @@ worked LP.
 
 ---
 
-## 17. Datalog & Fact Tables
+## 19. Datalog & Fact Tables
 
 `std.db` provides Datalog-style relations with `defrel`, `assert!`, and
 tabled evaluation — see [`db.md`](./reference/db.md). `std.fact_table` is a
@@ -595,7 +595,7 @@ columnar store with hash-indexed lookups for analytics workloads — see
 
 ---
 
-## 18. Causal Inference
+## 20. Causal Inference
 
 The `std.causal` family is a research-grade causal-inference stack:
 ADMGs with bidirected edges, linear-time d-separation (Bayes-ball),
@@ -603,8 +603,12 @@ Pearl's three rules, the **ID** and **IDC** algorithms (Shpitser &
 Pearl) with hedge witnesses, generalised adjustment / front-door /
 IV criteria, mediation (NDE / NIE / CDE), transportability,
 counterfactuals (twin networks, ID*, ETT), AIPW / TMLE / IPW /
-g-formula estimators with bootstrap CIs, PC / FCI / NOTEARS-style
-structure learning, and DOT / Mermaid / LaTeX rendering.
+g-formula estimators with bootstrap CIs and sensitivity diagnostics
+(E-value, Rosenbaum bounds), PC / FCI / GES / NOTEARS-style structure
+learning, and DOT / Mermaid / LaTeX rendering. Milestones M0–M11 of the
+[causal plan](../plan/causal_plan.md) are in-tree; the HTE / CATE
+extension milestones (M12–M15: meta-learners, causal forest, DML
+cross-fitting, Qini / policy value) are tracked as future work.
 
 A graph is just an edge list — `->` is a directed edge, `<->` an
 unobserved-confounder bidirected edge:
@@ -624,6 +628,31 @@ unobserved-confounder bidirected edge:
 ;; => (sum (m) (prod (P (m x)) (sum (x*) (prod (P (y x* m)) (P (x*))))))
 ```
 
+Once an estimand is identified, plug observational data into the
+estimation backends — every estimator returns a scalar ATE, and
+`do:bootstrap-ci` wraps any of them for percentile CIs:
+
+```scheme
+(import std.causal.estimate)
+
+(define obs '(((x . 0) (z . 0) (y . 0.0)) ((x . 1) (z . 0) (y . 2.1))
+              ((x . 0) (z . 1) (y . 9.8)) ((x . 1) (z . 1) (y . 12.0))
+              ;; … many more rows …
+              ))
+
+(do:ate-gformula obs 'y 'x '(z))   ;; plug-in regression
+(do:ate-aipw     obs 'y 'x '(z))   ;; doubly-robust
+(do:bootstrap-ci (lambda (b) (do:ate-aipw b 'y 'x '(z))) obs 500 0.05)
+```
+
+Render any graph straight to Mermaid or DOT for notebooks and papers:
+
+```scheme
+(import std.causal.render)
+(dag:->mermaid finance-dag)        ;; flowchart LR …
+(dag:->dot finance-dag '((title . "Finance DAG") (rankdir . "LR")))
+```
+
 | Module | Scope |
 | :----- | :---- |
 | `std.causal`                  | DAG utilities, do-calculus rules, back-door identification, plug-in adjustment |
@@ -633,17 +662,18 @@ unobserved-confounder bidirected edge:
 | `std.causal.mediation`        | Natural / controlled direct & indirect effects |
 | `std.causal.transport`        | Selection diagrams, sBD criterion, transport queries |
 | `std.causal.counterfactual`   | Twin networks, ID* / IDC*, effect-of-treatment-on-treated |
-| `std.causal.estimate`         | g-formula, IPW, AIPW, TMLE, bootstrap CIs, sensitivity |
-| `std.causal.learn`            | PC / FCI / GES / NOTEARS structure learning, CI tests |
+| `std.causal.estimate`         | g-formula, IPW, AIPW, TMLE, bootstrap CIs, E-value, Rosenbaum bounds |
+| `std.causal.learn`            | PC / FCI / GES / NOTEARS structure learning, Fisher-z & χ² CI tests |
 | `std.causal.render`           | DOT, Mermaid, LaTeX renderers; `define-dag` macro |
 
 > **Reference:** [`causal.md`](./reference/causal.md);
 > counterfactual deep-dive [`causal-counterfactual.md`](./reference/causal-counterfactual.md);
-> end-to-end example [`examples/causal_demo.eta`](../../examples/causal_demo.eta).
+> end-to-end example [`examples/causal_demo.eta`](../../examples/causal_demo.eta);
+> roadmap [`docs/plan/causal_plan.md`](../plan/causal_plan.md).
 
 ---
 
-## 19. Automatic Differentiation (AAD)
+## 21. Automatic Differentiation (AAD)
 
 Reverse-mode AD with a tape recorded directly by the VM — no closure
 allocation per arithmetic op. `grad` returns `(value gradient-vector)`
@@ -662,7 +692,7 @@ Helpers for AD-safe primitives (`ad-abs`, `softplus`, `relu`,
 
 ---
 
-## 20. Statistics & Linear Algebra
+## 22. Statistics & Linear Algebra
 
 `std.stats` provides descriptive statistics, OLS multi-regression, PCA,
 and distribution functions, backed by Eigen for dense linear algebra.
@@ -673,7 +703,7 @@ The Eigen layer is currently exposed only through `std.stats` and
 
 ---
 
-## 21. libtorch / Neural Networks
+## 23. libtorch / Neural Networks
 
 `std.torch` wraps libtorch tensors, autograd, the `nn` module suite,
 optimisers, and (when built with CUDA) device transfer.
@@ -691,7 +721,7 @@ optimisers, and (when built with CUDA) device transfer.
 
 ---
 
-## 22. Concurrency & Distribution
+## 24. Concurrency & Distribution
 
 Eta's actor model is built on **nng**: every actor owns a mailbox
 socket; messages are arbitrary Eta values serialised by the runtime.
@@ -718,7 +748,7 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 ---
 
-## 23. Quantitative Finance Examples
+## 25. Quantitative Finance Examples
 
 | Example                                                        | Topic                                  | Walkthrough |
 | :------------------------------------------------------------- | :------------------------------------- | :---------- |
@@ -732,7 +762,7 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 ---
 
-## 24. Tooling
+## 26. Tooling
 
 | Topic                        | Reference                                              |
 | :--------------------------- | :----------------------------------------------------- |
@@ -745,7 +775,7 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 ---
 
-## 25. Runtime Internals (overview)
+## 27. Runtime Internals (overview)
 
 <details>
 <summary><b>NaN-boxing</b></summary>
@@ -785,7 +815,7 @@ For the architectural overview, read [`architecture.md`](../architecture.md).
 
 ---
 
-## 26. Examples Index
+## 28. Examples Index
 
 A curated walk through everything in [`examples/`](../../examples/):
 beginner programs, symbolic & logic, AAD & finance, concurrency, causal
@@ -798,7 +828,6 @@ beginner programs, symbolic & logic, AAD & finance, concurrency, causal
 ## 29. Further Reading
 
 - [`architecture.md`](../architecture.md) — pipeline overview
-- [`eta_plan.md`](../eta_plan.md) — language roadmap
 - [`next-steps.md`](../next-steps.md) — short-term work items
 - [`release-notes.md`](../release-notes.md) — version history
 
