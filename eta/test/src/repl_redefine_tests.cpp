@@ -207,5 +207,27 @@ BOOST_AUTO_TEST_CASE(dynamic_wind_cleanup_runs_with_cross_submission_set) {
     BOOST_TEST(repl.eval_int("(if cleanup-called 1 0)") == 1);
 }
 
+BOOST_AUTO_TEST_CASE(eval_runtime_error_does_not_poison_later_repl_submissions) {
+    ReplHarness repl;
+
+    eta::runtime::nanbox::LispVal first{eta::runtime::nanbox::Nil};
+    BOOST_REQUIRE_MESSAGE(repl.submit("(eval '(+ 1 2))", &first),
+                          "initial eval failed:\n" + repl.diagnostics_string());
+    auto first_num = eta::runtime::nanbox::ops::decode<int64_t>(first);
+    BOOST_REQUIRE_MESSAGE(first_num.has_value(), "initial eval did not produce a fixnum");
+    BOOST_TEST(*first_num == 3);
+
+    const bool failing_ok = repl.submit("(eval '(+ 1 *))");
+    BOOST_REQUIRE_MESSAGE(!failing_ok, "expected eval with non-numeric argument to fail");
+    BOOST_TEST(repl.diagnostics_string().find("+: argument is not a number") != std::string::npos);
+
+    eta::runtime::nanbox::LispVal after_error{eta::runtime::nanbox::Nil};
+    BOOST_REQUIRE_MESSAGE(repl.submit("(eval '(+ 1 2))", &after_error),
+                          "eval after runtime error failed:\n" + repl.diagnostics_string());
+    auto after_num = eta::runtime::nanbox::ops::decode<int64_t>(after_error);
+    BOOST_REQUIRE_MESSAGE(after_num.has_value(), "eval after runtime error did not produce a fixnum");
+    BOOST_TEST(*after_num == 3);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 

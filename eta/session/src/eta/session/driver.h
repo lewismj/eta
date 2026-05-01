@@ -1937,6 +1937,13 @@ private:
         }
 
         /**
+         * Rollback boundary for this submission.
+         * Keep modules auto-loaded while resolving imports above, but
+         * discard forms added by this submission (including nested eval).
+         */
+        const std::size_t accumulated_forms_base = accumulated_forms_.size();
+
+        /**
          * Record non-prelude imports in the compile result so the
          * serializer can embed them in .etac files.
          */
@@ -1960,20 +1967,19 @@ private:
 
         /// Link ALL accumulated forms
         reader::ModuleLinker linker;
+        const auto rollback_accumulated_forms = [&]() {
+            accumulated_forms_.resize(accumulated_forms_base);
+        };
         auto idx_res = linker.index_modules(accumulated_forms_);
         if (!idx_res) {
-            /// Rollback: remove the forms we just added
-            for (std::size_t i = 0; i < new_expanded.size(); ++i) {
-                accumulated_forms_.pop_back();
-            }
+            /// Rollback source additions from this run (including nested eval additions).
+            rollback_accumulated_forms();
             emit_link_error(idx_res.error());
             return false;
         }
         auto link_res = linker.link();
         if (!link_res) {
-            for (std::size_t i = 0; i < new_expanded.size(); ++i) {
-                accumulated_forms_.pop_back();
-            }
+            rollback_accumulated_forms();
             emit_link_error(link_res.error());
             return false;
         }
@@ -1982,9 +1988,7 @@ private:
         semantics::SemanticAnalyzer sa;
         auto sem_res = sa.analyze_all(accumulated_forms_, linker, builtins_);
         if (!sem_res) {
-            for (std::size_t i = 0; i < new_expanded.size(); ++i) {
-                accumulated_forms_.pop_back();
-            }
+            rollback_accumulated_forms();
             diag_engine_.emit(diagnostic::to_diagnostic(sem_res.error()));
             return false;
         }
@@ -2012,6 +2016,7 @@ private:
                 auto prim = runtime::memory::factory::make_primitive(
                     heap_, spec.func, spec.arity, spec.has_rest);
                 if (!prim) {
+                    rollback_accumulated_forms();
                     emit_runtime_error(prim.error());
                     return false;
                 }
@@ -2068,11 +2073,8 @@ private:
                 ActiveModuleInitGuard active_module_guard(active_module_init_stack_, mod.name);
                 auto exec_res = vm_.execute(*init_func);
                 if (!exec_res) {
-                    /// Rollback: remove the forms we just added so future
-                    /// REPL inputs are not poisoned by the broken module.
-                    for (std::size_t i = 0; i < new_expanded.size(); ++i) {
-                        accumulated_forms_.pop_back();
-                    }
+                    /// Rollback this run's source additions so failed modules don't poison later submissions.
+                    rollback_accumulated_forms();
                     emit_runtime_error(exec_res.error());
                     return false;
                 }
@@ -2086,9 +2088,7 @@ private:
                         auto main_res = vm_.call_value(main_val, {});
                         if (!main_res) {
                             /// Rollback for failed main invocation too.
-                            for (std::size_t i = 0; i < new_expanded.size(); ++i) {
-                                accumulated_forms_.pop_back();
-                            }
+                            rollback_accumulated_forms();
                             emit_runtime_error(main_res.error());
                             return false;
                         }
