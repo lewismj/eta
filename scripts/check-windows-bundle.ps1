@@ -9,11 +9,14 @@
 
     Performs three things:
       1. Verifies the required executables exist in <Prefix>\bin\.
-      2. Best-effort copies OpenSSL runtime DLLs (libcrypto*/libssl*) from
-         vcpkg's installed bin and from build/_deps into <Prefix>\bin\ when
-         they are not already present.
-      3. Verifies the eta_jupyter runtime DLL set is complete:
-            xeus / xeus-zmq / libzmq* / uv / libcrypto*
+      2. Hydrates the eta_jupyter runtime DLL set into <Prefix>\bin\ from
+         vcpkg's installed bin (flat) and from build/_deps (recursive),
+         covering xeus / xeus-zmq / libzmq / libuv / OpenSSL / libsodium.
+         CMake's in-tree install rules already copy these when the relevant
+         FetchContent / imported targets resolve at configure time; this
+         step is the belt-and-braces fallback for the cases where they do
+         not (e.g. xeus-zmq's optional LibUV branch on a stripped vcpkg).
+      3. Verifies the resulting bin\ contains the full runtime DLL set
          plus the MSVC redistributable runtime (msvcp140 / vcruntime140 /
          vcruntime140_1).
 
@@ -86,7 +89,15 @@ foreach ($exe in $requiredExes) {
     if (-not (Test-Path $p)) { $missingExes += $exe }
 }
 
-# ── 2. Optional OpenSSL hydration from vcpkg / _deps ────────────────────────
+# ── 2. Hydrate runtime DLLs from vcpkg / _deps ──────────────────────────────
+# CMake's in-tree install(FILES $<TARGET_FILE:...>) rules in
+# eta/jupyter/CMakeLists.txt only fire when the corresponding FetchContent or
+# imported target is fully materialised at configure time. On CI runners that
+# is not always the case (e.g. xeus-zmq's FetchContent build skips libuv when
+# LibUV is not on the vcpkg manifest), so the bundle's bin\ ends up missing
+# DLLs the kernel needs at runtime. Belt-and-braces: copy any matching DLL
+# we can find under vcpkg's installed bin and under build/_deps before the
+# validation pass runs.
 function Add-CandidateDlls {
     param(
         [System.Collections.ArrayList] $Acc,
@@ -106,15 +117,30 @@ function Add-CandidateDlls {
     }
 }
 
+# Every DLL family the eta_jupyter kernel needs at runtime. Patterns are
+# globs evaluated against vcpkg bin (flat) and against build/_deps (recursive).
+$hydrationFilters = @(
+    'xeus.dll', 'libxeus.dll',
+    'xeus-zmq.dll', 'libxeus-zmq.dll',
+    'libzmq*.dll', 'zmq*.dll',
+    'uv.dll', 'libuv*.dll',
+    'libcrypto*.dll', 'libssl*.dll',
+    'libsodium*.dll'
+)
+
 if (-not $NoCopy) {
-    $opensslCandidates = New-Object System.Collections.ArrayList
+    $candidates = New-Object System.Collections.ArrayList
     if ($VcpkgDir) {
         $vcpkgBin = Join-Path $VcpkgDir 'installed\x64-windows\bin'
-        Add-CandidateDlls -Acc $opensslCandidates -Root $vcpkgBin -Filters @('libcrypto*.dll', 'libssl*.dll')
+        Add-CandidateDlls -Acc $candidates -Root $vcpkgBin -Filters $hydrationFilters
     }
-    Add-CandidateDlls -Acc $opensslCandidates -Root $DepsDir -Filters @('libcrypto*.dll', 'libssl*.dll') -Recurse
+    Add-CandidateDlls -Acc $candidates -Root $DepsDir -Filters $hydrationFilters -Recurse
 
-    $unique = $opensslCandidates | Sort-Object FullName -Unique
+    # Prefer Release builds over Debug when both exist under build/_deps.
+    $unique = $candidates |
+        Sort-Object @{Expression = { if ($_.FullName -match '\\Debug\\') { 1 } else { 0 } }},
+                    Name,
+                    FullName -Unique
     foreach ($dll in $unique) {
         $dest = Join-Path $binDir $dll.Name
         if (-not (Test-Path $dest)) {
