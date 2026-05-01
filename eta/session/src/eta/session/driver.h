@@ -1232,7 +1232,7 @@ private:
         if (slots_to_reserve == 0) return true;
 
         const std::string reserve_module_name =
-            "__eta.etac.reserve." + std::to_string(etac_reserve_counter_++);
+            "__eta_etac_reserve_" + std::to_string(etac_reserve_counter_++);
 
         std::ostringstream source;
         source << "(module " << reserve_module_name << "\n";
@@ -1241,7 +1241,8 @@ private:
         }
         source << ")";
 
-        reader::lexer::Lexer lex(/*file_id=*/0, source.str());
+        const std::string source_text = source.str();
+        reader::lexer::Lexer lex(/*file_id=*/0, source_text);
         reader::parser::Parser parser(lex);
         auto parsed_res = parser.parse_toplevel();
         if (!parsed_res) {
