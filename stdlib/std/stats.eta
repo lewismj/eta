@@ -14,6 +14,7 @@
 
 (module std.stats
   (import std.core)
+  (import std.collections)
   (export
     stats:mean
     stats:variance stats:stddev stats:sem
@@ -36,7 +37,10 @@
     stats:ols-multi-coefficients stats:ols-multi-std-errors
     stats:ols-multi-t-stats stats:ols-multi-p-values
     stats:ols-multi-r-squared stats:ols-multi-adj-r-squared
-    stats:ols-multi-residual-se)
+    stats:ols-multi-residual-se
+    ;; Learner-spec constructors used by causal CATE modules.
+    stats:make-ols-regressor
+    stats:make-logistic)
   (begin
 
     ;;  Descriptive statistics 
@@ -171,6 +175,181 @@
     (defun stats:ols-multi-r-squared    (r) (cdr (assoc 'r-squared r)))
     (defun stats:ols-multi-adj-r-squared(r) (cdr (assoc 'adj-r-squared r)))
     (defun stats:ols-multi-residual-se  (r) (cdr (assoc 'residual-se r)))
+
+    ;; -- Learner-spec helpers --------------------------------------------
+
+    (defun %dot (a b)
+      (if (or (null? a) (null? b))
+          0.0
+          (+ (* (car a) (car b))
+             (%dot (cdr a) (cdr b)))))
+
+    (defun %matrix-cols (x-matrix)
+      (if (null? x-matrix)
+          '()
+          (let ((p (length (car x-matrix))))
+            (let loop ((j 0) (acc '()))
+              (if (= j p)
+                  (reverse acc)
+                  (loop (+ j 1)
+                        (cons (map* (lambda (row) (list-ref row j))
+                                    x-matrix)
+                              acc)))))))
+
+    (defun %assert-matrix-rows (x-matrix)
+      (if (null? x-matrix)
+          x-matrix
+          (let ((p (length (car x-matrix))))
+            (if (every? (lambda (row) (= (length row) p)) x-matrix)
+                x-matrix
+                (error "stats: learner expected rectangular design matrix")))))
+
+    (defun %clip01 (p)
+      (cond
+        ((< p 1e-9) 1e-9)
+        ((> p (- 1.0 1e-9)) (- 1.0 1e-9))
+        (else p)))
+
+    (defun %sigmoid (x)
+      (%clip01 (/ 1.0 (+ 1.0 (exp (- x))))))
+
+    (defun %normalize-binary-target (v)
+      (cond
+        ((equal? v 1) 1.0)
+        ((equal? v 0) 0.0)
+        ((eq? v #t) 1.0)
+        ((eq? v #f) 0.0)
+        (else (error "stats: logistic learner expects binary targets in {0,1,#t,#f}" v))))
+
+    (defun %opts->alist (opts who)
+      (let loop ((xs opts) (acc '()))
+        (cond
+          ((null? xs) (reverse acc))
+          ((null? (cdr xs))
+           (error (string-append who ": options must be key/value pairs")))
+          (else
+           (loop (cdr (cdr xs))
+                 (cons (cons (car xs) (cadr xs)) acc))))))
+
+    (defun %opt-ref (opts key default)
+      (let ((entry (assq key opts)))
+        (if entry (cdr entry) default)))
+
+    ;; OLS learner-spec:
+    ;;   ((fit . (lambda (X y) -> model))
+    ;;    (predict . (lambda (model X) -> yhat))
+    ;;    (fit-weighted . (lambda (X y w) -> model))
+    ;;    (kind . regressor))
+    ;; `fit-weighted` currently falls back to unweighted OLS.
+    (defun stats:make-ols-regressor ()
+      (letrec
+          ((fit
+             (lambda (x-matrix y-vector)
+               (%assert-matrix-rows x-matrix)
+               (if (not (= (length x-matrix) (length y-vector)))
+                   (error "stats: OLS learner expected matching X/Y lengths")
+                    (let ((coeffs
+                           (if (null? y-vector)
+                               '(0.0)
+                               (if (or (null? x-matrix)
+                                   (null? (car x-matrix)))
+                               (list (stats:mean y-vector))
+                               (stats:ols-multi-coefficients
+                                 (stats:ols-multi y-vector
+                                                  (%matrix-cols x-matrix))))))
+                     (list (cons 'coefficients coeffs)))))
+           (predict
+             (lambda (model x-matrix)
+               (%assert-matrix-rows x-matrix)
+               (let* ((entry (assq 'coefficients model))
+                      (coeffs (if entry (cdr entry) '(0.0)))
+                      (intercept (if (null? coeffs) 0.0 (car coeffs)))
+                      (betas (if (null? coeffs) '() (cdr coeffs))))
+                 (map* (lambda (row)
+                         (+ intercept (%dot betas row)))
+                       x-matrix))))
+           (fit-weighted
+             (lambda (x-matrix y-vector w-vector)
+               (if (not (= (length x-matrix) (length w-vector)))
+                   (error "stats: OLS learner expected matching X/weights lengths")
+                   (fit x-matrix y-vector)))))
+        (list
+          (cons 'fit fit)
+          (cons 'predict predict)
+          (cons 'fit-weighted fit-weighted)
+          (cons 'kind 'regressor))))
+
+    ;; Logistic learner-spec for binary outcomes.
+    ;; Options:
+    ;;   'epochs (default 250)
+    ;;   'lr     (default 0.05)
+    ;;   'l2     (default 0.0)
+    (defun stats:make-logistic . opts)
+      (let* ((opt-map (%opts->alist opts "stats:make-logistic"))
+             (epochs (%opt-ref opt-map 'epochs 250))
+             (lr (%opt-ref opt-map 'lr 0.05))
+             (l2 (%opt-ref opt-map 'l2 0.0)))
+        (letrec
+            ((fit
+               (lambda (x-matrix y-vector)
+                 (%assert-matrix-rows x-matrix)
+                 (if (or (null? x-matrix)
+                         (not (= (length x-matrix) (length y-vector))))
+                     (error "stats: logistic learner expected non-empty matching X/Y lengths")
+                     (let* ((n (length x-matrix))
+                            (p (length (car x-matrix)))
+                            (ys (map* %normalize-binary-target y-vector))
+                            (w0 0.0)
+                            (w (make-vector p 0.0)))
+                       (let train ((step 0) (bias w0))
+                         (if (>= step epochs)
+                             (list
+                               (cons 'bias bias)
+                               (cons 'weights (vector->list w)))
+                             (let* ((grads
+                                      (foldl (lambda (acc pair)
+                                               (let* ((row (car pair))
+                                                      (yv (cdr pair))
+                                                      (z (+ bias (%dot (vector->list w) row)))
+                                                      (p-hat (%sigmoid z))
+                                                      (err (- p-hat yv))
+                                                      (gb (+ (car acc) err))
+                                                      (gw-old (cdr acc))
+                                                      (gw-new
+                                                        (map-indexed
+                                                          (lambda (j g)
+                                                            (+ g (* err (list-ref row j))))
+                                                          gw-old)))
+                                                 (cons gb gw-new)))
+                                             (cons 0.0
+                                                   (map* (lambda (_j) 0.0) (range 0 p)))
+                                             (zip x-matrix ys)))
+                                    (gb (/ (car grads) n))
+                                    (gw (cdr grads))
+                                    (next-bias (- bias (* lr gb))))
+                               (let update ((j 0))
+                                 (when (< j p)
+                                   (let* ((wj (vector-ref w j))
+                                          (gj (/ (list-ref gw j) n))
+                                          (reg (* l2 wj))
+                                          (wj2 (- wj (* lr (+ gj reg)))))
+                                     (vector-set! w j wj2)
+                                     (update (+ j 1)))))
+                               (train (+ step 1) next-bias)))))))
+             (predict
+               (lambda (model x-matrix)
+                 (%assert-matrix-rows x-matrix)
+                 (let* ((b-entry (assq 'bias model))
+                        (w-entry (assq 'weights model))
+                        (bias (if b-entry (cdr b-entry) 0.0))
+                        (weights (if w-entry (cdr w-entry) '())))
+                   (map* (lambda (row)
+                           (%sigmoid (+ bias (%dot weights row))))
+                         x-matrix)))))
+          (list
+            (cons 'fit fit)
+            (cons 'predict predict)
+            (cons 'kind 'classifier))))
 
     ;; Returns an alist with key statistics for a numeric list.
     (defun stats:summary (xs)

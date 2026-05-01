@@ -597,18 +597,27 @@ columnar store with hash-indexed lookups for analytics workloads — see
 
 ## 20. Causal Inference
 
-The `std.causal` family is a research-grade causal-inference stack:
-ADMGs with bidirected edges, linear-time d-separation (Bayes-ball),
-Pearl's three rules, the **ID** and **IDC** algorithms (Shpitser &
-Pearl) with hedge witnesses, generalised adjustment / front-door /
-IV criteria, mediation (NDE / NIE / CDE), transportability,
-counterfactuals (twin networks, ID*, ETT), AIPW / TMLE / IPW /
-g-formula estimators with bootstrap CIs and sensitivity diagnostics
-(E-value, Rosenbaum bounds), PC / FCI / GES / NOTEARS-style structure
-learning, and DOT / Mermaid / LaTeX rendering. Milestones M0–M11 of the
-[causal plan](../plan/causal_plan.md) are in-tree; the HTE / CATE
-extension milestones (M12–M15: meta-learners, causal forest, DML
-cross-fitting, Qini / policy value) are tracked as future work.
+`std.causal` answers questions of the form *"what happens to Y if we
+intervene on X?"* from a graph and (optionally) data. A graph is an
+edge list; from there you can identify an estimand, estimate it from
+observations, run sensitivity checks, learn structure, or render the
+graph for a notebook.
+
+- **Graphs and d-separation** — DAGs and ADMGs (with `<->` for
+  unobserved confounders), ancestors, c-components, Bayes-ball.
+- **Identification** — back-door, front-door, IV, generalised
+  adjustment, and the ID / IDC algorithms for arbitrary do-queries.
+- **Mediation** — natural and controlled direct/indirect effects
+  (NDE, NIE, CDE).
+- **Transport & counterfactuals** — selection diagrams, the sBD
+  criterion, twin networks, ID*, effect of treatment on the treated.
+- **Estimation** — g-formula, IPW, AIPW, TMLE, plus bootstrap
+  confidence intervals and sensitivity diagnostics (E-value,
+  Rosenbaum bounds).
+- **Structure learning** — PC, FCI, GES, NOTEARS, with Fisher-z and
+  χ² conditional-independence tests.
+- **Rendering** — DOT, Mermaid, and LaTeX output for the same edge
+  lists you query against.
 
 A graph is just an edge list — `->` is a directed edge, `<->` an
 unobserved-confounder bidirected edge:
@@ -668,8 +677,7 @@ Render any graph straight to Mermaid or DOT for notebooks and papers:
 
 > **Reference:** [`causal.md`](./reference/causal.md);
 > counterfactual deep-dive [`causal-counterfactual.md`](./reference/causal-counterfactual.md);
-> end-to-end example [`examples/causal_demo.eta`](../../examples/causal_demo.eta);
-> roadmap [`docs/plan/causal_plan.md`](../plan/causal_plan.md).
+> end-to-end example [`examples/causal_demo.eta`](../../examples/causal_demo.eta).
 
 ---
 

@@ -25,6 +25,8 @@
     do:ate-tmle
     do:bootstrap-ci
     do:propensity-score
+    causal:design-matrix
+    causal:response-vector
     do:e-value
     do:rosenbaum-bound)
   (begin
@@ -154,6 +156,19 @@
                   (%stats-propensity
                     (%find-stats stats (%z-key obs z)))))
               data)))
+
+    ;; Shared feature/target extraction helpers used by CATE and DML modules.
+    ;; Returns an n x p row-major matrix following `cols` order exactly.
+    (defun causal:design-matrix (data cols)
+      (map* (lambda (obs)
+              (map* (lambda (col) (%obs-get obs col))
+                    cols))
+            data))
+
+    ;; Returns target vector aligned with `data` order.
+    (defun causal:response-vector (data y)
+      (map* (lambda (obs) (%obs-get obs y))
+            data))
 
     ;; Percentile bootstrap CI for any scalar estimator:
     ;;   estimator: (lambda (sample) -> number)

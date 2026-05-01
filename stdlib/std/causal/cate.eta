@@ -1,0 +1,406 @@
+;;; std/causal/cate.eta -- CATE meta-learners (S/T/X/R/DR).
+;;;
+;;; Learner protocol:
+;;;   ((fit . (lambda (X-matrix y-vector) -> model))
+;;;    (predict . (lambda (model X-matrix) -> y-hat-vector))
+;;;    (kind . regressor|classifier)
+;;;    (fit-weighted . (lambda (X-matrix y-vector w-vector) -> model))) ; optional
+;;;
+;;; Rows are association lists and feature matrices are row-major lists.
+
+(module std.causal.cate
+  (import std.core)
+  (import std.collections)
+  (import std.stats)
+  (import std.causal.estimate)
+  (export
+    cate:fit-s-learner
+    cate:fit-t-learner
+    cate:fit-x-learner
+    cate:fit-r-learner
+    cate:fit-dr-learner
+    cate:predict
+    cate:ate
+    cate:rank
+    cate:residual-r2
+    cate:propensity-overlap)
+  (begin
+
+    ;; -- Core helpers -----------------------------------------------------
+
+    (defun %obs-get (obs var)
+      (let ((p (assq var obs)))
+        (if p
+            (cdr p)
+            (error 'unknown-variable var))))
+
+    (defun %as-binary (v x-name)
+      (cond
+        ((equal? v 1) 1.0)
+        ((equal? v 0) 0.0)
+        ((eq? v #t) 1.0)
+        ((eq? v #f) 0.0)
+        (else (error 'non-binary-treatment x-name v))))
+
+    (defun %clip-prob (p)
+      (let ((eps 1e-6))
+        (cond
+          ((< p eps) eps)
+          ((> p (- 1.0 eps)) (- 1.0 eps))
+          (else p))))
+
+    (defun %opts->alist (opts who)
+      (let loop ((xs opts) (acc '()))
+        (cond
+          ((null? xs) (reverse acc))
+          ((null? (cdr xs))
+           (error (string-append who ": options must be key/value pairs")))
+          (else
+           (loop (cdr (cdr xs))
+                 (cons (cons (car xs) (cadr xs)) acc))))))
+
+    (defun %opt-ref (opts key default)
+      (let ((entry (assq key opts)))
+        (if entry (cdr entry) default)))
+
+    (defun %learner-ref (spec key who)
+      (let ((entry (assq key spec)))
+        (if entry
+            (cdr entry)
+            (error (string-append who ": learner-spec is missing required key")
+                   key))))
+
+    (defun %learner-kind (spec)
+      (let ((entry (assq 'kind spec)))
+        (if entry (cdr entry) #f)))
+
+    (defun %fit-regressor (spec x-matrix y-vector who)
+      (let ((kind (%learner-kind spec)))
+        (if (and kind (not (eq? kind 'regressor)))
+            (error (string-append who ": expected learner-spec kind=regressor"))
+            ((%learner-ref spec 'fit who) x-matrix y-vector))))
+
+    (defun %fit-classifier (spec x-matrix y-vector who)
+      (let ((kind (%learner-kind spec)))
+        (if (and kind (not (eq? kind 'classifier)))
+            (error (string-append who ": expected learner-spec kind=classifier"))
+            ((%learner-ref spec 'fit who) x-matrix y-vector))))
+
+    (defun %fit-regressor-weighted (spec x-matrix y-vector w-vector who)
+      (let ((entry (assq 'fit-weighted spec)))
+        (if entry
+            ((cdr entry) x-matrix y-vector w-vector)
+            (%fit-regressor spec x-matrix y-vector who))))
+
+    (defun %predict (spec model x-matrix who)
+      ((%learner-ref spec 'predict who) model x-matrix))
+
+    (defun %predict-one (spec model row who)
+      (let ((yh (%predict spec model (list row) who)))
+        (if (null? yh)
+            0.0
+            (car yh))))
+
+    (defun %design (data cols)
+      (causal:design-matrix data cols))
+
+    (defun %response (data y)
+      (causal:response-vector data y))
+
+    (defun %row (obs cols)
+      (map* (lambda (col) (%obs-get obs col)) cols))
+
+    (defun %row-with-treatment (obs cols x xval)
+      (map* (lambda (col)
+              (if (eq? col x)
+                  xval
+                  (%obs-get obs col)))
+            cols))
+
+    (defun %map3 (f xs ys zs)
+      (if (or (null? xs) (null? ys) (null? zs))
+          '()
+          (cons (f (car xs) (car ys) (car zs))
+                (%map3 f (cdr xs) (cdr ys) (cdr zs)))))
+
+    (defun %map4 (f ws xs ys zs)
+      (if (or (null? ws) (null? xs) (null? ys) (null? zs))
+          '()
+          (cons (f (car ws) (car xs) (car ys) (car zs))
+                (%map4 f (cdr ws) (cdr xs) (cdr ys) (cdr zs)))))
+
+    (defun %model-ref (model key)
+      (let ((entry (assq key model)))
+        (if entry
+            (cdr entry)
+            (error "cate: invalid model shape; missing key" key))))
+
+    (defun %make-model (kind fields)
+      (cons (cons 'tag 'cate-model)
+            (cons (cons 'learner kind)
+                  fields)))
+
+    (defun %assert-both-arms (d0 d1 who)
+      (if (or (null? d0) (null? d1))
+          (error (string-append who ": expected both treatment arms in data"))
+          'ok))
+
+    ;; -- Fitters ----------------------------------------------------------
+
+    ;; T-learner: separate response models per treatment arm.
+    (defun cate:fit-t-learner (data y x z reg-spec)
+      (let* ((d1 (filter (lambda (o) (= (%as-binary (%obs-get o x) x) 1.0)) data))
+             (d0 (filter (lambda (o) (= (%as-binary (%obs-get o x) x) 0.0)) data)))
+        (%assert-both-arms d0 d1 "cate:fit-t-learner")
+        (let* ((m1 (%fit-regressor reg-spec (%design d1 z) (%response d1 y)
+                                   "cate:fit-t-learner"))
+               (m0 (%fit-regressor reg-spec (%design d0 z) (%response d0 y)
+                                   "cate:fit-t-learner")))
+          (%make-model 't-learner
+                       (list
+                         (cons 'x x)
+                         (cons 'z z)
+                         (cons 'reg-spec reg-spec)
+                         (cons 'm0 m0)
+                         (cons 'm1 m1))))))
+
+    ;; S-learner: one model over [X Z], effect via treatment toggling.
+    (defun cate:fit-s-learner (data y x z reg-spec)
+      (let* ((cols (cons x z))
+             (m (%fit-regressor reg-spec (%design data cols) (%response data y)
+                                "cate:fit-s-learner")))
+        (%make-model 's-learner
+                     (list
+                       (cons 'x x)
+                       (cons 'cols cols)
+                       (cons 'reg-spec reg-spec)
+                       (cons 'm m)))))
+
+    ;; X-learner (Kunzell et al.):
+    ;;   fit mu1,mu0 -> impute D1,D0 -> fit tau1,tau0 -> propensity blend.
+    (defun cate:fit-x-learner (data y x z reg-spec cls-spec)
+      (let* ((d1 (filter (lambda (o) (= (%as-binary (%obs-get o x) x) 1.0)) data))
+             (d0 (filter (lambda (o) (= (%as-binary (%obs-get o x) x) 0.0)) data)))
+        (%assert-both-arms d0 d1 "cate:fit-x-learner")
+        (let* ((mu1 (%fit-regressor reg-spec (%design d1 z) (%response d1 y)
+                                    "cate:fit-x-learner"))
+               (mu0 (%fit-regressor reg-spec (%design d0 z) (%response d0 y)
+                                    "cate:fit-x-learner"))
+               (d1-pseudo
+                 (map* (lambda (o)
+                         (- (%obs-get o y)
+                            (%predict-one reg-spec mu0 (%row o z)
+                                          "cate:fit-x-learner")))
+                       d1))
+               (d0-pseudo
+                 (map* (lambda (o)
+                         (- (%predict-one reg-spec mu1 (%row o z)
+                                          "cate:fit-x-learner")
+                            (%obs-get o y)))
+                       d0))
+               (tau1 (%fit-regressor reg-spec (%design d1 z) d1-pseudo
+                                     "cate:fit-x-learner"))
+               (tau0 (%fit-regressor reg-spec (%design d0 z) d0-pseudo
+                                     "cate:fit-x-learner"))
+               (g-model (%fit-classifier cls-spec
+                                         (%design data z)
+                                         (%response data x)
+                                         "cate:fit-x-learner")))
+          (%make-model 'x-learner
+                       (list
+                         (cons 'x x)
+                         (cons 'z z)
+                         (cons 'reg-spec reg-spec)
+                         (cons 'cls-spec cls-spec)
+                         (cons 'tau0 tau0)
+                         (cons 'tau1 tau1)
+                         (cons 'g-model g-model))))))
+
+    ;; R-learner (orthogonalized objective).
+    ;; This implementation uses plug-in nuisances with optional propensity-spec.
+    (defun cate:fit-r-learner (data y x z reg-spec . opts)
+      (let* ((opt-map (%opts->alist opts "cate:fit-r-learner"))
+             (eps (%opt-ref opt-map 'eps 1e-6))
+             (prop-spec (%opt-ref opt-map 'propensity-spec
+                                  (stats:make-logistic)))
+             (mu-model (%fit-regressor reg-spec (%design data z) (%response data y)
+                                       "cate:fit-r-learner"))
+             (mu-hat (%predict reg-spec mu-model (%design data z)
+                               "cate:fit-r-learner"))
+             (e-model (%fit-classifier prop-spec (%design data z) (%response data x)
+                                       "cate:fit-r-learner"))
+             (e-hat (%predict prop-spec e-model (%design data z)
+                              "cate:fit-r-learner"))
+             (rows
+               (%map3
+                 (lambda (obs mu e)
+                   (let* ((xv (%as-binary (%obs-get obs x) x))
+                          (yt (- (%obs-get obs y) mu))
+                          (xt (- xv (%clip-prob e)))
+                          (xt* (if (< (abs xt) eps)
+                                   (if (< xt 0.0) (- eps) eps)
+                                   xt)))
+                     (list (%row obs z)
+                           (/ yt xt*)
+                           (* xt* xt*))))
+                 data mu-hat e-hat))
+             (x-matrix (map* car rows))
+             (y-star (map* cadr rows))
+             (weights (map* caddr rows))
+             (tau (%fit-regressor-weighted reg-spec x-matrix y-star weights
+                                           "cate:fit-r-learner")))
+        (%make-model 'r-learner
+                     (list
+                       (cons 'x x)
+                       (cons 'z z)
+                       (cons 'reg-spec reg-spec)
+                       (cons 'tau tau)))))
+
+    ;; DR-learner (doubly robust pseudo-outcome regression).
+    (defun cate:fit-dr-learner (data y x z reg-spec cls-spec . opts)
+      (let* ((opt-map (%opts->alist opts "cate:fit-dr-learner"))
+             (_eps (%opt-ref opt-map 'eps 1e-6))
+             (d1 (filter (lambda (o) (= (%as-binary (%obs-get o x) x) 1.0)) data))
+             (d0 (filter (lambda (o) (= (%as-binary (%obs-get o x) x) 0.0)) data)))
+        (%assert-both-arms d0 d1 "cate:fit-dr-learner")
+        (let* ((mu1-model (%fit-regressor reg-spec (%design d1 z) (%response d1 y)
+                                          "cate:fit-dr-learner"))
+               (mu0-model (%fit-regressor reg-spec (%design d0 z) (%response d0 y)
+                                          "cate:fit-dr-learner"))
+               (mu1-hat (%predict reg-spec mu1-model (%design data z)
+                                  "cate:fit-dr-learner"))
+               (mu0-hat (%predict reg-spec mu0-model (%design data z)
+                                  "cate:fit-dr-learner"))
+               (e-model (%fit-classifier cls-spec (%design data z) (%response data x)
+                                         "cate:fit-dr-learner"))
+               (e-hat (%predict cls-spec e-model (%design data z)
+                                "cate:fit-dr-learner"))
+               (phi
+                 (%map4
+                   (lambda (obs m1 m0 e)
+                     (let* ((xv (%as-binary (%obs-get obs x) x))
+                            (yv (%obs-get obs y))
+                            (e* (%clip-prob e)))
+                       (+ (- m1 m0)
+                          (- (/ (* xv (- yv m1)) e*)
+                             (/ (* (- 1.0 xv) (- yv m0))
+                                (- 1.0 e*))))))
+                   data mu1-hat mu0-hat e-hat))
+               (tau (%fit-regressor reg-spec (%design data z) phi
+                                    "cate:fit-dr-learner")))
+          (%make-model 'dr-learner
+                       (list
+                         (cons 'x x)
+                         (cons 'z z)
+                         (cons 'reg-spec reg-spec)
+                         (cons 'cls-spec cls-spec)
+                         (cons 'tau tau))))))
+
+    ;; -- Prediction + utility API ----------------------------------------
+
+    (defun cate:predict (model row)
+      (let ((kind (%model-ref model 'learner)))
+        (cond
+          ((eq? kind 't-learner)
+           (let* ((z (%model-ref model 'z))
+                  (reg (%model-ref model 'reg-spec))
+                  (m0 (%model-ref model 'm0))
+                  (m1 (%model-ref model 'm1))
+                  (z-row (%row row z)))
+             (- (%predict-one reg m1 z-row "cate:predict")
+                (%predict-one reg m0 z-row "cate:predict"))))
+          ((eq? kind 's-learner)
+           (let* ((x (%model-ref model 'x))
+                  (cols (%model-ref model 'cols))
+                  (reg (%model-ref model 'reg-spec))
+                  (m (%model-ref model 'm)))
+             (- (%predict-one reg m (%row-with-treatment row cols x 1.0) "cate:predict")
+                (%predict-one reg m (%row-with-treatment row cols x 0.0) "cate:predict"))))
+          ((eq? kind 'x-learner)
+           (let* ((z (%model-ref model 'z))
+                  (reg (%model-ref model 'reg-spec))
+                  (cls (%model-ref model 'cls-spec))
+                  (tau0 (%model-ref model 'tau0))
+                  (tau1 (%model-ref model 'tau1))
+                  (g-model (%model-ref model 'g-model))
+                  (z-row (%row row z))
+                  (g (%clip-prob (%predict-one cls g-model z-row "cate:predict")))
+                  (t0 (%predict-one reg tau0 z-row "cate:predict"))
+                  (t1 (%predict-one reg tau1 z-row "cate:predict")))
+             (+ (* g t0) (* (- 1.0 g) t1))))
+          ((eq? kind 'r-learner)
+           (let* ((z (%model-ref model 'z))
+                  (reg (%model-ref model 'reg-spec))
+                  (tau (%model-ref model 'tau)))
+             (%predict-one reg tau (%row row z) "cate:predict")))
+          ((eq? kind 'dr-learner)
+           (let* ((z (%model-ref model 'z))
+                  (reg (%model-ref model 'reg-spec))
+                  (tau (%model-ref model 'tau)))
+             (%predict-one reg tau (%row row z) "cate:predict")))
+          (else
+           (error 'unknown-cate-model kind)))))
+
+    (defun cate:ate (model data)
+      (if (null? data)
+          0.0
+          (stats:mean (map* (lambda (o) (cate:predict model o))
+                            data))))
+
+    ;; Returns (sorted-observations . sorted-tau-hats), descending tau.
+    (defun cate:rank (model data)
+      (let* ((pairs (map* (lambda (o) (cons o (cate:predict model o))) data))
+             (sorted (sort (lambda (a b) (> (cdr a) (cdr b))) pairs)))
+        (cons (map* car sorted)
+              (map* cdr sorted))))
+
+    ;; R^2 diagnostic between two equal-length numeric vectors.
+    (defun cate:residual-r2 (actual predicted)
+      (if (not (= (length actual) (length predicted)))
+          (error "cate:residual-r2 expects equal-length vectors")
+          (if (null? actual)
+              0.0
+              (let* ((mu (stats:mean actual))
+                     (sst (foldl (lambda (acc yv)
+                                   (let ((d (- yv mu)))
+                                     (+ acc (* d d))))
+                                 0.0
+                                 actual))
+                     (sse (foldl (lambda (acc ap)
+                                   (let ((d (- (car ap) (cdr ap))))
+                                     (+ acc (* d d))))
+                                 0.0
+                                 (zip actual predicted))))
+                (if (< (abs sst) 1e-12)
+                    0.0
+                    (- 1.0 (/ sse sst)))))))
+
+    ;; Overlap summary for propensity scores.
+    ;; Returns:
+    ;;   ((n . N) (min . pmin) (max . pmax) (mean . pmean)
+    ;;    (threshold . t) (inside-rate . r))
+    (defun cate:propensity-overlap (scores . rest)
+      (let ((threshold (if (null? rest) 0.05 (car rest))))
+        (if (null? scores)
+            (list
+              (cons 'n 0)
+              (cons 'min 0.0)
+              (cons 'max 0.0)
+              (cons 'mean 0.0)
+              (cons 'threshold threshold)
+              (cons 'inside-rate 0.0))
+            (let* ((ps (map* %clip-prob scores))
+                   (n (length ps))
+                   (inside (count (lambda (p)
+                                    (and (>= p threshold)
+                                         (<= p (- 1.0 threshold))))
+                                  ps)))
+              (list
+                (cons 'n n)
+                (cons 'min (stats:percentile ps 0.0))
+                (cons 'max (stats:percentile ps 1.0))
+                (cons 'mean (stats:mean ps))
+                (cons 'threshold threshold)
+                (cons 'inside-rate (/ (* 1.0 inside) n)))))))
+
+  ))
