@@ -18,9 +18,10 @@
     tensor ones zeros randn manual-seed arange linspace from-list
     tensor?
     t+ t- t* t/ matmul dot
-    cholesky mvnormal
+    cholesky matrix-exp mvnormal
     neg tabs texp tlog tsqrt relu sigmoid ttanh softmax
     shape reshape transpose squeeze unsqueeze cat
+    fact-table->tensor column-l2-norm torch:column-l2-norm
     tsum mean tmax tmin argmax argmin
     item to-list numel
     requires-grad! requires-grad? detach backward grad zero-grad!
@@ -61,6 +62,7 @@
     (define matmul torch/matmul)
     (define dot torch/dot)
     (define cholesky torch/cholesky)
+    (define matrix-exp torch/matrix-exp)
     (define mvnormal torch/mvnormal)
 
     ;; -- Unary ops -----------------------------------------------------------
@@ -81,6 +83,9 @@
     (define squeeze torch/squeeze)
     (define unsqueeze torch/unsqueeze)
     (define cat torch/cat)
+    (define fact-table->tensor torch/fact-table->tensor)
+    (define column-l2-norm torch/column-l2-norm)
+    (define torch:column-l2-norm torch/column-l2-norm)
 
     ;; -- Reductions ----------------------------------------------------------
     (define tsum torch/sum)

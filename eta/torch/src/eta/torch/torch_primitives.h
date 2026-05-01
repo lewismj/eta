@@ -43,6 +43,11 @@ inline TensorPtr* get_tensor(Heap& heap, LispVal v) {
     return heap.try_get_as<ObjectKind::Tensor, TensorPtr>(ops::payload(v));
 }
 
+inline types::FactTable* get_fact_table(Heap& heap, LispVal v) {
+    if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return nullptr;
+    return heap.try_get_as<ObjectKind::FactTable, types::FactTable>(ops::payload(v));
+}
+
 inline NNModulePtr* get_nn_module(Heap& heap, LispVal v) {
     if (!ops::is_boxed(v) || ops::tag(v) != Tag::HeapObject) return nullptr;
     return heap.try_get_as<ObjectKind::NNModule, NNModulePtr>(ops::payload(v));
@@ -273,6 +278,18 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         }
     });
 
+    /// (torch/matrix-exp t)
+    env.register_builtin("torch/matrix-exp", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto* t = get_tensor(heap, args[0]);
+        if (!t) return std::unexpected(torch_error("torch/matrix-exp: tensor required"));
+
+        try {
+            return factory::make_tensor(heap, ::torch::linalg_matrix_exp(t->tensor));
+        } catch (const c10::Error& e) {
+            return std::unexpected(torch_error(std::string("torch/matrix-exp: ") + e.what()));
+        }
+    });
+
     /**
      * (torch/mvnormal mean cov)
      *   Draw one sample from N(mean, cov), where cov is SPD.
@@ -447,6 +464,70 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         auto dim = to_int64(args[1], heap);
         if (!dim) return std::unexpected(torch_error("torch/cat: dim required"));
         return factory::make_tensor(heap, ::torch::cat(tensors, *dim));
+    });
+
+    /// (torch/fact-table->tensor ft col-idxs)
+    env.register_builtin("torch/fact-table->tensor", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto* ft = get_fact_table(heap, args[0]);
+        if (!ft) return std::unexpected(torch_error("torch/fact-table->tensor: fact-table required"));
+
+        std::vector<int64_t> col_indices;
+        LispVal cols = args[1];
+        while (cols != Nil) {
+            if (!ops::is_boxed(cols) || ops::tag(cols) != Tag::HeapObject)
+                return std::unexpected(torch_error("torch/fact-table->tensor: proper list of column indices required"));
+            auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cols));
+            if (!cons)
+                return std::unexpected(torch_error("torch/fact-table->tensor: proper list of column indices required"));
+
+            auto col = to_int64(cons->car, heap);
+            if (!col || *col < 0)
+                return std::unexpected(torch_error("torch/fact-table->tensor: non-negative integer column index required"));
+            if (static_cast<std::size_t>(*col) >= ft->columns.size())
+                return std::unexpected(torch_error("torch/fact-table->tensor: column index out of range"));
+
+            col_indices.push_back(*col);
+            cols = cons->cdr;
+        }
+
+        auto live_rows = ft->live_rows();
+        const int64_t row_count = static_cast<int64_t>(live_rows.size());
+        const int64_t col_count = static_cast<int64_t>(col_indices.size());
+
+        try {
+            auto tensor = ::torch::zeros({row_count, col_count}, ::torch::kFloat64);
+            auto* data = tensor.data_ptr<double>();
+            for (int64_t r = 0; r < row_count; ++r) {
+                const std::size_t row_id = live_rows[static_cast<std::size_t>(r)];
+                for (int64_t c = 0; c < col_count; ++c) {
+                    const std::size_t col_id = static_cast<std::size_t>(col_indices[static_cast<std::size_t>(c)]);
+                    auto n = classify_numeric(ft->columns[col_id][row_id], heap);
+                    if (!n.is_valid())
+                        return std::unexpected(torch_error("torch/fact-table->tensor: non-numeric cell"));
+                    data[r * col_count + c] = n.as_double();
+                }
+            }
+            return factory::make_tensor(heap, std::move(tensor));
+        } catch (const c10::Error& e) {
+            return std::unexpected(torch_error(std::string("torch/fact-table->tensor: ") + e.what()));
+        }
+    });
+
+    /// (torch/column-l2-norm t axis)
+    env.register_builtin("torch/column-l2-norm", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto* t = get_tensor(heap, args[0]);
+        if (!t) return std::unexpected(torch_error("torch/column-l2-norm: tensor required"));
+
+        auto axis = to_int64(args[1], heap);
+        if (!axis) return std::unexpected(torch_error("torch/column-l2-norm: integer axis required"));
+
+        try {
+            auto squared = t->tensor * t->tensor;
+            auto summed = squared.sum(*axis);
+            return factory::make_tensor(heap, ::torch::sqrt(summed));
+        } catch (const c10::Error& e) {
+            return std::unexpected(torch_error(std::string("torch/column-l2-norm: ") + e.what()));
+        }
     });
 
     /// Reductions

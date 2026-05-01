@@ -362,6 +362,7 @@ Tensors and modules can be moved between CPU and GPU:
 | `manual-seed` | `(seed)` | Set torch RNG seed for reproducible sampling |
 | `arange` | `(start end step)` | Range tensor |
 | `linspace` | `(start end n)` | Evenly spaced points |
+| `fact-table->tensor` | `(ft col-idxs)` | Convert live fact-table rows and selected columns to a `float64` tensor |
 | `from-list` | `(list)` | Flat list → 1-D tensor |
 
 ### Arithmetic
@@ -377,6 +378,7 @@ Tensors and modules can be moved between CPU and GPU:
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `cholesky` | `(cov)` | Cholesky factor of a square SPD covariance matrix |
+| `matrix-exp` | `(t)` | Matrix exponential of a square matrix tensor |
 | `mvnormal` | `(mean cov)` | Draw one sample from `N(mean, cov)` |
 
 ### Unary Operations
@@ -402,6 +404,7 @@ Tensors and modules can be moved between CPU and GPU:
 
 | Function | Description |
 |----------|-------------|
+| `column-l2-norm` / `torch:column-l2-norm` | `(t axis)` — L2 norm along the selected axis |
 | `tsum`, `mean` | Sum, mean of all elements |
 | `tmax`, `tmin` | Maximum, minimum |
 | `argmax`, `argmin` | Index of max / min |

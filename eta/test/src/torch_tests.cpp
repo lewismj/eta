@@ -311,6 +311,12 @@ BOOST_AUTO_TEST_CASE(register_torch_primitives_smoke) {
     BOOST_TEST(idx.has_value());
     idx = env.lookup("torch/cholesky");
     BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/matrix-exp");
+    BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/fact-table->tensor");
+    BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/column-l2-norm");
+    BOOST_TEST(idx.has_value());
     idx = env.lookup("torch/mvnormal");
     BOOST_TEST(idx.has_value());
     idx = env.lookup("nn/linear");
@@ -329,12 +335,56 @@ BOOST_AUTO_TEST_CASE(register_torch_builtin_names_smoke) {
     BOOST_TEST(idx.has_value());
     idx = env.lookup("torch/cholesky");
     BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/matrix-exp");
+    BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/fact-table->tensor");
+    BOOST_TEST(idx.has_value());
+    idx = env.lookup("torch/column-l2-norm");
+    BOOST_TEST(idx.has_value());
     idx = env.lookup("torch/mvnormal");
     BOOST_TEST(idx.has_value());
     idx = env.lookup("nn/forward");
     BOOST_TEST(idx.has_value());
     idx = env.lookup("optim/step!");
     BOOST_TEST(idx.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(builtin_name_matrix_exp_registered) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto runtime_idx = env.lookup("torch/matrix-exp");
+    BOOST_REQUIRE(runtime_idx.has_value());
+    BOOST_TEST(env.specs()[*runtime_idx].arity == 1u);
+    BOOST_TEST(!env.specs()[*runtime_idx].has_rest);
+
+    BuiltinEnvironment names_env;
+    eta::runtime::register_builtin_names(names_env);
+    auto names_idx = names_env.lookup("torch/matrix-exp");
+    BOOST_REQUIRE(names_idx.has_value());
+    BOOST_TEST(names_env.specs()[*names_idx].arity == 1u);
+    BOOST_TEST(!names_env.specs()[*names_idx].has_rest);
+}
+
+BOOST_AUTO_TEST_CASE(builtin_name_column_l2_norm_registered) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto runtime_idx = env.lookup("torch/column-l2-norm");
+    BOOST_REQUIRE(runtime_idx.has_value());
+    BOOST_TEST(env.specs()[*runtime_idx].arity == 2u);
+    BOOST_TEST(!env.specs()[*runtime_idx].has_rest);
+
+    BuiltinEnvironment names_env;
+    eta::runtime::register_builtin_names(names_env);
+    auto names_idx = names_env.lookup("torch/column-l2-norm");
+    BOOST_REQUIRE(names_idx.has_value());
+    BOOST_TEST(names_env.specs()[*names_idx].arity == 2u);
+    BOOST_TEST(!names_env.specs()[*names_idx].has_rest);
 }
 
 /// Device management
@@ -992,6 +1042,75 @@ BOOST_AUTO_TEST_CASE(prim_torch_cholesky_via_env) {
     auto* cp = get_tensor(heap, cov);
     BOOST_REQUIRE(cp);
     BOOST_TEST(torch::allclose(recon, cp->tensor, 1e-10, 1e-10));
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_matrix_exp_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto zeros = expect_ok(tf::make_tensor(heap, torch::zeros({2, 2}, torch::kFloat64)));
+    auto result = expect_ok(env.specs()[*env.lookup("torch/matrix-exp")].func({zeros}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({2, 2}));
+
+    auto ident = torch::eye(2, torch::kFloat64);
+    BOOST_TEST(torch::allclose(tp->tensor, ident, 1e-10, 1e-10));
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_fact_table_to_tensor_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto ft_val = expect_ok(make_fact_table(heap, {"x", "y", "z"}));
+    auto* ft = heap.try_get_as<ObjectKind::FactTable, types::FactTable>(ops::payload(ft_val));
+    BOOST_REQUIRE(ft);
+
+    BOOST_REQUIRE(ft->add_row({expect_ok(ops::encode(int64_t(1))),
+                               expect_ok(ops::encode(int64_t(10))),
+                               expect_ok(ops::encode(int64_t(100)))}));
+    BOOST_REQUIRE(ft->add_row({expect_ok(ops::encode(int64_t(2))),
+                               expect_ok(ops::encode(int64_t(20))),
+                               expect_ok(ops::encode(int64_t(200)))}));
+    BOOST_REQUIRE(ft->add_row({expect_ok(ops::encode(int64_t(3))),
+                               expect_ok(ops::encode(int64_t(30))),
+                               expect_ok(ops::encode(int64_t(300)))}));
+    BOOST_REQUIRE(ft->delete_row(1));
+
+    auto zero = expect_ok(ops::encode(int64_t(0)));
+    auto two = expect_ok(ops::encode(int64_t(2)));
+    auto cols = expect_ok(make_cons(heap, two, Nil));
+    cols = expect_ok(make_cons(heap, zero, cols));
+
+    auto result = expect_ok(env.specs()[*env.lookup("torch/fact-table->tensor")].func({ft_val, cols}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({2, 2}));
+
+    auto expected = torch::tensor({{1.0, 100.0}, {3.0, 300.0}}, torch::kFloat64);
+    BOOST_TEST(torch::allclose(tp->tensor, expected, 1e-10, 1e-10));
+}
+
+BOOST_AUTO_TEST_CASE(prim_torch_column_l2_norm_via_env) {
+    Heap heap(1ull << 22);
+    InternTable intern;
+    BuiltinEnvironment env;
+    register_torch_primitives(env, heap, intern, nullptr);
+
+    auto m = expect_ok(tf::make_tensor(heap,
+        torch::tensor({{3.0, 4.0}, {5.0, 12.0}}, torch::kFloat64)));
+    auto axis = expect_ok(ops::encode(int64_t(1)));
+
+    auto result = expect_ok(env.specs()[*env.lookup("torch/column-l2-norm")].func({m, axis}));
+    auto* tp = get_tensor(heap, result);
+    BOOST_REQUIRE(tp);
+    BOOST_TEST(tp->tensor.sizes() == std::vector<int64_t>({2}));
+    BOOST_TEST(std::abs(tp->tensor[0].item<double>() - 5.0) < 1e-10);
+    BOOST_TEST(std::abs(tp->tensor[1].item<double>() - 13.0) < 1e-10);
 }
 
 BOOST_AUTO_TEST_CASE(prim_torch_mvnormal_via_env) {

@@ -114,162 +114,43 @@ Add `(fact-table->tensor ft col-idxs)` producing a `(rows x k)` `float64` tensor
 - Row policy:
   - Use live rows (matches `%fact-table-row-count` / std.fact_table behavior)
 
-#### Implementation options
+#### Implementation option
 
-1. **Phase A (fast to ship): stdlib thin helper**
-   - File: `stdlib/std/torch.eta` (or `stdlib/std/fact_table.eta`)
-   - Implement nested loops over row/column using `%fact-table-ref`.
-   - Build row-major list and call `from-list`, then `reshape`.
-   - Lowest implementation risk, slower for large tables.
-
-2. **Phase B (preferred performance): C++ primitive**
    - File: `eta/torch/src/eta/torch/torch_primitives.h`
    - Add builtin `%`-style or direct public builtin (recommended public: `torch/fact-table->tensor`).
    - Access fact-table columns directly and fill contiguous `torch::Tensor` in row-major order.
    - Register alias in `std.torch` as `fact-table->tensor`.
    - This avoids per-cell VM overhead.
 
-#### Implementation steps (Phase B preferred)
-
-1. Add helper to decode list of column indices in C++ primitive.
-2. Validate `ft` type and each column index range.
-3. Allocate tensor:
-   - `auto out = ::torch::empty({rows, k}, ::torch::kFloat64);`
-4. Fill tensor:
-   - Iterate chosen columns.
-   - For each live row, numeric decode and write to `out[row_i][col_j]`.
-5. Return wrapped tensor via `factory::make_tensor`.
-6. Register builtin name in `builtin_names.h`.
-7. Add `std.torch` export/alias:
-   - `fact-table->tensor`.
-
-#### Tests
-
-**C++ tests (`eta/test/src/torch_tests.cpp`)**
-
-- `prim_torch_fact_table_to_tensor_via_env_shape`
-  - Build fact-table in runtime.
-  - Insert a few rows.
-  - Convert selected columns.
-  - Assert shape `(rows, selected-cols)`.
-
-- `prim_torch_fact_table_to_tensor_values`
-  - Validate expected row-major numeric values in output tensor.
-
-- `prim_torch_fact_table_to_tensor_rejects_non_numeric`
-  - Insert non-numeric value in selected column and assert error.
-
-- `prim_torch_fact_table_to_tensor_rejects_bad_col_index`
-  - Out-of-range index should error cleanly.
-
-**Eta tests**
-
-- File: `stdlib/tests/torch.test.eta` (or new `stdlib/tests/torch_fact_table_bridge.test.eta`)
-
-- `fact-table->tensor basic conversion`
-  - Build fact-table with 3 rows x 3 cols.
-  - Convert `(0 2)` and assert shape `(3 2)`.
-  - Assert flattened value order matches row-major expectation.
-
-- `fact-table->tensor respects live row count`
-  - Tombstone one row via `%fact-table-delete-row!`.
-  - Assert output row count equals `fact-table-row-count`.
-
-- `fact-table->tensor fails on non-numeric column`
-  - Ensure clear runtime error.
-
----
-
-### WS3 -- `torch:column-l2-norm` helper (axis-aware)
-
-#### Summary
-
-Expose L2 norm reduction along a specified axis.
-
-#### API
-
-- In `std.torch`: `(column-l2-norm t axis)`
-- Semantics:
-  - Return `sqrt(sum(t * t, axis))`
-  - For matrix + `axis=0`: column-wise norms
-  - For matrix + `axis=1`: row-wise norms
-
-#### Implementation choices
-
-1. **Pure wrapper only** (blocked by current runtime):
-   - Current `torch/sum` has arity `1` only; no axis argument.
-2. **Minimal runtime extension (recommended)**:
-   - Add `torch/sum-dim` primitive (tensor, dim).
-   - Implement `column-l2-norm` in `std.torch` from `t*`, `torch/sum-dim`, `tsqrt`.
-
-#### Implementation steps
-
-1. Runtime:
-   - File: `eta/torch/src/eta/torch/torch_primitives.h`
-   - Add `torch/sum-dim` arity `2`.
-   - Validate tensor + integer dim.
-2. Names:
-   - File: `eta/core/src/eta/runtime/builtin_names.h`
-   - Add `r("torch/sum-dim", 2, false);`
-3. Stdlib:
-   - File: `stdlib/std/torch.eta`
-   - Export `column-l2-norm`.
-   - Define:
-     - `(defun column-l2-norm (t axis) (tsqrt (torch/sum-dim (t* t t) axis)))`
-
-#### Tests
-
-**C++ tests (`eta/test/src/torch_tests.cpp`)**
-
-- `prim_torch_sum_dim_via_env`
-  - 2x3 tensor with known values.
-  - `sum-dim` over axis 0 and 1, assert expected values.
-
-- `prim_torch_sum_dim_bad_dim`
-  - Non-integer or out-of-range dimension returns error.
-
-**Eta tests (`stdlib/tests/torch.test.eta`)**
-
-- `column-l2-norm axis=0 on 2x2`
-  - Input `[[3,4],[0,0]]`, axis `0` => `(3,4)`.
-
-- `column-l2-norm axis=1 on 2x2`
-  - Same input, axis `1` => `(5,0)`.
-
----
-
-## 4. Delivery Phases
-
-### Phase 1 (unblock now)
-
-- Use Yu et al. truncated acyclicity approximation in NOTEARS path.
-- Implement `fact-table->tensor` (Phase A helper or Phase B primitive).
-- Implement axis-aware `column-l2-norm` via `torch/sum-dim`.
-
-### Phase 2 (P2 follow-up)
-
-- Add `torch/matrix-exp` binding and stdlib alias.
-- Keep approximation path available for reproducibility and performance comparisons.
-
----
-
-## 5. Risks and Mitigations
-
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Builtin registration order drift vs `builtin_names.h` | Runtime/name parity failures | Add/update parity tests in `torch_tests.cpp`; keep additions in matching order. |
-| Bridge performance regressions on large tables | Slower DAG training input pipeline | Prefer Phase B C++ primitive for columnar copy; keep helper only as fallback. |
-| Axis semantics confusion | Wrong norm vectors in model code | Add explicit axis tests (`0` and `1`) in Eta and C++. |
-| Numeric type surprises in fact-table | Runtime errors in training | Enforce numeric validation and explicit error messages. |
-
----
-
-## 6. Acceptance Criteria
-
-1. `std.torch` exposes `fact-table->tensor` and `column-l2-norm` with passing Eta tests.
-2. C++ primitive tests pass for:
-   - `torch/sum-dim`
-   - fact-table bridge primitive (if Phase B implemented)
+#### Implementation steps 
    - `torch/matrix-exp` (when P2 lands)
 3. Builtin name/arity parity tests continue passing after each primitive addition.
 4. `torch_improvements.md` implementation steps are reflected in touched files and test suites.
+
+---
+
+## 4. Implementation Status (2026-05-01)
+
+- WS1 implemented:
+  - `torch/matrix-exp` runtime primitive registered.
+  - builtin name parity updated.
+  - `std.torch` exports and aliases `matrix-exp`.
+  - torch reference docs updated.
+  - C++ and Eta tests added for identity and shape behavior.
+
+- WS2 implemented:
+  - `torch/fact-table->tensor` runtime primitive registered.
+  - `std.torch` exports and aliases `fact-table->tensor`.
+  - torch reference docs updated for fact-table bridge helper.
+  - C++ and Eta tests added for live-row handling and column order.
+
+- WS3 implemented:
+  - `torch/column-l2-norm` runtime primitive registered (axis-aware).
+  - `std.torch` exports both `column-l2-norm` and `torch:column-l2-norm`.
+  - torch reference docs updated for axis-aware L2 norm helper.
+  - C++ and Eta tests added for numeric correctness and alias parity.
+
+- Validation gate used after each workstream and at the end:
+  - Build: `cmake --build C:\Users\lewis\develop\eta\out\msvc-release --target eta_all -j 14`
+  - Tests: `ctest --test-dir C:\Users\lewis\develop\eta\out\msvc-release --output-on-failure`
+  - Result: all tests passed (`eta_core_test`, `eta_stdlib_tests`) at each gate.

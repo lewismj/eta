@@ -451,6 +451,7 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("torch/matmul",    2, false);
     r("torch/dot",       2, false);
     r("torch/cholesky",  1, false);
+    r("torch/matrix-exp", 1, false);
     r("torch/mvnormal",  2, false);
 
     /// Unary
@@ -471,6 +472,8 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("torch/squeeze",   1, false);
     r("torch/unsqueeze", 2, false);
     r("torch/cat",       2, false);
+    r("torch/fact-table->tensor", 2, false);
+    r("torch/column-l2-norm", 2, false);
 
     /// Reductions
     r("torch/sum",       1, false);
