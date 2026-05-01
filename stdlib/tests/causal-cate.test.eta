@@ -1,0 +1,141 @@
+;;; stdlib/tests/causal-cate.test.eta -- Tests for std.causal.cate
+
+(module causal.cate.tests
+  (import std.test std.causal.cate std.causal.estimate std.stats std.core std.collections)
+  (begin
+
+    (defun make-row (x z1 z2 y)
+      (list
+        (cons 'x x)
+        (cons 'z1 z1)
+        (cons 'z2 z2)
+        (cons 'y y)))
+
+    (defun repeat-row (n row)
+      (let loop ((i 0) (acc '()))
+        (if (= i n)
+            (reverse acc)
+            (loop (+ i 1) (cons row acc)))))
+
+    (defun append3 (a b c)
+      (append a (append b c)))
+
+    ;; Constant treatment effect: tau(z)=1.2.
+    (defun make-constant-cate-data ()
+      (let ((z1s '(-2 -1 0 1 2))
+            (z2s '(-1 0 1)))
+        (foldl
+          (lambda (acc z1)
+            (append
+              acc
+              (foldl
+                (lambda (acc2 z2)
+                  (let* ((base (+ 3.0 (* 0.5 z1) (* -0.4 z2)))
+                         (y0 base)
+                         (y1 (+ base 1.2)))
+                    (append3 acc2
+                             (repeat-row 8 (make-row 0 z1 z2 y0))
+                             (repeat-row 8 (make-row 1 z1 z2 y1)))))
+                '()
+                z2s)))
+          '()
+          z1s)))
+
+    ;; Imbalanced treatment assignment with heterogeneous tau(z1)=0.8+0.25*z1.
+    (defun make-imbalanced-cate-data ()
+      (let ((z1s '(-2 -1 0 1 2))
+            (z2s '(-1 0 1)))
+        (foldl
+          (lambda (acc z1)
+            (append
+              acc
+              (foldl
+                (lambda (acc2 z2)
+                  (let* ((tau (+ 0.8 (* 0.25 z1)))
+                         (base (+ 1.5 (* 0.6 z1) (* -0.2 z2)))
+                         (y0 base)
+                         (y1 (+ base tau)))
+                    (append3 acc2
+                             (repeat-row 2 (make-row 0 z1 z2 y0))
+                             (repeat-row 18 (make-row 1 z1 z2 y1)))))
+                '()
+                z2s)))
+          '()
+          z1s)))
+
+    ;; Overlap data for orthogonal / doubly robust learners.
+    ;; tau(z2)=1.0+0.2*z2 so average tau is exactly 1.0 on this grid.
+    (defun make-overlap-data ()
+      (let ((z1s '(-2 -1 0 1 2))
+            (z2s '(-1 0 1)))
+        (foldl
+          (lambda (acc z1)
+            (append
+              acc
+              (foldl
+                (lambda (acc2 z2)
+                  (let* ((tau (+ 1.0 (* 0.2 z2)))
+                         (base (+ 2.0 (* 0.3 z1) (* 0.5 z2)))
+                         (n1 (if (>= z1 0) 9 3))
+                         (n0 (if (>= z1 0) 3 9)))
+                    (append3 acc2
+                             (repeat-row n0 (make-row 0 z1 z2 base))
+                             (repeat-row n1 (make-row 1 z1 z2 (+ base tau))))))
+                '()
+                z2s)))
+          '()
+          z1s)))
+
+    (define d-const (make-constant-cate-data))
+    (define d-imbal (make-imbalanced-cate-data))
+    (define d-overlap (make-overlap-data))
+
+    (define ols (stats:make-ols-regressor))
+    (define logit (stats:make-logistic))
+
+    (define suite
+      (make-group "std.causal.cate"
+        (list
+
+          (make-test "T-learner recovers constant CATE"
+            (lambda ()
+              (let ((m (cate:fit-t-learner d-const 'y 'x '(z1 z2) ols)))
+                (assert-approx-equal 1.2 (cate:ate m d-const) 1e-9))))
+
+          (make-test "S-learner recovers constant CATE"
+            (lambda ()
+              (let ((m (cate:fit-s-learner d-const 'y 'x '(z1 z2) ols)))
+                (assert-approx-equal 1.2 (cate:ate m d-const) 1e-9))))
+
+          (make-test "X-learner handles treatment imbalance"
+            (lambda ()
+              (let* ((m (cate:fit-x-learner d-imbal 'y 'x '(z1 z2) ols logit))
+                     (ranked (cate:rank m d-imbal))
+                     (taus (cdr ranked)))
+                (assert-approx-equal 0.8 (cate:ate m d-imbal) 0.05)
+                (assert-true (>= (car taus) (list-ref taus (- (length taus) 1)))))))
+
+          (make-test "R-learner recovers mean CATE under overlap"
+            (lambda ()
+              (let ((m (cate:fit-r-learner d-overlap 'y 'x '(z1 z2) ols)))
+                (assert-approx-equal 1.0 (cate:ate m d-overlap) 0.08))))
+
+          (make-test "DR-learner recovers mean CATE under overlap"
+            (lambda ()
+              (let ((m (cate:fit-dr-learner d-overlap 'y 'x '(z1 z2) ols logit)))
+                (assert-approx-equal 1.0 (cate:ate m d-overlap) 0.08))))
+
+          (make-test "diagnostics: residual-r2 and propensity overlap"
+            (lambda ()
+              (let* ((actual '(1.0 2.0 3.0 4.0))
+                     (pred '(1.0 2.0 3.0 4.0))
+                     (r2 (cate:residual-r2 actual pred))
+                     (ps (do:propensity-score d-overlap 'x '(z1 z2)))
+                     (ov (cate:propensity-overlap ps 0.05)))
+                (assert-approx-equal 1.0 r2 1e-12)
+                (assert-equal (length ps) (cdr (assq 'n ov)))
+                (assert-true (> (cdr (assq 'inside-rate ov)) 0.0))))))
+
+          )))
+
+    (print-tap (run suite))))
