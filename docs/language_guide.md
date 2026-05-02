@@ -40,7 +40,7 @@
 22. [Statistics & Linear Algebra](#22-statistics--linear-algebra)
 23. [libtorch / Neural Networks](#23-libtorch--neural-networks)
 24. [Concurrency & Distribution](#24-concurrency--distribution)
-25. [Quantitative Finance Examples](#25-quantitative-finance-examples)
+25. [Finance Examples](#25-finance-examples)
 26. [Tooling](#26-tooling)
 27. [Runtime Internals (overview)](#27-runtime-internals-overview)
 28. [Examples Index](#28-examples-index)
@@ -818,7 +818,7 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 ---
 
-## 25. Quantitative Finance Examples
+## 25. Finance Examples
 
 | Example                                                        | Topic                                  | Walkthrough |
 | :------------------------------------------------------------- | :------------------------------------- | :---------- |
