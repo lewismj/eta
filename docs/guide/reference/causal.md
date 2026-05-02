@@ -853,33 +853,6 @@ analysis:
 
 ---
 
-## Status & Roadmap
-
-> [!IMPORTANT]
-> Milestones **M0 - M15** of the
-> [`causal_plan.md`](../../plan/causal_plan.md) are implemented in-tree:
-> ADMGs and latent projection, linear-time d-separation, the three
-> rules, ID / IDC with hedge witnesses, generalised adjustment /
-> front-door / IV, mediation, transportability, counterfactuals,
-> AIPW / TMLE / IPW / g-formula estimation with bootstrap CIs and
-> sensitivity, PC / FCI / GES / NOTEARS-style structure learning,
-> DOT / Mermaid / LaTeX rendering, CATE meta-learners, cross-fitting
-> DML (PLR/IRM), tree/random-forest/causal-forest estimators, and
-> uplift/Qini/policy-value scoring.
->
-> Extension milestones **M14 - M15** in the plan:
->
-> - None. M14 (cross-fitting/DML) and M15 (uplift/Qini/policy-value) are now implemented.
->
-> Smaller open items inside the implemented surface:
->
-> - Influence-function / analytic standard errors (currently bootstrap only).
-> - Continuous-treatment estimators.
-> - Native FCI orientation rules and a full GES score search
->   (`learn:fci` and `learn:ges` currently delegate to `learn:pc`).
-
----
-
 
 ## Source Locations
 

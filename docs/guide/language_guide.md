@@ -628,9 +628,9 @@ Three CLP domains are bundled:
 
 | Domain  | Module        | Reference |
 | :------ | :------------ | :-------- |
-| CLP(FD) | `std.clp`     | [`clp.md`](./reference/clp.md) |
+| CLP(FD) | `std.clp`     | [`clp.md`](./reference/clp.md)   |
 | CLP(B)  | `std.clpb`    | [`clpb.md`](./reference/clpb.md) |
-| CLP(R)  | `std.clpr`    | (interval API: `clp:real`, `clp:r<=`, `clp:r-minimize`, `clp:rq-minimize` …) |
+| CLP(R)  | `std.clpr`    | [`clpr.md`](./reference/clpr.md) |
 
 ```scheme
 (import std.clp)
