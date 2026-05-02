@@ -4,6 +4,7 @@
 [Modules and Stdlib](modules.md) ·
 [Language Guide](../language_guide.md) ·
 [OS Primitives](os.md) ·
+[Subprocesses](process.md) ·
 [Next Steps](../../next-steps.md)
 
 ---
@@ -136,4 +137,6 @@ responsibility (use `fs:delete-file` or platform tooling).
 - Process-level concerns — environment variables, working directory,
   exit codes, command-line arguments — live in
   [`std.os`](os.md).
+- Subprocess execution and pipe-based process I/O live in
+  [`std.process`](process.md).
 

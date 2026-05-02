@@ -5,7 +5,7 @@
  * @brief Single source of truth for ALL live primitive registrations.
  *
  * Every executable that runs Eta code must call register_all_primitives()
- * (which handles core + port + io + os + time + torch + stats + log), then call
+ * (which handles core + port + io + os + process + time + torch + stats + log), then call
  * eta::nng::register_nng_primitives() with driver-specific arguments.
  *
  * Canonical registration order  (MUST match builtin_names.h exactly):
@@ -13,11 +13,12 @@
  *   2. port_primitives.h
  *   3. io_primitives.h
  *   4. os_primitives.h
- *   5. time_primitives.h
- *   6. torch_primitives.h
- *   7. stats_primitives.h
- *   8. log_primitives.h
- *   9. nng_primitives.h  (registered separately by the Driver)
+ *   5. process_primitives.h
+ *   6. time_primitives.h
+ *   7. torch_primitives.h
+ *   8. stats_primitives.h
+ *   9. log_primitives.h
+ *  10. nng_primitives.h  (registered separately by the Driver)
  *
  * For analysis-only tools (LSP), builtin_names.h provides null-func
  */
@@ -26,6 +27,7 @@
 #include "eta/runtime/port_primitives.h"
 #include "eta/runtime/io_primitives.h"
 #include "eta/runtime/os_primitives.h"
+#include "eta/runtime/process_primitives.h"
 #include "eta/runtime/time_primitives.h"
 #include <eta/torch/torch_primitives.h>
 #include <eta/stats/stats_primitives.h>
@@ -40,7 +42,7 @@
 namespace eta::interpreter {
 
 /**
- * Register all core+port+io+os+time+torch+stats+log primitive implementations.
+ * Register all core+port+io+os+process+time+torch+stats+log primitive implementations.
  *
  * Call nng::register_nng_primitives() after this with the appropriate
  * driver-specific arguments to complete the full builtin set.
@@ -57,6 +59,7 @@ inline void register_all_primitives(
     runtime::register_port_primitives(env, heap, intern, vm);
     runtime::register_io_primitives(env, heap, intern, vm);
     runtime::register_os_primitives(env, heap, intern, vm, command_line_arguments);
+    runtime::register_process_primitives(env, heap, intern, vm);
     runtime::register_time_primitives(env, heap, intern, &vm);
     torch_bindings::register_torch_primitives(env, heap, intern, &vm);
     stats_bindings::register_stats_primitives(env, heap, intern, &vm);

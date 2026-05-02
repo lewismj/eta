@@ -656,7 +656,31 @@ directory, and process exit. Auto-imported by `std.prelude`.
 ---
 
 
-### `std.freeze` — Coroutine-Style Goal Suspension (opt-in)
+### `std.process` - Subprocess Execution (opt-in)
+
+```scheme
+(import std.process)
+```
+
+Blocking and non-blocking subprocess support with captured stdio and
+pipe-backed ports that integrate with existing `read-u8`, `write-u8`,
+and `close-port` workflows.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `process:run` | `(program args [opts]) -> (status stdout stderr)` | Blocking run with capture/inherit/null stream options |
+| `process:spawn` | `(program args [opts]) -> handle` | Non-blocking spawn returning a process handle |
+| `process:wait` | `(handle [timeout-ms]) -> int or #f` | Wait for completion (`#f` on timeout) |
+| `process:kill` / `process:terminate` | `(handle) -> bool` | Hard/soft termination |
+| `process:pid` / `process:alive?` / `process:exit-code` | `(handle) -> ...` | Lifecycle state accessors |
+| `process:stdin-port` / `process:stdout-port` / `process:stderr-port` | `(handle) -> port or #f` | Child stdio port access |
+| `process:run-string` | `(program args [opts]) -> stdout` | Convenience accessor for captured stdout |
+
+> **📖 Full documentation:** [Subprocesses](process.md)
+
+---
+
+### `std.freeze` - Coroutine-Style Goal Suspension (opt-in)
 
 ```scheme
 (import std.freeze)
@@ -763,7 +787,8 @@ name conflicts with example-local gradient drivers.
 
 The following modules are **not** included in the prelude and must be
 imported explicitly when needed: `std.regex`, `std.clpb`, `std.clpr`,
-`std.freeze`, `std.supervisor`, `std.csv`, `std.torch`, `std.test`.
+`std.freeze`, `std.supervisor`, `std.csv`, `std.torch`, `std.test`,
+`std.process`.
 
 ---
 

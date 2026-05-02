@@ -215,6 +215,12 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
+    std::expected<LispVal, RuntimeError> make_process_handle(Heap& heap, std::shared_ptr<types::ProcessHandle> handle) {
+        return make_heap_object<types::ProcessHandleObject, ObjectKind::ProcessHandle>(
+            heap, types::ProcessHandleObject{.handle = std::move(handle)});
+    }
+
+    inline_always
     std::expected<LispVal, RuntimeError> make_compound(Heap& heap, LispVal functor,
                                                        std::vector<LispVal> args) {
         return make_heap_object<types::CompoundTerm, ObjectKind::CompoundTerm>(

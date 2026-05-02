@@ -3,6 +3,7 @@
 [Back to README](../../../README.md) ·
 [Modules and Stdlib](modules.md) ·
 [Language Guide](../language_guide.md) ·
+[Subprocesses](process.md) ·
 [Filesystem](fs.md) ·
 [Next Steps](../../next-steps.md)
 
@@ -125,5 +126,7 @@ auto-imported by `std.prelude`; you can also import it directly:
   to a status code.
 - Filesystem operations — paths, directories, file metadata — live in
   [`std.fs`](fs.md).
+- Subprocess execution and child stdio piping live in
+  [`std.process`](process.md).
 - Wall-clock and monotonic time live in [`std.time`](time.md).
 

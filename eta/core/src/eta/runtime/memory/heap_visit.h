@@ -26,6 +26,7 @@ namespace eta::runtime::memory::heap {
         virtual R visit_hash_set(const eta::runtime::types::HashSet& hs) = 0;
         virtual R visit_csv_reader(const eta::runtime::types::CsvReader& reader) = 0;
         virtual R visit_compound_term(const eta::runtime::types::CompoundTerm& ct) = 0;
+        virtual R visit_process_handle(const eta::runtime::types::ProcessHandleObject& ph) = 0;
 
         /// Fallback for leaf/unknown kinds (no outward edges)
         virtual R visit_leaf(ObjectKind kind, const void* payload) = 0;
@@ -49,6 +50,7 @@ namespace eta::runtime::memory::heap {
             case HashSet:      return v.visit_hash_set(*static_cast<const eta::runtime::types::HashSet*>(payload));
             case CsvReader:    return v.visit_csv_reader(*static_cast<const eta::runtime::types::CsvReader*>(payload));
             case CompoundTerm: return v.visit_compound_term(*static_cast<const eta::runtime::types::CompoundTerm*>(payload));
+            case ProcessHandle:return v.visit_process_handle(*static_cast<const eta::runtime::types::ProcessHandleObject*>(payload));
 
             case Fixnum:
             case ByteVector:

@@ -461,9 +461,44 @@ action cover the awkward cases.
 
 Runnable demo: [`examples/args.eta`](../../examples/args.eta).
 
+### Subprocesses (`std.process`)
+
+`std.process` runs and controls external OS processes. Use
+`process:run` for the common shell-out (blocking, captures stdout /
+stderr) and `process:spawn` for long-running children whose stdio you
+want to drive as Eta ports.
+
+```scheme
+(import std.process std.io)
+
+;; Blocking — returns (exit-code stdout stderr)
+(define r (process:run "git" '("--version")))
+(println (cadr r))                       ; "git version 2.45.0\n"
+
+;; Non-blocking — drive the child by its ports
+(define p (process:spawn "python" '("-u" "-c" "print(input())")))
+(display "hello\n" (process:stdin-port p))
+(close-port (process:stdin-port p))
+(println (read-line (process:stdout-port p)))   ; "hello"
+(process:wait p)                                ; => 0
+```
+
+| Function                                                           | Purpose                                                  |
+| :----------------------------------------------------------------- | :------------------------------------------------------- |
+| `process:run program args [opts]`                                  | Block; return `(exit-code stdout stderr)`                |
+| `process:spawn program args [opts]`                                | Start a child; return a process handle                   |
+| `process:wait` / `process:kill` / `process:terminate`              | Lifecycle (graceful or hard stop)                        |
+| `process:pid` / `process:alive?` / `process:exit-code`             | Status queries                                           |
+
+
+Options accepted by both `run` and `spawn`: `cwd`, `env`,
+`replace-env?`, `stdin`, `stdout`, `stderr`, `timeout-ms`, `binary?`.
+
+> **Reference:** [`process.md`](./reference/process.md).
+
 > **Deep dive:** [`io.md`](./io.md). **References:**
 > [`fs.md`](./reference/fs.md), [`os.md`](./reference/os.md),
-> [`args.md`](./reference/args.md).
+> [`args.md`](./reference/args.md), [`process.md`](./reference/process.md).
 
 ---
 
@@ -612,7 +647,7 @@ worked LP.
 
 ---
 
-## 19. Datalog & Fact Tables
+## 19. Fact Tables
 
 `std.db` provides Datalog-style relations with `defrel`, `assert!`, and
 tabled evaluation — see [`db.md`](./reference/db.md). `std.fact_table` is a

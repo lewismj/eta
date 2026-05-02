@@ -379,7 +379,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto port_obj = get_port(port_val);
         if (!port_obj) return std::unexpected(port_obj.error());
 
-        auto* binary_port = dynamic_cast<BinaryPort*>((*port_obj)->port.get());
+        auto* binary_port = dynamic_cast<BytePort*>((*port_obj)->port.get());
         if (!binary_port) {
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "read-u8: not a binary port"}});
         }
@@ -408,7 +408,7 @@ inline void register_port_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         auto port_obj = get_port(port_val);
         if (!port_obj) return std::unexpected(port_obj.error());
 
-        auto* binary_port = dynamic_cast<BinaryPort*>((*port_obj)->port.get());
+        auto* binary_port = dynamic_cast<BytePort*>((*port_obj)->port.get());
         if (!binary_port) {
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "write-u8: not a binary port"}});
         }

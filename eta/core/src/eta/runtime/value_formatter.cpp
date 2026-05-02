@@ -245,6 +245,17 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return "#<port>";
         }
 
+        /// Subprocess handle
+        if (auto* ph = heap.try_get_as<ObjectKind::ProcessHandle, types::ProcessHandleObject>(id)) {
+            if (!ph->handle) return "#<process-handle>";
+#ifdef _WIN32
+            const auto pid = static_cast<unsigned long long>(ph->handle->pid);
+#else
+            const auto pid = static_cast<long long>(ph->handle->pid);
+#endif
+            return "#<process-handle pid=" + std::to_string(pid) + ">";
+        }
+
         /// Logic variable
         if (auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id)) {
             if (lv->binding.has_value()) {

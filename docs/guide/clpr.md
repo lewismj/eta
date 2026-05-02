@@ -2,6 +2,10 @@
 
 [← Back to Language Guide](./language_guide.md)
 
+> [!TIP]
+>  This page is a short conceptual tour.
+> The complete reference: **[`reference/clpr.md`](./reference/clpr.md)**.
+
 `std.clpr` adds **continuous-domain** constraint solving to Eta's logic
 engine. Where `std.clp` (CLP(FD)) reasons over integers and `std.clpb`
 over booleans, `std.clpr` reasons over real intervals and posts linear
@@ -152,6 +156,7 @@ attribute. They can:
 
 ## Related
 
+- **[Full `std.clpr` reference →](./reference/clpr.md)**
 - [`clp.md`](./reference/clp.md), [`clpb.md`](./reference/clpb.md), [`logic.md`](./reference/logic.md)
 - [`featured_examples/portfolio.md`](../featured_examples/portfolio.md)
 - [Eigen](./eigen.md) (the underlying numerics)

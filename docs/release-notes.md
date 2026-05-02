@@ -4,6 +4,64 @@
 
 ---
 
+## 2026-05-02
+
+### Subprocess Support (`std.process`)
+
+Hosted-platform Phase H1 is now complete with subprocess execution and
+process lifecycle control.
+
+Highlights:
+
+- New native builtins:
+  - `%process-run`
+  - `%process-spawn`
+  - `%process-wait`
+  - `%process-kill`
+  - `%process-terminate`
+  - `%process-pid`
+  - `%process-alive?`
+  - `%process-exit-code`
+  - `%process-handle?`
+  - `%process-stdin-port`
+  - `%process-stdout-port`
+  - `%process-stderr-port`
+- `%process-run` now supports:
+  - captured/inherited/null stdio modes
+  - string or bytevector stdin input
+  - merged stderr-to-stdout mode
+  - timeout handling via `process-timeout:` errors
+  - binary capture mode (`binary? #t`) returning bytevectors
+- New stdlib module: `std.process`:
+  - `process:run`, `process:run-string`
+  - `process:spawn`, `process:wait`
+  - `process:kill`, `process:terminate`
+  - `process:pid`, `process:alive?`, `process:exit-code`
+  - `process:handle?`
+  - `process:stdin-port`, `process:stdout-port`, `process:stderr-port`
+- New C++ runtime tests:
+  - `eta/test/src/process_primitives_tests.cpp`
+- New stdlib tests:
+  - `stdlib/tests/process.test.eta`
+- New examples:
+  - `examples/process-shellout.eta`
+  - `examples/process-pipeline.eta`
+
+Documentation updates:
+
+- Added [docs/guide/reference/process.md](guide/reference/process.md).
+- Updated [docs/guide/reference/modules.md](guide/reference/modules.md)
+  with `std.process`.
+- Added process cross-links in:
+  - [docs/guide/reference/os.md](guide/reference/os.md)
+  - [docs/guide/reference/fs.md](guide/reference/fs.md)
+- Updated [docs/next-steps.md](next-steps.md) to mark subprocess as
+  shipped.
+- Added VS Code snippets for process import/run/spawn in
+  [editors/vscode/snippets/eta.json](../editors/vscode/snippets/eta.json).
+
+---
+
 ## 2026-04-29 (later)
 
 ### JSON (`std.json`)

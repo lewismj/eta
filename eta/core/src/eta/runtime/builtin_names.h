@@ -6,7 +6,7 @@
  *        that need to know builtin names/arities but do NOT execute code.
  *
  * Registers every builtin that the runtime provides (core + port + io + os +
- * time + torch + stats + log + nng) into a BuiltinEnvironment using null PrimitiveFuncs.
+ * process + time + torch + stats + log + nng) into a BuiltinEnvironment using null PrimitiveFuncs.
  * The SemanticAnalyzer only reads names/arities from the env to pre-allocate
  *
  * REGISTRATION ORDER must stay in sync with all_primitives.h / driver.h:
@@ -411,6 +411,23 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("temp-directory",          0, false);
     r("file-modification-time",  1, false);
     r("file-size",               1, false);
+
+    /**
+     * process_primitives.h  (must match registration order exactly)
+     */
+
+    r("%process-run",          2, true);
+    r("%process-spawn",        2, true);
+    r("%process-wait",         1, true);
+    r("%process-kill",         1, false);
+    r("%process-terminate",    1, false);
+    r("%process-pid",          1, false);
+    r("%process-alive?",       1, false);
+    r("%process-exit-code",    1, false);
+    r("%process-handle?",      1, false);
+    r("%process-stdin-port",   1, false);
+    r("%process-stdout-port",  1, false);
+    r("%process-stderr-port",  1, false);
 
     /**
      * time_primitives.h  (must match registration order exactly)

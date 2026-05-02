@@ -118,6 +118,13 @@ namespace eta::runtime::memory::gc {
             for (auto v : ct.args) callback(v);
         }
 
+        void visit_process_handle(const types::ProcessHandleObject& ph) override {
+            if (!ph.handle) return;
+            callback(ph.handle->stdin_port);
+            callback(ph.handle->stdout_port);
+            callback(ph.handle->stderr_port);
+        }
+
         void visit_leaf(heap::ObjectKind, const void*) override { /* no edges */ }
     };
 

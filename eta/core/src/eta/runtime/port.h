@@ -495,11 +495,55 @@ private:
 };
 
 /**
+ * @brief Base class for ports that support byte-oriented I/O.
+ */
+class BytePort : public Port {
+public:
+    /**
+     * @brief Read a single byte.
+     * @return The byte read, or std::nullopt on EOF.
+     */
+    virtual std::optional<uint8_t> read_byte() {
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Write a single byte.
+     * @return An error if the write failed.
+     */
+    virtual std::expected<void, error::RuntimeError> write_byte(uint8_t /*byte*/) {
+        return std::unexpected(error::RuntimeError{
+            error::VMError{error::RuntimeErrorCode::TypeError, "Port is not writable"}
+        });
+    }
+
+    /**
+     * @brief Write multiple bytes.
+     * @return An error if the write failed.
+     */
+    virtual std::expected<void, error::RuntimeError> write_bytes(const std::vector<uint8_t>& bytes) {
+        for (uint8_t b : bytes) {
+            auto r = write_byte(b);
+            if (!r) return r;
+        }
+        return {};
+    }
+
+    bool is_binary() const override {
+        return true;
+    }
+
+    Encoding encoding() const override {
+        return Encoding::Binary;
+    }
+};
+
+/**
  * @brief Binary port for bytevector I/O operations.
  *
  * Reads and writes raw bytes without any encoding.
  */
-class BinaryPort : public Port {
+class BinaryPort : public BytePort {
 public:
     enum class Mode {
         Input,
@@ -513,7 +557,7 @@ public:
      * @brief Read a single byte.
      * @return The byte read, or std::nullopt if EOF.
      */
-    std::optional<uint8_t> read_byte() {
+    std::optional<uint8_t> read_byte() override {
         if (mode_ != Mode::Input || read_pos_ >= data_.size()) {
             return std::nullopt;
         }
@@ -523,7 +567,7 @@ public:
     /**
      * @brief Write a single byte.
      */
-    std::expected<void, error::RuntimeError> write_byte(uint8_t byte) {
+    std::expected<void, error::RuntimeError> write_byte(uint8_t byte) override {
         if (mode_ != Mode::Output) {
             return std::unexpected(error::RuntimeError{
                 error::VMError{error::RuntimeErrorCode::TypeError, "Cannot write to input binary port"}
@@ -536,7 +580,7 @@ public:
     /**
      * @brief Write multiple bytes.
      */
-    std::expected<void, error::RuntimeError> write_bytes(const std::vector<uint8_t>& bytes) {
+    std::expected<void, error::RuntimeError> write_bytes(const std::vector<uint8_t>& bytes) override {
         if (mode_ != Mode::Output) {
             return std::unexpected(error::RuntimeError{
                 error::VMError{error::RuntimeErrorCode::TypeError, "Cannot write to input binary port"}
@@ -559,14 +603,6 @@ public:
 
     bool is_output() const override {
         return mode_ == Mode::Output;
-    }
-
-    bool is_binary() const override {
-        return true;
-    }
-
-    Encoding encoding() const override {
-        return Encoding::Binary;
     }
 
 private:

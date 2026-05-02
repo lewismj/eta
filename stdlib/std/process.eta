@@ -1,0 +1,37 @@
+;;; std/process.eta - Subprocess helpers built on %process-* primitives.
+
+(module std.process
+  (export
+    process:run
+    process:spawn
+    process:wait
+    process:kill
+    process:terminate
+    process:pid
+    process:alive?
+    process:exit-code
+    process:handle?
+    process:stdin-port
+    process:stdout-port
+    process:stderr-port
+    process:run-string)
+  (begin
+
+    (define process:run %process-run)
+    (define process:spawn %process-spawn)
+    (define process:wait %process-wait)
+    (define process:kill %process-kill)
+    (define process:terminate %process-terminate)
+    (define process:pid %process-pid)
+    (define process:alive? %process-alive?)
+    (define process:exit-code %process-exit-code)
+    (define process:handle? %process-handle?)
+    (define process:stdin-port %process-stdin-port)
+    (define process:stdout-port %process-stdout-port)
+    (define process:stderr-port %process-stderr-port)
+
+    (defun process:run-string (program args . rest)
+      (let ((result (apply %process-run program args rest)))
+        (car (cdr result))))
+
+  ))

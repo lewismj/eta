@@ -20,3 +20,4 @@
 #include "compound.h"
 #include "regex.h"
 #include "log_types.h"
+#include "process_handle.h"

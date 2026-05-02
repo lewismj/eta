@@ -29,9 +29,9 @@ The remaining roadmap splits into three buckets:
    per-thread DAP routing.
 3. **Hosted-platform layer** *(new phase, see end of doc)* — the
    functionality a script needs from its host OS. Hash maps, sets,
-   `getenv`, argv, filesystem and JSON are now shipped (`std.hashmap`,
-   `std.hashset`, `std.os`, `std.fs`, `std.json`); the remaining gaps
-   are atoms, subprocess, HTTP, FFI, and a
+   `getenv`, argv, filesystem, subprocess, and JSON are now shipped
+   (`std.hashmap`, `std.hashset`, `std.os`, `std.fs`, `std.process`,
+   `std.json`); the remaining gaps are atoms, HTTP, FFI, and a
    condition system. This is the largest *capability* gap between Eta
    and a comparable hosted language (Clojure, Racket, Common Lisp,
    Chez).
@@ -293,7 +293,7 @@ a delivery order.
 | **getenv / setenv** | `(System/getenv ...)` | `os:getenv` / `os:setenv!` / `os:unsetenv!` / `os:environment-variables` (`std.os`) | Closed |
 | **argv / command-line** | `*command-line-args*` | `os:command-line-arguments` (`std.os`) | Closed |
 | **Filesystem ops** | `clojure.java.io` | full `std.fs` (`fs:file-exists?`, `fs:directory?`, `fs:delete-file`, `fs:make-directory`, `fs:list-directory`, `fs:path-join`, `fs:path-split`, `fs:path-normalize`, `fs:temp-file`, `fs:temp-directory`, `fs:file-modification-time`, `fs:file-size`) | Closed |
-| **Subprocess / `exec`** | `clojure.java.shell/sh` | none | Big — no way to call `git`, `python`, etc. |
+| **Subprocess / `exec`** | `clojure.java.shell/sh` | `std.process` (`process:run`, `process:spawn`, lifecycle controls, stdio ports) | Closed |
 | **JSON parser / serialiser** | `clojure.data.json`, `cheshire` | `json:read` / `json:read-string` / `json:write` / `json:write-string` (`std.json`, RFC 8259, hash-map / vector decode, optional integer-exact mode) | Closed |
 | **`format` / `printf`** | `(format "%.3f" x)` | string ports + `display` | Medium — verbose for numeric reports |
 | **HTTP client** | `clj-http`, `hato` | nng raw sockets only | Medium |
@@ -329,15 +329,16 @@ Eta as a Python replacement.
   - `file-modification-time`, `file-size`
 - **Stdlib** — `std.os` and `std.fs` shipped (see
   [`os.md`](guide/reference/os.md), [`fs.md`](guide/reference/fs.md)).
-- **Subprocess** — *still outstanding*. Wrap `boost::process` or
-  `std::process` equivalent:
-  - `process-run` (blocking, returns `(status stdout stderr)`)
-  - `process-spawn` (non-blocking, returns a process handle)
-  - `process-wait`, `process-kill`, `process-pid`, `process-stdin-port`
-  - Stdio piping that lands as plain Eta ports so existing
-    `read-line` / `read-u8` works unchanged.
-- **Stdlib** — `std.process` for the subprocess layer (~600 LoC C++ +
-  ~200 LoC Eta wrappers + tests + docs page).
+- **Subprocess** — shipped in `std.process`:
+  - blocking `process:run` / `process:run-string`
+  - non-blocking `process:spawn` with lifecycle controls
+    (`process:wait`, `process:kill`, `process:terminate`,
+    `process:pid`, `process:alive?`, `process:exit-code`)
+  - child stdio as Eta ports
+    (`process:stdin-port`, `process:stdout-port`, `process:stderr-port`)
+  - timeout and operational error prefixes
+    (`process-timeout`, `process-spawn-failed`, `process-not-found`,
+    `process-wait-failed`)
 
 #### Phase H2 — Hash Map / Set + Atom (concurrency primitive)
 
@@ -433,7 +434,7 @@ useful but each is also pure quality-of-life on top of H1–H4.
 | Phase | Effort (eng-weeks) | Risk | Unblocks |
 |---|---|---|---|
 | H1 Process & FS | 2 | Low | scripts, deploy, test runners that shell out |
-| H1 already shipped: `std.os` + `std.fs` (env, argv, cwd, exit, paths, temp, stat). Subprocess (`std.process`) is the remaining slice. |
+| H1 shipped: `std.os` + `std.fs` + `std.process` (env, argv, cwd, exit, paths, temp, stat, subprocess run/spawn/lifecycle). |
 | H2 Hashmap / Set / Atom | 3 | Medium (GC barrier on Atom; HAMT later) | every dict-shaped workload |
 | H3 JSON / Format / Log | 2 | Low | configs, observability, REST consumers |
 | H3 already shipped: `std.json` (RFC 8259, hash-map / vector decode, integer-exact mode) and `std.log` (levels, filters, sinks, patterns, custom formatters). `std.format` remains. |
@@ -471,6 +472,17 @@ useful but each is also pure quality-of-life on top of H1–H4.
   Auto-imported by `std.prelude`. Tests in
   `stdlib/tests/json.test.eta`; reference at
   [`json.md`](guide/reference/json.md).
+- ✅ Hosted-platform Phase H1 - Subprocess support (`std.process`):
+  native `%process-*` builtins (`%process-run`, `%process-spawn`,
+  `%process-wait`, `%process-kill`, `%process-terminate`,
+  `%process-pid`, `%process-alive?`, `%process-exit-code`,
+  `%process-handle?`, `%process-stdin-port`, `%process-stdout-port`,
+  `%process-stderr-port`), stdlib wrapper module
+  (`stdlib/std/process.eta`), stdlib tests
+  (`stdlib/tests/process.test.eta`), C++ runtime tests
+  (`eta/test/src/process_primitives_tests.cpp`), examples
+  (`examples/process-shellout.eta`, `examples/process-pipeline.eta`),
+  and reference docs (`guide/reference/process.md`).
 - ✅ Hosted-platform Phase H1 — Filesystem + OS primitives: native
   builtins (`file-exists?`, `directory?`, `delete-file`,
   `make-directory`, `list-directory`, `path-join`, `path-split`,
@@ -480,8 +492,7 @@ useful but each is also pure quality-of-life on top of H1–H4.
   `exit`, `current-directory`, `change-directory!`) plus the
   `std.fs` and `std.os` stdlib wrappers and reference docs
   ([`fs.md`](guide/reference/fs.md), [`os.md`](guide/reference/os.md)).
-  See [release-notes.md](release-notes.md#2026-04-29). Subprocess
-  (`std.process`) is the remaining H1 slice.
+  See [release-notes.md](release-notes.md#2026-04-29).
 - ✅ Hash map / hash set runtime delivery: native `HashMap` / `HashSet`
   object kinds, core builtins, stdlib wrappers (`std.hashmap`,
   `std.hashset`), docs, snippets, and test coverage across

@@ -107,8 +107,32 @@
     },
     "Import": {
         "prefix": "import",
-        "body": "(import ${1|std.prelude,std.io,std.core,std.collections,std.math,std.logic,std.freeze,std.clp,std.clpr,std.clpb,std.db,std.aad,std.torch,std.stats,std.hashmap,std.hashset,std.regex,std.csv,std.net,std.supervisor,std.test,std.time|})",
+        "body": "(import ${1|std.prelude,std.io,std.core,std.collections,std.math,std.logic,std.freeze,std.clp,std.clpr,std.clpb,std.db,std.aad,std.torch,std.stats,std.hashmap,std.hashset,std.regex,std.csv,std.net,std.supervisor,std.process,std.test,std.time|})",
         "description": "Import bindings from a module"
+    },
+    "Import Process": {
+        "prefix": "import-process",
+        "body": "(import std.process)",
+        "description": "Import subprocess execution helpers"
+    },
+    "Process Run": {
+        "prefix": "process-run",
+        "body": [
+            "(define ${1:result}",
+            "  (process:run \"${2:program}\" ${3:'()} ${4:'()}))",
+            "$0"
+        ],
+        "description": "Run a process and capture (status stdout stderr)"
+    },
+    "Process Spawn": {
+        "prefix": "process-spawn",
+        "body": [
+            "(define ${1:handle}",
+            "  (process:spawn \"${2:program}\" ${3:'()} ${4:'()}))",
+            "(define ${5:stdout} (process:stdout-port ${1:handle}))",
+            "$0"
+        ],
+        "description": "Spawn a process and keep a handle/stdio ports"
     },
     "Catch": {
         "prefix": "catch",

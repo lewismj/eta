@@ -35,6 +35,7 @@ set(SOURCES
         src/stats_tests.cpp
         src/time_primitives_tests.cpp
         src/os_primitives_tests.cpp
+        src/process_primitives_tests.cpp
         src/csv_reader_tests.cpp
         src/csv_writer_tests.cpp
         src/csv_fact_table_tests.cpp
