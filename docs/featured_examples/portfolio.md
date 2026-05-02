@@ -1,9 +1,9 @@
 # Causal Portfolio Engine
 
 [← Back to README](../README.md) · [Examples](examples.md) ·
-[Causal](causal.md) · [Logic](logic.md) · [CLP](clp.md) ·
-[AAD](aad.md) · [Torch](torch.md) · [Fact Tables](fact-table.md) ·
-[Message Passing](message-passing.md)
+[Causal](../guide/reference/causal.md) · [Logic](../guide/reference/logic.md) · [CLP](../guide/reference/clp.md) ·
+[AAD](../guide/reference/aad.md) · [Torch](../guide/reference/torch.md) · [Fact Tables](../guide/reference/fact-table.md) ·
+[Message Passing](../guide/reference/message-passing.md)
 
 ---
 

@@ -1,0 +1,315 @@
+;;; std/causal/policy.eta -- Uplift, policy-value and synthetic scoring helpers.
+
+(module std.causal.policy
+  (import std.core)
+  (import std.collections)
+  (import std.stats)
+  (import std.causal.cate)
+  (import std.causal.estimate)
+  (export
+    ;; Ranking metrics
+    policy:qini-curve
+    policy:qini-coefficient
+    policy:auuc
+    policy:cumulative-gain-curve
+    ;; Policy values
+    policy:value-ipw
+    policy:value-aipw
+    policy:rank-by-cate
+    ;; Synthetic-truth metrics
+    policy:pehe
+    policy:ate-rmse
+    policy:ate-bias
+    ;; Policy construction
+    policy:greedy-treat-positive
+    policy:greedy-budget)
+  (begin
+
+    ;; -- Core helpers -----------------------------------------------------
+
+    (defun %obs-get (obs var)
+      (let ((p (assq var obs)))
+        (if p
+            (cdr p)
+            (error 'unknown-variable var))))
+
+    (defun %as-binary (v x-name)
+      (cond
+        ((equal? v 1) 1.0)
+        ((equal? v 0) 0.0)
+        ((eq? v #t) 1.0)
+        ((eq? v #f) 0.0)
+        (else (error 'non-binary-treatment x-name v))))
+
+    (defun %as-action (v)
+      (cond
+        ((equal? v 1) 1.0)
+        ((equal? v 0) 0.0)
+        ((eq? v #t) 1.0)
+        ((eq? v #f) 0.0)
+        (else (error "policy: expected binary action in {0,1,#t,#f}" v))))
+
+    (defun %clip-prob (p)
+      (let ((eps 1e-6))
+        (cond
+          ((< p eps) eps)
+          ((> p (- 1.0 eps)) (- 1.0 eps))
+          (else p))))
+
+    (defun %assert-eq-length3 (a b c who)
+      (if (and (= (length a) (length b))
+               (= (length a) (length c)))
+          'ok
+          (error (string-append who ": expected equal-length vectors"))))
+
+    (defun %assert-eq-length2 (a b who)
+      (if (= (length a) (length b))
+          'ok
+          (error (string-append who ": expected equal-length vectors"))))
+
+    (defun %map3 (f xs ys zs)
+      (if (or (null? xs) (null? ys) (null? zs))
+          '()
+          (cons (f (car xs) (car ys) (car zs))
+                (%map3 f (cdr xs) (cdr ys) (cdr zs)))))
+
+    (defun %map4 (f ws xs ys zs)
+      (if (or (null? ws) (null? xs) (null? ys) (null? zs))
+          '()
+          (cons (f (car ws) (car xs) (car ys) (car zs))
+                (%map4 f (cdr ws) (cdr xs) (cdr ys) (cdr zs)))))
+
+    (defun %sort-desc-by-cate (cate-preds y x)
+      (%assert-eq-length3 cate-preds y x "policy:qini-curve")
+      (sort (lambda (a b) (> (car a) (car b)))
+            (%map3 (lambda (tau yi xi)
+                     (list tau yi (%as-binary xi 'x)))
+                   cate-preds y x)))
+
+    ;; Curve representation:
+    ;;   list of (k . value), k in 1..n
+    (defun %curve-area (curve)
+      (let* ((n (length curve))
+             (step (if (= n 0) 0.0 (/ 1.0 n))))
+        (let loop ((rest curve) (prev 0.0) (acc 0.0))
+          (if (null? rest)
+              acc
+              (let* ((curr (cdr (car rest)))
+                     (trap (* 0.5 (+ prev curr) step)))
+                (loop (cdr rest) curr (+ acc trap)))))))
+
+    (defun %curve-max-abs (curve)
+      (foldl (lambda (acc kv)
+               (let ((v (abs (cdr kv))))
+                 (if (> v acc) v acc)))
+             0.0
+             curve))
+
+    (defun %last-curve-value (curve)
+      (if (null? curve)
+          0.0
+          (cdr (list-ref curve (- (length curve) 1)))))
+
+    (defun %row (obs cols)
+      (map* (lambda (col) (%obs-get obs col)) cols))
+
+    (defun %mark-top-k (pairs k n)
+      (let ((out (make-vector n 0)))
+        (let loop ((rest pairs) (i 0))
+          (if (or (null? rest) (>= i k))
+              (vector->list out)
+              (begin
+                (vector-set! out (cdr (car rest)) 1)
+                (loop (cdr rest) (+ i 1)))))))
+
+    (defun %budget->k (n budget)
+      (if (<= n 0)
+          0
+          (if (<= budget 1.0)
+              (let loop ((i 0))
+                (if (or (>= i n)
+                        (> (/ (+ i 1.0) n) budget))
+                    i
+                    (loop (+ i 1))))
+              (let loop ((i 0))
+                (if (or (>= i n)
+                        (> (+ i 1) budget))
+                    i
+                    (loop (+ i 1)))))))
+
+    ;; -- Ranking metrics --------------------------------------------------
+
+    ;; Qini/cumulative uplift curve from CATE scores and observed (Y, X).
+    ;; Returns list of (k . gain_k), k = 1..n.
+    (defun policy:qini-curve (cate-preds y x)
+      (let* ((triples (%sort-desc-by-cate cate-preds y x))
+             (n (length triples)))
+        (if (= n 0)
+            '()
+            (let loop ((i 1) (rest triples) (acc-t 0.0) (acc-c 0.0)
+                       (n1 0.0) (n0 0.0) (curve '()))
+              (if (null? rest)
+                  (reverse curve)
+                  (let* ((row (car rest))
+                         (yi (cadr row))
+                         (xi (caddr row))
+                         (acc-t* (+ acc-t (* xi yi)))
+                         (acc-c* (+ acc-c (* (- 1.0 xi) yi)))
+                         (n1* (+ n1 xi))
+                         (n0* (+ n0 (- 1.0 xi)))
+                         (uplift (- (if (= n1* 0.0) 0.0 (/ acc-t* n1*))
+                                    (if (= n0* 0.0) 0.0 (/ acc-c* n0*))))
+                         (gain (* (/ (* 1.0 i) n) uplift)))
+                    (loop (+ i 1)
+                          (cdr rest)
+                          acc-t*
+                          acc-c*
+                          n1*
+                          n0*
+                          (cons (cons i gain) curve))))))))
+
+    ;; Alias with the same shape as qini-curve.
+    (defun policy:cumulative-gain-curve (cate-preds y x)
+      (policy:qini-curve cate-preds y x))
+
+    ;; Area between model Qini curve and the random-targeting line.
+    (defun policy:qini-coefficient (curve)
+      (let* ((auc (%curve-area curve))
+             (end-v (%last-curve-value curve))
+             (baseline (* 0.5 end-v)))
+        (- auc baseline)))
+
+    ;; Normalized area under cumulative gain curve, clipped to [0,1].
+    (defun policy:auuc (curve)
+      (if (null? curve)
+          0.0
+          (let* ((den (%curve-max-abs curve)))
+            (if (<= den 1e-12)
+                0.0
+                (let ((raw (/ (%curve-area
+                                (map* (lambda (kv)
+                                        (cons (car kv) (abs (cdr kv))))
+                                      curve))
+                              den)))
+                  (cond
+                    ((< raw 0.0) 0.0)
+                    ((> raw 1.0) 1.0)
+                    (else raw)))))))
+
+    ;; Sort rows by descending CATE predictions.
+    ;; Returns (sorted-rows . sorted-cate).
+    (defun policy:rank-by-cate (data cate-preds)
+      (%assert-eq-length2 data cate-preds "policy:rank-by-cate")
+      (let* ((pairs (map2 (lambda (obs tau) (cons obs tau)) data cate-preds))
+             (sorted (sort (lambda (a b) (> (cdr a) (cdr b))) pairs)))
+        (cons (map* car sorted)
+              (map* cdr sorted))))
+
+    ;; -- Policy values ----------------------------------------------------
+
+    ;; Horvitz-Thompson policy value estimator.
+    ;; `e-hat` is propensity for X=1, aligned with data.
+    (defun policy:value-ipw (data y x z policy-fn e-hat)
+      (%assert-eq-length2 data e-hat "policy:value-ipw")
+      (if (null? data)
+          0.0
+          (stats:mean
+            (map2 (lambda (obs e)
+                    (let* ((a (%as-action (policy-fn (%row obs z))))
+                           (xv (%as-binary (%obs-get obs x) x))
+                           (yv (%obs-get obs y))
+                           (pa (%clip-prob (if (= a 1.0) e (- 1.0 e)))))
+                      (if (= xv a)
+                          (/ yv pa)
+                          0.0)))
+                  data
+                  e-hat))))
+
+    ;; Doubly-robust policy value estimator.
+    ;; Inputs `mu1`, `mu0`, `e-hat` are aligned vectors over `data`.
+    (defun policy:value-aipw (data y x z policy-fn mu1 mu0 e-hat)
+      (%assert-eq-length3 data mu1 mu0 "policy:value-aipw")
+      (%assert-eq-length2 data e-hat "policy:value-aipw")
+      (if (null? data)
+          0.0
+          (stats:mean
+            (%map4
+              (lambda (obs m1 m0 e)
+                (let* ((a (%as-action (policy-fn (%row obs z))))
+                       (mua (if (= a 1.0) m1 m0))
+                       (xv (%as-binary (%obs-get obs x) x))
+                       (yv (%obs-get obs y))
+                       (pa (%clip-prob (if (= a 1.0) e (- 1.0 e)))))
+                  (+ mua
+                     (if (= xv a)
+                         (/ (- yv mua) pa)
+                         0.0))))
+              data mu1 mu0 e-hat))))
+
+    ;; -- Synthetic truth metrics -----------------------------------------
+
+    (defun policy:pehe (true-cate pred-cate)
+      (%assert-eq-length2 true-cate pred-cate "policy:pehe")
+      (if (null? true-cate)
+          0.0
+          (sqrt (stats:mean (map2 (lambda (t p)
+                                    (let ((d (- t p))) (* d d)))
+                                  true-cate
+                                  pred-cate)))))
+
+    ;; Root-mean-squared error of ATE estimates over repeats.
+    ;; `true-ate` may be scalar or a same-length vector.
+    (defun policy:ate-rmse (true-ate pred-ate)
+      (if (or (list? pred-ate) (list? true-ate))
+          (let* ((pred (if (list? pred-ate)
+                           pred-ate
+                           (map* (lambda (_v) pred-ate) true-ate)))
+                 (truth (if (list? true-ate)
+                            true-ate
+                            (map* (lambda (_v) true-ate) pred))))
+            (%assert-eq-length2 truth pred "policy:ate-rmse")
+            (if (null? pred)
+                0.0
+                (sqrt (stats:mean (map2 (lambda (t p)
+                                          (let ((d (- p t))) (* d d)))
+                                        truth
+                                        pred)))))
+          (abs (- pred-ate true-ate))))
+
+    ;; Mean signed bias of ATE estimates over repeats.
+    ;; `true-ate` may be scalar or a same-length vector.
+    (defun policy:ate-bias (true-ate pred-ate)
+      (if (or (list? pred-ate) (list? true-ate))
+          (let* ((pred (if (list? pred-ate)
+                           pred-ate
+                           (map* (lambda (_v) pred-ate) true-ate)))
+                 (truth (if (list? true-ate)
+                            true-ate
+                            (map* (lambda (_v) true-ate) pred))))
+            (%assert-eq-length2 truth pred "policy:ate-bias")
+            (if (null? pred)
+                0.0
+                (stats:mean (map2 (lambda (t p) (- p t))
+                                  truth
+                                  pred))))
+          (- pred-ate true-ate)))
+
+    ;; -- Policy construction ---------------------------------------------
+
+    ;; Greedy one-step policy: treat when tau-hat is positive.
+    (defun policy:greedy-treat-positive (tau-hat)
+      (if (> tau-hat 0.0) 1 0))
+
+    ;; Build in-sample top-k treatment assignment from cate-preds.
+    ;; `budget` accepts:
+    ;;   - fraction in [0,1] => floor(budget * n)
+    ;;   - integer-like count > 1 => top-k count directly
+    ;; Returns a 0/1 vector aligned with input order.
+    (defun policy:greedy-budget (cate-preds budget)
+      (let* ((n (length cate-preds))
+             (k (%budget->k n budget))
+             (indexed (map-indexed (lambda (i tau) (cons tau i)) cate-preds))
+             (sorted (sort (lambda (a b) (> (car a) (car b))) indexed)))
+        (%mark-top-k sorted k n)))
+
+  ))

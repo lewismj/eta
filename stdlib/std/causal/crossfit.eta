@@ -1,0 +1,329 @@
+;;; std/causal/crossfit.eta -- Cross-fitting and DML estimators.
+
+(module std.causal.crossfit
+  (import std.core)
+  (import std.collections)
+  (import std.stats)
+  (import std.causal.estimate)
+  (export
+    crossfit:k-folds
+    crossfit:nuisance
+    crossfit:nuisance-arm
+    crossfit:dml-plr
+    crossfit:dml-irm
+    crossfit:influence-se
+    crossfit:dml-ci)
+  (begin
+
+    ;; -- Core helpers -----------------------------------------------------
+
+    (defun %obs-get (obs var)
+      (let ((p (assq var obs)))
+        (if p
+            (cdr p)
+            (error 'unknown-variable var))))
+
+    (defun %as-binary (v x-name)
+      (cond
+        ((equal? v 1) 1.0)
+        ((equal? v 0) 0.0)
+        ((eq? v #t) 1.0)
+        ((eq? v #f) 0.0)
+        (else (error 'non-binary-treatment x-name v))))
+
+    (defun %clip-prob (p)
+      (let ((eps 1e-6))
+        (cond
+          ((< p eps) eps)
+          ((> p (- 1.0 eps)) (- 1.0 eps))
+          (else p))))
+
+    (defun %remove-at (xs idx)
+      (let loop ((rest xs) (i 0) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (if (= i idx)
+                (append (reverse acc) (cdr rest))
+                (loop (cdr rest) (+ i 1) (cons (car rest) acc))))))
+
+    ;; Park-Miller minimal standard LCG.
+    (defun %lcg-next (seed)
+      (let ((s (if (<= seed 0) 1 seed)))
+        (modulo (* 48271 s) 2147483647)))
+
+    ;; Returns (shuffled . next-seed).
+    (defun %shuffle (xs seed)
+      (let loop ((pool xs) (s seed) (acc '()))
+        (if (null? pool)
+            (cons (reverse acc) s)
+            (let* ((s2 (%lcg-next s))
+                   (idx (modulo s2 (length pool)))
+                   (picked (list-ref pool idx))
+                   (rest (%remove-at pool idx)))
+              (loop rest s2 (cons picked acc))))))
+
+    (defun %learner-ref (spec key who)
+      (let ((entry (assq key spec)))
+        (if entry
+            (cdr entry)
+            (error (string-append who ": learner-spec is missing required key")
+                   key))))
+
+    (defun %learner-kind (spec)
+      (let ((entry (assq 'kind spec)))
+        (if entry (cdr entry) #f)))
+
+    (defun %assert-regressor (spec who)
+      (let ((kind (%learner-kind spec)))
+        (if (and kind (not (eq? kind 'regressor)))
+            (error (string-append who ": expected learner-spec kind=regressor"))
+            'ok)))
+
+    (defun %assert-classifier (spec who)
+      (let ((kind (%learner-kind spec)))
+        (if (and kind (not (eq? kind 'classifier)))
+            (error (string-append who ": expected learner-spec kind=classifier"))
+            'ok)))
+
+    (defun %fit (spec x-matrix y-vector who)
+      ((%learner-ref spec 'fit who) x-matrix y-vector))
+
+    (defun %predict (spec model x-matrix who)
+      ((%learner-ref spec 'predict who) model x-matrix))
+
+    (defun %design (data cols)
+      (causal:design-matrix data cols))
+
+    (defun %response (data y)
+      (causal:response-vector data y))
+
+    (defun %select (rows indices)
+      (map* (lambda (i) (list-ref rows i))
+            indices))
+
+    (defun %scatter! (vec indices vals who)
+      (if (not (= (length indices) (length vals)))
+          (error (string-append who ": fold prediction length mismatch"))
+          (let loop ((is indices) (vs vals))
+            (if (null? is)
+                'ok
+                (begin
+                  (vector-set! vec (car is) (car vs))
+                  (loop (cdr is) (cdr vs)))))))
+
+    (defun %sum-sq (xs)
+      (foldl (lambda (acc x) (+ acc (* x x))) 0.0 xs))
+
+    (defun %arm-rows (data x arm)
+      (filter (lambda (obs)
+                (= (%as-binary (%obs-get obs x) x) arm))
+              data))
+
+    (defun %arm-mean (data y x arm who)
+      (let* ((rows (%arm-rows data x arm))
+             (n (length rows)))
+        (if (= n 0)
+            (error (string-append who ": expected both treatment arms in data"))
+            (/ (foldl (lambda (acc obs) (+ acc (%obs-get obs y))) 0.0 rows)
+               n))))
+
+    (defun %map4 (f ws xs ys zs)
+      (if (or (null? ws) (null? xs) (null? ys) (null? zs))
+          '()
+          (cons (f (car ws) (car xs) (car ys) (car zs))
+                (%map4 f (cdr ws) (cdr xs) (cdr ys) (cdr zs)))))
+
+    ;; -- Public API -------------------------------------------------------
+
+    ;; Deterministic K-fold partition with shuffled index assignment.
+    ;; Returns list of (train-indices . test-indices), length k.
+    (defun crossfit:k-folds (n k seed)
+      (if (< n 0)
+          (error "crossfit:k-folds: expected n >= 0")
+          (if (<= k 1)
+              (error "crossfit:k-folds: expected k >= 2")
+              (let* ((idx+seed (%shuffle (range 0 n) seed))
+                     (shuffled (car idx+seed))
+                     (base (/ (- n (modulo n k)) k))
+                     (extra (modulo n k)))
+                (let loop ((fold-id 0) (start 0) (acc '()))
+                  (if (= fold-id k)
+                      (reverse acc)
+                      (let* ((size (+ base (if (< fold-id extra) 1 0)))
+                             (test (take size (drop start shuffled)))
+                             (train (append (take start shuffled)
+                                            (drop (+ start size) shuffled))))
+                        (loop (+ fold-id 1)
+                              (+ start size)
+                              (cons (cons train test) acc)))))))))
+
+    ;; Out-of-fold predictions for one response target y over features cols.
+    ;; Returns a list aligned with `data` order.
+    (defun crossfit:nuisance (learner-spec data cols y k seed)
+      (let* ((who "crossfit:nuisance")
+             (n (length data))
+             (folds (crossfit:k-folds n k seed))
+             (preds (make-vector n 0.0)))
+        (let loop ((rest folds))
+          (if (null? rest)
+              (vector->list preds)
+              (let* ((fold (car rest))
+                     (train-idx (car fold))
+                     (test-idx (cdr fold)))
+                (if (null? test-idx)
+                    (loop (cdr rest))
+                    (let* ((train (%select data train-idx))
+                           (test (%select data test-idx)))
+                      (if (null? train)
+                          (error "crossfit:nuisance: fold has empty training split")
+                          (let* ((model (%fit learner-spec
+                                              (%design train cols)
+                                              (%response train y)
+                                              who))
+                                 (yhat (%predict learner-spec
+                                                 model
+                                                 (%design test cols)
+                                                 who)))
+                            (%scatter! preds test-idx yhat who)
+                            (loop (cdr rest)))))))))))
+
+    ;; Per-arm OOF predictions mu_a(z) trained only on rows with X = arm.
+    ;; Returns a list aligned with `data` order.
+    (defun crossfit:nuisance-arm (learner-spec data y x z arm k seed)
+      (let* ((who "crossfit:nuisance-arm")
+             (_kind (%assert-regressor learner-spec who))
+             (arm* (%as-binary arm x))
+             (n (length data))
+             (folds (crossfit:k-folds n k seed))
+             (fallback (%arm-mean data y x arm* who))
+             (preds (make-vector n fallback)))
+        (let loop ((rest folds))
+          (if (null? rest)
+              (vector->list preds)
+              (let* ((fold (car rest))
+                     (train-idx (car fold))
+                     (test-idx (cdr fold)))
+                (if (null? test-idx)
+                    (loop (cdr rest))
+                    (let* ((train (%select data train-idx))
+                           (test (%select data test-idx))
+                           (arm-train (%arm-rows train x arm*)))
+                      (if (null? arm-train)
+                          (begin
+                            (%scatter! preds
+                                      test-idx
+                                      (map* (lambda (_i) fallback) test-idx)
+                                      who)
+                            (loop (cdr rest)))
+                          (let* ((model (%fit learner-spec
+                                              (%design arm-train z)
+                                              (%response arm-train y)
+                                              who))
+                                 (yhat (%predict learner-spec
+                                                 model
+                                                 (%design test z)
+                                                 who)))
+                            (%scatter! preds test-idx yhat who)
+                            (loop (cdr rest)))))))))))
+
+    ;; Influence-function based standard error:
+    ;;   se = sqrt( mean(psi^2) / ( mean(den_i)^2 * n ) )
+    ;; with scalar denominator represented as `den = sum den_i`.
+    (defun crossfit:influence-se (psi den n)
+      (if (<= n 0)
+          (error "crossfit:influence-se: expected n > 0")
+          (if (not (= (length psi) n))
+              (error "crossfit:influence-se: expected psi length to match n")
+              (let ((mean-den (/ (* 1.0 den) n)))
+                (if (<= (abs mean-den) 1e-12)
+                    (error "crossfit:influence-se: denominator is numerically zero")
+                    (let* ((mean-psi2 (/ (%sum-sq psi) n))
+                           (var-theta (/ mean-psi2
+                                         (* mean-den mean-den n))))
+                      (sqrt (if (< var-theta 0.0) 0.0 var-theta))))))))
+
+    ;; Symmetric normal-approximation CI for scalar DML estimands.
+    ;; Returns (lower upper).
+    (defun crossfit:dml-ci (theta se alpha)
+      (if (or (<= alpha 0.0) (>= alpha 1.0))
+          (error "crossfit:dml-ci: expected 0 < alpha < 1")
+          (let* ((z (stats:normal-quantile (- 1.0 (/ alpha 2.0))))
+                 (half-width (* z se)))
+            (list (- theta half-width)
+                  (+ theta half-width)))))
+
+    ;; DML PLR (partially linear regression):
+    ;;   Y = theta*X + g(Z) + eps
+    ;;   X = m(Z) + nu
+    (defun crossfit:dml-plr (data y x z reg-mu reg-m k seed)
+      (let* ((who "crossfit:dml-plr")
+             (_rg1 (%assert-regressor reg-mu who))
+             (_rg2 (%assert-regressor reg-m who))
+             (n (length data)))
+        (if (= n 0)
+            (error "crossfit:dml-plr: expected non-empty data")
+            (let* ((mu (crossfit:nuisance reg-mu data z y k seed))
+                   (m (crossfit:nuisance reg-m data z x k (+ seed 97)))
+                   (yt (map2 (lambda (obs gi) (- (%obs-get obs y) gi))
+                             data mu))
+                   (xt (map2 (lambda (obs mi) (- (%obs-get obs x) mi))
+                             data m))
+                   (num (foldl (lambda (acc pair)
+                                 (+ acc (* (car pair) (cdr pair))))
+                               0.0
+                               (zip yt xt)))
+                   (den (foldl (lambda (acc xi) (+ acc (* xi xi))) 0.0 xt)))
+              (if (<= (abs den) 1e-12)
+                  (error "crossfit:dml-plr: weak identification (near-zero residualized treatment variance)")
+                  (let* ((theta (/ num den))
+                         (psi (map2 (lambda (yi xi)
+                                      (* xi (- yi (* theta xi))))
+                                    yt xt))
+                         (se (crossfit:influence-se psi den n)))
+                    (list
+                      (cons 'theta theta)
+                      (cons 'se se)
+                      (cons 'ci (crossfit:dml-ci theta se 0.05))
+                      (cons 'n n))))))))
+
+    ;; DML IRM (binary treatment):
+    ;;   theta = E[ mu1(Z)-mu0(Z)
+    ;;              + X*(Y-mu1(Z))/e(Z)
+    ;;              - (1-X)*(Y-mu0(Z))/(1-e(Z)) ]
+    (defun crossfit:dml-irm (data y x z reg-mu cls-e k seed)
+      (let* ((who "crossfit:dml-irm")
+             (_rg (%assert-regressor reg-mu who))
+             (_cl (%assert-classifier cls-e who))
+             (n (length data)))
+        (if (= n 0)
+            (error "crossfit:dml-irm: expected non-empty data")
+            (let* ((n1 (count (lambda (obs)
+                                (= (%as-binary (%obs-get obs x) x) 1.0))
+                              data))
+                   (n0 (- n n1)))
+              (if (or (= n1 0) (= n0 0))
+                  (error "crossfit:dml-irm: expected both treatment arms in data")
+                  (let* ((mu1 (crossfit:nuisance-arm reg-mu data y x z 1 k seed))
+                         (mu0 (crossfit:nuisance-arm reg-mu data y x z 0 k (+ seed 97)))
+                         (e-hat (map* %clip-prob
+                                      (crossfit:nuisance cls-e data z x k (+ seed 191))))
+                         (phi (%map4
+                                (lambda (obs m1 m0 e)
+                                  (let* ((xv (%as-binary (%obs-get obs x) x))
+                                         (yv (%obs-get obs y))
+                                         (e* (%clip-prob e)))
+                                    (+ (- m1 m0)
+                                       (- (/ (* xv (- yv m1)) e*)
+                                          (/ (* (- 1.0 xv) (- yv m0))
+                                             (- 1.0 e*))))))
+                                data mu1 mu0 e-hat))
+                         (theta (stats:mean phi))
+                         (psi (map* (lambda (v) (- v theta)) phi))
+                         (se (crossfit:influence-se psi n n)))
+                    (list
+                      (cons 'theta theta)
+                      (cons 'se se)
+                      (cons 'ci (crossfit:dml-ci theta se 0.05))
+                      (cons 'n n))))))))
+
+  ))

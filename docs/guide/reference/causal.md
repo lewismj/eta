@@ -40,6 +40,8 @@ and estimation surface end-to-end:
 | CATE meta-learners (S/T/X/R/DR)                                                | `std.causal.cate`          | ✅ |
 | Regression CART + random forest                                                 | `std.ml.tree`, `std.ml.forest` | ✅ |
 | Causal forest + local AIPW query                                                | `std.causal.forest`        | ✅ |
+| Cross-fitting and DML (PLR/IRM)                                                | `std.causal.crossfit`      | ✅ |
+| Uplift, Qini, and policy-value scoring                                          | `std.causal.policy`        | ✅ |
 
 The layer also composes with:
 
@@ -683,6 +685,84 @@ Learner-spec protocol expected by the fitters:
 
 ---
 
+## Cross-fitting and DML
+
+For cross-fitted nuisance estimation and Double Machine Learning:
+
+```scheme
+(import std.causal.crossfit)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(crossfit:k-folds n k seed)` | Deterministic K-fold split as `((train . test) ...)` |
+| `(crossfit:nuisance learner data cols y k seed)` | Out-of-fold predictions for one target variable |
+| `(crossfit:nuisance-arm learner data y x z arm k seed)` | Arm-specific out-of-fold response model `mu_arm(z)` |
+| `(crossfit:dml-plr data y x z reg-mu reg-m k seed)` | Partially linear DML estimator (PLR) |
+| `(crossfit:dml-irm data y x z reg-mu cls-e k seed)` | Interactive regression DML estimator (IRM, binary treatment) |
+| `(crossfit:influence-se psi den n)` | Influence-function standard error helper |
+| `(crossfit:dml-ci theta se alpha)` | Normal-approximation confidence interval `(lower upper)` |
+
+Minimal usage:
+
+```scheme
+(import std.causal.crossfit)
+(import std.stats)
+
+(define reg (stats:make-ols-regressor))
+(define cls (stats:make-logistic))
+
+(crossfit:dml-plr data 'y 'x '(z1 z2 z3) reg reg 5 42)
+;; => ((theta . ...) (se . ...) (ci . (... ...)) (n . ...))
+
+(crossfit:dml-irm data 'y 'x '(z1 z2 z3) reg cls 5 42)
+;; => ((theta . ...) (se . ...) (ci . (... ...)) (n . ...))
+```
+
+Notes:
+- `crossfit:dml-irm` expects binary treatment (`0/1` or `#f/#t`).
+- All nuisance vectors are aligned with input row order.
+
+---
+
+## Uplift, Qini, and Policy Value
+
+For treatment-ranking metrics, policy evaluation, and synthetic-effect diagnostics:
+
+```scheme
+(import std.causal.policy)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(policy:qini-curve cate-preds y x)` | Cumulative uplift/Qini curve as `((k . value) ...)` |
+| `(policy:qini-coefficient curve)` | Area between model Qini curve and random-targeting baseline |
+| `(policy:auuc curve)` | Normalized area under cumulative gain curve |
+| `(policy:cumulative-gain-curve cate-preds y x)` | Alias for cumulative gain curve construction |
+| `(policy:value-ipw data y x z policy-fn e-hat)` | Horvitz-Thompson off-policy value estimator |
+| `(policy:value-aipw data y x z policy-fn mu1 mu0 e-hat)` | Doubly robust off-policy value estimator |
+| `(policy:rank-by-cate data cate-preds)` | Sort rows by descending CATE, returns `(rows . taus)` |
+| `(policy:pehe true-cate pred-cate)` | Precision in Estimation of Heterogeneous Effect |
+| `(policy:ate-rmse true-ate pred-ate)` | ATE RMSE diagnostic (scalar or vector form) |
+| `(policy:ate-bias true-ate pred-ate)` | ATE signed-bias diagnostic (scalar or vector form) |
+| `(policy:greedy-treat-positive tau-hat)` | One-step policy `1{tau_hat > 0}` |
+| `(policy:greedy-budget cate-preds budget)` | Top-k/top-fraction treatment assignment vector |
+
+Minimal usage:
+
+```scheme
+(import std.causal.policy)
+
+(define curve (policy:qini-curve tau-hat y x))
+(policy:qini-coefficient curve)
+(policy:auuc curve)
+
+(policy:value-ipw data 'y 'x '(z1 z2) policy-fn e-hat)
+(policy:value-aipw data 'y 'x '(z1 z2) policy-fn mu1 mu0 e-hat)
+```
+
+---
+
 ## Trees, Random Forests, and Causal Forest
 
 M13 introduces native tree/forest learners plus a causal-forest wrapper.
@@ -776,20 +856,20 @@ analysis:
 ## Status & Roadmap
 
 > [!IMPORTANT]
-> Milestones **M0 – M13** of the
+> Milestones **M0 - M15** of the
 > [`causal_plan.md`](../../plan/causal_plan.md) are implemented in-tree:
 > ADMGs and latent projection, linear-time d-separation, the three
 > rules, ID / IDC with hedge witnesses, generalised adjustment /
 > front-door / IV, mediation, transportability, counterfactuals,
 > AIPW / TMLE / IPW / g-formula estimation with bootstrap CIs and
 > sensitivity, PC / FCI / GES / NOTEARS-style structure learning,
-> DOT / Mermaid / LaTeX rendering, CATE meta-learners, and
-> tree/random-forest/causal-forest estimators.
+> DOT / Mermaid / LaTeX rendering, CATE meta-learners, cross-fitting
+> DML (PLR/IRM), tree/random-forest/causal-forest estimators, and
+> uplift/Qini/policy-value scoring.
 >
-> Outstanding (extension milestones **M14 – M15** in the plan):
+> Extension milestones **M14 - M15** in the plan:
 >
-> - **Cross-fitting / Double Machine Learning** harness (DML PLR / IRM)
-> - **Uplift / Qini / policy-value scoring**
+> - None. M14 (cross-fitting/DML) and M15 (uplift/Qini/policy-value) are now implemented.
 >
 > Smaller open items inside the implemented surface:
 >
@@ -812,6 +892,8 @@ analysis:
 | Transportability helpers             | [`stdlib/std/causal/transport.eta`](../../../stdlib/std/causal/transport.eta)             |
 | Counterfactual helpers               | [`stdlib/std/causal/counterfactual.eta`](../../../stdlib/std/causal/counterfactual.eta)   |
 | CATE meta-learner API                | [`stdlib/std/causal/cate.eta`](../../../stdlib/std/causal/cate.eta)                       |
+| Cross-fitting / DML API              | [`stdlib/std/causal/crossfit.eta`](../../../stdlib/std/causal/crossfit.eta)               |
+| Uplift / policy scoring API          | [`stdlib/std/causal/policy.eta`](../../../stdlib/std/causal/policy.eta)                   |
 | Causal forest helpers                | [`stdlib/std/causal/forest.eta`](../../../stdlib/std/causal/forest.eta)                   |
 | Regression tree                      | [`stdlib/std/ml/tree.eta`](../../../stdlib/std/ml/tree.eta)                               |
 | Random forest                        | [`stdlib/std/ml/forest.eta`](../../../stdlib/std/ml/forest.eta)                           |
@@ -825,6 +907,8 @@ analysis:
 | CSV module                           | [`stdlib/std/csv.eta`](../../../stdlib/std/csv.eta)                                         |
 | End-to-end primer (causal + NN ATE)  | [`examples/causal_demo.eta`](../../../examples/causal_demo.eta)                           |
 | CATE test suite                      | [`stdlib/tests/causal-cate.test.eta`](../../../stdlib/tests/causal-cate.test.eta)         |
+| Cross-fitting test suite             | [`stdlib/tests/causal-crossfit.test.eta`](../../../stdlib/tests/causal-crossfit.test.eta) |
+| Policy scoring test suite            | [`stdlib/tests/causal-policy.test.eta`](../../../stdlib/tests/causal-policy.test.eta)     |
 | Tree/forest test suite               | [`stdlib/tests/ml-tree.test.eta`](../../../stdlib/tests/ml-tree.test.eta)                 |
 | Causal-forest test suite             | [`stdlib/tests/causal-forest.test.eta`](../../../stdlib/tests/causal-forest.test.eta)     |
 | CLP binding for `clp(Z)` / `clp(FD)` | [`stdlib/std/clp.eta`](../../../stdlib/std/clp.eta)                                       |
