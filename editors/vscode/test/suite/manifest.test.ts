@@ -8,6 +8,8 @@ type EtaManifest = {
     contributes?: {
         breakpoints?: Array<{ language?: string }>;
         commands?: Array<{ command?: string }>;
+        languages?: Array<{ id?: string; extensions?: string[] }>;
+        grammars?: Array<{ language?: string; path?: string }>;
         configuration?: {
             properties?: Record<string, { default?: unknown }>;
         };
@@ -65,6 +67,27 @@ describe('Eta manifest contributions', function () {
             properties['eta.debug.autoShowEnvironment']?.default,
             false,
             'eta.debug.autoShowEnvironment default should be false',
+        );
+    });
+
+    it('contributes eta-bytecode language and disassembly grammar', () => {
+        const ext = vscode.extensions.getExtension(EXTENSION_ID);
+        assert.ok(ext, `extension ${EXTENSION_ID} not found`);
+
+        const manifest = ext!.packageJSON as EtaManifest;
+        const langs = manifest.contributes?.languages ?? [];
+        const grammars = manifest.contributes?.grammars ?? [];
+
+        assert.ok(
+            langs.some(lang => lang.id === 'eta-bytecode'
+                && Array.isArray(lang.extensions)
+                && lang.extensions.includes('.eta-bytecode')),
+            'missing eta-bytecode language contribution',
+        );
+        assert.ok(
+            grammars.some(grammar => grammar.language === 'eta-bytecode'
+                && grammar.path === './syntaxes/eta-disasm.tmLanguage.json'),
+            'missing eta-bytecode grammar contribution',
         );
     });
 });

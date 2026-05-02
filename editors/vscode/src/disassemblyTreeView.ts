@@ -24,6 +24,7 @@ import {
     Event,
     debug,
     ThemeIcon,
+    ThemeColor,
     Command,
 } from 'vscode';
 import {
@@ -75,6 +76,94 @@ const CONST_POOL_RE = /^\s*-- constant pool --/;
 const CODE_RE = /^\s*-- code --/;
 const INSTR_RE = /^\s*(\d+)\s*:\s+(\S+)/;
 const MAX_TREE_TEXT_BYTES = 400_000;
+
+type TreeStyle = {
+    iconId: string;
+    colorId?: string;
+    description?: string;
+};
+
+const CALL_OPS = new Set(['Call', 'TailCall']);
+const CONTROL_PREFIXES = ['Jump', 'Branch', 'Return', 'Throw', 'Halt', 'Loop'];
+const LOAD_STORE_PREFIXES = ['Load', 'Store', 'Set', 'Move', 'Capture'];
+const ARITH_PREFIXES = [
+    'Add', 'Sub', 'Mul', 'Div', 'Mod', 'Neg',
+    'Eq', 'Ne', 'Lt', 'Le', 'Gt', 'Ge',
+    'And', 'Or', 'Not', 'Bit', 'Shl', 'Shr',
+];
+
+function opcodeFromLine(text: string): string | undefined {
+    const m = text.match(INSTR_RE);
+    return m ? m[2] : undefined;
+}
+
+function startsWithAny(value: string, prefixes: string[]): boolean {
+    for (const prefix of prefixes) {
+        if (value.startsWith(prefix)) return true;
+    }
+    return false;
+}
+
+function isConstantEntry(text: string): boolean {
+    return /^\s*\[\d+\]\s+/.test(text);
+}
+
+function toIcon(style: TreeStyle): ThemeIcon {
+    return style.colorId
+        ? new ThemeIcon(style.iconId, new ThemeColor(style.colorId))
+        : new ThemeIcon(style.iconId);
+}
+
+function classifyOpcodeStyle(opcode: string): TreeStyle {
+    if (CALL_OPS.has(opcode)) {
+        return { iconId: 'arrow-right', colorId: 'symbolIcon.functionForeground', description: 'call' };
+    }
+    if (opcode === 'LoadConst') {
+        return { iconId: 'symbol-number', colorId: 'symbolIcon.numberForeground', description: 'constant' };
+    }
+    if (startsWithAny(opcode, LOAD_STORE_PREFIXES)) {
+        return { iconId: 'symbol-variable', colorId: 'symbolIcon.variableForeground' };
+    }
+    if (startsWithAny(opcode, CONTROL_PREFIXES)) {
+        return { iconId: 'debug-step-over', colorId: 'symbolIcon.keywordForeground' };
+    }
+    if (startsWithAny(opcode, ARITH_PREFIXES)) {
+        return { iconId: 'symbol-operator', colorId: 'symbolIcon.operatorForeground' };
+    }
+    return { iconId: 'circle-outline', colorId: 'symbolIcon.textForeground' };
+}
+
+export function styleDisassemblyTreeLine(
+    text: string,
+    opts: { isHeader?: boolean; isCurrentPC?: boolean; callTarget?: number } = {},
+): TreeStyle {
+    if (opts.isCurrentPC) {
+        return {
+            iconId: 'debug-stackframe',
+            colorId: 'editorInfo.foreground',
+            description: 'PC',
+        };
+    }
+
+    const opcode = opcodeFromLine(text);
+    if (opts.callTarget !== undefined || (opcode && CALL_OPS.has(opcode))) {
+        return { iconId: 'arrow-right', colorId: 'symbolIcon.functionForeground', description: 'call' };
+    }
+    if (opcode) return classifyOpcodeStyle(opcode);
+    if (isConstantEntry(text)) {
+        return { iconId: 'symbol-number', colorId: 'symbolIcon.constantForeground' };
+    }
+    if (opts.isHeader) {
+        if (text.trimStart().startsWith(';')) {
+            return { iconId: 'comment', colorId: 'descriptionForeground' };
+        }
+        if (text.trimStart().startsWith('===')) {
+            return { iconId: 'symbol-function', colorId: 'symbolIcon.functionForeground' };
+        }
+        return { iconId: 'symbol-key', colorId: 'symbolIcon.keywordForeground' };
+    }
+    return { iconId: 'circle-outline', colorId: 'symbolIcon.textForeground' };
+}
 
 function parseFunctions(text: string, currentPC: number, currentFunction?: string): DisasmFunctionNode[] {
     const lines = text.split('\n');
@@ -271,8 +360,10 @@ export class DisassemblyTreeProvider implements TreeDataProvider<Node> {
                     `=== ${element.name || '<anonymous>'} ===`,
                     expanded ? TreeItemCollapsibleState.Expanded : TreeItemCollapsibleState.Collapsed,
                 );
-                item.iconPath = new ThemeIcon(element.containsPc ? 'debug-stackframe' : 'symbol-function');
-                item.description = `${element.instructions.length} instr` + (element.containsPc ? '  ◀ PC' : '');
+                item.iconPath = element.containsPc
+                    ? toIcon({ iconId: 'debug-stackframe', colorId: 'editorInfo.foreground' })
+                    : toIcon({ iconId: 'symbol-function', colorId: 'symbolIcon.functionForeground' });
+                item.description = `${element.instructions.length} instr` + (element.containsPc ? '  PC' : '');
                 item.tooltip = element.headerLines.join('\n');
                 item.contextValue = 'etaDisasm.function';
                 return item;
@@ -282,21 +373,18 @@ export class DisassemblyTreeProvider implements TreeDataProvider<Node> {
                     `${element.label} (${element.children.length})`,
                     TreeItemCollapsibleState.Collapsed,
                 );
-                item.iconPath = new ThemeIcon('symbol-array');
+                item.iconPath = toIcon({ iconId: 'symbol-array', colorId: 'symbolIcon.arrayForeground' });
                 return item;
             }
             case 'line': {
                 const item = new TreeItem(element.text, TreeItemCollapsibleState.None);
-                if (element.isCurrentPC) {
-                    item.iconPath = new ThemeIcon('debug-stackframe');
-                    item.description = '◀ PC';
-                } else if (element.isHeader) {
-                    item.iconPath = new ThemeIcon('symbol-function');
-                } else if (element.callTarget !== undefined) {
-                    item.iconPath = new ThemeIcon('arrow-right');
-                } else {
-                    item.iconPath = new ThemeIcon('circle-outline');
-                }
+                const style = styleDisassemblyTreeLine(element.text, {
+                    isHeader: element.isHeader,
+                    isCurrentPC: element.isCurrentPC,
+                    callTarget: element.callTarget,
+                });
+                item.iconPath = toIcon(style);
+                item.description = style.description;
                 item.tooltip = element.isCurrentPC
                     ? `Current instruction (PC)\n${element.text}`
                     : element.text;

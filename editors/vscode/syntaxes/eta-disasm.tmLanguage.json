@@ -1,0 +1,98 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Eta Bytecode Disassembly",
+  "scopeName": "source.eta-bytecode",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#functionHeader" },
+    { "include": "#sectionHeader" },
+    { "include": "#instruction" },
+    { "include": "#constPoolEntry" },
+    { "include": "#funcRef" },
+    { "include": "#hexNumber" },
+    { "include": "#number" },
+    { "include": "#booleanNil" },
+    { "include": "#string" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.semicolon.eta-bytecode",
+      "match": ";.*$"
+    },
+    "functionHeader": {
+      "match": "^===\\s+(.+?)\\s+===\\s*$",
+      "captures": {
+        "0": { "name": "entity.name.function.eta-bytecode" },
+        "1": { "name": "entity.name.function.eta-bytecode" }
+      }
+    },
+    "sectionHeader": {
+      "match": "^\\s*--\\s+[^-]+\\s+--\\s*$",
+      "name": "keyword.control.section.eta-bytecode"
+    },
+    "instruction": {
+      "begin": "^(\\s*)(\\d+)(\\s*:)(\\s+)([A-Za-z][A-Za-z0-9]*)\\b",
+      "beginCaptures": {
+        "2": { "name": "constant.numeric.line.eta-bytecode" },
+        "3": { "name": "punctuation.separator.key-value.eta-bytecode" },
+        "5": { "name": "keyword.operator.opcode.eta-bytecode" }
+      },
+      "end": "$",
+      "name": "meta.instruction.eta-bytecode",
+      "patterns": [
+        { "include": "#funcRef" },
+        { "include": "#hexNumber" },
+        { "include": "#number" },
+        { "include": "#booleanNil" },
+        { "include": "#string" }
+      ]
+    },
+    "constPoolEntry": {
+      "begin": "^(\\s*)(\\[)(\\d+)(\\])(\\s+)",
+      "beginCaptures": {
+        "2": { "name": "punctuation.definition.bracket.begin.eta-bytecode" },
+        "3": { "name": "constant.numeric.index.eta-bytecode" },
+        "4": { "name": "punctuation.definition.bracket.end.eta-bytecode" }
+      },
+      "end": "$",
+      "name": "meta.constant-pool.entry.eta-bytecode",
+      "patterns": [
+        { "include": "#funcRef" },
+        { "include": "#hexNumber" },
+        { "include": "#number" },
+        { "include": "#booleanNil" },
+        { "include": "#string" }
+      ]
+    },
+    "funcRef": {
+      "match": "<func:(\\d+)>",
+      "captures": {
+        "0": { "name": "support.function.reference.eta-bytecode" },
+        "1": { "name": "constant.numeric.reference.eta-bytecode" }
+      }
+    },
+    "hexNumber": {
+      "name": "constant.numeric.hex.eta-bytecode",
+      "match": "\\b0x[0-9A-Fa-f]+\\b"
+    },
+    "number": {
+      "name": "constant.numeric.decimal.eta-bytecode",
+      "match": "\\b-?\\d+(?:\\.\\d+)?\\b"
+    },
+    "booleanNil": {
+      "name": "constant.language.eta-bytecode",
+      "match": "\\b(?:true|false|nil|#t|#f|#nil)\\b"
+    },
+    "string": {
+      "name": "string.quoted.double.eta-bytecode",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.eta-bytecode",
+          "match": "\\\\."
+        }
+      ]
+    }
+  }
+}

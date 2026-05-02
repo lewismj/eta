@@ -9,16 +9,22 @@
     <link rel="stylesheet" href="{{cssUri}}">
 </head>
 <body>
-    <header>
-        <h2>🔍 Eta Heap Inspector</h2>
-        <div class="toolbar">
-            <input type="text" id="kindFilter" placeholder="Filter kinds…" />
-            <button class="btn secondary" id="baselineBtn" title="Capture current snapshot as a comparison baseline.">Capture Baseline</button>
-            <button class="btn secondary" id="diffBtn" title="Toggle diff view against the captured baseline." disabled>Diff</button>
-            <button class="btn secondary" id="clearBaselineBtn" title="Drop the baseline snapshot." disabled>Clear Baseline</button>
-            <button class="btn" id="refreshBtn" title="Re-request a heap snapshot from the VM.">Refresh</button>
-        </div>
-    </header>
+    <section class="top-panel">
+        <header>
+            <h2>Eta Heap Inspector</h2>
+            <div class="toolbar">
+                <div class="toolbar-group">
+                    <input type="text" id="kindFilter" placeholder="Filter kinds..." />
+                </div>
+                <div class="toolbar-group">
+                    <button class="btn secondary" id="baselineBtn" title="Capture current snapshot as a comparison baseline.">Capture Baseline</button>
+                    <button class="btn secondary" id="diffBtn" title="Toggle diff view against the captured baseline." disabled>Diff</button>
+                    <button class="btn secondary" id="clearBaselineBtn" title="Drop the baseline snapshot." disabled>Clear Baseline</button>
+                    <button class="btn" id="refreshBtn" title="Re-request a heap snapshot from the VM.">Refresh</button>
+                </div>
+            </div>
+        </header>
+    </section>
 
     <div id="gauges"></div>
     <div id="kinds"></div>
@@ -30,4 +36,3 @@
     <script nonce="{{nonce}}" src="{{jsUri}}"></script>
 </body>
 </html>
-

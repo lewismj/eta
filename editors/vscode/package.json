@@ -52,6 +52,16 @@
                     ".eta"
                 ],
                 "configuration": "./language-configuration.json"
+            },
+            {
+                "id": "eta-bytecode",
+                "aliases": [
+                    "Eta Bytecode",
+                    "eta-bytecode"
+                ],
+                "extensions": [
+                    ".eta-bytecode"
+                ]
             }
         ],
         "grammars": [
@@ -59,6 +69,11 @@
                 "language": "eta",
                 "scopeName": "source.eta",
                 "path": "./syntaxes/eta.tmLanguage.json"
+            },
+            {
+                "language": "eta-bytecode",
+                "scopeName": "source.eta-bytecode",
+                "path": "./syntaxes/eta-disasm.tmLanguage.json"
             }
         ],
         "snippets": [

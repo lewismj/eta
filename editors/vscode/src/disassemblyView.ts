@@ -9,6 +9,7 @@
 import {
     window,
     workspace,
+    languages,
     debug,
     Uri,
     Range,
@@ -179,7 +180,13 @@ export async function showDisassembly(
     provider.setScope(scope);
     await provider.refresh();
     const uri = DisassemblyContentProvider.uri(scope);
-    const doc = await workspace.openTextDocument(uri);
+    let doc = await workspace.openTextDocument(uri);
+    if (doc.languageId !== 'eta-bytecode') {
+        try {
+            doc = await languages.setTextDocumentLanguage(doc, 'eta-bytecode');
+        } catch {
+        }
+    }
     await window.showTextDocument(doc, {
         preview: true,
         preserveFocus: opts.preserveFocus ?? false,

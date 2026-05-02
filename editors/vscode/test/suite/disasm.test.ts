@@ -8,7 +8,7 @@ import {
     findFunctionHeaderLine,
     inferCalleeFuncIndex,
 } from '../../src/disassemblyView';
-import { parseFunctions } from '../../src/disassemblyTreeView';
+import { parseFunctions, styleDisassemblyTreeLine } from '../../src/disassemblyTreeView';
 
 const SAMPLE = [
     '; 2 function(s)',
@@ -82,6 +82,25 @@ describe('disassembly parser (B4)', () => {
         if (innerCall >= 0) {
             assert.strictEqual(inferCalleeFuncIndex(SAMPLE, innerCall), undefined);
         }
+    });
+
+    it('classifies disassembly lines for sidebar syntax-like styling', () => {
+        const call = styleDisassemblyTreeLine('       1: Call                   0', { callTarget: 1 });
+        assert.strictEqual(call.iconId, 'arrow-right');
+        assert.strictEqual(call.colorId, 'symbolIcon.functionForeground');
+
+        const constant = styleDisassemblyTreeLine('       0: LoadConst              0  ; 7');
+        assert.strictEqual(constant.iconId, 'symbol-number');
+        assert.strictEqual(constant.colorId, 'symbolIcon.numberForeground');
+
+        const control = styleDisassemblyTreeLine('       2: Return');
+        assert.strictEqual(control.iconId, 'debug-step-over');
+        assert.strictEqual(control.colorId, 'symbolIcon.keywordForeground');
+
+        const current = styleDisassemblyTreeLine('       1: Call                   0', { isCurrentPC: true });
+        assert.strictEqual(current.iconId, 'debug-stackframe');
+        assert.strictEqual(current.colorId, 'editorInfo.foreground');
+        assert.strictEqual(current.description, 'PC');
     });
 });
 

@@ -135,7 +135,7 @@
 
         const safeSoftLimit = Math.max(0, softLimit);
         const freeHeadroom = Math.max(0, safeSoftLimit - totalBytes);
-        let html = '<div class="section"><h2>Memory</h2>';
+        let html = '<section class="section gauge-panel"><h2>Memory</h2>';
         html += '<div class="gauge-container">';
         html += '  <div class="gauge-bar">' + gaugeSvg(fillPct, cls) + '</div>';
         html += '  <span class="gauge-label">' + pct.toFixed(1) + '%</span>';
@@ -153,7 +153,7 @@
                   + ' | Soft limit unavailable'
                   + '</div>';
         }
-        html += '</div>';
+        html += '</section>';
 
         if (snap.consPool && snap.consPool.capacity > 0) {
             const pool = snap.consPool;
@@ -164,7 +164,7 @@
             const poolPct = asPct(poolLive, poolCapacity);
             const poolFillPct = visibleFillPct(poolPct);
             const poolCls = poolPct >= 90 ? 'crit' : poolPct >= 70 ? 'warn' : '';
-            html += '<div class="section"><h2>Cons Pool</h2>';
+            html += '<section class="section gauge-panel"><h2>Cons Pool</h2>';
             html += '<div class="gauge-container">';
             html += '  <div class="gauge-bar">' + gaugeSvg(poolFillPct, poolCls) + '</div>';
             html += '  <span class="gauge-label">' + poolPct.toFixed(1) + '%</span>';
@@ -173,7 +173,7 @@
                   + poolLive.toLocaleString() + ' / ' + poolCapacity.toLocaleString()
                   + ' | Free: ' + poolFree.toLocaleString()
                   + ' | ' + fmt(poolBytes)
-                  + '</div></div>';
+                  + '</div></section>';
         }
         document.getElementById('gauges').innerHTML = html;
     }
@@ -214,7 +214,8 @@
             return (av - bv) * dir;
         });
 
-        let html = '<h2>Object Kinds <span class="muted">(' + shownBeforeFilter + ')</span>';
+        let html = '<section class="kinds-panel">';
+        html += '<h2>Object Kinds <span class="muted">(' + shownBeforeFilter + ')</span>';
         if (snapshot.kindsTruncated && Number.isFinite(snapshot.kindsTotal)) {
             const shownKinds = Number.isFinite(snapshot.kindsShown) ? snapshot.kindsShown : shownBeforeFilter;
             html += ' <span class="muted">(showing ' + shownKinds + ' of ' + snapshot.kindsTotal + ' kinds)</span>';
@@ -251,6 +252,7 @@
             html += '</tr>';
         }
         html += '</table>';
+        html += '</section>';
         document.getElementById('kinds').innerHTML = html;
 
         document.querySelectorAll('#kinds th[data-sort]').forEach((th) => {
@@ -269,18 +271,23 @@
 
     function renderRoots() {
         const snap = snapshot;
-        let html = '<h2>GC Roots</h2><ul class="tree">';
-        for (const root of snap.roots) {
+        let html = '<section class="roots-panel"><h2>GC Roots</h2>';
+        for (let rootIndex = 0; rootIndex < snap.roots.length; rootIndex++) {
+            const root = snap.roots[rootIndex];
             if (root.objectIds.length === 0) continue;
             const displayedCount = root.objectIds.length;
             const totalCount = root.totalCount || displayedCount;
+            const rootBodyId = 'root-body-' + rootIndex;
+
+            html += '<section class="root-group">';
+            html += '<button class="root-header root-toggle" data-target="' + rootBodyId + '">';
+            html += '  <span class="root-chevron">></span>';
+            html += '  <span class="root-title">' + esc(root.name) + '</span>';
+            html += '  <span class="badge">' + totalCount + '</span>';
+            html += '</button>';
+            html += '<div id="' + rootBodyId + '" class="root-body" style="display:none">';
 
             if (root.name === 'Globals' && root.labels && root.labels.length > 0) {
-                html += '<li>';
-                html += '<span class="toggle" data-root="Globals">Globals';
-                html += ' <span class="badge">' + totalCount + '</span></span>';
-                html += '<ul class="children" style="display:none">';
-
                 const groups = {};
                 for (let i = 0; i < root.objectIds.length; i++) {
                     const oid = root.objectIds[i];
@@ -295,56 +302,65 @@
                     if (b === '(top-level)') return -1;
                     return a.localeCompare(b);
                 });
-                for (const mod of modNames) {
+                for (let modIndex = 0; modIndex < modNames.length; modIndex++) {
+                    const mod = modNames[modIndex];
                     const items = groups[mod];
-                    html += '<li>';
-                    html += '<span class="toggle">' + esc(mod);
-                    html += ' <span class="badge">' + items.length + '</span></span>';
-                    html += '<ul class="children" style="display:none">';
+                    const modBodyId = 'root-body-' + rootIndex + '-mod-' + modIndex;
+                    html += '<button class="root-row module root-toggle" data-target="' + modBodyId + '">';
+                    html += '  <span class="root-chevron">></span>';
+                    html += '  <span class="root-title">' + esc(mod) + '</span>';
+                    html += '  <span class="badge">' + items.length + '</span>';
+                    html += '</button>';
+                    html += '<div id="' + modBodyId + '" class="root-children" style="display:none">';
                     for (const it of items) {
                         const shortName = it.label.includes('.')
                             ? it.label.substring(it.label.lastIndexOf('.') + 1)
                             : it.label;
-                        html += '<li><span class="obj-link" data-oid="' + it.oid + '">'
-                              + esc(shortName) + ' <span class="badge">#' + it.oid + '</span></span></li>';
+                        html += '<div class="root-row nested">';
+                        html += '  <span class="obj-link root-link" data-oid="' + it.oid + '">'
+                              + esc(shortName) + '</span>';
+                        html += '  <span class="badge">#' + it.oid + '</span>';
+                        html += '</div>';
                     }
-                    html += '</ul></li>';
+                    html += '</div>';
                 }
                 if (root.truncated && totalCount > displayedCount) {
-                    html += '<li class="muted">Showing first '
-                        + displayedCount + ' of ' + totalCount + ' globals.</li>';
+                    html += '<div class="root-hint">Showing first '
+                        + displayedCount + ' of ' + totalCount + ' globals.</div>';
                 }
-                html += '</ul></li>';
-                continue;
+            } else {
+                for (let i = 0; i < root.objectIds.length; i++) {
+                    const oid = root.objectIds[i];
+                    const label = (root.labels && root.labels[i]) ? root.labels[i] : ('Object #' + oid);
+                    html += '<div class="root-row nested">';
+                    html += '  <span class="obj-link root-link" data-oid="' + oid + '">' + esc(label) + '</span>';
+                    html += '  <span class="badge">#' + oid + '</span>';
+                    html += '</div>';
+                }
+                if (root.truncated && totalCount > displayedCount) {
+                    html += '<div class="root-hint">Showing first ' + displayedCount
+                        + ' of ' + totalCount + ' root objects.</div>';
+                }
             }
-
-            html += '<li>';
-            html += '<span class="toggle">' + esc(root.name);
-            html += ' <span class="badge">' + totalCount + '</span></span>';
-            html += '<ul class="children" style="display:none">';
-            for (let i = 0; i < root.objectIds.length; i++) {
-                const oid = root.objectIds[i];
-                const label = (root.labels && root.labels[i]) ? root.labels[i] : ('Object #' + oid);
-                html += '<li><span class="obj-link" data-oid="' + oid + '">'
-                      + esc(label) + ' <span class="badge">#' + oid + '</span></span></li>';
-            }
-            if (root.truncated && totalCount > displayedCount) {
-                html += '<li class="muted">Showing first ' + displayedCount
-                    + ' of ' + totalCount + ' root objects.</li>';
-            }
-            html += '</ul></li>';
+            html += '</div>';
+            html += '</section>';
         }
-        html += '</ul>';
+        html += '</section>';
         document.getElementById('roots').innerHTML = html;
 
-        document.querySelectorAll('.toggle').forEach((el) => {
+        document.querySelectorAll('#roots .root-toggle').forEach((el) => {
             el.addEventListener('click', () => {
-                el.classList.toggle('open');
-                const ul = el.nextElementSibling;
-                if (ul) ul.style.display = ul.style.display === 'none' ? '' : 'none';
+                const target = el.getAttribute('data-target');
+                if (!target) return;
+                const body = document.getElementById(target);
+                if (!body) return;
+                const opening = body.style.display === 'none';
+                body.style.display = opening ? '' : 'none';
+                const chev = el.querySelector('.root-chevron');
+                if (chev) chev.textContent = opening ? 'v' : '>';
             });
         });
-        document.querySelectorAll('.obj-link').forEach((el) => {
+        document.querySelectorAll('#roots .obj-link').forEach((el) => {
             el.addEventListener('click', () => {
                 const oid = parseInt(el.getAttribute('data-oid'), 10);
                 vscode.postMessage({ command: 'inspectObject', objectId: oid });
