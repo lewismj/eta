@@ -1,6 +1,6 @@
-# Functions and Closures
+﻿# Functions and Closures
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 Functions are first-class values — they can be stored, passed, and
 returned. Eta is a Lisp-1: functions and other values share a single
@@ -133,4 +133,5 @@ Eta does not auto-curry; emulate it manually:
 - [Tail Calls](./tail-calls.md)
 - [Bindings & Scope](./bindings-and-scope.md)
 - [Macros](./macros.md)
+
 

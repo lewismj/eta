@@ -918,7 +918,7 @@ builtins to provide higher-level abstractions like `foldl`, `sort`, and
 
 ## LSP Integration
 
-**File:** [`lsp_server.h`](../../../eta/lsp/src/eta/lsp/lsp_server.h)
+**File:** [`lsp_server.h`](../../../eta/tools/lsp/src/eta/lsp/lsp_server.h)
 
 The `eta_lsp` executable implements the Language Server Protocol over
 JSON-RPC (stdio). It creates a `Driver` internally and runs the
@@ -931,10 +931,10 @@ Supported LSP features:
 
 ### VS Code Extension
 
-The [`editors/vscode/`](../editors/vscode/) directory contains a VS Code
+The [`editors/vscode/`](../../../editors/vscode/) directory contains a VS Code
 extension that provides:
 
-- TextMate grammar for syntax highlighting ([`eta.tmLanguage.json`](../editors/vscode/syntaxes/eta.tmLanguage.json))
+- TextMate grammar for syntax highlighting ([`eta.tmLanguage.json`](../../../editors/vscode/syntaxes/eta.tmLanguage.json))
 - Language configuration (bracket matching, comment toggling)
 - LSP client that launches `eta_lsp` as a child process
 

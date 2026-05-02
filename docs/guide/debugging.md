@@ -1,6 +1,6 @@
-# Debugging — LSP, DAP, and the VS Code Extension
+﻿# Debugging — LSP, DAP, and the VS Code Extension
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 Eta ships two cooperating processes for IDE integration:
 
@@ -93,4 +93,5 @@ These views update on every DAP `stopped` event.
 - [`runtime.md`](./reference/runtime.md), [`bytecode-vm.md`](./reference/bytecode-vm.md)
 - [Bytecode & Tools](./bytecode-and-tools.md)
 - [Testing](./testing.md)
+
 

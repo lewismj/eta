@@ -1,7 +1,7 @@
 # Featured Example Plan — Structural Stress Test & Rebalancing Under an Energy Shock
 
 [← Back to README](../../README.md) ·
-[xVA-WWR featured example](../featured_examples/xva-wwr.md) ·
+[xVA-WWR featured example](../featured/xva-wwr.md) ·
 [Causal plan](./causal_plan.md) ·
 [AAD](../guide/reference/aad.md) ·
 [Torch](../guide/reference/torch.md)
@@ -93,7 +93,7 @@ scripts/
 data/
 └── energy-stress-returns.csv   ;; committed snapshot (small ~ 100 KB) for reproducibility
 
-docs/featured_examples/
+docs/featured/
 └── energy-stress.md    ;; produced **after** implementation; mirrors xva-wwr.md
 ```
 
@@ -767,7 +767,7 @@ Uses `std.jupyter` (xeus kernel) to render:
 | **M4** | `dag.eta`: learned-DAG container, thresholding, topo-sort over learned edges, `do(...)` encoding | M3a, `examples/do-calculus/dag.eta` | 1 d | Med |
 | **M5** | `shock.eta` + `stress.eta`: SCM forward-sim, VaR/ES, AAD greeks (incl. credit + nat-gas shock dimensions) | M4 | 1.5 d | Med |
 | **M6** | `rebalance.eta`: QP via `clp:rq-minimize`, turnover encoding, sleeve-bucket bands, return-floor optional | M5, `std.clpr` | 1.5 d | Med |
-| **M7** | `workers.eta` + `report.eta` + `main.eta` + `sample-output.txt` + `docs/featured_examples/energy-stress.md` | M1–M6 | 1.5 d | Low |
+| **M7** | `workers.eta` + `report.eta` + `main.eta` + `sample-output.txt` + `docs/featured/energy-stress.md` | M1–M6 | 1.5 d | Low |
 
 **Total:** ~9 working days of focused effort (M3 dropped from 3 d → 2.5 d
 combined since linear NOTEARS is far simpler than MLP-NOTEARS).
@@ -901,6 +901,6 @@ No changes are required to the **causal** stack — we reuse
 
 <!-- Implementation note: this plan is **not yet implemented**. When the
 example lands, mirror the `xva-wwr.md` companion document under
-`docs/featured_examples/energy-stress.md` and add a row to the README's
+`docs/featured/energy-stress.md` and add a row to the README's
 "Featured examples" table linking the two. -->
 

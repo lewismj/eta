@@ -1,16 +1,16 @@
-# Eta — Language Guide
+﻿# Eta — Language Guide
 
-[← Back to README](../../README.md) ·
-[Quick Start](../quickstart.md) ·
-[Architecture](../architecture.md) ·
-[Modules & Stdlib](./reference/modules.md) ·
-[Release Notes](../release-notes.md)
+[← Back to README](../README.md) ·
+[Quick Start](./quickstart.md) ·
+[Architecture](./architecture.md) ·
+[Modules & Stdlib](./guide/reference/modules.md) ·
+[Release Notes](./release-notes.md)
 
 > [!NOTE]
 > This guide is the canonical entry point for learning the Eta language.
 > Each section is intentionally short and links to a deep-dive page —
-> either a tutorial chapter under [`docs/guide/`](.) or a module / tool
-> reference under [`docs/guide/reference/`](./reference/).
+> either a tutorial chapter under [`docs/guide/`](./guide/) or a module / tool
+> reference under [`docs/guide/reference/`](./guide/reference/).
 
 ---
 
@@ -61,13 +61,13 @@ linear algebra (Eigen), neural networks (libtorch), and an actor runtime
 
 | Tool          | Role                                                | Reference |
 | :------------ | :-------------------------------------------------- | :-------- |
-| `etai`        | Interpreter for `.eta` source or `.etac` bytecode   | [Quick Start](../quickstart.md) |
-| `etac`        | Ahead-of-time bytecode compiler                     | [Compiler](./reference/compiler.md), [Bytecode Tools](./bytecode-and-tools.md) |
-| `eta_repl`    | Interactive REPL                                    | [REPL](./reference/repl.md) |
-| `eta_lsp`     | Language Server (diagnostics, completion, navigation) | [VS Code](./reference/vscode.md), [Debugging](./debugging.md) |
-| `eta_dap`     | Debug Adapter (breakpoints, stepping, inspection)   | [Debugging](./debugging.md) |
-| `eta_test`    | Test runner with TAP / JUnit output                 | [Testing](./testing.md) |
-| `eta_jupyter` | Jupyter kernel                                      | [Jupyter](./reference/jupyter.md) |
+| `etai`        | Interpreter for `.eta` source or `.etac` bytecode   | [Quick Start](./quickstart.md) |
+| `etac`        | Ahead-of-time bytecode compiler                     | [Compiler](./guide/reference/compiler.md), [Bytecode Tools](./guide/bytecode-and-tools.md) |
+| `eta_repl`    | Interactive REPL                                    | [REPL](./guide/reference/repl.md) |
+| `eta_lsp`     | Language Server (diagnostics, completion, navigation) | [VS Code](./guide/reference/vscode.md), [Debugging](./guide/debugging.md) |
+| `eta_dap`     | Debug Adapter (breakpoints, stepping, inspection)   | [Debugging](./guide/debugging.md) |
+| `eta_test`    | Test runner with TAP / JUnit output                 | [Testing](./guide/testing.md) |
+| `eta_jupyter` | Jupyter kernel                                      | [Jupyter](./guide/reference/jupyter.md) |
 
 ### Hello, world
 
@@ -84,7 +84,7 @@ etai hello.eta
 
 > [!TIP]
 > The interactive notebook at
-> [`examples/notebooks/LanguageBasics.ipynb`](../../examples/notebooks/LanguageBasics.ipynb)
+> [`examples/notebooks/LanguageBasics.ipynb`](../examples/notebooks/LanguageBasics.ipynb)
 > walks through the same material as §§ 2–9 in a runnable form.
 
 ### How to read this guide
@@ -111,7 +111,7 @@ splicing `,@`.
 
 Equality has three flavours: `eq?` (identity), `eqv?` (numeric/char
 equivalence), `equal?` (structural). The numeric tower is fixnum +
-double, with NaN-box tagging — see [`nanboxing.md`](./reference/nanboxing.md).
+double, with NaN-box tagging — see [`nanboxing.md`](./guide/reference/nanboxing.md).
 
 Because code is just S-expression data, `eval` compiles and executes
 any expression at runtime against the current lexical environment.
@@ -127,8 +127,8 @@ with runtime metaprogramming.
 (f 3 4)                                  ; => 12
 ```
 
-> **Deep dives:** [`syntax-and-values.md`](./syntax-and-values.md),
-> [`eval`](./reference/eval.md).
+> **Deep dives:** [`syntax-and-values.md`](./guide/syntax-and-values.md),
+> [`eval`](./guide/reference/eval.md).
 
 ---
 
@@ -153,9 +153,9 @@ recursive.
 
 > [!NOTE]
 > The REPL allows shadowing (re-`define` of an existing name); modules
-> do not. See [`repl.md`](./reference/repl.md) for the REPL-specific rules.
+> do not. See [`repl.md`](./guide/reference/repl.md) for the REPL-specific rules.
 
-> **Deep dive:** [`bindings-and-scope.md`](./bindings-and-scope.md).
+> **Deep dive:** [`bindings-and-scope.md`](./guide/bindings-and-scope.md).
 
 ---
 
@@ -180,7 +180,7 @@ mutual recursion. All such forms are tail-call optimised — see §5.
   (else              'many))
 ```
 
-> **Deep dive:** [`control-flow.md`](./control-flow.md).
+> **Deep dive:** [`control-flow.md`](./guide/control-flow.md).
 
 ---
 
@@ -205,8 +205,8 @@ last expression of `if`, `cond`, `when`, `unless`, `case`, `let*`,
 `letrec`, and `begin`. Mutual recursion via `letrec` runs in constant
 stack.
 
-> **Deep dives:** [`functions-and-closures.md`](./functions-and-closures.md),
-> [`tail-calls.md`](./tail-calls.md).
+> **Deep dives:** [`functions-and-closures.md`](./guide/functions-and-closures.md),
+> [`tail-calls.md`](./guide/tail-calls.md).
 
 ---
 
@@ -250,7 +250,7 @@ predicate guards or, for symbolic data, structural unification from
 ```
 
 For destructuring on relational data, use `(== pat term)` with logic
-variables — see [`logic.md`](./reference/logic.md).
+variables — see [`logic.md`](./guide/reference/logic.md).
 
 ---
 
@@ -272,10 +272,10 @@ ellipsis (`...`) for variadic patterns.
 > [!IMPORTANT]
 > Eta's macro system is `syntax-rules` only — there are no procedural
 > macros. This keeps expansion deterministic and serialisable into
-> bytecode. See [`macros.md`](./macros.md) for ellipses, literal
+> bytecode. See [`macros.md`](./guide/macros.md) for ellipses, literal
 > keywords, and worked examples from the standard library.
 
-> **Deep dive:** [`macros.md`](./macros.md).
+> **Deep dive:** [`macros.md`](./guide/macros.md).
 
 ---
 
@@ -294,7 +294,7 @@ is the input file's directory plus `--path` arguments and
 | `(import (rename std.math (pi PI)))`  | Rename on import                        |
 | `(import (prefix std.math math:))`    | Namespace-style qualified access        |
 
-> **Reference:** [`modules.md`](./reference/modules.md).
+> **Reference:** [`modules.md`](./guide/reference/modules.md).
 
 ---
 
@@ -317,7 +317,7 @@ Tags are symbols; the raised payload can be any value. A tag-less
 `dynamic-wind` runs its *after* thunk on every exit (normal or
 exceptional), enabling reliable cleanup.
 
-> **Deep dive:** [`error-handling.md`](./error-handling.md).
+> **Deep dive:** [`error-handling.md`](./guide/error-handling.md).
 
 ---
 
@@ -335,7 +335,7 @@ expressions live in `std.regex`.
 ;; => (("10-20" "10" "20") ("30-40" "30" "40"))
 ```
 
-> **Deep dive:** [`strings.md`](./strings.md). **Reference:** [`regex.md`](./reference/regex.md).
+> **Deep dive:** [`strings.md`](./guide/strings.md). **Reference:** [`regex.md`](./guide/reference/regex.md).
 
 ---
 
@@ -345,9 +345,9 @@ expressions live in `std.regex`.
 | :--------- | :---------- | :------- | :---------------------------- |
 | List       | immutable   | O(n)     | builtin                       |
 | Vector     | mutable     | O(1)     | builtin                       |
-| Hash map   | mutable     | O(1) avg | [`std.hashmap`](./reference/hashmap.md) |
+| Hash map   | mutable     | O(1) avg | [`std.hashmap`](./guide/reference/hashmap.md) |
 | Hash set   | mutable     | O(1) avg | `std.hashset`                 |
-| Fact table | columnar    | indexed  | [`std.fact_table`](./reference/fact-table.md) |
+| Fact table | columnar    | indexed  | [`std.fact_table`](./guide/reference/fact-table.md) |
 
 `std.collections` provides the higher-order suite (`map*`, `filter`,
 `foldl` / `foldr`, `reduce`, `zip`, `range`, `take` / `drop`,
@@ -359,7 +359,7 @@ expressions live in `std.regex`.
 ;; => 220
 ```
 
-> **Deep dive:** [`collections.md`](./collections.md).
+> **Deep dive:** [`collections.md`](./guide/collections.md).
 
 ---
 
@@ -377,8 +377,8 @@ Built-ins: `display`, `write`, `newline`, `write-string`, `read-char`,
   (lambda () (println "captured")))
 ```
 
-CSV via [`std.csv`](./reference/csv.md), Datalog via
-[`std.db`](./reference/db.md). JSON has its own section (§14), and
+CSV via [`std.csv`](./guide/reference/csv.md), Datalog via
+[`std.db`](./guide/reference/db.md). JSON has its own section (§14), and
 structured logging has its own section (§15).
 
 ### Filesystem (`std.fs`)
@@ -459,7 +459,7 @@ action cover the awkward cases.
 (println (args:get r 'positional))
 ```
 
-Runnable demo: [`examples/args.eta`](../../examples/args.eta).
+Runnable demo: [`examples/args.eta`](../examples/args.eta).
 
 ### Subprocesses (`std.process`)
 
@@ -494,11 +494,11 @@ want to drive as Eta ports.
 Options accepted by both `run` and `spawn`: `cwd`, `env`,
 `replace-env?`, `stdin`, `stdout`, `stderr`, `timeout-ms`, `binary?`.
 
-> **Reference:** [`process.md`](./reference/process.md).
+> **Reference:** [`process.md`](./guide/reference/process.md).
 
-> **Deep dive:** [`io.md`](./io.md). **References:**
-> [`fs.md`](./reference/fs.md), [`os.md`](./reference/os.md),
-> [`args.md`](./reference/args.md), [`process.md`](./reference/process.md).
+> **Deep dive:** [`io.md`](./guide/io.md). **References:**
+> [`fs.md`](./guide/reference/fs.md), [`os.md`](./guide/reference/os.md),
+> [`args.md`](./guide/reference/args.md), [`process.md`](./guide/reference/process.md).
 
 ---
 
@@ -532,7 +532,7 @@ maps, arrays to vectors, numbers default to flonums (pass
 Options are alternating keyword/value pairs; the only key recognised
 in v1 is `'keep-integers-exact?`.
 
-> **Reference:** [`json.md`](./reference/json.md).
+> **Reference:** [`json.md`](./guide/reference/json.md).
 
 ---
 
@@ -573,7 +573,7 @@ Each level wrapper (`log:trace`, `log:debug`, `log:info`, `log:warn`,
 | `log:flush!` / `log:flush-on!` | Manual flush, or auto-flush above a level                     |
 | `log:shutdown!`                | Drain and dispose every registered logger at exit             |
 
-> **Reference:** [`log.md`](./reference/log.md).
+> **Reference:** [`log.md`](./guide/reference/log.md).
 
 ---
 
@@ -581,7 +581,7 @@ Each level wrapper (`log:trace`, `log:debug`, `log:info`, `log:warn`,
 
 `std.time` exposes `time:now-ms`, `time:monotonic-ms`, `time:sleep-ms`,
 `time:utc-parts`, `time:format-iso8601-utc`, `time:elapsed-ms` — see
-[`time.md`](./reference/time.md).
+[`time.md`](./guide/reference/time.md).
 
 `std.freeze` provides two attributed-variable combinators that compose
 with the logic engine:
@@ -591,7 +591,7 @@ with the logic engine:
 | `(freeze v thunk)`  | Run `thunk` when logic var `v` becomes ground                 |
 | `(dif x y)`         | Structural disequality; succeeds iff `x` and `y` cannot unify |
 
-See [`freeze.md`](./reference/freeze.md) and [`finalizers.md`](./reference/finalizers.md)
+See [`freeze.md`](./guide/reference/freeze.md) and [`finalizers.md`](./guide/reference/finalizers.md)
 for object-lifetime hooks.
 
 ---
@@ -618,7 +618,7 @@ exception handling and CLP propagation compose with it cleanly.
 ;; => (bob liz)
 ```
 
-> **Reference:** [`logic.md`](./reference/logic.md).
+> **Reference:** [`logic.md`](./guide/reference/logic.md).
 
 ---
 
@@ -628,9 +628,9 @@ Three CLP domains are bundled:
 
 | Domain  | Module        | Reference |
 | :------ | :------------ | :-------- |
-| CLP(FD) | `std.clp`     | [`clp.md`](./reference/clp.md)   |
-| CLP(B)  | `std.clpb`    | [`clpb.md`](./reference/clpb.md) |
-| CLP(R)  | `std.clpr`    | [`clpr.md`](./reference/clpr.md) |
+| CLP(FD) | `std.clp`     | [`clp.md`](./guide/reference/clp.md)   |
+| CLP(B)  | `std.clpb`    | [`clpb.md`](./guide/reference/clpb.md) |
+| CLP(R)  | `std.clpr`    | [`clpr.md`](./guide/reference/clpr.md) |
 
 ```scheme
 (import std.clp)
@@ -642,7 +642,7 @@ Three CLP domains are bundled:
 
 `std.clpr` exposes interval domains, linear and quadratic
 minimise/maximise routines backed by the Fourier–Motzkin oracle. See
-[`examples/portfolio-lp.eta`](../../examples/portfolio-lp.eta) for a
+[`examples/portfolio-lp.eta`](../examples/portfolio-lp.eta) for a
 worked LP.
 
 ---
@@ -650,10 +650,10 @@ worked LP.
 ## 19. Fact Tables
 
 `std.db` provides Datalog-style relations with `defrel`, `assert!`, and
-tabled evaluation — see [`db.md`](./reference/db.md). `std.fact_table` is a
+tabled evaluation — see [`db.md`](./guide/reference/db.md). `std.fact_table` is a
 columnar store with hash-indexed lookups for analytics workloads — see
-[`fact-table.md`](./reference/fact-table.md) and
-[`examples/fact-table.eta`](../../examples/fact-table.eta).
+[`fact-table.md`](./guide/reference/fact-table.md) and
+[`examples/fact-table.eta`](../examples/fact-table.eta).
 
 ---
 
@@ -737,9 +737,9 @@ Render any graph straight to Mermaid or DOT for notebooks and papers:
 | `std.causal.learn`            | PC / FCI / GES / NOTEARS structure learning, Fisher-z & χ² CI tests |
 | `std.causal.render`           | DOT, Mermaid, LaTeX renderers; `define-dag` macro |
 
-> **Reference:** [`causal.md`](./reference/causal.md);
-> counterfactual deep-dive [`causal-counterfactual.md`](./reference/causal-counterfactual.md);
-> end-to-end example [`examples/causal_demo.eta`](../../examples/causal_demo.eta).
+> **Reference:** [`causal.md`](./guide/reference/causal.md);
+> counterfactual deep-dive [`causal-counterfactual.md`](./guide/reference/causal-counterfactual.md);
+> end-to-end example [`examples/causal_demo.eta`](../examples/causal_demo.eta).
 
 ---
 
@@ -758,7 +758,7 @@ in a single backward sweep over the tape.
 Helpers for AD-safe primitives (`ad-abs`, `softplus`, `relu`,
 `check-grad`) and tape introspection live in `std.aad`.
 
-> **Reference:** [`aad.md`](./reference/aad.md).
+> **Reference:** [`aad.md`](./guide/reference/aad.md).
 
 ---
 
@@ -769,7 +769,7 @@ and distribution functions, backed by Eigen for dense linear algebra.
 The Eigen layer is currently exposed only through `std.stats` and
 `std.torch` — there is no separate user-facing module.
 
-> **Reference:** [`stats.md`](./reference/stats.md).
+> **Reference:** [`stats.md`](./guide/reference/stats.md).
 
 ---
 
@@ -786,8 +786,8 @@ optimisers, and (when built with CUDA) device transfer.
 (torch:grad x)
 ```
 
-> **Reference:** [`torch.md`](./reference/torch.md);
-> tests: [`examples/torch_tests/`](../../examples/torch_tests/).
+> **Reference:** [`torch.md`](./guide/reference/torch.md);
+> tests: [`examples/torch_tests/`](../examples/torch_tests/).
 
 ---
 
@@ -811,10 +811,10 @@ High-level patterns provided by `std.net`: `worker-pool`,
 `request-reply`, `survey`, PUB/SUB. Supervision trees (`one-for-one`,
 `one-for-all`) live in `std.supervisor`.
 
-> **References:** [`message-passing.md`](./reference/message-passing.md),
-> [`networking.md`](./reference/networking.md),
-> [`network-message-passing.md`](./reference/network-message-passing.md),
-> [`supervisor.md`](./reference/supervisor.md).
+> **References:** [`message-passing.md`](./guide/reference/message-passing.md),
+> [`networking.md`](./guide/reference/networking.md),
+> [`network-message-passing.md`](./guide/reference/network-message-passing.md),
+> [`supervisor.md`](./guide/reference/supervisor.md).
 
 ---
 
@@ -822,13 +822,13 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 | Example                                                        | Topic                                  | Walkthrough |
 | :------------------------------------------------------------- | :------------------------------------- | :---------- |
-| [`european.eta`](../../examples/european.eta)                  | Black–Scholes Greeks via AAD           | [`european.md`](./reference/european.md) |
-| [`sabr.eta`](../../examples/sabr.eta)                          | SABR vol surface, Hagan approximation  | [`sabr.md`](./reference/sabr.md) |
-| [`xva.eta`](../../examples/xva.eta)                            | CVA / FVA sensitivities via AAD        | [`xva.md`](./reference/xva.md) |
-| [`xva-wwr/`](../../examples/xva-wwr/)                          | Wrong-Way Risk via do-interventions    | [`featured_examples/xva-wwr.md`](../featured_examples/xva-wwr.md) |
-| [`portfolio.eta`](../../examples/portfolio.eta)                | Causal portfolio engine (full pipeline)| [`featured_examples/portfolio.md`](../featured_examples/portfolio.md) |
-| [`portfolio-lp.eta`](../../examples/portfolio-lp.eta)          | LP variant via `std.clpr`              | [CLP(R)](./clpr.md) |
-| [`fact-table.eta`](../../examples/fact-table.eta)              | Columnar fact tables                   | [`fact-table.md`](./reference/fact-table.md) |
+| [`european.eta`](../examples/european.eta)                  | Black–Scholes Greeks via AAD           | [`european.md`](./guide/reference/european.md) |
+| [`sabr.eta`](../examples/sabr.eta)                          | SABR vol surface, Hagan approximation  | [`sabr.md`](./guide/reference/sabr.md) |
+| [`xva.eta`](../examples/xva.eta)                            | CVA / FVA sensitivities via AAD        | [`xva.md`](./guide/reference/xva.md) |
+| [`xva-wwr/`](../examples/xva-wwr/)                          | Wrong-Way Risk via do-interventions    | [`featured/xva-wwr.md`](./featured/xva-wwr.md) |
+| [`portfolio.eta`](../examples/portfolio.eta)                | Causal portfolio engine (full pipeline)| [`featured/portfolio.md`](./featured/portfolio.md) |
+| [`portfolio-lp.eta`](../examples/portfolio-lp.eta)          | LP variant via `std.clpr`              | [CLP(R)](./guide/reference/clpr.md) |
+| [`fact-table.eta`](../examples/fact-table.eta)              | Columnar fact tables                   | [`fact-table.md`](./guide/reference/fact-table.md) |
 
 ---
 
@@ -836,12 +836,12 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 | Topic                        | Reference                                              |
 | :--------------------------- | :----------------------------------------------------- |
-| REPL                         | [`repl.md`](./reference/repl.md)                                |
-| Compiler (`etac`)            | [`compiler.md`](./reference/compiler.md), [`bytecode-and-tools.md`](./bytecode-and-tools.md) |
-| Bytecode VM                  | [`bytecode-vm.md`](./reference/bytecode-vm.md)                  |
-| LSP / DAP / VS Code          | [`vscode.md`](./reference/vscode.md), [`debugging.md`](./debugging.md) |
-| Jupyter kernel               | [`jupyter.md`](./reference/jupyter.md)                          |
-| Testing (`std.test`, `eta_test`) | [`testing.md`](./testing.md), [`std_lib_tests.md`](../std_lib_tests.md) |
+| REPL                         | [`repl.md`](./guide/reference/repl.md)                                |
+| Compiler (`etac`)            | [`compiler.md`](./guide/reference/compiler.md), [`bytecode-and-tools.md`](./guide/bytecode-and-tools.md) |
+| Bytecode VM                  | [`bytecode-vm.md`](./guide/reference/bytecode-vm.md)                  |
+| LSP / DAP / VS Code          | [`vscode.md`](./guide/reference/vscode.md), [`debugging.md`](./guide/debugging.md) |
+| Jupyter kernel               | [`jupyter.md`](./guide/reference/jupyter.md)                          |
+| Testing (`std.test`, `eta_test`) | [`testing.md`](./guide/testing.md) |
 
 ---
 
@@ -853,15 +853,15 @@ High-level patterns provided by `std.net`: `worker-pool`,
 All Eta values fit in a 64-bit double-NaN payload: fixnums and small
 immediates are encoded directly; heap objects (pairs, vectors,
 strings, closures, records, …) use tagged pointers. See
-[`nanboxing.md`](./reference/nanboxing.md).
+[`nanboxing.md`](./guide/reference/nanboxing.md).
 </details>
 
 <details>
 <summary><b>Bytecode VM</b></summary>
 
 A stack-based VM with explicit `Call` / `TailCall`, `SetupCatch` /
-`Throw`, and unification opcodes. See [`bytecode-vm.md`](./reference/bytecode-vm.md)
-and [`runtime.md`](./reference/runtime.md).
+`Throw`, and unification opcodes. See [`bytecode-vm.md`](./guide/reference/bytecode-vm.md)
+and [`runtime.md`](./guide/reference/runtime.md).
 </details>
 
 <details>
@@ -869,7 +869,7 @@ and [`runtime.md`](./reference/runtime.md).
 
 Mark-and-sweep over the VM heap with explicit GC roots from the value
 stack, frame stack, intern table, and registered finalizer set. See
-[`runtime.md`](./reference/runtime.md), [`finalizers.md`](./reference/finalizers.md).
+[`runtime.md`](./guide/reference/runtime.md), [`finalizers.md`](./guide/reference/finalizers.md).
 </details>
 
 <details>
@@ -877,27 +877,41 @@ stack, frame stack, intern table, and registered finalizer set. See
 
 `etac -O` runs constant folding, dead-code elimination, peephole
 opcode fusion, and known-call inlining. See
-[`optimisations.md`](./reference/optimisations.md) and
-[`optimization.md`](./reference/optimization.md).
+[`optimisations.md`](./guide/reference/optimisations.md).
 </details>
 
-For the architectural overview, read [`architecture.md`](../architecture.md).
+For the architectural overview, read [`architecture.md`](./architecture.md).
 
 ---
 
 ## 28. Examples Index
 
-A curated walk through everything in [`examples/`](../../examples/):
+A curated walk through everything in [`examples/`](../examples/):
 beginner programs, symbolic & logic, AAD & finance, concurrency, causal
 & portfolio engines, plus the notebook collection.
 
-> **Tour:** [`examples-tour.md`](./examples-tour.md).
+> **Tour:** [`examples-tour.md`](./guide/examples-tour.md).
 
 ---
 
 ## 29. Further Reading
 
-- [`architecture.md`](../architecture.md) — pipeline overview
-- [`next-steps.md`](../next-steps.md) — short-term work items
-- [`release-notes.md`](../release-notes.md) — version history
+- [`architecture.md`](./architecture.md) — pipeline overview
+- [`next-steps.md`](./next-steps.md) — short-term work items
+- [`release-notes.md`](./release-notes.md) — version history
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

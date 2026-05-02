@@ -1,6 +1,6 @@
-# I/O & Ports
+﻿# I/O & Ports
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 Eta's I/O follows the R7RS port model. The runtime provides the core
 port operations as builtins; `std.io` adds convenience functions and
@@ -106,4 +106,5 @@ Companions: `with-input-from-port`, `with-error-to-port`, `with-port`.
 - [Strings](./strings.md)
 - [Collections](./collections.md)
 - [`csv.md`](./reference/csv.md), [`db.md`](./reference/db.md)
+
 

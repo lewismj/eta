@@ -51,7 +51,7 @@ namespace eta::runtime::memory::heap {
         LogSink,         ///< Logging sink wrapper (spdlog sink + sink traits)
         LogLogger,       ///< Logging logger wrapper (spdlog logger + formatter mode)
         ProcessHandle,   ///< Native subprocess lifecycle handle + optional stdio ports
-        NngSocket,       ///< nng socket (wraps NngSocketPtr from eta/nng/)
+        NngSocket,       ///< nng socket (wraps NngSocketPtr from eta/builtins/nng/)
         CompoundTerm,    ///< Structured logic term: functor symbol + argument list
     };
 

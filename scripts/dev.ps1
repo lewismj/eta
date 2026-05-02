@@ -70,8 +70,8 @@ function Resolve-CMakeExe {
 function Resolve-EtaCoreTestBinary {
     param([string]$RootBuildDir)
     $candidates = @(
-        (Join-Path $RootBuildDir "eta\test\eta_core_test.exe"),
-        (Join-Path $RootBuildDir "eta\test\Release\eta_core_test.exe"),
+        (Join-Path $RootBuildDir "eta\qa\test\eta_core_test.exe"),
+        (Join-Path $RootBuildDir "eta\qa\test\Release\eta_core_test.exe"),
         (Join-Path $RootBuildDir "eta_core_test.exe"),
         (Join-Path $RootBuildDir "Release\eta_core_test.exe")
     )

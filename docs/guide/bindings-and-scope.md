@@ -1,6 +1,6 @@
-# Bindings & Scope
+﻿# Bindings & Scope
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 Eta is lexically scoped. This page lists every binding form, the
 shadowing rules, and the differences between top-level, module-level,
@@ -141,4 +141,5 @@ commands.
 - [Functions, Closures & Tail Calls](./functions-and-closures.md)
 - [Control Flow](./control-flow.md)
 - [Modules](./reference/modules.md), [REPL](./reference/repl.md)
+
 

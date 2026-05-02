@@ -1,6 +1,6 @@
-# Examples Tour
+﻿# Examples Tour
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 A guided reading order through every program in
 [`examples/`](../../examples/). Each entry gives a one-line summary and
@@ -55,7 +55,7 @@ sections build on each other and culminate in
 | [`european.eta`](../../examples/european.eta) | Black–Scholes Greeks (1st & 2nd order)             | [`european.md`](./reference/european.md) |
 | [`sabr.eta`](../../examples/sabr.eta)         | SABR vol surface, Hagan approximation              | [`sabr.md`](./reference/sabr.md) |
 | [`xva.eta`](../../examples/xva.eta)           | CVA / FVA sensitivities via AAD                    | [`xva.md`](./reference/xva.md) |
-| [`xva-wwr/`](../../examples/xva-wwr/)         | Wrong-Way Risk via do-interventions                | [`featured_examples/xva-wwr.md`](../featured_examples/xva-wwr.md) |
+| [`xva-wwr/`](../../examples/xva-wwr/)         | Wrong-Way Risk via do-interventions                | [`featured/xva-wwr.md`](../featured/xva-wwr.md) |
 
 ---
 
@@ -101,7 +101,7 @@ sections build on each other and culminate in
 | [`do-calculus/`](../../examples/do-calculus/)            | Worked do-calculus identification problems    | [`causal.md`](./reference/causal.md) |
 | [`fact-table.eta`](../../examples/fact-table.eta)        | Columnar fact tables for analytics            | [`fact-table.md`](./reference/fact-table.md) |
 | [`portfolio-lp.eta`](../../examples/portfolio-lp.eta)    | LP construction via `std.clpr`                | — |
-| [`portfolio.eta`](../../examples/portfolio.eta)          | End-to-end causal portfolio engine            | [`featured_examples/portfolio.md`](../featured_examples/portfolio.md) |
+| [`portfolio.eta`](../../examples/portfolio.eta)          | End-to-end causal portfolio engine            | [`featured/portfolio.md`](../featured/portfolio.md) |
 
 ---
 
@@ -117,7 +117,8 @@ See [`jupyter.md`](./reference/jupyter.md) for kernel installation.
 
 ## Related
 
-- [Language Guide](./language_guide.md)
-- [Featured: Causal Portfolio Engine](../featured_examples/portfolio.md)
-- [Featured: Wrong-Way Risk via do-interventions](../featured_examples/xva-wwr.md)
+- [Language Guide](../language_guide.md)
+- [Featured: Causal Portfolio Engine](../featured/portfolio.md)
+- [Featured: Wrong-Way Risk via do-interventions](../featured/xva-wwr.md)
+
 

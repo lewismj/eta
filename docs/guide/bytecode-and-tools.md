@@ -1,6 +1,6 @@
-# Bytecode & Tools
+﻿# Bytecode & Tools
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 This is the task-oriented companion to the reference docs
 [`compiler.md`](./reference/compiler.md) and [`bytecode-vm.md`](./reference/bytecode-vm.md).
@@ -38,9 +38,8 @@ constants, debug spans, and the symbol table.
 - Known-call inlining for small leaf functions
 - Macro pre-expansion
 
-See [`optimisations.md`](./reference/optimisations.md) and
-[`optimization.md`](./reference/optimization.md) for the full pass list and
-heuristics.
+See [`optimisations.md`](./reference/optimisations.md) for the full pass
+list and heuristics.
 
 ---
 
@@ -131,6 +130,7 @@ errors carry a span and a stack trace as the exception payload — see
 ## Related
 
 - [`compiler.md`](./reference/compiler.md), [`bytecode-vm.md`](./reference/bytecode-vm.md)
-- [`optimisations.md`](./reference/optimisations.md), [`optimization.md`](./reference/optimization.md)
+- [`optimisations.md`](./reference/optimisations.md)
 - [Tail Calls](./tail-calls.md), [Debugging](./debugging.md)
+
 

@@ -12,13 +12,13 @@ add_executable(eta_jupyter
     src/eta/jupyter/comm/actors_comm.cpp
     src/eta/jupyter/comm/dag_comm.cpp
     src/eta/jupyter/comm/tensor_comm.cpp
-    ../interpreter/src/eta/interpreter/repl_wrap.cpp
+    ${ETA_INTERPRETER_SRC_DIR}/eta/interpreter/repl_wrap.cpp
 )
 
 target_include_directories(eta_jupyter
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
+    PRIVATE ${ETA_INTERPRETER_SRC_DIR}
+    PRIVATE ${ETA_SESSION_SRC_DIR}
 )
 
 target_link_libraries(eta_jupyter
@@ -28,7 +28,7 @@ target_link_libraries(eta_jupyter
 
 target_compile_definitions(eta_jupyter PRIVATE
     ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1
-    ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
+    ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
     ETA_JUPYTER_SOURCE_RESOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"
 )
 

@@ -1,6 +1,6 @@
 import pathlib
 
-p = pathlib.Path(r'C:\Users\lewis\develop\eta\eta\test\src\builtin_sync_tests.cpp')
+p = pathlib.Path(r'C:\Users\lewis\develop\eta\eta\qa\test\src\builtin_sync_tests.cpp')
 raw = p.read_bytes()
 print(f'File size: {len(raw)} bytes')
 print(f'First 6 bytes: {raw[:6].hex()}')

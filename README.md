@@ -1,4 +1,4 @@
-<div align="center" style="display: flex; justify-content: center; align-items: center; gap: 20px;">
+﻿<div align="center" style="display: flex; justify-content: center; align-items: center; gap: 20px;">
   <img src="docs/img/eta.svg" alt="Eta logo" width="120">
   <div style="text-align: left;">
     <h1 style="margin: 0;">η (Eta)</h1>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="docs/quickstart.md">Quick Start</a> ·
-  <a href="docs/guide/language_guide.md">Language Guide</a> ·
+  <a href="docs/language_guide.md">Language Guide</a> ·
   <a href="docs/guide/reference/vscode.md">VS Code</a> ·
   <a href="docs/guide/reference/jupyter.md">Jupyter</a> ·
   <a href="docs/architecture.md">Architecture</a>
@@ -20,20 +20,20 @@
 <p align="center">
   <strong>Featured Examples</strong><br>
   Causal Decision Engine for Portfolio Optimisation 
-  <a href="docs/featured_examples/portfolio.md">docs</a> ·
+  <a href="docs/featured/portfolio.md">docs</a> ·
   <a href="examples/notebooks/Portfolio.ipynb">notebook</a><br>
   Wrong-Way Risk via do-interventions 
-  <a href="docs/featured_examples/xva-wwr.md">docs</a>
+  <a href="docs/featured/xva-wwr.md">docs</a>
 </p>
 -->
 
 <p align="center">
   <strong>Featured Examples</strong><br>
-  <a href="docs/featured_examples/portfolio.md">
+  <a href="docs/featured/portfolio.md">
     Causal Decision Engine for Portfolio Optimisation
   </a> ·
   <a href="examples/notebooks/Portfolio.ipynb">notebook</a><br>
-  <a href="docs/featured_examples/xva-wwr.md">
+  <a href="docs/featured/xva-wwr.md">
     Wrong-Way Risk via do-interventions
   </a>
 </p>
@@ -49,7 +49,7 @@
 
 Eta is built around a **stack-based VM** that serves as a unified runtime for all language subsystems:
 
-*   **Modern Scheme Core:** Nan-boxing, tail-call optimization (TCO), hygienic `syntax-rules` macros, and a module system. See [Language Guide](docs/guide/language_guide.md) for details.
+*   **Modern Scheme Core:** Nan-boxing, tail-call optimization (TCO), hygienic `syntax-rules` macros, and a module system. See [Language Guide](docs/language_guide.md) for details.
 *   **Native Logic Programming:** Built-in structural unification and backtracking via dedicated VM opcodes, enabling [Prolog-style](docs/guide/reference/logic.md) reasoning directly within the language.
 *   **Differentiable Programming:** Native reverse-mode Automatic Differentiation [(AAD)](docs/guide/reference/aad.md) integrated into the runtime for transparent gradient computation with zero closure overhead.
 *   **Machine Learning & Numerics:** First-class C++ bindings to [**libtorch**](docs/guide/reference/torch.md) for neural networks and **Eigen** for linear algebra and [statistics](docs/guide/reference/stats.md).
@@ -135,7 +135,7 @@ Eta allows you to mix paradigms easily. In this snippet, we define a mathematica
 
 ## Explore More
 
-*   **[Language Guide](docs/guide/language_guide.md)** — structured tour of the language, with deep dives into syntax, macros, logic, AAD, concurrency, and tooling.
+*   **[Language Guide](docs/language_guide.md)** — structured tour of the language, with deep dives into syntax, macros, logic, AAD, concurrency, and tooling.
 *   **[Examples Tour](docs/guide/examples-tour.md)** — guided reading order for everything in [`examples/`](examples/).
 *   **[Standard Library Reference](docs/guide/reference/modules.md)** — modules for logic, math, torch, actors, and more.
 *   **[Architecture](docs/architecture.md)** — NaN-boxed VM and compilation pipeline.
@@ -144,3 +144,4 @@ Eta allows you to mix paradigms easily. In this snippet, we define a mathematica
 
 ---
 *License: [LICENSE.txt](LICENSE.txt)*
+

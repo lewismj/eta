@@ -1,8 +1,8 @@
-# JSON
+﻿# JSON
 
 [Back to README](../../../README.md) ·
 [Modules and Stdlib](modules.md) ·
-[Language Guide](../language_guide.md) ·
+[Language Guide](../../language_guide.md) ·
 [CSV](csv.md) ·
 [Hash Maps](hashmap.md) ·
 [Next Steps](../../next-steps.md)
@@ -132,4 +132,5 @@ human-readable indentation is required.
   builtins apply to decoded objects without conversion.
 - For tabular ingest prefer [`std.csv`](csv.md); for record-shaped
   config / API payloads prefer `std.json`.
+
 

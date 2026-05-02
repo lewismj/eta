@@ -9,6 +9,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # The project does not use C++20 modules; disable dependency scanning globally.
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
+# Root-anchored source paths shared by eta subdirectories.
+set(ETA_REPO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(ETA_CMAKE_DIR "${ETA_REPO_ROOT_DIR}/cmake")
+set(ETA_SOURCE_DIR "${ETA_REPO_ROOT_DIR}/eta")
+set(ETA_STDLIB_SOURCE_DIR "${ETA_REPO_ROOT_DIR}/stdlib")
+set(ETA_EXAMPLES_SOURCE_DIR "${ETA_REPO_ROOT_DIR}/examples")
+
 # GitHub Actions release jobs package from `cmake --install` directly, so
 # ensure the MSVC runtime DLLs are installed into bin/ for portable bundles.
 if(WIN32)

@@ -3,7 +3,7 @@
 [← Back to README](../../../README.md) · [Quick Start](../../quickstart.md) · [Build from Source](../../build.md) ·
 [Architecture](../../architecture.md) ·
 [NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
-[Optimization](optimization.md) · [Runtime & GC](runtime.md) ·
+[Optimisations](optimisations.md) · [Runtime & GC](runtime.md) ·
 [Modules & Stdlib](modules.md) · [Project Status](../../next-steps.md)
 
 ---
@@ -123,7 +123,7 @@ currently implemented:
 Passes are composable — the pipeline runs them in sequence and can be
 extended with additional passes in the future.
 
-> **📖 Full details:** [Optimization Pipeline](optimization.md) — architecture, IR node reference, pass authoring guide.
+> **📖 Full details:** [Optimization Pipeline](optimisations.md) — architecture, IR node reference, pass authoring guide.
 
 ```console
 # Compile with optimizations enabled
@@ -238,7 +238,7 @@ as expected.
 
 | File | Role |
 |------|------|
-| [`main_etac.cpp`](../../../eta/compiler/src/eta/compiler/main_etac.cpp) | `etac` entry point — CLI parsing, pipeline orchestration, serialization. |
+| [`main_etac.cpp`](../../../eta/tools/compiler/src/eta/compiler/main_etac.cpp) | `etac` entry point — CLI parsing, pipeline orchestration, serialization. |
 | [`bytecode_serializer.h`](../../../eta/core/src/eta/runtime/vm/bytecode_serializer.h) | `BytecodeSerializer` — serialize / deserialize `.etac` binary format. |
 | [`disassembler.h`](../../../eta/core/src/eta/runtime/vm/disassembler.h) | `Disassembler` — human-readable bytecode dump. |
 | [`optimization_pipeline.h`](../../../eta/core/src/eta/semantics/optimization_pipeline.h) | `OptimizationPipeline` — composable IR pass runner. |

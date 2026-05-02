@@ -95,5 +95,5 @@ Implementation lives in side tables in:
 
 Behavioral tests are in:
 
-- `eta/test/src/gc_tests.cpp`
-- `eta/test/src/vm_tests.cpp`
+- `eta/qa/test/src/gc_tests.cpp`
+- `eta/qa/test/src/vm_tests.cpp`

@@ -98,8 +98,8 @@ jobs:
 
           # Keep kernel logos next to eta_jupyter for runtime --install.
           mkdir -p "$PREFIX/bin/resources"
-          cp eta/jupyter/resources/logo-32x32.png "$PREFIX/bin/resources/" || true
-          cp eta/jupyter/resources/logo-64x64.png "$PREFIX/bin/resources/" || true
+          cp eta/tools/jupyter/resources/logo-32x32.png "$PREFIX/bin/resources/" || true
+          cp eta/tools/jupyter/resources/logo-64x64.png "$PREFIX/bin/resources/" || true
 
           mkdir -p "$PREFIX/editors"
           cp "editors/vscode/eta-lang-${{ env.VSIX_LABEL }}.vsix" "$PREFIX/editors/"
@@ -235,8 +235,8 @@ jobs:
           # Keep kernel logos next to eta_jupyter for runtime --install.
           $resDest = Join-Path $prefix "bin\resources"
           New-Item -ItemType Directory -Force $resDest | Out-Null
-          Copy-Item "eta\jupyter\resources\logo-32x32.png" $resDest -ErrorAction SilentlyContinue
-          Copy-Item "eta\jupyter\resources\logo-64x64.png" $resDest -ErrorAction SilentlyContinue
+          Copy-Item "eta\tools\jupyter\resources\logo-32x32.png" $resDest -ErrorAction SilentlyContinue
+          Copy-Item "eta\tools\jupyter\resources\logo-64x64.png" $resDest -ErrorAction SilentlyContinue
 
           New-Item -ItemType Directory -Force "$prefix\editors" | Out-Null
           Copy-Item "editors\vscode\eta-lang-${{ env.VSIX_LABEL }}.vsix" "$prefix\editors\"

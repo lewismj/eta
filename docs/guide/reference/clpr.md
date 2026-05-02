@@ -3,10 +3,9 @@
 [<- Back to README](../../../README.md) · [CLP(FD)](clp.md) · [CLP(B)](clpb.md) ·
 [Logic](logic.md) · [Runtime & GC](runtime.md)
 
-> The `docs/guide/clpr.md` page is the short user-facing tour. **This** page
-> is the reference: it documents the algorithms, the trail/store split,
-> the simplex and active-set QP backends, and the wire-format of every
-> `%clp-r-*` builtin.
+> This page is the canonical `std.clpr` reference: it documents the
+> algorithms, the trail/store split, the simplex and active-set QP
+> backends, and the wire-format of every `%clp-r-*` builtin.
 
 ---
 
@@ -157,7 +156,7 @@ The simplex itself is a textbook *revised* implementation:
 
 Numerical tolerances live in `simplex.h::Tolerance` and are tuned for
 financial-scale matrices (hundreds of constraints, conditioning up to
-1e8). For larger problems use the bench in `eta/bench/`.
+1e8). For larger problems use the bench in `eta/qa/bench/`.
 
 ### 4.1 Worked example — small LP
 
@@ -381,5 +380,5 @@ you want to handle unboundedness without `with-handlers`.
 | Tests — LP optimization | [`stdlib/tests/clpr_optimization.test.eta`](../../../stdlib/tests/clpr_optimization.test.eta) |
 | Tests — QP optimization | [`stdlib/tests/clpr_qp_optimization.test.eta`](../../../stdlib/tests/clpr_qp_optimization.test.eta) |
 | Worked example — LP | [`examples/portfolio-lp.eta`](../../../examples/portfolio-lp.eta) |
-| Featured example — QP + causal | [`examples/portfolio.eta`](../../../examples/portfolio.eta), [`docs/featured_examples/portfolio.md`](../../featured_examples/portfolio.md) |
+| Featured example — QP + causal | [`examples/portfolio.eta`](../../../examples/portfolio.eta), [`docs/featured/portfolio.md`](../../featured/portfolio.md) |
 

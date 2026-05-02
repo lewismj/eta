@@ -255,7 +255,7 @@ if (-not $HasCrypto) {
 
 # Keep Jupyter kernelspec logos next to eta_jupyter so `eta_jupyter --install`
 # can copy them on target machines (without source-tree paths).
-$JupyterResSrc = Join-Path $ProjectRoot "eta\jupyter\resources"
+$JupyterResSrc = Join-Path $ProjectRoot "eta\tools\jupyter\resources"
 if (Test-Path $JupyterResSrc) {
     $JupyterResDest = Join-Path $Prefix "bin\resources"
     New-Item -ItemType Directory -Force -Path $JupyterResDest | Out-Null

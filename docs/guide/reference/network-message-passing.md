@@ -75,7 +75,7 @@ class of lifecycle bugs common in ZeroMQ applications.
                        │  stdlib/std/net.eta
                        ▼
 ┌──────────────────────────────────────────────────────────┐
-│              eta/nng/ — C++ Primitive Layer              │
+│         eta/builtins/nng/ — C++ Primitive Layer          │
 │                                                          │
 │  NngSocketPtr     — GC-managed heap object               │
 │  Wire format      — LispVal ↔ binary / s-expression      │
@@ -94,7 +94,7 @@ class of lifecycle bugs common in ZeroMQ applications.
 1. **Eta stdlib** (`std/net.eta`) — high-level ergonomic patterns:
    `with-socket`, `request-reply`, `worker-pool`, `pub-sub`, `survey`.
 
-2. **C++ primitive layer** (`eta/nng/`) — registers low-level builtins
+2. **C++ primitive layer** (`eta/builtins/nng/`) — registers low-level builtins
    into the VM's global slot table: `nng-socket`, `nng-listen`, `nng-dial`,
    `send!`, `recv!`, `spawn`, `current-mailbox`, etc.  Manages the
    `NngSocketPtr` heap object, its GC destructor, and child process

@@ -1,8 +1,8 @@
-# Filesystem
+﻿# Filesystem
 
 [Back to README](../../../README.md) ·
 [Modules and Stdlib](modules.md) ·
-[Language Guide](../language_guide.md) ·
+[Language Guide](../../language_guide.md) ·
 [OS Primitives](os.md) ·
 [Subprocesses](process.md) ·
 [Next Steps](../../next-steps.md)
@@ -139,4 +139,5 @@ responsibility (use `fs:delete-file` or platform tooling).
   [`std.os`](os.md).
 - Subprocess execution and pipe-based process I/O live in
   [`std.process`](process.md).
+
 

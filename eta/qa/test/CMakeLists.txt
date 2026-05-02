@@ -80,8 +80,8 @@ endif()
 
 # Inject source tree paths for the example runner integration test.
 target_compile_definitions(${PROJECT_NAME} PRIVATE
-    ETA_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../examples"
-    ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
+    ETA_EXAMPLES_DIR="${ETA_EXAMPLES_SOURCE_DIR}"
+    ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
 )
 
 # Inject the path to the etai binary for spawn tests.
@@ -93,12 +93,12 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 # Pull in the DAP server implementation (not main_dap.cpp) so dap_tests.cpp
 # can link against DapServer with injected streams.
 target_sources(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_io.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src/eta/dap/dap_server.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../lsp/src/eta/lsp/lsp_server.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../jupyter/src/eta/jupyter/kernel_config.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../jupyter/src/eta/jupyter/magics.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src/eta/interpreter/repl_wrap.cpp
+    ${ETA_DAP_SRC_DIR}/eta/dap/dap_io.cpp
+    ${ETA_DAP_SRC_DIR}/eta/dap/dap_server.cpp
+    ${ETA_LSP_SRC_DIR}/eta/lsp/lsp_server.cpp
+    ${ETA_JUPYTER_SRC_DIR}/eta/jupyter/kernel_config.cpp
+    ${ETA_JUPYTER_SRC_DIR}/eta/jupyter/magics.cpp
+    ${ETA_INTERPRETER_SRC_DIR}/eta/interpreter/repl_wrap.cpp
 )
 
 # Always link all runtime libraries
@@ -120,11 +120,11 @@ eta_copy_log_dlls(${PROJECT_NAME})
 
 # Expose session driver, interpreter helpers, DAP, and LSP headers.
 target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../dap/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../jupyter/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../lsp/src
+    ${ETA_INTERPRETER_SRC_DIR}
+    ${ETA_SESSION_SRC_DIR}
+    ${ETA_DAP_SRC_DIR}
+    ${ETA_JUPYTER_SRC_DIR}
+    ${ETA_LSP_SRC_DIR}
 )
 
 # vcpkg x64-windows builds shared Boost; x64-linux builds static.

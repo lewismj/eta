@@ -143,7 +143,7 @@ unset _libext _missing
 
 # Keep Jupyter kernelspec logos next to eta_jupyter so `eta_jupyter --install`
 # can copy them on target machines (without source-tree paths).
-JUPYTER_RES_SRC="${PROJECT_ROOT}/eta/jupyter/resources"
+JUPYTER_RES_SRC="${PROJECT_ROOT}/eta/tools/jupyter/resources"
 if [ -d "$JUPYTER_RES_SRC" ]; then
     mkdir -p "${PREFIX}/bin/resources"
     cp -f "${JUPYTER_RES_SRC}/logo-32x32.png" "${PREFIX}/bin/resources/" 2>/dev/null || true

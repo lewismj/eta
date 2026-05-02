@@ -1,5 +1,29 @@
 project(eta)
 
+set(ETA_CMAKE_MODULE_DIR "${ETA_CMAKE_DIR}")
+set(ETA_LAYOUT_ROOT_DIR "${ETA_SOURCE_DIR}")
+
+set(ETA_CORE_DIR "${ETA_LAYOUT_ROOT_DIR}/core")
+set(ETA_TORCH_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/torch")
+set(ETA_NNG_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/nng")
+set(ETA_STATS_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/stats")
+set(ETA_LOG_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/log")
+set(ETA_INTERPRETER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/interpreter")
+set(ETA_COMPILER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/compiler")
+set(ETA_LSP_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/lsp")
+set(ETA_DAP_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/dap")
+set(ETA_JUPYTER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/jupyter")
+set(ETA_TEST_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/test")
+set(ETA_TEST_RUNNER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/test_runner")
+set(ETA_BENCH_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/bench")
+set(ETA_FUZZ_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/fuzz")
+
+set(ETA_SESSION_SRC_DIR "${ETA_LAYOUT_ROOT_DIR}/session/src")
+set(ETA_INTERPRETER_SRC_DIR "${ETA_INTERPRETER_DIR}/src")
+set(ETA_DAP_SRC_DIR "${ETA_DAP_DIR}/src")
+set(ETA_LSP_SRC_DIR "${ETA_LSP_DIR}/src")
+set(ETA_JUPYTER_SRC_DIR "${ETA_JUPYTER_DIR}/src")
+
 
 # Specify dependencies.
 if(POLICY CMP0167)
@@ -27,7 +51,7 @@ if(Torch_FOUND)
     message(STATUS "libtorch found — building eta_torch bindings")
 else()
     message(STATUS "libtorch not found locally — attempting auto-download (backend=${ETA_TORCH_BACKEND})")
-    include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchLibtorch.cmake")
+    include("${ETA_CMAKE_MODULE_DIR}/FetchLibtorch.cmake")
     find_package(Torch REQUIRED)
     message(STATUS "libtorch auto-downloaded — building eta_torch bindings (backend=${ETA_TORCH_BACKEND})")
 endif()
@@ -54,9 +78,9 @@ endfunction()
 
 # ── nng (always required) ─────────────────────────────────────────────────
 message(STATUS "Fetching nng (nanomsg-next-gen) v1.11 ...")
-include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchNng.cmake")
+include("${ETA_CMAKE_MODULE_DIR}/FetchNng.cmake")
 message(STATUS "Fetching spdlog 1.17.0 ...")
-include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchSpdlog.cmake")
+include("${ETA_CMAKE_MODULE_DIR}/FetchSpdlog.cmake")
 if(NOT TARGET spdlog::spdlog)
     message(FATAL_ERROR "spdlog fetch FAILED - spdlog::spdlog target missing")
 endif()
@@ -66,9 +90,9 @@ endif()
 
 # ── Eigen (always required for stats primitives) ──────────────────────────
 message(STATUS "Fetching Eigen 5.0.0 (header-only) ...")
-include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchEigen.cmake")
+include("${ETA_CMAKE_MODULE_DIR}/FetchEigen.cmake")
 message(STATUS "Fetching csv-parser 4.0.0 ...")
-include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/FetchCsvParser.cmake")
+include("${ETA_CMAKE_MODULE_DIR}/FetchCsvParser.cmake")
 if(NOT TARGET csv::parser)
     message(FATAL_ERROR "csv-parser fetch FAILED - csv::parser target missing")
 endif()
@@ -120,20 +144,25 @@ if(NOT WIN32)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 
-add_subdirectory(core)
-add_subdirectory(torch)
-add_subdirectory(nng)
-add_subdirectory(stats)
-add_subdirectory(log)
-add_subdirectory(interpreter)
-add_subdirectory(compiler)
-add_subdirectory(lsp)
-add_subdirectory(dap)
-add_subdirectory(jupyter)
-add_subdirectory(test)
-add_subdirectory(test_runner)
-add_subdirectory(bench)
-add_subdirectory(fuzz)
+# Runtime core and native capability modules.
+add_subdirectory("${ETA_CORE_DIR}" core)
+add_subdirectory("${ETA_TORCH_DIR}")
+add_subdirectory("${ETA_NNG_DIR}")
+add_subdirectory("${ETA_STATS_DIR}")
+add_subdirectory("${ETA_LOG_DIR}")
+
+# User-facing tools and protocol servers.
+add_subdirectory("${ETA_INTERPRETER_DIR}")
+add_subdirectory("${ETA_COMPILER_DIR}")
+add_subdirectory("${ETA_LSP_DIR}")
+add_subdirectory("${ETA_DAP_DIR}")
+add_subdirectory("${ETA_JUPYTER_DIR}")
+
+# Quality and performance targets.
+add_subdirectory("${ETA_TEST_DIR}")
+add_subdirectory("${ETA_TEST_RUNNER_DIR}")
+add_subdirectory("${ETA_BENCH_DIR}")
+add_subdirectory("${ETA_FUZZ_DIR}")
 
 # Keep the common local workflow target aligned with test/runtime dependencies:
 # building eta_core_test should also rebuild etai + eta_test_runner.
@@ -145,8 +174,8 @@ endif()
 add_custom_target(eta_rebuild_and_test
     COMMAND $<TARGET_FILE:eta_core_test>
     COMMAND $<TARGET_FILE:eta_test>
-        --path "${CMAKE_CURRENT_SOURCE_DIR}/../stdlib"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../stdlib/tests"
+        --path "${ETA_STDLIB_SOURCE_DIR}"
+        "${ETA_STDLIB_SOURCE_DIR}/tests"
     DEPENDS etai eta_test eta_core_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Rebuild etai + eta_test + eta_core_test, then run runtime + stdlib tests"

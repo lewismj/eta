@@ -8,14 +8,14 @@ add_executable(eta_test
 set_target_properties(eta_test PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 target_include_directories(eta_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
+    ${ETA_INTERPRETER_SRC_DIR}
+    ${ETA_SESSION_SRC_DIR}
 )
 
 target_link_libraries(eta_test PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
 target_compile_definitions(eta_test PRIVATE
     ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1
-    ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
+    ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
 )
 
 eta_copy_torch_dlls(eta_test)
@@ -54,8 +54,8 @@ enable_testing()
 add_test(
     NAME eta_stdlib_tests
     COMMAND eta_test
-        --path "${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib/tests"
+        --path "${ETA_STDLIB_SOURCE_DIR}"
+        "${ETA_STDLIB_SOURCE_DIR}/tests"
 )
 
 install(TARGETS eta_test RUNTIME DESTINATION bin)

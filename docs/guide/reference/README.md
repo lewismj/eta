@@ -1,10 +1,12 @@
-# Reference
+﻿# Reference
 
-[← Back to Language Guide](../language_guide.md)
+[← Back to Language Guide](../../language_guide.md)
 
 This folder contains the per-module / per-tool reference documentation.
-The [Language Guide](../language_guide.md) is the place to start; each
+The [Language Guide](../../language_guide.md) is the place to start; each
 chapter there links into the relevant pages here.
+Use [`../README.md`](../README.md) for tutorial chapter deep dives.
+This folder is for module, tool, and runtime/internal reference only.
 
 ---
 
@@ -19,7 +21,7 @@ chapter there links into the relevant pages here.
 | [`compiler.md`](./compiler.md)             | `etac` AOT compiler                              |
 | [`nanboxing.md`](./nanboxing.md)           | NaN-boxed value layout                           |
 | [`optimisations.md`](./optimisations.md)   | Optimisation pass list                           |
-| [`optimization.md`](./optimization.md)     | Heuristics & cost models                         |
+| [`eigen-backend.md`](./eigen-backend.md)   | Eigen backend internals used by numeric modules  |
 | [`finalizers.md`](./finalizers.md)         | Object-lifetime hooks                            |
 
 ## Standard-library modules
@@ -69,7 +71,8 @@ chapter there links into the relevant pages here.
 | [`xva.md`](./xva.md)       | CVA / FVA via AAD                   |
 
 For the featured end-to-end engines see
-[`featured_examples/portfolio.md`](../../featured_examples/portfolio.md)
+[`featured/portfolio.md`](../../featured/portfolio.md)
 and
-[`featured_examples/xva-wwr.md`](../../featured_examples/xva-wwr.md).
+[`featured/xva-wwr.md`](../../featured/xva-wwr.md).
+
 

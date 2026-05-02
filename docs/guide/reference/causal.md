@@ -1,7 +1,7 @@
 # Causal Inference — `std.causal` Reference
 
 [← Back to README](../../../README.md) ·
-[Portfolio Engine](../../featured_examples/portfolio.md) · [Logic Programming](logic.md) ·
+[Portfolio Engine](../../featured/portfolio.md) · [Logic Programming](logic.md) ·
 [CLP](clp.md) · [AAD](aad.md) · [xVA](xva.md)
 
 > [!TIP]
@@ -13,7 +13,7 @@
 >   validation, and a libtorch neural ATE.
 > - [`causal-counterfactual.md`](./causal-counterfactual.md) - focused
 >   counterfactual reference for twin networks, ID*, IDC*, and ETT.
-> - [`portfolio.md`](../../featured_examples/portfolio.md) — full institutional pipeline:
+> - [`portfolio.md`](../../featured/portfolio.md) — full institutional pipeline:
 >   6-node macro DAG, AAD risk sensitivities, CLP(R) + QP allocation,
 >   scenario stress, dynamic control.
 

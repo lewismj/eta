@@ -1,6 +1,6 @@
-# Strings
+﻿# Strings
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 Strings in Eta are immutable, indexed in characters (not bytes), and
 stored in UTF-8 internally. Symbols are interned; convert between the
@@ -112,4 +112,5 @@ typing, header handling, and streaming readers / writers.
 - [I/O & Ports](./io.md)
 - [Collections](./collections.md)
 - [`regex.md`](./reference/regex.md), [`csv.md`](./reference/csv.md)
+
 

@@ -1,8 +1,8 @@
-# Operating System
+﻿# Operating System
 
 [Back to README](../../../README.md) ·
 [Modules and Stdlib](modules.md) ·
-[Language Guide](../language_guide.md) ·
+[Language Guide](../../language_guide.md) ·
 [Subprocesses](process.md) ·
 [Filesystem](fs.md) ·
 [Next Steps](../../next-steps.md)
@@ -129,4 +129,5 @@ auto-imported by `std.prelude`; you can also import it directly:
 - Subprocess execution and child stdio piping live in
   [`std.process`](process.md).
 - Wall-clock and monotonic time live in [`std.time`](time.md).
+
 

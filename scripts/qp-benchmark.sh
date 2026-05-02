@@ -14,8 +14,8 @@ if [[ $# -ge 1 ]]; then
 fi
 
 EXE_CANDIDATES=(
-  "${BUILD_DIR}/eta/bench/eta_qp_bench"
-  "${BUILD_DIR}/eta/bench/Release/eta_qp_bench"
+  "${BUILD_DIR}/eta/qa/bench/eta_qp_bench"
+  "${BUILD_DIR}/eta/qa/bench/Release/eta_qp_bench"
 )
 
 EXE=""

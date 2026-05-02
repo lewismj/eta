@@ -91,7 +91,7 @@ foreach ($exe in $requiredExes) {
 
 # ── 2. Hydrate runtime DLLs from vcpkg / _deps ──────────────────────────────
 # CMake's in-tree install(FILES $<TARGET_FILE:...>) rules in
-# eta/jupyter/CMakeLists.txt only fire when the corresponding FetchContent or
+# eta/tools/jupyter/CMakeLists.txt only fire when the corresponding FetchContent or
 # imported target is fully materialised at configure time. On CI runners that
 # is not always the case (e.g. xeus-zmq's FetchContent build skips libuv when
 # LibUV is not on the vcpkg manifest), so the bundle's bin\ ends up missing

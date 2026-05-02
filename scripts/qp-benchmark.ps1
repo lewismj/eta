@@ -15,8 +15,8 @@ function Resolve-BenchmarkExe {
     param([string]$Root)
 
     $candidates = @(
-        (Join-Path $Root "eta/bench/eta_qp_bench.exe"),
-        (Join-Path $Root "eta/bench/Release/eta_qp_bench.exe")
+        (Join-Path $Root "eta/qa/bench/eta_qp_bench.exe"),
+        (Join-Path $Root "eta/qa/bench/Release/eta_qp_bench.exe")
     )
 
     foreach ($path in $candidates) {

@@ -1,6 +1,6 @@
-# Macros — `syntax-rules`
+﻿# Macros — `syntax-rules`
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 Eta's macro system is `define-syntax` + `syntax-rules`: hygienic,
 pattern-based, and fully expanded at compile time. There are no
@@ -150,4 +150,5 @@ compilation; useful for confirming hygiene and ellipsis behaviour. See
 - [Functions, Closures & Tail Calls](./functions-and-closures.md)
 - [Modules](./reference/modules.md)
 - [`compiler.md`](./reference/compiler.md)
+
 

@@ -3,7 +3,7 @@ project(eta_core_fuzz LANGUAGES CXX)
 
 # Only build fuzzers with Clang (LibFuzzer requirement)
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    message(STATUS "Fuzzing targets require Clang, skipping fuzz/ directory")
+    message(STATUS "Fuzzing targets require Clang, skipping qa/fuzz directory")
     return()
 endif()
 
@@ -48,7 +48,7 @@ function(add_fuzz_target TARGET_NAME SOURCE_FILE CORPUS_NAME)
     set(CORPUS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/corpus/${CORPUS_NAME})
     file(MAKE_DIRECTORY ${CORPUS_DIR})
 
-    # Copy sample seeds if they exist (place your seed files under fuzz/samples/<CORPUS_NAME>)
+    # Copy sample seeds if they exist (place your seed files under qa/fuzz/samples/<CORPUS_NAME>)
     set(SAMPLE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/samples/${CORPUS_NAME})
     if(EXISTS ${SAMPLE_DIR})
         file(GLOB SAMPLE_SEEDS ${SAMPLE_DIR}/*)

@@ -8,7 +8,7 @@ add_executable(eta_lsp
 
 target_include_directories(eta_lsp
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
+    PRIVATE ${ETA_INTERPRETER_SRC_DIR}
 )
 
 target_link_libraries(eta_lsp PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)

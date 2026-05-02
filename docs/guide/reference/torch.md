@@ -522,7 +522,7 @@ Run a single test file:
 etai examples/torch_tests/tensor_creation.eta
 ```
 
-The C++ unit tests in `eta/test/src/torch_tests.cpp` mirror these Eta tests
+The C++ unit tests in `eta/qa/test/src/torch_tests.cpp` mirror these Eta tests
 at the primitive level, verifying heap lifecycle, GC behavior, error paths,
 and end-to-end training convergence directly against the C++ API.
 
@@ -537,8 +537,8 @@ ctest --test-dir build -R torch
 
 The integration is structured as three layers:
 
-1. **`eta/torch/`** — C++ header-only library
-   ([`torch_primitives.h`](../../../eta/torch/src/eta/torch/torch_primitives.h))
+1. **`eta/builtins/torch/`** — C++ header-only library
+   ([`torch_primitives.h`](../../../eta/builtins/torch/src/eta/torch/torch_primitives.h))
    that registers ~60 builtins with the VM's `BuiltinEnvironment`.
 
 2. **`stdlib/std/torch.eta`** — Eta wrapper module that re-exports the

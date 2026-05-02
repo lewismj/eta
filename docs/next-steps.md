@@ -147,7 +147,7 @@ The remaining roadmap splits into three buckets:
 - C++ unit suite (`eta_core_test`) and stdlib test runner (`eta_test`
   wired into CTest (`eta_stdlib_tests`) plus the convenience target
   `eta_rebuild_and_test`.
-- Async DAP harness (`eta/test/src/dap_tests.cpp`) covering the
+- Async DAP harness (`eta/qa/test/src/dap_tests.cpp`) covering the
   paused-session round trip.
 - QP rollout gate: `eta_qp_bench` benchmark plus
   `qp-benchmark.{ps1,sh}` with `--gate` thresholds (see
@@ -480,7 +480,7 @@ useful but each is also pure quality-of-life on top of H1–H4.
   `%process-stderr-port`), stdlib wrapper module
   (`stdlib/std/process.eta`), stdlib tests
   (`stdlib/tests/process.test.eta`), C++ runtime tests
-  (`eta/test/src/process_primitives_tests.cpp`), examples
+  (`eta/qa/test/src/process_primitives_tests.cpp`), examples
   (`examples/process-shellout.eta`, `examples/process-pipeline.eta`),
   and reference docs (`guide/reference/process.md`).
 - ✅ Hosted-platform Phase H1 — Filesystem + OS primitives: native

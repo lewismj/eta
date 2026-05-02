@@ -8,8 +8,8 @@ add_executable(etac
 
 target_include_directories(etac
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
+    PRIVATE ${ETA_INTERPRETER_SRC_DIR}
+    PRIVATE ${ETA_SESSION_SRC_DIR}
 )
 
 target_link_libraries(etac PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
@@ -17,7 +17,7 @@ target_compile_definitions(etac PRIVATE
     ETA_HAS_TORCH=1
     ETA_HAS_NNG=1
     ETA_HAS_STATS=1
-    ETA_STDLIB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../stdlib"
+    ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
 )
 eta_copy_torch_dlls(etac)
 eta_copy_nng_dlls(etac)

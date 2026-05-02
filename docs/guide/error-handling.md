@@ -1,6 +1,6 @@
-# Error Handling
+﻿# Error Handling
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 Eta's exception model is built on two special forms: `raise` and
 `catch`. They compile directly to the `Throw` and `SetupCatch` opcodes
@@ -169,4 +169,5 @@ See [`bytecode-vm.md`](./reference/bytecode-vm.md) for the opcodes.
 - [Control Flow](./control-flow.md)
 - [Logic Programming](./reference/logic.md)
 - [`bytecode-vm.md`](./reference/bytecode-vm.md)
+
 

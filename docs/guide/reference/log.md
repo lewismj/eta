@@ -1,6 +1,6 @@
-# `std.log` — Structured Logging
+﻿# `std.log` — Structured Logging
 
-[← Language Guide](../language_guide.md) ·
+[← Language Guide](../../language_guide.md) ·
 [Modules & Stdlib](./modules.md) ·
 [I/O](../io.md)
 
@@ -269,6 +269,7 @@ as do strings (`"color?"`); unknown keys raise an error.
 
 - Wrapper module: [`stdlib/std/log.eta`](../../../stdlib/std/log.eta)
 - TAP tests: [`stdlib/tests/log.test.eta`](../../../stdlib/tests/log.test.eta)
-- Native primitives: [`eta/log/`](../../../eta/log/) (built on
+- Native primitives: [`eta/builtins/log/`](../../../eta/builtins/log/) (built on
   [`spdlog`](https://github.com/gabime/spdlog))
+
 

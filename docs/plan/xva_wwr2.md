@@ -2,7 +2,7 @@
 
 [Back to plans index](./README.md) - supersedes the ad-hoc layout in
 [`examples/xva-wwr/`](../../examples/xva-wwr) and the long-form
-[`docs/featured_examples/xva-wwr.md`](../featured_examples/xva-wwr.md).
+[`docs/featured/xva-wwr.md`](../featured/xva-wwr.md).
 
 ---
 
@@ -424,7 +424,7 @@ In-notebook assertions (cells flagged `;; TEST`) plus one CI script.
 ## Appendix — What Changed vs the Existing v1 Material
 
 There is no `xva_wwr.md` plan on disk; the comparison baseline is
-`docs/featured_examples/xva-wwr.md` plus the working code in
+`docs/featured/xva-wwr.md` plus the working code in
 `examples/xva-wwr/`.
 
 | Area | v1 (featured example + code) | v2 (this plan) |

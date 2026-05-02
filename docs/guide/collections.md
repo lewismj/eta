@@ -1,6 +1,6 @@
-# Collections
+﻿# Collections
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 This page covers the four primary in-memory collection types — lists,
 vectors, hash maps, and hash sets — and the `std.collections` suite of
@@ -137,4 +137,5 @@ Re-exported by `std.prelude`. The headline combinators:
 - [Strings](./strings.md), [I/O](./io.md)
 - [`hashmap.md`](./reference/hashmap.md), [`fact-table.md`](./reference/fact-table.md)
 - [`csv.md`](./reference/csv.md), [`db.md`](./reference/db.md)
+
 

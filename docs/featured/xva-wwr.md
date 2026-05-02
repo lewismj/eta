@@ -1,8 +1,8 @@
-# Causal xVA Engine — Wrong-Way Risk via `do(...)` Interventions
+﻿# Causal xVA Engine — Wrong-Way Risk via `do(...)` Interventions
 
 [← Back to README](../../README.md) · [xVA overview](../guide/reference/xva.md) ·
 [Causal](../guide/reference/causal.md) · [AAD](../guide/reference/aad.md) · [Torch](../guide/reference/torch.md) ·
-[Language Guide](../guide/language_guide.md) · [Compiler](../guide/reference/compiler.md)
+[Language Guide](../language_guide.md) · [Compiler](../guide/reference/compiler.md)
 
 ---
 
@@ -1738,3 +1738,4 @@ unchanged whether the graph is hand-drawn or machine-emitted.
 | libtorch | [`stdlib/std/torch.eta`](../../stdlib/std/torch.eta) |
 | VM execution engine | [`eta/core/src/eta/runtime/vm/vm.cpp`](../../eta/core/src/eta/runtime/vm/vm.cpp) |
 | Compiler (`etac`) | [`docs/compiler.md`](../guide/reference/compiler.md) |
+

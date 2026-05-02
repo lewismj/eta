@@ -31,7 +31,7 @@ choice, it picks one and explains why.
 13. [Registry (future)](#13-registry-future)
 14. [Migration & compatibility](#14-migration--compatibility)
 15. [Testing strategy](#15-testing-strategy)
-16. [Phased roadmap (M1–M6)](#16-phased-roadmap)
+16. [Phased roadmap (S0-S8, stage-gated)](#16-phased-roadmap-stage-gated)
 17. [Open questions & risks](#17-open-questions--risks)
 18. [Appendix: end-to-end example](#18-appendix-end-to-end-example)
 
@@ -262,7 +262,7 @@ strip     = true
 
 # === Scripts (sandboxed; see §12) ===
 [scripts]
-fmt   = "etac --fmt src/"
+fmt   = "eta fmt src/"              # available once eta fmt lands (post-v1)
 gen   = "python ./tools/gen_tables.py"   # external scripts allowed; explicit opt-in flag at install time
 
 # === Workspaces (reserved for v2) ===
@@ -276,8 +276,8 @@ gen   = "python ./tools/gen_tables.py"   # external scripts allowed; explicit op
 |---|---|---|
 | `package.name` | yes | regex above; must equal directory's `src/<name>.eta` root module |
 | `package.version` | yes | semver 2.0 parse OK |
-| `package.license` | yes | SPDX expression parse OK; warning if missing |
-| `compatibility.eta` | yes | semver range parse OK; resolver checks against running `etac --version` |
+| `package.license` | yes | hard error if missing or invalid SPDX expression |
+| `compatibility.eta` | yes | semver range parse OK; resolver checks against toolchain version from runtime/compiler API (not shelling out to ad-hoc CLI flags) |
 | `dependencies.<n>` | no | each spec must specify exactly one of `version`/`path`/`git`/`tarball` |
 
 ### 4.4 Lockfile: `eta.lock`
@@ -370,7 +370,7 @@ This is the v1 contract that the runtime and the CLI both honour.
 ### 6.1 Search-root precedence
 
 When resolving an `(import M)`, the resolver tries roots in this
-order; **the first hit wins** (no shadow warnings — deterministic):
+order; **the first hit wins** (deterministic):
 
 | # | Root | Origin |
 |---|---|---|
@@ -385,10 +385,9 @@ order; **the first hit wins** (no shadow warnings — deterministic):
 [`module_path.h`](../../eta/core/src/eta/interpreter/module_path.h);
 we only insert layers 1, 2, and 4 in front.)
 
-The resolver **always** walks the full ordered list to verify no
-*later* root contains a *different* file with the same module name; on
-mismatch it emits a warning (configurable to `error` via
-`build.shadow-policy = "error"`).
+Default mode stops at the first hit. Optional strict mode
+(`build.shadow-policy = "error"` or `eta doctor --shadows`) walks the
+full ordered list and fails if duplicates are found.
 
 ### 6.2 Source-vs-bytecode preference per root
 
@@ -422,7 +421,7 @@ ETA_MODULE_PATH=/extra
 1. /work/myapp/src/stats.etac          → not found
 2. /work/myapp/src/stats.eta           → not found
 3. /work/myapp/.eta/modules/stats-1.2.7/target/release/stats.etac  ← HIT (hash OK) ✓
-   (linker also checks 4–6 to confirm no shadow.)
+   (resolution stops here in default mode; strict-shadow mode scans 4–6 too.)
 ```
 
 ### 6.4 Determinism guarantees
@@ -610,25 +609,28 @@ so users with muscle memory and CI scripts keep working.
 
 ### 9.1 Subcommand reference
 
-| Subcommand | Inputs | Outputs / Side-effects |
-|---|---|---|
-| `eta new <name> [--bin\|--lib]` | dir name | Creates `<name>/` with `eta.toml`, `src/<name>.eta`, `tests/`, `.gitignore`, `README.md`. |
-| `eta init [--bin\|--lib]` | (cwd) | As above but in current dir. |
-| `eta build [--release] [--bin NAME]` | (manifest) | Writes `.eta/target/<profile>/*.etac`; updates `eta.lock` if needed. |
-| `eta run [--bin NAME] [--example NAME] [-- args…]` | (manifest) | Runs `etai` on the chosen entry under the project's resolved module path. |
-| `eta test [filter]` | (manifest, `tests/`) | Compiles & runs every `tests/**/*.test.eta`; emits TAP/JUnit; exit code = #failures. |
-| `eta bench [filter]` | (manifest, `bench/`) | Same as test but with `bench` profile and timing harness. |
-| `eta repl` | (manifest, optional) | Launches `eta_repl` with the project's resolved module path pre-loaded. |
-| `eta fmt [--check]` | sources | Wraps `etac --fmt`. Non-zero exit on diff under `--check`. |
-| `eta add <pkg>[@<range>] [--dev] [--features=…]` | manifest, network | Inserts dep into `eta.toml`, runs resolver, updates `eta.lock`, downloads. |
-| `eta remove <pkg>` | manifest | Reverse of `add`. |
-| `eta update [<pkg>…]` | manifest, network | Re-solves; rewrites `eta.lock`. |
-| `eta install [<pkg>] [--global]` | (registry) | `--global`: installs binary into `~/.eta/bin/`. Without `<pkg>`: installs current project's `[[bin]]`s. |
-| `eta publish [--dry-run]` | manifest | Builds release artifact, signs (post-v1), pushes to registry. Refuses `path = …` deps. |
-| `eta vendor [--target DIR]` | manifest, lockfile | Materialises all deps locally; suitable for air-gapped CI. |
-| `eta tree [--depth N]` | lockfile | Prints the resolved dependency tree. |
-| `eta clean [--all]` | (manifest) | Removes `.eta/target/`; `--all` also removes `.eta/modules/`. |
-| `eta doc [--open]` | sources | Renders module-level docstrings to `docs/api/`. (post-v1) |
+| Subcommand | Stage | Inputs | Outputs / Side-effects |
+|---|---|---|---|
+| `eta new <name> [--bin\|--lib]` | S2 | dir name | Creates `<name>/` with `eta.toml`, `src/<name>.eta`, `tests/`, `.gitignore`, `README.md`. |
+| `eta init [--bin\|--lib]` | S2 | (cwd) | As above but in current dir. |
+| `eta tree [--depth N]` | S2 | lockfile/manifest | Prints deterministic resolved dependency tree. |
+| `eta run [--bin NAME] [--example NAME] [-- args…]` | S2 | (manifest optional) | Manifest mode: runs with resolved module path. No-manifest mode: degrades to `etai`. |
+| `eta build [--release] [--bin NAME]` | S3 | manifest | Writes `.eta/target/<profile>/*.etac`; lockfile read-only in S3/S4. |
+| `eta repl` | S3 | (manifest, optional) | Launches `eta_repl` with resolved module path pre-loaded. |
+| `eta add <pkg>[@<range>] [--dev] [--features=…]` | S6 | manifest, network | Inserts dep into `eta.toml`, runs resolver, updates `eta.lock`, downloads. |
+| `eta remove <pkg>` | S6 | manifest | Reverse of `add`. |
+| `eta update [<pkg>…]` | S6 | manifest, network | Re-solves; rewrites `eta.lock`. |
+| `eta test [filter]` | S6 | manifest, `tests/` | Compiles & runs `tests/**/*.test.eta`; emits TAP/JUnit; exit code = #failures. |
+| `eta bench [filter]` | S6 | manifest, `bench/` | Same as test but bench profile and timing harness. |
+| `eta vendor [--target DIR]` | S6 | manifest, lockfile | Materialises all deps locally for offline/air-gapped CI. |
+| `eta install [<pkg>] [--global]` | S6 | manifest/registry | Installs binaries globally or current package bins. |
+| `eta publish [--dry-run]` | S8 | manifest | Builds release artifact; signatures/registry in post-v1 phase. |
+| `eta clean [--all]` | S6 | manifest | Removes `.eta/target/`; `--all` also removes `.eta/modules/`. |
+| `eta fmt [--check]` | post-v1 | sources | Not part of v1 unless formatter lands in toolchain first. |
+| `eta doc [--open]` | post-v1 | sources | Renders module-level docstrings to `docs/api/`. |
+
+Commands not yet in the current stage must fail with a clear
+`NotYetImplemented(stage=Sx)` message (no silent no-op).
 
 ### 9.2 Compatibility
 
@@ -642,10 +644,11 @@ so users with muscle memory and CI scripts keep working.
 
 ### 9.3 Implementation note
 
-The `eta` umbrella is itself a small C++ binary (target `eta` in
-`eta/cli/`) that re-uses `eta_core` for parsing the manifest TOML and
-calling into a new `eta::package::Resolver`. The umbrella exec's the
-existing tool binaries — no behavior is reimplemented.
+`eta/cli/` does not exist today; this plan introduces it in S2 as a new
+target. The umbrella re-uses `eta_core` for manifest parsing and calls a
+new `eta::package::Resolver`, then execs existing binaries (`etai`,
+`etac`, `eta_repl`) where possible. We explicitly avoid re-implementing
+compiler/interpreter behavior in the umbrella.
 
 ---
 
@@ -658,7 +661,7 @@ the prompt asked us to be opinionated about.
 
 | Option | Mechanism | Pros | Cons |
 |---|---|---|---|
-| **(a)** Ship precompiled `.etac` next to binary | `cmake --install` packages `stdlib/*.etac` produced at build time | Fast cold start; deterministic; debuggable (sources also shipped) | Release pipeline must run a bootstrap-compiled `etac` over `stdlib/` for every platform |
+| **(a)** Ship precompiled `.etac` next to binary | `cmake --install` packages `stdlib/*.etac` produced at build time | Fast cold start; deterministic; debuggable (sources also shipped) | Release pipeline must compile `stdlib/*.eta` to `.etac` during packaging on every platform |
 | **(b)** Compile on first run into user cache | `Driver::load_prelude()` falls back to `~/.eta/cache/stdlib-<ver>/` if no bundled `.etac` | Zero release-pipeline cost | First run pays full compile cost (several seconds for the full prelude); permission issues on locked-down systems |
 | **(c)** Embed prelude bytecode into the interpreter binary | `stdlib/prelude.etac` linked as a resource (`xxd -i` / `embed`) | Zero-IO cold start of prelude | Couples runtime binary size to stdlib; harder to ship a stdlib hot-fix |
 
@@ -687,18 +690,31 @@ Why each layer:
 
 ### 10.3 Build-system integration
 
-Add to `eta/CMakeLists.txt` (sketch):
+Add to `eta/CMakeLists.txt` (sketch, aligned with the current `etac`
+CLI rather than hypothetical bootstrap flags):
 
 ```cmake
-# After etac is built, run it over stdlib/*.eta to produce stdlib/*.etac
-# inside the build tree.
-add_custom_target(stdlib_etac ALL
+# Build prelude.etac with the existing etac flags.
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/stdlib/prelude.etac
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/stdlib
     COMMAND ${CMAKE_COMMAND} -E env
             ETA_MODULE_PATH=${CMAKE_SOURCE_DIR}/stdlib
-        $<TARGET_FILE:etac> --bootstrap
-            --src-root  ${CMAKE_SOURCE_DIR}/stdlib
-            --out-root  ${CMAKE_BINARY_DIR}/stdlib
-            -O2 --no-debug
+            $<TARGET_FILE:etac>
+            ${CMAKE_SOURCE_DIR}/stdlib/prelude.eta
+            -o ${CMAKE_BINARY_DIR}/stdlib/prelude.etac
+            --path ${CMAKE_SOURCE_DIR}/stdlib
+            -O --no-debug
+    DEPENDS etac ${CMAKE_SOURCE_DIR}/stdlib/prelude.eta)
+
+# Build remaining stdlib modules via a helper script that invokes etac
+# once per .eta file (no new etac bootstrap mode required for v1).
+add_custom_target(stdlib_etac ALL
+    COMMAND ${PYTHON_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/scripts/build_stdlib_etac.py
+            --etac $<TARGET_FILE:etac>
+            --src-root ${CMAKE_SOURCE_DIR}/stdlib
+            --out-root ${CMAKE_BINARY_DIR}/stdlib
     DEPENDS etac)
 
 # Embed prelude.etac into eta_core as a resource.
@@ -828,7 +844,7 @@ breaking it.
 3. **Tests.** `stdlib/tests/*.test.eta` are reorganised under the new
    per-package `tests/` convention (see §4.1). The
    `_putenv_s("ETA_MODULE_PATH", …)` invocation in
-   `eta/test/src/module_path_tests.cpp` is replaced by the resolver's
+   `eta/qa/test/src/module_path_tests.cpp` is replaced by the resolver's
    programmatic API.
 4. **CI.** Add a `eta build --release` step that exercises the
    precompiled-stdlib fast path; keep the existing `etai`-from-source
@@ -838,7 +854,7 @@ breaking it.
    installer narratives.
 
 The cut-over is staged: the old `etai` / `etac` / `ETA_MODULE_PATH`
-contract keeps working through M3, and only deprecates after M5.
+contract keeps working through S3, and only deprecates after S6.
 
 ---
 
@@ -863,67 +879,127 @@ keeps running.
 
 ---
 
-## 16. Phased roadmap
+## 16. Phased roadmap (stage-gated)
 
-Each milestone is independently shippable and adds verifiable user
-value.
+Each stage is mergeable and testable on its own. We do not advance to
+the next stage until the current stage's test gate is green in CI.
 
-### M1 — Manifest + resolver (P0, ~2 weeks)
+### S0 — Contract freeze + harness (P0, ~2-3 days)
 
-- TOML parser integration (vendor `toml++` or equivalent).
-- `eta::package::Manifest` + validators.
-- PubGrub-lite resolver, `path` and registry-stub source kinds only.
-- `eta.lock` writer/reader.
-- `eta new`, `eta init`, `eta tree`.
+- Freeze current behavior with additional regression tests around:
+  `ModulePathResolver`, prelude loading, and `.etac` load/execute.
+- Add new test targets `eta_pkg_test` and `eta_cli_test` with
+  placeholder smoke tests so later stages can add coverage incrementally.
+- No user-visible behavior change.
 
-**Deliverable:** `eta tree` on a hand-written manifest prints a
-deterministic resolved graph.
+**Test gate:** existing `eta_core_test` and `eta_test` stay green; new
+test targets build and run empty/smoke suites.
 
-### M2 — `.etac` v4 + recompile-on-stale (P0, ~1 week)
+**Deliverable:** a stable baseline that prevents packaging refactors
+from regressing current `etai`/`etac` workflows.
 
-- Bump `FORMAT_VERSION` to 4; add compiler-id, package-meta,
-  dep-hash sections (§7.2).
-- Implement freshness check (§7.3) inside `BytecodeSerializer` and
-  the resolver.
-- Backward-compatible v3 read.
+### S1 — Manifest + lockfile core (path deps only) (P0, ~1 week)
 
-**Deliverable:** existing tests pass; a stale `.etac` is silently
-recompiled; `bytecode_serializer_tests.cpp` extended.
+- TOML parser integration (`toml++` or equivalent).
+- `eta::package::Manifest` schema + validators.
+- `eta.lock` read/write (schema v1), deterministic ordering.
+- Resolver supports local `path` dependencies only.
 
-### M3 — `ETA_MODULE_PATH` semantics + project-local root (P0, ~1 week)
+**Test gate:** `eta_pkg_test` covers parse errors, required fields,
+deterministic lockfile output, and path-dep graph resolution.
 
-- Extend `ModulePathResolver` to know about `.etac` lookup, project
-  root, and user cache (§6.1, 6.2).
-- Wire the resolver's output into the `Driver`'s search path.
+**Deliverable:** hand-written `eta.toml` + path deps resolve to a
+deterministic in-memory graph and stable `eta.lock`.
 
-**Deliverable:** an `eta build` of a two-package workspace
-(`stats` lib + `myapp` bin) compiles and runs without any
-`ETA_MODULE_PATH` env var set.
+### S2 — Minimal `eta` umbrella CLI (P0, ~1 week)
 
-### M4 — Stdlib precompile + embedded prelude (P0, ~1 week)
+- Introduce new `eta/cli/` target and binary `eta`.
+- Implement only: `eta new`, `eta init`, `eta tree`, `eta run`.
+- No-manifest `eta run file.eta` degrades to `etai file.eta`.
+- All other subcommands return `NotYetImplemented(stage=Sx)`.
 
-- CMake target for stage-0 stdlib build (§10.3).
-- `prelude_blob.cpp` embedding; `Driver::load_prelude()` chooses
-  embedded blob → bundled `.etac` → recompile in that order.
-- Install bundle includes `stdlib/*.etac`.
+**Test gate:** `eta_cli_test` verifies scaffolded project layout,
+deterministic `eta tree`, and no-manifest run compatibility.
 
-**Deliverable:** cold `etai hello.eta` startup (clean cache) drops
-by ≥ 50% on a stopwatch test.
+**Deliverable:** users can create a project and inspect its resolved
+graph without touching `ETA_MODULE_PATH`.
 
-### M5 — Dependency install (`eta add`/`build`/`vendor`) (P1, ~2 weeks)
+### S3 — Runtime resolver integration (P0, ~1 week)
 
-- `git` and `tarball` source kinds.
-- `eta add`, `eta remove`, `eta update`, `eta install`, `eta vendor`.
-- `eta test` + `eta run` honouring deps.
-- Examples + stdlib migrated to manifests (§14).
+- Add project-root discovery (`eta.toml` walk-up).
+- Inject `<project>/src` and `.eta/modules/...` roots ahead of env and
+  stdlib fallbacks.
+- Module lookup preference becomes `.etac` then `.eta` per root.
+- Keep first-hit semantics in default mode; add strict shadow scan mode.
 
-**Deliverable:** a fresh checkout can `git clone … && eta build` and
-it works without any extra environment setup.
+**Test gate:** integration fixture with two local packages builds/runs
+without setting `ETA_MODULE_PATH`; strict-shadow test catches duplicate
+module names.
 
-### M6 — Registry + signing (P2, post-v1, ~4 weeks)
+**Deliverable:** reproducible project-local resolution with explicit and
+tested precedence.
+
+### S4 — `.etac` v4 metadata + stale-artifact policy (P0, ~1 week)
+
+- Bump bytecode format to v4 and append compiler/package/dependency
+  metadata.
+- Keep backward-compatible v3 reader path.
+- Implement freshness checks and stale handling rules from §7.3.
+
+**Test gate:** extend `bytecode_serializer_tests.cpp` with v3 read, v4
+round-trip, stale detection, and builtin/compiler mismatch behavior.
+
+**Deliverable:** stale bytecode is detected deterministically with
+clear diagnostics and safe fallback behavior.
+
+### S5 — Precompiled prelude + bundled stdlib `.etac` (P0, ~1 week)
+
+- Build `prelude.etac` and stdlib `.etac` artifacts in CMake using the
+  current `etac` CLI surface (no bootstrap-mode dependency).
+- Embed prelude blob in runtime.
+- `Driver::load_prelude()` order:
+  embedded blob → bundled `.etac` → source recompile fallback.
+
+**Test gate:** stdlib artifact load smoke test in `eta_core_test`;
+clean-cache startup benchmark shows measurable cold-start reduction
+(`>=30%` target for the first landing, then optimize further).
+
+**Deliverable:** faster startup with robust fallback and no user action.
+
+### S6 — Dependency workflows (P1, ~2 weeks)
+
+- Add source kinds `git+rev` and `tarball+sha256`.
+- Implement `eta add/remove/update/build/test/bench/vendor/install/clean`.
+- Materialize `.eta/modules` from lockfile with cache dedup.
+- Migrate selected examples to manifests (full migration can continue
+  after S6).
+
+**Test gate:** fresh checkout scenario:
+`git clone ... && eta build && eta test` succeeds without manual
+environment setup; offline build works after `eta vendor`.
+
+**Deliverable:** end-to-end package workflow for real projects.
+
+### S7 — Tooling integration (P1, ~1-2 weeks)
+
+- `eta_repl`, `eta_lsp`, `eta_dap`, and `eta_jupyter` consume resolved
+  project roots and lockfile context when inside a package.
+- Manifest and lockfile diagnostics surfaced in LSP.
+
+**Test gate:** targeted REPL/LSP/DAP/Jupyter integration tests confirm
+project discovery and dependency-aware navigation/debugging.
+
+**Deliverable:** packaging behavior is consistent across all frontends.
+
+### S8 — Registry + signing (P2, post-v1, ~4 weeks)
 
 - HTTP read API + `eta publish`.
-- Sigstore-based signatures, registry mirroring, `--offline` mode.
+- Signature verification, mirroring, and hardened `--offline` flows.
+
+**Test gate:** publish/install round-trip against staging registry,
+signature verification and mirror replay tests.
+
+**Deliverable:** public distribution channel with provenance checks.
 
 ---
 
@@ -944,7 +1020,7 @@ it works without any extra environment setup.
    alongside `.etac`? *Recommendation:* yes, but in a "v3" effort
    after the registry stabilises.
 5. **Re-exporting from a package root** — convention or compiler-
-   enforced? *Recommendation:* convention in v1, lint warning in M5.
+   enforced? *Recommendation:* convention in v1, lint warning in S6.
 6. **Lockfile commit policy for libraries.** Cargo's "libs ignore the
    lockfile" rule catches some users out. *Recommendation:* document
    loudly that *only the consuming app's lockfile decides*; the

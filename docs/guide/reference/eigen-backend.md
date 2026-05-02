@@ -1,6 +1,6 @@
-# Eigen — Linear Algebra Backend
+﻿# Eigen — Linear Algebra Backend
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../../language_guide.md)
 
 [Eigen](https://eigen.tuxfamily.org/) is the C++ template library that
 powers Eta's dense linear algebra. It is a **backend**, not a
@@ -9,10 +9,10 @@ the runtime uses Eigen internally for the numerics in:
 
 | Module                       | What Eigen does                                  |
 | :--------------------------- | :----------------------------------------------- |
-| [`std.stats`](./reference/stats.md)   | OLS / GLS regression, PCA, covariance, descriptive statistics |
-| [`std.torch`](./reference/torch.md)   | Light-weight tensor ops on the CPU path          |
+| [`std.stats`](./stats.md)             | OLS / GLS regression, PCA, covariance, descriptive statistics |
+| [`std.torch`](./torch.md)             | Light-weight tensor ops on the CPU path          |
 | [`std.clpr`](./clpr.md)      | LP / QP solver workspace                         |
-| [`std.aad`](./reference/aad.md)       | Vector primal / adjoint storage                  |
+| [`std.aad`](./aad.md)                 | Vector primal / adjoint storage                  |
 
 This page documents what that means in practice, what guarantees the
 backend gives, and how to read the relevant performance trade-offs.
@@ -46,7 +46,7 @@ Regression, decompositions, and projections all return Eta values
 (stats:pca X 'k 3)         ; top-3 PCA via Eigen's SVD
 ```
 
-See [`stats.md`](./reference/stats.md) for the full surface.
+See [`stats.md`](./stats.md) for the full surface.
 
 ### `std.torch`
 
@@ -69,7 +69,7 @@ Reverse-mode AD stores primal and adjoint vectors as
 ## Build configuration
 
 Eigen is fetched via CMake at configure time
-(see [`cmake/FetchEigen.cmake`](../../cmake/FetchEigen.cmake)).
+(see [`cmake/FetchEigen.cmake`](../../../cmake/FetchEigen.cmake)).
 There is no Eta-side configuration: the same binary uses Eigen for all
 subsystems.
 
@@ -100,7 +100,7 @@ benefit from a vendor BLAS.
 
 ## When to drop into libtorch instead
 
-Use [`std.torch`](./reference/torch.md) when you need:
+Use [`std.torch`](./torch.md) when you need:
 
 - GPU acceleration,
 - gradient tracking on tensor-shaped objects,
@@ -116,7 +116,8 @@ Stay with the Eigen-backed modules (`std.stats`, `std.clpr`) when:
 
 ## Related
 
-- [`stats.md`](./reference/stats.md), [`torch.md`](./reference/torch.md)
-- [CLP(R)](./clpr.md), [`aad.md`](./reference/aad.md)
-- [`architecture.md`](../architecture.md)
+- [`stats.md`](./stats.md), [`torch.md`](./torch.md)
+- [CLP(R)](./clpr.md), [`aad.md`](./aad.md)
+- [`architecture.md`](../../architecture.md)
+
 

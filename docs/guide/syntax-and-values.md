@@ -1,6 +1,6 @@
-# Syntax & Values
+﻿# Syntax & Values
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 This chapter is the lexical and value-level reference for Eta. It
 describes the surface syntax read by the front-end, the kinds of values
@@ -150,4 +150,5 @@ indexed via `vector-ref` / `vector-set!`. Use `make-vector`,
 - [Bindings & Scope](./bindings-and-scope.md)
 - [Strings](./strings.md), [Collections](./collections.md)
 - [`nanboxing.md`](./reference/nanboxing.md), [`runtime.md`](./reference/runtime.md)
+
 

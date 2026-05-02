@@ -36,7 +36,7 @@
 > realistic engine is mostly **adding finance** (exposure simulator,
 > curves, netting/CSA) rather than changing the runtime.
 > 
-> See [wrong-way risk](../../featured_examples/xva-wwr.md) Wrong-Way Risk using `do`-calculus.
+> See [wrong-way risk](../../featured/xva-wwr.md) Wrong-Way Risk using `do`-calculus.
 
 ---
 

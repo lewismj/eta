@@ -1,13 +1,12 @@
-# Testing
+﻿# Testing
 
-[← Back to Language Guide](./language_guide.md)
+[← Back to Language Guide](../language_guide.md)
 
 Eta ships with a small testing library, `std.test`, and a dedicated
 runner binary, `eta_test`. Tests are ordinary Eta values: a *test case*
 is a name + thunk; a *group* is a name + a list of children.
 
-> **Reference:** [`std_lib_tests.md`](../std_lib_tests.md) for the
-> standard-library test layout.
+> **Reference:** stdlib integration tests live under `stdlib/tests/`.
 
 ---
 
@@ -110,7 +109,7 @@ extension — see [`vscode.md`](./reference/vscode.md).
 
 ## Related
 
-- [`std_lib_tests.md`](../std_lib_tests.md)
 - [Debugging](./debugging.md)
 - [`vscode.md`](./reference/vscode.md)
+
 

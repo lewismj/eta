@@ -1,6 +1,6 @@
-# Release Notes
+﻿# Release Notes
 
-[<- Back to README](README.md)
+[<- Back to README](../README.md)
 
 ---
 
@@ -40,7 +40,7 @@ Highlights:
   - `process:handle?`
   - `process:stdin-port`, `process:stdout-port`, `process:stderr-port`
 - New C++ runtime tests:
-  - `eta/test/src/process_primitives_tests.cpp`
+  - `eta/qa/test/src/process_primitives_tests.cpp`
 - New stdlib tests:
   - `stdlib/tests/process.test.eta`
 - New examples:
@@ -95,7 +95,7 @@ Highlights:
 Documentation updates:
 
 - New reference page [docs/guide/reference/json.md](guide/reference/json.md).
-- [docs/guide/language_guide.md](guide/language_guide.md) — section 13
+- [docs/language_guide.md](language_guide.md) — section 13
   ("I/O, Filesystem & OS") gains a JSON subsection alongside the
   filesystem / OS coverage.
 - [docs/guide/reference/modules.md](guide/reference/modules.md) — new
@@ -153,7 +153,7 @@ Documentation updates:
 
 - New reference pages: [docs/guide/reference/fs.md](guide/reference/fs.md)
   and [docs/guide/reference/os.md](guide/reference/os.md).
-- [docs/guide/language_guide.md](guide/language_guide.md) — section 13
+- [docs/language_guide.md](language_guide.md) — section 13
   renamed to "I/O, Filesystem & OS" with subsections covering
   `std.fs` and `std.os`.
 - [docs/guide/reference/modules.md](guide/reference/modules.md) — new
@@ -194,12 +194,13 @@ Highlights:
   - `stdlib/tests/hashset.test.eta`
   - `stdlib/tests/regex.test.eta` coverage for `regex:match-groups-hash`
 - New C++ runtime tests:
-  - `eta/test/src/hash_map_tests.cpp`
+  - `eta/qa/test/src/hash_map_tests.cpp`
 
 Documentation updates:
 
-- Added [docs/hashmap.md](hashmap.md).
-- Added module reference entries in [docs/modules.md](modules.md).
+- Added [docs/guide/reference/hashmap.md](guide/reference/hashmap.md).
+- Added module reference entries in
+  [docs/guide/reference/modules.md](guide/reference/modules.md).
 
 ---
 
@@ -214,7 +215,7 @@ macros, AAD, libtorch, CLP, causal, actors — with no FFI hop.
 
 **Highlights:**
 
-- New executable `eta_jupyter` built from `eta/jupyter/` against
+- New executable `eta_jupyter` built from `eta/tools/jupyter/` against
   `xeus` + `xeus-zmq` (vendored via `cmake/FetchXeus.cmake`); listed in
   the standard `eta_all` target.
 - Runtime kernelspec installation:
@@ -234,7 +235,7 @@ macros, AAD, libtorch, CLP, causal, actors — with no FFI hop.
   `jupyter:dag` rich-display helpers used by the showcase notebooks.
 - Three showcase notebooks under `examples/notebooks/`:
   `LanguageBasics.ipynb`, `AAD.ipynb`, `Portfolio.ipynb`.
-- Docs: [docs/jupyter.md](jupyter.md).
+- Docs: [docs/guide/reference/jupyter.md](guide/reference/jupyter.md).
 
 ### Documentation
 
@@ -285,3 +286,4 @@ BUILD_DIR=./out/wsl-clang-release GATE=1 ./scripts/qp-benchmark.sh
 
 - `ETA_CLP_QP_BACKEND` is now compiled in unconditionally in
   `eta/core/CMakeLists.txt`.
+

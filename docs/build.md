@@ -148,11 +148,11 @@ When running from a build directory (not the install tree):
 
 ```bash
 # Via CLI flag
-./build/eta/interpreter/etai --path ./stdlib examples/hello.eta
+./build/eta/tools/interpreter/etai --path ./stdlib examples/hello.eta
 
 # Or via environment variable
 export ETA_MODULE_PATH=./stdlib
-./build/eta/interpreter/etai examples/hello.eta
+./build/eta/tools/interpreter/etai examples/hello.eta
 ```
 
 ---
@@ -199,7 +199,7 @@ etai examples/torch_tests/tensor_creation.eta
 
 #### C++ Unit Tests (Torch)
 
-The C++ tests in `eta/test/src/torch_tests.cpp` mirror the Eta tests at
+The C++ tests in `eta/qa/test/src/torch_tests.cpp` mirror the Eta tests at
 the primitive level, additionally verifying heap lifecycle, GC behaviour,
 error paths, and builtin registration:
 

@@ -11,8 +11,8 @@ add_executable(eta_dap
 target_include_directories(eta_dap
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
     # Driver is header-only; make session headers visible to the DAP server.
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../session/src
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../interpreter/src
+    PRIVATE ${ETA_SESSION_SRC_DIR}
+    PRIVATE ${ETA_INTERPRETER_SRC_DIR}
 )
 
 target_link_libraries(eta_dap PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
