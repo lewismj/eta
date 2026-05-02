@@ -1434,4 +1434,4 @@ leaderboard scoring (M15).
 
 ---
 
-<!-- Implementation note (2026-04-30): M0, M1, M2, M3, M4, M5, M6, M7, M8, and M9 are implemented in-tree (see `stdlib/std/causal.eta`, `stdlib/std/causal/*.eta`, and `stdlib/tests/causal-*.test.eta`). M10 (structure learning), M11 (rendering), and the HTE extension milestones M12–M15 (CATE meta-learners, causal forest, cross-fitting/DML, Qini/policy evaluation) remain outstanding. -->
+<!-- Implementation note (2026-05-02): M0-M9 are implemented in-tree (see `stdlib/std/causal.eta`, `stdlib/std/causal/*.eta`, and `stdlib/tests/causal-*.test.eta`). M12 (CATE meta-learners) is implemented in `stdlib/std/causal/cate.eta` with `stdlib/tests/causal-cate.test.eta`. M13 (tree/forest/causal-forest) is implemented in `stdlib/std/ml/tree.eta`, `stdlib/std/ml/forest.eta`, and `stdlib/std/causal/forest.eta` with `stdlib/tests/ml-tree.test.eta` and `stdlib/tests/causal-forest.test.eta`. Remaining extension milestones are M14 and M15. -->

@@ -1,0 +1,289 @@
+;;; std/causal/forest.eta -- Causal forest built on DR pseudo-outcomes.
+
+(module std.causal.forest
+  (import std.core)
+  (import std.collections)
+  (import std.stats)
+  (import std.ml.tree)
+  (import std.ml.forest)
+  (import std.causal.estimate)
+  (export
+    forest:fit-causal-forest
+    forest:predict-cate
+    forest:variable-importance
+    forest:local-aipw)
+  (begin
+
+    ;; -- Helpers ----------------------------------------------------------
+
+    (defun %obs-get (obs var)
+      (let ((p (assq var obs)))
+        (if p
+            (cdr p)
+            (error 'unknown-variable var))))
+
+    (defun %as-binary (v x-name)
+      (cond
+        ((equal? v 1) 1.0)
+        ((equal? v 0) 0.0)
+        ((eq? v #t) 1.0)
+        ((eq? v #f) 0.0)
+        (else (error 'non-binary-treatment x-name v))))
+
+    (defun %clip-prob (p)
+      (let ((eps 1e-6))
+        (cond
+          ((< p eps) eps)
+          ((> p (- 1.0 eps)) (- 1.0 eps))
+          (else p))))
+
+    (defun %opts->alist (opts who)
+      (let loop ((xs opts) (acc '()))
+        (cond
+          ((null? xs) (reverse acc))
+          ((null? (cdr xs))
+           (error (string-append who ": options must be key/value pairs")))
+          (else
+           (loop (cdr (cdr xs))
+                 (cons (cons (car xs) (cadr xs)) acc))))))
+
+    (defun %opt-ref (opts key default)
+      (let ((entry (assq key opts)))
+        (if entry (cdr entry) default)))
+
+    (defun %normalize-int (v fallback)
+      (if (and (number? v) (> v 0))
+          v
+          fallback))
+
+    (defun %half-floor (n)
+      (/ (- n (modulo n 2)) 2))
+
+    (defun %clip (x lo hi)
+      (cond
+        ((< x lo) lo)
+        ((> x hi) hi)
+        (else x)))
+
+    (defun %map4 (f ws xs ys zs)
+      (if (or (null? ws) (null? xs) (null? ys) (null? zs))
+          '()
+          (cons (f (car ws) (car xs) (car ys) (car zs))
+                (%map4 f (cdr ws) (cdr xs) (cdr ys) (cdr zs)))))
+
+    (defun %row (obs cols)
+      (map* (lambda (col) (%obs-get obs col)) cols))
+
+    (defun %design (data cols)
+      (causal:design-matrix data cols))
+
+    (defun %response (data y)
+      (causal:response-vector data y))
+
+    (defun %model-ref (model key who)
+      (let ((entry (assq key model)))
+        (if entry
+            (cdr entry)
+            (error (string-append who ": invalid causal-forest model; missing key")
+                   key))))
+
+    (defun %learner-ref (spec key who)
+      (let ((entry (assq key spec)))
+        (if entry
+            (cdr entry)
+            (error (string-append who ": learner-spec is missing required key")
+                   key))))
+
+    (defun %fit-classifier (spec x-matrix y-vector who)
+      ((%learner-ref spec 'fit who) x-matrix y-vector))
+
+    (defun %predict-classifier (spec model x-matrix who)
+      ((%learner-ref spec 'predict who) model x-matrix))
+
+    (defun %predict-one-forest (model row)
+      (let ((ys (forest:predict model (list row))))
+        (if (null? ys) 0.0 (car ys))))
+
+    (defun %filter-arm (data x arm)
+      (filter (lambda (obs)
+                (= (%as-binary (%obs-get obs x) x) arm))
+              data))
+
+    (defun %assert-both-arms (d0 d1 who)
+      (if (or (null? d0) (null? d1))
+          (error (string-append who ": expected both treatment arms in data"))
+          'ok))
+
+    (defun %forest-fit (x-matrix y-vector n-trees min-leaf max-depth
+                                 subsample honest? seed mtry-opt)
+      (let ((base
+              (list x-matrix y-vector
+                    'n-trees n-trees
+                    'min-leaf min-leaf
+                    'max-depth max-depth
+                    'subsample subsample
+                    'honest? honest?
+                    'seed seed)))
+        (if mtry-opt
+            (apply forest:fit (append base (list 'mtry mtry-opt)))
+            (apply forest:fit base))))
+
+    (defun %leaf-members-by-id (leaves leaf-id)
+      (let loop ((rest leaves))
+        (if (null? rest)
+            '()
+            (let* ((leaf (car rest))
+                   (id-entry (assq 'id leaf)))
+              (if (and id-entry (= (cdr id-entry) leaf-id))
+                  (let ((m-entry (assq 'members leaf)))
+                    (if m-entry (cdr m-entry) '()))
+                  (loop (cdr rest)))))))
+
+    (defun %accumulate-members! (weights members w n)
+      (let loop ((ms members))
+        (when (not (null? ms))
+          (let ((idx (car ms)))
+            (when (and (number? idx) (>= idx 0) (< idx n))
+              (vector-set! weights idx (+ (vector-ref weights idx) w))))
+          (loop (cdr ms)))))
+
+    ;; -- Public API -------------------------------------------------------
+
+    ;; Fit a causal forest with DR pseudo-outcomes:
+    ;;   phi = mu1(z) - mu0(z)
+    ;;         + x*(y-mu1(z))/e(z) - (1-x)*(y-mu0(z))/(1-e(z))
+    ;; and then regress phi on z via random forest.
+    (defun forest:fit-causal-forest (data y x z . opts)
+      (let* ((who "forest:fit-causal-forest")
+             (opt-map (%opts->alist opts who))
+             (n-trees (%normalize-int (%opt-ref opt-map 'n-trees 500) 500))
+             (min-leaf (%normalize-int (%opt-ref opt-map 'min-leaf 5) 5))
+             (max-depth (%normalize-int (%opt-ref opt-map 'max-depth 10) 10))
+             (subsample (%clip (%opt-ref opt-map 'subsample 0.8) 0.05 1.0))
+             (seed (%normalize-int (%opt-ref opt-map 'seed 1) 1))
+             (honest? (%opt-ref opt-map 'honest? #t))
+             (mtry-opt (%opt-ref opt-map 'mtry #f))
+             (nuisance-default (max 50 (%half-floor n-trees)))
+             (nuisance-trees (%normalize-int
+                               (%opt-ref opt-map 'nuisance-trees nuisance-default)
+                               nuisance-default))
+             (prop-spec (%opt-ref opt-map 'propensity-spec
+                                  (stats:make-logistic)))
+             (d1 (%filter-arm data x 1.0))
+             (d0 (%filter-arm data x 0.0)))
+        (%assert-both-arms d0 d1 who)
+        (let* ((z-all (%design data z))
+               (mu1-model (%forest-fit (%design d1 z)
+                                       (%response d1 y)
+                                       nuisance-trees
+                                       min-leaf
+                                       max-depth
+                                       subsample
+                                       honest?
+                                       (+ seed 101)
+                                       mtry-opt))
+               (mu0-model (%forest-fit (%design d0 z)
+                                       (%response d0 y)
+                                       nuisance-trees
+                                       min-leaf
+                                       max-depth
+                                       subsample
+                                       honest?
+                                       (+ seed 151)
+                                       mtry-opt))
+               (mu1-hat (forest:predict mu1-model z-all))
+               (mu0-hat (forest:predict mu0-model z-all))
+               (e-model (%fit-classifier prop-spec
+                                         z-all
+                                         (%response data x)
+                                         who))
+               (e-hat-raw (%predict-classifier prop-spec
+                                               e-model
+                                               z-all
+                                               who))
+               (e-hat (map* %clip-prob e-hat-raw))
+               (phi (%map4
+                      (lambda (obs m1 m0 e)
+                        (let* ((xv (%as-binary (%obs-get obs x) x))
+                               (yv (%obs-get obs y))
+                               (e* (%clip-prob e)))
+                          (+ (- m1 m0)
+                             (- (/ (* xv (- yv m1)) e*)
+                                (/ (* (- 1.0 xv) (- yv m0))
+                                   (- 1.0 e*))))))
+                      data mu1-hat mu0-hat e-hat))
+               (tau-forest (%forest-fit z-all
+                                        phi
+                                        n-trees
+                                        min-leaf
+                                        max-depth
+                                        subsample
+                                        honest?
+                                        (+ seed 211)
+                                        mtry-opt)))
+          (list
+            (cons 'tag 'causal-forest)
+            (cons 'data data)
+            (cons 'y y)
+            (cons 'x x)
+            (cons 'z z)
+            (cons 'phi phi)
+            (cons 'tau-forest tau-forest)
+            (cons 'mu1-model mu1-model)
+            (cons 'mu0-model mu0-model)
+            (cons 'propensity-model e-model)
+            (cons 'propensity e-hat)
+            (cons 'options opt-map)))))
+
+    ;; Predict tau(z) for one observation alist.
+    (defun forest:predict-cate (cf row)
+      (let* ((z (%model-ref cf 'z "forest:predict-cate"))
+             (tau-forest (%model-ref cf 'tau-forest "forest:predict-cate")))
+        (%predict-one-forest tau-forest (%row row z))))
+
+    ;; Importance aligned with z columns:
+    ;;   ((z1 . w1) (z2 . w2) ...)
+    (defun forest:variable-importance (cf)
+      (let* ((z (%model-ref cf 'z "forest:variable-importance"))
+             (tau-forest (%model-ref cf 'tau-forest "forest:variable-importance"))
+             (entry (assq 'feature-importance tau-forest))
+             (weights (if entry
+                          (cdr entry)
+                          (map* (lambda (_z) 0.0) z))))
+        (map2 (lambda (name w) (cons name w)) z weights)))
+
+    ;; Alpha-weighted local AIPW estimate at query row.
+    ;; Uses leaf memberships from all trees to form observation weights.
+    (defun forest:local-aipw (cf row)
+      (let* ((tau-forest (%model-ref cf 'tau-forest "forest:local-aipw"))
+             (phi (%model-ref cf 'phi "forest:local-aipw"))
+             (n (length phi))
+             (trees-entry (assq 'trees tau-forest)))
+        (if (or (<= n 0) (not trees-entry) (null? (cdr trees-entry)))
+            (forest:predict-cate cf row)
+            (let* ((trees (cdr trees-entry))
+                   (tcount (length trees))
+                   (z (%model-ref cf 'z "forest:local-aipw"))
+                   (z-row (%row row z))
+                   (weights (make-vector n 0.0))
+                   (phi-vec (list->vector phi)))
+              (let loop-trees ((rest trees))
+                (when (not (null? rest))
+                  (let* ((tree (car rest))
+                         (leaf-id (tree:leaf-membership tree z-row))
+                         (members (%leaf-members-by-id (tree:leaves tree) leaf-id))
+                         (m (length members)))
+                    (when (> m 0)
+                      (%accumulate-members! weights
+                                            members
+                                            (/ 1.0 (* tcount m))
+                                            n))
+                    (loop-trees (cdr rest)))))
+              (let loop-sum ((i 0) (acc 0.0))
+                (if (= i n)
+                    acc
+                    (loop-sum (+ i 1)
+                              (+ acc (* (vector-ref weights i)
+                                        (vector-ref phi-vec i))))))))))
+
+  ))

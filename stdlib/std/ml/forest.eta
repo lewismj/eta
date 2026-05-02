@@ -1,0 +1,224 @@
+;;; std/ml/forest.eta -- Bagged regression forests over std.ml.tree.
+
+(module std.ml.forest
+  (import std.core)
+  (import std.collections)
+  (import std.ml.tree)
+  (import std.net)
+  (export
+    forest:fit
+    forest:predict
+    forest:fit-parallel
+    forest:make-rf-regressor)
+  (begin
+
+    ;; -- Helpers ----------------------------------------------------------
+
+    (defun %opts->alist (opts who)
+      (let loop ((xs opts) (acc '()))
+        (cond
+          ((null? xs) (reverse acc))
+          ((null? (cdr xs))
+           (error (string-append who ": options must be key/value pairs")))
+          (else
+           (loop (cdr (cdr xs))
+                 (cons (cons (car xs) (cadr xs)) acc))))))
+
+    (defun %opt-ref (opts key default)
+      (let ((entry (assq key opts)))
+        (if entry (cdr entry) default)))
+
+    (defun %normalize-int (v fallback)
+      (if (and (number? v) (> v 0))
+          v
+          fallback))
+
+    (defun %clip (x lo hi)
+      (cond
+        ((< x lo) lo)
+        ((> x hi) hi)
+        (else x)))
+
+    (defun %assert-rectangular (x-matrix who)
+      (if (null? x-matrix)
+          x-matrix
+          (let ((p (length (car x-matrix))))
+            (if (every? (lambda (row) (= (length row) p)) x-matrix)
+                x-matrix
+                (error (string-append who ": expected rectangular design matrix"))))))
+
+    (defun %assert-length-match (x-matrix y-vector who)
+      (if (= (length x-matrix) (length y-vector))
+          y-vector
+          (error (string-append who ": expected matching X/Y lengths"))))
+
+    (defun %zeros (n)
+      (if (<= n 0)
+          '()
+          (cons 0.0 (%zeros (- n 1)))))
+
+    (defun %lcg-next (seed)
+      (let ((s (if (<= seed 0) 1 seed)))
+        (modulo (* 48271 s) 2147483647)))
+
+    ;; Returns (x-sample y-sample row-ids next-seed).
+    (defun %bootstrap-sample (x-matrix y-vector sample-size seed)
+      (let ((n (length x-matrix)))
+        (if (= n 0)
+            (list '() '() '() seed)
+            (let loop ((i sample-size) (s seed) (xs '()) (ys '()) (ids '()))
+              (if (= i 0)
+                  (list (reverse xs) (reverse ys) (reverse ids) s)
+                  (let* ((s2 (%lcg-next s))
+                         (idx (modulo s2 n)))
+                    (loop (- i 1)
+                          s2
+                          (cons (list-ref x-matrix idx) xs)
+                          (cons (list-ref y-vector idx) ys)
+                          (cons idx ids))))))))
+
+    (defun %sum (xs)
+      (foldl (lambda (acc x) (+ acc x)) 0.0 xs))
+
+    (defun %tree-predict-one (tree row)
+      (let ((ys (tree:predict tree (list row))))
+        (if (null? ys) 0.0 (car ys))))
+
+    (defun %forest-predict-row (trees row)
+      (if (null? trees)
+          0.0
+          (/ (foldl (lambda (acc t) (+ acc (%tree-predict-one t row)))
+                    0.0
+                    trees)
+             (length trees))))
+
+    (defun %safe-sqrt-int (p)
+      (if (<= p 0)
+          1
+          (let loop ((k 1))
+            (if (> (* k k) p)
+                (max 1 (- k 1))
+                (loop (+ k 1))))))
+
+    (defun %subsample-size (n frac)
+      (cond
+        ((<= n 0) 0)
+        ((>= frac 1.0) n)
+        ((<= frac 0.0) 1)
+        (else
+         (let loop ((k 1))
+           (if (or (>= k n)
+                   (>= (/ (* 1.0 k) n) frac))
+               k
+               (loop (+ k 1)))))))
+
+    (defun %tree-counts (tree p)
+      (let ((entry (assq 'split-counts tree)))
+        (if entry
+            (cdr entry)
+            (%zeros p))))
+
+    (defun %counts-merge (a b)
+      (map2 (lambda (x y) (+ x y)) a b))
+
+    (defun %forest-importance (trees p)
+      (if (or (null? trees) (<= p 0))
+          (%zeros p)
+          (let* ((counts
+                   (foldl (lambda (acc tree)
+                            (%counts-merge acc (%tree-counts tree p)))
+                          (%zeros p)
+                          trees))
+                 (total (%sum counts)))
+            (if (<= total 0.0)
+                (%zeros p)
+                (map* (lambda (c) (/ c total)) counts)))))
+
+    ;; -- Public API -------------------------------------------------------
+
+    ;; (forest:fit X y 'n-trees 200 'min-leaf 5 'max-depth 10
+    ;;              'mtry 4 'subsample 0.8 'honest? #f 'seed 1)
+    (defun forest:fit (x-matrix y-vector . opts)
+      (let* ((who "forest:fit")
+             (_xok (%assert-rectangular x-matrix who))
+             (_yok (%assert-length-match x-matrix y-vector who))
+             (n (length x-matrix))
+             (p (if (null? x-matrix) 0 (length (car x-matrix))))
+             (opt-map (%opts->alist opts who))
+             (n-trees (%normalize-int (%opt-ref opt-map 'n-trees 100) 100))
+             (min-leaf (%normalize-int (%opt-ref opt-map 'min-leaf 5) 5))
+             (max-depth (%normalize-int (%opt-ref opt-map 'max-depth 8) 8))
+             (mtry-default (%safe-sqrt-int p))
+             (mtry (%normalize-int (%opt-ref opt-map 'mtry mtry-default)
+                                   mtry-default))
+             (subsample-raw (%opt-ref opt-map 'subsample 1.0))
+             (subsample (%clip subsample-raw 0.05 1.0))
+             (honest? (%opt-ref opt-map 'honest? #f))
+             (seed (%normalize-int (%opt-ref opt-map 'seed 1) 1))
+             (sample-size (%subsample-size n subsample)))
+        (if (< n-trees 1)
+            (error "forest:fit: expected n-trees >= 1")
+            (let loop ((t 0) (s seed) (acc '()))
+              (if (= t n-trees)
+                  (let* ((trees (reverse acc))
+                         (importance (%forest-importance trees p)))
+                    (list
+                      (cons 'tag 'ml-forest)
+                      (cons 'trees trees)
+                      (cons 'n-features p)
+                      (cons 'feature-importance importance)
+                      (cons 'options opt-map)))
+                  (let* ((boot (%bootstrap-sample x-matrix
+                                                  y-vector
+                                                  sample-size
+                                                  s))
+                         (xb (list-ref boot 0))
+                         (yb (list-ref boot 1))
+                         (ids (list-ref boot 2))
+                         (s2 (list-ref boot 3))
+                         (tree-seed (%lcg-next s2))
+                         (tree
+                           (tree:fit xb yb
+                                     'row-ids ids
+                                     'min-leaf min-leaf
+                                     'max-depth max-depth
+                                     'mtry mtry
+                                     'honest? honest?
+                                     'seed tree-seed)))
+                    (loop (+ t 1) (%lcg-next tree-seed) (cons tree acc))))))))
+
+    ;; Predict scalar response for each row in X.
+    (defun forest:predict (model x-matrix)
+      (let ((trees-entry (assq 'trees model)))
+        (if trees-entry
+            (let ((trees (cdr trees-entry)))
+              (map* (lambda (row) (%forest-predict-row trees row))
+                    x-matrix))
+            (map* (lambda (_row) 0.0) x-matrix))))
+
+    ;; API-compatible hook. Uses serial training currently.
+    (defun forest:fit-parallel (x-matrix y-vector . opts)
+      (apply forest:fit (append (list x-matrix y-vector) opts)))
+
+    ;; Learner-spec adapter for std.causal.cate and other modules.
+    ;; (forest:make-rf-regressor n-trees min-leaf [forest opts...])
+    (defun forest:make-rf-regressor (n-trees min-leaf . rest)
+      (let* ((base-opts (append (list 'n-trees n-trees
+                                      'min-leaf min-leaf)
+                                rest))
+             (fit (lambda (x-matrix y-vector)
+                    (apply forest:fit
+                           (append (list x-matrix y-vector) base-opts))))
+             (predict (lambda (model x-matrix)
+                        (forest:predict model x-matrix)))
+             (fit-weighted
+               (lambda (x-matrix y-vector w-vector)
+                 ;; Weighted RF fit is not implemented yet; keep API shape.
+                 (fit x-matrix y-vector))))
+        (list
+          (cons 'fit fit)
+          (cons 'predict predict)
+          (cons 'fit-weighted fit-weighted)
+          (cons 'kind 'regressor))))
+
+  ))

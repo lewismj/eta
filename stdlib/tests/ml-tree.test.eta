@@ -1,0 +1,169 @@
+;;; stdlib/tests/ml-tree.test.eta -- Tests for std.ml.tree and std.ml.forest
+
+(module ml.tree.tests
+  (import std.test
+          std.core
+          std.collections
+          std.ml.tree
+          std.ml.forest)
+  (begin
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (defun %lcg-next (seed)
+      (let ((s (if (<= seed 0) 1 seed)))
+        (modulo (* 48271 s) 2147483647)))
+
+    (defun %rand01 (seed)
+      (let ((s2 (%lcg-next seed)))
+        (cons (/ (* 1.0 s2) 2147483647.0) s2)))
+
+    (defun %target-fn (row)
+      (let* ((x1 (list-ref row 0))
+             (x2 (list-ref row 1))
+             (x3 (list-ref row 2))
+             (step (if (> x3 0.0) 2.0 -2.0)))
+        (+ (* 2.0 x1 x1)
+           (* -1.5 x2)
+           step
+           (* 1.2 x1 x2))))
+
+    (defun %noise (i)
+      (cond
+        ((= (modulo i 4) 0) 1.5)
+        ((= (modulo i 4) 1) -1.5)
+        ((= (modulo i 4) 2) 0.75)
+        (else -0.75)))
+
+    ;; Returns (X y).
+    (defun make-noisy-train-data (n seed)
+      (let loop ((i 0) (s seed) (xs '()) (ys '()))
+        (if (= i n)
+            (list (reverse xs) (reverse ys))
+            (let* ((r1 (%rand01 s))
+                   (u1 (car r1))
+                   (s1 (cdr r1))
+                   (r2 (%rand01 s1))
+                   (u2 (car r2))
+                   (s2 (cdr r2))
+                   (r3 (%rand01 s2))
+                   (u3 (car r3))
+                   (s3 (cdr r3))
+                   (x1 (- (* 2.0 u1) 1.0))
+                   (x2 (- (* 2.0 u2) 1.0))
+                   (x3 (- (* 2.0 u3) 1.0))
+                   (row (list x1 x2 x3))
+                   (y (+ (%target-fn row) (%noise i))))
+              (loop (+ i 1) s3 (cons row xs) (cons y ys))))))
+
+    ;; Returns (X y) with noise-free outcomes.
+    (defun make-clean-test-data (n seed)
+      (let loop ((i 0) (s seed) (xs '()) (ys '()))
+        (if (= i n)
+            (list (reverse xs) (reverse ys))
+            (let* ((r1 (%rand01 s))
+                   (u1 (car r1))
+                   (s1 (cdr r1))
+                   (r2 (%rand01 s1))
+                   (u2 (car r2))
+                   (s2 (cdr r2))
+                   (r3 (%rand01 s2))
+                   (u3 (car r3))
+                   (s3 (cdr r3))
+                   (x1 (- (* 2.0 u1) 1.0))
+                   (x2 (- (* 2.0 u2) 1.0))
+                   (x3 (- (* 2.0 u3) 1.0))
+                   (row (list x1 x2 x3))
+                   (y (%target-fn row)))
+              (loop (+ i 1) s3 (cons row xs) (cons y ys))))))
+
+    ;; Simple one-feature piecewise-constant training set.
+    (defun make-piecewise-data ()
+      (let* ((xs (map* (lambda (i)
+                         (let ((x (/ (- i 20.0) 10.0)))
+                           (list x)))
+                       (range 0 41)))
+             (ys (map* (lambda (row)
+                         (if (< (car row) 0.0) 1.0 3.0))
+                       xs)))
+        (list xs ys)))
+
+    (defun mse (actual predicted)
+      (if (not (= (length actual) (length predicted)))
+          (error "mse expects equal-length vectors")
+          (if (null? actual)
+              0.0
+              (/ (foldl (lambda (acc ap)
+                          (let ((d (- (car ap) (cdr ap))))
+                            (+ acc (* d d))))
+                        0.0
+                        (zip actual predicted))
+                 (length actual)))))
+
+    (define piecewise (make-piecewise-data))
+    (define px (car piecewise))
+    (define py (cadr piecewise))
+
+    (define suite
+      (make-group "std.ml.tree + std.ml.forest"
+        (list
+
+          (make-test "CART recovers piecewise-constant signal"
+            (lambda ()
+              (let* ((model (tree:fit px py
+                                      'min-leaf 2
+                                      'max-depth 4
+                                      'seed 7))
+                     (probe (list (list -1.4) (list -0.2) (list 0.3) (list 1.6)))
+                     (pred (tree:predict model probe))
+                     (leaf-ids (map* (lambda (leaf) (cdr (assq 'id leaf)))
+                                     (tree:leaves model)))
+                     (probe-id (tree:leaf-membership model (list -1.0))))
+                (assert-approx-equal 1.0 (list-ref pred 0) 0.20)
+                (assert-approx-equal 1.0 (list-ref pred 1) 0.20)
+                (assert-approx-equal 3.0 (list-ref pred 2) 0.20)
+                (assert-approx-equal 3.0 (list-ref pred 3) 0.20)
+                (assert-true (%member? probe-id leaf-ids)))))
+
+          (make-test "Random forest beats a single deep tree on noisy nonlinear data"
+            (lambda ()
+              (let* ((train (make-noisy-train-data 220 17))
+                     (test (make-clean-test-data 140 991))
+                     (xtr (car train))
+                     (ytr (cadr train))
+                     (xte (car test))
+                     (yte (cadr test))
+                     (single (tree:fit xtr ytr
+                                       'min-leaf 1
+                                       'max-depth 18
+                                       'seed 31))
+                     (rf (forest:fit xtr ytr
+                                     'n-trees 80
+                                     'min-leaf 4
+                                     'max-depth 12
+                                     'mtry 2
+                                     'subsample 0.75
+                                     'seed 31))
+                     (mse-tree (mse yte (tree:predict single xte)))
+                     (mse-rf (mse yte (forest:predict rf xte))))
+                (assert-true (< mse-rf mse-tree)))))
+
+          (make-test "RF learner-spec follows the regressor protocol"
+            (lambda ()
+              (let* ((spec (forest:make-rf-regressor 30 2
+                                                     'max-depth 8
+                                                     'seed 11))
+                     (fit (cdr (assq 'fit spec)))
+                     (predict (cdr (assq 'predict spec)))
+                     (model (fit px py))
+                     (pred (predict model (list (list -0.6) (list 0.6)))))
+                (assert-approx-equal 1.0 (list-ref pred 0) 0.35)
+                (assert-approx-equal 3.0 (list-ref pred 1) 0.35)))))
+
+          )))
+
+    (print-tap (run suite)))

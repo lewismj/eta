@@ -1,0 +1,139 @@
+;;; stdlib/tests/causal-forest.test.eta -- Tests for std.causal.forest
+
+(module causal.forest.tests
+  (import std.test
+          std.core
+          std.collections
+          std.stats
+          std.causal.cate
+          std.causal.forest)
+  (begin
+
+    (defun make-row (x z1 z2 y)
+      (list
+        (cons 'x x)
+        (cons 'z1 z1)
+        (cons 'z2 z2)
+        (cons 'y y)))
+
+    (defun append3 (a b c)
+      (append a (append b c)))
+
+    (defun %noise (i)
+      (cond
+        ((= (modulo i 3) 0) 0.20)
+        ((= (modulo i 3) 1) -0.20)
+        (else 0.0)))
+
+    (defun %arm-rows (n x z1 z2 y0 tau)
+      (let loop ((i 0) (acc '()))
+        (if (= i n)
+            (reverse acc)
+            (let* ((eps (%noise i))
+                   (y (+ y0 (if (= x 1) tau 0.0) eps))
+                   (row (make-row x z1 z2 y)))
+              (loop (+ i 1) (cons row acc))))))
+
+    ;; Piecewise treatment effect:
+    ;;   tau(z1) = 0.6 for z1 < 0, tau(z1) = 2.1 for z1 >= 0.
+    (defun true-cate (row)
+      (if (< (cdr (assq 'z1 row)) 0) 0.6 2.1))
+
+    ;; Confounded assignment via z2: more treatment at larger z2.
+    (defun make-step-cate-data ()
+      (let ((z1s '(-2 -1 0 1 2))
+            (z2s '(-1 0 1)))
+        (foldl
+          (lambda (acc z1)
+            (append
+              acc
+              (foldl
+                (lambda (acc2 z2)
+                  (let* ((tau (if (< z1 0) 0.6 2.1))
+                         (base (+ 2.0
+                                  (* 0.25 z1)
+                                  (* 0.50 z2)
+                                  (* 0.20 (* z1 z2))
+                                  (* 0.15 (* z1 z1))))
+                         (n1 (cond
+                               ((= z2 1) 18)
+                               ((= z2 0) 12)
+                               (else 6)))
+                         (n0 (cond
+                               ((= z2 1) 6)
+                               ((= z2 0) 12)
+                               (else 18))))
+                    (append3 acc2
+                             (%arm-rows n0 0 z1 z2 base tau)
+                             (%arm-rows n1 1 z1 z2 base tau))))
+                '()
+                z2s)))
+          '()
+          z1s)))
+
+    (defun pehe (preds rows)
+      (if (null? rows)
+          0.0
+          (/ (foldl (lambda (acc pair)
+                      (let* ((pred (car pair))
+                             (row (cdr pair))
+                             (truth (true-cate row))
+                             (d (- pred truth)))
+                        (+ acc (* d d))))
+                    0.0
+                    (zip preds rows))
+             (length rows))))
+
+    (defun alist-keys (alist)
+      (map* car alist))
+
+    (defun %member? (x xs)
+      (cond
+        ((null? xs) #f)
+        ((equal? x (car xs)) #t)
+        (else (%member? x (cdr xs)))))
+
+    (define d (make-step-cate-data))
+    (define ols (stats:make-ols-regressor))
+    (define t-learner (cate:fit-t-learner d 'y 'x '(z1 z2) ols))
+    (define cf
+      (forest:fit-causal-forest d 'y 'x '(z1 z2)
+                                'n-trees 80
+                                'nuisance-trees 40
+                                'min-leaf 4
+                                'max-depth 10
+                                'subsample 0.80
+                                'seed 42))
+
+    (define suite
+      (make-group "std.causal.forest"
+        (list
+
+          (make-test "Causal forest CATE PEHE is below linear T-learner on step DGP"
+            (lambda ()
+              (let* ((pred-t (map* (lambda (row) (cate:predict t-learner row)) d))
+                     (pred-cf (map* (lambda (row) (forest:predict-cate cf row)) d))
+                     (pehe-t (pehe pred-t d))
+                     (pehe-cf (pehe pred-cf d)))
+                (assert-true (< pehe-cf pehe-t)))))
+
+          (make-test "variable-importance returns normalized weights for z columns"
+            (lambda ()
+              (let* ((vi (forest:variable-importance cf))
+                     (keys (alist-keys vi))
+                     (sumw (foldl (lambda (acc kv) (+ acc (cdr kv))) 0.0 vi)))
+                (assert-true (%member? 'z1 keys))
+                (assert-true (%member? 'z2 keys))
+                (assert-true (> sumw 0.95))
+                (assert-true (< sumw 1.05)))))
+
+          (make-test "local-aipw is aligned with predict-cate at a query row"
+            (lambda ()
+              (let* ((row (car d))
+                     (local (forest:local-aipw cf row))
+                     (pred (forest:predict-cate cf row)))
+                (assert-approx-equal pred local 0.30))))
+
+          )))
+
+    (print-tap (run suite))))

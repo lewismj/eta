@@ -37,6 +37,9 @@ and estimation surface end-to-end:
 | g-formula, IPW, AIPW, TMLE, bootstrap CIs, E-value, Rosenbaum bounds           | `std.causal.estimate`      | ✅ |
 | PC / FCI / GES / NOTEARS structure learning + CI tests                         | `std.causal.learn`         | ✅ |
 | DOT, Mermaid and LaTeX rendering, `define-dag` macro                           | `std.causal.render`        | ✅ |
+| CATE meta-learners (S/T/X/R/DR)                                                | `std.causal.cate`          | ✅ |
+| Regression CART + random forest                                                 | `std.ml.tree`, `std.ml.forest` | ✅ |
+| Causal forest + local AIPW query                                                | `std.causal.forest`        | ✅ |
 
 The layer also composes with:
 
@@ -46,6 +49,7 @@ The layer also composes with:
 - **`std.stats`** — Fisher-z residualisation for CI tests, OLS / GLS for
   outcome and propensity models
 - **`std.torch`** — neural propensity / outcome models for `std.causal.estimate`
+- **`std.ml.tree`** / **`std.ml.forest`** — tree and random-forest learners for CATE backbones
 
 The finance-oriented running example estimates the **causal effect of
 market-beta exposure on excess stock returns**, adjusting for sector
@@ -638,6 +642,105 @@ etai examples/causal_demo.eta
 
 ---
 
+## CATE Meta-Learners
+
+For conditional treatment-effect modelling:
+
+```scheme
+(import std.causal.cate)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(cate:fit-s-learner data y x z reg-spec)` | Fit an S-learner (single response model over `[x z]`) |
+| `(cate:fit-t-learner data y x z reg-spec)` | Fit a T-learner (separate response models per treatment arm) |
+| `(cate:fit-x-learner data y x z reg-spec cls-spec)` | Fit an X-learner with propensity-weighted pseudo-outcome blending |
+| `(cate:fit-r-learner data y x z reg-spec [opts...])` | Fit an R-learner via orthogonalized pseudo-residual regression |
+| `(cate:fit-dr-learner data y x z reg-spec cls-spec [opts...])` | Fit a DR-learner via doubly-robust pseudo-outcomes |
+| `(cate:predict model row)` | Predict CATE at one observation alist |
+| `(cate:ate model data)` | Average predicted CATE over a dataset |
+| `(cate:rank model data)` | Return `(sorted-data . tau-hats)` in descending CATE order |
+| `(cate:residual-r2 actual predicted)` | `R^2` diagnostic for two equal-length numeric vectors |
+| `(cate:propensity-overlap scores [threshold])` | Overlap summary alist for propensity-score vectors |
+
+Learner-spec protocol expected by the fitters:
+
+```scheme
+((fit . (lambda (X y) -> model))
+ (predict . (lambda (model X) -> yhat))
+ (kind . regressor|classifier)
+ (fit-weighted . (lambda (X y w) -> model))) ; optional
+```
+
+`std.stats` already ships compatible constructors:
+
+```scheme
+(define reg (stats:make-ols-regressor))
+(define cls (stats:make-logistic))
+(define m (cate:fit-dr-learner data 'y 'x '(z1 z2 z3) reg cls))
+(cate:ate m data)
+```
+
+---
+
+## Trees, Random Forests, and Causal Forest
+
+M13 introduces native tree/forest learners plus a causal-forest wrapper.
+
+### Regression tree (`std.ml.tree`)
+
+```scheme
+(import std.ml.tree)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(tree:fit X y [opts...])` | Fit regression CART (`'min-leaf`, `'max-depth`, `'mtry`, `'honest?`, `'seed`, optional `'row-ids`) |
+| `(tree:predict model X)` | Predict a numeric response vector |
+| `(tree:leaf-membership model row)` | Return stable leaf id for one feature row |
+| `(tree:leaves model)` | Return leaf records with id, prediction, members, and size |
+
+### Random forest (`std.ml.forest`)
+
+```scheme
+(import std.ml.forest)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(forest:fit X y [opts...])` | Fit a bagged regression forest (`'n-trees`, `'min-leaf`, `'max-depth`, `'mtry`, `'subsample`, `'honest?`, `'seed`) |
+| `(forest:predict model X)` | Predict by averaging tree predictions |
+| `(forest:fit-parallel X y [opts...])` | API-compatible entry point (currently serial implementation) |
+| `(forest:make-rf-regressor n-trees min-leaf [opts...])` | Return learner-spec adapter compatible with `std.causal.cate` |
+
+### Causal forest (`std.causal.forest`)
+
+```scheme
+(import std.causal.forest)
+```
+
+| Function | Description |
+| -------- | ----------- |
+| `(forest:fit-causal-forest data y x z [opts...])` | Fit DR-pseudo-outcome forest for CATE (`'n-trees`, `'nuisance-trees`, `'min-leaf`, `'max-depth`, `'subsample`, `'honest?`, `'mtry`, `'seed`) |
+| `(forest:predict-cate cf row)` | Predict CATE for one observation alist |
+| `(forest:variable-importance cf)` | Return normalized `(feature . weight)` importances aligned with `z` |
+| `(forest:local-aipw cf row)` | Return alpha-weighted local AIPW estimate at a query row |
+
+Minimal usage:
+
+```scheme
+(define cf
+  (forest:fit-causal-forest data 'y 'x '(z1 z2 z3)
+                            'n-trees 500
+                            'min-leaf 5
+                            'subsample 0.8
+                            'seed 42))
+
+(forest:predict-cate cf (car data))
+```
+
+---
+
 ## CLP Integration
 
 `std.clp` connects to causal reasoning through **structural constraints**
@@ -673,19 +776,18 @@ analysis:
 ## Status & Roadmap
 
 > [!IMPORTANT]
-> Milestones **M0 – M11** of the
+> Milestones **M0 – M13** of the
 > [`causal_plan.md`](../../plan/causal_plan.md) are implemented in-tree:
 > ADMGs and latent projection, linear-time d-separation, the three
 > rules, ID / IDC with hedge witnesses, generalised adjustment /
 > front-door / IV, mediation, transportability, counterfactuals,
 > AIPW / TMLE / IPW / g-formula estimation with bootstrap CIs and
 > sensitivity, PC / FCI / GES / NOTEARS-style structure learning,
-> and DOT / Mermaid / LaTeX rendering.
+> DOT / Mermaid / LaTeX rendering, CATE meta-learners, and
+> tree/random-forest/causal-forest estimators.
 >
-> Outstanding (extension milestones **M12 – M15** in the plan):
+> Outstanding (extension milestones **M14 – M15** in the plan):
 >
-> - **CATE meta-learners** (S / T / X / R / DR-learner)
-> - **Trees, random forests, and Causal Forest**
 > - **Cross-fitting / Double Machine Learning** harness (DML PLR / IRM)
 > - **Uplift / Qini / policy-value scoring**
 >
@@ -709,7 +811,10 @@ analysis:
 | Mediation effect estimators          | [`stdlib/std/causal/mediation.eta`](../../../stdlib/std/causal/mediation.eta)             |
 | Transportability helpers             | [`stdlib/std/causal/transport.eta`](../../../stdlib/std/causal/transport.eta)             |
 | Counterfactual helpers               | [`stdlib/std/causal/counterfactual.eta`](../../../stdlib/std/causal/counterfactual.eta)   |
-| Structure learning helpers           | [`stdlib/std/causal/learn.eta`](../../../stdlib/std/causal/learn.eta)                     |
+| CATE meta-learner API                | [`stdlib/std/causal/cate.eta`](../../../stdlib/std/causal/cate.eta)                       |
+| Causal forest helpers                | [`stdlib/std/causal/forest.eta`](../../../stdlib/std/causal/forest.eta)                   |
+| Regression tree                      | [`stdlib/std/ml/tree.eta`](../../../stdlib/std/ml/tree.eta)                               |
+| Random forest                        | [`stdlib/std/ml/forest.eta`](../../../stdlib/std/ml/forest.eta)                           |
 | Structure learning helpers           | [`stdlib/std/causal/learn.eta`](../../../stdlib/std/causal/learn.eta)                     |
 | Estimation backends                  | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | Rendering (DOT / Mermaid / LaTeX) and `define-dag` macro | [`stdlib/std/causal/render.eta`](../../../stdlib/std/causal/render.eta) |
@@ -719,5 +824,8 @@ analysis:
 | Full identification demo             | [`examples/do-calculus/demo.eta`](../../../examples/do-calculus/demo.eta)                 |
 | CSV module                           | [`stdlib/std/csv.eta`](../../../stdlib/std/csv.eta)                                         |
 | End-to-end primer (causal + NN ATE)  | [`examples/causal_demo.eta`](../../../examples/causal_demo.eta)                           |
+| CATE test suite                      | [`stdlib/tests/causal-cate.test.eta`](../../../stdlib/tests/causal-cate.test.eta)         |
+| Tree/forest test suite               | [`stdlib/tests/ml-tree.test.eta`](../../../stdlib/tests/ml-tree.test.eta)                 |
+| Causal-forest test suite             | [`stdlib/tests/causal-forest.test.eta`](../../../stdlib/tests/causal-forest.test.eta)     |
 | CLP binding for `clp(Z)` / `clp(FD)` | [`stdlib/std/clp.eta`](../../../stdlib/std/clp.eta)                                       |
 | C++ constraint store                 | [`clp/constraint_store.h`](../../../eta/core/src/eta/runtime/clp/constraint_store.h)      |
