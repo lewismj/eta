@@ -7,6 +7,8 @@ import {
     findPcLine,
     findFunctionHeaderLine,
     inferCalleeFuncIndex,
+    parseInstructionIndex,
+    computeDisassemblyLineRangeForSource,
 } from '../../src/disassemblyView';
 import { parseFunctions, styleDisassemblyTreeLine } from '../../src/disassemblyTreeView';
 
@@ -101,6 +103,16 @@ describe('disassembly parser (B4)', () => {
         assert.strictEqual(current.iconId, 'debug-stackframe');
         assert.strictEqual(current.colorId, 'editorInfo.foreground');
         assert.strictEqual(current.description, 'PC');
+    });
+
+    it('extracts instruction indices and computes source-correlated bytecode ranges', () => {
+        assert.strictEqual(parseInstructionIndex('       7: Add'), 7);
+        assert.strictEqual(parseInstructionIndex('not an instruction'), undefined);
+
+        const range = computeDisassemblyLineRangeForSource(SAMPLE, [0, 1]);
+        assert.ok(range);
+        assert.strictEqual(range!.startLine, 8);
+        assert.strictEqual(range!.endLine, 18);
     });
 });
 

@@ -21,6 +21,7 @@ export interface EnvironmentSettings {
     showBuiltins: boolean;
     showInternal: boolean;
     showNil: boolean;
+    showChangedOnly: boolean;
 }
 
 export interface EnvironmentSelection {
@@ -61,6 +62,7 @@ export function getEnvironmentSettings(): EnvironmentSettings {
         showBuiltins: cfg.get<boolean>('showBuiltins', false),
         showInternal: cfg.get<boolean>('showInternal', false),
         showNil: cfg.get<boolean>('showNil', false),
+        showChangedOnly: cfg.get<boolean>('showChangedOnly', false),
     };
 }
 

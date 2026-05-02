@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { buildEnvironmentRequestArgs, getEnvironmentSettings } from './gcRootsTreeView';
 import type { DebugVariable, EnvironmentSnapshot } from './dapTypes';
+import { computeChangedBindingKeys } from './environmentDiff';
 
 type FilterKey =
     | 'showLocals'
@@ -22,7 +23,8 @@ type FilterKey =
     | 'showGlobals'
     | 'showBuiltins'
     | 'showInternal'
-    | 'showNil';
+    | 'showNil'
+    | 'showChangedOnly';
 
 export class EnvironmentInspectorPanel {
     public static readonly viewType = 'etaEnvironmentInspector';
@@ -31,6 +33,7 @@ export class EnvironmentInspectorPanel {
     private readonly panel: WebviewPanel;
     private readonly extensionUri: Uri;
     private snapshot: EnvironmentSnapshot | undefined;
+    private changedBindingKeys = new Set<string>();
     private idleText = 'Start and pause an Eta debug session to inspect lexical environments.';
 
     private constructor(panel: WebviewPanel, extensionUri: Uri) {
@@ -74,6 +77,11 @@ export class EnvironmentInspectorPanel {
                     this.postSettings();
                     await this.refresh();
                     break;
+                case 'setShowChangedOnly':
+                    await this.updateChangedOnlySetting(!!msg.value);
+                    this.postSettings();
+                    this.postSnapshot();
+                    break;
             }
         });
 
@@ -115,6 +123,7 @@ export class EnvironmentInspectorPanel {
     }
 
     public applyEnvironment(snapshot: EnvironmentSnapshot): void {
+        this.changedBindingKeys = computeChangedBindingKeys(this.snapshot, snapshot);
         this.snapshot = snapshot;
         this.postSnapshot();
     }
@@ -157,6 +166,7 @@ export class EnvironmentInspectorPanel {
         this.panel.webview.postMessage({
             command: 'snapshot',
             data: this.snapshot,
+            changedKeys: Array.from(this.changedBindingKeys),
         });
     }
 
@@ -175,6 +185,11 @@ export class EnvironmentInspectorPanel {
     private async updateFollowSetting(value: boolean): Promise<void> {
         const cfg = workspace.getConfiguration('eta.debug.environment');
         await cfg.update('followActiveFrame', value, this.configurationTarget());
+    }
+
+    private async updateChangedOnlySetting(value: boolean): Promise<void> {
+        const cfg = workspace.getConfiguration('eta.debug.environment');
+        await cfg.update('showChangedOnly', value, this.configurationTarget());
     }
 
     private configurationTarget(): ConfigurationTarget {

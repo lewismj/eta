@@ -908,6 +908,96 @@ BOOST_AUTO_TEST_CASE(environment_include_flags_control_levels) {
 }
 
 /**
+ * Builtins scope should include non-current-module globals even when module
+ * globals are hidden.
+ */
+BOOST_AUTO_TEST_CASE(environment_builtins_include_imported_module_symbols) {
+    const auto tmp_dir = fs::temp_directory_path() / "eta_dap_env_builtins_scope_test";
+    const auto helper_mod = tmp_dir / "envhelper.eta";
+    const auto main_mod = tmp_dir / "envmain.eta";
+    struct TempDirCleanup {
+        fs::path main_file;
+        fs::path helper_file;
+        fs::path dir;
+        ~TempDirCleanup() {
+            std::error_code ec;
+            fs::remove(main_file, ec);
+            fs::remove(helper_file, ec);
+            fs::remove(dir, ec);
+        }
+    } cleanup{main_mod, helper_mod, tmp_dir};
+
+    {
+        std::error_code ec;
+        fs::create_directories(tmp_dir, ec);
+        BOOST_REQUIRE(!ec);
+    }
+    {
+        std::ofstream f(helper_mod, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module envhelper\n"
+             "  (defun helper-fn (x)\n"
+             "    x))\n";
+    }
+    {
+        std::ofstream f(main_mod, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module envmain\n"
+             "  (import envhelper)\n"
+             "  (defun main ()\n"
+             "    0)\n"
+             "  (begin (main)))\n";
+    }
+
+    AsyncDapHarness harness;
+
+    harness.send(request(1, "initialize", "{}"));
+    auto init_resp = harness.wait_response("initialize");
+    BOOST_REQUIRE(!init_resp.is_null());
+    BOOST_TEST(init_resp["success"].as_bool() == true);
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(main_mod) + R"(","stopOnEntry":true})";
+    harness.send(request(2, "launch", launch_args));
+    auto launch_resp = harness.wait_response("launch");
+    BOOST_REQUIRE(!launch_resp.is_null());
+    BOOST_TEST(launch_resp["success"].as_bool() == true);
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    harness.send(request(3, "configurationDone", "{}"));
+    auto config_done_resp = harness.wait_response("configurationDone");
+    BOOST_REQUIRE(!config_done_resp.is_null());
+    BOOST_TEST(config_done_resp["success"].as_bool() == true);
+    BOOST_REQUIRE(!harness.wait_event("stopped", std::chrono::milliseconds(10000)).is_null());
+
+    harness.send(request(
+        4,
+        "eta/environment",
+        R"({"threadId":1,"frameIndex":0,"include":{"locals":false,"closures":false,"globals":false,"builtins":true},"limits":{"maxBuiltins":5000}})"
+    ));
+    auto env_resp = harness.wait_response("eta/environment", std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!env_resp.is_null());
+    BOOST_TEST(env_resp["success"].as_bool() == true);
+
+    const auto& envs = env_resp["body"]["environments"].as_array();
+    BOOST_REQUIRE_EQUAL(envs.size(), 1u);
+    auto kind = envs[0].get_string("kind");
+    BOOST_REQUIRE(kind.has_value());
+    BOOST_TEST(*kind == "builtins");
+
+    const auto total = envs[0].get_int("total");
+    BOOST_REQUIRE(total.has_value());
+    BOOST_TEST(*total > 0);
+
+    BOOST_TEST(!envs[0]["bindings"].as_array().empty());
+
+    harness.send(request(5, "disconnect", "{}"));
+    auto disconnect_resp = harness.wait_response("disconnect");
+    BOOST_REQUIRE(!disconnect_resp.is_null());
+    BOOST_TEST(disconnect_resp["success"].as_bool() == true);
+}
+
+/**
  *     stopOnEntry) and request a snapshot.  The VM is likely not paused so
  *     we expect error 2002 ("VM must be paused"), but if timing allows a
  *     successful response we validate the consPool shape.

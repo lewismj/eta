@@ -2092,16 +2092,31 @@ void DapServer::handle_environment(const Value& id, const Value& args) {
             if (dot == std::string::npos) {
                 const bool is_internal = !full_name.empty() && full_name[0] == '%';
                 if (!include_internal && is_internal) continue;
-                builtin_slots.push_back({full_name, slot});
+                if (include_builtins) {
+                    builtin_slots.push_back({full_name, slot});
+                }
                 continue;
             }
-            if (!include_globals) continue;
-            if (module_name.empty()) continue;
-            if (full_name.substr(0, dot) != module_name) continue;
+
             std::string short_name = full_name.substr(dot + 1);
             const bool is_internal = !short_name.empty() && short_name[0] == '%';
             if (!include_internal && is_internal) continue;
-            module_slots.push_back({std::move(short_name), slot});
+
+            const bool is_current_module =
+                !module_name.empty()
+                && dot == module_name.size()
+                && full_name.compare(0, dot, module_name) == 0;
+            if (is_current_module) {
+                if (include_globals) {
+                    module_slots.push_back({std::move(short_name), slot});
+                }
+                continue;
+            }
+
+            if (include_builtins) {
+                /// Keep module prefix so similarly named imports remain distinct.
+                builtin_slots.push_back({full_name, slot});
+            }
         }
 
         std::sort(

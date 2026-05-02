@@ -11,6 +11,7 @@ import {
     languages,
     Uri,
     ViewColumn,
+    Position,
     Range,
     Selection,
     TextEditorRevealType,
@@ -42,6 +43,8 @@ import {
     EtaDisassemblyDefinitionProvider,
     showDisassembly,
     autoShowDisassemblyOnStop,
+    resolveDisassemblyRangeForSourceLine,
+    resolveSourceLocationForDisassemblyLine,
     type DisassemblyResult,
 } from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
@@ -144,7 +147,7 @@ export function activate(context: ExtensionContext) {
     );
 
     // -- Disassembly tree view (debug sidebar) ----------------------------
-    disasmTreeProvider = new DisassemblyTreeProvider();
+    disasmTreeProvider = new DisassemblyTreeProvider(disasmProvider);
     const disasmView = window.createTreeView('etaDisassembly', {
         treeDataProvider: disasmTreeProvider,
         showCollapseAll: false,
@@ -248,6 +251,7 @@ export function activate(context: ExtensionContext) {
                 { key: 'showBuiltins', label: 'Builtins', description: 'Show builtin/global runtime functions' },
                 { key: 'showInternal', label: 'Internal', description: 'Show internal names (e.g. %foo)' },
                 { key: 'showNil', label: 'Nil Values', description: 'Show bindings with nil values' },
+                { key: 'showChangedOnly', label: 'Changed Only', description: 'Show only bindings changed since previous stop' },
             ];
             const settings = getEnvironmentSettings();
             const picks = options.map(option => ({
@@ -304,6 +308,72 @@ export function activate(context: ExtensionContext) {
             ed.selection = new Selection(range.start, range.start);
             ed.revealRange(range, TextEditorRevealType.InCenterIfOutsideViewport);
         }),
+        commands.registerCommand('eta.disassembly.gotoSource', async () => {
+            const editor = window.activeTextEditor;
+            if (!editor || editor.document.uri.scheme !== 'eta-disasm') {
+                window.showInformationMessage('Open an Eta disassembly document first.');
+                return;
+            }
+            try {
+                const sourceLoc = await resolveSourceLocationForDisassemblyLine(
+                    disasmProvider,
+                    editor.document,
+                    editor.selection.active.line,
+                );
+                if (!sourceLoc) {
+                    window.showInformationMessage('No source location mapped for this disassembly line.');
+                    return;
+                }
+                const sourceUri = Uri.file(sourceLoc.path);
+                const doc = await workspace.openTextDocument(sourceUri);
+                const ed = await window.showTextDocument(doc, {
+                    preview: true,
+                    preserveFocus: false,
+                    viewColumn: ViewColumn.Active,
+                });
+                const sourceLine = Math.max(0, Math.min(sourceLoc.line - 1, Math.max(0, doc.lineCount - 1)));
+                const range = new Range(sourceLine, 0, sourceLine, doc.lineAt(sourceLine).text.length);
+                ed.selection = new Selection(range.start, range.start);
+                ed.revealRange(range, TextEditorRevealType.InCenterIfOutsideViewport);
+            } catch (err: any) {
+                window.showErrorMessage(`Eta disassembly source lookup failed: ${err?.message ?? String(err)}`);
+            }
+        }),
+        commands.registerCommand('eta.disassembly.revealForSourceLine', async () => {
+            const editor = window.activeTextEditor;
+            if (!editor || editor.document.languageId !== 'eta' || editor.document.uri.scheme !== 'file') {
+                window.showInformationMessage('Open an Eta source file first.');
+                return;
+            }
+            try {
+                await showDisassembly(disasmProvider, 'current', { revealPc: false, preserveFocus: false });
+                const range = await resolveDisassemblyRangeForSourceLine(
+                    disasmProvider,
+                    editor.document.uri,
+                    editor.selection.active.line + 1,
+                );
+                if (!range) {
+                    window.showInformationMessage('No bytecode range mapped for this source line.');
+                    return;
+                }
+                const disUri = DisassemblyContentProvider.uri('current');
+                const disDoc = await workspace.openTextDocument(disUri);
+                const disEd = await window.showTextDocument(disDoc, {
+                    preview: true,
+                    preserveFocus: false,
+                    viewColumn: ViewColumn.Beside,
+                });
+                const startLine = Math.max(0, Math.min(range.startLine, Math.max(0, disDoc.lineCount - 1)));
+                const endLine = Math.max(startLine, Math.min(range.endLine, Math.max(0, disDoc.lineCount - 1)));
+                const start = new Position(startLine, 0);
+                const end = new Position(endLine, disDoc.lineAt(endLine).text.length);
+                const revealRange = new Range(start, end);
+                disEd.selection = new Selection(start, end);
+                disEd.revealRange(revealRange, TextEditorRevealType.InCenterIfOutsideViewport);
+            } catch (err: any) {
+                window.showErrorMessage(`Eta source->disassembly lookup failed: ${err?.message ?? String(err)}`);
+            }
+        }),
     );
 
     // -- Test Explorer -------------------------------------------
@@ -315,6 +385,10 @@ export function activate(context: ExtensionContext) {
         .get<boolean>('inlineValuesEnabled', false);
     log(`Eta inline values enabled: ${inlineValuesEnabled}`);
     const editorRegistrations = [
+        languages.registerDefinitionProvider(
+            { scheme: 'eta-disasm', language: 'eta-bytecode' },
+            new EtaDisassemblyDefinitionProvider(disasmProvider),
+        ),
         languages.registerEvaluatableExpressionProvider(etaSelector, new EtaEvaluatableExpressionProvider()),
         languages.registerCodeLensProvider(etaSelector, new EtaCodeLensProvider()),
         languages.registerDocumentLinkProvider(etaSelector, new EtaDocumentLinkProvider()),

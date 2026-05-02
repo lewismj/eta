@@ -47,7 +47,7 @@ describe('Eta manifest contributions', function () {
         );
     });
 
-    it('contributes environment inspector command and setting', () => {
+    it('contributes environment inspector commands and settings', () => {
         const ext = vscode.extensions.getExtension(EXTENSION_ID);
         assert.ok(ext, `extension ${EXTENSION_ID} not found`);
 
@@ -56,6 +56,14 @@ describe('Eta manifest contributions', function () {
         assert.ok(
             commands.some(cmd => cmd.command === 'eta.showEnvironmentInspector'),
             'missing eta.showEnvironmentInspector command contribution',
+        );
+        assert.ok(
+            commands.some(cmd => cmd.command === 'eta.disassembly.gotoSource'),
+            'missing eta.disassembly.gotoSource command contribution',
+        );
+        assert.ok(
+            commands.some(cmd => cmd.command === 'eta.disassembly.revealForSourceLine'),
+            'missing eta.disassembly.revealForSourceLine command contribution',
         );
 
         const properties = manifest.contributes?.configuration?.properties ?? {};
@@ -67,6 +75,15 @@ describe('Eta manifest contributions', function () {
             properties['eta.debug.autoShowEnvironment']?.default,
             false,
             'eta.debug.autoShowEnvironment default should be false',
+        );
+        assert.ok(
+            Object.prototype.hasOwnProperty.call(properties, 'eta.debug.environment.showChangedOnly'),
+            'missing eta.debug.environment.showChangedOnly setting',
+        );
+        assert.strictEqual(
+            properties['eta.debug.environment.showChangedOnly']?.default,
+            false,
+            'eta.debug.environment.showChangedOnly default should be false',
         );
     });
 

@@ -14,6 +14,7 @@
         showBuiltins: false,
         showInternal: false,
         showNil: false,
+        showChangedOnly: false,
     };
 
     const openEnvironments = new Set();
@@ -21,6 +22,7 @@
     const loadingRefs = new Set();
     const childrenByRef = new Map();
     const expandErrors = new Map();
+    let changedKeys = new Set();
     let nextRequestId = 1;
 
     function el(id) {
@@ -52,6 +54,7 @@
         el('showBuiltins').checked = !!settings.showBuiltins;
         el('showInternal').checked = !!settings.showInternal;
         el('showNil').checked = !!settings.showNil;
+        el('showChangedOnly').checked = !!settings.showChangedOnly;
     }
 
     function iconForType(type) {
@@ -75,6 +78,10 @@
         return `${env.kind}:${env.depth}`;
     }
 
+    function bindingKey(env, variable) {
+        return `${env.kind}:${env.depth}:${variable.name}`;
+    }
+
     function requestExpand(ref) {
         const requestId = `expand-${nextRequestId++}`;
         loadingRefs.add(ref);
@@ -86,7 +93,7 @@
         });
     }
 
-    function renderRow(variable, depth, ancestors) {
+    function renderRow(variable, depth, ancestors, isChanged) {
         const hasChildren = (variable.variablesReference || 0) > 0;
         const ref = variable.variablesReference || 0;
         const isExpanded = expandedRefs.has(ref);
@@ -105,7 +112,8 @@
         }
 
         let html = '';
-        html += `<div class="row depth-${rowDepth}" data-ref="${ref}">`;
+        const changedClass = isChanged ? ' changed' : '';
+        html += `<div class="row depth-${rowDepth}${changedClass}" data-ref="${ref}">`;
         if (hasChildren && !isCycle) {
             html += `<button class="expand-btn" data-action="toggle" data-ref="${ref}" title="Expand">${expandGlyph}</button>`;
         } else {
@@ -134,7 +142,7 @@
                             nextAncestors.add(objectId);
                         }
                         for (const child of children) {
-                            html += renderRow(child, depth + 1, nextAncestors);
+                            html += renderRow(child, depth + 1, nextAncestors, false);
                         }
                     }
                 }
@@ -163,13 +171,20 @@
 
         let html = '';
         for (const env of envs) {
-            const key = environmentKey(env);
-            if (!openEnvironments.has(key) && env.depth < 2) {
-                openEnvironments.add(key);
+            const allBindings = Array.isArray(env.bindings) ? env.bindings : [];
+            const changedCount = allBindings.reduce((count, binding) => (
+                changedKeys.has(bindingKey(env, binding)) ? count + 1 : count
+            ), 0);
+            if (settings.showChangedOnly && changedCount === 0) {
+                continue;
             }
+
+            const key = environmentKey(env);
             const isOpen = openEnvironments.has(key);
-            const shown = (env.bindings || []).length;
-            const badge = env.truncated ? `${shown}/${env.total}` : `${env.total}`;
+            const shown = allBindings.length;
+            const badge = settings.showChangedOnly
+                ? `${changedCount}/${env.total}`
+                : (env.truncated ? `${shown}/${env.total}` : `${env.total}`);
             const glyph = isOpen ? 'v' : '>';
 
             html += '<section class="env">';
@@ -180,17 +195,28 @@
             html += '</button>';
             if (isOpen) {
                 html += '<div class="env-body">';
-                const bindings = Array.isArray(env.bindings) ? env.bindings : [];
+                const bindings = settings.showChangedOnly
+                    ? allBindings.filter(binding => changedKeys.has(bindingKey(env, binding)))
+                    : allBindings;
                 if (bindings.length === 0) {
-                    html += '<div class="hint">No bindings</div>';
+                    html += settings.showChangedOnly
+                        ? '<div class="hint">No changed bindings</div>'
+                        : '<div class="hint">No bindings</div>';
                 } else {
                     for (const binding of bindings) {
-                        html += renderRow(binding, 0, new Set());
+                        html += renderRow(binding, 0, new Set(), changedKeys.has(bindingKey(env, binding)));
                     }
                 }
                 html += '</div>';
             }
             html += '</section>';
+        }
+
+        if (html.length === 0) {
+            container.innerHTML = settings.showChangedOnly
+                ? '<div class="hint">No binding changes since the previous stop.</div>'
+                : '<div class="hint">No lexical environments available for current filters.</div>';
+            return;
         }
 
         container.innerHTML = html;
@@ -254,18 +280,6 @@
             render();
         });
 
-        el('expandNearBtn').addEventListener('click', () => {
-            openEnvironments.clear();
-            if (snapshot && Array.isArray(snapshot.environments)) {
-                for (const env of snapshot.environments) {
-                    if ((env.depth || 0) < 2) {
-                        openEnvironments.add(environmentKey(env));
-                    }
-                }
-            }
-            render();
-        });
-
         const filterKeys = [
             'showLocals',
             'showClosures',
@@ -280,6 +294,13 @@
                 vscode.postMessage({ command: 'setFilter', key, value });
             });
         }
+
+        el('showChangedOnly').addEventListener('change', (ev) => {
+            const value = !!ev.target.checked;
+            settings.showChangedOnly = value;
+            vscode.postMessage({ command: 'setShowChangedOnly', value });
+            render();
+        });
 
         el('followActiveFrame').addEventListener('change', (ev) => {
             vscode.postMessage({
@@ -298,6 +319,7 @@
                 break;
             case 'snapshot':
                 snapshot = msg.data || undefined;
+                changedKeys = new Set(Array.isArray(msg.changedKeys) ? msg.changedKeys : []);
                 setError('');
                 render();
                 break;

@@ -205,6 +205,11 @@
                     "default": false,
                     "description": "Show bindings whose current value is nil."
                 },
+                "eta.debug.environment.showChangedOnly": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Show only bindings that changed since the previous debugger stop in the Environment Inspector."
+                },
                 "eta.test.runnerPath": {
                     "type": "string",
                     "default": "",
@@ -288,6 +293,16 @@
                 "command": "eta.disassembly.gotoCallee",
                 "title": "Go to Callee",
                 "category": "Eta"
+            },
+            {
+                "command": "eta.disassembly.gotoSource",
+                "title": "Go to Source from Disassembly",
+                "category": "Eta"
+            },
+            {
+                "command": "eta.disassembly.revealForSourceLine",
+                "title": "Show Disassembly for Source Line",
+                "category": "Eta"
             }
         ],
         "menus": {
@@ -336,6 +351,14 @@
                 {
                     "command": "eta.disassembly.gotoCallee",
                     "when": "false"
+                },
+                {
+                    "command": "eta.disassembly.gotoSource",
+                    "when": "debugType == 'eta' && resourceScheme == 'eta-disasm'"
+                },
+                {
+                    "command": "eta.disassembly.revealForSourceLine",
+                    "when": "debugType == 'eta' && resourceLangId == eta"
                 }
             ],
             "view/title": [

@@ -1,10 +1,9 @@
 /**
- * disassemblyView.ts — virtual `eta-disasm:` document provider.
+ * disassemblyView.ts - virtual `eta-disasm:` document provider and helpers.
  *
  * Exposes the latest disassembly response so that:
  *   - `showDisassembly` opens it in a side editor and reveals the PC line.
- *   - `EtaDisassemblyDefinitionProvider` (below) can resolve Call / TailCall
- *     instructions to the target function header (B4-3 jump-to-callee).
+ *   - definition providers can resolve bytecode <-> source locations.
  */
 import {
     window,
@@ -22,9 +21,8 @@ import {
     EventEmitter,
     ViewColumn,
     TextEditorRevealType,
+    type DebugSession,
 } from 'vscode';
-
-// ── Disassembly response type ─────────────────────────────────────────────────
 
 export interface DisassemblyResult {
     text: string;
@@ -33,13 +31,82 @@ export interface DisassemblyResult {
     currentPC: number;
 }
 
-// ── Shared parsing helpers ────────────────────────────────────────────────────
+export interface DisassemblySourceLocation {
+    path: string;
+    line: number; // 1-based source line
+    name?: string;
+}
+
+interface StandardDisassembleInstruction {
+    address?: string;
+    line?: number;
+    location?: {
+        path?: string;
+        name?: string;
+    };
+}
+
+interface StandardDisassembleResponse {
+    instructions?: StandardDisassembleInstruction[];
+}
 
 const FUNC_HEADER_RE = /^=== (.+?) ===$/;
-/** A `LoadConst N  ; <func:M>` line — second capture is the function index. */
+/** A `LoadConst N  ; <func:M>` line - second capture is the function index. */
 const LOADCONST_FUNC_RE = /^\s*\d+\s*:\s+LoadConst\s+\d+\s*;\s*<func:(\d+)>/;
 const CALL_RE = /^\s*\d+\s*:\s+(?:Call|TailCall)\b/;
 const INSTR_RE = /^\s*(\d+)\s*:\s/;
+
+function normalizeSourcePath(pathText: string): string {
+    const normalized = pathText.replace(/\\/g, '/');
+    return process.platform === 'win32'
+        ? normalized.toLowerCase()
+        : normalized;
+}
+
+function sourceLookupKey(uri: Uri, sourceLine1: number): string {
+    return `${normalizeSourcePath(uri.fsPath)}:${sourceLine1}`;
+}
+
+export function parseInstructionIndex(lineText: string): number | undefined {
+    const m = lineText.match(INSTR_RE);
+    if (!m) return undefined;
+    const n = parseInt(m[1], 10);
+    return Number.isFinite(n) ? n : undefined;
+}
+
+export function indexDisassemblyInstructionLines(text: string): Map<number, number[]> {
+    const out = new Map<number, number[]>();
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        const idx = parseInstructionIndex(lines[i]);
+        if (idx === undefined) continue;
+        const bucket = out.get(idx);
+        if (bucket) bucket.push(i);
+        else out.set(idx, [i]);
+    }
+    return out;
+}
+
+export function computeDisassemblyLineRangeForSource(
+    disassemblyText: string,
+    instructionIndices: number[],
+): { startLine: number; endLine: number } | undefined {
+    if (!instructionIndices.length) return undefined;
+    const byInstr = indexDisassemblyInstructionLines(disassemblyText);
+    const lines: number[] = [];
+    for (const idx of instructionIndices) {
+        const hits = byInstr.get(idx);
+        if (hits && hits.length > 0) {
+            lines.push(...hits);
+        }
+    }
+    if (!lines.length) return undefined;
+    lines.sort((a, b) => a - b);
+    return {
+        startLine: lines[0],
+        endLine: lines[lines.length - 1],
+    };
+}
 
 /** Find the first instruction line whose index equals currentPC, scoped to functionName. */
 export function findPcLine(text: string, currentPC: number, functionName: string): number {
@@ -93,8 +160,6 @@ export function inferCalleeFuncIndex(text: string, clickLine: number): number | 
     return undefined;
 }
 
-// ── Virtual document provider ────────────────────────────────────────────────
-
 export class DisassemblyContentProvider implements TextDocumentContentProvider {
     private _onDidChange = new EventEmitter<Uri>();
     readonly onDidChange = this._onDidChange.event;
@@ -103,8 +168,16 @@ export class DisassemblyContentProvider implements TextDocumentContentProvider {
     private scope: string = 'current';
     private latest: DisassemblyResult | undefined;
 
+    private sourceByInstruction = new Map<number, DisassemblySourceLocation>();
+    private instructionBySource = new Map<string, number[]>();
+
     setScope(scope: string): void {
-        this.scope = scope;
+        if (this.scope !== scope) {
+            this.scope = scope;
+            this.clearSourceCorrelation();
+        } else {
+            this.scope = scope;
+        }
     }
 
     /** Latest disassembly response (for definition / reveal helpers). */
@@ -117,9 +190,25 @@ export class DisassemblyContentProvider implements TextDocumentContentProvider {
         return this.scope;
     }
 
+    currentText(): string {
+        return this.content;
+    }
+
+    sourceForInstruction(instructionIndex: number): DisassemblySourceLocation | undefined {
+        return this.sourceByInstruction.get(instructionIndex);
+    }
+
+    instructionIndicesForSource(sourceUri: Uri, sourceLine1: number): number[] {
+        const key = sourceLookupKey(sourceUri, sourceLine1);
+        return this.instructionBySource.get(key) ?? [];
+    }
+
     applyResult(result: DisassemblyResult | undefined, scope?: string): void {
         if (scope) {
             this.scope = scope;
+        }
+        if (this.scope === 'current') {
+            this.clearSourceCorrelation();
         }
         if (!result) {
             this.content = '; No disassembly available.';
@@ -137,6 +226,7 @@ export class DisassemblyContentProvider implements TextDocumentContentProvider {
         if (!session || session.type !== 'eta') {
             this.content = '; No active Eta debug session.';
             this.latest = undefined;
+            this.clearSourceCorrelation();
             this._onDidChange.fire(DisassemblyContentProvider.uri(this.scope));
             return this.content;
         }
@@ -147,13 +237,73 @@ export class DisassemblyContentProvider implements TextDocumentContentProvider {
             }) as DisassemblyResult;
             this.content = result.text || '; (empty disassembly)';
             this.latest = result;
+            if (this.scope === 'current') {
+                await this.refreshSourceCorrelation(session);
+            } else {
+                this.clearSourceCorrelation();
+            }
             this._onDidChange.fire(DisassemblyContentProvider.uri(this.scope));
             return this.content;
         } catch (err: any) {
             this.content = `; Error: ${err?.message ?? String(err)}`;
             this.latest = undefined;
+            this.clearSourceCorrelation();
             this._onDidChange.fire(DisassemblyContentProvider.uri(this.scope));
             return this.content;
+        }
+    }
+
+    async ensureSourceCorrelation(): Promise<void> {
+        if (this.scope !== 'current') {
+            return;
+        }
+        if (this.sourceByInstruction.size > 0) {
+            return;
+        }
+        const session = debug.activeDebugSession;
+        if (!session || session.type !== 'eta') {
+            return;
+        }
+        await this.refreshSourceCorrelation(session);
+    }
+
+    private clearSourceCorrelation(): void {
+        this.sourceByInstruction.clear();
+        this.instructionBySource.clear();
+    }
+
+    private async refreshSourceCorrelation(session: DebugSession): Promise<void> {
+        this.clearSourceCorrelation();
+        const resp = await session.customRequest('disassemble', {
+            memoryReference: 'current',
+            instructionOffset: 0,
+            instructionCount: 200000,
+        }) as StandardDisassembleResponse;
+        const instructions = Array.isArray(resp?.instructions) ? resp.instructions : [];
+        for (const inst of instructions) {
+            if (!inst || typeof inst.address !== 'string') continue;
+            const instructionIndex = parseInt(inst.address, 10);
+            if (!Number.isFinite(instructionIndex)) continue;
+            if (!inst.location || !inst.location.path) continue;
+            const line = Number(inst.line);
+            if (!Number.isFinite(line) || line <= 0) continue;
+
+            const location: DisassemblySourceLocation = {
+                path: inst.location.path,
+                line,
+                name: inst.location.name,
+            };
+            this.sourceByInstruction.set(instructionIndex, location);
+
+            const srcKey = `${normalizeSourcePath(location.path)}:${location.line}`;
+            const bucket = this.instructionBySource.get(srcKey);
+            if (bucket) bucket.push(instructionIndex);
+            else this.instructionBySource.set(srcKey, [instructionIndex]);
+        }
+
+        for (const [key, indices] of this.instructionBySource) {
+            const uniq = Array.from(new Set(indices)).sort((a, b) => a - b);
+            this.instructionBySource.set(key, uniq);
         }
     }
 
@@ -166,7 +316,35 @@ export class DisassemblyContentProvider implements TextDocumentContentProvider {
     }
 }
 
-// ── Open / reveal helpers ─────────────────────────────────────────────────────
+/**
+ * Resolve source location for an instruction line in a disassembly document.
+ */
+export async function resolveSourceLocationForDisassemblyLine(
+    provider: DisassemblyContentProvider,
+    document: TextDocument,
+    disassemblyLine: number,
+): Promise<DisassemblySourceLocation | undefined> {
+    if (document.uri.scheme !== 'eta-disasm') return undefined;
+    if (disassemblyLine < 0 || disassemblyLine >= document.lineCount) return undefined;
+    const instructionIndex = parseInstructionIndex(document.lineAt(disassemblyLine).text);
+    if (instructionIndex === undefined) return undefined;
+    await provider.ensureSourceCorrelation();
+    return provider.sourceForInstruction(instructionIndex);
+}
+
+/**
+ * Resolve disassembly line range for a source location.
+ */
+export async function resolveDisassemblyRangeForSourceLine(
+    provider: DisassemblyContentProvider,
+    sourceUri: Uri,
+    sourceLine1: number,
+): Promise<{ startLine: number; endLine: number } | undefined> {
+    await provider.ensureSourceCorrelation();
+    const instructionIndices = provider.instructionIndicesForSource(sourceUri, sourceLine1);
+    if (!instructionIndices.length) return undefined;
+    return computeDisassemblyLineRangeForSource(provider.currentText(), instructionIndices);
+}
 
 /**
  * Open the disassembly document in a side column. When `revealPc` is true,
@@ -217,7 +395,7 @@ export function revealPcInDisassembly(provider: DisassemblyContentProvider): voi
 
 /**
  * If the user has opted in via `eta.debug.autoShowDisassembly`, open the
- * disassembly side-by-side on every `stopped` event. Idempotent — when the
+ * disassembly side-by-side on every `stopped` event. Idempotent - when the
  * document is already visible, this just refreshes and re-reveals the PC line.
  */
 export async function autoShowDisassemblyOnStop(
@@ -242,17 +420,28 @@ export async function autoShowDisassemblyOnStop(
     });
 }
 
-// ── Definition provider — jump-to-callee on Call / TailCall lines ────────────
-
 export class EtaDisassemblyDefinitionProvider implements DefinitionProvider {
-    provideDefinition(document: TextDocument, position: Position): Location | undefined {
+    constructor(private readonly provider: DisassemblyContentProvider) {}
+
+    async provideDefinition(document: TextDocument, position: Position): Promise<Location | undefined> {
         if (document.uri.scheme !== 'eta-disasm') return undefined;
         const text = document.getText();
         const callee = inferCalleeFuncIndex(text, position.line);
-        if (callee === undefined) return undefined;
-        const targetLine = findFunctionHeaderLine(text, callee);
-        if (targetLine < 0) return undefined;
-        return new Location(document.uri, new Position(targetLine, 0));
+        if (callee !== undefined) {
+            const targetLine = findFunctionHeaderLine(text, callee);
+            if (targetLine >= 0) {
+                return new Location(document.uri, new Position(targetLine, 0));
+            }
+        }
+
+        const source = await resolveSourceLocationForDisassemblyLine(
+            this.provider,
+            document,
+            position.line,
+        );
+        if (!source) return undefined;
+        const sourceUri = Uri.file(source.path);
+        const line = Math.max(0, source.line - 1);
+        return new Location(sourceUri, new Position(line, 0));
     }
 }
-

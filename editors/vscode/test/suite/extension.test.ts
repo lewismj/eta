@@ -45,6 +45,8 @@ describe('Eta extension activation', function () {
             'eta.showEnvironmentInspector',
             'eta.showDisassembly',
             'eta.refreshEnvironment',
+            'eta.disassembly.gotoSource',
+            'eta.disassembly.revealForSourceLine',
         ]) {
             assert.ok(all.includes(cmd), `missing command: ${cmd}`);
         }

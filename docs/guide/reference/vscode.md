@@ -1,106 +1,154 @@
 # Eta VS Code Extension
 
-The Eta VS Code extension is the recommended way to develop in Eta. It bundles
-syntax highlighting, a Language Server (`eta_lsp`), a Debug Adapter
-(`eta_dap`), a Test Explorer integration (`eta_test`), and several live
-runtime inspection panels (heap, disassembly, child processes).
+[<- Back to README](../../../README.md) | [Quick Start](../../quickstart.md) |
+[Build from Source](../../build.md) | [Bytecode & VM](bytecode-vm.md) |
+[Runtime & GC](runtime.md)
 
-This page is the **single source of truth** for the extension and covers:
+---
 
-1. [Installation](#installation)
-2. [Configuration](#configuration)
-3. [Binary Discovery Order](#binary-discovery-order)
-4. [Launch Configuration Reference](#launch-configuration-reference)
-5. [Editing & Language Features](#editing--language-features)
-6. [Debugging Workflow](#debugging-workflow)
-7. [Runtime Inspection Panels](#runtime-inspection-panels)
-8. [Test Explorer Integration](#test-explorer-integration)
-9. [Useful Commands](#useful-commands)
-10. [Troubleshooting](#troubleshooting)
+## Overview
+
+The Eta VS Code extension bundles:
+
+1. Eta language support (`.eta`) and snippets.
+2. Language Server integration (`eta_lsp`).
+3. Debug Adapter integration (`eta_dap`) with custom Eta runtime tooling.
+4. Test Explorer integration (`eta_test`, TAP format).
+5. Disassembly document language (`eta-bytecode`) with syntax highlighting.
+
+This page is the reference for configuration, commands, debugger tooling,
+testing, and troubleshooting.
 
 ---
 
 ## Installation
 
-The release installer (`install.sh` / `install.cmd` / `install.ps1`) installs
-the `.vsix` automatically when VS Code is detected on `PATH`. To install
-manually:
+### From an Eta release bundle
+
+Eta release installers (`install.sh`, `install.cmd`, `install.ps1`) install the
+VS Code extension automatically when `code` is on `PATH`.
+
+### Manual VSIX install
 
 ```bash
-code --install-extension editors/eta-lang-<version>.vsix
+code --install-extension editors/vscode/eta-scheme-lang-<version>.vsix
 ```
 
-After installing, open any `.eta` file. The extension activates automatically
-and starts `eta_lsp` in the background.
+After install, open an `.eta` file to activate the extension.
+
+---
+
+## Quick Start
+
+1. Open an `.eta` file.
+2. Run `Eta: Debug Eta File` (or press `F5`).
+3. Set breakpoints in the gutter and step with `F10`/`F11`/`Shift+F11`.
+4. Open `Eta: Show Environment Inspector` and `Eta: Show Heap Inspector`.
+
+![Eta debug session](../../img/vsx/eta_debug_session.png)
 
 ---
 
 ## Configuration
 
-Open VS Code settings (`Ctrl+,` → search **Eta**) and set the binary paths if
-they are not already on `PATH`:
+Open Settings and search for `Eta`.
+
+### Core settings
+
+| Setting | Type | Default | Notes |
+|---|---|---:|---|
+| `eta.modulePath` | `string` | `""` | Module search path (`ETA_MODULE_PATH`) used by LSP, DAP, and test runner. |
+| `eta.lsp.enabled` | `boolean` | `true` | Enable/disable LSP startup. |
+| `eta.lsp.serverPath` | `string` | `""` | Path to `eta_lsp` (file or containing directory). |
+| `eta.dap.executablePath` | `string` | `""` | Path to `eta_dap` (file or containing directory). |
+| `eta.test.runnerPath` | `string` | `""` | Path to `eta_test` (file or containing directory). |
+| `eta.binaries.searchPaths` | `string[]` | `[]` | Extra binary search roots or executable paths. Supports `${workspaceFolder}`. |
+
+### Debug automation settings
+
+| Setting | Type | Default | Notes |
+|---|---|---:|---|
+| `eta.debug.autoShowHeap` | `boolean` | `false` | Open Heap Inspector automatically (effective when heap auto-refresh is enabled). |
+| `eta.debug.autoShowEnvironment` | `boolean` | `false` | Open Environment Inspector webview on stop events. |
+| `eta.debug.autoShowDisassembly` | `boolean` | `false` | Open disassembly document on stop events. |
+| `eta.debug.autoRefreshViewsOnStop` | `boolean` | `false` | Auto-refresh debug side views (Environment/Child Processes/disassembly refresh path). |
+| `eta.debug.autoRefreshHeapOnStop` | `boolean` | `false` | Auto-refresh Heap Inspector on stops. |
+| `eta.debug.autoRefreshDisassemblyOnStop` | `boolean` | `true` | Auto-refresh current disassembly on stops. |
+| `eta.debug.inlineValuesEnabled` | `boolean` | `false` | Enable inline variable values while paused. |
+
+### Environment filter/settings
+
+| Setting | Type | Default |
+|---|---|---:|
+| `eta.debug.environment.followActiveFrame` | `boolean` | `true` |
+| `eta.debug.environment.showLocals` | `boolean` | `true` |
+| `eta.debug.environment.showClosures` | `boolean` | `true` |
+| `eta.debug.environment.showGlobals` | `boolean` | `false` |
+| `eta.debug.environment.showBuiltins` | `boolean` | `false` |
+| `eta.debug.environment.showInternal` | `boolean` | `false` |
+| `eta.debug.environment.showNil` | `boolean` | `false` |
+| `eta.debug.environment.showChangedOnly` | `boolean` | `false` |
+
+Example:
 
 ```jsonc
 {
-  // Per-tool overrides (highest priority)
-  "eta.lsp.serverPath":     "/path/to/bin/eta_lsp",
-  "eta.dap.executablePath": "/path/to/bin/eta_dap",
-  "eta.test.runnerPath":    "/path/to/bin/eta_test",
-
-  // ETA_MODULE_PATH used when launching the LSP / DAP / test runner
   "eta.modulePath": "/path/to/stdlib",
-
-  // Additional directories (or full executable paths) to search.
-  // Supports ${workspaceFolder} substitution.
-  "eta.binaries.searchPaths": [
-    "${workspaceFolder}/build/eta/interpreter",
-    "${workspaceFolder}/build/eta/lsp",
-    "${workspaceFolder}/build/eta/dap",
-    "${workspaceFolder}/build/eta/test_runner"
-  ]
+  "eta.lsp.serverPath": "/path/to/eta_lsp",
+  "eta.dap.executablePath": "/path/to/eta_dap",
+  "eta.test.runnerPath": "/path/to/eta_test",
+  "eta.debug.environment.showBuiltins": true
 }
 ```
 
-![Eta extension settings in VS Code](img/vsx/eta_lsp_config.png)
+![Eta extension settings](../../img/vsx/eta_lsp_config.png)
 
 ---
 
 ## Binary Discovery Order
 
-The extension resolves `eta_lsp`, `eta_dap`, and `eta_test` in this order:
+The extension resolves binaries in this order.
 
-1. **Per-tool explicit settings** — `eta.lsp.serverPath`,
-   `eta.dap.executablePath`, `eta.test.runnerPath`.
-2. **`bin/`** inside the extension install directory (used by the bundled
-   release installer).
-3. **Workspace build output directories** (e.g. `build/eta/lsp`,
-   `build/eta/dap`).
-4. **Additional paths** from `eta.binaries.searchPaths`.
-5. **`PATH`** lookup.
+### `eta_lsp`
 
-`eta.binaries.searchPaths` accepts directories *or* full executable paths and
-supports `${workspaceFolder}` substitution.
+1. `eta.lsp.serverPath`
+2. `<extension>/bin/eta_lsp`
+3. workspace build candidates (for example `out/msvc-release/...`, `out/wsl-clang-release/...`)
+4. `eta.binaries.searchPaths`
+5. `PATH`
+
+### `eta_dap`
+
+1. `eta.dap.executablePath`
+2. next to resolved `eta_lsp`
+3. bundled/workspace/search-path/PATH fallback resolution
+
+### `eta_test`
+
+1. `eta.test.runnerPath`
+2. next to resolved `eta_lsp`
+3. next to resolved `eta_dap`
+4. bundled/workspace/search-path/PATH fallback resolution
 
 ---
 
-## Launch Configuration Reference
+## Launch Configuration (`launch.json`)
 
-The Eta debugger contributes a `launch.json` schema with the following
-properties:
+Debugger type is `eta`.
 
-| Property      | Type             | Default              | Description |
-|---------------|------------------|----------------------|-------------|
-| `program`     | string           | (required)           | Path to the `.eta` (or `.etac`) file to run. |
-| `args`        | string[]         | `[]`                 | Command-line arguments forwarded to the program. |
-| `cwd`         | string           | `${workspaceFolder}` | Working directory for the spawned process. |
-| `env`         | `{string:string}`| `{}`                 | Extra environment variables. |
-| `modulePath`  | string           | `eta.modulePath`     | Per-session override for `ETA_MODULE_PATH`. |
-| `stopOnEntry` | boolean          | `false`              | Pause at the first instruction. |
-| `etac`        | boolean          | `false`              | Pre-compile with `etac` and run the resulting bytecode. |
-| `console`     | enum             | `debugConsole`       | `debugConsole` \| `integratedTerminal` \| `externalTerminal`. |
-| `trace`       | boolean          | `false`              | Adds `--trace-protocol` to `eta_dap` for DAP message logging. |
+| Property | Type | Default | Description |
+|---|---|---:|---|
+| `program` | `string` | `${file}` | Eta source path to run/debug. |
+| `args` | `string[]` | `[]` | Program args passed through launch handling. |
+| `cwd` | `string` | `${workspaceFolder}` | Working directory for adapter launch. |
+| `env` | `object` | `{}` | Environment variables for adapter process. |
+| `modulePath` | `string` | `eta.modulePath` | Session-level `ETA_MODULE_PATH` override. |
+| `stopOnEntry` | `boolean` | `false` | Pause on first instruction. |
+| `etac` | `boolean` | `false` | Run precompiled path when adapter supports it. |
+| `console` | `string` | `debugConsole` | `debugConsole`, `integratedTerminal`, `externalTerminal`. |
+| `trace` | `boolean` | `false` | Launch adapter with protocol tracing (`--trace-protocol`). |
 
-A minimal `launch.json` entry:
+Minimal config:
 
 ```jsonc
 {
@@ -109,10 +157,9 @@ A minimal `launch.json` entry:
     {
       "type": "eta",
       "request": "launch",
-      "name": "Run current Eta file",
+      "name": "Run Eta file",
       "program": "${file}",
-      "stopOnEntry": false,
-      "console": "integratedTerminal"
+      "stopOnEntry": false
     }
   ]
 }
@@ -120,146 +167,250 @@ A minimal `launch.json` entry:
 
 ---
 
-## Editing & Language Features
+## Editing Features
 
-Provided by `eta_lsp`:
+### Language and LSP
 
-- Syntax highlighting and snippets for `.eta` files.
-- Live diagnostics (lex / parse / expand / link / analyze).
-- Hover, completion, signature help.
-- Go to definition, find references, rename.
-- Document outline / workspace symbols.
+1. Grammar-based syntax highlighting for Eta (`source.eta`).
+2. LSP diagnostics, completion, hover, go-to-definition, references, rename,
+   signature help, and symbols (when `eta_lsp` is available).
+3. Code lenses:
+   - `Run File`
+   - `Debug File (stop on entry)`
+   - `Run Tests in File` / `Debug Tests in File` for `*.test.eta`
+4. Import document links: dotted module names in `(import ...)` become clickable.
+
+### Snippets
+
+The extension ships a broad snippet set including:
+
+1. core forms (`module`, `defun`, `define`, `lambda`, `let`, `if`, `cond`, ...)
+2. error/macro forms (`catch`, `raise`, `define-syntax`)
+3. stdlib workflows (regex, csv, process, networking, actors, worker pool)
 
 ---
 
 ## Debugging Workflow
 
-1. Open an `.eta` file.
-2. Click the gutter to set one or more breakpoints.
-3. Press **F5** (or run **Eta: Debug Eta File**).
-4. Use the standard step controls:
-   - **F10** Step Over
-   - **F11** Step In
-   - **Shift+F11** Step Out
-   - **F5** Continue
+The debug sidebar contributes:
 
-![Eta debug session](img/vsx/eta_debug_session.png)
+1. `Environment` tree view
+2. `Disassembly` tree view
+3. `Child Processes` tree view
 
-The Variables, Watch, Call Stack, and Debug Console panels behave as for any
-other VS Code language. Expressions typed in the Debug Console are evaluated
-in the current frame by `eta_dap`.
+![Eta debug side panels](../../img/vsx/eta_side_panels.png)
+
+The extension also uses two output channels:
+
+1. `Eta Language` (adapter/language logs)
+2. `Eta Output` (program stdout/stderr stream from `eta-output` events)
 
 ---
 
-## Runtime Inspection Panels
+## Environment Tooling
 
-During an Eta debug session the Debug sidebar exposes dedicated views for
-**Memory**, **Disassembly**, and **Child Processes**.
+Eta has both a sidebar tree and a standalone inspector webview.
 
-![Eta debug side panels](img/vsx/eta_side_panels.png)
+### Environment sidebar tree (`Environment`)
 
-### Heap Inspector
+1. Shows lexical chain levels from `eta/environment`:
+   - `Frame locals`
+   - `Closure parent #N`
+   - `Module (...)`
+   - `Builtins`
+2. Uses current call stack selection when `followActiveFrame = true`.
+3. Expands compound values through DAP `variables` requests.
 
-Run **Eta: Show Heap Inspector** for a live WebView with:
+### Standalone `Eta Environment Inspector`
 
-- Memory usage gauge.
-- Object-kind counts and bytes.
-- Cons pool utilization.
-- GC root categories (Stack, Globals, Frames) with module-grouped globals and
-  object drill-down.
+Open with `Eta: Show Environment Inspector`.
 
-![Eta heap inspector](img/vsx/eta_heap_inspector.png)
+Features:
 
-### Disassembly Views
+1. Refresh and Collapse All controls.
+2. Live filter toggles for locals/closures/module/builtins/internal/nil.
+3. `Changed Only` mode (highlights and filters bindings changed since previous stop).
+4. Row actions:
+   - `Heap` (inspect object in Heap Inspector when object id exists)
+   - `Disasm` (open disassembly from callable bindings)
 
-The extension supports both an inline side panel (current function, with a
-live PC marker) and a full-document view of every loaded function.
+![Eta Environment Inspector](../../img/vsx/eta_environment_inspector.png)
 
-![Eta disassembly in side panel](img/vsx/eta_disassembly_side_panel.png)
+`Builtins` now surfaces non-current-module runtime/global symbols, so it is no
+longer limited to undotted names only.
 
-![Eta full disassembly document](img/vsx/eta_full_disassembly.png)
+---
 
-### Child Processes
+## Heap Inspector
 
-When debugging actor / message-passing code, the **Child Processes** panel
-lists every spawned process with PID, endpoint, and live/exited status.
+Open with `Eta: Show Heap Inspector`.
+
+Features:
+
+1. Memory gauge (usage vs soft limit).
+2. Cons pool gauge when present.
+3. Object Kinds table:
+   - sortable columns
+   - filter box
+   - optional baseline diff mode (`Capture Baseline`, `Diff`, `Clear Baseline`)
+   - truncation indicator (`showing X of Y kinds`) when capped.
+4. GC Roots browser with expandable groups and module grouping for globals.
+5. Object detail pane via `eta/inspectObject`.
+6. Retention-path search (`Find paths to root`) using bounded BFS over roots.
+
+![Eta Heap Inspector](../../img/vsx/eta_heap_inspector.png)
+
+---
+
+## Disassembly Tooling
+
+### Sidebar `Disassembly` tree
+
+1. Function-grouped view with current-PC function auto-expanded.
+2. Constant pool section and code section.
+3. Opcode-aware icons/colors (calls, constants, load/store, control flow, arithmetic).
+4. Call/TailCall lines can jump to callee function headers.
+
+### Disassembly documents
+
+Commands:
+
+1. `Eta: Show Disassembly` (current function context)
+2. `Eta: Show Disassembly (All Functions)` (full dump)
+
+The virtual document uses `eta-bytecode` language (`source.eta-bytecode`) with
+syntax highlighting for:
+
+1. function headers
+2. opcodes
+3. constants/indices/numbers
+4. `<func:N>` references
+5. strings/comments
+
+Cross-navigation commands:
+
+1. `Eta: Go to Source from Disassembly` (`eta.disassembly.gotoSource`)
+2. `Eta: Show Disassembly for Source Line` (`eta.disassembly.revealForSourceLine`)
+
+![Eta disassembly side panel](../../img/vsx/eta_disassembly_side_panel.png)
+![Eta full disassembly document](../../img/vsx/eta_full_disassembly.png)
+
+---
+
+## Child Processes View
+
+The `Child Processes` debug view queries `eta/childProcesses` and shows:
+
+1. process id
+2. endpoint
+3. module path
+4. alive/exited status
+
+Use `Eta: Refresh Child Processes` to refresh manually.
 
 ---
 
 ## Test Explorer Integration
 
-When the workspace contains `*.test.eta` files, the extension registers an Eta
-test controller that drives `eta_test --format tap`.
+The extension registers a VS Code Test Controller for `**/*.test.eta`.
 
-Available run profiles:
+Profiles:
 
-- **Run** — execute tests and report pass/fail.
-- **Debug** — launch tests under `eta_dap`.
-- **Coverage** — when supported by the installed `eta_test` build.
+1. `Run` - runs `eta_test --format tap`
+2. `Debug` - launches Eta debugger for the test file
+3. `Coverage` - runs with `--coverage` and degrades gracefully if unsupported
 
-The TAP parser maps YAML diagnostics into rich `TestMessage`s, including:
+TAP parsing is streaming, so results appear incrementally during long runs.
 
-| YAML key   | Mapped to |
-|------------|-----------|
-| `severity` | Message severity. |
-| `at`       | Clickable `TestMessage.location` (file + line). |
-| `expected` | Expected output of the assertion. |
-| `actual`   | Actual output of the assertion. |
-| `message`  | Human-readable failure message. |
+YAML diagnostics mapping:
 
-Runner stdout/stderr is streamed into the test output channel as it arrives,
-not buffered until process exit, so long-running tests show progress live.
+| TAP YAML key | VS Code mapping |
+|---|---|
+| `message` | test failure headline |
+| `severity` | detail text |
+| `at` | clickable failure location |
+| `expected` | expected output field |
+| `actual` | actual output field |
 
-![Eta test runner in VS Code](img/vsx/eta_test_runner.png)
+![Eta test runner](../../img/vsx/eta_test_runner.png)
 
 ---
 
-## Useful Commands
+## Commands
 
-| Command                                    | Purpose |
-|--------------------------------------------|---------|
-| `Eta: Run Eta File`                        | Run the active Eta file. |
-| `Eta: Debug Eta File`                      | Launch the active file under the Eta debugger. |
-| `Eta: Run Tests in Current File`           | Run tests for the active `*.test.eta` file. |
-| `Eta: Show Heap Inspector`                 | Open the live heap inspection WebView. |
-| `Eta: Show Disassembly`                    | Show disassembly for the current function. |
-| `Eta: Show Disassembly (All Functions)`    | Show disassembly for every loaded function. |
-| `Eta: Refresh Memory`                      | Refresh the Memory tree view. |
-| `Eta: Refresh Disassembly`                 | Refresh the Disassembly tree view. |
-| `Eta: Refresh Child Processes`             | Refresh child-process state in the debug view. |
+### Primary commands
+
+| Command | Description |
+|---|---|
+| `Eta: Run Eta File` | Run active Eta file using the Eta debug launch flow. |
+| `Eta: Debug Eta File` | Debug active Eta file. |
+| `Eta: Run Tests in Current File` | Run tests for active `*.test.eta` file. |
+| `Eta: Show Heap Inspector` | Open heap webview inspector. |
+| `Eta: Show Environment Inspector` | Open environment webview inspector. |
+| `Eta: Show Disassembly` | Open current disassembly document. |
+| `Eta: Show Disassembly (All Functions)` | Open all-functions disassembly document. |
+| `Eta: Refresh Environment` | Refresh environment tree and inspector. |
+| `Eta: Configure Environment Filters` | Quick-pick editor for environment filter settings. |
+| `Eta: Refresh Disassembly` | Refresh disassembly sidebar tree. |
+| `Eta: Refresh Child Processes` | Refresh child process sidebar tree. |
+
+### Navigation/power commands
+
+| Command id | Description |
+|---|---|
+| `eta.disassembly.gotoSource` | Jump from current disassembly line to source location. |
+| `eta.disassembly.revealForSourceLine` | Reveal bytecode range for active source line. |
+| `eta.disassembly.gotoCallee` | Jump to callee header from call instruction (tree/doc integration). |
 
 ---
 
 ## Troubleshooting
 
-**LSP does not start / "Could not locate eta_lsp".**
-Set `eta.lsp.serverPath` explicitly, or add the build output directory to
-`eta.binaries.searchPaths`. Check the **Eta Language Server** output channel
-for stderr from `eta_lsp`.
+### "Could not locate eta_lsp/eta_dap/eta_test"
 
-**Debugger reports "module not found".**
-Set `eta.modulePath` (or the per-session `modulePath` in `launch.json`) to
-your `stdlib/` directory. The release installer points this at the bundled
-stdlib automatically.
+Set explicit paths:
 
-**Need to capture a DAP transcript.**
-Enable `"trace": true` in your `launch.json` configuration — this passes
-`--trace-protocol` to `eta_dap`, which logs every DAP message to stderr.
+```jsonc
+{
+  "eta.lsp.serverPath": "/abs/path/to/eta_lsp",
+  "eta.dap.executablePath": "/abs/path/to/eta_dap",
+  "eta.test.runnerPath": "/abs/path/to/eta_test"
+}
+```
 
-**Tests are not discovered.**
-The Test Explorer only registers files matching `**/*.test.eta`. Ensure
-`eta.test.runnerPath` resolves to a working `eta_test` binary; run it once
-manually with `--format tap` to confirm.
+You can also add build output folders to `eta.binaries.searchPaths`.
+
+### "module not found" during debug/test
+
+Set `eta.modulePath` to your stdlib/modules path. This is propagated as
+`ETA_MODULE_PATH` to LSP, DAP, and `eta_test`.
+
+### Environment/Heap inspectors show idle state
+
+These views require a paused Eta debug session. Set a breakpoint, then step or
+continue to a pause point before refreshing.
+
+### Coverage profile marks file skipped
+
+Your `eta_test` build does not support `--coverage` yet. Run/Debug profiles
+still work.
+
+### Disassembly source jump says no mapping
+
+Source correlation relies on DAP disassembly location metadata for the current
+session and instruction range. Ensure you are paused in a normal Eta frame.
 
 ---
 
-## See Also
+## Developer Notes (Extension)
 
-- [Quick Start](../../quickstart.md) — installing Eta and running your first program.
-- [Build from Source](../../build.md) — producing local `eta_lsp` / `eta_dap` /
-  `eta_test` binaries that the extension can pick up.
-- [Bytecode & VM](bytecode-vm.md) — context for the Disassembly view.
-- [Runtime & GC](runtime.md) — context for the Heap Inspector view.
-- [Message Passing & Actors](message-passing.md) — context for the Child
-  Processes view.
+From `editors/vscode`:
 
+```bash
+npm ci
+npm run compile-tests
+npm test
+npm run package
+```
+
+This produces `eta-scheme-lang-<version>.vsix`.
