@@ -10,6 +10,8 @@ export interface GCRoot {
     name: string;
     objectIds: number[];
     labels?: string[];
+    totalCount?: number;
+    truncated?: boolean;
 }
 
 export interface ConsPoolStats {
@@ -25,6 +27,11 @@ export interface HeapSnapshot {
     kinds: KindStat[];
     roots: GCRoot[];
     consPool?: ConsPoolStats;
+    truncated?: boolean;
+    scannedObjects?: number;
+    kindsTotal?: number;
+    kindsShown?: number;
+    kindsTruncated?: boolean;
 }
 
 export interface ObjectChild {
@@ -48,22 +55,27 @@ export interface DebugVariable {
     variablesReference: number;
     indexedVariables?: number;
     namedVariables?: number;
+    type?: string;
+    objectId?: number;
+    canInspectHeap?: boolean;
+    canDisassemble?: boolean;
 }
 
-export interface LocalMemorySnapshot {
+export interface EnvironmentLevel {
+    kind: string;
+    label: string;
+    depth: number;
+    total: number;
+    truncated: boolean;
+    bindings: DebugVariable[];
+}
+
+export interface EnvironmentSnapshot {
     threadId: number;
     frameIndex: number;
     frameName: string;
     moduleName: string;
-    locals: DebugVariable[];
-    upvalues: DebugVariable[];
-    moduleGlobals: DebugVariable[];
-    localsTotal: number;
-    upvaluesTotal: number;
-    moduleGlobalsTotal: number;
-    localsTruncated: boolean;
-    upvaluesTruncated: boolean;
-    moduleGlobalsTruncated: boolean;
+    environments: EnvironmentLevel[];
 }
 
 export interface ChildProcessInfo {

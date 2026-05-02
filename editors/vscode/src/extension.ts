@@ -14,6 +14,7 @@ import {
     Range,
     Selection,
     TextEditorRevealType,
+    ConfigurationTarget,
 } from 'vscode';
 import type {
     DebugAdapterDescriptor,
@@ -30,7 +31,12 @@ import {
     Executable,
 } from 'vscode-languageclient/node';
 import { HeapInspectorPanel } from './heapView';
-import { GCRootsTreeProvider } from './gcRootsTreeView';
+import { EnvironmentInspectorPanel } from './environmentView';
+import {
+    EnvironmentTreeProvider,
+    buildEnvironmentRequestArgs,
+    getEnvironmentSettings,
+} from './gcRootsTreeView';
 import {
     DisassemblyContentProvider,
     EtaDisassemblyDefinitionProvider,
@@ -40,7 +46,7 @@ import {
 } from './disassemblyView';
 import { DisassemblyTreeProvider } from './disassemblyTreeView';
 import { ChildProcessTreeProvider } from './childProcessTreeView';
-import type { ChildProcessInfo, HeapSnapshot, LocalMemorySnapshot } from './dapTypes';
+import type { ChildProcessInfo, EnvironmentSnapshot, HeapSnapshot } from './dapTypes';
 import { registerTestController, runTestsForUri } from './testController';
 import { discoverBinaries } from './binaries';
 import { EtaInlineValuesProvider } from './inlineValues';
@@ -54,11 +60,11 @@ let programOutputChannel: LogOutputChannel;
 let extensionCtx: ExtensionContext;
 
 // Shared providers (accessible from tracker)
-let gcRootsProvider: GCRootsTreeProvider;
+let environmentProvider: EnvironmentTreeProvider;
 let disasmProvider: DisassemblyContentProvider;
 let disasmTreeProvider: DisassemblyTreeProvider;
 let childProcProvider: ChildProcessTreeProvider;
-let gcRootsViewVisible = false;
+let environmentViewVisible = false;
 let disasmViewVisible = false;
 let childProcViewVisible = false;
 
@@ -93,17 +99,41 @@ export function activate(context: ExtensionContext) {
     log('Eta extension activating...');
     log(`Eta extension version: ${context.extension.packageJSON.version}`);
 
-    // -- GC Roots tree view -------------------------------------------
-    gcRootsProvider = new GCRootsTreeProvider();
-    const gcRootsView = window.createTreeView('etaGCRoots', {
-        treeDataProvider: gcRootsProvider,
+    // -- Environment tree view -------------------------------------------
+    environmentProvider = new EnvironmentTreeProvider();
+    const environmentView = window.createTreeView('etaEnvironment', {
+        treeDataProvider: environmentProvider,
         showCollapseAll: true,
     });
-    gcRootsViewVisible = gcRootsView.visible;
+    environmentViewVisible = environmentView.visible;
     context.subscriptions.push(
-        gcRootsView,
-        gcRootsView.onDidChangeVisibility(e => {
-            gcRootsViewVisible = e.visible;
+        environmentView,
+        environmentView.onDidChangeVisibility(e => {
+            environmentViewVisible = e.visible;
+            if (e.visible) {
+                environmentProvider.refresh();
+            }
+        }),
+        debug.onDidChangeActiveStackItem(() => {
+            const session = debug.activeDebugSession;
+            if (!session || session.type !== 'eta') {
+                return;
+            }
+            const envPanel = EnvironmentInspectorPanel.current();
+            const envPanelVisible = envPanel?.isVisible() ?? false;
+            if (!environmentViewVisible && !envPanelVisible) {
+                return;
+            }
+            const settings = getEnvironmentSettings();
+            if (!settings.followActiveFrame) {
+                return;
+            }
+            if (environmentViewVisible) {
+                environmentProvider.refresh();
+            }
+            if (envPanelVisible) {
+                void envPanel?.refresh();
+            }
         }),
     );
 
@@ -192,14 +222,57 @@ export function activate(context: ExtensionContext) {
         commands.registerCommand('eta.showHeapInspector', () => {
             HeapInspectorPanel.createOrShow(extensionCtx).refresh();
         }),
+        commands.registerCommand('eta.showEnvironmentInspector', () => {
+            EnvironmentInspectorPanel.createOrShow(extensionCtx).refresh();
+        }),
         commands.registerCommand('eta.showDisassembly', () => {
             showDisassembly(disasmProvider, 'current');
         }),
         commands.registerCommand('eta.showDisassemblyAll', () => {
             showDisassembly(disasmProvider, 'all');
         }),
-        commands.registerCommand('eta.refreshGCRoots', () => {
-            gcRootsProvider.refresh();
+        commands.registerCommand('eta.refreshEnvironment', () => {
+            environmentProvider.refresh();
+            EnvironmentInspectorPanel.current()?.refresh();
+        }),
+        commands.registerCommand('eta.configureEnvironmentFilters', async () => {
+            type FilterOption = {
+                key: keyof ReturnType<typeof getEnvironmentSettings>;
+                label: string;
+                description: string;
+            };
+            const options: FilterOption[] = [
+                { key: 'showLocals', label: 'Locals', description: 'Show local variables' },
+                { key: 'showClosures', label: 'Closures', description: 'Show captured closure/upvalue bindings' },
+                { key: 'showGlobals', label: 'Globals', description: 'Show module globals' },
+                { key: 'showBuiltins', label: 'Builtins', description: 'Show builtin/global runtime functions' },
+                { key: 'showInternal', label: 'Internal', description: 'Show internal names (e.g. %foo)' },
+                { key: 'showNil', label: 'Nil Values', description: 'Show bindings with nil values' },
+            ];
+            const settings = getEnvironmentSettings();
+            const picks = options.map(option => ({
+                key: option.key,
+                label: option.label,
+                description: option.description,
+                picked: settings[option.key] === true,
+            }));
+            const selected = await window.showQuickPick(picks, {
+                canPickMany: true,
+                title: 'Eta Environment Filters',
+                placeHolder: 'Select which scopes/entries to show in the Environment view',
+            });
+            if (!selected) {
+                return;
+            }
+            const selectedKeys = new Set(selected.map(item => item.key));
+            const config = workspace.getConfiguration('eta.debug.environment');
+            const target = workspace.workspaceFolders && workspace.workspaceFolders.length > 0
+                ? ConfigurationTarget.Workspace
+                : ConfigurationTarget.Global;
+            for (const option of options) {
+                await config.update(option.key, selectedKeys.has(option.key), target);
+            }
+            environmentProvider.refresh();
         }),
         commands.registerCommand('eta.refreshDisassembly', () => {
             disasmTreeProvider.refresh();
@@ -266,6 +339,10 @@ export function activate(context: ExtensionContext) {
                 outputChannel.info(`LSP binary resolved to: ${refreshed.lsp ?? '(none)'}`);
                 outputChannel.info(`DAP binary resolved to: ${refreshed.dap ?? '(none)'}`);
                 outputChannel.info(`TEST binary resolved to: ${refreshed.test ?? '(none)'}`);
+            }
+            if (e.affectsConfiguration('eta.debug.environment')) {
+                environmentProvider.refresh();
+                EnvironmentInspectorPanel.current()?.refresh();
             }
         })
     );
@@ -458,6 +535,8 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         }
         this.flushProgramOutput();
         HeapInspectorPanel.disposeCurrent();
+        EnvironmentInspectorPanel.disposeCurrent();
+        environmentProvider?.applyEnvironment(undefined);
         childProcProvider?.notifySessionEnded();
     }
 
@@ -522,10 +601,14 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 const autoRefreshViewsOnStop = debugCfg.get<boolean>('autoRefreshViewsOnStop', false);
                 const autoRefreshHeapOnStop = debugCfg.get<boolean>('autoRefreshHeapOnStop', false);
                 const autoRefreshDisassemblyOnStop = debugCfg.get<boolean>('autoRefreshDisassemblyOnStop', true);
+                const autoShowEnvironment = debugCfg.get<boolean>('autoShowEnvironment', false);
+                const environmentPanelVisible = EnvironmentInspectorPanel.current()?.isVisible() ?? false;
                 const shouldQueueRefresh = autoRefreshViewsOnStop
                     || autoRefreshHeapOnStop
                     || autoRefreshDisassemblyOnStop
-                    || gcRootsViewVisible;
+                    || environmentViewVisible
+                    || environmentPanelVisible
+                    || autoShowEnvironment;
                 if (shouldQueueRefresh) {
                     this.queueStoppedRefresh();
                 }
@@ -600,7 +683,6 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
         const heapPanelVisible = heapPanel?.isVisible() ?? false;
         const shouldFetchHeapPanel = autoRefreshHeap && heapPanelVisible;
         const shouldFetchHeapSnapshot = shouldFetchHeapPanel;
-        const shouldFetchLocalMemory = true;
 
         const autoShowDisasm = workspace.getConfiguration('eta.debug')
             .get<boolean>('autoShowDisassembly', false);
@@ -608,14 +690,20 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             .get<boolean>('autoRefreshDisassemblyOnStop', true);
         const autoRefreshViewsOnStop = workspace.getConfiguration('eta.debug')
             .get<boolean>('autoRefreshViewsOnStop', false);
-        const disasmDocVisible = window.visibleTextEditors.some(
-            ed => ed.document.uri.scheme === 'eta-disasm',
-        );
+        const autoShowEnvironment = workspace.getConfiguration('eta.debug')
+            .get<boolean>('autoShowEnvironment', false);
+        if (autoShowEnvironment && extensionCtx && !EnvironmentInspectorPanel.current()) {
+            EnvironmentInspectorPanel.createOrShow(extensionCtx);
+        }
+        const environmentPanel = EnvironmentInspectorPanel.current();
+        const environmentPanelVisible = environmentPanel?.isVisible() ?? false;
         const providerScope = disasmProvider ? disasmProvider.currentScope() : 'current';
         // When disassembly auto-refresh is enabled, refresh on every stop so
         // the first breakpoint has data even before the UI view becomes visible.
         const shouldRefreshDisasmCurrent = autoRefreshDisasmOnStop;
         const shouldFetchChildren = autoRefreshViewsOnStop && childProcViewVisible;
+        const shouldFetchEnvironment =
+            environmentViewVisible || environmentPanelVisible || autoRefreshViewsOnStop;
 
         const heapPromise = shouldFetchHeapSnapshot
             ? session.customRequest('eta/heapSnapshot', {
@@ -635,21 +723,18 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             ? session.customRequest('eta/childProcesses') as Promise<{ children: ChildProcessInfo[] }>
             : Promise.resolve(undefined);
 
-        const localMemoryPromise = shouldFetchLocalMemory
-            ? session.customRequest('eta/localMemory', {
-                frameIndex: 0,
-                includeModuleGlobals: true,
-                maxLocals: 200,
-                maxUpvalues: 200,
-                maxModuleGlobals: 200,
-            }) as Promise<LocalMemorySnapshot>
+        const environmentPromise = shouldFetchEnvironment
+            ? session.customRequest(
+                'eta/environment',
+                buildEnvironmentRequestArgs(session),
+            ) as Promise<EnvironmentSnapshot>
             : Promise.resolve(undefined);
 
-        const [heapResult, currentDisasmResult, childrenResult, localMemoryResult] = await Promise.allSettled([
+        const [heapResult, currentDisasmResult, childrenResult, environmentResult] = await Promise.allSettled([
             heapPromise,
             disasmPromise,
             childrenPromise,
-            localMemoryPromise,
+            environmentPromise,
         ]);
 
         if (shouldFetchHeapSnapshot) {
@@ -673,40 +758,26 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
             }
         }
 
-        if (shouldFetchLocalMemory) {
-            if (localMemoryResult.status === 'fulfilled') {
-                let mem = localMemoryResult.value as LocalMemorySnapshot;
-                const isProbablyEmptyMemory = (m: LocalMemorySnapshot | undefined): boolean => {
-                    if (!m) return true;
-                    const total = (m.localsTotal ?? 0) + (m.upvaluesTotal ?? 0) + (m.moduleGlobalsTotal ?? 0);
-                    const frameName = (m.frameName ?? '').trim();
-                    const moduleName = (m.moduleName ?? '').trim();
-                    return total === 0 && frameName.length === 0 && moduleName.length === 0;
-                };
-                // First-stop race hardening similar to disassembly.
-                if (isProbablyEmptyMemory(mem)) {
-                    try {
-                        await new Promise<void>(resolve => setTimeout(resolve, 20));
-                        const retry = await session.customRequest('eta/localMemory', {
-                            frameIndex: 0,
-                            includeModuleGlobals: true,
-                            maxLocals: 200,
-                            maxUpvalues: 200,
-                            maxModuleGlobals: 200,
-                        }) as LocalMemorySnapshot;
-                        if (!isProbablyEmptyMemory(retry)) {
-                            mem = retry;
-                        }
-                    } catch (err: any) {
+        if (shouldFetchEnvironment) {
+            if (environmentResult.status === 'fulfilled') {
+                const env = environmentResult.value as EnvironmentSnapshot;
+                environmentProvider?.applyEnvironment(env);
+                environmentPanel?.applyEnvironment(env);
+            } else {
+                environmentProvider?.applyEnvironment(undefined);
+                const msg = environmentResult.reason instanceof Error
+                    ? environmentResult.reason.message
+                    : String(environmentResult.reason);
+                if (environmentPanel) {
+                    if (/must be paused/i.test(msg)) {
+                        environmentPanel.showIdle(
+                            'Pause the VM (breakpoint or step) to inspect lexical environments.',
+                        );
+                    } else {
+                        environmentPanel.showError(msg);
                     }
                 }
-                gcRootsProvider?.applyLocalMemory(mem);
-            } else {
-                gcRootsProvider?.applyLocalMemory(undefined);
-                const msg = localMemoryResult.reason instanceof Error
-                    ? localMemoryResult.reason.message
-                    : String(localMemoryResult.reason);
-                this.channel.appendLine(`[DAP] eta/localMemory refresh failed: ${msg}`);
+                this.channel.appendLine(`[DAP] eta/environment refresh failed: ${msg}`);
             }
         }
 

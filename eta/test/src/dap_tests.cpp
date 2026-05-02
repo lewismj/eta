@@ -845,6 +845,69 @@ BOOST_AUTO_TEST_CASE(inspect_object_missing_objectid) {
 }
 
 /**
+ * eta/environment returns the lexical-chain payload shape (`environments[]`)
+ * even when no paused VM is available.
+ */
+BOOST_AUTO_TEST_CASE(environment_without_vm_returns_lexical_chain_shape) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/environment", "{}"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/environment");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+
+    const auto& body = resp["body"];
+    BOOST_TEST(body.has("threadId"));
+    BOOST_TEST(body.has("frameIndex"));
+    BOOST_TEST(body.has("frameName"));
+    BOOST_TEST(body.has("moduleName"));
+    BOOST_TEST(body.has("environments"));
+    BOOST_TEST(body["environments"].is_array());
+
+    const auto& envs = body["environments"].as_array();
+    BOOST_REQUIRE_GE(envs.size(), 1u);
+    for (const auto& env : envs) {
+        BOOST_TEST(env.has("kind"));
+        BOOST_TEST(env.has("label"));
+        BOOST_TEST(env.has("depth"));
+        BOOST_TEST(env.has("total"));
+        BOOST_TEST(env.has("truncated"));
+        BOOST_TEST(env.has("bindings"));
+        BOOST_TEST(env["bindings"].is_array());
+    }
+}
+
+/**
+ * include flags control which lexical levels are returned by eta/environment.
+ */
+BOOST_AUTO_TEST_CASE(environment_include_flags_control_levels) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/environment",
+            R"({"include":{"locals":false,"closures":false,"globals":true,"builtins":true}})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/environment");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+
+    const auto& envs = resp["body"]["environments"].as_array();
+    BOOST_REQUIRE_EQUAL(envs.size(), 2u);
+    auto kind0 = envs[0].get_string("kind");
+    auto kind1 = envs[1].get_string("kind");
+    BOOST_REQUIRE(kind0.has_value());
+    BOOST_REQUIRE(kind1.has_value());
+    BOOST_TEST(*kind0 == "module");
+    BOOST_TEST(*kind1 == "builtins");
+}
+
+/**
  *     stopOnEntry) and request a snapshot.  The VM is likely not paused so
  *     we expect error 2002 ("VM must be paused"), but if timing allows a
  *     successful response we validate the consPool shape.
@@ -2487,6 +2550,9 @@ BOOST_AUTO_TEST_CASE(perf_heap_snapshot_under_250ms) {
     if (resp["success"].as_bool()) {
         perf_log("eta/heapSnapshot round-trip", dur);
         BOOST_TEST(dur < budget);
+        BOOST_TEST(resp["body"].has("kindsTotal"));
+        BOOST_TEST(resp["body"].has("kindsShown"));
+        BOOST_TEST(resp["body"].has("kindsTruncated"));
     }
 }
 
@@ -2560,6 +2626,11 @@ BOOST_AUTO_TEST_CASE(large_vector_advertises_paging_and_honours_start_count) {
     auto idx = found.variable.get_int("indexedVariables");
     BOOST_REQUIRE(idx.has_value());
     BOOST_TEST(*idx == 500);
+    BOOST_TEST(found.variable.has("type"));
+    auto vec_type = found.variable.get_string("type");
+    BOOST_REQUIRE(vec_type.has_value());
+    BOOST_TEST(*vec_type == "vector");
+    BOOST_TEST(found.variable.has("objectId"));
 
     /// 2. Request slice [100, 110): should return exactly 10 entries named [100]..[109].
     harness.send(request(500, "variables",
@@ -2572,6 +2643,7 @@ BOOST_AUTO_TEST_CASE(large_vector_advertises_paging_and_honours_start_count) {
     if (slice.size() == 10u) {
         BOOST_TEST(*slice.front().get_string("name") == "[100]");
         BOOST_TEST(*slice.back().get_string("name")  == "[109]");
+        BOOST_TEST(slice.front().has("type"));
     }
 
     /// 3. Slice past the end should be clamped (no crash, no error response).

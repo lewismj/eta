@@ -1093,7 +1093,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 }
                 std::reverse(upvals.begin(), upvals.end());
                 
-                auto closure_res = make_closure(heap_, bfunc, std::move(upvals));
+                auto closure_res = make_closure(heap_, bfunc, std::move(upvals), current_closure_);
                 if (!closure_res) return std::unexpected(closure_res.error());
                 push(*closure_res);
                 break;
@@ -1984,26 +1984,43 @@ bool VM::set_local(std::size_t frame_index, std::size_t slot, LispVal value) {
     return true;
 }
 
-std::vector<VarEntry> VM::get_upvalues(std::size_t frame_index) const {
-    std::vector<VarEntry> result;
-
+std::optional<nanbox::LispVal> VM::get_frame_closure(std::size_t frame_index) const {
     LispVal closure_val = current_closure_;
 
     if (frame_index != 0) {
         std::size_t idx = 1;
+        bool found = false;
         for (int i = static_cast<int>(frames_.size()) - 1; i >= 0; --i) {
             const auto& f = frames_[static_cast<std::size_t>(i)];
             if (f.kind == FrameKind::Sentinel) break;
             if (f.func == nullptr) continue;
             if (idx == frame_index) {
                 closure_val = f.closure;
+                found = true;
                 break;
             }
             ++idx;
         }
+        if (!found) {
+            return std::nullopt;
+        }
     }
 
-    if (auto* cl = try_get_as<ObjectKind::Closure, types::Closure>(closure_val)) {
+    if (try_get_as<ObjectKind::Closure, types::Closure>(closure_val)) {
+        return closure_val;
+    }
+    return std::nullopt;
+}
+
+std::vector<VarEntry> VM::get_upvalues(std::size_t frame_index) const {
+    std::vector<VarEntry> result;
+
+    const auto closure_opt = get_frame_closure(frame_index);
+    if (!closure_opt.has_value()) {
+        return result;
+    }
+
+    if (auto* cl = try_get_as<ObjectKind::Closure, types::Closure>(*closure_opt)) {
         for (std::size_t i = 0; i < cl->upvals.size(); ++i) {
             VarEntry e;
             /// Use the real name from upval_names if available; fall back to &N placeholder.

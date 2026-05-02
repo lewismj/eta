@@ -70,10 +70,10 @@
         "views": {
             "debug": [
                 {
-                    "id": "etaGCRoots",
-                    "name": "Memory",
+                    "id": "etaEnvironment",
+                    "name": "Environment",
                     "when": "inDebugMode && debugType == 'eta'",
-                    "icon": "$(list-tree)"
+                    "icon": "$(symbol-variable)"
                 },
                 {
                     "id": "etaDisassembly",
@@ -125,6 +125,11 @@
                     "default": false,
                     "description": "Automatically show the Heap Inspector when a debug session starts (when heap auto-refresh is enabled)."
                 },
+                "eta.debug.autoShowEnvironment": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically show the Environment Inspector webview on stopped events."
+                },
                 "eta.debug.autoShowDisassembly": {
                     "type": "boolean",
                     "default": false,
@@ -149,6 +154,41 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Enable inline values in the editor while paused. Disabled by default because stop-time evaluate requests can impact debug responsiveness on large programs."
+                },
+                "eta.debug.environment.followActiveFrame": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "When enabled, the Environment view follows the selected frame in the Call Stack."
+                },
+                "eta.debug.environment.showLocals": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show local variables in the Environment view."
+                },
+                "eta.debug.environment.showClosures": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show closure/upvalue bindings in the Environment view."
+                },
+                "eta.debug.environment.showGlobals": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Show module globals in the Environment view."
+                },
+                "eta.debug.environment.showBuiltins": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Show runtime builtins in the Environment view."
+                },
+                "eta.debug.environment.showInternal": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Show internal bindings (for example names beginning with %)."
+                },
+                "eta.debug.environment.showNil": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Show bindings whose current value is nil."
                 },
                 "eta.test.runnerPath": {
                     "type": "string",
@@ -183,6 +223,12 @@
                 "category": "Eta"
             },
             {
+                "command": "eta.showEnvironmentInspector",
+                "title": "Show Environment Inspector",
+                "icon": "$(symbol-namespace)",
+                "category": "Eta"
+            },
+            {
                 "command": "eta.showDisassembly",
                 "title": "Show Disassembly",
                 "icon": "$(file-binary)",
@@ -195,9 +241,15 @@
                 "category": "Eta"
             },
             {
-                "command": "eta.refreshGCRoots",
-                "title": "Refresh Memory",
+                "command": "eta.refreshEnvironment",
+                "title": "Refresh Environment",
                 "icon": "$(refresh)",
+                "category": "Eta"
+            },
+            {
+                "command": "eta.configureEnvironmentFilters",
+                "title": "Configure Environment Filters",
+                "icon": "$(filter)",
                 "category": "Eta"
             },
             {
@@ -248,11 +300,18 @@
                     "command": "eta.showHeapInspector"
                 },
                 {
+                    "command": "eta.showEnvironmentInspector"
+                },
+                {
                     "command": "eta.showDisassembly",
                     "when": "debugType == 'eta'"
                 },
                 {
                     "command": "eta.showDisassemblyAll",
+                    "when": "debugType == 'eta'"
+                },
+                {
+                    "command": "eta.configureEnvironmentFilters",
                     "when": "debugType == 'eta'"
                 },
                 {
@@ -266,8 +325,13 @@
             ],
             "view/title": [
                 {
-                    "command": "eta.refreshGCRoots",
-                    "when": "view == etaGCRoots",
+                    "command": "eta.refreshEnvironment",
+                    "when": "view == etaEnvironment",
+                    "group": "navigation"
+                },
+                {
+                    "command": "eta.configureEnvironmentFilters",
+                    "when": "view == etaEnvironment",
                     "group": "navigation"
                 },
                 {

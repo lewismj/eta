@@ -42,8 +42,9 @@ describe('Eta extension activation', function () {
             'eta.debugFile',
             'eta.runTestFile',
             'eta.showHeapInspector',
+            'eta.showEnvironmentInspector',
             'eta.showDisassembly',
-            'eta.refreshGCRoots',
+            'eta.refreshEnvironment',
         ]) {
             assert.ok(all.includes(cmd), `missing command: ${cmd}`);
         }

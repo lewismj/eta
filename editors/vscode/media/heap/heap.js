@@ -200,6 +200,7 @@
                 status,
             });
         }
+        const shownBeforeFilter = rows.length;
 
         if (kindFilter) {
             rows = rows.filter((r) => r.kind.toLowerCase().includes(kindFilter));
@@ -213,7 +214,15 @@
             return (av - bv) * dir;
         });
 
-        let html = '<h2>Object Kinds <span class="muted">(' + rows.length + ')</span></h2>';
+        let html = '<h2>Object Kinds <span class="muted">(' + shownBeforeFilter + ')</span>';
+        if (snapshot.kindsTruncated && Number.isFinite(snapshot.kindsTotal)) {
+            const shownKinds = Number.isFinite(snapshot.kindsShown) ? snapshot.kindsShown : shownBeforeFilter;
+            html += ' <span class="muted">(showing ' + shownKinds + ' of ' + snapshot.kindsTotal + ' kinds)</span>';
+        }
+        if (kindFilter) {
+            html += ' <span class="muted">(filtered: ' + rows.length + ')</span>';
+        }
+        html += '</h2>';
         html += '<table>';
         const cols = diffMode && baseline
             ? [['kind', 'Kind'], ['count', 'Count'], ['dCount', 'Δ Count'], ['bytes', 'Bytes'], ['dBytes', 'Δ Bytes']]

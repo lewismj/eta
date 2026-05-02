@@ -74,8 +74,18 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
-    std::expected<LispVal, RuntimeError> make_closure(Heap& heap, const vm::BytecodeFunction* func, std::vector<LispVal> upvals) {
-        return make_heap_object<types::Closure, ObjectKind::Closure>(heap, types::Closure{.func = func, .upvals = std::move(upvals)});
+    std::expected<LispVal, RuntimeError> make_closure(
+        Heap& heap,
+        const vm::BytecodeFunction* func,
+        std::vector<LispVal> upvals,
+        LispVal parent = nanbox::Nil) {
+        return make_heap_object<types::Closure, ObjectKind::Closure>(
+            heap,
+            types::Closure{
+                .func = func,
+                .upvals = std::move(upvals),
+                .parent = parent,
+            });
     }
 
     inline_always

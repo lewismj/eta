@@ -198,6 +198,7 @@ void DapServer::dispatch(const Value& msg) {
         else if (*cmd == "completions")         handle_completions(id, args);
         else if (*cmd == "disconnect")          handle_disconnect(id, args);
         else if (*cmd == "disassemble")         handle_standard_disassemble(id, args);
+        else if (*cmd == "eta/environment")     handle_environment(id, args);
         else if (*cmd == "eta/localMemory")     handle_local_memory(id, args);
         else if (*cmd == "eta/heapSnapshot")    handle_heap_inspector(id, args);
         else if (*cmd == "eta/inspectObject")   handle_inspect_object(id, args);
@@ -243,7 +244,7 @@ void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
         /// Vectors and other indexed compounds expose `indexedVariables`/`namedVariables`
         /// in their `make_variable_json` output and honour `start`/`count` on `variables`.
         {"supportsVariablePaging",              true},
-        {"supportsVariableType",                false},
+        {"supportsVariableType",                true},
     }));
     /**
      * IMPORTANT: "initialized" is intentionally NOT sent here.
@@ -1849,6 +1850,307 @@ void DapServer::notify_breakpoints_verified() {
 
 /**
  */
+void DapServer::handle_environment(const Value& id, const Value& args) {
+    std::lock_guard<std::mutex> lk(vm_mutex_);
+
+    const auto parse_limit = [](const Value& obj, const char* key, int64_t fallback) -> int64_t {
+        if (obj.is_object()) {
+            if (auto v = obj.get_int(key)) {
+                return std::clamp<int64_t>(*v, 0, 5000);
+            }
+        }
+        return fallback;
+    };
+    const auto parse_bool = [](const Value& obj, const char* key, bool fallback) -> bool {
+        if (obj.is_object() && obj.has(key) && obj[key].is_bool()) {
+            return obj[key].as_bool();
+        }
+        return fallback;
+    };
+
+    int frame_idx = 0;
+    if (auto v = args.get_int("frameIndex")) {
+        frame_idx = std::max<int>(0, static_cast<int>(*v));
+    }
+
+    Value include_obj;
+    if (args.is_object() && args.has("include") && args["include"].is_object()) {
+        include_obj = args["include"];
+    }
+    const bool include_locals = parse_bool(include_obj, "locals", true);
+    const bool include_closures = parse_bool(include_obj, "closures", true);
+    const bool include_globals = parse_bool(include_obj, "globals", false);
+    const bool include_builtins = parse_bool(include_obj, "builtins", false);
+    const bool include_internal = parse_bool(include_obj, "internal", false);
+    const bool include_nil = parse_bool(include_obj, "nil", false);
+
+    Value limits_obj;
+    if (args.is_object() && args.has("limits") && args["limits"].is_object()) {
+        limits_obj = args["limits"];
+    }
+    const int64_t max_locals = parse_limit(limits_obj, "maxLocals", 200);
+    const int64_t max_closures = parse_limit(limits_obj, "maxClosures", 200);
+    const int64_t max_globals = parse_limit(limits_obj, "maxGlobals", 200);
+    const int64_t max_builtins = parse_limit(limits_obj, "maxBuiltins", 200);
+
+    DapThread* th = resolve_thread_arg_locked(args);
+    const int resolved_thread_id = th ? th->dap_thread_id : MAIN_THREAD_ID;
+
+    auto make_empty_environments = [&](const std::string& module_name) -> Array {
+        Array envs;
+        int64_t depth = 0;
+        auto append = [&](const char* kind, const std::string& label) {
+            envs.push_back(json::object({
+                {"kind", Value(kind)},
+                {"label", Value(label)},
+                {"depth", Value(depth++)},
+                {"total", 0},
+                {"truncated", false},
+                {"bindings", json::array({})},
+            }));
+        };
+        if (include_locals) {
+            append("locals", "Frame locals");
+        }
+        if (include_closures) {
+            append("closure", "Closure parent #1");
+        }
+        if (include_globals) {
+            append("module", module_name.empty() ? "Module" : ("Module (" + module_name + ")"));
+        }
+        if (include_builtins) {
+            append("builtins", "Builtins");
+        }
+        return envs;
+    };
+    auto send_empty = [&](const std::string& frame_name = std::string{},
+                          const std::string& module_name = std::string{}) {
+        send_response(id, json::object({
+            {"threadId", Value(static_cast<int64_t>(resolved_thread_id))},
+            {"frameIndex", Value(static_cast<int64_t>(frame_idx))},
+            {"frameName", Value(frame_name)},
+            {"moduleName", Value(module_name)},
+            {"environments", Value(make_empty_environments(module_name))},
+        }));
+    };
+
+    if (!th || !th->vm || !th->driver || !th->vm->is_paused()) {
+        send_empty();
+        return;
+    }
+
+    session::Driver& drv = *th->driver;
+    runtime::vm::VM& vm = *th->vm;
+    const auto frames = vm.get_frames();
+    if (frame_idx < 0 || static_cast<std::size_t>(frame_idx) >= frames.size()) {
+        send_empty();
+        return;
+    }
+
+    const auto& frame = frames[static_cast<std::size_t>(frame_idx)];
+    const std::string frame_name = frame.func_name.empty() ? "<anonymous>" : frame.func_name;
+    const std::string module_name = current_module_from_frame(drv, static_cast<std::size_t>(frame_idx));
+
+    auto collect_bindings = [&](const auto& entries,
+                                int64_t limit,
+                                int64_t& out_total,
+                                bool& out_truncated) -> Array {
+        Array vars;
+        out_total = 0;
+        out_truncated = false;
+        for (const auto& e : entries) {
+            const bool is_internal = !e.name.empty() && e.name[0] == '%';
+            if (!include_internal && is_internal) continue;
+            const bool is_nil = (e.value == runtime::nanbox::Nil);
+            if (!include_nil && is_nil) continue;
+            out_total++;
+            if (limit > 0 && static_cast<int64_t>(vars.size()) >= limit) {
+                out_truncated = true;
+                continue;
+            }
+            vars.push_back(make_variable_json(drv, th->dap_thread_id, e.name, e.value));
+        }
+        return vars;
+    };
+
+    auto collect_slots = [&](const std::vector<std::pair<std::string, uint32_t>>& slots,
+                             int64_t limit,
+                             int64_t& out_total,
+                             bool& out_truncated) -> Array {
+        Array vars;
+        out_total = 0;
+        out_truncated = false;
+        const auto& globals = vm.globals();
+        for (const auto& [name, slot] : slots) {
+            if (slot >= globals.size()) continue;
+            const auto value = globals[slot];
+            out_total++;
+            if (limit > 0 && static_cast<int64_t>(vars.size()) >= limit) {
+                out_truncated = true;
+                continue;
+            }
+            vars.push_back(make_variable_json(drv, th->dap_thread_id, name, value));
+        }
+        return vars;
+    };
+
+    Array environments;
+    int64_t lexical_depth = 0;
+    auto append_environment = [&](const char* kind,
+                                  const std::string& label,
+                                  int64_t total,
+                                  bool truncated,
+                                  Array bindings) {
+        environments.push_back(json::object({
+            {"kind", Value(kind)},
+            {"label", Value(label)},
+            {"depth", Value(lexical_depth++)},
+            {"total", Value(total)},
+            {"truncated", Value(truncated)},
+            {"bindings", Value(std::move(bindings))},
+        }));
+    };
+
+    if (include_locals) {
+        const auto locals = vm.get_locals(static_cast<std::size_t>(frame_idx));
+        int64_t total = 0;
+        bool truncated = false;
+        auto vars = collect_bindings(locals, max_locals, total, truncated);
+        append_environment("locals", "Frame locals", total, truncated, std::move(vars));
+    }
+
+    if (include_closures) {
+        const auto closure_opt = vm.get_frame_closure(static_cast<std::size_t>(frame_idx));
+        auto& heap = drv.heap();
+        std::unordered_set<runtime::memory::heap::ObjectId> seen_closures;
+        runtime::nanbox::LispVal closure_val = closure_opt.value_or(runtime::nanbox::Nil);
+        int closure_level = 0;
+        while (runtime::nanbox::ops::is_boxed(closure_val)
+               && runtime::nanbox::ops::tag(closure_val) == runtime::nanbox::Tag::HeapObject) {
+            const auto oid = static_cast<runtime::memory::heap::ObjectId>(
+                runtime::nanbox::ops::payload(closure_val));
+            if (!seen_closures.insert(oid).second) {
+                break;
+            }
+            auto* cl = heap.try_get_as<
+                runtime::memory::heap::ObjectKind::Closure,
+                runtime::types::Closure>(oid);
+            if (!cl) {
+                break;
+            }
+
+            std::vector<runtime::vm::VarEntry> upvalue_entries;
+            upvalue_entries.reserve(cl->upvals.size());
+            for (std::size_t i = 0; i < cl->upvals.size(); ++i) {
+                runtime::vm::VarEntry e;
+                if (cl->func
+                    && i < cl->func->upval_names.size()
+                    && !cl->func->upval_names[i].empty()) {
+                    e.name = cl->func->upval_names[i];
+                } else {
+                    e.name = "&" + std::to_string(i);
+                }
+                e.value = cl->upvals[i];
+                upvalue_entries.push_back(std::move(e));
+            }
+
+            int64_t total = 0;
+            bool truncated = false;
+            auto vars = collect_bindings(upvalue_entries, max_closures, total, truncated);
+            append_environment(
+                "closure",
+                "Closure parent #" + std::to_string(++closure_level),
+                total,
+                truncated,
+                std::move(vars));
+
+            if (cl->parent == runtime::nanbox::Nil) {
+                break;
+            }
+            closure_val = cl->parent;
+        }
+        if (closure_level == 0) {
+            append_environment("closure", "Closure parent #1", 0, false, Array{});
+        }
+    }
+
+    if (include_globals || include_builtins) {
+        const auto& globals = vm.globals();
+        const auto& names = drv.global_names();
+        std::vector<std::pair<std::string, uint32_t>> module_slots;
+        std::vector<std::pair<std::string, uint32_t>> builtin_slots;
+        module_slots.reserve(names.size());
+        builtin_slots.reserve(names.size());
+
+        for (const auto& [slot, full_name] : names) {
+            if (slot >= globals.size()) continue;
+            const auto value = globals[slot];
+            const bool is_nil = (value == runtime::nanbox::Nil);
+            if (!include_nil && is_nil) continue;
+
+            const auto dot = full_name.rfind('.');
+            if (dot == std::string::npos) {
+                const bool is_internal = !full_name.empty() && full_name[0] == '%';
+                if (!include_internal && is_internal) continue;
+                builtin_slots.push_back({full_name, slot});
+                continue;
+            }
+            if (!include_globals) continue;
+            if (module_name.empty()) continue;
+            if (full_name.substr(0, dot) != module_name) continue;
+            std::string short_name = full_name.substr(dot + 1);
+            const bool is_internal = !short_name.empty() && short_name[0] == '%';
+            if (!include_internal && is_internal) continue;
+            module_slots.push_back({std::move(short_name), slot});
+        }
+
+        std::sort(
+            module_slots.begin(),
+            module_slots.end(),
+            [](const auto& a, const auto& b) {
+                if (a.first != b.first) return a.first < b.first;
+                return a.second < b.second;
+            }
+        );
+        std::sort(
+            builtin_slots.begin(),
+            builtin_slots.end(),
+            [](const auto& a, const auto& b) {
+                if (a.first != b.first) return a.first < b.first;
+                return a.second < b.second;
+            }
+        );
+
+        if (include_globals) {
+            int64_t total = 0;
+            bool truncated = false;
+            auto vars = collect_slots(module_slots, max_globals, total, truncated);
+            append_environment(
+                "module",
+                module_name.empty() ? "Module" : ("Module (" + module_name + ")"),
+                total,
+                truncated,
+                std::move(vars));
+        }
+        if (include_builtins) {
+            int64_t total = 0;
+            bool truncated = false;
+            auto vars = collect_slots(builtin_slots, max_builtins, total, truncated);
+            append_environment("builtins", "Builtins", total, truncated, std::move(vars));
+        }
+    }
+
+    send_response(id, json::object({
+        {"threadId", Value(static_cast<int64_t>(th->dap_thread_id))},
+        {"frameIndex", Value(static_cast<int64_t>(frame_idx))},
+        {"frameName", Value(frame_name)},
+        {"moduleName", Value(module_name)},
+        {"environments", Value(std::move(environments))},
+    }));
+}
+
+/**
+ */
 void DapServer::handle_local_memory(const Value& id, const Value& args) {
     std::lock_guard<std::mutex> lk(vm_mutex_);
 
@@ -2074,6 +2376,8 @@ Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_
 
     auto& heap = driver_->heap();
     bool truncated = false;
+    bool kinds_truncated = false;
+    int64_t kinds_total_rows = 0;
 
     /// Per-kind statistics
     struct KindStat { int64_t count{0}; int64_t bytes{0}; };
@@ -2113,10 +2417,12 @@ Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_
                 if (a.second.count != b.second.count) return a.second.count > b.second.count;
                 return a.first < b.first;
             });
+        kinds_total_rows = static_cast<int64_t>(rows.size());
         if (opts.max_kind_rows > 0
             && static_cast<int64_t>(rows.size()) > opts.max_kind_rows) {
             rows.resize(static_cast<std::size_t>(opts.max_kind_rows));
             truncated = true;
+            kinds_truncated = true;
         }
         for (const auto& [k, stat] : rows) {
             kinds_arr.push_back(json::object({
@@ -2224,6 +2530,7 @@ Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_
         {"free",     Value(static_cast<int64_t>(pool.free_count))},
         {"bytes",    Value(static_cast<int64_t>(pool.bytes))},
     });
+    const int64_t kinds_shown = static_cast<int64_t>(kinds_arr.size());
 
     return json::object({
         {"totalBytes",      Value(static_cast<int64_t>(heap.total_bytes()))},
@@ -2233,6 +2540,9 @@ Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_
         {"consPool",        Value(std::move(cons_pool_obj))},
         {"truncated",       Value(truncated)},
         {"scannedObjects",  Value(scanned_objects)},
+        {"kindsTotal",      Value(kinds_total_rows)},
+        {"kindsShown",      Value(kinds_shown)},
+        {"kindsTruncated",  Value(kinds_truncated)},
     });
 }
 
@@ -2532,6 +2842,111 @@ bool DapServer::is_compound_value(uint64_t val) const {
     }
 }
 
+namespace {
+
+std::string heap_kind_type_hint(runtime::memory::heap::ObjectKind kind) {
+    using runtime::memory::heap::ObjectKind;
+    switch (kind) {
+        case ObjectKind::Cons:
+            return "pair";
+        case ObjectKind::Fixnum:
+            return "integer";
+        case ObjectKind::Vector:
+            return "vector";
+        case ObjectKind::ByteVector:
+            return "bytevector";
+        case ObjectKind::Closure:
+            return "procedure";
+        case ObjectKind::Continuation:
+            return "continuation";
+        case ObjectKind::Primitive:
+            return "builtin";
+        case ObjectKind::Guardian:
+            return "guardian";
+        case ObjectKind::MultipleValues:
+            return "multiple-values";
+        case ObjectKind::Port:
+            return "port";
+        case ObjectKind::LogicVar:
+            return "logic-var";
+        case ObjectKind::Tape:
+            return "tape";
+        case ObjectKind::Tensor:
+            return "tensor";
+        case ObjectKind::NNModule:
+            return "nn-module";
+        case ObjectKind::Optimizer:
+            return "optimizer";
+        case ObjectKind::FactTable:
+            return "fact-table";
+        case ObjectKind::HashMap:
+            return "hashmap";
+        case ObjectKind::HashSet:
+            return "hashset";
+        case ObjectKind::CsvReader:
+            return "csv-reader";
+        case ObjectKind::CsvWriter:
+            return "csv-writer";
+        case ObjectKind::Regex:
+            return "regex";
+        case ObjectKind::LogSink:
+            return "log-sink";
+        case ObjectKind::LogLogger:
+            return "log-logger";
+        case ObjectKind::ProcessHandle:
+            return "process";
+        case ObjectKind::NngSocket:
+            return "socket";
+        case ObjectKind::CompoundTerm:
+            return "compound-term";
+        default:
+            return "object";
+    }
+}
+
+std::string classify_value_type(runtime::memory::heap::Heap& heap, runtime::nanbox::LispVal val) {
+    using namespace runtime::nanbox;
+    if (!ops::is_boxed(val)) {
+        return "number";
+    }
+    switch (ops::tag(val)) {
+        case Tag::Nil:
+            if (val == runtime::nanbox::True || val == runtime::nanbox::False) {
+                return "boolean";
+            }
+            return "nil";
+        case Tag::Char:
+            return "char";
+        case Tag::Fixnum:
+            return "integer";
+        case Tag::String:
+            return "string";
+        case Tag::Symbol:
+            return "symbol";
+        case Tag::Nan:
+            return "number";
+        case Tag::TapeRef:
+            return "tape-ref";
+        case Tag::HeapObject: {
+            runtime::memory::heap::HeapEntry entry;
+            if (heap.try_get(static_cast<runtime::memory::heap::ObjectId>(ops::payload(val)), entry)) {
+                return heap_kind_type_hint(entry.header.kind);
+            }
+            return "object";
+        }
+        default:
+            return "value";
+    }
+}
+
+bool is_callable_type_hint(const std::string& type_hint) {
+    return type_hint == "procedure"
+        || type_hint == "builtin"
+        || type_hint == "continuation";
+}
+
+} // namespace
+
 Value DapServer::make_variable_json(session::Driver& drv, int dap_thread_id,
                                     const std::string& name, uint64_t val) {
     using namespace runtime::nanbox;
@@ -2541,6 +2956,7 @@ Value DapServer::make_variable_json(session::Driver& drv, int dap_thread_id,
     int var_ref = 0;
     int64_t indexed_count = 0;
     int64_t named_count   = 0;
+    std::optional<int64_t> object_id;
     /// is_compound_value() probes the *parent* heap; for child threads we
     /// re-probe against `drv.heap()` directly to determine expandability.
     auto& heap = drv.heap();
@@ -2548,6 +2964,7 @@ Value DapServer::make_variable_json(session::Driver& drv, int dap_thread_id,
         const auto pid = static_cast<ObjectId>(ops::payload(val));
         HeapEntry entry;
         if (heap.try_get(pid, entry)) {
+            object_id = static_cast<int64_t>(pid);
             switch (entry.header.kind) {
                 case ObjectKind::Vector:
                     if (auto* vec = heap.try_get_as<ObjectKind::Vector, Vector>(pid)) {
@@ -2574,16 +2991,25 @@ Value DapServer::make_variable_json(session::Driver& drv, int dap_thread_id,
             }
         }
     }
+    const std::string type_hint = classify_value_type(heap, val);
     auto obj = json::object({
         {"name",               Value(name)},
         {"value",              Value(drv.format_value(val))},
         {"variablesReference", Value(static_cast<int64_t>(var_ref))},
+        {"type",               Value(type_hint)},
     });
     if (indexed_count > 0) {
         obj.as_object().insert_or_assign("indexedVariables", Value(indexed_count));
     }
     if (named_count > 0) {
         obj.as_object().insert_or_assign("namedVariables", Value(named_count));
+    }
+    if (object_id.has_value()) {
+        obj.as_object().insert_or_assign("objectId", Value(*object_id));
+        obj.as_object().insert_or_assign("canInspectHeap", Value(true));
+    }
+    if (is_callable_type_hint(type_hint)) {
+        obj.as_object().insert_or_assign("canDisassemble", Value(true));
     }
     return obj;
 }

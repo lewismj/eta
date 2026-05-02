@@ -1,107 +1,273 @@
 import {
+    DebugSession,
     debug,
     Event,
     EventEmitter,
+    MarkdownString,
+    ThemeColor,
     ThemeIcon,
+    workspace,
     TreeDataProvider,
     TreeItem,
     TreeItemCollapsibleState,
 } from 'vscode';
-import type { DebugVariable, LocalMemorySnapshot } from './dapTypes';
+import type { DebugVariable, EnvironmentLevel, EnvironmentSnapshot } from './dapTypes';
 
-export type MemoryNode = MemorySectionNode | MemoryVariableNode | MemoryMessageNode;
-
-export class MemorySectionNode {
-    constructor(
-        public readonly title: string,
-        public readonly total: number,
-        public readonly truncated: boolean,
-        public readonly variables: DebugVariable[],
-    ) {}
+export interface EnvironmentSettings {
+    followActiveFrame: boolean;
+    showLocals: boolean;
+    showClosures: boolean;
+    showGlobals: boolean;
+    showBuiltins: boolean;
+    showInternal: boolean;
+    showNil: boolean;
 }
 
-export class MemoryVariableNode {
+export interface EnvironmentSelection {
+    threadId: number;
+    frameIndex: number;
+}
+
+type StackItemLike = {
+    session?: { id: string };
+    threadId?: number;
+    frameId?: number;
+} | undefined;
+
+export type EnvironmentNode =
+    | EnvironmentScopeNode
+    | EnvironmentVariableNode
+    | EnvironmentMessageNode;
+
+export class EnvironmentScopeNode {
+    constructor(public readonly environment: EnvironmentLevel) {}
+}
+
+export class EnvironmentVariableNode {
     constructor(public readonly variable: DebugVariable) {}
 }
 
-export class MemoryMessageNode {
+export class EnvironmentMessageNode {
     constructor(public readonly text: string) {}
 }
 
-export class GCRootsTreeProvider implements TreeDataProvider<MemoryNode> {
-    private readonly _onDidChangeTreeData = new EventEmitter<MemoryNode | undefined | void>();
-    readonly onDidChangeTreeData: Event<MemoryNode | undefined | void> = this._onDidChangeTreeData.event;
+export function getEnvironmentSettings(): EnvironmentSettings {
+    const cfg = workspace.getConfiguration('eta.debug.environment');
+    return {
+        followActiveFrame: cfg.get<boolean>('followActiveFrame', true),
+        showLocals: cfg.get<boolean>('showLocals', true),
+        showClosures: cfg.get<boolean>('showClosures', true),
+        showGlobals: cfg.get<boolean>('showGlobals', false),
+        showBuiltins: cfg.get<boolean>('showBuiltins', false),
+        showInternal: cfg.get<boolean>('showInternal', false),
+        showNil: cfg.get<boolean>('showNil', false),
+    };
+}
 
-    private snapshot: LocalMemorySnapshot | undefined;
-    private statusText = 'Pause an Eta debug session to inspect frame memory.';
+export function resolveEnvironmentSelection(
+    session: DebugSession,
+    followActiveFrame: boolean,
+    stackItem: StackItemLike = debug.activeStackItem as StackItemLike,
+): EnvironmentSelection {
+    if (!followActiveFrame) {
+        return { threadId: 1, frameIndex: 0 };
+    }
+    if (!stackItem || stackItem.session?.id !== session.id) {
+        return { threadId: 1, frameIndex: 0 };
+    }
+    const threadId = Number.isInteger(stackItem.threadId) && (stackItem.threadId ?? 0) > 0
+        ? (stackItem.threadId as number)
+        : 1;
+    const frameIndex = Number.isInteger(stackItem.frameId)
+        ? Math.max(0, (stackItem.frameId as number) & 0xFFFF)
+        : 0;
+    return { threadId, frameIndex };
+}
 
-    applyLocalMemory(snapshot: LocalMemorySnapshot | undefined): void {
+export function buildEnvironmentRequestArgs(session: DebugSession): {
+    threadId: number;
+    frameIndex: number;
+    include: {
+        locals: boolean;
+        closures: boolean;
+        globals: boolean;
+        builtins: boolean;
+        internal: boolean;
+        nil: boolean;
+    };
+    limits: {
+        maxLocals: number;
+        maxClosures: number;
+        maxGlobals: number;
+        maxBuiltins: number;
+    };
+} {
+    const settings = getEnvironmentSettings();
+    const sel = resolveEnvironmentSelection(session, settings.followActiveFrame);
+    return {
+        threadId: sel.threadId,
+        frameIndex: sel.frameIndex,
+        include: {
+            locals: settings.showLocals,
+            closures: settings.showClosures,
+            globals: settings.showGlobals,
+            builtins: settings.showBuiltins,
+            internal: settings.showInternal,
+            nil: settings.showNil,
+        },
+        limits: {
+            maxLocals: 200,
+            maxClosures: 200,
+            maxGlobals: 200,
+            maxBuiltins: 200,
+        },
+    };
+}
+
+function scopeIcon(scopeKind: string): ThemeIcon {
+    switch (scopeKind) {
+        case 'locals':
+            return new ThemeIcon('bracket', new ThemeColor('symbolIcon.variableForeground'));
+        case 'closure':
+        case 'closures':
+        case 'upvalues':
+            return new ThemeIcon('link', new ThemeColor('symbolIcon.referenceForeground'));
+        case 'module':
+        case 'globals':
+            return new ThemeIcon('symbol-module', new ThemeColor('symbolIcon.moduleForeground'));
+        case 'builtins':
+            return new ThemeIcon('library', new ThemeColor('symbolIcon.functionForeground'));
+        default:
+            return new ThemeIcon('symbol-namespace', new ThemeColor('symbolIcon.namespaceForeground'));
+    }
+}
+
+const TYPE_ICON: Record<string, [string, string?]> = {
+    procedure: ['symbol-method', 'symbolIcon.functionForeground'],
+    builtin: ['zap', 'symbolIcon.functionForeground'],
+    continuation: ['debug-step-back', 'symbolIcon.eventForeground'],
+    pair: ['list-tree', 'symbolIcon.arrayForeground'],
+    vector: ['symbol-array', 'symbolIcon.arrayForeground'],
+    hashmap: ['symbol-structure', 'symbolIcon.structForeground'],
+    hashset: ['symbol-structure', 'symbolIcon.structForeground'],
+    string: ['symbol-string', 'symbolIcon.stringForeground'],
+    symbol: ['symbol-key', 'symbolIcon.keyForeground'],
+    integer: ['symbol-number', 'symbolIcon.numberForeground'],
+    number: ['symbol-number', 'symbolIcon.numberForeground'],
+    boolean: ['symbol-boolean', 'symbolIcon.booleanForeground'],
+    char: ['symbol-text', 'symbolIcon.stringForeground'],
+    port: ['plug', 'symbolIcon.interfaceForeground'],
+    tensor: ['graph', 'symbolIcon.numberForeground'],
+    nil: ['circle-slash', 'disabledForeground'],
+    object: ['symbol-misc', 'symbolIcon.colorForeground'],
+};
+
+function sniffType(value: string): string {
+    const text = value.trim();
+    if (text === '#t' || text === '#f' || text === 'true' || text === 'false') return 'boolean';
+    if (text === '()' || text === '#nil' || text === 'nil') return 'nil';
+    if (/^-?\d/.test(text)) return 'number';
+    if (text.startsWith('"')) return 'string';
+    if (text.startsWith('#<tensor')) return 'tensor';
+    if (text.startsWith('#<vector')) return 'vector';
+    if (text.startsWith('#<hashmap')) return 'hashmap';
+    if (text.startsWith('#<hashset')) return 'hashset';
+    if (text.startsWith('<procedure') || text.startsWith('#<closure')) return 'procedure';
+    if (text.startsWith('(')) return 'pair';
+    return 'object';
+}
+
+function variableIcon(v: DebugVariable): ThemeIcon {
+    const declared = typeof v.type === 'string' ? v.type.trim().toLowerCase() : '';
+    const key = declared && TYPE_ICON[declared] ? declared : sniffType(v.value ?? '');
+    const [icon, color] = TYPE_ICON[key] ?? TYPE_ICON.object;
+    return color ? new ThemeIcon(icon, new ThemeColor(color)) : new ThemeIcon(icon);
+}
+
+function variableTooltip(v: DebugVariable): MarkdownString {
+    const md = new MarkdownString(undefined, true);
+    md.isTrusted = false;
+    md.appendMarkdown(`**${v.name}**`);
+    md.appendCodeblock(v.value ?? '', 'eta');
+    if (v.type) {
+        md.appendMarkdown(`\n_type:_ \`${v.type}\``);
+    }
+    const id = v.objectId ?? undefined;
+    if (typeof id === 'number' && Number.isFinite(id) && id > 0) {
+        md.appendMarkdown(`\n_id:_ \`#${id}\``);
+    }
+    return md;
+}
+
+export class EnvironmentTreeProvider implements TreeDataProvider<EnvironmentNode> {
+    private readonly _onDidChangeTreeData = new EventEmitter<EnvironmentNode | undefined | void>();
+    readonly onDidChangeTreeData: Event<EnvironmentNode | undefined | void> = this._onDidChangeTreeData.event;
+
+    private snapshot: EnvironmentSnapshot | undefined;
+    private statusText = 'Pause an Eta debug session to inspect environments.';
+
+    applyEnvironment(snapshot: EnvironmentSnapshot | undefined): void {
         this.snapshot = snapshot;
         if (snapshot) {
-            this.statusText = `Frame ${snapshot.frameIndex}: ${snapshot.frameName || '<anonymous>'}`;
+            this.statusText =
+                `Thread ${snapshot.threadId} Frame ${snapshot.frameIndex}: `
+                + `${snapshot.frameName || '<anonymous>'}`;
         } else if (debug.activeDebugSession?.type === 'eta') {
             this.statusText = 'No paused Eta frame available.';
         } else {
-            this.statusText = 'Pause an Eta debug session to inspect frame memory.';
+            this.statusText = 'Pause an Eta debug session to inspect environments.';
         }
         this._onDidChangeTreeData.fire();
     }
 
     refresh(): void {
-        this.fetchLocalMemory().then(() => this._onDidChangeTreeData.fire());
+        void this.refreshFromSession();
     }
 
-    notifyStopped(): void {
-        this.refresh();
-    }
-
-    private async fetchLocalMemory(): Promise<void> {
-        const session = debug.activeDebugSession;
-        if (!session || session.type !== 'eta') {
-            this.snapshot = undefined;
-            this.statusText = 'Pause an Eta debug session to inspect frame memory.';
+    async refreshFromSession(session?: DebugSession): Promise<void> {
+        const activeSession = session ?? debug.activeDebugSession;
+        if (!activeSession || activeSession.type !== 'eta') {
+            this.applyEnvironment(undefined);
             return;
         }
         try {
-            const snap = await session.customRequest('eta/localMemory', {
-                frameIndex: 0,
-                includeModuleGlobals: true,
-                maxLocals: 200,
-                maxUpvalues: 200,
-                maxModuleGlobals: 200,
-            }) as LocalMemorySnapshot;
-            this.snapshot = snap;
-            this.statusText = `Frame ${snap.frameIndex}: ${snap.frameName || '<anonymous>'}`;
+            const args = buildEnvironmentRequestArgs(activeSession);
+            const snap = await activeSession.customRequest('eta/environment', args) as EnvironmentSnapshot;
+            this.applyEnvironment(snap);
         } catch (err: any) {
-            this.snapshot = undefined;
             const text = err?.message ?? String(err);
-            this.statusText = `Memory unavailable: ${text}`;
+            this.snapshot = undefined;
+            this.statusText = `Environment unavailable: ${text}`;
+            this._onDidChangeTreeData.fire();
         }
     }
 
-    getTreeItem(element: MemoryNode): TreeItem {
-        if (element instanceof MemorySectionNode) {
-            const item = new TreeItem(element.title, TreeItemCollapsibleState.Collapsed);
-            item.iconPath = new ThemeIcon('symbol-namespace');
-            item.description = element.truncated
-                ? `${element.variables.length}/${element.total}`
-                : `${element.total}`;
-            item.tooltip = element.truncated
-                ? `${element.title}: showing ${element.variables.length} of ${element.total}`
-                : `${element.title}: ${element.total}`;
+    getTreeItem(element: EnvironmentNode): TreeItem {
+        if (element instanceof EnvironmentScopeNode) {
+            const env = element.environment;
+            const item = new TreeItem(env.label, TreeItemCollapsibleState.Collapsed);
+            item.iconPath = scopeIcon(env.kind);
+            const shown = env.bindings.length;
+            item.description = env.truncated ? `${shown}/${env.total}` : `${env.total}`;
+            item.tooltip = env.truncated
+                ? `${env.label}: showing ${shown} of ${env.total}`
+                : `${env.label}: ${env.total}`;
             return item;
         }
 
-        if (element instanceof MemoryVariableNode) {
+        if (element instanceof EnvironmentVariableNode) {
             const v = element.variable;
             const hasChildren = (v.variablesReference ?? 0) > 0;
             const item = new TreeItem(
                 v.name,
                 hasChildren ? TreeItemCollapsibleState.Collapsed : TreeItemCollapsibleState.None,
             );
-            item.iconPath = new ThemeIcon(hasChildren ? 'symbol-object' : 'symbol-variable');
-            item.description = v.value;
-            item.tooltip = `${v.name} = ${v.value}`;
+            item.iconPath = variableIcon(v);
+            const id = v.objectId ?? undefined;
+            item.description = typeof id === 'number'
+                ? `${v.value}   #${id}`
+                : v.value;
+            item.tooltip = variableTooltip(v);
             return item;
         }
 
@@ -110,49 +276,39 @@ export class GCRootsTreeProvider implements TreeDataProvider<MemoryNode> {
         return item;
     }
 
-    getChildren(element?: MemoryNode): MemoryNode[] | Thenable<MemoryNode[]> {
+    getChildren(element?: EnvironmentNode): EnvironmentNode[] | Thenable<EnvironmentNode[]> {
         if (!element) {
             return this.rootNodes();
         }
-        if (element instanceof MemorySectionNode) {
-            return element.variables.map(v => new MemoryVariableNode(v));
+        if (element instanceof EnvironmentScopeNode) {
+            return element.environment.bindings.map(v => new EnvironmentVariableNode(v));
         }
-        if (element instanceof MemoryVariableNode) {
+        if (element instanceof EnvironmentVariableNode) {
             return this.expandVariable(element.variable);
         }
         return [];
     }
 
-    private rootNodes(): MemoryNode[] {
+    private rootNodes(): EnvironmentNode[] {
         const snap = this.snapshot;
         if (!snap) {
-            return [new MemoryMessageNode(this.statusText)];
+            return [new EnvironmentMessageNode(this.statusText)];
         }
-
-        const moduleTitle = snap.moduleName
-            ? `Module Globals (${snap.moduleName})`
-            : 'Module Globals';
-
-        return [
-            new MemorySectionNode('Locals', snap.localsTotal, snap.localsTruncated, snap.locals ?? []),
-            new MemorySectionNode('Upvalues', snap.upvaluesTotal, snap.upvaluesTruncated, snap.upvalues ?? []),
-            new MemorySectionNode(
-                moduleTitle,
-                snap.moduleGlobalsTotal,
-                snap.moduleGlobalsTruncated,
-                snap.moduleGlobals ?? [],
-            ),
-        ];
+        const environments = Array.isArray(snap.environments) ? snap.environments : [];
+        if (environments.length === 0) {
+            return [new EnvironmentMessageNode('No lexical environments enabled by current filters.')];
+        }
+        return environments.map(env => new EnvironmentScopeNode(env));
     }
 
-    private async expandVariable(variable: DebugVariable): Promise<MemoryNode[]> {
+    private async expandVariable(variable: DebugVariable): Promise<EnvironmentNode[]> {
         const ref = variable.variablesReference ?? 0;
         if (ref <= 0) {
             return [];
         }
         const session = debug.activeDebugSession;
         if (!session || session.type !== 'eta') {
-            return [new MemoryMessageNode('No active Eta debug session.')];
+            return [new EnvironmentMessageNode('No active Eta debug session.')];
         }
 
         try {
@@ -162,10 +318,10 @@ export class GCRootsTreeProvider implements TreeDataProvider<MemoryNode> {
                 count: 0,
             }) as { variables?: DebugVariable[] };
             const children = Array.isArray(resp?.variables) ? resp.variables : [];
-            return children.map(v => new MemoryVariableNode(v));
+            return children.map(v => new EnvironmentVariableNode(v));
         } catch (err: any) {
             const text = err?.message ?? String(err);
-            return [new MemoryMessageNode(`Failed to expand: ${text}`)];
+            return [new EnvironmentMessageNode(`Failed to expand: ${text}`)];
         }
     }
 }

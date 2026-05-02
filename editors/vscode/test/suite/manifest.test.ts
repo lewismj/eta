@@ -7,6 +7,10 @@ type EtaManifest = {
     activationEvents?: string[];
     contributes?: {
         breakpoints?: Array<{ language?: string }>;
+        commands?: Array<{ command?: string }>;
+        configuration?: {
+            properties?: Record<string, { default?: unknown }>;
+        };
     };
 };
 
@@ -38,6 +42,29 @@ describe('Eta manifest contributions', function () {
         assert.ok(
             activationEvents.includes('onDebugResolve:eta'),
             'missing activation event onDebugResolve:eta',
+        );
+    });
+
+    it('contributes environment inspector command and setting', () => {
+        const ext = vscode.extensions.getExtension(EXTENSION_ID);
+        assert.ok(ext, `extension ${EXTENSION_ID} not found`);
+
+        const manifest = ext!.packageJSON as EtaManifest;
+        const commands = manifest.contributes?.commands ?? [];
+        assert.ok(
+            commands.some(cmd => cmd.command === 'eta.showEnvironmentInspector'),
+            'missing eta.showEnvironmentInspector command contribution',
+        );
+
+        const properties = manifest.contributes?.configuration?.properties ?? {};
+        assert.ok(
+            Object.prototype.hasOwnProperty.call(properties, 'eta.debug.autoShowEnvironment'),
+            'missing eta.debug.autoShowEnvironment setting',
+        );
+        assert.strictEqual(
+            properties['eta.debug.autoShowEnvironment']?.default,
+            false,
+            'eta.debug.autoShowEnvironment default should be false',
         );
     });
 });

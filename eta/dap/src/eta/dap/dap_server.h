@@ -205,6 +205,7 @@ private:
     void handle_disconnect(const Value& id, const Value& args);
 
     /// Custom requests
+    void handle_environment(const Value& id, const Value& args);
     void handle_local_memory(const Value& id, const Value& args);
     void handle_heap_inspector(const Value& id, const Value& args);
     void handle_inspect_object(const Value& id, const Value& args);

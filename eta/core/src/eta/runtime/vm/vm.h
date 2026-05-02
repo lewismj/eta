@@ -275,6 +275,7 @@ public:
     [[nodiscard]] std::vector<FrameInfo> get_frames()                        const;
     [[nodiscard]] std::vector<VarEntry>  get_locals(std::size_t frame_index) const;
     [[nodiscard]] std::vector<VarEntry>  get_upvalues(std::size_t frame_index) const;
+    [[nodiscard]] std::optional<nanbox::LispVal> get_frame_closure(std::size_t frame_index) const;
     /**
      * Write one local slot in a paused frame.
      *

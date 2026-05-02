@@ -11,6 +11,7 @@ namespace eta::runtime::types {
     struct Closure {
         const BytecodeFunction* func {};
         std::vector<LispVal> upvals {};
+        LispVal parent {nanbox::Nil};
     };
 
 }
