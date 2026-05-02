@@ -59,6 +59,26 @@ Notebook helpers are available from `std.jupyter`:
 (jupyter:plot 'line '(1 2 3) '(2 4 8))
 ```
 
+## Notebook screenshots
+
+### Generic notebook flow
+
+Basic Eta notebook execution and cell output:
+
+![Eta notebook generic example](../../img/jupyter/jupyter_notebook_ex1.png)
+
+### Rich rendering
+
+Example of notebook-side rich rendering output:
+
+![Eta notebook rendering example](../../img/jupyter/jupyter_notebook_ex2_rendering.png)
+
+### Error reporting
+
+Example of runtime error reporting in a notebook cell:
+
+![Eta notebook error reporting example](../../img/jupyter/jupyter_notebook_ex2_show_error.png)
+
 ## Comm widgets
 
 `std.jupyter` now includes comm-backed helpers for live debug widgets:
