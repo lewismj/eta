@@ -165,9 +165,9 @@ add_subdirectory("${ETA_BENCH_DIR}")
 add_subdirectory("${ETA_FUZZ_DIR}")
 
 # Keep the common local workflow target aligned with test/runtime dependencies:
-# building eta_core_test should also rebuild etai + eta_test_runner.
-if(TARGET eta_core_test AND TARGET etai AND TARGET eta_test)
-    add_dependencies(eta_core_test etai eta_test)
+# building eta_core_test should also rebuild etai + etac + eta_test_runner.
+if(TARGET eta_core_test AND TARGET etai AND TARGET etac AND TARGET eta_test)
+    add_dependencies(eta_core_test etai etac eta_test)
 endif()
 
 # Convenience target: rebuild core binaries and run the two canonical test suites.
@@ -176,9 +176,9 @@ add_custom_target(eta_rebuild_and_test
     COMMAND $<TARGET_FILE:eta_test>
         --path "${ETA_STDLIB_SOURCE_DIR}"
         "${ETA_STDLIB_SOURCE_DIR}/tests"
-    DEPENDS etai eta_test eta_core_test
+    DEPENDS etai etac eta_test eta_core_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Rebuild etai + eta_test + eta_core_test, then run runtime + stdlib tests"
+    COMMENT "Rebuild etai + etac + eta_test + eta_core_test, then run runtime + stdlib tests"
     USES_TERMINAL
 )
 
