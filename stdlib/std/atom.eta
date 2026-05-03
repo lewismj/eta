@@ -1,0 +1,36 @@
+;;; std/atom.eta - Atomic mutable references with CAS semantics.
+
+(module std.atom
+  (export
+    atom:new
+    atom:atom?
+    atom:deref
+    atom:reset!
+    atom:swap!
+    atom:compare-and-set!
+    atom
+    atom?
+    deref
+    reset!
+    swap!
+    compare-and-set!)
+  (begin
+
+    ;; Collision-safe names.
+    (define atom:new %atom-new)
+    (define atom:atom? %atom?)
+    (define atom:deref %atom-deref)
+    (define atom:reset! %atom-reset!)
+    (define atom:swap! %atom-swap!)
+    (define atom:compare-and-set! %atom-compare-and-set!)
+
+    ;; Clojure-style aliases (opt-in by explicit std.atom import).
+    (define atom atom:new)
+    (define atom? atom:atom?)
+    (define deref atom:deref)
+    (define reset! atom:reset!)
+    (define swap! atom:swap!)
+    (define compare-and-set! atom:compare-and-set!)
+
+  ))
+

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <vector>
 #include <span>
 #include <unordered_set>
@@ -36,6 +37,10 @@ namespace eta::runtime::memory::gc {
         void visit_cons(const types::Cons& c) override {
             callback(c.car);
             callback(c.cdr);
+        }
+
+        void visit_atom(const types::Atom& a) override {
+            callback(a.cell.load(std::memory_order_seq_cst));
         }
 
 

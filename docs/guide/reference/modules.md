@@ -358,6 +358,31 @@ Convenience wrappers:
 
 ---
 
+### `std.atom` - Atomic Mutable References (opt-in)
+
+```scheme
+(import std.atom)
+```
+
+Provides single-cell mutable references with CAS semantics.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `atom:new` | `(value) -> atom` | Create a new atom. |
+| `atom:atom?` | `(x) -> bool` | Atom predicate. |
+| `atom:deref` | `(a) -> value` | Read current value. |
+| `atom:reset!` | `(a value) -> value` | Replace current value and return it. |
+| `atom:swap!` | `(a fn arg ...) -> value` | Compute and install a new value via CAS retry. |
+| `atom:compare-and-set!` | `(a old new) -> bool` | CAS from `old` to `new` using raw `LispVal` equality. |
+
+Alias exports are also provided for explicit opt-in imports:
+`atom`, `atom?`, `deref`, `reset!`, `swap!`, `compare-and-set!`.
+
+For full details and collision guidance with `std.core:atom?`, see
+[atom.md](atom.md).
+
+---
+
 ### `std.regex` — Regular Expressions
 
 ```scheme
@@ -788,7 +813,7 @@ name conflicts with example-local gradient drivers.
 The following modules are **not** included in the prelude and must be
 imported explicitly when needed: `std.regex`, `std.clpb`, `std.clpr`,
 `std.freeze`, `std.supervisor`, `std.csv`, `std.torch`, `std.test`,
-`std.process`.
+`std.process`, `std.atom`.
 
 ---
 

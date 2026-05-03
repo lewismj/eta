@@ -13,14 +13,19 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
+#include "eta/package/resolver.h"
 #include "eta/runtime/port.h"
 
 namespace fs = std::filesystem;
@@ -58,6 +63,39 @@ static fs::path stdlib_dir() {
         if (fs::is_directory(candidate)) return fs::canonical(candidate);
     }
     return {};
+}
+
+static fs::path canonicalize_path(const fs::path& path) {
+    std::error_code ec;
+    const auto canonical = fs::weakly_canonical(path, ec);
+    if (!ec) return canonical;
+    return path.lexically_normal();
+}
+
+static std::string canonical_key(const fs::path& path) {
+    auto normalized = canonicalize_path(path).generic_string();
+#ifdef _WIN32
+    std::transform(normalized.begin(),
+                   normalized.end(),
+                   normalized.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+#endif
+    return normalized;
+}
+
+static std::optional<fs::path> find_manifest_path(fs::path start_dir) {
+    start_dir = canonicalize_path(start_dir);
+    while (true) {
+        auto candidate = start_dir / "eta.toml";
+        std::error_code ec;
+        if (fs::is_regular_file(candidate, ec) && !ec) {
+            return canonicalize_path(candidate);
+        }
+        auto parent = start_dir.parent_path();
+        if (parent.empty() || parent == start_dir) break;
+        start_dir = parent;
+    }
+    return std::nullopt;
 }
 
 /// Collect all .eta example files
@@ -142,8 +180,39 @@ struct ExampleRunnerFixture {
         }
 
         eta::interpreter::ModulePathResolver resolver({stdlib});
+        std::unordered_set<std::string> seen_dirs;
+        seen_dirs.insert(canonical_key(stdlib));
+        auto add_module_dir = [&](const fs::path& dir) {
+            if (dir.empty()) return;
+            std::error_code ec;
+            if (!fs::is_directory(dir, ec) || ec) return;
+            auto canonical = canonicalize_path(dir);
+            if (seen_dirs.insert(canonical_key(canonical)).second) {
+                resolver.add_dir(std::move(canonical));
+            }
+        };
+
+        if (auto manifest = find_manifest_path(file.parent_path())) {
+            auto root_manifest = eta::package::resolve_path_dependencies(*manifest);
+            if (root_manifest) {
+                for (const auto& pkg : root_manifest->packages) {
+                    auto source_dir = pkg.package_root / "src";
+                    std::error_code ec;
+                    if (fs::is_directory(source_dir, ec) && !ec) {
+                        add_module_dir(source_dir);
+                    } else {
+                        add_module_dir(pkg.package_root);
+                    }
+                }
+            } else {
+                BOOST_TEST_MESSAGE("Path dependency resolution failed for "
+                                   << manifest->string() << ": "
+                                   << root_manifest.error().message);
+            }
+        }
+
         /// Also add the example's own directory so sibling imports work
-        resolver.add_dir(file.parent_path());
+        add_module_dir(file.parent_path());
         eta::session::Driver driver(std::move(resolver), 8 * 1024 * 1024);
 
         /// Suppress stdout from cookbook programs: redirect to a string port
@@ -204,7 +273,6 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
             BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires networking runtime  -  skipped)");
             continue;
         }
-
         BOOST_TEST_CONTEXT("Example: " << rel.string()) {
             bool ok = run_example(file);
             if (ok) {

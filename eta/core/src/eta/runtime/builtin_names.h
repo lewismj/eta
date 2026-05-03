@@ -207,6 +207,14 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("hash-set->list",     1, false);
     r("list->hash-set",     1, false);
 
+    /// Atom primitives
+    r("%atom-new",              1, false);
+    r("%atom?",                 1, false);
+    r("%atom-deref",            1, false);
+    r("%atom-reset!",           2, false);
+    r("%atom-compare-and-set!", 3, false);
+    r("%atom-swap!",            2, true);
+
     /// Misc
     r("error",      1, true);
     r("platform",   0, false);

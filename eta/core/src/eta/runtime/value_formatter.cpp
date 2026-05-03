@@ -235,6 +235,11 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return "#<guardian>";
         }
 
+        /// Atom
+        if (heap.try_get_as<ObjectKind::Atom, types::Atom>(id)) {
+            return "#<atom>";
+        }
+
         /// Continuation
         if (heap.try_get_as<ObjectKind::Continuation, types::Continuation>(id)) {
             return "#<continuation>";

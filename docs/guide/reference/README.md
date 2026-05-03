@@ -36,6 +36,7 @@ This folder is for module, tool, and runtime/internal reference only.
 | [`db.md`](./db.md)                                   | `std.db` (Datalog)    |
 | [`fact-table.md`](./fact-table.md)                   | `std.fact_table`      |
 | [`hashmap.md`](./hashmap.md)                         | `std.hashmap`         |
+| [`atom.md`](./atom.md)                               | `std.atom`            |
 | [`regex.md`](./regex.md)                             | `std.regex`           |
 | [`csv.md`](./csv.md)                                 | `std.csv`             |
 | [`json.md`](./json.md)                               | `std.json`            |

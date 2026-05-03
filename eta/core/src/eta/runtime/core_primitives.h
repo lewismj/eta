@@ -2122,6 +2122,20 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
         return set;
     };
 
+    auto expect_atom = [&heap](const LispVal value, const char* op_name)
+        -> std::expected<types::Atom*, RuntimeError> {
+        if (!ops::is_boxed(value) || ops::tag(value) != Tag::HeapObject) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError, std::string(op_name) + ": expected an atom"}});
+        }
+        auto* atom = heap.try_get_as<ObjectKind::Atom, types::Atom>(ops::payload(value));
+        if (!atom) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError, std::string(op_name) + ": expected an atom"}});
+        }
+        return atom;
+    };
+
     auto list_to_elements = [&heap](const LispVal list, const char* op_name)
         -> std::expected<std::vector<LispVal>, RuntimeError> {
         std::vector<LispVal> out;
@@ -2573,6 +2587,100 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
             auto table = map_build_from_entries(entries, hash_seed[0], "list->hash-set");
             if (!table) return std::unexpected(table.error());
             return make_hash_set(heap, types::HashSet{.table = std::move(*table)});
+        });
+
+    env.register_builtin("%atom-new", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        return make_atom(heap, args[0]);
+    });
+
+    env.register_builtin("%atom?", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        if (!ops::is_boxed(args[0]) || ops::tag(args[0]) != Tag::HeapObject) return False;
+        return heap.try_get_as<ObjectKind::Atom, types::Atom>(ops::payload(args[0])) ? True : False;
+    });
+
+    env.register_builtin("%atom-deref", 1, false,
+        [expect_atom](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto atom_res = expect_atom(args[0], "%atom-deref");
+            if (!atom_res) return std::unexpected(atom_res.error());
+            return (*atom_res)->cell.load(std::memory_order_seq_cst);
+        });
+
+    env.register_builtin("%atom-reset!", 2, false,
+        [expect_atom](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto atom_res = expect_atom(args[0], "%atom-reset!");
+            if (!atom_res) return std::unexpected(atom_res.error());
+            (*atom_res)->cell.store(args[1], std::memory_order_seq_cst);
+            return args[1];
+        });
+
+    env.register_builtin("%atom-compare-and-set!", 3, false,
+        [expect_atom](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto atom_res = expect_atom(args[0], "%atom-compare-and-set!");
+            if (!atom_res) return std::unexpected(atom_res.error());
+
+            LispVal expected = args[1];
+            const bool swapped = (*atom_res)->cell.compare_exchange_strong(
+                expected, args[2], std::memory_order_seq_cst, std::memory_order_seq_cst);
+            return swapped ? True : False;
+        });
+
+    env.register_builtin("%atom-swap!", 2, true,
+        [&heap, vm, expect_atom](Args args) -> std::expected<LispVal, RuntimeError> {
+            auto atom_res = expect_atom(args[0], "%atom-swap!");
+            if (!atom_res) return std::unexpected(atom_res.error());
+
+            const LispVal callable = args[1];
+            if (!ops::is_boxed(callable) || ops::tag(callable) != Tag::HeapObject) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "%atom-swap!: second argument must be a procedure"}});
+            }
+
+            auto* primitive = heap.try_get_as<ObjectKind::Primitive, types::Primitive>(ops::payload(callable));
+            if (!vm && !primitive) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "%atom-swap!: closures require a VM context"}});
+            }
+
+            std::vector<LispVal> rest_args;
+            rest_args.reserve(args.size() > 2 ? args.size() - 2 : 0);
+            for (std::size_t i = 2; i < args.size(); ++i) {
+                rest_args.push_back(args[i]);
+            }
+
+            while (true) {
+                auto roots = heap.make_external_root_frame();
+                roots.push(args[0]);
+                roots.push(callable);
+                for (auto value : rest_args) roots.push(value);
+
+                const LispVal old_value = (*atom_res)->cell.load(std::memory_order_seq_cst);
+                roots.push(old_value);
+
+                std::vector<LispVal> call_args;
+                call_args.reserve(1 + rest_args.size());
+                call_args.push_back(old_value);
+                call_args.insert(call_args.end(), rest_args.begin(), rest_args.end());
+                for (auto value : call_args) roots.push(value);
+
+                std::expected<LispVal, RuntimeError> call_result;
+                if (vm) {
+                    call_result = vm->call_value(callable, call_args);
+                } else {
+                    call_result = primitive->func(call_args);
+                }
+                if (!call_result) return std::unexpected(call_result.error());
+
+                const LispVal new_value = *call_result;
+                roots.push(new_value);
+
+                LispVal expected = old_value;
+                if ((*atom_res)->cell.compare_exchange_strong(
+                    expected, new_value, std::memory_order_seq_cst, std::memory_order_seq_cst)) {
+                    return new_value;
+                }
+            }
         });
 
     /**

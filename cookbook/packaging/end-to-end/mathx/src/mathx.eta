@@ -1,6 +1,5 @@
 (module mathx
   (export square cube)
-  (import std.math)
   (begin
     (defun square (x) (* x x))
     (defun cube (x) (* x x x))))

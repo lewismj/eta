@@ -39,7 +39,7 @@ The remaining roadmap splits into four buckets:
 4. **Hosted-platform remainder** — hash maps, sets, `getenv`, argv,
    filesystem, subprocess, JSON, and logging are now shipped
    (`std.hashmap`, `std.hashset`, `std.os`, `std.fs`, `std.process`,
-   `std.json`, `std.log`); the remaining gaps are atoms, `std.format`,
+   `std.json`, `std.log`, `std.atom`); the remaining gaps are `std.format`,
    HTTP, FFI, and a condition system.
 
 ---
@@ -349,7 +349,7 @@ a delivery order.
 | Capability | Clojure | Eta today | Gap |
 |---|---|---|---|
 | **Hash map / set** | `{:a 1}`, `#{1 2}` (persistent) | native `hash-map` / `hash-set` + `std.hashmap` / `std.hashset` | Medium — reader literals / HAMT / transients deferred |
-| **Atom / ref / agent** (CAS cells) | `atom`, `ref`, `agent` | none | Big — actors fill some of this, not all |
+| **Atom / ref / agent** (CAS cells) | `atom`, `ref`, `agent` | `std.atom` (`atom:new`, `atom:deref`, `atom:reset!`, `atom:swap!`, `atom:compare-and-set!`) | Closed (watchers/refs/agents deferred) |
 | **getenv / setenv** | `(System/getenv ...)` | `os:getenv` / `os:setenv!` / `os:unsetenv!` / `os:environment-variables` (`std.os`) | Closed |
 | **argv / command-line** | `*command-line-args*` | `os:command-line-arguments` (`std.os`) | Closed |
 | **Filesystem ops** | `clojure.java.io` | full `std.fs` (`fs:file-exists?`, `fs:directory?`, `fs:delete-file`, `fs:make-directory`, `fs:list-directory`, `fs:path-join`, `fs:path-split`, `fs:path-normalize`, `fs:temp-file`, `fs:temp-directory`, `fs:file-modification-time`, `fs:file-size`) | Closed |
@@ -402,7 +402,7 @@ Eta as a Python replacement.
 
 #### Phase H2 — Hash Map / Set + Atom (concurrency primitive)
 
-Hash map and hash set are now shipped. The remaining H2 gap is Atom.
+Hash map, hash set, and Atom are now shipped.
 
 - **Hash map** shipped as a first-class immutable value:
   `make-hash-map`, `hash-map?`, `hash-map-ref`, `hash-map-assoc`,
@@ -418,8 +418,7 @@ Hash map and hash set are now shipped. The remaining H2 gap is Atom.
     `(swap! a fn args …)`, `(compare-and-set! a old new)`.
   - Backed by `std::atomic<LispVal>` (boxed) with the existing GC
     barrier. No watcher chain in v1; add later if needed.
-- **Stdlib** now includes `std.hashmap` and `std.hashset`; `std.atom`
-  remains outstanding with the Atom runtime work.
+- **Stdlib** now includes `std.hashmap`, `std.hashset`, and `std.atom`.
 
 > **Why hash map before HTTP / JSON.** JSON parsing returns a hash
 > map. HTTP libraries return responses as hash maps. There is no
@@ -495,7 +494,7 @@ useful but each is also pure quality-of-life on top of H1–H4.
 |---|---|---|---|
 | H1 Process & FS | 2 | Low | scripts, deploy, test runners that shell out |
 | H1 shipped: `std.os` + `std.fs` + `std.process` (env, argv, cwd, exit, paths, temp, stat, subprocess run/spawn/lifecycle). |
-| H2 Hashmap / Set / Atom | 3 | Medium (GC barrier on Atom; HAMT later) | every dict-shaped workload |
+| H2 Hashmap / Set / Atom | 3 | Medium (reader literals / HAMT later) | every dict-shaped workload |
 | H3 JSON / Format / Log | 2 | Low | configs, observability, REST consumers |
 | H3 already shipped: `std.json` (RFC 8259, hash-map / vector decode, integer-exact mode) and `std.log` (levels, filters, sinks, patterns, custom formatters). `std.format` remains. |
 | H4 HTTP / FFI | 3 | Medium (HTTP TLS; FFI safety) | webhook receivers, telemetry, third-party C libs |
@@ -575,6 +574,12 @@ useful but each is also pure quality-of-life on top of H1–H4.
   `std.hashset`), docs, snippets, and test coverage across
   `eta_core_test` and `eta_stdlib_tests`. See
   [release-notes.md](release-notes.md#2026-04-28).
+- ✅ Atom delivery (`std.atom`): native `Atom` heap kind with GC traversal,
+  `%atom-*` primitives (`%atom-new`, `%atom?`, `%atom-deref`,
+  `%atom-reset!`, `%atom-compare-and-set!`, `%atom-swap!`),
+  stdlib wrapper module (`stdlib/std/atom.eta`), and test coverage in
+  `eta_core_test` + `eta_test`. See
+  [release-notes.md](release-notes.md#2026-05-03-later).
 - ✅ Optimisation pipeline expansion: `PrimitiveSpecialisation` lowers
   proven builtin call sites to dedicated VM opcodes; self-recursive
   tail calls (unary) lower to backward `Jump`; lock-free function

@@ -40,6 +40,7 @@ set(SOURCES
         src/csv_reader_tests.cpp
         src/csv_writer_tests.cpp
         src/csv_fact_table_tests.cpp
+        src/atom_tests.cpp
         src/hash_map_tests.cpp
         src/regex_tests.cpp
         src/json_tests.cpp

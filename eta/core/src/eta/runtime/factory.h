@@ -69,6 +69,15 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
+    std::expected<LispVal, RuntimeError> make_atom(Heap& heap, const LispVal initial) {
+        auto allocated = heap.allocate<types::Atom, ObjectKind::Atom>(initial);
+        if (allocated.has_value()) {
+            return ops::box(Tag::HeapObject, allocated.value());
+        }
+        return allocated;
+    }
+
+    inline_always
     std::expected<LispVal, RuntimeError> make_bytevector(Heap& heap, std::vector<std::uint8_t> data) {
         return make_heap_object<types::ByteVector, ObjectKind::ByteVector>(heap, types::ByteVector{.data = std::move(data)});
     }

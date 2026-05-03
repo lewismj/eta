@@ -2,5 +2,5 @@
   (import std.io)
   (import mathx)
   (begin
-    (defun main (args)
+    (defun main ()
       (println (square 7)))))

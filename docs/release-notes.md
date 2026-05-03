@@ -4,6 +4,57 @@
 
 ---
 
+## 2026-05-03 (later)
+
+### Atom Support (`std.atom`)
+
+Hosted-platform Phase H2 now includes Atom support: a mutable single-cell
+reference with compare-and-set semantics.
+
+Highlights:
+
+- New runtime object kind and payload:
+  - `ObjectKind::Atom`
+  - `types::Atom` with atomic `LispVal` cell storage
+- GC and runtime plumbing:
+  - Atom cell is traced as a strong reference during mark
+  - value formatter now prints atoms as `#<atom>`
+  - factory helper added: `make_atom(...)`
+- New core primitives:
+  - `%atom-new`
+  - `%atom?`
+  - `%atom-deref`
+  - `%atom-reset!`
+  - `%atom-compare-and-set!`
+  - `%atom-swap!`
+- `%atom-swap!` semantics:
+  - implemented as a CAS retry loop
+  - supports VM callback path (`vm->call_value`) and primitive-only
+    fallback when no VM context is available
+  - uses external GC root frames for transient callback values during retries
+- New stdlib module:
+  - `std.atom` (`stdlib/std/atom.eta`)
+  - collision-safe names: `atom:new`, `atom:atom?`, `atom:deref`,
+    `atom:reset!`, `atom:swap!`, `atom:compare-and-set!`
+  - opt-in aliases: `atom`, `atom?`, `deref`, `reset!`, `swap!`,
+    `compare-and-set!`
+  - note: `std.atom` is intentionally not re-exported by `std.prelude`
+    due `std.core:atom?` compatibility
+- New tests:
+  - C++ runtime tests: `eta/qa/test/src/atom_tests.cpp`
+  - stdlib tests: `stdlib/tests/atom.test.eta`
+
+Documentation updates:
+
+- Added [docs/guide/reference/atom.md](guide/reference/atom.md).
+- Updated [docs/guide/reference/modules.md](guide/reference/modules.md)
+  with `std.atom` and prelude opt-in notes.
+- Updated [docs/guide/reference/README.md](guide/reference/README.md)
+  reference index.
+- Updated [docs/next-steps.md](next-steps.md) to mark Atom as delivered.
+
+---
+
 ## 2026-05-03
 
 ### Packaging Plan Implementation (S0-S7)

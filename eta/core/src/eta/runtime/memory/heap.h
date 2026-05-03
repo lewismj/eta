@@ -28,6 +28,7 @@ namespace eta::runtime::memory::heap {
     enum class ObjectKind : std::uint8_t {
         Unknown,
         Cons,
+        Atom,
         Fixnum,
         Vector,
         ByteVector,
@@ -58,6 +59,7 @@ namespace eta::runtime::memory::heap {
     ETA_ENUM_TO_STRING_BEGIN(ObjectKind)
         ETA_ENUM_CASE(Unknown)
         ETA_ENUM_CASE(Cons)
+        ETA_ENUM_CASE(Atom)
         ETA_ENUM_CASE(Fixnum)
         ETA_ENUM_CASE(Vector)
         ETA_ENUM_CASE(ByteVector)
