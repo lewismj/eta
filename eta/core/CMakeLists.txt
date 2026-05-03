@@ -41,6 +41,9 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/clp/fm.cpp
         src/eta/runtime/clp/simplex.cpp
         src/eta/runtime/clp/real_store.cpp
+        src/eta/package/manifest.cpp
+        src/eta/package/lockfile.cpp
+        src/eta/package/resolver.cpp
 )
 
 # Convex QP support is part of the required core runtime surface.

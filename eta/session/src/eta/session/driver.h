@@ -33,6 +33,7 @@
 #include "eta/runtime/vm/disassembler.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/builtin_names.h"
+#include "eta/runtime/embedded_prelude.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/diagnostic/diagnostic.h"
@@ -249,9 +250,9 @@ public:
 
     /// Result of a load_prelude() call.
     struct PreludeResult {
-        bool found{false};    ///< Was prelude.eta found on disk?
+        bool found{false};    ///< Was a prelude artifact discovered?
         bool loaded{false};   ///< Did it compile and execute successfully?
-        fs::path path;        ///< Path to the prelude file (if found).
+        fs::path path;        ///< Source/.etac path, or an embedded marker.
     };
 
     struct CompileModuleEntry {
@@ -277,21 +278,53 @@ public:
     };
 
     /**
-     * @brief Load and execute the prelude from the module path.
+     * @brief Load and execute the prelude.
      *
-     * Searches for "prelude.eta" in the configured search directories.
-     * If found, it is compiled and executed, seeding the global environment
-     * with standard library definitions.
+     * Resolution order:
+     *  1) embedded bytecode blob
+     *  2) bundled/resolved "prelude.etac"
+     *  3) source "prelude.eta"
      */
     PreludeResult load_prelude() {
         PreludeResult result;
+
+        if (has_module("std.prelude")) {
+            result.found = true;
+            if (prelude_origin_path_) {
+                result.path = *prelude_origin_path_;
+            }
+            return result;
+        }
+
+        if (try_load_embedded_prelude()) {
+            result.found = true;
+            result.loaded = true;
+            result.path = embedded_prelude_marker_path();
+            prelude_origin_path_ = result.path;
+            return result;
+        }
+
+        if (auto prelude_etac = resolver_.find_file("prelude.etac")) {
+            result.found = true;
+            result.path = *prelude_etac;
+            if (run_etac_file(*prelude_etac)) {
+                result.loaded = true;
+                prelude_origin_path_ = result.path;
+                return result;
+            }
+        }
+
         auto prelude_path = resolver_.find_file("prelude.eta");
         if (!prelude_path) {
-            return result; ///< not found
+            return result;
         }
+
         result.found = true;
         result.path = *prelude_path;
         result.loaded = run_file(*prelude_path);
+        if (result.loaded) {
+            prelude_origin_path_ = result.path;
+        }
         return result;
     }
 
@@ -1071,8 +1104,7 @@ public:
         }
 
         runtime::vm::BytecodeSerializer serializer(heap_, intern_table_);
-        auto etac_res = serializer.deserialize(in,
-            static_cast<uint32_t>(builtins_.specs().size()));
+        auto etac_res = serializer.deserialize(in, /*expected_builtins=*/0);
         if (!etac_res) {
             diag_engine_.emit_error(
                 diagnostic::DiagnosticCode::ModuleNotFound, {},
@@ -1081,17 +1113,94 @@ public:
         }
         auto& etac = *etac_res;
 
+        runtime::vm::FreshnessContext freshness;
+        freshness.expected_compiler_id = runtime::vm::BytecodeSerializer::default_compiler_id();
+        freshness.expected_builtin_count = static_cast<uint32_t>(builtins_.specs().size());
+
+        auto sibling_source = path;
+        sibling_source.replace_extension(".eta");
+        if (std::error_code ec; fs::is_regular_file(sibling_source, ec) && !ec) {
+            if (auto source_hash = hash_file_for_etac_freshness(sibling_source)) {
+                freshness.expected_source_hash = *source_hash;
+            }
+        }
+
+        if (auto manifest_path = find_nearest_manifest_path(path.parent_path())) {
+            if (auto manifest_hash = hash_file_for_etac_freshness(*manifest_path)) {
+                freshness.expected_manifest_hash = *manifest_hash;
+            }
+        }
+
+        const auto freshness_result =
+            runtime::vm::BytecodeSerializer::check_freshness(etac, freshness);
+        if (!freshness_result.fresh()) {
+            std::string message =
+                "stale .etac detected: " + std::string(runtime::vm::to_string(freshness_result.status));
+            if (!freshness_result.detail.empty()) {
+                message += " (" + freshness_result.detail + ")";
+            }
+            std::error_code ec;
+            if (fs::is_regular_file(sibling_source, ec) && !ec) {
+                const bool fallback_ok = run_file(sibling_source);
+                diag_engine_.emit_warning(
+                    diagnostic::DiagnosticCode::ModuleNotFound, {},
+                    message + "; falling back to source: " + sibling_source.string());
+                return fallback_ok;
+            }
+
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                message + "; no sibling source found for fallback");
+            return false;
+        }
+
+        return execute_deserialized_etac(etac);
+    }
+
+private:
+    [[nodiscard]] static fs::path embedded_prelude_marker_path() {
+        return fs::path("<embedded:prelude.etac>");
+    }
+
+    bool try_load_embedded_prelude() {
+        const auto blob = runtime::embedded_prelude_blob();
+        if (blob.empty()) return false;
+
+        std::string bytes;
+        bytes.resize(blob.size());
+        for (std::size_t i = 0; i < blob.size(); ++i) {
+            bytes[i] = static_cast<char>(blob[i]);
+        }
+
+        std::istringstream in(bytes, std::ios::in | std::ios::binary);
+        runtime::vm::BytecodeSerializer serializer(heap_, intern_table_);
+        auto etac_res = serializer.deserialize(
+            in, static_cast<uint32_t>(builtins_.specs().size()));
+        if (!etac_res) {
+            return false;
+        }
+        if (!execute_deserialized_etac(*etac_res)) {
+            diag_engine_.clear();
+            return false;
+        }
+        return true;
+    }
+
+    bool execute_deserialized_etac(runtime::vm::EtacFile& etac) {
         /// Auto-load non-prelude imports
         for (const auto& imp : etac.imports) {
             if (executed_modules_.contains(imp)) continue;
-            auto imp_path = resolver_.resolve(imp);
+            bool shadow_conflict = false;
+            auto imp_path = resolve_import_path(imp, &shadow_conflict);
             if (!imp_path) {
-                diag_engine_.emit_error(
-                    diagnostic::DiagnosticCode::ModuleNotFound, {},
-                    "cannot resolve import '" + imp + "' required by .etac");
+                if (!shadow_conflict) {
+                    diag_engine_.emit_error(
+                        diagnostic::DiagnosticCode::ModuleNotFound, {},
+                        "cannot resolve import '" + imp + "' required by .etac");
+                }
                 return false;
             }
-            if (!run_file(*imp_path)) return false;
+            if (!run_module_file(*imp_path)) return false;
         }
 
         /**
@@ -1106,11 +1215,6 @@ public:
             copy.rebase_func_indices(static_cast<int32_t>(base_idx));
             registry_.add(std::move(copy));
         }
-
-        /**
-         * Wire up function resolver if not already done
-         * (constructor does this, but defensive)
-         */
 
         uint32_t accounted_globals = static_cast<uint32_t>(vm_.globals().size());
 
@@ -1185,7 +1289,68 @@ public:
         return true;
     }
 
-private:
+    bool run_module_file(const fs::path& path) {
+        if (path.extension() == ".etac") return run_etac_file(path);
+        return run_file(path);
+    }
+
+    [[nodiscard]] static std::optional<uint64_t>
+    hash_file_for_etac_freshness(const fs::path& file_path) {
+        std::ifstream in(file_path, std::ios::in | std::ios::binary);
+        if (!in) return std::nullopt;
+
+        std::ostringstream buf;
+        buf << in.rdbuf();
+        return runtime::vm::BytecodeSerializer::hash_source(buf.str());
+    }
+
+    [[nodiscard]] static std::optional<fs::path>
+    find_nearest_manifest_path(fs::path start_dir) {
+        std::error_code ec;
+        start_dir = fs::weakly_canonical(start_dir, ec);
+        if (ec) start_dir = start_dir.lexically_normal();
+        while (!start_dir.empty()) {
+            const auto manifest = start_dir / "eta.toml";
+            ec.clear();
+            if (fs::is_regular_file(manifest, ec) && !ec) {
+                auto normalized = fs::weakly_canonical(manifest, ec);
+                if (!ec) return normalized;
+                return manifest.lexically_normal();
+            }
+
+            const auto parent = start_dir.parent_path();
+            if (parent.empty() || parent == start_dir) break;
+            start_dir = parent;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<fs::path> resolve_import_path(const std::string& module_name,
+                                                bool* shadow_conflict = nullptr) {
+        auto candidates = resolver_.resolve_all(module_name);
+        if (candidates.empty()) {
+            if (shadow_conflict) *shadow_conflict = false;
+            return std::nullopt;
+        }
+
+        if (resolver_.strict_shadow_scan() && candidates.size() > 1u) {
+            if (shadow_conflict) *shadow_conflict = true;
+            std::ostringstream oss;
+            oss << "strict shadow mode: module '" << module_name
+                << "' resolves to multiple files";
+            for (const auto& candidate : candidates) {
+                oss << "\n  - " << candidate.string();
+            }
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                oss.str());
+            return std::nullopt;
+        }
+
+        if (shadow_conflict) *shadow_conflict = false;
+        return candidates.front();
+    }
+
     [[nodiscard]] static bool is_synthetic_eval_binding_name(std::string_view name) {
         if (name.empty() || name.size() < 2) return false;
         const char prefix = name.front();
@@ -1717,6 +1882,8 @@ private:
 
     /// Track which files we've already loaded (to avoid double-loading prelude etc.)
     std::unordered_set<std::string> loaded_files_;
+    std::unordered_set<std::string> indexed_source_files_;
+    std::optional<fs::path> prelude_origin_path_;
 
     /// File ID allocator for diagnostic spans
     uint32_t next_file_id_;
@@ -1803,6 +1970,57 @@ private:
         return result;
     }
 
+    [[nodiscard]] static bool form_declares_module(
+            const reader::parser::SExprPtr& form,
+            const std::string& module_name) {
+        auto* lst = form ? form->template as<reader::parser::List>() : nullptr;
+        if (!lst || lst->elems.size() < 2) return false;
+        if (!reader::utils::is_symbol_named(lst->elems[0], "module")) return false;
+        auto* nsym = lst->elems[1]->template as<reader::parser::Symbol>();
+        return nsym && nsym->name == module_name;
+    }
+
+    [[nodiscard]] bool module_declared(
+            const std::string& module_name,
+            std::span<const reader::parser::SExprPtr> new_forms) const {
+        for (const auto& f : accumulated_forms_) {
+            if (form_declares_module(f, module_name)) return true;
+        }
+        for (const auto& f : new_forms) {
+            if (form_declares_module(f, module_name)) return true;
+        }
+        return false;
+    }
+
+    bool hydrate_executed_module_source(const std::string& module_name) {
+        bool shadow_conflict = false;
+        auto resolved = resolve_import_path(module_name, &shadow_conflict);
+        if (!resolved) return !shadow_conflict;
+
+        fs::path source_path = *resolved;
+        if (source_path.extension() == ".etac") {
+            auto sibling_source = source_path;
+            sibling_source.replace_extension(".eta");
+            std::error_code ec;
+            if (!fs::is_regular_file(sibling_source, ec) || ec) {
+                return true;
+            }
+            source_path = sibling_source;
+        } else if (source_path.extension() != ".eta") {
+            return true;
+        }
+
+        const auto source_key = canon_path_key(source_path);
+        if (indexed_source_files_.contains(source_key)) return true;
+
+        indexed_source_files_.insert(source_key);
+        if (!run_file(source_path)) {
+            indexed_source_files_.erase(source_key);
+            return false;
+        }
+        return true;
+    }
+
     /**
      * Auto-load module files from the module path for any import that
      * references a module not yet in the accumulated set.
@@ -1813,8 +2031,13 @@ private:
     bool auto_load_imports(std::span<const reader::parser::SExprPtr> new_forms) {
         auto needed = collect_imported_modules(new_forms);
         for (const auto& mod_name : needed) {
-            /// Skip modules already loaded.
-            if (executed_modules_.contains(mod_name)) continue;
+            const bool already_accumulated = module_declared(mod_name, new_forms);
+            if (already_accumulated) continue;
+
+            if (executed_modules_.contains(mod_name)) {
+                if (!hydrate_executed_module_source(mod_name)) return false;
+                continue;
+            }
 
             if (loading_modules_.contains(mod_name)) {
                 /// Build the cycle description for a helpful error message.
@@ -1831,37 +2054,20 @@ private:
                 return false;
             }
 
-            /// Check if it's already in the accumulated forms (defined but not yet executed)
-            bool already_accumulated = false;
-            for (const auto& f : accumulated_forms_) {
-                auto* lst = f ? f->template as<reader::parser::List>() : nullptr;
-                if (!lst || lst->elems.size() < 2) continue;
-                if (!reader::utils::is_symbol_named(lst->elems[0], "module")) continue;
-                auto* nsym = lst->elems[1]->template as<reader::parser::Symbol>();
-                if (nsym && nsym->name == mod_name) { already_accumulated = true; break; }
-            }
-            /// Also check in the new forms themselves (peer modules in same source)
-            if (!already_accumulated) {
-                for (const auto& f : new_forms) {
-                    auto* lst = f ? f->template as<reader::parser::List>() : nullptr;
-                    if (!lst || lst->elems.size() < 2) continue;
-                    if (!reader::utils::is_symbol_named(lst->elems[0], "module")) continue;
-                    auto* nsym = lst->elems[1]->template as<reader::parser::Symbol>();
-                    if (nsym && nsym->name == mod_name) { already_accumulated = true; break; }
-                }
-            }
-            if (already_accumulated) continue;
-
             /// Try to resolve and load the module file
-            auto path = resolver_.resolve(mod_name);
-            if (!path) continue; ///< Will fail later at link time with a clear error
+            bool shadow_conflict = false;
+            auto path = resolve_import_path(mod_name, &shadow_conflict);
+            if (!path) {
+                if (shadow_conflict) return false;
+                continue; ///< Will fail later at link time with a clear error
+            }
 
             auto canonical = path->string();
             if (loaded_files_.contains(canonical)) continue;
 
             loading_modules_.insert(mod_name);
             loaded_files_.insert(canonical);
-            bool ok = run_file(*path);
+            bool ok = run_module_file(*path);
             loading_modules_.erase(mod_name);
 
             if (!ok) return false;

@@ -440,6 +440,15 @@
                                 "description": "Pause on the first instruction when launching.",
                                 "default": false
                             },
+                            "profile": {
+                                "type": "string",
+                                "enum": [
+                                    "debug",
+                                    "release"
+                                ],
+                                "description": "Eta package profile used by debugger launch defaults. Use debug for source-level sessions.",
+                                "default": "debug"
+                            },
                             "etac": {
                                 "type": "boolean",
                                 "description": "Launch a precompiled .etac artifact when supported by the adapter.",
@@ -469,7 +478,8 @@
                         "request": "launch",
                         "name": "Run Eta file",
                         "program": "${file}",
-                        "stopOnEntry": false
+                        "stopOnEntry": false,
+                        "profile": "debug"
                     }
                 ],
                 "configurationSnippets": [
@@ -481,7 +491,8 @@
                             "request": "launch",
                             "name": "Run Eta file",
                             "program": "^\"\\${file}\"",
-                            "stopOnEntry": false
+                            "stopOnEntry": false,
+                            "profile": "debug"
                         }
                     }
                 ]

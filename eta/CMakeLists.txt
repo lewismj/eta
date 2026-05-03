@@ -10,10 +10,13 @@ set(ETA_STATS_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/stats")
 set(ETA_LOG_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/log")
 set(ETA_INTERPRETER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/interpreter")
 set(ETA_COMPILER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/compiler")
+set(ETA_CLI_DIR "${ETA_LAYOUT_ROOT_DIR}/cli")
 set(ETA_LSP_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/lsp")
 set(ETA_DAP_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/dap")
 set(ETA_JUPYTER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/jupyter")
 set(ETA_TEST_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/test")
+set(ETA_PKG_TEST_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/pkg_test")
+set(ETA_CLI_TEST_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/cli_test")
 set(ETA_TEST_RUNNER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/test_runner")
 set(ETA_BENCH_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/bench")
 set(ETA_FUZZ_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/fuzz")
@@ -23,6 +26,10 @@ set(ETA_INTERPRETER_SRC_DIR "${ETA_INTERPRETER_DIR}/src")
 set(ETA_DAP_SRC_DIR "${ETA_DAP_DIR}/src")
 set(ETA_LSP_SRC_DIR "${ETA_LSP_DIR}/src")
 set(ETA_JUPYTER_SRC_DIR "${ETA_JUPYTER_DIR}/src")
+set(ETA_STDLIB_RUNTIME_DIR "${CMAKE_BINARY_DIR}/stdlib")
+set(ETA_STDLIB_EMBED_DIR "${CMAKE_BINARY_DIR}/embed")
+set(ETA_EMBED_BLOB_SCRIPT "${ETA_REPO_ROOT_DIR}/scripts/embed_blob.py")
+set(ETA_STDLIB_BUILD_SCRIPT "${ETA_REPO_ROOT_DIR}/scripts/build_stdlib_etac.py")
 
 
 # Specify dependencies.
@@ -39,6 +46,7 @@ find_package(Boost 1.88 REQUIRED COMPONENTS unit_test_framework)
 if(NOT Boost_FOUND)
     message(FATAL_ERROR "Boost not found.")
 endif()
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # ── libtorch (always required) ────────────────────────────────────────────
 set(ETA_TORCH_BACKEND "cpu" CACHE STRING
@@ -154,15 +162,57 @@ add_subdirectory("${ETA_LOG_DIR}")
 # User-facing tools and protocol servers.
 add_subdirectory("${ETA_INTERPRETER_DIR}")
 add_subdirectory("${ETA_COMPILER_DIR}")
+add_subdirectory("${ETA_CLI_DIR}")
 add_subdirectory("${ETA_LSP_DIR}")
 add_subdirectory("${ETA_DAP_DIR}")
 add_subdirectory("${ETA_JUPYTER_DIR}")
 
 # Quality and performance targets.
 add_subdirectory("${ETA_TEST_DIR}")
+add_subdirectory("${ETA_PKG_TEST_DIR}")
+add_subdirectory("${ETA_CLI_TEST_DIR}")
 add_subdirectory("${ETA_TEST_RUNNER_DIR}")
 add_subdirectory("${ETA_BENCH_DIR}")
 add_subdirectory("${ETA_FUZZ_DIR}")
+
+file(GLOB_RECURSE ETA_STDLIB_ETA_SOURCES CONFIGURE_DEPENDS
+    "${ETA_STDLIB_SOURCE_DIR}/*.eta")
+
+set(ETA_STDLIB_BUILD_STAMP "${ETA_STDLIB_RUNTIME_DIR}/.eta_stdlib_etac.stamp")
+add_custom_command(
+    OUTPUT "${ETA_STDLIB_BUILD_STAMP}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${ETA_STDLIB_RUNTIME_DIR}"
+    COMMAND ${Python3_EXECUTABLE} "${ETA_STDLIB_BUILD_SCRIPT}"
+            --etac "$<TARGET_FILE:etac>"
+            --src-root "${ETA_STDLIB_SOURCE_DIR}"
+            --out-root "${ETA_STDLIB_RUNTIME_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E touch "${ETA_STDLIB_BUILD_STAMP}"
+    DEPENDS etac "${ETA_STDLIB_BUILD_SCRIPT}" ${ETA_STDLIB_ETA_SOURCES}
+    VERBATIM
+)
+add_custom_target(eta_stdlib_etac DEPENDS "${ETA_STDLIB_BUILD_STAMP}")
+
+set(ETA_EMBEDDED_PRELUDE_CPP "${ETA_STDLIB_EMBED_DIR}/prelude_blob.cpp")
+add_custom_command(
+    OUTPUT "${ETA_EMBEDDED_PRELUDE_CPP}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${ETA_STDLIB_EMBED_DIR}"
+    COMMAND ${Python3_EXECUTABLE} "${ETA_EMBED_BLOB_SCRIPT}"
+            --in "${ETA_STDLIB_RUNTIME_DIR}/prelude.etac"
+            --out "${ETA_EMBEDDED_PRELUDE_CPP}"
+            --sym eta_embedded_prelude
+    DEPENDS eta_stdlib_etac "${ETA_EMBED_BLOB_SCRIPT}"
+    VERBATIM
+)
+add_library(eta_embedded_prelude STATIC "${ETA_EMBEDDED_PRELUDE_CPP}")
+set_target_properties(eta_embedded_prelude PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+target_compile_definitions(eta_embedded_prelude INTERFACE ETA_HAS_EMBEDDED_PRELUDE=1)
+
+foreach(_t IN ITEMS etai eta_repl eta_lsp eta_dap eta_jupyter)
+    if(TARGET ${_t})
+        target_link_libraries(${_t} PRIVATE eta_embedded_prelude)
+        add_dependencies(${_t} eta_stdlib_etac)
+    endif()
+endforeach()
 
 # Keep the common local workflow target aligned with test/runtime dependencies:
 # building eta_core_test should also rebuild etai + etac + eta_test_runner.

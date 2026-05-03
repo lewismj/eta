@@ -16,6 +16,7 @@
 
 (module std.supervisor
   (export one-for-one one-for-all)
+  (import std.collections)
   (begin
 
     ;;  Internal helpers 

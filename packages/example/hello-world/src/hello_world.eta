@@ -1,0 +1,4 @@
+(module hello_world
+  (import std.io)
+  (begin
+    (println "hello world from eta package fixture")))

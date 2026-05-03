@@ -268,7 +268,20 @@ void DapServer::handle_launch(const Value& id, const Value& args) {
         return;
     }
 
-    script_path_    = fs::path(*program);
+    launch_profile_ = args.get_string("profile").value_or("debug");
+    if (launch_profile_ != "debug" && launch_profile_ != "release") {
+        send_error_response(
+            id, 1002, "launch: 'profile' must be 'debug' or 'release'");
+        return;
+    }
+
+    script_path_ = fs::path(*program);
+    {
+        std::error_code ec;
+        auto absolute = fs::absolute(script_path_, ec);
+        if (!ec) script_path_ = absolute;
+        script_path_ = script_path_.lexically_normal();
+    }
     stop_on_entry_  = args.has("stopOnEntry") && args["stopOnEntry"].is_bool()
                       && args["stopOnEntry"].as_bool();
     launched_       = true;
@@ -284,7 +297,8 @@ void DapServer::handle_launch(const Value& id, const Value& args) {
 
     send_event("output", json::object({
         {"category", "console"},
-        {"output", "[eta_dap] Launch: " + script_path_.string() + "\n"},
+        {"output", "[eta_dap] Launch: " + script_path_.string()
+                       + " (profile=" + launch_profile_ + ")\n"},
     }));
     /// The VM is actually started on configurationDone.
 }
@@ -549,10 +563,11 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
 
 void DapServer::start_vm_from_current_launch() {
 
-    /// Build the module search path using ModulePathResolver (same logic as etai / eta_lsp)
-    auto resolver = interpreter::ModulePathResolver::from_args_or_env("");
-    /// Also search the directory containing the script being debugged.
     auto script_dir = script_path_.parent_path();
+    /// Build module search roots from the script's package context.
+    auto resolver = interpreter::ModulePathResolver::from_args_or_env_at(
+        "", script_dir.empty() ? fs::current_path() : script_dir);
+    /// Also search the directory containing the script being debugged.
     if (!script_dir.empty()) resolver.add_dir(script_dir);
 
     /// Log the module search path so the user can diagnose "module not found"
@@ -1248,14 +1263,22 @@ void DapServer::handle_restart(const Value& id, const Value& /*args*/) {
     }
 
     script_path_ = fs::path(*program);
+    {
+        std::error_code ec;
+        auto absolute = fs::absolute(script_path_, ec);
+        if (!ec) script_path_ = absolute;
+        script_path_ = script_path_.lexically_normal();
+    }
     stop_on_entry_ = last_launch_args_.has("stopOnEntry")
                      && last_launch_args_["stopOnEntry"].is_bool()
                      && last_launch_args_["stopOnEntry"].as_bool();
+    launch_profile_ = last_launch_args_.get_string("profile").value_or("debug");
     launched_ = true;
 
     send_event("output", json::object({
         {"category", "console"},
-        {"output", "[eta_dap] Restart: " + script_path_.string() + "\n"},
+        {"output", "[eta_dap] Restart: " + script_path_.string()
+                       + " (profile=" + launch_profile_ + ")\n"},
     }));
 
     start_vm_from_current_launch();

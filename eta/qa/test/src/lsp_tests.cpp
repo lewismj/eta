@@ -14,6 +14,9 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -22,6 +25,31 @@
 #include "eta/util/json.h"
 
 namespace json = eta::json;
+namespace fs = std::filesystem;
+
+struct TempDir {
+    fs::path path;
+
+    TempDir() {
+        const auto stamp =
+            std::chrono::steady_clock::now().time_since_epoch().count();
+        path = fs::temp_directory_path() / ("eta_lsp_s7_" + std::to_string(stamp));
+        fs::create_directories(path);
+    }
+
+    ~TempDir() {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
+
+    fs::path create_file(const std::string& rel, const std::string& content) const {
+        const auto full = path / rel;
+        fs::create_directories(full.parent_path());
+        std::ofstream out(full, std::ios::out | std::ios::binary | std::ios::trunc);
+        out << content;
+        return full;
+    }
+};
 
 /**
  * Helpers
@@ -80,6 +108,21 @@ static json::Value find_response(const std::vector<json::Value>& msgs, int id) {
         if (mid && *mid == id && m.has("result")) return m;
     }
     return {};
+}
+
+static std::vector<json::Value> find_diagnostics_for_uri(
+    const std::vector<json::Value>& msgs,
+    const std::string& uri) {
+    std::vector<json::Value> out;
+    for (const auto& m : msgs) {
+        auto method = m.get_string("method");
+        if (!method || *method != "textDocument/publishDiagnostics") continue;
+        const auto& params = m["params"];
+        auto msg_uri = params.get_string("uri");
+        if (!msg_uri || *msg_uri != uri) continue;
+        out.push_back(params["diagnostics"]);
+    }
+    return out;
 }
 
 /**
@@ -1178,6 +1221,150 @@ BOOST_AUTO_TEST_CASE(inlay_hint_unknown_callee_no_hints) {
     auto resp = find_response(msgs, 32);
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["result"].as_array().empty());
+}
+
+BOOST_AUTO_TEST_CASE(lockfile_explain_returns_workspace_resolution) {
+    TempDir tmp;
+    tmp.create_file("app/src/app.eta",
+                    "(module app\n"
+                    "  (import dep)\n"
+                    "  (begin (define answer dep-value)))\n");
+    tmp.create_file("app/.eta/modules/dep-0.1.0/src/dep.eta",
+                    "(module dep\n"
+                    "  (export dep-value)\n"
+                    "  (begin (define dep-value 42)))\n");
+    tmp.create_file("app/eta.toml", R"toml(
+[package]
+name = "app"
+version = "1.0.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+dep = { path = "../dep" }
+)toml");
+    tmp.create_file("app/eta.lock", R"toml(
+version = 1
+
+[[package]]
+name = "app"
+version = "1.0.0"
+source = "root"
+dependencies = ["dep@0.1.0"]
+
+[[package]]
+name = "dep"
+version = "0.1.0"
+source = "path+../dep"
+dependencies = []
+)toml");
+
+    const auto src_path = tmp.path / "app" / "src" / "app.eta";
+    const auto src_uri = eta::lsp::LspServer::path_to_uri(src_path.string());
+    const std::string src =
+        "(module app\n"
+        "  (import dep)\n"
+        "  (begin (define answer dep-value)))\n";
+
+    auto input = build_input(src_uri, src, {
+        frame(request(
+            44, "eta/lockfile/explain",
+            R"({"textDocument":{"uri":")" + src_uri + R"("},"module":"dep"})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 44);
+    BOOST_REQUIRE(!resp.is_null());
+
+    auto selected = resp["result"].get_string("selected");
+    BOOST_REQUIRE(selected.has_value());
+    BOOST_TEST(selected->find("dep.eta") != std::string::npos);
+
+    auto manifest_path = resp["result"].get_string("manifestPath");
+    BOOST_REQUIRE(manifest_path.has_value());
+    BOOST_TEST(manifest_path->find("eta.toml") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(workspace_manifest_diagnostics_are_published) {
+    TempDir tmp;
+    tmp.create_file("app/src/app.eta", "(module app (begin 1))\n");
+    tmp.create_file("app/eta.toml", R"toml(
+[package]
+name = "app"
+version = "1.0.0"
+license = "MIT"
+
+[dependencies]
+)toml");
+
+    const auto src_path = tmp.path / "app" / "src" / "app.eta";
+    const auto src_uri = eta::lsp::LspServer::path_to_uri(src_path.string());
+    const auto manifest_uri =
+        eta::lsp::LspServer::path_to_uri((tmp.path / "app" / "eta.toml").string());
+
+    auto input = build_input(src_uri, "(module app (begin 1))\n", {});
+    auto msgs = run_server(input);
+
+    const auto manifest_diags = find_diagnostics_for_uri(msgs, manifest_uri);
+    BOOST_REQUIRE(!manifest_diags.empty());
+
+    bool found_manifest_error = false;
+    for (const auto& batch : manifest_diags) {
+        if (!batch.is_array()) continue;
+        for (const auto& diag : batch.as_array()) {
+            auto source = diag.get_string("source");
+            if (source && *source == "eta-manifest") {
+                found_manifest_error = true;
+                break;
+            }
+        }
+    }
+    BOOST_TEST(found_manifest_error);
+}
+
+BOOST_AUTO_TEST_CASE(workspace_lockfile_diagnostics_are_published) {
+    TempDir tmp;
+    tmp.create_file("app/src/app.eta", "(module app (begin 1))\n");
+    tmp.create_file("app/eta.toml", R"toml(
+[package]
+name = "app"
+version = "1.0.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+)toml");
+    tmp.create_file("app/eta.lock", R"toml(
+version = "oops"
+)toml");
+
+    const auto src_path = tmp.path / "app" / "src" / "app.eta";
+    const auto src_uri = eta::lsp::LspServer::path_to_uri(src_path.string());
+    const auto lockfile_uri =
+        eta::lsp::LspServer::path_to_uri((tmp.path / "app" / "eta.lock").string());
+
+    auto input = build_input(src_uri, "(module app (begin 1))\n", {});
+    auto msgs = run_server(input);
+
+    const auto lockfile_diags = find_diagnostics_for_uri(msgs, lockfile_uri);
+    BOOST_REQUIRE(!lockfile_diags.empty());
+
+    bool found_lock_error = false;
+    for (const auto& batch : lockfile_diags) {
+        if (!batch.is_array()) continue;
+        for (const auto& diag : batch.as_array()) {
+            auto source = diag.get_string("source");
+            if (source && *source == "eta-lockfile") {
+                found_lock_error = true;
+                break;
+            }
+        }
+    }
+    BOOST_TEST(found_lock_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

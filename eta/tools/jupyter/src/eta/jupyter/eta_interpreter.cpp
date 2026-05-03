@@ -213,7 +213,8 @@ EtaInterpreter::EtaInterpreter() {
         std::cerr << "[eta-jupyter] " << warning << '\n';
     }
 
-    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env("");
+    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env_at(
+        "", std::filesystem::current_path());
     driver_ = std::make_unique<eta::session::Driver>(std::move(resolver));
     if (driver_) {
         (void)driver_->load_prelude();

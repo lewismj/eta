@@ -35,6 +35,10 @@ add_subdirectory(editors/vscode)
 # Install stdlib alongside binaries.
 install(DIRECTORY stdlib/ DESTINATION stdlib
     FILES_MATCHING PATTERN "*.eta")
+install(DIRECTORY "${CMAKE_BINARY_DIR}/stdlib/" DESTINATION stdlib
+    OPTIONAL
+    FILES_MATCHING PATTERN "*.etac"
+)
 
 # Install cookbook programs.
 install(DIRECTORY cookbook/ DESTINATION cookbook
@@ -47,13 +51,17 @@ foreach(_t IN ITEMS
     eta_nng
     eta_stats
     eta_log
+    eta
     etai
     eta_repl
     etac
     eta_lsp
     eta_dap
     eta_jupyter
+    eta_stdlib_etac
     eta_core_test
+    eta_pkg_test
+    eta_cli_test
     eta_test
     eta_test_runner
     eta_qp_bench

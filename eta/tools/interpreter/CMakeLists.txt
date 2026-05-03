@@ -16,7 +16,7 @@ target_compile_definitions(etai PRIVATE
     ETA_HAS_TORCH=1
     ETA_HAS_NNG=1
     ETA_HAS_STATS=1
-    ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
+    ETA_STDLIB_DIR="${ETA_STDLIB_RUNTIME_DIR}"
 )
 eta_copy_torch_dlls(etai)
 eta_copy_nng_dlls(etai)
@@ -65,7 +65,7 @@ target_compile_definitions(eta_repl PRIVATE
     ETA_HAS_TORCH=1
     ETA_HAS_NNG=1
     ETA_HAS_STATS=1
-    ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
+    ETA_STDLIB_DIR="${ETA_STDLIB_RUNTIME_DIR}"
 )
 eta_copy_torch_dlls(eta_repl)
 eta_copy_nng_dlls(eta_repl)

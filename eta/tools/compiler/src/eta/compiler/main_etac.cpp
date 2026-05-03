@@ -24,6 +24,7 @@ static void print_usage(const char* prog) {
               << "  -O0             Disable optimization (default).\n"
               << "  --disasm        Print disassembly to stdout instead of writing .etac.\n"
               << "  --no-debug      Strip debug info (source maps) from output.\n"
+              << "  --no-prelude    Do not auto-load std.prelude before compilation.\n"
               << "  --path <dirs>   Module search path.\n"
               << "  --help          Show this help message.\n";
 }
@@ -35,12 +36,14 @@ int main(int argc, char* argv[]) {
     bool disasm_mode  = false;
     bool include_debug = true;
     bool optimize = false;
+    bool auto_prelude = true;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") { print_usage(argv[0]); return 0; }
         if (arg == "--disasm")  { disasm_mode = true; continue; }
         if (arg == "--no-debug") { include_debug = false; continue; }
+        if (arg == "--no-prelude") { auto_prelude = false; continue; }
         if (arg == "--optimize" || arg == "-O") { optimize = true; continue; }
         if (arg == "-O0") { optimize = false; continue; }
         if (arg == "--path") {
@@ -99,7 +102,7 @@ int main(int argc, char* argv[]) {
         pipeline.add_pass(std::make_unique<eta::semantics::passes::DeadCodeElimination>());
     }
 
-    {
+    if (auto_prelude) {
         auto pr = driver.load_prelude();
         if (pr.found && !pr.loaded) {
             driver.diagnostics().print_all(std::cerr, true, resolve);

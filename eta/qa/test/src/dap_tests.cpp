@@ -145,6 +145,34 @@ static std::vector<std::string> collect_eta_output(const std::vector<json::Value
     return out;
 }
 
+struct CurrentPathGuard {
+    fs::path original;
+
+    CurrentPathGuard()
+        : original(fs::current_path()) {}
+
+    ~CurrentPathGuard() {
+        std::error_code ec;
+        fs::current_path(original, ec);
+    }
+};
+
+struct ScopedTempDir {
+    fs::path path;
+
+    ScopedTempDir() {
+        const auto stamp =
+            std::chrono::steady_clock::now().time_since_epoch().count();
+        path = fs::temp_directory_path() / ("eta_dap_s7_" + std::to_string(stamp));
+        fs::create_directories(path);
+    }
+
+    ~ScopedTempDir() {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
+};
+
 /**
  * Run the server synchronously with the given framed input and return all
  * parsed output messages.
@@ -432,6 +460,133 @@ BOOST_AUTO_TEST_CASE(launch_responds_success) {
     auto resp = find_msg(msgs, "response", "launch");
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["success"].as_bool() == true);
+}
+
+BOOST_AUTO_TEST_CASE(launch_defaults_profile_to_debug) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "launch",
+            R"({"program":"/tmp/nonexistent.eta","stopOnEntry":false})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+    auto console = collect_output(msgs, "console");
+    std::string merged;
+    for (const auto& line : console) merged += line;
+    BOOST_TEST(merged.find("profile=debug") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(launch_uses_program_workspace_for_dependency_resolution) {
+    ScopedTempDir temp;
+    const auto project_root = temp.path / "app";
+    fs::create_directories(project_root / "src");
+    fs::create_directories(project_root / ".eta" / "modules" / "dep-0.1.0" / "src");
+
+    {
+        std::ofstream out(project_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"app\"\n"
+            << "version = \"1.0.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n"
+            << "dep = { path = \"../dep\" }\n";
+    }
+    {
+        std::ofstream out(project_root / "eta.lock", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "version = 1\n\n"
+            << "[[package]]\n"
+            << "name = \"app\"\n"
+            << "version = \"1.0.0\"\n"
+            << "source = \"root\"\n"
+            << "dependencies = [\"dep@0.1.0\"]\n\n"
+            << "[[package]]\n"
+            << "name = \"dep\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"path+../dep\"\n"
+            << "dependencies = []\n";
+    }
+    {
+        std::ofstream out(project_root / ".eta" / "modules" / "dep-0.1.0" / "src" / "dep.eta",
+                          std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module dep\n"
+            << "  (export dep-value)\n"
+            << "  (begin (define dep-value 7)))\n";
+    }
+    const auto program = project_root / "src" / "app.eta";
+    {
+        std::ofstream out(program, std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module app\n"
+            << "  (import dep)\n"
+            << "  (begin\n"
+            << "    (display dep-value)\n"
+            << "    (newline)))\n";
+    }
+
+    CurrentPathGuard cwd_guard;
+    fs::create_directories(temp.path / "outside");
+    fs::current_path(temp.path / "outside");
+
+    AsyncDapHarness harness;
+    harness.send(request(1, "initialize", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("initialize").is_null());
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(program) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    BOOST_REQUIRE(!harness.wait_response("launch").is_null());
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    harness.send(request(3, "configurationDone", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("configurationDone").is_null());
+
+    bool terminated = false;
+    std::string stderr_text;
+    std::string stdout_text;
+    for (int attempts = 0; attempts < 12 && !terminated; ++attempts) {
+        auto msg = harness.wait_message(
+            [](const json::Value& m) {
+                auto t = m.get_string("type");
+                if (!t || *t != "event") return false;
+                auto e = m.get_string("event");
+                return e && (*e == "output" || *e == "eta-output" || *e == "terminated");
+            },
+            std::chrono::milliseconds(10000));
+        BOOST_REQUIRE(!msg.is_null());
+        auto event = msg.get_string("event");
+        BOOST_REQUIRE(event.has_value());
+
+        if (*event == "output") {
+            auto cat = msg["body"].get_string("category");
+            auto text = msg["body"].get_string("output");
+            if (cat && text && *cat == "stderr") {
+                stderr_text += *text;
+            }
+            continue;
+        }
+        if (*event == "eta-output") {
+            auto stream = msg["body"].get_string("stream");
+            auto text = msg["body"].get_string("text");
+            if (stream && text && *stream == "stdout") {
+                stdout_text += *text;
+            }
+            continue;
+        }
+        if (*event == "terminated") {
+            terminated = true;
+        }
+    }
+    BOOST_TEST(terminated);
+    BOOST_TEST(stderr_text.find("cannot resolve import 'dep'") == std::string::npos);
+    BOOST_TEST(stdout_text.find("7") != std::string::npos);
+
+    harness.send(request(4, "disconnect", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("disconnect").is_null());
 }
 
 /**

@@ -127,6 +127,7 @@ private:
     void handle_initialized(const Value& params);
     void handle_shutdown();
     void handle_exit();
+    Value handle_lockfile_explain(const Value& params);
 
     /// Text document sync
     void handle_did_open(const Value& params);
@@ -177,6 +178,10 @@ private:
 
     /// Initialise resolver_ from ETA_MODULE_PATH env var + bundled stdlib.
     void init_module_path();
+    void ensure_workspace_for_uri(const std::string& uri);
+    void publish_workspace_package_diagnostics(const std::string& uri);
+    static std::optional<std::filesystem::path> uri_to_path(const std::string& uri);
+    static std::optional<std::filesystem::path> find_manifest_path(std::filesystem::path start_dir);
 
     /**
      * Read the source of a module (e.g. "std.core") from the search path.
@@ -219,6 +224,10 @@ private:
 
     /// Validation content cache
     std::unordered_map<std::string, std::string> last_validated_content_;
+    std::optional<std::filesystem::path> workspace_manifest_path_;
+    std::optional<std::filesystem::path> workspace_root_path_;
+    std::optional<std::string> manifest_diagnostics_uri_;
+    std::optional<std::string> lockfile_diagnostics_uri_;
 };
 
 } ///< namespace eta::lsp

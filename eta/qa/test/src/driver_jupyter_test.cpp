@@ -53,7 +53,98 @@ static void require_prelude(eta::session::Driver& driver) {
     BOOST_REQUIRE_MESSAGE(pr.loaded, "prelude.eta failed to load for driver jupyter tests");
 }
 
+struct CurrentPathGuard {
+    fs::path original;
+
+    CurrentPathGuard()
+        : original(fs::current_path()) {}
+
+    ~CurrentPathGuard() {
+        std::error_code ec;
+        fs::current_path(original, ec);
+    }
+};
+
+struct ScopedTempDir {
+    fs::path path;
+
+    ScopedTempDir() {
+        const auto stamp =
+            std::chrono::steady_clock::now().time_since_epoch().count();
+        path = fs::temp_directory_path() / ("eta_jupyter_s7_" + std::to_string(stamp));
+        fs::create_directories(path);
+    }
+
+    ~ScopedTempDir() {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
+};
+
 BOOST_AUTO_TEST_SUITE(driver_jupyter_tests)
+
+BOOST_AUTO_TEST_CASE(startup_resolver_discovers_project_modules_from_lockfile) {
+    ScopedTempDir temp;
+    const auto project_root = temp.path / "app";
+    fs::create_directories(project_root / ".eta" / "modules" / "dep-0.1.0" / "src");
+    fs::create_directories(project_root / "src");
+
+    {
+        std::ofstream out(project_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"app\"\n"
+            << "version = \"1.0.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n"
+            << "dep = { path = \"../dep\" }\n";
+    }
+    {
+        std::ofstream out(project_root / "eta.lock", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "version = 1\n\n"
+            << "[[package]]\n"
+            << "name = \"app\"\n"
+            << "version = \"1.0.0\"\n"
+            << "source = \"root\"\n"
+            << "dependencies = [\"dep@0.1.0\"]\n\n"
+            << "[[package]]\n"
+            << "name = \"dep\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"path+../dep\"\n"
+            << "dependencies = []\n";
+    }
+    {
+        std::ofstream out(project_root / ".eta" / "modules" / "dep-0.1.0" / "src" / "dep.eta",
+                          std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module dep\n"
+            << "  (export dep-value)\n"
+            << "  (begin (define dep-value 9)))\n";
+    }
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(project_root);
+
+    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env_at(
+        "", project_root);
+    eta::session::Driver driver(std::move(resolver));
+    require_prelude(driver);
+
+    eta::runtime::nanbox::LispVal result{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module app.test
+  (import dep)
+  (define result dep-value))
+)eta", &result, "result");
+    BOOST_REQUIRE(ok);
+
+    auto decoded = eta::runtime::nanbox::ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_TEST(*decoded == 9);
+}
 
 BOOST_AUTO_TEST_CASE(is_complete_expression_unbalanced_paren_with_indent_hint) {
     eta::session::Driver driver(make_resolver());

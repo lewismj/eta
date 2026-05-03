@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -23,10 +24,46 @@
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/builtin_names.h"
 #include "eta/interpreter/repl_complete.h"
+#include "eta/package/lockfile.h"
+#include "eta/package/manifest.h"
+#include "eta/package/resolver.h"
 
 namespace eta::lsp {
 
 using namespace eta::json;
+
+namespace {
+
+[[nodiscard]] std::filesystem::path canonicalize_path(const std::filesystem::path& path) {
+    std::error_code ec;
+    const auto canonical = std::filesystem::weakly_canonical(path, ec);
+    if (!ec) return canonical;
+    return path.lexically_normal();
+}
+
+[[nodiscard]] std::optional<int> parse_hex_nibble(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return std::nullopt;
+}
+
+[[nodiscard]] LspDiagnostic package_error_diagnostic(const std::string& source,
+                                                     std::string message,
+                                                     std::size_t line) {
+    LspDiagnostic d;
+    d.source = source;
+    d.severity = 1;
+    const auto zero_based = (line > 0u) ? static_cast<int64_t>(line - 1u) : 0;
+    d.range = Range{
+        Position{zero_based, 0},
+        Position{zero_based, 1},
+    };
+    d.message = std::move(message);
+    return d;
+}
+
+} // namespace
 
 /**
  * Construction
@@ -49,13 +86,202 @@ LspServer::LspServer(std::istream& in, std::ostream& out)
  */
 
 void LspServer::init_module_path() {
-    resolver_ = interpreter::ModulePathResolver::from_args_or_env("");
+    std::error_code ec;
+    auto cwd = std::filesystem::current_path(ec);
+    if (ec) {
+        resolver_ = interpreter::ModulePathResolver::from_args_or_env("");
+        return;
+    }
+    resolver_ = interpreter::ModulePathResolver::from_args_or_env_at("", cwd);
+}
+
+std::optional<std::filesystem::path> LspServer::uri_to_path(const std::string& uri) {
+    constexpr std::string_view kFilePrefix = "file://";
+    if (uri.rfind(kFilePrefix, 0) != 0) return std::nullopt;
+
+    std::string_view encoded = std::string_view(uri).substr(kFilePrefix.size());
+#if defined(_WIN32)
+    if (encoded.size() >= 3u
+        && encoded[0] == '/'
+        && std::isalpha(static_cast<unsigned char>(encoded[1]))
+        && encoded[2] == ':') {
+        encoded.remove_prefix(1u);
+    }
+#endif
+
+    std::string decoded;
+    decoded.reserve(encoded.size());
+    for (std::size_t i = 0; i < encoded.size(); ++i) {
+        const char c = encoded[i];
+        if (c == '%' && (i + 2u) < encoded.size()) {
+            const auto hi = parse_hex_nibble(encoded[i + 1u]);
+            const auto lo = parse_hex_nibble(encoded[i + 2u]);
+            if (hi && lo) {
+                decoded.push_back(static_cast<char>((*hi << 4) | *lo));
+                i += 2u;
+                continue;
+            }
+        }
+        decoded.push_back(c);
+    }
+    if (decoded.empty()) return std::nullopt;
+
+#if defined(_WIN32)
+    std::replace(decoded.begin(), decoded.end(), '/', '\\');
+#endif
+    return std::filesystem::path(decoded);
+}
+
+std::optional<std::filesystem::path>
+LspServer::find_manifest_path(std::filesystem::path start_dir) {
+    if (start_dir.empty()) return std::nullopt;
+    start_dir = canonicalize_path(start_dir);
+    while (!start_dir.empty()) {
+        const auto manifest = start_dir / "eta.toml";
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(manifest, ec) && !ec) {
+            return canonicalize_path(manifest);
+        }
+        const auto parent = start_dir.parent_path();
+        if (parent.empty() || parent == start_dir) break;
+        start_dir = parent;
+    }
+    return std::nullopt;
+}
+
+void LspServer::ensure_workspace_for_uri(const std::string& uri) {
+    std::filesystem::path start_dir;
+    if (auto doc_path = uri_to_path(uri)) {
+        std::error_code ec;
+        if (std::filesystem::is_directory(*doc_path, ec) && !ec) {
+            start_dir = *doc_path;
+        } else {
+            start_dir = doc_path->parent_path();
+        }
+    }
+    if (start_dir.empty()) {
+        std::error_code ec;
+        start_dir = std::filesystem::current_path(ec);
+        if (ec) start_dir.clear();
+    }
+
+    std::optional<std::filesystem::path> manifest_path;
+    if (!start_dir.empty()) {
+        manifest_path = find_manifest_path(start_dir);
+    }
+    const std::optional<std::filesystem::path> root_path =
+        manifest_path ? std::optional<std::filesystem::path>(manifest_path->parent_path())
+                      : std::nullopt;
+
+    if (workspace_manifest_path_ == manifest_path
+        && workspace_root_path_ == root_path) {
+        return;
+    }
+
+    if (manifest_path) {
+        resolver_ = interpreter::ModulePathResolver::from_args_or_env_at(
+            "", manifest_path->parent_path());
+    } else {
+        resolver_ = interpreter::ModulePathResolver::from_args_or_env("");
+    }
+    workspace_manifest_path_ = std::move(manifest_path);
+    workspace_root_path_ = root_path;
+
+    completion_cache_loaded_ = false;
+    prelude_symbols_.clear();
+    module_path_symbols_.clear();
+}
+
+void LspServer::publish_workspace_package_diagnostics(const std::string& /*uri*/) {
+    if (!workspace_manifest_path_) {
+        if (manifest_diagnostics_uri_) {
+            publish_diagnostics(*manifest_diagnostics_uri_, {});
+            manifest_diagnostics_uri_.reset();
+        }
+        if (lockfile_diagnostics_uri_) {
+            publish_diagnostics(*lockfile_diagnostics_uri_, {});
+            lockfile_diagnostics_uri_.reset();
+        }
+        return;
+    }
+
+    const auto manifest_path = *workspace_manifest_path_;
+    const auto manifest_uri = path_to_uri(manifest_path.string());
+    if (manifest_diagnostics_uri_ && *manifest_diagnostics_uri_ != manifest_uri) {
+        publish_diagnostics(*manifest_diagnostics_uri_, {});
+    }
+    manifest_diagnostics_uri_ = manifest_uri;
+
+    std::vector<LspDiagnostic> manifest_diags;
+    auto manifest = eta::package::read_manifest(manifest_path);
+    if (!manifest) {
+        manifest_diags.push_back(package_error_diagnostic(
+            "eta-manifest", manifest.error().message, manifest.error().line));
+    }
+
+    const auto lockfile_path = manifest_path.parent_path() / "eta.lock";
+    std::optional<std::string> lockfile_uri;
+    std::optional<eta::package::Lockfile> lockfile;
+    {
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(lockfile_path, ec) && !ec) {
+            lockfile_uri = path_to_uri(lockfile_path.string());
+        }
+    }
+
+    std::vector<LspDiagnostic> lockfile_diags;
+    if (lockfile_uri) {
+        auto lock = eta::package::read_lockfile(lockfile_path);
+        if (!lock) {
+            lockfile_diags.push_back(package_error_diagnostic(
+                "eta-lockfile", lock.error().message, lock.error().line));
+        } else {
+            lockfile = std::move(*lock);
+        }
+    }
+
+    if (manifest && manifest_diags.empty()) {
+        eta::package::ResolveOptions options;
+        options.modules_root = manifest_path.parent_path() / ".eta" / "modules";
+        if (lockfile) options.lockfile = &*lockfile;
+        auto resolved = eta::package::resolve_dependencies(manifest_path, options);
+        if (!resolved) {
+            manifest_diags.push_back(package_error_diagnostic(
+                "eta-manifest", resolved.error().message, 0));
+        }
+    }
+
+    if (lockfile_diagnostics_uri_) {
+        if (!lockfile_uri || *lockfile_diagnostics_uri_ != *lockfile_uri) {
+            publish_diagnostics(*lockfile_diagnostics_uri_, {});
+            lockfile_diagnostics_uri_.reset();
+        }
+    }
+
+    publish_diagnostics(manifest_uri, manifest_diags);
+    if (lockfile_uri) {
+        lockfile_diagnostics_uri_ = *lockfile_uri;
+        publish_diagnostics(*lockfile_uri, lockfile_diags);
+    }
 }
 
 std::optional<std::string> LspServer::resolve_module_source(const std::string& module_name) {
     auto path = resolver_.resolve(module_name);
     if (!path) return std::nullopt;
-    std::ifstream f(*path);
+
+    auto source_path = *path;
+    if (source_path.extension() == ".etac") {
+        auto sibling = source_path;
+        sibling.replace_extension(".eta");
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(sibling, ec) || ec) {
+            return std::nullopt;
+        }
+        source_path = std::move(sibling);
+    }
+    if (source_path.extension() != ".eta") return std::nullopt;
+
+    std::ifstream f(source_path);
     if (!f.is_open()) return std::nullopt;
     return std::string(std::istreambuf_iterator<char>(f),
                        std::istreambuf_iterator<char>());
@@ -380,6 +606,9 @@ void LspServer::dispatch(const Value& msg) {
     } else if (method == "textDocument/inlayHint") {
         auto result = handle_inlay_hint(params);
         if (has_id) send_response(id, result);
+    } else if (method == "eta/lockfile/explain") {
+        auto result = handle_lockfile_explain(params);
+        if (has_id) send_response(id, result);
     } else {
         if (has_id) {
             send_error(id, -32601, "Method not found: " + method);
@@ -454,6 +683,62 @@ void LspServer::handle_exit() {
     running_ = false;
 }
 
+Value LspServer::handle_lockfile_explain(const Value& params) {
+    std::string uri = params.get_string("uri").value_or("");
+    if (uri.empty()) {
+        uri = params["textDocument"].get_string("uri").value_or("");
+    }
+    if (!uri.empty()) {
+        ensure_workspace_for_uri(uri);
+    } else if (!documents_.empty()) {
+        ensure_workspace_for_uri(documents_.begin()->first);
+    }
+
+    const std::string module_name =
+        params.get_string("module").value_or(
+            params.get_string("moduleName").value_or(""));
+
+    Array roots;
+    roots.reserve(resolver_.dirs().size());
+    for (const auto& dir : resolver_.dirs()) {
+        roots.push_back(dir.string());
+    }
+
+    Array candidates;
+    if (!module_name.empty()) {
+        for (const auto& candidate : resolver_.resolve_all(module_name)) {
+            candidates.push_back(candidate.string());
+        }
+    }
+
+    Object response{
+        {"module", module_name},
+        {"roots", Value(std::move(roots))},
+        {"candidates", Value(std::move(candidates))},
+    };
+    if (module_name.empty()) {
+        response.insert_or_assign("selected", Value(nullptr));
+        response.insert_or_assign("error", Value("missing 'module' parameter"));
+    } else if (auto selected = resolver_.resolve(module_name)) {
+        response.insert_or_assign("selected", selected->string());
+    } else {
+        response.insert_or_assign("selected", Value(nullptr));
+    }
+
+    if (workspace_root_path_) {
+        response.insert_or_assign("workspaceRoot", workspace_root_path_->string());
+    }
+    if (workspace_manifest_path_) {
+        response.insert_or_assign("manifestPath", workspace_manifest_path_->string());
+        const auto lockfile = workspace_manifest_path_->parent_path() / "eta.lock";
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(lockfile, ec) && !ec) {
+            response.insert_or_assign("lockfilePath", lockfile.string());
+        }
+    }
+    return Value(std::move(response));
+}
+
 /**
  * Text document synchronization
  */
@@ -522,6 +807,9 @@ void LspServer::handle_did_save(const Value& params) {
 void LspServer::validate_document(const std::string& uri) {
     auto it = documents_.find(uri);
     if (it == documents_.end()) return;
+
+    ensure_workspace_for_uri(uri);
+    publish_workspace_package_diagnostics(uri);
 
     const auto& source = it->second.content;
 
@@ -805,6 +1093,9 @@ Value LspServer::handle_hover(const Value& params) {
 
 Value LspServer::handle_definition(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
+    if (!uri.empty()) {
+        ensure_workspace_for_uri(uri);
+    }
     auto it = documents_.find(uri);
     if (it == documents_.end()) return Value(nullptr);
 
@@ -868,6 +1159,9 @@ Value LspServer::handle_definition(const Value& params) {
 
 Value LspServer::handle_completion(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
+    if (!uri.empty()) {
+        ensure_workspace_for_uri(uri);
+    }
     auto it = documents_.find(uri);
 
     /// Lazily load the completion cache on first completion request
@@ -1925,6 +2219,10 @@ Value LspServer::handle_workspace_symbol(const Value& params) {
     auto query_opt = params.get_string("query");
     std::string query = query_opt ? *query_opt : "";
 
+    if (!documents_.empty()) {
+        ensure_workspace_for_uri(documents_.begin()->first);
+    }
+
     if (!completion_cache_loaded_) {
         load_completion_cache();
     }
@@ -2816,6 +3114,9 @@ std::vector<InlayCallSite> find_inlay_call_sites(const std::string& source) {
 
 Value LspServer::handle_inlay_hint(const Value& params) {
     auto uri = params["textDocument"].get_string("uri").value_or("");
+    if (!uri.empty()) {
+        ensure_workspace_for_uri(uri);
+    }
     auto it = documents_.find(uri);
     if (it == documents_.end()) return Value(Array{});
 

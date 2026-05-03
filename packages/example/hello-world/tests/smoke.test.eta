@@ -1,0 +1,10 @@
+(module hello_world.tests.smoke
+  (import std.test)
+  (begin
+    (define suite
+      (make-group "hello_world"
+        (list
+          (make-test "smoke"
+            (lambda ()
+              (assert-true #t))))))
+    (print-tap (run suite))))

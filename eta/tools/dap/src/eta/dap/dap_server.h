@@ -140,6 +140,7 @@ private:
 
     /// Whether "launch" has been requested (i.e., VM thread is running/should start)
     bool launched_{false};
+    std::string launch_profile_{"debug"};
     Value last_launch_args_{};
 
     /// Command name of the request currently being dispatched (used by send_response).

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <iosfwd>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -51,13 +53,88 @@ struct ModuleEntry {
     std::optional<std::uint32_t> main_func_slot; ///< global slot of main, if any
 };
 
+/**
+ * @brief Package metadata embedded in a `.etac` header.
+ */
+struct PackageMetadata {
+    std::string name;
+    std::string version;
+    std::uint64_t manifest_hash{0};
+};
+
+/**
+ * @brief Dependency hash entry embedded in a `.etac` header.
+ */
+struct DependencyHashEntry {
+    std::string dependency;
+    std::uint64_t etac_hash{0};
+};
+
 /// Result of deserialization
 
 struct EtacFile {
+    std::uint16_t format_version{0};
+    std::uint16_t flags{0};
     std::uint64_t source_hash{0};
+    std::uint32_t builtin_count{0};
+    bool has_compiler_id{false};
+    std::array<std::uint8_t, 16> compiler_id{};
+    std::optional<PackageMetadata> package_metadata;
+    std::vector<DependencyHashEntry> dependency_hashes;
     std::vector<std::string> imports;   ///< Non-prelude module dependencies
     std::vector<ModuleEntry> modules;
     semantics::BytecodeFunctionRegistry registry;
+};
+
+/**
+ * @brief Freshness policy input for stale-artifact checks.
+ */
+struct FreshnessContext {
+    std::optional<std::array<std::uint8_t, 16>> expected_compiler_id;
+    std::optional<std::uint32_t> expected_builtin_count;
+    std::optional<std::uint64_t> expected_source_hash;
+    std::optional<std::uint64_t> expected_manifest_hash;
+    std::vector<DependencyHashEntry> expected_dependency_hashes;
+};
+
+/**
+ * @brief Freshness status for `.etac` artifacts.
+ */
+enum class FreshnessStatus : std::uint8_t {
+    Fresh,
+    UnsupportedFormat,
+    MissingCompilerId,
+    CompilerIdMismatch,
+    BuiltinCountMismatch,
+    SourceHashMismatch,
+    ManifestHashMismatch,
+    DependencyHashMismatch,
+};
+
+constexpr const char* to_string(FreshnessStatus status) noexcept {
+    switch (status) {
+        case FreshnessStatus::Fresh:              return "artifact is fresh";
+        case FreshnessStatus::UnsupportedFormat:  return "unsupported bytecode format";
+        case FreshnessStatus::MissingCompilerId:  return "artifact has no compiler fingerprint";
+        case FreshnessStatus::CompilerIdMismatch: return "compiler fingerprint mismatch";
+        case FreshnessStatus::BuiltinCountMismatch: return "builtin count mismatch";
+        case FreshnessStatus::SourceHashMismatch: return "source hash mismatch";
+        case FreshnessStatus::ManifestHashMismatch: return "manifest hash mismatch";
+        case FreshnessStatus::DependencyHashMismatch: return "dependency hash mismatch";
+    }
+    return "unknown freshness status";
+}
+
+/**
+ * @brief Result of stale-artifact checking.
+ */
+struct FreshnessResult {
+    FreshnessStatus status{FreshnessStatus::Fresh};
+    std::string detail;
+
+    [[nodiscard]] bool fresh() const noexcept {
+        return status == FreshnessStatus::Fresh;
+    }
 };
 
 /// Serializer / Deserializer
@@ -78,6 +155,9 @@ public:
      * @param os            Output stream (binary mode).
      * @param imports       Non-prelude module dependencies to store in the .etac.
      * @param num_builtins  Number of builtin slots registered at compile time.
+     * @param package_metadata Optional package metadata for stale-artifact checks.
+     * @param dependency_hashes Optional dep-hash table for stale-artifact checks.
+     * @param compiler_id   Optional compiler fingerprint (defaults to current build id).
      * @return true on success.
      */
     bool serialize(const std::vector<ModuleEntry>& modules,
@@ -86,7 +166,10 @@ public:
                    bool include_debug,
                    std::ostream& os,
                    const std::vector<std::string>& imports = {},
-                   std::uint32_t num_builtins = 0) const;
+                   std::uint32_t num_builtins = 0,
+                   const std::optional<PackageMetadata>& package_metadata = std::nullopt,
+                   const std::vector<DependencyHashEntry>& dependency_hashes = {},
+                   const std::array<std::uint8_t, 16>* compiler_id = nullptr) const;
 
     /**
      * Deserialize a .etac binary into an EtacFile.
@@ -100,14 +183,32 @@ public:
     /// Compute a source hash using boost::hash.
     static std::uint64_t hash_source(std::string_view source);
 
+    /**
+     * @brief Compute the compiler fingerprint for the current build.
+     *
+     * The value is deterministic for a given toolchain/build configuration and
+     * is embedded in v4 artifacts to detect stale `.etac` files.
+     */
+    static std::array<std::uint8_t, 16> default_compiler_id();
+
+    /**
+     * @brief Evaluate whether a deserialized artifact is fresh.
+     */
+    static FreshnessResult check_freshness(const EtacFile& file,
+                                           const FreshnessContext& context);
+
     /// Format constants
     static constexpr char     MAGIC[4]       = {'E','T','A','C'};
-    static constexpr uint16_t FORMAT_VERSION = 3;   ///< bumped: LE-canonical + TapeRef/CT_Nil
+    static constexpr uint16_t FORMAT_VERSION_V3 = 3;
+    static constexpr uint16_t FORMAT_VERSION = 4;   ///< v4 metadata + stale-artifact policy hooks
     static constexpr uint16_t FLAG_HAS_DEBUG = 0x0001;
+    static constexpr uint16_t FLAG_HAS_PACKAGE_META = 0x0002;
+    static constexpr uint16_t FLAG_HAS_DEPHASH = 0x0004;
 
     /// Sanity limits applied during deserialization (prevent DoS from crafted files)
     static constexpr uint32_t MAX_STRING_LEN = 64u * 1024u;  ///< 64 KiB per string/symbol
     static constexpr uint32_t MAX_VEC_LEN    = 65535u;       ///< max inline constant-vector len
+    static constexpr uint32_t MAX_DEP_HASH_ENTRIES = 65535u; ///< max dep-hash table entries
 
 private:
     memory::heap::Heap& heap_;

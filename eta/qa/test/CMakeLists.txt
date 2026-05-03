@@ -24,6 +24,7 @@ set(SOURCES
         src/dap_tests.cpp
         src/lsp_tests.cpp
         src/module_path_tests.cpp
+        src/packaging_contract_tests.cpp
         src/repl_redefine_tests.cpp
         src/higher_order_tests.cpp
         src/cookbook/example_runner_tests.cpp
@@ -82,6 +83,7 @@ endif()
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_COOKBOOK_DIR="${ETA_COOKBOOK_SOURCE_DIR}"
     ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
+    ETA_STDLIB_ETAC_DIR="${ETA_STDLIB_RUNTIME_DIR}"
 )
 
 # Inject the path to the etai binary for spawn tests.

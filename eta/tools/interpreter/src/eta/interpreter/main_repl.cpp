@@ -23,6 +23,7 @@ static void print_usage(const char* prog) {
 #endif
     std::cerr << "-separated).\n"
               << "                  Falls back to ETA_MODULE_PATH environment variable.\n"
+              << "  --strict-shadows Fail when a module resolves to multiple files.\n"
               << "  --help          Show this help message.\n";
 }
 
@@ -120,6 +121,7 @@ static constexpr const char* BANNER =
 
 int main(int argc, char* argv[]) {
     std::string cli_path;
+    bool strict_shadows = false;
 
     /// Parse CLI arguments
     for (int i = 1; i < argc; ++i) {
@@ -139,13 +141,19 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
+        if (arg == "--strict-shadows") {
+            strict_shadows = true;
+            continue;
+        }
+
         std::cerr << "error: unexpected argument: " << arg << "\n";
         print_usage(argv[0]);
         return 1;
     }
 
     /// Build module path resolver
-    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
+    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env(
+        cli_path, strict_shadows);
 
     /// Warn when the module path is empty and no explicit --path was given.
     if (cli_path.empty()) {

@@ -201,6 +201,7 @@ export function activate(context: ExtensionContext) {
                 request: 'launch',
                 name: 'Run Eta file',
                 program: target,
+                profile: 'debug',
             });
         }),
         commands.registerCommand('eta.debugFile', (uri?: Uri, stopOnEntry?: boolean) => {
@@ -212,6 +213,7 @@ export function activate(context: ExtensionContext) {
                 name: 'Debug Eta file',
                 program: target,
                 stopOnEntry: stopOnEntry === true,
+                profile: 'debug',
             });
         }),
         commands.registerCommand('eta.runTestFile', async (uri?: Uri) => {
@@ -492,6 +494,7 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
                 request: 'launch',
                 name: 'Run Eta file',
                 program: editor.document.fileName,
+                profile: 'debug',
             };
         }
 
@@ -513,6 +516,15 @@ class EtaDebugConfigurationProvider implements DebugConfigurationProvider {
         }
         if (typeof config.stopOnEntry !== 'boolean') {
             config.stopOnEntry = false;
+        }
+        if (typeof config.profile !== 'string') {
+            config.profile = 'debug';
+        }
+        if (config.profile !== 'debug' && config.profile !== 'release') {
+            window.showWarningMessage(
+                'Eta debug: "profile" must be "debug" or "release".'
+            );
+            return undefined;
         }
         if (typeof config.etac !== 'boolean') {
             config.etac = false;
@@ -628,7 +640,9 @@ class EtaDebugAdapterTracker implements DebugAdapterTracker {
                 this.channel.appendLine('[DAP->] initialize');
                 break;
             case 'launch':
-                this.channel.appendLine(`[DAP->] launch: program="${args?.program ?? '?'}"`);
+                this.channel.appendLine(
+                    `[DAP->] launch: program="${args?.program ?? '?'}" profile="${args?.profile ?? 'debug'}"`
+                );
                 break;
             case 'setBreakpoints': {
                 const srcPath: string = args?.source?.path ?? '?';

@@ -1,4 +1,5 @@
 #include <boost/test/unit_test.hpp>
+#include <array>
 #include <sstream>
 
 #include "eta/runtime/vm/bytecode_serializer.h"
@@ -36,9 +37,14 @@ struct SerializerFixture {
     roundtrip(const std::vector<ModuleEntry>& mods,
               const semantics::BytecodeFunctionRegistry& reg,
               uint64_t hash = 42,
-              bool debug = true) {
+              bool debug = true,
+              uint32_t num_builtins = 0,
+              const std::optional<PackageMetadata>& package_metadata = std::nullopt,
+              const std::vector<DependencyHashEntry>& dependency_hashes = {},
+              const std::array<uint8_t, 16>* compiler_id = nullptr) {
         std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
-        if (!serializer.serialize(mods, reg, hash, debug, ss)) {
+        if (!serializer.serialize(mods, reg, hash, debug, ss, {}, num_builtins,
+                                  package_metadata, dependency_hashes, compiler_id)) {
             return std::unexpected(SerializerError::IOError);
         }
         ss.seekg(0);
@@ -57,6 +63,8 @@ BOOST_AUTO_TEST_CASE(roundtrip_empty_registry) {
     std::vector<ModuleEntry> mods;
     auto result = roundtrip(mods, reg);
     BOOST_REQUIRE(result.has_value());
+    BOOST_CHECK_EQUAL(result->format_version, BytecodeSerializer::FORMAT_VERSION);
+    BOOST_CHECK(result->has_compiler_id);
     BOOST_CHECK_EQUAL(result->modules.size(), 0u);
     BOOST_CHECK_EQUAL(result->registry.size(), 0u);
 }
@@ -372,6 +380,49 @@ BOOST_AUTO_TEST_CASE(roundtrip_source_hash) {
     BOOST_CHECK_EQUAL(result->source_hash, expected_hash);
 }
 
+BOOST_AUTO_TEST_CASE(roundtrip_v4_metadata_sections) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name = "meta";
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    std::array<uint8_t, 16> compiler_id{};
+    for (std::size_t i = 0; i < compiler_id.size(); ++i) {
+        compiler_id[i] = static_cast<uint8_t>(i + 1u);
+    }
+
+    PackageMetadata package_metadata{
+        .name = "mathx",
+        .version = "1.4.2",
+        .manifest_hash = 0xAABBCCDDEEFF0011ull,
+    };
+    const std::vector<DependencyHashEntry> dep_hashes{
+        {"std.math", 0x101ull},
+        {"stats.core", 0x202ull},
+    };
+
+    auto result = roundtrip({}, reg, /*hash=*/77, /*debug=*/true,
+                            /*num_builtins=*/123, package_metadata, dep_hashes, &compiler_id);
+    BOOST_REQUIRE(result.has_value());
+    BOOST_CHECK_EQUAL(result->format_version, BytecodeSerializer::FORMAT_VERSION);
+    BOOST_CHECK(result->has_compiler_id);
+    BOOST_CHECK(result->compiler_id == compiler_id);
+    BOOST_CHECK_EQUAL(result->builtin_count, 123u);
+
+    BOOST_REQUIRE(result->package_metadata.has_value());
+    BOOST_CHECK_EQUAL(result->package_metadata->name, "mathx");
+    BOOST_CHECK_EQUAL(result->package_metadata->version, "1.4.2");
+    BOOST_CHECK_EQUAL(result->package_metadata->manifest_hash, 0xAABBCCDDEEFF0011ull);
+
+    BOOST_REQUIRE_EQUAL(result->dependency_hashes.size(), 2u);
+    BOOST_CHECK_EQUAL(result->dependency_hashes[0].dependency, "std.math");
+    BOOST_CHECK_EQUAL(result->dependency_hashes[0].etac_hash, 0x101ull);
+    BOOST_CHECK_EQUAL(result->dependency_hashes[1].dependency, "stats.core");
+    BOOST_CHECK_EQUAL(result->dependency_hashes[1].etac_hash, 0x202ull);
+}
+
 BOOST_AUTO_TEST_CASE(roundtrip_heap_cons_constant) {
     /// Quoted list '(1 2) materializes as heap cons cells
     auto two = ops::encode(int64_t{2}).value();
@@ -438,6 +489,76 @@ BOOST_AUTO_TEST_CASE(deserialize_version_mismatch) {
     auto result = serializer.deserialize(ss);
     BOOST_CHECK(!result.has_value());
     BOOST_CHECK(result.error() == SerializerError::VersionMismatch);
+}
+
+BOOST_AUTO_TEST_CASE(deserialize_v3_legacy_format_is_supported) {
+    auto write_u16_le = [](std::ostream& os, uint16_t v) {
+        const char bytes[2] = {
+            static_cast<char>(v & 0xFFu),
+            static_cast<char>((v >> 8) & 0xFFu),
+        };
+        os.write(bytes, 2);
+    };
+    auto write_u32_le = [](std::ostream& os, uint32_t v) {
+        const char bytes[4] = {
+            static_cast<char>(v & 0xFFu),
+            static_cast<char>((v >> 8) & 0xFFu),
+            static_cast<char>((v >> 16) & 0xFFu),
+            static_cast<char>((v >> 24) & 0xFFu),
+        };
+        os.write(bytes, 4);
+    };
+    auto write_u64_le = [](std::ostream& os, uint64_t v) {
+        const char bytes[8] = {
+            static_cast<char>(v & 0xFFu),
+            static_cast<char>((v >> 8) & 0xFFu),
+            static_cast<char>((v >> 16) & 0xFFu),
+            static_cast<char>((v >> 24) & 0xFFu),
+            static_cast<char>((v >> 32) & 0xFFu),
+            static_cast<char>((v >> 40) & 0xFFu),
+            static_cast<char>((v >> 48) & 0xFFu),
+            static_cast<char>((v >> 56) & 0xFFu),
+        };
+        os.write(bytes, 8);
+    };
+
+    std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+    ss.write("ETAC", 4);
+    write_u16_le(ss, BytecodeSerializer::FORMAT_VERSION_V3); // version
+    write_u16_le(ss, 0);                                     // flags
+    write_u64_le(ss, 0x1234u);                              // source hash
+    write_u32_le(ss, 7);                                    // builtin count
+    write_u32_le(ss, 0);                                    // num modules
+    write_u32_le(ss, 0);                                    // num functions
+    write_u32_le(ss, 0);                                    // num imports
+
+    ss.seekg(0);
+    auto result = serializer.deserialize(ss);
+    BOOST_REQUIRE(result.has_value());
+    BOOST_CHECK_EQUAL(result->format_version, BytecodeSerializer::FORMAT_VERSION_V3);
+    BOOST_CHECK(!result->has_compiler_id);
+    BOOST_CHECK_EQUAL(result->builtin_count, 7u);
+    BOOST_CHECK_EQUAL(result->modules.size(), 0u);
+    BOOST_CHECK_EQUAL(result->registry.size(), 0u);
+}
+
+BOOST_AUTO_TEST_CASE(deserialize_builtin_count_mismatch) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name = "b";
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+    const bool ok = serializer.serialize({}, reg, /*hash=*/9, /*debug=*/true, ss,
+                                         /*imports=*/{}, /*num_builtins=*/17);
+    BOOST_REQUIRE(ok);
+    ss.seekg(0);
+
+    auto result = serializer.deserialize(ss, /*expected_builtins=*/23);
+    BOOST_CHECK(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::BuiltinCountMismatch);
 }
 
 /**
@@ -546,6 +667,125 @@ BOOST_AUTO_TEST_CASE(hash_source_differs) {
     auto h1 = BytecodeSerializer::hash_source("(module a)");
     auto h2 = BytecodeSerializer::hash_source("(module b)");
     BOOST_CHECK_NE(h1, h2);
+}
+
+BOOST_AUTO_TEST_CASE(freshness_reports_compiler_mismatch) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name = "fresh";
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg, /*hash=*/11);
+    BOOST_REQUIRE(result.has_value());
+
+    FreshnessContext ctx;
+    auto expected_compiler = BytecodeSerializer::default_compiler_id();
+    expected_compiler[0] ^= 0x5Au;
+    ctx.expected_compiler_id = expected_compiler;
+
+    auto freshness = BytecodeSerializer::check_freshness(*result, ctx);
+    BOOST_CHECK(!freshness.fresh());
+    BOOST_CHECK(freshness.status == FreshnessStatus::CompilerIdMismatch);
+}
+
+BOOST_AUTO_TEST_CASE(freshness_reports_missing_compiler_id_for_v3) {
+    auto write_u16_le = [](std::ostream& os, uint16_t v) {
+        const char bytes[2] = {
+            static_cast<char>(v & 0xFFu),
+            static_cast<char>((v >> 8) & 0xFFu),
+        };
+        os.write(bytes, 2);
+    };
+    auto write_u32_le = [](std::ostream& os, uint32_t v) {
+        const char bytes[4] = {
+            static_cast<char>(v & 0xFFu),
+            static_cast<char>((v >> 8) & 0xFFu),
+            static_cast<char>((v >> 16) & 0xFFu),
+            static_cast<char>((v >> 24) & 0xFFu),
+        };
+        os.write(bytes, 4);
+    };
+    auto write_u64_le = [](std::ostream& os, uint64_t v) {
+        const char bytes[8] = {
+            static_cast<char>(v & 0xFFu),
+            static_cast<char>((v >> 8) & 0xFFu),
+            static_cast<char>((v >> 16) & 0xFFu),
+            static_cast<char>((v >> 24) & 0xFFu),
+            static_cast<char>((v >> 32) & 0xFFu),
+            static_cast<char>((v >> 40) & 0xFFu),
+            static_cast<char>((v >> 48) & 0xFFu),
+            static_cast<char>((v >> 56) & 0xFFu),
+        };
+        os.write(bytes, 8);
+    };
+
+    std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+    ss.write("ETAC", 4);
+    write_u16_le(ss, BytecodeSerializer::FORMAT_VERSION_V3);
+    write_u16_le(ss, 0);
+    write_u64_le(ss, 0x99u);
+    write_u32_le(ss, 0);
+    write_u32_le(ss, 0);
+    write_u32_le(ss, 0);
+    write_u32_le(ss, 0);
+    ss.seekg(0);
+
+    auto parsed = serializer.deserialize(ss);
+    BOOST_REQUIRE(parsed.has_value());
+
+    FreshnessContext ctx;
+    ctx.expected_compiler_id = BytecodeSerializer::default_compiler_id();
+    auto freshness = BytecodeSerializer::check_freshness(*parsed, ctx);
+    BOOST_CHECK(!freshness.fresh());
+    BOOST_CHECK(freshness.status == FreshnessStatus::MissingCompilerId);
+}
+
+BOOST_AUTO_TEST_CASE(freshness_reports_source_manifest_and_dependency_mismatch) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name = "fresh_ctx";
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    PackageMetadata pkg_meta{
+        .name = "demo",
+        .version = "0.1.0",
+        .manifest_hash = 100,
+    };
+    const std::vector<DependencyHashEntry> dep_hashes{
+        {"demo.dep", 111},
+    };
+
+    auto parsed = roundtrip({}, reg, /*hash=*/50, /*debug=*/true, /*num_builtins=*/7,
+                            pkg_meta, dep_hashes);
+    BOOST_REQUIRE(parsed.has_value());
+
+    {
+        FreshnessContext ctx;
+        ctx.expected_source_hash = 51;
+        auto freshness = BytecodeSerializer::check_freshness(*parsed, ctx);
+        BOOST_CHECK(!freshness.fresh());
+        BOOST_CHECK(freshness.status == FreshnessStatus::SourceHashMismatch);
+    }
+
+    {
+        FreshnessContext ctx;
+        ctx.expected_manifest_hash = 101;
+        auto freshness = BytecodeSerializer::check_freshness(*parsed, ctx);
+        BOOST_CHECK(!freshness.fresh());
+        BOOST_CHECK(freshness.status == FreshnessStatus::ManifestHashMismatch);
+    }
+
+    {
+        FreshnessContext ctx;
+        ctx.expected_dependency_hashes = {DependencyHashEntry{"demo.dep", 999}};
+        auto freshness = BytecodeSerializer::check_freshness(*parsed, ctx);
+        BOOST_CHECK(!freshness.fresh());
+        BOOST_CHECK(freshness.status == FreshnessStatus::DependencyHashMismatch);
+    }
 }
 
 /**

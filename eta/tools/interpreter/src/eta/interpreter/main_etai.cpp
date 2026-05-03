@@ -23,6 +23,7 @@ static void print_usage(const char* prog) {
 #endif
     std::cerr << "-separated).\n"
               << "                      Falls back to ETA_MODULE_PATH environment variable.\n"
+              << "  --strict-shadows    Fail when a module resolves to multiple files.\n"
               << "  --mailbox <url>     nng endpoint to dial on startup (spawned child mode).\n"
               << "                      The child dials this endpoint to connect to the parent.\n"
               << "  --disasm            Disassemble bytecode instead of executing.\n"
@@ -35,6 +36,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> program_args;
     std::string mailbox_endpoint;  ///< --mailbox <url>  (spawned child mode)
     bool disasm_mode = false;
+    bool strict_shadows = false;
     bool parsing_program_args = false;
 
     /// Parse CLI arguments
@@ -58,6 +60,11 @@ int main(int argc, char* argv[]) {
 
         if (arg == "--disasm") {
             disasm_mode = true;
+            continue;
+        }
+
+        if (arg == "--strict-shadows") {
+            strict_shadows = true;
             continue;
         }
 
@@ -101,7 +108,8 @@ int main(int argc, char* argv[]) {
     }
 
     /// Build module path resolver
-    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
+    auto resolver =
+        eta::interpreter::ModulePathResolver::from_args_or_env(cli_path, strict_shadows);
 
     /**
      * Also add the directory containing the input file so sibling

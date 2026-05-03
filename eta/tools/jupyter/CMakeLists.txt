@@ -28,7 +28,7 @@ target_link_libraries(eta_jupyter
 
 target_compile_definitions(eta_jupyter PRIVATE
     ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1
-    ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
+    ETA_STDLIB_DIR="${ETA_STDLIB_RUNTIME_DIR}"
     ETA_JUPYTER_SOURCE_RESOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources"
 )
 

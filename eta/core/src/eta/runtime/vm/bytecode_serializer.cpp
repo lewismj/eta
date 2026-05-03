@@ -1,9 +1,11 @@
 #include "bytecode_serializer.h"
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
-#include <ostream>
 #include <istream>
+#include <ostream>
+#include <sstream>
 
 #include <boost/container_hash/hash.hpp>
 
@@ -39,6 +41,83 @@ inline int64_t host_to_le_i64(int64_t v) noexcept {
     if constexpr (std::endian::native == std::endian::little)
         return v;
     return static_cast<int64_t>(std::byteswap(static_cast<uint64_t>(v)));
+}
+
+constexpr uint64_t kFNVOffsetBasis = 14695981039346656037ull;
+constexpr uint64_t kFNVPrime = 1099511628211ull;
+
+uint64_t fnv1a64(std::string_view text, uint64_t seed = kFNVOffsetBasis) noexcept {
+    uint64_t hash = seed;
+    for (const unsigned char c : text) {
+        hash ^= static_cast<uint64_t>(c);
+        hash *= kFNVPrime;
+    }
+    return hash;
+}
+
+void store_u64_le(uint64_t value, std::array<uint8_t, 16>& out, std::size_t offset) noexcept {
+    for (std::size_t i = 0; i < 8; ++i) {
+        out[offset + i] = static_cast<uint8_t>((value >> (i * 8)) & 0xFFu);
+    }
+}
+
+std::array<uint8_t, 16> make_fingerprint128(std::string_view input) noexcept {
+    const uint64_t lo = fnv1a64(input, kFNVOffsetBasis);
+    const uint64_t hi = fnv1a64(input, kFNVOffsetBasis ^ 0x9e3779b97f4a7c15ull);
+
+    std::array<uint8_t, 16> out{};
+    store_u64_le(lo, out, 0);
+    store_u64_le(hi, out, 8);
+    return out;
+}
+
+std::string build_compiler_fingerprint_input() {
+    std::ostringstream oss;
+    oss << "eta-bytecode-v4";
+
+#if defined(_MSC_FULL_VER)
+    oss << "|msvc:" << _MSC_FULL_VER;
+#elif defined(__clang__)
+    oss << "|clang:" << __clang_major__ << "." << __clang_minor__ << "." << __clang_patchlevel__;
+#elif defined(__GNUC__)
+    oss << "|gcc:" << __GNUC__ << "." << __GNUC_MINOR__ << "." << __GNUC_PATCHLEVEL__;
+#else
+    oss << "|compiler:unknown";
+#endif
+
+    oss << "|cplusplus:" << __cplusplus;
+
+#if defined(NDEBUG)
+    oss << "|ndebug:1";
+#else
+    oss << "|ndebug:0";
+#endif
+
+#if defined(USE_PEXT)
+    oss << "|pext:1";
+#else
+    oss << "|pext:0";
+#endif
+
+#if defined(ETA_CLP_QP_BACKEND)
+    oss << "|clp_qp:1";
+#else
+    oss << "|clp_qp:0";
+#endif
+
+    oss << "|ptr:" << (sizeof(void*) * 8u);
+
+#if defined(_WIN32)
+    oss << "|os:windows";
+#elif defined(__APPLE__)
+    oss << "|os:macos";
+#elif defined(__linux__)
+    oss << "|os:linux";
+#else
+    oss << "|os:unknown";
+#endif
+
+    return oss.str();
 }
 
 } ///< anonymous namespace
@@ -83,6 +162,93 @@ bool BytecodeSerializer::read_str(std::istream& is, std::string& s) {
 uint64_t BytecodeSerializer::hash_source(std::string_view source) {
     boost::hash<std::string_view> hasher;
     return static_cast<uint64_t>(hasher(source));
+}
+
+std::array<uint8_t, 16> BytecodeSerializer::default_compiler_id() {
+    static const auto compiler_id = make_fingerprint128(build_compiler_fingerprint_input());
+    return compiler_id;
+}
+
+FreshnessResult
+BytecodeSerializer::check_freshness(const EtacFile& file, const FreshnessContext& context) {
+    if (file.format_version != FORMAT_VERSION_V3 && file.format_version != FORMAT_VERSION) {
+        return FreshnessResult{
+            .status = FreshnessStatus::UnsupportedFormat,
+            .detail = "format version " + std::to_string(file.format_version),
+        };
+    }
+
+    if (context.expected_compiler_id.has_value()) {
+        if (!file.has_compiler_id) {
+            return FreshnessResult{
+                .status = FreshnessStatus::MissingCompilerId,
+                .detail = "legacy v3 artifact has no compiler fingerprint",
+            };
+        }
+        if (file.compiler_id != *context.expected_compiler_id) {
+            return FreshnessResult{
+                .status = FreshnessStatus::CompilerIdMismatch,
+                .detail = "artifact compiler fingerprint does not match runtime",
+            };
+        }
+    }
+
+    if (context.expected_builtin_count.has_value()
+        && file.builtin_count != *context.expected_builtin_count) {
+        return FreshnessResult{
+            .status = FreshnessStatus::BuiltinCountMismatch,
+            .detail = "artifact builtins=" + std::to_string(file.builtin_count)
+                + ", runtime builtins=" + std::to_string(*context.expected_builtin_count),
+        };
+    }
+
+    if (context.expected_source_hash.has_value()
+        && file.source_hash != *context.expected_source_hash) {
+        return FreshnessResult{
+            .status = FreshnessStatus::SourceHashMismatch,
+            .detail = "artifact source hash mismatch",
+        };
+    }
+
+    if (context.expected_manifest_hash.has_value()) {
+        if (!file.package_metadata.has_value()) {
+            return FreshnessResult{
+                .status = FreshnessStatus::ManifestHashMismatch,
+                .detail = "artifact has no package metadata",
+            };
+        }
+        if (file.package_metadata->manifest_hash != *context.expected_manifest_hash) {
+            return FreshnessResult{
+                .status = FreshnessStatus::ManifestHashMismatch,
+                .detail = "artifact manifest hash mismatch",
+            };
+        }
+    }
+
+    if (!context.expected_dependency_hashes.empty()) {
+        for (const auto& expected : context.expected_dependency_hashes) {
+            auto it = std::find_if(
+                file.dependency_hashes.begin(),
+                file.dependency_hashes.end(),
+                [&expected](const DependencyHashEntry& actual) {
+                    return actual.dependency == expected.dependency;
+                });
+            if (it == file.dependency_hashes.end()) {
+                return FreshnessResult{
+                    .status = FreshnessStatus::DependencyHashMismatch,
+                    .detail = "missing dependency hash for '" + expected.dependency + "'",
+                };
+            }
+            if (it->etac_hash != expected.etac_hash) {
+                return FreshnessResult{
+                    .status = FreshnessStatus::DependencyHashMismatch,
+                    .detail = "dependency hash mismatch for '" + expected.dependency + "'",
+                };
+            }
+        }
+    }
+
+    return FreshnessResult{};
 }
 
 /**
@@ -298,7 +464,10 @@ bool BytecodeSerializer::serialize(
         bool include_debug,
         std::ostream& os,
         const std::vector<std::string>& imports,
-        uint32_t num_builtins) const
+        uint32_t num_builtins,
+        const std::optional<PackageMetadata>& package_metadata,
+        const std::vector<DependencyHashEntry>& dependency_hashes,
+        const std::array<uint8_t, 16>* compiler_id) const
 {
     /// Header
     os.write(MAGIC, 4);
@@ -306,10 +475,30 @@ bool BytecodeSerializer::serialize(
 
     uint16_t flags = 0;
     if (include_debug) flags |= FLAG_HAS_DEBUG;
+    if (package_metadata.has_value()) flags |= FLAG_HAS_PACKAGE_META;
+    if (!dependency_hashes.empty()) flags |= FLAG_HAS_DEPHASH;
     write_u16(os, flags);
 
     write_u64(os, source_hash);
     write_u32(os, num_builtins);
+    const auto effective_compiler_id =
+        compiler_id != nullptr ? *compiler_id : default_compiler_id();
+    os.write(reinterpret_cast<const char*>(effective_compiler_id.data()),
+             static_cast<std::streamsize>(effective_compiler_id.size()));
+
+    if (package_metadata.has_value()) {
+        write_str(os, package_metadata->name);
+        write_str(os, package_metadata->version);
+        write_u64(os, package_metadata->manifest_hash);
+    }
+
+    if (!dependency_hashes.empty()) {
+        write_u32(os, static_cast<uint32_t>(dependency_hashes.size()));
+        for (const auto& dep : dependency_hashes) {
+            write_str(os, dep.dependency);
+            write_u64(os, dep.etac_hash);
+        }
+    }
 
     write_u32(os, static_cast<uint32_t>(modules.size()));
     write_u32(os, static_cast<uint32_t>(registry.size()));
@@ -392,18 +581,55 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
 
     uint16_t version;
     if (!read_u16(is, version)) return std::unexpected(SerializerError::Truncated);
-    if (version != FORMAT_VERSION) return std::unexpected(SerializerError::VersionMismatch);
+    if (version != FORMAT_VERSION_V3 && version != FORMAT_VERSION) {
+        return std::unexpected(SerializerError::VersionMismatch);
+    }
+    result.format_version = version;
 
     uint16_t flags;
     if (!read_u16(is, flags)) return std::unexpected(SerializerError::Truncated);
+    result.flags = flags;
     bool has_debug = (flags & FLAG_HAS_DEBUG) != 0;
 
     if (!read_u64(is, result.source_hash)) return std::unexpected(SerializerError::Truncated);
 
     uint32_t file_builtins;
     if (!read_u32(is, file_builtins)) return std::unexpected(SerializerError::Truncated);
+    result.builtin_count = file_builtins;
     if (expected_builtins != 0 && file_builtins != expected_builtins)
         return std::unexpected(SerializerError::BuiltinCountMismatch);
+
+    if (version >= FORMAT_VERSION) {
+        if (!is.read(reinterpret_cast<char*>(result.compiler_id.data()),
+                     static_cast<std::streamsize>(result.compiler_id.size()))
+                 .good()) {
+            return std::unexpected(SerializerError::Truncated);
+        }
+        result.has_compiler_id = true;
+
+        if ((flags & FLAG_HAS_PACKAGE_META) != 0) {
+            PackageMetadata meta;
+            if (!read_str(is, meta.name)) return std::unexpected(SerializerError::Truncated);
+            if (!read_str(is, meta.version)) return std::unexpected(SerializerError::Truncated);
+            if (!read_u64(is, meta.manifest_hash)) return std::unexpected(SerializerError::Truncated);
+            result.package_metadata = std::move(meta);
+        }
+
+        if ((flags & FLAG_HAS_DEPHASH) != 0) {
+            uint32_t dep_count = 0;
+            if (!read_u32(is, dep_count)) return std::unexpected(SerializerError::Truncated);
+            if (dep_count > MAX_DEP_HASH_ENTRIES) {
+                return std::unexpected(SerializerError::CorruptConstant);
+            }
+            result.dependency_hashes.reserve(dep_count);
+            for (uint32_t i = 0; i < dep_count; ++i) {
+                DependencyHashEntry entry;
+                if (!read_str(is, entry.dependency)) return std::unexpected(SerializerError::Truncated);
+                if (!read_u64(is, entry.etac_hash)) return std::unexpected(SerializerError::Truncated);
+                result.dependency_hashes.push_back(std::move(entry));
+            }
+        }
+    }
 
     uint32_t num_modules, num_functions;
     if (!read_u32(is, num_modules)) return std::unexpected(SerializerError::Truncated);
