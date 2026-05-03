@@ -3,8 +3,10 @@
 The fastest way to get started is to download a pre-built release, run the installer, and try the cookbook programs.
 
 > [!TIP]
-> For the full reference â€” modules, import variants, all VS Code features,
-> and `etac` CLI details â€” see [Quick Start](docs/quickstart.md).
+> For the full reference — modules, import variants, all VS Code features,
+> and `etac` CLI details — see [Quick Start](docs/quickstart.md).
+> To build an app project (not just run scripts), see
+> [Build Your First App](docs/app/first_app.md).
 
 ---
 
@@ -78,10 +80,10 @@ C:\tmp\eta-v0.2.0-win-x64>
 
 The `cookbook/` directory inside the release bundle contains several `.eta` programs.
 
-### Interpret from Source â€” `etai`
+### Interpret from Source — `etai`
 
-`etai` compiles a `.eta` file in-memory (lex â†’ parse â†’ expand â†’ link â†’
-analyze â†’ emit) and executes it immediately:
+`etai` compiles a `.eta` file in-memory (lex → parse → expand → link →
+analyze → emit) and executes it immediately:
 
 ```console
 C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etai hello.eta
@@ -103,15 +105,15 @@ dot(v, [1,2,3])
   grad at (1,1,1): (6 #(1 2 3))
 ```
 
-### Ahead-of-Time Compilation â€” `etac` + `etai`
+### Ahead-of-Time Compilation — `etac` + `etai`
 
 `etac` compiles `.eta` source files into compact `.etac` bytecode.
-`etai` then loads `.etac` files directly â€” **skipping all front-end
+`etai` then loads `.etac` files directly — **skipping all front-end
 phases** for faster startup:
 
 ```console
 C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etac hello.eta
-compiled cookbook\basics\hello.eta â†’ cookbook\basics\hello.etac (3 functions, 1 module(s))
+compiled cookbook\basics\hello.eta → cookbook\basics\hello.etac (3 functions, 1 module(s))
 
 C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etai hello.etac
 Hello, world!
@@ -154,7 +156,27 @@ eta> (exit)
 
 ---
 
-## 4. VS Code Setup
+## 4. Build a Project
+
+For one-off scripts the `etai file.eta` flow above is enough. For
+anything bigger, Eta has a project model — `eta new`, `eta build`,
+`eta run`, `eta test`, `eta add` — that produces buildable app and
+library packages with dependency resolution.
+
+```console
+eta new hello_app --bin
+cd hello_app
+eta build
+eta run
+```
+
+For an end-to-end walkthrough that adds a local library dependency
+(`eta new mathx --lib`, `eta add mathx --path ../mathx`, `eta tree`),
+see [Build Your First App](docs/app/first_app.md).
+
+---
+
+## 5. VS Code Setup
 
 The installer automatically installs the VS Code extension when VS Code is present. The extension provides syntax highlighting, live diagnostics via the Language Server (`eta_lsp`), and full debugging via the Debug Adapter (`eta_dap`).
 
@@ -182,8 +204,8 @@ Or add them directly to your `settings.json`:
 
 ### Open and Run an Example
 
-1. In VS Code open the `cookbook/` folder from the release bundle (**File â†’ Open Folder**).
-2. Open any `.eta` file â€” syntax highlighting and diagnostics activate automatically.
+1. In VS Code open the `cookbook/` folder from the release bundle (**File → Open Folder**).
+2. Open any `.eta` file — syntax highlighting and diagnostics activate automatically.
 3. Run the file with the interpreter from the integrated terminal: `etai hello.eta`
 
 ![Running an example in VS Code](docs/img/eta_example_run.png)
@@ -225,15 +247,15 @@ The example notebooks live in `cookbook/notebooks/` inside the release bundle. O
 
 ---
 
-## 6. Debugging
+## 7. Debugging
 
 ### Breakpoints & Stepping
 
 1. Open a `.eta` file in VS Code.
 2. Click the gutter to set a breakpoint (red dot).
-3. Press **F5** (or **Run â†’ Start Debugging**) â€” the DAP adapter launches the script.
+3. Press **F5** (or **Run → Start Debugging**) — the DAP adapter launches the script.
 4. When the VM hits a breakpoint it pauses. Use the standard controls:
-   - **F10** Step Over Â· **F11** Step In Â· **Shift+F11** Step Out Â· **F5** Continue
+   - **F10** Step Over · **F11** Step In · **Shift+F11** Step Out · **F5** Continue
 
 Script output (`display`, `newline`, etc.) appears in the **Eta Output** panel (not the Debug Console).
 
@@ -245,27 +267,27 @@ The Heap Inspector lets you visualise heap usage, per-object-kind statistics, an
 2. Open the Command Palette (`Ctrl+Shift+P`) and run **Eta: Show Heap Inspector**.
    (Also opens automatically if `eta.debug.autoShowHeap` is enabled.)
 3. The inspector panel opens beside your editor showing:
-   - **Memory gauge** â€” current heap usage vs. soft limit.
-   - **Cons Pool** â€” pool utilisation (live/capacity/free/bytes).
-   - **Object Kinds** â€” count and bytes per type (Cons, Closure, Vector, String, etc.), sorted by size.
-   - **GC Roots** â€” expandable tree of root categories (Stack, Globals, Frames, etc.). Globals are grouped by module.
-4. Click any **Object #N** link to drill into it â€” view kind, size, value preview, and child references.
+   - **Memory gauge** — current heap usage vs. soft limit.
+   - **Cons Pool** — pool utilisation (live/capacity/free/bytes).
+   - **Object Kinds** — count and bytes per type (Cons, Closure, Vector, String, etc.), sorted by size.
+   - **GC Roots** — expandable tree of root categories (Stack, Globals, Frames, etc.). Globals are grouped by module.
+4. Click any **Object #N** link to drill into it — view kind, size, value preview, and child references.
 5. The panel **auto-refreshes** each time the VM stops (breakpoint, step). You can also click **Refresh** manually.
 
 ### Disassembly View
 
 The Disassembly View shows live bytecode while debugging:
 
-- **Sidebar panel:** The **Disassembly** panel appears in the Debug sidebar when an Eta debug session is active. Each bytecode instruction is shown as a tree item with a `â—€ PC` marker highlighting the current program counter. It auto-refreshes on every step/breakpoint.
+- **Sidebar panel:** The **Disassembly** panel appears in the Debug sidebar when an Eta debug session is active. Each bytecode instruction is shown as a tree item with a `â◀ PC` marker highlighting the current program counter. It auto-refreshes on every step/breakpoint.
 - **Full-document view:** Open the Command Palette (`Ctrl+Shift+P`) and run:
-  - **Eta: Show Disassembly** â€” disassembly of the current function.
-  - **Eta: Show Disassembly (All Functions)** â€” disassembly of every loaded function.
+  - **Eta: Show Disassembly** — disassembly of the current function.
+  - **Eta: Show Disassembly (All Functions)** — disassembly of every loaded function.
 
 ### GC Roots Tree
 
 The **Memory** panel in the Debug sidebar provides an expandable tree of GC root categories (Stack, Globals, Frames, etc.):
 
 - **Globals** are automatically grouped by module prefix for readability.
-- Each root object is expandable â€” clicking it shows child fields (car/cdr, vector elements, upvalues, etc.).
+- Each root object is expandable — clicking it shows child fields (car/cdr, vector elements, upvalues, etc.).
 - Click any object to open it in the Heap Inspector for detailed inspection.
 - Auto-refreshes on each VM stop; manual refresh via the title bar button.

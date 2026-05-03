@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="docs/quickstart.md">Quick Start</a> ·
+  <a href="docs/app/first_app.md">Build Your First App</a> ·
   <a href="docs/language_guide.md">Language Guide</a> ·
   <a href="docs/packaging.md">Packaging System</a> ·
   <a href="docs/guide/reference/vscode.md">VS Code</a> ·
@@ -92,6 +93,19 @@ Run the interpreter to ensure everything is set up correctly:
 etai --version
 ```
 
+### 4. Build Your First App
+Eta ships with a project model — `eta new`, `eta build`, `eta run`,
+`eta test`, `eta add` — for assembling multi-module apps and libraries.
+See [Build Your First App](docs/app/first_app.md) for an end-to-end app
++ library walkthrough.
+
+```console
+eta new hello_app --bin
+cd hello_app
+eta build
+eta run
+```
+
 ---
 
 ## The Toolchain
@@ -137,6 +151,7 @@ Eta allows you to mix paradigms easily. In this snippet, we define a mathematica
 ## Explore More
 
 *   **[Language Guide](docs/language_guide.md)** — structured tour of the language, with deep dives into syntax, macros, logic, AAD, concurrency, and tooling.
+*   **[Build Your First App](docs/app/first_app.md)** — `eta new` / `build` / `run` / `test` / `add`; app-with-library walkthrough.
 *   **[Examples Tour](docs/guide/examples-tour.md)** — guided reading order for everything in [`cookbook/`](cookbook/).
 *   **[Standard Library Reference](docs/guide/reference/modules.md)** — modules for logic, math, torch, actors, and more.
 *   **[Architecture](docs/architecture.md)** — NaN-boxed VM and compilation pipeline.
