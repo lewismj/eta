@@ -11,8 +11,8 @@
 # bin/ is added to PATH and ETA_MODULE_PATH is set in your shell rc.
 #
 # When called with a <prefix>, files are copied:
-#   <prefix>/bin/         ← etac, etai, eta_repl, eta_lsp, eta_dap, eta_jupyter
-#   <prefix>/stdlib/      ← prelude.eta, std/*.eta
+#   <prefix>/bin/         ← eta, etac, etai, eta_test, eta_repl, eta_lsp, eta_dap, eta_jupyter
+#   <prefix>/stdlib/      ← prelude.eta/.etac, std/*.eta/.etac
 #   <prefix>/editors/     ← VS Code extension (optional)
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -117,7 +117,7 @@ fi
 # ── 4. Smoke test ─────────────────────────────────────────────────────
 echo
 echo "▸ Verifying..."
-for bin in etac etai eta_repl eta_lsp eta_dap eta_jupyter; do
+for bin in eta etac etai eta_test eta_repl eta_lsp eta_dap eta_jupyter; do
     p="${BIN_DIR}/${bin}"
     if [ -x "$p" ]; then
         echo "  ✓ ${bin}"
@@ -125,6 +125,11 @@ for bin in etac etai eta_repl eta_lsp eta_dap eta_jupyter; do
         echo "  ✗ ${bin} — not found or not executable"
     fi
 done
+if [ -f "${STDLIB_DIR}/prelude.eta" ] && [ -f "${STDLIB_DIR}/prelude.etac" ]; then
+    echo "  ✓ stdlib/prelude.{eta,etac}"
+else
+    echo "  ✗ stdlib/prelude.{eta,etac} — missing source and/or bytecode artifact"
+fi
 
 echo
 echo "▸ Jupyter kernel setup:"
@@ -170,6 +175,7 @@ fi
 echo
 echo "✓ Done!  Open a new terminal (or run: source ${RC_FILE}) then try:"
 echo ""
+echo "    eta --help"
 echo "    etai --help"
 echo "    eta_repl"
 echo ""

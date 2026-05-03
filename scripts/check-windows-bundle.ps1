@@ -7,7 +7,7 @@
     same checks can be run locally against a `cmake --install` prefix without
     pushing to CI.
 
-    Performs three things:
+    Performs four things:
       1. Verifies the required executables exist in <Prefix>\bin\.
       2. Hydrates the eta_jupyter runtime DLL set into <Prefix>\bin\ from
          vcpkg's installed bin (flat) and from build/_deps (recursive),
@@ -16,7 +16,9 @@
          FetchContent / imported targets resolve at configure time; this
          step is the belt-and-braces fallback for the cases where they do
          not (e.g. xeus-zmq's optional LibUV branch on a stripped vcpkg).
-      3. Verifies the resulting bin\ contains the full runtime DLL set
+      3. Verifies stdlib source + precompiled artifacts exist:
+         stdlib\prelude.eta and stdlib\prelude.etac.
+      4. Verifies the resulting bin\ contains the full runtime DLL set
          plus the MSVC redistributable runtime (msvcp140 / vcruntime140 /
          vcruntime140_1).
 
@@ -80,13 +82,21 @@ Write-Host "=== Validating bundle: $Prefix ==="
 
 # ── 1. Required executables ─────────────────────────────────────────────────
 $requiredExes = @(
-    'etac.exe', 'etai.exe', 'eta_repl.exe',
+    'eta.exe', 'etac.exe', 'etai.exe', 'eta_test.exe', 'eta_repl.exe',
     'eta_lsp.exe', 'eta_dap.exe', 'eta_jupyter.exe'
 )
 $missingExes = @()
 foreach ($exe in $requiredExes) {
     $p = Join-Path $binDir $exe
     if (-not (Test-Path $p)) { $missingExes += $exe }
+}
+
+$stdlibDir = Join-Path $Prefix 'stdlib'
+$requiredStdlib = @('prelude.eta', 'prelude.etac')
+$missingStdlib = @()
+foreach ($artifact in $requiredStdlib) {
+    $p = Join-Path $stdlibDir $artifact
+    if (-not (Test-Path $p)) { $missingStdlib += "stdlib\$artifact" }
 }
 
 # ── 2. Hydrate runtime DLLs from vcpkg / _deps ──────────────────────────────
@@ -191,6 +201,10 @@ $ok = $true
 if ($missingExes.Count -gt 0) {
     $ok = $false
     Write-Host "[FAIL] Missing executables: $($missingExes -join ', ')"
+}
+if ($missingStdlib.Count -gt 0) {
+    $ok = $false
+    Write-Host "[FAIL] Missing stdlib artifacts: $($missingStdlib -join ', ')"
 }
 if ($missingDlls.Count -gt 0) {
     $ok = $false

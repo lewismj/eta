@@ -148,13 +148,20 @@ if ($CodeExe -and (Test-Path $VsixPath)) {
 # -- 4. Smoke test -------------------------------------------------------------
 Write-Host ""
 Write-Host "> Verifying..."
-foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe", "eta_jupyter.exe")) {
+foreach ($bin in @("eta.exe", "etac.exe", "etai.exe", "eta_test.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe", "eta_jupyter.exe")) {
     $p = Join-Path $BinDir $bin
     if (Test-Path $p) {
         Write-Host "  [OK] $bin"
     } else {
         Write-Host "  [FAIL] $bin -- not found"
     }
+}
+$PreludeEta = Join-Path $StdlibDir "prelude.eta"
+$PreludeEtac = Join-Path $StdlibDir "prelude.etac"
+if ((Test-Path $PreludeEta) -and (Test-Path $PreludeEtac)) {
+    Write-Host "  [OK] stdlib\\prelude.{eta,etac}"
+} else {
+    Write-Host "  [FAIL] stdlib\\prelude.{eta,etac} -- missing source and/or bytecode artifact"
 }
 
 $HasSpdlog = [bool](Get-ChildItem -Path $BinDir -Filter "spdlog*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
@@ -227,6 +234,7 @@ if (Test-Path $EtaJupyterExe) {
 Write-Host ""
 Write-Host "[OK] Done! Open a new terminal and try:" -ForegroundColor Green
 Write-Host ""
+Write-Host "    eta --help"
 Write-Host "    etai --help"
 Write-Host "    eta_repl"
 Write-Host ""

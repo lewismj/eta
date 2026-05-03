@@ -91,10 +91,8 @@ jobs:
         run: |
           PREFIX=${{ github.workspace }}/dist/${{ env.BUNDLE }}
 
-          # Ensure required binaries are present.
-          for bin in etac etai eta_repl eta_lsp eta_dap eta_jupyter; do
-            test -x "$PREFIX/bin/$bin"
-          done
+          # Validate required binaries + stdlib artifacts.
+          bash scripts/check-unix-bundle.sh --prefix "$PREFIX"
 
           # Keep kernel logos next to eta_jupyter for runtime --install.
           mkdir -p "$PREFIX/bin/resources"

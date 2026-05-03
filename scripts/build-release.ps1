@@ -208,11 +208,22 @@ if ($LASTEXITCODE -ne 0) { throw "CMake install failed" }
 
 # Verify required runtime binaries are present in the bundle.
 Write-Host "  Verifying runtime binaries..."
-foreach ($bin in @("etac.exe", "etai.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe", "eta_jupyter.exe")) {
+foreach ($bin in @("eta.exe", "etac.exe", "etai.exe", "eta_test.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe", "eta_jupyter.exe")) {
     $p = Join-Path $Prefix "bin\$bin"
     if (-not (Test-Path $p)) {
         throw "Missing required binary after install: $p"
     }
+}
+
+# Verify stdlib source + precompiled artifacts landed in the bundle.
+Write-Host "  Verifying stdlib artifacts..."
+$PreludeEta = Join-Path $Prefix "stdlib\prelude.eta"
+if (-not (Test-Path $PreludeEta)) {
+    throw "Missing required stdlib source after install: $PreludeEta"
+}
+$PreludeEtac = Join-Path $Prefix "stdlib\prelude.etac"
+if (-not (Test-Path $PreludeEtac)) {
+    throw "Missing required stdlib bytecode after install: $PreludeEtac"
 }
 
 # Bundle the MSVC runtime DLLs into bin/ for clean-machine execution.
