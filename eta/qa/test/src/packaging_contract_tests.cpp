@@ -236,6 +236,33 @@ BOOST_AUTO_TEST_CASE(load_prelude_prefers_embedded_blob_when_available) {
 #endif
 }
 
+BOOST_AUTO_TEST_CASE(embedded_prelude_allows_std_prelude_import_in_source_runs) {
+#if defined(ETA_HAS_EMBEDDED_PRELUDE)
+    auto stdlib_root = configured_stdlib_root();
+    BOOST_REQUIRE_MESSAGE(stdlib_root.has_value(),
+                          "ETA_STDLIB_DIR is not set to a valid stdlib root");
+
+    eta::interpreter::ModulePathResolver resolver({*stdlib_root});
+    eta::session::Driver driver(std::move(resolver), 8 * 1024 * 1024);
+
+    auto prelude = driver.load_prelude();
+    BOOST_REQUIRE_MESSAGE(prelude.found, "expected prelude artifact to be discoverable");
+    BOOST_REQUIRE_MESSAGE(prelude.loaded, diagnostics_to_string(driver));
+    BOOST_TEST(driver.has_module("std.prelude"));
+
+    eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
+    const bool run_ok = driver.run_source(R"eta(
+(module embedded.prelude.contract
+  (import std.prelude)
+  (define result (+ 1 1)))
+)eta", &value, "result");
+    BOOST_REQUIRE_MESSAGE(run_ok, diagnostics_to_string(driver));
+    BOOST_TEST(decode_fixnum(value) == 2);
+#else
+    BOOST_TEST_MESSAGE("ETA_HAS_EMBEDDED_PRELUDE is not enabled for eta_core_test; skipping.");
+#endif
+}
+
 BOOST_AUTO_TEST_CASE(run_etac_file_auto_loads_imports_and_executes_modules) {
     TempDir temp;
     (void)temp.create_file("etac/contract/dep.eta", R"eta(

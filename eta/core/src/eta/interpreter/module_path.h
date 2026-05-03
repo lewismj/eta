@@ -241,6 +241,7 @@ public:
     [[nodiscard]] std::vector<fs::path> resolve_all(const std::string& module_name) const {
         const auto rel_etac = module_to_relative(module_name, ".etac");
         const auto rel_eta = module_to_relative(module_name, ".eta");
+        const bool legacy_prelude_alias = (module_name == "std.prelude");
 
         std::vector<fs::path> matches;
         matches.reserve(dirs_.size());
@@ -257,6 +258,29 @@ public:
             auto eta_candidate = dir / rel_eta;
             if (fs::is_regular_file(eta_candidate, ec) && !ec) {
                 matches.push_back(canonicalize_path(eta_candidate));
+                continue;
+            }
+            ec.clear();
+
+            /**
+             * Backward-compatible stdlib layout:
+             *   module std.prelude  <->  <root>/prelude.{etac,eta}
+             *
+             * Keep normal dotted-path resolution first (std/prelude.*), then
+             * fall back to the legacy root-level prelude files.
+             */
+            if (legacy_prelude_alias) {
+                auto legacy_etac = dir / "prelude.etac";
+                if (fs::is_regular_file(legacy_etac, ec) && !ec) {
+                    matches.push_back(canonicalize_path(legacy_etac));
+                    continue;
+                }
+                ec.clear();
+
+                auto legacy_eta = dir / "prelude.eta";
+                if (fs::is_regular_file(legacy_eta, ec) && !ec) {
+                    matches.push_back(canonicalize_path(legacy_eta));
+                }
             }
         }
         return matches;

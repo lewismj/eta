@@ -226,6 +226,27 @@ BOOST_AUTO_TEST_CASE(resolve_keeps_first_hit_semantics_across_roots) {
     BOOST_TEST(result->extension() == ".eta");
 }
 
+BOOST_AUTO_TEST_CASE(resolve_std_prelude_falls_back_to_root_prelude_file) {
+    TempDir d;
+    d.create_file("prelude.eta", "(module std.prelude)");
+
+    ModulePathResolver r{{d.path}};
+    auto result = r.resolve("std.prelude");
+    BOOST_REQUIRE(result.has_value());
+    BOOST_TEST(result->filename() == "prelude.eta");
+}
+
+BOOST_AUTO_TEST_CASE(resolve_std_prelude_legacy_root_prefers_etac) {
+    TempDir d;
+    d.create_file("prelude.eta", "(module std.prelude)");
+    d.create_file("prelude.etac", "ETAC");
+
+    ModulePathResolver r{{d.path}};
+    auto result = r.resolve("std.prelude");
+    BOOST_REQUIRE(result.has_value());
+    BOOST_TEST(result->filename() == "prelude.etac");
+}
+
 /// find_file
 
 BOOST_AUTO_TEST_CASE(find_file_locates_prelude) {
