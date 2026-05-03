@@ -12,7 +12,7 @@
 #
 # When called with a <prefix>, files are copied:
 #   <prefix>/bin/         ← eta, etac, etai, eta_test, eta_repl, eta_lsp, eta_dap, eta_jupyter
-#   <prefix>/stdlib/      ← prelude.eta/.etac, std/*.eta/.etac
+#   <prefix>/stdlib/      ← std/prelude.eta/.etac, std/*.eta/.etac
 #   <prefix>/editors/     ← VS Code extension (optional)
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -125,10 +125,10 @@ for bin in eta etac etai eta_test eta_repl eta_lsp eta_dap eta_jupyter; do
         echo "  ✗ ${bin} — not found or not executable"
     fi
 done
-if [ -f "${STDLIB_DIR}/prelude.eta" ] && [ -f "${STDLIB_DIR}/prelude.etac" ]; then
-    echo "  ✓ stdlib/prelude.{eta,etac}"
+if [ -f "${STDLIB_DIR}/std/prelude.eta" ] && [ -f "${STDLIB_DIR}/std/prelude.etac" ]; then
+    echo "  ✓ stdlib/std/prelude.{eta,etac}"
 else
-    echo "  ✗ stdlib/prelude.{eta,etac} — missing source and/or bytecode artifact"
+    echo "  ✗ stdlib/std/prelude.{eta,etac} — missing source and/or bytecode artifact"
 fi
 
 echo

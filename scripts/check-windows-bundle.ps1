@@ -17,7 +17,7 @@
          step is the belt-and-braces fallback for the cases where they do
          not (e.g. xeus-zmq's optional LibUV branch on a stripped vcpkg).
       3. Verifies stdlib source + precompiled artifacts exist:
-         stdlib\prelude.eta and stdlib\prelude.etac.
+         stdlib\std\prelude.eta and stdlib\std\prelude.etac.
       4. Verifies the resulting bin\ contains the full runtime DLL set
          plus the MSVC redistributable runtime (msvcp140 / vcruntime140 /
          vcruntime140_1).
@@ -92,7 +92,7 @@ foreach ($exe in $requiredExes) {
 }
 
 $stdlibDir = Join-Path $Prefix 'stdlib'
-$requiredStdlib = @('prelude.eta', 'prelude.etac')
+$requiredStdlib = @('std\prelude.eta', 'std\prelude.etac')
 $missingStdlib = @()
 foreach ($artifact in $requiredStdlib) {
     $p = Join-Path $stdlibDir $artifact

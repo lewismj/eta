@@ -150,8 +150,9 @@ Key properties:
 ### Prelude Auto-Loading
 
 On startup, the `Driver` calls `load_prelude()` which searches the
-module path for `prelude.eta`. This file defines the standard library
-modules inline. After the prelude runs, its modules are in
+module path for `std.prelude` (backed by `std/prelude.eta`). This file
+defines the standard library modules inline. After the prelude runs, its
+modules are in
 `executed_modules_` and their global slots are populated in the VM.
 
 ---
@@ -160,7 +161,7 @@ modules inline. After the prelude runs, its modules are in
 
 All standard library modules are defined in the
 [`stdlib/std/`](../../../stdlib/std/) directory; the
-[`stdlib/prelude.eta`](../../../stdlib/prelude.eta) file aggregates and
+[`stdlib/std/prelude.eta`](../../../stdlib/std/prelude.eta) file aggregates and
 re-exports a curated subset for one-line import:
 
 ```scheme
@@ -807,8 +808,8 @@ Re-exports public names from `std.core`, `std.math`, `std.aad`, `std.io`,
 `std.clp`, `std.causal`, `std.fact_table`, `std.db`, `std.stats`,
 `std.time`, and `std.net` in a single import for convenience.
 
-The prelude intentionally does not re-export `std.aad`'s `grad` symbol to avoid
-name conflicts with example-local gradient drivers.
+The prelude re-exports `std.aad`'s `grad` helper alongside the AD-safe math
+helpers and finite-difference check utilities.
 
 The following modules are **not** included in the prelude and must be
 imported explicitly when needed: `std.regex`, `std.clpb`, `std.clpr`,
@@ -932,7 +933,7 @@ There are two layers of "standard" functionality:
 | Layer | Defined in | Mechanism |
 |-------|-----------|-----------|
 | **Builtins** | C++ (`core_primitives.h`, `io_primitives.h`, `port_primitives.h`) | Registered as `Primitive` heap objects in fixed global slots |
-| **Standard Library** | Eta (`prelude.eta`, `std/*.eta`) | Regular Eta functions defined in modules |
+| **Standard Library** | Eta (`std/prelude.eta`, `std/*.eta`) | Regular Eta functions defined in modules |
 
 Builtins like `+`, `cons`, `display` are always available (they occupy
 global slots 0..N−1). The standard library modules build on top of

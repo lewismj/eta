@@ -215,7 +215,7 @@ private:
 [[nodiscard]] bool is_stdlib_root(const fs::path& dir) {
     std::error_code ec;
     if (!fs::is_directory(dir, ec) || ec) return false;
-    const auto prelude = dir / "prelude.eta";
+    const auto prelude = dir / "std" / "prelude.eta";
     const auto jupyter_mod = dir / "std" / "jupyter.eta";
     return fs::is_regular_file(prelude, ec) && !ec &&
            fs::is_regular_file(jupyter_mod, ec) && !ec;

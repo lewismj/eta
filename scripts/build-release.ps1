@@ -217,11 +217,11 @@ foreach ($bin in @("eta.exe", "etac.exe", "etai.exe", "eta_test.exe", "eta_repl.
 
 # Verify stdlib source + precompiled artifacts landed in the bundle.
 Write-Host "  Verifying stdlib artifacts..."
-$PreludeEta = Join-Path $Prefix "stdlib\prelude.eta"
+$PreludeEta = Join-Path $Prefix "stdlib\std\prelude.eta"
 if (-not (Test-Path $PreludeEta)) {
     throw "Missing required stdlib source after install: $PreludeEta"
 }
-$PreludeEtac = Join-Path $Prefix "stdlib\prelude.etac"
+$PreludeEtac = Join-Path $Prefix "stdlib\std\prelude.etac"
 if (-not (Test-Path $PreludeEtac)) {
     throw "Missing required stdlib bytecode after install: $PreludeEtac"
 }

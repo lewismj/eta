@@ -31,31 +31,8 @@
     ;; f    — a function of N arguments (receives tape-ref values)
     ;; vals — a list of N numeric input values
     ;; Returns: (primal-value gradient-vector)
-    ;; grad has moved to std.aad, but we keep this here for demonstration purposes.
-    (defun grad (f vals)
-      (let ((tape (tape-new))
-            (n    (length vals)))
-        ;; Register each input as an independent variable
-        (let ((vars (letrec ((mk (lambda (vs acc)
-                                   (if (null? vs) (reverse acc)
-                                       (mk (cdr vs)
-                                           (cons (tape-var tape (car vs)) acc))))))
-                      (mk vals '()))))
-          ;; Activate the tape, evaluate f, then backward pass
-          (tape-start! tape)
-          (let ((output (apply f vars)))
-            (tape-stop!)
-            (tape-backward! tape output)
-            ;; Collect adjoints into a gradient vector
-            (let ((grad-vec (make-vector n 0)))
-              (letrec ((collect (lambda (vs i)
-                                  (if (null? vs) grad-vec
-                                      (begin
-                                        (vector-set! grad-vec i
-                                          (tape-adjoint tape (car vs)))
-                                        (collect (cdr vs) (+ i 1)))))))
-                (collect vars 0))
-              (list (tape-primal tape output) grad-vec))))))
+    ;; Uses std.aad's grad helper via std.prelude.
+    ;;   (grad f vals) => (primal-value gradient-vector)
 
 
     ;; ── Examples ──────────────────────────────────────────────

@@ -22,9 +22,7 @@
 ;;; Run:  etai cookbook/quant/european.eta
 
 (module european
-  (import std.core)
-  (import std.math)
-  (import std.io)
+  (import std.prelude)
   (begin
 
     ;; ════════════════════════════════════════════════════════════════
@@ -37,36 +35,10 @@
 
     ;; ── Gradient driver ─────────────────────────────────────────────
 
-    ;; Explicit tape context for branch-only primal extraction.
-    (define branch-tape #f)
+    ;; Primal extraction helper for branch decisions in piecewise formulas.
+    ;; tape-ref-value is a pass-through for plain numbers.
     (defun branch-primal (x)
-      (if (and branch-tape (tape-ref? x))
-        (tape-ref-value-of branch-tape x)
-        x))
-
-    (defun grad (f vals)
-      (let ((tape (tape-new))
-          (n    (length vals)))
-        (let ((vars (letrec ((mk (lambda (vs acc)
-                      (if (null? vs) (reverse acc)
-                        (mk (cdr vs)
-                          (cons (tape-var tape (car vs)) acc))))))
-                (mk vals '()))))
-          (set! branch-tape tape)
-          (tape-start! tape)
-          (let ((output (apply f vars)))
-            (tape-stop!)
-            (set! branch-tape #f)
-            (tape-backward! tape output)
-            (let ((grad-vec (make-vector n 0)))
-              (letrec ((collect (lambda (vs i)
-                      (if (null? vs) grad-vec
-                        (begin
-                          (vector-set! grad-vec i
-                            (tape-adjoint tape (car vs)))
-                          (collect (cdr vs) (+ i 1)))))))
-                (collect vars 0))
-              (list (tape-primal tape output) grad-vec))))))
+      (if (tape-ref? x) (tape-ref-value x) x))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §2  Statistical Functions

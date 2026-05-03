@@ -190,8 +190,9 @@ private:
     std::optional<std::string> resolve_module_source(const std::string& module_name);
 
     /**
-     * Load prelude.eta from the module search path and add all its module
-     * forms to all_forms, registering their names in seen_modules.
+     * Load std.prelude (from std/prelude.eta) from the module search path and
+     * add all its module forms to all_forms, registering their names in
+     * seen_modules.
      * This provides std.core, std.math, std.io, std.prelude etc. to the
      * linker so that (import std.prelude) in user code resolves correctly.
      */

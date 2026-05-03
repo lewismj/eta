@@ -71,6 +71,7 @@
     expt
     sum product
     ;; -- std.aad --------------------------------------------------------
+    grad
     ad-abs ad-max ad-min ad-relu ad-clamp
     softplus smooth-abs smooth-clamp
     check-grad check-grad-report

@@ -36,11 +36,13 @@ def mirror_sources(sources: list[Path], src_root: Path, out_root: Path) -> None:
         shutil.copy2(source, destination)
 
 
-def remove_stale_etac(out_root: Path) -> None:
+def remove_stale_artifacts(out_root: Path) -> None:
     if not out_root.exists():
         return
     for artifact in out_root.rglob("*.etac"):
         artifact.unlink()
+    for mirrored_source in out_root.rglob("*.eta"):
+        mirrored_source.unlink()
 
 
 def compile_source(etac_exe: Path, src_root: Path, source: Path, out_root: Path) -> None:
@@ -111,7 +113,7 @@ def main() -> int:
         return 1
 
     out_root.mkdir(parents=True, exist_ok=True)
-    remove_stale_etac(out_root)
+    remove_stale_artifacts(out_root)
     mirror_sources(sources, src_root, out_root)
 
     for source in sources:

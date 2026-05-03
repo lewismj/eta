@@ -68,7 +68,7 @@ for bin in "${required_bins[@]}"; do
     fi
 done
 
-required_stdlib=(prelude.eta prelude.etac)
+required_stdlib=(std/prelude.eta std/prelude.etac)
 missing_stdlib=()
 for artifact in "${required_stdlib[@]}"; do
     if [ ! -f "$STDLIB_DIR/$artifact" ]; then

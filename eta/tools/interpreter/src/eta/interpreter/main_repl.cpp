@@ -164,7 +164,7 @@ int main(int argc, char* argv[]) {
                 std::cerr << "warning: ETA_MODULE_PATH is not set and no "
                              "bundled stdlib found next to the executable.\n"
                              "         Use --path or set ETA_MODULE_PATH to "
-                             "the directory containing prelude.eta.\n";
+                             "the directory containing std/prelude.eta.\n";
             }
         }
     }
@@ -189,7 +189,7 @@ int main(int argc, char* argv[]) {
                 driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
             }
         } else {
-            std::cerr << "warning: prelude.eta not found in module search path.\n";
+            std::cerr << "warning: std.prelude not found in module search path.\n";
             const auto& dirs = driver.resolver().dirs();
             if (dirs.empty()) {
                 std::cerr << "         (search path is empty)\n";

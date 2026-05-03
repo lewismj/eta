@@ -174,7 +174,7 @@ BOOST_AUTO_TEST_CASE(load_prelude_reports_not_found_when_missing) {
 
 BOOST_AUTO_TEST_CASE(load_prelude_second_call_keeps_existing_module_state) {
     TempDir temp;
-    (void)temp.create_file("prelude.eta", R"eta(
+    (void)temp.create_file("std/prelude.eta", R"eta(
 (module std.prelude
   (export prelude-inc)
   (begin
@@ -188,9 +188,10 @@ BOOST_AUTO_TEST_CASE(load_prelude_second_call_keeps_existing_module_state) {
     eta::session::Driver driver(std::move(resolver), 8 * 1024 * 1024);
 
     auto first = driver.load_prelude();
-    BOOST_REQUIRE_MESSAGE(first.found, "expected temporary prelude.eta to be found");
-    BOOST_REQUIRE_MESSAGE(first.loaded, "expected temporary prelude.eta to load");
+    BOOST_REQUIRE_MESSAGE(first.found, "expected temporary std/prelude.eta to be found");
+    BOOST_REQUIRE_MESSAGE(first.loaded, "expected temporary std/prelude.eta to load");
     BOOST_TEST(first.path.filename().string() == "prelude.eta");
+    BOOST_TEST(first.path.parent_path().filename().string() == "std");
     BOOST_TEST(driver.has_module("std.prelude"));
 
     eta::runtime::nanbox::LispVal first_value{eta::runtime::nanbox::Nil};
@@ -203,7 +204,7 @@ BOOST_AUTO_TEST_CASE(load_prelude_second_call_keeps_existing_module_state) {
     BOOST_TEST(decode_fixnum(first_value) == 1);
 
     auto second = driver.load_prelude();
-    BOOST_REQUIRE_MESSAGE(second.found, "expected temporary prelude.eta to still be found");
+    BOOST_REQUIRE_MESSAGE(second.found, "expected temporary std/prelude.eta to still be found");
     BOOST_TEST(!second.loaded);
     BOOST_TEST(driver.has_module("std.prelude"));
 

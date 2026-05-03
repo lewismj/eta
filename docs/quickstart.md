@@ -421,8 +421,8 @@ eta-v0.2.0-<platform>/
     eta_lsp(.exe)           # Language Server (JSON-RPC over stdio)
     eta_dap(.exe)           # Debug Adapter (DAP over stdio, used by VS Code)
   stdlib/
-    prelude.eta             # Auto-loaded standard library
     std/
+      prelude.eta           # Auto-loaded standard library module (std.prelude)
       core.eta  math.eta  io.eta  collections.eta  test.eta
       logic.eta  clp.eta  clpb.eta  clpr.eta  causal.eta
       db.eta  fact_table.eta  freeze.eta  net.eta  stats.eta  time.eta

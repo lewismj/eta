@@ -117,8 +117,8 @@ eta-v0.2.0-<platform>/
       logo-32x32.png        # Kernel logo copied by `eta_jupyter --install`
       logo-64x64.png
   stdlib/
-    prelude.eta             # Auto-loaded standard library
     std/
+      prelude.eta           # Auto-loaded standard library module (std.prelude)
       core.eta  math.eta  io.eta  collections.eta  test.eta
       logic.eta  clp.eta  clpb.eta  clpr.eta  causal.eta
       db.eta  fact_table.eta  freeze.eta  net.eta  stats.eta

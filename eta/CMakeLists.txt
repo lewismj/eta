@@ -197,7 +197,7 @@ add_custom_command(
     OUTPUT "${ETA_EMBEDDED_PRELUDE_CPP}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${ETA_STDLIB_EMBED_DIR}"
     COMMAND ${Python3_EXECUTABLE} "${ETA_EMBED_BLOB_SCRIPT}"
-            --in "${ETA_STDLIB_RUNTIME_DIR}/prelude.etac"
+            --in "${ETA_STDLIB_RUNTIME_DIR}/std/prelude.etac"
             --out "${ETA_EMBEDDED_PRELUDE_CPP}"
             --sym eta_embedded_prelude
     DEPENDS eta_stdlib_etac "${ETA_EMBED_BLOB_SCRIPT}"

@@ -297,15 +297,14 @@ void LspServer::preload_prelude(
      * std.test, std.prelude).  We must load it before preload_module_deps so
      * that (import std.prelude) in user code resolves to a known module.
      */
-    static const std::string prelude_uri = "eta://stdlib/prelude.eta";
+    static const std::string prelude_uri = "eta://stdlib/std/prelude.eta";
 
-    auto prelude_path = resolver_.find_file("prelude.eta");
+    auto prelude_path = resolver_.resolve("std.prelude");
     if (!prelude_path) return;
+    auto src_opt = resolve_module_source("std.prelude");
+    if (!src_opt) return;
 
-    std::ifstream f(*prelude_path);
-    if (!f.is_open()) return;
-    std::string src(std::istreambuf_iterator<char>(f),
-                    std::istreambuf_iterator<char>{});
+    std::string src = std::move(*src_opt);
 
     reader::lexer::Lexer lex(0, src);
     reader::parser::Parser parser(lex);
@@ -321,12 +320,12 @@ void LspServer::preload_prelude(
             if constexpr (std::is_same_v<T, reader::lexer::LexError>) {
                 d.range   = span_to_range(e.span.start.line, e.span.start.column,
                                           e.span.end.line,   e.span.end.column);
-                d.message = "[prelude.eta] lex error: " + (e.message.empty()
+                d.message = "[std/prelude.eta] lex error: " + (e.message.empty()
                     ? std::string(reader::lexer::to_string(e.kind)) : e.message);
             } else {
                 d.range   = span_to_range(e.span.start.line, e.span.start.column,
                                           e.span.end.line,   e.span.end.column);
-                d.message = "[prelude.eta] parse error: "
+                d.message = "[std/prelude.eta] parse error: "
                     + std::string(reader::parser::to_string(e.kind));
             }
             diags.push_back(std::move(d));
@@ -345,7 +344,7 @@ void LspServer::preload_prelude(
         d.source   = "eta-prelude";
         d.range    = span_to_range(err.span.start.line, err.span.start.column,
                                    err.span.end.line,   err.span.end.column);
-        d.message  = "[prelude.eta] expand error: " + (err.message.empty()
+        d.message  = "[std/prelude.eta] expand error: " + (err.message.empty()
             ? reader::expander::to_string(err.kind)
             : err.message);
         publish_diagnostics(prelude_uri, {d});
@@ -1650,49 +1649,49 @@ void LspServer::load_completion_cache() {
     module_path_symbols_.clear();
 
     /// Scan prelude
-    auto prelude_path = resolver_.find_file("prelude.eta");
-    if (prelude_path) {
-        std::ifstream f(*prelude_path);
-        if (f.is_open()) {
-            std::string src(std::istreambuf_iterator<char>(f),
-                            std::istreambuf_iterator<char>{});
-            auto syms = collect_symbols(src, /*capture_signature=*/true);
+    auto prelude_path = resolver_.resolve("std.prelude");
+    auto prelude_source = resolve_module_source("std.prelude");
+    if (prelude_path && prelude_source) {
+        auto prelude_source_path = *prelude_path;
+        if (prelude_source_path.extension() == ".etac") {
+            prelude_source_path.replace_extension(".eta");
+        }
+        std::string src = std::move(*prelude_source);
+        auto syms = collect_symbols(src, /*capture_signature=*/true);
 
-            /**
-             * Determine which module each symbol belongs to by tracking
-             * (module <name> ...) boundaries in the source.
-             */
-            std::string current_module;
-            std::istringstream lines(src);
-            std::string line;
-            int64_t line_num = 0;
-            std::vector<std::pair<int64_t, std::string>> module_starts;
-            while (std::getline(lines, line)) {
-                auto pos = line.find("(module ");
-                if (pos != std::string::npos) {
-                    auto name_start = pos + 8;
-                    while (name_start < line.size() && line[name_start] == ' ') ++name_start;
-                    auto name_end = name_start;
-                    while (name_end < line.size() && line[name_end] != ' ' && line[name_end] != ')' && line[name_end] != '\n')
-                        ++name_end;
-                    if (name_end > name_start)
-                        module_starts.push_back({line_num, line.substr(name_start, name_end - name_start)});
-                }
-                ++line_num;
+        /**
+         * Determine which module each symbol belongs to by tracking
+         * (module <name> ...) boundaries in the source.
+         */
+        std::istringstream lines(src);
+        std::string line;
+        int64_t line_num = 0;
+        std::vector<std::pair<int64_t, std::string>> module_starts;
+        while (std::getline(lines, line)) {
+            auto pos = line.find("(module ");
+            if (pos != std::string::npos) {
+                auto name_start = pos + 8;
+                while (name_start < line.size() && line[name_start] == ' ') ++name_start;
+                auto name_end = name_start;
+                while (name_end < line.size() && line[name_end] != ' ' && line[name_end] != ')' && line[name_end] != '\n')
+                    ++name_end;
+                if (name_end > name_start)
+                    module_starts.push_back({line_num, line.substr(name_start, name_end - name_start)});
             }
+            ++line_num;
+        }
 
-            for (auto& sym : syms) {
-                if (sym.kind == "module") continue; ///< skip module declarations
-                sym.file_path = prelude_path->string();
-                /// Find which module this symbol belongs to
-                for (auto rit = module_starts.rbegin(); rit != module_starts.rend(); ++rit) {
-                    if (sym.line >= rit->first) {
-                        sym.module_name = rit->second;
-                        break;
-                    }
+        for (auto& sym : syms) {
+            if (sym.kind == "module") continue; ///< skip module declarations
+            sym.file_path = prelude_source_path.string();
+            /// Find which module this symbol belongs to
+            for (auto rit = module_starts.rbegin(); rit != module_starts.rend(); ++rit) {
+                if (sym.line >= rit->first) {
+                    sym.module_name = rit->second;
+                    break;
                 }
-                prelude_symbols_.push_back(std::move(sym));
             }
+            prelude_symbols_.push_back(std::move(sym));
         }
     }
 

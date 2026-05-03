@@ -6,6 +6,17 @@
 
 ## 2026-05-03 (later)
 
+### Breaking: `std.prelude` On-Disk Layout
+
+The standard library prelude source/bytecode artifacts now live under
+`stdlib/std/`:
+
+- `stdlib/std/prelude.eta`
+- `stdlib/std/prelude.etac`
+
+The legacy root-level layout (`stdlib/prelude.eta`,
+`stdlib/prelude.etac`) is no longer resolved for `std.prelude`.
+
 ### Atom Support (`std.atom`)
 
 Hosted-platform Phase H2 now includes Atom support: a mutable single-cell

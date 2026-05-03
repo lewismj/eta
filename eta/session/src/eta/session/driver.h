@@ -282,8 +282,8 @@ public:
      *
      * Resolution order:
      *  1) embedded bytecode blob
-     *  2) bundled/resolved "prelude.etac"
-     *  3) source "prelude.eta"
+     *  2) bundled/resolved "std/prelude.etac"
+     *  3) source "std/prelude.eta"
      */
     PreludeResult load_prelude() {
         PreludeResult result;
@@ -304,27 +304,25 @@ public:
             return result;
         }
 
-        if (auto prelude_etac = resolver_.find_file("prelude.etac")) {
+        for (const auto& prelude_path : resolver_.resolve_all("std.prelude")) {
             result.found = true;
-            result.path = *prelude_etac;
-            if (run_etac_file(*prelude_etac)) {
+            result.path = prelude_path;
+
+            const auto ext = prelude_path.extension();
+            bool loaded = false;
+            if (ext == ".etac") {
+                loaded = run_etac_file(prelude_path);
+            } else if (ext == ".eta") {
+                loaded = run_file(prelude_path);
+            }
+
+            if (loaded) {
                 result.loaded = true;
                 prelude_origin_path_ = result.path;
                 return result;
             }
         }
 
-        auto prelude_path = resolver_.find_file("prelude.eta");
-        if (!prelude_path) {
-            return result;
-        }
-
-        result.found = true;
-        result.path = *prelude_path;
-        result.loaded = run_file(*prelude_path);
-        if (result.loaded) {
-            prelude_origin_path_ = result.path;
-        }
         return result;
     }
 

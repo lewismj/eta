@@ -680,7 +680,7 @@ void DapServer::start_vm_from_current_launch() {
             send_event("output", json::object({
                 {"category", "important"},
                 {"output",
-                    "[eta_dap] Warning: prelude.eta not found  -  std.core, std.io, std.prelude etc. unavailable.\n"
+                    "[eta_dap] Warning: std.prelude not found  -  std.core, std.io, std.prelude etc. unavailable.\n"
                     "[eta_dap] Set 'eta.lsp.modulePath' in VS Code settings, or set ETA_MODULE_PATH.\n"},
             }));
         } else if (!pr.loaded) {
