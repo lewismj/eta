@@ -4,6 +4,104 @@
 
 ---
 
+## 2026-05-03
+
+### Packaging Plan Implementation (S0-S7)
+
+The packaging plan in `docs/plan/eta_packaging_plan.md` is now
+implemented through S7, including runtime, CLI, build, and tooling
+integration.
+
+Highlights:
+
+- Added the package manifest/lockfile core:
+  - `eta.toml` parsing/validation (`eta::package::Manifest`)
+  - deterministic `eta.lock` parsing/serialization (`eta::package::Lockfile`)
+  - resolver graph validation for path/git/tarball dependency specs
+- Added and expanded the umbrella CLI:
+  - S2 commands: `new`, `init`, `tree`, `run`
+  - S6 commands: `add`, `remove`, `update`, `build`, `test`, `bench`,
+    `vendor`, `install`, `clean`
+- Runtime resolver integration (S3):
+  - project-root `eta.toml` discovery
+  - lockfile-ordered `.eta/modules/<name>-<version>/{target/release,src}`
+    roots
+  - per-root `.etac` before `.eta` resolution
+  - strict duplicate detection via `--strict-shadows`
+- `.etac` format v4 metadata + stale-artifact policy (S4):
+  - compiler/package/dependency hash metadata in bytecode
+  - deterministic freshness checks with source fallback when possible
+- Precompiled prelude/stdlib delivery (S5):
+  - embedded `prelude.etac` blob in runtime binaries
+  - bundled stdlib `.etac` artifacts installed beside stdlib sources
+  - `Driver::load_prelude()` preference order: embedded -> `.etac` -> source
+- Tooling integration (S7):
+  - package-aware REPL/LSP/DAP/Jupyter resolution
+  - LSP `eta-manifest` / `eta-lockfile` diagnostics
+  - `eta/lockfile/explain` custom LSP request
+  - DAP `profile` launch support (default `debug`) and workspace-rooted resolution
+- Added packaging fixtures and smoke targets:
+  - `packages/example/hello-world/`
+  - `cookbook/packaging/end-to-end/`
+  - expanded `eta_pkg_test`, `eta_cli_test`, and integration coverage in
+    `eta_core_test`
+
+Documentation updates:
+
+- Added stage landing notes under:
+  - `docs/plan/eta_packaging_s0_baseline.md`
+  - `docs/plan/eta_packaging_s1_manifest_lockfile.md`
+  - `docs/plan/eta_packaging_s2_minimal_cli.md`
+  - `docs/plan/eta_packaging_s3_runtime_resolver_integration.md`
+  - `docs/plan/eta_packaging_s4_etac_v4_stale_policy.md`
+  - `docs/plan/eta_packaging_s5_precompiled_prelude_stdlib_etac.md`
+  - `docs/plan/eta_packaging_s6_dependency_workflows.md`
+  - `docs/plan/eta_packaging_s7_tooling_integration.md`
+- Added user packaging docs:
+  - [docs/packaging.md](packaging.md)
+  - [docs/guide/packages.md](guide/packages.md)
+  - [docs/app/first_app.md](app/first_app.md)
+  - [cookbook/packaging/end-to-end/README.md](../cookbook/packaging/end-to-end/README.md)
+
+---
+
+## 2026-05-02 (later)
+
+### Causal Stack Completion (tag `v0.5.6`)
+
+The causal roadmap landed additional implementation slices across model
+backbones, heterogeneous-effect estimation, and policy evaluation.
+
+Highlights:
+
+- Added native regression-tree and random-forest modules:
+  - `std.ml.tree`
+  - `std.ml.forest`
+- Added causal-forest API:
+  - `std.causal.forest` (`forest:fit-causal-forest`,
+    `forest:predict-cate`, `forest:local-aipw`,
+    `forest:variable-importance`)
+- Added cross-fitting/DML API:
+  - `std.causal.crossfit` (`crossfit:dml-plr`, `crossfit:dml-irm`,
+    fold/nuisance helpers, CI helpers)
+- Added uplift/policy-evaluation API:
+  - `std.causal.policy` (Qini/AUUC, IPW/AIPW policy value,
+    ranking/diagnostic helpers)
+- Added and expanded stdlib tests:
+  - `stdlib/tests/ml-tree.test.eta`
+  - `stdlib/tests/causal-forest.test.eta`
+  - `stdlib/tests/causal-crossfit.test.eta`
+  - `stdlib/tests/causal-policy.test.eta`
+
+Documentation updates:
+
+- Expanded [docs/guide/reference/causal.md](guide/reference/causal.md)
+  with the new modules and APIs.
+- Updated the portfolio/featured documentation to reflect the completed
+  causal stack and workflows.
+
+---
+
 ## 2026-05-02
 
 ### Subprocess Support (`std.process`)

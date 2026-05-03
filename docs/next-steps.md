@@ -11,7 +11,7 @@
 ## Overview
 
 This page tracks what is delivered in the current Eta baseline, and the
-focused work items that are genuinely outstanding. As of **April 2026**
+focused work items that are genuinely outstanding. As of **May 2026**
 the core language, runtime, GC, logic substrate, CLP family
 (Z / FD / R / B), networking + actor model, libtorch bindings, stdlib,
 LSP, DAP, VS Code extension, and Jupyter kernel are all shipped and
@@ -21,20 +21,26 @@ plus a lock-free function-registry read path and self-recursive
 tail-call → backward-jump emission (see
 [optimisations.md](optimisations.md)).
 
-The remaining roadmap splits into three buckets:
+Packaging plan stages **S0-S7** are now implemented end-to-end (manifest
+and lockfile core, umbrella CLI workflows, runtime resolver integration,
+`.etac` v4 freshness policy, precompiled prelude/stdlib artifacts, and
+REPL/LSP/DAP/Jupyter integration). The causal stack also shipped new
+cross-fitting, policy-value, and causal-forest modules with tree/forest
+learners and test coverage.
 
-1. **Distribution / packaging polish** — conda-forge, Binder badges,
-   CI publish for the `.vsix`.
-2. **Engine follow-ons** — further optimiser passes, generational GC,
-   per-thread DAP routing.
-3. **Hosted-platform layer** *(new phase, see end of doc)* — the
-   functionality a script needs from its host OS. Hash maps, sets,
-   `getenv`, argv, filesystem, subprocess, and JSON are now shipped
+The remaining roadmap splits into four buckets:
+
+1. **Distribution polish** — conda-forge, Binder badges, and `.vsix`
+   CI publish.
+2. **Packaging post-v1 hardening** — registry/signing (S8), publish
+   workflow hardening, and workspace support.
+3. **Engine follow-ons** — further optimiser passes, generational GC,
+   and per-thread DAP routing.
+4. **Hosted-platform remainder** — hash maps, sets, `getenv`, argv,
+   filesystem, subprocess, JSON, and logging are now shipped
    (`std.hashmap`, `std.hashset`, `std.os`, `std.fs`, `std.process`,
-   `std.json`); the remaining gaps are atoms, HTTP, FFI, and a
-   condition system. This is the largest *capability* gap between Eta
-   and a comparable hosted language (Clojure, Racket, Common Lisp,
-   Chez).
+   `std.json`, `std.log`); the remaining gaps are atoms, `std.format`,
+   HTTP, FFI, and a condition system.
 
 ---
 
@@ -153,11 +159,65 @@ The remaining roadmap splits into three buckets:
   `qp-benchmark.{ps1,sh}` with `--gate` thresholds (see
   [release-notes.md](release-notes.md)).
 
+### Packaging & Project Workflows
+
+- Packaging stages S0-S7 in
+  [`docs/plan/eta_packaging_plan.md`](plan/eta_packaging_plan.md) are
+  implemented, with landed stage notes under [`docs/plan/`](plan/).
+- `eta.toml` + `eta.lock` are shipped with deterministic lockfile
+  ordering and dependency source support for `path`, `git+rev`, and
+  `tarball+sha256`.
+- The umbrella CLI now ships `eta new/init/tree/run/add/remove/update`,
+  plus `build/test/bench/vendor/install/clean`.
+- Runtime/module resolution supports project-root discovery,
+  lockfile-ordered `.eta/modules` injection, `.etac`-before-`.eta`
+  preference, and strict duplicate detection (`--strict-shadows`).
+- `.etac` format v4 metadata and stale-artifact policy are live,
+  including source fallback when a sibling `.eta` exists.
+- Build/install now ship precompiled stdlib `.etac` artifacts and an
+  embedded `prelude.etac` blob; runtime prelude load order is embedded
+  blob → bundled `.etac` → source.
+- Tooling integration is in place: package-aware REPL/LSP/DAP/Jupyter,
+  LSP manifest/lockfile diagnostics, `eta/lockfile/explain`, and DAP
+  debug-profile defaults.
+- Canonical package fixtures now exist in
+  `packages/example/hello-world/` and
+  `cookbook/packaging/end-to-end/`.
+
+### Causal Stack Expansion
+
+- `std.ml.tree` and `std.ml.forest` now provide regression CART and
+  random-forest backbones.
+- `std.causal.forest` now provides causal-forest fitting, local AIPW
+  queries, and variable-importance reporting.
+- `std.causal.crossfit` now provides cross-fitting and DML estimators
+  (PLR/IRM) with confidence interval helpers.
+- `std.causal.policy` now provides uplift ranking metrics (Qini/AUUC),
+  off-policy IPW/AIPW value estimators, and ranking diagnostics.
+- Added tests:
+  `stdlib/tests/ml-tree.test.eta`,
+  `stdlib/tests/causal-forest.test.eta`,
+  `stdlib/tests/causal-crossfit.test.eta`,
+  `stdlib/tests/causal-policy.test.eta`.
+
 ---
 
 ## Outstanding Work — Distribution & Polish
 
 The list is short and mostly about distribution.
+
+### 0) Packaging System — Post-v1 Items
+
+Packaging S0-S7 is complete. Remaining packaging work is concentrated in
+post-v1 tasks:
+
+- **Registry + signing (S8).** Add `eta publish` and a staged read API,
+  package signatures, and mirror replay tests.
+- **Workspace support.** Promote the reserved `[workspace]` manifest
+  shape into a shipped multi-package workflow.
+- **Hardening + docs polish.** Expand `eta vendor --offline` CI checks,
+  document cache/locking behavior, and publish migration notes for
+  existing `ETA_MODULE_PATH`-based scripts.
 
 ### 1) Jupyter — Packaging & JupyterLab Front-End
 
@@ -456,6 +516,23 @@ useful but each is also pure quality-of-life on top of H1–H4.
 
 ## Recently Completed (was on this list, now shipped)
 
+- ✅ Packaging plan S0-S7 implementation:
+  - `eta.toml`/`eta.lock` manifest + deterministic lockfile core.
+  - umbrella `eta` CLI (`new`, `init`, `tree`, `run`, `add`, `remove`,
+    `update`, `build`, `test`, `bench`, `vendor`, `install`, `clean`).
+  - runtime/project resolver integration (`.etac` preference, strict
+    shadow scanning, project-root lockfile roots).
+  - `.etac` v4 metadata + freshness policy with source fallback.
+  - precompiled prelude + bundled stdlib `.etac` install path.
+  - tooling integration across REPL/LSP/DAP/Jupyter, including LSP
+    manifest/lockfile diagnostics and lockfile explain endpoint.
+  See [release-notes.md](release-notes.md#2026-05-03) and
+  [`docs/guide/packages.md`](guide/packages.md).
+- ✅ Causal stack completion (tag `v0.5.6`): causal forest,
+  cross-fitting/DML, and policy-value APIs (`std.causal.forest`,
+  `std.causal.crossfit`, `std.causal.policy`) plus native tree/forest
+  learners (`std.ml.tree`, `std.ml.forest`) and test suites.
+  See [release-notes.md](release-notes.md#2026-05-02-later).
 - ✅ Hosted-platform Phase H3 (slice 2) — `std.log`: structured logger
   with `trace`/`debug`/`info`/`warn`/`error`/`critical` levels,
   per-logger level filters, multiple sink kinds (stdout, stderr, file,
