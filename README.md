@@ -12,6 +12,7 @@
   <a href="docs/quickstart.md">Quick Start</a> ·
   <a href="docs/app/first_app.md">Build Your First App</a> ·
   <a href="docs/language_guide.md">Language Guide</a> ·
+  <a href="docs/stdlib.md">Standard Library</a> ·
   <a href="docs/packaging.md">Packaging System</a> ·
   <a href="docs/guide/reference/vscode.md">VS Code</a> ·
   <a href="docs/guide/reference/jupyter.md">Jupyter</a> ·
