@@ -775,7 +775,7 @@ CliResult<std::string> compute_sha256_file(const fs::path& file_path) {
     return std::unexpected("failed to parse SHA256 digest from certutil output");
 #else
     auto parse_sha_output = [](std::string_view text) -> std::optional<std::string> {
-        std::istringstream in(std::string(text));
+        std::istringstream in{std::string(text)};
         std::string token;
         in >> token;
         if (!looks_like_hex(token, 64u)) return std::nullopt;
