@@ -1,5 +1,10 @@
 ## Eta Packaging — Comprehensive Design Plan
 
+
+>[!IMPORTANT] S0 - S7 implemented, Workspaces next, but this can come 
+>after language features like atoms & http lib. Possibly after FFI,
+>so external packages can use C++ bindings, rather than being builtins.
+
 **Goal.** Give Eta a real package system: a manifest, a lockfile, a
 deterministic resolver, a per-project module root, an
 `ETA_MODULE_PATH`-driven runtime lookup that understands compiled
