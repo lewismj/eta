@@ -1,0 +1,6 @@
+(module myapp
+  (import std.io)
+  (import mathx)
+  (begin
+    (defun main (args)
+      (println (square 7)))))

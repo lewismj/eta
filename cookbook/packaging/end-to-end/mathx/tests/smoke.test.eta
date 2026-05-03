@@ -1,0 +1,12 @@
+(module mathx.tests.smoke
+  (import std.test)
+  (import mathx)
+  (begin
+    (define suite
+      (make-group "mathx"
+        (list
+          (make-test "square"
+            (lambda () (assert-equal 49 (square 7))))
+          (make-test "cube"
+            (lambda () (assert-equal 27 (cube 3)))))))
+    (print-tap (run suite))))

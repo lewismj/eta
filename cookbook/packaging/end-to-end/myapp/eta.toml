@@ -1,0 +1,11 @@
+[package]
+name = "myapp"
+version = "0.1.0"
+license = "MIT"
+description = "Example app consuming a local path dependency."
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+mathx = { path = "../mathx" }

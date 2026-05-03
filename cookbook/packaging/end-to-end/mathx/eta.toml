@@ -1,0 +1,10 @@
+[package]
+name = "mathx"
+version = "0.1.0"
+license = "MIT"
+description = "Linear-algebra helpers."
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]

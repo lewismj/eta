@@ -6,6 +6,16 @@
 
 ---
 
+> [!IMPORTANT]
+> **How to build your first app + end-to-end app/library flow:** start with
+> [How to Build Your First App](app/first_app.md), then run the
+> [Cookbook End-to-End Packaging Example](../cookbook/packaging/end-to-end/README.md).
+
+> [!IMPORTANT]
+> **How to get started with Jupyter:** see
+> [Eta Jupyter Kernel (`eta_jupyter`)](guide/reference/jupyter.md) and
+> [Cookbook Notebooks](../cookbook/notebooks/README.md).
+
 ## Installing from a Release
 
 Download the latest archive for your platform from

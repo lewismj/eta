@@ -105,6 +105,14 @@ sections build on each other and culminate in
 
 ---
 
+## Packaging
+
+| Example | Topic | Walkthrough |
+| :------ | :---- | :---------- |
+| [`packaging/end-to-end/`](../../cookbook/packaging/end-to-end/) | End-to-end package flow: local library + app path dependency | [`first_app.md`](../app/first_app.md) |
+
+---
+
 ## Notebooks
 
 | Notebook                                                                  | Topic                                  |
