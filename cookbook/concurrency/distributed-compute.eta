@@ -1,0 +1,50 @@
+;;; cookbook/concurrency/distributed-compute.eta — Cross-machine message passing.
+;;;
+;;; Demonstrates that the same send!/recv! API works transparently over TCP.
+;;; Spawns a server child process that binds a REP socket on localhost:6000,
+;;; waits for it to signal readiness, then runs the client in the parent.
+;;;
+;;; For real cross-machine use:
+;;;   - Run distributed-compute-server.eta on the server machine
+;;;   - Change endpoint below to point at the server's IP
+;;;
+;;; Run:
+;;;   etai cookbook/concurrency/distributed-compute.eta
+
+(module distributed-compute
+  (import std.prelude)
+  (begin
+
+    (define endpoint "tcp://127.0.0.1:6000")
+
+    ;; ── Spawn server child ────────────────────────────────────────────
+    ;; The server binds nng-listen synchronously, then sends 'ready.
+    ;; Waiting here guarantees the socket is listening before we dial.
+    (println "distributed-compute: starting server...")
+    (define server (spawn "cookbook/concurrency/distributed-compute-server.eta"))
+    (recv! server 'wait)   ; block until server sends 'ready
+
+    ;; ── Run client ────────────────────────────────────────────────────
+    (println (string-append "client: connecting to " endpoint))
+    (let ((sock (nng-socket 'req)))
+      (nng-dial sock endpoint)
+      (let ((tasks (list '(add 10 20)
+                         '(mul 6 7)
+                         '(fib 20)
+                         '(add 100 200))))
+        (for-each (lambda (task)
+                    (send! sock task)
+                    (let ((result (recv! sock 'wait)))
+                      (print (string-append "client: "
+                                            (display-to-string task)
+                                            " => "))
+                      (println result)))
+                  tasks))
+      (nng-close sock)
+      (println "client: done."))
+
+    ;; ── Shutdown ──────────────────────────────────────────────────────
+    (spawn-kill server)
+    (spawn-wait server)
+    (nng-close server)
+    (println "distributed-compute: done.")))

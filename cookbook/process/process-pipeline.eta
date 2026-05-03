@@ -1,0 +1,60 @@
+;;; process-pipeline.eta - Pipe stdout of one subprocess into stdin of another.
+;;;
+;;; Run: etai cookbook/process/process-pipeline.eta
+
+(module process-pipeline
+  (import std.io std.process)
+  (begin
+
+    (defun windows? ()
+      (equal? (platform) 'Win32))
+
+    (defun producer-command ()
+      (if (windows?)
+          (list "cmd" '("/c" "echo alpha& echo beta"))
+          (list "/bin/sh" '("-c" "printf 'alpha\nbeta\n'"))))
+
+    (defun filter-command ()
+      (if (windows?)
+          (list "cmd" '("/c" "findstr beta"))
+          (list "/bin/grep" '("beta"))))
+
+    (defun copy-bytes (input output)
+      (letrec ((loop (lambda ()
+                       (let ((b (read-u8 input)))
+                         (if (equal? b #f)
+                             'done
+                             (begin
+                               (write-u8 b output)
+                               (loop)))))))
+        (loop)))
+
+    (defun read-text-from-port (port)
+      (let ((out (open-output-string)))
+        (letrec ((loop (lambda ()
+                         (let ((b (read-u8 port)))
+                           (if (equal? b #f)
+                               (get-output-string out)
+                               (begin
+                                 (write-char (integer->char b) out)
+                                 (loop)))))))
+          (loop))))
+
+    (let* ((src-cmd (producer-command))
+           (dst-cmd (filter-command))
+           (src (process:spawn (car src-cmd) (car (cdr src-cmd))))
+           (dst (process:spawn (car dst-cmd) (car (cdr dst-cmd))))
+           (src-out (process:stdout-port src))
+           (dst-in (process:stdin-port dst))
+           (dst-out (process:stdout-port dst)))
+      (copy-bytes src-out dst-in)
+      (close-port src-out)
+      (close-port dst-in)
+
+      (println (read-text-from-port dst-out))
+      (close-port dst-out)
+
+      (process:wait src)
+      (process:wait dst))
+
+  ))

@@ -1,0 +1,40 @@
+;;; cookbook/concurrency/echo-server.eta — REP echo server.
+;;;
+;;; Demonstrates the REQ/REP request-reply pattern:
+;;;   - (nng-socket 'rep)   → create a REP server socket
+;;;   - (nng-listen sock endpoint)  → listen for connections
+;;;   - (recv! sock 'wait)  → block until a request arrives
+;;;   - (send! sock value 'wait)   → send the reply
+;;;
+;;; Run in one terminal:
+;;;   etai cookbook/concurrency/echo-server.eta
+;;;
+;;; Then query it from another terminal or the REPL:
+;;;   etai -e "(import std.net) (println (request-reply \"tcp://localhost:5555\" '(hello world)))"
+;;;
+;;; Or use the companion client:
+;;;   etai cookbook/concurrency/echo-client.eta
+
+(module echo-server
+  (import std.io)
+  (begin
+
+    (define endpoint "tcp://*:5555")
+
+    (define sock (nng-socket 'rep))
+    (nng-listen sock endpoint)
+    (println (string-append "echo-server: listening on " endpoint))
+    (println "echo-server: press Ctrl+C to stop")
+
+    ;; REP sockets follow a strict alternating pattern:
+    ;;   recv → send → recv → send → ...
+    ;; The server must reply to each request before receiving the next one.
+    (letrec ((loop (lambda ()
+                     (let ((msg (recv! sock 'wait)))
+                       (when msg
+                         (print "echo-server: received: ")
+                         (println msg)
+                         (send! sock msg 'wait)     ; echo back unchanged
+                         (loop))))))
+      (loop))))
+

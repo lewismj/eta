@@ -1,0 +1,157 @@
+;;; do-calculus/demo.eta — Interactive do-calculus identification demo.
+;;;
+;;; Demonstrates end-to-end identification of causal effects using
+;;; the do-calculus engine in std.causal, across three real-world DAGs:
+;;;
+;;;   1. The weather DAG  (Pearl 2009, Chapter 3)
+;;;   2. A finance DAG    (sector confounds market-beta → returns)
+;;;   3. An education DAG (Angrist & Pischke 2009)
+;;;
+;;; Run:  etai cookbook/do-calculus/demo.eta
+
+(module demo
+  (import std.io)
+  (import std.causal)
+  (import std.clp)
+  (begin
+
+    (define win (eq? (platform) 'Win32))
+
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+    (println (if win "  Do-Calculus Identification Engine -- Demo" "  Do-Calculus Identification Engine — Demo"))
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+
+    ;; ── 1. Weather DAG ────────────────────────────────────────────────────
+    ;;
+    ;;   season ──→ rain ──────────────┐
+    ;;     │                           ↓
+    ;;     └──→ sprinkler ──→ wet-grass
+    ;;
+    (println "")
+    (println "1. Weather DAG (Pearl 2009)")
+    (println (if win "--------------------------" "──────────────────────────"))
+
+    (define weather-dag
+      '((season    -> rain)
+        (season    -> sprinkler)
+        (rain      -> wet-grass)
+        (sprinkler -> wet-grass)))
+
+    (println weather-dag)
+
+    ;; Identify P(wet-grass | do(sprinkler))
+    (let* ((formula (do:identify weather-dag 'wet-grass 'sprinkler))
+           (formula-str (do:adjustment-formula->string formula
+                                                       'wet-grass 'sprinkler)))
+      (println "")
+      (print "Query:  P(wet-grass | do(sprinkler))")
+      (println "")
+      (print "Result: ")
+      (println formula-str))
+    ;; => P(wet-grass | do(sprinkler)) = P(wet-grass | sprinkler)
+    ;;    (no back-door paths — sprinkler has no incoming common causes with wet-grass
+    ;;     not already on a directed path; season is a parent of sprinkler but
+    ;;     the back-door path season→wet-grass doesn't go through sprinkler)
+
+    ;; Identify P(wet-grass | do(rain))
+    (let* ((formula (do:identify weather-dag 'wet-grass 'rain))
+           (formula-str (do:adjustment-formula->string formula 'wet-grass 'rain)))
+      (println "")
+      (print "Query:  P(wet-grass | do(rain))")
+      (println "")
+      (print "Result: ")
+      (println formula-str))
+    ;; => adjustment via {season} blocks the back-door path rain ← season → wet-grass
+
+    ;; ── 2. Finance DAG ────────────────────────────────────────────────────
+    ;;
+    ;;   sector ──→ market-beta ──→ stock-return
+    ;;     └─────────────────────→ stock-return
+    ;;
+    ;; `sector` is an observed confounder: it causes both market-beta
+    ;; (the exposure) and stock-return (the outcome) directly.
+    ;;
+    (println "")
+    (println "2. Finance DAG (sector confounder)")
+    (println (if win "-----------------------------------" "───────────────────────────────────"))
+
+    (define finance-dag
+      '((sector      -> market-beta)
+        (sector      -> stock-return)
+        (market-beta -> stock-return)))
+
+    (println finance-dag)
+
+    ;; Identify P(stock-return | do(market-beta))
+    (let* ((formula (do:identify finance-dag 'stock-return 'market-beta))
+           (formula-str (do:adjustment-formula->string formula
+                                                       'stock-return 'market-beta)))
+      (println "")
+      (print "Query:  P(stock-return | do(market-beta))")
+      (println "")
+      (print "Result: ")
+      (println formula-str))
+    ;; => Σ_{sector} P(stock-return | market-beta, sector) · P(sector)
+
+    ;; ── 3. Education & Income DAG ─────────────────────────────────────────
+    ;;
+    ;;   location ──→ education ──→ income
+    ;;       └──────────────────→ income
+    ;;
+    ;; `location` (e.g. urban/rural) confounds education → income.
+    ;;
+    (println "")
+    (println "3. Education & Income DAG (Angrist & Pischke)")
+    (println (if win "----------------------------------------------" "──────────────────────────────────────────────"))
+
+    (define educ-dag
+      '((location  -> education)
+        (location  -> income)
+        (education -> income)))
+
+    (println educ-dag)
+
+    (let* ((formula (do:identify educ-dag 'income 'education))
+           (formula-str (do:adjustment-formula->string formula
+                                                       'income 'education)))
+      (println "")
+      (print "Query:  P(income | do(education))")
+      (println "")
+      (print "Result: ")
+      (println formula-str))
+    ;; => Σ_{location} P(income | education, location) · P(location)
+
+    ;; ── 4. CLP bounds on causal effects ──────────────────────────────────
+    ;;
+    ;; Use std.clp to assert that the causal effect estimand must
+    ;; lie within the unit interval [0, 1] (a probability).
+    (println "")
+    (println "4. CLP bounds on the causal effect")
+    (println (if win "------------------------------------" "────────────────────────────────────"))
+    (println "(Causal effects that are probabilities lie in [0, 1])")
+    (println "")
+
+    ;; The do-calculus identifies the formula symbolically.
+    ;; CLP encodes that valid probability values are multiples of 0.01 in [0,1]:
+    ;; Here we represent the effect as hundredths (×100) using clp(FD) and
+    ;; back-solve to find which values satisfy a simple bounding constraint.
+
+    ;; Demonstrate: find all integer values for effect×100 in [0,100]
+    ;; such that effect×100 ≠ 0 and effect×100 ≠ 100 (strict interior)
+    ;; and effect×100 ≤ 50 (effect is at most 0.5)
+
+    (println (if win "Admissible effect*100 values <= 50 (strict interior of [0,1]):"
+                     "Admissible effect×100 values ≤ 50 (strict interior of [0,1]):"))
+    (let* ((eff100 (logic-var)))
+      (clp:domain eff100 1 49)   ; clp(Z): 1 ≤ eff100 ≤ 49
+      (if (clp:solve (list eff100))
+          (println (string-append "First solution: "
+                                  (number->string (deref-lvar eff100))))
+          (println "No solution")))
+
+    (println "")
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+    (println "  Done.")
+    (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))
+  ))
+

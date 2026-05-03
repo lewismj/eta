@@ -1,0 +1,88 @@
+;;; tests/torch/tensor_creation.eta — Tensor creation primitives
+;;;
+;;; Tests: tensor, ones, zeros, randn, arange, linspace, from-list, tensor?
+;;;
+;;; Run:  etai cookbook/tests/torch/tensor_creation.eta
+
+(module torch-test-tensor-creation
+  (import std.core)
+  (import std.io)
+  (import std.torch)
+  (import std.test)
+  (begin
+
+    (define results
+      (run (make-group "Tensor Creation"
+        (list
+
+          ;; ── ones / zeros ──────────────────────────────────────────
+          (make-test "ones shape"
+            (lambda ()
+              (let ((t (ones '(2 3))))
+                (assert-equal '(2 3) (shape t) "ones shape mismatch")
+                (assert-equal 6.0 (item (tsum t)) "ones sum mismatch"))))
+
+          (make-test "zeros shape"
+            (lambda ()
+              (let ((t (zeros '(3 4))))
+                (assert-equal '(3 4) (shape t) "zeros shape mismatch")
+                (assert-equal 0.0 (item (tsum t)) "zeros sum mismatch"))))
+
+          ;; ── randn ─────────────────────────────────────────────────
+          (make-test "randn shape"
+            (lambda ()
+              (let ((t (randn '(5 3))))
+                (assert-equal '(5 3) (shape t) "randn shape mismatch")
+                (assert-equal 15 (numel t) "randn numel mismatch"))))
+
+          ;; ── from-list roundtrip ───────────────────────────────────
+          (make-test "from-list roundtrip"
+            (lambda ()
+              (let* ((lst '(1.0 2.0 3.0 4.0 5.0))
+                     (t   (from-list lst))
+                     (back (to-list t)))
+                (assert-equal 5 (numel t) "from-list numel")
+                (assert-equal lst back "roundtrip mismatch"))))
+
+          ;; ── scalar tensor ─────────────────────────────────────────
+          (make-test "scalar tensor"
+            (lambda ()
+              (let ((t (tensor 42.0)))
+                (assert-equal 42.0 (item t) "scalar item mismatch"))))
+
+          ;; ── tensor from list ──────────────────────────────────────
+          (make-test "tensor from list"
+            (lambda ()
+              (let ((t (tensor '(10.0 20.0 30.0))))
+                (assert-equal 3 (numel t))
+                (assert-equal 60.0 (item (tsum t))))))
+
+          ;; ── arange ────────────────────────────────────────────────
+          (make-test "arange"
+            (lambda ()
+              (let ((t (arange 0 5 1)))
+                (assert-equal 5 (numel t) "arange numel")
+                (assert-equal 10.0 (item (tsum t)) "arange sum"))))
+
+          ;; ── linspace ──────────────────────────────────────────────
+          (make-test "linspace"
+            (lambda ()
+              (let ((t (linspace 0.0 1.0 5)))
+                (assert-equal 5 (numel t) "linspace numel")
+                ;; endpoints: 0, 0.25, 0.5, 0.75, 1.0
+                (assert-equal '(0.0 0.25 0.5 0.75 1.0) (to-list t)
+                  "linspace values"))))
+
+          ;; ── tensor? predicate ─────────────────────────────────────
+          (make-test "tensor? predicate"
+            (lambda ()
+              (assert-true  (tensor? (ones '(2))) "tensor is tensor")
+              (assert-false (tensor? 42)          "fixnum not tensor")
+              (assert-false (tensor? "hello")     "string not tensor")))
+
+        ))))
+
+    (print-summary (summary results))
+    (assert-equal 0 (summary-failed (summary results)) "tensor creation tests failed")
+  ))
+

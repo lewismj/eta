@@ -143,7 +143,7 @@ The remaining roadmap splits into three buckets:
 - Jupyter kernel (`eta_jupyter`) — xeus-based, embeds the `Driver`
   directly; `--install` writes the kernelspec; rich-display MIME
   bundles for tensors, fact tables, heap snapshots; three showcase
-  notebooks under `examples/notebooks/`. See [jupyter.md](jupyter.md).
+  notebooks under `cookbook/notebooks/`. See [jupyter.md](jupyter.md).
 - C++ unit suite (`eta_core_test`) and stdlib test runner (`eta_test`
   wired into CTest (`eta_stdlib_tests`) plus the convenience target
   `eta_rebuild_and_test`.
@@ -260,8 +260,8 @@ short version:
   a single landing.
 - `docs/clpr.md` — split out from `clp.md` once that page exceeds a
   screen.
-- More notebook-led tutorials under `examples/notebooks/` (xVA, SABR,
-  causal primer based on `examples/causal_demo.eta`).
+- More notebook-led tutorials under `cookbook/notebooks/` (xVA, SABR,
+  causal primer based on `cookbook/causal/causal_demo.eta`).
 
 ---
 
@@ -481,7 +481,7 @@ useful but each is also pure quality-of-life on top of H1–H4.
   (`stdlib/std/process.eta`), stdlib tests
   (`stdlib/tests/process.test.eta`), C++ runtime tests
   (`eta/qa/test/src/process_primitives_tests.cpp`), examples
-  (`examples/process-shellout.eta`, `examples/process-pipeline.eta`),
+  (`cookbook/process/process-shellout.eta`, `cookbook/process/process-pipeline.eta`),
   and reference docs (`guide/reference/process.md`).
 - ✅ Hosted-platform Phase H1 — Filesystem + OS primitives: native
   builtins (`file-exists?`, `directory?`, `delete-file`,

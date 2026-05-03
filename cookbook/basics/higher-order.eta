@@ -1,0 +1,85 @@
+;;; higher-order.eta — Map, filter, fold, and function composition
+;;;
+;;; Run:  etai cookbook/basics/higher-order.eta
+
+(module higher-order
+  (import std.prelude)
+  (begin
+
+    (define nums (list 1 2 3 4 5 6 7 8 9 10))
+
+    ;; ── map* — transform every element ──────────────────────────────
+    (println (map* square nums))
+    ;; => (1 4 9 16 25 36 49 64 81 100)
+
+    (println (map* (lambda (x) (* x 10)) '(1 2 3)))
+    ;; => (10 20 30)
+
+    ;; ── filter — keep elements that satisfy a predicate ─────────────
+    (println (filter even? nums))
+    ;; => (2 4 6 8 10)
+
+    (println (filter (lambda (x) (> x 5)) nums))
+    ;; => (6 7 8 9 10)
+
+    ;; ── foldl — left fold (accumulate from the left) ────────────────
+    ;; sum: start at 0, add each element
+    (println (foldl + 0 nums))
+    ;; => 55
+
+    ;; product: start at 1, multiply each element
+    (println (foldl * 1 '(1 2 3 4 5)))
+    ;; => 120
+
+    ;; ── foldr — right fold (accumulate from the right) ──────────────
+    ;; copy a list (cons each element onto '())
+    (println (foldr cons '() '(a b c)))
+    ;; => (a b c)
+
+    ;; ── reduce — fold without an initial value ──────────────────────
+    (println (reduce + '(1 2 3 4)))
+    ;; => 10
+
+    (println (reduce max '(3 7 2 9 1)))
+    ;; => 9
+
+    ;; ── Combining higher-order functions ────────────────────────────
+    ;; "sum of squares of even numbers"
+    (define result
+      (foldl + 0
+        (map* square
+          (filter even? nums))))
+    (println result)
+    ;; => 220  (4 + 16 + 36 + 64 + 100)
+
+    ;; ── any? / every? — short-circuit predicates ────────────────────
+    (println (any? negative? '(1 -2 3)))   ; => #t
+    (println (every? positive? '(1 2 3)))  ; => #t
+
+    ;; ── count — how many satisfy the predicate? ─────────────────────
+    (println (count even? nums))           ; => 5
+
+    ;; ── zip — pair up two lists ─────────────────────────────────────
+    (println (zip '(a b c) '(1 2 3)))
+    ;; => ((a . 1) (b . 2) (c . 3))
+
+    ;; ── take / drop ─────────────────────────────────────────────────
+    (println (take 3 nums))    ; => (1 2 3)
+    (println (drop 7 nums))    ; => (8 9 10)
+
+    ;; ── range — generate a sequence ─────────────────────────────────
+    (println (range 1 6))      ; => (1 2 3 4 5)
+
+    ;; ── flatten — one level of nesting ──────────────────────────────
+    (println (flatten '((1 2) (3 4) (5))))
+    ;; => (1 2 3 4 5)
+
+    ;; ── sort ────────────────────────────────────────────────────────
+    (println (sort < '(5 3 8 1 4 2 7 6)))
+    ;; => (1 2 3 4 5 6 7 8)
+
+    (println (sort > '(5 3 8 1 4 2 7 6)))
+    ;; => (8 7 6 5 4 3 2 1)
+
+  ))
+

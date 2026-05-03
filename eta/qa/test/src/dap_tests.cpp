@@ -2567,7 +2567,7 @@ BOOST_AUTO_TEST_CASE(perf_initialize_under_500ms) {
 }
 
 /**
- * C2-2: launch + reach `terminated` for `examples/hello.eta` budget.
+ * C2-2: launch + reach `terminated` for `cookbook/basics/hello.eta` budget.
  *
  * End-to-end "open the project, run a tiny script, exit" loop must clear in
  * under 5 seconds. This guards against accidental synchronous waits in

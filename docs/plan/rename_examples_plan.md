@@ -131,7 +131,7 @@ eta/qa/test/src/cookbook/
 3. Packaging:
    - release script outputs include `cookbook/` (not `examples/`)
 4. Docs:
-   - key quickstart commands run using `cookbook/hello.eta`
+   - key quickstart commands run using `cookbook/basics/hello.eta`
    - markdown links resolve for moved files.
 
 ## 6. Risks and Mitigations

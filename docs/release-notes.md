@@ -1,4 +1,4 @@
-﻿# Release Notes
+# Release Notes
 
 [<- Back to README](../README.md)
 
@@ -44,8 +44,8 @@ Highlights:
 - New stdlib tests:
   - `stdlib/tests/process.test.eta`
 - New examples:
-  - `examples/process-shellout.eta`
-  - `examples/process-pipeline.eta`
+  - `cookbook/process/process-shellout.eta`
+  - `cookbook/process/process-pipeline.eta`
 
 Documentation updates:
 
@@ -233,7 +233,7 @@ macros, AAD, libtorch, CLP, causal, actors — with no FFI hop.
   `application/vnd.eta.heap+json`.
 - `(import std.jupyter)` exposes `jupyter:table`, `jupyter:plot`, and
   `jupyter:dag` rich-display helpers used by the showcase notebooks.
-- Three showcase notebooks under `examples/notebooks/`:
+- Three showcase notebooks under `cookbook/notebooks/`:
   `LanguageBasics.ipynb`, `AAD.ipynb`, `Portfolio.ipynb`.
 - Docs: [docs/guide/reference/jupyter.md](guide/reference/jupyter.md).
 

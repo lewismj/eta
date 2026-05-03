@@ -1,0 +1,80 @@
+;;; cookbook/xva-wwr/ml-calibration-test.eta -- WWR ML calibration regression tests.
+;;;
+;;; Run with ETA_MODULE_PATH pointing to the repo-local stdlib
+;;; (use an absolute path so launch cwd does not matter):
+;;;   PowerShell: $env:ETA_MODULE_PATH=(Resolve-Path ./stdlib).Path
+;;;   etai cookbook/xva-wwr/ml-calibration-test.eta
+
+(module xva-wwr-ml-calibration-test
+  (import std.core)
+  (import std.io)
+  (import std.test)
+  (import main)
+  (import learn-betas)
+  (import market)
+  (begin
+
+    (defun abs-val (x)
+      (if (< x 0) (* -1 x) x))
+
+    (defun calibrate ()
+      (let* ((panel (generate-shock-panel 500 0.05 20260427))
+             (x (car panel))
+             (y (cdr panel))
+             (fit (learn-cp-betas x y 300 0.05))
+             (model (car fit)))
+        (list
+          (cons 'loss (cdr fit))
+          (cons 'learned (learned-cp-sensitivity model))
+          (cons 'recovery (beta-recovery-report (learned-cp-sensitivity model))))))
+
+    (define calibration (calibrate))
+    (define demo-output (run-demo))
+
+    (define results
+      (run
+        (make-group "xva-wwr ml calibration"
+          (list
+            (make-test "beta recovery stays within tolerance"
+              (lambda ()
+                (let* ((loss (assoc-ref 'loss calibration))
+                       (learned (assoc-ref 'learned calibration))
+                       (report (assoc-ref 'recovery calibration))
+                       (max-error (assoc-ref 'max-error report))
+                       (cp17 (assoc-ref "CP-17" learned))
+                       (cp17-oil (cp-betas-oil cp17)))
+                  (println (list
+                             (cons 'diag "ml-calibration")
+                             (cons 'loss loss)
+                             (cons 'max-error max-error)
+                             (cons 'cp17-oil cp17-oil)))
+                  (assert-true (number? loss) "loss must be numeric")
+                  (assert-true (< loss 0.01) "training loss should be below 0.01")
+                  (assert-true (< max-error 0.06) "max beta error should stay below 0.06")
+                  (assert-true (< (abs-val (- cp17-oil 2.91)) 0.10)
+                               "CP-17 oil beta should recover near 2.91"))))
+
+            (make-test "run-demo includes learned beta artifacts"
+              (lambda ()
+                (let* ((book-size (assoc-ref 'book-size demo-output))
+                       (recovery (assoc-ref 'beta-recovery demo-output))
+                       (rows (assoc-ref 'rows recovery))
+                       (loss (assoc-ref 'training-loss demo-output))
+                       (max-error (assoc-ref 'max-error recovery)))
+                  (println (list
+                             (cons 'diag "run-demo")
+                             (cons 'book-size book-size)
+                             (cons 'training-loss loss)
+                             (cons 'max-error max-error)))
+                  (assert-equal 200 book-size "book-size should be 200")
+                  (assert-true (pair? rows) "beta-recovery rows should be populated")
+                  (assert-true (number? loss) "training-loss should be numeric")
+                  (assert-true (< max-error 0.06)
+                               "run-demo max beta error should stay below 0.06"))))))))
+
+    (print-summary (summary results))
+    (assert-equal 0 (summary-failed (summary results)) "xva-wwr ml tests failed")
+
+    (println "run-demo output:")
+    (println demo-output)
+  ))

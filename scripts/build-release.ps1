@@ -317,7 +317,7 @@ try {
 
 
 # -- 5. Copy helpers + docs ----------------------------------------------------
-Write-Host "> [5/6] Copying install script, docs, and examples..."
+Write-Host "> [5/6] Copying install script, docs, and cookbook..."
 $helpers = @(
     (Join-Path $ProjectRoot "scripts\install.ps1"),
     (Join-Path $ProjectRoot "scripts\install.cmd"),
@@ -327,12 +327,12 @@ foreach ($h in $helpers) {
     if (Test-Path $h) { Copy-Item -Force $h "$Prefix\" }
 }
 
-# Copy examples/
-$ExamplesSrc  = Join-Path $ProjectRoot "examples"
-$ExamplesDest = Join-Path $Prefix "examples"
-if (Test-Path $ExamplesSrc) {
-    Write-Host "  Copying examples..."
-    Copy-Item -Recurse -Force $ExamplesSrc $ExamplesDest
+# Copy cookbook/
+$CookbookSrc  = Join-Path $ProjectRoot "cookbook"
+$CookbookDest = Join-Path $Prefix "cookbook"
+if (Test-Path $CookbookSrc) {
+    Write-Host "  Copying cookbook..."
+    Copy-Item -Recurse -Force $CookbookSrc $CookbookDest
 }
 
 # -- 5b. Prune to minimal Windows layout ---------------------------------------
@@ -340,7 +340,7 @@ if (Test-Path $ExamplesSrc) {
 # copied next to them).  Drop any include/, lib/, share/ trees that
 # third-party dependencies may have installed despite EXCLUDE_FROM_ALL.
 Write-Host "  Pruning non-essential install directories..."
-$keepNames = @('bin','editors','stdlib','examples')
+$keepNames = @('bin','editors','stdlib','cookbook')
 Get-ChildItem -LiteralPath $Prefix -Directory | Where-Object { $keepNames -notcontains $_.Name } | ForEach-Object {
     Write-Host "    - removing $($_.Name)\"
     Remove-Item -LiteralPath $_.FullName -Recurse -Force

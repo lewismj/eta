@@ -1,0 +1,77 @@
+;;; cookbook/concurrency/scatter-gather.eta — SURVEYOR/RESPONDENT scatter-gather demo.
+;;;
+;;; Demonstrates the scatter-gather pattern:
+;;;   - (nng-socket 'surveyor)    → sends a question to all respondents
+;;;   - (nng-socket 'respondent)  → answers the surveyor's question
+;;;   - (nng-set-option sock 'survey-time ms) → deadline for collecting replies
+;;;   - (survey endpoint question timeout-ms) → std.net helper
+;;;
+;;; The surveyor broadcasts a question and collects ALL responses that
+;;; arrive before the deadline.  Useful for "which workers are idle?",
+;;; "what is your current load?", etc.
+;;;
+;;; This example spawns 3 respondent workers, surveys them, and collects
+;;; their status reports.
+;;;
+;;; Run:
+;;;   etai cookbook/concurrency/scatter-gather.eta
+;;;
+;;; Workers are cookbook/concurrency/scatter-gather-worker.eta
+
+(module scatter-gather
+  (import std.net)
+  (import std.collections)
+  (import std.io)
+  (begin
+
+    (define survey-endpoint "tcp://127.0.0.1:5557")
+    (define n-workers 3)
+
+    ;; Set up the surveyor socket
+    (define surveyor (nng-socket 'surveyor))
+    (nng-listen surveyor survey-endpoint)
+
+    ;; Deadline: collect responses for up to 1 second
+    (nng-set-option surveyor 'survey-time 1000)
+
+    ;; Spawn respondent workers — each worker connects to the survey endpoint
+    (println "scatter-gather: spawning respondents...")
+    (define workers
+      (map (lambda (id)
+             (spawn "cookbook/concurrency/scatter-gather-worker.eta"))
+           (range 0 n-workers)))
+
+    ;; Send each worker its ID so it can identify itself in responses
+    (for-each (lambda (pair)
+                (send! (car pair) (cdr pair)))
+              (zip workers (range 0 n-workers)))
+
+    ;; Wait for all workers to confirm they've connected
+    (for-each (lambda (w) (recv! w 'wait)) workers)
+
+    ;; ── Broadcast the question ────────────────────────────────────────
+    (println "scatter-gather: asking 'status?'...")
+    (send! surveyor '(status?) 'wait)
+
+    ;; ── Collect all responses within the deadline ─────────────────────
+    (let ((responses
+           (letrec ((collect (lambda (acc)
+                               (let ((r (recv! surveyor)))
+                                 (if r
+                                     (collect (cons r acc))
+                                     (reverse acc))))))
+             (collect '()))))
+      (println (string-append "scatter-gather: received "
+                              (number->string (length responses))
+                              " response(s)"))
+      (for-each (lambda (r)
+                  (print "  ") (println r))
+                responses))
+
+    ;; ── Cleanup ───────────────────────────────────────────────────────
+    (for-each (lambda (w) (send! w 'stop)) workers)
+    (for-each spawn-wait workers)
+    (for-each nng-close workers)
+    (nng-close surveyor)
+    (println "scatter-gather: done.")))
+

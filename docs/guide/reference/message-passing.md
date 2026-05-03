@@ -74,7 +74,7 @@ Returns the **parent-side socket**, which is used for all subsequent
 `send!` / `recv!` calls to the child.
 
 ```scheme
-(define worker (spawn "examples/worker.eta"))
+(define worker (spawn "cookbook/concurrency/message-passing-worker.eta"))
 (send! worker '(compute 42))
 (define result (recv! worker 'wait))
 (nng-close worker)
@@ -299,7 +299,7 @@ round-trip over a REQ/REP socket pair:
 
 Run the server:
 ```bash
-etai examples/echo-server.eta
+etai cookbook/concurrency/echo-server.eta
 ```
 
 From another terminal or the REPL:
@@ -324,8 +324,8 @@ From another terminal or the REPL:
 ; => (1 4 9 16 25)  (if worker squares its input)
 ```
 
-See [`examples/worker-pool.eta`](../../../examples/worker-pool.eta) and
-[`examples/parallel-map.eta`](../../../examples/parallel-map.eta) for
+See [`cookbook/concurrency/worker-pool.eta`](../../../cookbook/concurrency/worker-pool.eta) and
+[`cookbook/concurrency/parallel-map.eta`](../../../cookbook/concurrency/parallel-map.eta) for
 complete runnable demos.
 
 ---
@@ -399,7 +399,7 @@ deadline:
 ; => ((ok worker-1) (ok worker-2) ...)
 ```
 
-See [`examples/scatter-gather.eta`](../../../examples/scatter-gather.eta) for a
+See [`cookbook/concurrency/scatter-gather.eta`](../../../cookbook/concurrency/scatter-gather.eta) for a
 complete runnable demo.
 
 ---
@@ -466,7 +466,7 @@ thread connected over an `inproc://` PAIR socket.  The API is identical to
 (nng-close t1)   (nng-close t2)   (nng-close t3)
 ```
 
-See [`examples/inproc.eta`](../../../examples/inproc.eta) for the runnable demo.
+See [`cookbook/concurrency/inproc.eta`](../../../cookbook/concurrency/inproc.eta) for the runnable demo.
 
 #### Thread lifecycle
 
@@ -512,7 +512,7 @@ endpoints:
 (define result (recv! client 'wait))
 ```
 
-See [`examples/distributed-compute.eta`](../../../examples/distributed-compute.eta)
+See [`cookbook/concurrency/distributed-compute.eta`](../../../cookbook/concurrency/distributed-compute.eta)
 for a complete two-process demonstration.
 
 ---

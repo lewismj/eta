@@ -1,0 +1,111 @@
+;;; tests/torch/training.eta — End-to-end training loops
+;;;
+;;; Tests: train-step! helper, sequential training convergence,
+;;;        multi-layer training with Adam
+;;;
+;;; Run:  etai cookbook/tests/torch/training.eta
+
+(module torch-test-training
+  (import std.core)
+  (import std.io)
+  (import std.torch)
+  (import std.test)
+  (begin
+
+    ;; Helper: run N training steps, return final loss
+    (defun train-n (model opt loss-fn x y n)
+      (letrec ((loop (lambda (i last-loss)
+                  (if (> i n) last-loss
+                      (loop (+ i 1)
+                            (train-step! model opt loss-fn x y))))))
+        (loop 1 999.0)))
+
+    (define results
+      (run (make-group "Training Loops"
+        (list
+
+          ;; ── Single linear layer: y = 2x + 1 with SGD ─────────────
+          (make-test "linear regression SGD converges"
+            (lambda ()
+              (let* ((model (linear 1 1))
+                     (opt   (sgd model 0.01))
+                     (x     (reshape (from-list '(1.0 2.0 3.0 4.0)) '(4 1)))
+                     (y     (reshape (from-list '(3.0 5.0 7.0 9.0)) '(4 1)))
+                     (loss0 (train-step! model opt mse-loss x y))
+                     (_     (train-n model opt mse-loss x y 199))
+                     (loss-final (train-step! model opt mse-loss x y)))
+                (assert-true (< loss-final loss0)
+                  "loss should decrease")
+                (assert-true (< loss-final 0.1)
+                  "final loss should be small"))))
+
+          ;; ── Single linear layer with Adam ─────────────────────────
+          (make-test "linear regression Adam converges"
+            (lambda ()
+              (let* ((model (linear 1 1))
+                     (opt   (adam model 0.1))
+                     (x     (reshape (from-list '(1.0 2.0 3.0 4.0)) '(4 1)))
+                     (y     (reshape (from-list '(3.0 5.0 7.0 9.0)) '(4 1)))
+                     (loss0 (train-step! model opt mse-loss x y)))
+                (train-n model opt mse-loss x y 99)
+                (let ((loss-final (train-step! model opt mse-loss x y)))
+                  (assert-true (< loss-final loss0)
+                    "adam loss should decrease")))))
+
+          ;; ── Sequential network: y = 2x + 1 with Adam ─────────────
+          ;; This is the CRITICAL test — exercises nn/sequential through
+          ;; the full Eta binding path including forward, parameters,
+          ;; optimizer construction, and backprop.
+          (make-test "sequential net training converges"
+            (lambda ()
+              (let* ((net (sequential (linear 1 8)
+                                      (relu-layer)
+                                      (linear 8 1)))
+                     (opt (adam net 0.01))
+                     (x   (reshape (from-list '(1.0 2.0 3.0 4.0)) '(4 1)))
+                     (y   (reshape (from-list '(3.0 5.0 7.0 9.0)) '(4 1)))
+                     (loss0 (train-step! net opt mse-loss x y)))
+                (train-n net opt mse-loss x y 299)
+                (let ((loss-final (train-step! net opt mse-loss x y)))
+                  (assert-true (< loss-final loss0)
+                    "sequential training loss should decrease")))))
+
+          ;; ── Deep sequential (5-layer) convergence ─────────────────
+          ;; Mirrors causal_demo.eta's NN architecture
+          (make-test "deep sequential training converges"
+            (lambda ()
+              (let* ((net (sequential (linear 2 16)
+                                      (relu-layer)
+                                      (linear 16 8)
+                                      (relu-layer)
+                                      (linear 8 1)))
+                     (opt (adam net 0.005))
+                     ;; XOR-like 2D regression
+                     (x (reshape (from-list '(0.0 0.0
+                                              0.0 1.0
+                                              1.0 0.0
+                                              1.0 1.0)) '(4 2)))
+                     (y (reshape (from-list '(0.0 1.0 1.0 0.0)) '(4 1)))
+                     (loss0 (train-step! net opt mse-loss x y)))
+                (train-n net opt mse-loss x y 499)
+                (let ((loss-final (train-step! net opt mse-loss x y)))
+                  (assert-true (< loss-final loss0)
+                    "deep net loss should decrease")))))
+
+          ;; ── train-step! returns scalar ────────────────────────────
+          (make-test "train-step! returns scalar loss"
+            (lambda ()
+              (let* ((m (linear 1 1))
+                     (o (sgd m 0.01))
+                     (x (reshape (from-list '(1.0)) '(1 1)))
+                     (y (reshape (from-list '(2.0)) '(1 1)))
+                     (loss (train-step! m o mse-loss x y)))
+                (assert-true (number? loss) "loss should be a number")
+                (assert-true (>= loss 0.0) "loss should be non-negative"))))
+
+        ))))
+
+    (print-summary (summary results))
+    (assert-equal 0 (summary-failed (summary results)) "training tests failed")
+  ))
+

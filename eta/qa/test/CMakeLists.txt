@@ -26,8 +26,8 @@ set(SOURCES
         src/module_path_tests.cpp
         src/repl_redefine_tests.cpp
         src/higher_order_tests.cpp
-        src/example_runner_tests.cpp
-        src/compiled_example_tests.cpp
+        src/cookbook/example_runner_tests.cpp
+        src/cookbook/compiled_example_tests.cpp
         src/bytecode_serializer_tests.cpp
         src/disassembler_tests.cpp
         src/optimization_tests.cpp
@@ -78,9 +78,9 @@ if(MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_TORCH_DEBUG_SKIP=1)
 endif()
 
-# Inject source tree paths for the example runner integration test.
+# Inject source tree paths for the cookbook integration tests.
 target_compile_definitions(${PROJECT_NAME} PRIVATE
-    ETA_EXAMPLES_DIR="${ETA_EXAMPLES_SOURCE_DIR}"
+    ETA_COOKBOOK_DIR="${ETA_COOKBOOK_SOURCE_DIR}"
     ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
 )
 

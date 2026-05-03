@@ -1,0 +1,23 @@
+;;; cookbook/concurrency/inproc-worker.eta — In-process thread worker for inproc.eta
+;;;
+;;; spawn-thread-with loads this module in a fresh thread VM, then calls
+;;; the named function.  The function call happens outside module scope so
+;;; we do the real work here at module top-level instead, using the mailbox
+;;; to receive the task (sent by the parent after spawn-thread-with returns).
+
+(module inproc-worker
+  (import std.io)
+  (begin
+
+    ;; Placeholder — spawn-thread-with requires a named function.
+    ;; The actual work is done below at module top-level.
+    (defun noop () '())
+
+    ;; Module init: receive one task from the parent, process it, reply.
+    ;; Runs automatically when run_file loads this module in the thread.
+    (let ((mailbox (current-mailbox)))
+      (when mailbox
+        (let ((task (recv! mailbox 'wait)))
+          (println (string-append "  thread: got " (number->string task)
+                                  ", returning " (number->string (* task 2))))
+          (send! mailbox (* task 2) 'wait))))))

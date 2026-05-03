@@ -1,0 +1,179 @@
+;;; stats.eta -- Descriptive statistics, hypothesis testing, and OLS regression
+;;;
+;;; Uses the std.stats library to analyse two simulated monthly return series
+;;; (equity-like and bond-like) and demonstrates:
+;;;
+;;;   - Descriptive stats  (mean, stddev, SEM, median, percentiles)
+;;;   - Summary helper
+;;;   - 95% confidence interval for the mean
+;;;   - Pearson correlation and covariance
+;;;   - Two-sample Welch t-test
+;;;   - Simple OLS linear regression
+;;;
+;;; All std.stats functions accept any numeric sequence (lists, vectors,
+;;; or fact-table columns).  This example uses plain lists for clarity.
+;;;
+;;; Run:  etai cookbook/quant/stats.eta
+
+(module stats-example
+  (import std.core)
+  (import std.io)
+  (import std.math)
+  (import std.stats)
+  (begin
+
+    (define win (eq? (platform) 'Win32))
+
+    ;; ============================================================
+    ;; Data: 12 monthly total returns (%), two hypothetical assets
+    ;; ============================================================
+    ;;
+    ;; Equity fund (higher return, higher vol):
+    (define eq-returns
+      '(2.1 -1.4  3.8  0.5 -2.9  4.2  1.7 -0.8  2.6  3.1 -1.2  2.4))
+
+    ;; Bond fund (lower return, lower vol):
+    (define bd-returns
+      '(0.4  0.6 -0.1  0.5  0.3  0.7  0.2  0.8 -0.3  0.6  0.5  0.4))
+
+    ;; ============================================================
+    ;; Section 1 -- Descriptive statistics
+    ;; ============================================================
+
+    (display (if win "============================================================\n"
+                     "============================================================\n"))
+    (display " Descriptive Statistics\n")
+    (display (if win "============================================================\n\n"
+                     "============================================================\n\n"))
+
+    (display "Equity fund (monthly %):\n")
+    (display "  mean   = ") (println (stats:mean   eq-returns))
+    (display "  stddev = ") (println (stats:stddev eq-returns))
+    (display "  SEM    = ") (println (stats:sem    eq-returns))
+    (display "  median = ") (println (stats:median eq-returns))
+    (display "  p10    = ") (println (stats:percentile eq-returns 0.10))
+    (display "  p90    = ") (println (stats:percentile eq-returns 0.90))
+    (display "\n")
+
+    (display "Bond fund (monthly %):\n")
+    (display "  mean   = ") (println (stats:mean   bd-returns))
+    (display "  stddev = ") (println (stats:stddev bd-returns))
+    (display "  SEM    = ") (println (stats:sem    bd-returns))
+    (display "  median = ") (println (stats:median bd-returns))
+    (display "\n")
+
+    ;; ============================================================
+    ;; Section 2 -- Summary helper
+    ;; ============================================================
+
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+    (display " Summary (equity fund)\n")
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+
+    (let ((s (stats:summary eq-returns)))
+      (letrec ((pr (lambda (rows)
+                     (if (null? rows) #t
+                         (let ((row (car rows)))
+                           (display "  ")
+                           (display (car row))
+                           (display " = ")
+                           (println (cadr row))
+                           (pr (cdr rows)))))))
+        (pr s)))
+    (display "\n")
+
+    ;; ============================================================
+    ;; Section 3 -- 95% Confidence interval for the mean
+    ;; ============================================================
+
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+    (display " 95% Confidence Interval for the Mean\n")
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+
+    (let ((ci-eq (stats:ci eq-returns 0.95))
+          (ci-bd (stats:ci bd-returns 0.95)))
+      (display "  Equity: [")
+      (display (stats:ci-lower ci-eq))
+      (display ", ")
+      (display (stats:ci-upper ci-eq))
+      (display "]\n")
+      (display "  Bond:   [")
+      (display (stats:ci-lower ci-bd))
+      (display ", ")
+      (display (stats:ci-upper ci-bd))
+      (display "]\n\n"))
+
+    ;; ============================================================
+    ;; Section 4 -- Covariance and correlation
+    ;; ============================================================
+
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+    (display " Covariance and Correlation\n")
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+
+    (display "  covariance  = ")
+    (println (stats:covariance  eq-returns bd-returns))
+    (display "  correlation = ")
+    (println (stats:correlation eq-returns bd-returns))
+    (display "\n")
+
+    ;; ============================================================
+    ;; Section 5 -- Two-sample Welch t-test
+    ;; ============================================================
+    ;;
+    ;; H0: mean(equity) == mean(bond)
+    ;; H1: mean(equity) != mean(bond)
+
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+    (display " Two-sample Welch t-test  (H0: equal means)\n")
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+
+    (let ((ttr (stats:t-test eq-returns bd-returns)))
+      (display "  t-statistic = ")
+      (println (stats:t-test-stat    ttr))
+      (display "  p-value     = ")
+      (println (stats:t-test-pvalue  ttr))
+      (display "  degrees-of-freedom = ")
+      (println (stats:t-test-df      ttr))
+      (display "  mean difference    = ")
+      (println (stats:t-test-mean-diff ttr))
+      (display "\n")
+      (display (if (< (stats:t-test-pvalue ttr) 0.05)
+                   "  => Reject H0 at 5%: means differ significantly.\n"
+                   "  => Fail to reject H0 at 5%: insufficient evidence.\n"))
+      (display "\n"))
+
+    ;; ============================================================
+    ;; Section 6 -- OLS linear regression (bond ~ equity)
+    ;; ============================================================
+    ;;
+    ;; Fit:  bond_return = intercept + slope * equity_return
+
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+    (display " OLS Regression:  bond ~ equity\n")
+    (display (if win "------------------------------------------------------------\n"
+                     "------------------------------------------------------------\n"))
+
+    (let ((ols (stats:ols eq-returns bd-returns)))
+      (display "  slope       = ") (println (stats:ols-slope        ols))
+      (display "  intercept   = ") (println (stats:ols-intercept    ols))
+      (display "  R-squared   = ") (println (stats:ols-r2           ols))
+      (display "  SE(slope)   = ") (println (stats:ols-se-slope     ols))
+      (display "  SE(intcpt)  = ") (println (stats:ols-se-intercept ols))
+      (display "  t(slope)    = ") (println (stats:ols-t-slope      ols))
+      (display "  t(intcpt)   = ") (println (stats:ols-t-intercept  ols))
+      (display "  p(slope)    = ") (println (stats:ols-p-slope      ols))
+      (display "  p(intcpt)   = ") (println (stats:ols-p-intercept  ols))
+      (display "\n"))
+
+  ))
+

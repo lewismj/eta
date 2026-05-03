@@ -1,0 +1,62 @@
+;;; cookbook/concurrency/pub-sub.eta — PUB/SUB publish-subscribe demo.
+;;;
+;;; Demonstrates the PUB/SUB pattern:
+;;;   - (nng-socket 'pub)   → publisher socket
+;;;   - (nng-socket 'sub)   → subscriber socket
+;;;   - (nng-subscribe sub topic) → filter messages by prefix
+;;;   - (pub-sub endpoint topics handler) → event loop helper
+;;;
+;;; This example spawns a publisher worker child process, then subscribes
+;;; to two topic streams from the parent.
+;;;
+;;; Run:
+;;;   etai cookbook/concurrency/pub-sub.eta
+;;;
+;;; The publisher is cookbook/concurrency/pub-sub-publisher.eta
+
+(module pub-sub-demo
+  (import std.net)
+  (import std.io)
+  (begin
+
+    (define pub-endpoint "tcp://127.0.0.1:5556")
+
+    ;; Spawn the publisher as a child process.
+    ;; It will connect to pub-endpoint and start sending messages.
+    (println "pub-sub: spawning publisher...")
+    (define pub-proc (spawn "cookbook/concurrency/pub-sub-publisher.eta"))
+
+    ;; Give the publisher a moment to connect (nng reconnects automatically,
+    ;; but for PUB/SUB early messages can be lost before SUB connects).
+    ;; Signal the publisher to start after we're ready.
+
+    ;; Set up our subscriber socket
+    (define sub (nng-socket 'sub))
+    (nng-listen sub pub-endpoint)
+
+    ;; Subscribe to price and alert topics only
+    (nng-subscribe sub "prices")
+    (nng-subscribe sub "alert")
+
+    ;; Tell the publisher we are ready (it is waiting for this signal)
+    (send! pub-proc 'ready)
+
+    ;; Collect 6 messages then stop
+    (let ((count 0))
+      (letrec ((loop (lambda ()
+                       (when (< count 6)
+                         (let ((msg (recv! sub 'wait)))
+                           (when msg
+                             (print "sub received: ")
+                             (println msg)
+                             (set! count (+ count 1))))
+                         (loop)))))
+        (loop)))
+
+    ;; Shutdown
+    (send! pub-proc 'stop)
+    (spawn-wait pub-proc)
+    (nng-close pub-proc)
+    (nng-close sub)
+    (println "pub-sub: done.")))
+

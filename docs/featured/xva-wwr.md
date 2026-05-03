@@ -1,4 +1,4 @@
-﻿# Causal xVA Engine — Wrong-Way Risk via `do(...)` Interventions
+# Causal xVA Engine — Wrong-Way Risk via `do(...)` Interventions
 
 [← Back to README](../../README.md) · [xVA overview](../guide/reference/xva.md) ·
 [Causal](../guide/reference/causal.md) · [AAD](../guide/reference/aad.md) · [Torch](../guide/reference/torch.md) ·
@@ -125,13 +125,13 @@ stage that produced it.
 ;;     (shard-check ((first . 4.96368e7) (second . 4.96368e7) (match . #t))))
 ```
 
-The values above were regenerated from `examples/xva-wwr/main.eta`
+The values above were regenerated from `cookbook/xva-wwr/main.eta`
 with seed `20260427`.
 
 `run-demo` is intentionally side-effect-free; the **friendly
 stage-by-stage report** below is produced by `(main)`, which calls
 `run-demo` then hands the artifact to `report:print-friendly-report`
-(see [`examples/xva-wwr/report.eta`](../../examples/xva-wwr/report.eta)).
+(see [`cookbook/xva-wwr/report.eta`](../../cookbook/xva-wwr/report.eta)).
 
 ---
 
@@ -254,18 +254,18 @@ The example requires a release bundle with **torch support**.
 
 ```console
 # Compile & run (recommended)
-etac -O examples/xva-wwr/main.eta
+etac -O cookbook/xva-wwr/main.eta
 etai main.etac
 
 # Or interpret directly
-etai examples/xva-wwr/main.eta
+etai cookbook/xva-wwr/main.eta
 ```
 
 > [!TIP]
 > **If you only read one section, read this one.** Everything below
 > elaborates how each pipeline stage produces the artifact returned by
 > `run-demo`. The interesting code is the **composition** at the top
-> of [`examples/xva-wwr/main.eta`](../../examples/xva-wwr/main.eta) — the
+> of [`cookbook/xva-wwr/main.eta`](../../cookbook/xva-wwr/main.eta) — the
 > sibling files construct the inputs and define the operators.
 
 ### The Top-Level API
@@ -723,7 +723,7 @@ row $i$ is the sensitivity vector for CP-$i$.
 ### Code path
 
 `learn-betas.eta` is one module, ~150 lines, four entry points used by
-[`main.eta`](../../examples/xva-wwr/main.eta):
+[`main.eta`](../../cookbook/xva-wwr/main.eta):
 
 ```scheme
 (generate-shock-panel n-obs noise-sigma seed)
@@ -1350,7 +1350,7 @@ one line and lives next to the kernel call — it is the standard
 "never trust an AAD or symbolic derivative without a finite-difference
 sanity check" hygiene step.
 
-The differentiation engine itself ([`symbolic.eta`](../../examples/xva-wwr/symbolic.eta))
+The differentiation engine itself ([`symbolic.eta`](../../cookbook/xva-wwr/symbolic.eta))
 is one screen of code:
 
 ```scheme
@@ -1600,8 +1600,8 @@ shard hash shown here.
 | Shard replay (appendix) | `(rerun-shard-and-check 2)` ⇒ `(match . #t)` for seed `20260429` |
 
 To run your own validation, change `20260427` in
-[`main.eta`](../../examples/xva-wwr/main.eta) and
-[`workers.eta`](../../examples/xva-wwr/workers.eta) to a different seed —
+[`main.eta`](../../cookbook/xva-wwr/main.eta) and
+[`workers.eta`](../../cookbook/xva-wwr/workers.eta) to a different seed —
 every numeric column should change in a coordinated way (different
 seed, different shock vector, different CVA, different ε), but the
 **shape** of every artifact (book size, top-3 ranking, sign of
@@ -1652,9 +1652,9 @@ elasticities, QP feasibility) should remain identical.
 > Two files are the authoritative references when the doc and code
 > drift:
 >
-> - [`examples/xva-wwr/main.eta`](../../examples/xva-wwr/main.eta)
+> - [`cookbook/xva-wwr/main.eta`](../../cookbook/xva-wwr/main.eta)
 >   defines the **artifact shape** returned by `(run-demo)`.
-> - [`examples/xva-wwr/report.eta`](../../examples/xva-wwr/report.eta)
+> - [`cookbook/xva-wwr/report.eta`](../../cookbook/xva-wwr/report.eta)
 >   defines the **human-readable report structure** rendered by
 >   `(main)`.
 >
@@ -1663,17 +1663,17 @@ elasticities, QP feasibility) should remain identical.
 
 | Component | File |
 |---|---|
-| **Composition / orchestrator** | [`examples/xva-wwr/main.eta`](../../examples/xva-wwr/main.eta) |
-| Book and CSA terms | [`examples/xva-wwr/book.eta`](../../examples/xva-wwr/book.eta) |
-| Market state, hazards, recoveries, βs | [`examples/xva-wwr/market.eta`](../../examples/xva-wwr/market.eta) |
-| **ML calibration of βs** (§3a) | [`examples/xva-wwr/learn-betas.eta`](../../examples/xva-wwr/learn-betas.eta) |
-| Torch path shocks | [`examples/xva-wwr/paths.eta`](../../examples/xva-wwr/paths.eta) |
-| CVA aggregation + AAD greeks | [`examples/xva-wwr/xva.eta`](../../examples/xva-wwr/xva.eta) |
-| SCM + intervention sweep | [`examples/xva-wwr/wwr-causal.eta`](../../examples/xva-wwr/wwr-causal.eta) |
-| Symbolic algebra + lowering | [`examples/xva-wwr/symbolic.eta`](../../examples/xva-wwr/symbolic.eta) |
-| Compression QP | [`examples/xva-wwr/compress.eta`](../../examples/xva-wwr/compress.eta) |
-| Deterministic shard replay | [`examples/xva-wwr/workers.eta`](../../examples/xva-wwr/workers.eta) |
-| **Friendly stage-by-stage report** | [`examples/xva-wwr/report.eta`](../../examples/xva-wwr/report.eta) |
+| **Composition / orchestrator** | [`cookbook/xva-wwr/main.eta`](../../cookbook/xva-wwr/main.eta) |
+| Book and CSA terms | [`cookbook/xva-wwr/book.eta`](../../cookbook/xva-wwr/book.eta) |
+| Market state, hazards, recoveries, βs | [`cookbook/xva-wwr/market.eta`](../../cookbook/xva-wwr/market.eta) |
+| **ML calibration of βs** (§3a) | [`cookbook/xva-wwr/learn-betas.eta`](../../cookbook/xva-wwr/learn-betas.eta) |
+| Torch path shocks | [`cookbook/xva-wwr/paths.eta`](../../cookbook/xva-wwr/paths.eta) |
+| CVA aggregation + AAD greeks | [`cookbook/xva-wwr/xva.eta`](../../cookbook/xva-wwr/xva.eta) |
+| SCM + intervention sweep | [`cookbook/xva-wwr/wwr-causal.eta`](../../cookbook/xva-wwr/wwr-causal.eta) |
+| Symbolic algebra + lowering | [`cookbook/xva-wwr/symbolic.eta`](../../cookbook/xva-wwr/symbolic.eta) |
+| Compression QP | [`cookbook/xva-wwr/compress.eta`](../../cookbook/xva-wwr/compress.eta) |
+| Deterministic shard replay | [`cookbook/xva-wwr/workers.eta`](../../cookbook/xva-wwr/workers.eta) |
+| **Friendly stage-by-stage report** | [`cookbook/xva-wwr/report.eta`](../../cookbook/xva-wwr/report.eta) |
 | AAD tape (VM, C++) | [`eta/core/src/eta/runtime/vm/vm.cpp`](../../eta/core/src/eta/runtime/vm/vm.cpp) |
 | CLP(R) constraint store | [`eta/core/src/eta/runtime/clp/`](../../eta/core/src/eta/runtime/clp) |
 | libtorch wrappers | [`stdlib/std/torch.eta`](../../stdlib/std/torch.eta) |
@@ -1730,7 +1730,7 @@ unchanged whether the graph is hand-drawn or machine-emitted.
 
 | Component | File |
 |---|---|
-| **xVA WWR Demo** | [`examples/xva-wwr/main.eta`](../../examples/xva-wwr/main.eta) |
+| **xVA WWR Demo** | [`cookbook/xva-wwr/main.eta`](../../cookbook/xva-wwr/main.eta) |
 | Causal infrastructure | [`stdlib/std/causal.eta`](../../stdlib/std/causal.eta) |
 | ID/IDC, ADMG, adjustment, learn, render, estimate | [`stdlib/std/causal/`](../../stdlib/std/causal) |
 | AAD primitives | [`stdlib/std/aad.eta`](../../stdlib/std/aad.eta) |

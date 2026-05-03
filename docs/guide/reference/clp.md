@@ -237,7 +237,7 @@ Return shape:
 
 ## 6. Worked Example — N-Queens
 
-From [`examples/nqueens.eta`](../../../examples/nqueens.eta).
+From [`cookbook/logic/nqueens.eta`](../../../cookbook/logic/nqueens.eta).
 
 The puzzle: place `n` queens on an `n×n` chessboard so that no two
 attack each other. Encode the row of queen `i` (1 ≤ i ≤ n) as the
@@ -324,7 +324,7 @@ posts (no Régin) needs ~100× more backtracks at `n = 12`.
 
 ## 7. Worked Example — SEND + MORE = MONEY
 
-From [`examples/send-more-money.eta`](../../../examples/send-more-money.eta).
+From [`cookbook/logic/send-more-money.eta`](../../../cookbook/logic/send-more-money.eta).
 
 ```
     S E N D
@@ -507,5 +507,5 @@ through ground intermediate values.
 | `std.clpb` wrappers | [`stdlib/std/clpb.eta`](../../../stdlib/std/clpb.eta) |
 | CLP(FD) tests | [`stdlib/tests/clp.test.eta`](../../../stdlib/tests/clp.test.eta) |
 | CLP(R) tests | [`stdlib/tests/clpr_simplex.test.eta`](../../../stdlib/tests/clpr_simplex.test.eta), [`stdlib/tests/clpr_optimization.test.eta`](../../../stdlib/tests/clpr_optimization.test.eta), [`stdlib/tests/clpr_qp_optimization.test.eta`](../../../stdlib/tests/clpr_qp_optimization.test.eta) |
-| Worked examples | [`examples/nqueens.eta`](../../../examples/nqueens.eta), [`examples/send-more-money.eta`](../../../examples/send-more-money.eta), [`examples/portfolio-lp.eta`](../../../examples/portfolio-lp.eta) |
+| Worked examples | [`cookbook/logic/nqueens.eta`](../../../cookbook/logic/nqueens.eta), [`cookbook/logic/send-more-money.eta`](../../../cookbook/logic/send-more-money.eta), [`cookbook/quant/portfolio-lp.eta`](../../../cookbook/quant/portfolio-lp.eta) |
 

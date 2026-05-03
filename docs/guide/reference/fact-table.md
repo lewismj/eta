@@ -249,5 +249,5 @@ The column count and row count are shown for quick identification.
 | Value formatter | [`value_formatter.h`](../../../eta/core/src/eta/runtime/value_formatter.h) |
 | Builtins | [`core_primitives.h`](../../../eta/core/src/eta/runtime/core_primitives.h), [`csv_builtins.cpp`](../../../eta/core/src/eta/runtime/csv_builtins.cpp) |
 | `std.fact_table` module | [`stdlib/std/fact_table.eta`](../../../stdlib/std/fact_table.eta) |
-| Example | [`examples/fact-table.eta`](../../../examples/fact-table.eta) |
+| Example | [`cookbook/quant/fact-table.eta`](../../../cookbook/quant/fact-table.eta) |
 

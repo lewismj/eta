@@ -14,7 +14,7 @@ set(ETA_REPO_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(ETA_CMAKE_DIR "${ETA_REPO_ROOT_DIR}/cmake")
 set(ETA_SOURCE_DIR "${ETA_REPO_ROOT_DIR}/eta")
 set(ETA_STDLIB_SOURCE_DIR "${ETA_REPO_ROOT_DIR}/stdlib")
-set(ETA_EXAMPLES_SOURCE_DIR "${ETA_REPO_ROOT_DIR}/examples")
+set(ETA_COOKBOOK_SOURCE_DIR "${ETA_REPO_ROOT_DIR}/cookbook")
 
 # GitHub Actions release jobs package from `cmake --install` directly, so
 # ensure the MSVC runtime DLLs are installed into bin/ for portable bundles.
@@ -36,8 +36,8 @@ add_subdirectory(editors/vscode)
 install(DIRECTORY stdlib/ DESTINATION stdlib
     FILES_MATCHING PATTERN "*.eta")
 
-# Install example programs.
-install(DIRECTORY examples/ DESTINATION examples
+# Install cookbook programs.
+install(DIRECTORY cookbook/ DESTINATION cookbook
     FILES_MATCHING PATTERN "*.eta")
 
 add_custom_target(eta_all)

@@ -3,7 +3,7 @@
 [Back to README](../../../README.md) | [Examples](../examples-tour.md) | [Modules](modules.md)
 
 > 📓 **Interactive notebook:**
-> [`examples/notebooks/AAD.ipynb`](../../../examples/notebooks/AAD.ipynb) —
+> [`cookbook/notebooks/AAD.ipynb`](../../../cookbook/notebooks/AAD.ipynb) —
 > the same walkthrough as a runnable Jupyter notebook (xeus-eta kernel).
 
 ---
@@ -270,7 +270,7 @@ Callers must extract plain numeric primals before send.
 
 > [!IMPORTANT]
 > When parallelising a Monte-Carlo gradient (e.g. pathwise Greeks in
-> [`xva.eta`](../../../examples/xva.eta)), each worker must build its **own**
+> [`xva.eta`](../../../cookbook/quant/xva.eta)), each worker must build its **own**
 > local tape, run its `grad`, and send back **plain numbers** — never the
 > tape or its refs.
 
@@ -578,7 +578,7 @@ Tests should assert tag identity and payload keys, not message text.
 
 ## Examples
 
-- [examples/aad.eta](../../../examples/aad.eta) — basic AAD walkthrough
-- [European option pricing](european.md) ([source](../../../examples/european.eta))
-- [SABR model](sabr.md) ([source](../../../examples/sabr.eta))
-- [XVA](xva.md) ([source](../../../examples/xva.eta))
+- [cookbook/quant/aad.eta](../../../cookbook/quant/aad.eta) — basic AAD walkthrough
+- [European option pricing](european.md) ([source](../../../cookbook/quant/european.eta))
+- [SABR model](sabr.md) ([source](../../../cookbook/quant/sabr.eta))
+- [XVA](xva.md) ([source](../../../cookbook/quant/xva.eta))

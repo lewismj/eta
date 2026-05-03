@@ -1,6 +1,6 @@
-﻿# Eta Quick Install & Run
+# Eta Quick Install & Run
 
-The fastest way to get started is to download a pre-built release, run the installer, and try the examples.
+The fastest way to get started is to download a pre-built release, run the installer, and try the cookbook programs.
 
 > [!TIP]
 > For the full reference â€” modules, import variants, all VS Code features,
@@ -76,7 +76,7 @@ C:\tmp\eta-v0.2.0-win-x64>
 
 ## 3. Run the Examples
 
-The `examples/` directory inside the release bundle contains several `.eta` programs.
+The `cookbook/` directory inside the release bundle contains several `.eta` programs.
 
 ### Interpret from Source â€” `etai`
 
@@ -84,13 +84,13 @@ The `examples/` directory inside the release bundle contains several `.eta` prog
 analyze â†’ emit) and executes it immediately:
 
 ```console
-C:\tmp\eta-v0.2.0-win-x64\examples> etai hello.eta
+C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etai hello.eta
 Hello, world!
 2432902008176640000
 ```
 
 ```console
-C:\tmp\eta-v0.2.0-win-x64\examples> etai aad.eta
+C:\tmp\eta-v0.2.0-win-x64\cookbook\quant> etai aad.eta
 f(x,y) = x*y + sin(x)
   grad at (2,3): (6.9093 #(2.58385 2))
 g(x) = x^2 + 3x + 1
@@ -110,22 +110,22 @@ dot(v, [1,2,3])
 phases** for faster startup:
 
 ```console
-C:\tmp\eta-v0.2.0-win-x64\examples> etac hello.eta
-compiled examples\hello.eta â†’ examples\hello.etac (3 functions, 1 module(s))
+C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etac hello.eta
+compiled cookbook\basics\hello.eta â†’ cookbook\basics\hello.etac (3 functions, 1 module(s))
 
-C:\tmp\eta-v0.2.0-win-x64\examples> etai hello.etac
+C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etai hello.etac
 Hello, world!
 2432902008176640000
 ```
 
 Enable optimization passes with `-O`:
 ```console
-C:\tmp\eta-v0.2.0-win-x64\examples> etac -O hello.eta -o hello-opt.etac
+C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etac -O hello.eta -o hello-opt.etac
 ```
 
 Inspect the emitted bytecode without writing a file:
 ```console
-C:\tmp\eta-v0.2.0-win-x64\examples> etac --disasm hello.eta
+C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etac --disasm hello.eta
 ```
 
 Key `etac` flags:
@@ -182,7 +182,7 @@ Or add them directly to your `settings.json`:
 
 ### Open and Run an Example
 
-1. In VS Code open the `examples/` folder from the release bundle (**File â†’ Open Folder**).
+1. In VS Code open the `cookbook/` folder from the release bundle (**File â†’ Open Folder**).
 2. Open any `.eta` file â€” syntax highlighting and diagnostics activate automatically.
 3. Run the file with the interpreter from the integrated terminal: `etai hello.eta`
 
@@ -221,7 +221,7 @@ Then open or create a notebook and select **Eta** as the kernel.
 > eta_jupyter --install --user
 > ```
 
-The example notebooks live in `examples/notebooks/` inside the release bundle. Open `Portfolio.ipynb` to see a worked financial-modelling example using the built-in CLP(R), AAD, and causal-inference libraries.
+The example notebooks live in `cookbook/notebooks/` inside the release bundle. Open `Portfolio.ipynb` to see a worked financial-modelling example using the built-in CLP(R), AAD, and causal-inference libraries.
 
 ---
 

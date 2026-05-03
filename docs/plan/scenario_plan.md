@@ -10,7 +10,7 @@
 
 ## 1 — Executive Summary
 
-A new featured example, **`examples/energy-stress/`**, that takes a realistic
+A new featured example, **`cookbook/energy-stress/`**, that takes a realistic
 ~$1bn global multi-asset portfolio (US / Europe / UK / Japan / EM equity,
 energy equity, oil, **natural gas**, gold, **US IG and HY credit**, a full
 US Treasury maturity ladder SHV/SHY/IEI/IEF/TLT, and a multi-currency FX
@@ -27,7 +27,7 @@ P&L distribution, VaR/ES, AAD-greeks, and **solves an optimal rebalance**
 (min stressed-ES s.t. weight / turnover / mandate constraints) using the
 existing CLP(R)/QP machinery. The example mirrors the file layout, module
 conventions, friendly-report style, and CI-friendly determinism guarantees
-of [`examples/xva-wwr/`](../../examples/xva-wwr).
+of [`cookbook/xva-wwr/`](../../cookbook/xva-wwr).
 
 The example differs from `xva-wwr` in three load-bearing ways:
 
@@ -42,7 +42,7 @@ The example differs from `xva-wwr` in three load-bearing ways:
 
 ### Goals
 
-- End-to-end runnable demo (`etai examples/energy-stress/main.eta`) producing
+- End-to-end runnable demo (`etai cookbook/energy-stress/main.eta`) producing
   a single deterministic artifact, plus a friendly stage-by-stage report.
 - Demonstrate **NOTEARS-style structure learning** on real returns using
   `std.torch` (acyclicity + L1 + augmented Lagrangian).
@@ -63,7 +63,7 @@ The example differs from `xva-wwr` in three load-bearing ways:
 - A full causal-discovery survey (we pick **one** method — NOTEARS — and
   reference the others).
 - Re-implementation of the existing `std.causal` identification machinery;
-  we **reuse** `examples/do-calculus/dag.eta` primitives and
+  we **reuse** `cookbook/do-calculus/dag.eta` primitives and
   `stdlib/std/causal.eta`.
 
 ---
@@ -71,14 +71,14 @@ The example differs from `xva-wwr` in three load-bearing ways:
 ## 3 — Directory Layout
 
 ```text
-examples/energy-stress/
+cookbook/energy-stress/
 ├── main.eta            ;; orchestrator: returns single alist artifact (run-demo)
 ├── data.eta            ;; CSV loader + log-returns + standardisation + train/test split
 ├── market.eta          ;; asset universe, weights, notional, baseline stats
 ├── portfolio.eta       ;; portfolio P&L given a return vector and a weight vector
 ├── dag-learn.eta       ;; NOTEARS-style NN learner over std.torch — outputs W (d×d)
 ├── dag.eta             ;; learned-DAG container, threshold, topo-sort, do(...) helper
-│                       ;; (extends/wraps examples/do-calculus/dag.eta)
+│                       ;; (extends/wraps cookbook/do-calculus/dag.eta)
 ├── shock.eta           ;; shock specification + intervention encoding (do-vector)
 ├── stress.eta          ;; SCM forward-sim, MC P&L, VaR/ES, marginal contributions
 ├── rebalance.eta       ;; convex rebalancing QP via std.clpr (clp:rq-minimize)
@@ -225,7 +225,7 @@ per column), GC-managed, supports per-column hash indexes, native
 `fact-table-load-csv`, and `fact-table-group-*` aggregations — exactly the
 shape this workload wants. See
 [`docs/guide/reference/fact-table.md`](../guide/reference/fact-table.md)
-and [`examples/fact-table.eta`](../../examples/fact-table.eta).
+and [`cookbook/quant/fact-table.eta`](../../cookbook/quant/fact-table.eta).
 
 1. **Load** with the C++-side parser:
    ```scheme
@@ -504,7 +504,7 @@ credit-pair check are the three load-bearing PM-credibility tests.
 ## 6 — Structural Shock Propagation
 
 Encode the learned DAG as the alist format used by
-[`examples/do-calculus/dag.eta`](../../examples/do-calculus/dag.eta) so the
+[`cookbook/do-calculus/dag.eta`](../../cookbook/do-calculus/dag.eta) so the
 existing `dag:topo-sort`, `dag:ancestors`, `dag:descendants`,
 `dag:satisfies-backdoor?` primitives are reusable verbatim:
 
@@ -643,7 +643,7 @@ $$
 
 The function returns `(value . #(grad-vector))` in one tape sweep —
 identical pattern to `cva-with-greeks` in
-[`examples/xva-wwr/xva.eta`](../../examples/xva-wwr/xva.eta).
+[`cookbook/xva-wwr/xva.eta`](../../cookbook/xva-wwr/xva.eta).
 
 ---
 
@@ -690,7 +690,7 @@ choice that makes the rebalance *causal*: the optimiser sees the structural
 shock's covariance, not unconditional history.
 
 **Solver:** reuse `clp:rq-minimize` from `std.clpr`, exactly as
-[`examples/xva-wwr/compress.eta`](../../examples/xva-wwr/compress.eta) does
+[`cookbook/xva-wwr/compress.eta`](../../cookbook/xva-wwr/compress.eta) does
 for the SIMM-Σ QP. Output (illustrative; eighteen weights, ordered
 `SPY VGK EWU EWJ EEM XLE USO UNG GLD EURUSD GBPUSD USDJPY HYG LQD SHV SHY IEI IEF TLT`):
 
@@ -736,7 +736,7 @@ alternative for non-convex extensions; the QP is the default.
 
 ### Console (`report.eta`)
 
-Mirrors `examples/xva-wwr/report.eta` structure: nine numbered panels
+Mirrors `cookbook/xva-wwr/report.eta` structure: nine numbered panels
 (`[1/9] Data Load`, `[2/9] DAG Learning`, `[3/9] Prior-Edge Audit`,
 `[4/9] Identification`, `[5/9] Shock Specification`, `[6/9] MC Stress`,
 `[7/9] Risk & Greeks`, `[8/9] Rebalance QP`, `[9/9] Determinism`) each
@@ -764,7 +764,7 @@ Uses `std.jupyter` (xeus kernel) to render:
 | **M2** | `market.eta` + `portfolio.eta` + baseline (no-shock) MC sanity check | M1 | 0.5 d | Low |
 | **M3a** | `dag-learn.eta` **linear NOTEARS** (default): augmented-Lagrangian outer loop, prior-edge audit, stability-selection, per-regime refit | M2, `std.torch` | 1.5 d | Med |
 | **M3b** | `dag-learn.eta` **MLP ablation** (`method 'mlp` flag): per-node MLPs at hidden=32, agreement panel vs M3a | M3a | 1 d | Med |
-| **M4** | `dag.eta`: learned-DAG container, thresholding, topo-sort over learned edges, `do(...)` encoding | M3a, `examples/do-calculus/dag.eta` | 1 d | Med |
+| **M4** | `dag.eta`: learned-DAG container, thresholding, topo-sort over learned edges, `do(...)` encoding | M3a, `cookbook/do-calculus/dag.eta` | 1 d | Med |
 | **M5** | `shock.eta` + `stress.eta`: SCM forward-sim, VaR/ES, AAD greeks (incl. credit + nat-gas shock dimensions) | M4 | 1.5 d | Med |
 | **M6** | `rebalance.eta`: QP via `clp:rq-minimize`, turnover encoding, sleeve-bucket bands, return-floor optional | M5, `std.clpr` | 1.5 d | Med |
 | **M7** | `workers.eta` + `report.eta` + `main.eta` + `sample-output.txt` + `docs/featured/energy-stress.md` | M1–M6 | 1.5 d | Low |
@@ -772,7 +772,7 @@ Uses `std.jupyter` (xeus kernel) to render:
 **Total:** ~9 working days of focused effort (M3 dropped from 3 d → 2.5 d
 combined since linear NOTEARS is far simpler than MLP-NOTEARS).
 
-Each milestone ships with TAP-style tests under `examples/energy-stress/tests/`
+Each milestone ships with TAP-style tests under `cookbook/energy-stress/tests/`
 (or `stdlib/tests/` if a primitive lands in stdlib).
 
 ---
@@ -790,7 +790,7 @@ Each milestone ships with TAP-style tests under `examples/energy-stress/tests/`
 
 No changes are required to the **causal** stack — we reuse
 `stdlib/std/causal.eta`, `stdlib/std/causal/identify.eta`, and
-`examples/do-calculus/dag.eta` as-is.
+`cookbook/do-calculus/dag.eta` as-is.
 
 ---
 
@@ -804,7 +804,7 @@ No changes are required to the **causal** stack — we reuse
 | **Acyclicity approximation error** (no `matrix-exp`) | Med | Tiny residual cycles | Truncated $h$ + final hard threshold + cycle-check; if cycles remain, drop the lowest-weight back-edge. |
 | **Shock plausibility** (no historical analogue at exactly +40 % oil) | Med | Decision-relevance challenged | Provide a side-by-side "milder" scenario (oil +20 %); cite OPEC-1973 / 2008 / 2022 ranges; treat shock as a hypothetical, not a forecast. |
 | **MC noise in ES greeks** | Med | Noisy gradients | Antithetic variates; common random numbers across MC for FD cross-check; assert `‖AAD - FD‖∞ < tol` in CI. |
-| **NN training non-determinism** | Low | Bit-drift across runs | `manual-seed` + CPU-only inference path; same shard-replay pattern as `examples/xva-wwr/workers.eta`. |
+| **NN training non-determinism** | Low | Bit-drift across runs | `manual-seed` + CPU-only inference path; same shard-replay pattern as `cookbook/xva-wwr/workers.eta`. |
 | **Identification claim overreach** | Med | Confuses readers vs xVA-WWR | Mirror the `[!CAUTION]` box from `xva-wwr.md` verbatim: a learned DAG is conditional on faithfulness, sufficiency, and the function class; quote what is and is not claimed. |
 
 ---

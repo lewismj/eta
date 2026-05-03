@@ -7,7 +7,7 @@
 > [!TIP]
 > **See also**
 >
-> - [`examples/causal_demo.eta`](../../../examples/causal_demo.eta) — gentle
+> - [`cookbook/causal/causal_demo.eta`](../../../cookbook/causal/causal_demo.eta) — gentle
 >   end-to-end primer (3-node DAG, single confounder) combining symbolic
 >   differentiation, do-calculus identification, `findall` + CLP
 >   validation, and a libtorch neural ATE.
@@ -620,7 +620,7 @@ Notes:
 
     ;; Embedded toy data: 30 observations
     ;; (sector market-beta stock-return)
-    (define data '(...))   ; see examples/causal_demo.eta for the DGP
+    (define data '(...))   ; see cookbook/causal/causal_demo.eta for the DGP
 
     ;; Symbolic identification
     (define formula (do:identify dag 'stock-return 'market-beta))
@@ -639,7 +639,7 @@ Notes:
 Run the full primer:
 
 ```bash
-etai examples/causal_demo.eta
+etai cookbook/causal/causal_demo.eta
 ```
 
 ---
@@ -874,11 +874,11 @@ analysis:
 | Estimation backends                  | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | Rendering (DOT / Mermaid / LaTeX) and `define-dag` macro | [`stdlib/std/causal/render.eta`](../../../stdlib/std/causal/render.eta) |
 | Counterfactual reference page        | [`causal-counterfactual.md`](./causal-counterfactual.md)                                  |
-| DAG demo                             | [`examples/do-calculus/dag.eta`](../../../examples/do-calculus/dag.eta)                   |
-| Do-calculus rules demo               | [`examples/do-calculus/do-rules.eta`](../../../examples/do-calculus/do-rules.eta)         |
-| Full identification demo             | [`examples/do-calculus/demo.eta`](../../../examples/do-calculus/demo.eta)                 |
+| DAG demo                             | [`cookbook/do-calculus/dag.eta`](../../../cookbook/do-calculus/dag.eta)                   |
+| Do-calculus rules demo               | [`cookbook/do-calculus/do-rules.eta`](../../../cookbook/do-calculus/do-rules.eta)         |
+| Full identification demo             | [`cookbook/do-calculus/demo.eta`](../../../cookbook/do-calculus/demo.eta)                 |
 | CSV module                           | [`stdlib/std/csv.eta`](../../../stdlib/std/csv.eta)                                         |
-| End-to-end primer (causal + NN ATE)  | [`examples/causal_demo.eta`](../../../examples/causal_demo.eta)                           |
+| End-to-end primer (causal + NN ATE)  | [`cookbook/causal/causal_demo.eta`](../../../cookbook/causal/causal_demo.eta)                           |
 | CATE test suite                      | [`stdlib/tests/causal-cate.test.eta`](../../../stdlib/tests/causal-cate.test.eta)         |
 | Cross-fitting test suite             | [`stdlib/tests/causal-crossfit.test.eta`](../../../stdlib/tests/causal-crossfit.test.eta) |
 | Policy scoring test suite            | [`stdlib/tests/causal-policy.test.eta`](../../../stdlib/tests/causal-policy.test.eta)     |

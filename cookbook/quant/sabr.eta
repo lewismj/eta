@@ -1,0 +1,338 @@
+;;; sabr.eta — SABR Volatility Surface with Tape-Based AD
+;;;
+;;; Computes the Hagan et al. (2002) SABR implied volatility approximation
+;;; and obtains *all* model sensitivities via Eta's tape-based AD.
+;;;
+;;; The SABR model is the standard stochastic-volatility model used by
+;;; rates and FX desks worldwide.  Its four parameters (α, β, ρ, ν)
+;;; control the level, backbone, skew, and curvature of the implied
+;;; volatility smile.
+;;;
+;;; The VM's arithmetic (+, -, *, /, exp, log, sqrt) transparently
+;;; records onto a tape when TapeRef operands are present — no
+;;; explicit AD-lifted functions needed.  This means the SABR
+;;; formula uses plain arithmetic and gets automatic differentiation
+;;; for free.
+;;;
+;;; Demonstrates:
+;;;   - SABR Hagan implied vol (ATM + general-K branches)
+;;;   - Vol surface generation across strikes and expiries
+;;;   - First-order Greeks via tape-based grad (single backward pass)
+;;;   - Zero-overhead tape recording at the C++ level
+;;;
+;;; Run:  etai cookbook/quant/sabr.eta
+
+(module sabr
+  (import std.core)
+  (import std.math)
+  (import std.io)
+  (begin
+
+    ;; ════════════════════════════════════════════════════════════════
+    ;; §1  Tape-Based AD Gradient Driver
+    ;; ════════════════════════════════════════════════════════════════
+    ;;
+    ;; The VM transparently records operations when any operand is a
+    ;; TapeRef.  No nd+, nd*, ndlog etc. needed — plain arithmetic
+    ;; is tape-aware.
+
+    ;; Explicit tape context for branch-only primal extraction.
+    (define branch-tape #f)
+    (defun branch-primal (x)
+      (if (and branch-tape (tape-ref? x))
+          (tape-ref-value-of branch-tape x)
+          x))
+
+    (defun grad (f vals)
+      (let ((tape (tape-new))
+            (n    (length vals)))
+        (let ((vars (letrec ((mk (lambda (vs acc)
+                                   (if (null? vs) (reverse acc)
+                                       (mk (cdr vs)
+                                           (cons (tape-var tape (car vs)) acc))))))
+                      (mk vals '()))))
+          (set! branch-tape tape)
+          (tape-start! tape)
+          (let ((output (apply f vars)))
+            (tape-stop!)
+            (set! branch-tape #f)
+            (tape-backward! tape output)
+            (let ((grad-vec (make-vector n 0)))
+              (letrec ((collect (lambda (vs i)
+                                  (if (null? vs) grad-vec
+                                      (begin
+                                        (vector-set! grad-vec i
+                                          (tape-adjoint tape (car vs)))
+                                        (collect (cdr vs) (+ i 1)))))))
+                (collect vars 0))
+              (list (tape-primal tape output) grad-vec))))))
+
+    ;; ── nd-val: extract primal (works for tape-refs and plain numbers) ──
+    (defun nd-val (x)
+      (branch-primal x))
+
+    ;; ── Helper: pow uses dedicated taped primitive support ────────
+    (defun ndpow (a b) (pow a b))
+
+    ;; ════════════════════════════════════════════════════════════════
+    ;; §2  SABR Hagan Implied Volatility Approximation
+    ;; ════════════════════════════════════════════════════════════════
+    ;;
+    ;; Hagan et al. (2002), "Managing Smile Risk"
+    ;;
+    ;; σ_impl(F, K, T; α, β, ρ, ν) for F ≠ K:
+    ;;
+    ;;              α                              z
+    ;;   ────────────────────────── × ─────────────────────────────
+    ;;   (FK)^{(1-β)/2} [1 + ...]     x(z)
+    ;;
+    ;;   × [1 + (...) T]
+    ;;
+    ;; where z = (ν/α)(FK)^{(1-β)/2} ln(F/K)
+    ;;       x(z) = ln[(√(1-2ρz+z²) + z - ρ) / (1-ρ)]
+    ;;
+    ;; For ATM (F ≈ K):
+    ;;             α
+    ;;   σ_ATM = ───────── [1 + correction terms × T]
+    ;;           F^{1-β}
+
+    ;; ── Helper: x(z) = ln[(√(1 - 2ρz + z²) + z - ρ) / (1 - ρ)] ──
+
+    (defun sabr-xz (z rho)
+      (let ((disc (sqrt (+ (- 1 (* 2 (* rho z)))
+                           (* z z)))))
+        (log (/ (+ (- disc rho) z)
+                (- 1 rho)))))
+
+    ;; ── ATM implied vol ─────────────────────────────────────────────
+    ;; σ_ATM = (α / F^(1-β)) × [1 + T × ((1-β)²α²/(24 F^(2-2β))
+    ;;                                     + ρβνα/(4 F^(1-β))
+    ;;                                     + (2-3ρ²)ν²/24)]
+
+    (defun sabr-atm-vol (F T alpha beta rho nu)
+      (let ((one-minus-beta (- 1 beta)))
+        (let ((F-pow (ndpow F one-minus-beta)))
+          (let ((base-vol (/ alpha F-pow)))
+            (let ((term1 (/ (* (* one-minus-beta one-minus-beta)
+                               (* alpha alpha))
+                            (* 24 (ndpow F (* 2 one-minus-beta)))))
+                  (term2 (/ (* rho (* beta (* nu alpha)))
+                            (* 4 F-pow)))
+                  (term3 (/ (* (- 2 (* 3 (* rho rho)))
+                               (* nu nu))
+                            24)))
+              (* base-vol
+                 (+ 1 (* T (+ term1 (+ term2 term3))))))))))
+
+    ;; ── General implied vol (F ≠ K) ─────────────────────────────────
+
+    (defun sabr-general-vol (F K T alpha beta rho nu)
+      (let ((one-minus-beta (- 1 beta)))
+        (let ((FK (* F K)))
+          (let ((FK-mid (ndpow FK (* 0.5 one-minus-beta)))
+                (log-FK (log (/ F K))))
+            ;; Denominator correction: 1 + (1-β)²/24 × ln²(F/K) + (1-β)⁴/1920 × ln⁴(F/K)
+            (let ((omb2 (* one-minus-beta one-minus-beta)))
+              (let ((denom-corr (+ 1
+                                  (+ (/ (* omb2 (* log-FK log-FK)) 24)
+                                     (/ (* (* omb2 omb2)
+                                           (* (* log-FK log-FK)
+                                              (* log-FK log-FK)))
+                                        1920)))))
+                ;; z = (ν/α) × FK^{(1-β)/2} × ln(F/K)
+                (let ((z (* (/ nu alpha) (* FK-mid log-FK))))
+                  ;; x(z) — handle z ≈ 0 (would make x(z)/z ≈ 1)
+                  (let ((z-val (branch-primal z)))
+                    (let ((zx-ratio
+                            (if (< (abs z-val) 1e-12)
+                                1
+                                (/ z (sabr-xz z rho)))))
+                      ;; Numerator correction: same as ATM terms
+                      (let ((FK-full (ndpow FK one-minus-beta)))
+                        (let ((term1 (/ (* omb2 (* alpha alpha))
+                                        (* 24 FK-full)))
+                              (term2 (/ (* rho (* beta (* nu alpha)))
+                                        (* 4 FK-mid)))
+                              (term3 (/ (* (- 2 (* 3 (* rho rho)))
+                                           (* nu nu))
+                                        24)))
+                          (let ((num-corr (+ 1 (* T (+ term1 (+ term2 term3))))))
+                            (* (/ alpha (* FK-mid denom-corr))
+                               (* zx-ratio num-corr))))))))))))))
+
+    ;; ── Unified SABR implied vol ────────────────────────────────────
+    ;; Switch between ATM and general formula based on |F - K| < tol
+
+    (defun sabr-implied-vol (F K T alpha beta rho nu)
+      (if (< (abs (- F K)) 1e-7)
+          (sabr-atm-vol F T alpha beta rho nu)
+          (sabr-general-vol F K T alpha beta rho nu)))
+
+    ;; ════════════════════════════════════════════════════════════════
+    ;; §3  Vol Surface Generation
+    ;; ════════════════════════════════════════════════════════════════
+
+    ;; Market parameters (typical USD swaption calibration):
+    ;;   F     = 0.03     (3% forward swap rate)
+    ;;   α     = 0.035    (vol level)
+    ;;   β     = 0.5      (CEV exponent — square-root backbone)
+    ;;   ρ     = -0.25    (negative skew — typical for rates)
+    ;;   ν     = 0.40     (vol-of-vol — controls smile curvature)
+
+    (define F-fwd 0.03)
+    (define alpha-val 0.035)
+    (define beta-val 0.5)
+    (define rho-val -0.25)
+    (define nu-val 0.40)
+
+    (define win (eq? (platform) 'Win32))
+
+    (display (if win "==================================================\n"
+                     "══════════════════════════════════════════════════\n"))
+    (display " SABR Volatility Surface with Tape-Based AD\n")
+    (display (if win "==================================================\n\n"
+                     "══════════════════════════════════════════════════\n\n"))
+
+    (display "SABR parameters:\n")
+    (display "  F (forward)  = 3.00%\n")
+    (display (if win "  alpha        = 0.035   (vol level)\n"
+                     "  α            = 0.035   (vol level)\n"))
+    (display (if win "  beta         = 0.50    (CEV exponent)\n"
+                     "  β            = 0.50    (CEV exponent)\n"))
+    (display (if win "  rho          = -0.25   (skew)\n"
+                     "  ρ            = -0.25   (skew)\n"))
+    (display (if win "  nu           = 0.40    (vol-of-vol)\n"
+                     "  ν            = 0.40    (vol-of-vol)\n"))
+    (display "\n")
+
+    ;; ── Vol surface table ──────────────────────────────────────────
+
+    (display (if win "\n-- Implied Vol Surface (%) --\n\n"
+                     "\n── Implied Vol Surface (%) ─────────────────────────\n\n"))
+
+    ;; Strike grid as fraction of forward
+    (define strike-pcts '(80 85 90 95 100 105 110 115 120))
+    (define expiries '(0.25 0.5 1.0 2.0 5.0))
+
+    ;; Header
+    (display "  K/F(%)")
+    (letrec ((hdr (lambda (es)
+                    (if (null? es) (display "\n")
+                        (begin
+                          (display "   ")
+                          (display (car es))
+                          (display "Y")
+                          (hdr (cdr es)))))))
+      (hdr expiries))
+
+    ;; Rows
+    (letrec ((row (lambda (ks)
+                    (if (null? ks) #t
+                        (begin
+                          (display "  ")
+                          (if (< (car ks) 100) (display " ") #t)
+                          (display (car ks))
+                          (display "%   ")
+                          (let ((K (* F-fwd (/ (car ks) 100.0))))
+                            (letrec ((col (lambda (es)
+                                            (if (null? es) (display "\n")
+                                                (let ((T (car es)))
+                                                  (let ((vol (sabr-implied-vol
+                                                               F-fwd K T
+                                                               alpha-val beta-val
+                                                               rho-val nu-val)))
+                                                    (display (* 100 (nd-val vol)))
+                                                    (display "  ")
+                                                    (col (cdr es))))))))
+                              (col expiries)))
+                          (row (cdr ks)))))))
+      (row strike-pcts))
+
+    ;; ════════════════════════════════════════════════════════════════
+    ;; §4  First-Order Greeks via tape-based grad
+    ;; ════════════════════════════════════════════════════════════════
+    ;;
+    ;; Differentiate σ_impl w.r.t. (α, β, ρ, ν) at the ATM point.
+    ;; Parameter indices: α=0, β=1, ρ=2, ν=3
+
+    (display (if win "\n\n-- First-Order Greeks (single backward pass) --\n\n"
+                     "\n\n── First-Order Greeks (single backward pass) ──────\n\n"))
+    (display "  At ATM point: F = K = 3%, T = 1Y\n\n")
+
+    (define sabr-params (list alpha-val beta-val rho-val nu-val))
+
+    (let ((result (grad (lambda (alpha beta rho nu)
+                                 (sabr-implied-vol F-fwd F-fwd 1.0
+                                                   alpha beta rho nu))
+                               sabr-params)))
+      (let ((vol (car result))
+            (g   (cadr result)))
+        (display (if win "  sigma_impl = " "  σ_impl      = "))
+        (display (* 100 vol))
+        (display "%\n\n")
+        (display "  Sensitivities:\n")
+        (display (if win "    dsigma/dalpha = " "    ∂σ/∂α = "))
+        (println (vector-ref g 0))
+        (display (if win "    dsigma/dbeta  = " "    ∂σ/∂β = "))
+        (println (vector-ref g 1))
+        (display (if win "    dsigma/drho   = " "    ∂σ/∂ρ = "))
+        (println (vector-ref g 2))
+        (display (if win "    dsigma/dnu    = " "    ∂σ/∂ν = "))
+        (println (vector-ref g 3))
+        (display "\n  Interpretation:\n")
+        (display (if win "    dalpha -> smile level shift\n"
+                         "    ∂σ/∂α → smile level shift\n"))
+        (display (if win "    dbeta  -> backbone / CEV curvature\n"
+                         "    ∂σ/∂β → backbone / CEV curvature\n"))
+        (display (if win "    drho   -> skew sensitivity\n"
+                         "    ∂σ/∂ρ → skew sensitivity\n"))
+        (display (if win "    dnu    -> wing / kurtosis sensitivity\n"
+                         "    ∂σ/∂ν → wing / kurtosis sensitivity\n"))))
+
+    ;; ── OTM point Greeks ────────────────────────────────────────────
+
+    (display (if win "\n\n-- OTM Greeks: K = 2.4% (80% moneyness), T = 1Y --\n\n"
+                     "\n\n── OTM Greeks: K = 2.4% (80% moneyness), T = 1Y ───\n\n"))
+
+    (let ((K-otm (* F-fwd 0.80)))
+      (let ((result (grad (lambda (alpha beta rho nu)
+                                   (sabr-implied-vol F-fwd K-otm 1.0
+                                                     alpha beta rho nu))
+                                 sabr-params)))
+        (let ((vol (car result))
+              (g   (cadr result)))
+          (display (if win "  sigma_impl = " "  σ_impl      = "))
+          (display (* 100 vol))
+          (display "%\n\n")
+          (display "  Sensitivities:\n")
+          (display (if win "    dsigma/dalpha = " "    ∂σ/∂α = "))
+          (println (vector-ref g 0))
+          (display (if win "    dsigma/dbeta  = " "    ∂σ/∂β = "))
+          (println (vector-ref g 1))
+          (display (if win "    dsigma/drho   = " "    ∂σ/∂ρ = "))
+          (println (vector-ref g 2))
+          (display (if win "    dsigma/dnu    = " "    ∂σ/∂ν = "))
+          (println (vector-ref g 3)))))
+
+    ;; ════════════════════════════════════════════════════════════════
+    ;; §5  Tape-Based AD Architecture
+    ;; ════════════════════════════════════════════════════════════════
+
+    (display (if win "\n\n-- Tape-Based AD Architecture --\n\n"
+                     "\n\n── Tape-Based AD Architecture ──────────────────────\n\n"))
+    (display "  The SABR Hagan formula involves ~50 elementary operations\n")
+    (display "  on 4 scalar parameters — ideal for tape-based AD.\n\n")
+    (display "  Tape-based AD (built into the VM):\n")
+    (display "    Per op: VM detects TapeRef tag (~1 branch in C++)\n")
+    (display "            Records operation + primal + arg indices\n")
+    (display "            ~32 bytes per tape entry, zero closures\n")
+    (display "    SABR: ~50 ops recorded in a single forward pass\n")
+    (display "    Backward: single reverse sweep accumulates all adjoints\n\n")
+    (display "  Benefits:\n")
+    (display "    - Plain arithmetic: no nd+, nd*, ndlog wrappers needed\n")
+    (display "    - Zero closure allocations (recording is C++ level)\n")
+    (display "    - ~32 bytes per op vs ~200+ bytes for library-level AD\n")
+    (display "    - All 4 Greeks in one backward sweep\n")
+
+  ))
+

@@ -1,4 +1,4 @@
-﻿# Macros — `syntax-rules`
+# Macros — `syntax-rules`
 
 [← Back to Language Guide](../language_guide.md)
 
@@ -92,7 +92,7 @@ do **not** bind. Used to build embedded sub-syntax:
 
 ## Worked example: `dotimes`
 
-From [`examples/portfolio.eta`](../../examples/portfolio.eta):
+From [`cookbook/quant/portfolio.eta`](../../cookbook/quant/portfolio.eta):
 
 ```scheme
 (define-syntax dotimes

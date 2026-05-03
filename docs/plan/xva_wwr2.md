@@ -1,7 +1,7 @@
 # XVA Wrong-Way-Risk Notebook v2 — Streamlined Plan
 
 [Back to plans index](./README.md) - supersedes the ad-hoc layout in
-[`examples/xva-wwr/`](../../examples/xva-wwr) and the long-form
+[`cookbook/xva-wwr/`](../../cookbook/xva-wwr) and the long-form
 [`docs/featured/xva-wwr.md`](../featured/xva-wwr.md).
 
 ---
@@ -9,7 +9,7 @@
 ## 1. Scope and Goals
 
 Deliver **one** xeus-eta Jupyter notebook,
-[`examples/notebooks/xva-wwr.ipynb`](../../examples/notebooks/xva-wwr.ipynb),
+[`cookbook/notebooks/xva-wwr.ipynb`](../../cookbook/notebooks/xva-wwr.ipynb),
 that reproduces — and meaningfully upgrades — the existing xVA / WWR
 demo as an interactive narrative. The notebook must be runnable
 top-to-bottom on a release build with `-DETA_BUILD_TORCH=ON`, finish
@@ -43,7 +43,7 @@ via `std.jupyter`.
 - Real CDS / market data ingest (synthetic but plausible curves only).
 - Production-grade SIMM, BA-CVA, SA-CVA capital models.
 - Distributed actor sweeps; the notebook stays single-process.
-- Rewriting the existing `examples/xva-wwr/*.eta` modules — the
+- Rewriting the existing `cookbook/xva-wwr/*.eta` modules — the
   notebook imports them where useful and replaces the rest with
   declarative cells.
 - Real-time Greek hedging dashboard.
@@ -98,7 +98,7 @@ expected rendered output. `MD` = markdown cell, `EC` = Eta code cell.
 
 All schemas are `define-record-type` (already used by
 [`stats.eta`](../../stdlib/std/stats.eta) and
-[`market.eta`](../../examples/xva-wwr/market.eta)). FactTable rows are
+[`market.eta`](../../cookbook/xva-wwr/market.eta)). FactTable rows are
 keyed by `id`; collections of records are stored as alists or
 `FactTable`s where group-by/index access is needed.
 
@@ -205,7 +205,7 @@ present in [`stdlib/std/`](../../stdlib/std).
 | In-notebook macro hygiene shim if `define-syntax` proves too thin | fall back to `defmacro` style helpers wrapping the record constructors |
 
 None of the gaps justify a new stdlib module; all should live in the
-notebook's preamble cell or in a thin `examples/notebooks/xva_wwr_helpers.eta`
+notebook's preamble cell or in a thin `cookbook/notebooks/xva_wwr_helpers.eta`
 module imported at cell 0.2.
 
 ---
@@ -391,7 +391,7 @@ In-notebook assertions (cells flagged `;; TEST`) plus one CI script.
 
 ## 11. Delivery Order
 
-1. **PR 1** — `examples/notebooks/xva_wwr_helpers.eta` + cells 0.x, 1.x.
+1. **PR 1** — `cookbook/notebooks/xva_wwr_helpers.eta` + cells 0.x, 1.x.
 2. **PR 2** — `define-portfolio`, `define-csa`, cells 2.x–4.x.
 3. **PR 3** — Market state, sampler, `simulate-paths` macro, cells 5.x–6.x.
 4. **PR 4** — xVA aggregation + AAD + `report-xva`, cells 7.x–8.x.
@@ -425,11 +425,11 @@ In-notebook assertions (cells flagged `;; TEST`) plus one CI script.
 
 There is no `xva_wwr.md` plan on disk; the comparison baseline is
 `docs/featured/xva-wwr.md` plus the working code in
-`examples/xva-wwr/`.
+`cookbook/xva-wwr/`.
 
 | Area | v1 (featured example + code) | v2 (this plan) |
 |---|---|---|
-| Deliverable | Long-form prose doc + standalone `.eta` orchestrator | One xeus-eta notebook (`examples/notebooks/xva-wwr.ipynb`) |
+| Deliverable | Long-form prose doc + standalone `.eta` orchestrator | One xeus-eta notebook (`cookbook/notebooks/xva-wwr.ipynb`) |
 | Trade count | 200, deterministic closed-form | 5 000, declarative DSL across 4 product types |
 | Counterparties | 30, no rating / sector / region | 20–50, with rating, sector, region, CDS curve |
 | Netting sets | implicit (1-per-CP) | explicit, multiple per CP, mixed CSA / non-CSA |

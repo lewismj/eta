@@ -177,18 +177,18 @@ The example requires a release bundle with **torch support**.
 
 ```console
 # Compile & run (recommended)
-etac -O examples/portfolio.eta
+etac -O cookbook/quant/portfolio.eta
 etai portfolio.etac
 
 # Or interpret directly
-etai examples/portfolio.eta
+etai cookbook/quant/portfolio.eta
 ```
 
 > [!TIP]
 > **If you only read one section, read this one.** Everything below
 > elaborates how each pipeline stage produces the artifact returned by
 > `run-pipeline`. The interesting code is at the *bottom* of
-> [`examples/portfolio.eta`](../examples/portfolio.eta) — the stages
+> [`cookbook/quant/portfolio.eta`](../cookbook/quant/portfolio.eta) — the stages
 > above it construct the inputs.
 
 ### The Top-Level API
@@ -1045,7 +1045,7 @@ observe that all downstream estimates shift accordingly.
 
 ## Appendix C — Source Layout & DSL Helpers
 
-`examples/portfolio.eta` keeps stage flow explicit via:
+`cookbook/quant/portfolio.eta` keeps stage flow explicit via:
 
 - shared header helpers for stage banners
 - direct stdlib math/stats (`clamp`, `mean`, `variance`, `covariance`)
@@ -1130,7 +1130,7 @@ it does not participate in identification or estimation.
 
 | Component | File |
 |---|---|
-| **Portfolio Demo** | [`examples/portfolio.eta`](../examples/portfolio.eta) |
+| **Portfolio Demo** | [`cookbook/quant/portfolio.eta`](../cookbook/quant/portfolio.eta) |
 | Fact table module | [`stdlib/std/fact_table.eta`](../stdlib/std/fact_table.eta) |
 | Causal DAG & do-calculus | [`stdlib/std/causal.eta`](../stdlib/std/causal.eta) |
 | ID/IDC, ADMG, adjustment, learn, render, estimate | [`stdlib/std/causal/`](../stdlib/std/causal) |

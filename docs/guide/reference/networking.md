@@ -452,7 +452,7 @@ when the thunk intentionally depends on non-transferable runtime handles.
 
 ```scheme
 ;; inproc-worker.eta defines a (noop) stub; real work is in module body.
-(define t (spawn-thread-with "examples/inproc-worker.eta" 'noop))
+(define t (spawn-thread-with "cookbook/concurrency/inproc-worker.eta" 'noop))
 (send! t 42 'wait)
 (recv! t 'wait)
 (thread-join t)

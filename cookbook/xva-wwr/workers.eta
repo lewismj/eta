@@ -1,0 +1,35 @@
+;;; cookbook/xva-wwr/workers.eta -- Deterministic shard helpers for supervisor demos.
+
+(module workers
+  (export run-path-shard shard-hash rerun-shard-and-check)
+  (import std.core)
+  (import std.collections)
+  (import paths)
+  (import market)
+  (begin
+
+    (defun run-path-shard (shard-id)
+      (simulate-paths baseline-curves '() factor-correlation
+                      250 12 0.25 (+ 20260427 shard-id)))
+
+    (defun curve-sum (curve)
+      (foldl (lambda (acc x) (+ acc x)) 0.0 curve))
+
+    (defun shard-hash (ee-curves)
+      (foldl
+        (lambda (acc entry)
+          (+ acc (curve-sum (cdr entry))))
+        0.0
+        ee-curves))
+
+    ;; Re-run the same shard seed and assert deterministic hash equality.
+    (defun rerun-shard-and-check (shard-id)
+      (let ((h1 (shard-hash (run-path-shard shard-id)))
+            (h2 (shard-hash (run-path-shard shard-id))))
+        (list
+          (cons 'first h1)
+          (cons 'second h2)
+          (cons 'match (= h1 h2)))))
+
+  ))
+

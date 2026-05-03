@@ -123,7 +123,7 @@ eta-v0.2.0-<platform>/
       logic.eta  clp.eta  clpb.eta  clpr.eta  causal.eta
       db.eta  fact_table.eta  freeze.eta  net.eta  stats.eta
       supervisor.eta  torch.eta
-  examples/
+  cookbook/
     hello.eta  basics.eta  functions.eta  higher-order.eta  ...
   editors/
     eta-lang-<version>.vsix # VS Code extension
@@ -148,11 +148,11 @@ When running from a build directory (not the install tree):
 
 ```bash
 # Via CLI flag
-./build/eta/tools/interpreter/etai --path ./stdlib examples/hello.eta
+./build/eta/tools/interpreter/etai --path ./stdlib cookbook/basics/hello.eta
 
 # Or via environment variable
 export ETA_MODULE_PATH=./stdlib
-./build/eta/tools/interpreter/etai examples/hello.eta
+./build/eta/tools/interpreter/etai cookbook/basics/hello.eta
 ```
 
 ---
@@ -170,18 +170,18 @@ ctest --test-dir build
 ### Torch Test Suite
 
 
-Ten standalone test files in `examples/torch_tests/` exercise every
+Ten standalone test files in `cookbook/tests/torch/` exercise every
 `std.torch` primitive end-to-end using the `std.test` framework:
 
 ```bash
 # Run all torch tests (Linux / macOS)
-for f in examples/torch_tests/*.eta; do echo "── $f"; etai "$f"; done
+for f in cookbook/tests/torch/*.eta; do echo "── $f"; etai "$f"; done
 
 # Run all torch tests (Windows PowerShell)
-Get-ChildItem examples\torch_tests\*.eta | ForEach-Object { Write-Host "── $_"; etai $_ }
+Get-ChildItem cookbook\tests\torch\*.eta | ForEach-Object { Write-Host "── $_"; etai $_ }
 
 # Run a single test file
-etai examples/torch_tests/tensor_creation.eta
+etai cookbook/tests/torch/tensor_creation.eta
 ```
 
 | File | Coverage |
@@ -210,7 +210,7 @@ ctest --test-dir build -R torch
 ```
 
 The `example_runner_tests` suite also automatically discovers and runs
-all `.eta` files (including `torch_tests/`) when built with torch support.
+all `.eta` files (including `tests/torch/`) when built with torch support.
 
 ---
 

@@ -1,4 +1,4 @@
-﻿# Eta — Language Guide
+# Eta — Language Guide
 
 [← Back to README](../README.md) ·
 [Quick Start](./quickstart.md) ·
@@ -84,7 +84,7 @@ etai hello.eta
 
 > [!TIP]
 > The interactive notebook at
-> [`examples/notebooks/LanguageBasics.ipynb`](../examples/notebooks/LanguageBasics.ipynb)
+> [`cookbook/notebooks/LanguageBasics.ipynb`](../cookbook/notebooks/LanguageBasics.ipynb)
 > walks through the same material as §§ 2–9 in a runnable form.
 
 ### How to read this guide
@@ -115,7 +115,7 @@ double, with NaN-box tagging — see [`nanboxing.md`](./guide/reference/nanboxin
 
 Because code is just S-expression data, `eval` compiles and executes
 any expression at runtime against the current lexical environment.
-This is fundamental: it is how the symbolic engine in `examples/xva-wwr`
+This is fundamental: it is how the symbolic engine in `cookbook/xva-wwr`
 lowers a differentiated expression onto the active AAD tape, how the
 REPL evaluates user input, and how macros and quasi-quotation compose
 with runtime metaprogramming.
@@ -459,7 +459,7 @@ action cover the awkward cases.
 (println (args:get r 'positional))
 ```
 
-Runnable demo: [`examples/args.eta`](../examples/args.eta).
+Runnable demo: [`cookbook/basics/args.eta`](../cookbook/basics/args.eta).
 
 ### Subprocesses (`std.process`)
 
@@ -642,7 +642,7 @@ Three CLP domains are bundled:
 
 `std.clpr` exposes interval domains, linear and quadratic
 minimise/maximise routines backed by the Fourier–Motzkin oracle. See
-[`examples/portfolio-lp.eta`](../examples/portfolio-lp.eta) for a
+[`cookbook/quant/portfolio-lp.eta`](../cookbook/quant/portfolio-lp.eta) for a
 worked LP.
 
 ---
@@ -653,7 +653,7 @@ worked LP.
 tabled evaluation — see [`db.md`](./guide/reference/db.md). `std.fact_table` is a
 columnar store with hash-indexed lookups for analytics workloads — see
 [`fact-table.md`](./guide/reference/fact-table.md) and
-[`examples/fact-table.eta`](../examples/fact-table.eta).
+[`cookbook/quant/fact-table.eta`](../cookbook/quant/fact-table.eta).
 
 ---
 
@@ -739,7 +739,7 @@ Render any graph straight to Mermaid or DOT for notebooks and papers:
 
 > **Reference:** [`causal.md`](./guide/reference/causal.md);
 > counterfactual deep-dive [`causal-counterfactual.md`](./guide/reference/causal-counterfactual.md);
-> end-to-end example [`examples/causal_demo.eta`](../examples/causal_demo.eta).
+> end-to-end example [`cookbook/causal/causal_demo.eta`](../cookbook/causal/causal_demo.eta).
 
 ---
 
@@ -787,7 +787,7 @@ optimisers, and (when built with CUDA) device transfer.
 ```
 
 > **Reference:** [`torch.md`](./guide/reference/torch.md);
-> tests: [`examples/torch_tests/`](../examples/torch_tests/).
+> tests: [`cookbook/tests/torch/`](../cookbook/tests/torch/).
 
 ---
 
@@ -822,13 +822,13 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 | Example                                                        | Topic                                  | Walkthrough |
 | :------------------------------------------------------------- | :------------------------------------- | :---------- |
-| [`european.eta`](../examples/european.eta)                  | Black–Scholes Greeks via AAD           | [`european.md`](./guide/reference/european.md) |
-| [`sabr.eta`](../examples/sabr.eta)                          | SABR vol surface, Hagan approximation  | [`sabr.md`](./guide/reference/sabr.md) |
-| [`xva.eta`](../examples/xva.eta)                            | CVA / FVA sensitivities via AAD        | [`xva.md`](./guide/reference/xva.md) |
-| [`xva-wwr/`](../examples/xva-wwr/)                          | Wrong-Way Risk via do-interventions    | [`featured/xva-wwr.md`](./featured/xva-wwr.md) |
-| [`portfolio.eta`](../examples/portfolio.eta)                | Causal portfolio engine (full pipeline)| [`featured/portfolio.md`](./featured/portfolio.md) |
-| [`portfolio-lp.eta`](../examples/portfolio-lp.eta)          | LP variant via `std.clpr`              | [CLP(R)](./guide/reference/clpr.md) |
-| [`fact-table.eta`](../examples/fact-table.eta)              | Columnar fact tables                   | [`fact-table.md`](./guide/reference/fact-table.md) |
+| [`european.eta`](../cookbook/quant/european.eta)                  | Black–Scholes Greeks via AAD           | [`european.md`](./guide/reference/european.md) |
+| [`sabr.eta`](../cookbook/quant/sabr.eta)                          | SABR vol surface, Hagan approximation  | [`sabr.md`](./guide/reference/sabr.md) |
+| [`xva.eta`](../cookbook/quant/xva.eta)                            | CVA / FVA sensitivities via AAD        | [`xva.md`](./guide/reference/xva.md) |
+| [`xva-wwr/`](../cookbook/xva-wwr/)                          | Wrong-Way Risk via do-interventions    | [`featured/xva-wwr.md`](./featured/xva-wwr.md) |
+| [`portfolio.eta`](../cookbook/quant/portfolio.eta)                | Causal portfolio engine (full pipeline)| [`featured/portfolio.md`](./featured/portfolio.md) |
+| [`portfolio-lp.eta`](../cookbook/quant/portfolio-lp.eta)          | LP variant via `std.clpr`              | [CLP(R)](./guide/reference/clpr.md) |
+| [`fact-table.eta`](../cookbook/quant/fact-table.eta)              | Columnar fact tables                   | [`fact-table.md`](./guide/reference/fact-table.md) |
 
 ---
 
@@ -886,7 +886,7 @@ For the architectural overview, read [`architecture.md`](./architecture.md).
 
 ## 28. Examples Index
 
-A curated walk through everything in [`examples/`](../examples/):
+A curated walk through everything in [`cookbook/`](../cookbook/):
 beginner programs, symbolic & logic, AAD & finance, concurrency, causal
 & portfolio engines, plus the notebook collection.
 

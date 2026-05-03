@@ -1,9 +1,0 @@
-;;; examples/parallel-map-worker.eta — Worker for parallel-map.eta
-;;;
-;;; One instance is spawned per input value.
-
-(module parallel-map-worker
-  (begin
-    (define mailbox (current-mailbox))
-    (define task (recv! mailbox 'wait))
-    (send! mailbox (* task 2) 'wait)))

@@ -174,7 +174,7 @@ idiom:
     ok))
 ```
 
-From [`examples/unification.eta`](../../../examples/unification.eta) §3:
+From [`cookbook/logic/unification.eta`](../../../cookbook/logic/unification.eta) §3:
 
 ```scheme
 (define r    (logic-var))
@@ -291,7 +291,7 @@ failed/aborted branches leak no bindings.
 
 ## 7. Worked Example — Pattern Matching via Unification
 
-From [`examples/unification.eta`](../../../examples/unification.eta) §7,
+From [`cookbook/logic/unification.eta`](../../../cookbook/logic/unification.eta) §7,
 a tiny tagged-message dispatcher built only from `unify` and
 `trail-mark`:
 
@@ -330,7 +330,7 @@ substrate directly.
 
 ## 8. Worked Example — Relational Database
 
-From [`examples/logic.eta`](../../../examples/logic.eta), the canonical
+From [`cookbook/logic/logic.eta`](../../../cookbook/logic/logic.eta), the canonical
 parent/grandparent example.
 
 ### 8.1 Facts and the `parento` relation
@@ -499,5 +499,5 @@ indexing and variant tabling.
 | `std.logic` | [`stdlib/std/logic.eta`](../../../stdlib/std/logic.eta) |
 | `std.db` | [`stdlib/std/db.eta`](../../../stdlib/std/db.eta) |
 | Fact-table runtime type | [`types/fact_table.h`](../../../eta/core/src/eta/runtime/types/fact_table.h) |
-| Logic examples | [`examples/unification.eta`](../../../examples/unification.eta), [`examples/logic.eta`](../../../examples/logic.eta) |
+| Logic examples | [`cookbook/logic/unification.eta`](../../../cookbook/logic/unification.eta), [`cookbook/logic/logic.eta`](../../../cookbook/logic/logic.eta) |
 

@@ -1,0 +1,14 @@
+;;; cookbook/concurrency/worker-pool-worker.eta — Worker for worker-pool.eta
+;;;
+;;; Each instance of this module:
+;;;   1. Receives one task from the parent via (current-mailbox)
+;;;   2. Computes the result (doubles the input)
+;;;   3. Sends the result back
+;;;   4. Exits
+
+(module worker-pool-worker
+  (begin
+    (define mailbox (current-mailbox))
+    (define task (recv! mailbox 'wait))
+    (send! mailbox (* task 2) 'wait)))
+

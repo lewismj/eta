@@ -160,7 +160,7 @@ financial-scale matrices (hundreds of constraints, conditioning up to
 
 ### 4.1 Worked example — small LP
 
-From [`examples/portfolio-lp.eta`](../../../examples/portfolio-lp.eta):
+From [`cookbook/quant/portfolio-lp.eta`](../../../cookbook/quant/portfolio-lp.eta):
 
 ```scheme
 ;; maximise   r·w
@@ -379,6 +379,6 @@ you want to handle unboundedness without `with-handlers`.
 | Tests — simplex | [`stdlib/tests/clpr_simplex.test.eta`](../../../stdlib/tests/clpr_simplex.test.eta) |
 | Tests — LP optimization | [`stdlib/tests/clpr_optimization.test.eta`](../../../stdlib/tests/clpr_optimization.test.eta) |
 | Tests — QP optimization | [`stdlib/tests/clpr_qp_optimization.test.eta`](../../../stdlib/tests/clpr_qp_optimization.test.eta) |
-| Worked example — LP | [`examples/portfolio-lp.eta`](../../../examples/portfolio-lp.eta) |
-| Featured example — QP + causal | [`examples/portfolio.eta`](../../../examples/portfolio.eta), [`docs/featured/portfolio.md`](../../featured/portfolio.md) |
+| Worked example — LP | [`cookbook/quant/portfolio-lp.eta`](../../../cookbook/quant/portfolio-lp.eta) |
+| Featured example — QP + causal | [`cookbook/quant/portfolio.eta`](../../../cookbook/quant/portfolio.eta), [`docs/featured/portfolio.md`](../../featured/portfolio.md) |
 

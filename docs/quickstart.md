@@ -69,7 +69,7 @@ or **compile ahead-of-time** then run the bytecode.
 analyze ? emit) and executes it immediately:
 
 ```bash
-etai examples/hello.eta
+etai cookbook/basics/hello.eta
 ```
 
 ```
@@ -82,7 +82,7 @@ Hello, world!
 execution for faster startup:
 
 ```bash
-etai examples/hello.etac
+etai cookbook/basics/hello.etac
 ```
 
 ### Ahead-of-Time Compilation — `etac`
@@ -92,8 +92,8 @@ resulting bytecode to a compact binary `.etac` file instead of executing
 it:
 
 ```bash
-etac examples/hello.eta                       # ? examples/hello.etac
-etai examples/hello.etac                      # run from bytecode (instant load)
+etac cookbook/basics/hello.eta                       # ? cookbook/basics/hello.etac
+etai cookbook/basics/hello.etac                      # run from bytecode (instant load)
 ```
 
 #### `etac` CLI Reference
@@ -116,13 +116,13 @@ Usage: etac [options] <file.eta> [-o <file.etac>]
 
 ```bash
 # Compile with optimizations
-etac -O examples/hello.eta -o hello-opt.etac
+etac -O cookbook/basics/hello.eta -o hello-opt.etac
 
 # Inspect the emitted bytecode without writing a file
-etac --disasm examples/hello.eta
+etac --disasm cookbook/basics/hello.eta
 
 # Strip debug info for a smaller distributable
-etac --no-debug examples/hello.eta -o hello-small.etac
+etac --no-debug cookbook/basics/hello.eta -o hello-small.etac
 ```
 
 #### Disassembly
@@ -346,7 +346,7 @@ The extension looks for the LSP binary in the following order:
 
 ### Running & Debugging
 
-1. Open the `examples/` folder from the release bundle (**File ? Open Folder**).
+1. Open the `cookbook/` folder from the release bundle (**File ? Open Folder**).
 2. Open any `.eta` file — syntax highlighting and diagnostics activate automatically.
 3. **Run from terminal:** `etai hello.eta` in the integrated terminal.
 4. **Debug with F5:** press **F5** (or **Run ? Start Debugging**) — the extension launches `eta_dap` automatically.
@@ -417,7 +417,7 @@ eta-v0.2.0-<platform>/
       logic.eta  clp.eta  clpb.eta  clpr.eta  causal.eta
       db.eta  fact_table.eta  freeze.eta  net.eta  stats.eta  time.eta
       supervisor.eta  torch.eta
-  examples/
+  cookbook/
     hello.eta  basics.eta  functions.eta  higher-order.eta  ...
   editors/
     eta-lang-<version>.vsix # VS Code extension

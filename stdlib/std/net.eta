@@ -79,7 +79,7 @@
     ;;   2. (send! (current-mailbox) result 'wait)  to return its result.
     ;;
     ;; Example:
-    ;;   (worker-pool "examples/worker.eta" '(1 2 3 4))
+    ;;   (worker-pool "cookbook/concurrency/worker-pool-worker.eta" '(1 2 3 4))
     ;;    list of four replies, one from each worker
     (defun worker-pool (module-path tasks)
       ;; Spawn one worker per task

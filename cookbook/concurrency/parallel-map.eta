@@ -1,0 +1,44 @@
+;;; cookbook/concurrency/parallel-map.eta — Parallel map using a worker pool.
+;;;
+;;; Demonstrates how to parallelize a pure function across a list of inputs
+;;; using (worker-pool module-path tasks):
+;;;   - One child process is spawned per task
+;;;   - All workers run simultaneously on separate cores
+;;;   - Results are collected in task-submission order
+;;;
+;;; This example doubles each input in parallel.
+;;; See parallel-fib.eta for a parallel Fibonacci example.
+;;;
+;;; Run:
+;;;   etai cookbook/concurrency/parallel-map.eta
+;;;
+;;; Worker: cookbook/concurrency/parallel-map-worker.eta
+
+(module parallel-map
+  (import std.net)
+  (import std.collections)
+  (import std.io)
+  (begin
+
+    ;; Inputs to map over
+    (define inputs '(1 2 3 4 5 6))
+
+    (println "parallel-map: doubling inputs in parallel...")
+    (println (string-append "  inputs: " (display-to-string inputs)))
+
+    ;; worker-pool spawns one child per input and collects results
+    (define results
+      (worker-pool "cookbook/concurrency/parallel-map-worker.eta" inputs))
+
+    (println (string-append "  results: " (display-to-string results)))
+
+    ;; Display input → result pairs
+    (for-each (lambda (pair)
+                (let ((n   (car pair))
+                      (r   (cdr pair)))
+                  (println (string-append "  " (number->string n) " * 2 = "
+                                          (number->string r)))))
+              (zip inputs results))
+
+    (println "parallel-map: done.")))
+

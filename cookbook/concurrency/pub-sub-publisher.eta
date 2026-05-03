@@ -1,0 +1,38 @@
+;;; cookbook/concurrency/pub-sub-publisher.eta — Publisher child for pub-sub.eta
+;;;
+;;; Launched by pub-sub.eta via (spawn ...).
+;;; Waits for a 'ready signal, publishes messages, then exits on 'stop.
+
+(module pub-sub-publisher
+  (import std.io)
+  (begin
+
+    (define mailbox (current-mailbox))
+    (define pub-endpoint "tcp://127.0.0.1:5556")
+
+    ;; Guard: this file must be run as a spawned child, not directly.
+    (when (null? mailbox)
+      (error "pub-sub-publisher: must be launched via (spawn ...), not run directly"))
+
+    ;; Connect as publisher
+    (define pub (nng-socket 'pub))
+    (nng-dial pub pub-endpoint)
+
+    ;; Wait for the subscriber to be ready before broadcasting
+    (define signal (recv! mailbox 'wait))
+    (println (string-append "publisher: got signal " (symbol->string signal)))
+
+    ;; Publish a mix of price and alert messages
+    (send! pub '(prices 100.5))
+    (send! pub '(prices 101.0))
+    (send! pub '(alert "margin call"))
+    (send! pub '(prices 99.8))
+    (send! pub '(weather sunny))   ; not subscribed — will be filtered out
+    (send! pub '(alert "low balance"))
+    (send! pub '(prices 102.3))
+
+    ;; Wait for stop signal
+    (recv! mailbox 'wait)
+    (nng-close pub)
+    (println "publisher: exiting.")))
+

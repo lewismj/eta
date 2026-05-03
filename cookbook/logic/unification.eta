@@ -1,0 +1,335 @@
+;;; unification.eta — Logic programming with native structural unification
+;;;
+;;; Eta provides six built-in unification primitives that give you the core
+;;; machinery of a Prolog engine without leaving the language:
+;;;
+;;;   (logic-var)          – allocate a fresh, unbound logic variable
+;;;   (unify a b)          – structural unification; returns #t or #f
+;;;   (deref-lvar x)       – walk a logic variable chain to its value
+;;;   (logic-var? x)       – #t if x is still unbound
+;;;   (trail-mark)         – snapshot the binding stack for backtracking
+;;;   (unwind-trail mark)  – undo every binding made since the snapshot
+;;;
+;;; Run:  etai cookbook/logic/unification.eta
+
+(module unification
+  (import std.io)
+  (import std.collections)
+  (import std.logic)
+  (begin
+
+    ;; ── 1. Basic unification ─────────────────────────────────────────────────
+
+    (println "-- 1. Basic unification --")
+
+    ;; Binding a fresh logic variable
+    (define x (logic-var))
+    (unify x 42)
+    (println (deref-lvar x))               ; => 42
+
+    ;; Two concrete atoms unify iff they are the same value
+    (println (unify 'hello 'hello))        ; => #t
+    (println (unify 'hello 'world))        ; => #f
+
+    ;; ── 2. Structural term unification ───────────────────────────────────────
+
+    (println "")
+    (println "-- 2. Structural unification --")
+
+    ;; Unify '(f ?a 2) with '(f 1 ?b)  —  decomposes recursively:
+    ;;   'f  = 'f  (atoms equal)
+    ;;   ?a  = 1   (binds a)
+    ;;   2   = ?b  (binds b)
+    (define a (logic-var))
+    (define b (logic-var))
+    (unify (cons 'f (cons a (cons 2 '())))
+           (cons 'f (cons 1 (cons b '()))))
+    (print "a = ") (println (deref-lvar a))   ; => 1
+    (print "b = ") (println (deref-lvar b))   ; => 2
+
+    ;; Variable chains: unifying two unbound variables links them so that
+    ;; binding either one is visible through the other.
+    (define v1 (logic-var))
+    (define v2 (logic-var))
+    (unify v1 v2)    ; v1 and v2 now share the same binding
+    (unify v2 99)    ; binding v2 is visible through v1
+    (print "v1 (via v2) = ") (println (deref-lvar v1))  ; => 99
+
+    ;; ── 3. Backtracking with trail marks ─────────────────────────────────────
+
+    (println "")
+    (println "-- 3. Backtracking --")
+
+    ;; Save a mark, make a binding, then wind back to the mark.
+    (define r    (logic-var))
+    (define mark (trail-mark))
+    (unify r 100)
+    (print "r before backtrack: ") (println (deref-lvar r))        ; => 100
+    (unwind-trail mark)
+    (print "r after  backtrack: unbound? ")
+    (println (logic-var? (deref-lvar r)))                          ; => #t
+
+    ;; Multiple bindings are all undone atomically by a single unwind.
+    (define p  (logic-var))
+    (define q  (logic-var))
+    (define m2 (trail-mark))
+    (unify p 'alpha)
+    (unify q 'beta)
+    (unwind-trail m2)
+    (print "p unbound after multi-unwind? ") (println (logic-var? (deref-lvar p)))  ; => #t
+    (print "q unbound after multi-unwind? ") (println (logic-var? (deref-lvar q)))  ; => #t
+
+    ;; ── 4. Occurs check prevents cyclic terms ────────────────────────────────
+
+    (println "")
+    (println "-- 4. Occurs check --")
+
+    ;; Binding z to a term that contains z would create an infinite structure.
+    ;; The occurs check detects this and returns #f rather than looping forever.
+    (define z   (logic-var))
+    (define z-m (trail-mark))
+    (print "(unify z (cons z '())) = ")
+    (println (unify z (cons z '())))    ; => #f
+    (unwind-trail z-m)
+
+    ;; ── 5. Prolog-style fact database ────────────────────────────────────────
+
+    (println "")
+    (println "-- 5. Database queries --")
+
+    ;; Facts: each entry is a (parent child) pair.
+    ;;   parent(tom, bob)   parent(tom, liz)
+    ;;   parent(bob, ann)   parent(bob, pat)
+    ;;   parent(pat, jim)
+    (define parent-db
+      '((tom bob) (tom liz) (bob ann) (bob pat) (pat jim)))
+
+    ;; solve-parent pvar cvar db
+    ;;   Unifies ?pvar and ?cvar against every fact in db.
+    ;;   Each attempt uses trail-mark / unwind-trail so that failed attempts
+    ;;   leave no lingering bindings, exactly like Prolog's choice points.
+    ;;   Returns a list of concrete (parent-val . child-val) solutions.
+    (defun solve-parent (pvar cvar db)
+      (if (null? db)
+          '()
+          (let* ((fact (car db))
+                 (fp   (car fact))
+                 (fc   (car (cdr fact)))
+                 (m    (trail-mark))
+                 (ok   (and (unify pvar fp) (unify cvar fc))))
+            (if ok
+                ;; Record the dereferenced solution, undo, keep searching
+                (let* ((sol  (cons (deref-lvar pvar) (deref-lvar cvar)))
+                       (rest (begin (unwind-trail m)
+                                    (solve-parent pvar cvar (cdr db)))))
+                  (cons sol rest))
+                (begin (unwind-trail m)
+                       (solve-parent pvar cvar (cdr db)))))))
+
+    ;; Query: all children of tom
+    ;; Pre-bind pvar to 'tom — solve-parent then acts as a filter.
+    (let* ((pv (logic-var))
+           (cv (logic-var))
+           (_ (unify pv 'tom))
+           (sols (solve-parent pv cv parent-db)))
+      (print "Children of tom:  ")
+      (println (map* cdr sols)))
+    ; => (bob liz)
+
+    ;; Query: all parents of ann
+    (let* ((pv (logic-var))
+           (cv (logic-var))
+           (_ (unify cv 'ann))
+           (sols (solve-parent pv cv parent-db)))
+      (print "Parents  of ann:  ")
+      (println (map* car sols)))
+    ; => (bob)
+
+    ;; Query: all parent -> child pairs (no constraints — full relation)
+    (let* ((pv (logic-var))
+           (cv (logic-var))
+           (sols (solve-parent pv cv parent-db)))
+      (println "All parent->child pairs:")
+      (println sols))
+    ; => ((tom . bob) (tom . liz) (bob . ann) (bob . pat) (pat . jim))
+
+    ;; ── 6. Derived rule: grandparent ─────────────────────────────────────────
+
+    (println "")
+    (println "-- 6. Derived rule: grandparent --")
+
+    ;; Prolog rule: grandparent(GP, GC) :- parent(GP, Mid), parent(Mid, GC)
+    ;;
+    ;; Implemented as a two-step join:
+    ;;   1. solve-parent with free ?gp and ?mid  → all (gp . mid) pairs
+    ;;   2. for each mid-val, solve-parent with concrete mid-val and free ?gc
+    ;;      → all (mid-val . gc) pairs; prepend gp-val to form (gp . gc)
+    (defun solve-grandparent (db)
+      (let* ((gp    (logic-var))
+             (mid   (logic-var))
+             (step1 (solve-parent gp mid db)))   ; all (gp . mid) pairs
+        (foldr
+          (lambda (pair acc)
+            (let* ((gp-val  (car pair))
+                   (mid-val (cdr pair))
+                   (gc      (logic-var))
+                   (step2   (solve-parent mid-val gc db)))
+              (append (map* (lambda (s) (cons gp-val (cdr s))) step2)
+                      acc)))
+          '()
+          step1)))
+
+    (println "All grandparent->grandchild pairs:")
+    (println (solve-grandparent parent-db))
+    ; => ((tom . ann) (tom . pat) (bob . jim))
+
+    ;; Membership test: is bob a grandparent of jim?
+    (let* ((sols (solve-grandparent parent-db))
+           (ans  (any? (lambda (s) (and (eq? (car s) 'bob)
+                                        (eq? (cdr s) 'jim)))
+                       sols)))
+      (print "Is bob grandparent of jim? ")
+      (println ans))
+    ; => #t
+
+    ;; ── 7. Unification as pattern matching ───────────────────────────────────
+
+    (println "")
+    (println "-- 7. Pattern matching via unification --")
+
+    ;; Decode a tagged message by unifying it against expected shapes.
+    ;; Each branch saves a mark, attempts the match, backtracks on failure.
+    (defun dispatch (msg)
+      (let ((tag  (logic-var))
+            (body (logic-var)))
+
+        ;; Try (add x y)
+        (let* ((x    (logic-var))
+               (y    (logic-var))
+               (m    (trail-mark))
+               (ok   (unify msg (cons 'add (cons x (cons y '()))))))
+          (if ok
+              (begin (println (+ (deref-lvar x) (deref-lvar y)))
+                     (unwind-trail m))
+              (begin
+                (unwind-trail m)
+
+                ;; Try (greet name)
+                (let* ((name (logic-var))
+                       (m2   (trail-mark))
+                       (ok2  (unify msg (cons 'greet (cons name '())))))
+                  (if ok2
+                      (begin (print "Hello, ")
+                             (println (deref-lvar name))
+                             (unwind-trail m2))
+                      (begin
+                        (unwind-trail m2)
+                        (println "unknown message")))))))))
+
+    (dispatch '(add 3 4))          ; => 7
+    (dispatch '(greet world))      ; => Hello, world
+    (dispatch '(unknown))          ; => unknown message
+
+    ;; ── 8. std.logic — higher-level query API ────────────────────────────────
+    ;;
+    ;; The db-branches pattern below is the idiomatic raw form.  For the next
+    ;; step — wrapping that pattern as a reusable *relation* (parento) that
+    ;; works in all query directions — see cookbook/logic/logic.eta.
+
+    (println "")
+    (println "-- 8. std.logic higher-level API --")
+
+    ;; ground? (builtin) — checks a term contains no unbound variables
+    (define gv (logic-var))
+    (print "fresh var is ground? ") (println (ground? gv))        ; => #f
+    (unify gv 42)
+    (print "bound var is ground? ") (println (ground? (deref-lvar gv)))  ; => #t
+    (print "pair with free var:  ") (println (ground? (cons 1 (logic-var))))  ; => #f
+
+    ;; == wraps unify as an ordinary callable goal function
+    (define g1 (logic-var))
+    (define g2 (logic-var))
+    (== g1 99)
+    (print "g1 after (== g1 99): ") (println (deref-lvar g1))    ; => 99
+
+    ;; copy-term — fresh copy with independent logic variables
+    (define tmpl (cons (logic-var) (logic-var)))     ; (?a . ?b)
+    (define copy1 (copy-term tmpl))
+    (define copy2 (copy-term tmpl))
+    (== (car copy1) 'alpha)
+    (== (car copy2) 'beta)
+    (print "copy1 car: ") (println (deref-lvar (car copy1)))  ; => alpha
+    (print "copy2 car: ") (println (deref-lvar (car copy2)))  ; => beta
+    (print "tmpl unaffected: ") (println (logic-var? (car tmpl)))  ; => #t
+
+    ;; naf — negation as failure (always backtracks)
+    (define naf-var (logic-var))
+    (print "naf of failing goal: ")
+    (println (naf (lambda () (== naf-var 'impossible) (== naf-var 'also-impossible))))
+    ; => #t  (the conjunction fails — naf returns #t)
+    (print "naf-var still unbound: ") (println (logic-var? naf-var))  ; => #t
+
+    ;; findall + run1 — Prolog findall/3 over a list of alternative branches
+    ;;
+    ;; Pattern: define a logic variable for the template, then pass a list
+    ;; of (lambda () goal-conjunction) thunks as the branches.
+    ;; findall tries each branch, records the template value on success,
+    ;; and always resets the trail between branches.
+
+    (println "")
+    (println "  findall demo — all solutions for (member x '(a b c)):")
+    (let* ((x    (logic-var))
+           (sols (findall
+                   (lambda () (deref-lvar x))
+                   (map* (lambda (v) (lambda () (== x v)))
+                         '(a b c)))))
+      (println sols))
+    ; => (a b c)
+
+    (println "  run1 — first solution where x > 3:")
+    (let* ((x   (logic-var))
+           (sol (run1
+                  (lambda () (deref-lvar x))
+                  (map* (lambda (v) (lambda () (and (== x v) (> v 3))))
+                        '(1 2 3 4 5)))))
+      (println sol))
+    ; => 4
+
+    ;; succeeds? — probe a goal without keeping its bindings
+    (println "  succeeds? (non-destructive probe):")
+    (let* ((sv (logic-var))
+           (ok (succeeds? (lambda () (== sv 77)))))
+      (print "  goal succeeded: ") (println ok)                ; => #t
+      (print "  sv still unbound: ") (println (logic-var? sv))) ; => #t
+
+    ;; Database queries rewritten with findall
+    (println "")
+    (println "  Database queries with findall:")
+    (define fdb '((tom bob) (tom liz) (bob ann) (bob pat) (pat jim)))
+
+    ;; Build one branch thunk per fact; each thunk tries to unify pv/cv
+    (defun db-branches (pv cv db)
+      (map* (lambda (fact)
+               (lambda ()
+                 (let ((fp (car fact))
+                       (fc (car (cdr fact))))
+                   (and (== pv fp) (== cv fc)))))
+             db))
+
+    (let* ((pv (logic-var))
+           (cv (logic-var))
+           (_ (== pv 'tom))
+           (sols (findall (lambda () (deref-lvar cv))
+                          (db-branches pv cv fdb))))
+      (print "  Children of tom: ") (println sols))
+    ; => (bob liz)
+
+    (let* ((pv (logic-var))
+           (cv (logic-var))
+           (sols (findall (lambda () (cons (deref-lvar pv) (deref-lvar cv)))
+                          (db-branches pv cv fdb))))
+      (print "  All pairs:       ") (println sols))
+    ; => ((tom . bob) (tom . liz) (bob . ann) (bob . pat) (pat . jim))
+
+  ))
+

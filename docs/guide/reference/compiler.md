@@ -37,11 +37,11 @@ etai  hello.etac                           # run from cache (instant load)
 
 ```console
 # Compile an Eta source file to bytecode
-$ etac examples/hello.eta
-compiled examples/hello.eta → examples/hello.etac (3 functions, 1 module(s))
+$ etac cookbook/basics/hello.eta
+compiled cookbook/basics/hello.eta → cookbook/basics/hello.etac (3 functions, 1 module(s))
 
 # Run the compiled bytecode
-$ etai examples/hello.etac
+$ etai cookbook/basics/hello.etac
 Hello, world!
 2432902008176640000
 ```
@@ -127,7 +127,7 @@ extended with additional passes in the future.
 
 ```console
 # Compile with optimizations enabled
-$ etac -O examples/hello.eta -o hello-opt.etac
+$ etac -O cookbook/basics/hello.eta -o hello-opt.etac
 ```
 
 ---
@@ -139,7 +139,7 @@ to stdout, which is useful for understanding what the compiler produces
 or debugging performance issues:
 
 ```console
-$ etac --disasm examples/hello.eta
+$ etac --disasm cookbook/basics/hello.eta
 ```
 
 Both `etac` and `etai` support disassembly:

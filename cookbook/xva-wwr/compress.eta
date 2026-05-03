@@ -1,0 +1,123 @@
+;;; cookbook/xva-wow/compress.eta -- QP helpers for unwind compression.
+
+(module compress
+  (export
+    simm-ir-delta-covariance
+    matrix-prefix
+    quadratic-risk-expr
+    objective-value
+    solve-compression-qp)
+  (import std.core)
+  (import std.collections)
+  (import std.logic)
+  (import std.clpr)
+  (begin
+
+    ;; SIMM-style IR delta covariance literal (10x10).
+    (define simm-ir-delta-covariance
+      '((1.00 0.35 0.30 0.25 0.20 0.18 0.16 0.14 0.12 0.10)
+        (0.35 1.00 0.32 0.27 0.22 0.20 0.18 0.16 0.14 0.12)
+        (0.30 0.32 1.00 0.29 0.24 0.22 0.20 0.18 0.16 0.14)
+        (0.25 0.27 0.29 1.00 0.26 0.24 0.22 0.20 0.18 0.16)
+        (0.20 0.22 0.24 0.26 1.00 0.25 0.23 0.21 0.19 0.17)
+        (0.18 0.20 0.22 0.24 0.25 1.00 0.24 0.22 0.20 0.18)
+        (0.16 0.18 0.20 0.22 0.23 0.24 1.00 0.23 0.21 0.19)
+        (0.14 0.16 0.18 0.20 0.21 0.22 0.23 1.00 0.22 0.20)
+        (0.12 0.14 0.16 0.18 0.19 0.20 0.21 0.22 1.00 0.21)
+        (0.10 0.12 0.14 0.16 0.17 0.18 0.19 0.20 0.21 1.00)))
+
+    (defun matrix-prefix (m n)
+      (let ((rows (take n m)))
+        (map* (lambda (row) (take n row)) rows)))
+
+    (defun make-real-vars (n lo hi)
+      (if (= n 0)
+          '()
+          (let ((v (logic-var)))
+            (clp:real v lo hi)
+            (cons v (make-real-vars (- n 1) lo hi)))))
+
+    (defun dot-expr (coeffs vars)
+      (if (or (null? coeffs) (null? vars))
+          0.0
+          (clp:r+
+            (clp:r*scalar (car coeffs) (car vars))
+            (dot-expr (cdr coeffs) (cdr vars)))))
+
+    (defun sum-exprs (exprs)
+      (if (null? exprs)
+          0.0
+          (clp:r+ (car exprs) (sum-exprs (cdr exprs)))))
+
+    (defun row-terms (row ws wi)
+      (if (or (null? row) (null? ws))
+          '()
+          (cons
+            (clp:r*scalar (car row) (list '* wi (car ws)))
+            (row-terms (cdr row) (cdr ws) wi))))
+
+    (defun quadratic-terms (rows ws full-ws)
+      (if (or (null? rows) (null? ws))
+          '()
+          (append
+            (row-terms (car rows) full-ws (car ws))
+            (quadratic-terms (cdr rows) (cdr ws) full-ws))))
+
+    (defun quadratic-risk-expr (ws sigma)
+      (sum-exprs (quadratic-terms sigma ws ws)))
+
+    (defun mat-vec (row v)
+      (if (or (null? row) (null? v))
+          0.0
+          (+ (* (car row) (car v)) (mat-vec (cdr row) (cdr v)))))
+
+    (defun quad-value-rows (rows ws full-w)
+      (if (or (null? rows) (null? ws))
+          0.0
+          (+ (* (car ws) (mat-vec (car rows) full-w))
+             (quad-value-rows (cdr rows) (cdr ws) full-w))))
+
+    (defun quad-value (w sigma)
+      (quad-value-rows sigma w w))
+
+    (defun objective-value (delta sigma funding-lambda)
+      (+ (* 0.5 (quad-value delta sigma))
+         (* funding-lambda (foldl (lambda (acc x) (+ acc x)) 0.0 delta))))
+
+    ;; Bind every (var . value) pair in `witness` to its numeric
+    ;; optimum, so the deltas can be deref'd to plain floats.
+    (defun %apply-qp-witness! (witness)
+      (if (null? witness)
+          #t
+          (begin
+            (unify (car (car witness)) (cdr (car witness)))
+            (%apply-qp-witness! (cdr witness)))))
+
+    ;; Solve:
+    ;;   min  0.5 * delta^T * Sigma * delta + lambda * 1^T delta
+    ;; s.t.  -1 <= delta_i <= 1
+    ;;
+    ;; Returns (list optimum delta-values) where delta-values is a
+    ;; plain list of floats (the unwind set), one per dv01 bucket.
+    (defun solve-compression-qp (dv01 funding-lambda)
+      (let* ((n (length dv01))
+             (sigma (matrix-prefix simm-ir-delta-covariance n))
+             (mark (trail-mark))
+             (delta (make-real-vars n -1.0 1.0))
+             (risk (quadratic-risk-expr delta sigma))
+             (carry (dot-expr dv01 delta))
+             (objective (clp:r+ (clp:r*scalar 0.5 risk)
+                                (clp:r*scalar funding-lambda carry))))
+        (call-with-values
+          (lambda () (clp:rq-minimize objective))
+          (lambda (optimum witness)
+            ;; Bind logic vars to their optimal values, deref to plain
+            ;; floats, THEN unwind the trail.  Doing the unwind first
+            ;; leaves `delta` unbound and any later deref returns a
+            ;; non-number, which downstream printers reject.
+            (%apply-qp-witness! witness)
+            (let ((delta-vals (map* (lambda (v) (deref-lvar v)) delta)))
+              (unwind-trail mark)
+              (list optimum delta-vals))))))
+
+  ))

@@ -15,7 +15,7 @@ implemented as native C++ bindings exposed through the `std.torch` module,
 so there is no FFI overhead or marshalling boundary beyond a thin wrapper.
 
 ```bash
-etai examples/torch.eta
+etai cookbook/ml/torch.eta
 ```
 
 > [!NOTE]
@@ -482,7 +482,7 @@ cmake -B build -DTorch_DIR=/path/to/libtorch/share/cmake/Torch
 
 ## Test Suite
 
-The `examples/torch_tests/` directory contains a comprehensive integration
+The `cookbook/tests/torch/` directory contains a comprehensive integration
 test suite that exercises every `std.torch` primitive through the full Eta
 pipeline (lex → parse → expand → link → emit → execute).  Each file is a
 standalone module that uses the `std.test` framework and prints a
@@ -490,16 +490,16 @@ pass/fail summary.
 
 | File | Coverage |
 |------|----------|
-| [`tensor_creation.eta`](../../../examples/torch_tests/tensor_creation.eta) | `tensor`, `ones`, `zeros`, `randn`, `arange`, `linspace`, `from-list`, `tensor?` |
-| [`arithmetic.eta`](../../../examples/torch_tests/arithmetic.eta) | `t+`, `t-`, `t*`, `t/`, `matmul`, `dot`, `neg`, `tabs`, `texp`, `tlog`, `tsqrt`, `relu`, `sigmoid`, `ttanh`, `softmax` |
-| [`shape_ops.eta`](../../../examples/torch_tests/shape_ops.eta) | `shape`, `reshape`, `transpose`, `squeeze`, `unsqueeze`, `cat`, `numel` |
-| [`reductions.eta`](../../../examples/torch_tests/reductions.eta) | `tsum`, `mean`, `tmax`, `tmin`, `argmax`, `argmin` |
-| [`autograd.eta`](../../../examples/torch_tests/autograd.eta) | `requires-grad!`, `requires-grad?`, `backward`, `grad`, `zero-grad!`, `detach` |
-| [`nn_layers.eta`](../../../examples/torch_tests/nn_layers.eta) | `linear`, `sequential`, `relu-layer`, `sigmoid-layer`, `dropout`, `forward`, `parameters`, `module?`, `train!`, `eval!` |
-| [`loss_functions.eta`](../../../examples/torch_tests/loss_functions.eta) | `mse-loss`, `l1-loss` |
-| [`optimizers.eta`](../../../examples/torch_tests/optimizers.eta) | `sgd`, `adam`, `step!`, `optim-zero-grad!`, `optimizer?` |
-| [`device_info.eta`](../../../examples/torch_tests/device_info.eta) | `gpu-available?`, `gpu-count`, `device`, `to-device`, `to-cpu` |
-| [`training.eta`](../../../examples/torch_tests/training.eta) | `train-step!`, SGD/Adam convergence, sequential network training |
+| [`tensor_creation.eta`](../../../cookbook/tests/torch/tensor_creation.eta) | `tensor`, `ones`, `zeros`, `randn`, `arange`, `linspace`, `from-list`, `tensor?` |
+| [`arithmetic.eta`](../../../cookbook/tests/torch/arithmetic.eta) | `t+`, `t-`, `t*`, `t/`, `matmul`, `dot`, `neg`, `tabs`, `texp`, `tlog`, `tsqrt`, `relu`, `sigmoid`, `ttanh`, `softmax` |
+| [`shape_ops.eta`](../../../cookbook/tests/torch/shape_ops.eta) | `shape`, `reshape`, `transpose`, `squeeze`, `unsqueeze`, `cat`, `numel` |
+| [`reductions.eta`](../../../cookbook/tests/torch/reductions.eta) | `tsum`, `mean`, `tmax`, `tmin`, `argmax`, `argmin` |
+| [`autograd.eta`](../../../cookbook/tests/torch/autograd.eta) | `requires-grad!`, `requires-grad?`, `backward`, `grad`, `zero-grad!`, `detach` |
+| [`nn_layers.eta`](../../../cookbook/tests/torch/nn_layers.eta) | `linear`, `sequential`, `relu-layer`, `sigmoid-layer`, `dropout`, `forward`, `parameters`, `module?`, `train!`, `eval!` |
+| [`loss_functions.eta`](../../../cookbook/tests/torch/loss_functions.eta) | `mse-loss`, `l1-loss` |
+| [`optimizers.eta`](../../../cookbook/tests/torch/optimizers.eta) | `sgd`, `adam`, `step!`, `optim-zero-grad!`, `optimizer?` |
+| [`device_info.eta`](../../../cookbook/tests/torch/device_info.eta) | `gpu-available?`, `gpu-count`, `device`, `to-device`, `to-cpu` |
+| [`training.eta`](../../../cookbook/tests/torch/training.eta) | `train-step!`, SGD/Adam convergence, sequential network training |
 
 The stdlib test suite also includes [`stdlib/tests/torch.test.eta`](../../../stdlib/tests/torch.test.eta),
 which validates `cholesky` and `mvnormal` via the Eta test runner.
@@ -510,16 +510,16 @@ Run all torch tests at once:
 
 ```bash
 # All tests (Linux / macOS)
-for f in examples/torch_tests/*.eta; do echo "── $f"; etai "$f"; done
+for f in cookbook/tests/torch/*.eta; do echo "── $f"; etai "$f"; done
 
 # All tests (Windows PowerShell)
-Get-ChildItem examples\torch_tests\*.eta | ForEach-Object { Write-Host "── $_"; etai $_ }
+Get-ChildItem cookbook\tests\torch\*.eta | ForEach-Object { Write-Host "── $_"; etai $_ }
 ```
 
 Run a single test file:
 
 ```bash
-etai examples/torch_tests/tensor_creation.eta
+etai cookbook/tests/torch/tensor_creation.eta
 ```
 
 The C++ unit tests in `eta/qa/test/src/torch_tests.cpp` mirror these Eta tests
@@ -545,10 +545,10 @@ The integration is structured as three layers:
    builtins under clean names (`t+`, `matmul`, `forward`, etc.) and
    provides the `train-step!` helper.
 
-3. **`examples/torch.eta`** — End-to-end example covering tensor creation,
+3. **`cookbook/ml/torch.eta`** — End-to-end example covering tensor creation,
    autograd, network construction, and training with both SGD and Adam.
 
-4. **`examples/torch_tests/`** — 10-file integration test suite covering
+4. **`cookbook/tests/torch/`** — 10-file integration test suite covering
    every exported function in `std.torch`.
 
 The C++ primitives handle type marshalling between NaN-boxed `LispVal`

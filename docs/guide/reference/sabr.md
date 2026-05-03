@@ -8,7 +8,7 @@
 
 ## Overview
 
-[`examples/sabr.eta`](../../../examples/sabr.eta) implements the **Hagan et al.
+[`cookbook/quant/sabr.eta`](../../../cookbook/quant/sabr.eta) implements the **Hagan et al.
 (2002)** SABR implied volatility approximation and computes **all model
 sensitivities** using Eta's built-in **tape-based reverse-mode AD**.
 
@@ -20,7 +20,7 @@ sensitivities** using Eta's built-in **tape-based reverse-mode AD**.
 - Plain arithmetic (`+`, `-`, `*`, `/`, `exp`, `log`, `sqrt`) with transparent tape recording
 
 ```bash
-etai examples/sabr.eta
+etai cookbook/quant/sabr.eta
 ```
 
 > [!NOTE]

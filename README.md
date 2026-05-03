@@ -1,4 +1,4 @@
-﻿<div align="center" style="display: flex; justify-content: center; align-items: center; gap: 20px;">
+<div align="center" style="display: flex; justify-content: center; align-items: center; gap: 20px;">
   <img src="docs/img/eta.svg" alt="Eta logo" width="120">
   <div style="text-align: left;">
     <h1 style="margin: 0;">η (Eta)</h1>
@@ -21,7 +21,7 @@
   <strong>Featured Examples</strong><br>
   Causal Decision Engine for Portfolio Optimisation 
   <a href="docs/featured/portfolio.md">docs</a> ·
-  <a href="examples/notebooks/Portfolio.ipynb">notebook</a><br>
+  <a href="cookbook/notebooks/Portfolio.ipynb">notebook</a><br>
   Wrong-Way Risk via do-interventions 
   <a href="docs/featured/xva-wwr.md">docs</a>
 </p>
@@ -32,7 +32,7 @@
   <a href="docs/featured/portfolio.md">
     Causal Decision Engine for Portfolio Optimisation
   </a> ·
-  <a href="examples/notebooks/Portfolio.ipynb">notebook</a><br>
+  <a href="cookbook/notebooks/Portfolio.ipynb">notebook</a><br>
   <a href="docs/featured/xva-wwr.md">
     Wrong-Way Risk via do-interventions
   </a>
@@ -136,7 +136,7 @@ Eta allows you to mix paradigms easily. In this snippet, we define a mathematica
 ## Explore More
 
 *   **[Language Guide](docs/language_guide.md)** — structured tour of the language, with deep dives into syntax, macros, logic, AAD, concurrency, and tooling.
-*   **[Examples Tour](docs/guide/examples-tour.md)** — guided reading order for everything in [`examples/`](examples/).
+*   **[Examples Tour](docs/guide/examples-tour.md)** — guided reading order for everything in [`cookbook/`](cookbook/).
 *   **[Standard Library Reference](docs/guide/reference/modules.md)** — modules for logic, math, torch, actors, and more.
 *   **[Architecture](docs/architecture.md)** — NaN-boxed VM and compilation pipeline.
 *   **[Causal Inference Primer](docs/guide/reference/causal.md)** — Pearl's do-calculus in Eta.

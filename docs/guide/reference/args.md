@@ -1,4 +1,4 @@
-﻿# Command-Line Arguments (`std.args`)
+# Command-Line Arguments (`std.args`)
 
 [← Back to Language Guide](../../language_guide.md) ·
 [I/O](../io.md) ·
@@ -56,7 +56,7 @@ configuration files. Compose those with `std.os`, `std.json`, and
 ```
 
 For the runnable demo see
-[`examples/args.eta`](../../../examples/args.eta); for tested behaviour
+[`cookbook/basics/args.eta`](../../../cookbook/basics/args.eta); for tested behaviour
 see [`stdlib/tests/args.test.eta`](../../../stdlib/tests/args.test.eta).
 
 ---

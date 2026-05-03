@@ -1,0 +1,84 @@
+;;; basics.eta — Core language fundamentals
+;;;
+;;; Run:  etai cookbook/basics/basics.eta
+
+(module basics
+  (import std.io)
+  (begin
+
+    (define win (eq? (platform) 'Win32))
+
+    (println (if win "-- Arithmetic --"              "── Arithmetic ──"))
+    (println (+ 1 2 3))          ; => 6
+    (println (* 2 3 4))          ; => 24
+    (println (- 10 3))           ; => 7
+
+    (println (if win "-- Booleans & Conditionals --" "── Booleans & Conditionals ──"))
+    (println (and #t #f))        ; => #f
+    (println (or  #f #t))        ; => #t
+    (println (not #f))           ; => #t
+
+    (println (if (> 3 2) "yes" "no"))  ; => "yes"
+
+    (println (cond
+      ((= 1 2) "nope")
+      ((= 1 1) "match!")
+      (#t      "default")))     ; => "match!"
+
+    (println (if win "-- Variables & Let --"         "── Variables & Let ──"))
+    (define x 42)
+    (println x)                  ; => 42
+
+    (let ((a 10) (b 20))
+      (println (+ a b)))         ; => 30
+
+    ;; let* — sequential bindings (each sees the previous)
+    (let* ((a 1)
+           (b (+ a 1))
+           (c (+ a b)))
+      (println c))               ; => 4
+
+    (println (if win "-- Strings --"                 "── Strings ──"))
+    (println (string-append "hello" ", " "world!"))
+    (println (string-length "eta"))   ; => 3
+
+    (println (if win "-- Pairs & Lists --"           "── Pairs & Lists ──"))
+    (define pair (cons 1 2))
+    (println (car pair))         ; => 1
+    (println (cdr pair))         ; => 2
+
+    (define xs (list 1 2 3 4 5))
+    (println xs)                 ; => (1 2 3 4 5)
+    (println (length xs))        ; => 5
+    (println (append '(a b) '(c d)))  ; => (a b c d)
+
+    (println (if win "-- Records --"                 "── Records ──"))
+    ;; define-record-type: name, constructor, predicate, (field accessor) …
+    (define-record-type <point>
+      (make-point x y)
+      point?
+      (x point-x)
+      (y point-y))
+
+    (define p (make-point 3 4))
+    (println (point? p))         ; => #t
+    (println (point-x p))        ; => 3
+    (println (point-y p))        ; => 4
+    (println (pair? p))          ; => #f  (records are not pairs)
+
+    ;; Records with a mutable field
+    (define-record-type <counter>
+      (make-counter value)
+      counter?
+      (value counter-value set-counter-value!))
+
+    (define c (make-counter 0))
+    (set-counter-value! c (+ (counter-value c) 1))
+    (println (counter-value c))  ; => 1
+
+    (println (if win "-- Symbols & Quoting --"       "── Symbols & Quoting ──"))
+    (println 'hello)             ; => hello
+    (println '(one two three))   ; => (one two three)
+
+  ))
+

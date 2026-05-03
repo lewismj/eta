@@ -83,7 +83,7 @@ choice, it picks one and explains why.
 | Prelude load | `Driver::load_prelude()` — re-parses & re-compiles `prelude.eta` every cold start | Bundled `prelude.etac`, lazy recompile on hash mismatch. |
 | CLI | `etac`, `etai`, `eta_repl`, `eta_lsp`, `eta_dap`, `eta_jupyter` | Adds `eta` umbrella with subcommands; existing binaries keep their CLIs. |
 | Project metadata | None — projects are loose `.eta` files in a tree | `eta.toml` + `eta.lock`. |
-| Per-project deps | None — `examples/xva-wwr/ml-calibration-test.eta` manually sets `$env:ETA_MODULE_PATH` | Implicit project root injection by `eta` CLI. |
+| Per-project deps | None — `cookbook/xva-wwr/ml-calibration-test.eta` manually sets `$env:ETA_MODULE_PATH` | Implicit project root injection by `eta` CLI. |
 | Native deps | Hard-coded into the runtime; `BuiltinCountMismatch` makes a torch-built `.etac` un-loadable on a non-torch runtime | Manifest-level `requires-native` declaration; runtime self-describes its capability set. |
 
 ---
@@ -121,7 +121,7 @@ mathx/                       ← package root (the directory that contains eta.t
 │       └── trig.eta         ← (module mathx._internal.trig …) — leading "_" = private convention
 ├── tests/                   ← run by `eta test`; can `(import mathx)` directly
 │   └── linalg.test.eta
-├── examples/                ← run by `eta run --example NAME`
+├── cookbook/                ← run by `eta run --example NAME`
 │   └── solve_demo.eta
 ├── bench/                   ← run by `eta bench`
 │   └── matmul_bench.eta
@@ -837,10 +837,10 @@ breaking it.
    already exists at `stdlib/std/`; we add a thin `stdlib/src/` that
    symlinks (or, on Windows, mirrors) to `stdlib/std/` *or* simply
    move the tree (preferred long-term, but a follow-up PR).
-2. **Examples.** Each `examples/<topic>/` gets an `eta.toml` with a
+2. **Examples.** Each `cookbook/<topic>/` gets an `eta.toml` with a
    single `path` dep on the in-tree stdlib. The current
    `$env:ETA_MODULE_PATH=…` boilerplate at the top of files like
-   `examples/xva-wwr/ml-calibration-test.eta` disappears.
+   `cookbook/xva-wwr/ml-calibration-test.eta` disappears.
 3. **Tests.** `stdlib/tests/*.test.eta` are reorganised under the new
    per-package `tests/` convention (see §4.1). The
    `_putenv_s("ETA_MODULE_PATH", …)` invocation in
@@ -874,7 +874,7 @@ TAP/JUnit style already used by `std.test`.
 | Cross-platform | CI matrix | Windows / Linux / macOS runs `eta build` on a fixed example and asserts byte-identical `.etac` |
 
 Acceptance bar: ≥ 50 new tests, ≥ 90% line coverage on the new
-`eta::package::*` namespace, every example in `examples/` migrates and
+`eta::package::*` namespace, every example in `cookbook/` migrates and
 keeps running.
 
 ---

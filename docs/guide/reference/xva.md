@@ -42,7 +42,7 @@
 
 ## Overview
 
-[`examples/xva.eta`](../../../examples/xva.eta) builds on
+[`cookbook/quant/xva.eta`](../../../cookbook/quant/xva.eta) builds on
 Eta's built-in [tape-based reverse-mode AD](aad.md) to illustrate **xVA**
 calculations and their **sensitivities**.
 
@@ -59,7 +59,7 @@ calculations and their **sensitivities**.
 - Zero closure allocations — all tape recording happens at the C++ level
 
 ```bash
-etai examples/xva.eta
+etai cookbook/quant/xva.eta
 ```
 
 > [!NOTE]

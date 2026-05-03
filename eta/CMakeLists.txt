@@ -144,7 +144,7 @@ if(NOT WIN32)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 
-# Runtime core and native capability modules.
+# Runtime core and builtins modules.
 add_subdirectory("${ETA_CORE_DIR}" core)
 add_subdirectory("${ETA_TORCH_DIR}")
 add_subdirectory("${ETA_NNG_DIR}")
