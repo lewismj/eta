@@ -170,7 +170,6 @@ void DapServer::dispatch(const Value& msg) {
     const Value& id   = msg["seq"];
     const Value& args = msg.has("arguments") ? msg["arguments"] : Value{};
     current_command_  = *cmd;
-    const std::string req = id.is_int() ? std::to_string(id.as_int()) : "?";
 
     try {
         if (*cmd == "initialize")               handle_initialize(id, args);
@@ -208,7 +207,23 @@ void DapServer::dispatch(const Value& msg) {
             send_response(id, json::object({}));
         }
     } catch (const std::exception& e) {
-        throw;
+        const std::string request = cmd.value_or("<unknown>");
+        const std::string message =
+            "[eta_dap] internal adapter error while handling '" + request + "': " + e.what();
+        send_event("output", json::object({
+            {"category", "stderr"},
+            {"output", message + "\n"},
+        }));
+        send_error_response(id, 1999, message);
+    } catch (...) {
+        const std::string request = cmd.value_or("<unknown>");
+        const std::string message =
+            "[eta_dap] internal adapter error while handling '" + request + "': unknown exception";
+        send_event("output", json::object({
+            {"category", "stderr"},
+            {"output", message + "\n"},
+        }));
+        send_error_response(id, 1999, message);
     }
 }
 
@@ -567,6 +582,11 @@ void DapServer::start_vm_from_current_launch() {
     /// Build module search roots from the script's package context.
     auto resolver = interpreter::ModulePathResolver::from_args_or_env_at(
         "", script_dir.empty() ? fs::current_path() : script_dir);
+    /**
+     * Source-level debugging should prefer .eta when both .eta and .etac are
+     * present.  .etac remains a fallback when source is unavailable.
+     */
+    resolver.set_prefer_source(true);
     /// Also search the directory containing the script being debugged.
     if (!script_dir.empty()) resolver.add_dir(script_dir);
 
@@ -787,14 +807,16 @@ void DapServer::handle_stack_trace(const Value& id, const Value& args) {
     for (const auto& fi : frames) {
         const auto& sp = fi.span;
         Value source_val = source_json_for(drv, sp.file_id);
+        const uint32_t line = std::max<uint32_t>(1u, sp.start.line);
+        const uint32_t column = std::max<uint32_t>(1u, sp.start.column);
 
         const int frame_id = tid_high | (frame_idx & 0xFFFF);
         frames_arr.push_back(json::object({
             {"id",     Value(static_cast<int64_t>(frame_id))},
             {"name",   fi.func_name.empty() ? Value("<anonymous>") : Value(fi.func_name)},
             {"source", source_val},
-            {"line",   Value(static_cast<int64_t>(sp.start.line))},
-            {"column", Value(static_cast<int64_t>(sp.start.column))},
+            {"line",   Value(static_cast<int64_t>(line))},
+            {"column", Value(static_cast<int64_t>(column))},
         }));
         ++frame_idx;
     }

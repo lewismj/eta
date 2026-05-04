@@ -214,6 +214,18 @@ BOOST_AUTO_TEST_CASE(resolve_prefers_etac_over_eta_within_same_root) {
     BOOST_TEST(result->extension() == ".etac");
 }
 
+BOOST_AUTO_TEST_CASE(resolve_prefers_eta_when_source_mode_enabled) {
+    TempDir d;
+    d.create_file("std/core.eta", "(module std.core)");
+    d.create_file("std/core.etac", "ETAC");
+
+    ModulePathResolver r{{d.path}};
+    r.set_prefer_source(true);
+    auto result = r.resolve("std.core");
+    BOOST_REQUIRE(result.has_value());
+    BOOST_TEST(result->extension() == ".eta");
+}
+
 BOOST_AUTO_TEST_CASE(resolve_keeps_first_hit_semantics_across_roots) {
     TempDir d1, d2;
     d1.create_file("std/core.eta", "(module std.core)");
@@ -245,6 +257,18 @@ BOOST_AUTO_TEST_CASE(resolve_std_prelude_prefers_std_subdir_etac) {
     auto result = r.resolve("std.prelude");
     BOOST_REQUIRE(result.has_value());
     BOOST_TEST(result->filename() == "prelude.etac");
+}
+
+BOOST_AUTO_TEST_CASE(resolve_std_prelude_prefers_source_when_source_mode_enabled) {
+    TempDir d;
+    d.create_file("std/prelude.eta", "(module std.prelude)");
+    d.create_file("std/prelude.etac", "ETAC");
+
+    ModulePathResolver r{{d.path}};
+    r.set_prefer_source(true);
+    auto result = r.resolve("std.prelude");
+    BOOST_REQUIRE(result.has_value());
+    BOOST_TEST(result->filename() == "prelude.eta");
 }
 
 BOOST_AUTO_TEST_CASE(resolve_std_prelude_does_not_use_legacy_root_files) {

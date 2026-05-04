@@ -59,6 +59,14 @@ in the workspace.
 }
 ```
 
+> [!IMPORTANT]
+> **Pre-v1.0 module preference in VS Code debugging**
+> - In debug sessions (`eta_dap`), Eta prefers `.eta` over `.etac` when both are present.
+> - In normal run mode, Eta prefers `.etac` over `.eta` for module resolution.
+> - Debugging with only `.etac` artifacts is supported, but source-level detail depends on whether the artifacts were built with debug metadata.
+> - Freshness checks can still fall back from a stale `.etac` to a sibling `.eta` source file.
+> - Planned for v1.0: the default debug preference is expected to switch to `.etac`.
+
 ---
 
 ## VS Code panels

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
@@ -32,9 +33,11 @@ class ModulePathResolver {
 public:
     /// Construct with explicit search directories.
     explicit ModulePathResolver(std::vector<fs::path> dirs = {},
-                                bool strict_shadow_scan = false)
+                                bool strict_shadow_scan = false,
+                                bool prefer_source = false)
         : dirs_(std::move(dirs)),
-          strict_shadow_scan_(strict_shadow_scan) {}
+          strict_shadow_scan_(strict_shadow_scan),
+          prefer_source_(prefer_source) {}
 
     /**
      * Construct from a PATH-style string (semicolon-delimited on Windows,
@@ -42,7 +45,7 @@ public:
      */
     static ModulePathResolver from_path_string(std::string_view path_str) {
         std::vector<fs::path> dirs;
-        if (path_str.empty()) return ModulePathResolver{dirs, false};
+        if (path_str.empty()) return ModulePathResolver{dirs, false, false};
 
 #ifdef _WIN32
         constexpr char sep = ';';
@@ -60,7 +63,7 @@ public:
             }
             start = pos + 1;
         }
-        return ModulePathResolver{std::move(dirs), false};
+        return ModulePathResolver{std::move(dirs), false, false};
     }
 
     /**
@@ -239,25 +242,22 @@ public:
      * Per root, `.etac` is preferred over `.eta`.
      */
     [[nodiscard]] std::vector<fs::path> resolve_all(const std::string& module_name) const {
-        const auto rel_etac = module_to_relative(module_name, ".etac");
         const auto rel_eta = module_to_relative(module_name, ".eta");
+        const auto rel_etac = module_to_relative(module_name, ".etac");
 
         std::vector<fs::path> matches;
         matches.reserve(dirs_.size());
         for (const auto& dir : dirs_) {
             std::error_code ec;
-
-            auto etac_candidate = dir / rel_etac;
-            if (fs::is_regular_file(etac_candidate, ec) && !ec) {
-                matches.push_back(canonicalize_path(etac_candidate));
-                continue;
-            }
-            ec.clear();
-
-            auto eta_candidate = dir / rel_eta;
-            if (fs::is_regular_file(eta_candidate, ec) && !ec) {
-                matches.push_back(canonicalize_path(eta_candidate));
-                continue;
+            const std::array<fs::path, 2> candidates = prefer_source_
+                ? std::array<fs::path, 2>{dir / rel_eta, dir / rel_etac}
+                : std::array<fs::path, 2>{dir / rel_etac, dir / rel_eta};
+            for (const auto& candidate : candidates) {
+                if (fs::is_regular_file(candidate, ec) && !ec) {
+                    matches.push_back(canonicalize_path(candidate));
+                    break;
+                }
+                ec.clear();
             }
         }
         return matches;
@@ -288,9 +288,11 @@ public:
     [[nodiscard]] const std::vector<fs::path>& dirs() const noexcept { return dirs_; }
     [[nodiscard]] bool empty() const noexcept { return dirs_.empty(); }
     [[nodiscard]] bool strict_shadow_scan() const noexcept { return strict_shadow_scan_; }
+    [[nodiscard]] bool prefer_source() const noexcept { return prefer_source_; }
 
     void add_dir(fs::path dir) { dirs_.push_back(std::move(dir)); }
     void set_strict_shadow_scan(bool enabled) noexcept { strict_shadow_scan_ = enabled; }
+    void set_prefer_source(bool enabled) noexcept { prefer_source_ = enabled; }
 
 private:
     [[nodiscard]] static fs::path canonicalize_path(const fs::path& path) {
@@ -328,6 +330,7 @@ private:
 
     std::vector<fs::path> dirs_;
     bool strict_shadow_scan_{false};
+    bool prefer_source_{false};
 };
 
 } ///< namespace eta::interpreter

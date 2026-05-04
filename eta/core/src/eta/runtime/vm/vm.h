@@ -239,13 +239,26 @@ public:
              * (which is wrong because the debug hook fires pre-increment).
              */
             auto sp = debug_->stopped_span();
-            debug_->step_over(sp, frames_.size());
+            /**
+             * Compiled artifacts without debug spans (e.g. .etac built with
+             * --no-debug) report file_id/line as zero. In that mode, source-line
+             * stepping cannot make progress; fall back to instruction stepping.
+             */
+            if (sp.file_id == 0 || sp.start.line == 0) {
+                debug_->step_over_instruction(frames_.size());
+            } else {
+                debug_->step_over(sp, frames_.size());
+            }
         }
     }
     void step_in()       {
         if (debug_) {
             auto sp = debug_->stopped_span();
-            debug_->step_in(sp, frames_.size());
+            if (sp.file_id == 0 || sp.start.line == 0) {
+                debug_->step_in_instruction(frames_.size());
+            } else {
+                debug_->step_in(sp, frames_.size());
+            }
         }
     }
     void step_out()      { if (debug_) debug_->step_out(frames_.size()); }

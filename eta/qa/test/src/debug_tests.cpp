@@ -389,6 +389,61 @@ BOOST_AUTO_TEST_CASE(step_over_stays_in_caller) {
     BOOST_CHECK(stops[1].reason == StopReason::Step);
 }
 
+BOOST_AUTO_TEST_CASE(step_over_without_source_span_falls_back_to_instruction_step) {
+    DebugFixture f;
+    const std::string src =
+        "(module test\n"
+        "  (define x 1)\n"
+        "  (define y (+ x 2))\n"
+        "  (define result (+ y 3)))";
+
+    auto* main_fn = f.compile(src, /*file_id=*/211);
+
+    for (std::size_t i = 0; i < f.registry.size(); ++i) {
+        auto* fn = f.registry.get_mut(static_cast<uint32_t>(i));
+        BOOST_REQUIRE(fn != nullptr);
+        for (auto& sp : fn->source_map) {
+            sp.file_id = 0;
+            sp.start.line = 0;
+            sp.start.column = 0;
+            sp.end.line = 0;
+            sp.end.column = 0;
+        }
+    }
+
+    auto vm = f.make_vm();
+    auto install = f.builtins.install(f.heap, vm->globals(), f.last_total_globals_);
+    BOOST_REQUIRE(install.has_value());
+
+    std::mutex mu;
+    std::condition_variable cv;
+    std::vector<StopEvent> stops;
+
+    vm->set_stop_callback([&](const StopEvent& ev) {
+        std::lock_guard<std::mutex> lk(mu);
+        stops.push_back(ev);
+        cv.notify_one();
+    });
+
+    vm->request_pause();
+    std::thread t([&] { (void)vm->execute(*main_fn); });
+
+    auto wait = [&](std::size_t n) {
+        std::unique_lock<std::mutex> lk(mu);
+        return cv.wait_for(lk, std::chrono::seconds(5), [&] { return stops.size() >= n; });
+    };
+
+    BOOST_REQUIRE_MESSAGE(wait(1), "Timed out waiting for initial pause");
+    BOOST_CHECK_EQUAL(stops[0].span.file_id, 0u);
+
+    vm->step_over();
+    BOOST_REQUIRE_MESSAGE(wait(2), "Timed out waiting for source-less step_over stop");
+    BOOST_CHECK(stops[1].reason == StopReason::Step);
+
+    vm->resume();
+    t.join();
+}
+
 BOOST_AUTO_TEST_CASE(resume_lets_script_complete) {
     DebugFixture f;
     auto* main_fn = f.compile("(module test (define result (+ 1 2)))", /*file_id=*/22);
