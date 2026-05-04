@@ -171,7 +171,7 @@ is the operationally useful statement.
 
 ### 0.2 What runs end-to-end
 
-`eta run -- all --seed 42 --fast` executes, in order:
+`eta run -- all --seed 42` executes, in order:
 
 1. **Generate** a deterministic trace under a baseline (rule-following but
    non-counting) dealer/player.
@@ -186,9 +186,8 @@ is the operationally useful statement.
    *"never split 10s"*, *"always split 8s"*) and print them ranked by
    coverage.
 
-The whole pipeline is reproducible (`--seed`) and budgeted (`--fast`
-finishes in ≤ 30s on a developer laptop), so it doubles as a smoke test
-for the packaging story.
+The whole pipeline is reproducible (`--seed`) and deterministic under
+fixed inputs, so it doubles as a smoke test for the packaging story.
 
 ### 0.3 What this demo deliberately is *not*
 
@@ -235,9 +234,9 @@ across paradigms buys properties an end-to-end policy net cannot offer:
    separable artefacts. Each can be inspected, snapshot-tested, and
    audited.
 3. **Sample efficiency.** A 13-parameter linear summary plus a small EV
-   head converges in seconds; an end-to-end policy net over the same
-   state would need orders of magnitude more rollouts to match — and
-   would still not yield a cheat sheet at the end.
+   head converges with modest data; an end-to-end policy net over the
+   same state would need orders of magnitude more rollouts to match —
+   and would still not yield a cheat sheet at the end.
 4. **Testability.** Each phase has a sharp acceptance criterion
    (rule equivalence, EV flip, cosine-to-Hi-Lo, chart agreement,
    maxim coverage). An end-to-end agent has only one (win-rate),
@@ -571,8 +570,8 @@ worker-pool patterns:
 1. `simulate : (policy, shoe, n) -> traces` produces
    `(state, action, count, reward)` tuples,
 2. shards across workers; deterministic seeds per shard,
-3. throughput target: **≥ 1M hands/min** on a 4-core laptop
-   (aspirational; benchmark in B2 before committing to it — see §10.1).
+3. deterministic replay checks ensure stable trace/stat outputs for a
+   fixed seed and configuration.
 
 #### 5.5.1 Frozen shoe parameters
 
@@ -592,9 +591,9 @@ To make count behaviour and acceptance reproducible, the demo fixes:
 These five values are constants in `shoe.eta` and surfaced in the app
 header so every printed result is fully specified.
 
-#### 5.5.2 Performance representation
+#### 5.5.2 Rollout representation
 
-To make 1M hands/min plausible on a functional runtime:
+To keep rollout execution simple, deterministic, and allocation-light:
 
 1. represent the shoe as a **rank-count vector** `[u8; 13]` (a 13-byte
    composition), not a list of cards — sampling a card is one
@@ -605,9 +604,9 @@ To make 1M hands/min plausible on a functional runtime:
 4. workers reuse arenas across rounds; only the trace summary crosses
    thread boundaries.
 
-If B2 benchmarking shows the functional shoe representation cannot hit
-the throughput target, drop the target rather than the representation
-purity — the §5.6 acceptance is in cosine, not wall-clock.
+The representation choice is correctness-first: preserve pure functional
+semantics and deterministic behavior, then optimize implementation details
+only if they do not change outputs.
 
 ### 5.6 `learn.eta` — Torch EV model and weight discovery
 
@@ -646,7 +645,7 @@ the policy are co-trained. This is the design that demonstrates the
 representation-learning claim and is the path the §0 narrative is
 built around.
 
-#### 5.6.2 Fallback path: supervised regression (CI + debugging baseline)
+#### 5.6.2 Fallback path: supervised regression (reproducibility + debugging baseline)
 
 A second mode, `--learn=supervised`, **fixes the policy to canonical
 basic strategy** (the §5.8.1 chart) and reduces the problem to a
@@ -654,7 +653,7 @@ supervised regression of EV residuals against shoe composition. This
 is *not* the headline — it is shipped as:
 
 1. **CI baseline** — deterministic, fast, no policy-iteration
-   variance, suitable for the `--fast` test budget.
+   variance, suitable for stable test execution.
 2. **Debugging anchor** — if the joint loop fails to recover Hi-Lo,
    the supervised path tells you whether the problem is in the
    representation/data (supervised also fails) or in the policy
@@ -896,10 +895,10 @@ eta run -- chart       # §5.7 — print strategy chart per count bucket
 eta run -- maxims      # §5.8 — print induced basic-strategy rules
                        #   --maxims=ilp         (default)
                        #   --maxims=templates   (fallback; §5.8.3)
-eta run -- all         # runs the five phases in order
+eta run -- all         # runs the full pipeline in order
 ```
 
-Common flags: `--seed <n>`, `--fast`, `--debug-trace <path>` (writes the
+Common flags: `--seed <n>`, `--debug-trace <path>` (writes the
 §5.6.3 per-decision CSV; the first artefact to inspect when an
 acceptance test regresses).
 
@@ -913,14 +912,14 @@ acceptance test regresses).
    - `induction`: induced rules equivalent to hand-written over fixed trace.
    - `causal`: `do()` sign of effect at known count thresholds.
    - `learn`: with trace from a *fixed* known-good policy, `w` recovers Hi-Lo
-     within tolerance using a small N for CI (full N gated behind a marker).
+     within tolerance on a deterministic training configuration.
    - `strategy`: snapshot of chart at `count=0` matches a checked-in fixture.
    - `maxims`: induced top-N rule list contains the §5.8 acceptance
      clauses; snapshot of the printed list is stable.
-2. **App smoke**: `eta run -- all --seed 42 --fast` exits 0 within budget
-   and prints the five expected section headers.
-3. **CI budget**: `--fast` mode (≤ 30s) is the default test path; the
-   high-N run is opt-in.
+2. **App smoke**: `eta run -- all --seed 42` exits 0
+   and prints the expected section headers.
+3. **CI stability**: default path is deterministic (fixed seeds/config),
+   and tolerance thresholds are explicit in tests.
 
 ---
 
@@ -934,7 +933,7 @@ eta test
 
 cd ../blackjack-demo
 eta build
-eta run -- all --seed 42 --fast
+eta run -- all --seed 42
 eta tree
 ```
 
@@ -961,18 +960,16 @@ Gate: `eta build && eta run` works in `blackjack-demo`.
 
 Gate: rule unit tests green.
 
-### B2 — Monte Carlo harness (benchmark gates downstream phases)
+### B2 — Monte Carlo harness (unblocks downstream phases)
 
 1. `mc.eta` with parallel sharding using the §5.5.2 compact
    representation (`[u8; 13]` shoe, fixed-size hand tuple),
 2. trace recorder schema frozen,
-3. throughput micro-benchmark **run before B3–B6 begin** so that the
-   downstream phases do not commit to a number that cannot be hit; if
-   below 1M hands/min, lower the target and proportionally lower the
-   `--fast` N rather than re-architecting later.
+3. deterministic replay checks run before B3–B6 begin so downstream
+   phases build on stable rollout behavior.
 
-Gate: ≥ 1M hands/min on dev machine **or** documented lower target with
-matching `--fast` budget; reproducible with seed.
+Gate: deterministic outputs are reproducible with fixed seed and the
+integration phases consume the harness successfully.
 
 ### B3 — Rule induction
 
@@ -993,9 +990,9 @@ Gate: causal flip test green.
 
 1. Torch model + joint optimization,
 2. policy iteration loop,
-3. weight recovery test (cosine ≥ 0.95) under fast budget.
+3. weight recovery test (cosine ≥ 0.95) on the deterministic training path.
 
-Gate: weight recovery test green in `--fast`.
+Gate: weight recovery test green.
 
 ### B6 — Strategy chart
 
@@ -1016,12 +1013,12 @@ Gate: maxim list contains the documented clauses; snapshot stable.
 
 ### B7 — App polish + docs
 
-1. subcommand UX, `--seed`, `--fast`,
+1. subcommand UX, `--seed`,
 2. cookbook README with copy-paste run instructions,
 3. README/TLDR/next-steps cross-links,
 4. optional notebook wrapper under `cookbook/notebooks/`.
 
-Gate: `eta run -- all --seed 42 --fast` produces the documented output.
+Gate: `eta run -- all --seed 42` produces the documented output.
 
 ### B8 — v1.5: extend action set to `{double, split}`
 
@@ -1065,18 +1062,17 @@ predicates induced equivalent to oracle.
 3. **MC variance hides EV flips** — Mitigation: paired-rollout variance
    reduction (same shoe seed for `hit` vs `stand` branch where possible);
    §5.8.2 acceptance uses tolerant agreement with `ε = 0.01`.
-4. **Torch availability on CI** — Mitigation: `--fast` path uses tiny model
-   + small N; full path is opt-in behind a test marker; §5.6.2 supervised
-   mode is policy-iteration-free and runs deterministically.
+4. **Torch availability on CI** — Mitigation: keep a deterministic
+   supervised path (§5.6.2), and keep test configs fixed so failures are
+   debuggable and reproducible.
 5. **Test flakiness from RNG** — Mitigation: every test fixes seeds and
    uses tolerance-based asserts with documented bounds.
-6. **Demo runtime budget** — Mitigation: `--fast` ≤ 30s default; full run
-   documented but not on CI critical path.
-7. **Throughput target may not hold on functional runtime** —
-   Mitigation: §5.5.2 specifies compact representations; B2 benchmarks
-   *before* downstream phases commit to the number; if 1M hands/min is
-   not achievable the target is dropped (cosine acceptance is
-   wall-clock-independent).
+6. **Long-running training loops slow feedback** — Mitigation: keep test
+   configurations small but fixed, and preserve one deterministic path as
+   the default verification route.
+7. **Parallel rollout implementation can hide correctness bugs** —
+   Mitigation: assert deterministic replay under fixed seeds and compare
+   aggregate stats between worker counts in B2.
 8. **Causal over-claim** — Mitigation: §5.4.1 caveat explicitly limits
    the identifiability claim; the headline framing is "intervention
    semantics + cross-paradigm direction agreement", not "EOR
@@ -1093,7 +1089,7 @@ versus what may be deliberately minimal:
 
 **Must be rock solid (the demo lives or dies on these):**
 
-1. Monte Carlo harness (§5.5) — determinism, throughput, paired-rollout
+1. Monte Carlo harness (§5.5) — determinism, paired-rollout
    variance reduction.
 2. Torch EV + weight recovery (§5.6) — the Hi-Lo punchline.
 3. Strategy chart (§5.7) — snapshot-stable, ≥ 98% agreement with §5.8.1.
@@ -1135,7 +1131,7 @@ The demo is complete when:
 
 1. `cookbook/blackjack/blackjack` builds and `eta test` is green,
 2. `cookbook/blackjack/blackjack-demo` builds and
-   `eta run -- all --seed 42 --fast` exits 0,
+   `eta run -- all --seed 42` exits 0,
 3. induced rules are equivalent to hand-written rules on the trace fixture,
 4. causal `do()` sweep shows the documented action flip,
 5. learned weight vector matches Hi-Lo within cosine ≥ 0.95,

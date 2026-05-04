@@ -97,8 +97,8 @@ These views update on every DAP `stopped` event.
 
 ## Related
 
-- [`vscode.md`](./reference/vscode.md)
-- [`runtime.md`](./reference/runtime.md), [`bytecode-vm.md`](./reference/bytecode-vm.md)
+- [VSCode](./reference/vscode.md)
+- [Runtime](./reference/runtime.md), [`bytecode-vm.md`](./reference/bytecode-vm.md)
 - [Bytecode & Tools](./bytecode-and-tools.md)
 - [Testing](./testing.md)
 
