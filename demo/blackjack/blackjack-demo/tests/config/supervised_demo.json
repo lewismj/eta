@@ -1,6 +1,7 @@
 {
   "seed": 42,
   "induce_rounds": 64,
+  "induce_workers": 8,
   "learn_mode": "supervised",
   "learn_epochs": 12,
   "learn_batch_size": 64,

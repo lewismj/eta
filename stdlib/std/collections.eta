@@ -16,6 +16,7 @@
     filter foldl foldr reduce
     any? every? count
     sum-by
+    join-with
     zip
     pairwise
     take drop
@@ -110,6 +111,16 @@
     ;; Sum transformed elements.
     (defun sum-by (f xs)
       (foldl (lambda (acc x) (+ acc (f x))) 0 xs))
+
+    ;; Join a list of strings with a separator.
+    (defun join-with (parts sep)
+      (if (null? parts)
+          ""
+          (let loop ((rest (cdr parts)) (acc (car parts)))
+            (if (null? rest)
+                acc
+                (loop (cdr rest)
+                      (string-append acc sep (car rest)))))))
 
     ;; Zip two lists into a list of pairs.
     (defun zip (xs ys)

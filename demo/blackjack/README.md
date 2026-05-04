@@ -6,17 +6,17 @@ This directory contains the blackjack demo packages defined in
 ## Packages
 
 - [`blackjack/`](blackjack/README.md): library package with deterministic shoe/rules, causal checks, learning, strategy charts, and maxim induction.
-- [`blackjack-demo/`](blackjack-demo/README.md): app package with the `induce|causal|learn|chart|maxims|all` CLI.
+- [`blackjack-demo/`](blackjack-demo/README.md): app package with the `induce|causal|learn|chart|maxims|report|all` CLI.
 - [`notebooks/`](notebooks/README.md): optional Jupyter notebook wrapper.
 
 ## Quick run (copy/paste)
 
 ```console
 cd demo/blackjack/blackjack
-ETA_HEAP_SOFT_LIMIT=500M HEAP=524288000 eta test
+ETA_HEAP_MEMORY=262144000 ETA_HEAP_SOFT_LIMIT=250M HEAP=262144000 eta test
 
 cd ../blackjack-demo
-ETA_HEAP_SOFT_LIMIT=500M HEAP=524288000 eta test
+ETA_HEAP_MEMORY=262144000 ETA_HEAP_SOFT_LIMIT=250M HEAP=262144000 eta test
 eta build
 eta run -- all --config tests/config/supervised_demo.json
 ```
@@ -31,6 +31,9 @@ The `all` command prints deterministic section headers:
 
 Each section also prints `elapsed-ms=...`, and the footer includes
 `total-elapsed-ms=...`.
+By default, timed runs also write a timestamped app log file
+(`blackjack-demo-<command>-<seed>-<epoch_ms>.log`) with phase start/end
+breadcrumbs, worker timing profiles, and report summaries.
 
 ## Links
 

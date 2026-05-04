@@ -1,11 +1,14 @@
 (module mc
   (import std.collections)
+  (import std.log)
+  (import std.time)
   (import shoe)
   (export
     frozen-decks
     frozen-penetration
     frozen-cut-card-remaining
     frozen-blackjack-payout
+    default-mc-workers
     trace-schema-version
     make-mc-shoe
     mc-shoe?
@@ -25,6 +28,7 @@
     trace-row-count
     trace-row-reward
     trace-row->alist
+    simulate-profiled
     simulate
     simulate-summary
     replay-deterministic
@@ -35,6 +39,7 @@
     (define frozen-decks 6)
     (define frozen-penetration 0.75)
     (define frozen-blackjack-payout 1.5)
+    (define default-mc-workers 8)
     (define trace-schema-version 'blackjack-trace-v1)
 
     (define-record-type <mc-shoe-config>
@@ -76,6 +81,10 @@
     (defun %quotient (a b)
       (/ (- a (modulo a b)) b))
 
+    (defun %alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if pair (cdr pair) #f)))
+
     (define frozen-cut-card-remaining
       (%quotient (* 52 frozen-decks) 4))
 
@@ -95,22 +104,6 @@
     (defun %total-cards (decks)
       (* 52 decks))
 
-    (defun %vector-copy (v)
-      (let ((n (vector-length v))
-            (copy (make-vector (vector-length v) 0)))
-        (let loop ((i 0))
-          (when (< i n)
-            (vector-set! copy i (vector-ref v i))
-            (loop (+ i 1))))
-        copy))
-
-    (defun %vector->list (v)
-      (let ((n (vector-length v)))
-        (let loop ((i 0) (acc '()))
-          (if (= i n)
-              (reverse acc)
-              (loop (+ i 1) (cons (vector-ref v i) acc))))))
-
     (defun %fresh-counts (decks)
       (let ((counts (make-vector 13 0))
             (per-rank (* 4 decks)))
@@ -126,8 +119,10 @@
                           0
                           (%normalize-seed seed)))
 
+    (define %hi-lo-weights-vec (list->vector hi-lo-weights))
+
     (defun %weight-for-rank (rank)
-      (list-ref hi-lo-weights (- rank 1)))
+      (vector-ref %hi-lo-weights-vec (- rank 1)))
 
     (defun %draw-index (counts pick)
       (let loop ((idx 0) (acc 0))
@@ -145,11 +140,10 @@
                  (pick (+ 1 (modulo seed2 (compact-shoe-remaining shoe))))
                  (counts (compact-shoe-counts shoe))
                  (idx (%draw-index counts pick))
-                 (rank (+ idx 1))
-                 (counts2 (%vector-copy counts)))
-            (vector-set! counts2 idx (- (vector-ref counts2 idx) 1))
+                 (rank (+ idx 1)))
+            (vector-set! counts idx (- (vector-ref counts idx) 1))
             (cons rank
-                  (%make-compact-shoe counts2
+                  (%make-compact-shoe counts
                                       (- (compact-shoe-remaining shoe) 1)
                                       (+ (compact-shoe-running-count shoe)
                                          (%weight-for-rank rank))
@@ -329,37 +323,191 @@
                           (cons (cons start size) acc))))))))
 
     (defun %simulate-shard (policy cfg start count)
-      (let ((arena (make-vector count '())))
-        (let loop ((i 0))
-          (if (= i count)
-              (%vector->list arena)
-              (let* ((round-index (+ start i))
-                     (round-seed (%mix-seed (mc-shoe-seed cfg) round-index)))
-                (vector-set! arena i (%simulate-round policy cfg round-index round-seed))
-                (loop (+ i 1)))))))
+      (let loop ((i 0) (acc '()))
+        (if (= i count)
+            (reverse acc)
+            (let* ((round-index (+ start i))
+                   (round-seed (%mix-seed (mc-shoe-seed cfg) round-index)))
+              (loop (+ i 1)
+                    (cons (%simulate-round policy cfg round-index round-seed) acc))))))
 
-    (defun %spawn-shard-worker (policy cfg)
+    (defun %make-worker-logger (path worker-id)
+      (let* ((logger-name (string-append
+                            "blackjack.mc.worker."
+                            (number->string worker-id)
+                            "."
+                            (number->string (time:now-ms))))
+             (sink (log:make-file-sink path 'truncate? #t))
+             (logger (log:make-logger logger-name (list sink))))
+        (log:set-pattern! logger "%v")
+        (log:flush-on! logger 'info)
+        logger))
+
+    (defun %spawn-shard-worker (policy cfg worker-id log-prefix)
       (spawn-thread
         (lambda ()
           (let* ((mb (current-mailbox))
                  (task (recv! mb 'wait))
                  (start (car task))
-                 (count (cdr task)))
-            (send! mb (%simulate-shard policy cfg start count) 'wait)))))
+                 (count (cdr task))
+                 (started-at-ms (time:now-ms))
+                 (log-path (if (> (string-length log-prefix) 0)
+                               (string-append
+                                 log-prefix
+                                 "-worker_"
+                                 (number->string worker-id)
+                                 ".log")
+                               ""))
+                 (logger (if (> (string-length log-path) 0)
+                             (%make-worker-logger log-path worker-id)
+                             #f)))
+            (if logger
+                (log:info logger
+                          (string-append
+                            "worker-start=worker_"
+                            (number->string worker-id)
+                            ", shard-start="
+                            (number->string start)
+                            ", shard-count="
+                            (number->string count)
+                            ", timestamp="
+                            (time:format-iso8601-local started-at-ms)))
+                #f)
+            (let* ((t0 (time:monotonic-ms))
+                   (rows (%simulate-shard policy cfg start count))
+                   (t1 (time:monotonic-ms))
+                   (elapsed-ms (time:elapsed-ms t0 t1))
+                   (finished-at-ms (time:now-ms))
+                   (stats (list
+                            (cons 'worker-id worker-id)
+                            (cons 'shard-start start)
+                            (cons 'shard-count count)
+                            (cons 'rows (length rows))
+                            (cons 'elapsed-ms elapsed-ms)
+                            (cons 'started-at-ms started-at-ms)
+                            (cons 'finished-at-ms finished-at-ms))))
+              (if logger
+                  (log:info logger
+                            (string-append
+                              "worker-end=worker_"
+                              (number->string worker-id)
+                              ", produced="
+                              (number->string (length rows))
+                              ", elapsed-ms="
+                              (number->string elapsed-ms)
+                              ", timestamp="
+                              (time:format-iso8601-local finished-at-ms)))
+                  #f)
+              (send! mb
+                     (list
+                       (cons 'rows rows)
+                       (cons 'stats stats))
+                     'wait)
+              (if logger
+                  (log:flush! logger)
+                  #f))))))
 
-    (defun %dispatch-workers (workers shards)
-      (for-each (lambda (pair)
-                  (send! (car pair) (cdr pair) 'wait))
-                (zip workers shards)))
+    (defun %dispatch-workers (workers shards . rest)
+      (let ((progress-hook (if (null? rest) #f (car rest))))
+        (let loop ((ws workers) (ss shards) (worker-index 1))
+          (cond
+            ((and (null? ws) (null? ss)) #t)
+            ((or (null? ws) (null? ss))
+             (error "%dispatch-workers: workers and shards length mismatch"))
+            (else
+              (let ((shard (car ss)))
+                (if progress-hook
+                    (progress-hook
+                      (string-append
+                        "dispatch-worker="
+                        (number->string worker-index)
+                        ", shard-start="
+                        (number->string (car shard))
+                        ", shard-count="
+                        (number->string (cdr shard))))
+                    #f)
+                (send! (car ws) shard 'wait)
+                (loop (cdr ws) (cdr ss) (+ worker-index 1))))))))
 
-    (defun %collect-workers (workers)
-      (map* (lambda (w) (recv! w 'wait)) workers))
+    (defun %collect-workers (workers . rest)
+      (let ((progress-hook (if (null? rest) #f (car rest))))
+        (let loop ((ws workers) (worker-index 1) (acc '()))
+          (if (null? ws)
+              (reverse acc)
+              (begin
+                (if progress-hook
+                    (progress-hook
+                      (string-append
+                        "collect-await-worker="
+                        (number->string worker-index)))
+                    #f)
+                (let* ((result (recv! (car ws) 'wait))
+                       (stats (%alist-get 'stats result)))
+                  (if progress-hook
+                      (progress-hook
+                        (string-append
+                          "collect-worker-done="
+                          (number->string worker-index)
+                          ", rows="
+                          (number->string (%alist-get 'rows stats))
+                          ", elapsed-ms="
+                          (number->string (%alist-get 'elapsed-ms stats))))
+                      #f)
+                  (loop (cdr ws)
+                        (+ worker-index 1)
+                        (cons result acc))))))))
 
-    (defun %cleanup-workers (workers)
-      (for-each (lambda (w) (thread-join w) (nng-close w)) workers))
+    (defun %cleanup-workers (workers . rest)
+      (let ((progress-hook (if (null? rest) #f (car rest))))
+        (let loop ((ws workers) (worker-index 1))
+          (if (null? ws)
+              #t
+              (let ((worker (car ws)))
+                (if progress-hook
+                    (progress-hook
+                      (string-append
+                        "cleanup-join-worker="
+                        (number->string worker-index)))
+                    #f)
+                (thread-join worker)
+                (if progress-hook
+                    (progress-hook
+                      (string-append
+                        "cleanup-close-worker="
+                        (number->string worker-index)))
+                    #f)
+                (nng-close worker)
+                (loop (cdr ws) (+ worker-index 1)))))))
 
     (defun %flatten (xss)
-      (foldl (lambda (acc xs) (append acc xs)) '() xss))
+      (flatten xss))
+
+    (defun %rows-from-worker-results (results)
+      (%flatten
+        (map* (lambda (result) (%alist-get 'rows result))
+              results)))
+
+    (defun %stats-from-worker-results (results)
+      (map* (lambda (result) (%alist-get 'stats result))
+            results))
+
+    (defun %sum-worker-elapsed-ms (stats)
+      (foldl (lambda (acc stat) (+ acc (%alist-get 'elapsed-ms stat)))
+             0
+             stats))
+
+    (defun %max-worker-elapsed-ms (stats)
+      (foldl (lambda (best stat) (max best (%alist-get 'elapsed-ms stat)))
+             0
+             stats))
+
+    (defun %spawn-workers (policy cfg count log-prefix)
+      (let loop ((i 1) (acc '()))
+        (if (> i count)
+            (reverse acc)
+            (loop (+ i 1)
+                  (cons (%spawn-shard-worker policy cfg i log-prefix)
+                        acc)))))
 
     (defun make-mc-shoe (seed . rest)
       (let ((decks (if (null? rest) frozen-decks (car rest))))
@@ -385,19 +533,69 @@
         (cons 'count (trace-row-count row))
         (cons 'reward (trace-row-reward row))))
 
-    (defun simulate (policy cfg n . rest)
+    (defun simulate-profiled (policy cfg n . rest)
       (if (< n 0)
-          (error "simulate: n must be non-negative")
-          (if (= n 0)
-              '()
-              (let* ((workers-requested (if (null? rest) 4 (car rest)))
-                     (shards (%make-shards n workers-requested))
-                     (workers (map* (lambda (_shard) (%spawn-shard-worker policy cfg))
-                                    shards)))
-                (%dispatch-workers workers shards)
-                (let ((results (%collect-workers workers)))
-                  (%cleanup-workers workers)
-                  (%flatten results))))))
+          (error "simulate-profiled: n must be non-negative")
+          (let* ((workers-requested (if (null? rest)
+                                        default-mc-workers
+                                        (car rest)))
+                 (log-prefix (if (or (null? rest) (null? (cdr rest)))
+                                 ""
+                                 (car (cdr rest))))
+                 (progress-hook (if (or (null? rest)
+                                        (null? (cdr rest))
+                                        (null? (cdr (cdr rest))))
+                                    #f
+                                    (car (cdr (cdr rest)))))
+                 (shards (%make-shards n workers-requested))
+                 (workers (%spawn-workers policy cfg (length shards) log-prefix))
+                 (t0 (time:monotonic-ms)))
+            (if progress-hook
+                (progress-hook
+                  (string-append
+                    "simulate-profiled-start, rounds="
+                    (number->string n)
+                    ", workers="
+                    (number->string (length shards))))
+                #f)
+            (if progress-hook (progress-hook "dispatch-start") #f)
+            (%dispatch-workers workers shards progress-hook)
+            (if progress-hook (progress-hook "dispatch-done") #f)
+            (let* ((t1 (time:monotonic-ms))
+                   (_collect-start (if progress-hook (progress-hook "collect-start") #f))
+                   (results (%collect-workers workers progress-hook))
+                   (t2 (time:monotonic-ms)))
+              (if progress-hook (progress-hook "collect-done") #f)
+              (if progress-hook (progress-hook "cleanup-start") #f)
+              (%cleanup-workers workers progress-hook)
+              (let* ((t3 (time:monotonic-ms))
+                     (rows (%rows-from-worker-results results))
+                     (stats (%stats-from-worker-results results))
+                     (t4 (time:monotonic-ms)))
+                (if progress-hook (progress-hook "cleanup-done") #f)
+                (if progress-hook
+                    (progress-hook
+                      (string-append
+                        "simulate-profiled-done, total-ms="
+                        (number->string (time:elapsed-ms t0 t4))))
+                    #f)
+                (list
+                  (cons 'rows rows)
+                  (cons 'worker-stats stats)
+                  (cons 'rounds n)
+                  (cons 'workers (length shards))
+                  (cons 'dispatch-ms (time:elapsed-ms t0 t1))
+                  (cons 'collect-ms (time:elapsed-ms t1 t2))
+                  (cons 'cleanup-ms (time:elapsed-ms t2 t3))
+                  (cons 'flatten-ms (time:elapsed-ms t3 t4))
+                  (cons 'worker-elapsed-ms-total (%sum-worker-elapsed-ms stats))
+                  (cons 'worker-elapsed-ms-max (%max-worker-elapsed-ms stats))
+                  (cons 'total-ms (time:elapsed-ms t0 t4))))))))
+
+    (defun simulate (policy cfg n . rest)
+      (%alist-get 'rows
+                  (apply simulate-profiled
+                         (cons policy (cons cfg (cons n rest))))))
 
     (defun simulate-summary (rows)
       (let loop ((rest rows)
@@ -421,6 +619,8 @@
                    (reward (trace-row-reward row))
                    (wins2 (if (> reward 0.0) (+ wins 1) wins))
                    (losses2 (if (< reward 0.0) (+ losses 1) losses))
+                   ;; Rewards are emitted from a discrete set (-1.0, 0.0, 1.0, 1.5),
+                   ;; so exact float equality is intentional here.
                    (pushes2 (if (= reward 0.0) (+ pushes 1) pushes))
                    (naturals2 (if (= reward frozen-blackjack-payout)
                                   (+ naturals 1)
@@ -434,7 +634,7 @@
                     (+ reward-sum reward))))))
 
     (defun replay-deterministic (policy cfg n . rest)
-      (let* ((workers (if (null? rest) 4 (car rest)))
+      (let* ((workers (if (null? rest) default-mc-workers (car rest)))
              (rows-a (simulate policy cfg n workers))
              (rows-b (simulate policy cfg n workers))
              (summary-a (simulate-summary rows-a))

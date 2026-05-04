@@ -70,6 +70,15 @@
       (cons (causal-state-player-total state)
             (causal-state-dealer-up state)))
 
+    (defun %rows-cache-key (state count)
+      (string-append (number->string (causal-state-player-total state))
+                     ":"
+                     (number->string (causal-state-dealer-up state))
+                     ":"
+                     (number->string count)))
+
+    (define %rows-cache (make-hash-map))
+
     (defun %quotient (a b)
       (/ (- a (modulo a b)) b))
 
@@ -174,12 +183,35 @@
         (append (%repeat hit-row n-hit)
                 (%repeat stand-row n-stand))))
 
+    (defun %split-rows-by-action (rows)
+      (let loop ((rest rows) (hits '()) (stands '()))
+        (if (null? rest)
+            (cons (reverse hits) (reverse stands))
+            (let ((row (car rest)))
+              (if (eq? (%alist-get 'action row) 'hit)
+                  (loop (cdr rest) (cons row hits) stands)
+                  (loop (cdr rest) hits (cons row stands)))))))
+
+    (defun %rows-bundle-for-state-count (state count)
+      (let* ((key (%rows-cache-key state count))
+             (cached (hash-map-ref %rows-cache key #f)))
+        (if cached
+            cached
+            (let* ((n-total 200)
+                   (n-high (%clamp-int (+ 100 (* 30 count)) 10 190))
+                   (n-low (- n-total n-high))
+                   (rows (append (%rows-for-shoe state count -1 n-low)
+                                 (%rows-for-shoe state count 1 n-high)))
+                   (hit+stand (%split-rows-by-action rows))
+                   (bundle (list
+                             (cons 'rows rows)
+                             (cons 'hit (car hit+stand))
+                             (cons 'stand (cdr hit+stand)))))
+              (set! %rows-cache (hash-map-assoc %rows-cache key bundle))
+              bundle))))
+
     (defun %rows-for-state-count (state count)
-      (let* ((n-total 200)
-             (n-high (%clamp-int (+ 100 (* 30 count)) 10 190))
-             (n-low (- n-total n-high)))
-        (append (%rows-for-shoe state count -1 n-low)
-                (%rows-for-shoe state count 1 n-high))))
+      (%alist-get 'rows (%rows-bundle-for-state-count state count)))
 
     (defun %rows-for-counts (state counts)
       (if (null? counts)
@@ -190,9 +222,11 @@
     (defun %rows-for (state count)
       (%rows-for-state-count state count))
 
-    (defun %rows-for-action (rows action)
-      (filter (lambda (row) (eq? (%alist-get 'action row) action))
-              rows))
+    (defun %rows-for-state-count-action (state count action)
+      (let ((bundle (%rows-bundle-for-state-count state count)))
+        (if (eq? action 'hit)
+            (%alist-get 'hit bundle)
+            (%alist-get 'stand bundle))))
 
     (defun %ensure-non-empty (rows who)
       (if (null? rows)
@@ -206,40 +240,59 @@
           ((eq? status 'direct) '())
           (else (error "causal: do-calculus query is not identifiable")))))
 
+    (defun %ev-obs-from-action-rows (rows)
+      (do:conditional-mean rows 'outcome))
+
+    (defun %ev-do-from-rows (rows action)
+      (do:estimate-effect 'outcome
+                          'action
+                          action
+                          (%adjustment-set)
+                          rows))
+
     (defun ev-obs (state action count)
       (let* ((action2 (%require-action action))
-             (rows (%ensure-non-empty (%rows-for state count)
-                                      "ev-obs: no rows for requested state/count"))
-             (rows2 (%ensure-non-empty (%rows-for-action rows action2)
-                                       "ev-obs: no rows for requested action")))
-        (do:conditional-mean rows2 'outcome)))
+             (rows2 (%ensure-non-empty
+                      (%rows-for-state-count-action state count action2)
+                      "ev-obs: no rows for requested action")))
+        (%ev-obs-from-action-rows rows2)))
 
     (defun ev-do (state action count)
       (let* ((action2 (%require-action action))
              (rows (%ensure-non-empty (%rows-for state count)
                                       "ev-do: no rows for requested state/count")))
-        (do:estimate-effect 'outcome
-                            'action
-                            action2
-                            (%adjustment-set)
-                            rows)))
+        (%ev-do-from-rows rows action2)))
 
     (defun policy-do (state count)
-      (let ((ev-hit (ev-do state 'hit count))
-            (ev-stand (ev-do state 'stand count)))
+      (let* ((rows (%ensure-non-empty (%rows-for state count)
+                                      "policy-do: no rows for requested state/count"))
+             (ev-hit (%ev-do-from-rows rows 'hit))
+             (ev-stand (%ev-do-from-rows rows 'stand)))
         (if (>= ev-stand ev-hit) 'stand 'hit)))
 
     (defun sweep-do (state counts)
       (if (null? counts)
           '()
           (let* ((count (car counts))
+                 (rows (%ensure-non-empty (%rows-for state count)
+                                          "sweep-do: no rows for requested state/count"))
+                 (rows-hit (%ensure-non-empty
+                             (%rows-for-state-count-action state count 'hit)
+                             "sweep-do: no hit rows for requested state/count"))
+                 (rows-stand (%ensure-non-empty
+                               (%rows-for-state-count-action state count 'stand)
+                               "sweep-do: no stand rows for requested state/count"))
+                 (ev-do-hit (%ev-do-from-rows rows 'hit))
+                 (ev-do-stand (%ev-do-from-rows rows 'stand))
                  (row (list
                         (cons 'count count)
-                        (cons 'ev-obs-hit (ev-obs state 'hit count))
-                        (cons 'ev-obs-stand (ev-obs state 'stand count))
-                        (cons 'ev-do-hit (ev-do state 'hit count))
-                        (cons 'ev-do-stand (ev-do state 'stand count))
-                        (cons 'policy (policy-do state count)))))
+                        (cons 'ev-obs-hit (%ev-obs-from-action-rows rows-hit))
+                        (cons 'ev-obs-stand (%ev-obs-from-action-rows rows-stand))
+                        (cons 'ev-do-hit ev-do-hit)
+                        (cons 'ev-do-stand ev-do-stand)
+                        (cons 'policy (if (>= ev-do-stand ev-do-hit)
+                                          'stand
+                                          'hit)))))
             (cons row
                   (sweep-do state (cdr counts))))))
 

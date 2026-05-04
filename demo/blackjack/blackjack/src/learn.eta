@@ -1,6 +1,7 @@
 (module learn
   (import std.collections)
   (import std.log)
+  (import std.time)
   (import std.torch)
   (import shoe)
   (export
@@ -34,6 +35,7 @@
     learn-result-normalized-weights
     learn-result-cosine-hi-lo
     learn-result-ev-monotone
+    learn-result-training-log-path
     normalize-weights
     cosine-similarity
     recover-hi-lo
@@ -49,12 +51,14 @@
     (define default-learn-epochs 80)
     (define default-learn-batch-size 128)
     (define default-learning-rate 0.03)
-    (define default-policy-refresh 8)
+    (define default-policy-refresh 16)
     (define default-convergence-patience 200)
     (define default-convergence-epsilon 0.0001)
     (define default-lr-decay-patience 12)
     (define default-lr-decay-factor 0.5)
     (define default-min-learning-rate 0.005)
+    (define default-policy-mix-warmup-epochs 8)
+    (define default-replay-buffer-size 12)
 
     (define-record-type <learn-config>
       (%make-learn-config mode seed epochs batch-size learning-rate policy-refresh)
@@ -84,7 +88,8 @@
                           weights
                           normalized-weights
                           cosine-hi-lo
-                          ev-monotone)
+                          ev-monotone
+                          training-log-path)
       learn-result?
       (mode learn-result-mode)
       (seed learn-result-seed)
@@ -95,7 +100,8 @@
       (weights learn-result-weights)
       (normalized-weights learn-result-normalized-weights)
       (cosine-hi-lo learn-result-cosine-hi-lo)
-      (ev-monotone learn-result-ev-monotone))
+      (ev-monotone learn-result-ev-monotone)
+      (training-log-path learn-result-training-log-path))
 
     (defun %normalize-seed (seed)
       (let ((s (modulo (+ (abs seed) 1) 2147483647)))
@@ -114,8 +120,12 @@
           fallback
           (list-ref xs idx)))
 
+    (defun %alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if pair (cdr pair) #f)))
+
     (defun %flatten (xss)
-      (foldl (lambda (acc xs) (append acc xs)) '() xss))
+      (flatten xss))
 
     (defun %dot (xs ys)
       (let loop ((lhs xs) (rhs ys) (acc 0.0))
@@ -134,6 +144,40 @@
 
     (define %hi-lo-norm2 (%dot %hi-lo-float %hi-lo-float))
 
+    (defun %effective-policy-refresh (mode epochs policy-refresh)
+      (if (and (eq? mode learn-mode-joint)
+               (> policy-refresh epochs))
+          epochs
+          policy-refresh))
+
+    (defun %clamp01 (x)
+      (max 0.0 (min 1.0 x)))
+
+    (defun %model-policy-ratio (cfg epoch)
+      (if (not (eq? (learn-config-mode cfg) learn-mode-joint))
+          0.0
+          (let ((refresh (learn-config-policy-refresh cfg)))
+            (if (< epoch refresh)
+                0.0
+                (%clamp01 (/ (* 1.0 (+ (- epoch refresh) 1))
+                             default-policy-mix-warmup-epochs))))))
+
+    (defun %take-n (xs n)
+      (let loop ((rest xs) (i 0) (acc '()))
+        (if (or (null? rest) (>= i n))
+            (reverse acc)
+            (loop (cdr rest)
+                  (+ i 1)
+                  (cons (car rest) acc)))))
+
+    (defun %push-replay-batch (buffer batch)
+      (%take-n (cons batch buffer) default-replay-buffer-size))
+
+    (defun %sample-replay-batch (buffer seed)
+      (let* ((n (length buffer))
+             (idx (modulo (abs seed) n)))
+        (list-ref buffer idx)))
+
     (defun make-learn-config (mode seed . rest)
       (let* ((epochs (%nth-or rest 0 default-learn-epochs))
              (batch-size (%nth-or rest 1 default-learn-batch-size))
@@ -149,12 +193,16 @@
                         (error "make-learn-config: learning-rate must be positive")
                         (if (<= policy-refresh 0)
                             (error "make-learn-config: policy-refresh must be positive")
-                            (%make-learn-config mode
-                                                (%normalize-seed seed)
-                                                epochs
-                                                batch-size
-                                                learning-rate
-                                                policy-refresh))))))))
+                            (let ((policy-refresh2
+                                    (%effective-policy-refresh mode
+                                                               epochs
+                                                               policy-refresh)))
+                              (%make-learn-config mode
+                                                  (%normalize-seed seed)
+                                                  epochs
+                                                  batch-size
+                                                  learning-rate
+                                                  policy-refresh2)))))))))
 
     (defun normalize-weights (weights)
       (if (not (= (length weights) 13))
@@ -217,11 +265,25 @@
         (item (forward ev-head input))))
 
     (defun %policy-action-from-model (count-model ev-head seen player-norm dealer-norm)
-      (let ((ev-hit (%predict-ev-for-action count-model ev-head seen player-norm dealer-norm 'hit))
-            (ev-stand (%predict-ev-for-action count-model ev-head seen player-norm dealer-norm 'stand)))
+      (let* ((seen-t (reshape (from-list seen) '(1 13)))
+             (count-scalar (item (detach (forward count-model seen-t))))
+             (input (reshape
+                      (from-list
+                        (list player-norm
+                              dealer-norm
+                              (%action-feature 'hit)
+                              count-scalar
+                              player-norm
+                              dealer-norm
+                              (%action-feature 'stand)
+                              count-scalar))
+                      '(2 4)))
+             (preds (to-list (reshape (forward ev-head input) '(2))))
+             (ev-hit (car preds))
+             (ev-stand (list-ref preds 1)))
         (if (>= ev-stand ev-hit) 'stand 'hit)))
 
-    (defun %sample-row (seed count-model ev-head use-model-policy)
+    (defun %sample-row (seed count-model ev-head model-policy-ratio)
       (let* ((s1 (%lcg-next seed))
              (player-total (+ 12 (modulo s1 9)))
              (s2 (%lcg-next s1))
@@ -229,12 +291,16 @@
              (seen+seed (%sample-seen s2))
              (seen (car seen+seed))
              (s3 (cdr seen+seed))
+             (s4 (%lcg-next s3))
              (player-norm (/ (- player-total 16.0) 10.0))
              (dealer-norm (/ (- dealer-up 7.0) 10.0))
              (true-count (%dot %hi-lo-float seen))
              (ev-hit (%oracle-ev-hit player-norm dealer-norm true-count))
              (ev-stand (%oracle-ev-stand player-norm dealer-norm true-count))
              (oracle-action (%oracle-action ev-hit ev-stand))
+             (roll (/ (modulo s4 10000) 10000.0))
+             (use-model-policy (and (> model-policy-ratio 0.0)
+                                    (< roll model-policy-ratio)))
              (action (if use-model-policy
                          (%policy-action-from-model
                            count-model
@@ -247,24 +313,38 @@
              (features (list player-norm
                              dealer-norm
                              (%action-feature action))))
-        (cons (list seen features reward) s3)))
+        (cons (list seen features reward) s4)))
 
-    (defun %generate-batch (cfg seed count-model ev-head use-model-policy)
-      (let loop ((i 0) (s (%normalize-seed seed)) (seen-rows '()) (feature-rows '()) (targets '()))
-        (if (= i (learn-config-batch-size cfg))
-            (cons (%make-learn-batch (learn-config-batch-size cfg)
-                                     (%flatten (reverse seen-rows))
-                                     (%flatten (reverse feature-rows))
-                                     (reverse targets))
-                  s)
-            (let* ((row+seed (%sample-row s count-model ev-head use-model-policy))
-                   (row (car row+seed))
-                   (s2 (cdr row+seed)))
-              (loop (+ i 1)
-                    s2
-                    (cons (list-ref row 0) seen-rows)
-                    (cons (list-ref row 1) feature-rows)
-                    (cons (list-ref row 2) targets))))))
+    (defun %copy-list-into-vector! (target offset xs)
+      (let loop ((i 0) (rest xs))
+        (if (null? rest)
+            target
+            (begin
+              (vector-set! target (+ offset i) (car rest))
+              (loop (+ i 1) (cdr rest))))))
+
+    (defun %generate-batch (cfg seed count-model ev-head model-policy-ratio)
+      (let* ((batch-size (learn-config-batch-size cfg))
+             (seen-flat (make-vector (* batch-size 13) 0.0))
+             (features-flat (make-vector (* batch-size 3) 0.0))
+             (target-flat (make-vector batch-size 0.0)))
+        (let loop ((i 0) (s (%normalize-seed seed)))
+          (if (= i batch-size)
+              (cons (%make-learn-batch batch-size
+                                       (vector->list seen-flat)
+                                       (vector->list features-flat)
+                                       (vector->list target-flat))
+                    s)
+              (let* ((row+seed (%sample-row s count-model ev-head model-policy-ratio))
+                     (row (car row+seed))
+                     (s2 (cdr row+seed))
+                     (seen-row (list-ref row 0))
+                     (feature-row (list-ref row 1))
+                     (target (list-ref row 2)))
+                (%copy-list-into-vector! seen-flat (* i 13) seen-row)
+                (%copy-list-into-vector! features-flat (* i 3) feature-row)
+                (vector-set! target-flat i target)
+                (loop (+ i 1) s2))))))
 
     (defun %batch->tensors (batch)
       (let* ((n (learn-batch-size batch))
@@ -328,14 +408,17 @@
                      (symbol->string (learn-config-mode cfg))
                      "-"
                      (number->string (learn-config-seed cfg))
+                     "-"
+                     (number->string (time:now-ms))
                      ".log"))
 
     (defun %make-training-logger (cfg)
-      (let* ((sink (log:make-file-sink (%training-log-path cfg) 'truncate? #t))
+      (let* ((path (%training-log-path cfg))
+             (sink (log:make-file-sink path 'truncate? #t))
              (logger (log:make-logger "blackjack.learn" (list sink))))
         (log:set-pattern! logger "%v")
         (log:flush-on! logger 'info)
-        logger))
+        (cons path logger)))
 
     (defun %recover (cfg)
       (manual-seed (learn-config-seed cfg))
@@ -345,7 +428,9 @@
                                   (linear 16 1)))
              (opt-count (adam count-model (learn-config-learning-rate cfg)))
              (opt-head (adam ev-head (learn-config-learning-rate cfg)))
-             (logger (%make-training-logger cfg)))
+             (logger+path (%make-training-logger cfg))
+             (training-log-path (car logger+path))
+             (logger (cdr logger+path)))
         (log:info logger
                   "recover-hi-lo:start"
                   (list
@@ -359,7 +444,9 @@
                     (cons 'convergence-epsilon default-convergence-epsilon)
                     (cons 'lr-decay-patience default-lr-decay-patience)
                     (cons 'lr-decay-factor default-lr-decay-factor)
-                    (cons 'lr-min default-min-learning-rate)))
+                    (cons 'lr-min default-min-learning-rate)
+                    (cons 'policy-mix-warmup-epochs default-policy-mix-warmup-epochs)
+                    (cons 'replay-buffer-size default-replay-buffer-size)))
         (train! count-model)
         (train! ev-head)
         (let loop ((epoch 0)
@@ -371,13 +458,25 @@
                    (opt-head2 opt-head)
                    (current-lr (learn-config-learning-rate cfg))
                    (best-loss 1e30)
-                   (stalled 0))
+                   (stalled 0)
+                   (best-state #f)
+                   (replay-batches '()))
           (if (or (= epoch (learn-config-epochs cfg))
                   (>= stalled default-convergence-patience))
-              (let* ((weights (%extract-weights count-model))
+              (let* ((weights (if best-state
+                                  (%alist-get 'weights best-state)
+                                  (%extract-weights count-model)))
                      (normalized (normalize-weights weights))
                      (cosine (cosine-similarity normalized %normalized-hi-lo))
-                     (ev-monotone (%ev-monotone? count-model ev-head)))
+                     (ev-monotone (if best-state
+                                      (%alist-get 'ev-monotone best-state)
+                                      (%ev-monotone? count-model ev-head)))
+                     (best-epoch (if best-state
+                                     (%alist-get 'epoch best-state)
+                                     epochs-run))
+                     (loss-final2 (if (< best-loss 1e30)
+                                      best-loss
+                                      loss-final)))
                 (if (>= stalled default-convergence-patience)
                     (log:warn logger
                               "recover-hi-lo:early-stop-no-improvement"
@@ -391,8 +490,11 @@
                           (list
                             (cons 'epochs-run epochs-run)
                             (cons 'loss-initial loss-initial)
-                            (cons 'loss-final loss-final)
+                            (cons 'loss-final loss-final2)
+                            (cons 'loss-last-epoch loss-final)
+                            (cons 'best-epoch best-epoch)
                             (cons 'lr-final current-lr)
+                            (cons 'replay-buffer-final (length replay-batches))
                             (cons 'cosine cosine)
                             (cons 'ev-monotone ev-monotone)))
                 (log:flush! logger)
@@ -401,21 +503,51 @@
                                     epochs-run
                                     (learn-config-batch-size cfg)
                                     loss-initial
-                                    loss-final
+                                    loss-final2
                                     weights
                                     normalized
                                     cosine
-                                    ev-monotone))
-              (let* ((use-model-policy
-                       (and (eq? (learn-config-mode cfg) learn-mode-joint)
-                            (>= epoch (learn-config-policy-refresh cfg))))
-                     (batch+seed (%generate-batch cfg seed count-model ev-head use-model-policy))
+                                    ev-monotone
+                                    training-log-path))
+              (let* ((model-policy-ratio (%model-policy-ratio cfg epoch))
+                     (batch+seed (%generate-batch cfg
+                                                  seed
+                                                  count-model
+                                                  ev-head
+                                                  model-policy-ratio))
                      (batch (car batch+seed))
                      (next-seed (cdr batch+seed))
-                     (loss (%train-step! count-model ev-head opt-count2 opt-head2 batch))
+                     (replay-batch (if (and (> model-policy-ratio 0.0)
+                                            (not (null? replay-batches)))
+                                       (%sample-replay-batch replay-batches next-seed)
+                                       #f))
+                     (loss-current (%train-step! count-model ev-head opt-count2 opt-head2 batch))
+                     (loss-replay (if replay-batch
+                                      (%train-step! count-model
+                                                    ev-head
+                                                    opt-count2
+                                                    opt-head2
+                                                    replay-batch)
+                                      loss-current))
+                     (loss (if replay-batch
+                               (/ (+ loss-current loss-replay) 2.0)
+                               loss-current))
+                     (next-seed2 (if replay-batch
+                                     (%lcg-next next-seed)
+                                     next-seed))
+                     (replay-batches2 (if (eq? (learn-config-mode cfg) learn-mode-joint)
+                                          (%push-replay-batch replay-batches batch)
+                                          replay-batches))
                      (loss0 (if loss-initial loss-initial loss))
+                     (better-loss (< loss best-loss))
                      (improved (< loss (- best-loss default-convergence-epsilon)))
-                     (best2 (if improved loss best-loss))
+                     (best2 (if better-loss loss best-loss))
+                     (best-state2 (if better-loss
+                                      (list
+                                        (cons 'epoch (+ epoch 1))
+                                        (cons 'weights (%extract-weights count-model))
+                                        (cons 'ev-monotone (%ev-monotone? count-model ev-head)))
+                                      best-state))
                      (stalled2 (if improved 0 (+ stalled 1)))
                      (decay? (and (>= stalled2 default-lr-decay-patience)
                                   (> current-lr default-min-learning-rate)))
@@ -435,8 +567,13 @@
                           (list
                             (cons 'epoch (+ epoch 1))
                             (cons 'loss loss)
+                            (cons 'loss-current loss-current)
+                            (cons 'loss-replay (if replay-batch loss-replay #f))
                             (cons 'best-loss best2)
                             (cons 'lr current-lr)
+                            (cons 'model-policy-ratio model-policy-ratio)
+                            (cons 'replay? (if replay-batch #t #f))
+                            (cons 'replay-size (length replay-batches2))
                             (cons 'stalled stalled2)))
                 (if decay?
                     (log:warn logger
@@ -447,7 +584,7 @@
                                 (cons 'lr-new next-lr)
                                 (cons 'best-loss best2))))
                 (loop (+ epoch 1)
-                      next-seed
+                      next-seed2
                       loss0
                       loss
                       (+ epochs-run 1)
@@ -455,7 +592,9 @@
                       next-opt-head
                       next-lr
                       best2
-                      stalled3))))))
+                      stalled3
+                      best-state2
+                      replay-batches2))))))
 
     (defun recover-hi-lo (cfg)
       (if (not (learn-config? cfg))

@@ -32,6 +32,7 @@
     frozen-penetration
     frozen-cut-card-remaining
     frozen-blackjack-payout
+    default-mc-workers
     trace-schema-version
     make-mc-shoe
     mc-shoe?
@@ -51,6 +52,7 @@
     trace-row-count
     trace-row-reward
     trace-row->alist
+    simulate-profiled
     simulate
     simulate-summary
     replay-deterministic
@@ -94,6 +96,7 @@
     learn-result-normalized-weights
     learn-result-cosine-hi-lo
     learn-result-ev-monotone
+    learn-result-training-log-path
     normalize-weights
     cosine-similarity
     recover-hi-lo

@@ -1,5 +1,5 @@
 (module blackjack.tests.mc
-  (import std.test blackjack)
+  (import std.test std.fs std.time blackjack)
   (begin
 
     (defun alist-keys (rows)
@@ -18,6 +18,14 @@
           (make-test "trace schema version is frozen"
             (lambda ()
               (assert-equal 'blackjack-trace-v1 trace-schema-version)))
+
+          (make-test "default in-proc worker count is 8"
+            (lambda ()
+              (assert-equal 8 default-mc-workers)
+              (let* ((cfg (make-mc-shoe 14))
+                     (check (replay-deterministic policy-hit-below-17 cfg 32)))
+                (assert-equal default-mc-workers
+                              (alist-get 'workers check)))))
 
           (make-test "simulate is deterministic for fixed seed and worker count"
             (lambda ()
@@ -66,6 +74,31 @@
                      (losses (alist-get 'losses summary))
                      (pushes (alist-get 'pushes summary)))
                 (assert-equal 90 rounds)
-                (assert-equal rounds (+ wins losses pushes))))))))
+                (assert-equal rounds (+ wins losses pushes)))))
+
+          (make-test "simulate-profiled returns rows and worker timing stats"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 27))
+                     (profile (simulate-profiled policy-hit-below-17 cfg 40 2))
+                     (rows (alist-get 'rows profile))
+                     (stats (alist-get 'worker-stats profile)))
+                (assert-equal 40 (length rows))
+                (assert-equal 2 (length stats))
+                (assert-true (>= (alist-get 'worker-elapsed-ms-total profile)
+                                 (alist-get 'worker-elapsed-ms-max profile))))))
+
+          (make-test "simulate can emit per-worker log files"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 31))
+                     (log-base (fs:path-join
+                                 (fs:temp-directory)
+                                 (string-append "blackjack-mc-worker-smoke-"
+                                                (number->string (time:now-ms)))))
+                     (rows (simulate policy-hit-below-17 cfg 40 2 log-base))
+                     (w1 (string-append log-base "-worker_1.log"))
+                     (w2 (string-append log-base "-worker_2.log")))
+                (assert-equal 40 (length rows))
+                (assert-true (fs:file-exists? w1))
+                (assert-true (fs:file-exists? w2))))))))
 
     (print-tap (run suite))))

@@ -15,6 +15,8 @@
     (define %all-dealer-ups
       chart-dealer-ups)
 
+    (define %maxim-grid-size 160)
+
     (define %canonical-dealer-options
       (list
         %all-dealer-ups
@@ -109,19 +111,23 @@
       (cons (%cell-total cell)
             (%cell-dealer-up cell)))
 
-    (defun %stand-keys (cells)
-      (if (null? cells)
-          '()
-          (let ((cell (car cells)))
-            (if (eq? (%cell-action cell) 'stand)
-                (cons (%cell-key cell) (%stand-keys (cdr cells)))
-                (%stand-keys (cdr cells))))))
+    (defun %dealer-up-index (dealer-up)
+      (cond
+        ((= dealer-up 2) 0)
+        ((= dealer-up 3) 1)
+        ((= dealer-up 4) 2)
+        ((= dealer-up 5) 3)
+        ((= dealer-up 6) 4)
+        ((= dealer-up 7) 5)
+        ((= dealer-up 8) 6)
+        ((= dealer-up 9) 7)
+        ((= dealer-up 10) 8)
+        ((= dealer-up 1) 9)
+        (else (error "maxims: dealer-up out of range for chart grid"))))
 
-    (defun %all-stand? (cells)
-      (if (null? cells)
-          #t
-          (and (eq? (%cell-action (car cells)) 'stand)
-               (%all-stand? (cdr cells)))))
+    (defun %cell-index (player-total dealer-up)
+      (+ (* (- player-total 5) 10)
+         (%dealer-up-index dealer-up)))
 
     (defun %total-intervals ()
       (let loop-lo ((totals %all-player-totals) (acc '()))
@@ -134,7 +140,7 @@
                     (loop-hi (cdr rest)
                              (cons (cons lo (car rest)) acc2))))))))
 
-    (defun %candidate-clauses ()
+    (defun %build-candidate-clauses ()
       (let ((intervals (%total-intervals)))
         (let loop-i ((rest intervals) (acc '()))
           (if (null? rest)
@@ -149,47 +155,68 @@
                               (cons (%make-clause lo hi (car dealer-rest) 'stand)
                                     acc2)))))))))
 
-    (defun %clause-matched-cells (clause cells)
-      (filter (lambda (cell)
-                (%clause-matches? clause
-                                  (%cell-total cell)
-                                  (%cell-dealer-up cell)))
-              cells))
+    (define %candidate-clauses (%build-candidate-clauses))
 
-    (defun %valid-stand-clause? (clause cells)
-      (let ((matched (%clause-matched-cells clause cells)))
-        (and (not (null? matched))
-             (%all-stand? matched))))
+    (defun %stand-mask+count (cells)
+      ;; TODO: replace this vector-backed bitset with std.bitset once available.
+      (let ((mask (make-vector %maxim-grid-size #f)))
+        (let loop ((rest cells) (count 0))
+          (if (null? rest)
+              (cons mask count)
+              (let* ((cell (car rest))
+                     (idx (%cell-index (%cell-total cell)
+                                       (%cell-dealer-up cell))))
+                (if (and (eq? (%cell-action cell) 'stand)
+                         (not (vector-ref mask idx)))
+                    (begin
+                      (vector-set! mask idx #t)
+                      (loop (cdr rest) (+ count 1)))
+                    (loop (cdr rest) count)))))))
 
-    (defun %valid-stand-clauses (cells)
-      (filter (lambda (clause) (%valid-stand-clause? clause cells))
-              (%candidate-clauses)))
+    (defun %extend-covered-indices (total dealer-ups stand-mask covered count)
+      (if (null? dealer-ups)
+          (cons covered count)
+          (let ((idx (%cell-index total (car dealer-ups))))
+            (if (vector-ref stand-mask idx)
+                (%extend-covered-indices total
+                                         (cdr dealer-ups)
+                                         stand-mask
+                                         (cons idx covered)
+                                         (+ count 1))
+                #f))))
 
-    (defun %clause-covered-keys (clause cells)
-      (let loop ((rest cells) (acc '()))
+    (defun %clause-covered-indices-if-valid (clause stand-mask)
+      (let ((lo (%clause-total-lo clause))
+            (hi (%clause-total-hi clause))
+            (dealer-ups (%clause-dealer-ups clause)))
+        (let loop-total ((total lo) (covered '()) (count 0))
+          (if (> total hi)
+              (if (= count 0)
+                  #f
+                  (reverse covered))
+              (let ((next (%extend-covered-indices total
+                                                   dealer-ups
+                                                   stand-mask
+                                                   covered
+                                                   count)))
+                (if next
+                    (loop-total (+ total 1) (car next) (cdr next))
+                    #f))))))
+
+    (defun %valid-stand-candidates (stand-mask)
+      (let loop ((rest %candidate-clauses) (acc '()))
         (if (null? rest)
             (reverse acc)
-            (let ((cell (car rest)))
-              (if (and (eq? (%cell-action cell) 'stand)
-                       (%clause-matches? clause
-                                         (%cell-total cell)
-                                         (%cell-dealer-up cell)))
-                  (loop (cdr rest) (cons (%cell-key cell) acc))
+            (let* ((clause (car rest))
+                   (covered-indices (%clause-covered-indices-if-valid clause
+                                                                      stand-mask)))
+              (if covered-indices
+                  (loop (cdr rest)
+                        (cons (list
+                                (cons 'clause clause)
+                                (cons 'covered-indices covered-indices))
+                              acc))
                   (loop (cdr rest) acc))))))
-
-    (defun %filter-keys-in (xs allowed)
-      (if (null? xs)
-          '()
-          (if (%member-equal? (car xs) allowed)
-              (cons (car xs) (%filter-keys-in (cdr xs) allowed))
-              (%filter-keys-in (cdr xs) allowed))))
-
-    (defun %remove-keys (xs removed)
-      (if (null? xs)
-          '()
-          (if (%member-equal? (car xs) removed)
-              (%remove-keys (cdr xs) removed)
-              (cons (car xs) (%remove-keys (cdr xs) removed)))))
 
     (defun %clause-complexity (clause)
       (+ (if (and (= (%clause-total-lo clause) 5)
@@ -200,28 +227,36 @@
              0
              1)))
 
-    (defun %choose-best-candidate (candidates cells uncovered)
+    (defun %covered-count (covered-indices uncovered-mask)
+      (let loop ((rest covered-indices) (n 0))
+        (if (null? rest)
+            n
+            (loop (cdr rest)
+                  (if (vector-ref uncovered-mask (car rest))
+                      (+ n 1)
+                      n)))))
+
+    (defun %choose-best-candidate (candidates uncovered-mask)
       (let loop ((rest candidates)
                  (best-clause #f)
-                 (best-covered '())
+                 (best-covered-indices '())
                  (best-coverage 0)
                  (best-complexity 0))
         (if (null? rest)
             (if best-clause
                 (list
                   (cons 'clause best-clause)
-                  (cons 'covered best-covered))
+                  (cons 'covered-indices best-covered-indices))
                 #f)
-            (let* ((clause (car rest))
-                   (covered (%filter-keys-in
-                              (%clause-covered-keys clause cells)
-                              uncovered))
-                   (coverage (length covered))
+            (let* ((candidate (car rest))
+                   (clause (%alist-get 'clause candidate))
+                   (covered-indices (%alist-get 'covered-indices candidate))
+                   (coverage (%covered-count covered-indices uncovered-mask))
                    (complexity (%clause-complexity clause)))
               (if (= coverage 0)
                   (loop (cdr rest)
                         best-clause
-                        best-covered
+                        best-covered-indices
                         best-coverage
                         best-complexity)
                   (if (or (not best-clause)
@@ -230,26 +265,43 @@
                                (< complexity best-complexity)))
                       (loop (cdr rest)
                             clause
-                            covered
+                            covered-indices
                             coverage
                             complexity)
                       (loop (cdr rest)
                             best-clause
-                            best-covered
+                            best-covered-indices
                             best-coverage
                             best-complexity)))))))
 
+    (defun %remove-covered! (covered-indices uncovered-mask)
+      (let loop ((rest covered-indices) (removed 0))
+        (if (null? rest)
+            removed
+            (let ((idx (car rest)))
+              (if (vector-ref uncovered-mask idx)
+                  (begin
+                    (vector-set! uncovered-mask idx #f)
+                    (loop (cdr rest) (+ removed 1)))
+                  (loop (cdr rest) removed))))))
+
     (defun %induce-stand-clauses (cells)
-      (let ((candidates (%valid-stand-clauses cells))
-            (stand-keys (%stand-keys cells)))
-        (let loop ((uncovered stand-keys) (acc '()))
-          (if (null? uncovered)
+      (let* ((stand-mask+count (%stand-mask+count cells))
+             (stand-mask (car stand-mask+count))
+             (stand-count (cdr stand-mask+count))
+             (candidates (%valid-stand-candidates stand-mask)))
+        (let loop ((uncovered-count stand-count) (acc '()))
+          (if (= uncovered-count 0)
               (reverse acc)
-              (let ((best (%choose-best-candidate candidates cells uncovered)))
+              (let ((best (%choose-best-candidate candidates stand-mask)))
                 (if (not best)
                     (error "induce-maxim-clauses-for-count: unable to cover stand cells")
-                    (loop (%remove-keys uncovered (%alist-get 'covered best))
-                          (cons (%alist-get 'clause best) acc))))))))
+                    (let* ((covered-indices (%alist-get 'covered-indices best))
+                           (removed (%remove-covered! covered-indices stand-mask)))
+                      (if (= removed 0)
+                          (error "induce-maxim-clauses-for-count: zero-progress candidate")
+                          (loop (- uncovered-count removed)
+                                (cons (%alist-get 'clause best) acc))))))))))
 
     (defun induce-maxim-clauses-for-count (count)
       (let ((cells (enumerate-strategy-cells (list count))))
@@ -330,13 +382,13 @@
                            (induce-maxim-clauses-for-count count)))
 
     (defun render-maxim-clauses (counts)
-      (let ((counts2 (%validate-counts counts
-                                       "render-maxim-clauses: counts must be non-empty")))
+      (let* ((counts2 (%validate-counts counts
+                                        "render-maxim-clauses: counts must be non-empty"))
+             (clauses-by-count (induce-maxim-clauses counts2)))
         (%join-with
-          (map* (lambda (count)
-                  (%render-count-block count
-                                       (induce-maxim-clauses-for-count count)))
-                counts2)
+          (map* (lambda (entry)
+                  (%render-count-block (car entry) (cdr entry)))
+                clauses-by-count)
           "\n\n")))
 
   ))

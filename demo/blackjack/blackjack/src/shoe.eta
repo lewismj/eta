@@ -28,27 +28,28 @@
     (define hi-lo-weights
       '(-1 1 1 1 1 1 0 0 0 -1 -1 -1 -1))
 
+    (define %hi-lo-weights-vec
+      (list->vector hi-lo-weights))
+
     (defun %lcg-next (seed)
       (let ((s (if (<= seed 0) 1 seed)))
         (modulo (* 48271 s) 2147483647)))
 
-    (defun %remove-at (xs idx)
-      (let loop ((rest xs) (i 0) (acc '()))
-        (if (null? rest)
-            (reverse acc)
-            (if (= i idx)
-                (append (reverse acc) (cdr rest))
-                (loop (cdr rest) (+ i 1) (cons (car rest) acc))))))
+    (defun %swap! (v i j)
+      (let ((tmp (vector-ref v i)))
+        (vector-set! v i (vector-ref v j))
+        (vector-set! v j tmp)))
 
     (defun %shuffle (xs seed)
-      (let loop ((pool xs) (s seed) (acc '()))
-        (if (null? pool)
-            (cons (reverse acc) s)
-            (let* ((s2 (%lcg-next s))
-                   (idx (modulo s2 (length pool)))
-                   (picked (list-ref pool idx))
-                   (rest (%remove-at pool idx)))
-              (loop rest s2 (cons picked acc))))))
+      (let* ((cards (list->vector xs))
+             (n (vector-length cards)))
+        (let loop ((i (- n 1)) (s seed))
+          (if (<= i 0)
+              (cons (vector->list cards) s)
+              (let* ((s2 (%lcg-next s))
+                     (j (modulo s2 (+ i 1))))
+                (%swap! cards i j)
+                (loop (- i 1) s2))))))
 
     (defun %append-rank (rank n acc)
       (if (= n 0)
@@ -157,25 +158,24 @@
         (and (<= best 21)
              (> (- best hard) 0))))
 
-    (defun %weight-for-rank (weights rank)
+    (defun %weight-for-rank (weights-vec rank)
       (if (or (< rank 1) (> rank 13))
           (error "running-count: rank out of range")
-          (list-ref weights (- rank 1))))
+          (vector-ref weights-vec (- rank 1))))
 
-    (defun %validate-weights (weights)
+    (defun %weights->vector (weights)
       (if (= (length weights) 13)
-          weights
+          (list->vector weights)
           (error "running-count: expected 13 weights")))
 
     (defun running-count (seen . rest)
-      (let ((weights (%validate-weights
-                       (if (null? rest)
-                           hi-lo-weights
-                           (car rest)))))
+      (let ((weights-vec (if (null? rest)
+                             %hi-lo-weights-vec
+                             (%weights->vector (car rest)))))
         (let loop ((cards seen) (acc 0))
           (if (null? cards)
               acc
               (loop (cdr cards)
-                    (+ acc (%weight-for-rank weights (car cards))))))))
+                    (+ acc (%weight-for-rank weights-vec (car cards))))))))
 
   ))

@@ -2,7 +2,7 @@
 
 Library package for the blackjack demo.
 
-## B6 modules
+## Modules
 
 - `src/shoe.eta`
   - deterministic `make-shoe` and pure `deal`
@@ -14,7 +14,7 @@ Library package for the blackjack demo.
 - `src/mc.eta`
   - compact rollout core (`[13]` rank-count vector and fixed-size hand tuple)
   - frozen trace schema: `blackjack-trace-v1`
-  - deterministic sharded simulation with replay checks
+  - deterministic in-proc actor sharding (default `8` workers) with replay checks
 - `src/causal.eta`
   - causal DAG declaration via `std.causal.render/define-dag`
   - observational EV (`ev-obs`) and interventional EV (`ev-do`) for hit/stand
@@ -23,13 +23,13 @@ Library package for the blackjack demo.
   - Torch count-compressor + EV head (`std.torch`)
   - deterministic supervised and joint policy-iteration training paths
   - adaptive learning-rate decay on loss plateaus
-  - per-run training logs via `std.log` to `blackjack-learn-<mode>-<seed>.log`
+  - per-run training logs via `std.log` to `blackjack-learn-<mode>-<seed>-<epoch_ms>.log`
   - bounded no-improvement stop to avoid unbounded non-converging loops
   - B5 gate metrics: cosine-to-Hi-Lo and monotone EV check
 - `src/strategy.eta`
-  - CLP enumeration over `(player_total, dealer_up, count_bucket)`
+  - direct cartesian enumeration over `(player_total, dealer_up, count_bucket)`
   - `argmax` policy projection via causal `policy-do`
-  - stable chart rendering for snapshot tests and app output
+  - indexed chart lookups for fast rendering
 - `src/maxims.eta`
   - greedy set-cover induction over chart cells for compact hard-total rules
   - deterministic rule rendering for `count_bucket` snapshots
@@ -40,7 +40,7 @@ Library package for the blackjack demo.
 ## Tests
 
 ```console
-ETA_HEAP_SOFT_LIMIT=500M HEAP=524288000 eta test
+ETA_HEAP_MEMORY=262144000 ETA_HEAP_SOFT_LIMIT=250M HEAP=262144000 eta test
 ```
 
 ## Links
