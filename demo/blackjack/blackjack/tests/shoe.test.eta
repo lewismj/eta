@@ -1,0 +1,65 @@
+(module blackjack.tests.shoe
+  (import std.test blackjack)
+  (begin
+
+    (defun draw-n (shoe n)
+      (let loop ((s shoe) (k n) (acc '()))
+        (if (= k 0)
+            (reverse acc)
+            (let* ((dealt (deal s))
+                   (card (car dealt))
+                   (next-shoe (cdr dealt)))
+              (loop next-shoe (- k 1) (cons card acc))))))
+
+    (define suite
+      (make-group "blackjack shoe"
+        (list
+          (make-test "make-shoe is deterministic for a fixed seed"
+            (lambda ()
+              (let* ((shoe-a (make-shoe 1 42))
+                     (shoe-b (make-shoe 1 42)))
+                (assert-equal (draw-n shoe-a 12)
+                              (draw-n shoe-b 12)))))
+
+          (make-test "different seeds produce different deals"
+            (lambda ()
+              (let* ((shoe-a (make-shoe 1 42))
+                     (shoe-b (make-shoe 1 99)))
+                (assert-not-equal (draw-n shoe-a 12)
+                                  (draw-n shoe-b 12)))))
+
+          (make-test "hand-totals handles one soft ace"
+            (lambda ()
+              (assert-equal '(7 17) (hand-totals '(1 6)))))
+
+          (make-test "hand-totals preserves zero for empty hand"
+            (lambda ()
+              (assert-equal '(0) (hand-totals '()))))
+
+          (make-test "hand-totals deduplicates repeated ace totals"
+            (lambda ()
+              (assert-equal '(2 12 22) (hand-totals '(1 1)))))
+
+          (make-test "hand-totals handles multiple aces"
+            (lambda ()
+              (assert-equal '(11 21 31) (hand-totals '(1 1 9)))))
+
+          (make-test "running-count defaults to hi-lo"
+            (lambda ()
+              (assert-equal -1
+                            (running-count '(2 6 10 1 8 13)))))
+
+          (make-test "deal updates remaining cards and seen history"
+            (lambda ()
+              (let* ((shoe0 (make-shoe 1 7))
+                     (remaining0 (shoe-remaining shoe0))
+                     (dealt (deal shoe0))
+                     (card (car dealt))
+                     (shoe1 (cdr dealt)))
+                (assert-equal (- remaining0 1) (shoe-remaining shoe1))
+                (assert-equal card (car (shoe-seen shoe1)))
+                (assert-equal remaining0
+                              (+ (shoe-remaining shoe1)
+                                 (length (shoe-seen shoe1))))))))))
+
+    (print-tap (run suite))))

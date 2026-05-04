@@ -132,6 +132,12 @@ int main(int argc, char* argv[]) {
     eta::session::Driver driver(std::move(resolver), heap_bytes, self_path, std::move(program_args));
 
     auto resolve = driver.file_resolver();
+    /// Detect .etac extension for pre-compiled bytecode.
+    const bool is_etac = file_path.extension() == ".etac";
+    if (!is_etac) {
+        /// Source submissions must prefer .eta for import/link consistency.
+        driver.resolver().set_prefer_source(true);
+    }
 
     /// Install mailbox socket if we are a spawned child
 #ifdef ETA_HAS_NNG
@@ -156,9 +162,6 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     }
-
-    /// Detect .etac extension for pre-compiled bytecode
-    bool is_etac = file_path.extension() == ".etac";
 
     if (is_etac) {
         if (disasm_mode) {

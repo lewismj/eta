@@ -1,0 +1,120 @@
+(module blackjack_demo.tests.smoke
+  (import std.test std.causal.render blackjack blackjack_demo)
+  (begin
+
+    (defun contains? (text needle)
+      (let ((n (string-length text))
+            (m (string-length needle)))
+        (if (= m 0)
+            #t
+            (if (< n m)
+                #f
+                (letrec ((loop (lambda (i)
+                                 (if (> i (- n m))
+                                     #f
+                                     (if (string=? (substring text i (+ i m)) needle)
+                                         #t
+                                         (loop (+ i 1)))))))
+                  (loop 0))))))
+
+    (define suite
+      (make-group "blackjack_demo"
+        (list
+          (make-test "blackjack-dependency"
+            (lambda ()
+              (assert-equal "Blackjack demo scaffold ready."
+                            (scaffold-message))))
+          (make-test "b1-rules-export-through-package"
+            (lambda ()
+              (assert-true (blackjack '(1 13)))))
+          (make-test "b2-mc-export-through-package"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 5))
+                     (rows (simulate policy-hit-below-17 cfg 4 1)))
+                (assert-equal 4 (length rows)))))
+          (make-test "b4-causal-export-through-package"
+            (lambda ()
+              (assert-equal 2
+                            (find-flip-threshold
+                              state-16-vs-10
+                              default-count-buckets))))
+          (make-test "b4-causal-dag-renders-through-stdlib"
+            (lambda ()
+              (let ((dot (dag:->dot blackjack-causal-dag
+                                    '((title . "blackjack")))))
+                (assert-true (contains? dot "digraph \"blackjack\""))
+                (assert-true (contains? dot "\"state\" -> \"action\""))
+                (assert-true (contains? dot "\"action\" -> \"outcome\"")))))
+          (make-test "b5-learn-export-through-package"
+            (lambda ()
+              (let* ((cfg (make-learn-config learn-mode-supervised
+                                             7
+                                             4
+                                             16
+                                             0.01
+                                             2))
+                     (result (recover-hi-lo cfg)))
+                (assert-true (learn-result? result))
+                (assert-equal learn-mode-supervised
+                              (learn-result-mode result)))))
+          (make-test "b6-strategy-export-through-package"
+            (lambda ()
+              (let ((snapshot (render-strategy-chart 0)))
+                (assert-true (contains? snapshot "count=0"))
+                (assert-true (contains? snapshot "dealer,2,3,4,5,6,7,8,9,10,A")))))
+          (make-test "b6.5-maxims-export-through-package"
+            (lambda ()
+              (let ((rules (render-maxim-clauses-for-count 0)))
+                (assert-true (contains? rules "count=0"))
+                (assert-true (contains? rules "total-in(17,20)"))
+                (assert-true (contains? rules "default -> hit")))))
+          (make-test "b6-app-prints-multi-bucket-chart"
+            (lambda ()
+              (let ((out (chart-output)))
+                (assert-true (contains? out "count=-2"))
+                (assert-true (contains? out "count=0"))
+                (assert-true (contains? out "count=2")))))
+          (make-test "b7-help-documents-subcommands-config-and-seed"
+            (lambda ()
+              (let ((help (cli-help)))
+                (assert-true (contains? help "subcommands:"))
+                (assert-true (contains? help "all"))
+                (assert-true (contains? help "--config"))
+                (assert-true (contains? help "--seed")))))
+          (make-test "b7-chart-subcommand-renders-section-output"
+            (lambda ()
+              (let ((out (run-command '("chart" "--seed" "42"))))
+                (assert-true (contains? out "== chart =="))
+                (assert-true (contains? out "elapsed-ms="))
+                (assert-true (contains? out "seed=42"))
+                (assert-true (contains? out "count=-2"))
+                (assert-true (contains? out "count=0"))
+                (assert-true (contains? out "count=2")))))
+          (make-test "b7-json-config-controls-learn-settings"
+            (lambda ()
+              (let ((out (run-command
+                           '("learn" "--config" "tests/config/supervised_demo.json"))))
+                (assert-true (contains? out "== learn =="))
+                (assert-true (contains? out "elapsed-ms="))
+                (assert-true (contains? out "mode=supervised"))
+                (assert-true (contains? out "requested-seed=42"))
+                (assert-true (contains? out "epochs=12"))
+                (assert-true (contains? out "learning-rate=0.01"))
+                (assert-true (contains? out "policy-refresh=8")))))
+          (make-test "b7-all-subcommand-produces-documented-sections"
+            (lambda ()
+              (let ((out (run-command '("all" "--seed" "42" "--learn" "supervised"))))
+                (assert-true (contains? out "Blackjack demo scaffold ready."))
+                (assert-true (contains? out "== induce =="))
+                (assert-true (contains? out "== causal =="))
+                (assert-true (contains? out "== learn =="))
+                (assert-true (contains? out "== chart =="))
+                (assert-true (contains? out "== maxims =="))
+                (assert-true (contains? out "total-elapsed-ms="))
+                (assert-true (contains? out "seed=42")))))
+          (make-test "b7-unknown-subcommand-returns-runtime-error"
+            (lambda ()
+              (let ((err (catch 'runtime.error
+                           (run-command '("unknown")))))
+                (assert-equal 'runtime-error (car err))))))))
+    (print-tap (run suite))))

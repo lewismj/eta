@@ -1,0 +1,258 @@
+(module causal
+  (import std.collections)
+  (import std.causal)
+  (import std.causal.render)
+  (export
+    make-causal-state
+    causal-state?
+    causal-state-player-total
+    causal-state-dealer-up
+    state-16-vs-10
+    default-count-buckets
+    blackjack-causal-dag
+    causal-identification-details
+    causal-identification-formula
+    ev-obs
+    ev-do
+    policy-do
+    sweep-do
+    find-flip-threshold)
+  (begin
+
+    (define-record-type <causal-state>
+      (%make-causal-state player-total dealer-up)
+      causal-state?
+      (player-total causal-state-player-total)
+      (dealer-up causal-state-dealer-up))
+
+    (defun make-causal-state (player-total dealer-up)
+      (if (or (< player-total 4) (> player-total 21))
+          (error "make-causal-state: player-total out of range")
+          (if (or (< dealer-up 1) (> dealer-up 13))
+              (error "make-causal-state: dealer-up out of range")
+              (%make-causal-state player-total dealer-up))))
+
+    (define state-16-vs-10 (%make-causal-state 16 10))
+    (define %state-12-vs-4 (%make-causal-state 12 4))
+    (define default-count-buckets '(-3 -2 -1 0 1 2 3))
+
+    (define blackjack-causal-dag
+      (define-dag
+        '((shoe -> count)
+          (shoe -> next-card)
+          (shoe -> action)
+          (shoe -> outcome)
+          (state -> action)
+          (state -> outcome)
+          (count -> action)
+          (count -> outcome)
+          (next-card -> outcome)
+          (action -> outcome))))
+
+    (define %observed-nodes
+      '(state count shoe next-card action outcome))
+
+    (define causal-identification-details
+      (do:identify-details-observed
+        blackjack-causal-dag
+        'outcome
+        'action
+        %observed-nodes))
+
+    (defun %alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if pair (cdr pair) #f)))
+
+    (define causal-identification-formula
+      (%alist-get 'result causal-identification-details))
+
+    (defun %state-key (state)
+      (cons (causal-state-player-total state)
+            (causal-state-dealer-up state)))
+
+    (defun %quotient (a b)
+      (/ (- a (modulo a b)) b))
+
+    (defun %clamp-int (value lo hi)
+      (max lo (min hi value)))
+
+    (defun %repeat (row n)
+      (let loop ((k n) (acc '()))
+        (if (= k 0)
+            acc
+            (loop (- k 1) (cons row acc)))))
+
+    (defun %split-count (n pct)
+      (let* ((pct2 (%clamp-int pct 1 99))
+             (lhs (%clamp-int (%quotient (* n pct2) 100) 1 (- n 1))))
+        (cons lhs (- n lhs))))
+
+    (defun %require-action (action)
+      (if (or (eq? action 'hit) (eq? action 'stand))
+          action
+          (error "causal: action must be 'hit or 'stand")))
+
+    (defun %dealer-bucket (dealer-up)
+      (if (= dealer-up 1)
+          11
+          (min dealer-up 10)))
+
+    (defun %base-stand-threshold (dealer-up)
+      (let ((up (%dealer-bucket dealer-up)))
+        (cond
+          ((<= up 3) 13)
+          ((<= up 6) 12)
+          (else 17))))
+
+    (defun %high-count-shift (dealer-up count)
+      (let ((up (%dealer-bucket dealer-up)))
+        (if (>= up 10)
+            (max 0 (- count 1))
+            0)))
+
+    (defun %stand-threshold (state count)
+      (let* ((base (%base-stand-threshold (causal-state-dealer-up state)))
+             (shift (%high-count-shift (causal-state-dealer-up state) count)))
+        (max 8 (- base shift))))
+
+    (defun %dealer-stand-bonus (dealer-up)
+      (let ((up (%dealer-bucket dealer-up)))
+        (if (and (>= up 4) (<= up 6))
+            0.35
+            0.0)))
+
+    (defun %decision-margin (state count)
+      (+ (- (causal-state-player-total state)
+            (%stand-threshold state count))
+         (%dealer-stand-bonus (causal-state-dealer-up state))))
+
+    (defun %state-baseline (state)
+      (let ((player-total (causal-state-player-total state))
+            (dealer-up (%dealer-bucket (causal-state-dealer-up state))))
+        (+ (* 0.010 (- player-total 13))
+           (* -0.015 (- dealer-up 6)))))
+
+    (defun %outcome-for (state action count shoe next-card)
+      (let* ((margin (%decision-margin state count))
+             (baseline (%state-baseline state))
+             (shoe-impact (+ (* 0.18 shoe)
+                             (* 0.02 next-card)))
+             (ev-hit (+ -0.20 baseline shoe-impact (* 0.020 count) (* -0.110 margin)))
+             (ev-stand (+ -0.20 baseline shoe-impact (* 0.055 count) (* 0.110 margin))))
+        (if (eq? action 'stand) ev-stand ev-hit)))
+
+    (defun %make-row (state-key count shoe next-card action outcome)
+      (list
+        (cons 'state state-key)
+        (cons 'count count)
+        (cons 'shoe shoe)
+        (cons 'next-card next-card)
+        (cons 'action action)
+        (cons 'outcome outcome)))
+
+    (defun %rows-for-shoe (state count shoe n)
+      (let* ((stand-pct (if (= shoe 1)
+                            (+ 50 (* 5 count))
+                            (+ 10 (* 3 count))))
+             (stand+hit (%split-count n stand-pct))
+             (n-stand (car stand+hit))
+             (n-hit (cdr stand+hit))
+             (state-key (%state-key state))
+             (next-card shoe)
+             (hit-row (%make-row state-key
+                                 count
+                                 shoe
+                                 next-card
+                                 'hit
+                                 (%outcome-for state 'hit count shoe next-card)))
+             (stand-row (%make-row state-key
+                                   count
+                                   shoe
+                                   next-card
+                                   'stand
+                                   (%outcome-for state 'stand count shoe next-card))))
+        (append (%repeat hit-row n-hit)
+                (%repeat stand-row n-stand))))
+
+    (defun %rows-for-state-count (state count)
+      (let* ((n-total 200)
+             (n-high (%clamp-int (+ 100 (* 30 count)) 10 190))
+             (n-low (- n-total n-high)))
+        (append (%rows-for-shoe state count -1 n-low)
+                (%rows-for-shoe state count 1 n-high))))
+
+    (defun %rows-for-counts (state counts)
+      (if (null? counts)
+          '()
+          (append (%rows-for-state-count state (car counts))
+                  (%rows-for-counts state (cdr counts)))))
+
+    (defun %rows-for (state count)
+      (%rows-for-state-count state count))
+
+    (defun %rows-for-action (rows action)
+      (filter (lambda (row) (eq? (%alist-get 'action row) action))
+              rows))
+
+    (defun %ensure-non-empty (rows who)
+      (if (null? rows)
+          (error who)
+          rows))
+
+    (defun %adjustment-set ()
+      (let ((status (%alist-get 'status causal-identification-details)))
+        (cond
+          ((eq? status 'adjust) (%alist-get 'chosen-z causal-identification-details))
+          ((eq? status 'direct) '())
+          (else (error "causal: do-calculus query is not identifiable")))))
+
+    (defun ev-obs (state action count)
+      (let* ((action2 (%require-action action))
+             (rows (%ensure-non-empty (%rows-for state count)
+                                      "ev-obs: no rows for requested state/count"))
+             (rows2 (%ensure-non-empty (%rows-for-action rows action2)
+                                       "ev-obs: no rows for requested action")))
+        (do:conditional-mean rows2 'outcome)))
+
+    (defun ev-do (state action count)
+      (let* ((action2 (%require-action action))
+             (rows (%ensure-non-empty (%rows-for state count)
+                                      "ev-do: no rows for requested state/count")))
+        (do:estimate-effect 'outcome
+                            'action
+                            action2
+                            (%adjustment-set)
+                            rows)))
+
+    (defun policy-do (state count)
+      (let ((ev-hit (ev-do state 'hit count))
+            (ev-stand (ev-do state 'stand count)))
+        (if (>= ev-stand ev-hit) 'stand 'hit)))
+
+    (defun sweep-do (state counts)
+      (if (null? counts)
+          '()
+          (let* ((count (car counts))
+                 (row (list
+                        (cons 'count count)
+                        (cons 'ev-obs-hit (ev-obs state 'hit count))
+                        (cons 'ev-obs-stand (ev-obs state 'stand count))
+                        (cons 'ev-do-hit (ev-do state 'hit count))
+                        (cons 'ev-do-stand (ev-do state 'stand count))
+                        (cons 'policy (policy-do state count)))))
+            (cons row
+                  (sweep-do state (cdr counts))))))
+
+    (defun find-flip-threshold (state counts)
+      (let loop ((rest counts) (prev-action #f))
+        (if (null? rest)
+            #f
+            (let* ((count (car rest))
+                   (action (policy-do state count)))
+              (if (and prev-action
+                       (eq? prev-action 'hit)
+                       (eq? action 'stand))
+                  count
+                  (loop (cdr rest) action))))))
+
+  ))

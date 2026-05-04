@@ -1,0 +1,9 @@
+{
+  "seed": 42,
+  "induce_rounds": 64,
+  "learn_mode": "supervised",
+  "learn_epochs": 12,
+  "learn_batch_size": 64,
+  "learn_learning_rate": 0.01,
+  "learn_policy_refresh": 8
+}

@@ -1,0 +1,71 @@
+(module blackjack.tests.mc
+  (import std.test blackjack)
+  (begin
+
+    (defun alist-keys (rows)
+      (if (null? rows)
+          '()
+          (cons (car (car rows))
+                (alist-keys (cdr rows)))))
+
+    (defun alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if pair (cdr pair) #f)))
+
+    (define suite
+      (make-group "blackjack mc"
+        (list
+          (make-test "trace schema version is frozen"
+            (lambda ()
+              (assert-equal 'blackjack-trace-v1 trace-schema-version)))
+
+          (make-test "simulate is deterministic for fixed seed and worker count"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 42))
+                     (rows-a (simulate policy-hit-below-17 cfg 80 4))
+                     (rows-b (simulate policy-hit-below-17 cfg 80 4)))
+                (assert-equal rows-a rows-b))))
+
+          (make-test "replay-deterministic reports matching traces and summaries"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 123))
+                     (check (replay-deterministic policy-hit-below-17 cfg 120 3)))
+                (assert-true (alist-get 'trace-match check))
+                (assert-true (alist-get 'summary-match check))
+                (assert-true (alist-get 'match check)))))
+
+          (make-test "aggregate summary is stable across worker counts"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 77))
+                     (check (replay-worker-parity policy-hit-below-17 cfg 160 1 5)))
+                (assert-true (alist-get 'match check)))))
+
+          (make-test "trace rows expose the frozen field order"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 9))
+                     (rows (simulate policy-hit-below-17 cfg 1 1))
+                     (row (car rows))
+                     (keys (alist-keys (trace-row->alist row))))
+                (assert-equal '(round-index
+                                player-total
+                                dealer-up
+                                player-soft
+                                player-cards
+                                action
+                                count
+                                reward)
+                              keys))))
+
+          (make-test "simulate-summary totals are internally consistent"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 19))
+                     (rows (simulate policy-hit-below-17 cfg 90 2))
+                     (summary (simulate-summary rows))
+                     (rounds (alist-get 'rounds summary))
+                     (wins (alist-get 'wins summary))
+                     (losses (alist-get 'losses summary))
+                     (pushes (alist-get 'pushes summary)))
+                (assert-equal 90 rounds)
+                (assert-equal rounds (+ wins losses pushes))))))))
+
+    (print-tap (run suite))))

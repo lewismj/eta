@@ -1,0 +1,65 @@
+(module blackjack.tests.learn
+  (import std.test blackjack)
+  (begin
+
+    (defun %all-close? (lhs rhs epsilon)
+      (cond
+        ((and (null? lhs) (null? rhs)) #t)
+        ((or (null? lhs) (null? rhs)) #f)
+        ((> (abs (- (car lhs) (car rhs))) epsilon) #f)
+        (else (%all-close? (cdr lhs) (cdr rhs) epsilon))))
+
+    (define suite
+      (make-group "blackjack learn"
+        (list
+          (make-test "supervised learning recovers hi-lo direction"
+            (lambda ()
+              (let* ((cfg (make-learn-config learn-mode-supervised
+                                             42
+                                             80
+                                             128
+                                             0.03
+                                             8))
+                     (result (recover-hi-lo cfg)))
+                (assert-true (learn-result? result))
+                (assert-true (< (learn-result-loss-final result)
+                                (learn-result-loss-initial result)))
+                (assert-true (>= (learn-result-cosine-hi-lo result) 0.95))
+                (assert-true (expected-value-monotone? result))
+                (assert-true (b5-gate-pass? result)))))
+
+          (make-test "supervised wrapper is deterministic for fixed seed/config"
+            (lambda ()
+              (let* ((result-a (recover-hi-lo-supervised 17 16 64 0.02 4))
+                     (result-b (recover-hi-lo-supervised 17 16 64 0.02 4)))
+                (assert-equal learn-mode-supervised (learn-result-mode result-a))
+                (assert-true (%all-close? (learn-result-weights result-a)
+                                          (learn-result-weights result-b)
+                                          1e-9))
+                (assert-true (%all-close? (learn-result-normalized-weights result-a)
+                                          (learn-result-normalized-weights result-b)
+                                          1e-9))
+                (assert-true (< (abs (- (learn-result-cosine-hi-lo result-a)
+                                        (learn-result-cosine-hi-lo result-b)))
+                                1e-9)))))
+
+          (make-test "normalize-weights fixes sign and length for rank-5 convention"
+            (lambda ()
+              (let* ((weights (list -1 -1 -1 -1 -1 0 0 0 1 1 1 1 1))
+                     (normalized (normalize-weights weights)))
+                (assert-equal 13 (length normalized))
+                (assert-true (> (list-ref normalized 4) 0.0))
+                (assert-true (< (abs (- (cosine-similarity normalized normalized)
+                                        1.0))
+                                1e-9)))))
+
+          (make-test "joint mode runs policy iteration path and returns weight vector"
+            (lambda ()
+              (let* ((result (recover-hi-lo-joint 42 32 64 0.02 8)))
+                (assert-true (learn-result? result))
+                (assert-equal learn-mode-joint (learn-result-mode result))
+                (assert-equal 13 (length (learn-result-weights result)))
+                (assert-true (< (learn-result-loss-final result)
+                                (learn-result-loss-initial result)))))))))
+
+    (print-tap (run suite))))

@@ -1,0 +1,342 @@
+(module maxims
+  (import std.collections)
+  (import strategy)
+  (export
+    induce-maxim-clauses-for-count
+    induce-maxim-clauses
+    maxim-action-at
+    render-maxim-clauses-for-count
+    render-maxim-clauses)
+  (begin
+
+    (define %all-player-totals
+      '(5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20))
+
+    (define %all-dealer-ups
+      chart-dealer-ups)
+
+    (define %canonical-dealer-options
+      (list
+        %all-dealer-ups
+        '(2 3 4 5 6)
+        '(7 8 9 10 1)
+        '(2 3 4 5 6 7)
+        '(2 3 4 5 6 7 8 9)
+        '(2 3 4 5 6 7 8 9 10)
+        '(3 4 5 6)
+        '(4 5 6)
+        '(5 6)
+        '(10 1)
+        '(2)
+        '(3)
+        '(4)
+        '(5)
+        '(6)
+        '(7)
+        '(8)
+        '(9)
+        '(10)
+        '(1)))
+
+    (defun %alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if pair (cdr pair) #f)))
+
+    (defun %join-with (parts sep)
+      (if (null? parts)
+          ""
+          (let loop ((rest (cdr parts)) (acc (car parts)))
+            (if (null? rest)
+                acc
+                (loop (cdr rest)
+                      (string-append acc sep (car rest)))))))
+
+    (defun %validate-counts (counts who)
+      (if (null? counts)
+          (error who)
+          counts))
+
+    (defun %make-clause (total-lo total-hi dealer-ups action)
+      (list
+        (cons 'total-lo total-lo)
+        (cons 'total-hi total-hi)
+        (cons 'dealer-ups dealer-ups)
+        (cons 'action action)))
+
+    (defun %clause-total-lo (clause)
+      (%alist-get 'total-lo clause))
+
+    (defun %clause-total-hi (clause)
+      (%alist-get 'total-hi clause))
+
+    (defun %clause-dealer-ups (clause)
+      (%alist-get 'dealer-ups clause))
+
+    (defun %clause-action (clause)
+      (%alist-get 'action clause))
+
+    (defun %member-equal? (x xs)
+      (if (null? xs)
+          #f
+          (if (equal? x (car xs))
+              #t
+              (%member-equal? x (cdr xs)))))
+
+    (defun %clause-matches? (clause player-total dealer-up)
+      (and (<= (%clause-total-lo clause) player-total)
+           (<= player-total (%clause-total-hi clause))
+           (%member-equal? dealer-up (%clause-dealer-ups clause))))
+
+    (defun maxim-action-at (clauses player-total dealer-up)
+      (let loop ((rest clauses))
+        (if (null? rest)
+            'hit
+            (let ((clause (car rest)))
+              (if (%clause-matches? clause player-total dealer-up)
+                  (%clause-action clause)
+                  (loop (cdr rest)))))))
+
+    (defun %cell-total (cell)
+      (%alist-get 'player-total cell))
+
+    (defun %cell-dealer-up (cell)
+      (%alist-get 'dealer-up cell))
+
+    (defun %cell-action (cell)
+      (%alist-get 'action cell))
+
+    (defun %cell-key (cell)
+      (cons (%cell-total cell)
+            (%cell-dealer-up cell)))
+
+    (defun %stand-keys (cells)
+      (if (null? cells)
+          '()
+          (let ((cell (car cells)))
+            (if (eq? (%cell-action cell) 'stand)
+                (cons (%cell-key cell) (%stand-keys (cdr cells)))
+                (%stand-keys (cdr cells))))))
+
+    (defun %all-stand? (cells)
+      (if (null? cells)
+          #t
+          (and (eq? (%cell-action (car cells)) 'stand)
+               (%all-stand? (cdr cells)))))
+
+    (defun %total-intervals ()
+      (let loop-lo ((totals %all-player-totals) (acc '()))
+        (if (null? totals)
+            (reverse acc)
+            (let ((lo (car totals)))
+              (let loop-hi ((rest totals) (acc2 acc))
+                (if (null? rest)
+                    (loop-lo (cdr totals) acc2)
+                    (loop-hi (cdr rest)
+                             (cons (cons lo (car rest)) acc2))))))))
+
+    (defun %candidate-clauses ()
+      (let ((intervals (%total-intervals)))
+        (let loop-i ((rest intervals) (acc '()))
+          (if (null? rest)
+              (reverse acc)
+              (let* ((interval (car rest))
+                     (lo (car interval))
+                     (hi (cdr interval)))
+                (let loop-d ((dealer-rest %canonical-dealer-options) (acc2 acc))
+                  (if (null? dealer-rest)
+                      (loop-i (cdr rest) acc2)
+                      (loop-d (cdr dealer-rest)
+                              (cons (%make-clause lo hi (car dealer-rest) 'stand)
+                                    acc2)))))))))
+
+    (defun %clause-matched-cells (clause cells)
+      (filter (lambda (cell)
+                (%clause-matches? clause
+                                  (%cell-total cell)
+                                  (%cell-dealer-up cell)))
+              cells))
+
+    (defun %valid-stand-clause? (clause cells)
+      (let ((matched (%clause-matched-cells clause cells)))
+        (and (not (null? matched))
+             (%all-stand? matched))))
+
+    (defun %valid-stand-clauses (cells)
+      (filter (lambda (clause) (%valid-stand-clause? clause cells))
+              (%candidate-clauses)))
+
+    (defun %clause-covered-keys (clause cells)
+      (let loop ((rest cells) (acc '()))
+        (if (null? rest)
+            (reverse acc)
+            (let ((cell (car rest)))
+              (if (and (eq? (%cell-action cell) 'stand)
+                       (%clause-matches? clause
+                                         (%cell-total cell)
+                                         (%cell-dealer-up cell)))
+                  (loop (cdr rest) (cons (%cell-key cell) acc))
+                  (loop (cdr rest) acc))))))
+
+    (defun %filter-keys-in (xs allowed)
+      (if (null? xs)
+          '()
+          (if (%member-equal? (car xs) allowed)
+              (cons (car xs) (%filter-keys-in (cdr xs) allowed))
+              (%filter-keys-in (cdr xs) allowed))))
+
+    (defun %remove-keys (xs removed)
+      (if (null? xs)
+          '()
+          (if (%member-equal? (car xs) removed)
+              (%remove-keys (cdr xs) removed)
+              (cons (car xs) (%remove-keys (cdr xs) removed)))))
+
+    (defun %clause-complexity (clause)
+      (+ (if (and (= (%clause-total-lo clause) 5)
+                  (= (%clause-total-hi clause) 20))
+             0
+             1)
+         (if (equal? (%clause-dealer-ups clause) %all-dealer-ups)
+             0
+             1)))
+
+    (defun %choose-best-candidate (candidates cells uncovered)
+      (let loop ((rest candidates)
+                 (best-clause #f)
+                 (best-covered '())
+                 (best-coverage 0)
+                 (best-complexity 0))
+        (if (null? rest)
+            (if best-clause
+                (list
+                  (cons 'clause best-clause)
+                  (cons 'covered best-covered))
+                #f)
+            (let* ((clause (car rest))
+                   (covered (%filter-keys-in
+                              (%clause-covered-keys clause cells)
+                              uncovered))
+                   (coverage (length covered))
+                   (complexity (%clause-complexity clause)))
+              (if (= coverage 0)
+                  (loop (cdr rest)
+                        best-clause
+                        best-covered
+                        best-coverage
+                        best-complexity)
+                  (if (or (not best-clause)
+                          (> coverage best-coverage)
+                          (and (= coverage best-coverage)
+                               (< complexity best-complexity)))
+                      (loop (cdr rest)
+                            clause
+                            covered
+                            coverage
+                            complexity)
+                      (loop (cdr rest)
+                            best-clause
+                            best-covered
+                            best-coverage
+                            best-complexity)))))))
+
+    (defun %induce-stand-clauses (cells)
+      (let ((candidates (%valid-stand-clauses cells))
+            (stand-keys (%stand-keys cells)))
+        (let loop ((uncovered stand-keys) (acc '()))
+          (if (null? uncovered)
+              (reverse acc)
+              (let ((best (%choose-best-candidate candidates cells uncovered)))
+                (if (not best)
+                    (error "induce-maxim-clauses-for-count: unable to cover stand cells")
+                    (loop (%remove-keys uncovered (%alist-get 'covered best))
+                          (cons (%alist-get 'clause best) acc))))))))
+
+    (defun induce-maxim-clauses-for-count (count)
+      (let ((cells (enumerate-strategy-cells (list count))))
+        (%induce-stand-clauses cells)))
+
+    (defun induce-maxim-clauses (counts)
+      (let ((counts2 (%validate-counts counts
+                                       "induce-maxim-clauses: counts must be non-empty")))
+        (map* (lambda (count)
+                (cons count (induce-maxim-clauses-for-count count)))
+              counts2)))
+
+    (defun %dealer-label (dealer-up)
+      (if (= dealer-up 1)
+          "A"
+          (number->string dealer-up)))
+
+    (defun %dealer-set-explicit-label (dealer-ups)
+      (string-append "{"
+                     (%join-with
+                       (map* (lambda (dealer-up) (%dealer-label dealer-up))
+                             dealer-ups)
+                       ",")
+                     "}"))
+
+    (defun %dealer-set-label (dealer-ups)
+      (cond
+        ((equal? dealer-ups %all-dealer-ups) "{2..A}")
+        ((equal? dealer-ups '(2 3 4 5 6)) "{2..6}")
+        ((equal? dealer-ups '(7 8 9 10 1)) "{7..A}")
+        ((equal? dealer-ups '(2 3 4 5 6 7)) "{2..7}")
+        ((equal? dealer-ups '(2 3 4 5 6 7 8 9)) "{2..9}")
+        ((equal? dealer-ups '(2 3 4 5 6 7 8 9 10)) "{2..10}")
+        ((equal? dealer-ups '(3 4 5 6)) "{3..6}")
+        ((equal? dealer-ups '(4 5 6)) "{4..6}")
+        ((equal? dealer-ups '(5 6)) "{5..6}")
+        ((equal? dealer-ups '(10 1)) "{10,A}")
+        (else (%dealer-set-explicit-label dealer-ups))))
+
+    (defun %total-label (clause)
+      (let ((lo (%clause-total-lo clause))
+            (hi (%clause-total-hi clause)))
+        (if (= lo hi)
+            (string-append "total=" (number->string lo))
+            (string-append "total-in(" (number->string lo) "," (number->string hi) ")"))))
+
+    (defun %action-label (action)
+      (cond
+        ((eq? action 'stand) "stand")
+        ((eq? action 'hit) "hit")
+        (else (error "render-maxim-clauses: unsupported action"))))
+
+    (defun %render-clause (idx clause)
+      (string-append
+        (number->string idx)
+        ". "
+        (%total-label clause)
+        ", up-in("
+        (%dealer-set-label (%clause-dealer-ups clause))
+        ") -> "
+        (%action-label (%clause-action clause))))
+
+    (defun %render-count-block (count clauses)
+      (let ((lines
+              (let loop ((rest clauses) (idx 1) (acc '()))
+                (if (null? rest)
+                    (reverse (cons "default -> hit" acc))
+                    (loop (cdr rest)
+                          (+ idx 1)
+                          (cons (%render-clause idx (car rest)) acc))))))
+        (string-append "count="
+                       (number->string count)
+                       "\n"
+                       (%join-with lines "\n"))))
+
+    (defun render-maxim-clauses-for-count (count)
+      (%render-count-block count
+                           (induce-maxim-clauses-for-count count)))
+
+    (defun render-maxim-clauses (counts)
+      (let ((counts2 (%validate-counts counts
+                                       "render-maxim-clauses: counts must be non-empty")))
+        (%join-with
+          (map* (lambda (count)
+                  (%render-count-block count
+                                       (induce-maxim-clauses-for-count count)))
+                counts2)
+          "\n\n")))
+
+  ))

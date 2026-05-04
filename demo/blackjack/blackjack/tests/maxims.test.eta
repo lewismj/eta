@@ -1,0 +1,56 @@
+(module blackjack.tests.maxims
+  (import std.test blackjack)
+  (begin
+
+    (defun %alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if pair (cdr pair) #f)))
+
+    (defun %contains-clause? (clauses total-lo total-hi dealer-ups action)
+      (let loop ((rest clauses))
+        (if (null? rest)
+            #f
+            (let ((clause (car rest)))
+              (if (and (= (%alist-get 'total-lo clause) total-lo)
+                       (= (%alist-get 'total-hi clause) total-hi)
+                       (equal? (%alist-get 'dealer-ups clause) dealer-ups)
+                       (eq? (%alist-get 'action clause) action))
+                  #t
+                  (loop (cdr rest)))))))
+
+    (define %count0-snapshot
+      (string-append
+        "count=0\n"
+        "1. total-in(17,20), up-in({2..A}) -> stand\n"
+        "2. total-in(13,16), up-in({2..6}) -> stand\n"
+        "3. total=12, up-in({4..6}) -> stand\n"
+        "default -> hit"))
+
+    (define suite
+      (make-group "blackjack maxims"
+        (list
+          (make-test "count 0 maxim snapshot is deterministic and stable"
+            (lambda ()
+              (let* ((snapshot-a (render-maxim-clauses-for-count 0))
+                     (snapshot-b (render-maxim-clauses-for-count 0)))
+                (assert-equal snapshot-a snapshot-b)
+                (assert-equal %count0-snapshot snapshot-a))))
+
+          (make-test "count 0 includes canonical v1 hard-total clauses"
+            (lambda ()
+              (let ((clauses (induce-maxim-clauses-for-count 0)))
+                (assert-true (%contains-clause? clauses 17 20 chart-dealer-ups 'stand))
+                (assert-true (%contains-clause? clauses 13 16 '(2 3 4 5 6) 'stand))
+                (assert-true (%contains-clause? clauses 12 12 '(4 5 6) 'stand))
+                (assert-true (<= (length clauses) 4))
+                (assert-equal 'stand (maxim-action-at clauses 17 1))
+                (assert-equal 'hit (maxim-action-at clauses 11 6)))))
+
+          (make-test "count +2 maxims capture 16 vs 10 deviation"
+            (lambda ()
+              (let ((clauses0 (induce-maxim-clauses-for-count 0))
+                    (clauses2 (induce-maxim-clauses-for-count 2)))
+                (assert-equal 'hit (maxim-action-at clauses0 16 10))
+                (assert-equal 'stand (maxim-action-at clauses2 16 10))))))))
+
+    (print-tap (run suite))))

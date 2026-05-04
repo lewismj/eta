@@ -11,8 +11,8 @@
 
 ## 0) Introduction
 
-> **One-line summary.** This demo shows how four paradigms — logic, causal
-> inference, statistical learning, and constraint solving — can be
+> **One-line summary.** This demo shows how four paradigms — logic (ILP/CLP),
+> causal inference, statistical learning, and concurrent Monte Carlo execution — can be
 > *combined* to **learn, validate, and compress decision policies from
 > data**, with blackjack as a small but non-trivial test bed.
 
@@ -40,11 +40,11 @@ Blackjack is the canonical "small game with deep structure" — a finite rule
 set, a clean reward signal, and a well-known optimal strategy that depends
 not only on the player's hand but on *what cards remain in the shoe*. That
 last point is what makes it interesting for a multi-paradigm language: the
-same game can be studied as **rules**, as a **causal system**, and as a
-**statistical learning** problem, and each paradigm answers a different
-question.
+same game can be studied as **rules/constraints**, as a **causal system**, as a
+**statistical learning** problem, and as a **concurrent simulation**
+workload; each paradigm answers a different question.
 
-This demo asks four progressively harder questions, each handled by the
+This demo asks five progressively harder questions, each handled by the
 paradigm best suited to it:
 
 1. *Given only game traces, can we recover the rules?*
@@ -249,24 +249,25 @@ End-to-end RL is the natural baseline; this demo is deliberately the
 
 ## 1) Objective
 
-Ship a runnable cookbook demo that uses Eta's four flagship paradigms — **Logic
-/ CLP**, **Causal / do-calculus**, **ML / Torch**, and **Concurrency /
-Monte Carlo** — to:
+Ship a runnable demo that uses Eta's four flagship paradigms —
+**Logic (ILP/CLP)**, **Causal / do-calculus**, **ML / Torch**, and
+**Concurrency / Monte Carlo** — to:
 
 1. **induce** the basic rules of blackjack from observed game traces,
 2. **model** the shoe causally and evaluate `do(action)` queries,
 3. **rediscover** the Hi-Lo running-count weights from EV residuals,
-4. **emit** a basic-strategy chart conditioned on the count.
+4. **emit** a basic-strategy chart conditioned on the count,
+5. **distill** that chart into human-readable strategy maxims.
 
 Primary outcome: a packaged `library + app` pair under
-`cookbook/blackjack/` that builds and runs end-to-end with `eta build && eta run`,
+`demo/blackjack/` that builds and runs end-to-end with `eta build && eta run`,
 and is referenced from the README/TLDR as a flagship example.
 
 ---
 
 ## 2) Why this demo
 
-1. exercises four cookbook areas in one cohesive narrative,
+1. exercises four language areas in one cohesive narrative,
 2. each paradigm is used where it is genuinely best (not contrived),
 3. produces a *measurable* punchline: the learned weight vector should
    converge to a positive multiple of `(+1,+1,+1,+1,+1, 0,0,0, -1,-1,-1,-1,-1)`,
@@ -298,15 +299,30 @@ and is referenced from the README/TLDR as a flagship example.
 5. GUI / notebook polish (a follow-up notebook can wrap the library),
 6. registry publication.
 
+### 3.3 Implementation constraints
+
+1. **Output location**: all deliverables for this plan live under `demo/blackjack/`
+   (library, app, fixtures, and docs for the demo itself).
+2. **Stdlib-first policy**: implementation must use `std.*` modules first; do not
+   depend on ad hoc cookbook scripts as runtime/code dependencies.
+3. **Missing functionality rule**: if required functionality is not in `std.*`,
+   implement it inside the demo package (`demo/blackjack/blackjack/src/`) with
+   accompanying tests.
+4. **Readable source requirement**: where it improves clarity, use
+   `define-syntax` (`syntax-rules`) for declarative table/rule declarations.
+5. **Structured data requirement**: use `define-record-type` (defstruct-style
+   records) for state/config/result payloads instead of loose alists where that
+   improves readability.
+
 ---
 
 ## 4) Package layout
 
-Two packages under `cookbook/blackjack/`, mirroring
+Two packages under `demo/blackjack/`, mirroring
 [end-to-end packaging](../../cookbook/packaging/end-to-end/README.md):
 
 ```
-cookbook/blackjack/
+demo/blackjack/
   README.md
   blackjack/                 # library package
     eta.toml
@@ -368,7 +384,7 @@ blackjack = { path = "../blackjack" }
 Created with the standard flow:
 
 ```console
-cd cookbook/blackjack
+cd demo/blackjack
 eta new blackjack --lib
 eta new blackjack-demo --bin
 cd blackjack-demo
@@ -379,6 +395,17 @@ eta add blackjack --path ../blackjack
 
 ## 5) Module-by-module design
 
+### 5.0 Source readability conventions
+
+1. define `define-record-type` records for core structured values
+   (`shoe-state`, `hand-state`, `trace-row`, rule candidate rows) rather
+   than passing unstructured lists/alists across module boundaries.
+2. use `define-syntax` (`syntax-rules`) for repeated declarative tables
+   (for example chart row schemas and rule-template declarations) where
+   it materially reduces boilerplate.
+3. keep runtime behavior in functions; use macros to improve readability,
+   not to hide evaluation order or control flow.
+
 ### 5.1 `shoe.eta` — card model
 
 1. Ranks `1..13` with value map `A=(1|11)`, `2..10` face value, `J/Q/K=10`.
@@ -388,13 +415,12 @@ eta add blackjack --path ../blackjack
 5. `running-count : seen -> int` parameterized by a weight vector
    (Hi-Lo is just one instantiation).
 
-Reference patterns: [stats.eta](../../cookbook/quant/stats.eta).
+Implementation note: use `std.core`, `std.collections`, and `std.math`
+helpers before introducing demo-local helpers.
 
 ### 5.2 `rules.eta` — relational rule predicates
 
-Pure logic predicates re-using patterns from
-[logic.eta](../../cookbook/logic/logic.eta) and
-[unification.eta](../../cookbook/logic/unification.eta):
+Pure logic predicates built on `std.logic` and `std.core` primitives:
 
 ```
 bust(H)            :- min(totals(H)) > 21.
@@ -464,11 +490,12 @@ Goal: given a labeled trace `[(state, label)]`, search a small predicate
 DSL (`sum`, `count`, `member`, `<`, `<=`, `=`) for the smallest hypothesis
 consistent with the labels.
 
-Approach (re-using [boolean-simplifier.eta](../../cookbook/logic/boolean-simplifier.eta)):
+Approach:
 
 1. enumerate candidate clauses up to bounded length,
 2. score by coverage − complexity (MDL),
-3. simplify boolean combinations with the existing simplifier,
+3. simplify boolean combinations with stdlib operations and demo-local
+   helpers (if needed),
 4. return canonical rule per target predicate.
 
 Targets: `bust`, `blackjack`, `dealer-hits`, `dealer-stands`, win condition.
@@ -491,8 +518,10 @@ hand-written rules in §5.2 over a 50k-hand trace.
 
 ### 5.4 `causal.eta` — DAG + do-calculus
 
-Build a shoe DAG using [dag.eta](../../cookbook/do-calculus/dag.eta) and
-[do-rules.eta](../../cookbook/do-calculus/do-rules.eta):
+Build a shoe DAG using `std.causal` primitives (`dag:*`, `do-rule*`,
+`do:identify`, `do:estimate-effect`) and `std.causal.render`'s
+`define-dag` for readable graph declarations:
+
 
 ```
 Shoe ──► NextCard ──► Outcome
@@ -563,9 +592,8 @@ second is rarely identifiable. The demo models the honest version.
 
 ### 5.5 `mc.eta` — parallel rollout harness
 
-Re-uses [monte-carlo.eta](../../cookbook/concurrency/monte-carlo.eta),
-[parallel-map.eta](../../cookbook/concurrency/parallel-map.eta), and the
-worker-pool patterns:
+Uses stdlib/runtime concurrency primitives (including `std.supervisor`
+where useful) with demo-local worker orchestration:
 
 1. `simulate : (policy, shoe, n) -> traces` produces
    `(state, action, count, reward)` tuples,
@@ -624,7 +652,7 @@ Parameterize:
 2. `f_θ : (player_total, dealer_up, count) -> ℝ` — EV head (small MLP),
 3. shared loss: MSE between `f_θ` and observed reward.
 
-Training loop (using [torch.eta](../../cookbook/ml/torch.eta)):
+Training loop (using `std.torch`):
 
 1. generate batch of MC traces under current `policy-from(f_θ, w)`,
 2. compute `count` per state via `w`,
@@ -676,9 +704,8 @@ thing to inspect in §10.
 ### 5.7 `strategy.eta` — CLP basic-strategy chart
 
 Enumerate `player_total ∈ {5..20} × dealer_up ∈ {2..A} × count_bucket`,
-solve `argmax_a ev-do(...)`, project to a 2D table per count bucket. Same
-enumeration shape as [nqueens.eta](../../cookbook/logic/nqueens.eta) and
-[send-more-money.eta](../../cookbook/logic/send-more-money.eta).
+solve `argmax_a ev-do(...)`, project to a 2D table per count bucket, using
+`std.logic`/`std.clp` combinators.
 
 Output: pretty-printed chart(s) and a stable text snapshot for tests.
 
@@ -769,8 +796,8 @@ Post-processing normalisation (applied to the surviving clause set):
 Without these passes the raw ILP output, even with sensible scoring,
 will not look like the cheat sheet; with them it does.
 
-Reuses [boolean-simplifier.eta](../../cookbook/logic/boolean-simplifier.eta)
-for clause normalisation and the same simplification path as §5.3.
+Clause normalisation should use stdlib helpers where available; any missing
+normalisation helper belongs in the demo library (not cookbook dependencies).
 
 #### 5.8.1 Canonical ground-truth chart (S17, dealer stands on soft 17)
 
@@ -928,7 +955,7 @@ acceptance test regresses).
 Mirrors [Package Commands](../guide/packages.md):
 
 ```console
-cd cookbook/blackjack/blackjack
+cd demo/blackjack/blackjack
 eta test
 
 cd ../blackjack-demo
@@ -1014,9 +1041,9 @@ Gate: maxim list contains the documented clauses; snapshot stable.
 ### B7 — App polish + docs
 
 1. subcommand UX, `--seed`,
-2. cookbook README with copy-paste run instructions,
+2. demo README with copy-paste run instructions,
 3. README/TLDR/next-steps cross-links,
-4. optional notebook wrapper under `cookbook/notebooks/`.
+4. optional notebook wrapper under `demo/blackjack/notebooks/`.
 
 Gate: `eta run -- all --seed 42` produces the documented output.
 
@@ -1115,7 +1142,7 @@ Layout already groups two packages under one directory, so adopting
 [workspace mode](./workspace_plan.md) later is mechanical:
 
 ```toml
-# cookbook/blackjack/eta.toml (future)
+# demo/blackjack/eta.toml (future)
 [workspace]
 members = ["blackjack", "blackjack-demo"]
 default-members = ["blackjack-demo"]
@@ -1127,19 +1154,30 @@ No code changes required; only the root manifest is added when workspaces ship.
 
 ## 12) Acceptance criteria
 
-The demo is complete when:
+The plan has two explicit completion levels:
 
-1. `cookbook/blackjack/blackjack` builds and `eta test` is green,
-2. `cookbook/blackjack/blackjack-demo` builds and
+### 12.1 v1 core complete
+
+v1 (action set `{hit, stand}`) is complete when:
+
+1. `demo/blackjack/blackjack` builds and `eta test` is green,
+2. `demo/blackjack/blackjack-demo` builds and
    `eta run -- all --seed 42` exits 0,
 3. induced rules are equivalent to hand-written rules on the trace fixture,
 4. causal `do()` sweep shows the documented action flip,
 5. learned weight vector matches Hi-Lo within cosine ≥ 0.95,
 6. strategy chart snapshot is stable,
-7. induced basic-strategy maxim list satisfies the §5.8.2 acceptance
-   contract against the canonical S17 cheat sheet in §5.8.1
-   (v1: hard-totals H/S rows + count-conditional deviation;
-   v1.5: full chart fidelity ≥ 98%, every cheat-sheet row covered, ≤ 25
-   printed clauses),
+7. maxim induction satisfies the **v1 subset** in §5.8.2
+   (hard-total H/S rows + count-conditional deviation),
 8. README, TLDR, and next-steps reference the demo.
+
+### 12.2 v1.5 extension complete
+
+v1.5 (extended action set `{hit, stand, double, split}`) is complete when:
+
+1. all v1 core criteria in §12.1 remain green, and
+2. the induced basic-strategy maxim list satisfies the full §5.8.2
+   acceptance contract against the canonical S17 cheat sheet in §5.8.1
+   (chart fidelity ≥ 98%, every cheat-sheet row covered, ≤ 25 printed
+   clauses).
 

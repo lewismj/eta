@@ -1,0 +1,14 @@
+recover-hi-lo:start mode=supervised seed=43 epochs-requested=12 batch-size=64 lr=0.01 policy-refresh=8 convergence-patience=200 convergence-epsilon=0.0001 lr-decay-patience=12 lr-decay-factor=0.5 lr-min=0.005
+recover-hi-lo:epoch epoch=1 loss=0.0177529 best-loss=0.0177529 lr=0.01 stalled=0
+recover-hi-lo:epoch epoch=2 loss=0.0145137 best-loss=0.0145137 lr=0.01 stalled=0
+recover-hi-lo:epoch epoch=3 loss=0.00946973 best-loss=0.00946973 lr=0.01 stalled=0
+recover-hi-lo:epoch epoch=4 loss=0.0067886 best-loss=0.0067886 lr=0.01 stalled=0
+recover-hi-lo:epoch epoch=5 loss=0.00526245 best-loss=0.00526245 lr=0.01 stalled=0
+recover-hi-lo:epoch epoch=6 loss=0.00411554 best-loss=0.00411554 lr=0.01 stalled=0
+recover-hi-lo:epoch epoch=7 loss=0.00253776 best-loss=0.00253776 lr=0.01 stalled=0
+recover-hi-lo:epoch epoch=8 loss=0.00311596 best-loss=0.00253776 lr=0.01 stalled=1
+recover-hi-lo:epoch epoch=9 loss=0.00284254 best-loss=0.00253776 lr=0.01 stalled=2
+recover-hi-lo:epoch epoch=10 loss=0.00293424 best-loss=0.00253776 lr=0.01 stalled=3
+recover-hi-lo:epoch epoch=11 loss=0.00421131 best-loss=0.00253776 lr=0.01 stalled=4
+recover-hi-lo:epoch epoch=12 loss=0.00415579 best-loss=0.00253776 lr=0.01 stalled=5
+recover-hi-lo:done epochs-run=12 loss-initial=0.0177529 loss-final=0.00415579 lr-final=0.01 cosine=0.231954 ev-monotone=#t

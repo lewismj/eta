@@ -1,0 +1,130 @@
+(module strategy
+  (import std.collections)
+  (import std.logic)
+  (import std.clp)
+  (import causal)
+  (export
+    chart-player-totals
+    chart-dealer-ups
+    default-chart-counts
+    enumerate-strategy-cells
+    chart-action-at
+    render-strategy-chart
+    render-strategy-charts)
+  (begin
+
+    (define chart-player-totals
+      '(20 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5))
+
+    (define chart-dealer-ups
+      '(2 3 4 5 6 7 8 9 10 1))
+
+    (define default-chart-counts
+      '(-2 0 2))
+
+    (defun %alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if pair (cdr pair) #f)))
+
+    (defun %join-with (parts sep)
+      (if (null? parts)
+          ""
+          (let loop ((rest (cdr parts)) (acc (car parts)))
+            (if (null? rest)
+                acc
+                (loop (cdr rest)
+                      (string-append acc sep (car rest)))))))
+
+    (defun %dealer-label (dealer-up)
+      (if (= dealer-up 1)
+          "A"
+          (number->string dealer-up)))
+
+    (defun %action-label (action)
+      (cond
+        ((eq? action 'stand) "S")
+        ((eq? action 'hit) "H")
+        (else (error "render-strategy-charts: unsupported action"))))
+
+    (defun %validate-counts (counts who)
+      (if (null? counts)
+          (error who)
+          counts))
+
+    (defun enumerate-strategy-cells (counts)
+      (let* ((counts2 (%validate-counts counts
+                                        "enumerate-strategy-cells: counts must be non-empty"))
+             (player-total (logic-var))
+             (dealer-idx (logic-var))
+             (count-idx (logic-var)))
+        (clp:domain player-total 5 20)
+        (clp:domain dealer-idx 0 (- (length chart-dealer-ups) 1))
+        (clp:domain count-idx 0 (- (length counts2) 1))
+        (let ((solutions (clp:labeling (list player-total dealer-idx count-idx)
+                                       'strategy 'ff
+                                       'solutions 'all)))
+          (map* (lambda (sol)
+                  (let* ((total (list-ref sol 0))
+                         (up (list-ref chart-dealer-ups (list-ref sol 1)))
+                         (count (list-ref counts2 (list-ref sol 2)))
+                         (state (make-causal-state total up)))
+                    (list
+                      (cons 'player-total total)
+                      (cons 'dealer-up up)
+                      (cons 'count count)
+                      (cons 'action (policy-do state count)))))
+                solutions))))
+
+    (defun chart-action-at (cells player-total dealer-up count)
+      (let loop ((rest cells))
+        (if (null? rest)
+            (error "chart-action-at: missing chart cell")
+            (let* ((cell (car rest))
+                   (total (%alist-get 'player-total cell))
+                   (up (%alist-get 'dealer-up cell))
+                   (bucket (%alist-get 'count cell)))
+              (if (and (= total player-total)
+                       (= up dealer-up)
+                       (= bucket count))
+                  (%alist-get 'action cell)
+                  (loop (cdr rest)))))))
+
+    (defun %render-row (cells count player-total)
+      (let ((actions (map* (lambda (dealer-up)
+                             (%action-label
+                               (chart-action-at cells
+                                                player-total
+                                                dealer-up
+                                                count)))
+                           chart-dealer-ups)))
+        (string-append (number->string player-total)
+                       ","
+                       (%join-with actions ","))))
+
+    (defun %render-chart (cells count)
+      (let* ((header (string-append "count="
+                                    (number->string count)
+                                    "\n"
+                                    "dealer,"
+                                    (%join-with
+                                      (map* (lambda (up) (%dealer-label up))
+                                            chart-dealer-ups)
+                                      ",")
+                                    "\n"))
+             (rows (map* (lambda (total) (%render-row cells count total))
+                         chart-player-totals)))
+        (string-append header
+                       (%join-with rows "\n"))))
+
+    (defun render-strategy-charts (counts)
+      (let* ((counts2 (%validate-counts counts
+                                        "render-strategy-charts: counts must be non-empty"))
+             (cells (enumerate-strategy-cells counts2))
+             (chunks (map* (lambda (count) (%render-chart cells count))
+                           counts2)))
+        (%join-with chunks "\n\n")))
+
+    (defun render-strategy-chart (count)
+      (render-strategy-charts (list count)))
+
+  ))

@@ -347,6 +347,26 @@ public:
             changed = true;
         }
 
+        if (etac_module_reservations_.erase(module_name) > 0) {
+            changed = true;
+        }
+        for (auto it = etac_module_reservations_.begin(); it != etac_module_reservations_.end();) {
+            auto& reserve_modules = it->second;
+            const auto before = reserve_modules.size();
+            reserve_modules.erase(
+                std::remove(reserve_modules.begin(), reserve_modules.end(), module_name),
+                reserve_modules.end());
+            if (reserve_modules.empty()) {
+                it = etac_module_reservations_.erase(it);
+                changed = true;
+                continue;
+            }
+            if (reserve_modules.size() != before) {
+                changed = true;
+            }
+            ++it;
+        }
+
         const auto before_forms = accumulated_forms_.size();
         accumulated_forms_.erase(
             std::remove_if(
@@ -1233,8 +1253,12 @@ private:
              */
             if (mod.total_globals > accounted_globals) {
                 const auto reserve_slots = mod.total_globals - accounted_globals;
-                if (!append_etac_global_reservation(reserve_slots)) {
+                std::string reserve_module_name;
+                if (!append_etac_global_reservation(reserve_slots, &reserve_module_name)) {
                     return false;
+                }
+                if (!reserve_module_name.empty()) {
+                    etac_module_reservations_[mod.name].push_back(std::move(reserve_module_name));
                 }
                 accounted_globals = mod.total_globals;
             }
@@ -1391,14 +1415,18 @@ private:
      * The placeholder module is marked executed and never run; it only exists to
      * keep semantic global allocation in sync with already-loaded compiled code.
      */
-    bool append_etac_global_reservation(uint32_t slots_to_reserve) {
+    bool append_etac_global_reservation(uint32_t slots_to_reserve,
+                                        std::string* reserve_module_name = nullptr) {
         if (slots_to_reserve == 0) return true;
 
-        const std::string reserve_module_name =
+        const std::string reserve_name =
             "__eta_etac_reserve_" + std::to_string(etac_reserve_counter_++);
+        if (reserve_module_name != nullptr) {
+            *reserve_module_name = reserve_name;
+        }
 
         std::ostringstream source;
-        source << "(module " << reserve_module_name << "\n";
+        source << "(module " << reserve_name << "\n";
         for (uint32_t i = 0; i < slots_to_reserve; ++i) {
             source << "  (define __eta_etac_slot_" << i << " '())\n";
         }
@@ -1426,7 +1454,23 @@ private:
         for (auto& f : *expanded_res) {
             accumulated_forms_.push_back(reader::parser::deep_copy(f));
         }
-        executed_modules_.insert(reserve_module_name);
+        executed_modules_.insert(reserve_name);
+        return true;
+    }
+
+    void drop_etac_reservation_modules(const std::vector<std::string>& reserve_modules) {
+        for (const auto& reserve_module_name : reserve_modules) {
+            (void)clear_module_cache(reserve_module_name);
+        }
+    }
+
+    bool release_etac_global_reservation(const std::string& module_name) {
+        auto it = etac_module_reservations_.find(module_name);
+        if (it == etac_module_reservations_.end()) return true;
+
+        auto reserve_modules = std::move(it->second);
+        etac_module_reservations_.erase(it);
+        drop_etac_reservation_modules(reserve_modules);
         return true;
     }
 
@@ -1899,6 +1943,7 @@ private:
     int repl_counter_{0};
     uint64_t eval_counter_{0};
     uint64_t etac_reserve_counter_{0};
+    std::unordered_map<std::string, std::vector<std::string>> etac_module_reservations_;
     std::vector<std::string> active_module_init_stack_;
     std::vector<PriorModule> repl_modules_;
 
@@ -2011,6 +2056,8 @@ private:
         const auto source_key = canon_path_key(source_path);
         if (indexed_source_files_.contains(source_key)) return true;
 
+        if (!release_etac_global_reservation(module_name)) return false;
+
         indexed_source_files_.insert(source_key);
         if (!run_file(source_path)) {
             indexed_source_files_.erase(source_key);
@@ -2069,6 +2116,16 @@ private:
             loading_modules_.erase(mod_name);
 
             if (!ok) return false;
+
+            /**
+             * Imports resolved to .etac execute successfully, but the linker
+             * still needs source module forms in accumulated_forms_ for this
+             * same submission. Hydrate sibling .eta immediately so the module
+             * is visible to link/index passes without changing execution order.
+             */
+            if (path->extension() == ".etac") {
+                if (!hydrate_executed_module_source(mod_name)) return false;
+            }
         }
         return true;
     }
@@ -2087,6 +2144,20 @@ private:
                          const std::string& result_binding = {},
                          bool execute = true,
                          CompileResult* out_cr = nullptr) {
+        struct PreferSourceGuard {
+            ModulePathResolver& resolver;
+            bool previous{false};
+
+            explicit PreferSourceGuard(ModulePathResolver& target)
+                : resolver(target), previous(target.prefer_source()) {
+                resolver.set_prefer_source(true);
+            }
+
+            ~PreferSourceGuard() {
+                resolver.set_prefer_source(previous);
+            }
+        } prefer_source_guard{resolver_};
+
         diag_engine_.clear();
 
         /// Lex + Parse

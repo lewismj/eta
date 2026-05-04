@@ -1,0 +1,292 @@
+(module blackjack_demo
+  (export startup-message chart-output cli-help run-command run-command-line)
+  (import std.io std.args std.collections std.json std.time blackjack)
+  (begin
+
+    (define %cli-spec
+      (list
+        '(config (--config) string "")
+        '(seed (--seed) int 42)
+        (list 'learn
+              (list '--learn)
+              'string
+              "joint"
+              (list (cons 'choices '("joint" "supervised"))))
+        '(help (--help -h) flag)))
+
+    (define %default-induce-rounds 128)
+    (define %default-learn-epochs 24)
+    (define %default-learn-batch-size 64)
+
+    (define (startup-message)
+      (scaffold-message))
+
+    (define (chart-output)
+      (render-strategy-charts default-chart-counts))
+
+    (defun %join-with (parts sep)
+      (if (null? parts)
+          ""
+          (let loop ((rest (cdr parts)) (acc (car parts)))
+            (if (null? rest)
+                acc
+                (loop (cdr rest)
+                      (string-append acc sep (car rest)))))))
+
+    (defun %first-or (xs fallback)
+      (if (null? xs)
+          fallback
+          (car xs)))
+
+    (defun %alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if pair (cdr pair) #f)))
+
+    (defun %section (name body)
+      (string-append "== " name " ==\n" body))
+
+    (defun %timed-section (name thunk)
+      (let* ((t0 (time:monotonic-ms))
+             (body (thunk))
+             (t1 (time:monotonic-ms))
+             (elapsed (time:elapsed-ms t0 t1)))
+        (%section name
+                  (string-append
+                    "elapsed-ms="
+                    (number->string elapsed)
+                    "\n"
+                    body))))
+
+    (defun %default-learning-rate (learn-mode-name)
+      (if (string=? learn-mode-name "joint")
+          0.005
+          0.01))
+
+    (defun %default-policy-refresh (learn-mode-name)
+      (if (string=? learn-mode-name "joint")
+          50
+          8))
+
+    (defun %learn-mode-from-string (raw)
+      (cond
+        ((string=? raw "supervised") learn-mode-supervised)
+        ((string=? raw "joint") learn-mode-joint)
+        (else (error "blackjack-demo: learn_mode must be 'joint' or 'supervised"))))
+
+    (defun %load-config-file (path)
+      (if (= (string-length path) 0)
+          (hash-map)
+          (let ((port (open-input-file path)))
+            (let ((cfg (json:read port 'keep-integers-exact? #t)))
+              (close-input-port port)
+              (if (hash-map? cfg)
+                  cfg
+                  (error "blackjack-demo: config JSON root must be an object"))))))
+
+    (defun %cfg-ref (cfg key fallback)
+      (hash-map-ref cfg key fallback))
+
+    (defun %resolve-run-config (parsed)
+      (let* ((config-path (args:get parsed 'config))
+             (file-cfg (%load-config-file config-path))
+             (seed (%cfg-ref file-cfg "seed" (args:get parsed 'seed)))
+             (learn-mode-name (%cfg-ref file-cfg "learn_mode" (args:get parsed 'learn)))
+             (learn-epochs (%cfg-ref file-cfg "learn_epochs" %default-learn-epochs))
+             (learn-batch-size (%cfg-ref file-cfg "learn_batch_size" %default-learn-batch-size))
+             (learn-learning-rate (%cfg-ref file-cfg
+                                            "learn_learning_rate"
+                                            (%default-learning-rate learn-mode-name)))
+             (learn-policy-refresh (%cfg-ref file-cfg
+                                             "learn_policy_refresh"
+                                             (%default-policy-refresh learn-mode-name)))
+             (induce-rounds (%cfg-ref file-cfg "induce_rounds" %default-induce-rounds)))
+        (%learn-mode-from-string learn-mode-name)
+        (if (<= induce-rounds 0)
+            (error "blackjack-demo: induce_rounds must be positive")
+            (hash-map
+              'config-path config-path
+              'seed seed
+              'learn-mode learn-mode-name
+              'learn-epochs learn-epochs
+              'learn-batch-size learn-batch-size
+              'learn-learning-rate learn-learning-rate
+              'learn-policy-refresh learn-policy-refresh
+              'induce-rounds induce-rounds))))
+
+    (defun %run-cfg-ref (cfg key)
+      (hash-map-ref cfg key))
+
+    (defun %render-induce (run-cfg)
+      (let* ((seed (%run-cfg-ref run-cfg 'seed))
+             (rounds (%run-cfg-ref run-cfg 'induce-rounds))
+             (cfg (make-mc-shoe seed))
+             (rows (simulate policy-hit-below-17 cfg rounds 1))
+             (summary (simulate-summary rows)))
+        (string-append
+          "seed="
+          (number->string seed)
+          "\ntrace-schema="
+          (symbol->string trace-schema-version)
+          "\nrounds="
+          (number->string rounds)
+          "\nsummary="
+          (display->string summary)
+          "\npredicates=(bust blackjack dealer-hits dealer-stands player-wins push)")))
+
+    (defun %render-causal-row (row)
+      (string-append
+        "count="
+        (number->string (%alist-get 'count row))
+        ", ev-do(hit)="
+        (display->string (%alist-get 'ev-do-hit row))
+        ", ev-do(stand)="
+        (display->string (%alist-get 'ev-do-stand row))
+        ", policy="
+        (symbol->string (%alist-get 'policy row))))
+
+    (defun %render-causal (run-cfg)
+      (let* ((seed (%run-cfg-ref run-cfg 'seed))
+             (rows (sweep-do state-16-vs-10 default-count-buckets))
+             (threshold (find-flip-threshold state-16-vs-10 default-count-buckets))
+             (lines (map* %render-causal-row rows))
+             (threshold-label (if threshold (number->string threshold) "none")))
+        (string-append
+          "seed="
+          (number->string seed)
+          "\nstate=(16,10)\n"
+          (%join-with lines "\n")
+          "\nflip-threshold="
+          threshold-label)))
+
+    (defun %render-learn (run-cfg)
+      (let* ((seed (%run-cfg-ref run-cfg 'seed))
+             (learn-mode-name (%run-cfg-ref run-cfg 'learn-mode))
+             (epochs (%run-cfg-ref run-cfg 'learn-epochs))
+             (batch-size (%run-cfg-ref run-cfg 'learn-batch-size))
+             (learning-rate (%run-cfg-ref run-cfg 'learn-learning-rate))
+             (policy-refresh (%run-cfg-ref run-cfg 'learn-policy-refresh))
+             (mode (%learn-mode-from-string learn-mode-name))
+             (cfg (make-learn-config mode
+                                     seed
+                                     epochs
+                                     batch-size
+                                     learning-rate
+                                     policy-refresh))
+             (result (recover-hi-lo cfg)))
+        (string-append
+          "mode="
+          learn-mode-name
+          "\nrequested-seed="
+          (number->string seed)
+          "\neffective-seed="
+          (number->string (learn-result-seed result))
+          "\nepochs="
+          (number->string (learn-result-epochs result))
+          "\nbatch-size="
+          (number->string (learn-result-batch-size result))
+          "\nlearning-rate="
+          (display->string learning-rate)
+          "\npolicy-refresh="
+          (number->string policy-refresh)
+          "\nloss-initial="
+          (display->string (learn-result-loss-initial result))
+          "\nloss-final="
+          (display->string (learn-result-loss-final result))
+          "\ncosine-hi-lo="
+          (display->string (learn-result-cosine-hi-lo result))
+          "\nev-monotone="
+          (display->string (learn-result-ev-monotone result))
+          "\nnormalized-weights="
+          (display->string (learn-result-normalized-weights result)))))
+
+    (defun %render-chart (run-cfg)
+      (let ((seed (%run-cfg-ref run-cfg 'seed)))
+        (string-append
+          "seed="
+          (number->string seed)
+          "\n"
+          (chart-output))))
+
+    (defun %render-maxims (run-cfg)
+      (let ((seed (%run-cfg-ref run-cfg 'seed)))
+        (string-append
+          "seed="
+          (number->string seed)
+          "\n"
+          (render-maxim-clauses default-chart-counts))))
+
+    (defun %render-all (run-cfg)
+      (let* ((total-start (time:monotonic-ms))
+             (body (%join-with
+                     (list
+                       (startup-message)
+                       (%timed-section "induce" (lambda () (%render-induce run-cfg)))
+                       (%timed-section "causal" (lambda () (%render-causal run-cfg)))
+                       (%timed-section "learn" (lambda () (%render-learn run-cfg)))
+                       (%timed-section "chart" (lambda () (%render-chart run-cfg)))
+                       (%timed-section "maxims" (lambda () (%render-maxims run-cfg))))
+                     "\n\n"))
+             (total-end (time:monotonic-ms)))
+        (string-append body
+                       "\n\ntotal-elapsed-ms="
+                       (number->string (time:elapsed-ms total-start total-end)))))
+
+    (defun cli-help ()
+      (string-append
+        (args:help %cli-spec "blackjack-demo <subcommand>")
+        "\nsubcommands:\n"
+        "  induce   generate deterministic trace summary and rule surface\n"
+        "  causal   print do() EV sweep and action flip threshold\n"
+        "  learn    run weight recovery and print normalized weights\n"
+        "  chart    render multi-bucket strategy charts\n"
+        "  maxims   render induced basic-strategy maxims\n"
+        "  all      run the full pipeline in order\n"
+        "\njson config keys:\n"
+        "  seed, induce_rounds, learn_mode, learn_epochs,\n"
+        "  learn_batch_size, learn_learning_rate, learn_policy_refresh\n"
+        "\nexamples:\n"
+        "  eta run -- all --config tests/config/supervised_demo.json\n"
+        "  eta run -- learn --config tests/config/supervised_demo.json\n"
+        "  eta run -- causal --seed 42"))
+
+    (defun run-command (argv)
+      (let* ((parsed (args:parse %cli-spec argv))
+             (help? (args:get parsed 'help))
+             (positionals (args:get parsed 'positional))
+             (command (%first-or positionals "all")))
+        (if help?
+            (cli-help)
+            (if (> (length positionals) 1)
+                (error "blackjack-demo: expected at most one subcommand")
+                (let ((run-cfg (%resolve-run-config parsed)))
+                  (cond
+                    ((or (string=? command "help")
+                         (string=? command "-h")
+                         (string=? command "--help"))
+                     (cli-help))
+                    ((string=? command "induce")
+                     (%timed-section "induce" (lambda () (%render-induce run-cfg))))
+                    ((string=? command "causal")
+                     (%timed-section "causal" (lambda () (%render-causal run-cfg))))
+                    ((string=? command "learn")
+                     (%timed-section "learn" (lambda () (%render-learn run-cfg))))
+                    ((string=? command "chart")
+                     (%timed-section "chart" (lambda () (%render-chart run-cfg))))
+                    ((string=? command "maxims")
+                     (%timed-section "maxims" (lambda () (%render-maxims run-cfg))))
+                    ((string=? command "all")
+                     (%render-all run-cfg))
+                    (else
+                      (error
+                        (string-append
+                          "blackjack-demo: unknown subcommand '"
+                          command
+                          "'")))))))))
+
+    (defun run-command-line ()
+      (run-command (command-line-arguments)))
+
+    (defun main ()
+      (println (run-command-line)))
+
+  ))

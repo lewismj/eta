@@ -295,6 +295,46 @@ BOOST_AUTO_TEST_CASE(run_etac_file_auto_loads_imports_and_executes_modules) {
     BOOST_TEST(runner.has_module("etac.contract.main"));
 }
 
+BOOST_AUTO_TEST_CASE(source_run_hydrates_sibling_source_for_etac_imports) {
+    TempDir temp;
+    const auto dep_source = temp.create_file("hydration/dep.eta", R"eta(
+(module hydration.dep
+  (export dep-value)
+  (begin
+    (define dep-value 41)))
+)eta");
+    const auto main_source = temp.create_file("hydration/main.eta", R"eta(
+(module hydration.main
+  (import hydration.dep)
+  (export answer)
+  (begin
+    (define answer (+ dep-value 1))))
+)eta");
+
+    const auto dep_etac = temp.path / "hydration" / "dep.etac";
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compile_to_etac(dep_source, temp.path, dep_etac, &compile_error),
+        "compile_to_etac failed: " + compile_error);
+
+    eta::interpreter::ModulePathResolver run_resolver({temp.path});
+    eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+
+    const bool run_ok = runner.run_file(main_source);
+    BOOST_REQUIRE_MESSAGE(run_ok, diagnostics_to_string(runner));
+    BOOST_TEST(runner.has_module("hydration.dep"));
+    BOOST_TEST(runner.has_module("hydration.main"));
+
+    eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
+    const bool verify_ok = runner.run_source(R"eta(
+(module hydration.verify
+  (import hydration.main)
+  (define result answer))
+)eta", &value, "result");
+    BOOST_REQUIRE_MESSAGE(verify_ok, diagnostics_to_string(runner));
+    BOOST_TEST(decode_fixnum(value) == 42);
+}
+
 BOOST_AUTO_TEST_CASE(run_etac_file_emits_clear_diagnostic_for_missing_import) {
     TempDir temp;
     const auto dep_source = temp.create_file("etac/contract/dep.eta", R"eta(

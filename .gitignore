@@ -60,6 +60,9 @@ editors/vscode/node_modules/
 
 demo
 demo/*
+!demo/
+!demo/blackjack/
+!demo/blackjack/**
 editors/vscode/.vscode-test/
 
 cookbook/notebooks/.ipynb_checkpoints/
