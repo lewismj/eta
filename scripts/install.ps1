@@ -156,12 +156,15 @@ foreach ($bin in @("eta.exe", "etac.exe", "etai.exe", "eta_test.exe", "eta_repl.
         Write-Host "  [FAIL] $bin -- not found"
     }
 }
-$PreludeEta = Join-Path $StdlibDir "std\\prelude.eta"
-$PreludeEtac = Join-Path $StdlibDir "std\\prelude.etac"
-if ((Test-Path $PreludeEta) -and (Test-Path $PreludeEtac)) {
-    Write-Host "  [OK] stdlib\\std\\prelude.{eta,etac}"
+$CoreEta = Join-Path $StdlibDir "std\\core.eta"
+$CoreEtac = Join-Path $StdlibDir "std\\core.etac"
+$JupyterEta = Join-Path $StdlibDir "std\\jupyter.eta"
+$JupyterEtac = Join-Path $StdlibDir "std\\jupyter.etac"
+if ((Test-Path $CoreEta) -and (Test-Path $CoreEtac) -and
+    (Test-Path $JupyterEta) -and (Test-Path $JupyterEtac)) {
+    Write-Host "  [OK] stdlib\\std\\{core,jupyter}.{eta,etac}"
 } else {
-    Write-Host "  [FAIL] stdlib\\std\\prelude.{eta,etac} -- missing source and/or bytecode artifact"
+    Write-Host "  [FAIL] stdlib\\std\\{core,jupyter}.{eta,etac} -- missing source and/or bytecode artifact"
 }
 
 $HasSpdlog = [bool](Get-ChildItem -Path $BinDir -Filter "spdlog*.dll" -File -ErrorAction SilentlyContinue | Select-Object -First 1)

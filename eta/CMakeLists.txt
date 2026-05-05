@@ -27,8 +27,6 @@ set(ETA_DAP_SRC_DIR "${ETA_DAP_DIR}/src")
 set(ETA_LSP_SRC_DIR "${ETA_LSP_DIR}/src")
 set(ETA_JUPYTER_SRC_DIR "${ETA_JUPYTER_DIR}/src")
 set(ETA_STDLIB_RUNTIME_DIR "${CMAKE_BINARY_DIR}/stdlib")
-set(ETA_STDLIB_EMBED_DIR "${CMAKE_BINARY_DIR}/embed")
-set(ETA_EMBED_BLOB_SCRIPT "${ETA_REPO_ROOT_DIR}/scripts/embed_blob.py")
 set(ETA_STDLIB_BUILD_SCRIPT "${ETA_REPO_ROOT_DIR}/scripts/build_stdlib_etac.py")
 
 
@@ -192,24 +190,8 @@ add_custom_command(
 )
 add_custom_target(eta_stdlib_etac DEPENDS "${ETA_STDLIB_BUILD_STAMP}")
 
-set(ETA_EMBEDDED_PRELUDE_CPP "${ETA_STDLIB_EMBED_DIR}/prelude_blob.cpp")
-add_custom_command(
-    OUTPUT "${ETA_EMBEDDED_PRELUDE_CPP}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${ETA_STDLIB_EMBED_DIR}"
-    COMMAND ${Python3_EXECUTABLE} "${ETA_EMBED_BLOB_SCRIPT}"
-            --in "${ETA_STDLIB_RUNTIME_DIR}/std/prelude.etac"
-            --out "${ETA_EMBEDDED_PRELUDE_CPP}"
-            --sym eta_embedded_prelude
-    DEPENDS eta_stdlib_etac "${ETA_EMBED_BLOB_SCRIPT}"
-    VERBATIM
-)
-add_library(eta_embedded_prelude STATIC "${ETA_EMBEDDED_PRELUDE_CPP}")
-set_target_properties(eta_embedded_prelude PROPERTIES CXX_SCAN_FOR_MODULES OFF)
-target_compile_definitions(eta_embedded_prelude INTERFACE ETA_HAS_EMBEDDED_PRELUDE=1)
-
 foreach(_t IN ITEMS etai eta_repl eta_lsp eta_dap eta_jupyter)
     if(TARGET ${_t})
-        target_link_libraries(${_t} PRIVATE eta_embedded_prelude)
         add_dependencies(${_t} eta_stdlib_etac)
     endif()
 endforeach()

@@ -101,7 +101,6 @@ namespace {
 
         ModulePathResolver resolver({fs::path(stdlib_path)});
         Driver driver(std::move(resolver));
-        driver.load_prelude();
 
         bool ok = driver.run_source(src);
         BOOST_REQUIRE_MESSAGE(!ok, "expected spawn-thread upvalue serialization failure");
@@ -2682,7 +2681,6 @@ BOOST_AUTO_TEST_CASE(spawn_thread_full_driver_round_trip) {
     /// Build a Driver with the stdlib path
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
-    driver.load_prelude();
 
     /**
      * The thunk: receives a value from the mailbox, adds the captured
@@ -2732,7 +2730,6 @@ BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
 
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
-    driver.load_prelude();
 
     /**
      * Each thunk captures a different offset (10, 20, 30) as an upvalue.
@@ -2802,7 +2799,6 @@ BOOST_AUTO_TEST_CASE(spawn_thread_list_payload_and_quoted_constant_regression) {
 
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
-    driver.load_prelude();
 
     const char* src = R"eta(
 (module spawn-thread-list-quote-regression
@@ -2847,7 +2843,6 @@ BOOST_AUTO_TEST_CASE(spawn_thread_portfolio_worker_shape_regression) {
 
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
-    driver.load_prelude();
 
     const char* src = R"eta(
 (module spawn-thread-portfolio-worker-shape
@@ -2915,7 +2910,6 @@ BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_closure_direct_captured) {
 
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
-    driver.load_prelude();
 
     const char* src = R"eta(
 (module spawn-thread-upvalue-closure-direct
@@ -2958,7 +2952,6 @@ BOOST_AUTO_TEST_CASE(spawn_thread_module_global_definition_capture) {
 
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
-    driver.load_prelude();
 
     const char* src = R"eta(
 (module spawn-thread-module-global-definition-capture

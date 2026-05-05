@@ -51,6 +51,23 @@ struct ModuleEntry {
     std::uint32_t init_func_index{0};          ///< index into the function table
     std::uint32_t total_globals{0};
     std::optional<std::uint32_t> main_func_slot; ///< global slot of main, if any
+    std::uint32_t first_func_index{0};         ///< first function index owned by this module
+    std::uint32_t func_count{0};               ///< number of functions owned by this module
+    std::vector<std::uint32_t> owned_global_slots; ///< global slots defined by this module
+
+    struct ImportBinding {
+        std::uint32_t local_slot{0};          ///< local/import binding slot in this module
+        std::string from_module;              ///< provider module
+        std::string remote_name;              ///< provider export name
+    };
+
+    struct ExportBinding {
+        std::string name;                     ///< exported symbol name
+        std::uint32_t slot{0};                ///< defining global slot in artifact layout
+    };
+
+    std::vector<ImportBinding> import_bindings; ///< import-binding relocation metadata
+    std::vector<ExportBinding> export_bindings; ///< export-slot relocation metadata
 };
 
 /**
@@ -187,7 +204,7 @@ public:
      * @brief Compute the compiler fingerprint for the current build.
      *
      * The value is deterministic for a given toolchain/build configuration and
-     * is embedded in v4 artifacts to detect stale `.etac` files.
+     * is embedded in modern artifacts to detect stale `.etac` files.
      */
     static std::array<std::uint8_t, 16> default_compiler_id();
 
@@ -200,7 +217,8 @@ public:
     /// Format constants
     static constexpr char     MAGIC[4]       = {'E','T','A','C'};
     static constexpr uint16_t FORMAT_VERSION_V3 = 3;
-    static constexpr uint16_t FORMAT_VERSION = 4;   ///< v4 metadata + stale-artifact policy hooks
+    static constexpr uint16_t FORMAT_VERSION_V4 = 4;
+    static constexpr uint16_t FORMAT_VERSION = 5;   ///< v5 module relocation metadata
     static constexpr uint16_t FLAG_HAS_DEBUG = 0x0001;
     static constexpr uint16_t FLAG_HAS_PACKAGE_META = 0x0002;
     static constexpr uint16_t FLAG_HAS_DEPHASH = 0x0004;

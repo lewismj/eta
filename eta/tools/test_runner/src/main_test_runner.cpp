@@ -110,7 +110,7 @@ static TapSummary parse_tap(const std::string& tap_output,
  * True iff `name` looks like a test file suitable for directory auto-discovery.
  * Accepts `*.test.eta` (canonical TAP tests) and `*_smoke.eta` (end-to-end
  * smoke drivers).  Rejects everything else so stdlib module sources like
- * `prelude.eta`, `core.eta`, `supervisor.eta` are not accidentally run as
+ * `core.eta`, `supervisor.eta` are not accidentally run as
  * tests when a user points eta-test at the stdlib root.
  */
 static bool is_discoverable_test_filename(const std::string& name) {
@@ -316,18 +316,6 @@ int main(int argc, char* argv[]) {
         auto sp = std::make_shared<eta::runtime::StringPort>(
             eta::runtime::StringPort::Mode::Output);
         driver.set_output_port(sp);
-
-        /// Load prelude
-        {
-            auto pr = driver.load_prelude();
-            if (pr.found && !pr.loaded) {
-                std::cerr << "eta-test: failed to load prelude for "
-                          << test_file.filename() << "\n";
-                driver.diagnostics().print_all(std::cerr, false, driver.file_resolver());
-                file_results.push_back({ test_file, {}, false });
-                continue;
-            }
-        }
 
         bool ok = driver.run_file(fs::absolute(test_file));
         if (!ok) {

@@ -164,15 +164,68 @@ Implementation notes:
    `builtin_names.h` between the `r("remainder", …)` line and the
    transcendentals (`r("sin", …)`).
 
-### 4.1 No multi-word primitive
+### 4.1 Multi-word primitives (C++ fast path)
 
-The bitset's bulk ops (`bitset-and`, `bitset-popcount`, …) are
-implemented in `.eta` as loops over the words vector calling the
-primitives above. No allocation in the inner loop because each
-primitive returns a fresh fixnum (cheap). If profiling later shows
-multi-word AND/OR/popcount as a hotspot, a `%bitset-words-*` family
-backed by C++ on a contiguous buffer can be added in a follow-up
-without changing the public API.
+It would be self-defeating to pull in `<bit>` for hardware-issued
+`POPCNT` / `CTZ` / `CLZ` and then bury them under a per-word
+interpreted loop that allocates a fresh fixnum each iteration. The
+inner-loop bulk ops are therefore implemented in C++ from day one,
+operating directly on the underlying word vector. They live in
+`bit_primitives.h` next to the scalar ops and are registered as part
+of the same block:
+
+```
+%bitset-words-and!         (2, false)   ; (dst, src) -> dst, in place AND
+%bitset-words-or!          (2, false)
+%bitset-words-xor!         (2, false)
+%bitset-words-andnot!      (2, false)
+%bitset-words-not!         (2, false)   ; (dst, tail-mask) -> dst
+%bitset-words-copy!        (2, false)   ; (dst, src) -> dst
+%bitset-words-equal?       (2, false)   ; word-wise vector equality
+%bitset-words-popcount     (1, false)   ; sum of std::popcount over all words
+%bitset-words-ctz          (2, false)   ; (words, capacity) -> trailing zeros
+%bitset-words-clz          (2, false)   ; (words, capacity) -> leading zeros
+%bitset-words-first-set    (1, false)   ; index of lowest set bit, or -1
+%bitset-words-next-set     (2, false)   ; (words, start) -> index or -1
+%bitset-words-shift-left!  (3, false)   ; (dst, src, k); dst may alias src
+%bitset-words-shift-right! (3, false)
+```
+
+Implementation notes:
+
+1. Each `%bitset-words-*` takes Eta vectors of fixnum words (the
+   `words-vector` slot of the bitset record from §3.1). The C++ side
+   reinterprets each fixnum's `int_val` as `uint64_t`, performs the
+   bulk operation against a contiguous stack buffer or in place, and
+   writes the results back. This is one allocation per call (the
+   result vector, when not mutating) instead of one per word.
+2. Loops are written so the optimiser can vectorise them: a tight
+   `for (size_t i = 0; i < n; ++i) dst[i] = a[i] OP b[i];` over
+   `uint64_t*`. With `-O2` and AVX2/NEON enabled, MSVC/Clang/GCC will
+   emit packed 256-bit ops; `std::popcount` reductions lower to
+   `VPOPCNTQ` where available and to a chained `POPCNT` otherwise.
+3. The mutating variants (`…!`) require equal vector lengths and
+   raise `RuntimeErrorCode::TypeError` on mismatch — the `.eta`
+   wrapper has already enforced capacity equality, so this is a
+   defensive check.
+4. `%bitset-words-not!` takes the tail-mask (§3.3) as its second
+   argument so the C++ side can apply it to the last word in the
+   same pass and preserve the high-bit-zero invariant without a
+   second round-trip.
+5. `%bitset-words-shift-left!` / `…-shift-right!` implement the
+   word-shift + bit-shift algorithm from §6.4 in C++; they handle
+   `k == 0` and `bit-shift == 0` specially to avoid the undefined
+   `>> 64`. They permit `dst == src` aliasing and process words in
+   the safe direction accordingly.
+6. `%bitset-words-first-set` / `…-next-set` return `-1` (a fixnum)
+   for "no set bit"; the `.eta` wrapper translates that to `#f` so
+   the public API matches §5.6.
+
+The scalar `%bit-*`, `%popcount`, `%ctz`, `%clz` primitives from §4
+remain — they back the standalone 64-bit fast path in §5.6 and the
+single-bit `bitset-set!` / `-clear!` / `-flip!` mutators where the
+overhead of crossing into C++ for one word is not worth a dedicated
+primitive.
 
 ---
 
@@ -509,8 +562,9 @@ Gate: `popcount 0xFFFFFFFFFFFFFFFF == 64` round-trips through the VM;
 ### M2 — Bulk set operations
 
 1. Implement `bitset-and!`/`-or!`/`-xor!`/`-andnot!`/`-not!` plus pure
-   variants by looping over the words vector calling the `%bit-*`
-   primitives.
+   variants as thin wrappers over the `%bitset-words-*` primitives
+   from §4.1; pure variants allocate via `%bitset-words-copy!` then
+   apply the in-place op.
 2. Implement `bitset=?`, `bitset-subset?`, `bitset-disjoint?`,
    `bitset-empty?`, `bitset-full?`.
 3. Add `bitset-from-integer`, `bitset-from-list`, `bitset-copy`,
@@ -542,13 +596,14 @@ Gate: word-boundary-crossing shifts and scans pass.
 
 Gate: documentation merged; module discoverable from the stdlib index.
 
-### M5 *(optional)* — Multi-word native fast path
+### M5 *(optional)* — SIMD / hardware-specific tuning
 
-If profiling shows multi-word `bitset-and`/`-or`/`-popcount` as a
-hotspot, add `%bitset-words-and!`, `%bitset-words-or!`,
-`%bitset-words-popcount` (operating on a contiguous `int64_t*`
-buffer) and dispatch to them from the `.eta` wrappers. Public API
-unchanged; only the inner loop changes.
+The §4.1 multi-word primitives already compile to vectorised loops
+under `-O2`. If profiling on a specific target shows headroom, this
+phase introduces hand-tuned intrinsic paths (AVX-512 `VPOPCNTQ`,
+ARM SVE) selected at runtime via CPU feature detection. Public API
+and the C++ primitive surface stay unchanged; only the inner kernel
+swaps.
 
 ---
 

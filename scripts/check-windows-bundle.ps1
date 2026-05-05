@@ -17,7 +17,7 @@
          step is the belt-and-braces fallback for the cases where they do
          not (e.g. xeus-zmq's optional LibUV branch on a stripped vcpkg).
       3. Verifies stdlib source + precompiled artifacts exist:
-         stdlib\std\prelude.eta and stdlib\std\prelude.etac.
+         stdlib\std\core.{eta,etac} and stdlib\std\jupyter.{eta,etac}.
       4. Verifies the resulting bin\ contains the full runtime DLL set
          plus the MSVC redistributable runtime (msvcp140 / vcruntime140 /
          vcruntime140_1).
@@ -92,11 +92,23 @@ foreach ($exe in $requiredExes) {
 }
 
 $stdlibDir = Join-Path $Prefix 'stdlib'
-$requiredStdlib = @('std\prelude.eta', 'std\prelude.etac')
+$requiredStdlib = @('std\core.eta', 'std\core.etac', 'std\jupyter.eta', 'std\jupyter.etac')
 $missingStdlib = @()
 foreach ($artifact in $requiredStdlib) {
     $p = Join-Path $stdlibDir $artifact
     if (-not (Test-Path $p)) { $missingStdlib += "stdlib\$artifact" }
+}
+
+$cookbookDir = Join-Path $Prefix 'cookbook'
+$requiredNotebooks = @(
+    'notebooks\LanguageBasics.ipynb',
+    'notebooks\AAD.ipynb',
+    'notebooks\Portfolio.ipynb'
+)
+$missingNotebooks = @()
+foreach ($notebook in $requiredNotebooks) {
+    $p = Join-Path $cookbookDir $notebook
+    if (-not (Test-Path $p)) { $missingNotebooks += "cookbook\$notebook" }
 }
 
 # ── 2. Hydrate runtime DLLs from vcpkg / _deps ──────────────────────────────
@@ -205,6 +217,10 @@ if ($missingExes.Count -gt 0) {
 if ($missingStdlib.Count -gt 0) {
     $ok = $false
     Write-Host "[FAIL] Missing stdlib artifacts: $($missingStdlib -join ', ')"
+}
+if ($missingNotebooks.Count -gt 0) {
+    $ok = $false
+    Write-Host "[FAIL] Missing cookbook notebooks: $($missingNotebooks -join ', ')"
 }
 if ($missingDlls.Count -gt 0) {
     $ok = $false

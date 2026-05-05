@@ -45,11 +45,7 @@ static eta::interpreter::ModulePathResolver make_resolver() {
 struct EvalHarness {
     eta::session::Driver driver;
 
-    EvalHarness() : driver(make_resolver()) {
-        auto pr = driver.load_prelude();
-        BOOST_REQUIRE_MESSAGE(pr.found, "prelude.eta was not found for eval tests");
-        BOOST_REQUIRE_MESSAGE(pr.loaded, "prelude.eta failed to load for eval tests");
-    }
+    EvalHarness() : driver(make_resolver()) {}
 
     [[nodiscard]] std::string diagnostics_string() const {
         std::ostringstream oss;

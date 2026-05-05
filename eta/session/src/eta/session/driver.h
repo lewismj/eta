@@ -256,10 +256,26 @@ public:
     };
 
     struct CompileModuleEntry {
+        struct ImportBinding {
+            uint32_t local_slot{0};
+            std::string from_module;
+            std::string remote_name;
+        };
+
+        struct ExportBinding {
+            std::string name;
+            uint32_t slot{0};
+        };
+
         std::string name;
         uint32_t init_func_index{0};        ///< index relative to base_func_idx
         uint32_t total_globals{0};
         std::optional<uint32_t> main_func_slot;
+        uint32_t first_func_index{0};       ///< first module function relative to base_func_idx
+        uint32_t func_count{0};             ///< number of functions emitted for this module
+        std::vector<uint32_t> owned_global_slots;
+        std::vector<ImportBinding> import_bindings;
+        std::vector<ExportBinding> export_bindings;
     };
 
     struct CompileResult {
@@ -395,6 +411,10 @@ public:
             } else {
                 ++it;
             }
+        }
+
+        if (runtime_module_info_.erase(module_name) > 0) {
+            changed = true;
         }
 
         repl_modules_.erase(
@@ -1176,6 +1196,19 @@ public:
     }
 
 private:
+    /**
+     * Ensure debugger global-name metadata always has canonical bare builtin
+     * names at slots 0..N-1.
+     */
+    void record_builtin_names() {
+        const uint32_t builtin_count = static_cast<uint32_t>(builtins_.specs().size());
+        for (uint32_t slot = 0; slot < builtin_count; ++slot) {
+            const auto& name = builtins_.specs()[slot].name;
+            if (name.empty()) continue;
+            global_names_[slot] = name;
+        }
+    }
+
     [[nodiscard]] static fs::path embedded_prelude_marker_path() {
         return fs::path("<embedded:prelude.etac>");
     }
@@ -1204,6 +1237,39 @@ private:
         return true;
     }
 
+    static void relocate_function_global_slots(
+        runtime::vm::BytecodeFunction& func,
+        const std::unordered_map<uint32_t, uint32_t>& slot_map) {
+        if (slot_map.empty()) return;
+        for (auto& instr : func.code) {
+            if (instr.opcode != runtime::vm::OpCode::LoadGlobal
+                && instr.opcode != runtime::vm::OpCode::StoreGlobal) {
+                continue;
+            }
+            auto it = slot_map.find(instr.arg);
+            if (it != slot_map.end()) {
+                instr.arg = it->second;
+            }
+        }
+    }
+
+    void record_runtime_exports_from_source_module(const semantics::ModuleSemantics& mod) {
+        RuntimeModuleInfo info;
+        for (const auto& [export_name, binding_id] : mod.exports) {
+            if (binding_id.id >= mod.bindings.size()) continue;
+            info.export_slots[export_name] = mod.bindings[binding_id.id].slot;
+        }
+        runtime_module_info_[mod.name] = std::move(info);
+    }
+
+    void record_runtime_exports_from_compiled_module(
+        const std::string& module_name,
+        const std::unordered_map<std::string, uint32_t>& export_slots) {
+        RuntimeModuleInfo info;
+        info.export_slots = export_slots;
+        runtime_module_info_[module_name] = std::move(info);
+    }
+
     bool execute_deserialized_etac(runtime::vm::EtacFile& etac) {
         /// Auto-load non-prelude imports
         for (const auto& imp : etac.imports) {
@@ -1221,6 +1287,203 @@ private:
             if (!run_module_file(*imp_path)) return false;
         }
 
+        if (etac.format_version < runtime::vm::BytecodeSerializer::FORMAT_VERSION) {
+            /**
+             * Legacy path for v3/v4 artifacts that do not carry relocation
+             * metadata. Keep existing behavior for backward compatibility.
+             */
+            uint32_t base_idx = static_cast<uint32_t>(registry_.size());
+            for (const auto& func : etac.registry.all()) {
+                runtime::vm::BytecodeFunction copy = func;
+                copy.rebase_func_indices(static_cast<int32_t>(base_idx));
+                registry_.add(std::move(copy));
+            }
+
+            uint32_t accounted_globals = static_cast<uint32_t>(vm_.globals().size());
+            for (const auto& mod : etac.modules) {
+                if (executed_modules_.contains(mod.name)) {
+                    if (mod.total_globals > accounted_globals) {
+                        accounted_globals = mod.total_globals;
+                    }
+                    continue;
+                }
+
+                if (mod.total_globals > accounted_globals) {
+                    const auto reserve_slots = mod.total_globals - accounted_globals;
+                    std::string reserve_module_name;
+                    if (!append_etac_global_reservation(reserve_slots, &reserve_module_name)) {
+                        return false;
+                    }
+                    if (!reserve_module_name.empty()) {
+                        etac_module_reservations_[mod.name].push_back(std::move(reserve_module_name));
+                    }
+                    accounted_globals = mod.total_globals;
+                }
+
+                auto& globals = vm_.globals();
+                if (globals.size() < mod.total_globals) {
+                    globals.resize(mod.total_globals, runtime::nanbox::Nil);
+                }
+
+                if (!builtins_installed_) {
+                    for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
+                        const auto& spec = builtins_.specs()[i];
+                        auto prim = runtime::memory::factory::make_primitive(
+                            heap_, spec.func, spec.arity, spec.has_rest);
+                        if (prim) globals[i] = *prim;
+                    }
+                    record_builtin_names();
+                    builtins_installed_ = true;
+                }
+
+                uint32_t func_idx = base_idx + mod.init_func_index;
+                const auto* init_func = registry_.get(func_idx);
+                if (!init_func) {
+                    diag_engine_.emit_error(
+                        diagnostic::DiagnosticCode::ModuleNotFound, {},
+                        "missing init function for module: " + mod.name);
+                    return false;
+                }
+
+                auto exec_res = vm_.execute(*init_func);
+                if (!exec_res) {
+                    emit_runtime_error(exec_res.error());
+                    return false;
+                }
+
+                executed_modules_.insert(mod.name);
+
+                if (mod.main_func_slot) {
+                    auto main_val = globals[*mod.main_func_slot];
+                    if (main_val != runtime::nanbox::Nil) {
+                        auto main_res = vm_.call_value(main_val, {});
+                        if (!main_res) {
+                            emit_runtime_error(main_res.error());
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        struct ModuleRelocationPlan {
+            bool execute{true};
+            std::unordered_map<uint32_t, uint32_t> slot_map;
+            std::unordered_map<std::string, uint32_t> export_slots;
+            std::optional<uint32_t> runtime_main_slot;
+            uint32_t runtime_global_count{0};
+        };
+
+        std::unordered_map<std::string, ModuleRelocationPlan> plans;
+        uint32_t next_runtime_slot = std::max<uint32_t>(
+            static_cast<uint32_t>(vm_.globals().size()),
+            static_cast<uint32_t>(builtins_.specs().size()));
+
+        auto resolve_export_runtime_slot =
+            [&](const std::string& module_name,
+                const std::string& export_name) -> std::optional<uint32_t> {
+            if (auto pit = plans.find(module_name); pit != plans.end()) {
+                if (auto it = pit->second.export_slots.find(export_name);
+                    it != pit->second.export_slots.end()) {
+                    return it->second;
+                }
+            }
+            if (auto rit = runtime_module_info_.find(module_name);
+                rit != runtime_module_info_.end()) {
+                if (auto it = rit->second.export_slots.find(export_name);
+                    it != rit->second.export_slots.end()) {
+                    return it->second;
+                }
+            }
+            return std::nullopt;
+        };
+
+        for (const auto& mod : etac.modules) {
+            ModuleRelocationPlan plan;
+            plan.execute = !executed_modules_.contains(mod.name);
+
+            if (!plan.execute) {
+                if (auto existing = runtime_module_info_.find(mod.name);
+                    existing != runtime_module_info_.end()) {
+                    plan.export_slots = existing->second.export_slots;
+                }
+                plan.runtime_global_count = next_runtime_slot;
+                plans.emplace(mod.name, std::move(plan));
+                continue;
+            }
+
+            for (const auto& imp : mod.import_bindings) {
+                auto runtime_slot = resolve_export_runtime_slot(
+                    imp.from_module, imp.remote_name);
+                if (!runtime_slot.has_value()) {
+                    diag_engine_.emit_error(
+                        diagnostic::DiagnosticCode::ModuleNotFound, {},
+                        "cannot relocate import '" + imp.remote_name
+                            + "' from module '" + imp.from_module
+                            + "' while loading '" + mod.name + "'");
+                    return false;
+                }
+
+                auto [it, inserted] = plan.slot_map.emplace(imp.local_slot, *runtime_slot);
+                if (!inserted && it->second != *runtime_slot) {
+                    diag_engine_.emit_error(
+                        diagnostic::DiagnosticCode::ModuleNotFound, {},
+                        "inconsistent relocation for slot " + std::to_string(imp.local_slot)
+                            + " while loading '" + mod.name + "'");
+                    return false;
+                }
+            }
+
+            auto owned_slots = mod.owned_global_slots;
+            std::sort(owned_slots.begin(), owned_slots.end());
+            owned_slots.erase(std::unique(owned_slots.begin(), owned_slots.end()), owned_slots.end());
+            for (const auto slot : owned_slots) {
+                auto [it, inserted] = plan.slot_map.emplace(slot, next_runtime_slot);
+                if (inserted) {
+                    ++next_runtime_slot;
+                }
+            }
+
+            for (const auto& ex : mod.export_bindings) {
+                auto it = plan.slot_map.find(ex.slot);
+                const uint32_t runtime_slot =
+                    (it != plan.slot_map.end()) ? it->second : ex.slot;
+                plan.export_slots[ex.name] = runtime_slot;
+            }
+
+            if (mod.main_func_slot.has_value()) {
+                auto it = plan.slot_map.find(*mod.main_func_slot);
+                plan.runtime_main_slot =
+                    (it != plan.slot_map.end()) ? it->second : *mod.main_func_slot;
+            }
+
+            plan.runtime_global_count = next_runtime_slot;
+            plans.emplace(mod.name, std::move(plan));
+        }
+
+        const auto& file_funcs = etac.registry.all();
+        std::vector<const runtime::vm::ModuleEntry*> owner_by_func(file_funcs.size(), nullptr);
+        for (const auto& mod : etac.modules) {
+            const uint64_t begin = mod.first_func_index;
+            const uint64_t end = begin + mod.func_count;
+            if (end > file_funcs.size()) {
+                diag_engine_.emit_error(
+                    diagnostic::DiagnosticCode::ModuleNotFound, {},
+                    "invalid function range in .etac module metadata for '" + mod.name + "'");
+                return false;
+            }
+            for (uint64_t i = begin; i < end; ++i) {
+                if (owner_by_func[static_cast<std::size_t>(i)] != nullptr) {
+                    diag_engine_.emit_error(
+                        diagnostic::DiagnosticCode::ModuleNotFound, {},
+                        "overlapping function ranges in .etac module metadata");
+                    return false;
+                }
+                owner_by_func[static_cast<std::size_t>(i)] = &mod;
+            }
+        }
+
         /**
          * Move functions from the deserialized registry into ours,
          * recording the base index so module init_func_index values can be offset.
@@ -1228,9 +1491,17 @@ private:
          * them to the runner's absolute indices.
          */
         uint32_t base_idx = static_cast<uint32_t>(registry_.size());
-        for (const auto& func : etac.registry.all()) {
-            runtime::vm::BytecodeFunction copy = func;
+        for (std::size_t i = 0; i < file_funcs.size(); ++i) {
+            runtime::vm::BytecodeFunction copy = file_funcs[i];
             copy.rebase_func_indices(static_cast<int32_t>(base_idx));
+
+            if (owner_by_func[i] != nullptr) {
+                const auto plan_it = plans.find(owner_by_func[i]->name);
+                if (plan_it != plans.end()) {
+                    relocate_function_global_slots(copy, plan_it->second.slot_map);
+                }
+            }
+
             registry_.add(std::move(copy));
         }
 
@@ -1238,21 +1509,24 @@ private:
 
         /// Execute each module's _init function
         for (const auto& mod : etac.modules) {
-            if (executed_modules_.contains(mod.name)) {
-                if (mod.total_globals > accounted_globals) {
-                    accounted_globals = mod.total_globals;
+            const auto plan_it = plans.find(mod.name);
+            if (plan_it == plans.end()) {
+                diag_engine_.emit_error(
+                    diagnostic::DiagnosticCode::ModuleNotFound, {},
+                    "missing relocation plan for module: " + mod.name);
+                return false;
+            }
+            const auto& plan = plan_it->second;
+
+            if (!plan.execute) {
+                if (plan.runtime_global_count > accounted_globals) {
+                    accounted_globals = plan.runtime_global_count;
                 }
                 continue;
             }
 
-            /**
-             * .etac modules are loaded without source forms, but later dynamic
-             * eval/compilation still re-analyzes accumulated_forms_. Reserve
-             * equivalent global slots up front so synthetic eval modules cannot
-             * overlap and clobber this compiled module's globals.
-             */
-            if (mod.total_globals > accounted_globals) {
-                const auto reserve_slots = mod.total_globals - accounted_globals;
+            if (plan.runtime_global_count > accounted_globals) {
+                const auto reserve_slots = plan.runtime_global_count - accounted_globals;
                 std::string reserve_module_name;
                 if (!append_etac_global_reservation(reserve_slots, &reserve_module_name)) {
                     return false;
@@ -1260,12 +1534,13 @@ private:
                 if (!reserve_module_name.empty()) {
                     etac_module_reservations_[mod.name].push_back(std::move(reserve_module_name));
                 }
-                accounted_globals = mod.total_globals;
+                accounted_globals = plan.runtime_global_count;
             }
 
             auto& globals = vm_.globals();
-            if (globals.size() < mod.total_globals)
-                globals.resize(mod.total_globals, runtime::nanbox::Nil);
+            if (globals.size() < plan.runtime_global_count) {
+                globals.resize(plan.runtime_global_count, runtime::nanbox::Nil);
+            }
 
             /// Re-install builtins
             if (!builtins_installed_) {
@@ -1275,6 +1550,7 @@ private:
                         heap_, spec.func, spec.arity, spec.has_rest);
                     if (prim) globals[i] = *prim;
                 }
+                record_builtin_names();
                 builtins_installed_ = true;
             }
 
@@ -1294,10 +1570,16 @@ private:
             }
 
             executed_modules_.insert(mod.name);
+            record_runtime_exports_from_compiled_module(mod.name, plan.export_slots);
+            const uint32_t builtin_slot_limit = static_cast<uint32_t>(builtins_.specs().size());
+            for (const auto& [export_name, slot] : plan.export_slots) {
+                if (slot < builtin_slot_limit) continue;
+                global_names_[slot] = mod.name + "." + export_name;
+            }
 
             /// Invoke optional main
-            if (mod.main_func_slot) {
-                auto main_val = globals[*mod.main_func_slot];
+            if (plan.runtime_main_slot) {
+                auto main_val = globals[*plan.runtime_main_slot];
                 if (main_val != runtime::nanbox::Nil) {
                     auto main_res = vm_.call_value(main_val, {});
                     if (!main_res) {
@@ -1699,7 +1981,6 @@ private:
                         "ETA_HEAP_SOFT_LIMIT",
                         Driver::DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES));
                 Driver child(std::move(resolver), child_heap);
-                child.load_prelude();
 
                 if (stdout_sink || stderr_sink) {
                     child.set_stream_sinks(stdout_sink, stderr_sink);
@@ -1756,7 +2037,6 @@ private:
                         "ETA_HEAP_SOFT_LIMIT",
                         Driver::DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES));
                 Driver child(std::move(resolver), child_heap);
-                child.load_prelude();
 
                 if (stdout_sink || stderr_sink) {
                     child.set_stream_sinks(stdout_sink, stderr_sink);
@@ -1766,6 +2046,30 @@ private:
                     alive->store(false, std::memory_order_release);
                     return;
                 }
+
+                /**
+                 * spawn-thread capture payloads may reference primitive globals
+                 * by fixed builtin slot (SCT_GlobalRef). Ensure the child VM has
+                 * builtin primitives installed in slots 0..N-1 before
+                 * deserializing captures so those references can be resolved.
+                 */
+                auto& child_globals = child.vm().globals();
+                if (child_globals.size() < child.builtins_.specs().size()) {
+                    child_globals.resize(child.builtins_.specs().size(),
+                                         runtime::nanbox::Nil);
+                }
+                for (std::size_t i = 0; i < child.builtins_.specs().size(); ++i) {
+                    const auto& spec = child.builtins_.specs()[i];
+                    auto prim = runtime::memory::factory::make_primitive(
+                        child.heap_, spec.func, spec.arity, spec.has_rest);
+                    if (!prim) {
+                        alive->store(false, std::memory_order_release);
+                        return;
+                    }
+                    child_globals[i] = *prim;
+                }
+                child.record_builtin_names();
+                child.builtins_installed_ = true;
 
                 /// Deserialize the function registry from the etac-format blob
                 runtime::vm::BytecodeSerializer ser(child.heap(), child.intern_table());
@@ -1939,7 +2243,12 @@ private:
     /// Guard against recursive auto-loading cycles
     std::unordered_set<std::string> loading_modules_;
 
+    struct RuntimeModuleInfo {
+        std::unordered_map<std::string, uint32_t> export_slots;
+    };
+
     std::unordered_map<uint32_t, std::string> global_names_;
+    std::unordered_map<std::string, RuntimeModuleInfo> runtime_module_info_;
     int repl_counter_{0};
     uint64_t eval_counter_{0};
     uint64_t etac_reserve_counter_{0};
@@ -2057,7 +2366,6 @@ private:
         if (indexed_source_files_.contains(source_key)) return true;
 
         if (!release_etac_global_reservation(module_name)) return false;
-
         indexed_source_files_.insert(source_key);
         if (!run_file(source_path)) {
             indexed_source_files_.erase(source_key);
@@ -2144,20 +2452,6 @@ private:
                          const std::string& result_binding = {},
                          bool execute = true,
                          CompileResult* out_cr = nullptr) {
-        struct PreferSourceGuard {
-            ModulePathResolver& resolver;
-            bool previous{false};
-
-            explicit PreferSourceGuard(ModulePathResolver& target)
-                : resolver(target), previous(target.prefer_source()) {
-                resolver.set_prefer_source(true);
-            }
-
-            ~PreferSourceGuard() {
-                resolver.set_prefer_source(previous);
-            }
-        } prefer_source_guard{resolver_};
-
         diag_engine_.clear();
 
         /// Lex + Parse
@@ -2297,6 +2591,7 @@ private:
                 }
                 globals[i] = *prim;
             }
+            record_builtin_names();
             builtins_installed_ = true;
         }
 
@@ -2308,12 +2603,16 @@ private:
                 continue; ///< Already executed in a prior call
             }
 
+            const uint32_t module_func_begin = static_cast<uint32_t>(registry_.size());
             semantics::Emitter emitter(mod, heap_, intern_table_, registry_);
             auto* init_func = emitter.emit();
+            const uint32_t module_func_end = static_cast<uint32_t>(registry_.size());
+            const uint32_t builtin_slot_limit = static_cast<uint32_t>(builtins_.specs().size());
 
             /// Prefix with "module." so the UI can group by module.
             for (const auto& bi : mod.bindings) {
                 if (bi.kind == semantics::BindingInfo::Kind::Global && !bi.name.empty()) {
+                    if (bi.slot < builtin_slot_limit) continue;
                     global_names_[bi.slot] = mod.name + "." + bi.name;
                 }
             }
@@ -2326,6 +2625,45 @@ private:
                 cme.init_func_index = static_cast<uint32_t>(registry_.size()) - 1 - base_func_idx;
                 cme.total_globals = mod.total_globals;
                 cme.main_func_slot = mod.main_func_slot;
+
+                cme.first_func_index = module_func_begin - base_func_idx;
+                cme.func_count = module_func_end - module_func_begin;
+
+                for (const auto& bi : mod.bindings) {
+                    if (bi.kind == semantics::BindingInfo::Kind::Global
+                        && bi.mutable_flag) {
+                        cme.owned_global_slots.push_back(bi.slot);
+                    } else if (bi.kind == semantics::BindingInfo::Kind::Import
+                               && bi.origin.has_value()) {
+                        CompileModuleEntry::ImportBinding ib;
+                        ib.local_slot = bi.slot;
+                        ib.from_module = bi.origin->from_module;
+                        ib.remote_name = bi.origin->remote_name;
+                        cme.import_bindings.push_back(std::move(ib));
+                    }
+                }
+
+                std::sort(cme.owned_global_slots.begin(), cme.owned_global_slots.end());
+                cme.owned_global_slots.erase(
+                    std::unique(cme.owned_global_slots.begin(), cme.owned_global_slots.end()),
+                    cme.owned_global_slots.end());
+
+                cme.export_bindings.reserve(mod.exports.size());
+                for (const auto& [export_name, binding_id] : mod.exports) {
+                    if (binding_id.id >= mod.bindings.size()) continue;
+                    CompileModuleEntry::ExportBinding eb;
+                    eb.name = export_name;
+                    eb.slot = mod.bindings[binding_id.id].slot;
+                    cme.export_bindings.push_back(std::move(eb));
+                }
+                std::sort(
+                    cme.export_bindings.begin(),
+                    cme.export_bindings.end(),
+                    [](const CompileModuleEntry::ExportBinding& lhs,
+                       const CompileModuleEntry::ExportBinding& rhs) {
+                        return lhs.name < rhs.name;
+                    });
+
                 out_cr->modules.push_back(std::move(cme));
             }
 
@@ -2355,6 +2693,7 @@ private:
                 }
 
                 executed_modules_.insert(mod.name);
+                record_runtime_exports_from_source_module(mod);
 
                 /// Invoke optional (defun main ...) entry point
                 if (mod.main_func_slot) {

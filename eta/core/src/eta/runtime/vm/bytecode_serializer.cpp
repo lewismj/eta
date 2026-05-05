@@ -73,7 +73,7 @@ std::array<uint8_t, 16> make_fingerprint128(std::string_view input) noexcept {
 
 std::string build_compiler_fingerprint_input() {
     std::ostringstream oss;
-    oss << "eta-bytecode-v4";
+    oss << "eta-bytecode-v5";
 
 #if defined(_MSC_FULL_VER)
     oss << "|msvc:" << _MSC_FULL_VER;
@@ -171,7 +171,9 @@ std::array<uint8_t, 16> BytecodeSerializer::default_compiler_id() {
 
 FreshnessResult
 BytecodeSerializer::check_freshness(const EtacFile& file, const FreshnessContext& context) {
-    if (file.format_version != FORMAT_VERSION_V3 && file.format_version != FORMAT_VERSION) {
+    if (file.format_version != FORMAT_VERSION_V3
+        && file.format_version != FORMAT_VERSION_V4
+        && file.format_version != FORMAT_VERSION) {
         return FreshnessResult{
             .status = FreshnessStatus::UnsupportedFormat,
             .detail = "format version " + std::to_string(file.format_version),
@@ -182,7 +184,7 @@ BytecodeSerializer::check_freshness(const EtacFile& file, const FreshnessContext
         if (!file.has_compiler_id) {
             return FreshnessResult{
                 .status = FreshnessStatus::MissingCompilerId,
-                .detail = "legacy v3 artifact has no compiler fingerprint",
+                .detail = "legacy artifact has no compiler fingerprint",
             };
         }
         if (file.compiler_id != *context.expected_compiler_id) {
@@ -517,6 +519,26 @@ bool BytecodeSerializer::serialize(
         uint8_t has_main = mod.main_func_slot.has_value() ? 1 : 0;
         write_u8(os, has_main);
         write_u32(os, mod.main_func_slot.value_or(0xFFFFFFFFu));
+        write_u32(os, mod.first_func_index);
+        write_u32(os, mod.func_count);
+
+        write_u32(os, static_cast<uint32_t>(mod.owned_global_slots.size()));
+        for (const auto slot : mod.owned_global_slots) {
+            write_u32(os, slot);
+        }
+
+        write_u32(os, static_cast<uint32_t>(mod.import_bindings.size()));
+        for (const auto& imp : mod.import_bindings) {
+            write_u32(os, imp.local_slot);
+            write_str(os, imp.from_module);
+            write_str(os, imp.remote_name);
+        }
+
+        write_u32(os, static_cast<uint32_t>(mod.export_bindings.size()));
+        for (const auto& ex : mod.export_bindings) {
+            write_str(os, ex.name);
+            write_u32(os, ex.slot);
+        }
     }
 
     /// Function table
@@ -581,7 +603,9 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
 
     uint16_t version;
     if (!read_u16(is, version)) return std::unexpected(SerializerError::Truncated);
-    if (version != FORMAT_VERSION_V3 && version != FORMAT_VERSION) {
+    if (version != FORMAT_VERSION_V3
+        && version != FORMAT_VERSION_V4
+        && version != FORMAT_VERSION) {
         return std::unexpected(SerializerError::VersionMismatch);
     }
     result.format_version = version;
@@ -599,7 +623,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     if (expected_builtins != 0 && file_builtins != expected_builtins)
         return std::unexpected(SerializerError::BuiltinCountMismatch);
 
-    if (version >= FORMAT_VERSION) {
+    if (version >= FORMAT_VERSION_V4) {
         if (!is.read(reinterpret_cast<char*>(result.compiler_id.data()),
                      static_cast<std::streamsize>(result.compiler_id.size()))
                  .good()) {
@@ -655,6 +679,57 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         uint32_t main_slot;
         if (!read_u32(is, main_slot)) return std::unexpected(SerializerError::Truncated);
         if (has_main) mod.main_func_slot = main_slot;
+
+        if (version >= FORMAT_VERSION) {
+            if (!read_u32(is, mod.first_func_index)) return std::unexpected(SerializerError::Truncated);
+            if (!read_u32(is, mod.func_count)) return std::unexpected(SerializerError::Truncated);
+
+            uint32_t owned_count = 0;
+            if (!read_u32(is, owned_count)) return std::unexpected(SerializerError::Truncated);
+            mod.owned_global_slots.resize(owned_count);
+            for (uint32_t i = 0; i < owned_count; ++i) {
+                if (!read_u32(is, mod.owned_global_slots[i])) {
+                    return std::unexpected(SerializerError::Truncated);
+                }
+            }
+
+            uint32_t import_binding_count = 0;
+            if (!read_u32(is, import_binding_count)) return std::unexpected(SerializerError::Truncated);
+            mod.import_bindings.resize(import_binding_count);
+            for (uint32_t i = 0; i < import_binding_count; ++i) {
+                auto& imp = mod.import_bindings[i];
+                if (!read_u32(is, imp.local_slot)) return std::unexpected(SerializerError::Truncated);
+                if (!read_str(is, imp.from_module)) return std::unexpected(SerializerError::Truncated);
+                if (!read_str(is, imp.remote_name)) return std::unexpected(SerializerError::Truncated);
+            }
+
+            uint32_t export_binding_count = 0;
+            if (!read_u32(is, export_binding_count)) return std::unexpected(SerializerError::Truncated);
+            mod.export_bindings.resize(export_binding_count);
+            for (uint32_t i = 0; i < export_binding_count; ++i) {
+                auto& ex = mod.export_bindings[i];
+                if (!read_str(is, ex.name)) return std::unexpected(SerializerError::Truncated);
+                if (!read_u32(is, ex.slot)) return std::unexpected(SerializerError::Truncated);
+            }
+        }
+    }
+
+    if (version < FORMAT_VERSION) {
+        /**
+         * Legacy artifacts do not store per-module function ranges.
+         * Infer ranges from init-function indices, where each module init is
+         * emitted last for that module and module order is preserved.
+         */
+        uint32_t start = 0;
+        for (auto& mod : result.modules) {
+            mod.first_func_index = start;
+            if (mod.init_func_index >= start) {
+                mod.func_count = (mod.init_func_index - start) + 1;
+            } else {
+                mod.func_count = 0;
+            }
+            start = mod.init_func_index + 1;
+        }
     }
 
     /// Function table

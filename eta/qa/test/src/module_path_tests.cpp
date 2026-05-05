@@ -151,8 +151,8 @@ BOOST_AUTO_TEST_CASE(module_to_relative_simple) {
 }
 
 BOOST_AUTO_TEST_CASE(module_to_relative_single_component) {
-    auto p = ModulePathResolver::module_to_relative("prelude");
-    BOOST_TEST(p == fs::path("prelude.eta"));
+    auto p = ModulePathResolver::module_to_relative("core");
+    BOOST_TEST(p == fs::path("core.eta"));
 }
 
 BOOST_AUTO_TEST_CASE(module_to_relative_deep) {
@@ -238,58 +238,58 @@ BOOST_AUTO_TEST_CASE(resolve_keeps_first_hit_semantics_across_roots) {
     BOOST_TEST(result->extension() == ".eta");
 }
 
-BOOST_AUTO_TEST_CASE(resolve_std_prelude_finds_std_subdir_source) {
+BOOST_AUTO_TEST_CASE(resolve_std_jupyter_finds_std_subdir_source) {
     TempDir d;
-    d.create_file("std/prelude.eta", "(module std.prelude)");
+    d.create_file("std/jupyter.eta", "(module std.jupyter)");
 
     ModulePathResolver r{{d.path}};
-    auto result = r.resolve("std.prelude");
+    auto result = r.resolve("std.jupyter");
     BOOST_REQUIRE(result.has_value());
-    BOOST_TEST(result->filename() == "prelude.eta");
+    BOOST_TEST(result->filename() == "jupyter.eta");
 }
 
-BOOST_AUTO_TEST_CASE(resolve_std_prelude_prefers_std_subdir_etac) {
+BOOST_AUTO_TEST_CASE(resolve_std_jupyter_prefers_std_subdir_etac) {
     TempDir d;
-    d.create_file("std/prelude.eta", "(module std.prelude)");
-    d.create_file("std/prelude.etac", "ETAC");
+    d.create_file("std/jupyter.eta", "(module std.jupyter)");
+    d.create_file("std/jupyter.etac", "ETAC");
 
     ModulePathResolver r{{d.path}};
-    auto result = r.resolve("std.prelude");
+    auto result = r.resolve("std.jupyter");
     BOOST_REQUIRE(result.has_value());
-    BOOST_TEST(result->filename() == "prelude.etac");
+    BOOST_TEST(result->filename() == "jupyter.etac");
 }
 
-BOOST_AUTO_TEST_CASE(resolve_std_prelude_prefers_source_when_source_mode_enabled) {
+BOOST_AUTO_TEST_CASE(resolve_std_jupyter_prefers_source_when_source_mode_enabled) {
     TempDir d;
-    d.create_file("std/prelude.eta", "(module std.prelude)");
-    d.create_file("std/prelude.etac", "ETAC");
+    d.create_file("std/jupyter.eta", "(module std.jupyter)");
+    d.create_file("std/jupyter.etac", "ETAC");
 
     ModulePathResolver r{{d.path}};
     r.set_prefer_source(true);
-    auto result = r.resolve("std.prelude");
+    auto result = r.resolve("std.jupyter");
     BOOST_REQUIRE(result.has_value());
-    BOOST_TEST(result->filename() == "prelude.eta");
+    BOOST_TEST(result->filename() == "jupyter.eta");
 }
 
-BOOST_AUTO_TEST_CASE(resolve_std_prelude_does_not_use_legacy_root_files) {
+BOOST_AUTO_TEST_CASE(resolve_std_jupyter_does_not_use_legacy_root_files) {
     TempDir d;
-    d.create_file("prelude.eta", "(module std.prelude)");
-    d.create_file("prelude.etac", "ETAC");
+    d.create_file("jupyter.eta", "(module std.jupyter)");
+    d.create_file("jupyter.etac", "ETAC");
 
     ModulePathResolver r{{d.path}};
-    BOOST_TEST(!r.resolve("std.prelude").has_value());
+    BOOST_TEST(!r.resolve("std.jupyter").has_value());
 }
 
 /// find_file
 
-BOOST_AUTO_TEST_CASE(find_file_locates_prelude) {
+BOOST_AUTO_TEST_CASE(find_file_locates_named_file) {
     TempDir d;
-    d.create_file("prelude.eta", "(module prelude)");
+    d.create_file("core.eta", "(module core)");
 
     ModulePathResolver r{{d.path}};
-    auto result = r.find_file("prelude.eta");
+    auto result = r.find_file("core.eta");
     BOOST_REQUIRE(result.has_value());
-    BOOST_TEST(result->filename() == "prelude.eta");
+    BOOST_TEST(result->filename() == "core.eta");
 }
 
 BOOST_AUTO_TEST_CASE(find_file_returns_nullopt_when_absent) {
@@ -300,10 +300,10 @@ BOOST_AUTO_TEST_CASE(find_file_returns_nullopt_when_absent) {
 
 BOOST_AUTO_TEST_CASE(find_file_searches_dirs_in_order) {
     TempDir d1, d2;
-    d2.create_file("prelude.eta", "(module prelude)");
+    d2.create_file("core.eta", "(module core)");
 
     ModulePathResolver r{{d1.path, d2.path}};
-    auto result = r.find_file("prelude.eta");
+    auto result = r.find_file("core.eta");
     BOOST_REQUIRE(result.has_value());
     BOOST_TEST(result->string().find(d2.path.string()) != std::string::npos);
 }

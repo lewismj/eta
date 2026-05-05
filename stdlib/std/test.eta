@@ -16,6 +16,7 @@
 ;;;   (print-junit results)  ; emits JUnit XML to stdout
 
 (module std.test
+  (import std.core)
   (export
     ;; Constructors
     make-test make-group

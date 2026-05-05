@@ -41,8 +41,15 @@ install(DIRECTORY "${CMAKE_BINARY_DIR}/stdlib/" DESTINATION stdlib
 )
 
 # Install cookbook programs.
+# Include source examples (*.eta), Jupyter notebooks (*.ipynb) and the
+# accompanying READMEs/markdown so the release bundle ships a complete
+# cookbook tree (the notebooks under cookbook/notebooks/ in particular
+# are referenced from README.md / TLDR.md / docs/*).
 install(DIRECTORY cookbook/ DESTINATION cookbook
-    FILES_MATCHING PATTERN "*.eta")
+    FILES_MATCHING
+        PATTERN "*.eta"
+        PATTERN "*.ipynb"
+        PATTERN "*.md")
 
 add_custom_target(eta_all)
 foreach(_t IN ITEMS

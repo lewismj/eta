@@ -22,7 +22,7 @@
 ;;; Run:  etai cookbook/quant/aad.eta
 
 (module aad
-  (import std.prelude)
+  (import std.core std.io std.collections std.aad)
   (begin
 
     ;; ── Gradient computation ────────────────────────────────────────
@@ -31,7 +31,7 @@
     ;; f    — a function of N arguments (receives tape-ref values)
     ;; vals — a list of N numeric input values
     ;; Returns: (primal-value gradient-vector)
-    ;; Uses std.aad's grad helper via std.prelude.
+    ;; Uses std.aad's grad helper via direct module import.
     ;;   (grad f vals) => (primal-value gradient-vector)
 
 

@@ -24,7 +24,8 @@ static void print_usage(const char* prog) {
               << "  -O0             Disable optimization (default).\n"
               << "  --disasm        Print disassembly to stdout instead of writing .etac.\n"
               << "  --no-debug      Strip debug info (source maps) from output.\n"
-              << "  --no-prelude    Do not auto-load std.prelude before compilation.\n"
+              << "  --prelude       Auto-load std.prelude before compilation.\n"
+              << "  --no-prelude    Do not auto-load std.prelude before compilation (default).\n"
               << "  --path <dirs>   Module search path.\n"
               << "  --help          Show this help message.\n";
 }
@@ -36,13 +37,14 @@ int main(int argc, char* argv[]) {
     bool disasm_mode  = false;
     bool include_debug = true;
     bool optimize = false;
-    bool auto_prelude = true;
+    bool auto_prelude = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") { print_usage(argv[0]); return 0; }
         if (arg == "--disasm")  { disasm_mode = true; continue; }
         if (arg == "--no-debug") { include_debug = false; continue; }
+        if (arg == "--prelude") { auto_prelude = true; continue; }
         if (arg == "--no-prelude") { auto_prelude = false; continue; }
         if (arg == "--optimize" || arg == "-O") { optimize = true; continue; }
         if (arg == "-O0") { optimize = false; continue; }
@@ -142,6 +144,24 @@ int main(int argc, char* argv[]) {
         entry.init_func_index = cme.init_func_index;
         entry.total_globals = cme.total_globals;
         entry.main_func_slot = cme.main_func_slot;
+        entry.first_func_index = cme.first_func_index;
+        entry.func_count = cme.func_count;
+        entry.owned_global_slots = cme.owned_global_slots;
+        entry.import_bindings.reserve(cme.import_bindings.size());
+        for (const auto& imp : cme.import_bindings) {
+            eta::runtime::vm::ModuleEntry::ImportBinding out_imp;
+            out_imp.local_slot = imp.local_slot;
+            out_imp.from_module = imp.from_module;
+            out_imp.remote_name = imp.remote_name;
+            entry.import_bindings.push_back(std::move(out_imp));
+        }
+        entry.export_bindings.reserve(cme.export_bindings.size());
+        for (const auto& ex : cme.export_bindings) {
+            eta::runtime::vm::ModuleEntry::ExportBinding out_ex;
+            out_ex.name = ex.name;
+            out_ex.slot = ex.slot;
+            entry.export_bindings.push_back(std::move(out_ex));
+        }
         module_entries.push_back(std::move(entry));
     }
 
@@ -169,5 +189,3 @@ int main(int argc, char* argv[]) {
               << module_entries.size() << " module(s))\n";
     return 0;
 }
-
-

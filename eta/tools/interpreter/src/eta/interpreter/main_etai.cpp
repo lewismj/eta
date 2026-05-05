@@ -134,10 +134,6 @@ int main(int argc, char* argv[]) {
     auto resolve = driver.file_resolver();
     /// Detect .etac extension for pre-compiled bytecode.
     const bool is_etac = file_path.extension() == ".etac";
-    if (!is_etac) {
-        /// Source submissions must prefer .eta for import/link consistency.
-        driver.resolver().set_prefer_source(true);
-    }
 
     /// Install mailbox socket if we are a spawned child
 #ifdef ETA_HAS_NNG
@@ -153,15 +149,6 @@ int main(int argc, char* argv[]) {
         std::cerr << "warning: --mailbox ignored (built without ETA_HAS_NNG)\n";
     }
 #endif
-
-    /// Load prelude (if available in module path)
-    {
-        auto pr = driver.load_prelude();
-        if (pr.found && !pr.loaded) {
-            driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
-            return 1;
-        }
-    }
 
     if (is_etac) {
         if (disasm_mode) {

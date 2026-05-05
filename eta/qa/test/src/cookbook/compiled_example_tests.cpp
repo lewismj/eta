@@ -255,9 +255,6 @@ struct CompiledExampleFixture {
         driver.set_output_port(out_port);
         driver.set_error_port(err_port);
 
-        auto prelude = driver.load_prelude();
-        if (!prelude.loaded) return {false, ""};
-
         bool ok = driver.run_file(file);
         return {ok, out_port->get_string()};
     }
@@ -283,9 +280,6 @@ struct CompiledExampleFixture {
             pipeline.add_pass(std::make_unique<eta::semantics::passes::DeadCodeElimination>());
         }
 
-        auto prelude = compiler.load_prelude();
-        if (!prelude.loaded) return {false, ""};
-
         auto compile_result = compiler.compile_file(file);
         if (!compile_result) return {false, ""};
 
@@ -308,6 +302,24 @@ struct CompiledExampleFixture {
             entry.init_func_index = cme.init_func_index;
             entry.total_globals = cme.total_globals;
             entry.main_func_slot = cme.main_func_slot;
+            entry.first_func_index = cme.first_func_index;
+            entry.func_count = cme.func_count;
+            entry.owned_global_slots = cme.owned_global_slots;
+            entry.import_bindings.reserve(cme.import_bindings.size());
+            for (const auto& imp : cme.import_bindings) {
+                eta::runtime::vm::ModuleEntry::ImportBinding out_imp;
+                out_imp.local_slot = imp.local_slot;
+                out_imp.from_module = imp.from_module;
+                out_imp.remote_name = imp.remote_name;
+                entry.import_bindings.push_back(std::move(out_imp));
+            }
+            entry.export_bindings.reserve(cme.export_bindings.size());
+            for (const auto& ex : cme.export_bindings) {
+                eta::runtime::vm::ModuleEntry::ExportBinding out_ex;
+                out_ex.name = ex.name;
+                out_ex.slot = ex.slot;
+                entry.export_bindings.push_back(std::move(out_ex));
+            }
             module_entries.push_back(std::move(entry));
         }
 
@@ -349,11 +361,6 @@ struct CompiledExampleFixture {
             eta::runtime::StringPort::Mode::Output);
         runner.set_output_port(out_port);
         runner.set_error_port(err_port);
-
-        auto run_prelude = runner.load_prelude();
-        if (!run_prelude.loaded) {
-            return {false, ""};
-        }
 
         bool ok = runner.run_etac_file(temp_etac);
 
@@ -457,11 +464,6 @@ struct CompiledExampleFixture {
             eta::runtime::StringPort::Mode::Output);
         runner.set_output_port(out_port);
         runner.set_error_port(err_port);
-
-        auto run_prelude = runner.load_prelude();
-        if (!run_prelude.loaded) {
-            return {false, ""};
-        }
 
         const bool ok = runner.run_etac_file(temp_etac);
 

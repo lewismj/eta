@@ -12,7 +12,8 @@
 ;;;   etai cookbook/concurrency/distributed-compute.eta
 
 (module distributed-compute
-  (import std.prelude)
+  (import std.core)
+  (import std.io)
   (begin
 
     (define endpoint "tcp://127.0.0.1:6000")

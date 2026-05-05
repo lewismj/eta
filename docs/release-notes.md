@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-05-05
+
+### Breaking: Prelude Entrypoint Removed
+
+The standard library no longer uses a single `std.prelude` entrypoint.
+`stdlib/std/prelude.eta` is removed from the shipped stdlib.
+
+Tooling now runs source and bytecode directly without requiring prelude
+auto-load behavior.
+
+### `.etac` Module Relocation Metadata (v5)
+
+`.etac` format is now version 5. Module metadata now records:
+
+- function ownership ranges (`first_func_index`, `func_count`)
+- owned global slots
+- import bindings (`local_slot` -> provider module/export)
+- export bindings (symbol -> slot)
+
+Runtime `.etac` loading now relocates module globals by module/export
+identity at load time, so independently compiled artifacts do not collide
+on absolute global slot numbers.
+
+---
+
 ## 2026-05-03 (later)
 
 ### Breaking: `std.prelude` On-Disk Layout
@@ -90,7 +115,7 @@ Highlights:
     roots
   - per-root `.etac` before `.eta` resolution
   - strict duplicate detection via `--strict-shadows`
-- `.etac` format v4 metadata + stale-artifact policy (S4):
+- `.etac` format v4 metadata + stale-artifact policy (S4; later extended to v5 relocation metadata):
   - compiler/package/dependency hash metadata in bytecode
   - deterministic freshness checks with source fallback when possible
 - Precompiled prelude/stdlib delivery (S5):

@@ -1,6 +1,6 @@
 /**
  * @file packaging_contract_tests.cpp
- * @brief Baseline contract tests for module path, prelude loading, and .etac execution.
+ * @brief Baseline contract tests for module path and .etac execution.
  */
 
 #include <boost/test/unit_test.hpp>
@@ -123,6 +123,24 @@ struct TempDir {
         entry.init_func_index = module.init_func_index;
         entry.total_globals = module.total_globals;
         entry.main_func_slot = module.main_func_slot;
+        entry.first_func_index = module.first_func_index;
+        entry.func_count = module.func_count;
+        entry.owned_global_slots = module.owned_global_slots;
+        entry.import_bindings.reserve(module.import_bindings.size());
+        for (const auto& imp : module.import_bindings) {
+            eta::runtime::vm::ModuleEntry::ImportBinding out_imp;
+            out_imp.local_slot = imp.local_slot;
+            out_imp.from_module = imp.from_module;
+            out_imp.remote_name = imp.remote_name;
+            entry.import_bindings.push_back(std::move(out_imp));
+        }
+        entry.export_bindings.reserve(module.export_bindings.size());
+        for (const auto& ex : module.export_bindings) {
+            eta::runtime::vm::ModuleEntry::ExportBinding out_ex;
+            out_ex.name = ex.name;
+            out_ex.slot = ex.slot;
+            entry.export_bindings.push_back(std::move(out_ex));
+        }
         module_entries.push_back(std::move(entry));
     }
     if (module_entries.empty()) {
@@ -161,107 +179,22 @@ struct TempDir {
 
 BOOST_AUTO_TEST_SUITE(packaging_contract_tests)
 
-BOOST_AUTO_TEST_CASE(load_prelude_reports_not_found_when_missing) {
-    TempDir temp;
-    eta::interpreter::ModulePathResolver resolver({temp.path});
-    eta::session::Driver driver(std::move(resolver));
-
-    auto result = driver.load_prelude();
-    BOOST_TEST(!result.found);
-    BOOST_TEST(!result.loaded);
-    BOOST_TEST(result.path.empty());
-}
-
-BOOST_AUTO_TEST_CASE(load_prelude_second_call_keeps_existing_module_state) {
-    TempDir temp;
-    (void)temp.create_file("std/prelude.eta", R"eta(
-(module std.prelude
-  (export prelude-inc)
-  (begin
-    (define counter 0)
-    (define (prelude-inc)
-      (set! counter (+ counter 1))
-      counter)))
-)eta");
-
-    eta::interpreter::ModulePathResolver resolver({temp.path});
-    eta::session::Driver driver(std::move(resolver), 8 * 1024 * 1024);
-
-    auto first = driver.load_prelude();
-    BOOST_REQUIRE_MESSAGE(first.found, "expected temporary std/prelude.eta to be found");
-    BOOST_REQUIRE_MESSAGE(first.loaded, "expected temporary std/prelude.eta to load");
-    BOOST_TEST(first.path.filename().string() == "prelude.eta");
-    BOOST_TEST(first.path.parent_path().filename().string() == "std");
-    BOOST_TEST(driver.has_module("std.prelude"));
-
-    eta::runtime::nanbox::LispVal first_value{eta::runtime::nanbox::Nil};
-    const bool first_eval_ok = driver.run_source(R"eta(
-(module prelude.contract.first
-  (import std.prelude)
-  (define result (prelude-inc)))
-)eta", &first_value, "result");
-    BOOST_REQUIRE_MESSAGE(first_eval_ok, diagnostics_to_string(driver));
-    BOOST_TEST(decode_fixnum(first_value) == 1);
-
-    auto second = driver.load_prelude();
-    BOOST_REQUIRE_MESSAGE(second.found, "expected temporary std/prelude.eta to still be found");
-    BOOST_TEST(!second.loaded);
-    BOOST_TEST(driver.has_module("std.prelude"));
-
-    eta::runtime::nanbox::LispVal second_value{eta::runtime::nanbox::Nil};
-    const bool second_eval_ok = driver.run_source(R"eta(
-(module prelude.contract.second
-  (import std.prelude)
-  (define result (prelude-inc)))
-)eta", &second_value, "result");
-    BOOST_REQUIRE_MESSAGE(second_eval_ok, diagnostics_to_string(driver));
-    BOOST_TEST(decode_fixnum(second_value) == 2);
-}
-
-BOOST_AUTO_TEST_CASE(load_prelude_prefers_embedded_blob_when_available) {
-#if defined(ETA_HAS_EMBEDDED_PRELUDE)
+BOOST_AUTO_TEST_CASE(source_run_with_explicit_std_import_succeeds) {
     auto stdlib_root = configured_stdlib_root();
     BOOST_REQUIRE_MESSAGE(stdlib_root.has_value(),
                           "ETA_STDLIB_DIR is not set to a valid stdlib root");
 
     eta::interpreter::ModulePathResolver resolver({*stdlib_root});
     eta::session::Driver driver(std::move(resolver), 8 * 1024 * 1024);
-
-    auto prelude = driver.load_prelude();
-    BOOST_REQUIRE_MESSAGE(prelude.found, "expected prelude artifact to be discoverable");
-    BOOST_REQUIRE_MESSAGE(prelude.loaded, diagnostics_to_string(driver));
-    BOOST_TEST(driver.has_module("std.prelude"));
-    BOOST_TEST(prelude.path.string() == "<embedded:prelude.etac>");
-#else
-    BOOST_TEST_MESSAGE("ETA_HAS_EMBEDDED_PRELUDE is not enabled for eta_core_test; skipping.");
-#endif
-}
-
-BOOST_AUTO_TEST_CASE(embedded_prelude_allows_std_prelude_import_in_source_runs) {
-#if defined(ETA_HAS_EMBEDDED_PRELUDE)
-    auto stdlib_root = configured_stdlib_root();
-    BOOST_REQUIRE_MESSAGE(stdlib_root.has_value(),
-                          "ETA_STDLIB_DIR is not set to a valid stdlib root");
-
-    eta::interpreter::ModulePathResolver resolver({*stdlib_root});
-    eta::session::Driver driver(std::move(resolver), 8 * 1024 * 1024);
-
-    auto prelude = driver.load_prelude();
-    BOOST_REQUIRE_MESSAGE(prelude.found, "expected prelude artifact to be discoverable");
-    BOOST_REQUIRE_MESSAGE(prelude.loaded, diagnostics_to_string(driver));
-    BOOST_TEST(driver.has_module("std.prelude"));
 
     eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
     const bool run_ok = driver.run_source(R"eta(
-(module embedded.prelude.contract
-  (import std.prelude)
-  (define result (+ 1 1)))
+(module explicit.import.contract
+  (import std.core)
+  (define result (identity 42)))
 )eta", &value, "result");
     BOOST_REQUIRE_MESSAGE(run_ok, diagnostics_to_string(driver));
-    BOOST_TEST(decode_fixnum(value) == 2);
-#else
-    BOOST_TEST_MESSAGE("ETA_HAS_EMBEDDED_PRELUDE is not enabled for eta_core_test; skipping.");
-#endif
+    BOOST_TEST(decode_fixnum(value) == 42);
 }
 
 BOOST_AUTO_TEST_CASE(run_etac_file_auto_loads_imports_and_executes_modules) {
@@ -411,6 +344,45 @@ BOOST_AUTO_TEST_CASE(run_etac_file_stale_source_hash_falls_back_to_source) {
     BOOST_TEST(decode_fixnum(value) == 99);
 }
 
+BOOST_AUTO_TEST_CASE(source_run_with_stdlib_etac_root_executes_basic_module) {
+    auto stdlib_root = configured_stdlib_etac_root();
+    BOOST_REQUIRE_MESSAGE(stdlib_root.has_value(),
+                          "ETA_STDLIB_ETAC_DIR is not set to a valid stdlib artifact root");
+
+    eta::interpreter::ModulePathResolver resolver({*stdlib_root});
+    eta::session::Driver driver(std::move(resolver), 16 * 1024 * 1024);
+
+    eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module etac.root.source.contract
+  (begin
+    (define result (+ 40 2))))
+)eta", &value, "result");
+    BOOST_REQUIRE_MESSAGE(ok, diagnostics_to_string(driver));
+    BOOST_TEST(decode_fixnum(value) == 42);
+}
+
+BOOST_AUTO_TEST_CASE(source_run_with_stdlib_etac_root_keeps_unrelated_imports_slot_stable) {
+    auto stdlib_root = configured_stdlib_etac_root();
+    BOOST_REQUIRE_MESSAGE(stdlib_root.has_value(),
+                          "ETA_STDLIB_ETAC_DIR is not set to a valid stdlib artifact root");
+
+    eta::interpreter::ModulePathResolver resolver({*stdlib_root});
+    eta::session::Driver driver(std::move(resolver), 16 * 1024 * 1024);
+
+    eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module etac.root.slot.contract
+  (import std.test std.aad)
+  (begin
+    (define sample-test
+      (make-test "no-op" (lambda () (assert-true #t))))
+    (define result (if (> (ad-max 2.0 7.0) 6.0) 1 0))))
+)eta", &value, "result");
+    BOOST_REQUIRE_MESSAGE(ok, diagnostics_to_string(driver));
+    BOOST_TEST(decode_fixnum(value) == 1);
+}
+
 BOOST_AUTO_TEST_CASE(stdlib_etac_artifacts_load_without_stale_fallback) {
     auto stdlib_root = configured_stdlib_etac_root();
     BOOST_REQUIRE_MESSAGE(stdlib_root.has_value(),
@@ -428,14 +400,7 @@ BOOST_AUTO_TEST_CASE(stdlib_etac_artifacts_load_without_stale_fallback) {
     eta::interpreter::ModulePathResolver resolver({*stdlib_root});
     eta::session::Driver driver(std::move(resolver), 16 * 1024 * 1024);
 
-    auto prelude = driver.load_prelude();
-    BOOST_REQUIRE_MESSAGE(prelude.found, "expected prelude artifact to be present");
-    BOOST_REQUIRE_MESSAGE(prelude.loaded, diagnostics_to_string(driver));
-    BOOST_TEST(diagnostics_to_string(driver).find("stale .etac detected") == std::string::npos);
-
     for (const auto& artifact : artifacts) {
-        if (artifact.filename() == "prelude.etac") continue;
-
         driver.diagnostics().clear();
         const bool ok = driver.run_etac_file(artifact);
         BOOST_REQUIRE_MESSAGE(ok,

@@ -22,7 +22,7 @@
 ;;; Run:  etai cookbook/quant/european.eta
 
 (module european
-  (import std.prelude)
+  (import std.core std.io std.aad)
   (begin
 
     ;; ════════════════════════════════════════════════════════════════

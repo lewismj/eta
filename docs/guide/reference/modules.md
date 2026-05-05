@@ -147,27 +147,23 @@ Key properties:
 
 ---
 
-### Prelude Auto-Loading
+### Stdlib Loading
 
-On startup, the `Driver` calls `load_prelude()` which searches the
-module path for `std.prelude` (backed by `std/prelude.eta`). This file
-defines the standard library modules inline. After the prelude runs, its
-modules are in
-`executed_modules_` and their global slots are populated in the VM.
+Eta does not auto-load a prelude module. Import stdlib modules
+explicitly in each module or REPL submission.
 
 ---
 
 ## Standard Library Reference
 
 All standard library modules are defined in the
-[`stdlib/std/`](../../../stdlib/std/) directory; the
-[`stdlib/std/prelude.eta`](../../../stdlib/std/prelude.eta) file aggregates and
-re-exports a curated subset for one-line import:
+[`stdlib/std/`](../../../stdlib/std/) directory. Use explicit imports
+for each module you depend on:
 
 ```scheme
-(import std.prelude)  ;; imports std.core, std.math, std.aad, std.io, std.collections,
-                      ;; std.logic, std.clp, std.causal, std.fact_table,
-                      ;; std.db, std.stats, std.time, and std.net
+(import std.core)
+(import std.math)
+(import std.io)
 ```
 
 ---
@@ -504,7 +500,7 @@ and `std.clpr`.
 Boolean variables and constraints (`clp:boolean`, `clp:and`,
 `clp:or`, `clp:xor`, `clp:imp`, `clp:eq`, `clp:not`, `clp:card`)
 plus search and queries (`clp:labeling-b`, `clp:sat?`, `clp:taut?`).
-Not auto-imported by `std.prelude`.
+Requires explicit import.
 
 > **📖 Full documentation:** [Boolean Constraints (CLP(B))](clpb.md)
 
@@ -521,8 +517,7 @@ Real-domain constructors and accessors, linear arithmetic
 (`clp:r=`, `clp:r<=`, `clp:r<`, `clp:r>=`, `clp:r>`), simplex/QP
 optimisation (`clp:r-minimize`, `clp:r-maximize`,
 `clp:rq-minimize`, `clp:rq-maximize`), and queries
-(`clp:r-bounds`, `clp:r-feasible?`). Not auto-imported by
-`std.prelude`.
+(`clp:r-bounds`, `clp:r-feasible?`). Requires explicit import.
 
 ---
 
@@ -636,7 +631,7 @@ Example:
 ```
 
 Path manipulation, directory enumeration, file metadata, and temp-file
-allocation backed by `std::filesystem`. Auto-imported by `std.prelude`.
+allocation backed by `std::filesystem`. Requires explicit import.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
@@ -664,7 +659,7 @@ allocation backed by `std::filesystem`. Auto-imported by `std.prelude`.
 ```
 
 Environment variables, command-line arguments, current working
-directory, and process exit. Auto-imported by `std.prelude`.
+directory, and process exit. Requires explicit import.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
@@ -714,7 +709,7 @@ and `close-port` workflows.
 
 Adds `freeze` (suspend a goal until a logic variable is bound) and
 `dif` (disequality between terms) on top of the attributed-variable
-substrate. Not auto-imported by `std.prelude`.
+substrate. Requires explicit import.
 
 > **📖 Full documentation:** [Freeze & Dif](freeze.md)
 
@@ -728,7 +723,7 @@ substrate. Not auto-imported by `std.prelude`.
 
 `one-for-one` and `one-for-all` supervisors built on top of the
 nng actor primitives (`spawn`, `monitor`, `nng-poll`, `recv!`).
-Not auto-imported by `std.prelude`.
+Requires explicit import.
 
 > **📖 Full documentation:** [Supervisors](supervisor.md)
 
@@ -783,8 +778,8 @@ Native CSV API backed by `vincentlaucsb/csv-parser`.
 RFC 8259 JSON codec implemented in-tree (`eta/core/src/eta/util/json.h`,
 no third-party dependency). Objects decode to hash
 maps, arrays to vectors, numbers default to flonums (with an opt-in
-`'keep-integers-exact?` flag for integer fidelity). Auto-imported by
-`std.prelude`.
+`'keep-integers-exact?` flag for integer fidelity). Requires explicit
+import.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
@@ -797,24 +792,10 @@ maps, arrays to vectors, numbers default to flonums (with an opt-in
 
 ---
 
-### `std.prelude` — Convenience Re-Export
+### Prelude Status
 
-```scheme
-(import std.prelude)
-```
-
-Re-exports public names from `std.core`, `std.math`, `std.aad`, `std.io`,
-`std.os`, `std.fs`, `std.json`, `std.collections`, `std.logic`,
-`std.clp`, `std.causal`, `std.fact_table`, `std.db`, `std.stats`,
-`std.time`, and `std.net` in a single import for convenience.
-
-The prelude re-exports `std.aad`'s `grad` helper alongside the AD-safe math
-helpers and finite-difference check utilities.
-
-The following modules are **not** included in the prelude and must be
-imported explicitly when needed: `std.regex`, `std.clpb`, `std.clpr`,
-`std.freeze`, `std.supervisor`, `std.csv`, `std.torch`, `std.test`,
-`std.process`, `std.atom`.
+`std.prelude` is not part of the standard library contract.
+Import modules explicitly.
 
 ---
 
@@ -933,7 +914,7 @@ There are two layers of "standard" functionality:
 | Layer | Defined in | Mechanism |
 |-------|-----------|-----------|
 | **Builtins** | C++ (`core_primitives.h`, `io_primitives.h`, `port_primitives.h`) | Registered as `Primitive` heap objects in fixed global slots |
-| **Standard Library** | Eta (`std/prelude.eta`, `std/*.eta`) | Regular Eta functions defined in modules |
+| **Standard Library** | Eta (`std/*.eta`) | Regular Eta functions defined in modules |
 
 Builtins like `+`, `cons`, `display` are always available (they occupy
 global slots 0..N−1). The standard library modules build on top of

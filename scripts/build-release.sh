@@ -156,9 +156,26 @@ echo "▸ [5/6] Copying install script, docs, and cookbook..."
 [ -f "$PROJECT_ROOT/docs/quickstart.md" ]  && cp "$PROJECT_ROOT/docs/quickstart.md" "$PREFIX/"
 
 # Copy cookbook/
+# CMake's `install(DIRECTORY cookbook/ ...)` rule already copies the
+# *.eta / *.ipynb / *.md files into $PREFIX/cookbook. Mirror those
+# patterns here as a belt-and-braces fallback so the bundle always
+# ships the notebooks (cookbook/notebooks/*.ipynb) referenced from
+# README.md / TLDR.md / docs/. We deliberately exclude build artefacts
+# (*.etac) and Python/Jupyter junk (__pycache__, .ipynb_checkpoints).
 if [ -d "$PROJECT_ROOT/cookbook" ]; then
-    echo "  Copying cookbook..."
-    cp -r "$PROJECT_ROOT/cookbook" "$PREFIX/cookbook"
+    echo "  Copying cookbook (*.eta, *.ipynb, *.md)..."
+    mkdir -p "$PREFIX/cookbook"
+    (
+        cd "$PROJECT_ROOT/cookbook"
+        find . \
+            \( -name __pycache__ -o -name .ipynb_checkpoints \) -prune -o \
+            -type f \( -name '*.eta' -o -name '*.ipynb' -o -name '*.md' \) -print
+    ) | while IFS= read -r rel; do
+        rel="${rel#./}"
+        dest_dir="$PREFIX/cookbook/$(dirname "$rel")"
+        mkdir -p "$dest_dir"
+        cp "$PROJECT_ROOT/cookbook/$rel" "$dest_dir/"
+    done
 fi
 
 # Make binaries executable

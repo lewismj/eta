@@ -47,12 +47,6 @@ static eta::interpreter::ModulePathResolver make_resolver() {
     return eta::interpreter::ModulePathResolver({stdlib});
 }
 
-static void require_prelude(eta::session::Driver& driver) {
-    auto pr = driver.load_prelude();
-    BOOST_REQUIRE_MESSAGE(pr.found, "prelude.eta was not found for driver jupyter tests");
-    BOOST_REQUIRE_MESSAGE(pr.loaded, "prelude.eta failed to load for driver jupyter tests");
-}
-
 struct CurrentPathGuard {
     fs::path original;
 
@@ -131,7 +125,6 @@ BOOST_AUTO_TEST_CASE(startup_resolver_discovers_project_modules_from_lockfile) {
     auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env_at(
         "", project_root);
     eta::session::Driver driver(std::move(resolver));
-    require_prelude(driver);
 
     eta::runtime::nanbox::LispVal result{eta::runtime::nanbox::Nil};
     const bool ok = driver.run_source(R"eta(
@@ -206,7 +199,6 @@ BOOST_AUTO_TEST_CASE(is_complete_expression_representative_inputs) {
 
 BOOST_AUTO_TEST_CASE(completions_at_import_prefix_includes_std_torch) {
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
 
     const std::string code = "(import std.to";
     const auto completion = driver.completions_at(code, code.size());
@@ -224,20 +216,20 @@ BOOST_AUTO_TEST_CASE(completions_at_import_prefix_includes_std_torch) {
     BOOST_TEST(found_std_torch);
 }
 
-BOOST_AUTO_TEST_CASE(hover_at_resolves_prelude_binding_docs) {
+BOOST_AUTO_TEST_CASE(hover_at_resolves_imported_binding_docs) {
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
+    const auto imported = driver.eval_to_display("(import std.test)");
+    BOOST_REQUIRE(static_cast<int>(imported.tag) != static_cast<int>(eta::session::DisplayTag::Error));
 
-    const auto markdown = driver.hover_at("defrel");
+    const auto markdown = driver.hover_at("make-test");
     BOOST_TEST(!markdown.empty());
-    BOOST_TEST(markdown.find("defrel") != std::string::npos);
+    BOOST_TEST(markdown.find("make-test") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(request_interrupt_stops_runaway_evaluation_quickly) {
     using namespace std::chrono_literals;
 
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
 
     static constexpr auto kRunawaySource = R"eta(
 (module driver-jupyter-interrupt
@@ -272,7 +264,9 @@ BOOST_AUTO_TEST_CASE(request_interrupt_stops_runaway_evaluation_quickly) {
 
 BOOST_AUTO_TEST_CASE(eval_to_display_tags_tensor_values) {
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
+
+    const auto imported = driver.eval_to_display("(import std.torch)");
+    BOOST_REQUIRE(static_cast<int>(imported.tag) != static_cast<int>(eta::session::DisplayTag::Error));
 
     auto display = driver.eval_to_display("(torch/zeros '(3 3))");
     BOOST_TEST(static_cast<int>(display.tag) == static_cast<int>(eta::session::DisplayTag::Tensor));
@@ -280,7 +274,9 @@ BOOST_AUTO_TEST_CASE(eval_to_display_tags_tensor_values) {
 
 BOOST_AUTO_TEST_CASE(eval_to_display_tags_fact_table_values) {
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
+
+    const auto imported = driver.eval_to_display("(import std.fact_table)");
+    BOOST_REQUIRE(static_cast<int>(imported.tag) != static_cast<int>(eta::session::DisplayTag::Error));
 
     auto display = driver.eval_to_display("(%make-fact-table '(x y))");
     BOOST_TEST(static_cast<int>(display.tag) == static_cast<int>(eta::session::DisplayTag::FactTable));
@@ -288,7 +284,6 @@ BOOST_AUTO_TEST_CASE(eval_to_display_tags_fact_table_values) {
 
 BOOST_AUTO_TEST_CASE(eval_to_display_tags_jupyter_wrapper_values) {
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
 
     auto html = driver.eval_to_display("(vector 'jupyter-display \"text/html\" \"<b>ok</b>\")");
     BOOST_TEST(static_cast<int>(html.tag) == static_cast<int>(eta::session::DisplayTag::Html));
@@ -300,7 +295,6 @@ BOOST_AUTO_TEST_CASE(eval_to_display_tags_jupyter_wrapper_values) {
 
 BOOST_AUTO_TEST_CASE(eval_to_display_import_std_jupyter_module) {
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
 
     const auto imported = driver.eval_to_display("(import std.jupyter)");
     BOOST_TEST(static_cast<int>(imported.tag) != static_cast<int>(eta::session::DisplayTag::Error));
@@ -308,7 +302,6 @@ BOOST_AUTO_TEST_CASE(eval_to_display_import_std_jupyter_module) {
 
 BOOST_AUTO_TEST_CASE(eval_to_display_persists_imports_between_calls) {
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
 
     const auto first = driver.eval_to_display("(import (only std.aad grad))");
     BOOST_TEST(static_cast<int>(first.tag) != static_cast<int>(eta::session::DisplayTag::Error));
@@ -320,7 +313,6 @@ BOOST_AUTO_TEST_CASE(eval_to_display_persists_imports_between_calls) {
 
 BOOST_AUTO_TEST_CASE(set_stream_sinks_routes_stdout_and_stderr) {
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
 
     std::string stdout_text;
     std::string stderr_text;
@@ -346,7 +338,6 @@ BOOST_AUTO_TEST_CASE(spawn_thread_routes_stdout_to_spawning_stream_sink) {
     using namespace std::chrono_literals;
 
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
 
     std::mutex stdout_mu;
     std::string stdout_text;
@@ -382,7 +373,8 @@ BOOST_AUTO_TEST_CASE(spawn_thread_routes_stdout_to_spawning_stream_sink) {
         "            (spin (+ i 1)) "
         "            i)) "
         "      (spin 0) "
-        "      (println \"routing-hi\"))))",
+        "      (display \"routing-hi\") "
+        "      (newline))))",
         out);
     if (!spawned) {
         std::ostringstream diagnostics;
@@ -409,7 +401,6 @@ BOOST_AUTO_TEST_CASE(spawn_thread_routes_stdout_to_spawning_stream_sink) {
 
 BOOST_AUTO_TEST_CASE(runtime_error_populates_user_error_diagnostic) {
     eta::session::Driver driver(make_resolver());
-    require_prelude(driver);
 
     std::string out;
     const bool ok = driver.eval_string("(error \"x\")", out);
@@ -444,7 +435,6 @@ BOOST_AUTO_TEST_CASE(clear_module_cache_allows_module_reload) {
 
     eta::interpreter::ModulePathResolver resolver({tmp, stdlib});
     eta::session::Driver driver(std::move(resolver));
-    require_prelude(driver);
 
     BOOST_REQUIRE(driver.run_file(module_path));
     BOOST_TEST(driver.has_module("jupyter_reload_test"));

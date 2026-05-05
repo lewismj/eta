@@ -1104,6 +1104,8 @@ BOOST_AUTO_TEST_CASE(environment_builtins_include_imported_module_symbols) {
              "  (begin (main)))\n";
     }
 
+    const int bp_line = 4;
+
     AsyncDapHarness harness;
 
     harness.send(request(1, "initialize", "{}"));
@@ -1112,21 +1114,32 @@ BOOST_AUTO_TEST_CASE(environment_builtins_include_imported_module_symbols) {
     BOOST_TEST(init_resp["success"].as_bool() == true);
 
     const std::string launch_args =
-        std::string(R"({"program":")") + json_path(main_mod) + R"(","stopOnEntry":true})";
+        std::string(R"({"program":")") + json_path(main_mod) + R"(","stopOnEntry":false})";
     harness.send(request(2, "launch", launch_args));
     auto launch_resp = harness.wait_response("launch");
     BOOST_REQUIRE(!launch_resp.is_null());
     BOOST_TEST(launch_resp["success"].as_bool() == true);
     BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
 
-    harness.send(request(3, "configurationDone", "{}"));
+    const std::string set_bp_args =
+        std::string(R"({"source":{"path":")") + json_path(main_mod)
+      + R"("},"breakpoints":[{"line":)" + std::to_string(bp_line) + R"(}]})";
+    harness.send(request(3, "setBreakpoints", set_bp_args));
+    auto set_bp_resp = harness.wait_response("setBreakpoints");
+    BOOST_REQUIRE(!set_bp_resp.is_null());
+    BOOST_TEST(set_bp_resp["success"].as_bool() == true);
+    BOOST_REQUIRE_EQUAL(set_bp_resp["body"]["breakpoints"].as_array().size(), 1u);
+
+    harness.send(request(4, "configurationDone", "{}"));
     auto config_done_resp = harness.wait_response("configurationDone");
     BOOST_REQUIRE(!config_done_resp.is_null());
     BOOST_TEST(config_done_resp["success"].as_bool() == true);
-    BOOST_REQUIRE(!harness.wait_event("stopped", std::chrono::milliseconds(10000)).is_null());
+    auto stopped_evt = harness.wait_event("stopped", std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!stopped_evt.is_null());
+    BOOST_TEST(stopped_evt["body"].get_string("reason").value_or("") == "breakpoint");
 
     harness.send(request(
-        4,
+        5,
         "eta/environment",
         R"({"threadId":1,"frameIndex":0,"include":{"locals":false,"closures":false,"globals":false,"builtins":true},"limits":{"maxBuiltins":5000}})"
     ));
@@ -1146,7 +1159,21 @@ BOOST_AUTO_TEST_CASE(environment_builtins_include_imported_module_symbols) {
 
     BOOST_TEST(!envs[0]["bindings"].as_array().empty());
 
-    harness.send(request(5, "disconnect", "{}"));
+    const std::string clear_bp_args =
+        std::string(R"({"source":{"path":")") + json_path(main_mod)
+      + R"("},"breakpoints":[]})";
+    harness.send(request(6, "setBreakpoints", clear_bp_args));
+    auto clear_bp_resp = harness.wait_response("setBreakpoints");
+    BOOST_REQUIRE(!clear_bp_resp.is_null());
+    BOOST_TEST(clear_bp_resp["success"].as_bool() == true);
+
+    harness.send(request(7, "continue", R"({"threadId":1})"));
+    auto continue_resp = harness.wait_response("continue");
+    BOOST_REQUIRE(!continue_resp.is_null());
+    BOOST_TEST(continue_resp["success"].as_bool() == true);
+    (void)harness.wait_event("terminated", std::chrono::milliseconds(1000));
+
+    harness.send(request(8, "disconnect", "{}"));
     auto disconnect_resp = harness.wait_response("disconnect");
     BOOST_REQUIRE(!disconnect_resp.is_null());
     BOOST_TEST(disconnect_resp["success"].as_bool() == true);

@@ -3,7 +3,7 @@
 ;;; Run:  etai cookbook/basics/composition.eta
 
 (module composition
-  (import std.prelude)
+  (import std.core std.io std.collections std.math)
   (begin
 
     ;; ── compose — chain two functions: (f ∘ g)(x) = f(g(x)) ────────

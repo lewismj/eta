@@ -2,8 +2,8 @@
  * @file example_runner_tests.cpp
  * @brief Integration tests that run every .eta file in the cookbook/ directory
  *
- * The test discovers example files relative to the project root, loads the
- * prelude, and runs each example.  A per-file Boost test case is registered
+ * The test discovers example files relative to the project root and runs each
+ * example.  A per-file Boost test case is registered
  * so failures are reported individually.
  *
  * Paths are injected via CMake compile definitions:
@@ -220,12 +220,6 @@ struct ExampleRunnerFixture {
             eta::runtime::StringPort::Mode::Output);
         driver.set_output_port(null_port);
         driver.set_error_port(null_port);
-
-        auto prelude = driver.load_prelude();
-        if (!prelude.loaded) {
-            BOOST_TEST_MESSAGE("Failed to load prelude from " << stdlib.string());
-            return false;
-        }
 
         bool ok = driver.run_file(file);
         if (!ok) {

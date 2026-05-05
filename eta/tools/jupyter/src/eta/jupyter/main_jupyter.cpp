@@ -215,10 +215,18 @@ private:
 [[nodiscard]] bool is_stdlib_root(const fs::path& dir) {
     std::error_code ec;
     if (!fs::is_directory(dir, ec) || ec) return false;
-    const auto prelude = dir / "std" / "prelude.eta";
-    const auto jupyter_mod = dir / "std" / "jupyter.eta";
-    return fs::is_regular_file(prelude, ec) && !ec &&
-           fs::is_regular_file(jupyter_mod, ec) && !ec;
+
+    auto has_module_artifact = [&](std::string_view module_leaf) {
+        const auto module_eta = dir / "std" / (std::string(module_leaf) + ".eta");
+        const auto module_etac = dir / "std" / (std::string(module_leaf) + ".etac");
+        ec.clear();
+        const bool has_eta = fs::is_regular_file(module_eta, ec) && !ec;
+        ec.clear();
+        const bool has_etac = fs::is_regular_file(module_etac, ec) && !ec;
+        return has_eta || has_etac;
+    };
+
+    return has_module_artifact("core") && has_module_artifact("jupyter");
 }
 
 [[nodiscard]] std::optional<std::string> detect_module_path_env(const fs::path& exe_path) {

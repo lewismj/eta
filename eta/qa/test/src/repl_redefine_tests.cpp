@@ -40,16 +40,11 @@ static fs::path stdlib_dir() {
 
 struct ReplHarness {
     eta::session::Driver driver;
-    bool prelude_available{false};
+    bool auto_std_import_enabled{false};
     int repl_counter{0};
     std::vector<eta::interpreter::PriorModule> prior_modules;
 
-    ReplHarness() : driver(make_resolver()) {
-        auto pr = driver.load_prelude();
-        BOOST_REQUIRE_MESSAGE(pr.found, "prelude.eta was not found for REPL tests");
-        BOOST_REQUIRE_MESSAGE(pr.loaded, "prelude.eta failed to load for REPL tests");
-        prelude_available = driver.has_module("std.prelude");
-    }
+    ReplHarness() : driver(make_resolver()) {}
 
     static eta::interpreter::ModulePathResolver make_resolver() {
         auto stdlib = stdlib_dir();
@@ -66,7 +61,7 @@ struct ReplHarness {
     bool submit(const std::vector<std::string>& forms,
                 eta::runtime::nanbox::LispVal* out_result = nullptr) {
         auto wrapped = eta::interpreter::wrap_repl_submission(
-            forms, repl_counter++, prelude_available, prior_modules);
+            forms, repl_counter++, auto_std_import_enabled, prior_modules);
 
         if (wrapped.source.empty()) return true;
 
@@ -166,7 +161,7 @@ BOOST_AUTO_TEST_CASE(imported_names_survive_across_submissions) {
     BOOST_TEST(value != eta::runtime::nanbox::Nil);
 }
 
-BOOST_AUTO_TEST_CASE(explicit_core_import_after_prelude_is_allowed) {
+BOOST_AUTO_TEST_CASE(explicit_core_import_is_allowed) {
     ReplHarness repl;
     repl.require_submit("(import std.core)");
     BOOST_TEST(repl.eval_int("(identity 7)") == 7);

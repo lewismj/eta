@@ -157,13 +157,15 @@ Both `etac` and `etai` support `--disasm`:
 eta_repl
 ```
 
-The REPL auto-loads `std.prelude`, which re-exports every name from
-`std.core`, `std.math`, `std.io`, `std.collections`, `std.logic`,
-`std.clp`, `std.causal`, `std.fact_table`, `std.db`, `std.stats`,
-`std.time`, and `std.net`. Those standard library functions are available immediately
-— no explicit `import` needed (opt-in modules `std.clpb`, `std.clpr`,
-`std.freeze`, `std.supervisor`, `std.torch`, and `std.test` must still
-be imported by hand):
+The REPL does not auto-import stdlib modules. Import what you need first:
+
+```scheme
+?> (import std.core)
+?> (import std.math)
+?> (import std.collections)
+```
+
+Then call functions normally:
 
 ```
 ?> (atom? 42)
@@ -225,7 +227,6 @@ Hello, REPL!
 | `std.supervisor`     | `one-for-one`, `one-for-all` *(opt-in)*   |
 | `std.torch`          | `tensor`, `forward`, `train-step!`, — *(opt-in)* |
 | `std.test`           | `make-test`, `assert-equal`, `run`, — *(opt-in)* |
-| `std.prelude`        | Re-exports the non-opt-in modules above   |
 
 ### Writing a Module
 
@@ -422,7 +423,6 @@ eta-v0.2.0-<platform>/
     eta_dap(.exe)           # Debug Adapter (DAP over stdio, used by VS Code)
   stdlib/
     std/
-      prelude.eta           # Auto-loaded standard library module (std.prelude)
       core.eta  math.eta  io.eta  collections.eta  test.eta
       logic.eta  clp.eta  clpb.eta  clpr.eta  causal.eta
       db.eta  fact_table.eta  freeze.eta  net.eta  stats.eta  time.eta

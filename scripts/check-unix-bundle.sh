@@ -68,11 +68,32 @@ for bin in "${required_bins[@]}"; do
     fi
 done
 
-required_stdlib=(std/prelude.eta std/prelude.etac)
+required_stdlib=(
+    std/core.eta
+    std/core.etac
+    std/jupyter.eta
+    std/jupyter.etac
+)
 missing_stdlib=()
 for artifact in "${required_stdlib[@]}"; do
     if [ ! -f "$STDLIB_DIR/$artifact" ]; then
         missing_stdlib+=("stdlib/$artifact")
+    fi
+done
+
+# Cookbook notebooks (referenced from README.md / TLDR.md / docs/).
+# Regression guard: the CMake install rule used to filter on *.eta only,
+# silently dropping every *.ipynb. Make sure they're present.
+COOKBOOK_DIR="$PREFIX/cookbook"
+required_notebooks=(
+    notebooks/LanguageBasics.ipynb
+    notebooks/AAD.ipynb
+    notebooks/Portfolio.ipynb
+)
+missing_notebooks=()
+for nb in "${required_notebooks[@]}"; do
+    if [ ! -f "$COOKBOOK_DIR/$nb" ]; then
+        missing_notebooks+=("cookbook/$nb")
     fi
 done
 
@@ -99,6 +120,10 @@ fi
 if [ ${#missing_stdlib[@]} -gt 0 ]; then
     ok=0
     echo "[FAIL] Missing stdlib artifacts: ${missing_stdlib[*]}" >&2
+fi
+if [ ${#missing_notebooks[@]} -gt 0 ]; then
+    ok=0
+    echo "[FAIL] Missing cookbook notebooks: ${missing_notebooks[*]}" >&2
 fi
 
 if [ "$ok" -eq 1 ]; then

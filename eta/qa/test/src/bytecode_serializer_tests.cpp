@@ -380,7 +380,7 @@ BOOST_AUTO_TEST_CASE(roundtrip_source_hash) {
     BOOST_CHECK_EQUAL(result->source_hash, expected_hash);
 }
 
-BOOST_AUTO_TEST_CASE(roundtrip_v4_metadata_sections) {
+BOOST_AUTO_TEST_CASE(roundtrip_metadata_sections_with_compiler_and_deps) {
     semantics::BytecodeFunctionRegistry reg;
     BytecodeFunction func;
     func.name = "meta";
@@ -421,6 +421,73 @@ BOOST_AUTO_TEST_CASE(roundtrip_v4_metadata_sections) {
     BOOST_CHECK_EQUAL(result->dependency_hashes[0].etac_hash, 0x101ull);
     BOOST_CHECK_EQUAL(result->dependency_hashes[1].dependency, "stats.core");
     BOOST_CHECK_EQUAL(result->dependency_hashes[1].etac_hash, 0x202ull);
+}
+
+BOOST_AUTO_TEST_CASE(roundtrip_v5_module_relocation_metadata) {
+    semantics::BytecodeFunctionRegistry reg;
+
+    BytecodeFunction helper;
+    helper.name = "std.test.helper";
+    helper.code.push_back({OpCode::Return, 0});
+    helper.source_map.push_back({});
+    reg.add(std::move(helper));
+
+    BytecodeFunction init;
+    init.name = "std.test._init";
+    init.code.push_back({OpCode::Return, 0});
+    init.source_map.push_back({});
+    reg.add(std::move(init));
+
+    ModuleEntry mod;
+    mod.name = "std.test";
+    mod.init_func_index = 1;
+    mod.total_globals = 700;
+    mod.main_func_slot = 620;
+    mod.first_func_index = 0;
+    mod.func_count = 2;
+    mod.owned_global_slots = {610, 611, 620};
+
+    ModuleEntry::ImportBinding ib;
+    ib.local_slot = 450;
+    ib.from_module = "std.core";
+    ib.remote_name = "make-test";
+    mod.import_bindings.push_back(ib);
+
+    ModuleEntry::ExportBinding eb0;
+    eb0.name = "make-test";
+    eb0.slot = 610;
+    mod.export_bindings.push_back(eb0);
+
+    ModuleEntry::ExportBinding eb1;
+    eb1.name = "run";
+    eb1.slot = 611;
+    mod.export_bindings.push_back(eb1);
+
+    auto result = roundtrip({mod}, reg);
+    BOOST_REQUIRE(result.has_value());
+    BOOST_REQUIRE_EQUAL(result->modules.size(), 1u);
+
+    const auto& roundtripped = result->modules.front();
+    BOOST_CHECK_EQUAL(roundtripped.first_func_index, 0u);
+    BOOST_CHECK_EQUAL(roundtripped.func_count, 2u);
+    BOOST_CHECK(roundtripped.main_func_slot.has_value());
+    BOOST_CHECK_EQUAL(*roundtripped.main_func_slot, 620u);
+
+    BOOST_REQUIRE_EQUAL(roundtripped.owned_global_slots.size(), 3u);
+    BOOST_CHECK_EQUAL(roundtripped.owned_global_slots[0], 610u);
+    BOOST_CHECK_EQUAL(roundtripped.owned_global_slots[1], 611u);
+    BOOST_CHECK_EQUAL(roundtripped.owned_global_slots[2], 620u);
+
+    BOOST_REQUIRE_EQUAL(roundtripped.import_bindings.size(), 1u);
+    BOOST_CHECK_EQUAL(roundtripped.import_bindings[0].local_slot, 450u);
+    BOOST_CHECK_EQUAL(roundtripped.import_bindings[0].from_module, "std.core");
+    BOOST_CHECK_EQUAL(roundtripped.import_bindings[0].remote_name, "make-test");
+
+    BOOST_REQUIRE_EQUAL(roundtripped.export_bindings.size(), 2u);
+    BOOST_CHECK_EQUAL(roundtripped.export_bindings[0].name, "make-test");
+    BOOST_CHECK_EQUAL(roundtripped.export_bindings[0].slot, 610u);
+    BOOST_CHECK_EQUAL(roundtripped.export_bindings[1].name, "run");
+    BOOST_CHECK_EQUAL(roundtripped.export_bindings[1].slot, 611u);
 }
 
 BOOST_AUTO_TEST_CASE(roundtrip_heap_cons_constant) {

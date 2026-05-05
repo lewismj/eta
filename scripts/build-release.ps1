@@ -217,13 +217,17 @@ foreach ($bin in @("eta.exe", "etac.exe", "etai.exe", "eta_test.exe", "eta_repl.
 
 # Verify stdlib source + precompiled artifacts landed in the bundle.
 Write-Host "  Verifying stdlib artifacts..."
-$PreludeEta = Join-Path $Prefix "stdlib\std\prelude.eta"
-if (-not (Test-Path $PreludeEta)) {
-    throw "Missing required stdlib source after install: $PreludeEta"
-}
-$PreludeEtac = Join-Path $Prefix "stdlib\std\prelude.etac"
-if (-not (Test-Path $PreludeEtac)) {
-    throw "Missing required stdlib bytecode after install: $PreludeEtac"
+$requiredStdlib = @(
+    "stdlib\std\core.eta",
+    "stdlib\std\core.etac",
+    "stdlib\std\jupyter.eta",
+    "stdlib\std\jupyter.etac"
+)
+foreach ($artifact in $requiredStdlib) {
+    $path = Join-Path $Prefix $artifact
+    if (-not (Test-Path $path)) {
+        throw "Missing required stdlib artifact after install: $path"
+    }
 }
 
 # Bundle the MSVC runtime DLLs into bin/ for clean-machine execution.
@@ -339,11 +343,28 @@ foreach ($h in $helpers) {
 }
 
 # Copy cookbook/
+# CMake's `install(DIRECTORY cookbook/ ...)` rule already copies the
+# *.eta / *.ipynb / *.md files into <Prefix>\cookbook. Mirror those
+# patterns here as a belt-and-braces fallback (e.g. when the bundle is
+# being assembled from a partial install tree). Use robocopy with an
+# explicit file-mask list so we never accidentally bring in build
+# artefacts like *.etac or __pycache__.
 $CookbookSrc  = Join-Path $ProjectRoot "cookbook"
 $CookbookDest = Join-Path $Prefix "cookbook"
 if (Test-Path $CookbookSrc) {
-    Write-Host "  Copying cookbook..."
-    Copy-Item -Recurse -Force $CookbookSrc $CookbookDest
+    Write-Host "  Copying cookbook (*.eta, *.ipynb, *.md)..."
+    if (-not (Test-Path $CookbookDest)) {
+        New-Item -ItemType Directory -Path $CookbookDest | Out-Null
+    }
+    # /E recurse incl. empty dirs, /NFL/NDL/NJH/NJS/NP quiet output,
+    # /XD exclude common junk dirs. robocopy exit codes 0-7 are success.
+    & robocopy $CookbookSrc $CookbookDest *.eta *.ipynb *.md `
+        /E /NFL /NDL /NJH /NJS /NP `
+        /XD __pycache__ .ipynb_checkpoints | Out-Null
+    if ($LASTEXITCODE -ge 8) {
+        throw "robocopy failed copying cookbook (exit $LASTEXITCODE)"
+    }
+    $global:LASTEXITCODE = 0
 }
 
 # -- 5b. Prune to minimal Windows layout ---------------------------------------

@@ -579,14 +579,15 @@ void DapServer::handle_configuration_done(const Value& id, const Value& /*args*/
 void DapServer::start_vm_from_current_launch() {
 
     auto script_dir = script_path_.parent_path();
+    const bool script_is_etac = script_path_.extension() == ".etac";
     /// Build module search roots from the script's package context.
     auto resolver = interpreter::ModulePathResolver::from_args_or_env_at(
         "", script_dir.empty() ? fs::current_path() : script_dir);
     /**
-     * Source-level debugging should prefer .eta when both .eta and .etac are
-     * present.  .etac remains a fallback when source is unavailable.
+     * Debugging source submissions prefers .eta for richer line mapping.
+     * Debugging a compiled script keeps the default .etac-first behavior.
      */
-    resolver.set_prefer_source(true);
+    resolver.set_prefer_source(!script_is_etac);
     /// Also search the directory containing the script being debugged.
     if (!script_dir.empty()) resolver.add_dir(script_dir);
 
@@ -691,7 +692,7 @@ void DapServer::start_vm_from_current_launch() {
     }
 
     /// Launch the VM on a background thread
-    vm_thread_ = std::thread([this]() {
+    vm_thread_ = std::thread([this, script_is_etac]() {
         auto* drv = driver_.get();
 
         /// Load prelude
@@ -729,8 +730,18 @@ void DapServer::start_vm_from_current_launch() {
         /// Notify VS Code about any breakpoints that became verified after prelude load
         notify_breakpoints_verified();
 
+        if (script_is_etac) {
+            send_event("output", json::object({
+                {"category", "important"},
+                {"output",
+                    "[eta_dap] Debugging compiled .etac bytecode.\n"
+                    "[eta_dap] Source breakpoints/line mapping depend on embedded debug spans.\n"
+                    "[eta_dap] If line mapping is limited, use instruction stepping or rebuild without --no-debug.\n"},
+            }));
+        }
+
         /// Execute the script
-        bool ok = drv->run_file(script_path_);
+        bool ok = script_is_etac ? drv->run_etac_file(script_path_) : drv->run_file(script_path_);
 
         /// Signal IDE
         if (ok) {
