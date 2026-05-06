@@ -695,39 +695,16 @@ void DapServer::start_vm_from_current_launch() {
     vm_thread_ = std::thread([this, script_is_etac]() {
         auto* drv = driver_.get();
 
-        /// Load prelude
-        auto pr = drv->load_prelude();
-        if (!pr.found) {
-            send_event("output", json::object({
-                {"category", "important"},
-                {"output",
-                    "[eta_dap] Warning: std.prelude not found  -  std.core, std.io, std.prelude etc. unavailable.\n"
-                    "[eta_dap] Set 'eta.lsp.modulePath' in VS Code settings, or set ETA_MODULE_PATH.\n"},
-            }));
-        } else if (!pr.loaded) {
-            auto resolve = drv->file_resolver();
-            const auto& diags = drv->diagnostics().diagnostics();
-            for (const auto& d : diags) {
-                std::ostringstream msg;
-                diagnostic::format_diagnostic(msg, d, /*use_color=*/false, resolve);
-                send_event("output", json::object({{"category", "stderr"}, {"output", msg.str() + "\n"}}));
-            }
-        } else {
-            send_event("output", json::object({
-                {"category", "console"},
-                {"output", "[eta_dap] Prelude loaded: " + pr.path.string() + "\n"},
-            }));
-        }
-
         /**
-         * Re-install now that prelude file IDs are known, so breakpoints in
-         * library files are active before the script starts executing.
+         * Refresh breakpoints immediately before script execution.
+         * This keeps all pending requests applied without relying on
+         * any prelude/module pre-load side effects.
          */
         {
             std::lock_guard<std::mutex> lk(vm_mutex_);
             install_pending_breakpoints();
         }
-        /// Notify VS Code about any breakpoints that became verified after prelude load
+        /// Notify VS Code about any breakpoints that became verified pre-run
         notify_breakpoints_verified();
 
         if (script_is_etac) {
