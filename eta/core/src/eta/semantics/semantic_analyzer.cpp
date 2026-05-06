@@ -731,21 +731,23 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms,
         }
 
 
-        /// Wire imports to the exporting module's unified slot
+        /// Wire imports to exporting module slots.
+        /// Prefer externally-provided runtime slots when available, so a
+        /// source-hydrated module cannot drift from already-executed ETAC slots.
         for (const auto& [ln, orign] : mtref->get().import_origins) {
+            if (external_slots) {
+                auto runtime_slot = external_slots(orign.from_module, orign.remote_name);
+                if (runtime_slot.has_value()) {
+                    ctx.add_import_at_slot(toplevel, ln, orign, orign.where, *runtime_slot);
+                    continue;
+                }
+            }
+
             auto mod_it = export_slots.find(orign.from_module);
             if (mod_it != export_slots.end()) {
                 auto slot_it = mod_it->second.find(orign.remote_name);
                 if (slot_it != mod_it->second.end()) {
                     ctx.add_import_at_slot(toplevel, ln, orign, orign.where, slot_it->second);
-                    continue;
-                }
-            }
-
-            if (external_slots) {
-                auto runtime_slot = external_slots(orign.from_module, orign.remote_name);
-                if (runtime_slot.has_value()) {
-                    ctx.add_import_at_slot(toplevel, ln, orign, orign.where, *runtime_slot);
                     continue;
                 }
             }

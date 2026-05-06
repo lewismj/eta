@@ -436,23 +436,27 @@
             (let* ((rows (%map3 (lambda (x y rid) (%make-row x y rid))
                                 x-matrix y-vector row-ids))
                    (honest-enabled? (and honest? (>= n (* 2 min-leaf))))
+                   (shuffle+seed
+                     (if honest-enabled?
+                         (%shuffle rows seed)
+                         #f))
+                   (shuffled
+                     (if honest-enabled?
+                         (car shuffle+seed)
+                         '()))
+                   (grow-n
+                     (if honest-enabled?
+                         (%clamp-int (%half-floor n)
+                                     min-leaf
+                                     (- n min-leaf))
+                         0))
                    (rows-for-grow
                      (if honest-enabled?
-                         (let* ((shuffle+seed (%shuffle rows seed))
-                                (shuffled (car shuffle+seed))
-                                (grow-n (%clamp-int (%half-floor n)
-                                                    min-leaf
-                                                    (- n min-leaf))))
-                           (take grow-n shuffled))
+                         (take grow-n shuffled)
                          rows))
                    (rows-for-estimate
                      (if honest-enabled?
-                         (let* ((shuffle+seed (%shuffle rows seed))
-                                (shuffled (car shuffle+seed))
-                                (grow-n (%clamp-int (%half-floor n)
-                                                    min-leaf
-                                                    (- n min-leaf))))
-                           (drop grow-n shuffled))
+                         (drop grow-n shuffled)
                          '()))
                    (tree-result (%build-tree rows-for-grow
                                              0
