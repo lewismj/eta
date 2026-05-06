@@ -668,12 +668,20 @@ inline void mark_tail(core::Node* node, bool in_tail_context) {
 SemResult<std::vector<ModuleSemantics>>
 SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::reader::ModuleLinker& linker) {
     ::eta::runtime::BuiltinEnvironment empty;
-    return analyze_all(forms, linker, empty);
+    return analyze_all(forms, linker, empty, {});
 }
 
 SemResult<std::vector<ModuleSemantics>>
 SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::reader::ModuleLinker& linker,
                               const ::eta::runtime::BuiltinEnvironment& builtins) {
+    return analyze_all(forms, linker, builtins, {});
+}
+
+SemResult<std::vector<ModuleSemantics>>
+SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms,
+                              const ::eta::reader::ModuleLinker& linker,
+                              const ::eta::runtime::BuiltinEnvironment& builtins,
+                              ExternalExportSlotResolver external_slots) {
     std::vector<ModuleSemantics> out;
 
     /**
@@ -733,6 +741,15 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::read
                     continue;
                 }
             }
+
+            if (external_slots) {
+                auto runtime_slot = external_slots(orign.from_module, orign.remote_name);
+                if (runtime_slot.has_value()) {
+                    ctx.add_import_at_slot(toplevel, ln, orign, orign.where, *runtime_slot);
+                    continue;
+                }
+            }
+
             /// Fallback: allocate a fresh slot (should not happen if modules are in dependency order)
             ctx.add_import(toplevel, ln, orign, orign.where);
         }

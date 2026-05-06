@@ -416,6 +416,9 @@ public:
         if (runtime_module_info_.erase(module_name) > 0) {
             changed = true;
         }
+        if (compiled_link_modules_.erase(module_name) > 0) {
+            changed = true;
+        }
 
         repl_modules_.erase(
             std::remove_if(
@@ -1192,7 +1195,7 @@ public:
             return false;
         }
 
-        return execute_deserialized_etac(etac);
+        return execute_deserialized_etac(etac, path);
     }
 
 private:
@@ -1230,7 +1233,7 @@ private:
         if (!etac_res) {
             return false;
         }
-        if (!execute_deserialized_etac(*etac_res)) {
+        if (!execute_deserialized_etac(*etac_res, embedded_prelude_marker_path())) {
             diag_engine_.clear();
             return false;
         }
@@ -1270,7 +1273,26 @@ private:
         runtime_module_info_[module_name] = std::move(info);
     }
 
-    bool execute_deserialized_etac(runtime::vm::EtacFile& etac) {
+    void record_compiled_link_exports_from_compiled_module(
+        const runtime::vm::ModuleEntry& module,
+        const fs::path& artifact_path) {
+        auto& info = compiled_link_modules_[module.name];
+        info.name = module.name;
+        info.artifact_path = artifact_path;
+        info.exports.clear();
+        info.exports.reserve(module.export_bindings.size());
+        for (const auto& ex : module.export_bindings) {
+            if (ex.name.empty()) continue;
+            info.exports.push_back(ex.name);
+        }
+        std::sort(info.exports.begin(), info.exports.end());
+        info.exports.erase(
+            std::unique(info.exports.begin(), info.exports.end()),
+            info.exports.end());
+    }
+
+    bool execute_deserialized_etac(runtime::vm::EtacFile& etac,
+                                   const fs::path& artifact_path) {
         /// Auto-load non-prelude imports
         for (const auto& imp : etac.imports) {
             if (executed_modules_.contains(imp)) continue;
@@ -1301,6 +1323,8 @@ private:
 
             uint32_t accounted_globals = static_cast<uint32_t>(vm_.globals().size());
             for (const auto& mod : etac.modules) {
+                record_compiled_link_exports_from_compiled_module(mod, artifact_path);
+
                 if (executed_modules_.contains(mod.name)) {
                     if (mod.total_globals > accounted_globals) {
                         accounted_globals = mod.total_globals;
@@ -1352,6 +1376,12 @@ private:
                 }
 
                 executed_modules_.insert(mod.name);
+                std::unordered_map<std::string, uint32_t> legacy_export_slots;
+                legacy_export_slots.reserve(mod.export_bindings.size());
+                for (const auto& ex : mod.export_bindings) {
+                    legacy_export_slots[ex.name] = ex.slot;
+                }
+                record_runtime_exports_from_compiled_module(mod.name, legacy_export_slots);
 
                 if (mod.main_func_slot) {
                     auto main_val = globals[*mod.main_func_slot];
@@ -1588,6 +1618,10 @@ private:
                     }
                 }
             }
+        }
+
+        for (const auto& mod : etac.modules) {
+            record_compiled_link_exports_from_compiled_module(mod, artifact_path);
         }
 
         return true;
@@ -2247,8 +2281,15 @@ private:
         std::unordered_map<std::string, uint32_t> export_slots;
     };
 
+    struct CompiledModuleLinkInfo {
+        std::string name;
+        std::vector<std::string> exports;
+        fs::path artifact_path;
+    };
+
     std::unordered_map<uint32_t, std::string> global_names_;
     std::unordered_map<std::string, RuntimeModuleInfo> runtime_module_info_;
+    std::unordered_map<std::string, CompiledModuleLinkInfo> compiled_link_modules_;
     int repl_counter_{0};
     uint64_t eval_counter_{0};
     uint64_t etac_reserve_counter_{0};
@@ -2320,6 +2361,20 @@ private:
             }
         }
         return result;
+    }
+
+    [[nodiscard]] static std::unordered_set<std::string> collect_declared_module_names(
+            std::span<const reader::parser::SExprPtr> forms) {
+        std::unordered_set<std::string> names;
+        for (const auto& form : forms) {
+            auto* lst = form ? form->template as<reader::parser::List>() : nullptr;
+            if (!lst || lst->elems.size() < 2) continue;
+            if (!reader::utils::is_symbol_named(lst->elems[0], "module")) continue;
+            auto* nsym = lst->elems[1] ? lst->elems[1]->template as<reader::parser::Symbol>() : nullptr;
+            if (!nsym || nsym->name.empty()) continue;
+            names.insert(nsym->name);
+        }
+        return names;
     }
 
     [[nodiscard]] static bool form_declares_module(
@@ -2426,10 +2481,9 @@ private:
             if (!ok) return false;
 
             /**
-             * Imports resolved to .etac execute successfully, but the linker
-             * still needs source module forms in accumulated_forms_ for this
-             * same submission. Hydrate sibling .eta immediately so the module
-             * is visible to link/index passes without changing execution order.
+             * Prefer sibling source hydration when it exists for richer source
+             * spans/diagnostics. Linking correctness does not depend on this:
+             * compiled-module export metadata is replayed each source pass.
              */
             if (path->extension() == ".etac") {
                 if (!hydrate_executed_module_source(mod_name)) return false;
@@ -2546,6 +2600,29 @@ private:
             emit_link_error(idx_res.error());
             return false;
         }
+
+        const auto source_declared_module_names =
+            collect_declared_module_names(accumulated_forms_);
+        std::vector<std::string> replay_compiled_modules;
+        replay_compiled_modules.reserve(compiled_link_modules_.size());
+        for (const auto& [module_name, _] : compiled_link_modules_) {
+            if (source_declared_module_names.contains(module_name)) continue;
+            replay_compiled_modules.push_back(module_name);
+        }
+        std::sort(replay_compiled_modules.begin(), replay_compiled_modules.end());
+        for (const auto& module_name : replay_compiled_modules) {
+            const auto it = compiled_link_modules_.find(module_name);
+            if (it == compiled_link_modules_.end()) continue;
+            auto replay_res = linker.index_compiled_module_exports(
+                it->second.name,
+                std::span<const std::string>(it->second.exports.data(), it->second.exports.size()));
+            if (!replay_res) {
+                rollback_accumulated_forms();
+                emit_link_error(replay_res.error());
+                return false;
+            }
+        }
+
         auto link_res = linker.link();
         if (!link_res) {
             rollback_accumulated_forms();
@@ -2555,7 +2632,16 @@ private:
 
         /// Semantic analysis (all accumulated modules)
         semantics::SemanticAnalyzer sa;
-        auto sem_res = sa.analyze_all(accumulated_forms_, linker, builtins_);
+        auto sem_res = sa.analyze_all(
+            accumulated_forms_, linker, builtins_,
+            [this](std::string_view module_name,
+                   std::string_view export_name) -> std::optional<uint32_t> {
+                const auto module_it = runtime_module_info_.find(std::string(module_name));
+                if (module_it == runtime_module_info_.end()) return std::nullopt;
+                const auto export_it = module_it->second.export_slots.find(std::string(export_name));
+                if (export_it == module_it->second.export_slots.end()) return std::nullopt;
+                return export_it->second;
+            });
         if (!sem_res) {
             rollback_accumulated_forms();
             diag_engine_.emit(diagnostic::to_diagnostic(sem_res.error()));

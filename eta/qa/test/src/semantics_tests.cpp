@@ -1,5 +1,8 @@
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+#include <array>
+
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
@@ -29,6 +32,37 @@ static SemResult<std::vector<ModuleSemantics>> analyze_src(std::string_view prog
 
     SemanticAnalyzer sa;
     return sa.analyze_all(*expanded, L);
+}
+
+static SemResult<std::vector<ModuleSemantics>>
+analyze_src_with_compiled_provider(std::string_view program,
+                                   std::string_view compiled_module_name,
+                                   std::span<const std::string> compiled_exports,
+                                   ExternalExportSlotResolver external_slots) {
+    reader::lexer::Lexer lex(0, program);
+    reader::parser::Parser p(lex);
+    auto parsed = p.parse_toplevel();
+    if (!parsed) return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, {}, "Parse error"});
+
+    reader::expander::Expander ex;
+    auto expanded = ex.expand_many(*parsed);
+    if (!expanded) return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, {}, "Expansion error"});
+
+    reader::ModuleLinker L;
+    auto idx = L.index_modules(*expanded);
+    if (!idx) return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, {}, "Linker index error"});
+
+    auto compiled_idx = L.index_compiled_module_exports(
+        std::string(compiled_module_name),
+        compiled_exports);
+    if (!compiled_idx) return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, {}, "Compiled module index error"});
+
+    auto lk = L.link();
+    if (!lk) return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, {}, "Link error"});
+
+    SemanticAnalyzer sa;
+    eta::runtime::BuiltinEnvironment builtins;
+    return sa.analyze_all(*expanded, L, builtins, std::move(external_slots));
 }
 
 BOOST_AUTO_TEST_SUITE(semantics_tests)
@@ -304,6 +338,54 @@ BOOST_AUTO_TEST_CASE(test_lambda_arity) {
     auto* lam3 = std::get_if<core::Lambda>(&std::get_if<core::Set>(&(*res3)[0].toplevel_inits[0]->data)->value->data);
     BOOST_CHECK_EQUAL(lam3->arity.required, 0);
     BOOST_CHECK_EQUAL(lam3->arity.has_rest, true);
+}
+
+BOOST_AUTO_TEST_CASE(test_import_uses_external_slot_resolver_when_source_provider_absent) {
+    static constexpr uint32_t kExternalSlot = 77;
+    const std::array<std::string, 1> compiled_exports = {"ext-value"};
+
+    auto res = analyze_src_with_compiled_provider(
+        "(module consumer (import compiled.only) (define result ext-value))",
+        "compiled.only",
+        std::span<const std::string>(compiled_exports.data(), compiled_exports.size()),
+        [](std::string_view module, std::string_view export_name) -> std::optional<uint32_t> {
+            if (module == "compiled.only" && export_name == "ext-value") {
+                return kExternalSlot;
+            }
+            return std::nullopt;
+        });
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL(res->size(), 1);
+
+    const auto& mod = (*res)[0];
+    const auto it = std::find_if(mod.bindings.begin(), mod.bindings.end(),
+        [](const BindingInfo& binding) {
+            return binding.kind == BindingInfo::Kind::Import && binding.name == "ext-value";
+        });
+    BOOST_REQUIRE(it != mod.bindings.end());
+    BOOST_CHECK_EQUAL(it->slot, kExternalSlot);
+}
+
+BOOST_AUTO_TEST_CASE(test_import_falls_back_to_fresh_slot_when_resolver_misses) {
+    const std::array<std::string, 1> compiled_exports = {"ext-value"};
+
+    auto res = analyze_src_with_compiled_provider(
+        "(module consumer (import compiled.only) (define result ext-value))",
+        "compiled.only",
+        std::span<const std::string>(compiled_exports.data(), compiled_exports.size()),
+        [](std::string_view, std::string_view) -> std::optional<uint32_t> {
+            return std::nullopt;
+        });
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL(res->size(), 1);
+
+    const auto& mod = (*res)[0];
+    const auto it = std::find_if(mod.bindings.begin(), mod.bindings.end(),
+        [](const BindingInfo& binding) {
+            return binding.kind == BindingInfo::Kind::Import && binding.name == "ext-value";
+        });
+    BOOST_REQUIRE(it != mod.bindings.end());
+    BOOST_CHECK_EQUAL(it->slot, 0u);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

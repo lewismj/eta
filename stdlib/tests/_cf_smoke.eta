@@ -1,0 +1,45 @@
+(module causal.forest.smoke
+  (import std.core
+          std.collections
+          std.stats
+          std.causal.cate
+          std.causal.forest)
+  (begin
+
+    (defun make-row (x z1 z2 y)
+      (list (cons 'x x) (cons 'z1 z1) (cons 'z2 z2) (cons 'y y)))
+
+    (define d
+      (list
+        (make-row 0 -1 0 1.0)
+        (make-row 1 -1 0 1.6)
+        (make-row 0  1 0 2.0)
+        (make-row 1  1 0 4.1)
+        (make-row 0 -1 1 1.5)
+        (make-row 1 -1 1 2.1)
+        (make-row 0  1 1 2.5)
+        (make-row 1  1 1 4.6)))
+
+    (display "data ready") (newline)
+
+    (define cf
+      (forest:fit-causal-forest d 'y 'x '(z1 z2)
+                                'n-trees 4
+                                'nuisance-trees 2
+                                'min-leaf 2
+                                'max-depth 3
+                                'subsample 0.80
+                                'seed 42))
+
+    (display "fit ok") (newline)
+
+    (define p (forest:predict-cate cf (car d)))
+    (display "predict-cate => ") (display p) (newline)
+
+    (define vi (forest:variable-importance cf))
+    (display "var-importance => ") (display vi) (newline)
+
+    (define la (forest:local-aipw cf (car d)))
+    (display "local-aipw => ") (display la) (newline)
+  ))
+

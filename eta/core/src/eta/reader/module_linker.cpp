@@ -5,6 +5,15 @@ namespace eta::reader::linker {
 
     using namespace utils;
 
+    LinkResult<void> ModuleLinker::ensure_unique_module_name(
+        const std::string& name,
+        Span duplicate_span) const {
+        if (modules_.contains(name)) {
+            return std::unexpected(LinkError{LinkError::Kind::DuplicateModule, duplicate_span,
+                std::string("duplicate module: ") + name});
+        }
+        return {};
+    }
 
     std::optional<std::reference_wrapper<const ModuleTable>>
     ModuleLinker::get(const std::string& name) const {
@@ -31,10 +40,7 @@ namespace eta::reader::linker {
                     "module: invalid module name (symbol required)"});
             }
             auto name = nameSym->name;
-            if (modules_.contains(name)) {
-                return std::unexpected(LinkError{LinkError::Kind::DuplicateModule, nameSym->span,
-                    std::string("duplicate module: ") + name});
-            }
+            if (auto unique_res = ensure_unique_module_name(name, nameSym->span); !unique_res) return unique_res;
 
             ModuleTable mt; mt.name = name; mt.state = ModuleState::Indexed;
             auto res = scan_module_body(*lst, mt);
@@ -48,6 +54,24 @@ namespace eta::reader::linker {
          * are checked against the fully-resolved visible set.
          */
 
+        return {};
+    }
+
+    LinkResult<void> ModuleLinker::index_compiled_module_exports(
+        const std::string& name,
+        std::span<const std::string> exports) {
+        if (auto unique_res = ensure_unique_module_name(name, {}); !unique_res) return unique_res;
+
+        ModuleTable mt;
+        mt.name = name;
+        mt.state = ModuleState::Indexed;
+        for (const auto& export_name : exports) {
+            if (!export_name.empty()) {
+                mt.exports.insert(export_name);
+            }
+        }
+
+        modules_.emplace(name, std::move(mt));
         return {};
     }
 

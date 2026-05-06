@@ -268,6 +268,84 @@ BOOST_AUTO_TEST_CASE(source_run_hydrates_sibling_source_for_etac_imports) {
     BOOST_TEST(decode_fixnum(value) == 42);
 }
 
+BOOST_AUTO_TEST_CASE(source_run_imports_compiled_only_module_without_sibling_source) {
+    TempDir temp;
+    const auto dep_source = temp.create_file("compiled/only/dep.eta", R"eta(
+(module compiled.only.dep
+  (export dep-value)
+  (begin
+    (define dep-value 41)))
+)eta");
+
+    const auto dep_etac = temp.path / "compiled" / "only" / "dep.etac";
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compile_to_etac(dep_source, temp.path, dep_etac, &compile_error),
+        "compile_to_etac failed: " + compile_error);
+
+    std::error_code ec;
+    fs::remove(dep_source, ec);
+    BOOST_REQUIRE_MESSAGE(!ec, "failed to remove dep source before source run");
+
+    eta::interpreter::ModulePathResolver run_resolver({temp.path});
+    eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+
+    eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
+    const bool run_ok = runner.run_source(R"eta(
+(module compiled.only.consumer
+  (import compiled.only.dep)
+  (define result (+ dep-value 1)))
+)eta", &value, "result");
+    BOOST_REQUIRE_MESSAGE(run_ok, diagnostics_to_string(runner));
+    BOOST_TEST(decode_fixnum(value) == 42);
+
+    const auto diagnostics = diagnostics_to_string(runner);
+    BOOST_TEST(diagnostics.find("unknown module in import") == std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(source_run_imports_reexport_chain_from_compiled_only_modules) {
+    TempDir temp;
+    const auto base_source = temp.create_file("compiled/chain/base.eta", R"eta(
+(module compiled.chain.base
+  (export base-value)
+  (begin
+    (define base-value 41)))
+)eta");
+    const auto mid_source = temp.create_file("compiled/chain/mid.eta", R"eta(
+(module compiled.chain.mid
+  (import compiled.chain.base)
+  (export base-value))
+)eta");
+
+    const auto base_etac = temp.path / "compiled" / "chain" / "base.etac";
+    const auto mid_etac = temp.path / "compiled" / "chain" / "mid.etac";
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compile_to_etac(base_source, temp.path, base_etac, &compile_error),
+        "compile_to_etac(base) failed: " + compile_error);
+    BOOST_REQUIRE_MESSAGE(
+        compile_to_etac(mid_source, temp.path, mid_etac, &compile_error),
+        "compile_to_etac(mid) failed: " + compile_error);
+
+    std::error_code ec;
+    fs::remove(base_source, ec);
+    BOOST_REQUIRE_MESSAGE(!ec, "failed to remove base source before source run");
+    fs::remove(mid_source, ec);
+    BOOST_REQUIRE_MESSAGE(!ec, "failed to remove mid source before source run");
+
+    eta::interpreter::ModulePathResolver run_resolver({temp.path});
+    eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+
+    eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
+    const bool run_ok = runner.run_source(R"eta(
+(module compiled.chain.consumer
+  (import compiled.chain.mid)
+  (define result (+ base-value 1)))
+)eta", &value, "result");
+    BOOST_REQUIRE_MESSAGE(run_ok, diagnostics_to_string(runner));
+    BOOST_TEST(decode_fixnum(value) == 42);
+}
+
 BOOST_AUTO_TEST_CASE(run_etac_file_emits_clear_diagnostic_for_missing_import) {
     TempDir temp;
     const auto dep_source = temp.create_file("etac/contract/dep.eta", R"eta(
@@ -381,6 +459,8 @@ BOOST_AUTO_TEST_CASE(source_run_with_stdlib_etac_root_keeps_unrelated_imports_sl
 )eta", &value, "result");
     BOOST_REQUIRE_MESSAGE(ok, diagnostics_to_string(driver));
     BOOST_TEST(decode_fixnum(value) == 1);
+    const auto diagnostics = diagnostics_to_string(driver);
+    BOOST_TEST(diagnostics.find("unknown module in import") == std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(stdlib_etac_artifacts_load_without_stale_fallback) {

@@ -91,6 +91,16 @@ namespace eta::reader::linker {
          */
         LinkResult<void> index_modules(std::span<const SExprPtr> forms);
 
+        /**
+         * Index a compiled module provider using only its exported names.
+         *
+         * This is used for `.etac`-only modules where source forms are not
+         * available in the current linker pass.
+         */
+        LinkResult<void> index_compiled_module_exports(
+            const std::string& name,
+            std::span<const std::string> exports);
+
         /// Resolve pending imports into ModuleTable.visible and fill `import_origins`
         LinkResult<void> link();
 
@@ -101,6 +111,7 @@ namespace eta::reader::linker {
         std::unordered_map<std::string, ModuleTable> modules_; ///< name -> table
         std::unordered_map<std::string, std::vector<PendingImport>> pending_; ///< target -> imports
 
+        LinkResult<void> ensure_unique_module_name(const std::string& name, Span duplicate_span) const;
 
         LinkResult<void> scan_module_body(const List& module_form, ModuleTable& mt);
         LinkResult<void> parse_import_form(ModuleTable& mt, const List& import_form);

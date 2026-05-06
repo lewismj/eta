@@ -3,9 +3,11 @@
 #include <compare>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -39,6 +41,10 @@ struct SemanticError {
 
 template <typename T>
 using SemResult = std::expected<T, SemanticError>;
+
+using ExternalExportSlotResolver =
+    std::function<std::optional<uint32_t>(std::string_view module,
+                                          std::string_view export_name)>;
 
 /**
  * @brief Information about a binding (variable, parameter, etc.)
@@ -128,6 +134,12 @@ public:
         std::span<const eta::reader::parser::SExprPtr> forms,
         const eta::reader::ModuleLinker& linker,
         const eta::runtime::BuiltinEnvironment& builtins);
+
+    SemResult<std::vector<ModuleSemantics>> analyze_all(
+        std::span<const eta::reader::parser::SExprPtr> forms,
+        const eta::reader::ModuleLinker& linker,
+        const eta::runtime::BuiltinEnvironment& builtins,
+        ExternalExportSlotResolver external_slots);
 
     SemResult<std::vector<ModuleSemantics>> analyze_all(
         std::span<const eta::reader::parser::SExprPtr> forms,

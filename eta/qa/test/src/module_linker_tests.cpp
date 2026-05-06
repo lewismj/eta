@@ -1,5 +1,7 @@
 #include <boost/test/unit_test.hpp>
 
+#include <array>
+
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
@@ -278,6 +280,51 @@ BOOST_AUTO_TEST_CASE(linker_prefix_bad_syntax) {
     reader::ModuleLinker L;
     auto idx = L.index_modules(std::span<const reader::parser::SExprPtr>(forms.data(), forms.size()));
     BOOST_CHECK(!idx.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(linker_compiled_provider_imports_into_source_module) {
+    auto forms = parse_and_expand(
+        "(module consumer (import compiled.math) (define y plus))");
+
+    reader::ModuleLinker linker;
+    auto idx = linker.index_modules(std::span<const reader::parser::SExprPtr>(forms.data(), forms.size()));
+    BOOST_REQUIRE(idx.has_value());
+
+    const std::array<std::string, 2> exports = {"plus", "minus"};
+    auto compiled_idx = linker.index_compiled_module_exports(
+        "compiled.math",
+        std::span<const std::string>(exports.data(), exports.size()));
+    BOOST_REQUIRE(compiled_idx.has_value());
+
+    auto lk = linker.link();
+    BOOST_REQUIRE_MESSAGE(lk.has_value(), link_error_msg(lk));
+
+    auto consumer = linker.get("consumer");
+    BOOST_REQUIRE(consumer.has_value());
+    const auto& module = consumer->get();
+    BOOST_CHECK(module.visible.contains("plus"));
+    BOOST_CHECK(module.visible.contains("minus"));
+    BOOST_CHECK(module.visible.contains("y"));
+
+    BOOST_REQUIRE(module.import_origins.contains("plus"));
+    BOOST_CHECK_EQUAL(module.import_origins.at("plus").from_module, "compiled.math");
+    BOOST_CHECK_EQUAL(module.import_origins.at("plus").remote_name, "plus");
+}
+
+BOOST_AUTO_TEST_CASE(linker_compiled_provider_duplicate_source_module_name_fails) {
+    auto forms = parse_and_expand(
+        "(module duplicate.mod (export x) (define x 1))");
+
+    reader::ModuleLinker linker;
+    auto idx = linker.index_modules(std::span<const reader::parser::SExprPtr>(forms.data(), forms.size()));
+    BOOST_REQUIRE(idx.has_value());
+
+    const std::array<std::string, 1> exports = {"x"};
+    auto compiled_idx = linker.index_compiled_module_exports(
+        "duplicate.mod",
+        std::span<const std::string>(exports.data(), exports.size()));
+    BOOST_REQUIRE(!compiled_idx.has_value());
+    BOOST_CHECK(compiled_idx.error().kind == reader::LinkError::Kind::DuplicateModule);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
