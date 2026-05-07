@@ -1,0 +1,4 @@
+[workspace]
+members = ["packages/*"]
+exclude = ["packages/experimental/*"]
+default-members = ["packages/app"]

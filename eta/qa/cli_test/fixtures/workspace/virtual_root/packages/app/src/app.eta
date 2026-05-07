@@ -1,0 +1,5 @@
+(module app
+  (import std.io)
+  (import lib)
+  (begin
+    (println meaning)))

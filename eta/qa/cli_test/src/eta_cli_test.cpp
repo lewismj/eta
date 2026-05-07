@@ -29,9 +29,14 @@ namespace fs = std::filesystem;
 #error ETA_CLI_PATH must be defined by CMake
 #endif
 
+#ifndef ETA_CLI_TEST_FIXTURES_DIR
+#error ETA_CLI_TEST_FIXTURES_DIR must be defined by CMake
+#endif
+
 namespace {
 
 const fs::path kEtaCliPath{ETA_CLI_PATH};
+const fs::path kCliTestFixturesDir{ETA_CLI_TEST_FIXTURES_DIR};
 
 struct TempDir {
     fs::path path;
@@ -152,6 +157,20 @@ std::string read_text_file(const fs::path& path) {
     std::ostringstream out;
     out << in.rdbuf();
     return out.str();
+}
+
+fs::path fixture_path(const fs::path& rel) {
+    return kCliTestFixturesDir / rel;
+}
+
+fs::path copy_fixture_tree(const TempDir& temp, const fs::path& rel) {
+    const auto source = fixture_path(rel);
+    const auto destination = temp.path / "fixture";
+    std::error_code ec;
+    fs::copy(source, destination, fs::copy_options::recursive, ec);
+    BOOST_REQUIRE_MESSAGE(!ec,
+                          "failed to copy fixture tree '" + source.string() + "': " + ec.message());
+    return destination;
 }
 
 CommandResult run_eta(const fs::path& cwd, const std::vector<std::string>& args) {
@@ -356,6 +375,198 @@ BOOST_AUTO_TEST_CASE(tree_output_is_deterministic_for_path_deps) {
     BOOST_TEST(gamma_pos < beta_pos);
 }
 
+BOOST_AUTO_TEST_CASE(tree_from_workspace_member_fixture_uses_member_manifest) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto result = run_eta(workspace_root / "packages" / "app", {"tree"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("app v0.1.0") != std::string::npos);
+    BOOST_TEST(result.output.find("lib v0.1.0") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(tree_from_nested_workspace_member_fixture_uses_member_manifest) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto result = run_eta(workspace_root / "packages" / "app" / "src", {"tree"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("app v0.1.0") != std::string::npos);
+    BOOST_TEST(result.output.find("lib v0.1.0") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(tree_from_virtual_workspace_root_fixture_uses_workspace_defaults) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto result = run_eta(workspace_root, {"tree"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("app v0.1.0") != std::string::npos);
+    BOOST_TEST(result.output.find("lib v0.1.0") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(tree_from_workspace_non_member_dir_uses_workspace_defaults) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+    fs::create_directories(workspace_root / "notes" / "drafts");
+
+    const auto result = run_eta(workspace_root / "notes" / "drafts", {"tree"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("app v0.1.0") != std::string::npos);
+    BOOST_TEST(result.output.find("lib v0.1.0") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(tree_with_manifest_path_selects_workspace_member) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+    const auto workspace_manifest = workspace_root / "eta.toml";
+
+    const auto result = run_eta(temp.path,
+                                {"tree",
+                                 "--manifest-path",
+                                 workspace_manifest.string(),
+                                 "-p",
+                                 "app"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("app v0.1.0") != std::string::npos);
+    BOOST_TEST(result.output.find("lib v0.1.0") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(build_from_rooted_workspace_root_fixture_keeps_root_package_behavior) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "rooted_root");
+
+    const auto build = run_eta(workspace_root, {"build"});
+    BOOST_REQUIRE_MESSAGE(build.exit_code == 0, build.output);
+
+    const auto root_artifact =
+        workspace_root / ".eta" / "target" / "release" / "root_tools" / "root_tools.etac";
+    const auto member_artifact =
+        workspace_root / ".eta" / "target" / "release" / "helper" / "helper.etac";
+    BOOST_TEST(fs::is_regular_file(root_artifact));
+    BOOST_TEST(!fs::exists(member_artifact));
+}
+
+BOOST_AUTO_TEST_CASE(build_from_workspace_member_writes_workspace_lockfile_and_shared_modules_root) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto build = run_eta(workspace_root / "packages" / "app", {"build"});
+    BOOST_REQUIRE_MESSAGE(build.exit_code == 0, build.output);
+
+    const auto app_artifact =
+        workspace_root / ".eta" / "target" / "release" / "app" / "app.etac";
+    BOOST_TEST(fs::is_regular_file(app_artifact));
+    BOOST_TEST(!fs::exists(workspace_root / "packages" / "app" / ".eta" / "target"));
+
+    const auto workspace_lock = workspace_root / "eta.lock";
+    const auto member_lock = workspace_root / "packages" / "app" / "eta.lock";
+    BOOST_TEST(fs::is_regular_file(workspace_lock));
+    BOOST_TEST(!fs::exists(member_lock));
+
+    const auto lock_text = read_text_file(workspace_lock);
+    BOOST_TEST(lock_text.find("source = \"workspace+packages/app\"") != std::string::npos);
+    BOOST_TEST(lock_text.find("source = \"workspace+packages/lib\"") != std::string::npos);
+
+    BOOST_TEST(fs::is_directory(workspace_root / ".eta" / "modules"));
+    BOOST_TEST(!fs::exists(workspace_root / "packages" / "app" / ".eta" / "modules"));
+}
+
+BOOST_AUTO_TEST_CASE(build_from_virtual_workspace_root_with_workspace_flag_builds_all_members) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto build = run_eta(workspace_root, {"build", "--workspace"});
+    BOOST_REQUIRE_MESSAGE(build.exit_code == 0, build.output);
+
+    const auto app_artifact =
+        workspace_root / ".eta" / "target" / "release" / "app" / "app.etac";
+    const auto lib_artifact =
+        workspace_root / ".eta" / "target" / "release" / "lib" / "lib.etac";
+    BOOST_TEST(fs::is_regular_file(app_artifact));
+    BOOST_TEST(fs::is_regular_file(lib_artifact));
+}
+
+BOOST_AUTO_TEST_CASE(run_from_virtual_workspace_root_requires_explicit_package) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto run = run_eta(workspace_root, {"run"});
+    BOOST_REQUIRE_NE(run.exit_code, 0);
+    BOOST_TEST(run.output.find("virtual workspace commands require -p/--package") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(run_from_workspace_non_member_dir_requires_explicit_package) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+    fs::create_directories(workspace_root / "notes" / "drafts");
+
+    const auto run = run_eta(workspace_root / "notes" / "drafts", {"run"});
+    BOOST_REQUIRE_NE(run.exit_code, 0);
+    BOOST_TEST(run.output.find("workspace non-member directories require -p/--package")
+               != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(run_from_virtual_workspace_root_with_package_target_runs_member) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto run = run_eta(workspace_root, {"run", "-p", "app"});
+    BOOST_REQUIRE_MESSAGE(run.exit_code == 0, run.output);
+    BOOST_TEST(run.output.find("42") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(install_from_virtual_workspace_root_requires_explicit_package_target) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto install = run_eta(workspace_root, {"install"});
+    BOOST_REQUIRE_NE(install.exit_code, 0);
+    BOOST_TEST(install.output.find("virtual workspace commands require -p/--package")
+               != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(install_from_virtual_workspace_root_with_package_target_installs_member_artifact) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto install = run_eta(workspace_root, {"install", "-p", "app"});
+    BOOST_REQUIRE_MESSAGE(install.exit_code == 0, install.output);
+
+    const fs::path shared_artifact =
+        workspace_root / ".eta" / "target" / "release" / "app" / "app.etac";
+    const fs::path installed_artifact =
+        workspace_root / "packages" / "app" / ".eta" / "bin" / "app.etac";
+    BOOST_TEST(fs::is_regular_file(shared_artifact));
+    BOOST_TEST(fs::is_regular_file(installed_artifact));
+}
+
 BOOST_AUTO_TEST_CASE(run_without_manifest_degrades_to_etai) {
     TempDir temp;
     temp.write_file("standalone.eta", R"eta(
@@ -435,6 +646,49 @@ BOOST_AUTO_TEST_CASE(run_manifest_mode_strict_shadow_scan_reports_duplicate_modu
     BOOST_REQUIRE_NE(result.exit_code, 0);
     BOOST_TEST(result.output.find("strict shadow mode") != std::string::npos);
     BOOST_TEST(result.output.find("dup.mod") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(add_from_virtual_workspace_root_requires_explicit_package_target) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto add = run_eta(workspace_root, {"add", "lib", "--path", "../lib"});
+    BOOST_REQUIRE_NE(add.exit_code, 0);
+    BOOST_TEST(add.output.find("virtual workspace commands require -p/--package")
+               != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(add_from_virtual_workspace_root_with_package_target_updates_member_manifest) {
+    TempDir temp;
+    temp.write_file("ws/eta.toml", R"toml(
+[workspace]
+members = ["packages/*"]
+)toml");
+    temp.write_file("ws/packages/app/eta.toml", make_manifest("app", "0.1.0"));
+    temp.write_file("ws/packages/lib/eta.toml", make_manifest("lib", "0.1.0"));
+    temp.write_file("ws/packages/app/src/app.eta", R"eta(
+(module app
+  (begin
+    (display "app")
+    (newline)))
+)eta");
+    temp.write_file("ws/packages/lib/src/lib.eta", R"eta(
+(module lib
+  (export meaning)
+  (begin
+    (define meaning 7)))
+)eta");
+
+    const auto add = run_eta(temp.path / "ws",
+                             {"add", "lib", "--path", "../lib", "-p", "app"});
+    BOOST_REQUIRE_MESSAGE(add.exit_code == 0, add.output);
+
+    const auto manifest_after_add =
+        read_text_file(temp.path / "ws" / "packages" / "app" / "eta.toml");
+    BOOST_TEST(manifest_after_add.find("lib = { path = \"../lib\" }") != std::string::npos);
+    BOOST_TEST(fs::is_regular_file(temp.path / "ws" / "eta.lock"));
 }
 
 BOOST_AUTO_TEST_CASE(add_and_remove_path_dependency_updates_manifest_and_lockfile) {
@@ -539,6 +793,43 @@ BOOST_AUTO_TEST_CASE(vendor_materializes_path_dependency_modules) {
 
     const fs::path dep_materialized = temp.path / "app" / ".eta" / "modules" / "dep-0.1.0" / "eta.toml";
     BOOST_TEST(fs::is_regular_file(dep_materialized));
+}
+
+BOOST_AUTO_TEST_CASE(vendor_from_workspace_root_resolves_relative_target_from_workspace_root) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto vendor = run_eta(workspace_root, {"vendor", "--target", "vendor-out"});
+    BOOST_REQUIRE_MESSAGE(vendor.exit_code == 0, vendor.output);
+
+    const fs::path workspace_target = workspace_root / "vendor-out";
+    BOOST_TEST(fs::is_directory(workspace_target));
+    BOOST_TEST(!fs::exists(workspace_root / "packages" / "app" / "vendor-out"));
+}
+
+BOOST_AUTO_TEST_CASE(clean_from_workspace_root_removes_selected_member_shared_target_artifacts) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto build = run_eta(workspace_root, {"build", "--workspace"});
+    BOOST_REQUIRE_MESSAGE(build.exit_code == 0, build.output);
+
+    const fs::path app_artifact =
+        workspace_root / ".eta" / "target" / "release" / "app" / "app.etac";
+    const fs::path lib_artifact =
+        workspace_root / ".eta" / "target" / "release" / "lib" / "lib.etac";
+    BOOST_TEST(fs::is_regular_file(app_artifact));
+    BOOST_TEST(fs::is_regular_file(lib_artifact));
+
+    const auto clean = run_eta(workspace_root, {"clean"});
+    BOOST_REQUIRE_MESSAGE(clean.exit_code == 0, clean.output);
+
+    BOOST_TEST(!fs::exists(app_artifact));
+    BOOST_TEST(fs::is_regular_file(lib_artifact));
 }
 
 BOOST_AUTO_TEST_CASE(clean_all_removes_target_and_modules) {

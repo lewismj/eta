@@ -30,6 +30,7 @@
 #include <unistd.h>
 #endif
 
+#include "eta/package/discovery.h"
 #include "eta/package/manifest.h"
 #include "eta/package/resolver.h"
 
@@ -83,6 +84,43 @@ struct CleanOptions {
     bool all{false};
 };
 
+enum class SelectionCommandMode {
+    Aggregate,
+    SingleTarget,
+};
+
+enum class InvocationContext {
+    StandalonePackage,
+    WorkspaceRoot,
+    WorkspaceMember,
+    WorkspaceNonMember,
+};
+
+struct WorkspaceCliOptions {
+    bool workspace{false};
+    std::vector<std::string> packages;
+    std::vector<std::string> exclude;
+    std::optional<fs::path> manifest_path;
+};
+
+struct ParsedCommandArgs {
+    WorkspaceCliOptions workspace;
+    std::vector<std::string> command_args;
+};
+
+struct SelectedPackageTarget {
+    std::string name;
+    fs::path manifest_path;
+    fs::path package_root;
+};
+
+struct ResolvedCommandTargets {
+    InvocationContext context{InvocationContext::StandalonePackage};
+    std::optional<fs::path> workspace_manifest_path;
+    fs::path workspace_root;
+    std::vector<SelectedPackageTarget> selected;
+};
+
 struct ExternalResult {
     int exit_code{1};
     std::string output;
@@ -91,6 +129,9 @@ struct ExternalResult {
 struct ResolvedProjectState {
     fs::path manifest_path;
     fs::path project_root;
+    fs::path lockfile_root;
+    fs::path modules_root;
+    std::optional<fs::path> workspace_root;
     eta::package::Manifest manifest;
     eta::package::ResolvedGraph graph;
     eta::package::Lockfile lockfile;
@@ -134,6 +175,16 @@ using CliResult = std::expected<T, std::string>;
 #else
     return normalized;
 #endif
+}
+
+[[nodiscard]] bool is_path_within(const fs::path& root, const fs::path& candidate) {
+    const auto root_key = path_key(root);
+    const auto candidate_key = path_key(candidate);
+    if (candidate_key == root_key) return true;
+    if (candidate_key.size() <= root_key.size()) return false;
+    if (candidate_key.compare(0u, root_key.size(), root_key) != 0) return false;
+    if (!root_key.empty() && root_key.back() == '/') return true;
+    return candidate_key[root_key.size()] == '/';
 }
 
 [[nodiscard]] uint64_t fnv1a_64(std::string_view data) {
@@ -502,17 +553,23 @@ void print_usage(const char* program) {
         << "Commands:\n"
         << "  eta new <name> [--bin|--lib]\n"
         << "  eta init [--bin|--lib]\n"
-        << "  eta tree [--depth N]\n"
-        << "  eta run [--profile <release|debug>] [--strict-shadows] [--bin NAME] [--example NAME] [file.eta] [-- args...]\n"
-        << "  eta add <pkg> [--path DIR|--git URL --rev SHA|--tarball PATH --sha256 HEX] [--dev]\n"
-        << "  eta remove <pkg>\n"
-        << "  eta update [<pkg>...]\n"
-        << "  eta build [--profile <release|debug>] [--bin NAME]\n"
-        << "  eta test [filter]\n"
-        << "  eta bench [filter]\n"
-        << "  eta vendor [--target DIR]\n"
-        << "  eta install [<pkg>] [--global]\n"
-        << "  eta clean [--all]\n"
+        << "  eta tree [--depth N] [workspace options]\n"
+        << "  eta run [--profile <release|debug>] [--strict-shadows] [--bin NAME] [--example NAME] [file.eta] [-- args...] [workspace options]\n"
+        << "  eta add <pkg> [--path DIR|--git URL --rev SHA|--tarball PATH --sha256 HEX] [--dev] [workspace options]\n"
+        << "  eta remove <pkg> [workspace options]\n"
+        << "  eta update [<pkg>...] [workspace options]\n"
+        << "  eta build [--profile <release|debug>] [--bin NAME] [workspace options]\n"
+        << "  eta test [filter] [workspace options]\n"
+        << "  eta bench [filter] [workspace options]\n"
+        << "  eta vendor [--target DIR] [workspace options]\n"
+        << "  eta install [<pkg>] [--global] [workspace options]\n"
+        << "  eta clean [--all] [workspace options]\n"
+        << "\n"
+        << "Workspace options:\n"
+        << "  --workspace            Select all workspace members\n"
+        << "  -p, --package <name>   Select one or more workspace members\n"
+        << "  --exclude <name>       Exclude package(s) when using --workspace\n"
+        << "  --manifest-path <path> Explicit workspace/package eta.toml\n"
         << "\n"
         << "Use `eta <command> --help` for command-specific options.\n";
 }
@@ -526,66 +583,431 @@ void print_init_usage(const char* program) {
 }
 
 void print_tree_usage(const char* program) {
-    std::cerr << "Usage: " << program << " tree [--depth N]\n";
+    std::cerr << "Usage: " << program
+              << " tree [--depth N] [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
 }
 
 void print_run_usage(const char* program) {
     std::cerr
         << "Usage: " << program
-        << " run [--profile <release|debug>] [--strict-shadows] [--bin NAME] [--example NAME] [file.eta] [-- args...]\n";
+        << " run [--profile <release|debug>] [--strict-shadows] [--bin NAME] [--example NAME] [file.eta] [-- args...]"
+        << " [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
 }
 
 void print_add_usage(const char* program) {
     std::cerr
         << "Usage: " << program
-        << " add <pkg> [--path DIR|--git URL --rev SHA|--tarball PATH --sha256 HEX] [--dev]\n";
+        << " add <pkg> [--path DIR|--git URL --rev SHA|--tarball PATH --sha256 HEX] [--dev]"
+        << " [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
 }
 
 void print_remove_usage(const char* program) {
-    std::cerr << "Usage: " << program << " remove <pkg>\n";
+    std::cerr << "Usage: " << program
+              << " remove <pkg> [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
 }
 
 void print_update_usage(const char* program) {
-    std::cerr << "Usage: " << program << " update [<pkg>...]\n";
+    std::cerr << "Usage: " << program
+              << " update [<pkg>...] [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
 }
 
 void print_build_usage(const char* program) {
-    std::cerr << "Usage: " << program << " build [--profile <release|debug>] [--bin NAME]\n";
+    std::cerr << "Usage: " << program
+              << " build [--profile <release|debug>] [--bin NAME] [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
 }
 
 void print_path_command_usage(const char* program,
                               std::string_view command,
                               std::string_view dir) {
-    std::cerr << "Usage: " << program << " " << command << " [filter]\n";
+    std::cerr << "Usage: " << program
+              << " " << command
+              << " [filter] [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
     std::cerr << "If no filter is provided, eta " << command << " runs all tests under "
               << dir << "/\n";
 }
 
 void print_vendor_usage(const char* program) {
-    std::cerr << "Usage: " << program << " vendor [--target DIR]\n";
+    std::cerr << "Usage: " << program
+              << " vendor [--target DIR] [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
 }
 
 void print_install_usage(const char* program) {
-    std::cerr << "Usage: " << program << " install [<pkg>] [--global]\n";
+    std::cerr << "Usage: " << program
+              << " install [<pkg>] [--global] [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
 }
 
 void print_clean_usage(const char* program) {
-    std::cerr << "Usage: " << program << " clean [--all]\n";
+    std::cerr << "Usage: " << program
+              << " clean [--all] [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
 }
 
-[[nodiscard]] std::optional<fs::path> find_manifest_path(fs::path start_dir) {
-    start_dir = canonicalize_path(start_dir);
-    while (true) {
-        const auto candidate = start_dir / "eta.toml";
-        std::error_code ec;
-        if (fs::is_regular_file(candidate, ec) && !ec) {
-            return canonicalize_path(candidate);
-        }
-        const auto parent = start_dir.parent_path();
-        if (parent.empty() || parent == start_dir) break;
-        start_dir = parent;
+CliResult<eta::package::ManifestDiscovery> discover_manifest_context(const fs::path& start_dir) {
+    auto discovered = eta::package::discover_manifest_context(start_dir);
+    if (!discovered) return std::unexpected(discovered.error().message);
+    return *discovered;
+}
+
+CliResult<fs::path> find_manifest_path(const fs::path& start_dir, std::string_view missing_message) {
+    auto discovered = discover_manifest_context(start_dir);
+    if (!discovered) return std::unexpected(discovered.error());
+    if (!discovered->active_manifest_path.has_value()) {
+        return std::unexpected(std::string(missing_message));
     }
-    return std::nullopt;
+    return *discovered->active_manifest_path;
+}
+
+[[nodiscard]] bool paths_equal(const fs::path& lhs, const fs::path& rhs) {
+    return path_key(lhs) == path_key(rhs);
+}
+
+[[nodiscard]] std::string normalize_member_selector(std::string_view selector) {
+    auto normalized = fs::path(std::string(selector)).lexically_normal().generic_string();
+    if (normalized.empty() || normalized == "./") return ".";
+#ifdef _WIN32
+    return lower_ascii(normalized);
+#else
+    return normalized;
+#endif
+}
+
+[[nodiscard]] std::string workspace_member_selector(const eta::package::WorkspaceMember& member) {
+    std::string selector = ".";
+    if (member.source.rfind("workspace+", 0) == 0) {
+        selector = member.source.substr(10u);
+        if (selector.empty()) selector = ".";
+    }
+    return normalize_member_selector(selector);
+}
+
+CliResult<fs::path> resolve_manifest_path_argument(std::string_view command,
+                                                   const fs::path& cwd,
+                                                   const fs::path& raw_path) {
+    fs::path candidate = raw_path;
+    if (!candidate.is_absolute()) {
+        candidate = cwd / candidate;
+    }
+    candidate = canonicalize_path(candidate);
+
+    std::error_code ec;
+    if (fs::is_directory(candidate, ec) && !ec) {
+        candidate /= "eta.toml";
+    }
+    if (!fs::is_regular_file(candidate, ec) || ec) {
+        return std::unexpected("eta " + std::string(command)
+                               + ": --manifest-path does not point to an eta.toml file: "
+                               + candidate.string());
+    }
+    return canonicalize_path(candidate);
+}
+
+CliResult<ParsedCommandArgs> parse_workspace_command_args(std::string_view command,
+                                                          const std::vector<std::string>& args) {
+    ParsedCommandArgs parsed;
+    bool passthrough = false;
+
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        const auto& arg = args[i];
+        if (passthrough) {
+            parsed.command_args.push_back(arg);
+            continue;
+        }
+        if (arg == "--") {
+            passthrough = true;
+            parsed.command_args.push_back(arg);
+            continue;
+        }
+        if (arg == "--workspace") {
+            parsed.workspace.workspace = true;
+            continue;
+        }
+        if (arg == "-p" || arg == "--package") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta " + std::string(command)
+                                       + ": " + arg + " requires a package name");
+            }
+            parsed.workspace.packages.push_back(args[++i]);
+            continue;
+        }
+        if (arg == "--exclude") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta " + std::string(command)
+                                       + ": --exclude requires a package name");
+            }
+            parsed.workspace.exclude.push_back(args[++i]);
+            continue;
+        }
+        if (arg == "--manifest-path") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta " + std::string(command)
+                                       + ": --manifest-path requires a path");
+            }
+            if (parsed.workspace.manifest_path.has_value()) {
+                return std::unexpected("eta " + std::string(command)
+                                       + ": --manifest-path may be provided at most once");
+            }
+            parsed.workspace.manifest_path = fs::path(args[++i]);
+            continue;
+        }
+        parsed.command_args.push_back(arg);
+    }
+    return parsed;
+}
+
+CliResult<ResolvedCommandTargets> resolve_command_targets(std::string_view command,
+                                                          const fs::path& cwd,
+                                                          const WorkspaceCliOptions& options,
+                                                          SelectionCommandMode mode,
+                                                          std::string_view missing_manifest_message) {
+    std::string command_name(command);
+
+    eta::package::ManifestDiscovery discovery;
+    if (options.manifest_path.has_value()) {
+        auto manifest_path = resolve_manifest_path_argument(command, cwd, *options.manifest_path);
+        if (!manifest_path) return std::unexpected(manifest_path.error());
+
+        auto document = eta::package::read_manifest_document(*manifest_path);
+        if (!document) {
+            return std::unexpected("eta " + command_name + ": " + document.error().message);
+        }
+
+        auto discovered = discover_manifest_context(manifest_path->parent_path());
+        if (!discovered) return std::unexpected("eta " + command_name + ": " + discovered.error());
+        discovery = std::move(*discovered);
+        discovery.start_dir = manifest_path->parent_path();
+        discovery.active_manifest_path = *manifest_path;
+
+        if (document->package.has_value()) {
+            discovery.package_manifest_path = *manifest_path;
+        } else if (discovery.package_manifest_path.has_value()
+                   && paths_equal(*discovery.package_manifest_path, *manifest_path)) {
+            discovery.package_manifest_path.reset();
+        }
+
+        if (document->workspace.has_value()) {
+            discovery.workspace_manifest_path = *manifest_path;
+        } else if (discovery.workspace_manifest_path.has_value()
+                   && paths_equal(*discovery.workspace_manifest_path, *manifest_path)) {
+            discovery.workspace_manifest_path.reset();
+        }
+    } else {
+        auto discovered = discover_manifest_context(cwd);
+        if (!discovered) return std::unexpected("eta " + command_name + ": " + discovered.error());
+        discovery = std::move(*discovered);
+    }
+
+    if (!discovery.package_manifest_path.has_value()
+        && !discovery.workspace_manifest_path.has_value()
+        && !discovery.active_manifest_path.has_value()) {
+        return std::unexpected(std::string(missing_manifest_message));
+    }
+
+    if (!discovery.workspace_manifest_path.has_value()) {
+        if (options.workspace || !options.packages.empty() || !options.exclude.empty()) {
+            return std::unexpected("eta " + command_name
+                                   + ": workspace selection flags require a workspace manifest");
+        }
+        const auto manifest_path = discovery.package_manifest_path.has_value()
+            ? *discovery.package_manifest_path
+            : *discovery.active_manifest_path;
+        auto manifest = eta::package::read_manifest(manifest_path);
+        if (!manifest) {
+            return std::unexpected("eta " + command_name + ": " + manifest.error().message);
+        }
+
+        ResolvedCommandTargets targets;
+        targets.context = InvocationContext::StandalonePackage;
+        targets.selected.push_back(SelectedPackageTarget{
+            manifest->name,
+            canonicalize_path(manifest_path),
+            canonicalize_path(manifest_path.parent_path()),
+        });
+        return targets;
+    }
+
+    auto workspace_members =
+        eta::package::resolve_workspace_members(*discovery.workspace_manifest_path);
+    if (!workspace_members) {
+        return std::unexpected("eta " + command_name + ": " + workspace_members.error().message);
+    }
+
+    auto workspace_doc =
+        eta::package::read_manifest_document(*discovery.workspace_manifest_path);
+    if (!workspace_doc) {
+        return std::unexpected("eta " + command_name + ": " + workspace_doc.error().message);
+    }
+    if (!workspace_doc->workspace.has_value()) {
+        return std::unexpected("eta " + command_name
+                               + ": manifest does not declare [workspace]: "
+                               + discovery.workspace_manifest_path->string());
+    }
+
+    const auto& workspace = *workspace_members;
+    const auto& workspace_section = *workspace_doc->workspace;
+
+    std::unordered_map<std::string, const eta::package::WorkspaceMember*> by_name;
+    by_name.reserve(workspace.members.size());
+    const eta::package::WorkspaceMember* root_member = nullptr;
+    for (const auto& member : workspace.members) {
+        by_name.emplace(member.name, &member);
+        if (paths_equal(member.package_root, workspace.workspace_root)) {
+            root_member = &member;
+        }
+    }
+
+    const eta::package::WorkspaceMember* current_member = nullptr;
+    if (discovery.package_manifest_path.has_value()) {
+        for (const auto& member : workspace.members) {
+            if (paths_equal(member.manifest_path, *discovery.package_manifest_path)) {
+                current_member = &member;
+                break;
+            }
+        }
+    }
+
+    InvocationContext invocation = InvocationContext::WorkspaceNonMember;
+    if (paths_equal(discovery.start_dir, workspace.workspace_root)) {
+        invocation = InvocationContext::WorkspaceRoot;
+    } else if (current_member != nullptr) {
+        invocation = InvocationContext::WorkspaceMember;
+    }
+
+    auto resolve_default_members =
+        [&]() -> CliResult<std::vector<const eta::package::WorkspaceMember*>> {
+        std::vector<const eta::package::WorkspaceMember*> defaults;
+        if (workspace_section.default_members.empty()) return defaults;
+
+        std::unordered_set<std::string> seen;
+        for (const auto& selector : workspace_section.default_members) {
+            const eta::package::WorkspaceMember* matched = nullptr;
+
+            if (auto by_name_it = by_name.find(selector); by_name_it != by_name.end()) {
+                matched = by_name_it->second;
+            } else {
+                const auto normalized_selector = normalize_member_selector(selector);
+                for (const auto& member : workspace.members) {
+                    if (workspace_member_selector(member) == normalized_selector) {
+                        matched = &member;
+                        break;
+                    }
+                }
+            }
+
+            if (matched == nullptr) {
+                return std::unexpected("eta " + command_name
+                                       + ": workspace default-members entry does not match any member: "
+                                       + selector);
+            }
+            if (seen.insert(matched->name).second) {
+                defaults.push_back(matched);
+            }
+        }
+
+        return defaults;
+    };
+
+    std::vector<const eta::package::WorkspaceMember*> selected_members;
+    if (options.workspace) {
+        if (!options.packages.empty()) {
+            return std::unexpected("eta " + command_name
+                                   + ": --workspace cannot be combined with -p/--package");
+        }
+
+        selected_members.reserve(workspace.members.size());
+        for (const auto& member : workspace.members) {
+            selected_members.push_back(&member);
+        }
+
+        std::unordered_set<std::string> excluded;
+        for (const auto& package_name : options.exclude) {
+            if (!by_name.contains(package_name)) {
+                return std::unexpected("eta " + command_name
+                                       + ": --exclude references unknown workspace package: "
+                                       + package_name);
+            }
+            excluded.insert(package_name);
+        }
+        selected_members.erase(
+            std::remove_if(selected_members.begin(),
+                           selected_members.end(),
+                           [&](const eta::package::WorkspaceMember* member) {
+                               return excluded.contains(member->name);
+                           }),
+            selected_members.end());
+    } else if (!options.packages.empty()) {
+        if (!options.exclude.empty()) {
+            return std::unexpected("eta " + command_name
+                                   + ": --exclude requires --workspace");
+        }
+
+        std::unordered_set<std::string> seen;
+        for (const auto& package_name : options.packages) {
+            auto it = by_name.find(package_name);
+            if (it == by_name.end()) {
+                return std::unexpected("eta " + command_name
+                                       + ": unknown workspace package: " + package_name);
+            }
+            if (seen.insert(package_name).second) {
+                selected_members.push_back(it->second);
+            }
+        }
+    } else {
+        if (!options.exclude.empty()) {
+            return std::unexpected("eta " + command_name
+                                   + ": --exclude requires --workspace");
+        }
+
+        if (invocation == InvocationContext::WorkspaceMember && current_member != nullptr) {
+            selected_members.push_back(current_member);
+        } else {
+            if (invocation == InvocationContext::WorkspaceNonMember
+                && mode == SelectionCommandMode::SingleTarget) {
+                return std::unexpected("eta " + command_name
+                                       + ": workspace non-member directories require -p/--package");
+            }
+            if (mode == SelectionCommandMode::SingleTarget && root_member == nullptr) {
+                return std::unexpected("eta " + command_name
+                                       + ": virtual workspace commands require -p/--package");
+            }
+
+            auto defaults = resolve_default_members();
+            if (!defaults) return std::unexpected(defaults.error());
+            if (!defaults->empty()) {
+                selected_members = std::move(*defaults);
+            } else if (root_member != nullptr) {
+                selected_members.push_back(root_member);
+            } else if (mode == SelectionCommandMode::Aggregate) {
+                selected_members.reserve(workspace.members.size());
+                for (const auto& member : workspace.members) {
+                    selected_members.push_back(&member);
+                }
+            } else {
+                return std::unexpected("eta " + command_name
+                                       + ": virtual workspace commands require -p/--package");
+            }
+        }
+    }
+
+    if (selected_members.empty()) {
+        return std::unexpected("eta " + command_name + ": selection did not match any workspace members");
+    }
+    if (mode == SelectionCommandMode::SingleTarget && selected_members.size() != 1u) {
+        return std::unexpected("eta " + command_name
+                               + ": command requires a single selected package; use -p/--package");
+    }
+
+    ResolvedCommandTargets targets;
+    targets.context = invocation;
+    targets.workspace_manifest_path = workspace.workspace_manifest_path;
+    targets.workspace_root = workspace.workspace_root;
+    targets.selected.reserve(selected_members.size());
+    for (const auto* member : selected_members) {
+        targets.selected.push_back(SelectedPackageTarget{
+            member->name,
+            member->manifest_path,
+            member->package_root,
+        });
+    }
+    return targets;
 }
 
 ErrorResult write_text_file(const fs::path& path, std::string_view content) {
@@ -1038,7 +1460,7 @@ CliResult<std::pair<std::string, std::string>> parse_tarball_source(std::string_
     return std::make_pair(tarball, sha256);
 }
 
-ErrorResult materialize_modules_from_lockfile(const fs::path& project_root,
+ErrorResult materialize_modules_from_lockfile(const fs::path& lockfile_root,
                                               const eta::package::Lockfile& lockfile,
                                               const fs::path& modules_root) {
     auto cache_root_res = eta_cache_modules_root();
@@ -1047,7 +1469,7 @@ ErrorResult materialize_modules_from_lockfile(const fs::path& project_root,
     if (auto mk = ensure_directory(modules_root); !mk) return mk;
 
     for (const auto& package : lockfile.packages) {
-        if (package.source == "root") continue;
+        if (package.source == "root" || package.source.rfind("workspace+", 0) == 0) continue;
 
         const fs::path package_dir = modules_root / (package.name + "-" + package.version);
         if (package.source.rfind("path+", 0) == 0) {
@@ -1090,7 +1512,7 @@ ErrorResult materialize_modules_from_lockfile(const fs::path& project_root,
             std::error_code ec;
             fs::path materialized_cache = cache_dir;
             if (!fs::is_regular_file(cache_dir / "eta.toml", ec) || ec) {
-                auto cache = ensure_tarball_cache(dep, project_root, cache_root);
+                auto cache = ensure_tarball_cache(dep, lockfile_root, cache_root);
                 if (!cache) return std::unexpected(cache.error());
                 materialized_cache = *cache;
             }
@@ -1117,9 +1539,37 @@ CliResult<ResolvedProjectState> resolve_project_state(const fs::path& manifest_p
         return std::unexpected(manifest.error().message);
     }
 
+    std::optional<eta::package::WorkspaceMembers> workspace;
+    auto discovered = eta::package::discover_manifest_context(project_root);
+    if (!discovered) return std::unexpected(discovered.error().message);
+    if (discovered->workspace_manifest_path.has_value()) {
+        auto resolved_members =
+            eta::package::resolve_workspace_members(*discovered->workspace_manifest_path);
+        if (!resolved_members) {
+            return std::unexpected(resolved_members.error().message);
+        }
+
+        const auto manifest_match = std::find_if(
+            resolved_members->members.begin(),
+            resolved_members->members.end(),
+            [&](const eta::package::WorkspaceMember& member) {
+                return path_key(member.manifest_path) == path_key(canonical_manifest);
+            });
+        if (manifest_match != resolved_members->members.end()) {
+            workspace = std::move(*resolved_members);
+        }
+    }
+
+    fs::path lockfile_root = project_root;
+    fs::path modules_root = project_root / ".eta" / "modules";
+    if (workspace.has_value()) {
+        lockfile_root = workspace->workspace_root;
+        modules_root = lockfile_root / ".eta" / "modules";
+    }
+
     std::optional<eta::package::Lockfile> existing_lockfile;
     {
-        auto lock = eta::package::read_lockfile(project_root / "eta.lock");
+        auto lock = eta::package::read_lockfile(lockfile_root / "eta.lock");
         if (lock) existing_lockfile = std::move(*lock);
     }
 
@@ -1130,7 +1580,7 @@ CliResult<ResolvedProjectState> resolve_project_state(const fs::path& manifest_p
     eta::package::ResolveOptions options;
     options.include_dev_dependencies = include_dev_dependencies;
     if (existing_lockfile.has_value()) options.lockfile = &*existing_lockfile;
-    options.modules_root = project_root / ".eta" / "modules";
+    options.modules_root = modules_root;
     options.dependency_locator =
         [&](const eta::package::Manifest& owner,
             const eta::package::ManifestDependency& dependency)
@@ -1148,25 +1598,63 @@ CliResult<ResolvedProjectState> resolve_project_state(const fs::path& manifest_p
     auto graph = eta::package::resolve_dependencies(canonical_manifest, options);
     if (!graph) return std::unexpected(graph.error().message);
 
-    auto lockfile = eta::package::build_lockfile(*graph);
+    eta::package::Lockfile lockfile;
+    if (workspace.has_value()) {
+        auto workspace_graph = eta::package::resolve_workspace_dependencies(*workspace, options);
+        if (!workspace_graph) return std::unexpected(workspace_graph.error().message);
+        lockfile = eta::package::build_lockfile(*workspace_graph);
+    } else {
+        lockfile = eta::package::build_lockfile(*graph);
+    }
+
     if (write_lockfile) {
-        auto write_result = eta::package::write_lockfile_file(lockfile, project_root / "eta.lock");
+        auto write_result = eta::package::write_lockfile_file(lockfile, lockfile_root / "eta.lock");
         if (!write_result) return std::unexpected(write_result.error().message);
     }
 
     if (materialize_modules) {
-        auto materialize = materialize_modules_from_lockfile(
-            project_root, lockfile, project_root / ".eta" / "modules");
+        auto materialize = materialize_modules_from_lockfile(lockfile_root, lockfile, modules_root);
         if (!materialize) return std::unexpected(materialize.error());
     }
 
     ResolvedProjectState state;
     state.manifest_path = canonical_manifest;
     state.project_root = project_root;
+    state.lockfile_root = lockfile_root;
+    state.modules_root = modules_root;
+    if (workspace.has_value()) {
+        state.workspace_root = workspace->workspace_root;
+    }
     state.manifest = std::move(*manifest);
     state.graph = std::move(*graph);
     state.lockfile = std::move(lockfile);
     return state;
+}
+
+[[nodiscard]] fs::path workspace_member_target_profile_root(const fs::path& workspace_root,
+                                                            std::string_view profile,
+                                                            std::string_view member_name) {
+    return workspace_root / ".eta" / "target" / std::string(profile) / std::string(member_name);
+}
+
+[[nodiscard]] fs::path selected_package_target_profile_root(const ResolvedProjectState& state,
+                                                            std::string_view profile) {
+    if (state.workspace_root.has_value()) {
+        return workspace_member_target_profile_root(*state.workspace_root, profile, state.manifest.name);
+    }
+    return state.project_root / ".eta" / "target" / std::string(profile);
+}
+
+[[nodiscard]] fs::path lockfile_package_release_root(
+    const ResolvedProjectState& state,
+    const eta::package::LockfilePackage& package) {
+    if (package.source == "root") {
+        return selected_package_target_profile_root(state, "release");
+    }
+    if (package.source.rfind("workspace+", 0) == 0 && state.workspace_root.has_value()) {
+        return workspace_member_target_profile_root(*state.workspace_root, "release", package.name);
+    }
+    return state.modules_root / (package.name + "-" + package.version) / "target" / "release";
 }
 
 [[nodiscard]] std::string display_source(const eta::package::ResolvedPackage& package,
@@ -1233,6 +1721,7 @@ void print_tree_children(std::ostream& out,
 }
 
 void add_package_layout_dirs(const fs::path& package_root,
+                             const std::optional<fs::path>& release_dir_override,
                              std::unordered_set<std::string>& seen,
                              std::vector<fs::path>& out) {
     auto add_unique = [&](const fs::path& candidate) {
@@ -1243,7 +1732,8 @@ void add_package_layout_dirs(const fs::path& package_root,
     };
 
     bool added = false;
-    const auto release_dir = package_root / "target" / "release";
+    const fs::path release_dir =
+        release_dir_override.has_value() ? *release_dir_override : (package_root / "target" / "release");
     add_unique(release_dir);
     if (seen.contains(path_key(release_dir))) added = true;
 
@@ -1252,6 +1742,17 @@ void add_package_layout_dirs(const fs::path& package_root,
     if (seen.contains(path_key(src_dir))) added = true;
 
     if (!added) add_unique(package_root);
+}
+
+[[nodiscard]] std::optional<fs::path>
+workspace_member_root_from_source(std::string_view source, const fs::path& workspace_root) {
+    if (source.rfind("workspace+", 0) != 0) return std::nullopt;
+    const std::string relative = std::string(source.substr(10u));
+    if (relative.empty() || relative == ".") return canonicalize_path(workspace_root);
+
+    const auto member_root = canonicalize_path(workspace_root / fs::path(relative));
+    if (!is_path_within(workspace_root, member_root)) return std::nullopt;
+    return member_root;
 }
 
 std::vector<fs::path> module_entries_from_lockfile(const ResolvedProjectState& state) {
@@ -1268,10 +1769,24 @@ std::vector<fs::path> module_entries_from_lockfile(const ResolvedProjectState& s
         seen.insert(path_key(state.project_root));
     }
 
-    const fs::path modules_root = state.project_root / ".eta" / "modules";
+    const fs::path modules_root = state.modules_root;
     for (const auto& package : state.lockfile.packages) {
         if (package.source == "root") continue;
-        add_package_layout_dirs(modules_root / (package.name + "-" + package.version), seen, entries);
+        if (auto workspace_member_root =
+                workspace_member_root_from_source(package.source, state.lockfile_root);
+            workspace_member_root.has_value()) {
+            std::optional<fs::path> release_override;
+            if (state.workspace_root.has_value()) {
+                release_override = workspace_member_target_profile_root(
+                    *state.workspace_root, "release", package.name);
+            }
+            add_package_layout_dirs(*workspace_member_root, release_override, seen, entries);
+            continue;
+        }
+        add_package_layout_dirs(modules_root / (package.name + "-" + package.version),
+                                std::nullopt,
+                                seen,
+                                entries);
     }
     return entries;
 }
@@ -1295,7 +1810,12 @@ std::vector<fs::path> module_entries_from_graph(const ResolvedProjectState& stat
 
     for (const auto& package : state.graph.packages) {
         if (package.name == state.graph.root_name) continue;
-        add_package_layout_dirs(package.package_root, seen, entries);
+        std::optional<fs::path> release_override;
+        if (state.workspace_root.has_value() && package.source.rfind("workspace+", 0) == 0) {
+            release_override = workspace_member_target_profile_root(
+                *state.workspace_root, "release", package.name);
+        }
+        add_package_layout_dirs(package.package_root, release_override, seen, entries);
     }
     return entries;
 }
@@ -1425,7 +1945,7 @@ CliResult<int> compile_project_sources(const char* argv0,
         return std::unexpected("eta build: no source files found under " + src_root.string());
     }
 
-    const fs::path out_root = state.project_root / ".eta" / "target" / options.profile;
+    const fs::path out_root = selected_package_target_profile_root(state, options.profile);
     if (auto mk = ensure_directory(out_root); !mk) return std::unexpected(mk.error());
 
     auto module_entries = module_entries_from_lockfile(state);
@@ -1570,18 +2090,21 @@ CliResult<int> command_init(const char* program,
 CliResult<int> command_tree(const char* program,
                             const std::vector<std::string>& args,
                             const fs::path& cwd) {
+    auto parsed_args = parse_workspace_command_args("tree", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
     std::optional<std::size_t> max_depth;
-    for (std::size_t i = 0; i < args.size(); ++i) {
-        const auto& arg = args[i];
+    for (std::size_t i = 0; i < parsed_args->command_args.size(); ++i) {
+        const auto& arg = parsed_args->command_args[i];
         if (arg == "--help" || arg == "-h") {
             print_tree_usage(program);
             return 0;
         }
         if (arg == "--depth") {
-            if (i + 1u >= args.size()) {
+            if (i + 1u >= parsed_args->command_args.size()) {
                 return std::unexpected("eta tree: --depth requires a value");
             }
-            auto depth_res = parse_depth(args[++i]);
+            auto depth_res = parse_depth(parsed_args->command_args[++i]);
             if (!depth_res) return std::unexpected("eta tree: " + depth_res.error());
             max_depth = *depth_res;
             continue;
@@ -1589,28 +2112,38 @@ CliResult<int> command_tree(const char* program,
         return std::unexpected("eta tree: unknown option " + arg);
     }
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta tree: could not find eta.toml (searched from "
-                               + cwd.string() + ")");
+    auto targets = resolve_command_targets(
+        "tree",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::Aggregate,
+        "eta tree: could not find eta.toml (searched from " + cwd.string() + ")");
+    if (!targets) return std::unexpected(targets.error());
+
+    for (std::size_t i = 0; i < targets->selected.size(); ++i) {
+        const auto& target = targets->selected[i];
+        auto state = resolve_project_state(target.manifest_path, false, false, false);
+        if (!state) return std::unexpected("eta tree: " + state.error());
+
+        const auto* root = state->graph.find(state->graph.root_name);
+        if (root == nullptr) {
+            return std::unexpected("eta tree: resolved graph is missing root package");
+        }
+
+        std::unordered_map<std::string, const eta::package::ResolvedPackage*> by_name;
+        by_name.reserve(state->graph.packages.size());
+        for (const auto& package : state->graph.packages) {
+            by_name.emplace(package.name, &package);
+        }
+
+        const auto root_dir = root->package_root;
+        std::cout << root->name << " v" << root->version
+                  << " (" << display_source(*root, root_dir) << ")\n";
+        print_tree_children(std::cout, *root, root_dir, by_name, "", 0u, max_depth);
+        if (i + 1u < targets->selected.size()) {
+            std::cout << "\n";
+        }
     }
-
-    auto state = resolve_project_state(*manifest_path, false, false, false);
-    if (!state) return std::unexpected("eta tree: " + state.error());
-
-    const auto* root = state->graph.find(state->graph.root_name);
-    if (root == nullptr) return std::unexpected("eta tree: resolved graph is missing root package");
-
-    std::unordered_map<std::string, const eta::package::ResolvedPackage*> by_name;
-    by_name.reserve(state->graph.packages.size());
-    for (const auto& package : state->graph.packages) {
-        by_name.emplace(package.name, &package);
-    }
-
-    const auto root_dir = root->package_root;
-    std::cout << root->name << " v" << root->version
-              << " (" << display_source(*root, root_dir) << ")\n";
-    print_tree_children(std::cout, *root, root_dir, by_name, "", 0u, max_depth);
     return 0;
 }
 
@@ -1679,18 +2212,28 @@ CliResult<int> command_run(const char* program,
                            const char* argv0,
                            const std::vector<std::string>& args,
                            const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("run", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_run_usage(program);
             return 0;
         }
     }
 
-    auto parsed = parse_run_options(args);
+    auto parsed = parse_run_options(parsed_args->command_args);
     if (!parsed) return std::unexpected(parsed.error());
     RunOptions options = std::move(*parsed);
 
     if (options.input_path.has_value()) {
+        if (parsed_args->workspace.workspace
+            || !parsed_args->workspace.packages.empty()
+            || !parsed_args->workspace.exclude.empty()
+            || parsed_args->workspace.manifest_path.has_value()) {
+            return std::unexpected("eta run: script mode does not accept workspace selection flags");
+        }
+
         const fs::path input = fs::absolute(*options.input_path);
         if (!fs::exists(input)) {
             return std::unexpected("eta run: file not found: " + input.string());
@@ -1706,12 +2249,15 @@ CliResult<int> command_run(const char* program,
         return run_with_etai(argv0, etai_args, cwd);
     }
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta run: no eta.toml found (or pass a file path for script mode)");
-    }
+    auto targets = resolve_command_targets(
+        "run",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::SingleTarget,
+        "eta run: no eta.toml found (or pass a file path for script mode)");
+    if (!targets) return std::unexpected(targets.error());
 
-    auto state = resolve_project_state(*manifest_path, false, true, true);
+    auto state = resolve_project_state(targets->selected.front().manifest_path, false, true, true);
     if (!state) return std::unexpected("eta run: " + state.error());
 
     fs::path run_file;
@@ -1777,25 +2323,36 @@ CliResult<int> command_build(const char* program,
                              const char* argv0,
                              const std::vector<std::string>& args,
                              const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("build", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_build_usage(program);
             return 0;
         }
     }
 
-    auto options = parse_build_options(args);
+    auto options = parse_build_options(parsed_args->command_args);
     if (!options) return std::unexpected(options.error());
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta build: no eta.toml found");
+    auto targets = resolve_command_targets(
+        "build",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::Aggregate,
+        "eta build: no eta.toml found");
+    if (!targets) return std::unexpected(targets.error());
+
+    for (const auto& target : targets->selected) {
+        auto state = resolve_project_state(target.manifest_path, false, true, true);
+        if (!state) return std::unexpected("eta build: " + state.error());
+
+        auto rc = compile_project_sources(argv0, *state, *options);
+        if (!rc) return std::unexpected(rc.error());
+        if (*rc != 0) return rc;
     }
-
-    auto state = resolve_project_state(*manifest_path, false, true, true);
-    if (!state) return std::unexpected("eta build: " + state.error());
-
-    return compile_project_sources(argv0, *state, *options);
+    return 0;
 }
 
 CliResult<PathCommandOptions> parse_path_command_options(const std::string& command,
@@ -1817,50 +2374,74 @@ CliResult<int> command_test(const char* program,
                             const char* argv0,
                             const std::vector<std::string>& args,
                             const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("test", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_path_command_usage(program, "test", "tests");
             return 0;
         }
     }
 
-    auto options = parse_path_command_options("test", args);
+    auto options = parse_path_command_options("test", parsed_args->command_args);
     if (!options) return std::unexpected(options.error());
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta test: no eta.toml found");
-    }
-    auto state = resolve_project_state(*manifest_path, true, false, true);
-    if (!state) return std::unexpected("eta test: " + state.error());
+    auto targets = resolve_command_targets(
+        "test",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::Aggregate,
+        "eta test: no eta.toml found");
+    if (!targets) return std::unexpected(targets.error());
 
-    const fs::path suite_root = state->project_root / "tests";
-    return run_project_suite(argv0, *state, suite_root, *options);
+    for (const auto& target : targets->selected) {
+        auto state = resolve_project_state(target.manifest_path, true, false, true);
+        if (!state) return std::unexpected("eta test: " + state.error());
+
+        const fs::path suite_root = state->project_root / "tests";
+        auto rc = run_project_suite(argv0, *state, suite_root, *options);
+        if (!rc) return std::unexpected(rc.error());
+        if (*rc != 0) return rc;
+    }
+    return 0;
 }
 
 CliResult<int> command_bench(const char* program,
                              const char* argv0,
                              const std::vector<std::string>& args,
                              const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("bench", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_path_command_usage(program, "bench", "bench");
             return 0;
         }
     }
 
-    auto options = parse_path_command_options("bench", args);
+    auto options = parse_path_command_options("bench", parsed_args->command_args);
     if (!options) return std::unexpected(options.error());
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta bench: no eta.toml found");
-    }
-    auto state = resolve_project_state(*manifest_path, true, false, true);
-    if (!state) return std::unexpected("eta bench: " + state.error());
+    auto targets = resolve_command_targets(
+        "bench",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::Aggregate,
+        "eta bench: no eta.toml found");
+    if (!targets) return std::unexpected(targets.error());
 
-    const fs::path suite_root = state->project_root / "bench";
-    return run_project_suite(argv0, *state, suite_root, *options);
+    for (const auto& target : targets->selected) {
+        auto state = resolve_project_state(target.manifest_path, true, false, true);
+        if (!state) return std::unexpected("eta bench: " + state.error());
+
+        const fs::path suite_root = state->project_root / "bench";
+        auto rc = run_project_suite(argv0, *state, suite_root, *options);
+        if (!rc) return std::unexpected(rc.error());
+        if (*rc != 0) return rc;
+    }
+    return 0;
 }
 
 CliResult<VendorOptions> parse_vendor_options(const std::vector<std::string>& args) {
@@ -1882,31 +2463,41 @@ CliResult<VendorOptions> parse_vendor_options(const std::vector<std::string>& ar
 CliResult<int> command_vendor(const char* program,
                               const std::vector<std::string>& args,
                               const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("vendor", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_vendor_usage(program);
             return 0;
         }
     }
 
-    auto options = parse_vendor_options(args);
+    auto options = parse_vendor_options(parsed_args->command_args);
     if (!options) return std::unexpected(options.error());
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta vendor: no eta.toml found");
-    }
-    auto state = resolve_project_state(*manifest_path, false, true, true);
+    auto targets = resolve_command_targets(
+        "vendor",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::Aggregate,
+        "eta vendor: no eta.toml found");
+    if (!targets) return std::unexpected(targets.error());
+
+    auto state = resolve_project_state(targets->selected.front().manifest_path, false, true, true);
     if (!state) return std::unexpected("eta vendor: " + state.error());
 
-    fs::path target = state->project_root / ".eta" / "modules";
+    fs::path target = state->modules_root;
     if (options->target.has_value()) {
+        const fs::path target_base = targets->workspace_manifest_path.has_value()
+            ? targets->workspace_root
+            : state->project_root;
         target = options->target->is_absolute()
             ? *options->target
-            : canonicalize_path(state->project_root / *options->target);
+            : canonicalize_path(target_base / *options->target);
     }
 
-    if (auto materialize = materialize_modules_from_lockfile(state->project_root, state->lockfile, target);
+    if (auto materialize = materialize_modules_from_lockfile(state->lockfile_root, state->lockfile, target);
         !materialize) {
         return std::unexpected("eta vendor: " + materialize.error());
     }
@@ -1937,21 +2528,28 @@ CliResult<int> command_install(const char* program,
                                const char* argv0,
                                const std::vector<std::string>& args,
                                const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("install", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_install_usage(program);
             return 0;
         }
     }
 
-    auto options = parse_install_options(args);
+    auto options = parse_install_options(parsed_args->command_args);
     if (!options) return std::unexpected(options.error());
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta install: no eta.toml found");
-    }
-    auto state = resolve_project_state(*manifest_path, false, true, true);
+    auto targets = resolve_command_targets(
+        "install",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::SingleTarget,
+        "eta install: no eta.toml found");
+    if (!targets) return std::unexpected(targets.error());
+
+    auto state = resolve_project_state(targets->selected.front().manifest_path, false, true, true);
     if (!state) return std::unexpected("eta install: " + state.error());
 
     BuildOptions build_opts;
@@ -1972,9 +2570,12 @@ CliResult<int> command_install(const char* program,
     }
     if (auto mk = ensure_directory(install_root); !mk) return std::unexpected(mk.error());
 
-    if (!options->package.has_value()) {
+    const bool install_root_package = !options->package.has_value()
+        || *options->package == state->manifest.name;
+    if (install_root_package) {
         const std::string root_module = module_name_from_package_name(state->manifest.name);
-        const fs::path source = state->project_root / ".eta" / "target" / "release" / (root_module + ".etac");
+        const fs::path source =
+            selected_package_target_profile_root(*state, "release") / (root_module + ".etac");
         if (!fs::is_regular_file(source)) {
             return std::unexpected("eta install: built artifact missing: " + source.string());
         }
@@ -1996,8 +2597,7 @@ CliResult<int> command_install(const char* program,
     if (it == state->lockfile.packages.end()) {
         return std::unexpected("eta install: package not found in lockfile: " + *options->package);
     }
-    const fs::path dep_release =
-        state->project_root / ".eta" / "modules" / (it->name + "-" + it->version) / "target" / "release";
+    const fs::path dep_release = lockfile_package_release_root(*state, *it);
     std::error_code ec;
     if (!fs::is_directory(dep_release, ec) || ec) {
         return std::unexpected("eta install: dependency has no release artifacts: " + dep_release.string());
@@ -2108,22 +2708,29 @@ void upsert_dependency(std::vector<eta::package::ManifestDependency>& deps,
 CliResult<int> command_add(const char* program,
                            const std::vector<std::string>& args,
                            const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("add", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_add_usage(program);
             return 0;
         }
     }
 
-    auto options = parse_add_options(args);
+    auto options = parse_add_options(parsed_args->command_args);
     if (!options) return std::unexpected(options.error());
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta add: no eta.toml found");
-    }
+    auto targets = resolve_command_targets(
+        "add",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::SingleTarget,
+        "eta add: no eta.toml found");
+    if (!targets) return std::unexpected(targets.error());
+    const auto& selected_target = targets->selected.front();
 
-    auto manifest = eta::package::read_manifest(*manifest_path);
+    auto manifest = eta::package::read_manifest(selected_target.manifest_path);
     if (!manifest) return std::unexpected(manifest.error().message);
 
     eta::package::ManifestDependency dep;
@@ -2161,10 +2768,10 @@ CliResult<int> command_add(const char* program,
         upsert_dependency(manifest->dependencies, std::move(dep));
     }
 
-    auto write_res = eta::package::write_manifest_file(*manifest, *manifest_path);
+    auto write_res = eta::package::write_manifest_file(*manifest, selected_target.manifest_path);
     if (!write_res) return std::unexpected(write_res.error().message);
 
-    auto state = resolve_project_state(*manifest_path, false, true, true);
+    auto state = resolve_project_state(selected_target.manifest_path, false, true, true);
     if (!state) return std::unexpected("eta add: " + state.error());
 
     std::cout << "added dependency " << options->name << "\n";
@@ -2174,23 +2781,33 @@ CliResult<int> command_add(const char* program,
 CliResult<int> command_remove(const char* program,
                               const std::vector<std::string>& args,
                               const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("remove", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_remove_usage(program);
             return 0;
         }
     }
 
-    if (args.size() != 1u || args.front().empty() || args.front().front() == '-') {
+    if (parsed_args->command_args.size() != 1u
+        || parsed_args->command_args.front().empty()
+        || parsed_args->command_args.front().front() == '-') {
         return std::unexpected("eta remove: requires exactly one package name");
     }
-    const std::string package_name = args.front();
+    const std::string package_name = parsed_args->command_args.front();
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta remove: no eta.toml found");
-    }
-    auto manifest = eta::package::read_manifest(*manifest_path);
+    auto targets = resolve_command_targets(
+        "remove",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::SingleTarget,
+        "eta remove: no eta.toml found");
+    if (!targets) return std::unexpected(targets.error());
+    const auto& selected_target = targets->selected.front();
+
+    auto manifest = eta::package::read_manifest(selected_target.manifest_path);
     if (!manifest) return std::unexpected(manifest.error().message);
 
     auto erase_by_name = [&](std::vector<eta::package::ManifestDependency>& deps) {
@@ -2209,10 +2826,10 @@ CliResult<int> command_remove(const char* program,
         return std::unexpected("eta remove: dependency not found: " + package_name);
     }
 
-    auto write_res = eta::package::write_manifest_file(*manifest, *manifest_path);
+    auto write_res = eta::package::write_manifest_file(*manifest, selected_target.manifest_path);
     if (!write_res) return std::unexpected(write_res.error().message);
 
-    auto state = resolve_project_state(*manifest_path, false, true, true);
+    auto state = resolve_project_state(selected_target.manifest_path, false, true, true);
     if (!state) return std::unexpected("eta remove: " + state.error());
 
     std::cout << "removed dependency " << package_name << "\n";
@@ -2222,7 +2839,10 @@ CliResult<int> command_remove(const char* program,
 CliResult<int> command_update(const char* program,
                               const std::vector<std::string>& args,
                               const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("update", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_update_usage(program);
             return 0;
@@ -2232,14 +2852,18 @@ CliResult<int> command_update(const char* program,
         }
     }
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta update: no eta.toml found");
-    }
-    auto state = resolve_project_state(*manifest_path, false, true, true);
+    auto targets = resolve_command_targets(
+        "update",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::Aggregate,
+        "eta update: no eta.toml found");
+    if (!targets) return std::unexpected(targets.error());
+
+    auto state = resolve_project_state(targets->selected.front().manifest_path, false, true, true);
     if (!state) return std::unexpected("eta update: " + state.error());
 
-    if (!args.empty()) {
+    if (!parsed_args->command_args.empty()) {
         std::cout << "updated lockfile (full graph refresh; package-scoped update is not narrowed yet)\n";
     } else {
         std::cout << "updated lockfile\n";
@@ -2262,28 +2886,67 @@ CliResult<CleanOptions> parse_clean_options(const std::vector<std::string>& args
 CliResult<int> command_clean(const char* program,
                              const std::vector<std::string>& args,
                              const fs::path& cwd) {
-    for (const auto& arg : args) {
+    auto parsed_args = parse_workspace_command_args("clean", args);
+    if (!parsed_args) return std::unexpected(parsed_args.error());
+
+    for (const auto& arg : parsed_args->command_args) {
         if (arg == "--help" || arg == "-h") {
             print_clean_usage(program);
             return 0;
         }
     }
 
-    auto options = parse_clean_options(args);
+    auto options = parse_clean_options(parsed_args->command_args);
     if (!options) return std::unexpected(options.error());
 
-    auto manifest_path = find_manifest_path(cwd);
-    if (!manifest_path.has_value()) {
-        return std::unexpected("eta clean: no eta.toml found");
-    }
-    const fs::path project_root = manifest_path->parent_path();
+    auto targets = resolve_command_targets(
+        "clean",
+        cwd,
+        parsed_args->workspace,
+        SelectionCommandMode::Aggregate,
+        "eta clean: no eta.toml found");
+    if (!targets) return std::unexpected(targets.error());
 
-    if (auto rm = remove_path_if_exists(project_root / ".eta" / "target"); !rm) {
-        return std::unexpected("eta clean: " + rm.error());
+    if (targets->workspace_manifest_path.has_value()) {
+        const fs::path workspace_target_root = targets->workspace_root / ".eta" / "target";
+        std::error_code ec;
+        if (fs::is_directory(workspace_target_root, ec) && !ec) {
+            for (const auto& profile_dir : fs::directory_iterator(workspace_target_root, ec)) {
+                if (ec) {
+                    return std::unexpected("eta clean: failed to iterate path '"
+                                           + workspace_target_root.string() + "': " + ec.message());
+                }
+                std::error_code entry_ec;
+                if (!profile_dir.is_directory(entry_ec) || entry_ec) continue;
+                for (const auto& target : targets->selected) {
+                    if (auto rm = remove_path_if_exists(profile_dir.path() / target.name); !rm) {
+                        return std::unexpected("eta clean: " + rm.error());
+                    }
+                }
+            }
+        } else if (ec) {
+            return std::unexpected("eta clean: failed to stat path '"
+                                   + workspace_target_root.string() + "': " + ec.message());
+        }
+    } else {
+        for (const auto& target : targets->selected) {
+            if (auto rm = remove_path_if_exists(target.package_root / ".eta" / "target"); !rm) {
+                return std::unexpected("eta clean: " + rm.error());
+            }
+        }
     }
+
     if (options->all) {
-        if (auto rm = remove_path_if_exists(project_root / ".eta" / "modules"); !rm) {
-            return std::unexpected("eta clean: " + rm.error());
+        if (targets->workspace_manifest_path.has_value()) {
+            if (auto rm = remove_path_if_exists(targets->workspace_root / ".eta" / "modules"); !rm) {
+                return std::unexpected("eta clean: " + rm.error());
+            }
+        } else {
+            for (const auto& target : targets->selected) {
+                if (auto rm = remove_path_if_exists(target.package_root / ".eta" / "modules"); !rm) {
+                    return std::unexpected("eta clean: " + rm.error());
+                }
+            }
         }
     }
     std::cout << "cleaned project artifacts\n";

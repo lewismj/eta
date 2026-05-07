@@ -7,6 +7,8 @@ add_executable(${PROJECT_NAME}
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE eta_core Boost::unit_test_framework)
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ETA_PKG_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE BOOST_TEST_DYN_LINK)

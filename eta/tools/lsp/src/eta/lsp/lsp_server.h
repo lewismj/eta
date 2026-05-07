@@ -225,8 +225,11 @@ private:
 
     /// Validation content cache
     std::unordered_map<std::string, std::string> last_validated_content_;
+    std::optional<std::filesystem::path> active_manifest_path_;
+    std::optional<std::filesystem::path> package_manifest_path_;
     std::optional<std::filesystem::path> workspace_manifest_path_;
     std::optional<std::filesystem::path> workspace_root_path_;
+    std::optional<std::string> workspace_context_;
     std::optional<std::string> manifest_diagnostics_uri_;
     std::optional<std::string> lockfile_diagnostics_uri_;
 };

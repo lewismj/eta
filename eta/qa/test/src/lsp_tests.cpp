@@ -1287,6 +1287,190 @@ dependencies = []
     BOOST_TEST(manifest_path->find("eta.toml") != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(lockfile_explain_workspace_member_reports_workspace_context) {
+    TempDir tmp;
+    tmp.create_file("ws/eta.toml", R"toml(
+[workspace]
+members = ["packages/*"]
+)toml");
+    tmp.create_file("ws/packages/app/eta.toml", R"toml(
+[package]
+name = "app"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+lib = { path = "../lib" }
+)toml");
+    tmp.create_file("ws/packages/lib/eta.toml", R"toml(
+[package]
+name = "lib"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+)toml");
+    tmp.create_file("ws/packages/app/src/app.eta",
+                    "(module app\n"
+                    "  (import lib)\n"
+                    "  (begin (define app-value lib-value)))\n");
+    tmp.create_file("ws/packages/lib/src/lib.eta",
+                    "(module lib\n"
+                    "  (export lib-value)\n"
+                    "  (begin (define lib-value 7)))\n");
+    tmp.create_file("ws/eta.lock", R"toml(
+version = 1
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = "workspace+packages/app"
+dependencies = ["lib@0.1.0"]
+
+[[package]]
+name = "lib"
+version = "0.1.0"
+source = "workspace+packages/lib"
+dependencies = []
+)toml");
+
+    const auto src_path = tmp.path / "ws" / "packages" / "app" / "src" / "app.eta";
+    const auto src_uri = eta::lsp::LspServer::path_to_uri(src_path.string());
+
+    auto input = build_input(src_uri,
+                             "(module app\n"
+                             "  (import lib)\n"
+                             "  (begin (define app-value lib-value)))\n",
+                             {
+        frame(request(
+            45, "eta/lockfile/explain",
+            R"({"textDocument":{"uri":")" + src_uri + R"("},"module":"lib"})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 45);
+    BOOST_REQUIRE(!resp.is_null());
+
+    auto selected = resp["result"].get_string("selected");
+    BOOST_REQUIRE(selected.has_value());
+    BOOST_TEST(selected->find("lib.eta") != std::string::npos);
+
+    auto context = resp["result"].get_string("context");
+    BOOST_REQUIRE(context.has_value());
+    BOOST_TEST(*context == "workspace-member");
+
+    auto workspace_manifest = resp["result"].get_string("workspaceManifestPath");
+    BOOST_REQUIRE(workspace_manifest.has_value());
+    BOOST_TEST(workspace_manifest->find("ws") != std::string::npos);
+    BOOST_TEST(workspace_manifest->find("eta.toml") != std::string::npos);
+
+    auto package_manifest = resp["result"].get_string("packageManifestPath");
+    BOOST_REQUIRE(package_manifest.has_value());
+    BOOST_TEST(package_manifest->find("packages") != std::string::npos);
+    BOOST_TEST(package_manifest->find("app") != std::string::npos);
+
+    auto lockfile_path = resp["result"].get_string("lockfilePath");
+    BOOST_REQUIRE(lockfile_path.has_value());
+    BOOST_TEST(lockfile_path->find("eta.lock") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(workspace_virtual_root_manifest_diagnostics_do_not_report_missing_package) {
+    TempDir tmp;
+    tmp.create_file("ws/eta.toml", R"toml(
+[workspace]
+members = ["packages/*"]
+)toml");
+    tmp.create_file("ws/packages/app/eta.toml", R"toml(
+[package]
+name = "app"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+)toml");
+    tmp.create_file("ws/packages/app/src/app.eta", "(module app (begin 1))\n");
+
+    const auto src_path = tmp.path / "ws" / "packages" / "app" / "src" / "app.eta";
+    const auto src_uri = eta::lsp::LspServer::path_to_uri(src_path.string());
+    const auto manifest_uri =
+        eta::lsp::LspServer::path_to_uri((tmp.path / "ws" / "eta.toml").string());
+
+    auto input = build_input(src_uri, "(module app (begin 1))\n", {});
+    auto msgs = run_server(input);
+
+    const auto manifest_diags = find_diagnostics_for_uri(msgs, manifest_uri);
+    BOOST_REQUIRE(!manifest_diags.empty());
+
+    bool found_manifest_error = false;
+    for (const auto& batch : manifest_diags) {
+        if (!batch.is_array()) continue;
+        for (const auto& diag : batch.as_array()) {
+            auto source = diag.get_string("source");
+            if (source && *source == "eta-manifest") {
+                found_manifest_error = true;
+                break;
+            }
+        }
+    }
+    BOOST_TEST(!found_manifest_error);
+}
+
+BOOST_AUTO_TEST_CASE(workspace_lockfile_diagnostics_are_published_for_member_documents) {
+    TempDir tmp;
+    tmp.create_file("ws/eta.toml", R"toml(
+[workspace]
+members = ["packages/*"]
+)toml");
+    tmp.create_file("ws/packages/app/eta.toml", R"toml(
+[package]
+name = "app"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+)toml");
+    tmp.create_file("ws/packages/app/src/app.eta", "(module app (begin 1))\n");
+    tmp.create_file("ws/eta.lock", R"toml(
+version = "oops"
+)toml");
+
+    const auto src_path = tmp.path / "ws" / "packages" / "app" / "src" / "app.eta";
+    const auto src_uri = eta::lsp::LspServer::path_to_uri(src_path.string());
+    const auto lockfile_uri =
+        eta::lsp::LspServer::path_to_uri((tmp.path / "ws" / "eta.lock").string());
+
+    auto input = build_input(src_uri, "(module app (begin 1))\n", {});
+    auto msgs = run_server(input);
+
+    const auto lockfile_diags = find_diagnostics_for_uri(msgs, lockfile_uri);
+    BOOST_REQUIRE(!lockfile_diags.empty());
+
+    bool found_lock_error = false;
+    for (const auto& batch : lockfile_diags) {
+        if (!batch.is_array()) continue;
+        for (const auto& diag : batch.as_array()) {
+            auto source = diag.get_string("source");
+            if (source && *source == "eta-lockfile") {
+                found_lock_error = true;
+                break;
+            }
+        }
+    }
+    BOOST_TEST(found_lock_error);
+}
+
 BOOST_AUTO_TEST_CASE(workspace_manifest_diagnostics_are_published) {
     TempDir tmp;
     tmp.create_file("app/src/app.eta", "(module app (begin 1))\n");

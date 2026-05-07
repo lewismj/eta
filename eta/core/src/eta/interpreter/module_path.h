@@ -15,7 +15,9 @@
 #include <windows.h>
 #endif
 
+#include "eta/package/discovery.h"
 #include "eta/package/lockfile.h"
+#include "eta/package/resolver.h"
 
 namespace eta::interpreter {
 
@@ -124,25 +126,36 @@ public:
             if (!added) add_unique_dir(package_root);
         };
 
-        auto add_project_roots = [&](const fs::path& manifest_path) {
-            const auto project_root = manifest_path.parent_path();
-
+        auto add_package_source_root = [&](const fs::path& package_root) {
             std::error_code ec;
-            const auto src_dir = project_root / "src";
+            const auto src_dir = package_root / "src";
             if (fs::is_directory(src_dir, ec) && !ec) {
                 add_unique_dir(src_dir);
             } else {
-                add_unique_dir(project_root);
+                add_unique_dir(package_root);
             }
+        };
 
-            const auto modules_root = project_root / ".eta" / "modules";
+        auto add_modules_from_lockfile = [&](const fs::path& lockfile_root) {
+            const auto modules_root = lockfile_root / ".eta" / "modules";
+            constexpr std::string_view kWorkspacePrefix = "workspace+";
+            std::error_code ec;
             ec.clear();
             if (!fs::is_directory(modules_root, ec) || ec) return;
 
-            auto lockfile = eta::package::read_lockfile(project_root / "eta.lock");
+            auto lockfile = eta::package::read_lockfile(lockfile_root / "eta.lock");
             if (lockfile) {
                 for (const auto& pkg : lockfile->packages) {
                     if (pkg.source == "root") continue;
+                    if (pkg.source.starts_with(kWorkspacePrefix)) {
+                        std::string rel = pkg.source.substr(kWorkspacePrefix.size());
+                        fs::path member_root = lockfile_root;
+                        if (!rel.empty() && rel != ".") {
+                            member_root /= fs::path(std::move(rel));
+                        }
+                        add_package_layout_dirs(member_root);
+                        continue;
+                    }
                     const auto package_dir = modules_root / (pkg.name + "-" + pkg.version);
                     add_package_layout_dirs(package_dir);
                 }
@@ -163,6 +176,14 @@ public:
             }
         };
 
+        auto add_workspace_member_roots = [&](const fs::path& workspace_manifest_path) {
+            auto workspace_members = eta::package::resolve_workspace_members(workspace_manifest_path);
+            if (!workspace_members) return;
+            for (const auto& member : workspace_members->members) {
+                add_package_layout_dirs(member.package_root);
+            }
+        };
+
         if (discovery_start.empty()) {
             std::error_code ec;
             discovery_start = fs::current_path(ec);
@@ -170,8 +191,32 @@ public:
         }
 
         if (!discovery_start.empty()) {
-            if (auto manifest_path = find_manifest_path(discovery_start)) {
-                add_project_roots(*manifest_path);
+            bool configured_from_context = false;
+            if (auto discovered = eta::package::discover_manifest_context(discovery_start);
+                discovered) {
+                if (discovered->workspace_manifest_path.has_value()) {
+                    const auto workspace_manifest = *discovered->workspace_manifest_path;
+                    const auto workspace_root = workspace_manifest.parent_path();
+                    add_modules_from_lockfile(workspace_root);
+                    add_workspace_member_roots(workspace_manifest);
+                    configured_from_context = true;
+                }
+
+                if (discovered->package_manifest_path.has_value()) {
+                    add_package_source_root(discovered->package_manifest_path->parent_path());
+                    if (!discovered->workspace_manifest_path.has_value()) {
+                        add_modules_from_lockfile(discovered->package_manifest_path->parent_path());
+                    }
+                    configured_from_context = true;
+                }
+            }
+
+            if (!configured_from_context) {
+                if (auto manifest_path = find_manifest_path(discovery_start)) {
+                    const auto project_root = manifest_path->parent_path();
+                    add_package_source_root(project_root);
+                    add_modules_from_lockfile(project_root);
+                }
             }
         }
 

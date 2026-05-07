@@ -37,6 +37,7 @@
 #include "eta/runtime/port.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/diagnostic/diagnostic.h"
+#include "eta/package/discovery.h"
 
 /// Single source of truth for live primitive registration order:
 #include "eta/interpreter/all_primitives.h"
@@ -1644,6 +1645,18 @@ private:
 
     [[nodiscard]] static std::optional<fs::path>
     find_nearest_manifest_path(fs::path start_dir) {
+        if (auto discovered = eta::package::discover_manifest_context(start_dir); discovered) {
+            if (discovered->workspace_manifest_path.has_value()) {
+                return *discovered->workspace_manifest_path;
+            }
+            if (discovered->package_manifest_path.has_value()) {
+                return *discovered->package_manifest_path;
+            }
+            if (discovered->active_manifest_path.has_value()) {
+                return *discovered->active_manifest_path;
+            }
+        }
+
         std::error_code ec;
         start_dir = fs::weakly_canonical(start_dir, ec);
         if (ec) start_dir = start_dir.lexically_normal();

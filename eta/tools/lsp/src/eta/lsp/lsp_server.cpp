@@ -24,6 +24,7 @@
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/builtin_names.h"
 #include "eta/interpreter/repl_complete.h"
+#include "eta/package/discovery.h"
 #include "eta/package/lockfile.h"
 #include "eta/package/manifest.h"
 #include "eta/package/resolver.h"
@@ -61,6 +62,20 @@ namespace {
     };
     d.message = std::move(message);
     return d;
+}
+
+[[nodiscard]] std::string manifest_context_label(eta::package::ManifestContextKind kind) {
+    switch (kind) {
+        case eta::package::ManifestContextKind::StandalonePackage:
+            return "standalone-package";
+        case eta::package::ManifestContextKind::WorkspaceRoot:
+            return "workspace-root";
+        case eta::package::ManifestContextKind::WorkspaceMember:
+            return "workspace-member";
+        case eta::package::ManifestContextKind::WorkspaceNonMember:
+            return "workspace-non-member";
+    }
+    return "unknown";
 }
 
 } // namespace
@@ -165,27 +180,51 @@ void LspServer::ensure_workspace_for_uri(const std::string& uri) {
         if (ec) start_dir.clear();
     }
 
-    std::optional<std::filesystem::path> manifest_path;
+    std::optional<std::filesystem::path> next_active_manifest_path;
+    std::optional<std::filesystem::path> next_package_manifest_path;
+    std::optional<std::filesystem::path> next_workspace_manifest_path;
+    std::optional<std::filesystem::path> next_root_path;
+    std::optional<std::string> next_context;
     if (!start_dir.empty()) {
-        manifest_path = find_manifest_path(start_dir);
+        if (auto discovered = eta::package::discover_manifest_context(start_dir); discovered) {
+            next_active_manifest_path = discovered->active_manifest_path;
+            next_package_manifest_path = discovered->package_manifest_path;
+            next_workspace_manifest_path = discovered->workspace_manifest_path;
+            if (discovered->context.has_value()) {
+                next_context = manifest_context_label(*discovered->context);
+            }
+            if (next_workspace_manifest_path.has_value()) {
+                next_root_path = next_workspace_manifest_path->parent_path();
+            } else if (next_active_manifest_path.has_value()) {
+                next_root_path = next_active_manifest_path->parent_path();
+            }
+        } else {
+            next_active_manifest_path = find_manifest_path(start_dir);
+            if (next_active_manifest_path.has_value()) {
+                next_package_manifest_path = next_active_manifest_path;
+                next_root_path = next_active_manifest_path->parent_path();
+            }
+        }
     }
-    const std::optional<std::filesystem::path> root_path =
-        manifest_path ? std::optional<std::filesystem::path>(manifest_path->parent_path())
-                      : std::nullopt;
 
-    if (workspace_manifest_path_ == manifest_path
-        && workspace_root_path_ == root_path) {
+    if (active_manifest_path_ == next_active_manifest_path
+        && package_manifest_path_ == next_package_manifest_path
+        && workspace_manifest_path_ == next_workspace_manifest_path
+        && workspace_root_path_ == next_root_path
+        && workspace_context_ == next_context) {
         return;
     }
 
-    if (manifest_path) {
-        resolver_ = interpreter::ModulePathResolver::from_args_or_env_at(
-            "", manifest_path->parent_path());
+    if (!start_dir.empty()) {
+        resolver_ = interpreter::ModulePathResolver::from_args_or_env_at("", start_dir);
     } else {
         resolver_ = interpreter::ModulePathResolver::from_args_or_env("");
     }
-    workspace_manifest_path_ = std::move(manifest_path);
-    workspace_root_path_ = root_path;
+    active_manifest_path_ = std::move(next_active_manifest_path);
+    package_manifest_path_ = std::move(next_package_manifest_path);
+    workspace_manifest_path_ = std::move(next_workspace_manifest_path);
+    workspace_root_path_ = std::move(next_root_path);
+    workspace_context_ = std::move(next_context);
 
     completion_cache_loaded_ = false;
     prelude_symbols_.clear();
@@ -193,7 +232,10 @@ void LspServer::ensure_workspace_for_uri(const std::string& uri) {
 }
 
 void LspServer::publish_workspace_package_diagnostics(const std::string& /*uri*/) {
-    if (!workspace_manifest_path_) {
+    const auto manifest_path = workspace_manifest_path_.has_value()
+        ? workspace_manifest_path_
+        : package_manifest_path_;
+    if (!manifest_path.has_value()) {
         if (manifest_diagnostics_uri_) {
             publish_diagnostics(*manifest_diagnostics_uri_, {});
             manifest_diagnostics_uri_.reset();
@@ -205,21 +247,23 @@ void LspServer::publish_workspace_package_diagnostics(const std::string& /*uri*/
         return;
     }
 
-    const auto manifest_path = *workspace_manifest_path_;
-    const auto manifest_uri = path_to_uri(manifest_path.string());
+    const auto manifest_uri = path_to_uri(manifest_path->string());
     if (manifest_diagnostics_uri_ && *manifest_diagnostics_uri_ != manifest_uri) {
         publish_diagnostics(*manifest_diagnostics_uri_, {});
     }
     manifest_diagnostics_uri_ = manifest_uri;
 
     std::vector<LspDiagnostic> manifest_diags;
-    auto manifest = eta::package::read_manifest(manifest_path);
-    if (!manifest) {
+    auto document = eta::package::read_manifest_document(*manifest_path);
+    if (!document) {
         manifest_diags.push_back(package_error_diagnostic(
-            "eta-manifest", manifest.error().message, manifest.error().line));
+            "eta-manifest", document.error().message, document.error().line));
     }
 
-    const auto lockfile_path = manifest_path.parent_path() / "eta.lock";
+    const auto lockfile_root = workspace_manifest_path_.has_value()
+        ? workspace_manifest_path_->parent_path()
+        : manifest_path->parent_path();
+    const auto lockfile_path = lockfile_root / "eta.lock";
     std::optional<std::string> lockfile_uri;
     std::optional<eta::package::Lockfile> lockfile;
     {
@@ -240,14 +284,31 @@ void LspServer::publish_workspace_package_diagnostics(const std::string& /*uri*/
         }
     }
 
-    if (manifest && manifest_diags.empty()) {
-        eta::package::ResolveOptions options;
-        options.modules_root = manifest_path.parent_path() / ".eta" / "modules";
-        if (lockfile) options.lockfile = &*lockfile;
-        auto resolved = eta::package::resolve_dependencies(manifest_path, options);
-        if (!resolved) {
-            manifest_diags.push_back(package_error_diagnostic(
-                "eta-manifest", resolved.error().message, 0));
+    if (document && manifest_diags.empty()) {
+        if (workspace_manifest_path_.has_value()) {
+            auto workspace = eta::package::resolve_workspace_members(*workspace_manifest_path_);
+            if (!workspace) {
+                manifest_diags.push_back(package_error_diagnostic(
+                    "eta-manifest", workspace.error().message, 0));
+            } else {
+                eta::package::ResolveOptions options;
+                options.modules_root = workspace_manifest_path_->parent_path() / ".eta" / "modules";
+                if (lockfile) options.lockfile = &*lockfile;
+                auto resolved = eta::package::resolve_workspace_dependencies(*workspace, options);
+                if (!resolved) {
+                    manifest_diags.push_back(package_error_diagnostic(
+                        "eta-manifest", resolved.error().message, 0));
+                }
+            }
+        } else if (document->package.has_value()) {
+            eta::package::ResolveOptions options;
+            options.modules_root = manifest_path->parent_path() / ".eta" / "modules";
+            if (lockfile) options.lockfile = &*lockfile;
+            auto resolved = eta::package::resolve_dependencies(*manifest_path, options);
+            if (!resolved) {
+                manifest_diags.push_back(package_error_diagnostic(
+                    "eta-manifest", resolved.error().message, 0));
+            }
         }
     }
 
@@ -727,9 +788,27 @@ Value LspServer::handle_lockfile_explain(const Value& params) {
     if (workspace_root_path_) {
         response.insert_or_assign("workspaceRoot", workspace_root_path_->string());
     }
+    if (workspace_context_) {
+        response.insert_or_assign("context", *workspace_context_);
+    }
+    if (active_manifest_path_) {
+        response.insert_or_assign("manifestPath", active_manifest_path_->string());
+    }
+    if (package_manifest_path_) {
+        response.insert_or_assign("packageManifestPath", package_manifest_path_->string());
+    }
     if (workspace_manifest_path_) {
-        response.insert_or_assign("manifestPath", workspace_manifest_path_->string());
-        const auto lockfile = workspace_manifest_path_->parent_path() / "eta.lock";
+        response.insert_or_assign("workspaceManifestPath", workspace_manifest_path_->string());
+    }
+
+    std::optional<std::filesystem::path> lockfile_root;
+    if (workspace_manifest_path_) {
+        lockfile_root = workspace_manifest_path_->parent_path();
+    } else if (active_manifest_path_) {
+        lockfile_root = active_manifest_path_->parent_path();
+    }
+    if (lockfile_root) {
+        const auto lockfile = *lockfile_root / "eta.lock";
         std::error_code ec;
         if (std::filesystem::is_regular_file(lockfile, ec) && !ec) {
             response.insert_or_assign("lockfilePath", lockfile.string());

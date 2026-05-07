@@ -42,6 +42,7 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/clp/simplex.cpp
         src/eta/runtime/clp/real_store.cpp
         src/eta/package/manifest.cpp
+        src/eta/package/discovery.cpp
         src/eta/package/lockfile.cpp
         src/eta/package/resolver.cpp
 )

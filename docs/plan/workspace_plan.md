@@ -137,13 +137,13 @@ keys are required in v1.
 
 ## 6.1 Single lockfile
 
-Workspace root owns `eta.lock` for all selected members.
+Workspace root owns `eta.lock` for all workspace members.
 
 Rules:
 
 1. `eta.lock` lives at workspace root,
 2. member-local lockfiles are not written in workspace mode,
-3. dependency resolution is global across selected members.
+3. lockfile-writing resolution is global across workspace members.
 
 ## 6.2 Lockfile representation
 
@@ -163,6 +163,19 @@ Workspace shared roots:
 Member commands executed inside workspace still use workspace `.eta` root for
 dedup and determinism.
 
+## 6.4 Selected-member update semantics
+
+Selection flags choose command targets, not lockfile scope.
+
+Rules:
+
+1. lockfile-writing commands (`add`, `remove`, `update`) always write a full
+   workspace lockfile,
+2. `eta update -p <name>` unlocks selected member root dependencies first,
+3. unselected member roots remain pinned unless shared constraints require
+   movement,
+4. resulting `eta.lock` still represents the full workspace graph.
+
 ---
 
 ## 7) Resolver and discovery
@@ -181,9 +194,10 @@ Introduce a manifest document layer in `eta::package`:
 New discovery routine:
 
 1. walk up from CWD,
-2. detect nearest package manifest,
-3. detect nearest workspace root that includes that package path,
-4. compute active context: standalone package vs workspace(member/root).
+2. detect nearest workspace root candidate (`eta.toml` with `[workspace]`),
+3. detect nearest package manifest and member ownership (if any),
+4. compute active context: standalone package vs workspace-root vs
+   workspace-member vs workspace-non-member directory.
 
 ## 7.3 Workspace resolution
 
@@ -200,7 +214,8 @@ Add workspace-level resolver entrypoint:
 
 ## 8.1 New selection flags
 
-For `tree`, `build`, `test`, `bench`, `run`, `vendor`, `clean`, `update`:
+For `tree`, `build`, `test`, `bench`, `run`, `vendor`, `clean`, `update`,
+`add`, `remove`, `install`:
 
 1. `--workspace` (all members),
 2. `-p, --package <name>` (one or more selected members),
@@ -214,7 +229,15 @@ From workspace root:
 1. if `default-members` set: operate on that set,
 2. else if rooted workspace: default to root package only,
 3. else (virtual workspace): default to all members for `build/test/bench/tree`,
-   require explicit `-p` for member-specific commands (`run`, `add`, `remove`).
+   require explicit `-p` for member-specific commands (`run`, `add`, `remove`,
+   `install`).
+
+From non-member directory under workspace root:
+
+1. aggregate commands (`build`, `test`, `bench`, `tree`, `update`, `vendor`,
+   `clean`) follow workspace-root defaults,
+2. member-specific commands (`run`, `add`, `remove`, `install`) require
+   explicit `-p`.
 
 From member directory:
 
@@ -223,10 +246,14 @@ From member directory:
 
 ## 8.3 Command notes
 
-1. `eta add/remove`: modifies selected member manifest, not workspace root.
-2. `eta update`: updates workspace lockfile from selected set (default all).
+1. `eta add/remove`: modifies selected member manifest, not workspace root, then
+   rewrites full workspace lockfile.
+2. `eta update`: always rewrites full workspace lockfile; with `-p`, selected
+   roots are unlocked first while unselected roots stay pinned unless required
+   by shared constraints.
 3. `eta vendor`: materializes shared workspace modules by default.
 4. `eta run`: requires a single selected package target.
+5. `eta install`: requires a single selected package target.
 
 ---
 
@@ -280,6 +307,14 @@ This avoids artifact collisions for similarly named entry modules.
 
 Gate: no regressions in current packaging tests.
 
+Status (May 6, 2026):
+1. workspace fixture trees are in `eta/qa/pkg_test/fixtures/workspace` and
+   `eta/qa/cli_test/fixtures/workspace`,
+2. baseline tests now lock current package-only behavior for:
+   - virtual workspace roots failing package parse,
+   - rooted workspace manifests still parsing as package manifests,
+   - CLI using nearest member `eta.toml` while workspace root remains package-centric.
+
 ### W1 - Manifest document and workspace parse
 
 1. add `ManifestDocument` and workspace section parser,
@@ -288,12 +323,39 @@ Gate: no regressions in current packaging tests.
 
 Gate: parser tests for package-only, workspace-only, rooted workspace.
 
+Status (May 6, 2026):
+1. `eta::package::ManifestDocument` now represents optional package and
+   workspace sections from one `eta.toml`,
+2. `[workspace]` parsing now validates:
+   - required `members`,
+   - optional `exclude` and `default-members`,
+   - malformed workspace arrays/keys with structured manifest errors,
+3. package-only parser helpers (`parse_manifest` / `read_manifest`) remain
+   package-scoped and continue to report missing package fields when no
+   package section exists.
+
 ### W2 - Discovery and context classification
 
 1. implement workspace-aware manifest discovery,
-2. classify command context (standalone/member/workspace-root).
+2. classify command context (standalone/workspace-member/workspace-root/
+   workspace-non-member).
 
 Gate: CLI tests for context detection from nested directories.
+
+Status (May 6, 2026):
+1. Added `eta::package::discover_manifest_context` with a shared
+   `ManifestContextKind` model for:
+   - standalone package,
+   - workspace root,
+   - workspace member,
+   - workspace non-member.
+2. Discovery now walks upward via `read_manifest_document`, stops at the
+   nearest workspace root, and records both package and workspace ownership.
+3. `eta` CLI manifest lookup now routes through workspace-aware discovery while
+   preserving package-first command routing (`package` manifest when present,
+   otherwise workspace root manifest).
+4. Added package and CLI tests covering nested member and non-member directory
+   detection in workspace fixtures.
 
 ### W3 - Workspace resolver and lockfile wiring
 
@@ -303,13 +365,47 @@ Gate: CLI tests for context detection from nested directories.
 
 Gate: deterministic lockfile output and stable resolver order.
 
+Status (May 7, 2026):
+1. Added `resolve_workspace_members` and `resolve_workspace_dependencies` in
+   `eta::package`:
+   - deterministic member expansion from `[workspace].members`/`exclude`,
+   - rooted workspace implicit `"."` member handling,
+   - duplicate member package-name rejection.
+2. Workspace lockfile rows now use `source = "workspace+<relative-path>"` for
+   member packages, while preserving deterministic lockfile ordering.
+3. CLI project resolution now writes/reads `eta.lock` at the workspace root
+   when invoked from a workspace member package.
+4. Module materialization now uses a shared workspace `.eta/modules` root and
+   skips rematerializing workspace-member sources.
+5. Added package and CLI tests covering workspace member expansion, workspace
+   lockfile source encoding, and workspace-root lockfile/modules behavior from
+   member builds.
+
 ### W4 - CLI command semantics and flags
 
 1. add `--workspace`, `-p/--package`, `--exclude`, `--manifest-path`,
-2. enforce single-target commands (`run`, `add`, `remove`),
-3. update help/usage text.
+2. enforce single-target commands (`run`, `add`, `remove`, `install`),
+3. define behavior for workspace non-member working directories,
+4. update help/usage text.
 
 Gate: end-to-end CLI tests from workspace root and member dirs.
+
+Status (May 7, 2026):
+1. Added shared workspace selection flags to workspace-aware commands:
+   `--workspace`, `-p/--package`, `--exclude`, and `--manifest-path`.
+2. Added command target resolution for workspace root/member/non-member
+   contexts, including default member selection from
+   `[workspace].default-members`.
+3. Single-target commands now require a single selected workspace package and
+   emit explicit diagnostics when invoked from virtual workspace roots or
+   workspace non-member directories without `-p`.
+4. Updated `eta` command help/usage text to document workspace selection
+   flags.
+5. Added CLI end-to-end tests covering:
+   - workspace-root and non-member defaults for aggregate commands,
+   - `--workspace` expansion across members,
+   - `run` and `add` single-target enforcement,
+   - explicit member selection via `--manifest-path` + `-p`.
 
 ### W5 - Build/test/install path updates
 
@@ -319,12 +415,41 @@ Gate: end-to-end CLI tests from workspace root and member dirs.
 
 Gate: artifact layout tests and install smoke tests.
 
+Status (May 7, 2026):
+1. Workspace member builds now emit artifacts under
+   `<workspace>/.eta/target/<profile>/<member-name>/...`.
+2. `eta install` now reads member artifacts from the shared workspace target
+   layout and keeps member selection explicit via `-p/--package`.
+3. `eta vendor --target` resolves relative paths from the workspace root when
+   invoked in workspace mode.
+4. `eta clean` now removes selected member artifacts from the shared workspace
+   `.eta/target` layout.
+5. Added CLI tests covering workspace artifact layout, install smoke behavior,
+   workspace-root vendor target resolution, and workspace-root clean behavior.
+
 ### W6 - Tooling integration
 
 1. wire workspace context to REPL/LSP/DAP/Jupyter,
 2. add manifest/lock diagnostics for workspace mode.
 
 Gate: tooling integration tests remain green.
+
+Status (May 7, 2026):
+1. `ModulePathResolver` project discovery is now workspace-aware:
+   - workspace member contexts load shared workspace lockfile/module roots,
+   - workspace member source roots are included for cross-member imports,
+   - virtual workspace roots preload member source roots from
+     `[workspace].members`.
+2. REPL, DAP, and Jupyter now inherit workspace-aware module roots through
+   `ModulePathResolver::from_args_or_env(_at)`.
+3. LSP manifest discovery now uses workspace context classification and reports
+   workspace metadata in `eta/lockfile/explain` (`context`,
+   `workspaceManifestPath`, `packageManifestPath`, `lockfilePath`).
+4. LSP diagnostics now validate workspace manifests/lockfiles from workspace
+   roots (including virtual workspaces) instead of forcing package-only parse
+   semantics.
+5. Added tooling tests covering workspace-aware module-path discovery and LSP
+   workspace diagnostics/explain behavior.
 
 ### W7 - Docs and migration notes
 
@@ -345,7 +470,8 @@ Gate: docs and examples reflect shipped behavior.
    - member expansion, duplicate-name errors, deterministic graph order.
 3. **CLI tests**:
    - command selection semantics (`--workspace`, `-p`, default-members),
-   - `build/test/run/vendor` from root/member paths.
+   - `build/test/run/vendor/add/remove/install` from workspace root/member/
+     non-member paths.
 4. **Integration tests**:
    - workspace lockfile consistency,
    - shared `.eta/modules` and `.eta/target` behavior.
@@ -375,8 +501,8 @@ Workspace support is complete when:
 
 1. `[workspace]` manifests are parsed and validated,
 2. workspace root/member discovery works deterministically,
-3. one workspace `eta.lock` governs all selected members,
-4. `eta build/test/run/vendor/update` operate correctly in workspace mode,
+3. one workspace `eta.lock` governs all workspace members,
+4. `eta build/test/run/vendor/update/add/remove/install` operate correctly in
+   workspace mode,
 5. tooling uses workspace context where applicable,
 6. single-package projects continue to behave exactly as before.
-

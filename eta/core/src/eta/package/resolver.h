@@ -46,6 +46,7 @@ struct ResolveError {
         DependencyNameMismatch,
         DuplicatePackageName,
         CycleDetected,
+        InvalidWorkspaceMember,
         UnsupportedDependencySource,
     };
 
@@ -79,8 +80,30 @@ struct ResolveOptions {
     bool include_dev_dependencies{false};
     const Lockfile* lockfile{nullptr};
     fs::path modules_root;
+    std::string root_source{"root"};
     DependencyLocator dependency_locator;
 };
+
+/**
+ * @brief One workspace member selected from `[workspace].members`.
+ */
+struct WorkspaceMember {
+    std::string name;
+    fs::path manifest_path;
+    fs::path package_root;
+    std::string source;
+};
+
+/**
+ * @brief Expanded workspace member set rooted at one workspace `eta.toml`.
+ */
+struct WorkspaceMembers {
+    fs::path workspace_manifest_path;
+    fs::path workspace_root;
+    std::vector<WorkspaceMember> members;
+};
+
+using WorkspaceMembersResult = std::expected<WorkspaceMembers, ResolveError>;
 
 /**
  * @brief Resolve a root `eta.toml` dependency graph.
@@ -96,6 +119,17 @@ ResolveResult resolve_dependencies(const fs::path& root_manifest_path,
  * @brief Resolve a root `eta.toml` plus transitive local `path` dependencies.
  */
 ResolveResult resolve_path_dependencies(const fs::path& root_manifest_path);
+
+/**
+ * @brief Expand workspace member manifests from a workspace root manifest.
+ */
+WorkspaceMembersResult resolve_workspace_members(const fs::path& workspace_manifest_path);
+
+/**
+ * @brief Resolve and union dependency graphs for all workspace members.
+ */
+ResolveResult resolve_workspace_dependencies(const WorkspaceMembers& workspace,
+                                             const ResolveOptions& options = {});
 
 /**
  * @brief Materialize deterministic lockfile rows from a resolved graph.

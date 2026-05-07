@@ -1,0 +1,4 @@
+(module lib
+  (export meaning)
+  (begin
+    (define meaning 42)))

@@ -2,6 +2,7 @@
 
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,6 +47,24 @@ struct Manifest {
 };
 
 /**
+ * @brief Workspace section declared by `[workspace]`.
+ */
+struct WorkspaceManifest {
+    std::vector<std::string> members;
+    std::vector<std::string> exclude;
+    std::vector<std::string> default_members;
+};
+
+/**
+ * @brief Parsed `eta.toml` document with optional package/workspace sections.
+ */
+struct ManifestDocument {
+    fs::path manifest_path;
+    std::optional<Manifest> package;
+    std::optional<WorkspaceManifest> workspace;
+};
+
+/**
  * @brief Manifest parser/validator error.
  */
 struct ManifestError {
@@ -63,17 +82,36 @@ struct ManifestError {
 };
 
 using ManifestResult = std::expected<Manifest, ManifestError>;
+using ManifestDocumentResult = std::expected<ManifestDocument, ManifestError>;
+
+/**
+ * @brief Parse an `eta.toml` payload into a document view.
+ *
+ * The parser accepts:
+ * - package data (`[package]`, `[compatibility]`, `[dependencies]`,
+ *   `[dev-dependencies]`)
+ * - workspace data (`[workspace]`: `members`, `exclude`, `default-members`)
+ */
+ManifestDocumentResult parse_manifest_document(std::string_view text,
+                                               const fs::path& source_path = {});
+
+/**
+ * @brief Read and parse `eta.toml` from disk into a document view.
+ */
+ManifestDocumentResult read_manifest_document(const fs::path& manifest_path);
 
 /**
  * @brief Parse an `eta.toml` payload.
  *
- * The parser accepts the packaging subset:
+ * This package-only helper accepts the packaging subset:
  * - `[package]`: `name`, `version`, `license`
  * - `[compatibility]`: `eta`
  * - `[dependencies]` / `[dev-dependencies]`:
  *   - `name = { path = "../dep" }`
  *   - `name = { git = "...", rev = "<40-hex>" }`
  *   - `name = { tarball = "...", sha256 = "<64-hex>" }`
+ *
+ * Returns an error when no package section is present.
  */
 ManifestResult parse_manifest(std::string_view text,
                               const fs::path& source_path = {});

@@ -20,6 +20,7 @@ enum class Section {
     Compatibility,
     Dependencies,
     DevDependencies,
+    Workspace,
     Other,
 };
 
@@ -366,6 +367,152 @@ parse_dependency_inline_table(std::string_view dep_name,
     return has_digit;
 }
 
+[[nodiscard]] std::expected<std::vector<std::string>, ManifestError>
+parse_string_array(std::string_view raw,
+                   std::string_view section,
+                   std::string_view key,
+                   std::size_t line_no) {
+    const auto text = trim(raw);
+    if (text.size() < 2u || text.front() != '[' || text.back() != ']') {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::ParseError,
+            "expected [" + std::string(section) + "]." + std::string(key) + " to be an array",
+            line_no,
+        });
+    }
+
+    std::vector<std::string> entries;
+    const auto body = std::string_view(text).substr(1u, text.size() - 2u);
+    std::size_t cursor = 0;
+    while (cursor < body.size()) {
+        std::size_t next = cursor;
+        bool in_string = false;
+        bool escaped = false;
+        while (next < body.size()) {
+            const char c = body[next];
+            if (escaped) {
+                escaped = false;
+                ++next;
+                continue;
+            }
+            if (in_string && c == '\\') {
+                escaped = true;
+                ++next;
+                continue;
+            }
+            if (c == '"') {
+                in_string = !in_string;
+                ++next;
+                continue;
+            }
+            if (!in_string && c == ',') break;
+            ++next;
+        }
+
+        const auto token = trim(body.substr(cursor, next - cursor));
+        if (token.empty()) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::ParseError,
+                "array [" + std::string(section) + "]." + std::string(key)
+                    + " contains an empty item",
+                line_no,
+            });
+        }
+
+        auto parsed = parse_quoted_string(token, line_no);
+        if (!parsed) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::ParseError,
+                "array [" + std::string(section) + "]." + std::string(key)
+                    + " must contain only quoted strings",
+                line_no,
+            });
+        }
+        entries.push_back(std::move(*parsed));
+
+        if (next == body.size()) break;
+        cursor = next + 1u;
+    }
+
+    return entries;
+}
+
+void sort_package_dependencies(Manifest& manifest) {
+    std::sort(manifest.dependencies.begin(),
+              manifest.dependencies.end(),
+              [](const ManifestDependency& lhs, const ManifestDependency& rhs) {
+                  return lhs.name < rhs.name;
+              });
+    std::sort(manifest.dev_dependencies.begin(),
+              manifest.dev_dependencies.end(),
+              [](const ManifestDependency& lhs, const ManifestDependency& rhs) {
+                  return lhs.name < rhs.name;
+              });
+}
+
+[[nodiscard]] std::expected<void, ManifestError> validate_package_manifest(Manifest& manifest) {
+    if (manifest.name.empty()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [package].name",
+            0,
+        });
+    }
+    if (manifest.version.empty()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [package].version",
+            0,
+        });
+    }
+    if (manifest.license.empty()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [package].license",
+            0,
+        });
+    }
+    if (manifest.compatibility_eta.empty()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [compatibility].eta",
+            0,
+        });
+    }
+
+    if (!is_valid_package_name(manifest.name)) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::InvalidValue,
+            "package.name must match [a-z][a-z0-9_-]{0,63}",
+            0,
+        });
+    }
+    if (!is_valid_semver(manifest.version)) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::InvalidValue,
+            "package.version must be valid semver (MAJOR.MINOR.PATCH)",
+            0,
+        });
+    }
+    if (!looks_like_spdx_expression(manifest.license)) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::InvalidValue,
+            "package.license must be a valid SPDX expression",
+            0,
+        });
+    }
+    if (!looks_like_semver_range(manifest.compatibility_eta)) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::InvalidValue,
+            "compatibility.eta must be a valid semver range expression",
+            0,
+        });
+    }
+
+    sort_package_dependencies(manifest);
+    return {};
+}
+
 [[nodiscard]] std::string escape_string(std::string_view value) {
     std::string out;
     out.reserve(value.size() + 4u);
@@ -404,13 +551,20 @@ parse_dependency_inline_table(std::string_view dep_name,
 
 } // namespace
 
-ManifestResult parse_manifest(std::string_view text, const fs::path& source_path) {
+ManifestDocumentResult parse_manifest_document(std::string_view text,
+                                               const fs::path& source_path) {
     Manifest manifest;
     manifest.manifest_path = source_path;
+    WorkspaceManifest workspace;
 
     Section current_section = Section::Root;
     std::unordered_set<std::string> dependency_names;
     std::unordered_set<std::string> dev_dependency_names;
+    bool saw_package_section = false;
+    bool saw_workspace_section = false;
+    bool saw_workspace_members = false;
+    bool saw_workspace_exclude = false;
+    bool saw_workspace_default_members = false;
 
     std::istringstream stream{std::string(text)};
     std::string line;
@@ -443,12 +597,19 @@ ManifestResult parse_manifest(std::string_view text, const fs::path& source_path
                 std::string_view(stripped).substr(1u, stripped.size() - 2u));
             if (header == "package") {
                 current_section = Section::Package;
+                saw_package_section = true;
             } else if (header == "compatibility") {
                 current_section = Section::Compatibility;
+                saw_package_section = true;
             } else if (header == "dependencies") {
                 current_section = Section::Dependencies;
+                saw_package_section = true;
             } else if (header == "dev-dependencies") {
                 current_section = Section::DevDependencies;
+                saw_package_section = true;
+            } else if (header == "workspace") {
+                current_section = Section::Workspace;
+                saw_workspace_section = true;
             } else {
                 current_section = Section::Other;
             }
@@ -536,80 +697,100 @@ ManifestResult parse_manifest(std::string_view text, const fs::path& source_path
             }
             continue;
         }
+
+        if (current_section == Section::Workspace) {
+            if (key == "members") {
+                if (saw_workspace_members) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [workspace].members",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_string_array(value, "workspace", "members", line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                workspace.members = std::move(*parsed);
+                saw_workspace_members = true;
+            } else if (key == "exclude") {
+                if (saw_workspace_exclude) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [workspace].exclude",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_string_array(value, "workspace", "exclude", line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                workspace.exclude = std::move(*parsed);
+                saw_workspace_exclude = true;
+            } else if (key == "default-members") {
+                if (saw_workspace_default_members) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [workspace].default-members",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_string_array(value, "workspace", "default-members", line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                workspace.default_members = std::move(*parsed);
+                saw_workspace_default_members = true;
+            } else {
+                return std::unexpected(ManifestError{
+                    ManifestError::Code::UnsupportedValue,
+                    "unsupported workspace key: " + key,
+                    line_no,
+                });
+            }
+            continue;
+        }
     }
 
-    if (manifest.name.empty()) {
+    ManifestDocument document;
+    document.manifest_path = source_path;
+
+    if (saw_package_section) {
+        if (auto package_check = validate_package_manifest(manifest); !package_check) {
+            return std::unexpected(package_check.error());
+        }
+        document.package = std::move(manifest);
+    }
+
+    if (saw_workspace_section) {
+        if (!saw_workspace_members) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::MissingRequiredField,
+                "missing required field [workspace].members",
+                0,
+            });
+        }
+        if (workspace.members.empty()) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::InvalidValue,
+                "[workspace].members must contain at least one entry",
+                0,
+            });
+        }
+        document.workspace = std::move(workspace);
+    }
+
+    return document;
+}
+
+ManifestResult parse_manifest(std::string_view text, const fs::path& source_path) {
+    auto document = parse_manifest_document(text, source_path);
+    if (!document) return std::unexpected(document.error());
+    if (!document->package.has_value()) {
         return std::unexpected(ManifestError{
             ManifestError::Code::MissingRequiredField,
             "missing required field [package].name",
             0,
         });
     }
-    if (manifest.version.empty()) {
-        return std::unexpected(ManifestError{
-            ManifestError::Code::MissingRequiredField,
-            "missing required field [package].version",
-            0,
-        });
-    }
-    if (manifest.license.empty()) {
-        return std::unexpected(ManifestError{
-            ManifestError::Code::MissingRequiredField,
-            "missing required field [package].license",
-            0,
-        });
-    }
-    if (manifest.compatibility_eta.empty()) {
-        return std::unexpected(ManifestError{
-            ManifestError::Code::MissingRequiredField,
-            "missing required field [compatibility].eta",
-            0,
-        });
-    }
-
-    if (!is_valid_package_name(manifest.name)) {
-        return std::unexpected(ManifestError{
-            ManifestError::Code::InvalidValue,
-            "package.name must match [a-z][a-z0-9_-]{0,63}",
-            0,
-        });
-    }
-    if (!is_valid_semver(manifest.version)) {
-        return std::unexpected(ManifestError{
-            ManifestError::Code::InvalidValue,
-            "package.version must be valid semver (MAJOR.MINOR.PATCH)",
-            0,
-        });
-    }
-    if (!looks_like_spdx_expression(manifest.license)) {
-        return std::unexpected(ManifestError{
-            ManifestError::Code::InvalidValue,
-            "package.license must be a valid SPDX expression",
-            0,
-        });
-    }
-    if (!looks_like_semver_range(manifest.compatibility_eta)) {
-        return std::unexpected(ManifestError{
-            ManifestError::Code::InvalidValue,
-            "compatibility.eta must be a valid semver range expression",
-            0,
-        });
-    }
-
-    std::sort(manifest.dependencies.begin(),
-              manifest.dependencies.end(),
-              [](const ManifestDependency& lhs, const ManifestDependency& rhs) {
-                  return lhs.name < rhs.name;
-              });
-    std::sort(manifest.dev_dependencies.begin(),
-              manifest.dev_dependencies.end(),
-              [](const ManifestDependency& lhs, const ManifestDependency& rhs) {
-                  return lhs.name < rhs.name;
-              });
-    return manifest;
+    return std::move(*document->package);
 }
 
-ManifestResult read_manifest(const fs::path& manifest_path) {
+ManifestDocumentResult read_manifest_document(const fs::path& manifest_path) {
     std::ifstream in(manifest_path, std::ios::in | std::ios::binary);
     if (!in) {
         return std::unexpected(ManifestError{
@@ -621,10 +802,26 @@ ManifestResult read_manifest(const fs::path& manifest_path) {
 
     std::ostringstream buffer;
     buffer << in.rdbuf();
-    auto parsed = parse_manifest(buffer.str(), manifest_path);
+    auto parsed = parse_manifest_document(buffer.str(), manifest_path);
     if (!parsed) return parsed;
     parsed->manifest_path = manifest_path;
+    if (parsed->package.has_value()) {
+        parsed->package->manifest_path = manifest_path;
+    }
     return parsed;
+}
+
+ManifestResult read_manifest(const fs::path& manifest_path) {
+    auto document = read_manifest_document(manifest_path);
+    if (!document) return std::unexpected(document.error());
+    if (!document->package.has_value()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [package].name",
+            0,
+        });
+    }
+    return std::move(*document->package);
 }
 
 std::string write_manifest(const Manifest& manifest) {

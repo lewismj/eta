@@ -504,5 +504,131 @@ dependencies = []
     BOOST_TEST(r.dirs()[2] == expected_dep_src);
 }
 
+BOOST_AUTO_TEST_CASE(from_args_or_env_at_workspace_member_includes_workspace_member_roots) {
+    TempDir d;
+    const auto workspace_root = d.path / "ws";
+    const auto app_root = workspace_root / "packages" / "app";
+    const auto lib_root = workspace_root / "packages" / "lib";
+    fs::create_directories(app_root / "src" / "nested");
+    fs::create_directories(lib_root / "src");
+    fs::create_directories(workspace_root / ".eta" / "modules" / "dep-0.2.0" / "target" / "release");
+    fs::create_directories(workspace_root / ".eta" / "modules" / "dep-0.2.0" / "src");
+
+    d.create_file("ws/eta.toml", R"toml(
+[workspace]
+members = ["packages/*"]
+)toml");
+    d.create_file("ws/packages/app/eta.toml", R"toml(
+[package]
+name = "app"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+lib = { path = "../lib" }
+dep = { path = "../../dep" }
+)toml");
+    d.create_file("ws/packages/lib/eta.toml", R"toml(
+[package]
+name = "lib"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+)toml");
+    d.create_file("ws/eta.lock", R"toml(
+version = 1
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = "workspace+packages/app"
+dependencies = ["lib@0.1.0", "dep@0.2.0"]
+
+[[package]]
+name = "lib"
+version = "0.1.0"
+source = "workspace+packages/lib"
+dependencies = []
+
+[[package]]
+name = "dep"
+version = "0.2.0"
+source = "path+../../dep"
+dependencies = []
+)toml");
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(d.path);
+
+    auto r = ModulePathResolver::from_args_or_env_at("", app_root / "src" / "nested");
+    BOOST_REQUIRE_GE(r.dirs().size(), 4u);
+
+    const auto expected_app_src = fs::weakly_canonical(app_root / "src");
+    const auto expected_lib_src = fs::weakly_canonical(lib_root / "src");
+    const auto expected_dep_release =
+        fs::weakly_canonical(workspace_root / ".eta" / "modules" / "dep-0.2.0" / "target" / "release");
+    const auto expected_dep_src =
+        fs::weakly_canonical(workspace_root / ".eta" / "modules" / "dep-0.2.0" / "src");
+
+    BOOST_TEST(r.dirs()[0] == expected_app_src);
+    BOOST_TEST(r.dirs()[1] == expected_lib_src);
+    BOOST_TEST(r.dirs()[2] == expected_dep_release);
+    BOOST_TEST(r.dirs()[3] == expected_dep_src);
+}
+
+BOOST_AUTO_TEST_CASE(from_args_or_env_at_virtual_workspace_root_includes_member_sources_without_lockfile) {
+    TempDir d;
+    const auto workspace_root = d.path / "ws";
+    fs::create_directories(workspace_root / "packages" / "app" / "src");
+    fs::create_directories(workspace_root / "packages" / "lib" / "src");
+
+    d.create_file("ws/eta.toml", R"toml(
+[workspace]
+members = ["packages/*"]
+)toml");
+    d.create_file("ws/packages/app/eta.toml", R"toml(
+[package]
+name = "app"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+lib = { path = "../lib" }
+)toml");
+    d.create_file("ws/packages/lib/eta.toml", R"toml(
+[package]
+name = "lib"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+)toml");
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(d.path);
+
+    auto r = ModulePathResolver::from_args_or_env_at("", workspace_root);
+    BOOST_REQUIRE_GE(r.dirs().size(), 2u);
+
+    const auto expected_app_src = fs::weakly_canonical(workspace_root / "packages" / "app" / "src");
+    const auto expected_lib_src = fs::weakly_canonical(workspace_root / "packages" / "lib" / "src");
+
+    BOOST_TEST(r.dirs()[0] == expected_app_src);
+    BOOST_TEST(r.dirs()[1] == expected_lib_src);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 

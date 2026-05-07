@@ -1,0 +1,4 @@
+(module helper
+  (export value)
+  (begin
+    (define value 7)))

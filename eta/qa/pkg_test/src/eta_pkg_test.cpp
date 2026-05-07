@@ -1,6 +1,7 @@
 #define BOOST_TEST_MODULE eta.pkg.test
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -9,12 +10,19 @@
 #include <vector>
 
 #include "eta/package/lockfile.h"
+#include "eta/package/discovery.h"
 #include "eta/package/manifest.h"
 #include "eta/package/resolver.h"
 
 namespace fs = std::filesystem;
 
+#ifndef ETA_PKG_TEST_FIXTURES_DIR
+#error ETA_PKG_TEST_FIXTURES_DIR must be defined by CMake
+#endif
+
 namespace {
+
+const fs::path kPkgTestFixturesDir{ETA_PKG_TEST_FIXTURES_DIR};
 
 /**
  * @brief Temporary directory guard for package graph integration tests.
@@ -63,6 +71,20 @@ std::vector<std::string> package_names(const eta::package::ResolvedGraph& graph)
     names.reserve(graph.packages.size());
     for (const auto& pkg : graph.packages) names.push_back(pkg.name);
     return names;
+}
+
+fs::path fixture_path(const std::string& rel) {
+    return kPkgTestFixturesDir / rel;
+}
+
+fs::path copy_fixture_tree(const TempDir& temp, const fs::path& rel) {
+    const auto source = fixture_path(rel.string());
+    const auto destination = temp.path / "fixture";
+    std::error_code ec;
+    fs::copy(source, destination, fs::copy_options::recursive, ec);
+    BOOST_REQUIRE_MESSAGE(!ec,
+                          "failed to copy fixture tree '" + source.string() + "': " + ec.message());
+    return destination;
 }
 
 } // namespace
@@ -138,6 +160,299 @@ alpha = { path = "../alpha" }
     BOOST_REQUIRE_EQUAL(parsed->dependencies.size(), 2u);
     BOOST_TEST(parsed->dependencies[0].name == "alpha");
     BOOST_TEST(parsed->dependencies[1].name == "zeta");
+}
+
+BOOST_AUTO_TEST_CASE(manifest_document_parses_package_only_manifest) {
+    const auto parsed = eta::package::parse_manifest_document(R"toml(
+[package]
+name = "app"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+alpha = { path = "../alpha" }
+)toml");
+
+    BOOST_REQUIRE(parsed);
+    BOOST_REQUIRE(parsed->package.has_value());
+    BOOST_TEST(!parsed->workspace.has_value());
+    BOOST_TEST(parsed->package->name == "app");
+    BOOST_TEST(parsed->package->version == "0.1.0");
+    BOOST_REQUIRE_EQUAL(parsed->package->dependencies.size(), 1u);
+    BOOST_TEST(parsed->package->dependencies[0].name == "alpha");
+}
+
+BOOST_AUTO_TEST_CASE(manifest_document_parses_workspace_only_fixture) {
+    const auto parsed =
+        eta::package::read_manifest_document(fixture_path("workspace/virtual_root/eta.toml"));
+
+    BOOST_REQUIRE(parsed);
+    BOOST_TEST(!parsed->package.has_value());
+    BOOST_REQUIRE(parsed->workspace.has_value());
+    BOOST_REQUIRE_EQUAL(parsed->workspace->members.size(), 1u);
+    BOOST_TEST(parsed->workspace->members[0] == "packages/*");
+    BOOST_REQUIRE_EQUAL(parsed->workspace->exclude.size(), 1u);
+    BOOST_TEST(parsed->workspace->exclude[0] == "packages/experimental/*");
+    BOOST_REQUIRE_EQUAL(parsed->workspace->default_members.size(), 1u);
+    BOOST_TEST(parsed->workspace->default_members[0] == "packages/app");
+}
+
+BOOST_AUTO_TEST_CASE(manifest_document_parses_rooted_workspace_fixture) {
+    const auto parsed =
+        eta::package::read_manifest_document(fixture_path("workspace/rooted_root/eta.toml"));
+
+    BOOST_REQUIRE(parsed);
+    BOOST_REQUIRE(parsed->package.has_value());
+    BOOST_REQUIRE(parsed->workspace.has_value());
+    BOOST_TEST(parsed->package->name == "root_tools");
+    BOOST_REQUIRE_EQUAL(parsed->workspace->members.size(), 1u);
+    BOOST_TEST(parsed->workspace->members[0] == "packages/*");
+}
+
+BOOST_AUTO_TEST_CASE(manifest_document_requires_workspace_members_key) {
+    const auto parsed = eta::package::parse_manifest_document(R"toml(
+[workspace]
+exclude = ["packages/experimental/*"]
+)toml");
+
+    BOOST_REQUIRE(!parsed);
+    BOOST_TEST(static_cast<int>(parsed.error().code)
+               == static_cast<int>(eta::package::ManifestError::Code::MissingRequiredField));
+    BOOST_TEST(parsed.error().message.find("[workspace].members") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(manifest_document_rejects_empty_workspace_members) {
+    const auto parsed = eta::package::parse_manifest_document(R"toml(
+[workspace]
+members = []
+)toml");
+
+    BOOST_REQUIRE(!parsed);
+    BOOST_TEST(static_cast<int>(parsed.error().code)
+               == static_cast<int>(eta::package::ManifestError::Code::InvalidValue));
+    BOOST_TEST(parsed.error().message.find("[workspace].members") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(manifest_document_rejects_non_string_workspace_members) {
+    const auto parsed = eta::package::parse_manifest_document(R"toml(
+[workspace]
+members = [1]
+)toml");
+
+    BOOST_REQUIRE(!parsed);
+    BOOST_TEST(static_cast<int>(parsed.error().code)
+               == static_cast<int>(eta::package::ManifestError::Code::ParseError));
+    BOOST_TEST(parsed.error().message.find("[workspace].members") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(discover_manifest_context_classifies_standalone_package) {
+    TempDir temp;
+    const auto manifest_path = temp.write_file("app/eta.toml", make_manifest("app", "0.1.0"));
+    fs::create_directories(temp.path / "app" / "src" / "nested");
+
+    const auto discovered =
+        eta::package::discover_manifest_context(temp.path / "app" / "src" / "nested");
+    BOOST_REQUIRE(discovered);
+    BOOST_REQUIRE(discovered->context.has_value());
+    BOOST_TEST(static_cast<int>(*discovered->context)
+               == static_cast<int>(eta::package::ManifestContextKind::StandalonePackage));
+    BOOST_REQUIRE(discovered->active_manifest_path.has_value());
+    BOOST_REQUIRE(discovered->package_manifest_path.has_value());
+    BOOST_TEST(!discovered->workspace_manifest_path.has_value());
+
+    std::error_code ec;
+    BOOST_TEST(fs::equivalent(*discovered->active_manifest_path, manifest_path, ec));
+    BOOST_TEST(!ec);
+}
+
+BOOST_AUTO_TEST_CASE(discover_manifest_context_classifies_virtual_workspace_root) {
+    const auto workspace_manifest = fixture_path("workspace/virtual_root/eta.toml");
+    const auto discovered =
+        eta::package::discover_manifest_context(workspace_manifest.parent_path());
+    BOOST_REQUIRE(discovered);
+    BOOST_REQUIRE(discovered->context.has_value());
+    BOOST_TEST(static_cast<int>(*discovered->context)
+               == static_cast<int>(eta::package::ManifestContextKind::WorkspaceRoot));
+    BOOST_REQUIRE(discovered->workspace_manifest_path.has_value());
+    BOOST_REQUIRE(discovered->active_manifest_path.has_value());
+    BOOST_TEST(!discovered->package_manifest_path.has_value());
+
+    std::error_code ec;
+    BOOST_TEST(fs::equivalent(*discovered->workspace_manifest_path, workspace_manifest, ec));
+    BOOST_TEST(!ec);
+    ec.clear();
+    BOOST_TEST(fs::equivalent(*discovered->active_manifest_path, workspace_manifest, ec));
+    BOOST_TEST(!ec);
+}
+
+BOOST_AUTO_TEST_CASE(discover_manifest_context_classifies_workspace_member) {
+    const auto workspace_manifest = fixture_path("workspace/virtual_root/eta.toml");
+    const auto member_manifest = fixture_path("workspace/virtual_root/packages/app/eta.toml");
+    const auto discovered =
+        eta::package::discover_manifest_context(fixture_path("workspace/virtual_root/packages/app/src"));
+    BOOST_REQUIRE(discovered);
+    BOOST_REQUIRE(discovered->context.has_value());
+    BOOST_TEST(static_cast<int>(*discovered->context)
+               == static_cast<int>(eta::package::ManifestContextKind::WorkspaceMember));
+    BOOST_REQUIRE(discovered->workspace_manifest_path.has_value());
+    BOOST_REQUIRE(discovered->package_manifest_path.has_value());
+    BOOST_REQUIRE(discovered->active_manifest_path.has_value());
+
+    std::error_code ec;
+    BOOST_TEST(fs::equivalent(*discovered->workspace_manifest_path, workspace_manifest, ec));
+    BOOST_TEST(!ec);
+    ec.clear();
+    BOOST_TEST(fs::equivalent(*discovered->package_manifest_path, member_manifest, ec));
+    BOOST_TEST(!ec);
+    ec.clear();
+    BOOST_TEST(fs::equivalent(*discovered->active_manifest_path, member_manifest, ec));
+    BOOST_TEST(!ec);
+}
+
+BOOST_AUTO_TEST_CASE(discover_manifest_context_classifies_workspace_non_member) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(temp, fs::path("workspace") / "virtual_root");
+    fs::create_directories(workspace_root / "notes" / "drafts");
+
+    const auto workspace_manifest = workspace_root / "eta.toml";
+    const auto discovered =
+        eta::package::discover_manifest_context(workspace_root / "notes" / "drafts");
+    BOOST_REQUIRE(discovered);
+    BOOST_REQUIRE(discovered->context.has_value());
+    BOOST_TEST(static_cast<int>(*discovered->context)
+               == static_cast<int>(eta::package::ManifestContextKind::WorkspaceNonMember));
+    BOOST_TEST(!discovered->package_manifest_path.has_value());
+    BOOST_REQUIRE(discovered->workspace_manifest_path.has_value());
+    BOOST_REQUIRE(discovered->active_manifest_path.has_value());
+
+    std::error_code ec;
+    BOOST_TEST(fs::equivalent(*discovered->workspace_manifest_path, workspace_manifest, ec));
+    BOOST_TEST(!ec);
+    ec.clear();
+    BOOST_TEST(fs::equivalent(*discovered->active_manifest_path, workspace_manifest, ec));
+    BOOST_TEST(!ec);
+}
+
+BOOST_AUTO_TEST_CASE(discover_manifest_context_returns_empty_when_no_manifest_exists) {
+    TempDir temp;
+    fs::create_directories(temp.path / "orphan" / "nested");
+    const auto discovered = eta::package::discover_manifest_context(temp.path / "orphan" / "nested");
+
+    BOOST_REQUIRE(discovered);
+    BOOST_TEST(!discovered->context.has_value());
+    BOOST_TEST(!discovered->active_manifest_path.has_value());
+    BOOST_TEST(!discovered->package_manifest_path.has_value());
+    BOOST_TEST(!discovered->workspace_manifest_path.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(workspace_virtual_root_fixture_fails_package_parse) {
+    const auto parsed =
+        eta::package::read_manifest(fixture_path("workspace/virtual_root/eta.toml"));
+
+    BOOST_REQUIRE(!parsed);
+    BOOST_TEST(static_cast<int>(parsed.error().code)
+               == static_cast<int>(eta::package::ManifestError::Code::MissingRequiredField));
+    BOOST_TEST(parsed.error().message.find("[package].name") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(workspace_rooted_fixture_parses_as_package_manifest) {
+    const auto parsed =
+        eta::package::read_manifest(fixture_path("workspace/rooted_root/eta.toml"));
+
+    BOOST_REQUIRE(parsed);
+    BOOST_TEST(parsed->name == "root_tools");
+    BOOST_TEST(parsed->version == "0.1.0");
+    BOOST_TEST(parsed->license == "MIT");
+    BOOST_TEST(parsed->compatibility_eta == ">=0.6, <0.8");
+    BOOST_TEST(parsed->dependencies.empty());
+    BOOST_TEST(parsed->dev_dependencies.empty());
+}
+
+BOOST_AUTO_TEST_CASE(resolver_treats_workspace_member_fixture_as_regular_root_manifest) {
+    const auto graph = eta::package::resolve_path_dependencies(
+        fixture_path("workspace/virtual_root/packages/app/eta.toml"));
+    if (!graph.has_value()) {
+        BOOST_FAIL(graph.error().message);
+    }
+    BOOST_REQUIRE(graph.has_value());
+
+    const std::vector<std::string> names = package_names(*graph);
+    const std::vector<std::string> expected_names{"app", "lib"};
+    BOOST_TEST(names == expected_names, boost::test_tools::per_element());
+    BOOST_TEST(graph->root_name == "app");
+}
+
+BOOST_AUTO_TEST_CASE(workspace_members_include_implicit_root_for_rooted_workspace) {
+    const auto workspace =
+        eta::package::resolve_workspace_members(fixture_path("workspace/rooted_root/eta.toml"));
+
+    BOOST_REQUIRE(workspace);
+    BOOST_REQUIRE_EQUAL(workspace->members.size(), 2u);
+
+    const auto root_it = std::find_if(
+        workspace->members.begin(),
+        workspace->members.end(),
+        [](const eta::package::WorkspaceMember& member) {
+            return member.name == "root_tools";
+        });
+    BOOST_REQUIRE(root_it != workspace->members.end());
+    BOOST_TEST(root_it->source == "workspace+.");
+
+    const auto helper_it = std::find_if(
+        workspace->members.begin(),
+        workspace->members.end(),
+        [](const eta::package::WorkspaceMember& member) {
+            return member.name == "helper";
+        });
+    BOOST_REQUIRE(helper_it != workspace->members.end());
+    BOOST_TEST(helper_it->source == "workspace+packages/helper");
+}
+
+BOOST_AUTO_TEST_CASE(workspace_members_reject_duplicate_package_names) {
+    TempDir temp;
+    temp.write_file("ws/eta.toml", R"toml(
+[workspace]
+members = ["packages/*"]
+)toml");
+    temp.write_file("ws/packages/one/eta.toml", make_manifest("dup", "0.1.0"));
+    temp.write_file("ws/packages/two/eta.toml", make_manifest("dup", "0.2.0"));
+
+    const auto workspace = eta::package::resolve_workspace_members(temp.path / "ws" / "eta.toml");
+    BOOST_REQUIRE(!workspace);
+    BOOST_TEST(static_cast<int>(workspace.error().code)
+               == static_cast<int>(eta::package::ResolveError::Code::DuplicatePackageName));
+}
+
+BOOST_AUTO_TEST_CASE(workspace_resolver_unions_members_and_emits_workspace_sources) {
+    const auto workspace =
+        eta::package::resolve_workspace_members(fixture_path("workspace/virtual_root/eta.toml"));
+    BOOST_REQUIRE(workspace);
+
+    const auto graph = eta::package::resolve_workspace_dependencies(*workspace);
+    if (!graph.has_value()) {
+        BOOST_FAIL(graph.error().message);
+    }
+    BOOST_REQUIRE(graph.has_value());
+
+    const std::vector<std::string> names = package_names(*graph);
+    const std::vector<std::string> expected_names{"app", "lib"};
+    BOOST_TEST(names == expected_names, boost::test_tools::per_element());
+
+    const auto* app = graph->find("app");
+    BOOST_REQUIRE(app != nullptr);
+    BOOST_TEST(app->source == "workspace+packages/app");
+
+    const auto* lib = graph->find("lib");
+    BOOST_REQUIRE(lib != nullptr);
+    BOOST_TEST(lib->source == "workspace+packages/lib");
+
+    const auto lockfile = eta::package::build_lockfile(*graph);
+    const auto rendered = eta::package::write_lockfile(lockfile);
+    BOOST_TEST(rendered.find("source = \"workspace+packages/app\"") != std::string::npos);
+    BOOST_TEST(rendered.find("source = \"workspace+packages/lib\"") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(lockfile_writer_is_deterministic) {

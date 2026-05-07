@@ -7,7 +7,9 @@ add_executable(${PROJECT_NAME}
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
-target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_CLI_PATH="$<TARGET_FILE:eta>")
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ETA_CLI_PATH="$<TARGET_FILE:eta>"
+    ETA_CLI_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 add_dependencies(${PROJECT_NAME} eta)
 
 if(WIN32)

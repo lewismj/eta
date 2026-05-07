@@ -152,6 +152,199 @@ resolve_dependency_location(const Manifest& owner,
     return resolve_non_path_from_lockfile(owner, dependency, options);
 }
 
+[[nodiscard]] bool has_wildcard(std::string_view text) {
+    return text.find('*') != std::string_view::npos
+        || text.find('?') != std::string_view::npos;
+}
+
+[[nodiscard]] bool glob_match_segment(std::string_view pattern, std::string_view value) {
+    std::size_t p = 0;
+    std::size_t v = 0;
+    std::size_t star = std::string_view::npos;
+    std::size_t star_match = 0;
+
+    while (v < value.size()) {
+        if (p < pattern.size()
+            && (pattern[p] == '?' || pattern[p] == value[v])) {
+            ++p;
+            ++v;
+            continue;
+        }
+        if (p < pattern.size() && pattern[p] == '*') {
+            star = p++;
+            star_match = v;
+            continue;
+        }
+        if (star != std::string_view::npos) {
+            p = star + 1u;
+            v = ++star_match;
+            continue;
+        }
+        return false;
+    }
+
+    while (p < pattern.size() && pattern[p] == '*') ++p;
+    return p == pattern.size();
+}
+
+[[nodiscard]] std::vector<std::string> split_pattern_segments(std::string_view pattern) {
+    std::vector<std::string> segments;
+    std::string current;
+    current.reserve(pattern.size());
+    for (const char c : pattern) {
+        if (c == '/' || c == '\\') {
+            if (!current.empty()) {
+                segments.push_back(current);
+                current.clear();
+            }
+            continue;
+        }
+        current.push_back(c);
+    }
+    if (!current.empty()) segments.push_back(current);
+    return segments;
+}
+
+[[nodiscard]] bool is_within_root(const fs::path& root, const fs::path& candidate) {
+    const auto root_key = canonical_key(root);
+    const auto candidate_key = canonical_key(candidate);
+    if (candidate_key == root_key) return true;
+    if (candidate_key.size() <= root_key.size()) return false;
+    if (candidate_key.compare(0u, root_key.size(), root_key) != 0) return false;
+    if (!root_key.empty() && root_key.back() == '/') return true;
+    return candidate_key[root_key.size()] == '/';
+}
+
+[[nodiscard]] std::string workspace_member_source(const fs::path& workspace_root,
+                                                  const fs::path& member_root) {
+    std::error_code ec;
+    auto relative = fs::relative(member_root, workspace_root, ec);
+    if (ec || relative.empty() || relative == ".") {
+        return "workspace+.";
+    }
+    const auto relative_text = relative.generic_string();
+    if (relative_text.empty()) return "workspace+.";
+    return "workspace+" + relative_text;
+}
+
+void sort_unique_paths(std::vector<fs::path>& paths) {
+    std::sort(paths.begin(),
+              paths.end(),
+              [](const fs::path& lhs, const fs::path& rhs) {
+                  return canonical_key(lhs) < canonical_key(rhs);
+              });
+    paths.erase(std::unique(paths.begin(),
+                            paths.end(),
+                            [](const fs::path& lhs, const fs::path& rhs) {
+                                return canonical_key(lhs) == canonical_key(rhs);
+                            }),
+                paths.end());
+}
+
+[[nodiscard]] std::expected<std::vector<fs::path>, ResolveError>
+expand_workspace_pattern(const fs::path& workspace_manifest_path,
+                         const fs::path& workspace_root,
+                         std::string_view pattern) {
+    auto pattern_path = fs::path(std::string(pattern));
+    if (pattern_path.is_absolute()) {
+        return std::unexpected(ResolveError{
+            ResolveError::Code::InvalidWorkspaceMember,
+            "workspace member pattern must be relative: " + std::string(pattern),
+        });
+    }
+
+    std::vector<fs::path> candidates{workspace_root};
+    auto segments = split_pattern_segments(pattern);
+    if (segments.empty()) {
+        if (pattern == "." || pattern == "./") return candidates;
+        return std::unexpected(ResolveError{
+            ResolveError::Code::InvalidWorkspaceMember,
+            "workspace member pattern is empty",
+        });
+    }
+
+    for (const auto& raw_segment : segments) {
+        std::string segment = raw_segment;
+#if defined(_WIN32)
+        std::transform(segment.begin(),
+                       segment.end(),
+                       segment.begin(),
+                       [](const char c) {
+                           return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                       });
+#endif
+
+        if (segment == ".") continue;
+        if (segment == "..") {
+            std::vector<fs::path> next;
+            next.reserve(candidates.size());
+            for (const auto& base : candidates) {
+                const auto parent = canonicalize_path(base.parent_path());
+                if (!is_within_root(workspace_root, parent)) {
+                    return std::unexpected(ResolveError{
+                        ResolveError::Code::InvalidWorkspaceMember,
+                        "workspace member pattern escapes workspace root: " + std::string(pattern),
+                    });
+                }
+                next.push_back(parent);
+            }
+            sort_unique_paths(next);
+            candidates = std::move(next);
+            continue;
+        }
+
+        const bool wildcard = has_wildcard(segment);
+        std::vector<fs::path> next;
+        for (const auto& base : candidates) {
+            std::error_code ec;
+            if (!fs::is_directory(base, ec) || ec) continue;
+
+            if (!wildcard) {
+                const auto child = canonicalize_path(base / segment);
+                std::error_code child_ec;
+                if (fs::is_directory(child, child_ec) && !child_ec) {
+                    next.push_back(child);
+                }
+                continue;
+            }
+
+            for (const auto& entry : fs::directory_iterator(base, ec)) {
+                if (ec) break;
+                std::error_code entry_ec;
+                if (!entry.is_directory(entry_ec) || entry_ec) continue;
+
+                auto file_name = entry.path().filename().string();
+#if defined(_WIN32)
+                std::transform(file_name.begin(),
+                               file_name.end(),
+                               file_name.begin(),
+                               [](const char c) {
+                                   return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                               });
+#endif
+                if (!glob_match_segment(segment, file_name)) continue;
+                next.push_back(canonicalize_path(entry.path()));
+            }
+        }
+
+        sort_unique_paths(next);
+        candidates = std::move(next);
+        if (candidates.empty()) break;
+    }
+
+    for (const auto& candidate : candidates) {
+        if (!is_within_root(workspace_root, candidate)) {
+            return std::unexpected(ResolveError{
+                ResolveError::Code::InvalidWorkspaceMember,
+                "workspace member '" + candidate.string()
+                    + "' is outside workspace root '" + workspace_manifest_path.parent_path().string() + "'",
+            });
+        }
+    }
+
+    return candidates;
+}
+
 } // namespace
 
 const ResolvedPackage* ResolvedGraph::find(std::string_view name) const {
@@ -243,7 +436,7 @@ ResolveResult resolve_dependencies(const fs::path& root_manifest_path,
         node.version = manifest.version;
         node.manifest_path = manifest_path;
         node.package_root = manifest_path.parent_path();
-        node.source = is_root ? "root"
+        node.source = is_root ? (options.root_source.empty() ? "root" : options.root_source)
                               : source_override.value_or(
                                     "path+" + canonicalize_path(node.package_root).generic_string());
         const bool include_dev = options.include_dev_dependencies && is_root;
@@ -323,6 +516,193 @@ ResolveResult resolve_dependencies(const fs::path& root_manifest_path,
 ResolveResult resolve_path_dependencies(const fs::path& root_manifest_path) {
     ResolveOptions options;
     return resolve_dependencies(root_manifest_path, options);
+}
+
+WorkspaceMembersResult resolve_workspace_members(const fs::path& workspace_manifest_path) {
+    auto workspace_manifest_res = normalize_manifest_path(workspace_manifest_path);
+    if (!workspace_manifest_res) return std::unexpected(workspace_manifest_res.error());
+
+    const auto workspace_manifest = *workspace_manifest_res;
+    auto document = read_manifest_document(workspace_manifest);
+    if (!document) {
+        return std::unexpected(ResolveError{
+            ResolveError::Code::ManifestReadError,
+            "failed to read workspace manifest '" + workspace_manifest.string()
+                + "': " + document.error().message,
+        });
+    }
+    if (!document->workspace.has_value()) {
+        return std::unexpected(ResolveError{
+            ResolveError::Code::InvalidWorkspaceMember,
+            "manifest does not declare [workspace]: " + workspace_manifest.string(),
+        });
+    }
+
+    WorkspaceMembers workspace;
+    workspace.workspace_manifest_path = workspace_manifest;
+    workspace.workspace_root = canonicalize_path(workspace_manifest.parent_path());
+
+    std::vector<fs::path> member_roots;
+    for (const auto& pattern : document->workspace->members) {
+        auto expanded = expand_workspace_pattern(workspace_manifest, workspace.workspace_root, pattern);
+        if (!expanded) return std::unexpected(expanded.error());
+        member_roots.insert(member_roots.end(), expanded->begin(), expanded->end());
+    }
+    sort_unique_paths(member_roots);
+
+    std::unordered_set<std::string> excluded_roots;
+    for (const auto& pattern : document->workspace->exclude) {
+        auto expanded = expand_workspace_pattern(workspace_manifest, workspace.workspace_root, pattern);
+        if (!expanded) return std::unexpected(expanded.error());
+        for (const auto& candidate : *expanded) {
+            excluded_roots.insert(canonical_key(candidate));
+        }
+    }
+
+    if (document->package.has_value()
+        && !excluded_roots.contains(canonical_key(workspace.workspace_root))) {
+        member_roots.push_back(workspace.workspace_root);
+    }
+    sort_unique_paths(member_roots);
+
+    std::vector<fs::path> selected_roots;
+    selected_roots.reserve(member_roots.size());
+    for (const auto& member_root : member_roots) {
+        if (excluded_roots.contains(canonical_key(member_root))) continue;
+        selected_roots.push_back(member_root);
+    }
+    sort_unique_paths(selected_roots);
+
+    if (selected_roots.empty()) {
+        return std::unexpected(ResolveError{
+            ResolveError::Code::InvalidWorkspaceMember,
+            "workspace does not resolve to any selected members: " + workspace_manifest.string(),
+        });
+    }
+
+    std::unordered_map<std::string, fs::path> manifest_by_name;
+    for (const auto& member_root : selected_roots) {
+        const auto manifest_candidate = canonicalize_path(member_root / "eta.toml");
+        std::error_code ec;
+        if (!fs::is_regular_file(manifest_candidate, ec) || ec) {
+            return std::unexpected(ResolveError{
+                ResolveError::Code::MissingDependencyManifest,
+                "workspace member manifest not found: " + manifest_candidate.string(),
+            });
+        }
+
+        auto manifest = read_manifest(manifest_candidate);
+        if (!manifest) {
+            return std::unexpected(ResolveError{
+                ResolveError::Code::ManifestReadError,
+                "failed to read workspace member manifest '" + manifest_candidate.string()
+                    + "': " + manifest.error().message,
+            });
+        }
+
+        if (auto existing = manifest_by_name.find(manifest->name);
+            existing != manifest_by_name.end()) {
+            if (canonical_key(existing->second) != canonical_key(manifest_candidate)) {
+                return std::unexpected(ResolveError{
+                    ResolveError::Code::DuplicatePackageName,
+                    "workspace members contain duplicate package.name '" + manifest->name
+                        + "': " + existing->second.string()
+                        + " and " + manifest_candidate.string(),
+                });
+            }
+        } else {
+            manifest_by_name.emplace(manifest->name, manifest_candidate);
+        }
+
+        WorkspaceMember member;
+        member.name = manifest->name;
+        member.manifest_path = manifest_candidate;
+        member.package_root = canonicalize_path(manifest_candidate.parent_path());
+        member.source = workspace_member_source(workspace.workspace_root, member.package_root);
+        workspace.members.push_back(std::move(member));
+    }
+
+    std::sort(workspace.members.begin(),
+              workspace.members.end(),
+              [](const WorkspaceMember& lhs, const WorkspaceMember& rhs) {
+                  if (lhs.source != rhs.source) return lhs.source < rhs.source;
+                  if (lhs.name != rhs.name) return lhs.name < rhs.name;
+                  return canonical_key(lhs.manifest_path) < canonical_key(rhs.manifest_path);
+              });
+
+    return workspace;
+}
+
+ResolveResult resolve_workspace_dependencies(const WorkspaceMembers& workspace,
+                                             const ResolveOptions& options) {
+    if (workspace.members.empty()) {
+        return std::unexpected(ResolveError{
+            ResolveError::Code::InvalidWorkspaceMember,
+            "workspace has no members to resolve",
+        });
+    }
+
+    ResolvedGraph merged;
+    merged.root_name = workspace.members.front().name;
+
+    std::unordered_map<std::string, std::size_t> index_by_name;
+    std::unordered_map<std::string, std::string> member_source_by_name;
+    member_source_by_name.reserve(workspace.members.size());
+    for (const auto& member : workspace.members) {
+        member_source_by_name.emplace(member.name, member.source);
+
+        ResolveOptions member_options = options;
+        member_options.root_source = member.source;
+        auto graph = resolve_dependencies(member.manifest_path, member_options);
+        if (!graph) return std::unexpected(graph.error());
+
+        for (auto& pkg : graph->packages) {
+            auto it = index_by_name.find(pkg.name);
+            if (it == index_by_name.end()) {
+                const std::size_t index = merged.packages.size();
+                index_by_name.emplace(pkg.name, index);
+                merged.packages.push_back(std::move(pkg));
+                continue;
+            }
+
+            auto& existing = merged.packages[it->second];
+            if (canonical_key(existing.manifest_path) != canonical_key(pkg.manifest_path)) {
+                return std::unexpected(ResolveError{
+                    ResolveError::Code::DuplicatePackageName,
+                    "package name '" + pkg.name + "' is provided by multiple manifests: "
+                        + existing.manifest_path.string() + " and " + pkg.manifest_path.string(),
+                });
+            }
+
+            existing.dependency_names.insert(existing.dependency_names.end(),
+                                             pkg.dependency_names.begin(),
+                                             pkg.dependency_names.end());
+            if (existing.source.rfind("workspace+", 0) != 0
+                && pkg.source.rfind("workspace+", 0) == 0) {
+                existing.source = pkg.source;
+            }
+        }
+    }
+
+    for (auto& pkg : merged.packages) {
+        if (auto it = member_source_by_name.find(pkg.name); it != member_source_by_name.end()) {
+            pkg.source = it->second;
+        }
+        std::sort(pkg.dependency_names.begin(), pkg.dependency_names.end());
+        pkg.dependency_names.erase(std::unique(pkg.dependency_names.begin(),
+                                               pkg.dependency_names.end()),
+                                   pkg.dependency_names.end());
+    }
+
+    std::stable_sort(merged.packages.begin(),
+                     merged.packages.end(),
+                     [](const ResolvedPackage& lhs, const ResolvedPackage& rhs) {
+                         if (lhs.name != rhs.name) return lhs.name < rhs.name;
+                         if (lhs.version != rhs.version) return lhs.version < rhs.version;
+                         return lhs.source < rhs.source;
+                     });
+
+    return merged;
 }
 
 Lockfile build_lockfile(const ResolvedGraph& graph) {
