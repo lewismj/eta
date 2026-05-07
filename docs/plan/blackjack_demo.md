@@ -171,7 +171,7 @@ is the operationally useful statement.
 
 ### 0.2 What runs end-to-end
 
-`eta run -- all --seed 42` executes, in order:
+`eta run -p blackjack_demo -- all --seed 42` executes, in order:
 
 1. **Generate** a deterministic trace under a baseline (rule-following but
    non-counting) dealer/player.
@@ -260,7 +260,8 @@ Ship a runnable demo that uses Eta's four flagship paradigms —
 5. **distill** that chart into human-readable strategy maxims.
 
 Primary outcome: a packaged `library + app` pair under
-`demo/blackjack/` that builds and runs end-to-end with `eta build && eta run`,
+`demo/blackjack/` that builds and runs end-to-end with
+`eta build --workspace && eta run -p blackjack_demo -- all`,
 and is referenced from the README/TLDR as a flagship example.
 
 ---
@@ -318,12 +319,13 @@ and is referenced from the README/TLDR as a flagship example.
 
 ## 4) Package layout
 
-Two packages under `demo/blackjack/`, mirroring
+One workspace root plus two member packages under `demo/blackjack/`, mirroring
 [end-to-end packaging](../../cookbook/packaging/end-to-end/README.md):
 
 ```
 demo/blackjack/
   README.md
+  eta.toml                    # workspace root manifest
   blackjack/                 # library package
     eta.toml
     src/
@@ -352,7 +354,15 @@ demo/blackjack/
       smoke_test.eta
 ```
 
-### 4.1 Library `eta.toml`
+### 4.1 Workspace root `eta.toml`
+
+```toml
+[workspace]
+members = ["blackjack", "blackjack-demo"]
+default-members = ["blackjack-demo"]
+```
+
+### 4.2 Library `eta.toml`
 
 ```toml
 [package]
@@ -366,7 +376,7 @@ eta = ">=0.6, <0.8"
 [dependencies]
 ```
 
-### 4.2 App `eta.toml`
+### 4.3 App `eta.toml`
 
 ```toml
 [package]
@@ -387,6 +397,7 @@ Created with the standard flow:
 cd demo/blackjack
 eta new blackjack --lib
 eta new blackjack-demo --bin
+# add demo/blackjack/eta.toml workspace manifest (see §4.1)
 cd blackjack-demo
 eta add blackjack --path ../blackjack
 ```
@@ -910,19 +921,19 @@ noisy clauses, while keeping the ILP path as the headline result.
 
 ## 6) App: `blackjack-demo`
 
-Single binary with subcommands:
+Single binary with subcommands (workspace-root invocation shown):
 
 ```console
-eta run -- induce      # §5.3 — print discovered rules
-eta run -- causal      # §5.4 — print do() EV sweeps + flip threshold
-eta run -- learn [N]   # §5.6 — train, print discovered weight vector
-                       #   --learn=joint        (default; headline)
-                       #   --learn=supervised   (CI/debug baseline; §5.6.2)
-eta run -- chart       # §5.7 — print strategy chart per count bucket
-eta run -- maxims      # §5.8 — print induced basic-strategy rules
-                       #   --maxims=ilp         (default)
-                       #   --maxims=templates   (fallback; §5.8.3)
-eta run -- all         # runs the full pipeline in order
+eta run -p blackjack_demo -- induce      # §5.3 — print discovered rules
+eta run -p blackjack_demo -- causal      # §5.4 — print do() EV sweeps + flip threshold
+eta run -p blackjack_demo -- learn [N]   # §5.6 — train, print discovered weight vector
+                                          #   --learn=joint        (default; headline)
+                                          #   --learn=supervised   (CI/debug baseline; §5.6.2)
+eta run -p blackjack_demo -- chart       # §5.7 — print strategy chart per count bucket
+eta run -p blackjack_demo -- maxims      # §5.8 — print induced basic-strategy rules
+                                          #   --maxims=ilp         (default)
+                                          #   --maxims=templates   (fallback; §5.8.3)
+eta run -p blackjack_demo -- all         # runs the full pipeline in order
 ```
 
 Common flags: `--seed <n>`, `--debug-trace <path>` (writes the
@@ -943,7 +954,7 @@ acceptance test regresses).
    - `strategy`: snapshot of chart at `count=0` matches a checked-in fixture.
    - `maxims`: induced top-N rule list contains the §5.8 acceptance
      clauses; snapshot of the printed list is stable.
-2. **App smoke**: `eta run -- all --seed 42` exits 0
+2. **App smoke**: `eta run -p blackjack_demo -- all --seed 42` exits 0
    and prints the expected section headers.
 3. **CI stability**: default path is deterministic (fixed seeds/config),
    and tolerance thresholds are explicit in tests.
@@ -955,18 +966,16 @@ acceptance test regresses).
 Mirrors [Package Commands](../guide/packages.md):
 
 ```console
-cd demo/blackjack/blackjack
-eta test
-
-cd ../blackjack-demo
-eta build
-eta run -- all --seed 42
-eta tree
+cd demo/blackjack
+eta test --workspace
+eta build --workspace
+eta run -p blackjack_demo -- all --seed 42
+eta tree --workspace
 ```
 
-Artifacts land under `.eta/target/<profile>/` per the standard layout.
-No registry, no native sidecars. Workspace mode is *not* required for v1
-but the layout is workspace-ready (see §11).
+Artifacts land under the shared workspace layout
+`.eta/target/<profile>/<member-name>/`.
+No registry, no native sidecars. The demo is workspace-native (see §11).
 
 ---
 
@@ -974,11 +983,13 @@ but the layout is workspace-ready (see §11).
 
 ### B0 — Skeleton and packaging
 
-1. `eta new` both packages, wire `eta add blackjack --path ../blackjack`,
-2. `hello world` end-to-end build/run/test passes,
-3. README stub linking to this plan.
+1. add workspace root manifest at `demo/blackjack/eta.toml`,
+2. `eta new` both packages, wire `eta add blackjack --path ../blackjack`,
+3. `hello world` end-to-end build/run/test passes,
+4. README stub linking to this plan.
 
-Gate: `eta build && eta run` works in `blackjack-demo`.
+Gate: workspace-root commands (`eta test --workspace`,
+`eta run -p blackjack_demo -- all --seed 42`) work.
 
 ### B1 — Shoe + rules (hand-written)
 
@@ -1045,7 +1056,7 @@ Gate: maxim list contains the documented clauses; snapshot stable.
 3. README/TLDR/next-steps cross-links,
 4. optional notebook wrapper under `demo/blackjack/notebooks/`.
 
-Gate: `eta run -- all --seed 42` produces the documented output.
+Gate: `eta run -p blackjack_demo -- all --seed 42` produces the documented output.
 
 ### B8 — v1.5: extend action set to `{double, split}`
 
@@ -1136,19 +1147,23 @@ its minimal form.
 
 ---
 
-## 11) Workspace-readiness (forward-looking)
+## 11) Workspace mode (current)
 
-Layout already groups two packages under one directory, so adopting
-[workspace mode](./workspace_plan.md) later is mechanical:
+This demo is expected to use [workspace mode](./workspace_plan.md) from day one.
+The root manifest is part of the planned layout:
 
 ```toml
-# demo/blackjack/eta.toml (future)
+# demo/blackjack/eta.toml
 [workspace]
 members = ["blackjack", "blackjack-demo"]
 default-members = ["blackjack-demo"]
 ```
 
-No code changes required; only the root manifest is added when workspaces ship.
+Command selection contract:
+
+1. use `--workspace` for aggregate commands (`build`, `test`, `tree`),
+2. use `-p/--package` for single-target commands (`run`, `add`, `remove`,
+   `install`) when targeting a non-default member.
 
 ---
 
@@ -1160,9 +1175,9 @@ The plan has two explicit completion levels:
 
 v1 (action set `{hit, stand}`) is complete when:
 
-1. `demo/blackjack/blackjack` builds and `eta test` is green,
-2. `demo/blackjack/blackjack-demo` builds and
-   `eta run -- all --seed 42` exits 0,
+1. workspace-root `eta test --workspace` is green,
+2. workspace-root `eta build --workspace` succeeds and
+   `eta run -p blackjack_demo -- all --seed 42` exits 0,
 3. induced rules are equivalent to hand-written rules on the trace fixture,
 4. causal `do()` sweep shows the documented action flip,
 5. learned weight vector matches Hi-Lo within cosine ≥ 0.95,
