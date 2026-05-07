@@ -6,9 +6,12 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -172,6 +175,58 @@ struct TempDir {
         if (error_message) *error_message = "bytecode serializer failed";
         return false;
     }
+    return true;
+}
+
+[[nodiscard]] bool mutate_etac_file(
+    const fs::path& etac_file,
+    const std::function<bool(eta::runtime::vm::EtacFile&)>& mutator,
+    std::string* error_message) {
+    eta::runtime::memory::heap::Heap heap(8 * 1024 * 1024);
+    eta::runtime::memory::intern::InternTable intern_table;
+    eta::runtime::vm::BytecodeSerializer serializer(heap, intern_table);
+
+    std::ifstream in(etac_file, std::ios::in | std::ios::binary);
+    if (!in) {
+        if (error_message) *error_message = "failed to open .etac for read";
+        return false;
+    }
+    auto parsed = serializer.deserialize(in, /*expected_builtins=*/0);
+    if (!parsed) {
+        if (error_message) {
+            *error_message = "failed to deserialize .etac: "
+                           + std::string(eta::runtime::vm::to_string(parsed.error()));
+        }
+        return false;
+    }
+    auto etac = std::move(*parsed);
+
+    if (!mutator(etac)) {
+        if (error_message) *error_message = "fixture mutator rejected .etac payload";
+        return false;
+    }
+
+    std::ofstream out(etac_file, std::ios::out | std::ios::binary);
+    if (!out) {
+        if (error_message) *error_message = "failed to open .etac for write";
+        return false;
+    }
+
+    const bool include_debug =
+        (etac.flags & eta::runtime::vm::BytecodeSerializer::FLAG_HAS_DEBUG) != 0;
+    const std::array<std::uint8_t, 16>* compiler_id = etac.has_compiler_id
+        ? &etac.compiler_id
+        : nullptr;
+
+    if (!serializer.serialize(etac.modules, etac.registry,
+                              etac.source_hash, include_debug, out,
+                              etac.imports, etac.builtin_count,
+                              etac.package_metadata, etac.dependency_hashes,
+                              compiler_id)) {
+        if (error_message) *error_message = "failed to serialize mutated .etac";
+        return false;
+    }
+
     return true;
 }
 
@@ -420,6 +475,232 @@ BOOST_AUTO_TEST_CASE(run_etac_file_stale_source_hash_falls_back_to_source) {
 )eta", &value, "result");
     BOOST_REQUIRE_MESSAGE(read_ok, diagnostics_to_string(runner));
     BOOST_TEST(decode_fixnum(value) == 99);
+}
+
+BOOST_AUTO_TEST_CASE(run_etac_file_relocate_missing_export_emits_clear_error) {
+    TempDir temp;
+    (void)temp.create_file("relocate/missing/dep.eta", R"eta(
+(module relocate.missing.dep
+  (export dep-value)
+  (begin
+    (define dep-value 41)))
+)eta");
+    const auto main_source = temp.create_file("relocate/missing/main.eta", R"eta(
+(module relocate.missing.main
+  (import relocate.missing.dep)
+  (export answer)
+  (begin
+    (define answer (+ dep-value 1))))
+)eta");
+
+    const auto etac_file = temp.path / "relocate" / "missing" / "main.etac";
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compile_to_etac(main_source, temp.path, etac_file, &compile_error),
+        "compile_to_etac failed: " + compile_error);
+
+    std::string mutate_error;
+    BOOST_REQUIRE_MESSAGE(
+        mutate_etac_file(
+            etac_file,
+            [](eta::runtime::vm::EtacFile& etac) {
+                for (auto& module : etac.modules) {
+                    if (module.name != "relocate.missing.main") continue;
+                    for (auto& imp : module.import_bindings) {
+                        if (imp.from_module == "relocate.missing.dep"
+                            && imp.remote_name == "dep-value") {
+                            imp.remote_name = "dep-value-missing";
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                return false;
+            },
+            &mutate_error),
+        "mutate_etac_file failed: " + mutate_error);
+
+    eta::interpreter::ModulePathResolver run_resolver({temp.path});
+    eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+
+    const bool ok = runner.run_etac_file(etac_file);
+    BOOST_TEST(!ok);
+    const auto diagnostics = diagnostics_to_string(runner);
+    BOOST_TEST(
+        diagnostics.find(
+            "cannot relocate import 'dep-value-missing' from module 'relocate.missing.dep' "
+            "while loading 'relocate.missing.main'")
+        != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(run_etac_file_relocate_conflicting_local_slot_emits_inconsistent_error) {
+    TempDir temp;
+    (void)temp.create_file("relocate/conflict/dep_a.eta", R"eta(
+(module relocate.conflict.dep_a
+  (export value-a)
+  (begin
+    (define value-a 40)))
+)eta");
+    (void)temp.create_file("relocate/conflict/dep_b.eta", R"eta(
+(module relocate.conflict.dep_b
+  (export value-b)
+  (begin
+    (define value-b 2)))
+)eta");
+    const auto main_source = temp.create_file("relocate/conflict/main.eta", R"eta(
+(module relocate.conflict.main
+  (import relocate.conflict.dep_a relocate.conflict.dep_b)
+  (export answer)
+  (begin
+    (define answer (+ value-a value-b))))
+)eta");
+
+    const auto etac_file = temp.path / "relocate" / "conflict" / "main.etac";
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compile_to_etac(main_source, temp.path, etac_file, &compile_error),
+        "compile_to_etac failed: " + compile_error);
+
+    uint32_t conflicting_slot = 0;
+    std::string mutate_error;
+    BOOST_REQUIRE_MESSAGE(
+        mutate_etac_file(
+            etac_file,
+            [&conflicting_slot](eta::runtime::vm::EtacFile& etac) {
+                for (auto& module : etac.modules) {
+                    if (module.name != "relocate.conflict.main") continue;
+                    if (module.import_bindings.size() < 2) return false;
+                    conflicting_slot = module.import_bindings.front().local_slot;
+                    module.import_bindings[1].local_slot = conflicting_slot;
+                    return true;
+                }
+                return false;
+            },
+            &mutate_error),
+        "mutate_etac_file failed: " + mutate_error);
+
+    eta::interpreter::ModulePathResolver run_resolver({temp.path});
+    eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+
+    const bool ok = runner.run_etac_file(etac_file);
+    BOOST_TEST(!ok);
+    const auto diagnostics = diagnostics_to_string(runner);
+    BOOST_TEST(
+        diagnostics.find(
+            "inconsistent relocation for slot " + std::to_string(conflicting_slot)
+                + " while loading 'relocate.conflict.main'")
+        != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(run_etac_file_relocate_duplicate_local_slot_same_target_is_allowed) {
+    TempDir temp;
+    (void)temp.create_file("relocate/duplicate/dep.eta", R"eta(
+(module relocate.duplicate.dep
+  (export dep-value)
+  (begin
+    (define dep-value 41)))
+)eta");
+    const auto main_source = temp.create_file("relocate/duplicate/main.eta", R"eta(
+(module relocate.duplicate.main
+  (import relocate.duplicate.dep)
+  (export answer)
+  (begin
+    (define answer (+ dep-value 1))))
+)eta");
+
+    const auto etac_file = temp.path / "relocate" / "duplicate" / "main.etac";
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compile_to_etac(main_source, temp.path, etac_file, &compile_error),
+        "compile_to_etac failed: " + compile_error);
+
+    std::string mutate_error;
+    BOOST_REQUIRE_MESSAGE(
+        mutate_etac_file(
+            etac_file,
+            [](eta::runtime::vm::EtacFile& etac) {
+                for (auto& module : etac.modules) {
+                    if (module.name != "relocate.duplicate.main") continue;
+                    if (module.import_bindings.empty()) return false;
+                    module.import_bindings.push_back(module.import_bindings.front());
+                    return true;
+                }
+                return false;
+            },
+            &mutate_error),
+        "mutate_etac_file failed: " + mutate_error);
+
+    eta::interpreter::ModulePathResolver run_resolver({temp.path});
+    eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+
+    const bool ok = runner.run_etac_file(etac_file);
+    BOOST_REQUIRE_MESSAGE(ok, diagnostics_to_string(runner));
+    BOOST_TEST(runner.has_module("relocate.duplicate.main"));
+
+    eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
+    const bool verify_ok = runner.run_source(R"eta(
+(module relocate.duplicate.verify
+  (import relocate.duplicate.main)
+  (define result answer))
+)eta", &value, "result");
+    BOOST_REQUIRE_MESSAGE(verify_ok, diagnostics_to_string(runner));
+    BOOST_TEST(decode_fixnum(value) == 42);
+}
+
+BOOST_AUTO_TEST_CASE(relocation_diagnostic_spanless_output_uses_file_id_fallback) {
+    TempDir temp;
+    (void)temp.create_file("relocate/spanless/dep.eta", R"eta(
+(module relocate.spanless.dep
+  (export dep-value)
+  (begin
+    (define dep-value 41)))
+)eta");
+    const auto main_source = temp.create_file("relocate/spanless/main.eta", R"eta(
+(module relocate.spanless.main
+  (import relocate.spanless.dep)
+  (export answer)
+  (begin
+    (define answer (+ dep-value 1))))
+)eta");
+
+    const auto etac_file = temp.path / "relocate" / "spanless" / "main.etac";
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compile_to_etac(main_source, temp.path, etac_file, &compile_error),
+        "compile_to_etac failed: " + compile_error);
+
+    std::string mutate_error;
+    BOOST_REQUIRE_MESSAGE(
+        mutate_etac_file(
+            etac_file,
+            [](eta::runtime::vm::EtacFile& etac) {
+                for (auto& module : etac.modules) {
+                    if (module.name != "relocate.spanless.main") continue;
+                    for (auto& imp : module.import_bindings) {
+                        if (imp.from_module == "relocate.spanless.dep"
+                            && imp.remote_name == "dep-value") {
+                            imp.remote_name = "dep-value-missing";
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+                return false;
+            },
+            &mutate_error),
+        "mutate_etac_file failed: " + mutate_error);
+
+    eta::interpreter::ModulePathResolver run_resolver({temp.path});
+    eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+
+    const bool ok = runner.run_etac_file(etac_file);
+    BOOST_TEST(!ok);
+    const auto diagnostics = diagnostics_to_string(runner);
+    BOOST_TEST(diagnostics.find("[file 0:") != std::string::npos);
+    BOOST_TEST(
+        diagnostics.find(
+            "cannot relocate import 'dep-value-missing' from module 'relocate.spanless.dep'")
+        != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(source_run_with_stdlib_etac_root_executes_basic_module) {
