@@ -25,6 +25,7 @@
 #include "eta/reader/sexpr_utils.h"
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/docs/markdown.h"
+#include "eta/docs/stdlib_docs.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/builtin_metadata.h"
 #include "eta/runtime/builtin_names.h"
@@ -1133,6 +1134,14 @@ Value LspServer::handle_hover(const Value& params) {
             })},
         });
     }
+    if (auto stdlib_doc = eta::docs::lookup_stdlib_doc(word)) {
+        return json::object({
+            {"contents", json::object({
+                {"kind", "markdown"},
+                {"value", eta::docs::render_markdown(*stdlib_doc)},
+            })},
+        });
+    }
 
     /// Check document-local definitions
     auto symbols = collect_symbols(source);
@@ -1894,6 +1903,11 @@ Value LspServer::handle_signature_help(const Value& params) {
     if (label.empty()) {
         if (auto entry = eta::reader::lookup_special_form_doc(func_name)) {
             label = std::string(entry->signature);
+        }
+    }
+    if (label.empty()) {
+        if (auto stdlib_doc = eta::docs::lookup_stdlib_doc(func_name)) {
+            label = std::string(stdlib_doc->signature);
         }
     }
 

@@ -66,6 +66,7 @@ foreach(_t IN ITEMS
     eta_dap
     eta_jupyter
     eta_prof
+    eta_stdlib_doc_registry
     eta_stdlib_etac
     eta_core_test
     eta_pkg_test

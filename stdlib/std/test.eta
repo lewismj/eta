@@ -93,6 +93,12 @@
         (display x p)
         (get-output-string p)))
 
+    ;;@doc (assert-equal expected actual . rest)
+    ;;@category Assertions
+    ;;@module std.test
+    ;; Assert that `expected` and `actual` are equal under `equal?`.
+    ;;@example
+    ;; (assert-equal 4 (+ 2 2))
     (defun assert-equal (expected actual . rest)
       (let ((msg (if (null? rest)
                      (string-append "expected "
@@ -236,6 +242,15 @@
             (%tap-print-result idx (car results))
             (%tap-print-all (cdr results) (+ idx 1)))))
 
+    ;;@doc (print-tap res)
+    ;;@category Output
+    ;;@module std.test
+    ;; Emit TAP 13 output for a result tree produced by `(run ...)`.
+    ;;@example
+    ;; (define results (run suite))
+    ;; (print-tap results)
+    ;;@example
+    ;; (print-tap (run (make-test "ok" (lambda () (assert-true #t)))))
     (defun print-tap (res)
       ;; res is the result of (run ...).
       (let ((flat (reverse (%tap-collect-results res '()))))

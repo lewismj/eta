@@ -33,6 +33,7 @@
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/disassembler.h"
 #include "eta/docs/markdown.h"
+#include "eta/docs/stdlib_docs.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/builtin_metadata.h"
 #include "eta/runtime/builtin_names.h"
@@ -670,6 +671,10 @@ public:
         for (const auto& builtin : runtime::builtin_metadata()) {
             add_candidate(builtin.name);
         }
+        for (const auto& stdlib_doc : docs::stdlib_doc_registry()) {
+            add_candidate(std::string(stdlib_doc.name));
+            add_candidate(std::string(stdlib_doc.qualified_name));
+        }
 
         for (const auto& [_, qualified] : global_names_) {
             add_candidate(qualified);
@@ -706,6 +711,9 @@ public:
         }
         if (auto builtin = runtime::lookup_builtin_metadata(symbol)) {
             return docs::render_builtin_markdown(*builtin);
+        }
+        if (auto stdlib_doc = docs::lookup_stdlib_doc(symbol)) {
+            return docs::render_markdown(*stdlib_doc);
         }
 
         for (const auto& [_, qualified] : global_names_) {

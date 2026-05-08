@@ -15,6 +15,10 @@
 /// Eta interpreter
 #include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
+#include "eta/docs/markdown.h"
+#include "eta/docs/stdlib_docs.h"
+#include "eta/reader/special_form_docs.h"
+#include "eta/runtime/builtin_metadata.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/vm/disassembler.h"
@@ -196,6 +200,7 @@ void DapServer::dispatch(const Value& msg) {
         else if (*cmd == "cancel")              handle_cancel(id, args);
         else if (*cmd == "completions")         handle_completions(id, args);
         else if (*cmd == "disconnect")          handle_disconnect(id, args);
+        else if (*cmd == "eta/symbolDoc")       handle_symbol_doc(id, args);
         else if (*cmd == "disassemble")         handle_standard_disassemble(id, args);
         else if (*cmd == "eta/environment")     handle_environment(id, args);
         else if (*cmd == "eta/localMemory")     handle_local_memory(id, args);
@@ -260,6 +265,7 @@ void DapServer::handle_initialize(const Value& id, const Value& /*args*/) {
         /// in their `make_variable_json` output and honour `start`/`count` on `variables`.
         {"supportsVariablePaging",              true},
         {"supportsVariableType",                true},
+        {"supportsEtaSymbolDocRequest",         true},
     }));
     /**
      * IMPORTANT: "initialized" is intentionally NOT sent here.
@@ -1879,6 +1885,62 @@ void DapServer::notify_breakpoints_verified() {
             })},
         }));
     }
+}
+
+/**
+ */
+void DapServer::handle_symbol_doc(const Value& id, const Value& args) {
+    const auto symbol = args.get_string("symbol");
+    if (!symbol || symbol->empty()) {
+        send_response(id, json::object({
+            {"found", false},
+        }));
+        return;
+    }
+
+    if (auto entry = eta::reader::lookup_special_form_doc(*symbol)) {
+        send_response(id, json::object({
+            {"found", true},
+            {"name", std::string(entry->name)},
+            {"symbolKind", "special-form"},
+            {"kind", "markdown"},
+            {"category", std::string(entry->category)},
+            {"signature", std::string(entry->signature)},
+            {"documentation", eta::docs::render_markdown(*entry)},
+        }));
+        return;
+    }
+
+    if (auto builtin = eta::runtime::lookup_builtin_metadata(*symbol)) {
+        send_response(id, json::object({
+            {"found", true},
+            {"name", builtin->name},
+            {"symbolKind", "builtin"},
+            {"kind", "markdown"},
+            {"category", builtin->category},
+            {"signature", eta::runtime::format_builtin_signature(*builtin)},
+            {"documentation", eta::docs::render_builtin_markdown(*builtin)},
+        }));
+        return;
+    }
+
+    if (auto stdlib_doc = eta::docs::lookup_stdlib_doc(*symbol)) {
+        send_response(id, json::object({
+            {"found", true},
+            {"name", std::string(stdlib_doc->name)},
+            {"symbolKind", "stdlib"},
+            {"kind", "markdown"},
+            {"category", std::string(stdlib_doc->category)},
+            {"module", std::string(stdlib_doc->module)},
+            {"signature", std::string(stdlib_doc->signature)},
+            {"documentation", eta::docs::render_markdown(*stdlib_doc)},
+        }));
+        return;
+    }
+
+    send_response(id, json::object({
+        {"found", false},
+    }));
 }
 
 /**

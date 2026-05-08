@@ -1,5 +1,5 @@
 # LSP / DAP doc-registry improvement plan
-Status: PR2 implemented (2026-05-08)
+Status: PR4 implemented (2026-05-08)
 Owner: tooling
 Scope: `eta/core`, `eta/session`, `eta/tools/lsp`, `eta/tools/dap`, `eta/qa`
 ## Problem
@@ -26,7 +26,7 @@ Issues:
    runtime features.
 4. **No reuse** — DAP can enumerate builtin slots but has no shared symbol-doc
    API; Jupyter/session and editor extensions cannot reuse LSP docs.
-5. **Stdlib invisibility** — docs in `docs/stdlib/*.md` and comments/docstrings
+5. **Stdlib invisibility** — docs in `docs/stdlib/*.md` and comment metadata
    in `stdlib/std/*.eta` are not surfaced to editor/debugger tooling.
 ## Goal
 Create a **single, core-owned source of truth for language symbol metadata**
@@ -488,22 +488,75 @@ Tests:
   builtin, and unknown symbol (`found: false`).
 * Optionally add Eta-specific documentation fields to custom environment
   responses, but do not modify standard DAP `"value"` semantics.
-### PR 4 — Stdlib docs (separate design)
+### PR 4 - Stdlib docs (separate design)
 Treat stdlib doc extraction as a separate design/implementation after hardcoded
 special-form and builtin metadata have been removed.
-Open questions for that design:
-* exact docstring syntax (`;;@doc`, metadata form, or docstring after `define`)
-* parser/reader impact
-* how docs map to fully qualified module names
-* how generated docs interact with `docs/stdlib/*.md`
-* CMake/build dependency for generated `stdlib_docs.inc`
-* conflict rules when source comments and markdown docs disagree
-Possible implementation:
-* Add a doc-comment convention to `.eta` stdlib files.
-* Extend `scripts/build_stdlib_etac.py` or add a sibling generator to emit
-  `stdlib_docs.inc`.
-* Add `lookup_stdlib_doc()` as a fallback for qualified and imported stdlib
-  symbols.
+Design decision:
+* Use comment metadata blocks (`;;@doc` and related tags), not parser-level
+  docstrings.
+* Keep Eta parsing unchanged. Documentation extraction is text/comment scanning
+  in build tooling and must not change reader/parser semantics.
+
+Doc block format (source of truth):
+```text
+DocBlock :=
+  DocStart
+  Tag*
+  MarkdownLine*
+
+DocStart :=
+  ";;@doc " Signature
+
+Tag :=
+  ";;@category " Text
+  ";;@module " Text
+  ";;@alias-of " Symbol
+  ";;@since " Version
+  ";;@deprecated " Text
+  ";;@example"
+
+MarkdownLine :=
+  ";;" [SP Text]
+```
+
+Attachment and extraction rules:
+* A doc block must be a contiguous comment block immediately preceding the
+  documented top-level form.
+* Supported documented forms for PR4 should include at least `defun`, `define`,
+  and macro-definition forms used in stdlib modules.
+* No non-comment line may appear between the doc block and the documented form.
+* `;;@doc` is required and provides the signature text verbatim.
+* Free `;; ...` lines become markdown body text.
+* `;;@example` starts an example block; subsequent `;; ...` lines belong to that
+  example until the next tag or end of block.
+* Invalid or ambiguous blocks should produce deterministic diagnostics during
+  generation (file/line + reason), and fail the docs-generation step in CI.
+
+Suggested generated model:
+* `name` (derived from documented symbol)
+* `signature` (from `;;@doc`)
+* `summary` (first markdown paragraph)
+* `details` (remaining markdown body)
+* `category`, `module`, `alias_of`, `since`, `deprecated`
+* `examples[]`
+
+Implementation sketch:
+* Add a stdlib-doc extractor (either in `scripts/build_stdlib_etac.py` or a
+  sibling script) that scans `.eta` files for the comment metadata blocks.
+* Emit a generated registry include (for example `stdlib_docs.inc`) and expose
+  `lookup_stdlib_doc()` in core docs APIs.
+* Wire lookup fallback order after special-form/builtin metadata for
+  LSP/session/DAP symbol docs where appropriate.
+* Keep `docs/stdlib/*.md` as narrative/reference docs; comment metadata is the
+  canonical source for symbol-level editor/debugger docs.
+
+Tests for PR4:
+* `stdlib_doc_extractor_parses_doc_block_tags`
+* `stdlib_doc_extractor_parses_examples`
+* `stdlib_doc_extractor_rejects_ambiguous_or_detached_blocks`
+* `lookup_stdlib_doc_known_binding_returns_markdown`
+* `lookup_stdlib_doc_unknown_symbol_returns_null`
+* `stdlib_doc_registry_has_no_duplicate_symbols`
 ## Acceptance criteria
 * No hardcoded special-form or builtin symbol metadata tables remain under
   `eta/tools/` or `eta/session/`. This includes hover docs, completion details,
@@ -539,7 +592,7 @@ Possible implementation:
   must keep enabled-build metadata consistent across all consumers.
 * Runtime `register_*_primitives()` sites are not the canonical docs source;
   they validate against canonical metadata.
-* Stdlib docstring extraction is explicitly outside the initial de-hardcoding
+* Stdlib comment-metadata extraction is explicitly outside the initial de-hardcoding
   milestone.
 
 ## PR1 implementation notes (2026-05-08)
@@ -571,3 +624,52 @@ Implemented in this workspace:
   `runtime_builtin_registration_matches_metadata_exhaustive`, which runs full
   runtime primitive registration (`register_all_primitives` + NNG registration)
   through patch-mode validation against `builtin_metadata()`.
+
+## PR3 implementation notes (2026-05-08)
+Implemented in this workspace:
+* Added Eta-specific DAP initialize capability
+  `supportsEtaSymbolDocRequest` in
+  `eta/tools/dap/src/eta/dap/dap_server.cpp`.
+* Added custom DAP request `eta/symbolDoc` in
+  `eta/tools/dap/src/eta/dap/dap_server.cpp`.
+* Implemented symbol-doc lookup precedence via
+  `lookup_special_form_doc()` and then `lookup_builtin_metadata()`, with a
+  stable unknown-symbol response shape (`found: false`).
+* Added DAP QA coverage in `eta/qa/test/src/dap_tests.cpp`:
+  `initialize_advertises_eta_symbol_doc_support`,
+  `symbol_doc_known_special_form_returns_markdown`,
+  `symbol_doc_known_builtin_returns_markdown`,
+  `symbol_doc_unknown_symbol_returns_found_false`.
+
+## PR4 design update (2026-05-08)
+Updated in this workspace:
+* Standardized on `;;@doc` comment metadata blocks for stdlib symbol docs.
+* Explicitly rejected parser-level docstrings for PR4 to avoid parser impact.
+* Added a concrete doc-block grammar, attachment rules, and extractor test plan.
+
+## PR4 implementation notes (2026-05-08)
+Implemented in this workspace:
+* Added stdlib doc extractor `scripts/build_stdlib_docs.py` that scans
+  `stdlib/**/*.eta` for `;;@doc` comment blocks, validates attachment/tag rules,
+  and emits a generated registry include:
+  `generated/eta/docs/generated/stdlib_docs.inc`.
+* Wired generated doc-registry build target `eta_stdlib_doc_registry` into
+  CMake and made `eta_core` depend on it so docs-generation diagnostics fail
+  the build deterministically.
+* Added core stdlib docs API in
+  `eta/core/src/eta/docs/stdlib_docs.h` and
+  `eta/core/src/eta/docs/stdlib_docs.cpp`:
+  `stdlib_doc_registry()`, `lookup_stdlib_doc()`, and
+  `duplicate_stdlib_doc_symbols()`.
+* Added first canonical stdlib symbol doc blocks in `stdlib/std/test.eta` for
+  `assert-equal` and `print-tap`.
+* Updated symbol-doc consumers to use stdlib fallback after special-form and
+  builtin metadata:
+  `eta/tools/lsp/src/eta/lsp/lsp_server.cpp`,
+  `eta/session/src/eta/session/driver.h`,
+  `eta/tools/dap/src/eta/dap/dap_server.cpp`.
+* Added extractor unit tests in
+  `scripts/tests/test_build_stdlib_docs.py` covering tag parsing, examples, and
+  detached/ambiguous block rejection.
+* Added QA coverage in `eta/qa/test/src/stdlib_doc_tests.cpp` and extended
+  LSP/DAP/session hover/signature tests for stdlib docs.

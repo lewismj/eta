@@ -29,6 +29,10 @@ set(ETA_LSP_SRC_DIR "${ETA_LSP_DIR}/src")
 set(ETA_JUPYTER_SRC_DIR "${ETA_JUPYTER_DIR}/src")
 set(ETA_STDLIB_RUNTIME_DIR "${CMAKE_BINARY_DIR}/stdlib")
 set(ETA_STDLIB_BUILD_SCRIPT "${ETA_REPO_ROOT_DIR}/scripts/build_stdlib_etac.py")
+set(ETA_STDLIB_DOC_BUILD_SCRIPT "${ETA_REPO_ROOT_DIR}/scripts/build_stdlib_docs.py")
+set(ETA_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/generated")
+set(ETA_STDLIB_DOC_REGISTRY_INC
+    "${ETA_GENERATED_INCLUDE_DIR}/eta/docs/generated/stdlib_docs.inc")
 
 
 # Specify dependencies.
@@ -183,6 +187,18 @@ add_subdirectory("${ETA_FUZZ_DIR}")
 file(GLOB_RECURSE ETA_STDLIB_ETA_SOURCES CONFIGURE_DEPENDS
     "${ETA_STDLIB_SOURCE_DIR}/*.eta")
 
+add_custom_command(
+    OUTPUT "${ETA_STDLIB_DOC_REGISTRY_INC}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${ETA_GENERATED_INCLUDE_DIR}/eta/docs/generated"
+    COMMAND ${Python3_EXECUTABLE} "${ETA_STDLIB_DOC_BUILD_SCRIPT}"
+            --src-root "${ETA_STDLIB_SOURCE_DIR}"
+            --out "${ETA_STDLIB_DOC_REGISTRY_INC}"
+    DEPENDS "${ETA_STDLIB_DOC_BUILD_SCRIPT}" ${ETA_STDLIB_ETA_SOURCES}
+    VERBATIM
+)
+add_custom_target(eta_stdlib_doc_registry DEPENDS "${ETA_STDLIB_DOC_REGISTRY_INC}")
+
 set(ETA_STDLIB_BUILD_STAMP "${ETA_STDLIB_RUNTIME_DIR}/.eta_stdlib_etac.stamp")
 add_custom_command(
     OUTPUT "${ETA_STDLIB_BUILD_STAMP}"
@@ -196,6 +212,10 @@ add_custom_command(
     VERBATIM
 )
 add_custom_target(eta_stdlib_etac DEPENDS "${ETA_STDLIB_BUILD_STAMP}")
+
+if(TARGET eta_core)
+    add_dependencies(eta_core eta_stdlib_doc_registry)
+endif()
 
 foreach(_t IN ITEMS etai eta_repl eta_lsp eta_dap eta_jupyter)
     if(TARGET ${_t})
@@ -220,6 +240,14 @@ add_custom_target(eta_rebuild_and_test
     COMMENT "Rebuild etai + etac + eta_test + eta_core_test, then run runtime + stdlib tests"
     USES_TERMINAL
 )
+
+add_test(
+    NAME stdlib_doc_extractor_tests
+    COMMAND ${Python3_EXECUTABLE}
+        "${ETA_REPO_ROOT_DIR}/scripts/tests/test_build_stdlib_docs.py"
+)
+set_tests_properties(stdlib_doc_extractor_tests PROPERTIES
+    WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
 
 # Install nng DLL on Windows
 if(WIN32 AND TARGET nng)

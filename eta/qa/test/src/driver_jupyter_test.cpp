@@ -242,6 +242,14 @@ BOOST_AUTO_TEST_CASE(hover_at_known_builtin_returns_markdown) {
     BOOST_TEST(markdown.find("(map proc list ...)") != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(hover_at_known_stdlib_binding_returns_markdown) {
+    eta::session::Driver driver(make_resolver());
+    const auto markdown = driver.hover_at("assert-equal");
+    BOOST_TEST(!markdown.empty());
+    BOOST_TEST(markdown.find("**assert-equal**") != std::string::npos);
+    BOOST_TEST(markdown.find("(assert-equal expected actual . rest)") != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(completions_at_uses_metadata_names) {
     eta::session::Driver driver(make_resolver());
 

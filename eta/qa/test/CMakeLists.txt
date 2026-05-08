@@ -53,6 +53,7 @@ set(SOURCES
         src/clp_fm_tests.cpp
         src/clp_simplex_tests.cpp
         src/builtin_sync_tests.cpp
+        src/stdlib_doc_tests.cpp
         src/driver_jupyter_test.cpp
         src/jupyter_kernel_config_test.cpp
         src/jupyter_magics_test.cpp)

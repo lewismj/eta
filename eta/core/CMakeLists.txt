@@ -11,6 +11,10 @@ target_include_directories(${PROJECT_NAME}
         PRIVATE ${PROJECT_SOURCE_DIR}
 )
 
+if(DEFINED ETA_GENERATED_INCLUDE_DIR)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${ETA_GENERATED_INCLUDE_DIR})
+endif()
+
 # Eigen is header-only; propagate PUBLIC so downstream targets (eta_stats etc.)
 # inherit the include paths automatically.
 target_link_libraries(${PROJECT_NAME} PUBLIC Eigen3::Eigen)
@@ -35,6 +39,7 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/regex_builtins.cpp
         src/eta/runtime/json_builtins.cpp
         src/eta/runtime/builtin_metadata.cpp
+        src/eta/docs/stdlib_docs.cpp
         src/eta/runtime/process_primitives.cpp
         src/eta/runtime/prof/profiler.cpp
         src/eta/runtime/prof/aggregator.cpp

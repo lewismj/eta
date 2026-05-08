@@ -1063,6 +1063,95 @@ BOOST_AUTO_TEST_CASE(environment_include_flags_control_levels) {
 }
 
 /**
+ * eta/symbolDoc returns markdown docs for known special forms.
+ */
+BOOST_AUTO_TEST_CASE(symbol_doc_known_special_form_returns_markdown) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/symbolDoc", R"({"symbol":"lambda"})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/symbolDoc");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    BOOST_TEST(resp["body"]["found"].as_bool() == true);
+    BOOST_TEST(resp["body"].get_string("symbolKind").value_or("") == "special-form");
+    BOOST_TEST(resp["body"].get_string("kind").value_or("") == "markdown");
+    BOOST_TEST(resp["body"].get_string("name").value_or("") == "lambda");
+
+    const auto doc = resp["body"].get_string("documentation");
+    BOOST_REQUIRE(doc.has_value());
+    BOOST_TEST(doc->find("**lambda**") != std::string::npos);
+}
+
+/**
+ * eta/symbolDoc returns markdown docs for known builtins.
+ */
+BOOST_AUTO_TEST_CASE(symbol_doc_known_builtin_returns_markdown) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/symbolDoc", R"({"symbol":"map"})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/symbolDoc");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    BOOST_TEST(resp["body"]["found"].as_bool() == true);
+    BOOST_TEST(resp["body"].get_string("symbolKind").value_or("") == "builtin");
+    BOOST_TEST(resp["body"].get_string("kind").value_or("") == "markdown");
+    BOOST_TEST(resp["body"].get_string("name").value_or("") == "map");
+
+    const auto doc = resp["body"].get_string("documentation");
+    BOOST_REQUIRE(doc.has_value());
+    BOOST_TEST(doc->find("**map**") != std::string::npos);
+}
+
+/**
+ * eta/symbolDoc returns markdown docs for known stdlib bindings.
+ */
+BOOST_AUTO_TEST_CASE(symbol_doc_known_stdlib_binding_returns_markdown) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/symbolDoc", R"({"symbol":"assert-equal"})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/symbolDoc");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    BOOST_TEST(resp["body"]["found"].as_bool() == true);
+    BOOST_TEST(resp["body"].get_string("symbolKind").value_or("") == "stdlib");
+    BOOST_TEST(resp["body"].get_string("kind").value_or("") == "markdown");
+    BOOST_TEST(resp["body"].get_string("name").value_or("") == "assert-equal");
+
+    const auto doc = resp["body"].get_string("documentation");
+    BOOST_REQUIRE(doc.has_value());
+    BOOST_TEST(doc->find("**assert-equal**") != std::string::npos);
+}
+
+/**
+ * eta/symbolDoc returns found:false for unknown symbols.
+ */
+BOOST_AUTO_TEST_CASE(symbol_doc_unknown_symbol_returns_found_false) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "eta/symbolDoc", R"({"symbol":"__not_a_symbol__"})"))
+      + frame(request(3, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "eta/symbolDoc");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["success"].as_bool() == true);
+    BOOST_TEST(resp["body"]["found"].as_bool() == false);
+}
+
+/**
  * Builtins scope should include non-current-module globals even when module
  * globals are hidden.
  */
@@ -1308,6 +1397,21 @@ BOOST_AUTO_TEST_CASE(initialize_advertises_completions_support) {
     auto resp = find_msg(msgs, "response", "initialize");
     BOOST_REQUIRE(!resp.is_null());
     BOOST_TEST(resp["body"]["supportsCompletionsRequest"].as_bool() == true);
+}
+
+/**
+ * initialize advertises Eta-specific symbol-doc support.
+ */
+BOOST_AUTO_TEST_CASE(initialize_advertises_eta_symbol_doc_support) {
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto resp = find_msg(msgs, "response", "initialize");
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["body"]["supportsEtaSymbolDocRequest"].as_bool() == true);
 }
 
 /**

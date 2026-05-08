@@ -428,6 +428,26 @@ BOOST_AUTO_TEST_CASE(hover_known_builtin_returns_markdown) {
     BOOST_TEST(markdown.find("(map proc list ...)") != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(hover_known_stdlib_binding_returns_markdown) {
+    const std::string uri = "file:///test/hover_stdlib.eta";
+    const std::string src = "(assert-equal 1 1)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(18, "textDocument/hover",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":0,"character":2}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 18);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_REQUIRE(!resp["result"].is_null());
+
+    auto markdown = resp["result"]["contents"].get_string("value").value_or("");
+    BOOST_TEST(markdown.find("**assert-equal**") != std::string::npos);
+    BOOST_TEST(markdown.find("(assert-equal expected actual . rest)") != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(hover_unknown_symbol_returns_null) {
     const std::string uri = "file:///test/hover_unknown.eta";
     const std::string src = "(not-a-real-symbol 1)\n";
@@ -519,6 +539,27 @@ BOOST_AUTO_TEST_CASE(signature_help_known_builtin_uses_metadata) {
     BOOST_REQUIRE(!signatures.empty());
     auto label = signatures.front().get_string("label").value_or("");
     BOOST_TEST(label == "(map proc list ...)");
+}
+
+BOOST_AUTO_TEST_CASE(signature_help_known_stdlib_binding_uses_metadata) {
+    const std::string uri = "file:///test/sig_stdlib.eta";
+    const std::string src = "(assert-equal 1 1)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(19, "textDocument/signatureHelp",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":0,"character":15}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 19);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_REQUIRE(!resp["result"].is_null());
+
+    const auto& signatures = resp["result"]["signatures"].as_array();
+    BOOST_REQUIRE(!signatures.empty());
+    auto label = signatures.front().get_string("label").value_or("");
+    BOOST_TEST(label == "(assert-equal expected actual . rest)");
 }
 
 BOOST_AUTO_TEST_CASE(signature_help_unknown_symbol_returns_null) {
