@@ -16,6 +16,8 @@ target_compile_definitions(eta PRIVATE
     ETA_ETAI_PATH="$<TARGET_FILE:etai>"
     ETA_ETAC_PATH="$<TARGET_FILE:etac>"
     ETA_ETA_TEST_PATH="$<TARGET_FILE:eta_test>"
+    ETA_ETA_PROF_PATH="$<TARGET_FILE:eta_prof>"
 )
+add_dependencies(eta eta_prof)
 
 install(TARGETS eta RUNTIME DESTINATION bin)

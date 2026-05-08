@@ -1278,7 +1278,7 @@ BOOST_AUTO_TEST_CASE(terminate_request_handled) {
 }
 
 /**
- *     when the user presses Tab in the Debug Console.  Without the handler
+ *     When the user presses Tab in the Debug Console.  Without the handler
  *     it would fall through to unknown-command.
  */
 BOOST_AUTO_TEST_CASE(completions_request_handled) {
@@ -2153,10 +2153,10 @@ BOOST_AUTO_TEST_CASE(async_function_breakpoint_pauses_on_function_entry) {
     BOOST_REQUIRE_EQUAL(set_bp_resp["body"]["breakpoints"].as_array().size(), 1u);
     /**
      * Capture the line where the function breakpoint was actually resolved.
-     * Function names emitted by the compiler include a synthesised `_lambda<N>`
-     * suffix, so verifying the stop happened "in func-bp-target-async" is done
-     * by matching the stack frame's source file + resolved line, rather than
-     * by name.
+     * Function labels are deterministic and may be module-qualified or
+     * source-labeled lambdas, so verifying the stop happened
+     * "in func-bp-target-async" is done by matching source file + resolved
+     * line, rather than frame name text.
      */
     const auto& fn_bps = set_bp_resp["body"]["breakpoints"].as_array();
     BOOST_REQUIRE(fn_bps[0].is_object());

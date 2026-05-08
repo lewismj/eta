@@ -1355,7 +1355,13 @@ private:
                         const auto& spec = builtins_.specs()[i];
                         auto prim = runtime::memory::factory::make_primitive(
                             heap_, spec.func, spec.arity, spec.has_rest);
-                        if (prim) globals[i] = *prim;
+                        if (prim) {
+                            auto* prim_obj = heap_.try_get_as<
+                                runtime::memory::heap::ObjectKind::Primitive,
+                                runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
+                            if (prim_obj) prim_obj->debug_name = spec.name;
+                            globals[i] = *prim;
+                        }
                     }
                     record_builtin_names();
                     builtins_installed_ = true;
@@ -1579,7 +1585,13 @@ private:
                     const auto& spec = builtins_.specs()[i];
                     auto prim = runtime::memory::factory::make_primitive(
                         heap_, spec.func, spec.arity, spec.has_rest);
-                    if (prim) globals[i] = *prim;
+                    if (prim) {
+                        auto* prim_obj = heap_.try_get_as<
+                            runtime::memory::heap::ObjectKind::Primitive,
+                            runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
+                        if (prim_obj) prim_obj->debug_name = spec.name;
+                        globals[i] = *prim;
+                    }
                 }
                 record_builtin_names();
                 builtins_installed_ = true;
@@ -2113,6 +2125,10 @@ private:
                         alive->store(false, std::memory_order_release);
                         return;
                     }
+                    auto* prim_obj = child.heap_.try_get_as<
+                        runtime::memory::heap::ObjectKind::Primitive,
+                        runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
+                    if (prim_obj) prim_obj->debug_name = spec.name;
                     child_globals[i] = *prim;
                 }
                 child.record_builtin_names();
@@ -2688,6 +2704,10 @@ private:
                     emit_runtime_error(prim.error());
                     return false;
                 }
+                auto* prim_obj = heap_.try_get_as<
+                    runtime::memory::heap::ObjectKind::Primitive,
+                    runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
+                if (prim_obj) prim_obj->debug_name = spec.name;
                 globals[i] = *prim;
             }
             record_builtin_names();

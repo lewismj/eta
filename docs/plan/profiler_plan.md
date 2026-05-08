@@ -6,20 +6,18 @@
 [Build](../build.md)
 
 > **Status.** Authoritative plan for adding a first-class profiler to the
-> Eta runtime. An implementer should be able to execute it without
-> consulting any other planning document. Companion to the lint/format
-> plan; same naming and phasing conventions.
+> Eta runtime. This plan is executable without a second planning document.
 
 ---
 
 ## 0) Names and binaries
 
-| Concern                       | Directory                        | CMake target | Binary / artefact         |
-| ----------------------------- | -------------------------------- | ------------ | ------------------------- |
-| Profiler runtime (in-VM)      | `eta/core/src/eta/runtime/prof/` | `eta_prof_lib` | — (links into `eta_core`) |
-| CLI subcommand `eta prof`     | `eta/cli/src/eta/cli/`           | `eta` (existing) | `eta prof …`              |
-| Standalone report viewer      | `eta/tools/prof/`                | `eta_prof`   | **`eta_prof`**            |
-| Stdlib API                    | `stdlib/std/prof.eta`            | —            | `(import std/prof)`       |
+| Concern | Directory | CMake target | Binary / artefact |
+| --- | --- | --- | --- |
+| Profiler runtime (in-VM) | `eta/core/src/eta/runtime/prof/` | `eta_core` (existing) | — (compiled into `eta_core`) |
+| CLI subcommand `eta prof` | `eta/cli/src/eta/cli/` | `eta` (existing) | `eta prof ...` |
+| Standalone report viewer | `eta/tools/prof/` | `eta_prof` | **`eta_prof`** |
+| Stdlib API | `stdlib/std/prof.eta` | — | `(import std.prof)` |
 
 The build-profile flag (`--profile release|debug`) already exists on
 `eta run` / `eta build`; to avoid a clash we use **`--prof`** (and the
@@ -32,83 +30,77 @@ subcommand `eta prof`) for performance profiling. Never overload
 
 ### Goals (v1)
 
-1. Tell the user **where wall-clock time is spent** in an Eta program at
-   function granularity (user-defined Eta functions and named builtins),
-   broken down into self time, inclusive time, and call counts.
-2. Produce both a **human-readable report** (flat + tree) on stdout and a
-   **machine-readable trace** (`speedscope` JSON) that opens directly in
-   <https://speedscope.app> for flamegraph / sandwich views.
-3. Work uniformly for `eta run`, `eta exec` (one-shot scripts), and the
-   REPL via an in-language API — `(profile/with thunk)` /
-   `(profile/start)` / `(profile/stop)` / `(profile/report)`.
-4. Cover concurrent workloads (the `nng`-based cookbook concurrency
-   demos): per-OS-thread sample buffers, merged at report time, with a
-   thread axis preserved in the speedscope output.
-5. **Acceptable overhead.** Sampling mode ≤ 5 % wall-clock overhead at
-   the default 1 kHz on cookbook quant workloads. Instrumenting mode ≤
-   25 % on the same.
+1. Show where **wall-clock time is spent** at function granularity
+   (Eta functions + named builtins), with self time, inclusive time,
+   and call counts.
+2. Produce both:
+   - a **human-readable report** (flat + tree), and
+   - a **machine-readable trace** (`speedscope` JSON) that opens in
+     <https://speedscope.app>.
+3. Work uniformly for:
+   - `eta run` (script mode and package mode),
+   - direct `etai` runs,
+   - REPL usage via `std.prof` API:
+     `(prof/with thunk)`, `(prof/start)`, `(prof/stop)`, `(prof/report)`.
+4. Cover concurrent workloads that run as **in-process VM threads**
+   (`spawn-thread*` cookbook demos), with per-thread profiles preserved
+   in speedscope output.
+5. Keep overhead within practical limits on cookbook quant workloads:
+   - sampling mode: <= 5% at default 1 kHz
+   - trace mode: <= 25%
 
 ### Non-goals (v1)
 
-1. Allocation / GC profiling beyond a coarse counter (deferred to phase
-   4).
-2. Hardware performance counters (`perf_event_open`, ETW providers).
-   Hooks are reserved but no implementation.
+1. Allocation / GC profiling beyond coarse counters (deferred to phase 4).
+2. Hardware counters (`perf_event_open`, ETW providers, etc.).
 3. Continuous profiling daemons / remote upload.
-4. Differential / A-B comparison UI (export is enough; speedscope already
-   does this).
-5. Profiling of **C++** code paths inside `eta_core` itself — that is
-   what platform tools (perf, VTune, Instruments, ETW, `samply`) are
-   for. We surface a builtin's name and inclusive time, not its
-   internals.
+4. Differential UI (export + external tools are enough for v1).
+5. Profiling C++ internals inside `eta_core`; builtin total time is enough.
+6. Profiling **out-of-process** child runtimes launched as separate
+   `etai` processes (`ProcessManager::spawn`) - deferred.
 
 ---
 
-## 2) Why both sampling and instrumenting
+## 2) Why both sampling and tracing
 
 Two complementary modes, one shared aggregation backend:
 
-| Mode             | Strength                                              | Weakness                                  | When to use                          |
-| ---------------- | ----------------------------------------------------- | ----------------------------------------- | ------------------------------------ |
-| **Sampling**     | Constant overhead, sees real wall time, no skew on hot tiny functions | Noisy on short runs; misses rare expensive calls | Default for `eta prof run` |
-| **Instrumenting**| Exact call counts and self-time deltas                | Skews micro-benchmarks, distorts inlining shapes | `--mode=trace`; debugging counts     |
+| Mode | Strength | Weakness | When to use |
+| --- | --- | --- | --- |
+| **Sampling** | Near-constant overhead, reflects real wall time | Noisy on short runs, may miss rare paths | Default (`eta prof run`) |
+| **Trace** | Exact call counts and precise per-call deltas | Higher perturbation on micro workloads | `--mode=trace` for debugging |
 
-A single `Aggregator` (§4.3) consumes events from either source so the
-reporting layer is mode-agnostic.
-
-We deliberately do *not* ship a third "tracing-with-args" mode in v1.
-Users who want span-style traces already get them from `spdlog`.
+A single `Aggregator` consumes both event kinds so reporting is
+mode-agnostic.
 
 ---
 
 ## 3) Repository layout
 
-```
+```text
 eta/
-├── core/src/eta/runtime/prof/      # NEW
-│   ├── profiler.h / .cpp           # PerThreadProfiler, sampler thread, hooks
-│   ├── aggregator.h / .cpp         # Flat + call-tree tables
-│   ├── frame_id.h / .cpp           # Stable interned (func_name, span) ids
-│   ├── sample_buffer.h / .cpp      # Lock-free MPSC ring, one per VM thread
-│   ├── clock.h                     # steady_clock wrapper, calibrated TSC fast path
-│   ├── speedscope.h / .cpp         # Speedscope JSON writer
-│   ├── pprof.h / .cpp              # (phase 3) gperftools pprof writer
-│   └── report.h / .cpp             # Pretty + JSON text reporters
-├── cli/src/eta/cli/
-│   └── prof_subcommand.cpp         # NEW — `eta prof run|report|merge`
-└── tools/prof/                     # NEW — standalone offline viewer
-    ├── CMakeLists.txt
-    └── src/eta/prof/main_eta_prof.cpp
-stdlib/std/prof.eta                 # NEW — (import std/prof)
-docs/guide/profiling.md             # NEW — user guide
+|-- core/src/eta/runtime/prof/      # NEW
+|   |-- profiler.h / .cpp           # PerThreadProfiler, sampler thread, hooks
+|   |-- aggregator.h / .cpp         # Flat + call-tree tables
+|   |-- frame_id.h / .cpp           # Stable interned frame ids
+|   |-- sample_buffer.h / .cpp      # SPSC mailbox, one per VM thread
+|   |-- clock.h                     # steady_clock wrapper
+|   |-- speedscope.h / .cpp         # Speedscope JSON writer
+|   |-- pprof.h / .cpp              # (phase 3) optional pprof writer
+|   `-- report.h / .cpp             # pretty + json reporters
+|-- cli/src/eta/cli/
+|   `-- prof_subcommand.cpp         # NEW - eta prof run|report|merge|view
+`-- tools/prof/                     # NEW - standalone offline viewer
+    |-- CMakeLists.txt
+    `-- src/eta/prof/main_eta_prof.cpp
+
+stdlib/std/prof.eta                 # NEW - (import std.prof)
+docs/guide/profiling.md             # NEW
 docs/plan/profiler_plan.md          # this file
 ```
 
-The new code lives **inside** `eta_core` (not a separate library) for two
-reasons: (a) the hooks must be on the VM hot path with no virtual
-dispatch, (b) profiling is a runtime feature, not a tool. The
-standalone `eta_prof` binary only ships the offline reader/renderer and
-links a thin subset.
+Profiler runtime code lives inside `eta_core` (no separate runtime lib):
+hooks are on hot VM paths and should stay direct.
 
 ---
 
@@ -116,127 +108,133 @@ links a thin subset.
 
 ### 4.1 What is a "frame"?
 
-A frame is whatever the user expects to see as a row in the report.
-Concretely a `FrameId` is the interned tuple
+A frame is a single row in reports. A `FrameId` is interned from:
 
-```
+```text
 (kind, qualified_name, source_span)
 ```
 
-where `kind ∈ {EtaFunction, Builtin, AnonymousLambda, TopLevel,
-ContinuationResume}`. `qualified_name` includes the module path
-(`std/math/sin`, `cookbook/quant/european:price`). Anonymous lambdas
-are labelled with their defining span (`<lambda@european.eta:42:7>`).
+where:
 
-Frame ids are dense `uint32_t` allocated by an
-`InternTable<FrameKey, uint32_t>` shared across threads, behind an
-`std::shared_mutex` (cold path: only on first sight of a function).
+- `kind ∈ {EtaFunction, Builtin, AnonymousLambda, TopLevel, ContinuationResume, UserRegion}`
+- `qualified_name` includes module path, e.g.
+  `cookbook/quant/european:price`
+- anonymous lambdas use source labels, e.g.
+  `<lambda@european.eta:42:7>`
+
+Frame ids are dense `uint32_t` from
+`InternTable<FrameKey, uint32_t>` behind `std::shared_mutex`
+(cold path only).
+
+### 4.1.1 Stable naming strategy (must land first)
+
+This is a prerequisite for useful profiler output and deterministic
+fixtures.
+
+1. Keep existing top-level/module names stable (`<module>_init`).
+2. For named user functions, emit a canonical report name:
+   `<module>:<binding-name>`.
+3. For lambdas/unnamed closures, use source-stable naming rather than
+   emission counters:
+   `<lambda@file:line:column>`.
+4. Ensure this naming is deterministic across runs and independent of
+   unrelated compile ordering.
+
+This work belongs in **phase 0**, before metrics validation.
 
 ### 4.2 Hook points in the VM
 
-The bytecode VM (`eta/core/src/eta/runtime/vm/vm.cpp`) already centralises
-calls in three opcodes — this is exactly where the hooks belong:
+Hooks are wired at central VM call/return helpers so all call forms are
+covered:
 
-1. `OpCode::Call`            — `prof::on_enter(frame_id)`
-2. `OpCode::TailCall`        — `prof::on_tail_call(callee_frame_id)`
-   (pops current frame's sample, pushes callee's; preserves wall time
-   accounting)
-3. `OpCode::Return`          — `prof::on_leave()`
-4. Builtin dispatch (the C++ trampoline that resolves a `Builtin*` and
-   calls it) — wrapped in a RAII `BuiltinScope` that acts as
-   enter/leave for builtin frames. This is the **only** place builtins
-   need to be touched.
-5. Continuation reinstatement (`OpCode::CallCC`, `DynamicWind` family)
-   — explicit `on_continuation_jump(target_depth)` that truncates the
-   shadow stack to `target_depth` rather than emitting fake leaves.
+1. Call setup paths for `Call`, `TailCall`, `Apply`, and `TailApply`
+   after `dispatch_callee(...)` decides `SetupFrame`, `TailReuse`, or
+   `Continue`.
+2. Return paths in both:
+   - `OpCode::Return`, and
+   - the explicit tail fast path that calls `handle_return(pop())`.
+3. Primitive dispatch in `dispatch_callee` (RAII around
+   `prim->func(args)`), which is the single builtin timing hook.
+4. Continuation/dynamic-wind transfer in `dispatch_callee` +
+   `handle_return` via `on_continuation_jump(target_depth)` to
+   truncate/restore profiler shadow state without fake leaves.
 
-The hooks are **branchless when profiling is off**: a single
-`if (!g_prof.enabled.load(std::memory_order_relaxed)) return;` at the
-top, and `g_prof.enabled` is an `std::atomic<bool>` initialised to
-`false`. With branch prediction this is < 1 ns per call when off.
+When profiling is off, hooks should be a single predictable fast-path
+branch:
 
-### 4.3 Per-thread shadow stack and aggregator
+```cpp
+if (!g_prof.enabled.load(std::memory_order_relaxed)) return;
+```
+
+### 4.3 Per-thread state and aggregator
 
 ```cpp
 struct ShadowFrame {
     uint32_t frame_id;
-    uint64_t enter_ns;        // steady_clock::now()
-    uint64_t child_ns_at_enter; // for self-time accounting
+    uint64_t enter_ns;
+    uint64_t child_ns_at_enter;
 };
 
 struct PerThreadProfiler {
-    std::vector<ShadowFrame> stack;   // grows with calls
+    std::vector<ShadowFrame> stack;
     uint64_t                 child_ns_total = 0;
-    SampleBuffer             samples;  // for sampling mode (lock-free)
+    SampleBuffer             samples;   // SPSC mailbox for snapshots
     uint64_t                 thread_id;
 };
 ```
 
-The thread-local pointer is published on VM-thread spawn so the sampler
-thread (§4.4) can walk every live VM thread's shadow stack at sample
-time.
+`PerThreadProfiler*` is registered on thread start and removed on exit.
 
 `Aggregator` owns:
 
-1. `flat`: `frame_id → {self_ns, incl_ns, calls}` — updated by enter/leave
-   in instrumenting mode, by sample walks in sampling mode.
-2. `tree`: edges `(parent_frame_id, child_frame_id) → {incl_ns, calls}`,
-   reconstructed from the shadow-stack snapshots stored in the sample
-   buffer (each sample stores a stack-id from a stack interner).
-3. `stack_intern`: dedupes `vector<frame_id>` → `stack_id`, the
-   speedscope "profile.samples[]" element type.
+1. `flat`: `frame_id -> {self_ns, incl_ns, calls}`
+2. `tree`: `(parent_frame_id, child_frame_id) -> {incl_ns, calls}`
+3. `stack_intern`: `vector<frame_id> -> stack_id` for speedscope samples
+4. `counters`: named `uint64_t` counters from `prof/counter`
 
-### 4.4 Sampler thread
+### 4.4 Sampler thread (race-free design)
 
-A single OS thread:
+A single sampler OS thread:
 
-1. Sleeps on a `condition_variable` with timeout = `1s / sample_hz`
+1. Sleeps on `condition_variable` with timeout `1s / sample_hz`
    (default 1000 Hz, configurable, capped 10 kHz).
-2. On wake, iterates the registry of live VM threads and copies each
-   shadow stack into a thread-local SPSC ring (`SampleBuffer::push`).
-   Reads are racy by construction; we accept this and rely on the
-   shadow stack being a contiguous `std::vector` whose `size()` we read
-   with `memory_order_acquire` *after* a `memory_order_release` store
-   in `on_enter`/`on_leave`. Stale stacks at sample time are
-   indistinguishable from sampling between two instructions — the
-   intended semantics.
-3. Drains every ring into the `Aggregator` at flush points (`stop()`,
-   `report()`).
+2. On wake, increments global `sample_epoch`.
+3. Each VM thread checks `sample_epoch` at safepoints
+   (run-loop boundary + call/return boundaries); on change it snapshots
+   **its own** current shadow stack into its own SPSC `SampleBuffer`.
+4. Sampler drains all per-thread buffers into `Aggregator` periodically,
+   and always at `stop()` / `report()`.
 
-**Tail calls** appear correctly because `on_tail_call` updates the top
-of stack atomically.
+No thread reads another thread's `std::vector` internals concurrently.
+This avoids undefined behavior under the C++ memory model.
 
-**Recursion** is handled because samples carry the full stack, so the
-flat view collapses recursive frames (counts add) while the tree view
-preserves depth.
+Tail calls are represented correctly because the logical top frame is
+updated before the next safepoint snapshot.
 
 ### 4.5 Clock
 
-`steady_clock::now()` is fast enough on Linux (vDSO) and Windows
-(`QueryPerformanceCounter`) — < 30 ns. We do not ship a TSC fast path
-in v1; `clock.h` reserves the seam.
+Use `steady_clock::now()` in v1 on all platforms.
+`clock.h` reserves a future optional TSC path.
 
-### 4.6 Concurrent / nng workloads
+### 4.6 Concurrency scope (v1)
 
-`std/concurrency` and the cookbook spawn worker VM threads. Each worker
-has its own `PerThreadProfiler` registered/unregistered on thread
-start/exit. Samples carry `thread_id`; the speedscope export emits one
-`profile` per thread, which speedscope renders as separate flame rows.
+Supported in v1:
 
-The in-language API can scope profiling to a single thread:
-`(profile/with-thread thunk)` profiles only the calling thread.
+- in-process worker VMs (`spawn-thread*`, cookbook concurrency demos)
+
+Not supported in v1:
+
+- out-of-process child runtimes (`spawn` launching separate `etai`)
 
 ### 4.7 Overhead budget
 
-| Mode      | Hook cost           | Sampler cost              | Memory                              |
-| --------- | ------------------- | ------------------------- | ----------------------------------- |
-| off       | ~1 ns/call (branch) | 0                         | 0                                   |
-| sampling  | ~1 ns/call          | ~50 µs per sample × hz    | 16 B/sample × hz × runtime_seconds |
-| trace     | ~30 ns/call (clock + 2 atomic ops + push) | 0 | 32 B/event × call count            |
+| Mode | Hook cost | Sampler cost | Memory |
+| --- | --- | --- | --- |
+| off | single fast branch | 0 | 0 |
+| sampling | branch + shadow-stack maintenance | timer tick + buffer drain | proportional to samples |
+| trace | clock + stack bookkeeping per event | 0 | proportional to call count |
 
-At 1 kHz on a 60 s run we budget ≤ 1 MB of sample memory per VM
-thread; samples flush to disk every 1 MB if `--prof-out` is set, else
-buffered to end.
+Hard gates are measured in CI benches (section 8), not estimated values.
 
 ---
 
@@ -244,310 +242,266 @@ buffered to end.
 
 ### 5.1 New subcommand: `eta prof`
 
+```text
+eta prof run    [--mode sample|trace] [--hz N]
+                [--out FILE] [--format pretty|json|speedscope|eta-prof|chrome|pprof]
+                [--bin NAME | --example NAME | FILE.eta] [-- args...]
+
+eta prof report [--format pretty|json|speedscope|chrome|pprof] FILE.eta-prof
+eta prof merge  --out OUT.eta-prof IN1.eta-prof IN2.eta-prof ...
+eta prof view   FILE.speedscope.json|FILE.eta-prof
 ```
-eta prof run    [--mode sample|trace] [--hz N] [--out FILE.speedscope.json]
-                [--format speedscope|pprof|chrome|pretty|json]
-                [--threads all|main]  <script.eta> [-- args...]
-eta prof report [--format pretty|json|speedscope] FILE.eta-prof
-eta prof merge  --out OUT.eta-prof  IN1.eta-prof IN2.eta-prof ...
-eta prof view   FILE.speedscope.json    # opens speedscope.app in browser
-```
 
-Flags:
+### 5.2 Existing-command flags
 
-| Flag                | Default                  | Notes                                     |
-| ------------------- | ------------------------ | ----------------------------------------- |
-| `--mode`            | `sample`                 | `sample` or `trace`                       |
-| `--hz`              | `1000`                   | sampling frequency, range `[10, 10000]`   |
-| `--out`             | `./prof.speedscope.json` | output path                               |
-| `--format`          | inferred from `--out`    | `pretty` is text-only; for `--out` use a structured format |
-| `--threads`         | `all`                    | `all` or `main`                           |
-| `--include`         | (none)                   | regex of frame names to keep              |
-| `--exclude`         | `^std/` (off by default) | regex of frame names to drop              |
-| `--max-depth`       | unlimited                | truncate tree report                      |
-| `--top`             | `30`                     | flat report row count                     |
-| `--no-color`        | tty-aware                |                                           |
+`eta run` accepts:
 
-Exit codes follow the existing `eta` conventions (0 success, 1 runtime
-error in profilee, 64 bad CLI usage, 70 internal error).
+- `--prof[=sample|trace]`
+- `--prof-out=FILE`
+- `--prof-format=FMT`
+- `--prof-hz=N`
 
-### 5.2 Existing-command flags (opt-in)
+These delegate to the same profiler machinery.
+There is currently no `eta exec` command in this repo.
 
-For convenience, `eta run` and `eta exec` accept `--prof[=MODE]` and
-`--prof-out=FILE`, which delegate to the same machinery. This keeps
-`eta prof run script.eta` and `eta run --prof script.eta` equivalent.
-
-### 5.3 In-language API (`std/prof`)
+### 5.3 In-language API (`std.prof`)
 
 `stdlib/std/prof.eta` exports:
 
 ```scheme
-(prof/start    [#:mode 'sample|'trace] [#:hz 1000])  ; -> session
-(prof/stop     session)                              ; -> report-handle
-(prof/with     thunk [#:mode 'sample] [#:hz 1000])   ; -> (values result report)
-(prof/report   handle [#:format 'pretty|'json|'tree]) ; -> string | hashmap
-(prof/save     handle path [#:format 'speedscope|'pprof|'eta-prof]) ; -> #t
-(prof/region   name thunk)   ; user-named span pushed onto shadow stack
-(prof/counter  name n)       ; increments a named counter, surfaced in report
-(prof/enabled?)              ; -> bool
+(prof/start    [mode] [hz])                          ; -> session
+(prof/stop     session)                              ; -> report-handle | #f
+(prof/with     thunk [mode] [hz])                    ; -> (values result report-handle)
+(prof/report   handle [format])                      ; -> string
+(prof/counter  name n)                               ; increment named counter
+(prof/region   name thunk)                           ; push synthetic UserRegion
+(prof/enabled?)                                      ; -> bool
 ```
-
-`prof/region` is the way users get **arbitrary spans** (e.g.
-`(prof/region "monte-carlo:inner-loop" (lambda () ...))`). Internally it
-pushes a synthetic `FrameId` of kind `UserRegion`.
-
-`prof/counter` covers the "I want to know how many times X happened"
-case without abusing function calls.
 
 ---
 
 ## 6) Output formats
 
-### 6.1 Pretty (default for stdout)
+### 6.1 Pretty (default stdout)
 
-Two sections: flat top-N and inverted call tree. Mirrors `pprof`'s
-`top` and `tree` commands so the output is familiar.
+Two sections:
 
-```
-eta prof: sample mode, 1000 Hz, 12.43 s wall, 12 412 samples, 4 threads
+1. flat top-N by self time
+2. call tree (optionally depth-truncated)
 
-Flat (top 10 by self time):
-  self%   self        incl%   incl       calls    name
-  31.4%   3.90 s      48.2%   5.99 s     1 240 003  cookbook/quant/european:simulate-path
-  17.1%   2.12 s      17.1%   2.12 s    36 200 110  std/math:exp
-   9.8%   1.22 s      62.0%   7.71 s         1 000  cookbook/quant/european:price
-   ...
-
-Tree (truncated at depth 6, edges with ≥1% incl):
-  100.0%  12.43 s  <root>
-  ├─ 62.0%   7.71 s  cookbook/quant/european:price
-  │  ├─ 48.2%   5.99 s  cookbook/quant/european:simulate-path
-  │  │  ├─ 17.1%   2.12 s  std/math:exp
-  │  │  └─ 11.4%   1.42 s  std/math:sqrt
-  ...
-
-Counters:
-  rng-draws        36 200 110
-```
+plus a counters section when non-empty.
 
 ### 6.2 Speedscope JSON (primary structured format)
 
-Implements the `speedscope` schema (event-format profile, one per
-thread, frames table, samples + weights). Verified by loading in
-<https://speedscope.app>; sample fixtures live under
-`eta/core/tests/prof/fixtures/`.
+Emit valid speedscope schema with one profile per thread.
+Fixtures and schema checks are CI-gated.
 
-### 6.3 pprof (phase 3)
+### 6.3 pprof (phase 3, optional)
 
-Google `pprof` proto v3 — enables `pprof -http=:8080 prof.pb.gz` and
-the existing ecosystem (`pprof -flame`, etc.). Optional; gated behind a
-CMake option `ETA_PROF_PPROF=ON`. We pull `protobuf` only if enabled.
+Optional writer behind `ETA_PROF_PPROF=ON`.
+Current implementation wires the export path and returns an explicit
+runtime error until a full pprof serializer lands.
 
-### 6.4 `chrome://tracing` JSON (phase 3)
+### 6.4 Chrome trace JSON (phase 3)
 
-Trivial transform from speedscope; useful inside Chromium-based
-inspectors and Perfetto.
+Transform from shared in-memory model.
 
-### 6.5 `eta-prof` binary format
+### 6.5 `eta-prof` archive format
 
-Compact internal format used by `eta prof merge` and `eta prof report`:
-a header + intern tables + sample stream (zstd-framed). Speedscope is
-the *export*; `eta-prof` is the *archive*. This separation lets us
-evolve the on-disk schema without breaking external viewers.
+Internal merge/report archive:
+
+- JSON payload with mode, frame intern table, trace aggregates or sampled
+  profiles, and named counters.
+
+`speedscope` is export format; `eta-prof` is archive format.
 
 ---
 
-## 7) Phased delivery roadmap
+## 7) Phased roadmap
 
-### Phase 0 — Hooks and scaffolding
+### Phase 0 - naming, hooks, scaffolding
 
-1. `eta/core/src/eta/runtime/prof/` skeleton (`profiler.h/.cpp`,
-   `frame_id.h/.cpp`, `clock.h`, empty `Aggregator`).
-2. Wire enter/leave/tail/builtin/cont-jump hooks in `vm.cpp` and the
-   builtin trampoline. Branchless-off when disabled.
-3. Microbenchmark in `eta/qa/bench/` proving overhead-when-off ≤ 1 % on
-   `cookbook/basics/recursion.eta` and `cookbook/quant/european.eta`.
+1. Add `eta/core/src/eta/runtime/prof/` skeleton.
+2. Land stable naming strategy (section 4.1.1).
+3. Wire hooks in VM call/return helpers:
+   `Call`, `TailCall`, `Apply`, `TailApply`, `Return`,
+   `dispatch_callee`, `handle_return`.
+4. Add off-overhead microbench under `eta/qa/bench/prof/`.
 
-Gate: bench passes on Linux + Windows; no functional change with
-profiler off.
+Gate:
 
-### Phase 1 — Trace mode MVP
+- no functional changes with profiler disabled
+- off-overhead <= 1% on benchmark workloads
+- frame names deterministic across runs
 
-1. Instrumenting aggregator (flat + tree), per-thread shadow stack,
-   global merge.
-2. `eta prof run --mode=trace` CLI; pretty reporter only.
-3. Stdlib `std/prof`: `prof/start`, `prof/stop`, `prof/with`,
-   `prof/region`, `prof/report`.
-4. Integration test: profile `cookbook/basics/recursion.eta` and assert
-   `fact` (or `fib`) appears in the top-3 by inclusive time.
+### Phase 1 - trace MVP
 
-Gate: `eta prof run --mode=trace cookbook/quant/european.eta` produces
-a sane pretty report; trace overhead ≤ 50 %.
+1. Trace aggregator (flat + tree), per-thread shadow stack, global merge.
+2. `eta prof run --mode=trace` + pretty report.
+3. `std.prof` MVP:
+   `prof/start`, `prof/stop`, `prof/with`, `prof/region`, `prof/report`.
+4. Integration test:
+   recursion workload shows expected dominant frame and call count sanity.
 
-### Phase 2 — Sampling mode + speedscope export
+Gate:
 
-1. Sampler thread, lock-free SPSC sample rings, stack interner.
-2. `eta prof run` defaults to sampling at 1 kHz.
-3. Speedscope JSON writer; round-trip test (load via a tiny vendored
-   schema check in `qa/`).
-4. `--prof[=sample]` flag on `eta run` / `eta exec`.
-5. Concurrency coverage: profile `cookbook/concurrency/parallel-fib.eta`,
-   confirm worker threads each have a profile in the speedscope output.
+- trace output is sane on `cookbook/quant/european.eta`
+- trace overhead <= 50% for baseline workload
 
-Gate: speedscope viewer renders the cookbook quant workload; sampling
-overhead ≤ 5 % at 1 kHz.
+### Phase 2 - sampling + speedscope
 
-### Phase 3 — Reporting, merge, additional formats
+Status update (2026-05-08):
+- Sampler thread + epoch handshake + per-thread sample buffers are implemented.
+- `eta prof run` now defaults to sampling mode.
+- Speedscope JSON emission is wired for sampled sessions.
+- `eta run --prof[=sample|trace]` and `--prof-out` route through the same runtime.
+- Tests cover sampled speedscope schema/content and multi-thread sampling profiles.
+
+1. Sampler thread + `sample_epoch` handshake + per-thread SPSC buffers.
+2. Default `eta prof run` mode is sampling (1 kHz).
+3. Speedscope writer + schema validation fixtures.
+4. `eta run --prof[=sample]` + `--prof-out`.
+5. Concurrency test on in-process `parallel-fib`:
+   each worker thread appears in speedscope output.
+
+Gate:
+
+- speedscope renders cookbook quant workload
+- sampling overhead <= 5% at 1 kHz
+
+### Phase 3 - report/merge and extra formats
+
+Status update (2026-05-08):
+- `eta prof report`, `eta prof merge`, and `eta prof view` are implemented
+  through the standalone `eta_prof` tool and surfaced through `eta prof`.
+- `eta-prof` archive read/write/merge is implemented in runtime `prof/`.
+- Chrome trace export and counters in pretty/json reports are implemented.
+- `std.prof` exports `prof/counter` and forwards report format selection.
+- Optional pprof integration is wired; writer remains a stub with a clear
+  diagnostic.
 
 1. `eta prof report`, `eta prof merge`, `eta prof view`.
-2. `eta-prof` archive format (zstd-framed) + standalone `eta_prof`
-   binary under `eta/tools/prof/`.
-3. Optional pprof writer (CMake `ETA_PROF_PPROF=ON`).
-4. Chrome trace JSON writer.
-5. Counters surfaced in report.
+2. `eta-prof` archive format + `eta/tools/prof/` standalone viewer.
+3. Optional pprof writer (`ETA_PROF_PPROF=ON`).
+4. Chrome trace writer.
+5. Counters in pretty/json reports.
 
-Gate: `eta prof merge` produces a single report from N concurrent runs;
-pprof opens cleanly when enabled.
+Gate:
 
-### Phase 4 — Allocations and notebook integration
+- merge combines N runs correctly
+- pprof path returns deterministic diagnostics until serializer lands
 
-1. Coarse allocation profiling: hook `runtime/memory/heap.h` allocator
-   to bump per-frame `bytes_allocated`; surface in flat report.
-2. Notebook integration: `cookbook/notebooks/` magic
-   `%%prof [--mode sample]` powered by `xeus`; renders an inline
-   speedscope iframe.
+### Phase 4 - allocations + notebook integration
+
+Status update (2026-05-08):
+- Coarse allocation profiling is implemented through allocator hooks and
+  reported as `bytes_allocated` in flat reports (pretty/json) and archives.
+- `eta_jupyter` implements `%%prof` cell magic with inline flamegraph HTML and
+  text report output.
+- `eta_repl` implements one-shot `:prof` meta-command for profiling the next
+  submission.
+- Gate satisfied: notebook profiling now runs and visualizes in-process.
+
+1. Coarse allocation profiling (`bytes_allocated` per frame) from
+   allocator hooks.
+2. Notebook `%%prof` magic in `eta_jupyter` with inline flamegraph view.
 3. REPL `:prof` meta-command in `etai`.
 
-Gate: a notebook cell can profile and visualise without touching the
-shell.
+Gate:
 
-### Phase 5 — Hardening
+- notebook cell can profile + visualize without shell
 
-1. Long-run stability test: 30-min `xva-wwr` simulation under sampling;
-   memory growth bounded.
-2. Public API freeze on `std/prof` (semver from here).
-3. Documentation finalised; `docs/guide/profiling.md` published.
+### Phase 5 - hardening
 
-Gate: 1.0 — `std/prof` API and `eta-prof` archive format frozen.
+1. Long-run stability test (30 min sampling run, bounded memory growth).
+2. Public API freeze for `std.prof`.
+3. Docs finalization.
+
+Gate:
+
+- 1.0 API/format freeze for `std.prof` + `eta-prof`
 
 ---
 
 ## 8) Testing strategy
 
-1. **Unit tests** under `eta/core/tests/prof/`:
-   - `frame_id` interning correctness and thread-safety.
-   - `Aggregator` exact arithmetic on synthetic event streams.
-   - `SampleBuffer` SPSC stress test (1 producer, 1 consumer, 10 M
-     samples, no losses, no torn reads).
-   - Speedscope writer schema conformance against pinned fixtures.
-2. **Integration tests** under `cookbook/tests/integration/prof/`:
-   - `recover_recursion.eta`: profile `(fib 30)` in trace mode; assert
-     `fib` is the dominant frame and call count matches the closed
-     form.
-   - `recover_concurrency.eta`: profile a 4-worker `parallel-fib`;
-     assert ≥ 4 thread profiles in the speedscope output and that
-     worker self-time sums to within 10 % of wall × workers.
-   - `recover_tail_call.eta`: deeply tail-recursive loop reports a
-     bounded shadow-stack depth.
-3. **Overhead benchmarks** in `eta/qa/bench/prof/`:
-   - `prof_off_overhead`: assert ≤ 1 % wall regression vs baseline on
-     `european.eta`.
-   - `prof_sample_overhead`: assert ≤ 5 % at 1 kHz on `european.eta`.
-   - `prof_trace_overhead`: assert ≤ 50 % on `european.eta`.
-   Numbers are CI-gated on a tagged self-hosted runner; a soft warning
-   on GitHub-hosted runners.
-4. **Fuzz** via `eta/qa/fuzz/`: feed random Eta programs through
-   `eta prof run` and assert no crashes / no unbounded memory growth.
-5. **Property test**: for any program `P`, the sum over flat rows of
-   `self_ns` equals the sampler-observed wall time within ±1 sample
-   period.
+1. **Unit tests** under `eta/qa/test/src/prof/`:
+   - frame-id interning correctness + thread safety
+   - aggregator arithmetic on synthetic streams
+   - sample buffer SPSC stress (producer/consumer, no torn reads)
+   - speedscope schema conformance on pinned fixtures
+2. **Integration tests** under `eta/qa/test/src/cookbook/prof/`:
+   - recursion dominance + call-count checks
+   - in-process concurrency profile count checks
+   - tail recursion bounded depth behavior
+3. **Benchmarks** under `eta/qa/bench/prof/`:
+   - profiler-off overhead gate
+   - sampling overhead gate (1 kHz)
+   - trace overhead gate
+4. **Fuzz** under `eta/qa/fuzz/`:
+   random programs through `eta prof run` should not crash or leak
+   unbounded memory.
+5. **Property check**:
+   flat `self_ns` sum tracks observed sampled wall time within tolerance
+   (sampling period + scheduler jitter).
 
 ---
 
 ## 9) Documentation deliverables
 
-1. `docs/guide/profiling.md` — user guide: when to use sampling vs
-   trace, CLI reference, in-language API, reading the report,
-   speedscope walkthrough, common pitfalls (cold starts, JIT-warmup-ish
-   effects from constant interning).
-2. `docs/stdlib.md` — append `std/prof` section.
-3. `docs/architecture.md` — append "Profiling" subsection covering the
-   VM hooks and shadow-stack model.
-4. `docs/release-notes.md` — entry per phase.
-5. `eta/tools/prof/README.md` — how to add a new output format.
-6. Update `docs/next-steps.md` to add a link to this plan once Phase 0
-   lands.
+1. `docs/guide/profiling.md`:
+   sampling vs trace, CLI/API reference, report reading guide, pitfalls.
+2. `docs/stdlib.md`: add `std.prof`.
+3. `docs/architecture.md`: add profiling subsection.
+4. `docs/release-notes.md`: phase entries.
+5. `eta/tools/prof/README.md`: extending output formats.
+6. `docs/next-steps.md`: link this plan once phase 0 lands.
 
 ---
 
-## 10) Risks and open questions
+## 10) Risks and decisions
 
-1. **Hot-path overhead even when off.** Mitigated by branchless-off
-   guard + microbenchmark gate (Phase 0 acceptance). If the gate fails
-   we fall back to a build-time switch (`ETA_ENABLE_PROFILER`,
-   default ON in debug, opt-in in release).
-2. **Tail calls and self-time accounting.** Tail-called frames inherit
-   the caller's wall window; we explicitly *replace* the stack top
-   rather than push, so inclusive time stays correct and self time is
-   attributed to the callee. Documented in `docs/guide/profiling.md`.
-3. **Continuations / `call/cc`.** Resuming a continuation can jump
-   arbitrarily up the stack. We snapshot the shadow stack on capture
-   and restore it on invoke, then emit synthetic
-   `on_continuation_jump`. Any time spent between capture and resume
-   is attributed to the resumer, not the original capturer.
-4. **Sampler racing the shadow stack.** Acceptable by design (samples
-   are statistical). The acquire/release pair around `stack.size()`
-   avoids torn reads; out-of-bounds reads are impossible because the
-   `vector`'s storage is reserved upfront (`stack.reserve(1024)` on
-   thread spawn; grows only at safe points).
-5. **Builtin granularity.** A single builtin like `std/math:exp` may
-   call into libtorch; we attribute *all* of that time to `exp`. To
-   drill further, point a platform profiler (`samply`, `perf`,
-   `Instruments`, ETW) at the process — a recipe for that lives in
-   `docs/guide/profiling.md`.
-6. **Anonymous lambdas.** Labelled by definition span; if the same
-   `lambda` is closed over with different upvals they share a
-   `FrameId`. Documented; users wanting to disambiguate use
-   `prof/region`.
-7. **`--profile` flag clash.** Resolved by using `--prof` for
-   profiling. Lint rule (in `eta_lint`, future) can flag CLI
-   documentation that confuses the two.
-8. **Speedscope schema drift.** Pin a tested schema version in
-   `eta/core/src/eta/runtime/prof/speedscope.h`; bump deliberately.
-9. **Windows clock resolution.** `steady_clock` on MSVC is QPC-backed
-   (~100 ns) which is enough; verified in Phase 0 bench.
-10. **Notebook iframe sandboxing.** Phase 4 must serve speedscope from
-    a local copy bundled with `xeus-eta`; do not depend on
-    `speedscope.app` being reachable.
+1. **Hot-path overhead when off**
+   - Mitigation: single fast branch + phase-0 benchmark gate.
+2. **Tail-call and self-time accounting**
+   - Mitigation: explicit tail-reuse handling in call helper hooks.
+3. **Continuations / `call/cc`**
+   - Mitigation: dedicated continuation-jump profiler hook in
+     `dispatch_callee`/`handle_return`.
+4. **Sampling correctness under concurrency**
+   - Decision: cooperative per-thread snapshots (`sample_epoch`) rather
+     than foreign-thread stack reads.
+5. **Builtin granularity**
+   - Decision: attribute full builtin wall time to builtin frame.
+6. **Anonymous lambda identity**
+   - Decision: source-span based names; users can refine via
+     `prof/region`.
+7. **CLI `--profile` clash**
+   - Decision: keep `--profile` for build mode, use `--prof` for profiler.
+8. **Scope decision**
+   - v1 supports in-process threads only; out-of-process deferred.
+9. **Stable naming decision**
+   - Stable frame naming is phase-0 prerequisite, not post-processing.
 
 ---
 
-## 11) Milestones / acceptance criteria (combined v1)
+## 11) Milestones / acceptance criteria
 
-The profiler v1 is complete when **all** of the following hold:
+Profiler v1 is complete when all are true:
 
-- [ ] `cmake --build` produces an `eta` binary with the `prof`
-      subcommand and a standalone `eta_prof` viewer; `(import std/prof)`
-      resolves and exposes the documented API.
-- [ ] `eta prof run --mode=sample cookbook/quant/european.eta` produces
-      a `prof.speedscope.json` that opens in speedscope and shows
-      `simulate-path` and `price` as dominant frames.
-- [ ] `eta prof run --mode=trace cookbook/basics/recursion.eta` reports
-      exact call counts for `fact` matching the analytic value.
-- [ ] Concurrent profiling: a 4-worker `parallel-fib` run yields ≥ 4
-      thread profiles in the speedscope export.
-- [ ] Overhead gates green: ≤ 1 % off, ≤ 5 % sampling at 1 kHz, ≤ 50 %
-      trace.
-- [ ] `eta prof merge` reproduces the union of two single-thread runs
-      bitwise-identically to a single two-thread run (modulo timestamps).
-- [ ] Pretty, JSON, speedscope, and (if `ETA_PROF_PPROF=ON`) pprof
-      reporters all conformance-tested against pinned fixtures.
-- [ ] `std/prof` covered by unit + integration tests; `prof/with`,
-      `prof/region`, `prof/counter` exercised in cookbook recipes.
-- [ ] `docs/guide/profiling.md`, `docs/stdlib.md` (`std/prof` section),
-      `docs/architecture.md` ("Profiling" subsection), and
-      `docs/release-notes.md` entries published.
-- [ ] `docs/next-steps.md` links to this plan.
-- [ ] Notebook `%%prof` magic renders an inline flamegraph in
-      `cookbook/notebooks/`.
-
+- [x] Build produces `eta` with `prof` subcommand and standalone
+      `eta_prof`; `(import std.prof)` resolves.
+- [ ] `eta prof run --mode=sample cookbook/quant/european.eta`
+      produces speedscope JSON that opens and highlights dominant quant
+      frames.
+- [ ] `eta prof run --mode=trace cookbook/basics/recursion.eta`
+      reports exact expected recursion call counts.
+- [ ] In-process concurrency profiling shows >= 4 thread profiles on
+      4-worker `parallel-fib`.
+- [ ] Overhead gates pass: <= 1% off, <= 5% sampling at 1 kHz,
+      <= 50% trace.
+- [x] `eta prof merge` merges multiple runs correctly.
+- [ ] Pretty, json, speedscope (and pprof when enabled) pass fixture checks.
+- [x] `std.prof` API (`prof/with`, `prof/region`, `prof/counter`) is
+      covered in unit + integration tests.
+- [ ] Profiling docs are published and linked from docs index / next steps.

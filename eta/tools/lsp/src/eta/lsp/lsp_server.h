@@ -203,11 +203,14 @@ private:
     /**
      * Recursively load all imported module files into all_forms so the linker
      * can resolve cross-module references.  seen_modules must already contain
-     * the names of every module already present in all_forms.
+     * the names of every module already present in all_forms.  For imports that
+     * resolve to `.etac` without sibling source, populate compiled_module_exports
+     * with module export lists so the linker can index compiled modules too.
      */
     void preload_module_deps(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
-        std::unordered_set<std::string>& seen_modules);
+        std::unordered_set<std::string>& seen_modules,
+        std::unordered_map<std::string, std::vector<std::string>>& compiled_module_exports);
 
     /**
      * Completion caches

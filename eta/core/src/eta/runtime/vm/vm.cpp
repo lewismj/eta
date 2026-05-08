@@ -14,6 +14,7 @@
 #include "eta/runtime/overflow.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/clp/domain.h"
+#include "eta/runtime/prof/profiler.h"
 #include <bit>
 #include <limits>
 
@@ -23,6 +24,7 @@ using namespace eta::runtime::memory::value_visit;
 
 using namespace eta::runtime::memory::factory;
 using namespace eta::runtime::types;
+namespace prof = eta::runtime::prof;
 
 namespace {
 
@@ -729,6 +731,7 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
             winding_stack_ = cont->winding_stack;
 
             if (debug_) debug_->notify_continuation_jump();
+            prof::runtime_profiler().on_continuation_jump(cont->frames.size());
 
             if (frames_.empty()) {
                 push(v);
@@ -811,6 +814,8 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
         const std::span<const LispVal> args_span{stack_.data() + args_start,
                                                  static_cast<std::size_t>(argc)};
 
+        const char* prim_name = prim->debug_name.empty() ? nullptr : prim->debug_name.c_str();
+        prof::ScopedPrimitiveCall primitive_scope(prim_name);
         auto res = prim->func(args_span);
         stack_.resize(args_start);
         if (!res) {
@@ -840,6 +845,10 @@ void VM::unpack_to_stack(LispVal value) {
 
 std::expected<void, RuntimeError> VM::run_loop() {
     while (current_func_ && pc_ < current_func_->code.size()) {
+        if (prof::runtime_profiler().sampling_active()) [[unlikely]] {
+            prof::runtime_profiler().on_vm_safepoint();
+        }
+
         if (heap_.pending_finalizer_count() != 0u) {
             process_pending_finalizers();
         }
@@ -1156,6 +1165,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                 if (!dispatch_res) return std::unexpected(dispatch_res.error());
 
                 if (dispatch_res->action == DispatchAction::TailReuse) {
+                    prof::runtime_profiler().on_tail_reuse(dispatch_res->func);
                     current_func_ = dispatch_res->func;
                     current_closure_ = dispatch_res->closure;
 
@@ -1251,6 +1261,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
                         if (!r) return std::unexpected(r.error());
                     }
                 } else if (dispatch_res->action == DispatchAction::TailReuse) {
+                    prof::runtime_profiler().on_tail_reuse(dispatch_res->func);
                     current_func_ = dispatch_res->func;
                     current_closure_ = dispatch_res->closure;
 
@@ -1416,6 +1427,9 @@ std::expected<void, RuntimeError> VM::run_loop() {
 
 /// Numeric type enumeration for dispatch
 std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
+    const BytecodeFunction* caller_func = frames_.empty() ? nullptr : frames_.back().func;
+    prof::runtime_profiler().on_return(current_func_, caller_func);
+
     if (frames_.empty()) {
         stack_.resize(fp_);
         push(result);
@@ -1475,6 +1489,7 @@ std::expected<void, RuntimeError> VM::handle_return(LispVal result) {
             LispVal v = state_vec->elements[1];
             auto* cont = try_get_as<ObjectKind::Continuation, Continuation>(target_cont_val);
             if (!cont) return std::unexpected(make_type_error("Invalid target continuation"));
+            prof::runtime_profiler().on_continuation_jump(cont->frames.size());
 
             /// Find current sentinel to define the boundary
             int32_t sentinel_idx = -1;

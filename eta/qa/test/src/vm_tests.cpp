@@ -1,8 +1,11 @@
 #include <boost/test/unit_test.hpp>
 #include <iostream>
 #include <algorithm>
+#include <chrono>
+#include <expected>
 #include <functional>
 #include <span>
+#include <thread>
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
@@ -10,9 +13,12 @@
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/semantics/emitter.h"
 #include "eta/runtime/vm/vm.h"
+#include "eta/runtime/prof/archive.h"
+#include "eta/runtime/prof/profiler.h"
 #include "eta/runtime/factory.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/core_primitives.h"
+#include "eta/util/json.h"
 
 using namespace eta;
 using namespace eta::semantics;
@@ -475,6 +481,431 @@ BOOST_AUTO_TEST_CASE(test_call_cc_basic) {
     std::string src = "(module m (define result (call/cc (lambda (k) (k 42) 99))))";
     LispVal res = run(src);
     BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase0_disabled_records_no_events, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.set_enabled(false);
+    profiler.reset_for_test();
+
+    LispVal res = run("(module m (define (id x) x) (define result (id 7)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 7);
+
+    const auto counters = profiler.counters_for_test();
+    BOOST_CHECK_EQUAL(counters.setup_frame_calls, 0u);
+    BOOST_CHECK_EQUAL(counters.tail_reuse_calls, 0u);
+    BOOST_CHECK_EQUAL(counters.returns, 0u);
+    BOOST_CHECK_EQUAL(counters.primitive_enter_calls, 0u);
+    BOOST_CHECK_EQUAL(counters.primitive_exit_calls, 0u);
+    BOOST_CHECK_EQUAL(counters.continuation_jumps, 0u);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase0_records_call_return_and_primitive_hooks, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+    profiler.set_enabled(true);
+
+    LispVal res = run(
+        "(module m "
+        "  (define (id x) x) "
+        "  (define result (number? (id 7))))");
+    BOOST_CHECK_EQUAL(res, nanbox::True);
+
+    profiler.set_enabled(false);
+    const auto counters = profiler.counters_for_test();
+    BOOST_CHECK_GT(counters.setup_frame_calls, 0u);
+    BOOST_CHECK_GT(counters.returns, 0u);
+    BOOST_CHECK_GT(counters.primitive_enter_calls, 0u);
+    BOOST_CHECK_EQUAL(counters.primitive_enter_calls, counters.primitive_exit_calls);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase0_records_tail_reuse, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+    profiler.set_enabled(true);
+
+    LispVal res = run(
+        "(module m "
+        "  (define (loop n acc) "
+        "    (if (= n 0) acc (loop (- n 1) (+ acc 1)))) "
+        "  (define result (loop 20 0)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 20);
+
+    profiler.set_enabled(false);
+    const auto counters = profiler.counters_for_test();
+    BOOST_CHECK_GT(counters.tail_reuse_calls, 0u);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase0_records_continuation_jump, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+    profiler.set_enabled(true);
+
+    LispVal res = run("(module m (define result (call/cc (lambda (k) (k 42) 0))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+
+    profiler.set_enabled(false);
+    const auto counters = profiler.counters_for_test();
+    BOOST_CHECK_GT(counters.continuation_jumps, 0u);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase1_trace_recursion_call_count_sanity, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+
+    auto session = profiler.start_trace_session();
+    BOOST_REQUIRE(session.has_value());
+
+    LispVal res = run(
+        "(module m "
+        "  (define (countdown n) "
+        "    (if (= n 0) 0 (+ 1 (countdown (- n 1))))) "
+        "  (define result (countdown 12)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 12);
+
+    BOOST_REQUIRE(profiler.stop_trace_session(*session));
+
+    const auto flat = profiler.flat_by_name_for_test();
+    const auto it = flat.find("m:countdown");
+    BOOST_REQUIRE(it != flat.end());
+    BOOST_CHECK_EQUAL(it->second.calls, 13u);
+    BOOST_CHECK_GE(it->second.inclusive_ns, it->second.self_ns);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase1_pretty_report_has_flat_and_tree_sections, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+
+    auto session = profiler.start_trace_session();
+    BOOST_REQUIRE(session.has_value());
+
+    LispVal res = run(
+        "(module m "
+        "  (define (inner x) (+ x 1)) "
+        "  (define (outer y) (inner y)) "
+        "  (define result (outer 41)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 42);
+
+    BOOST_REQUIRE(profiler.stop_trace_session(*session));
+    auto report = profiler.render_pretty_report_for_session(*session);
+    BOOST_REQUIRE(report.has_value());
+    BOOST_CHECK(report->find("flat,frame,self_ns,inclusive_ns,calls,bytes_allocated")
+                != std::string::npos);
+    BOOST_CHECK(report->find("tree,parent,child,inclusive_ns,calls") != std::string::npos);
+    BOOST_CHECK(report->find("m:outer") != std::string::npos);
+    BOOST_CHECK(report->find("m:inner") != std::string::npos);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase2_sampling_emits_speedscope_json, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+
+    auto session = profiler.start_sample_session(2000);
+    BOOST_REQUIRE(session.has_value());
+
+    LispVal res = run(
+        "(module m "
+        "  (define (slow-loop n acc) "
+        "    (if (= n 0) acc (slow-loop (- n 1) (+ acc 1)))) "
+        "  (define result (slow-loop 200000 0)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 200000);
+
+    BOOST_REQUIRE(profiler.stop_sample_session(*session));
+
+    auto report = profiler.render_speedscope_report_for_session(*session);
+    BOOST_REQUIRE(report.has_value());
+
+    eta::json::Value root;
+    BOOST_REQUIRE_NO_THROW(root = eta::json::parse(*report));
+
+    BOOST_REQUIRE(root.is_object());
+    BOOST_REQUIRE(root["$schema"].is_string());
+    BOOST_CHECK(root["$schema"].as_string().find("speedscope") != std::string::npos);
+
+    const auto& shared = root["shared"];
+    BOOST_REQUIRE(shared.is_object());
+    const auto& frames = shared["frames"];
+    BOOST_REQUIRE(frames.is_array());
+    BOOST_CHECK_GT(frames.as_array().size(), 0u);
+
+    bool saw_slow_loop = false;
+    for (const auto& frame : frames.as_array()) {
+        if (!frame.is_object()) continue;
+        auto name = frame.get_string("name");
+        if (name && *name == "m:slow-loop") {
+            saw_slow_loop = true;
+        }
+    }
+    BOOST_CHECK(saw_slow_loop);
+
+    const auto& profiles = root["profiles"];
+    BOOST_REQUIRE(profiles.is_array());
+    BOOST_CHECK_GT(profiles.as_array().size(), 0u);
+
+    for (const auto& profile : profiles.as_array()) {
+        BOOST_REQUIRE(profile.is_object());
+        auto type = profile.get_string("type");
+        auto unit = profile.get_string("unit");
+        BOOST_REQUIRE(type.has_value());
+        BOOST_REQUIRE(unit.has_value());
+        BOOST_CHECK_EQUAL(*type, "sampled");
+        BOOST_CHECK_EQUAL(*unit, "nanoseconds");
+        BOOST_REQUIRE(profile["samples"].is_array());
+        BOOST_REQUIRE(profile["weights"].is_array());
+        BOOST_CHECK_EQUAL(profile["samples"].as_array().size(),
+                          profile["weights"].as_array().size());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(profiler_phase2_sampling_tracks_multiple_threads) {
+    using namespace std::chrono_literals;
+
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+
+    auto session = profiler.start_sample_session(4000);
+    BOOST_REQUIRE(session.has_value());
+
+    std::vector<std::thread> workers;
+    workers.reserve(4);
+    for (int worker_idx = 0; worker_idx < 4; ++worker_idx) {
+        workers.emplace_back([worker_idx, &profiler] {
+            const std::string region_name = "worker-" + std::to_string(worker_idx);
+            for (int iter = 0; iter < 8; ++iter) {
+                profiler.push_user_region(region_name);
+                profiler.on_vm_safepoint();
+                std::this_thread::sleep_for(2ms);
+                profiler.on_vm_safepoint();
+                profiler.pop_user_region();
+            }
+        });
+    }
+    for (auto& worker : workers) {
+        worker.join();
+    }
+
+    BOOST_REQUIRE(profiler.stop_sample_session(*session));
+
+    auto report = profiler.render_speedscope_report_for_session(*session);
+    BOOST_REQUIRE(report.has_value());
+
+    eta::json::Value root;
+    BOOST_REQUIRE_NO_THROW(root = eta::json::parse(*report));
+    BOOST_REQUIRE(root["profiles"].is_array());
+
+    std::size_t non_empty_profiles = 0;
+    for (const auto& profile : root["profiles"].as_array()) {
+        if (!profile.is_object()) continue;
+        if (!profile["samples"].is_array()) continue;
+        if (!profile["samples"].as_array().empty()) {
+            ++non_empty_profiles;
+        }
+    }
+    BOOST_CHECK_GE(non_empty_profiles, 4u);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase3_trace_archive_round_trip_preserves_counters, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+
+    auto session = profiler.start_trace_session();
+    BOOST_REQUIRE(session.has_value());
+
+    LispVal res = run(
+        "(module m "
+        "  (begin "
+        "    (%prof-counter \"work-items\" 4) "
+        "    (define (countdown n) "
+        "      (if (= n 0) 0 (+ 1 (countdown (- n 1))))) "
+        "    (define result (countdown 5))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 5);
+
+    BOOST_REQUIRE(profiler.stop_trace_session(*session));
+
+    auto archive_json = profiler.render_archive_report_for_session(*session);
+    BOOST_REQUIRE(archive_json.has_value());
+
+    auto parsed = eta::runtime::prof::parse_eta_prof_archive(*archive_json);
+    BOOST_REQUIRE(parsed.has_value());
+    BOOST_CHECK(parsed->mode == eta::runtime::prof::ArchiveMode::Trace);
+    BOOST_REQUIRE(parsed->counters.contains("work-items"));
+    BOOST_CHECK_EQUAL(parsed->counters["work-items"], 4u);
+
+    const auto json_report = eta::runtime::prof::render_json_archive_report(*parsed);
+    BOOST_CHECK(json_report.find("\"work-items\":4") != std::string::npos);
+    BOOST_CHECK(json_report.find("m:countdown") != std::string::npos);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase3_merge_trace_archives_combines_calls_and_counters, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+
+    auto run_countdown = [&](const int n, const int run_counter)
+        -> std::expected<eta::runtime::prof::ArchiveSession, std::string> {
+        auto session = profiler.start_trace_session();
+        if (!session) {
+            return std::unexpected("failed to start trace session");
+        }
+
+        std::string source =
+            "(module m "
+            "  (begin "
+            "    (%prof-counter \"runs\" " + std::to_string(run_counter) + ") "
+            "    (define (countdown n) "
+            "      (if (= n 0) 0 (+ 1 (countdown (- n 1))))) "
+            "    (define result (countdown " + std::to_string(n) + "))))";
+
+        LispVal res = run(source);
+        if (nanbox::ops::decode<int64_t>(res).value() != n) {
+            return std::unexpected("unexpected execution result");
+        }
+
+        if (!profiler.stop_trace_session(*session)) {
+            return std::unexpected("failed to stop trace session");
+        }
+        auto archive_json = profiler.render_archive_report_for_session(*session);
+        if (!archive_json) {
+            return std::unexpected("failed to render trace archive");
+        }
+        return eta::runtime::prof::parse_eta_prof_archive(*archive_json);
+    };
+
+    auto left = run_countdown(4, 2);
+    BOOST_REQUIRE(left.has_value());
+    auto right = run_countdown(6, 3);
+    BOOST_REQUIRE(right.has_value());
+
+    std::vector<eta::runtime::prof::ArchiveSession> inputs;
+    inputs.push_back(*left);
+    inputs.push_back(*right);
+
+    auto merged =
+        eta::runtime::prof::merge_eta_prof_archives(
+            std::span<const eta::runtime::prof::ArchiveSession>(inputs.data(), inputs.size()));
+    BOOST_REQUIRE(merged.has_value());
+    BOOST_CHECK(merged->mode == eta::runtime::prof::ArchiveMode::Trace);
+    BOOST_REQUIRE(merged->counters.contains("runs"));
+    BOOST_CHECK_EQUAL(merged->counters["runs"], 5u);
+
+    std::uint64_t countdown_calls = 0;
+    for (const auto& row : merged->flat_rows) {
+        if (row.frame_id >= merged->frames.size()) continue;
+        if (merged->frames[row.frame_id].qualified_name == "m:countdown") {
+            countdown_calls = row.stats.calls;
+            break;
+        }
+    }
+    BOOST_CHECK_EQUAL(countdown_calls, 12u);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase3_sampling_archive_renders_chrome_trace, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+
+    auto session = profiler.start_sample_session(4000);
+    BOOST_REQUIRE(session.has_value());
+
+    LispVal res = run(
+        "(module m "
+        "  (define (slow n acc) "
+        "    (if (= n 0) "
+        "        acc "
+        "        (slow (- n 1) (+ acc 1)))) "
+        "  (define result (slow 250000 0)))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 250000);
+
+    BOOST_REQUIRE(profiler.stop_sample_session(*session));
+
+    auto archive_json = profiler.render_archive_report_for_session(*session);
+    BOOST_REQUIRE(archive_json.has_value());
+
+    auto parsed = eta::runtime::prof::parse_eta_prof_archive(*archive_json);
+    BOOST_REQUIRE(parsed.has_value());
+    BOOST_CHECK(parsed->mode == eta::runtime::prof::ArchiveMode::Sample);
+    BOOST_CHECK(!parsed->sample_profiles.empty());
+
+    auto chrome_report = profiler.render_chrome_report_for_session(*session);
+    BOOST_REQUIRE(chrome_report.has_value());
+
+    eta::json::Value root;
+    BOOST_REQUIRE_NO_THROW(root = eta::json::parse(*chrome_report));
+    BOOST_REQUIRE(root["traceEvents"].is_array());
+    BOOST_CHECK_GT(root["traceEvents"].as_array().size(), 0u);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase4_trace_tracks_allocated_bytes_per_frame, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+
+    auto session = profiler.start_trace_session();
+    BOOST_REQUIRE(session.has_value());
+
+    LispVal res = run(
+        "(module m "
+        "  (define (alloc n) "
+        "    (if (= n 0) "
+        "        '() "
+        "        (cons n (alloc (- n 1))))) "
+        "  (define result (length (alloc 64))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 64);
+
+    BOOST_REQUIRE(profiler.stop_trace_session(*session));
+
+    const auto flat = profiler.flat_by_name_for_test();
+    const auto it = flat.find("m:alloc");
+    BOOST_REQUIRE(it != flat.end());
+    BOOST_CHECK_GT(it->second.bytes_allocated, 0u);
+
+    auto json_report = profiler.render_json_report_for_session(*session, 128);
+    BOOST_REQUIRE(json_report.has_value());
+    BOOST_CHECK(json_report->find("\"bytes_allocated\"") != std::string::npos);
+}
+
+BOOST_FIXTURE_TEST_CASE(profiler_phase4_sample_archive_preserves_allocated_bytes, VMTestFixture) {
+    auto& profiler = eta::runtime::prof::runtime_profiler();
+    profiler.reset_for_test();
+
+    auto session = profiler.start_sample_session(2000);
+    BOOST_REQUIRE(session.has_value());
+
+    LispVal res = run(
+        "(module m "
+        "  (define (alloc n) "
+        "    (if (= n 0) "
+        "        '() "
+        "        (cons n (alloc (- n 1))))) "
+        "  (define result (length (alloc 64))))");
+    BOOST_CHECK_EQUAL(nanbox::ops::decode<int64_t>(res).value(), 64);
+
+    BOOST_REQUIRE(profiler.stop_sample_session(*session));
+
+    auto archive_json = profiler.render_archive_report_for_session(*session);
+    BOOST_REQUIRE(archive_json.has_value());
+    auto parsed = eta::runtime::prof::parse_eta_prof_archive(*archive_json);
+    BOOST_REQUIRE(parsed.has_value());
+
+    std::uint64_t total_allocated_bytes = 0;
+    for (const auto& row : parsed->flat_rows) {
+        total_allocated_bytes += row.stats.bytes_allocated;
+    }
+    BOOST_CHECK_GT(total_allocated_bytes, 0u);
+
+    auto json_report = profiler.render_json_report_for_session(*session, 128);
+    BOOST_REQUIRE(json_report.has_value());
+
+    eta::json::Value root;
+    BOOST_REQUIRE_NO_THROW(root = eta::json::parse(*json_report));
+    BOOST_REQUIRE(root["flat"].is_array());
+    std::uint64_t max_flat_alloc_bytes = 0;
+    for (const auto& row : root["flat"].as_array()) {
+        if (!row.is_object()) continue;
+        const auto alloc_bytes = row.get_int("bytes_allocated");
+        if (alloc_bytes && *alloc_bytes > 0
+            && static_cast<std::uint64_t>(*alloc_bytes) > max_flat_alloc_bytes) {
+            max_flat_alloc_bytes = static_cast<std::uint64_t>(*alloc_bytes);
+        }
+    }
+    BOOST_CHECK_GT(max_flat_alloc_bytes, 0u);
 }
 
 BOOST_AUTO_TEST_CASE(test_tail_call_recursion) {

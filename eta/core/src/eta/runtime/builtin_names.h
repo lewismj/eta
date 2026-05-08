@@ -218,6 +218,13 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     /// Misc
     r("error",      1, true);
     r("platform",   0, false);
+    r("%prof-start",        0, true);
+    r("%prof-stop",         1, false);
+    r("%prof-report",       1, true);
+    r("%prof-counter",      2, false);
+    r("%prof-region-enter", 1, false);
+    r("%prof-region-exit",  0, false);
+    r("%prof-enabled?",     0, false);
     r("logic-var?", 1, false);
     r("register-finalizer!",   2, false);
     r("unregister-finalizer!", 1, false);

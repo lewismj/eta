@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "eta/lsp/lsp_server.h"
+#include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/util/json.h"
 
 namespace json = eta::json;
@@ -135,6 +136,55 @@ static std::vector<json::Value> run_server(const std::string& input) {
     eta::lsp::LspServer server(in, out);
     server.run();
     return parse_output(out.str());
+}
+
+static bool write_compiled_module_etac(const fs::path& out_path,
+                                       const std::string& module_name,
+                                       const std::vector<std::string>& exports = {}) {
+    using eta::runtime::vm::BytecodeFunction;
+    using eta::runtime::vm::BytecodeSerializer;
+    using eta::runtime::vm::ModuleEntry;
+    using eta::runtime::vm::OpCode;
+
+    eta::runtime::memory::heap::Heap heap(8u * 1024u * 1024u);
+    eta::runtime::memory::intern::InternTable intern_table;
+    BytecodeSerializer serializer(heap, intern_table);
+
+    eta::semantics::BytecodeFunctionRegistry registry;
+    BytecodeFunction init_fn;
+    init_fn.name = module_name + ".init";
+    init_fn.arity = 0;
+    init_fn.stack_size = 1;
+    init_fn.code.push_back({OpCode::Return, 0});
+    init_fn.source_map.push_back({});
+    registry.add(std::move(init_fn));
+
+    ModuleEntry module;
+    module.name = module_name;
+    module.init_func_index = 0;
+    module.total_globals = 0;
+    module.first_func_index = 0;
+    module.func_count = 1;
+    module.export_bindings.reserve(exports.size());
+    for (const auto& export_name : exports) {
+        ModuleEntry::ExportBinding binding;
+        binding.name = export_name;
+        binding.slot = 0;
+        module.export_bindings.push_back(std::move(binding));
+    }
+
+    fs::create_directories(out_path.parent_path());
+    std::ofstream out(out_path, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!out) return false;
+
+    return serializer.serialize(
+        {module},
+        registry,
+        /*source_hash=*/0u,
+        /*include_debug=*/false,
+        out,
+        /*imports=*/{},
+        /*num_builtins=*/0u);
 }
 
 /**
@@ -1549,6 +1599,53 @@ version = "oops"
         }
     }
     BOOST_TEST(found_lock_error);
+}
+
+BOOST_AUTO_TEST_CASE(diagnostics_accept_compiled_only_import_without_sibling_source) {
+    TempDir tmp;
+    tmp.create_file("pkg/eta.toml", R"toml(
+[package]
+name = "pkg"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+)toml");
+    const auto source_path = tmp.create_file(
+        "pkg/src/app.eta",
+        "(module app\n"
+        "  (import std.core)\n"
+        "  (begin (define x 1)))\n");
+
+    const auto core_etac_path = tmp.path / "pkg" / "src" / "std" / "core.etac";
+    BOOST_REQUIRE(write_compiled_module_etac(core_etac_path, "std.core"));
+
+    const auto src_uri = eta::lsp::LspServer::path_to_uri(source_path.string());
+    const std::string src =
+        "(module app\n"
+        "  (import std.core)\n"
+        "  (begin (define x 1)))\n";
+
+    auto input = build_input(src_uri, src, {});
+    auto msgs = run_server(input);
+
+    const auto batches = find_diagnostics_for_uri(msgs, src_uri);
+    BOOST_REQUIRE(!batches.empty());
+
+    bool found_unknown_module = false;
+    for (const auto& batch : batches) {
+        if (!batch.is_array()) continue;
+        for (const auto& diag : batch.as_array()) {
+            const auto message = diag.get_string("message").value_or("");
+            if (message.find("unknown module in import: std.core") != std::string::npos) {
+                found_unknown_module = true;
+            }
+        }
+    }
+    BOOST_TEST(!found_unknown_module);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

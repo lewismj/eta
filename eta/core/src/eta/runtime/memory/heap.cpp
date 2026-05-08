@@ -71,6 +71,7 @@ namespace eta::runtime::memory::heap {
         auto result = cons_pool_->alloc(car, cdr);
         if (result.has_value()) {
             total_heap_bytes.fetch_add(sizeof(types::Cons), std::memory_order_relaxed);
+            eta::runtime::prof::runtime_profiler().on_allocation(sizeof(types::Cons));
         }
         return result;
     }

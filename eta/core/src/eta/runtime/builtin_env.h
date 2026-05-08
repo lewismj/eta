@@ -144,6 +144,8 @@ public:
             const auto& spec = specs_[i];
             auto prim = make_primitive(heap, spec.func, spec.arity, spec.has_rest);
             if (!prim) return std::unexpected(prim.error());
+            auto* prim_obj = heap.try_get_as<ObjectKind::Primitive, Primitive>(ops::payload(*prim));
+            if (prim_obj) prim_obj->debug_name = spec.name;
             globals[i] = *prim;
         }
         return {};

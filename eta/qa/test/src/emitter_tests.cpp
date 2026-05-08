@@ -178,6 +178,62 @@ BOOST_AUTO_TEST_CASE(emit_lambda_makes_closure) {
     BOOST_CHECK(has_opcode(OpCode::MakeClosure));
 }
 
+BOOST_AUTO_TEST_CASE(emit_named_lambda_uses_module_binding_name) {
+    auto* f = compile("(module m (define (add1 x) (+ x 1)) (define result (add1 41)))");
+    BOOST_REQUIRE(f != nullptr);
+
+    bool found_named_lambda = false;
+    for (const auto& func : registry.all()) {
+        if (func.name == "m:add1") {
+            found_named_lambda = true;
+            break;
+        }
+    }
+    BOOST_CHECK(found_named_lambda);
+}
+
+BOOST_AUTO_TEST_CASE(emit_anonymous_lambda_uses_source_stable_label) {
+    auto* f = compile("(module m (define result ((lambda (x) x) 1)))");
+    BOOST_REQUIRE(f != nullptr);
+
+    bool found_anonymous_lambda = false;
+    for (const auto& func : registry.all()) {
+        if (func.name.rfind("<lambda@m:", 0) == 0) {
+            found_anonymous_lambda = true;
+            BOOST_CHECK(func.name.find("_lambda") == std::string::npos);
+        }
+    }
+    BOOST_CHECK(found_anonymous_lambda);
+}
+
+BOOST_AUTO_TEST_CASE(emit_lambda_names_are_deterministic_across_compilations) {
+    const std::string src =
+        "(module m "
+        "  (define (add1 x) (+ x 1)) "
+        "  (define result ((lambda (y) (add1 y)) 7)))";
+
+    auto* first = compile(src);
+    BOOST_REQUIRE(first != nullptr);
+
+    std::vector<std::string> names_first;
+    for (const auto& func : registry.all()) {
+        names_first.push_back(func.name);
+    }
+
+    EmitterFixture second_fixture;
+    auto* second = second_fixture.compile(src);
+    BOOST_REQUIRE(second != nullptr);
+
+    std::vector<std::string> names_second;
+    for (const auto& func : second_fixture.registry.all()) {
+        names_second.push_back(func.name);
+    }
+
+    BOOST_REQUIRE_EQUAL(names_first.size(), names_second.size());
+    BOOST_CHECK_EQUAL_COLLECTIONS(names_first.begin(), names_first.end(),
+                                  names_second.begin(), names_second.end());
+}
+
 BOOST_AUTO_TEST_CASE(emit_lambda_body_has_return) {
     compile("(module m (define f (lambda (x) x)))");
     /// The lambda body (second function in registry) should end with Return

@@ -3,7 +3,7 @@
 This guide covers two flows:
 
 1. Build and run a single Eta app package.
-2. Build an app that depends on a local library package (from the end-to-end packaging appendix in [`docs/plan/eta_packaging_plan.md`](../plan/eta_packaging_plan.md)).
+2. Build an app + library in one workspace (end-to-end).
 
 ## Prerequisites
 
@@ -49,11 +49,24 @@ hello from my first eta app
 
 ## 2) Build an app with a library (end-to-end)
 
-### Create the library package
+### Create a workspace with two member packages
 
 ```console
+mkdir first_workspace
+cd first_workspace
 eta new mathx --lib
+eta new myapp --bin
 ```
+
+Create a workspace root manifest at `first_workspace/eta.toml`:
+
+```toml
+[workspace]
+members = ["mathx", "myapp"]
+default-members = ["myapp"]
+```
+
+### Implement the library package
 
 Edit `mathx/src/mathx.eta`:
 
@@ -66,18 +79,9 @@ Edit `mathx/src/mathx.eta`:
     (defun cube (x) (* x x x))))
 ```
 
-Run the library tests:
+### Add the library dependency to the app package
 
 ```console
-cd mathx
-eta test
-cd ..
-```
-
-### Create the app package and add the library dependency
-
-```console
-eta new myapp --bin
 cd myapp
 eta add mathx --path ../mathx
 ```
@@ -93,11 +97,13 @@ Edit `src/myapp.eta`:
       (println (square 7)))))
 ```
 
-Build and run:
+### Build, test, and run from the workspace root
 
 ```console
-eta build
-eta run
+cd ..
+eta test --workspace
+eta build --workspace
+eta run -p myapp
 ```
 
 Expected output:
@@ -109,10 +115,14 @@ Expected output:
 Inspect the resolved dependency graph:
 
 ```console
-eta tree
+eta tree --workspace
 ```
+
+In workspace mode, build artifacts are written under:
+`.eta/target/<profile>/<member-name>/...` at the workspace root.
 
 ## Related
 
 - [Packaging System overview](../packaging.md)
+- [Package and Workspace guide](../guide/packages.md)
 - [Cookbook end-to-end packaging example](../../cookbook/packaging/end-to-end/README.md)

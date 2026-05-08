@@ -1,11 +1,13 @@
 #define BOOST_TEST_MODULE eta.cli.test
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -29,6 +31,10 @@ namespace fs = std::filesystem;
 #error ETA_CLI_PATH must be defined by CMake
 #endif
 
+#ifndef ETA_REPL_PATH
+#error ETA_REPL_PATH must be defined by CMake
+#endif
+
 #ifndef ETA_CLI_TEST_FIXTURES_DIR
 #error ETA_CLI_TEST_FIXTURES_DIR must be defined by CMake
 #endif
@@ -36,6 +42,7 @@ namespace fs = std::filesystem;
 namespace {
 
 const fs::path kEtaCliPath{ETA_CLI_PATH};
+const fs::path kEtaReplPath{ETA_REPL_PATH};
 const fs::path kCliTestFixturesDir{ETA_CLI_TEST_FIXTURES_DIR};
 
 struct TempDir {
@@ -173,7 +180,10 @@ fs::path copy_fixture_tree(const TempDir& temp, const fs::path& rel) {
     return destination;
 }
 
-CommandResult run_eta(const fs::path& cwd, const std::vector<std::string>& args) {
+CommandResult run_process(const fs::path& exe_path,
+                          const fs::path& cwd,
+                          const std::vector<std::string>& args,
+                          std::string_view stdin_data = {}) {
     CommandResult result;
 #ifdef _WIN32
     SECURITY_ATTRIBUTES sa{};
@@ -189,21 +199,33 @@ CommandResult run_eta(const fs::path& cwd, const std::vector<std::string>& args)
     }
     (void)SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
 
+    HANDLE stdin_read = nullptr;
+    HANDLE stdin_write = nullptr;
+    if (!stdin_data.empty()) {
+        if (!CreatePipe(&stdin_read, &stdin_write, &sa, 0)) {
+            result.output = "CreatePipe(stdin) failed: " + win32_error_message(GetLastError());
+            CloseHandle(read_pipe);
+            CloseHandle(write_pipe);
+            return result;
+        }
+        (void)SetHandleInformation(stdin_write, HANDLE_FLAG_INHERIT, 0);
+    }
+
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdInput = stdin_data.empty() ? GetStdHandle(STD_INPUT_HANDLE) : stdin_read;
     si.hStdOutput = write_pipe;
     si.hStdError = write_pipe;
 
     PROCESS_INFORMATION pi{};
-    std::wstring command_line = build_windows_command_line(kEtaCliPath, args);
+    std::wstring command_line = build_windows_command_line(exe_path, args);
     std::vector<wchar_t> mutable_cmd(command_line.begin(), command_line.end());
     mutable_cmd.push_back(L'\0');
 
     std::wstring cwd_w = cwd.wstring();
     const BOOL created = CreateProcessW(
-        kEtaCliPath.wstring().c_str(),
+        exe_path.wstring().c_str(),
         mutable_cmd.data(),
         nullptr,
         nullptr,
@@ -215,10 +237,32 @@ CommandResult run_eta(const fs::path& cwd, const std::vector<std::string>& args)
         &pi);
 
     CloseHandle(write_pipe);
+    if (stdin_read != nullptr) CloseHandle(stdin_read);
     if (!created) {
         result.output = "CreateProcessW failed: " + win32_error_message(GetLastError());
         CloseHandle(read_pipe);
+        if (stdin_write != nullptr) CloseHandle(stdin_write);
         return result;
+    }
+
+    if (stdin_write != nullptr) {
+        std::size_t written_total = 0;
+        while (written_total < stdin_data.size()) {
+            const std::size_t remaining = stdin_data.size() - written_total;
+            const auto chunk_size = static_cast<DWORD>(
+                (std::min)(remaining, static_cast<std::size_t>((std::numeric_limits<DWORD>::max)())));
+            DWORD written = 0;
+            const BOOL ok = WriteFile(
+                stdin_write,
+                stdin_data.data() + written_total,
+                chunk_size,
+                &written,
+                nullptr);
+            if (!ok) break;
+            written_total += static_cast<std::size_t>(written);
+            if (written == 0) break;
+        }
+        CloseHandle(stdin_write);
     }
 
     std::string output;
@@ -242,42 +286,73 @@ CommandResult run_eta(const fs::path& cwd, const std::vector<std::string>& args)
     result.output = std::move(output);
     return result;
 #else
-    int pipe_fds[2];
-    if (pipe(pipe_fds) != 0) {
-        result.output = "pipe() failed";
+    int out_pipe[2];
+    if (pipe(out_pipe) != 0) {
+        result.output = "pipe(stdout) failed";
+        return result;
+    }
+
+    int in_pipe[2]{-1, -1};
+    if (!stdin_data.empty() && pipe(in_pipe) != 0) {
+        result.output = "pipe(stdin) failed";
+        close(out_pipe[0]);
+        close(out_pipe[1]);
         return result;
     }
 
     std::vector<std::string> argv_storage;
-    auto exec_argv = make_exec_argv(kEtaCliPath, args, argv_storage);
+    auto exec_argv = make_exec_argv(exe_path, args, argv_storage);
 
     const pid_t pid = fork();
     if (pid == -1) {
         result.output = "fork() failed";
-        close(pipe_fds[0]);
-        close(pipe_fds[1]);
+        close(out_pipe[0]);
+        close(out_pipe[1]);
+        if (in_pipe[0] != -1) close(in_pipe[0]);
+        if (in_pipe[1] != -1) close(in_pipe[1]);
         return result;
     }
 
     if (pid == 0) {
-        close(pipe_fds[0]);
+        close(out_pipe[0]);
+        if (!stdin_data.empty()) {
+            close(in_pipe[1]);
+            dup2(in_pipe[0], STDIN_FILENO);
+            close(in_pipe[0]);
+        }
         if (chdir(cwd.c_str()) != 0) _exit(127);
-        dup2(pipe_fds[1], STDOUT_FILENO);
-        dup2(pipe_fds[1], STDERR_FILENO);
-        close(pipe_fds[1]);
-        execv(kEtaCliPath.c_str(), exec_argv.data());
+        dup2(out_pipe[1], STDOUT_FILENO);
+        dup2(out_pipe[1], STDERR_FILENO);
+        close(out_pipe[1]);
+        execv(exe_path.c_str(), exec_argv.data());
         _exit(127);
     }
 
-    close(pipe_fds[1]);
+    close(out_pipe[1]);
+    if (!stdin_data.empty()) {
+        close(in_pipe[0]);
+        std::size_t written_total = 0;
+        while (written_total < stdin_data.size()) {
+            const auto remaining =
+                static_cast<std::size_t>(stdin_data.size() - written_total);
+            const ssize_t written = write(
+                in_pipe[1],
+                stdin_data.data() + written_total,
+                remaining);
+            if (written <= 0) break;
+            written_total += static_cast<std::size_t>(written);
+        }
+        close(in_pipe[1]);
+    }
+
     std::string output;
     std::array<char, 4096> buffer{};
     while (true) {
-        const ssize_t n = read(pipe_fds[0], buffer.data(), buffer.size());
+        const ssize_t n = read(out_pipe[0], buffer.data(), buffer.size());
         if (n <= 0) break;
         output.append(buffer.data(), buffer.data() + static_cast<std::size_t>(n));
     }
-    close(pipe_fds[0]);
+    close(out_pipe[0]);
 
     int status = 0;
     waitpid(pid, &status, 0);
@@ -291,6 +366,14 @@ CommandResult run_eta(const fs::path& cwd, const std::vector<std::string>& args)
     result.output = std::move(output);
     return result;
 #endif
+}
+
+CommandResult run_eta(const fs::path& cwd, const std::vector<std::string>& args) {
+    return run_process(kEtaCliPath, cwd, args);
+}
+
+CommandResult run_eta_repl(const fs::path& cwd, std::string_view stdin_data) {
+    return run_process(kEtaReplPath, cwd, {}, stdin_data);
 }
 
 std::string make_manifest(const std::string& name,
@@ -579,6 +662,164 @@ BOOST_AUTO_TEST_CASE(run_without_manifest_degrades_to_etai) {
     const auto result = run_eta(temp.path, {"run", "standalone.eta"});
     BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
     BOOST_TEST(result.output.find("eta-run-ok") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(prof_run_defaults_to_sampling_speedscope_output) {
+    TempDir temp;
+    temp.write_file("sampled.eta", R"eta(
+(module eta.prof.sample
+  (begin
+    (define (slow n)
+      (if (= n 0)
+          0
+          (begin
+            (%time-sleep-ms 2)
+            (slow (- n 1)))))
+    (define result (slow 4))))
+)eta");
+
+    const auto result = run_eta(temp.path, {"prof", "run", "sampled.eta"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("\"$schema\":\"https://www.speedscope.app/file-format-schema.json\"")
+               != std::string::npos);
+    BOOST_TEST(result.output.find("\"type\":\"sampled\"") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(run_prof_flag_defaults_to_sampling_speedscope_output) {
+    TempDir temp;
+    temp.write_file("sampled.eta", R"eta(
+(module eta.run.prof.sample
+  (begin
+    (define (slow n)
+      (if (= n 0)
+          0
+          (begin
+            (%time-sleep-ms 2)
+            (slow (- n 1)))))
+    (define result (slow 4))))
+)eta");
+
+    const auto result = run_eta(temp.path, {"run", "--prof", "sampled.eta"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("\"$schema\":\"https://www.speedscope.app/file-format-schema.json\"")
+               != std::string::npos);
+    BOOST_TEST(result.output.find("\"type\":\"sampled\"") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(prof_run_can_write_eta_prof_archive) {
+    TempDir temp;
+    temp.write_file("trace.eta", R"eta(
+(module eta.prof.archive
+  (begin
+    (define (countdown n)
+      (if (= n 0) 0 (+ 1 (countdown (- n 1)))))
+    (define result (countdown 8))))
+)eta");
+
+    const fs::path out_file = temp.path / "trace.eta-prof";
+    const auto run = run_eta(temp.path,
+                             {"prof", "run",
+                              "--mode", "trace",
+                              "--format", "eta-prof",
+                              "--out", out_file.string(),
+                              "trace.eta"});
+    BOOST_REQUIRE_MESSAGE(run.exit_code == 0, run.output);
+    BOOST_TEST(fs::is_regular_file(out_file));
+
+    const auto archive = read_text_file(out_file);
+    BOOST_TEST(archive.find("\"format\":\"eta-prof\"") != std::string::npos);
+    BOOST_TEST(archive.find("\"mode\":\"trace\"") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(prof_report_reads_eta_prof_archive) {
+    TempDir temp;
+    temp.write_file("trace.eta", R"eta(
+(module eta.prof.report
+  (begin
+    (define (work n)
+      (if (= n 0) 0 (+ 1 (work (- n 1)))))
+    (define result (work 6))))
+)eta");
+
+    const fs::path out_file = temp.path / "trace.eta-prof";
+    const auto run = run_eta(temp.path,
+                             {"prof", "run",
+                              "--mode", "trace",
+                              "--format", "eta-prof",
+                              "--out", out_file.string(),
+                              "trace.eta"});
+    BOOST_REQUIRE_MESSAGE(run.exit_code == 0, run.output);
+
+    const auto report = run_eta(temp.path, {"prof", "report", out_file.string()});
+    BOOST_REQUIRE_MESSAGE(report.exit_code == 0, report.output);
+    BOOST_TEST(report.output.find("Profiler summary") != std::string::npos);
+    BOOST_TEST(report.output.find("eta.prof.report:work") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(prof_merge_combines_archive_counters) {
+    TempDir temp;
+    temp.write_file("trace.eta", R"eta(
+(module eta.prof.merge
+  (begin
+    (%prof-counter "runs" 1)
+    (define (work n)
+      (if (= n 0) 0 (+ 1 (work (- n 1)))))
+    (define result (work 4))))
+)eta");
+
+    const fs::path first = temp.path / "first.eta-prof";
+    const fs::path second = temp.path / "second.eta-prof";
+    const fs::path merged = temp.path / "merged.eta-prof";
+
+    const auto run_first = run_eta(temp.path,
+                                   {"prof", "run",
+                                    "--mode", "trace",
+                                    "--format", "eta-prof",
+                                    "--out", first.string(),
+                                    "trace.eta"});
+    BOOST_REQUIRE_MESSAGE(run_first.exit_code == 0, run_first.output);
+
+    const auto run_second = run_eta(temp.path,
+                                    {"prof", "run",
+                                     "--mode", "trace",
+                                     "--format", "eta-prof",
+                                     "--out", second.string(),
+                                     "trace.eta"});
+    BOOST_REQUIRE_MESSAGE(run_second.exit_code == 0, run_second.output);
+
+    const auto merge = run_eta(temp.path,
+                               {"prof", "merge",
+                                "--out", merged.string(),
+                                first.string(),
+                                second.string()});
+    BOOST_REQUIRE_MESSAGE(merge.exit_code == 0, merge.output);
+    BOOST_TEST(fs::is_regular_file(merged));
+
+    const auto merged_json = run_eta(temp.path,
+                                     {"prof", "report",
+                                      "--format", "json",
+                                      merged.string()});
+    BOOST_REQUIRE_MESSAGE(merged_json.exit_code == 0, merged_json.output);
+    BOOST_TEST(merged_json.output.find("\"runs\":2") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(repl_prof_profiles_next_submission) {
+    TempDir temp;
+    const std::string input = ":prof trace --format pretty\n"
+                              "(+ 1 2)\n"
+                              "(exit)\n";
+    const auto result = run_eta_repl(temp.path, input);
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("[prof] next submission mode=trace hz=1000 format=pretty")
+               != std::string::npos);
+    BOOST_TEST(result.output.find("Profiler summary") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(repl_prof_rejects_invalid_hz) {
+    TempDir temp;
+    const auto result = run_eta_repl(temp.path, ":prof --hz 0\n(exit)\n");
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find(":prof: --hz must be a positive integer") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(run_manifest_mode_keeps_first_hit_semantics_by_default) {

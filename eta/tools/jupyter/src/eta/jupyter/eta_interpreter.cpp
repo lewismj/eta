@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <string_view>
@@ -23,6 +24,7 @@
 #include "eta/jupyter/magics.h"
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/nanbox.h"
+#include "eta/runtime/prof/profiler.h"
 #include "eta/runtime/vm/disassembler.h"
 #include "xeus/xhelper.hpp"
 
@@ -106,6 +108,205 @@ void trim_trailing_newlines(std::string& text) {
         }
     }
     return out;
+}
+
+struct ProfMagicOptions {
+    std::string mode{"sample"};
+    std::uint32_t hz{1000};
+};
+
+[[nodiscard]] std::optional<std::uint32_t> parse_positive_u32(std::string_view text) {
+    if (text.empty()) return std::nullopt;
+    std::uint64_t value = 0;
+    for (const char ch : text) {
+        if (!std::isdigit(static_cast<unsigned char>(ch))) return std::nullopt;
+        value = value * 10u + static_cast<std::uint64_t>(ch - '0');
+        if (value > static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())) {
+            return std::nullopt;
+        }
+    }
+    if (value == 0u) return std::nullopt;
+    return static_cast<std::uint32_t>(value);
+}
+
+[[nodiscard]] std::optional<ProfMagicOptions> parse_prof_magic_options(
+    std::string_view args,
+    std::string* error_out) {
+    if (error_out) error_out->clear();
+
+    ProfMagicOptions options;
+    std::istringstream in{std::string(args)};
+    std::vector<std::string> tokens;
+    std::string token;
+    while (in >> token) {
+        tokens.push_back(token);
+    }
+
+    for (std::size_t i = 0; i < tokens.size(); ++i) {
+        const auto& current = tokens[i];
+
+        if (current == "sample" || current == "trace") {
+            options.mode = current;
+            continue;
+        }
+        if (current == "--mode") {
+            if (i + 1u >= tokens.size()) {
+                if (error_out) *error_out = "%%prof: --mode requires a value";
+                return std::nullopt;
+            }
+            const auto& mode = tokens[++i];
+            if (mode != "sample" && mode != "trace") {
+                if (error_out) *error_out = "%%prof: --mode must be sample or trace";
+                return std::nullopt;
+            }
+            options.mode = mode;
+            continue;
+        }
+        if (current.rfind("--mode=", 0) == 0) {
+            const auto mode = current.substr(7);
+            if (mode != "sample" && mode != "trace") {
+                if (error_out) *error_out = "%%prof: --mode must be sample or trace";
+                return std::nullopt;
+            }
+            options.mode = mode;
+            continue;
+        }
+        if (current == "--hz") {
+            if (i + 1u >= tokens.size()) {
+                if (error_out) *error_out = "%%prof: --hz requires a value";
+                return std::nullopt;
+            }
+            auto hz = parse_positive_u32(tokens[++i]);
+            if (!hz) {
+                if (error_out) *error_out = "%%prof: --hz must be a positive integer";
+                return std::nullopt;
+            }
+            options.hz = *hz;
+            continue;
+        }
+        if (current.rfind("--hz=", 0) == 0) {
+            auto hz = parse_positive_u32(current.substr(5));
+            if (!hz) {
+                if (error_out) *error_out = "%%prof: --hz must be a positive integer";
+                return std::nullopt;
+            }
+            options.hz = *hz;
+            continue;
+        }
+        if (auto hz = parse_positive_u32(current)) {
+            options.hz = *hz;
+            continue;
+        }
+
+        if (error_out) *error_out = "%%prof: unknown argument '" + current + "'";
+        return std::nullopt;
+    }
+    return options;
+}
+
+[[nodiscard]] std::string render_prof_flamegraph_html(
+    std::string_view speedscope_json,
+    std::string_view mode,
+    const std::uint32_t hz,
+    std::string_view pretty_report) {
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const std::string flame_id = "eta-prof-flame-" + std::to_string(stamp);
+    const std::string speedscope_literal = nl::json(std::string(speedscope_json)).dump();
+
+    std::ostringstream html;
+    html << "<div class=\"eta-prof-widget\" style=\"font-family: ui-sans-serif, system-ui, sans-serif;\">";
+    html << "<div style=\"margin-bottom:6px;\"><strong>Profiler</strong> mode="
+         << html_escape(mode)
+         << " hz=" << hz
+         << "</div>";
+    html << "<div id=\"" << flame_id
+         << "\" style=\"border:1px solid #ddd; background:#fff; padding:4px; overflow:auto;\">"
+         << "Rendering flamegraph..."
+         << "</div>";
+    html << "<details style=\"margin-top:8px;\">"
+         << "<summary>Text report</summary>"
+         << "<pre style=\"white-space:pre-wrap; margin:6px 0 0 0;\">"
+         << html_escape(pretty_report)
+         << "</pre></details>";
+    html << "<script>(function(){"
+         << "const host=document.getElementById('" << flame_id << "');"
+         << "if(!host) return;"
+         << "const raw=" << speedscope_literal << ";"
+         << "let data;try{data=JSON.parse(raw);}catch(_){host.textContent='Invalid speedscope payload';return;}"
+         << "const profiles=Array.isArray(data.profiles)?data.profiles:[];"
+         << "const profile=profiles.find(p=>Array.isArray(p.samples)&&p.samples.length>0)||profiles[0];"
+         << "if(!profile){host.textContent='No profile samples captured.';return;}"
+         << "const frames=(data.shared&&Array.isArray(data.shared.frames))?data.shared.frames:[];"
+         << "const samples=Array.isArray(profile.samples)?profile.samples:[];"
+         << "const weights=Array.isArray(profile.weights)?profile.weights:[];"
+         << "const root={name:'(root)',value:0,children:new Map()};"
+         << "for(let i=0;i<samples.length;i++){"
+         << " const stack=Array.isArray(samples[i])?samples[i]:[];"
+         << " let weight=1;"
+         << " if(i<weights.length){const parsed=Number(weights[i]);if(Number.isFinite(parsed)&&parsed>0) weight=parsed;}"
+         << " root.value+=weight;"
+         << " let node=root;"
+         << " for(const frameId of stack){"
+         << "  const idx=Number(frameId);"
+         << "  const frame=(Number.isInteger(idx)&&idx>=0&&idx<frames.length)?frames[idx]:null;"
+         << "  const name=(frame&&typeof frame.name==='string'&&frame.name.length>0)?frame.name:('#'+idx);"
+         << "  let child=node.children.get(name);"
+         << "  if(!child){child={name:name,value:0,children:new Map()};node.children.set(name,child);}"
+         << "  child.value+=weight;"
+         << "  node=child;"
+         << " }"
+         << "}"
+         << "if(root.value<=0){host.textContent='No profile samples captured.';return;}"
+         << "const maxDepth=(node,d)=>{let out=d;for(const child of node.children.values()){out=Math.max(out,maxDepth(child,d+1));}return out;};"
+         << "const depth=maxDepth(root,0);"
+         << "const rowHeight=20;"
+         << "const gap=1;"
+         << "const width=1200;"
+         << "const height=(depth+1)*(rowHeight+gap);"
+         << "const svgNS='http://www.w3.org/2000/svg';"
+         << "const svg=document.createElementNS(svgNS,'svg');"
+         << "svg.setAttribute('viewBox','0 0 '+width+' '+height);"
+         << "svg.setAttribute('width','100%');"
+         << "svg.setAttribute('height',String(height));"
+         << "host.innerHTML='';"
+         << "host.appendChild(svg);"
+         << "const color=(name)=>{let h=0;for(let i=0;i<name.length;i++){h=((h*31)+name.charCodeAt(i))>>>0;}return 'hsl('+(h%360)+',70%,70%)';};"
+         << "const draw=(node,x,w,d)=>{"
+         << " const y=(depth-d)*(rowHeight+gap);"
+         << " if(d>0){"
+         << "  const rect=document.createElementNS(svgNS,'rect');"
+         << "  rect.setAttribute('x',String(x));"
+         << "  rect.setAttribute('y',String(y));"
+         << "  rect.setAttribute('width',String(w));"
+         << "  rect.setAttribute('height',String(rowHeight));"
+         << "  rect.setAttribute('fill',color(node.name));"
+         << "  rect.setAttribute('stroke','#ffffff');"
+         << "  const title=document.createElementNS(svgNS,'title');"
+         << "  title.textContent=node.name+' ('+node.value.toFixed(0)+')';"
+         << "  rect.appendChild(title);"
+         << "  svg.appendChild(rect);"
+         << "  if(w>50){"
+         << "   const label=document.createElementNS(svgNS,'text');"
+         << "   label.setAttribute('x',String(x+4));"
+         << "   label.setAttribute('y',String(y+14));"
+         << "   label.setAttribute('font-size','11');"
+         << "   label.textContent=node.name;"
+         << "   svg.appendChild(label);"
+         << "  }"
+         << " }"
+         << " let offset=x;"
+         << " const children=Array.from(node.children.values()).sort((a,b)=>b.value-a.value);"
+         << " for(const child of children){"
+         << "  const childWidth=w*(child.value/node.value);"
+         << "  if(childWidth<=0.5) continue;"
+         << "  draw(child,offset,childWidth,d+1);"
+         << "  offset+=childWidth;"
+         << " }"
+         << "};"
+         << "draw(root,0,width,0);"
+         << "})();</script>";
+    html << "</div>";
+    return html.str();
 }
 
 [[nodiscard]] std::string value_type_name(eta::session::Driver& driver,
@@ -600,6 +801,84 @@ void EtaInterpreter::execute_request_impl(send_reply_callback cb,
                 }
                 code_to_eval = "(begin (import std.jupyter) (jupyter:table " + arg + "))";
                 break;
+            }
+            case eta::jupyter::MagicName::Prof: {
+                if (magic.kind != eta::jupyter::MagicKind::Cell) {
+                    restore_ports();
+                    reply_magic_error("%%prof must be used as a cell magic");
+                    return;
+                }
+
+                const auto body = trim_copy(magic.body);
+                if (body.empty()) {
+                    restore_ports();
+                    reply_magic_error("%%prof cell body is empty");
+                    return;
+                }
+
+                std::string option_error;
+                auto options = parse_prof_magic_options(magic.args, &option_error);
+                if (!options) {
+                    restore_ports();
+                    reply_magic_error(option_error.empty() ? "%%prof: invalid arguments" : option_error);
+                    return;
+                }
+
+                auto& profiler = eta::runtime::prof::runtime_profiler();
+                auto session = (options->mode == "sample")
+                    ? profiler.start_sample_session(options->hz)
+                    : profiler.start_trace_session();
+                if (!session) {
+                    restore_ports();
+                    reply_magic_error("%%prof: a profiling session is already active");
+                    return;
+                }
+
+                const auto profiled_value = driver_->eval_to_display(body);
+                const bool stopped = (options->mode == "sample")
+                    ? profiler.stop_sample_session(*session)
+                    : profiler.stop_trace_session(*session);
+                if (!stopped) {
+                    restore_ports();
+                    reply_magic_error("%%prof: failed to stop profiler session");
+                    return;
+                }
+
+                restore_ports();
+                if (profiled_value.tag == eta::session::DisplayTag::Error) {
+                    reply_error_from_driver();
+                    return;
+                }
+
+                if (!config.silent) {
+                    auto rendered = eta::jupyter::display::render_display_value(
+                        *driver_, profiled_value, render_options_);
+                    if (!rendered.data.empty()) {
+                        publish_execution_result(execution_counter,
+                                                 std::move(rendered.data),
+                                                 std::move(rendered.metadata));
+                    }
+                }
+
+                if (!config.silent) {
+                    const auto pretty = profiler.render_pretty_report_for_session(*session, 40);
+                    const auto speedscope = profiler.render_speedscope_report_for_session(*session);
+                    if (pretty && speedscope) {
+                        nl::json data = nl::json::object();
+                        data["text/plain"] = *pretty;
+                        data["text/html"] = render_prof_flamegraph_html(
+                            *speedscope,
+                            options->mode,
+                            options->hz,
+                            *pretty);
+                        display_data(std::move(data), nl::json::object(), nl::json::object());
+                    } else {
+                        publish_stream("stderr", "[prof] failed to render profiler report\n");
+                    }
+                }
+
+                cb(xeus::create_successful_reply());
+                return;
             }
             case eta::jupyter::MagicName::Trace: {
                 if (magic.kind != eta::jupyter::MagicKind::Cell) {

@@ -18,6 +18,7 @@
 #include "eta/reader/lexer.h"
 #include "eta/runtime/clp/constraint_store.h"
 #include "eta/runtime/clp/real_store.h"
+#include "eta/runtime/prof/profiler.h"
 #include "bytecode.h"
 #include "debug_state.h"   ///< DebugState, BreakLocation, StopEvent, StopReason
 
@@ -600,6 +601,7 @@ private:
     }
 
     void setup_frame(const BytecodeFunction* func, LispVal closure, uint32_t argc, FrameKind kind = FrameKind::Normal, LispVal extra = 0) {
+        eta::runtime::prof::runtime_profiler().on_setup_frame(func);
         frames_.push_back({current_func_, pc_, fp_, current_closure_, kind, extra});
         current_func_ = func;
         current_closure_ = closure;

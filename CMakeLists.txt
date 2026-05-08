@@ -65,6 +65,7 @@ foreach(_t IN ITEMS
     eta_lsp
     eta_dap
     eta_jupyter
+    eta_prof
     eta_stdlib_etac
     eta_core_test
     eta_pkg_test
@@ -72,6 +73,7 @@ foreach(_t IN ITEMS
     eta_test
     eta_test_runner
     eta_qp_bench
+    eta_prof_off_bench
 )
     if(TARGET ${_t})
         add_dependencies(eta_all ${_t})

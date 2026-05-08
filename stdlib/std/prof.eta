@@ -1,0 +1,48 @@
+;;; std/prof.eta - Runtime profiling helpers.
+
+(module std.prof
+  (export
+    prof/start
+    prof/stop
+    prof/with
+    prof/region
+    prof/report
+    prof/counter
+    prof/enabled?)
+  (begin
+
+    (defun prof/start opts
+      (let ((mode (if (null? opts) "trace" (car opts)))
+            (hz   (if (or (null? opts) (null? (cdr opts))) 1000 (car (cdr opts)))))
+        (let ((mode-str (if (symbol? mode) (symbol->string mode) mode)))
+          (%prof-start mode-str hz))))
+
+    (defun prof/stop (session)
+      (%prof-stop session))
+
+    (defun prof/report (handle . opts)
+      (if (null? opts)
+          (%prof-report handle)
+          (%prof-report handle (car opts))))
+
+    (defun prof/counter (name n)
+      (%prof-counter name n))
+
+    (defun prof/with (thunk . opts)
+      (let ((session (if (null? opts)
+                         (prof/start)
+                         (apply prof/start opts))))
+        (let ((result (thunk)))
+          (let ((handle (prof/stop session)))
+            (values result handle)))))
+
+    (defun prof/region (name thunk)
+      (dynamic-wind
+        (lambda () (%prof-region-enter name))
+        thunk
+        (lambda () (%prof-region-exit))))
+
+    (defun prof/enabled? ()
+      (%prof-enabled?))
+
+  ))

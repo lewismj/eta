@@ -1,0 +1,76 @@
+;;; stdlib/tests/prof.test.eta - Unit tests for std.prof
+
+(module prof.tests
+  (import std.test std.prof)
+  (begin
+
+    (defun string-contains? (hay needle)
+      (let ((hlen (string-length hay))
+            (nlen (string-length needle)))
+        (if (> nlen hlen)
+            #f
+            (let loop ((i 0))
+              (if (> i (- hlen nlen))
+                  #f
+                  (if (string=? (substring hay i (+ i nlen)) needle)
+                      #t
+                      (loop (+ i 1))))))))
+
+    (defun work (n)
+      (if (= n 0)
+          0
+          (+ 1 (work (- n 1)))))
+
+    (define suite
+      (make-group "std.prof"
+        (list
+          (make-test "enabled flag toggles around sessions"
+            (lambda ()
+              (assert-false (prof/enabled?))
+              (let ((session (prof/start)))
+                (assert-true (prof/enabled?))
+                (let ((handle (prof/stop session)))
+                  (assert-false (prof/enabled?))
+                  (assert-true (number? handle))))))
+
+          (make-test "start stop and report expose named frames"
+            (lambda ()
+              (let ((session (prof/start 'trace 1000)))
+                (work 8)
+                (let ((handle (prof/stop session)))
+                  (let ((text (prof/report handle)))
+                    (assert-true (string? text))
+                    (assert-true (> (string-length text) 0))
+                    (assert-true (string-contains? text "prof.tests:work")))))))
+
+          (make-test "counter values appear in json report"
+            (lambda ()
+              (let ((session (prof/start 'trace 1000)))
+                (prof/counter "iterations" 3)
+                (work 3)
+                (let ((handle (prof/stop session)))
+                  (let ((json (prof/report handle "json")))
+                    (assert-true (string? json))
+                    (assert-true (string-contains? json "\"iterations\":3")))))))
+
+          (make-test "with returns result and handle"
+            (lambda ()
+              (call-with-values
+                (lambda () (prof/with (lambda () (work 5))))
+                (lambda (result handle)
+                  (assert-equal 5 result)
+                  (assert-true (number? handle))
+                  (assert-true (string? (prof/report handle)))))))
+
+          (make-test "region marker appears in report"
+            (lambda ()
+              (call-with-values
+                (lambda ()
+                  (prof/with
+                    (lambda ()
+                      (prof/region "local-region" (lambda () (work 2))))))
+                (lambda (_result handle)
+                  (let ((text (prof/report handle)))
+                    (assert-true (string-contains? text "local-region"))))))))))
+
+    (print-tap (run suite))))

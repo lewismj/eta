@@ -35,6 +35,15 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/regex_builtins.cpp
         src/eta/runtime/json_builtins.cpp
         src/eta/runtime/process_primitives.cpp
+        src/eta/runtime/prof/profiler.cpp
+        src/eta/runtime/prof/aggregator.cpp
+        src/eta/runtime/prof/frame_id.cpp
+        src/eta/runtime/prof/sample_buffer.cpp
+        src/eta/runtime/prof/speedscope.cpp
+        src/eta/runtime/prof/report.cpp
+        src/eta/runtime/prof/archive.cpp
+        src/eta/runtime/prof/chrome.cpp
+        src/eta/runtime/prof/pprof.cpp
         src/eta/runtime/clp/linear.cpp
         src/eta/runtime/clp/quadratic.cpp
         src/eta/runtime/clp/qp_solver.cpp

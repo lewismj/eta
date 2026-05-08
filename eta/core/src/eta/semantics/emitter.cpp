@@ -82,7 +82,7 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
         else if constexpr (std::is_same_v<T, core::Begin>)
             emit_begin(n, ctx, span);
         else if constexpr (std::is_same_v<T, core::Lambda>)
-            emit_lambda_node(n, span, ctx);
+            emit_lambda_node(n, span, ctx, std::nullopt);
         else if constexpr (std::is_same_v<T, core::Set>)
             emit_set(n, ctx, span);
         else if constexpr (std::is_same_v<T, core::Values>)
@@ -154,6 +154,48 @@ void Emitter::emit_address_store(const core::Address& addr, Context& ctx, const 
         else if constexpr (std::is_same_v<AT, core::Address::Global>)
             ctx.emit_instr(OpCode::StoreGlobal, a.id, span);
     }, addr.where);
+}
+
+std::optional<std::string> Emitter::resolve_binding_name(const core::Address& addr,
+                                                         const Context& ctx) const {
+    return std::visit([&](auto&& a) -> std::optional<std::string> {
+        using AT = std::decay_t<decltype(a)>;
+        if constexpr (std::is_same_v<AT, core::Address::Local>) {
+            const auto slot = static_cast<std::size_t>(a.slot);
+            if (slot >= ctx.func.local_names.size()) return std::nullopt;
+            if (ctx.func.local_names[slot].empty()) return std::nullopt;
+            return named_function_label(ctx.func.local_names[slot]);
+        } else if constexpr (std::is_same_v<AT, core::Address::Upval>) {
+            const auto slot = static_cast<std::size_t>(a.slot);
+            if (slot >= ctx.func.upval_names.size()) return std::nullopt;
+            if (ctx.func.upval_names[slot].empty()) return std::nullopt;
+            return named_function_label(ctx.func.upval_names[slot]);
+        } else if constexpr (std::is_same_v<AT, core::Address::Global>) {
+            for (const auto& info : sem_.bindings) {
+                if (info.kind != BindingInfo::Kind::Global) continue;
+                if (info.slot != a.id) continue;
+                if (info.name.empty()) return std::nullopt;
+                return named_function_label(info.name);
+            }
+            return std::nullopt;
+        } else {
+            return std::nullopt;
+        }
+    }, addr.where);
+}
+
+std::string Emitter::named_function_label(const std::string_view binding_name) const {
+    return sem_.name + ":" + std::string(binding_name);
+}
+
+std::string Emitter::anonymous_lambda_label(const Span& span) const {
+    if (span.file_id != 0 && span.start.line != 0 && span.start.column != 0) {
+        return "<lambda@" + sem_.name + ":" + std::to_string(span.start.line) + ":" +
+               std::to_string(span.start.column) + ">";
+    }
+
+    return "<lambda@" + sem_.name + ":" + std::to_string(span.start.offset) + ":" +
+           std::to_string(span.end.offset) + ">";
 }
 
 /**
@@ -319,8 +361,9 @@ void Emitter::emit_begin(const core::Begin& n, Context& ctx, const Span& span) {
     }
 }
 
-void Emitter::emit_lambda_node(const core::Lambda& n, const Span& span, Context& ctx) {
-    uint32_t func_idx = emit_lambda(n, ctx.func.name, span);
+void Emitter::emit_lambda_node(const core::Lambda& n, const Span& span, Context& ctx,
+                               std::optional<std::string> preferred_name) {
+    uint32_t func_idx = emit_lambda(n, span, preferred_name);
 
     LispVal func_idx_val = encode_func_index(func_idx);
     uint32_t const_idx   = add_const(func_idx_val, ctx);
@@ -333,6 +376,7 @@ void Emitter::emit_lambda_node(const core::Lambda& n, const Span& span, Context&
 }
 
 void Emitter::emit_set(const core::Set& n, Context& ctx, const Span& span) {
+    std::optional<std::string> preferred_name;
     if (const auto* lam = std::get_if<core::Lambda>(&n.value->data)) {
         if (const auto* target_local = std::get_if<core::Address::Local>(&n.target.where)) {
             std::vector<std::uint16_t> self_upval_slots;
@@ -348,9 +392,14 @@ void Emitter::emit_set(const core::Set& n, Context& ctx, const Span& span) {
                 pending_self_upval_slots_[lam] = std::move(self_upval_slots);
             }
         }
+        preferred_name = resolve_binding_name(n.target, ctx);
     }
 
-    emit_node(n.value, ctx);
+    if (const auto* lam = std::get_if<core::Lambda>(&n.value->data)) {
+        emit_lambda_node(*lam, span, ctx, preferred_name);
+    } else {
+        emit_node(n.value, ctx);
+    }
     emit_address_store(n.target, ctx, span);
 
     /// Fixup for letrec self-reference
@@ -501,9 +550,14 @@ void Emitter::emit_quote(const core::Quote& n, Context& ctx, const Span& span) {
 }
 
 uint32_t Emitter::emit_lambda(const core::Lambda& lambda,
-                              const std::string& parent_name, const Span& span) {
+                              const Span& span,
+                              const std::optional<std::string>& preferred_name) {
     Context ctx;
-    ctx.func.name       = parent_name + "_lambda" + std::to_string(lambda_count_++);
+    if (preferred_name && !preferred_name->empty()) {
+        ctx.func.name = *preferred_name;
+    } else {
+        ctx.func.name = anonymous_lambda_label(span);
+    }
     ctx.func.arity      = lambda.arity.required;
     ctx.func.has_rest   = lambda.arity.has_rest;
     ctx.func.stack_size = lambda.stack_size;

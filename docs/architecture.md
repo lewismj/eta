@@ -238,7 +238,9 @@ The emitter walks the Core IR tree and produces `BytecodeFunction` objects
 containing sequences of `Instruction`s. Each module produces a top-level
 `_init` function. Nested lambdas are emitted recursively and stored in a
 thread-safe `BytecodeFunctionRegistry` (backed by `std::deque` for pointer
-stability).
+stability). Named functions use deterministic `<module>:<binding>` labels,
+and anonymous lambdas use source-stable labels
+`<lambda@module:line:column>`.
 
 The emitter's key decisions:
 

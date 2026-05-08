@@ -1,6 +1,10 @@
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <limits>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -8,6 +12,9 @@
 #include "eta/interpreter/module_path.h"
 #include "eta/interpreter/repl_wrap.h"
 #include "eta/runtime/nanbox.h"
+#include "eta/runtime/prof/archive.h"
+#include "eta/runtime/prof/pprof.h"
+#include "eta/runtime/prof/profiler.h"
 
 namespace fs = std::filesystem;
 
@@ -115,9 +122,144 @@ static std::vector<std::string> split_toplevel_forms(const std::string& input) {
     return forms;
 }
 
+[[nodiscard]] std::string trim_copy(std::string_view text) {
+    const auto first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string_view::npos) return {};
+    const auto last = text.find_last_not_of(" \t\r\n");
+    return std::string(text.substr(first, last - first + 1u));
+}
+
+struct ReplProfileOptions {
+    std::string mode{"sample"};
+    std::uint32_t hz{1000};
+    std::string format{"pretty"};
+};
+
+[[nodiscard]] std::optional<std::uint32_t> parse_positive_u32(std::string_view text) {
+    if (text.empty()) return std::nullopt;
+    std::uint64_t value = 0;
+    for (const char ch : text) {
+        if (!std::isdigit(static_cast<unsigned char>(ch))) return std::nullopt;
+        value = value * 10u + static_cast<std::uint64_t>(ch - '0');
+        if (value > static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())) {
+            return std::nullopt;
+        }
+    }
+    if (value == 0u) return std::nullopt;
+    return static_cast<std::uint32_t>(value);
+}
+
+[[nodiscard]] bool is_valid_prof_format(std::string_view format) {
+    return format == "pretty"
+        || format == "json"
+        || format == "speedscope"
+        || format == "eta-prof"
+        || format == "chrome"
+        || format == "pprof";
+}
+
+[[nodiscard]] std::optional<ReplProfileOptions> parse_prof_options(
+    std::string_view args,
+    std::string* error_out) {
+    if (error_out) error_out->clear();
+
+    ReplProfileOptions options;
+    std::istringstream in{std::string(args)};
+    std::vector<std::string> tokens;
+    std::string token;
+    while (in >> token) {
+        tokens.push_back(token);
+    }
+
+    for (std::size_t i = 0; i < tokens.size(); ++i) {
+        const auto& current = tokens[i];
+        if (current == "sample" || current == "trace") {
+            options.mode = current;
+            continue;
+        }
+        if (current == "--mode") {
+            if (i + 1u >= tokens.size()) {
+                if (error_out) *error_out = ":prof: --mode requires a value";
+                return std::nullopt;
+            }
+            const auto& mode = tokens[++i];
+            if (mode != "sample" && mode != "trace") {
+                if (error_out) *error_out = ":prof: --mode must be sample or trace";
+                return std::nullopt;
+            }
+            options.mode = mode;
+            continue;
+        }
+        if (current.rfind("--mode=", 0) == 0) {
+            const auto mode = current.substr(7);
+            if (mode != "sample" && mode != "trace") {
+                if (error_out) *error_out = ":prof: --mode must be sample or trace";
+                return std::nullopt;
+            }
+            options.mode = mode;
+            continue;
+        }
+        if (current == "--hz") {
+            if (i + 1u >= tokens.size()) {
+                if (error_out) *error_out = ":prof: --hz requires a value";
+                return std::nullopt;
+            }
+            const auto hz = parse_positive_u32(tokens[++i]);
+            if (!hz) {
+                if (error_out) *error_out = ":prof: --hz must be a positive integer";
+                return std::nullopt;
+            }
+            options.hz = *hz;
+            continue;
+        }
+        if (current.rfind("--hz=", 0) == 0) {
+            const auto hz = parse_positive_u32(current.substr(5));
+            if (!hz) {
+                if (error_out) *error_out = ":prof: --hz must be a positive integer";
+                return std::nullopt;
+            }
+            options.hz = *hz;
+            continue;
+        }
+        if (current == "--format") {
+            if (i + 1u >= tokens.size()) {
+                if (error_out) *error_out = ":prof: --format requires a value";
+                return std::nullopt;
+            }
+            const auto& format = tokens[++i];
+            if (!is_valid_prof_format(format)) {
+                if (error_out) {
+                    *error_out = ":prof: --format must be one of "
+                                 "pretty|json|speedscope|eta-prof|chrome|pprof";
+                }
+                return std::nullopt;
+            }
+            options.format = format;
+            continue;
+        }
+        if (current.rfind("--format=", 0) == 0) {
+            const auto format = current.substr(9);
+            if (!is_valid_prof_format(format)) {
+                if (error_out) {
+                    *error_out = ":prof: --format must be one of "
+                                 "pretty|json|speedscope|eta-prof|chrome|pprof";
+                }
+                return std::nullopt;
+            }
+            options.format = format;
+            continue;
+        }
+
+        if (error_out) *error_out = ":prof: unknown argument '" + current + "'";
+        return std::nullopt;
+    }
+    return options;
+}
+
 static constexpr const char* BANNER =
     "eta REPL - type an expression and press Enter.\n"
-    "Use Ctrl+C or (exit) to quit.\n";
+    "Use Ctrl+C or (exit) to quit.\n"
+    "Use :prof [sample|trace] [--hz N] [--format FMT] to profile the next submission.\n";
 
 int main(int argc, char* argv[]) {
     std::string cli_path;
@@ -210,6 +352,7 @@ int main(int argc, char* argv[]) {
 
     /// Track prior REPL modules and their exported names.
     std::vector<eta::interpreter::PriorModule> prior_modules;
+    std::optional<ReplProfileOptions> pending_profile;
 
     while (true) {
         /// Prompt
@@ -241,22 +384,48 @@ int main(int argc, char* argv[]) {
         }
         continuation = false;
 
-        /// Skip empty input
-        if (buffer.empty() || buffer.find_first_not_of(" \t\n\r") == std::string::npos) {
+        const auto trimmed = trim_copy(buffer);
+
+        /// Skip empty input.
+        if (trimmed.empty()) {
             continue;
         }
 
-        /// Handle (exit) and (quit) commands
-        {
-            auto trimmed = buffer;
-            auto s = trimmed.find_first_not_of(" \t\n\r");
-            auto e = trimmed.find_last_not_of(" \t\n\r");
-            if (s != std::string::npos) {
-                trimmed = trimmed.substr(s, e - s + 1);
+        /// Handle (exit) and (quit) commands.
+        if (trimmed == "(exit)" || trimmed == "(quit)") {
+            break;
+        }
+
+        if (trimmed.rfind(":prof", 0) == 0
+            && (trimmed.size() == 5u
+                || std::isspace(static_cast<unsigned char>(trimmed[5])))) {
+            const auto args = trim_copy(trimmed.substr(5));
+            if (args == "off" || args == "disable") {
+                pending_profile.reset();
+                std::cout << "[prof] cleared pending profile request\n";
+                continue;
             }
-            if (trimmed == "(exit)" || trimmed == "(quit)") {
-                break;
+
+            std::string option_error;
+            auto parsed = parse_prof_options(args, &option_error);
+            if (!parsed) {
+                std::cerr << "error: "
+                          << (option_error.empty() ? ":prof: invalid arguments" : option_error)
+                          << "\n";
+                continue;
             }
+
+            pending_profile = std::move(*parsed);
+            std::cout << "[prof] next submission mode=" << pending_profile->mode
+                      << " hz=" << pending_profile->hz
+                      << " format=" << pending_profile->format
+                      << "\n";
+            continue;
+        }
+
+        if (!trimmed.empty() && trimmed.front() == ':') {
+            std::cerr << "error: unknown REPL command: " << trimmed << "\n";
+            continue;
         }
 
         /**
@@ -271,12 +440,80 @@ int main(int argc, char* argv[]) {
         auto wrapped = eta::interpreter::wrap_repl_submission(
             forms, this_id, prelude_available, prior_modules);
 
+        auto active_profile = pending_profile;
+        pending_profile.reset();
+
+        std::optional<std::uint64_t> profiler_session;
+        if (active_profile.has_value()) {
+            auto& profiler = eta::runtime::prof::runtime_profiler();
+            auto session = (active_profile->mode == "sample")
+                ? profiler.start_sample_session(active_profile->hz)
+                : profiler.start_trace_session();
+            if (!session) {
+                std::cerr << "error: :prof: failed to start profiler session\n";
+                active_profile.reset();
+            } else {
+                profiler_session = *session;
+            }
+        }
+
         eta::runtime::nanbox::LispVal result{};
         bool ok;
         if (wrapped.last_is_expr) {
             ok = driver.run_source(wrapped.source, &result, wrapped.result_name);
         } else {
             ok = driver.run_source(wrapped.source);
+        }
+
+        if (active_profile.has_value() && profiler_session.has_value()) {
+            auto& profiler = eta::runtime::prof::runtime_profiler();
+            const bool stopped = (active_profile->mode == "sample")
+                ? profiler.stop_sample_session(*profiler_session)
+                : profiler.stop_trace_session(*profiler_session);
+            if (!stopped) {
+                std::cerr << "error: :prof: failed to stop profiler session\n";
+            } else {
+                std::optional<std::string> report;
+                const auto& format = active_profile->format;
+                if (format == "pretty") {
+                    report = profiler.render_pretty_report_for_session(*profiler_session);
+                } else if (format == "json") {
+                    report = profiler.render_json_report_for_session(*profiler_session);
+                } else if (format == "speedscope") {
+                    report = profiler.render_speedscope_report_for_session(*profiler_session);
+                } else if (format == "eta-prof") {
+                    report = profiler.render_archive_report_for_session(*profiler_session);
+                } else if (format == "chrome") {
+                    report = profiler.render_chrome_report_for_session(*profiler_session);
+                } else if (format == "pprof") {
+                    auto archive = profiler.render_archive_report_for_session(*profiler_session);
+                    if (!archive) {
+                        std::cerr << "error: :prof: failed to render profiler archive for pprof\n";
+                    } else {
+                        auto parsed_archive = eta::runtime::prof::parse_eta_prof_archive(*archive);
+                        if (!parsed_archive) {
+                            std::cerr << "error: :prof: failed to parse profiler archive for pprof: "
+                                      << parsed_archive.error() << "\n";
+                        } else {
+                            auto pprof = eta::runtime::prof::write_pprof_profile(*parsed_archive);
+                            if (!pprof) {
+                                std::cerr << "error: :prof: " << pprof.error() << "\n";
+                            } else {
+                                report = std::move(*pprof);
+                            }
+                        }
+                    }
+                }
+
+                if (report.has_value()) {
+                    std::cout << *report;
+                    if (report->empty() || report->back() != '\n') {
+                        std::cout << "\n";
+                    }
+                } else if (format != "pprof") {
+                    std::cerr << "error: :prof: failed to render profiler report\n";
+                }
+            }
         }
 
         if (ok) {

@@ -18,6 +18,7 @@
 
 #include <eta/arch.h>
 #include <eta/runtime/nanbox.h>
+#include "eta/runtime/prof/profiler.h"
 #include "enum_utils.h"
 
 namespace eta::runtime::memory::heap {
@@ -256,6 +257,7 @@ namespace eta::runtime::memory::heap {
             stats.num_objects.fetch_add(1, std::memory_order_relaxed);
             stats.heap_bytes.fetch_add(sizeof(T), std::memory_order_relaxed);
             total_heap_bytes.fetch_add(sizeof(T), std::memory_order_relaxed);
+            eta::runtime::prof::runtime_profiler().on_allocation(sizeof(T));
             return id;
         }
 

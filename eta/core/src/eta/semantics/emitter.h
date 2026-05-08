@@ -6,6 +6,8 @@
 #include <deque>
 #include <mutex>
 #include <vector>
+#include <optional>
+#include <string_view>
 #include "eta/semantics/core_ir.h"
 #include "eta/runtime/vm/bytecode.h"
 #include "eta/semantics/semantic_analyzer.h"
@@ -105,7 +107,6 @@ private:
     runtime::memory::heap::Heap& heap_;
     runtime::memory::intern::InternTable& intern_table_;
     BytecodeFunctionRegistry& registry_;
-    uint32_t lambda_count_{0};  ///< instance counter (replaces former static in emit_lambda)
 
     struct Context {
         runtime::vm::BytecodeFunction func;
@@ -122,7 +123,8 @@ private:
     };
 
     void emit_node(const core::Node* node, Context& ctx);
-    uint32_t emit_lambda(const core::Lambda& lambda, const std::string& parent_name, const Span& span);
+    uint32_t emit_lambda(const core::Lambda& lambda, const Span& span,
+                         const std::optional<std::string>& preferred_name = std::nullopt);
 
     /// Helper to emit load/store operations for different address types
     void emit_address_load(const core::Address& addr, Context& ctx, const Span& span);
@@ -137,7 +139,8 @@ private:
     void emit_primitive_call(const core::PrimitiveCall& n, Context& ctx, const Span& span);
     void emit_if(const core::If& n, Context& ctx, const Span& span);
     void emit_begin(const core::Begin& n, Context& ctx, const Span& span);
-    void emit_lambda_node(const core::Lambda& n, const Span& span, Context& ctx);
+    void emit_lambda_node(const core::Lambda& n, const Span& span, Context& ctx,
+                          std::optional<std::string> preferred_name = std::nullopt);
     void emit_set(const core::Set& n, Context& ctx, const Span& span);
     void emit_values(const core::Values& n, Context& ctx, const Span& span);
     void emit_call_with_values(const core::CallWithValues& n, bool tail, Context& ctx, const Span& span);
@@ -165,6 +168,11 @@ private:
 
     std::vector<ActiveLambdaContext> active_lambda_stack_;
     std::unordered_map<const core::Lambda*, std::vector<std::uint16_t>> pending_self_upval_slots_;
+
+    [[nodiscard]] std::optional<std::string> resolve_binding_name(const core::Address& addr,
+                                                                   const Context& ctx) const;
+    [[nodiscard]] std::string named_function_label(std::string_view binding_name) const;
+    [[nodiscard]] std::string anonymous_lambda_label(const Span& span) const;
 };
 
 } ///< namespace eta::semantics

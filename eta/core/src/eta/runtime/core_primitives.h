@@ -30,6 +30,7 @@
 #include "eta/runtime/csv_builtins.h"
 #include "eta/runtime/regex_builtins.h"
 #include "eta/runtime/json_builtins.h"
+#include "eta/runtime/prof/profiler.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/types/logic_var.h"
 #include "eta/runtime/types/tape.h"
@@ -2725,6 +2726,174 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 #else
         return make_symbol(intern_table, "Unknown");
 #endif
+    });
+
+    /**
+     * Profiler controls consumed by std.prof.
+     */
+
+    env.register_builtin("%prof-start", 0, true, [&heap, &intern_table](Args args)
+        -> std::expected<LispVal, RuntimeError> {
+        std::string mode = "trace";
+        std::uint32_t sample_hz = 1000;
+        if (!args.empty()) {
+            auto mode_sv = StringView::try_from(args[0], intern_table);
+            if (!mode_sv) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "%prof-start: mode must be a string or symbol"}});
+            }
+            mode = std::string(mode_sv->view());
+        }
+
+        if (mode != "trace" && mode != "sample") {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::UserError,
+                "%prof-start: mode must be 'trace' or 'sample'"}});
+        }
+
+        if (args.size() > 2) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::InvalidArity,
+                "%prof-start: expected at most 2 arguments"}});
+        }
+
+        if (args.size() >= 2) {
+            auto hz = classify_numeric(args[1], heap);
+            if (!hz.is_valid() || !hz.is_fixnum() || hz.int_val <= 0) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "%prof-start: hz must be a positive integer"}});
+            }
+            sample_hz = static_cast<std::uint32_t>(hz.int_val);
+        }
+
+        auto& profiler = eta::runtime::prof::runtime_profiler();
+        auto session = (mode == "sample")
+            ? profiler.start_sample_session(sample_hz)
+            : profiler.start_trace_session();
+        if (!session) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::UserError,
+                "%prof-start: a profiling session is already active"}});
+        }
+        return make_fixnum(heap, static_cast<int64_t>(*session));
+    });
+
+    env.register_builtin("%prof-stop", 1, false, [&heap](Args args)
+        -> std::expected<LispVal, RuntimeError> {
+        auto id_num = classify_numeric(args[0], heap);
+        if (!id_num.is_valid() || !id_num.is_fixnum() || id_num.int_val <= 0) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError,
+                "%prof-stop: session handle must be a positive integer"}});
+        }
+
+        const auto session_id = static_cast<std::uint64_t>(id_num.int_val);
+        auto& profiler = eta::runtime::prof::runtime_profiler();
+        if (!profiler.stop_trace_session(session_id)
+            && !profiler.stop_sample_session(session_id)) {
+            return False;
+        }
+        return make_fixnum(heap, static_cast<int64_t>(session_id));
+    });
+
+    env.register_builtin("%prof-report", 1, true, [&heap, &intern_table](Args args)
+        -> std::expected<LispVal, RuntimeError> {
+        if (args.size() > 2) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::InvalidArity,
+                "%prof-report: expected one or two arguments"}});
+        }
+
+        auto id_num = classify_numeric(args[0], heap);
+        if (!id_num.is_valid() || !id_num.is_fixnum() || id_num.int_val <= 0) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError,
+                "%prof-report: session handle must be a positive integer"}});
+        }
+
+        std::string format = "pretty";
+        if (args.size() >= 2) {
+            auto format_sv = StringView::try_from(args[1], intern_table);
+            if (!format_sv) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "%prof-report: format must be a string or symbol"}});
+            }
+            format = std::string(format_sv->view());
+        }
+
+        const auto session_id = static_cast<std::uint64_t>(id_num.int_val);
+        auto& profiler = eta::runtime::prof::runtime_profiler();
+        std::optional<std::string> report;
+        if (format == "pretty") {
+            report = profiler.render_pretty_report_for_session(session_id);
+        } else if (format == "json") {
+            report = profiler.render_json_report_for_session(session_id);
+        } else if (format == "speedscope") {
+            report = profiler.render_speedscope_report_for_session(session_id);
+        } else if (format == "chrome") {
+            report = profiler.render_chrome_report_for_session(session_id);
+        } else if (format == "eta-prof") {
+            report = profiler.render_archive_report_for_session(session_id);
+        } else {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::UserError,
+                "%prof-report: unknown format"}});
+        }
+
+        if (!report) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::UserError,
+                "%prof-report: unknown profiler session handle"}});
+        }
+        return make_string(heap, intern_table, *report);
+    });
+
+    env.register_builtin("%prof-counter", 2, false, [&heap, &intern_table](Args args)
+        -> std::expected<LispVal, RuntimeError> {
+        auto name_sv = StringView::try_from(args[0], intern_table);
+        if (!name_sv) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError,
+                "%prof-counter: name must be a string or symbol"}});
+        }
+
+        auto value_num = classify_numeric(args[1], heap);
+        if (!value_num.is_valid() || !value_num.is_fixnum() || value_num.int_val < 0) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError,
+                "%prof-counter: value must be a non-negative integer"}});
+        }
+
+        eta::runtime::prof::runtime_profiler().add_counter(
+            name_sv->view(),
+            static_cast<std::uint64_t>(value_num.int_val));
+        return True;
+    });
+
+    env.register_builtin("%prof-region-enter", 1, false, [&intern_table](Args args)
+        -> std::expected<LispVal, RuntimeError> {
+        auto name_sv = StringView::try_from(args[0], intern_table);
+        if (!name_sv) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError,
+                "%prof-region-enter: name must be a string or symbol"}});
+        }
+        eta::runtime::prof::runtime_profiler().push_user_region(name_sv->view());
+        return True;
+    });
+
+    env.register_builtin("%prof-region-exit", 0, false, [](Args)
+        -> std::expected<LispVal, RuntimeError> {
+        eta::runtime::prof::runtime_profiler().pop_user_region();
+        return True;
+    });
+
+    env.register_builtin("%prof-enabled?", 0, false, [](Args)
+        -> std::expected<LispVal, RuntimeError> {
+        return eta::runtime::prof::runtime_profiler().enabled() ? True : False;
     });
 
     /**

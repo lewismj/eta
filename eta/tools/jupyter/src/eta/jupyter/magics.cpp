@@ -34,6 +34,7 @@ namespace {
     if (name == "whos") return MagicName::Whos;
     if (name == "plot") return MagicName::Plot;
     if (name == "table") return MagicName::Table;
+    if (name == "prof") return MagicName::Prof;
     if (name == "trace") return MagicName::Trace;
     return MagicName::Unknown;
 }
@@ -125,6 +126,7 @@ std::string_view magic_name(MagicName name)
         case MagicName::Whos: return "whos";
         case MagicName::Plot: return "plot";
         case MagicName::Table: return "table";
+        case MagicName::Prof: return "prof";
         case MagicName::Trace: return "trace";
         case MagicName::Unknown:
         default:

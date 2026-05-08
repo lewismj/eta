@@ -32,7 +32,7 @@ struct BytecodeFunction {
     uint32_t                 arity;       // required parameter count
     bool                     has_rest;    // accepts variadic rest arg?
     uint32_t                 stack_size;  // frame size (locals + temporaries)
-    std::string              name;        // debug name (e.g., "my-module_init_lambda3")
+    std::string              name;        // debug name (e.g., "my-module:my-func" or "<lambda@my-module:12:7>")
 };
 
 struct Instruction {
@@ -238,7 +238,7 @@ Lambda "add1":
 
 ### Stage 3 — Emit Bytecode
 
-**`add1` lambda → `example_init_lambda0`:**
+**`add1` lambda → `example:add1`:**
 
 ```
   constants: [ <fixnum 1> ]
@@ -281,16 +281,16 @@ Lambda "add1":
 
 ```
 Executing: example_init
-  pc=0  MakeClosure(0,0)  → creates Closure{func=&lambda0, upvals=[]}
+  pc=0  MakeClosure(0,0)  → creates Closure{func=&example:add1, upvals=[]}
                             pushes HeapObject(id=…) onto stack
   pc=1  StoreGlobal(N)    → globals[N] = pop()   (add1 closure stored)
   pc=2  Pop               → discard nil from set!
   pc=3  LoadConst(2)      → push 41
   pc=4  LoadGlobal(N)     → push Closure(add1)
   pc=5  Call(1)           → pop callee, set up new frame:
-                            frame = {func=lambda0, fp=top-1, pc=0}
+                            frame = {func=example:add1, fp=top-1, pc=0}
 
-Executing: example_init_lambda0  (fp points to stack slot with 41)
+Executing: example:add1  (fp points to stack slot with 41)
   pc=0  LoadLocal(0)      → push stack[fp+0] = 41
   pc=1  LoadConst(0)      → push 1
   pc=2  Add               → pop 1, pop 41, push 42

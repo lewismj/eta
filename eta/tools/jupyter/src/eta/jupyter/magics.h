@@ -32,6 +32,7 @@ enum class MagicName {
     Whos,
     Plot,
     Table,
+    Prof,
     Trace,
 };
 

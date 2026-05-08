@@ -31,6 +31,14 @@ BOOST_AUTO_TEST_CASE(parse_cell_magic_trace_with_body) {
     BOOST_TEST(parsed.body == "(+ 1 2)\n(* 3 4)\n");
 }
 
+BOOST_AUTO_TEST_CASE(parse_cell_magic_prof_with_options_and_body) {
+    const auto parsed = eta::jupyter::parse_magic("%%prof sample --hz=4000\n(+ 1 2)\n");
+    BOOST_TEST(static_cast<int>(parsed.kind) == static_cast<int>(eta::jupyter::MagicKind::Cell));
+    BOOST_TEST(static_cast<int>(parsed.name) == static_cast<int>(eta::jupyter::MagicName::Prof));
+    BOOST_TEST(parsed.args == "sample --hz=4000");
+    BOOST_TEST(parsed.body == "(+ 1 2)\n");
+}
+
 BOOST_AUTO_TEST_CASE(parse_non_magic_returns_none) {
     const auto parsed = eta::jupyter::parse_magic("(+ 1 2)");
     BOOST_TEST(static_cast<int>(parsed.kind) == static_cast<int>(eta::jupyter::MagicKind::None));

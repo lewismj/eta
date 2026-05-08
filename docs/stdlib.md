@@ -91,4 +91,5 @@ tutorials and longer examples see the [Language Guide](language_guide.md).
 
 - [std.test](stdlib/test.md) - Unit tests with TAP/JUnit reporters.
 - [std.jupyter](stdlib/jupyter.md) - Notebook MIME display markers.
+- [std.prof](stdlib/prof.md) - Runtime profiling sessions and reports.
 

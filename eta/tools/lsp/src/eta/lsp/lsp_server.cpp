@@ -8,8 +8,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <variant>
 
@@ -23,6 +25,9 @@
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/builtin_names.h"
+#include "eta/runtime/memory/heap.h"
+#include "eta/runtime/memory/intern_table.h"
+#include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/interpreter/repl_complete.h"
 #include "eta/package/discovery.h"
 #include "eta/package/lockfile.h"
@@ -76,6 +81,34 @@ namespace {
             return "workspace-non-member";
     }
     return "unknown";
+}
+
+[[nodiscard]] std::optional<std::vector<std::string>>
+load_etac_exports_for_module(const std::filesystem::path& etac_path,
+                             std::string_view module_name) {
+    std::ifstream in(etac_path, std::ios::in | std::ios::binary);
+    if (!in.is_open()) return std::nullopt;
+
+    runtime::memory::heap::Heap heap(8u * 1024u * 1024u);
+    runtime::memory::intern::InternTable intern_table;
+    runtime::vm::BytecodeSerializer serializer(heap, intern_table);
+    auto etac = serializer.deserialize(in, /*expected_builtins=*/0);
+    if (!etac) return std::nullopt;
+
+    for (const auto& module : etac->modules) {
+        if (module.name != module_name) continue;
+
+        std::vector<std::string> exports;
+        exports.reserve(module.export_bindings.size());
+        for (const auto& ex : module.export_bindings) {
+            if (!ex.name.empty()) exports.push_back(ex.name);
+        }
+
+        std::sort(exports.begin(), exports.end());
+        exports.erase(std::unique(exports.begin(), exports.end()), exports.end());
+        return exports;
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -428,7 +461,8 @@ void LspServer::preload_prelude(
 
 void LspServer::preload_module_deps(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
-        std::unordered_set<std::string>& seen_modules) {
+        std::unordered_set<std::string>& seen_modules,
+        std::unordered_map<std::string, std::vector<std::string>>& compiled_module_exports) {
     using namespace reader::utils;
 
     /// Collect imported module names from a form list
@@ -472,7 +506,21 @@ void LspServer::preload_module_deps(
             seen_modules.insert(mod_name);
 
             auto src = resolve_module_source(mod_name);
-            if (!src) continue;
+            if (!src) {
+                auto resolved = resolver_.resolve(mod_name);
+                if (resolved && resolved->extension() == ".etac") {
+                    auto sibling = *resolved;
+                    sibling.replace_extension(".eta");
+                    std::error_code ec;
+                    if (!std::filesystem::is_regular_file(sibling, ec) || ec) {
+                        auto exports = load_etac_exports_for_module(*resolved, mod_name);
+                        if (exports) {
+                            compiled_module_exports[mod_name] = std::move(*exports);
+                        }
+                    }
+                }
+                continue;
+            }
 
             reader::lexer::Lexer lex(0, *src);
             reader::parser::Parser parser(lex);
@@ -958,6 +1006,7 @@ void LspServer::validate_document(const std::string& uri) {
      * linker can resolve cross-module references without false diagnostics.
      */
     auto all_forms = std::move(*expanded_res);
+    std::unordered_map<std::string, std::vector<std::string>> compiled_module_exports;
     {
         using namespace reader::utils;
         std::unordered_set<std::string> seen_modules;
@@ -969,7 +1018,7 @@ void LspServer::validate_document(const std::string& uri) {
                 seen_modules.insert(name_sym->name);
         }
         preload_prelude(all_forms, seen_modules);
-        preload_module_deps(all_forms, seen_modules);
+        preload_module_deps(all_forms, seen_modules, compiled_module_exports);
     }
 
     reader::ModuleLinker linker;
@@ -984,6 +1033,23 @@ void LspServer::validate_document(const std::string& uri) {
         diags.push_back(std::move(d));
         publish_diagnostics(uri, diags);
         return;
+    }
+
+    for (const auto& [module_name, exports] : compiled_module_exports) {
+        auto compiled_idx_res = linker.index_compiled_module_exports(
+            module_name,
+            std::span<const std::string>(exports.data(), exports.size()));
+        if (!compiled_idx_res) {
+            const auto& err = compiled_idx_res.error();
+            LspDiagnostic d;
+            d.severity = 1;
+            d.range = span_to_range(err.span.start.line, err.span.start.column,
+                                    err.span.end.line, err.span.end.column);
+            d.message = err.message;
+            diags.push_back(std::move(d));
+            publish_diagnostics(uri, diags);
+            return;
+        }
     }
 
     auto link_res = linker.link();

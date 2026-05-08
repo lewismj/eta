@@ -14,6 +14,7 @@ set(ETA_CLI_DIR "${ETA_LAYOUT_ROOT_DIR}/cli")
 set(ETA_LSP_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/lsp")
 set(ETA_DAP_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/dap")
 set(ETA_JUPYTER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/jupyter")
+set(ETA_PROF_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/prof")
 set(ETA_TEST_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/test")
 set(ETA_PKG_TEST_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/pkg_test")
 set(ETA_CLI_TEST_DIR "${ETA_LAYOUT_ROOT_DIR}/qa/cli_test")
@@ -45,6 +46,11 @@ if(NOT Boost_FOUND)
     message(FATAL_ERROR "Boost not found.")
 endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+option(ETA_PROF_PPROF "Enable experimental pprof export support for profiling" OFF)
+if(ETA_PROF_PPROF)
+    add_compile_definitions(ETA_PROF_PPROF=1)
+endif()
 
 # ── libtorch (always required) ────────────────────────────────────────────
 set(ETA_TORCH_BACKEND "cpu" CACHE STRING
@@ -160,6 +166,7 @@ add_subdirectory("${ETA_LOG_DIR}")
 # User-facing tools and protocol servers.
 add_subdirectory("${ETA_INTERPRETER_DIR}")
 add_subdirectory("${ETA_COMPILER_DIR}")
+add_subdirectory("${ETA_PROF_DIR}")
 add_subdirectory("${ETA_CLI_DIR}")
 add_subdirectory("${ETA_LSP_DIR}")
 add_subdirectory("${ETA_DAP_DIR}")

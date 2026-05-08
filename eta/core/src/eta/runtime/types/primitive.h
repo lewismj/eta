@@ -4,6 +4,7 @@
 #include <expected>
 #include <initializer_list>
 #include <span>
+#include <string>
 #include <vector>
 #include <eta/runtime/nanbox.h>
 #include <eta/runtime/error.h>
@@ -44,6 +45,7 @@ namespace eta::runtime::types {
         PrimitiveFunc func {};
         uint32_t arity {};
         bool has_rest {};
+        std::string debug_name {};          ///< Optional profiler/debug label
         std::vector<LispVal> gc_roots {};  ///< LispVals captured by func that GC must trace
     };
 

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <regex>
 #include <sstream>
@@ -48,6 +49,10 @@ struct RunOptions {
     std::optional<std::string> bin_name;
     std::optional<std::string> example_name;
     std::optional<fs::path> input_path;
+    std::optional<std::string> prof_mode;
+    std::optional<std::string> prof_format;
+    std::optional<std::uint32_t> prof_hz;
+    std::optional<fs::path> prof_out;
     std::vector<std::string> program_args;
     bool strict_shadows{false};
 };
@@ -554,7 +559,11 @@ void print_usage(const char* program) {
         << "  eta new <name> [--bin|--lib]\n"
         << "  eta init [--bin|--lib]\n"
         << "  eta tree [--depth N] [workspace options]\n"
-        << "  eta run [--profile <release|debug>] [--strict-shadows] [--bin NAME] [--example NAME] [file.eta] [-- args...] [workspace options]\n"
+        << "  eta run [--profile <release|debug>] [--prof[=sample|trace]] [--prof-hz N] [--prof-format FMT] [--prof-out FILE] [--strict-shadows] [--bin NAME] [--example NAME] [file.eta] [-- args...] [workspace options]\n"
+        << "  eta prof run [--mode sample|trace] [--hz N] [--format FMT] [--out FILE] [run options]\n"
+        << "  eta prof report [--format pretty|json|speedscope|chrome|pprof] FILE.eta-prof\n"
+        << "  eta prof merge --out OUT.eta-prof IN1.eta-prof IN2.eta-prof ...\n"
+        << "  eta prof view FILE.speedscope.json|FILE.eta-prof\n"
         << "  eta add <pkg> [--path DIR|--git URL --rev SHA|--tarball PATH --sha256 HEX] [--dev] [workspace options]\n"
         << "  eta remove <pkg> [workspace options]\n"
         << "  eta update [<pkg>...] [workspace options]\n"
@@ -590,8 +599,25 @@ void print_tree_usage(const char* program) {
 void print_run_usage(const char* program) {
     std::cerr
         << "Usage: " << program
-        << " run [--profile <release|debug>] [--strict-shadows] [--bin NAME] [--example NAME] [file.eta] [-- args...]"
+        << " run [--profile <release|debug>] [--prof[=sample|trace]] [--prof-hz N] [--prof-format FMT] [--prof-out FILE] [--strict-shadows] [--bin NAME] [--example NAME] [file.eta] [-- args...]"
         << " [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n";
+}
+
+void print_prof_usage(const char* program) {
+    std::cerr
+        << "Usage: " << program << " prof <subcommand> [options]\n"
+        << "\n"
+        << "Subcommands:\n"
+        << "  run    [--mode sample|trace] [--hz N] [--format FMT] [--out FILE] [run options]\n"
+        << "  report [--format pretty|json|speedscope|chrome|pprof] FILE.eta-prof\n"
+        << "  merge  --out OUT.eta-prof IN1.eta-prof IN2.eta-prof ...\n"
+        << "  view   FILE.speedscope.json|FILE.eta-prof\n"
+        << "\n"
+        << "Run options:\n"
+        << "  [--profile <release|debug>] [--strict-shadows] [--bin NAME] [--example NAME] [file.eta] [-- args...]\n"
+        << "  [--workspace] [-p NAME] [--exclude NAME] [--manifest-path PATH]\n"
+        << "\n"
+        << "Formats: pretty|json|speedscope|eta-prof|chrome|pprof\n";
 }
 
 void print_add_usage(const char* program) {
@@ -1154,6 +1180,27 @@ CliResult<int> scaffold_project(const fs::path& project_root,
         parsed = parsed * 10u + static_cast<std::size_t>(c - '0');
     }
     return parsed;
+}
+
+[[nodiscard]] CliResult<std::uint32_t> parse_positive_u32(std::string_view value,
+                                                          std::string_view field_name) {
+    if (value.empty()) {
+        return std::unexpected(std::string(field_name) + " must be a positive integer");
+    }
+    std::uint64_t parsed = 0;
+    for (const char c : value) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
+            return std::unexpected(std::string(field_name) + " must be a positive integer");
+        }
+        parsed = parsed * 10u + static_cast<std::uint64_t>(c - '0');
+        if (parsed > static_cast<std::uint64_t>((std::numeric_limits<std::uint32_t>::max)())) {
+            return std::unexpected(std::string(field_name) + " is too large");
+        }
+    }
+    if (parsed == 0u) {
+        return std::unexpected(std::string(field_name) + " must be a positive integer");
+    }
+    return static_cast<std::uint32_t>(parsed);
 }
 
 [[nodiscard]] std::string dependency_source_id(const eta::package::ManifestDependency& dependency) {
@@ -1894,6 +1941,14 @@ std::vector<fs::path> module_entries_from_graph(const ResolvedProjectState& stat
 #endif
 }
 
+[[nodiscard]] fs::path find_eta_prof_path(const char* argv0) {
+#ifdef ETA_ETA_PROF_PATH
+    return find_tool_path(argv0, "eta_prof", fs::path(ETA_ETA_PROF_PATH));
+#else
+    return find_tool_path(argv0, "eta_prof", std::nullopt);
+#endif
+}
+
 CliResult<int> run_with_etai(const char* argv0,
                              const std::vector<std::string>& args,
                              const std::optional<fs::path>& cwd = std::nullopt) {
@@ -1910,6 +1965,12 @@ CliResult<int> run_with_eta_test(const char* argv0,
                                  const std::vector<std::string>& args,
                                  const std::optional<fs::path>& cwd = std::nullopt) {
     return run_external(find_eta_test_path(argv0), args, cwd);
+}
+
+CliResult<int> run_with_eta_prof(const char* argv0,
+                                 const std::vector<std::string>& args,
+                                 const std::optional<fs::path>& cwd = std::nullopt) {
+    return run_external(find_eta_prof_path(argv0), args, cwd);
 }
 
 std::vector<fs::path> collect_eta_sources(const fs::path& root_dir) {
@@ -2168,6 +2229,54 @@ CliResult<RunOptions> parse_run_options(const std::vector<std::string>& args) {
             options.profile = args[++i];
             continue;
         }
+        if (arg == "--prof") {
+            options.prof_mode = "sample";
+            if (i + 1u < args.size()) {
+                const auto& next = args[i + 1u];
+                if (next == "trace" || next == "sample") {
+                    options.prof_mode = next;
+                    ++i;
+                }
+            }
+            continue;
+        }
+        if (arg.rfind("--prof=", 0) == 0) {
+            options.prof_mode = arg.substr(7u);
+            continue;
+        }
+        if (arg == "--prof-out") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta run: --prof-out requires a value");
+            }
+            options.prof_out = fs::path(args[++i]);
+            continue;
+        }
+        if (arg == "--prof-format") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta run: --prof-format requires a value");
+            }
+            options.prof_format = args[++i];
+            continue;
+        }
+        if (arg.rfind("--prof-format=", 0) == 0) {
+            options.prof_format = arg.substr(14u);
+            continue;
+        }
+        if (arg == "--prof-hz") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta run: --prof-hz requires a value");
+            }
+            auto parsed_hz = parse_positive_u32(args[++i], "--prof-hz");
+            if (!parsed_hz) return std::unexpected("eta run: " + parsed_hz.error());
+            options.prof_hz = *parsed_hz;
+            continue;
+        }
+        if (arg.rfind("--prof-hz=", 0) == 0) {
+            auto parsed_hz = parse_positive_u32(arg.substr(10u), "--prof-hz");
+            if (!parsed_hz) return std::unexpected("eta run: " + parsed_hz.error());
+            options.prof_hz = *parsed_hz;
+            continue;
+        }
         if (arg == "--strict-shadows") {
             options.strict_shadows = true;
             continue;
@@ -2197,6 +2306,29 @@ CliResult<RunOptions> parse_run_options(const std::vector<std::string>& args) {
 
     if (options.profile != "release" && options.profile != "debug") {
         return std::unexpected("eta run: --profile must be 'release' or 'debug'");
+    }
+    if (options.prof_mode.has_value()
+        && *options.prof_mode != "trace"
+        && *options.prof_mode != "sample") {
+        return std::unexpected("eta run: --prof mode must be 'trace' or 'sample'");
+    }
+    if (options.prof_format.has_value()) {
+        static const std::unordered_set<std::string> kFormats = {
+            "pretty",
+            "json",
+            "speedscope",
+            "eta-prof",
+            "chrome",
+            "pprof",
+        };
+        if (!kFormats.contains(*options.prof_format)) {
+            return std::unexpected(
+                "eta run: --prof-format must be one of pretty|json|speedscope|eta-prof|chrome|pprof");
+        }
+    }
+    if ((options.prof_format.has_value() || options.prof_hz.has_value())
+        && !options.prof_mode.has_value()) {
+        return std::unexpected("eta run: --prof-format/--prof-hz require --prof");
     }
     if (options.input_path.has_value()
         && (options.bin_name.has_value() || options.example_name.has_value())) {
@@ -2240,6 +2372,22 @@ CliResult<int> command_run(const char* program,
         }
 
         std::vector<std::string> etai_args;
+        if (options.prof_mode.has_value()) {
+            etai_args.push_back("--prof");
+            etai_args.push_back(*options.prof_mode);
+        }
+        if (options.prof_out.has_value()) {
+            etai_args.push_back("--prof-out");
+            etai_args.push_back(options.prof_out->string());
+        }
+        if (options.prof_format.has_value()) {
+            etai_args.push_back("--prof-format");
+            etai_args.push_back(*options.prof_format);
+        }
+        if (options.prof_hz.has_value()) {
+            etai_args.push_back("--prof-hz");
+            etai_args.push_back(std::to_string(*options.prof_hz));
+        }
         if (options.strict_shadows) etai_args.push_back("--strict-shadows");
         etai_args.push_back(input.string());
         if (!options.program_args.empty()) {
@@ -2279,6 +2427,22 @@ CliResult<int> command_run(const char* program,
     const std::string module_path = join_module_path_entries(module_entries);
 
     std::vector<std::string> etai_args;
+    if (options.prof_mode.has_value()) {
+        etai_args.push_back("--prof");
+        etai_args.push_back(*options.prof_mode);
+    }
+    if (options.prof_out.has_value()) {
+        etai_args.push_back("--prof-out");
+        etai_args.push_back(options.prof_out->string());
+    }
+    if (options.prof_format.has_value()) {
+        etai_args.push_back("--prof-format");
+        etai_args.push_back(*options.prof_format);
+    }
+    if (options.prof_hz.has_value()) {
+        etai_args.push_back("--prof-hz");
+        etai_args.push_back(std::to_string(*options.prof_hz));
+    }
     if (options.strict_shadows) etai_args.push_back("--strict-shadows");
     if (!module_path.empty()) {
         etai_args.push_back("--path");
@@ -2291,6 +2455,120 @@ CliResult<int> command_run(const char* program,
         etai_args.insert(etai_args.end(), options.program_args.begin(), options.program_args.end());
     }
     return run_with_etai(argv0, etai_args, state->project_root);
+}
+
+CliResult<int> command_prof(const char* program,
+                            const char* argv0,
+                            const std::vector<std::string>& args,
+                            const fs::path& cwd) {
+    if (args.empty()) {
+        print_prof_usage(program);
+        return std::unexpected("eta prof: missing subcommand (expected run|report|merge|view)");
+    }
+
+    if (args.front() == "--help" || args.front() == "-h") {
+        print_prof_usage(program);
+        return 0;
+    }
+
+    const std::string subcommand = args.front();
+    if (subcommand == "report" || subcommand == "merge" || subcommand == "view") {
+        std::vector<std::string> prof_args;
+        prof_args.reserve(args.size());
+        prof_args.insert(prof_args.end(), args.begin(), args.end());
+        return run_with_eta_prof(argv0, prof_args, cwd);
+    }
+
+    if (subcommand != "run") {
+        return std::unexpected("eta prof: unknown subcommand '" + subcommand + "'");
+    }
+
+    std::string mode = "sample";
+    std::optional<std::string> format;
+    std::optional<std::uint32_t> hz;
+    std::optional<std::string> out;
+    std::vector<std::string> forwarded_run_args;
+    forwarded_run_args.reserve(args.size() + 8u);
+
+    for (std::size_t i = 1; i < args.size(); ++i) {
+        const auto& arg = args[i];
+        if (arg == "--help" || arg == "-h") {
+            print_prof_usage(program);
+            return 0;
+        }
+        if (arg == "--mode") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta prof run: --mode requires a value");
+            }
+            mode = args[++i];
+            continue;
+        }
+        if (arg.rfind("--mode=", 0) == 0) {
+            mode = arg.substr(7u);
+            continue;
+        }
+        if (arg == "--format") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta prof run: --format requires a value");
+            }
+            format = args[++i];
+            continue;
+        }
+        if (arg.rfind("--format=", 0) == 0) {
+            format = arg.substr(9u);
+            continue;
+        }
+        if (arg == "--hz") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta prof run: --hz requires a value");
+            }
+            auto parsed_hz = parse_positive_u32(args[++i], "--hz");
+            if (!parsed_hz) return std::unexpected("eta prof run: " + parsed_hz.error());
+            hz = *parsed_hz;
+            continue;
+        }
+        if (arg.rfind("--hz=", 0) == 0) {
+            auto parsed_hz = parse_positive_u32(arg.substr(5u), "--hz");
+            if (!parsed_hz) return std::unexpected("eta prof run: " + parsed_hz.error());
+            hz = *parsed_hz;
+            continue;
+        }
+        if (arg == "--out") {
+            if (i + 1u >= args.size()) {
+                return std::unexpected("eta prof run: --out requires a value");
+            }
+            out = args[++i];
+            continue;
+        }
+        if (arg.rfind("--out=", 0) == 0) {
+            out = arg.substr(6u);
+            continue;
+        }
+        forwarded_run_args.push_back(arg);
+    }
+
+    if (mode != "trace" && mode != "sample") {
+        return std::unexpected("eta prof run: --mode must be 'trace' or 'sample'");
+    }
+
+    std::vector<std::string> run_args;
+    run_args.reserve(forwarded_run_args.size() + 10u);
+    run_args.push_back("--prof");
+    run_args.push_back(mode);
+    if (hz.has_value()) {
+        run_args.push_back("--prof-hz");
+        run_args.push_back(std::to_string(*hz));
+    }
+    if (format.has_value()) {
+        run_args.push_back("--prof-format");
+        run_args.push_back(*format);
+    }
+    if (out.has_value()) {
+        run_args.push_back("--prof-out");
+        run_args.push_back(*out);
+    }
+    run_args.insert(run_args.end(), forwarded_run_args.begin(), forwarded_run_args.end());
+    return command_run(program, argv0, run_args, cwd);
 }
 
 CliResult<BuildOptions> parse_build_options(const std::vector<std::string>& args) {
@@ -2987,6 +3265,8 @@ int main(int argc, char* argv[]) {
         result = command_tree(argv[0], args, cwd);
     } else if (command == "run") {
         result = command_run(argv[0], argv[0], args, cwd);
+    } else if (command == "prof") {
+        result = command_prof(argv[0], argv[0], args, cwd);
     } else if (command == "add") {
         result = command_add(argv[0], args, cwd);
     } else if (command == "remove") {
