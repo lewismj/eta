@@ -2450,7 +2450,14 @@ private:
             if (already_accumulated) continue;
 
             if (executed_modules_.contains(mod_name)) {
-                if (!hydrate_executed_module_source(mod_name)) return false;
+                /**
+                 * Module already available at runtime.
+                 *
+                 * Do not hydrate sibling source for compiled artifacts here:
+                 * replayed compiled export metadata is sufficient for linking,
+                 * and forcing source hydration can perturb compiled global-slot
+                 * layout established by loaded .etac modules.
+                 */
                 continue;
             }
 
@@ -2488,13 +2495,10 @@ private:
             if (!ok) return false;
 
             /**
-             * Prefer sibling source hydration when it exists for richer source
-             * spans/diagnostics. Linking correctness does not depend on this:
-             * compiled-module export metadata is replayed each source pass.
+             * Keep imported compiled modules in compiled form here.
+             * Compiled export replay provides the linker surface needed by
+             * subsequent source passes without executing sibling source.
              */
-            if (path->extension() == ".etac") {
-                if (!hydrate_executed_module_source(mod_name)) return false;
-            }
         }
         return true;
     }
