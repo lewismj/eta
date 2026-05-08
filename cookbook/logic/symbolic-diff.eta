@@ -36,7 +36,7 @@
   (begin
 
     ;; ── Prelude helpers ─────────────────────────────────────────────
-    (defun atom? (x) (not (pair? x)))
+    (defun non-pair? (x) (not (pair? x)))
     (defun op (e) (car e))
     (defun a1 (e) (car (cdr e)))
     (defun a2 (e) (car (cdr (cdr e))))
@@ -45,7 +45,7 @@
     (defun simplify (e)
       (cond
         ;; Atoms simplify to themselves
-        ((atom? e) e)
+        ((non-pair? e) e)
 
         ;; (+ a b)
         ((eq? (op e) '+)

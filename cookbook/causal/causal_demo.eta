@@ -83,7 +83,7 @@
     (println factor-model)
 
     ;; ── Symbolic differentiator (self-contained) ──────────────────
-    ;; atom? is imported from std.core
+    ;; non-pair? is imported from std.core
 
     (defun op (e) (car e))
     (defun a1 (e) (car (cdr e)))
@@ -91,7 +91,7 @@
 
     (defun simplify (e)
       (cond
-        ((atom? e) e)
+        ((non-pair? e) e)
         ((eq? (op e) '+)
           (let ((sa (simplify (a1 e))) (sb (simplify (a2 e))))
             (cond

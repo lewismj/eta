@@ -12,7 +12,7 @@
 
     (defun simplify (e)
       (cond
-        ((atom? e) e)
+        ((non-pair? e) e)
 
         ((eq? (op e) '+)
           (let ((sa (simplify (a1 e)))
@@ -137,7 +137,7 @@
       (eval (list 'lambda vars expr)))
 
     (defun node-count (expr)
-      (if (atom? expr)
+      (if (non-pair? expr)
           1
           (+ 1 (sum-by node-count (cdr expr)))))
 

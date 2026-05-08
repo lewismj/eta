@@ -7,7 +7,7 @@
 (module std.core
   (export
     ;; Predicates
-    atom? void
+    non-pair? void
     ;; Combinators
     identity compose flip constantly negate
     ;; List utilities not covered by builtins
@@ -21,7 +21,7 @@
     ;;  Predicates 
 
     ;; True for anything that is not a pair.
-    (defun atom? (x) (not (pair? x)))
+    (defun non-pair? (x) (not (pair? x)))
 
     ;; Returns '()  the canonical "no useful value" result.
     (defun void () '())

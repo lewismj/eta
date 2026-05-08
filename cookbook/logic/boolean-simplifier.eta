@@ -17,8 +17,8 @@
   (begin
 
     ;; ── Helpers ─────────────────────────────────────────────────────
-    ;; atom? — true for anything that is not a pair (symbols, bools, etc.)
-    (defun atom? (x) (not (pair? x)))
+    ;; non-pair? — true for anything that is not a pair (symbols, bools, etc.)
+    (defun non-pair? (x) (not (pair? x)))
 
     ;; Extract operator and arguments from an expression tree
     (defun op (e) (car e))
@@ -29,14 +29,14 @@
     (defun simplify-bool (e)
       (cond
         ;; Atoms (variables or constants) return as-is
-        ((atom? e) e)
+        ((non-pair? e) e)
 
         ;; ── not ───────────────────────────────────────────────────
         ((eq? (op e) 'not)
           (let ((u (simplify-bool (a1 e))))
             (cond
-              ((and (atom? u) (eq? u #t)) #f)
-              ((and (atom? u) (eq? u #f)) #t)
+              ((and (non-pair? u) (eq? u #t)) #f)
+              ((and (non-pair? u) (eq? u #f)) #t)
               ;; Double negation: ¬(¬x) = x
               ((and (pair? u) (eq? (op u) 'not)) (a1 u))
               ;; De Morgan: ¬(a ∧ b) = (¬a) ∨ (¬b)
