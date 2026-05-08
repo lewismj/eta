@@ -25,13 +25,16 @@
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
 #include "eta/reader/module_linker.h"
+#include "eta/reader/special_form_docs.h"
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/semantics/emitter.h"
 #include "eta/semantics/optimization_pipeline.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/disassembler.h"
+#include "eta/docs/markdown.h"
 #include "eta/runtime/builtin_env.h"
+#include "eta/runtime/builtin_metadata.h"
 #include "eta/runtime/builtin_names.h"
 #include "eta/runtime/embedded_prelude.h"
 #include "eta/runtime/port.h"
@@ -660,22 +663,12 @@ public:
             if (!name.empty()) candidates.insert(std::move(name));
         };
 
-        for (const char* kw : {
-                 "define", "lambda", "if", "begin", "set!", "quote",
-                 "let", "let*", "letrec", "letrec*", "cond", "case",
-                 "and", "or", "when", "unless", "do",
-                 "module", "import", "export",
-                 "define-syntax", "syntax-rules", "define-record-type",
-                 "def", "defun", "progn", "quasiquote",
-                 "call/cc", "dynamic-wind", "values", "call-with-values",
-                 "apply", "raise", "catch",
-                 "logic-var", "unify", "deref-lvar", "trail-mark", "unwind-trail", "copy-term",
-             }) {
-            add_candidate(kw);
+        for (const auto& entry : reader::special_form_docs()) {
+            add_candidate(std::string(entry.name));
         }
 
-        for (const auto& spec : builtins_.specs()) {
-            add_candidate(spec.name);
+        for (const auto& builtin : runtime::builtin_metadata()) {
+            add_candidate(builtin.name);
         }
 
         for (const auto& [_, qualified] : global_names_) {
@@ -708,34 +701,11 @@ public:
     [[nodiscard]] std::string hover_at(const std::string& symbol) const {
         if (symbol.empty()) return {};
 
-        static const std::unordered_map<std::string, std::string> keyword_docs = {
-            {"define", "**define**  -  Define a variable or function.\n\n`(define name expr)`"},
-            {"lambda", "**lambda**  -  Create an anonymous function.\n\n`(lambda (args...) body...)`"},
-            {"if", "**if**  -  Conditional expression.\n\n`(if test consequent alternate)`"},
-            {"begin", "**begin**  -  Sequence expressions.\n\n`(begin expr...)`"},
-            {"module", "**module**  -  Declare a module.\n\n`(module name body...)`"},
-            {"import", "**import**  -  Import bindings from a module.\n\n`(import module-name)`"},
-            {"export", "**export**  -  Export bindings.\n\n`(export name...)`"},
-            {"defun", "**defun**  -  Alias for function definition.\n\n`(defun name (args...) body...)`"},
-            {"eval", "**eval**  -  Evaluate an expression in the current lexical and global environment.\n\n`(eval expr)`"},
-            {"raise", "**raise**  -  Raise an exception.\n\n`(raise tag value)`"},
-            {"catch", "**catch**  -  Catch an exception by tag.\n\n`(catch 'tag body ...)`"},
-            {"logic-var", "**logic-var**  -  Create a fresh logic variable.\n\n`(logic-var)`"},
-            {"unify", "**unify**  -  Unify two terms.\n\n`(unify term1 term2)`"},
-        };
-
-        if (auto it = keyword_docs.find(symbol); it != keyword_docs.end()) {
-            return it->second;
+        if (auto entry = reader::lookup_special_form_doc(symbol)) {
+            return docs::render_markdown(*entry);
         }
-
-        for (const auto& spec : builtins_.specs()) {
-            if (symbol == spec.name) {
-                std::string doc = "**" + symbol + "**  -  builtin primitive.";
-                doc += "\n\n`arity: " + std::to_string(spec.arity);
-                if (spec.has_rest) doc += "+";
-                doc += "`";
-                return doc;
-            }
+        if (auto builtin = runtime::lookup_builtin_metadata(symbol)) {
+            return docs::render_builtin_markdown(*builtin);
         }
 
         for (const auto& [_, qualified] : global_names_) {

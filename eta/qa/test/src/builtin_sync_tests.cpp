@@ -1,12 +1,18 @@
 #include <boost/test/unit_test.hpp>
 
+#include <array>
 #include <span>
+#include <string_view>
 #include <unordered_set>
 
 #include <eta/runtime/memory/heap.h>
 #include <eta/runtime/memory/intern_table.h>
 #include <eta/runtime/builtin_env.h>
+#include <eta/runtime/builtin_metadata.h>
 #include <eta/runtime/builtin_names.h>
+#include <eta/reader/special_form_docs.h>
+#include <eta/interpreter/all_primitives.h>
+#include <eta/nng/nng_primitives.h>
 #include <eta/runtime/os_primitives.h>
 #include <eta/runtime/process_primitives.h>
 #include <eta/runtime/time_primitives.h>
@@ -140,6 +146,124 @@ BOOST_AUTO_TEST_CASE(names_ssot_no_duplicates) {
         std::string msg = "Duplicate builtin names:";
         for (const auto& d : duplicates) msg += " " + d;
         BOOST_FAIL(msg);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(runtime_builtin_registration_matches_metadata_exhaustive) {
+    BuiltinEnvironment env;
+    register_builtin_names(env);
+
+    const auto metadata = builtin_metadata();
+    BOOST_REQUIRE_EQUAL(env.size(), metadata.size());
+
+    Heap heap(1ull << 22);
+    InternTable intern;
+    vm::VM vm(heap, intern);
+
+    env.begin_patching();
+    eta::interpreter::register_all_primitives(env, heap, intern, vm);
+    eta::nng::register_nng_primitives(env, heap, intern);
+    env.verify_all_patched();
+
+    BOOST_REQUIRE_EQUAL(env.size(), metadata.size());
+    for (std::size_t i = 0; i < metadata.size(); ++i) {
+        const auto& spec = env.specs()[i];
+        const auto& doc = metadata[i];
+        BOOST_TEST_CONTEXT("slot " << i << " name=" << spec.name) {
+            BOOST_TEST(spec.name == doc.name);
+            BOOST_TEST(spec.arity == doc.arity);
+            BOOST_TEST(spec.has_rest == doc.has_rest);
+            BOOST_TEST(static_cast<bool>(spec.func));
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(builtin_metadata_is_consistent_across_consumers) {
+    BuiltinEnvironment env;
+    register_builtin_names(env);
+
+    const auto metadata = builtin_metadata();
+    BOOST_REQUIRE_EQUAL(env.size(), metadata.size());
+
+    for (std::size_t i = 0; i < metadata.size(); ++i) {
+        const auto& spec = env.specs()[i];
+        const auto& doc = metadata[i];
+        BOOST_TEST_CONTEXT("slot " << i << " name=" << spec.name) {
+            BOOST_TEST(spec.name == doc.name);
+            BOOST_TEST(spec.arity == doc.arity);
+            BOOST_TEST(spec.has_rest == doc.has_rest);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(all_configured_builtins_have_docs) {
+    constexpr std::array<std::string_view, 0> allowed_missing{};
+    const auto missing = missing_builtin_docs(allowed_missing);
+
+    if (!missing.empty()) {
+        std::string message = "Builtins with missing docs:";
+        for (const auto& name : missing) message += " " + name;
+        BOOST_FAIL(message);
+    }
+
+    for (const auto& builtin : builtin_metadata()) {
+        BOOST_TEST_CONTEXT("builtin: " << builtin.name) {
+            BOOST_TEST(!builtin.category.empty());
+            BOOST_TEST(!builtin.signature.empty());
+            BOOST_TEST(!builtin.summary.empty());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(doc_metadata_has_no_duplicate_special_forms) {
+    std::unordered_set<std::string> seen;
+    std::vector<std::string> duplicates;
+
+    for (const auto& entry : eta::reader::special_form_docs()) {
+        if (!seen.insert(std::string(entry.name)).second) {
+            duplicates.push_back(std::string(entry.name));
+        }
+    }
+    if (!duplicates.empty()) {
+        std::string message = "Duplicate special-form docs:";
+        for (const auto& name : duplicates) message += " " + name;
+        BOOST_FAIL(message);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(doc_metadata_has_no_duplicate_builtins) {
+    std::unordered_set<std::string> seen;
+    std::vector<std::string> duplicates;
+
+    for (const auto& builtin : builtin_metadata()) {
+        if (!seen.insert(builtin.name).second) {
+            duplicates.push_back(builtin.name);
+        }
+    }
+    if (!duplicates.empty()) {
+        std::string message = "Duplicate builtin docs:";
+        for (const auto& name : duplicates) message += " " + name;
+        BOOST_FAIL(message);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(doc_metadata_has_no_special_form_builtin_name_collisions) {
+    std::unordered_set<std::string> builtin_names;
+    for (const auto& builtin : builtin_metadata()) {
+        builtin_names.insert(builtin.name);
+    }
+
+    std::vector<std::string> unexpected;
+    for (const auto& entry : eta::reader::special_form_docs()) {
+        if (!builtin_names.contains(std::string(entry.name))) continue;
+        if (eta::reader::is_allowed_special_form_builtin_collision(entry.name)) continue;
+        unexpected.push_back(std::string(entry.name));
+    }
+
+    if (!unexpected.empty()) {
+        std::string message = "Unexpected special-form/builtin collisions:";
+        for (const auto& name : unexpected) message += " " + name;
+        BOOST_FAIL(message);
     }
 }
 

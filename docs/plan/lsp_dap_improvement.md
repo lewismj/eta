@@ -1,5 +1,5 @@
 # LSP / DAP doc-registry improvement plan
-Status: proposed
+Status: PR2 implemented (2026-05-08)
 Owner: tooling
 Scope: `eta/core`, `eta/session`, `eta/tools/lsp`, `eta/tools/dap`, `eta/qa`
 ## Problem
@@ -186,10 +186,13 @@ LSP/DAP/session code.
 
 For PR 1, prefer header-only metadata with `inline constexpr` tables and `inline`
 lookup helpers so no CMake link changes are needed. In that shape, feature macros
-such as `ETA_HAS_NNG` are evaluated in the consuming target. If this metadata is
-later moved into a compiled `.cpp`, feature ownership must move to a shared
-generated config header or PUBLIC core compile definitions so `eta_core`, LSP,
-DAP, session, interpreter, and tests all see the same configured builtin list.
+such as `ETA_HAS_NNG` are evaluated in the consuming target, so PR 1 must also
+standardize feature-definition propagation (shared generated config header or
+PUBLIC/INTERFACE compile definitions) so `eta_core`, LSP, DAP, session,
+interpreter, and tests all see the same configured builtin list for a given
+build.
+If this metadata is later moved into a compiled `.cpp`, keep the same single
+source for feature ownership rather than reintroducing per-target definitions.
 The current workspace builds the main tools with NNG linked/defined, so do not
 claim NNG-disabled behaviour until a disabled configuration is actually wired and
 tested.
@@ -431,8 +434,13 @@ shared metadata table.
 * Classify existing LSP/session entries before moving them so runtime builtins,
   true reader forms, stdlib/prelude bindings, and obsolete entries do not get
   collapsed into one misleading registry.
+* Add a collision guard so special-form names and builtin names do not overlap
+  silently; if any overlap is intentional, document and whitelist it explicitly
+  with deterministic lookup precedence.
 * Change `eta/core/src/eta/runtime/builtin_names.h::register_builtin_names()`
   to loop over `builtin_metadata()`.
+* Ensure metadata feature macros are propagated from one shared config source
+  across `eta_core`, LSP, DAP, session, interpreter, and tests.
 * Change LSP hover and completion to consume `special_form_docs()` and
   `builtin_metadata()`.
 * Change LSP signature help to consume `signature` fields from the same metadata
@@ -452,8 +460,11 @@ Tests:
 * `driver_hover_known_special_form_returns_markdown`
 * `driver_hover_known_builtin_returns_markdown`
 * `driver_completion_uses_metadata_names`
+* `runtime_builtin_patch_path_matches_metadata_smoke`
+* `builtin_metadata_is_consistent_across_consumers`
 * `doc_metadata_has_no_duplicate_special_forms`
 * `doc_metadata_has_no_duplicate_builtins`
+* `doc_metadata_has_no_special_form_builtin_name_collisions`
 ### PR 2 — Runtime metadata validation
 * Reuse and extend existing `BuiltinEnvironment` patch-mode validation so runtime
   primitive registration order/name/arity/rest flags are checked against
@@ -465,7 +476,7 @@ Tests:
   signature, and summary, with any intentional exceptions explicitly whitelisted.
 Tests:
 * `all_configured_builtins_have_docs`
-* `runtime_builtin_registration_matches_metadata`
+* `runtime_builtin_registration_matches_metadata_exhaustive`
 * `nng_metadata_matches_configured_build` when both enabled and disabled
   configurations are actually supported in CI
 ### PR 3 — DAP integration
@@ -504,6 +515,10 @@ Possible implementation:
   by `builtin_metadata()`.
 * LSP hover, completion, and signature help use the same special-form and builtin
   metadata as session hover/completion.
+* A single configured builtin metadata view is observed by `eta_core`, LSP, DAP,
+  session, interpreter, and tests within the same build.
+* Special-form and builtin metadata names have no unreviewed collisions; any
+  intentional overlap is explicitly whitelisted with deterministic precedence.
 * DAP docs are exposed through `eta/symbolDoc` with an advertised Eta-specific
   capability and a stable success/unknown-symbol response shape; standard DAP
   variable `"value"` remains runtime value only.
@@ -519,9 +534,40 @@ Possible implementation:
   consumers. Prefer header-only/inline metadata for the first migration.
 * Header-only metadata must use `inline constexpr` tables and `inline` helpers;
   non-inline declarations require a compiled registry and CMake changes.
-* NNG-disabled metadata behaviour is a future configuration concern unless and
-  until the build grows a tested NNG-disabled target/configuration.
+* NNG-disabled metadata behaviour is still a future configuration concern unless
+  and until the build grows a tested NNG-disabled target/configuration, but PR 1
+  must keep enabled-build metadata consistent across all consumers.
 * Runtime `register_*_primitives()` sites are not the canonical docs source;
   they validate against canonical metadata.
 * Stdlib docstring extraction is explicitly outside the initial de-hardcoding
   milestone.
+
+## PR1 implementation notes (2026-05-08)
+Implemented in this workspace:
+* Added core doc primitives: `eta/core/src/eta/docs/doc_entry.h`,
+  `eta/core/src/eta/docs/markdown.h`.
+* Added special-form docs registry: `eta/core/src/eta/reader/special_form_docs.h`.
+* Added builtin metadata registry and lookup helpers:
+  `eta/core/src/eta/runtime/builtin_metadata.h`,
+  `eta/core/src/eta/runtime/builtin_metadata.cpp`.
+* Updated `register_builtin_names()` to register from `builtin_metadata()`.
+* Removed hardcoded hover/completion/signature tables from
+  `eta/tools/lsp/src/eta/lsp/lsp_server.cpp`.
+* Updated session hover/completion to consume shared metadata in
+  `eta/session/src/eta/session/driver.h`.
+* Added QA coverage for shared metadata integrity plus LSP/session hover,
+  completion, and signature-help metadata paths.
+
+## PR2 implementation notes (2026-05-08)
+Implemented in this workspace:
+* Added `missing_builtin_docs()` to `eta/core/src/eta/runtime/builtin_metadata.h`
+  and `eta/core/src/eta/runtime/builtin_metadata.cpp` for QA visibility into
+  incomplete builtin metadata.
+* Normalized canonical builtin metadata construction so every configured builtin
+  has populated `category`, `signature`, and `summary` fields.
+* Added `all_configured_builtins_have_docs` coverage in
+  `eta/qa/test/src/builtin_sync_tests.cpp`.
+* Replaced the patch smoke test with
+  `runtime_builtin_registration_matches_metadata_exhaustive`, which runs full
+  runtime primitive registration (`register_all_primitives` + NNG registration)
+  through patch-mode validation against `builtin_metadata()`.

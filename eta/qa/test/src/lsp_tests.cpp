@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "eta/lsp/lsp_server.h"
+#include "eta/runtime/builtin_metadata.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/util/json.h"
 
@@ -385,6 +386,155 @@ BOOST_AUTO_TEST_CASE(completion_includes_raise) {
     BOOST_TEST(found_logic_var);
     BOOST_TEST(found_unify);
     BOOST_TEST(found_copy_term);
+}
+
+BOOST_AUTO_TEST_CASE(hover_known_special_form_returns_markdown) {
+    const std::string uri = "file:///test/hover_special.eta";
+    const std::string src = "(if #t 1 0)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(11, "textDocument/hover",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":0,"character":1}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 11);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_REQUIRE(!resp["result"].is_null());
+
+    auto markdown = resp["result"]["contents"].get_string("value").value_or("");
+    BOOST_TEST(markdown.find("**if**") != std::string::npos);
+    BOOST_TEST(markdown.find("(if test consequent alternate)") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(hover_known_builtin_returns_markdown) {
+    const std::string uri = "file:///test/hover_builtin.eta";
+    const std::string src = "(map f xs)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(12, "textDocument/hover",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":0,"character":1}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 12);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_REQUIRE(!resp["result"].is_null());
+
+    auto markdown = resp["result"]["contents"].get_string("value").value_or("");
+    BOOST_TEST(markdown.find("**map**") != std::string::npos);
+    BOOST_TEST(markdown.find("(map proc list ...)") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(hover_unknown_symbol_returns_null) {
+    const std::string uri = "file:///test/hover_unknown.eta";
+    const std::string src = "(not-a-real-symbol 1)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(13, "textDocument/hover",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":0,"character":1}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 13);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["result"].is_null());
+}
+
+BOOST_AUTO_TEST_CASE(completion_uses_builtin_metadata) {
+    const std::string uri = "file:///test/comp_meta.eta";
+    const std::string src = "(module m1 (begin 1))\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(14, "textDocument/completion",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":0,"character":1}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 14);
+    BOOST_REQUIRE(!resp.is_null());
+
+    auto expected_map = eta::runtime::lookup_builtin_metadata("map");
+    BOOST_REQUIRE(expected_map.has_value());
+
+    const auto& items = resp["result"]["items"].as_array();
+    bool found = false;
+    for (const auto& item : items) {
+        const auto label = item.get_string("label").value_or("");
+        if (label != "map") continue;
+
+        const auto detail = item.get_string("detail").value_or("");
+        BOOST_TEST(detail.find(expected_map->category) != std::string::npos);
+
+        const auto docs = item["documentation"];
+        BOOST_TEST(docs.get_string("kind").value_or("") == "markdown");
+        BOOST_TEST(docs.get_string("value").value_or("").find("**map**") != std::string::npos);
+        found = true;
+        break;
+    }
+    BOOST_TEST(found);
+}
+
+BOOST_AUTO_TEST_CASE(signature_help_known_special_form_uses_metadata) {
+    const std::string uri = "file:///test/sig_special.eta";
+    const std::string src = "(if #t 1 0)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(15, "textDocument/signatureHelp",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":0,"character":5}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 15);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_REQUIRE(!resp["result"].is_null());
+
+    const auto& signatures = resp["result"]["signatures"].as_array();
+    BOOST_REQUIRE(!signatures.empty());
+    auto label = signatures.front().get_string("label").value_or("");
+    BOOST_TEST(label == "(if test consequent alternate)");
+}
+
+BOOST_AUTO_TEST_CASE(signature_help_known_builtin_uses_metadata) {
+    const std::string uri = "file:///test/sig_builtin.eta";
+    const std::string src = "(map f xs)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(16, "textDocument/signatureHelp",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":0,"character":6}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 16);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_REQUIRE(!resp["result"].is_null());
+
+    const auto& signatures = resp["result"]["signatures"].as_array();
+    BOOST_REQUIRE(!signatures.empty());
+    auto label = signatures.front().get_string("label").value_or("");
+    BOOST_TEST(label == "(map proc list ...)");
+}
+
+BOOST_AUTO_TEST_CASE(signature_help_unknown_symbol_returns_null) {
+    const std::string uri = "file:///test/sig_unknown.eta";
+    const std::string src = "(not-a-real-fn 1)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(17, "textDocument/signatureHelp",
+            R"({"textDocument":{"uri":")" + uri
+            + R"("},"position":{"line":0,"character":14}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 17);
+    BOOST_REQUIRE(!resp.is_null());
+    BOOST_TEST(resp["result"].is_null());
 }
 
 /**

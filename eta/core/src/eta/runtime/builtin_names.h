@@ -6,17 +6,19 @@
  *        that need to know builtin names/arities but do NOT execute code.
  *
  * Registers every builtin that the runtime provides (core + port + io + os +
- * process + time + torch + stats + log + nng) into a BuiltinEnvironment using null PrimitiveFuncs.
+ * process + time + torch + stats + log + nng) into a BuiltinEnvironment using
+ * metadata from builtin_metadata.h and null PrimitiveFuncs.
  * The SemanticAnalyzer only reads names/arities from the env to pre-allocate
  *
  * REGISTRATION ORDER must stay in sync with all_primitives.h / driver.h:
  */
 
 #include "eta/runtime/builtin_env.h"
+#include "eta/runtime/builtin_metadata.h"
 
 namespace eta::runtime {
 
-inline void register_builtin_names(BuiltinEnvironment& env) {
+inline void register_builtin_names_legacy(BuiltinEnvironment& env) {
     /// Helper: register with a null func (analysis-only, never installed)
     auto r = [&env](const char* name, uint32_t arity, bool has_rest) {
         env.register_builtin(name, arity, has_rest, PrimitiveFunc{});
@@ -621,6 +623,16 @@ inline void register_builtin_names(BuiltinEnvironment& env) {
     r("monitor",             1, false);
     r("demonitor",           1, false);
     r("enable-heartbeat",    2, false);
+}
+
+inline void register_builtin_names(BuiltinEnvironment& env) {
+    for (const auto& builtin : builtin_metadata()) {
+        env.register_builtin(
+            builtin.name,
+            builtin.arity,
+            builtin.has_rest,
+            PrimitiveFunc{});
+    }
 }
 
 } ///< namespace eta::runtime

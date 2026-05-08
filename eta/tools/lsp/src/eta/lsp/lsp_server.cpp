@@ -21,9 +21,12 @@
 #include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
 #include "eta/reader/module_linker.h"
+#include "eta/reader/special_form_docs.h"
 #include "eta/reader/sexpr_utils.h"
 #include "eta/semantics/semantic_analyzer.h"
+#include "eta/docs/markdown.h"
 #include "eta/runtime/builtin_env.h"
+#include "eta/runtime/builtin_metadata.h"
 #include "eta/runtime/builtin_names.h"
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
@@ -1114,102 +1117,19 @@ Value LspServer::handle_hover(const Value& params) {
     auto word = word_at_position(source, line, character);
     if (word.empty()) return Value(nullptr);
 
-    /// Known keywords/special forms
-    static const std::unordered_map<std::string, std::string> keyword_docs = {
-        {"define",       "**define**  -  Define a variable or function.\n\n`(define name expr)`\n\n`(define (name args...) body...)`"},
-        {"lambda",       "**lambda**  -  Create an anonymous function.\n\n`(lambda (args...) body...)`"},
-        {"if",           "**if**  -  Conditional expression.\n\n`(if test consequent alternate)`"},
-        {"begin",        "**begin**  -  Sequence expressions.\n\n`(begin expr...)`"},
-        {"set!",         "**set!**  -  Mutate a variable binding.\n\n`(set! name expr)`"},
-        {"quote",        "**quote**  -  Return datum without evaluation.\n\n`(quote datum)` or `'datum`"},
-        {"let",          "**let**  -  Parallel local bindings.\n\n`(let ((var init)...) body...)`"},
-        {"let*",         "**let***  -  Sequential local bindings.\n\n`(let* ((var init)...) body...)`"},
-        {"letrec",       "**letrec**  -  Recursive local bindings.\n\n`(letrec ((var init)...) body...)`"},
-        {"letrec*",      "**letrec***  -  Sequential recursive bindings.\n\n`(letrec* ((var init)...) body...)`"},
-        {"cond",         "**cond**  -  Multi-way conditional.\n\n`(cond (test expr...)... (else expr...))`"},
-        {"case",         "**case**  -  Dispatch on datum equality.\n\n`(case key ((datum...) expr...)... (else expr...))`"},
-        {"and",          "**and**  -  Short-circuit logical and.\n\n`(and expr...)` -> last truthy or `#f`"},
-        {"or",           "**or**  -  Short-circuit logical or.\n\n`(or expr...)` -> first truthy or `#f`"},
-        {"when",         "**when**  -  One-armed conditional.\n\n`(when test body...)`"},
-        {"unless",       "**unless**  -  Negated one-armed conditional.\n\n`(unless test body...)`"},
-        {"do",           "**do**  -  Iteration construct.\n\n`(do ((var init step)...) (test result...) body...)`"},
-        {"module",       "**module**  -  Declare a module.\n\n`(module name body...)`"},
-        {"import",       "**import**  -  Import bindings from a module.\n\n`(import module-name)`"},
-        {"export",       "**export**  -  Export bindings.\n\n`(export name...)`"},
-        {"define-syntax","**define-syntax**  -  Define a hygienic macro.\n\n`(define-syntax name (syntax-rules (literals...) clause...))`"},
-        {"syntax-rules", "**syntax-rules**  -  Hygienic macro transformer.\n\n`(syntax-rules (literals...) (pattern template)...)`"},
-        {"define-record-type", "**define-record-type**  -  Define a record type.\n\n`(define-record-type name (ctor field...) pred (field accessor [mutator])...)`"},
-        {"def",          "**def**  -  Alias for `define`.\n\n`(def name expr)` or `(def (name args...) body...)`"},
-        {"defun",        "**defun**  -  Alias for function definition.\n\n`(defun name (args...) body...)`"},
-        {"progn",        "**progn**  -  Alias for `begin`.\n\n`(progn expr...)`"},
-        {"quasiquote",   "**quasiquote**  -  Template with unquote.\n\n`` `(datum ,expr ,@splice) ``"},
-        {"call/cc",      "**call/cc**  -  Call with current continuation.\n\n`(call/cc proc)`"},
-        {"call-with-current-continuation", "**call-with-current-continuation**  -  Full name for `call/cc`.\n\n`(call-with-current-continuation proc)`"},
-        {"dynamic-wind", "**dynamic-wind**  -  Guard entry/exit of a continuation.\n\n`(dynamic-wind before thunk after)`"},
-        {"values",       "**values**  -  Return multiple values.\n\n`(values expr...)`"},
-        {"call-with-values", "**call-with-values**  -  Receive multiple values.\n\n`(call-with-values producer consumer)`"},
-        {"apply",        "**apply**  -  Apply procedure to argument list.\n\n`(apply proc arg... arg-list)`"},
-        /// Exception handling
-        {"raise",        "**raise**  -  Raise an exception.\n\n`(raise tag value)`"},
-        {"catch",        "**catch**  -  Catch an exception by tag.\n\n`(catch 'tag body ...)`"},
-        /// Logic / unification
-        {"logic-var",    "**logic-var**  -  Create a fresh logic variable.\n\n`(logic-var)`"},
-        {"unify",        "**unify**  -  Unify two terms, extending the substitution.\n\n`(unify term1 term2)`"},
-        {"deref-lvar",   "**deref-lvar**  -  Walk the substitution chain for a logic variable.\n\n`(deref-lvar lvar)`"},
-        {"trail-mark",   "**trail-mark**  -  Record the current trail position.\n\n`(trail-mark)`"},
-        {"unwind-trail", "**unwind-trail**  -  Undo bindings back to a saved trail mark.\n\n`(unwind-trail mark)`"},
-        {"copy-term",    "**copy-term**  -  Deep-copy a term, freshening logic variables.\n\n`(copy-term term)`"},
-        /// AD / tape
-        {"make-dual",        "**make-dual**  -  Construct a dual number for forward-mode AD.\n\n`(make-dual primal tangent)`"},
-        {"dual?",            "**dual?**  -  Predicate: is the value a dual number?\n\n`(dual? val)`"},
-        {"dual-primal",      "**dual-primal**  -  Extract the primal from a dual number.\n\n`(dual-primal dual)`"},
-        {"dual-backprop",    "**dual-backprop**  -  Extract the backprop closure from a dual.\n\n`(dual-backprop dual)`"},
-        {"tape-new",         "**tape-new**  -  Create a new AD tape.\n\n`(tape-new)`"},
-        {"tape-start!",      "**tape-start!**  -  Activate a tape for recording.\n\n`(tape-start! tape)`"},
-        {"tape-stop!",       "**tape-stop!**  -  Deactivate the current tape (pops the most recent).\n\n`(tape-stop!)`"},
-        {"tape-var",         "**tape-var**  -  Create a tracked tape variable.\n\n`(tape-var tape value)`"},
-        {"tape-backward!",   "**tape-backward!**  -  Run reverse-mode backpropagation.\n\n`(tape-backward! tape root-ref)`"},
-        {"tape-adjoint",     "**tape-adjoint**  -  Read the adjoint of a tape ref.\n\n`(tape-adjoint tape ref)`"},
-        {"tape-primal",      "**tape-primal**  -  Read the primal value of a tape ref.\n\n`(tape-primal tape ref)`"},
-        {"tape-ref?",        "**tape-ref?**  -  Predicate: is the value a tape reference?\n\n`(tape-ref? val)`"},
-        {"tape-ref-index",   "**tape-ref-index**  -  Get the integer index of a tape ref.\n\n`(tape-ref-index ref)`"},
-        {"tape-size",        "**tape-size**  -  Number of recorded nodes on the tape.\n\n`(tape-size tape)`"},
-        {"tape-ref-value",   "**tape-ref-value**  -  Get the primal value stored in a tape ref.\n\n`(tape-ref-value ref)`"},
-        /// CLP
-        {"%clp-domain-z!",  "**%clp-domain-z!**  -  Set an integer domain constraint.\n\n`(%clp-domain-z! lvar lo hi)`"},
-        {"%clp-domain-fd!",  "**%clp-domain-fd!**  -  Set a finite-domain constraint.\n\n`(%clp-domain-fd! lvar domain)`"},
-        {"%clp-get-domain",  "**%clp-get-domain**  -  Query the current domain of a constrained variable.\n\n`(%clp-get-domain lvar)`"},
-#ifdef ETA_HAS_NNG
-        /// nng / message-passing builtins
-        {"nng-socket",     "**nng-socket**  -  Create an nng socket.\n\n`(nng-socket type-sym)` where type-sym is one of: `'pair` `'pub` `'sub` `'push` `'pull` `'req` `'rep` `'surveyor` `'respondent` `'bus`"},
-        {"nng-listen",     "**nng-listen**  -  Listen on an endpoint.\n\n`(nng-listen sock endpoint)`  -  e.g. `\"tcp:///<*:5555\"`, `\"ipc:///tmp/eta.sock\"`, `\"inproc://workers\"`"},
-        {"nng-dial",       "**nng-dial**  -  Dial (connect to) an endpoint.\n\n`(nng-dial sock endpoint)`"},
-        {"nng-close",      "**nng-close**  -  Close the socket (idempotent).\n\n`(nng-close sock)`"},
-        {"nng-socket?",    "**nng-socket?**  -  Socket predicate.\n\n`(nng-socket? x)` -> `#t` if x is an nng socket"},
-        {"send!",          "**send!**  -  Serialize a value and send it over a socket.\n\n`(send! sock value [flag])`  -  flag: `'noblock` or `'wait`"},
-        {"recv!",          "**recv!**  -  Receive a value from a socket.\n\n`(recv! sock [flag])`  -  returns value or `#f` on timeout; flag: `'noblock` or `'wait`"},
-        {"nng-poll",       "**nng-poll**  -  Poll multiple sockets for readiness.\n\n`(nng-poll items timeout-ms)`  -  items is a list of `(socket . events)` pairs; returns list of ready sockets"},
-        {"nng-subscribe",  "**nng-subscribe**  -  Set SUB topic filter.\n\n`(nng-subscribe sock topic)`  -  topic is a string prefix"},
-        {"nng-set-option", "**nng-set-option**  -  Set a socket option.\n\n`(nng-set-option sock option value)`  -  option: `'recv-timeout` `'send-timeout` `'recv-buf-size` `'survey-time`"},
-        /// actor model
-        {"spawn",           "**spawn**  -  Spawn a child Eta process.\n\n`(spawn module-path)`  -  launches `etai <module-path>` as a child process and returns the parent-side PAIR socket for communication"},
-        {"spawn-kill",      "**spawn-kill**  -  Forcibly terminate a spawned child.\n\n`(spawn-kill sock)`  -  sends SIGTERM; returns `#t` on success"},
-        {"spawn-wait",      "**spawn-wait**  -  Wait for a spawned child to exit.\n\n`(spawn-wait sock)`  -  blocks until child exits; returns the exit code as a fixnum"},
-        {"current-mailbox", "**current-mailbox**  -  The PAIR socket to the parent process.\n\n`(current-mailbox)`  -  returns the socket established by `--mailbox` at startup, or `()` if not a spawned child"},
-        /// in-process actor threads
-        {"spawn-thread-with", "**spawn-thread-with**  -  Spawn an in-process actor thread.\n\n`(spawn-thread-with module-path func-name args...)`  -  launches a new OS thread with its own VM, loads the module, calls `(func-name args...)`, communicates via `inproc://` PAIR socket"},
-        {"spawn-thread",      "**spawn-thread**  -  Spawn an actor thread from a closure.\n\n`(spawn-thread thunk)`  -  use `spawn-thread-with` instead for named functions"},
-        {"thread-join",       "**thread-join**  -  Wait for an actor thread to complete.\n\n`(thread-join sock)`  -  blocks until the thread exits; returns `0` on success, `#f` if not found"},
-        {"thread-alive?",     "**thread-alive?**  -  Check if an actor thread is still running.\n\n`(thread-alive? sock)`  -  returns `#t` while the thread is executing, `#f` after it exits"},
-#endif
-    };
-
-    auto kit = keyword_docs.find(word);
-    if (kit != keyword_docs.end()) {
+    if (auto entry = eta::reader::lookup_special_form_doc(word)) {
         return json::object({
             {"contents", json::object({
                 {"kind", "markdown"},
-                {"value", kit->second},
+                {"value", eta::docs::render_markdown(*entry)},
+            })},
+        });
+    }
+    if (auto builtin = eta::runtime::lookup_builtin_metadata(word)) {
+        return json::object({
+            {"contents", json::object({
+                {"kind", "markdown"},
+                {"value", eta::docs::render_builtin_markdown(*builtin)},
             })},
         });
     }
@@ -1316,170 +1236,39 @@ Value LspServer::handle_completion(const Value& params) {
     Array items;
     std::unordered_set<std::string> seen; ///< dedup across all tiers
 
-    /// Tier 0: Keywords (special forms)
-    static const std::vector<std::pair<std::string, std::string>> keywords = {
-        {"define",       "Core: define a variable or function"},
-        {"lambda",       "Core: anonymous function"},
-        {"if",           "Core: conditional"},
-        {"begin",        "Core: sequence"},
-        {"set!",         "Core: mutation"},
-        {"quote",        "Core: literal datum"},
-        {"let",          "Binding: parallel local bindings"},
-        {"let*",         "Binding: sequential local bindings"},
-        {"letrec",       "Binding: recursive local bindings"},
-        {"letrec*",      "Binding: sequential recursive bindings"},
-        {"cond",         "Control: multi-way conditional"},
-        {"case",         "Control: datum dispatch"},
-        {"and",          "Control: short-circuit and"},
-        {"or",           "Control: short-circuit or"},
-        {"when",         "Control: one-armed if"},
-        {"unless",       "Control: negated one-armed if"},
-        {"do",           "Control: iteration"},
-        {"module",       "Module: declare a module"},
-        {"import",       "Module: import bindings"},
-        {"export",       "Module: export bindings"},
-        {"define-syntax","Macro: define a syntax transformer"},
-        {"syntax-rules", "Macro: hygienic macro rules"},
-        {"define-record-type", "Record: define a record type"},
-        {"def",          "Alias: for define"},
-        {"defun",        "Alias: function definition"},
-        {"progn",        "Alias: for begin"},
-        {"quasiquote",   "Core: template with unquote"},
-        {"call/cc",      "Advanced: call with current continuation"},
-        {"dynamic-wind", "Advanced: continuation guard"},
-        {"values",       "Advanced: multiple return values"},
-        {"call-with-values", "Advanced: receive multiple values"},
-        {"apply",        "Core: apply procedure to args"},
-        {"raise",        "Exception: raise an exception"},
-        {"catch",        "Exception: catch an exception"},
-        {"logic-var",    "Logic: create a logic variable"},
-        {"unify",        "Logic: unify two terms"},
-        {"deref-lvar",   "Logic: dereference a logic variable"},
-        {"trail-mark",   "Logic: mark the trail"},
-        {"unwind-trail", "Logic: unwind the trail"},
-        {"copy-term",    "Logic: deep-copy a term"},
-    };
-
-    for (const auto& [kw, detail] : keywords) {
-        seen.insert(kw);
+    /// Tier 0: language-level special forms
+    for (const auto& entry : eta::reader::special_form_docs()) {
+        const std::string name(entry.name);
+        if (!seen.insert(name).second) continue;
+        const std::string detail = entry.category.empty()
+            ? "Keyword"
+            : std::string(entry.category);
         items.push_back(json::object({
-            {"label", kw},
+            {"label", name},
             {"kind", 14}, ///< Keyword
             {"detail", detail},
+            {"documentation", json::object({
+                {"kind", "markdown"},
+                {"value", eta::docs::render_markdown(entry)},
+            })},
         }));
     }
 
-    /**
-     * Tier 1: Static builtins (from builtin_names.h)
-     * name, arity, has_rest, category
-     */
-    struct BuiltinDesc { const char* name; int arity; bool has_rest; const char* category; };
-    static const std::vector<BuiltinDesc> builtins = {
-        /// Arithmetic
-        {"+", 0, true, "Arithmetic"}, {"-", 1, true, "Arithmetic"},
-        {"*", 0, true, "Arithmetic"}, {"/", 1, true, "Arithmetic"},
-        /// Numeric comparison
-        {"=", 2, true, "Comparison"}, {"<", 2, true, "Comparison"},
-        {">", 2, true, "Comparison"}, {"<=", 2, true, "Comparison"},
-        {">=", 2, true, "Comparison"},
-        /// Equivalence
-        {"eq?", 2, false, "Equivalence"}, {"eqv?", 2, false, "Equivalence"},
-        {"not", 1, false, "Equivalence"},
-        /// Pairs / lists
-        {"cons", 2, false, "List"}, {"car", 1, false, "List"},
-        {"cdr", 1, false, "List"}, {"pair?", 1, false, "List"},
-        {"null?", 1, false, "List"}, {"list", 0, true, "List"},
-        /// Type predicates
-        {"number?", 1, false, "Predicate"}, {"boolean?", 1, false, "Predicate"},
-        {"string?", 1, false, "Predicate"}, {"char?", 1, false, "Predicate"},
-        {"symbol?", 1, false, "Predicate"}, {"procedure?", 1, false, "Predicate"},
-        {"integer?", 1, false, "Predicate"},
-        /// Numeric predicates
-        {"zero?", 1, false, "Predicate"}, {"positive?", 1, false, "Predicate"},
-        {"negative?", 1, false, "Predicate"},
-        /// Numeric operations
-        {"abs", 1, false, "Math"}, {"min", 2, true, "Math"},
-        {"max", 2, true, "Math"}, {"modulo", 2, false, "Math"},
-        {"remainder", 2, false, "Math"},
-        /// Transcendentals
-        {"sin", 1, false, "Math"}, {"cos", 1, false, "Math"},
-        {"tan", 1, false, "Math"}, {"asin", 1, false, "Math"},
-        {"acos", 1, false, "Math"}, {"atan", 1, true, "Math"},
-        {"exp", 1, false, "Math"}, {"log", 1, false, "Math"},
-        {"sqrt", 1, false, "Math"},
-        /// List operations
-        {"length", 1, false, "List"}, {"append", 0, true, "List"},
-        {"reverse", 1, false, "List"}, {"list-ref", 2, false, "List"},
-        /// Higher-order
-        {"map", 2, false, "Higher-order"}, {"for-each", 2, false, "Higher-order"},
-        /// Deep equality
-        {"equal?", 2, false, "Equivalence"},
-        /// String operations
-        {"string-length", 1, false, "String"}, {"string-append", 0, true, "String"},
-        {"number->string", 1, false, "String"}, {"string->number", 1, false, "String"},
-        /// Vector operations
-        {"vector", 0, true, "Vector"}, {"vector-length", 1, false, "Vector"},
-        {"vector-ref", 2, false, "Vector"}, {"vector-set!", 3, false, "Vector"},
-        {"vector?", 1, false, "Vector"}, {"make-vector", 2, false, "Vector"},
-        /// Misc
-        {"error", 1, true, "Misc"}, {"platform", 0, false, "Misc"},
-        {"logic-var?", 1, false, "Logic"}, {"ground?", 1, false, "Logic"},
-        /// AD Dual
-        {"dual?", 1, false, "AD"}, {"dual-primal", 1, false, "AD"},
-        {"dual-backprop", 1, false, "AD"}, {"make-dual", 2, false, "AD"},
-        /// CLP
-        {"%clp-domain-z!", 3, false, "CLP"}, {"%clp-domain-fd!", 2, false, "CLP"},
-        {"%clp-get-domain", 1, false, "CLP"},
-        /// AD Tape
-        {"tape-new", 0, false, "AD"}, {"tape-start!", 1, false, "AD"},
-        {"tape-stop!", 0, false, "AD"}, {"tape-var", 2, false, "AD"},
-        {"tape-backward!", 2, false, "AD"}, {"tape-adjoint", 2, false, "AD"},
-        {"tape-primal", 2, false, "AD"}, {"tape-ref?", 1, false, "AD"},
-        {"tape-ref-index", 1, false, "AD"}, {"tape-size", 1, false, "AD"},
-        {"tape-ref-value", 1, false, "AD"},
-        /// Port primitives
-        {"current-input-port", 0, false, "Port"}, {"current-output-port", 0, false, "Port"},
-        {"current-error-port", 0, false, "Port"},
-        {"set-current-input-port!", 1, false, "Port"}, {"set-current-output-port!", 1, false, "Port"},
-        {"set-current-error-port!", 1, false, "Port"},
-        {"open-output-string", 0, false, "Port"}, {"get-output-string", 1, false, "Port"},
-        {"open-input-string", 1, false, "Port"}, {"write-string", 1, true, "Port"},
-        {"read-char", 0, true, "Port"}, {"port?", 1, false, "Port"},
-        {"input-port?", 1, false, "Port"}, {"output-port?", 1, false, "Port"},
-        {"close-port", 1, false, "Port"}, {"close-input-port", 1, false, "Port"},
-        {"close-output-port", 1, false, "Port"}, {"write-char", 1, true, "Port"},
-        {"open-input-file", 1, false, "Port"}, {"open-output-file", 1, false, "Port"},
-        {"open-output-bytevector", 0, false, "Port"}, {"open-input-bytevector", 1, false, "Port"},
-        {"get-output-bytevector", 1, false, "Port"}, {"read-u8", 0, true, "Port"},
-        {"write-u8", 1, true, "Port"}, {"binary-port?", 1, false, "Port"},
-        /// I/O
-        {"display", 1, true, "I/O"}, {"write", 1, true, "I/O"},
-        {"newline", 0, true, "I/O"},
-#ifdef ETA_HAS_NNG
-        /// nng / message-passing
-        {"nng-socket",     1, false, "NNG"}, {"nng-listen",     2, false, "NNG"},
-        {"nng-dial",       2, false, "NNG"}, {"nng-close",      1, false, "NNG"},
-        {"nng-socket?",    1, false, "NNG"}, {"send!",          2, true,  "NNG"},
-        {"recv!",          1, true,  "NNG"}, {"nng-poll",       2, false, "NNG"},
-        {"nng-subscribe",  2, false, "NNG"}, {"nng-set-option", 3, false, "NNG"},
-        /// actor model
-        {"spawn",           1, true,  "NNG"}, {"spawn-kill",      1, false, "NNG"},
-        {"spawn-wait",      1, false, "NNG"}, {"current-mailbox", 0, false, "NNG"},
-        /// in-process actor threads
-        {"spawn-thread-with", 2, true,  "NNG"}, {"spawn-thread",  1, false, "NNG"},
-        {"thread-join",       1, false, "NNG"}, {"thread-alive?", 1, false, "NNG"},
-#endif
-    };
-
-    for (const auto& b : builtins) {
-        if (!seen.insert(b.name).second) continue; ///< already added (e.g. apply is a keyword)
-        std::string detail = std::string(b.category) + " (arity " + std::to_string(b.arity);
-        if (b.has_rest) detail += "+";
+    /// Tier 1: configured builtin metadata
+    for (const auto& builtin : eta::runtime::builtin_metadata()) {
+        if (!seen.insert(builtin.name).second) continue;
+        std::string detail = builtin.category.empty() ? "Builtin" : builtin.category;
+        detail += " (arity " + std::to_string(builtin.arity);
+        if (builtin.has_rest) detail += "+";
         detail += ")";
         items.push_back(json::object({
-            {"label", b.name},
+            {"label", builtin.name},
             {"kind", 3}, ///< Function
             {"detail", detail},
+            {"documentation", json::object({
+                {"kind", "markdown"},
+                {"value", eta::docs::render_builtin_markdown(builtin)},
+            })},
         }));
     }
 
@@ -2098,95 +1887,14 @@ Value LspServer::handle_signature_help(const Value& params) {
         }
     }
 
-    /// Signature lookup
-
-    /// Static table of builtin signatures
-    static const std::vector<std::pair<std::string, std::string>> builtin_sigs = {
-        {"+",              "(+ z ...)"}, {"-",  "(- z1 z2 ...)"}, {"*", "(* z ...)"}, {"/", "(/ z1 z2 ...)"},
-        {"=",              "(= z1 z2 ...)"}, {"<",  "(< x1 x2 ...)"}, {">",  "(> x1 x2 ...)"},
-        {"<=",             "(<= x1 x2 ...)"}, {">=", "(>= x1 x2 ...)"},
-        {"cons",           "(cons obj1 obj2)"}, {"car",  "(car pair)"}, {"cdr", "(cdr pair)"},
-        {"list",           "(list obj ...)"}, {"length",  "(length list)"},
-        {"append",         "(append list ...)"}, {"reverse", "(reverse list)"},
-        {"list-ref",       "(list-ref list k)"},
-        {"map",            "(map proc list ...)"}, {"for-each", "(for-each proc list ...)"},
-        {"display",        "(display obj [port])"}, {"write",   "(write obj [port])"},
-        {"newline",        "(newline [port])"},   {"error",   "(error message irritant ...)"},
-        {"apply",          "(apply proc arg ... args)"},
-        {"not",            "(not obj)"},    {"eq?",    "(eq? obj1 obj2)"},
-        {"eqv?",           "(eqv? obj1 obj2)"}, {"equal?",  "(equal? obj1 obj2)"},
-        {"null?",          "(null? obj)"},  {"pair?",  "(pair? obj)"},  {"list?",   "(list? obj)"},
-        {"number?",        "(number? obj)"},{"boolean?","(boolean? obj)"},{"string?","(string? obj)"},
-        {"symbol?",        "(symbol? obj)"},{"procedure?","(procedure? obj)"},{"integer?","(integer? obj)"},
-        {"zero?",          "(zero? z)"},    {"positive?","(positive? x)"},{"negative?","(negative? x)"},
-        {"abs",            "(abs x)"},      {"min",  "(min x1 x2 ...)"}, {"max",   "(max x1 x2 ...)"},
-        {"modulo",         "(modulo n1 n2)"},{"remainder","(remainder n1 n2)"},
-        {"sqrt",           "(sqrt z)"},     {"expt",   "(expt z1 z2)"},
-        {"floor",          "(floor x)"},    {"ceiling","(ceiling x)"},
-        {"truncate",       "(truncate x)"}, {"round",  "(round x)"},
-        {"sin",            "(sin z)"},{"cos","(cos z)"},{"tan","(tan z)"},
-        {"asin",           "(asin z)"},{"acos","(acos z)"},{"atan","(atan y [x])"},
-        {"exp",            "(exp z)"},{"log","(log z)"},
-        {"string-length",  "(string-length string)"},
-        {"string-append",  "(string-append string ...)"},
-        {"number->string", "(number->string z [radix])"},
-        {"string->number", "(string->number string [radix])"},
-        {"vector",         "(vector obj ...)"}, {"make-vector", "(make-vector k [fill])"},
-        {"vector-ref",     "(vector-ref vector k)"}, {"vector-set!", "(vector-set! vector k obj)"},
-        {"vector-length",  "(vector-length vector)"},
-        {"values",         "(values obj ...)"}, {"call-with-values", "(call-with-values producer consumer)"},
-        {"call/cc",        "(call/cc proc)"}, {"dynamic-wind", "(dynamic-wind before thunk after)"},
-        {"raise",          "(raise tag value)"},   {"catch",  "(catch 'tag body ...)"},
-        {"logic-var",      "(logic-var)"},    {"unify", "(unify term1 term2)"},
-        {"deref-lvar",     "(deref-lvar lvar)"},  {"trail-mark", "(trail-mark)"},
-        {"unwind-trail",   "(unwind-trail mark)"}, {"copy-term", "(copy-term term)"},
-        {"make-dual",      "(make-dual primal tangent)"},
-        {"tape-new",       "(tape-new)"},          {"tape-start!", "(tape-start! tape)"},
-        {"tape-stop!",     "(tape-stop! tape)"},   {"tape-var",    "(tape-var tape value)"},
-        {"tape-backward!", "(tape-backward! tape root-ref)"},
-        {"tape-adjoint",   "(tape-adjoint tape ref)"},
-        {"tape-primal",    "(tape-primal tape ref)"},
-        {"tape-ref-index", "(tape-ref-index ref)"}, {"tape-size", "(tape-size tape)"},
-        {"tape-ref-value", "(tape-ref-value ref)"},
-        {"%clp-domain-z!", "(%clp-domain-z! lvar lo hi)"},
-        {"%clp-domain-fd!","(%clp-domain-fd! lvar domain)"},
-        {"%clp-get-domain","(%clp-get-domain lvar)"},
-        {"define",         "(define name value)"}, {"defun",  "(defun name (args...) body...)"},
-        {"lambda",         "(lambda (args...) body...)"},
-        {"let",            "(let ((var init) ...) body ...)"}, {"let*",  "(let* ((var init) ...) body ...)"},
-        {"letrec",         "(letrec ((var init) ...) body ...)"}, {"if", "(if test consequent alternate)"},
-        {"when",           "(when test body ...)"}, {"unless", "(unless test body ...)"},
-        {"begin",          "(begin expr ...)"}, {"cond",  "(cond (test expr ...) ... (else expr ...))"},
-        {"case",           "(case key ((datum ...) expr ...) ... (else expr ...))"},
-        {"set!",           "(set! name value)"},
-#ifdef ETA_HAS_NNG
-        /// nng / message-passing
-        {"nng-socket",    "(nng-socket type-symbol)"},
-        {"nng-listen",    "(nng-listen sock endpoint)"},
-        {"nng-dial",      "(nng-dial sock endpoint)"},
-        {"nng-close",     "(nng-close sock)"},
-        {"nng-socket?",   "(nng-socket? x)"},
-        {"send!",         "(send! sock value [flag])"},
-        {"recv!",         "(recv! sock [flag])"},
-        {"nng-poll",      "(nng-poll items timeout-ms)"},
-        {"nng-subscribe", "(nng-subscribe sock topic)"},
-        {"nng-set-option","(nng-set-option sock option value)"},
-        /// actor model
-        {"spawn",           "(spawn module-path)"},
-        {"spawn-kill",      "(spawn-kill sock)"},
-        {"spawn-wait",      "(spawn-wait sock)"},
-        {"current-mailbox", "(current-mailbox)"},
-        /// in-process actor threads
-        {"spawn-thread-with", "(spawn-thread-with module-path func-name args...)"},
-        {"spawn-thread",      "(spawn-thread thunk)"},
-        {"thread-join",       "(thread-join sock)"},
-        {"thread-alive?",     "(thread-alive? sock)"},
-#endif
-    };
-
     std::string label;
-    for (const auto& [name, sig] : builtin_sigs) {
-        if (name == func_name) { label = sig; break; }
+    if (auto builtin = eta::runtime::lookup_builtin_metadata(func_name)) {
+        label = eta::runtime::format_builtin_signature(*builtin);
+    }
+    if (label.empty()) {
+        if (auto entry = eta::reader::lookup_special_form_doc(func_name)) {
+            label = std::string(entry->signature);
+        }
     }
 
     /// Check document-local symbols

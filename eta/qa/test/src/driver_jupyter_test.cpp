@@ -226,6 +226,47 @@ BOOST_AUTO_TEST_CASE(hover_at_resolves_imported_binding_docs) {
     BOOST_TEST(markdown.find("make-test") != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(hover_at_known_special_form_returns_markdown) {
+    eta::session::Driver driver(make_resolver());
+    const auto markdown = driver.hover_at("if");
+    BOOST_TEST(!markdown.empty());
+    BOOST_TEST(markdown.find("**if**") != std::string::npos);
+    BOOST_TEST(markdown.find("(if test consequent alternate)") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(hover_at_known_builtin_returns_markdown) {
+    eta::session::Driver driver(make_resolver());
+    const auto markdown = driver.hover_at("map");
+    BOOST_TEST(!markdown.empty());
+    BOOST_TEST(markdown.find("**map**") != std::string::npos);
+    BOOST_TEST(markdown.find("(map proc list ...)") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(completions_at_uses_metadata_names) {
+    eta::session::Driver driver(make_resolver());
+
+    const auto special_form_completion = driver.completions_at("ca", 2);
+    const auto builtin_completion = driver.completions_at("ma", 2);
+
+    bool found_catch = false;
+    for (const auto& match : special_form_completion.matches) {
+        if (match == "catch") {
+            found_catch = true;
+            break;
+        }
+    }
+    BOOST_TEST(found_catch);
+
+    bool found_map = false;
+    for (const auto& match : builtin_completion.matches) {
+        if (match == "map") {
+            found_map = true;
+            break;
+        }
+    }
+    BOOST_TEST(found_map);
+}
+
 BOOST_AUTO_TEST_CASE(request_interrupt_stops_runaway_evaluation_quickly) {
     using namespace std::chrono_literals;
 
