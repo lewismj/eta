@@ -111,7 +111,34 @@ The kernel supports line and cell magics in `execute_request_impl`:
 - `%whos`
 - `%plot EXPR`
 - `%table EXPR`
+- `%%prof [sample|trace] [--mode sample|trace] [--hz N]` (cell magic)
 - `%%trace` (cell magic)
+
+### Profiling cell magic
+
+`%%prof` profiles exactly one cell and emits both:
+
+- The normal cell result.
+- A profiling report (`text/plain`) plus inline flamegraph (`text/html`).
+
+Examples:
+
+```text
+%%prof
+(+ 1 2)
+```
+
+```text
+%%prof trace
+(fib 12)
+```
+
+```text
+%%prof --mode=sample --hz=4000
+(workload)
+```
+
+For format and workflow details, see [Profiling](../profiling.md).
 
 ## Interrupts and actor output routing
 

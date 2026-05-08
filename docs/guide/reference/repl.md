@@ -13,6 +13,49 @@ The REPL supports redefinition by shadowing older bindings for new code.
 
 ---
 
+## Profiling Meta-Command
+
+`eta_repl` supports a one-shot profiler command:
+
+```text
+:prof [sample|trace] [--mode sample|trace] [--hz N] [--format FMT]
+```
+
+`FMT` supports:
+
+- `pretty`
+- `json`
+- `speedscope`
+- `eta-prof`
+- `chrome`
+- `pprof`
+
+Behavior:
+
+1. `:prof ...` configures profiling for the next non-command submission.
+2. The next submission executes normally.
+3. The requested profile report is printed after that submission.
+4. The profile request is consumed (one-shot).
+
+Examples:
+
+```text
+eta> :prof trace --format pretty
+eta> (my-workload)
+```
+
+```text
+eta> :prof sample --hz 2000 --format json
+eta> (my-workload)
+```
+
+Use `:prof off` (or `:prof disable`) to clear a pending profile request.
+
+For full profiling workflow and report interpretation, see
+[Profiling](../profiling.md).
+
+---
+
 ## Redefinition Rules
 
 1. If you redefine a name, later submissions use the newest definition.
@@ -53,4 +96,3 @@ Each submission is wrapped into an internal module named like `__repl_N`.
 When building a new submission, the REPL imports only the currently live names
 from prior REPL modules. Older shadowed bindings are not imported into new
 submissions.
-

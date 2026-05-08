@@ -44,6 +44,30 @@ eta prof view merged.eta-prof
 `eta prof run` is a wrapper over `eta run --prof ...`. You can use either form.
 `etai` also supports profiling directly with `--prof`, `--prof-hz`, `--prof-format`, and `--prof-out`.
 
+### CLI surface
+
+`eta prof` subcommands:
+
+```text
+eta prof run [--mode sample|trace] [--hz N] [--format FMT] [--out FILE] <file.eta|file.etac>
+eta prof report [--format pretty|json|speedscope|chrome|pprof] FILE.eta-prof
+eta prof merge --out OUT.eta-prof IN1.eta-prof IN2.eta-prof ...
+eta prof view FILE.speedscope.json|FILE.eta-prof
+```
+
+Key `eta prof run` options:
+
+- `--mode sample|trace`: profile mode (`sample` default).
+- `--hz N`: sample frequency (sample mode only, default `1000`).
+- `--format FMT`: one of `pretty|json|speedscope|eta-prof|chrome|pprof`.
+- `--out FILE`: write report to a file.
+
+Equivalent `eta run` flags:
+
+```text
+eta run --prof[=sample|trace] [--prof-hz N] [--prof-format FMT] [--prof-out FILE] [run args...]
+```
+
 ## Notebook / Jupyter
 
 `eta_jupyter` supports a `%%prof` cell magic that profiles one cell and renders
@@ -107,6 +131,24 @@ Supported report/export formats:
 - `eta-prof`: Eta archive JSON for offline report/merge/view.
 - `chrome`: Chrome trace JSON.
 - `pprof`: reserved for optional pprof export path.
+
+## Report fields
+
+`pretty`/`json` include `flat` and `tree` tables.
+
+`flat` columns:
+
+- `frame`: frame/function label.
+- `self_ns`: self-time in nanoseconds.
+- `inclusive_ns`: inclusive time in nanoseconds.
+- `calls`: call count (trace mode) or weighted sample count (sample mode).
+- `bytes_allocated`: coarse per-frame allocated bytes from allocator hooks.
+
+`tree` columns:
+
+- `parent`, `child`: caller/callee frame labels.
+- `inclusive_ns`: edge-inclusive time.
+- `calls`: edge call/sample count.
 
 Notes:
 

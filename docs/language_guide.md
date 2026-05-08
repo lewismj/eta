@@ -68,6 +68,7 @@ linear algebra (Eigen), neural networks (libtorch), and an actor runtime
 | `eta_dap`     | Debug Adapter (breakpoints, stepping, inspection)   | [Debugging](./guide/debugging.md) |
 | `eta_test`    | Test runner with TAP / JUnit output                 | [Testing](./guide/testing.md) |
 | `eta_jupyter` | Jupyter kernel                                      | [Jupyter](./guide/reference/jupyter.md) |
+| `eta prof`    | Runtime profiling (`run`, `report`, `merge`, `view`) | [Profiling](./guide/profiling.md) |
 
 ### Hello, world
 
@@ -842,6 +843,7 @@ High-level patterns provided by `std.net`: `worker-pool`,
 | LSP / DAP / VS Code          | [`vscode.md`](./guide/reference/vscode.md), [`debugging.md`](./guide/debugging.md) |
 | Jupyter kernel               | [`jupyter.md`](./guide/reference/jupyter.md)                          |
 | Testing (`std.test`, `eta_test`) | [`testing.md`](./guide/testing.md) |
+| Profiling (`eta prof`, `std.prof`) | [`profiling.md`](./guide/profiling.md), [`std.prof`](./stdlib/prof.md) |
 
 ---
 

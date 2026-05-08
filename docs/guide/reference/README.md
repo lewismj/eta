@@ -62,6 +62,7 @@ This folder is for module, tool, and runtime/internal reference only.
 | [`repl.md`](./repl.md)     | `eta_repl` interactive prompt       |
 | [`vscode.md`](./vscode.md) | VS Code extension                   |
 | [`jupyter.md`](./jupyter.md) | `eta_jupyter` kernel              |
+| [`profiling.md`](../profiling.md) | Profiler usage (`eta prof`, `std.prof`, `%%prof`, `:prof`) |
 
 ## Quantitative finance walkthroughs
 

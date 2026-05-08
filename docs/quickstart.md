@@ -2,7 +2,7 @@
 
 [<- Back to README](../README.md) · [Build from Source](build.md) ·
 [Language Guide](guide/examples-tour.md) · [Compiler (`etac`)](guide/reference/compiler.md) ·
-[REPL](guide/reference/repl.md)
+[REPL](guide/reference/repl.md) · [Profiling](guide/profiling.md)
 
 ---
 
@@ -15,6 +15,11 @@
 > **How to get started with Jupyter:** see
 > [Eta Jupyter Kernel (`eta_jupyter`)](guide/reference/jupyter.md) and
 > [Cookbook Notebooks](../cookbook/notebooks/README.md).
+
+> [!IMPORTANT]
+> **How to profile Eta code:** see
+> [Profiling](guide/profiling.md) for `eta prof`, notebook `%%prof`, REPL
+> `:prof`, and `std.prof`.
 
 ## Installing from a Release
 
@@ -188,6 +193,13 @@ Redefining a name is supported. New submissions see the latest definition,
 while functions compiled earlier keep the bindings they were compiled with.
 See [REPL](guide/reference/repl.md) for details.
 
+You can profile the next submission with `:prof`:
+
+```text
+eta> :prof trace --format pretty
+eta> (my-workload)
+```
+
 You can import user-defined modules too. Use `--path` to tell the REPL
 where to find your `.eta` files:
 
@@ -227,6 +239,7 @@ Hello, REPL!
 | `std.supervisor`     | `one-for-one`, `one-for-all` *(opt-in)*   |
 | `std.torch`          | `tensor`, `forward`, `train-step!`, — *(opt-in)* |
 | `std.test`           | `make-test`, `assert-equal`, `run`, — *(opt-in)* |
+| `std.prof`           | `prof/start`, `prof/stop`, `prof/report`, `prof/with` |
 
 ### Writing a Module
 
