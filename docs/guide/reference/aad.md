@@ -270,7 +270,7 @@ Callers must extract plain numeric primals before send.
 
 > [!IMPORTANT]
 > When parallelising a Monte-Carlo gradient (e.g. pathwise Greeks in
-> [`xva.eta`](../../../cookbook/quant/xva.eta)), each worker must build its **own**
+> [`xva.eta`](../../../cookbook/numerics/xva.eta)), each worker must build its **own**
 > local tape, run its `grad`, and send back **plain numbers** — never the
 > tape or its refs.
 
@@ -578,7 +578,7 @@ Tests should assert tag identity and payload keys, not message text.
 
 ## Examples
 
-- [cookbook/quant/aad.eta](../../../cookbook/quant/aad.eta) — basic AAD walkthrough
-- [European option pricing](european.md) ([source](../../../cookbook/quant/european.eta))
-- [SABR model](sabr.md) ([source](../../../cookbook/quant/sabr.eta))
-- [XVA](xva.md) ([source](../../../cookbook/quant/xva.eta))
+- [cookbook/numerics/aad.eta](../../../cookbook/numerics/aad.eta) — basic AAD walkthrough
+- [European option pricing](european.md) ([source](../../../cookbook/numerics/european.eta))
+- [SABR model](sabr.md) ([source](../../../cookbook/numerics/sabr.eta))
+- [XVA](xva.md) ([source](../../../cookbook/numerics/xva.eta))

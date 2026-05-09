@@ -20,7 +20,7 @@
 ;;;   - First-order Greeks via tape-based grad (single backward pass)
 ;;;   - Zero-overhead tape recording at the C++ level
 ;;;
-;;; Run:  etai cookbook/quant/sabr.eta
+;;; Run:  etai cookbook/numerics/sabr.eta
 
 (module sabr
   (import std.core)

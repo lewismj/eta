@@ -13,7 +13,7 @@
 ;;; All std.stats functions accept any numeric sequence (lists, vectors,
 ;;; or fact-table columns).  This example uses plain lists for clarity.
 ;;;
-;;; Run:  etai cookbook/quant/stats.eta
+;;; Run:  etai cookbook/numerics/stats.eta
 
 (module stats-example
   (import std.core)

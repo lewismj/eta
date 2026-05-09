@@ -18,7 +18,7 @@
 ;;; Demonstrates: tape-based AD, quantitative finance with closures,
 ;;; recursive time-stepping, higher-order functions.
 ;;;
-;;; Run:  etai cookbook/quant/xva.eta
+;;; Run:  etai cookbook/numerics/xva.eta
 
 (module xva
   (import std.core)

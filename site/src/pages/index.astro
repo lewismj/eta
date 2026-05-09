@@ -9,6 +9,8 @@ import "../styles/global.css";
 
 const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
 
+const cookbookRepo = "https://github.com/lewismj/eta/tree/main/cookbook";
+
 const features = [
   {
     title: "Symbolic Lisp core",
@@ -19,32 +21,38 @@ const features = [
   {
     title: "Logic & CLP",
     body: "Built-in unification and backtracking as first-class VM primitives — constraint logic programming without an external solver.",
-    href: `${base}docs/stdlib/logic/`,
-    linkLabel: "std.logic",
+    href: `${cookbookRepo}/logic`,
+    linkLabel: "Logic examples",
   },
   {
     title: "AAD",
     body: "Native reverse-mode Automatic Adjoint Differentiation (AAD) integrated into the runtime — transparent gradient computation with zero closure overhead.",
-    href: `${base}docs/stdlib/aad/`,
-    linkLabel: "std.aad",
+    href: `${cookbookRepo}/numerics`,
+    linkLabel: "AAD examples",
   },
   {
     title: "Neural networks",
     body: "First-class C++ bindings to libtorch for neural networks and Eigen for linear algebra and statistics — delivered as native sidecars.",
-    href: `${base}docs/stdlib/torch/`,
-    linkLabel: "std.torch",
+    href: `${cookbookRepo}/ml`,
+    linkLabel: "Torch examples",
   },
   {
     title: "Causal inference",
     body: "Built-in Pearl's do-calculus — identification algorithms, do-interventions, and counterfactual queries in pure Eta.",
-    href: `${base}docs/stdlib/causal/`,
-    linkLabel: "std.causal",
+    href: `${cookbookRepo}/causal`,
+    linkLabel: "Causal examples",
   },
   {
     title: "Actor-model concurrency",
     body: "Erlang-style actors and message passing via nng — network-transparent parallelism, supervision trees, and pub/sub.",
-    href: `${base}docs/stdlib/supervisor/`,
-    linkLabel: "std.supervisor",
+    href: `${cookbookRepo}/concurrency`,
+    linkLabel: "Concurrency examples",
+  },
+  {
+    title: "Developer tools",
+    body: "VS Code extension (LSP, debugger, heap inspector), Jupyter kernel for interactive notebooks, and a built-in sampling profiler with REPL and notebook integration.",
+    href: `${base}docs/editors/`,
+    linkLabel: "Editors & tools",
   },
 ];
 
@@ -164,26 +172,26 @@ const sampleCode = `(import std.core std.aad)
   <CardGrid label="Cookbook highlights">
     <Card
       title="Quant workflows"
-      body="European options, SABR calibration, XVA with WWR, portfolio LP, and automatic adjoint differentiation."
-      href={`${base}cookbook/`}
+      body="European options, SABR calibration, XVA with WWR, portfolio LP, fact-table analytics, and automatic adjoint differentiation."
+      href={`${cookbookRepo}/numerics`}
       linkLabel="Open quant examples"
     />
     <Card
       title="Logic & constraint"
       body="N-queens, SEND+MORE=MONEY, boolean simplifier, symbolic differentiation, and unification."
-      href={`${base}cookbook/`}
+      href={`${cookbookRepo}/logic`}
       linkLabel="Open logic examples"
     />
     <Card
       title="Causal inference"
       body="DAGs, do-calculus rules, and counterfactual queries in pure Eta."
-      href={`${base}cookbook/`}
+      href={`${cookbookRepo}/causal`}
       linkLabel="Open causal examples"
     />
     <Card
       title="Concurrency"
       body="Worker pools, scatter-gather, distributed Monte Carlo, and reactive pub/sub over nng."
-      href={`${base}cookbook/`}
+      href={`${cookbookRepo}/concurrency`}
       linkLabel="Open concurrency examples"
     />
   </CardGrid>

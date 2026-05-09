@@ -112,6 +112,46 @@ function remarkRewriteMdLinks() {
 }
 
 /**
+ * Remark plugin: drop the "Back to README" navigation paragraph that
+ * appears near the top of most source markdown files. The site has a
+ * full sidebar, so this row is redundant — but it stays in the .md
+ * source so the file remains useful when viewed on GitHub.
+ */
+function remarkDropBackToReadme() {
+  const re = /^\s*[←<-]*\s*back to readme\b/i;
+  return (tree) => {
+    if (!tree.children) return;
+    tree.children = tree.children.filter((node) => {
+      if (node.type !== "paragraph" || !node.children?.length) return true;
+      // Find the first link in the paragraph; if its text matches
+      // "Back to README" / "← Back to README" / "<- Back to README",
+      // drop the entire paragraph.
+      const firstLink = node.children.find((c) => c.type === "link");
+      const linkText = firstLink?.children
+        ?.map((c) => (c.type === "text" ? c.value : ""))
+        .join("");
+      if (linkText && re.test(linkText)) return false;
+      // Also handle the case where the leading text node is "← " before
+      // a link whose text is just "Back to README".
+      if (node.children[0]?.type === "text") {
+        const lead = node.children[0].value || "";
+        const next = node.children[1];
+        if (
+          /^\s*[←<-]+\s*$/.test(lead) &&
+          next?.type === "link" &&
+          /^back to readme/i.test(
+            next.children?.map((c) => (c.type === "text" ? c.value : "")).join("") || ""
+          )
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+  };
+}
+
+/**
  * Remark plugin: turn GitHub-flavoured alert blockquotes into styled
  * callouts. Detects a leading `[!NOTE]` / `[!TIP]` / `[!IMPORTANT]` /
  * `[!WARNING]` / `[!CAUTION]` marker on the first line of a blockquote,
@@ -239,11 +279,13 @@ export default defineConfig({
   site: "https://lewismj.github.io",
   markdown: {
     remarkPlugins: [
+      remarkDropBackToReadme,
       remarkGfmAlerts,
       remarkDropInPageToc,
       remarkRewriteMdLinks,
     ],
     shikiConfig: {
+      // @ts-ignore
       theme: etaShikiTheme,
       wrap: false,
     },

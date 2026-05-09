@@ -8,9 +8,13 @@ Language support for the [Eta programming language](https://github.com/eta-lang/
 
 ### Syntax Highlighting
 
+![Syntax & side panels](../../docs/img/vsx/eta_side_panels.png)
+
 Rich TextMate grammar covering core special forms, binding constructs, control flow, module system, macros, records, exception handling, logic/unification, AD/tape operations, CLP constraints, I/O, and common builtins.
 
 ### Language Server (LSP)
+
+![LSP configuration](../../docs/img/vsx/eta_lsp_config.png)
 
 Powered by the native `eta_lsp` binary:
 
@@ -25,6 +29,8 @@ Powered by the native `eta_lsp` binary:
 
 ### Debugger (DAP)
 
+![Debug session](../../docs/img/vsx/eta_debug_session.png)
+
 Full debug adapter via `eta_dap`:
 
 - **Breakpoints** — set breakpoints in `.eta` source files
@@ -33,6 +39,8 @@ Full debug adapter via `eta_dap`:
 - **Program Output** — script `display`/`newline` output routed to a dedicated *Eta Output* panel
 
 ### Heap Inspector
+
+![Heap inspector](../../docs/img/vsx/eta_heap_inspector.png)
 
 WebView panel showing live heap state when the VM is paused:
 
@@ -44,9 +52,15 @@ WebView panel showing live heap state when the VM is paused:
 
 ### GC Roots Tree View
 
+![Environment & GC roots inspector](../../docs/img/vsx/eta_environment_inspector.png)
+
 Dedicated tree view in the Debug sidebar showing GC root categories. Expand any root to see individual objects; click to open in the Heap Inspector.
 
 ### Disassembly View
+
+![Full disassembly](../../docs/img/vsx/eta_full_disassembly.png)
+
+![Side-panel disassembly](../../docs/img/vsx/eta_disassembly_side_panel.png)
 
 View the bytecode disassembly of the current function or all functions. The current PC line is highlighted.
 

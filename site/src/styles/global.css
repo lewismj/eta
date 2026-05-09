@@ -624,7 +624,15 @@ pre {
 .docs-article img {
   border-radius: 10px;
   border: 1px solid var(--line);
-  margin: 16px 0;
+  margin: 20px auto;
+  display: block;
+  /* Cap embedded screenshots so portrait shots (heap inspector,
+     side panels) don't dominate the prose column. */
+  max-height: 480px;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
 }
 
 /* Pager + edit link ──────────────────────────── */

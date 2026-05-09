@@ -92,7 +92,7 @@ do **not** bind. Used to build embedded sub-syntax:
 
 ## Worked example: `dotimes`
 
-From [`cookbook/quant/portfolio.eta`](../../cookbook/quant/portfolio.eta):
+From [`cookbook/numerics/portfolio.eta`](../../cookbook/numerics/portfolio.eta):
 
 ```scheme
 (define-syntax dotimes

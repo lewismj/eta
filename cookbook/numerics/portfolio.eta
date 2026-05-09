@@ -36,11 +36,11 @@
 ;;;          - 0.3*rate + 0.2*beta*macro + 0.5*sentiment + noise
 ;;;
 ;;; Compile & run:
-;;;   etac -O cookbook/quant/portfolio.eta
+;;;   etac -O cookbook/numerics/portfolio.eta
 ;;;   etai portfolio.etac
 ;;;
 ;;; Or interpret directly:
-;;;   etai cookbook/quant/portfolio.eta
+;;;   etai cookbook/numerics/portfolio.eta
 
 (module portfolio
   (import std.io)

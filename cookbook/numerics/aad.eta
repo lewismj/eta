@@ -19,7 +19,7 @@
 ;;;
 ;;; Demonstrates: tape-based AD, higher-order functions, vectors.
 ;;;
-;;; Run:  etai cookbook/quant/aad.eta
+;;; Run:  etai cookbook/numerics/aad.eta
 
 (module aad
   (import std.core std.io std.collections std.aad)

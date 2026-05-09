@@ -19,7 +19,7 @@
 ;;; Demonstrates: tape-based AD, grad-on-Greek second-order AD,
 ;;; quantitative finance with closures.
 ;;;
-;;; Run:  etai cookbook/quant/european.eta
+;;; Run:  etai cookbook/numerics/european.eta
 
 (module european
   (import std.core std.io std.aad)

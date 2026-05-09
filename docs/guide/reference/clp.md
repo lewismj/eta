@@ -507,5 +507,5 @@ through ground intermediate values.
 | `std.clpb` wrappers | [`stdlib/std/clpb.eta`](../../../stdlib/std/clpb.eta) |
 | CLP(FD) tests | [`stdlib/tests/clp.test.eta`](../../../stdlib/tests/clp.test.eta) |
 | CLP(R) tests | [`stdlib/tests/clpr_simplex.test.eta`](../../../stdlib/tests/clpr_simplex.test.eta), [`stdlib/tests/clpr_optimization.test.eta`](../../../stdlib/tests/clpr_optimization.test.eta), [`stdlib/tests/clpr_qp_optimization.test.eta`](../../../stdlib/tests/clpr_qp_optimization.test.eta) |
-| Worked examples | [`cookbook/logic/nqueens.eta`](../../../cookbook/logic/nqueens.eta), [`cookbook/logic/send-more-money.eta`](../../../cookbook/logic/send-more-money.eta), [`cookbook/quant/portfolio-lp.eta`](../../../cookbook/quant/portfolio-lp.eta) |
+| Worked examples | [`cookbook/logic/nqueens.eta`](../../../cookbook/logic/nqueens.eta), [`cookbook/logic/send-more-money.eta`](../../../cookbook/logic/send-more-money.eta), [`cookbook/numerics/portfolio-lp.eta`](../../../cookbook/numerics/portfolio-lp.eta) |
 

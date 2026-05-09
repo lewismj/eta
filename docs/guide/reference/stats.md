@@ -325,11 +325,11 @@ system installation is needed.
 
 ## Example
 
-[`cookbook/quant/stats.eta`](../../../cookbook/quant/stats.eta) demonstrates `std.stats`
+[`cookbook/numerics/stats.eta`](../../../cookbook/numerics/stats.eta) demonstrates `std.stats`
 using two simulated monthly return series (equity and bond):
 
 ```bash
-etai cookbook/quant/stats.eta
+etai cookbook/numerics/stats.eta
 ```
 
 Expected output (abbreviated):
@@ -372,4 +372,4 @@ Equity fund (monthly %):
 | `%stats-mean-vec`, `%stats-cov-matrix`, `%stats-ols-multi`, … (multivariate) | [`packages/stdlib/native/stats/src/eta/stats/stats_primitives.h`](../../../packages/stdlib/native/stats/src/eta/stats/stats_primitives.h) |
 | `stats:mean`, `stats:cov-matrix`, `stats:ols-multi`, … (Eta wrappers) | [`stdlib/std/stats.eta`](../../../stdlib/std/stats.eta) |
 | Eigen fetch | [`cmake/FetchEigen.cmake`](../../../cmake/FetchEigen.cmake) |
-| Example | [`cookbook/quant/stats.eta`](../../../cookbook/quant/stats.eta) |
+| Example | [`cookbook/numerics/stats.eta`](../../../cookbook/numerics/stats.eta) |

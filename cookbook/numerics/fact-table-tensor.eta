@@ -1,6 +1,6 @@
 ;;; fact-table-tensor.eta -- std.fact_table -> std.torch bridge demo.
 ;;;
-;;; Run:  etai cookbook/quant/fact-table-tensor.eta
+;;; Run:  etai cookbook/numerics/fact-table-tensor.eta
 
 (module fact-table-tensor
   (import std.io std.fact_table std.torch)

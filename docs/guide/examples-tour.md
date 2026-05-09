@@ -13,7 +13,7 @@ a link to the file (and to the in-depth doc where one exists).
 If you are new to Eta, work through the **Beginner** and **Symbolic &
 Logic** sections first. The **AAD & Finance** and **Causal & Portfolio**
 sections build on each other and culminate in
-[`portfolio.eta`](../../cookbook/quant/portfolio.eta).
+[`portfolio.eta`](../../cookbook/numerics/portfolio.eta).
 
 ---
 
@@ -51,10 +51,10 @@ sections build on each other and culminate in
 
 | Example                                       | Topic                                              | Walkthrough |
 | :-------------------------------------------- | :------------------------------------------------- | :---------- |
-| [`aad.eta`](../../cookbook/quant/aad.eta)           | Reverse-mode AD primer, `grad`                     | [`aad.md`](./reference/aad.md) |
-| [`european.eta`](../../cookbook/quant/european.eta) | Black–Scholes Greeks (1st & 2nd order)             | [`european.md`](./reference/european.md) |
-| [`sabr.eta`](../../cookbook/quant/sabr.eta)         | SABR vol surface, Hagan approximation              | [`sabr.md`](./reference/sabr.md) |
-| [`xva.eta`](../../cookbook/quant/xva.eta)           | CVA / FVA sensitivities via AAD                    | [`xva.md`](./reference/xva.md) |
+| [`aad.eta`](../../cookbook/numerics/aad.eta)           | Reverse-mode AD primer, `grad`                     | [`aad.md`](./reference/aad.md) |
+| [`european.eta`](../../cookbook/numerics/european.eta) | Black–Scholes Greeks (1st & 2nd order)             | [`european.md`](./reference/european.md) |
+| [`sabr.eta`](../../cookbook/numerics/sabr.eta)         | SABR vol surface, Hagan approximation              | [`sabr.md`](./reference/sabr.md) |
+| [`xva.eta`](../../cookbook/numerics/xva.eta)           | CVA / FVA sensitivities via AAD                    | [`xva.md`](./reference/xva.md) |
 | [`xva-wwr/`](../../cookbook/xva-wwr/)         | Wrong-Way Risk via do-interventions                | [`featured/xva-wwr.md`](../featured/xva-wwr.md) |
 
 ---
@@ -63,7 +63,7 @@ sections build on each other and culminate in
 
 | Example                                       | Topic                                  |
 | :-------------------------------------------- | :------------------------------------- |
-| [`stats.eta`](../../cookbook/quant/stats.eta)       | Descriptive stats, OLS                 |
+| [`stats.eta`](../../cookbook/numerics/stats.eta)       | Descriptive stats, OLS                 |
 | [`torch.eta`](../../cookbook/ml/torch.eta)       | libtorch tensor / autograd basics      |
 | [`tests/torch/`](../../cookbook/tests/torch/) | Layer / optimiser smoke tests          |
 
@@ -99,9 +99,9 @@ sections build on each other and culminate in
 | :------------------------------------------------------- | :-------------------------------------------- | :---------- |
 | [`causal_demo.eta`](../../cookbook/causal/causal_demo.eta)      | Primer: symbolic + causal + CLP + libtorch    | [`causal.md`](./reference/causal.md) |
 | [`do-calculus/`](../../cookbook/do-calculus/)            | Worked do-calculus identification problems    | [`causal.md`](./reference/causal.md) |
-| [`fact-table.eta`](../../cookbook/quant/fact-table.eta)        | Columnar fact tables for analytics            | [`fact-table.md`](./reference/fact-table.md) |
-| [`portfolio-lp.eta`](../../cookbook/quant/portfolio-lp.eta)    | LP construction via `std.clpr`                | — |
-| [`portfolio.eta`](../../cookbook/quant/portfolio.eta)          | End-to-end causal portfolio engine            | [`featured/portfolio.md`](../featured/portfolio.md) |
+| [`fact-table.eta`](../../cookbook/numerics/fact-table.eta)        | Columnar fact tables for analytics            | [`fact-table.md`](./reference/fact-table.md) |
+| [`portfolio-lp.eta`](../../cookbook/numerics/portfolio-lp.eta)    | LP construction via `std.clpr`                | — |
+| [`portfolio.eta`](../../cookbook/numerics/portfolio.eta)          | End-to-end causal portfolio engine            | [`featured/portfolio.md`](../featured/portfolio.md) |
 
 ---
 

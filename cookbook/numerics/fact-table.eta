@@ -3,7 +3,7 @@
 ;;; Demonstrates the std.fact_table module: creating a table, inserting
 ;;; rows, building hash indexes, and querying / iterating over data.
 ;;;
-;;; Run:  etai cookbook/quant/fact-table.eta
+;;; Run:  etai cookbook/numerics/fact-table.eta
 
 (module fact-table-demo
   (import std.io)

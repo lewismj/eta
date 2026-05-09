@@ -7,7 +7,7 @@
 
 ## Overview
 
-[`cookbook/quant/european.eta`](../../../cookbook/quant/european.eta) computes
+[`cookbook/numerics/european.eta`](../../../cookbook/numerics/european.eta) computes
 **Black-Scholes option Greeks** — both first-order and second-order —
 using Eta's built-in [tape-based reverse-mode AD](aad.md).
 
@@ -19,7 +19,7 @@ using Eta's built-in [tape-based reverse-mode AD](aad.md).
 - Schwarz's theorem as a built-in consistency check
 
 ```bash
-etai cookbook/quant/european.eta
+etai cookbook/numerics/european.eta
 ```
 
 > [!NOTE]

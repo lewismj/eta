@@ -50,12 +50,13 @@
 
 ## 1. Orientation
 
-Eta is a Lisp-1 with an S-expression surface, a hygienic macro system,
-and a stack-based bytecode VM that uses NaN-boxing for value
-representation. The same VM hosts the symbolic core, native logic
-programming with backtracking, reverse-mode automatic differentiation,
-linear algebra (Eigen), neural networks (libtorch), and an actor runtime
-(nng).
+Eta is a Lisp/Scheme-like language with a hygienic macro system and a
+stack-based bytecode VM that uses NaN-boxing for value representation.
+The same VM hosts a wide range of capabilities — the symbolic core,
+logic programming, constraint logic programming (CLP), automatic
+adjoint differentiation, statistics, neural networks, causal inference,
+and actor-style concurrency — delivered as first-class language features
+or as packaged `std.*` modules.
 
 ### Toolchain
 
@@ -643,7 +644,7 @@ Three CLP domains are bundled:
 
 `std.clpr` exposes interval domains, linear and quadratic
 minimise/maximise routines backed by the Fourier–Motzkin oracle. See
-[`cookbook/quant/portfolio-lp.eta`](../cookbook/quant/portfolio-lp.eta) for a
+[`cookbook/numerics/portfolio-lp.eta`](../cookbook/numerics/portfolio-lp.eta) for a
 worked LP.
 
 ---
@@ -654,7 +655,7 @@ worked LP.
 tabled evaluation — see [`db.md`](./guide/reference/db.md). `std.fact_table` is a
 columnar store with hash-indexed lookups for analytics workloads — see
 [`fact-table.md`](./guide/reference/fact-table.md) and
-[`cookbook/quant/fact-table.eta`](../cookbook/quant/fact-table.eta).
+[`cookbook/numerics/fact-table.eta`](../cookbook/numerics/fact-table.eta).
 
 ---
 
@@ -823,13 +824,13 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 | Example                                                        | Topic                                  | Walkthrough |
 | :------------------------------------------------------------- | :------------------------------------- | :---------- |
-| [`european.eta`](../cookbook/quant/european.eta)                  | Black–Scholes Greeks via AAD           | [`european.md`](./guide/reference/european.md) |
-| [`sabr.eta`](../cookbook/quant/sabr.eta)                          | SABR vol surface, Hagan approximation  | [`sabr.md`](./guide/reference/sabr.md) |
-| [`xva.eta`](../cookbook/quant/xva.eta)                            | CVA / FVA sensitivities via AAD        | [`xva.md`](./guide/reference/xva.md) |
+| [`european.eta`](../cookbook/numerics/european.eta)                  | Black–Scholes Greeks via AAD           | [`european.md`](./guide/reference/european.md) |
+| [`sabr.eta`](../cookbook/numerics/sabr.eta)                          | SABR vol surface, Hagan approximation  | [`sabr.md`](./guide/reference/sabr.md) |
+| [`xva.eta`](../cookbook/numerics/xva.eta)                            | CVA / FVA sensitivities via AAD        | [`xva.md`](./guide/reference/xva.md) |
 | [`xva-wwr/`](../cookbook/xva-wwr/)                          | Wrong-Way Risk via do-interventions    | [`featured/xva-wwr.md`](./featured/xva-wwr.md) |
-| [`portfolio.eta`](../cookbook/quant/portfolio.eta)                | Causal portfolio engine (full pipeline)| [`featured/portfolio.md`](./featured/portfolio.md) |
-| [`portfolio-lp.eta`](../cookbook/quant/portfolio-lp.eta)          | LP variant via `std.clpr`              | [CLP(R)](./guide/reference/clpr.md) |
-| [`fact-table.eta`](../cookbook/quant/fact-table.eta)              | Columnar fact tables                   | [`fact-table.md`](./guide/reference/fact-table.md) |
+| [`portfolio.eta`](../cookbook/numerics/portfolio.eta)                | Causal portfolio engine (full pipeline)| [`featured/portfolio.md`](./featured/portfolio.md) |
+| [`portfolio-lp.eta`](../cookbook/numerics/portfolio-lp.eta)          | LP variant via `std.clpr`              | [CLP(R)](./guide/reference/clpr.md) |
+| [`fact-table.eta`](../cookbook/numerics/fact-table.eta)              | Columnar fact tables                   | [`fact-table.md`](./guide/reference/fact-table.md) |
 
 ---
 
