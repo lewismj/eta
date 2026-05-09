@@ -133,7 +133,7 @@ img, svg {
 
 .hero h1 {
   font-family: var(--font-display);
-  font-size: clamp(3.5rem, 9vw, 7.5rem);
+  font-size: clamp(2.8rem, 5vw, 5.5rem);
   font-weight: 800;
   line-height: 0.93;
   letter-spacing: -0.04em;
@@ -231,9 +231,7 @@ img, svg {
 }
 
 .card__icon {
-  font-size: 1.5rem;
-  line-height: 1;
-  margin-bottom: 4px;
+  display: none;
 }
 
 .card__title {
@@ -241,6 +239,20 @@ img, svg {
   font-weight: 700;
   font-size: 1.15rem;
   letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card__dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  min-height: 10px;
+  border-radius: 50%;
+  background-color: #fb8aa7;
 }
 
 .card__body {

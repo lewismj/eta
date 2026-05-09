@@ -5,6 +5,9 @@
     <p style="margin: 6px 0 0 0;">
       <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
     </p>
+    <p style="margin: 8px 0 0 0;">
+      <a href="https://lewismj.github.io/eta/">Site</a>
+    </p>
   </div>
 </div>
 

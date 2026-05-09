@@ -1,5 +1,4 @@
-n---
-
+---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import Header from "../../components/Header.astro";
 import Footer from "../../components/Footer.astro";
@@ -11,37 +10,31 @@ const base = import.meta.env.BASE_URL ?? "/";
 
 const cookbooks = [
   {
-    icon: "🔤",
     title: "Basics",
     body: "Hello world, functions, higher-order functions, recursion, args, composition, and exceptions.",
     href: `${base}cookbook/basics/`,
   },
   {
-    icon: "📈",
     title: "Quant",
     body: "European options, SABR calibration, XVA, portfolio LP, AAD, and fact-table analytics.",
     href: `${base}cookbook/quant/`,
   },
   {
-    icon: "🧮",
     title: "Logic",
     body: "N-queens, SEND+MORE=MONEY, boolean simplifier, symbolic diff, unification.",
     href: `${base}cookbook/logic/`,
   },
   {
-    icon: "🕸",
     title: "Causal",
     body: "DAGs, do-calculus rules, and counterfactual estimation.",
     href: `${base}cookbook/causal/`,
   },
   {
-    icon: "⚡",
     title: "Concurrency",
     body: "Worker pools, Monte Carlo, scatter-gather, pub/sub, and distributed compute.",
     href: `${base}cookbook/concurrency/`,
   },
   {
-    icon: "🤖",
     title: "ML / Torch",
     body: "LibTorch examples via the eta-torch-sidecar package.",
     href: `${base}cookbook/ml/`,
@@ -63,7 +56,7 @@ const cookbooks = [
   </div>
   <CardGrid>
     {cookbooks.map((c) => (
-      <Card icon={c.icon} title={c.title} body={c.body} href={c.href} />
+      <Card title={c.title} body={c.body} href={c.href} />
     ))}
   </CardGrid>
   <Footer />

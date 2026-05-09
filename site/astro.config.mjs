@@ -8,6 +8,6 @@ const base = process.env.BASE_PATH ?? "";
 export default defineConfig({
   base,
   output: "static",
-  site: "https://eta-lang.github.io",
+  site: "https://lewismj.github.io",
 });
 
