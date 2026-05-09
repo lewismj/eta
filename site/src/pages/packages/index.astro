@@ -6,7 +6,7 @@ import Card from "../../components/Card.astro";
 import CardGrid from "../../components/CardGrid.astro";
 import "../../styles/global.css";
 
-const base = import.meta.env.BASE_URL ?? "/";
+const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
 
 const packages = [
   {
