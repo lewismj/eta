@@ -299,6 +299,14 @@ if(TORCH_INSTALL_PREFIX)
     endif()
 endif()
 
+# Install native sidecar package metadata/artifact layout expected by
+# runtime bundled-sidecar discovery.
+if(EXISTS "${ETA_STDLIB_NATIVE_DIR}")
+    install(
+        DIRECTORY "${ETA_STDLIB_NATIVE_DIR}/"
+        DESTINATION "packages/stdlib/native")
+endif()
+
 # Install nng DLL on Windows
 if(WIN32 AND TARGET nng)
     install(FILES $<TARGET_FILE:nng> DESTINATION bin)

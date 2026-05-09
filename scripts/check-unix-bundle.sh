@@ -54,6 +54,7 @@ fi
 
 BIN_DIR="$PREFIX/bin"
 STDLIB_DIR="$PREFIX/stdlib"
+PACKAGES_DIR="$PREFIX/packages"
 
 if [ ! -d "$BIN_DIR" ]; then
     echo "error: bundle bin/ directory missing: $BIN_DIR" >&2
@@ -78,6 +79,19 @@ missing_stdlib=()
 for artifact in "${required_stdlib[@]}"; do
     if [ ! -f "$STDLIB_DIR/$artifact" ]; then
         missing_stdlib+=("stdlib/$artifact")
+    fi
+done
+
+required_sidecar_manifests=(
+    stdlib/native/log/eta.toml
+    stdlib/native/stats/eta.toml
+    stdlib/native/torch/eta.toml
+    stdlib/native/nng/eta.toml
+)
+missing_sidecar_manifests=()
+for manifest in "${required_sidecar_manifests[@]}"; do
+    if [ ! -f "$PACKAGES_DIR/$manifest" ]; then
+        missing_sidecar_manifests+=("packages/$manifest")
     fi
 done
 
@@ -125,9 +139,13 @@ if [ ${#missing_notebooks[@]} -gt 0 ]; then
     ok=0
     echo "[FAIL] Missing cookbook notebooks: ${missing_notebooks[*]}" >&2
 fi
+if [ ${#missing_sidecar_manifests[@]} -gt 0 ]; then
+    ok=0
+    echo "[FAIL] Missing native sidecar package manifests: ${missing_sidecar_manifests[*]}" >&2
+fi
 
 if [ "$ok" -eq 1 ]; then
-    echo "[OK] Bundle has required executables and stdlib artifacts."
+    echo "[OK] Bundle has required executables, stdlib artifacts, and sidecar package manifests."
 else
     echo
     echo "Current bin/ contents:" >&2

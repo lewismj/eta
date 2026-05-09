@@ -13,6 +13,7 @@
 # When called with a <prefix>, files are copied:
 #   <prefix>/bin/         ← eta, etac, etai, eta_test, eta_repl, eta_lsp, eta_dap, eta_jupyter
 #   <prefix>/stdlib/      ← std/*.eta and std/*.etac
+#   <prefix>/packages/    ← native sidecar package metadata/artifacts
 #   <prefix>/editors/     ← VS Code extension (optional)
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -28,9 +29,12 @@ fi
 # ── If a target prefix was given, copy files there first ──────────────
 if [ -n "$TARGET" ]; then
     echo "▸ Copying files to ${TARGET}..."
-    mkdir -p "$TARGET/bin" "$TARGET/stdlib"
+    mkdir -p "$TARGET/bin" "$TARGET/stdlib" "$TARGET/packages"
     cp -f "$BUNDLE_DIR/bin/"*           "$TARGET/bin/"        2>/dev/null || true
     cp -Rf "$BUNDLE_DIR/stdlib/."       "$TARGET/stdlib/"     2>/dev/null || true
+    if [ -d "$BUNDLE_DIR/packages" ]; then
+        cp -Rf "$BUNDLE_DIR/packages/." "$TARGET/packages/"   2>/dev/null || true
+    fi
     if [ -d "$BUNDLE_DIR/lib" ]; then
         mkdir -p "$TARGET/lib"
         cp -rf "$BUNDLE_DIR/lib/"*      "$TARGET/lib/"        2>/dev/null || true

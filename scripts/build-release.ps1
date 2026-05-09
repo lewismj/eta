@@ -230,6 +230,21 @@ foreach ($artifact in $requiredStdlib) {
     }
 }
 
+# Verify native sidecar package manifests are present in the bundle.
+Write-Host "  Verifying native sidecar package manifests..."
+$requiredSidecarManifests = @(
+    "packages\stdlib\native\log\eta.toml",
+    "packages\stdlib\native\stats\eta.toml",
+    "packages\stdlib\native\torch\eta.toml",
+    "packages\stdlib\native\nng\eta.toml"
+)
+foreach ($manifest in $requiredSidecarManifests) {
+    $path = Join-Path $Prefix $manifest
+    if (-not (Test-Path $path)) {
+        throw "Missing required native sidecar package manifest after install: $path"
+    }
+}
+
 # Bundle the MSVC runtime DLLs into bin/ for clean-machine execution.
 $BinPath = Join-Path $Prefix "bin"
 Copy-VsRuntimeDllsToBin -BuildDir $BuildDir -BinDir $BinPath
@@ -372,7 +387,7 @@ if (Test-Path $CookbookSrc) {
 # copied next to them).  Drop any include/, lib/, share/ trees that
 # third-party dependencies may have installed despite EXCLUDE_FROM_ALL.
 Write-Host "  Pruning non-essential install directories..."
-$keepNames = @('bin','editors','stdlib','cookbook')
+$keepNames = @('bin','editors','stdlib','packages','cookbook')
 Get-ChildItem -LiteralPath $Prefix -Directory | Where-Object { $keepNames -notcontains $_.Name } | ForEach-Object {
     Write-Host "    - removing $($_.Name)\"
     Remove-Item -LiteralPath $_.FullName -Recurse -Force

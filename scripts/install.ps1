@@ -16,7 +16,7 @@
     -ExecutionPolicy Bypass).
 
 .PARAMETER Prefix
-    Optional. Copy bin/, stdlib/, editors/ to this directory and
+    Optional. Copy bin/, stdlib/, packages/, editors/ to this directory and
     configure PATH to point there instead of the bundle location.
 
 .EXAMPLE
@@ -41,10 +41,15 @@ if ($Prefix) {
     Write-Host "> Copying files to $Prefix..."
     New-Item -ItemType Directory -Force -Path "$Prefix\bin"    | Out-Null
     New-Item -ItemType Directory -Force -Path "$Prefix\stdlib" | Out-Null
+    New-Item -ItemType Directory -Force -Path "$Prefix\packages" | Out-Null
 
     Copy-Item -Recurse -Force "$BundleDir\bin\*"    "$Prefix\bin\"
     Get-ChildItem -LiteralPath (Join-Path $BundleDir "stdlib") -Force |
         Copy-Item -Recurse -Force -Destination (Join-Path $Prefix "stdlib")
+    if (Test-Path "$BundleDir\packages") {
+        Get-ChildItem -LiteralPath (Join-Path $BundleDir "packages") -Force |
+            Copy-Item -Recurse -Force -Destination (Join-Path $Prefix "packages")
+    }
     if (Test-Path "$BundleDir\lib") {
         New-Item -ItemType Directory -Force -Path "$Prefix\lib" | Out-Null
         Copy-Item -Recurse -Force "$BundleDir\lib\*" "$Prefix\lib\"

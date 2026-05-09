@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cerrno>
 #include <cstdint>
@@ -1268,6 +1269,52 @@ private:
         return path.lexically_normal();
     }
 
+    [[nodiscard]] static std::string host_target_triple() {
+#if defined(_WIN32)
+#if defined(_M_X64) || defined(__x86_64__)
+        return "x86_64-pc-windows-msvc";
+#elif defined(_M_ARM64) || defined(__aarch64__)
+        return "aarch64-pc-windows-msvc";
+#else
+        return "unknown-pc-windows-msvc";
+#endif
+#elif defined(__APPLE__)
+#if defined(__aarch64__)
+        return "aarch64-apple-darwin";
+#else
+        return "x86_64-apple-darwin";
+#endif
+#elif defined(__linux__)
+#if defined(__aarch64__)
+        return "aarch64-unknown-linux-gnu";
+#else
+        return "x86_64-unknown-linux-gnu";
+#endif
+#else
+        return "unknown-unknown-unknown";
+#endif
+    }
+
+    [[nodiscard]] static bool is_all_zero_sha256(std::string_view digest) {
+        if (digest.size() != 64u) return false;
+        for (const char ch : digest) {
+            if (ch != '0') return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] static const package::ManifestNativeTarget* select_native_target_for_host(
+        const package::ManifestNative& native) {
+        const auto triple = host_target_triple();
+        const auto it = std::find_if(native.targets.begin(),
+                                     native.targets.end(),
+                                     [&](const package::ManifestNativeTarget& target) {
+                                         return target.triple == triple;
+                                     });
+        if (it == native.targets.end()) return nullptr;
+        return &*it;
+    }
+
     [[nodiscard]] static bool has_complete_native_lockfile_metadata(
         const package::LockfilePackage& package) {
         return package.native_id.has_value()
@@ -1323,6 +1370,117 @@ private:
         return accumulated_forms_.empty()
             && executed_modules_.empty()
             && runtime_module_info_.empty();
+    }
+
+    bool ensure_bundled_sidecars_loaded() {
+        if (bundled_sidecars_attempted_) return true;
+        bundled_sidecars_attempted_ = true;
+
+        std::unordered_set<std::string> root_seen;
+        std::vector<fs::path> candidate_roots;
+        const auto add_candidate_root = [&](const fs::path& root) {
+            if (root.empty()) return;
+            std::error_code ec;
+            if (!fs::is_directory(root, ec) || ec) return;
+            const auto canonical = canonicalize_runtime_path(root);
+            const auto key = canon_path_key(canonical);
+            if (!root_seen.insert(key).second) return;
+            candidate_roots.push_back(canonical);
+        };
+
+        for (const auto& module_dir : resolver_.dirs()) {
+            add_candidate_root(module_dir / "packages" / "stdlib" / "native");
+            add_candidate_root(module_dir.parent_path() / "packages" / "stdlib" / "native");
+        }
+
+        if (!etai_path_.empty()) {
+            const fs::path etai_path = canonicalize_runtime_path(fs::path(etai_path_));
+            add_candidate_root(etai_path.parent_path() / "packages" / "stdlib" / "native");
+            add_candidate_root(etai_path.parent_path().parent_path() / "packages" / "stdlib" / "native");
+        }
+
+        if (candidate_roots.empty()) return true;
+
+        std::unordered_set<std::string> package_seen;
+        std::unordered_map<std::string, fs::path> package_root_by_name;
+        std::vector<native::NativeSidecarSpec> sidecar_specs;
+
+        const std::array<std::string_view, 4> builtin_sidecar_dirs = {
+            "log",
+            "stats",
+            "torch",
+            "nng",
+        };
+
+        for (const auto& native_root : candidate_roots) {
+            for (const auto dir_name : builtin_sidecar_dirs) {
+                const auto package_root = native_root / std::string(dir_name);
+                const auto manifest_path = package_root / "eta.toml";
+                std::error_code ec;
+                if (!fs::is_regular_file(manifest_path, ec) || ec) continue;
+
+                auto manifest = package::read_manifest(manifest_path);
+                if (!manifest) continue;
+                if (!manifest->native.has_value()) continue;
+
+                const auto* selected_target = select_native_target_for_host(*manifest->native);
+                if (selected_target == nullptr) continue;
+
+                const auto artifact_abs =
+                    canonicalize_runtime_path(package_root / selected_target->artifact);
+                if (!native::is_path_within(package_root, artifact_abs)) continue;
+                if (!fs::is_regular_file(artifact_abs, ec) || ec) continue;
+
+                if (!package_seen.insert(manifest->name).second) continue;
+                package_root_by_name.emplace(manifest->name, canonicalize_runtime_path(package_root));
+
+                native::NativeSidecarSpec spec;
+                spec.package_name = manifest->name;
+                spec.artifact_relpath = selected_target->artifact;
+                spec.abi = manifest->native->abi;
+                spec.entrypoint = manifest->native->entry;
+                spec.expected_extension_id = manifest->native->id;
+                if (!selected_target->sha256.empty()
+                    && !is_all_zero_sha256(selected_target->sha256)) {
+                    spec.expected_sha256 = selected_target->sha256;
+                }
+                sidecar_specs.push_back(std::move(spec));
+            }
+        }
+
+        if (sidecar_specs.empty()) return true;
+
+        native::NativeLoadContext context;
+        context.context_kind = package::ManifestContextKind::StandalonePackage;
+        std::error_code cwd_ec;
+        context.active_manifest_path = canonicalize_runtime_path(fs::current_path(cwd_ec));
+        if (cwd_ec) context.active_manifest_path = canonicalize_runtime_path(fs::path("."));
+        context.lockfile_root = context.active_manifest_path.parent_path();
+        context.modules_root = context.lockfile_root / ".eta" / "modules";
+        context.package_root_by_name = std::move(package_root_by_name);
+
+        auto resolved_sidecars = native::resolve_native_sidecars(context, sidecar_specs);
+        if (!resolved_sidecars) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "failed to resolve bundled native sidecar artifact paths: "
+                    + resolved_sidecars.error().message);
+            return false;
+        }
+
+        for (const auto& sidecar : *resolved_sidecars) {
+            auto loaded = sidecar_loader_->load(sidecar);
+            if (!loaded) {
+                diag_engine_.emit_error(
+                    diagnostic::DiagnosticCode::ModuleNotFound, {},
+                    "failed to load bundled native sidecar for package '"
+                        + sidecar.spec.package_name + "': " + loaded.error().message);
+                return false;
+            }
+        }
+
+        if (!sync_sidecar_extensions_into_environment()) return false;
+        return true;
     }
 
     [[nodiscard]] static runtime::types::PrimitiveFunc make_sidecar_placeholder_primitive(
@@ -1487,7 +1645,10 @@ private:
      * of this driver instance to keep extension slots deterministic.
      */
     bool ensure_package_sidecars_loaded(std::optional<fs::path> start_dir) {
-        if (sidecar_manifest_key_.has_value()) return true;
+        if (sidecar_manifest_key_.has_value()) {
+            if (!sidecar_registry_.extensions().empty()) return true;
+            return ensure_bundled_sidecars_loaded();
+        }
 
         fs::path discovery_start;
         if (start_dir.has_value()) {
@@ -1495,9 +1656,9 @@ private:
         } else {
             std::error_code ec;
             discovery_start = fs::current_path(ec);
-            if (ec) return true;
+            if (ec) return ensure_bundled_sidecars_loaded();
         }
-        if (discovery_start.empty()) return true;
+        if (discovery_start.empty()) return ensure_bundled_sidecars_loaded();
 
         auto discovery = package::discover_manifest_context(discovery_start);
         if (!discovery) {
@@ -1507,14 +1668,16 @@ private:
                     + discovery.error().message);
             return false;
         }
-        if (!discovery->context.has_value()) return true;
-        if (*discovery->context == package::ManifestContextKind::WorkspaceNonMember) return true;
+        if (!discovery->context.has_value()) return ensure_bundled_sidecars_loaded();
+        if (*discovery->context == package::ManifestContextKind::WorkspaceNonMember) {
+            return ensure_bundled_sidecars_loaded();
+        }
         if (!discovery->package_manifest_path.has_value()) {
             /**
              * Workspace virtual roots have no selected package context.
              * Keep core-only behavior until a concrete package is selected.
              */
-            return true;
+            return ensure_bundled_sidecars_loaded();
         }
 
         const auto package_manifest_path =
@@ -1533,7 +1696,7 @@ private:
         std::error_code lockfile_ec;
         if (!fs::is_regular_file(lockfile_path, lockfile_ec) || lockfile_ec) {
             sidecar_manifest_key_ = package_manifest_key;
-            return true;
+            return ensure_bundled_sidecars_loaded();
         }
 
         auto lockfile = package::read_lockfile(lockfile_path);
@@ -1570,7 +1733,7 @@ private:
 
         if (active_lock_package == nullptr) {
             sidecar_manifest_key_ = package_manifest_key;
-            return true;
+            return ensure_bundled_sidecars_loaded();
         }
 
         std::unordered_set<std::string> closure_names;
@@ -1623,7 +1786,7 @@ private:
 
         if (sidecar_specs.empty()) {
             sidecar_manifest_key_ = package_manifest_key;
-            return true;
+            return ensure_bundled_sidecars_loaded();
         }
 
         auto resolved_sidecars = native::resolve_native_sidecars(load_context, sidecar_specs);
@@ -2758,6 +2921,7 @@ private:
     std::unique_ptr<native::SidecarLoader> sidecar_loader_;
     std::size_t sidecar_registered_extension_count_{0};
     std::optional<std::string> sidecar_manifest_key_;
+    bool bundled_sidecars_attempted_{false};
     runtime::vm::VM vm_;
 
     diagnostic::DiagnosticEngine diag_engine_;

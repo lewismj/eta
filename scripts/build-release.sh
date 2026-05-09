@@ -182,7 +182,7 @@ fi
 chmod +x "$PREFIX/bin/"* 2>/dev/null || true
 
 # ── 5b. Prune to minimal Linux/macOS layout ──────────────────────────
-# Keep only:  bin/  editors/  stdlib/  cookbook/  lib/  (lib/ holds libtorch .so's
+# Keep only:  bin/  editors/  stdlib/  packages/  cookbook/  lib/  (lib/ holds libtorch .so's
 # when torch is enabled — RPATH is set to $ORIGIN/../lib).  Within lib/
 # we further drop CMake config packages and pkgconfig files which are
 # build-time artifacts not needed at runtime.
@@ -190,7 +190,7 @@ echo "  Pruning non-essential install directories..."
 for d in "$PREFIX"/*/; do
     name="$(basename "$d")"
     case "$name" in
-        bin|editors|stdlib|cookbook|lib) ;;
+        bin|editors|stdlib|packages|cookbook|lib) ;;
         *) echo "    - removing ${name}/"; rm -rf "$d" ;;
     esac
 done
