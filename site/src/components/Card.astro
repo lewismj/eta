@@ -1,0 +1,23 @@
+---
+import "../styles/global.css";
+
+export interface Props {
+  icon?: string;
+  title: string;
+  body: string;
+  href?: string;
+  linkLabel?: string;
+}
+
+const { icon, title, body, href, linkLabel = "Learn more" } = Astro.props;
+---
+
+<div class="card">
+  {icon && <div class="card__icon">{icon}</div>}
+  <div class="card__title">{title}</div>
+  <div class="card__body">{body}</div>
+  {href && (
+    <a href={href} class="card__link">{linkLabel}</a>
+  )}
+</div>
+

@@ -5,7 +5,7 @@
 [Package Commands](../guide/packages.md) |
 [Next Steps](../next-steps.md)
 
-Status: NS0-NS8 implemented (2026-05-09).
+Status: NS0-NS9 implemented (2026-05-09). NS10 remains open.
 
 ---
 
@@ -26,31 +26,25 @@ End state: native capabilities are delivered by packages, not by hard-linked
 
 ## 2) Current state (May 2026)
 
-1. First-party native bindings are built as interface targets under
-   `eta/builtins/{torch,nng,stats,log}` and linked into all runtime tools
-   (`etai`, `eta_repl`, `etac`, `eta_lsp`, `eta_dap`, `eta_jupyter`,
-   `eta_test`).
-2. Driver registration is centralized in:
-   - `eta/tools/interpreter/src/eta/interpreter/all_primitives.h`
-   - `eta/session/src/eta/session/driver.h`
-3. `.etac` freshness currently validates builtin count; mismatches surface as
-   `BuiltinCountMismatch` (bytecode format is currently v5).
-4. Workspace support is now shipped:
-   - context discovery (`StandalonePackage`, `WorkspaceRoot`,
-     `WorkspaceMember`, `WorkspaceNonMember`) in
-     `eta/core/src/eta/package/discovery.*`,
-   - workspace member expansion and dependency union in
-     `eta/core/src/eta/package/resolver.*`,
-   - shared workspace artifact layout:
-     `.eta/target/<profile>/<member>/...` and workspace-root `.eta/modules`.
-5. Lockfile package sources already encode workspace/non-workspace origin via
-   `source = "root" | "workspace+<rel>" | "path+..." | "git+..." | "tarball+..."`.
-6. Tooling paths are workspace-aware through `ModulePathResolver` and
-   tool-specific context plumbing (CLI/LSP/DAP/Jupyter), but none of these paths
-   model native sidecar artifacts yet.
-7. Packaging S0-S7 is shipped (`eta.toml`, `eta.lock`, resolver, vendor/install,
-   tooling integration), but manifest/resolver/lockfile schemas do not yet model
-   native sidecars.
+1. Native sidecar metadata is implemented in package/lockfile schemas:
+   - manifest: `[native]` and `[[native.targets]]`,
+   - lockfile: `native_id`, `native_abi`, `native_entry`,
+     `native_target_triple`, `native_artifact_relpath`, `native_sha256`.
+2. Sidecar loading is active in runtime/tooling entrypoints:
+   - `eta/session/src/eta/session/driver.h`,
+   - `eta/tools/compiler/src/eta/compiler/main_etac.cpp`.
+3. In package contexts, tools load sidecars from lockfile metadata for the
+   active dependency closure, in lockfile order, before compile/run.
+4. In non-package contexts (or when no active package lockfile is available),
+   runtime attempts bundled stdlib sidecar discovery under
+   `packages/stdlib/native/*` on resolver/installation paths.
+5. `.etac` freshness now validates extension environment hash (format v6),
+   not sidecar-driven builtin count churn.
+6. Runtime tool targets no longer hard-link first-party native builtin
+   libraries (`torch`, `nng`, `stats`, `log`) into `etai`/`eta_repl`/`etac`
+   and related tools.
+7. Release/install bundle layout now includes `packages/stdlib/native`
+   manifests, and bundle check scripts verify these manifest paths exist.
 
 ---
 
@@ -291,8 +285,8 @@ Wire both environments into:
 
 1. register core builtins (existing path),
 2. build loader context via package/workspace discovery,
-3. if no active package manifest or no lockfile is available, continue with
-   core-only execution (no sidecar load attempt),
+3. if no active package manifest or no lockfile is available, try bundled
+   stdlib sidecar discovery and otherwise continue core-only,
 4. resolve dependency graph rooted at active package manifest,
 5. intersect graph closure with lockfile packages that declare native fields,
 6. load sidecars in lockfile order and register extension primitives,
@@ -417,7 +411,7 @@ Add focused UX:
 
 ---
 
-## 9) Migration strategy for existing builtins
+## 9) Migration strategy for existing builtins (historical)
 
 ## 9.1 Migration order
 
@@ -443,24 +437,19 @@ Concrete implementation notes per module:
    semantic analyzer/bytecode behavior drift.
 2. preserve existing stdlib wrapper module public API (`stdlib/std/*.eta`) so
    user code does not change.
-3. run parity tests in both modes (`ETA_NATIVE_BUILTIN_FALLBACK=ON/OFF`) before
-   removing linked registration.
+3. run parity tests during staged migration before removing linked registration.
 4. update `builtin_metadata`/docs surface only after sidecar-backed registration
    is proven in CI.
 
-## 9.3 Temporary compatibility flag
+## 9.3 Temporary compatibility flag (historical)
 
-Add temporary build flag:
+During migration, `ETA_NATIVE_BUILTIN_FALLBACK` was used to keep linked
+registration available while sidecar parity was verified.
 
-- `ETA_NATIVE_BUILTIN_FALLBACK=ON` (default ON during migration)
+Final state (NS9): fallback mode is removed and sidecar-only behavior is
+enforced.
 
-Behavior:
-
-1. if sidecar load fails, optionally fall back to linked builtin registration,
-2. CI lane with fallback OFF to enforce sidecar correctness,
-3. remove fallback at end of migration.
-
-## 9.4 CMake/linkage transition details
+## 9.4 CMake/linkage transition details (historical)
 
 During migration, keep tool build graph stable and remove links in one module at
 a time:
@@ -474,8 +463,7 @@ a time:
    - `eta/tools/test_runner/CMakeLists.txt`
    - top-level `CMakeLists.txt` (`eta_all` aggregation)
 2. move from hard link to sidecar load behind fallback flag first.
-3. drop `eta_copy_*_dlls(...)` calls only after fallback-off CI is green for the
-   migrated module.
+3. drop legacy hard-link and copy wiring after sidecar-only CI is green.
 
 ---
 
@@ -933,7 +921,8 @@ Each platform should run:
 
 ## 12) Security and trust model
 
-1. Sidecars are executable native code; loading is explicit via lockfile.
+1. Sidecars are executable native code; loading is explicit via lockfile in
+   package contexts, with bundled-sidecar discovery for shipped stdlib layouts.
 2. Require checksum verification before dynamic loading.
 3. Do not auto-execute package scripts to build sidecars in v1 runtime path.
 4. Treat ABI mismatch as hard error, not warning.
@@ -950,7 +939,8 @@ Each platform should run:
 3. **Determinism regressions**
    - Mitigation: extension hash + lockfile-ordered load and test fixtures.
 4. **Migration breakage for existing modules**
-   - Mitigation: staged fallback mode and per-module parity gates.
+   - Mitigation: staged parity gates during rollout; sidecar-only runtime and
+     integration coverage after NS9.
 5. **Debugging complexity**
    - Mitigation: `eta doctor` native diagnostics and explicit missing-extension errors.
 6. **Workspace behavior regressions**

@@ -1,0 +1,230 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Hero from "../components/Hero.astro";
+import Card from "../components/Card.astro";
+import CardGrid from "../components/CardGrid.astro";
+import "../styles/global.css";
+
+const base = import.meta.env.BASE_URL ?? "/";
+
+const features = [
+  {
+    icon: "λ",
+    title: "Lisp-shaped core",
+    body: "Modules, macros, records, lists, tail calls, and symbolic programming — expressive without ceremony.",
+    href: `${base}docs/language-guide/`,
+    linkLabel: "Language guide",
+  },
+  {
+    icon: "📦",
+    title: "Package-aware tooling",
+    body: "Manifests, lockfiles, workspaces, and build artifacts with deterministic dependency resolution.",
+    href: `${base}docs/packages/`,
+    linkLabel: "Packaging docs",
+  },
+  {
+    icon: "⚙",
+    title: "Native sidecars",
+    body: "Deterministic extension loading via package metadata — torch, nng, stats, and log as lockfile-managed sidecars.",
+    href: `${base}docs/native-sidecars/`,
+    linkLabel: "Sidecar model",
+  },
+  {
+    icon: "📖",
+    title: "Cookbook-first learning",
+    body: "Practical examples spanning quant workflows, logic programming, causal inference, concurrency, and ML.",
+    href: `${base}cookbook/`,
+    linkLabel: "Browse cookbook",
+  },
+  {
+    icon: "📊",
+    title: "Quant & analytics",
+    body: "European options, SABR calibration, XVA aggregation, portfolio LP, and AAD — out of the box.",
+    href: `${base}cookbook/`,
+    linkLabel: "Quant examples",
+  },
+  {
+    icon: "🔗",
+    title: "Concurrency & messaging",
+    body: "Message passing, worker pools, pub/sub, scatter-gather, and distributed compute via nng.",
+    href: `${base}cookbook/`,
+    linkLabel: "Concurrency examples",
+  },
+];
+
+const sampleCode = `; Monte Carlo — European call option price
+(defn black-scholes-mc [S K r sigma T n]
+  (let [dt   (/ T n)
+        disc (exp (* (neg r) T))]
+    (* disc
+       (mean
+         (map (fn [_]
+                (let [W  (* sigma (sqrt T) (randn))
+                      ST (* S (exp (* (- r (* 0.5 sigma sigma)) T)
+                                  W))]
+                  (max 0 (- ST K))))
+              (range n))))))
+
+(println (black-scholes-mc 100 100 0.05 0.2 1.0 100000))`;
+---
+
+<BaseLayout
+  title="Eta"
+  description="A Lisp-like language for programmable systems, quant workflows, package-managed modules, and native sidecars."
+>
+  <Header />
+
+  <!-- Hero ─────────────────────────────────────── -->
+  <Hero
+    eyebrow="Open Source · v0.7"
+    heading="A Lisp for<br/><em>programmable systems.</em>"
+    subheading="Package-managed modules, native sidecars, and a practical stdlib for quant, logic, and ML workflows."
+    primaryLabel="Get Started"
+    primaryHref={`${base}docs/quickstart/`}
+    secondaryLabel="Read the Guide"
+    secondaryHref={`${base}docs/language-guide/`}
+  />
+
+  <!-- tag strip ────────────────────────────────── -->
+  <div class="tag-strip">
+    <span class="tag">Lisp-like</span>
+    <span class="tag">Static compilation</span>
+    <span class="tag">eta.toml workspaces</span>
+    <span class="tag">Native sidecars (v1 ABI)</span>
+    <span class="tag">JetBrains + VSCode</span>
+    <span class="tag">Jupyter kernels</span>
+    <span class="tag">GitHub Pages docs</span>
+  </div>
+
+  <!-- Feature cards ────────────────────────────── -->
+  <CardGrid label="What Eta gives you">
+    {features.map((f) => (
+      <Card
+        icon={f.icon}
+        title={f.title}
+        body={f.body}
+        href={f.href}
+        linkLabel={f.linkLabel}
+      />
+    ))}
+  </CardGrid>
+
+  <!-- Code sample ──────────────────────────────── -->
+  <div class="code-section">
+    <div class="code-section__copy">
+      <p class="section-label">Language sample</p>
+      <h2>Practical Lisp,<br/>without the noise.</h2>
+      <p>
+        Eta is a compiled Lisp with tail-call optimisation, first-class
+        functions, pattern matching, and a practical standard library.
+        The same language you use in the REPL builds to <code>.etac</code>
+        bytecode for production.
+      </p>
+      <a href={`${base}docs/language-guide/`} class="btn btn-outline">
+        Read the language guide
+      </a>
+    </div>
+    <pre><code set:html={sampleCode
+      .replace(/;.*$/gm, (m) => `<span class="tok-comment">${m}</span>`)
+      .replace(/\b(defn|let|fn|map|range|println|mean|exp|sqrt|max|neg)\b/g,
+               '<span class="tok-fn">$1</span>')
+      .replace(/([\d.]+)/g, '<span class="tok-num">$1</span>')
+    } /></pre>
+  </div>
+
+  <!-- Native sidecar story ─────────────────────── -->
+  <CardGrid label="Native sidecar ecosystem">
+    <Card
+      icon="🔢"
+      title="eta-torch-sidecar"
+      body="LibTorch tensor operations and autograd — loaded as a versioned, checksummed native sidecar."
+      href={`${base}packages/`}
+      linkLabel="Package details"
+    />
+    <Card
+      icon="📡"
+      title="eta-nng-sidecar"
+      body="nanomsg-next-gen messaging primitives for pub/sub, push/pull, and request/reply patterns."
+      href={`${base}packages/`}
+      linkLabel="Package details"
+    />
+    <Card
+      icon="📐"
+      title="eta-stats-sidecar"
+      body="Eigen-backed statistics and linear algebra — normal distribution, regression, and more."
+      href={`${base}packages/`}
+      linkLabel="Package details"
+    />
+    <Card
+      icon="📝"
+      title="eta-log-sidecar"
+      body="spdlog-backed structured logging with level control — the reference migration example."
+      href={`${base}packages/`}
+      linkLabel="Package details"
+    />
+  </CardGrid>
+
+  <!-- Cookbook highlights ──────────────────────── -->
+  <CardGrid label="Cookbook highlights">
+    <Card
+      icon="📈"
+      title="Quant workflows"
+      body="European options, SABR calibration, XVA with WWR, portfolio LP, and automatic adjoint differentiation."
+      href={`${base}cookbook/`}
+      linkLabel="Open quant examples"
+    />
+    <Card
+      icon="🧮"
+      title="Logic & constraint"
+      body="N-queens, SEND+MORE=MONEY, boolean simplifier, symbolic differentiation, and unification."
+      href={`${base}cookbook/`}
+      linkLabel="Open logic examples"
+    />
+    <Card
+      icon="🕸"
+      title="Causal inference"
+      body="DAGs, do-calculus rules, and counterfactual queries in pure Eta."
+      href={`${base}cookbook/`}
+      linkLabel="Open causal examples"
+    />
+    <Card
+      icon="⚡"
+      title="Concurrency"
+      body="Worker pools, scatter-gather, distributed Monte Carlo, and reactive pub/sub over nng."
+      href={`${base}cookbook/`}
+      linkLabel="Open concurrency examples"
+    />
+  </CardGrid>
+
+  <!-- Links row ────────────────────────────────── -->
+  <section class="section" style="padding-top: 0;">
+    <p class="section-label">Get involved</p>
+    <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px,1fr));">
+      <a href="https://github.com/eta-lang/eta" target="_blank" rel="noopener noreferrer" class="card" style="text-decoration:none;">
+        <div class="card__icon">⭐</div>
+        <div class="card__title">GitHub</div>
+        <div class="card__body">Source, issues, and pull requests.</div>
+      </a>
+      <a href={`${base}docs/build/`} class="card" style="text-decoration:none;">
+        <div class="card__icon">🛠</div>
+        <div class="card__title">Build guide</div>
+        <div class="card__body">CMake setup for Windows, Linux, and macOS.</div>
+      </a>
+      <a href={`${base}docs/release-notes/`} class="card" style="text-decoration:none;">
+        <div class="card__icon">📜</div>
+        <div class="card__title">Release notes</div>
+        <div class="card__body">What changed in each release.</div>
+      </a>
+      <a href={`${base}docs/next-steps/`} class="card" style="text-decoration:none;">
+        <div class="card__icon">🗺</div>
+        <div class="card__title">Roadmap</div>
+        <div class="card__body">What is planned next for the language.</div>
+      </a>
+    </div>
+  </section>
+
+  <Footer />
+</BaseLayout>
+

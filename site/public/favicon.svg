@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="14" fill="#000000"/>
+  <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle"
+        font-family="'Barlow Condensed',system-ui,sans-serif"
+        font-weight="800" font-size="36" letter-spacing="-2" fill="#f5f5f4">η</text>
+</svg>
+

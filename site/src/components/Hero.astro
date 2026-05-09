@@ -1,0 +1,33 @@
+---
+export interface Props {
+  eyebrow?: string;
+  heading: string;
+  subheading?: string;
+  primaryLabel?: string;
+  primaryHref?: string;
+  secondaryLabel?: string;
+  secondaryHref?: string;
+}
+
+const {
+  eyebrow,
+  heading,
+  subheading,
+  primaryLabel = "Get Started",
+  primaryHref = "#",
+  secondaryLabel,
+  secondaryHref,
+} = Astro.props;
+---
+
+<section class="hero">
+  {eyebrow && <span class="hero__eyebrow">{eyebrow}</span>}
+  <h1 set:html={heading} />
+  {subheading && <p class="hero__sub">{subheading}</p>}
+  <div class="hero__actions">
+    <a href={primaryHref} class="btn btn-primary">{primaryLabel}</a>
+    {secondaryLabel && secondaryHref && (
+      <a href={secondaryHref} class="btn btn-outline">{secondaryLabel}</a>
+    )}
+  </div>
+</section>

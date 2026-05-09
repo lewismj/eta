@@ -88,6 +88,33 @@ When present, lockfile package rows may also include:
 The resolver selects the `[[native.targets]]` row matching the current target
 triple when writing these lockfile fields.
 
+## Runtime sidecar loading
+
+`etai`, `eta_repl`, and `etac` load sidecars before compile/run.
+
+Package context behavior:
+
+- Discover package/workspace context from the active start directory.
+- Read `eta.lock`, build dependency closure from the active package, and select
+  closure-reachable packages with complete `native_*` lockfile fields.
+- Resolve `native_artifact_relpath` against each package root, enforce
+  containment, verify `native_sha256`, then load in lockfile order.
+
+Non-package behavior:
+
+- If no active package context (or no package lockfile) is available, runtime
+  attempts bundled stdlib sidecar discovery under `packages/stdlib/native/*`
+  on resolver/installation paths.
+- Bundled stdlib manifests currently cover first-party sidecars
+  (`log`, `stats`, `torch`, `nng`).
+
+Notes:
+
+- Sidecars are loaded by manifest/lockfile metadata and artifact presence.
+- Imports resolve normally; when an imported module depends on sidecar-backed
+  primitives, those primitives must already be loadable through the current
+  package or bundled context.
+
 ## Layout
 
 `eta build` writes artifacts to `.eta/target/<profile>/` for standalone packages.

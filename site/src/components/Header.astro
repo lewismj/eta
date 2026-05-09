@@ -1,0 +1,24 @@
+---
+import "../styles/global.css";
+
+const base = import.meta.env.BASE_URL ?? "/";
+---
+
+<header class="site-header">
+  <a href={base} class="brand">η Eta</a>
+  <nav class="site-nav" aria-label="Main navigation">
+    <div class="site-nav-links">
+      <a href={`${base}docs/quickstart/`}>Docs</a>
+      <a href={`${base}docs/language-guide/`}>Guide</a>
+      <a href={`${base}cookbook/`}>Cookbook</a>
+      <a href={`${base}packages/`}>Packages</a>
+    </div>
+    <a
+      href="https://github.com/eta-lang/eta"
+      class="nav-cta"
+      target="_blank"
+      rel="noopener noreferrer"
+    >GitHub ↗</a>
+  </nav>
+</header>
+

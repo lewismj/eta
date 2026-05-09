@@ -1,0 +1,17 @@
+---
+import "../styles/global.css";
+
+export interface Props {
+  label?: string;
+}
+
+const { label } = Astro.props;
+---
+
+<section class="section">
+  {label && <p class="section-label">{label}</p>}
+  <div class="card-grid">
+    <slot />
+  </div>
+</section>
+

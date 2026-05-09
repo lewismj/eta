@@ -1,0 +1,58 @@
+b---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import Card from "../../components/Card.astro";
+import CardGrid from "../../components/CardGrid.astro";
+import "../../styles/global.css";
+
+const base = import.meta.env.BASE_URL ?? "/";
+
+const packages = [
+  {
+    icon: "🔢",
+    title: "eta-torch-sidecar",
+    body: "LibTorch tensor operations and autograd. ABI: eta-native-v1.",
+    href: `${base}packages/eta-torch-sidecar/`,
+  },
+  {
+    icon: "📡",
+    title: "eta-nng-sidecar",
+    body: "nanomsg-next-gen messaging — pub/sub, push/pull, request/reply.",
+    href: `${base}packages/eta-nng-sidecar/`,
+  },
+  {
+    icon: "📐",
+    title: "eta-stats-sidecar",
+    body: "Eigen-backed statistics and linear algebra primitives.",
+    href: `${base}packages/eta-stats-sidecar/`,
+  },
+  {
+    icon: "📝",
+    title: "eta-log-sidecar",
+    body: "spdlog-backed structured logging. Reference migration example.",
+    href: `${base}packages/eta-log-sidecar/`,
+  },
+];
+---
+
+<BaseLayout title="Packages" description="Eta packages and native sidecar registry.">
+  <Header />
+  <div style="max-width: 1120px; margin: 0 auto; padding: 56px 24px 0;">
+    <p class="section-label">Packages</p>
+    <h1 style="font-family: var(--font-display); font-size: clamp(2.5rem,6vw,4.5rem); font-weight:800; letter-spacing:-0.04em; line-height:1; margin-bottom:16px;">
+      Native sidecars &amp; packages.
+    </h1>
+    <p style="color: var(--muted); font-size:1.1rem; max-width:600px; margin-bottom:0;">
+      Package-managed native extensions for Eta — checksummed, triple-selected,
+      and loaded through the <code>eta-native-v1</code> ABI.
+    </p>
+  </div>
+  <CardGrid>
+    {packages.map((p) => (
+      <Card icon={p.icon} title={p.title} body={p.body} href={p.href} />
+    ))}
+  </CardGrid>
+  <Footer />
+</BaseLayout>
+

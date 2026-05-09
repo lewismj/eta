@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-05-09
+
+### Native Sidecar Runtime Rollout (NS0-NS9)
+
+Native sidecar rollout is now implemented through NS9.
+
+Highlights:
+
+- Runtime sidecar loading is active in `Driver` and compiler startup:
+  - package contexts load lockfile-selected sidecars for the active dependency
+    closure in lockfile order,
+  - non-package startup paths attempt bundled stdlib sidecar discovery under
+    `packages/stdlib/native/*`.
+- `.etac` freshness now includes extension-environment hash validation
+  (format v6).
+- Sidecar-only runtime behavior is enforced: legacy hard-linked first-party
+  native builtin fallback mode is removed.
+- Release/install bundle flow now preserves and validates stdlib native package
+  manifest layout under `packages/stdlib/native/{log,stats,torch,nng}/eta.toml`.
+
+Documentation updates:
+
+- Updated [docs/plan/native_sidecar_plan.md](plan/native_sidecar_plan.md)
+  implementation status and current-state/runtime notes.
+- Updated [docs/guide/packages.md](guide/packages.md) with concrete sidecar
+  loading behavior for `etai`, `eta_repl`, and `etac`.
+
+---
+
 ## 2026-05-05
 
 ### Breaking: Prelude Entrypoint Removed

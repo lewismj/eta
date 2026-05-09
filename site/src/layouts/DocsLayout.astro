@@ -1,0 +1,45 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+
+export interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+
+const base = import.meta.env.BASE_URL ?? "/";
+
+const nav = [
+  { label: "Quickstart",       href: `${base}docs/quickstart/` },
+  { label: "Build",            href: `${base}docs/build/` },
+  { label: "Language Guide",   href: `${base}docs/language-guide/` },
+  { label: "Stdlib",           href: `${base}docs/stdlib/` },
+  { label: "Packages",         href: `${base}docs/packages/` },
+  { label: "Native Sidecars",  href: `${base}docs/native-sidecars/` },
+  { label: "Cookbook",         href: `${base}cookbook/` },
+  { label: "Release Notes",    href: `${base}docs/release-notes/` },
+  { label: "Next Steps",       href: `${base}docs/next-steps/` },
+];
+---
+
+<BaseLayout title={title} description={description}>
+  <Header />
+  <div class="docs-shell">
+    <aside class="docs-sidebar">
+      <nav aria-label="Documentation navigation">
+        <span class="sidebar-label">Docs</span>
+        {nav.map((item) => (
+          <a href={item.href}>{item.label}</a>
+        ))}
+      </nav>
+    </aside>
+    <article class="docs-article">
+      <slot />
+    </article>
+  </div>
+  <Footer />
+</BaseLayout>
+
