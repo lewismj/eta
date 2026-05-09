@@ -20,4 +20,8 @@ target_compile_definitions(eta PRIVATE
 )
 add_dependencies(eta eta_prof)
 
+if(NOT MSVC)
+    target_link_libraries(eta PRIVATE stdc++ m)
+endif()
+
 install(TARGETS eta RUNTIME DESTINATION bin)

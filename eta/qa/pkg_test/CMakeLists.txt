@@ -10,6 +10,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE eta_core Boost::unit_test_framewor
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_PKG_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
+if(NOT MSVC)
+    target_link_libraries(${PROJECT_NAME} PRIVATE stdc++ m)
+endif()
+
 if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE BOOST_TEST_DYN_LINK)
 

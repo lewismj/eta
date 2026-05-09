@@ -53,6 +53,11 @@ if(WIN32)
     set(BUILD_SHARED_LIBS "${_eta_old_BUILD_SHARED_LIBS}")
 endif()
 
+# Linux/macOS sidecar modules link static nng; require PIC objects.
+if(NOT WIN32 AND TARGET nng)
+    set_target_properties(nng PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
 if(MSVC AND TARGET nng)
     # nng triggers C4022 in win_tcpconn.c on CancelIoEx calls.
     # Keep suppression local to third-party nng sources.

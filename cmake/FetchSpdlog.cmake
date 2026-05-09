@@ -16,6 +16,11 @@ set(SPDLOG_BUILD_EXAMPLE_HO OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
 set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
 set(SPDLOG_FMT_EXTERNAL OFF CACHE BOOL "" FORCE)
+# Linux/macOS sidecar modules link static spdlog; build with PIC so the archive
+# can be linked into shared objects.
+if(NOT WIN32)
+    set(SPDLOG_BUILD_PIC ON CACHE BOOL "" FORCE)
+endif()
 
 # On Windows, build shared so the runtime DLL can be copied/installed beside executables.
 if(WIN32)

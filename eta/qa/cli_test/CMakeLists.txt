@@ -15,6 +15,10 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_CLI_TEST_NATIVE_SIDECAR_PATH="$<TARGET_FILE:eta_test_native_sidecar>")
 add_dependencies(${PROJECT_NAME} eta eta_repl eta_test_native_sidecar)
 
+if(NOT MSVC)
+    target_link_libraries(${PROJECT_NAME} PRIVATE stdc++ m)
+endif()
+
 if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE BOOST_TEST_DYN_LINK)
 
