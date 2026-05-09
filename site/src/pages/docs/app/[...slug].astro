@@ -1,0 +1,26 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+
+export async function getStaticPaths() {
+  const modules = import.meta.glob("../../../../../docs/app/**/*.md", { eager: true });
+  return Object.entries(modules).map(([p, mod]: [string, any]) => {
+    const idx = p.indexOf("/docs/app/");
+    let rel = p.slice(idx + "/docs/app/".length).replace(/\.md$/, "");
+    rel = rel.replace(/(^|\/)README$/, "");
+    rel = rel.replace(/^\/+|\/+$/g, "");
+    return {
+      params: { slug: rel || undefined },
+      props: { mod, file: p.slice(p.indexOf("docs/")) },
+    };
+  });
+}
+
+const { mod, file } = Astro.props;
+const Content = mod.Content;
+const headings = mod.getHeadings ? mod.getHeadings() : [];
+const title = mod.frontmatter?.title ?? "App Guide";
+---
+<DocsLayout title={title} sourceFile={file} headings={headings}>
+  <Content />
+</DocsLayout>
+

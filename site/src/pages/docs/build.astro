@@ -1,8 +1,13 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
+import * as page from "../../../../docs/build.md";
+const { Content, getHeadings, frontmatter } = page as any;
 ---
-<DocsLayout title="Build Guide">
-  <h1>Build Guide</h1>
-  <p>Full content coming in SITE2 — this page will import <code>docs/build.md</code>.</p>
+<DocsLayout
+  title={frontmatter?.title ?? "Build"}
+  sourceFile="docs/build.md"
+  headings={getHeadings()}
+>
+  <Content />
 </DocsLayout>
 

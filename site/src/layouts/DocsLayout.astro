@@ -3,42 +3,211 @@ import BaseLayout from "./BaseLayout.astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 
+export interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
 export interface Props {
   title?: string;
   description?: string;
+  /** Repo-relative path to the source .md, used to build the "Edit on GitHub" link. */
+  sourceFile?: string;
+  /** Markdown headings (from `mod.getHeadings()`); drives the right-hand TOC. */
+  headings?: Heading[];
 }
 
-const { title, description } = Astro.props;
+const { title, description, sourceFile, headings = [] } = Astro.props;
 
 const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
 
-const nav = [
-  { label: "Quickstart",       href: `${base}docs/quickstart/` },
-  { label: "Build",            href: `${base}docs/build/` },
-  { label: "Language Guide",   href: `${base}docs/language-guide/` },
-  { label: "Stdlib",           href: `${base}docs/stdlib/` },
-  { label: "Packages",         href: `${base}docs/packages/` },
-  { label: "Native Sidecars",  href: `${base}docs/native-sidecars/` },
-  { label: "Cookbook",         href: `${base}cookbook/` },
-  { label: "Release Notes",    href: `${base}docs/release-notes/` },
-  { label: "Next Steps",       href: `${base}docs/next-steps/` },
+const sections: { label: string; items: { label: string; href: string }[] }[] = [
+  {
+    label: "Getting Started",
+    items: [
+      { label: "Quickstart",           href: `${base}docs/quickstart/` },
+      { label: "Build",                href: `${base}docs/build/` },
+      { label: "VS Code Extension",    href: `${base}docs/editors/` },
+      { label: "First App",            href: `${base}docs/app/first_app/` },
+    ],
+  },
+  {
+    label: "Language",
+    items: [
+      { label: "Language Guide",       href: `${base}docs/language-guide/` },
+      { label: "Syntax & Values",      href: `${base}docs/guide/syntax-and-values/` },
+      { label: "Bindings & Scope",     href: `${base}docs/guide/bindings-and-scope/` },
+      { label: "Functions & Closures", href: `${base}docs/guide/functions-and-closures/` },
+      { label: "Tail Calls",           href: `${base}docs/guide/tail-calls/` },
+      { label: "Macros",               href: `${base}docs/guide/macros/` },
+      { label: "Control Flow",         href: `${base}docs/guide/control-flow/` },
+      { label: "Collections",          href: `${base}docs/guide/collections/` },
+      { label: "Strings",              href: `${base}docs/guide/strings/` },
+      { label: "I/O",                  href: `${base}docs/guide/io/` },
+      { label: "Error Handling",       href: `${base}docs/guide/error-handling/` },
+      { label: "Packages (chapter)",   href: `${base}docs/guide/packages/` },
+      { label: "Examples Tour",        href: `${base}docs/guide/examples-tour/` },
+    ],
+  },
+  {
+    label: "Stdlib",
+    items: [
+      { label: "Overview",             href: `${base}docs/stdlib/` },
+      { label: "core",                 href: `${base}docs/stdlib/core/` },
+      { label: "collections",          href: `${base}docs/stdlib/collections/` },
+      { label: "math",                 href: `${base}docs/stdlib/math/` },
+      { label: "io",                   href: `${base}docs/stdlib/io/` },
+      { label: "fs",                   href: `${base}docs/stdlib/fs/` },
+      { label: "os",                   href: `${base}docs/stdlib/os/` },
+      { label: "time",                 href: `${base}docs/stdlib/time/` },
+      { label: "regex",                href: `${base}docs/stdlib/regex/` },
+      { label: "json",                 href: `${base}docs/stdlib/json/` },
+      { label: "csv",                  href: `${base}docs/stdlib/csv/` },
+      { label: "hashmap",              href: `${base}docs/stdlib/hashmap/` },
+      { label: "hashset",              href: `${base}docs/stdlib/hashset/` },
+      { label: "atom",                 href: `${base}docs/stdlib/atom/` },
+      { label: "logic",                href: `${base}docs/stdlib/logic/` },
+      { label: "freeze",               href: `${base}docs/stdlib/freeze/` },
+      { label: "clp",                  href: `${base}docs/stdlib/clp/` },
+      { label: "clpb",                 href: `${base}docs/stdlib/clpb/` },
+      { label: "clpr",                 href: `${base}docs/stdlib/clpr/` },
+      { label: "db",                   href: `${base}docs/stdlib/db/` },
+      { label: "fact_table",           href: `${base}docs/stdlib/fact_table/` },
+      { label: "causal",               href: `${base}docs/stdlib/causal/` },
+      { label: "aad",                  href: `${base}docs/stdlib/aad/` },
+      { label: "torch",                href: `${base}docs/stdlib/torch/` },
+      { label: "stats",                href: `${base}docs/stdlib/stats/` },
+      { label: "net",                  href: `${base}docs/stdlib/net/` },
+      { label: "process",              href: `${base}docs/stdlib/process/` },
+      { label: "supervisor",           href: `${base}docs/stdlib/supervisor/` },
+      { label: "log",                  href: `${base}docs/stdlib/log/` },
+      { label: "prof",                 href: `${base}docs/stdlib/prof/` },
+      { label: "test",                 href: `${base}docs/stdlib/test/` },
+      { label: "args",                 href: `${base}docs/stdlib/args/` },
+      { label: "jupyter",              href: `${base}docs/stdlib/jupyter/` },
+    ],
+  },
+  {
+    label: "Featured",
+    items: [
+      { label: "Portfolio",            href: `${base}docs/featured/portfolio/` },
+      { label: "XVA-WWR",              href: `${base}docs/featured/xva-wwr/` },
+    ],
+  },
+  {
+    label: "Reference",
+    items: [
+      { label: "Architecture",         href: `${base}docs/architecture/` },
+      { label: "Packaging",            href: `${base}docs/packaging/` },
+      { label: "Native Sidecars",      href: `${base}docs/native-sidecars/` },
+      { label: "Bytecode & Tools",     href: `${base}docs/guide/bytecode-and-tools/` },
+      { label: "Profiling",            href: `${base}docs/guide/profiling/` },
+      { label: "Debugging",            href: `${base}docs/guide/debugging/` },
+      { label: "Testing",              href: `${base}docs/guide/testing/` },
+    ],
+  },
+  {
+    label: "Release",
+    items: [
+      { label: "Release Notes",        href: `${base}docs/release-notes/` },
+      { label: "Roadmap",              href: `${base}docs/next-steps/` },
+    ],
+  },
 ];
+
+// Active-page detection (handles BASE_URL prefix and trailing-slash variance).
+const here = Astro.url.pathname.replace(/\/?$/, "/");
+const flat = sections.flatMap((s) => s.items);
+const activeIndex = flat.findIndex((it) => it.href.replace(/\/?$/, "/") === here);
+
+const prev = activeIndex > 0 ? flat[activeIndex - 1] : null;
+const next = activeIndex >= 0 && activeIndex < flat.length - 1 ? flat[activeIndex + 1] : null;
+
+let sectionLabel = "Docs";
+{
+  let cursor = 0;
+  for (const sec of sections) {
+    if (activeIndex >= cursor && activeIndex < cursor + sec.items.length) {
+      sectionLabel = sec.label;
+      break;
+    }
+    cursor += sec.items.length;
+  }
+}
+
+const editUrl = sourceFile
+  ? `https://github.com/lewismj/eta/edit/main/${sourceFile.replace(/^\/+/, "")}`
+  : null;
+
+const tocItems = headings.filter((h) => h.depth === 2 || h.depth === 3);
 ---
 
 <BaseLayout title={title} description={description}>
   <Header />
   <div class="docs-shell">
-    <aside class="docs-sidebar">
-      <nav aria-label="Documentation navigation">
-        <span class="sidebar-label">Docs</span>
-        {nav.map((item) => (
-          <a href={item.href}>{item.label}</a>
-        ))}
-      </nav>
+    <!-- Left rail: grouped section nav -->
+    <aside class="docs-sidebar" aria-label="Documentation navigation">
+      {sections.map((sec) => (
+        <nav class="docs-sidebar__group">
+          <span class="sidebar-label">{sec.label}</span>
+          {sec.items.map((it) => {
+            const norm = it.href.replace(/\/?$/, "/");
+            const isActive = norm === here;
+            return (
+              <a
+                href={it.href}
+                class:list={["docs-sidebar__link", { "is-active": isActive }]}
+                aria-current={isActive ? "page" : undefined}
+              >{it.label}</a>
+            );
+          })}
+        </nav>
+      ))}
     </aside>
+
+    <!-- Centre: prose -->
     <article class="docs-article">
+      <p class="section-label docs-eyebrow">{sectionLabel}</p>
       <slot />
+
+      <footer class="docs-pager">
+        <div class="docs-pager__row">
+          {prev ? (
+            <a class="docs-pager__card docs-pager__card--prev" href={prev.href}>
+              <span class="docs-pager__hint">← Previous</span>
+              <span class="docs-pager__title">{prev.label}</span>
+            </a>
+          ) : <span class="docs-pager__spacer" />}
+          {next ? (
+            <a class="docs-pager__card docs-pager__card--next" href={next.href}>
+              <span class="docs-pager__hint">Next →</span>
+              <span class="docs-pager__title">{next.label}</span>
+            </a>
+          ) : <span class="docs-pager__spacer" />}
+        </div>
+        {editUrl && (
+          <a class="docs-edit-link" href={editUrl} target="_blank" rel="noopener noreferrer">
+            Edit this page on GitHub ↗
+          </a>
+        )}
+      </footer>
     </article>
+
+    <!-- Right rail: on-this-page TOC -->
+    <aside class="docs-toc" aria-label="On this page">
+      {tocItems.length > 0 && (
+        <nav>
+          <span class="sidebar-label">On this page</span>
+          {tocItems.map((h) => (
+            <a
+              href={`#${h.slug}`}
+              class:list={["docs-toc__link", { "is-h3": h.depth === 3 }]}
+            >{h.text}</a>
+          ))}
+        </nav>
+      )}
+    </aside>
   </div>
   <Footer />
 </BaseLayout>

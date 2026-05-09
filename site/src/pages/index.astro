@@ -19,32 +19,32 @@ const features = [
   {
     title: "Logic & CLP",
     body: "Built-in unification and backtracking as first-class VM primitives — constraint logic programming without an external solver.",
-    href: `${base}docs/language-guide/`,
-    linkLabel: "Logic reference",
+    href: `${base}docs/stdlib/logic/`,
+    linkLabel: "std.logic",
   },
   {
     title: "AAD",
     body: "Native reverse-mode Automatic Adjoint Differentiation (AAD) integrated into the runtime — transparent gradient computation with zero closure overhead.",
-    href: `${base}docs/language-guide/`,
-    linkLabel: "AAD reference",
+    href: `${base}docs/stdlib/aad/`,
+    linkLabel: "std.aad",
   },
   {
     title: "Neural networks",
     body: "First-class C++ bindings to libtorch for neural networks and Eigen for linear algebra and statistics — delivered as native sidecars.",
-    href: `${base}docs/native-sidecars/`,
-    linkLabel: "Sidecar model",
+    href: `${base}docs/stdlib/torch/`,
+    linkLabel: "std.torch",
   },
   {
     title: "Causal inference",
     body: "Built-in Pearl's do-calculus — identification algorithms, do-interventions, and counterfactual queries in pure Eta.",
-    href: `${base}cookbook/`,
-    linkLabel: "Causal examples",
+    href: `${base}docs/stdlib/causal/`,
+    linkLabel: "std.causal",
   },
   {
     title: "Actor-model concurrency",
     body: "Erlang-style actors and message passing via nng — network-transparent parallelism, supervision trees, and pub/sub.",
-    href: `${base}cookbook/`,
-    linkLabel: "Concurrency examples",
+    href: `${base}docs/stdlib/supervisor/`,
+    linkLabel: "std.supervisor",
   },
 ];
 
@@ -137,26 +137,26 @@ const sampleCode = `(import std.core std.aad)
     <Card
       title="Torch NN"
       body="LibTorch tensor operations and autograd — loaded as a versioned, checksummed native sidecar."
-      href={`${base}packages/`}
-      linkLabel="Package details"
+      href={`${base}docs/stdlib/torch/`}
+      linkLabel="std.torch"
     />
     <Card
       title="NNG Networking"
       body="nanomsg-next-gen messaging primitives for pub/sub, push/pull, and request/reply patterns."
-      href={`${base}packages/`}
-      linkLabel="Package details"
+      href={`${base}docs/stdlib/net/`}
+      linkLabel="std.net"
     />
     <Card
       title="Eigen Numerics"
       body="Eigen-backed statistics and linear algebra — normal distribution, regression, and more."
-      href={`${base}packages/`}
-      linkLabel="Package details"
+      href={`${base}docs/stdlib/stats/`}
+      linkLabel="std.stats"
     />
     <Card
       title="Logging"
       body="spdlog-backed structured logging with level control — the reference migration example."
-      href={`${base}packages/`}
-      linkLabel="Package details"
+      href={`${base}docs/stdlib/log/`}
+      linkLabel="std.log"
     />
   </CardGrid>
 

@@ -1,6 +1,6 @@
 # Causal Portfolio Engine
 
-[← Back to README](../README.md) · [Examples](examples.md) ·
+[← Back to README](../README.md) · [Examples](../guide/examples-tour.md) ·
 [Causal](../guide/reference/causal.md) · [Logic](../guide/reference/logic.md) · [CLP](../guide/reference/clp.md) ·
 [AAD](../guide/reference/aad.md) · [Torch](../guide/reference/torch.md) · [Fact Tables](../guide/reference/fact-table.md) ·
 [Message Passing](../guide/reference/message-passing.md)
@@ -188,7 +188,7 @@ etai cookbook/quant/portfolio.eta
 > **If you only read one section, read this one.** Everything below
 > elaborates how each pipeline stage produces the artifact returned by
 > `run-pipeline`. The interesting code is at the *bottom* of
-> [`cookbook/quant/portfolio.eta`](../cookbook/quant/portfolio.eta) — the stages
+> [`cookbook/quant/portfolio.eta`](../../cookbook/quant/portfolio.eta) — the stages
 > above it construct the inputs.
 
 ### The Top-Level API
@@ -882,7 +882,7 @@ NN vs DGP (base case):  1.877 vs 1.878  →  consistent.
 
 In production, each scenario can run in a separate actor process via
 `worker-pool` over IPC — true OS-level parallelism with fault
-isolation. See [Message Passing](message-passing.md).
+isolation. See [Message Passing](../guide/reference/message-passing.md).
 
 ---
 
@@ -1113,7 +1113,7 @@ it does not participate in identification or estimation.
 
 | Extension | Effort | Impact |
 |---|---|---|
-| **CSV / real data** | Replace §0 DGP with `csv:load-file` (see [`std/csv.eta`](../stdlib/std/csv.eta)) | Use actual ETF returns |
+| **CSV / real data** | Replace §0 DGP with `csv:load-file` (see [`std/csv.eta`](../../stdlib/std/csv.eta)) | Use actual ETF returns |
 | **HTTP data feed** | When HTTP primitives land, swap §0 for a live loader | Real-time portfolio construction |
 | **Deeper backtest** | Split data 80/20, report OOS return vs predicted | Production validation |
 | **Denser Σ(m) grid** | Higher empirical-grid resolution (e.g., 50-point or MC) | Smoother scenario-dependent risk |
@@ -1130,13 +1130,13 @@ it does not participate in identification or estimation.
 
 | Component | File |
 |---|---|
-| **Portfolio Demo** | [`cookbook/quant/portfolio.eta`](../cookbook/quant/portfolio.eta) |
-| Fact table module | [`stdlib/std/fact_table.eta`](../stdlib/std/fact_table.eta) |
-| Causal DAG & do-calculus | [`stdlib/std/causal.eta`](../stdlib/std/causal.eta) |
-| ID/IDC, ADMG, adjustment, learn, render, estimate | [`stdlib/std/causal/`](../stdlib/std/causal) |
-| Logic programming | [`stdlib/std/logic.eta`](../stdlib/std/logic.eta) |
-| CLP(Z)/CLP(FD) and CLP(R) | [`stdlib/std/clp.eta`](../stdlib/std/clp.eta), [`stdlib/std/clpr.eta`](../stdlib/std/clpr.eta) |
-| libtorch wrappers | [`stdlib/std/torch.eta`](../stdlib/std/torch.eta) |
-| VM execution engine | [`eta/core/src/eta/runtime/vm/vm.cpp`](../eta/core/src/eta/runtime/vm/vm.cpp) |
-| Constraint store | [`eta/core/src/eta/runtime/clp/constraint_store.h`](../eta/core/src/eta/runtime/clp/constraint_store.h) |
-| Compiler (`etac`) | [`docs/compiler.md`](compiler.md) |
+| **Portfolio Demo** | [`cookbook/quant/portfolio.eta`](../../cookbook/quant/portfolio.eta) |
+| Fact table module | [`stdlib/std/fact_table.eta`](../../stdlib/std/fact_table.eta) |
+| Causal DAG & do-calculus | [`stdlib/std/causal.eta`](../../stdlib/std/causal.eta) |
+| ID/IDC, ADMG, adjustment, learn, render, estimate | [`stdlib/std/causal/`](../../stdlib/std/causal) |
+| Logic programming | [`stdlib/std/logic.eta`](../../stdlib/std/logic.eta) |
+| CLP(Z)/CLP(FD) and CLP(R) | [`stdlib/std/clp.eta`](../../stdlib/std/clp.eta), [`stdlib/std/clpr.eta`](../../stdlib/std/clpr.eta) |
+| libtorch wrappers | [`stdlib/std/torch.eta`](../../stdlib/std/torch.eta) |
+| VM execution engine | [`eta/core/src/eta/runtime/vm/vm.cpp`](../../eta/core/src/eta/runtime/vm/vm.cpp) |
+| Constraint store | [`eta/core/src/eta/runtime/clp/constraint_store.h`](../../eta/core/src/eta/runtime/clp/constraint_store.h) |
+| Compiler (`etac`) | [`docs/compiler.md`](../guide/reference/compiler.md) |

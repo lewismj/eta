@@ -978,6 +978,10 @@ BOOST_AUTO_TEST_CASE(request_interrupt_stops_runaway_evaluation_quickly) {
 
     eta::session::Driver driver(make_resolver());
 
+    // Warm runtime/sidecar startup paths outside the timed interrupt window.
+    BOOST_REQUIRE(driver.run_source(
+        "(module driver-jupyter-interrupt-warmup (begin (define warmup 0)))"));
+
     static constexpr auto kRunawaySource = R"eta(
 (module driver-jupyter-interrupt
   (begin

@@ -1,0 +1,71 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
+
+const groups = [
+  {
+    label: "Getting Started",
+    items: [
+      { title: "Quickstart",        href: `${base}docs/quickstart/`,  blurb: "Install Eta and run your first program in five minutes." },
+      { title: "Build",             href: `${base}docs/build/`,       blurb: "CMake build instructions for Windows, Linux, and macOS." },
+      { title: "VS Code Extension", href: `${base}docs/editors/`,     blurb: "Syntax highlighting, LSP, debugger, and heap inspector." },
+      { title: "First App",         href: `${base}docs/app/first_app/`, blurb: "End-to-end walkthrough of a packaged Eta application." },
+    ],
+  },
+  {
+    label: "Language",
+    items: [
+      { title: "Language Guide",    href: `${base}docs/language-guide/`, blurb: "The canonical 28-section reference for the Eta language." },
+      { title: "Examples Tour",     href: `${base}docs/guide/examples-tour/`, blurb: "A guided tour of the cookbook examples by topic." },
+      { title: "Macros",            href: `${base}docs/guide/macros/`, blurb: "Hygienic syntax-rules macros." },
+      { title: "Architecture",      href: `${base}docs/architecture/`, blurb: "Reader, expander, semantic analyser, bytecode VM." },
+    ],
+  },
+  {
+    label: "Standard Library",
+    items: [
+      { title: "Stdlib Overview",   href: `${base}docs/stdlib/`,      blurb: "All `std.*` modules indexed by category." },
+      { title: "std.aad",           href: `${base}docs/stdlib/aad/`,  blurb: "Reverse-mode automatic adjoint differentiation." },
+      { title: "std.causal",        href: `${base}docs/stdlib/causal/`, blurb: "DAGs, do-calculus, identification, counterfactuals." },
+      { title: "std.logic",         href: `${base}docs/stdlib/logic/`, blurb: "miniKanren-style relational programming." },
+      { title: "std.clp",           href: `${base}docs/stdlib/clp/`,  blurb: "Constraint logic programming over integers." },
+      { title: "std.torch",         href: `${base}docs/stdlib/torch/`, blurb: "LibTorch tensors and autograd, sidecar-loaded." },
+    ],
+  },
+  {
+    label: "Packaging & Sidecars",
+    items: [
+      { title: "Packaging",         href: `${base}docs/packaging/`,   blurb: "The `eta.toml` manifest, lockfile, and resolver." },
+      { title: "Native Sidecars",   href: `${base}docs/native-sidecars/`, blurb: "Versioned, checksummed C++ extensions via the eta-native-v1 ABI." },
+    ],
+  },
+  {
+    label: "Release",
+    items: [
+      { title: "Release Notes",     href: `${base}docs/release-notes/`, blurb: "What changed in each release." },
+      { title: "Roadmap",           href: `${base}docs/next-steps/`,  blurb: "What is planned next for the language." },
+    ],
+  },
+];
+---
+<DocsLayout title="Docs">
+  <h1>Documentation</h1>
+  <p style="color: var(--muted); font-size: 1.0625rem; line-height: 1.7; margin-top: -16px;">
+    The home for everything you need to learn and build with Eta — from the five-minute
+    quickstart through the full language reference, standard library, and runtime architecture.
+  </p>
+  {groups.map((g) => (
+    <section style="margin-top: 40px;">
+      <p class="section-label" style="margin-bottom: 14px;">{g.label}</p>
+      <div class="docs-index-grid">
+        {g.items.map((it) => (
+          <a class="docs-index-card" href={it.href}>
+            <span class="docs-index-card__title">{it.title}</span>
+            <span class="docs-index-card__blurb">{it.blurb}</span>
+          </a>
+        ))}
+      </div>
+    </section>
+  ))}
+</DocsLayout>
+

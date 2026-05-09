@@ -1,11 +1,11 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
-import * as page from "../../../../docs/next-steps.md";
+import * as page from "../../../../editors/vscode/README.md";
 const { Content, getHeadings, frontmatter } = page as any;
 ---
 <DocsLayout
-  title={frontmatter?.title ?? "Roadmap"}
-  sourceFile="docs/next-steps.md"
+  title={frontmatter?.title ?? "VS Code Extension"}
+  sourceFile="editors/vscode/README.md"
   headings={getHeadings()}
 >
   <Content />

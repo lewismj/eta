@@ -193,6 +193,15 @@ function(eta_link_sidecar_builtin_runtime target)
             /wd4267
         )
     endif()
+
+    # Linux sidecars are dlopen'd MODULE libraries that resolve eta_core
+    # references from the host process; executable hosts must export symbols.
+    if(UNIX AND NOT APPLE)
+        get_target_property(_eta_target_type ${target} TYPE)
+        if(_eta_target_type STREQUAL "EXECUTABLE")
+            target_link_options(${target} PRIVATE -rdynamic)
+        endif()
+    endif()
 endfunction()
 
 # On Linux/macOS, set RPATH so installed binaries find libtorch in ../lib.

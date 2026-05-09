@@ -1,11 +1,11 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
-import * as page from "../../../../docs/next-steps.md";
+import * as page from "../../../../docs/architecture.md";
 const { Content, getHeadings, frontmatter } = page as any;
 ---
 <DocsLayout
-  title={frontmatter?.title ?? "Roadmap"}
-  sourceFile="docs/next-steps.md"
+  title={frontmatter?.title ?? "Architecture"}
+  sourceFile="docs/architecture.md"
   headings={getHeadings()}
 >
   <Content />
