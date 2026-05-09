@@ -39,6 +39,10 @@
 cmake-build-*/
 out
 
+# Node / JS tooling
+node_modules/
+.astro/
+
 # Visual Studio/Visual Code
 .vs
 .vscode
