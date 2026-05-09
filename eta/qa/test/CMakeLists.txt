@@ -79,7 +79,23 @@ target_include_directories(eta_test_native_sidecar PRIVATE
     ${ETA_CORE_DIR}/src
     ${Boost_INCLUDE_DIRS}
 )
-target_link_libraries(eta_test_native_sidecar PRIVATE eta_core)
+if(WIN32 OR APPLE)
+    # On Windows/macOS, link eta_core statically into the sidecar as normal.
+    # Windows DLLs must resolve all symbols at link time, and neither platform
+    # has the ELF initial-exec TLS restriction that affects dlopen'd MODULEs.
+    target_link_libraries(eta_test_native_sidecar PRIVATE eta_core)
+else()
+    # On Linux, do NOT embed eta_core.a in the sidecar MODULE.
+    # Boost 1.88+ concurrent_flat_map uses [[gnu::tls_model("initial-exec")]] on
+    # its internal thread-local, which generates R_X86_64_TPOFF32 relocations that
+    # GCC's linker rejects inside any dlopen'd shared object — even with -fPIC.
+    # The sidecar is dlopen'd by eta_core_test which already has eta_core loaded,
+    # so all InternTable / Heap / BuiltinEnvironment symbols resolve from the host
+    # at dlopen() time via -rdynamic (added to the test executable below).
+    target_link_options(eta_test_native_sidecar PRIVATE
+        -Wl,--allow-shlib-undefined
+    )
+endif()
 eta_link_sidecar_builtin_runtime(eta_test_native_sidecar)
 target_compile_definitions(eta_test_native_sidecar PRIVATE
     ETA_NATIVE_EXPORT_SYMBOLS=1
@@ -164,6 +180,13 @@ if(NOT MSVC)
     target_link_libraries(${PROJECT_NAME} PRIVATE stdc++ m)
 
     target_compile_options(${PROJECT_NAME} PRIVATE "-msse2")
+
+    # Export all symbols to the dynamic symbol table so that the sidecar MODULE
+    # (dlopen'd at test runtime) can resolve eta_core symbols from this process.
+    # Not needed on Windows (DLL model) or Apple (dyld resolves differently).
+    if(NOT APPLE)
+        target_link_options(${PROJECT_NAME} PRIVATE -rdynamic)
+    endif()
 
     set(CMAKE_REQUIRED_FLAGS "-mbmi2")
     set(CMAKE_CXX_SCAN_FOR_MODULES_OLD ${CMAKE_CXX_SCAN_FOR_MODULES})

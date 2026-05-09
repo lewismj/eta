@@ -174,6 +174,7 @@ function(eta_link_sidecar_builtin_runtime target)
     target_link_libraries(${target} PRIVATE
         ${TORCH_LIBRARIES}
         nng
+        Eigen3::Eigen
     )
 
     eta_spdlog_target(_eta_spdlog_target)

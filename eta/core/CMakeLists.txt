@@ -4,6 +4,7 @@ project(eta_core LANGUAGES CXX)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 add_library(${PROJECT_NAME} STATIC)
+set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(${PROJECT_NAME}
         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -141,6 +142,7 @@ endif()
 # --- Fuzzing support (Clang/LLVM only, not Windows) ---
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT MSVC)
     add_library(${PROJECT_NAME}_sanitized)
+    set_target_properties(${PROJECT_NAME}_sanitized PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     target_sources(${PROJECT_NAME}_sanitized
             PRIVATE

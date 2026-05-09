@@ -32,6 +32,10 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(spdlog)
 
+# Ensure spdlog's static library is compiled with -fPIC so it can be linked
+# into shared libraries (e.g. native sidecar .so targets).
+set_target_properties(spdlog PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 if(NOT TARGET spdlog::spdlog)
     message(FATAL_ERROR "spdlog fetch failed: spdlog::spdlog target missing")
 endif()
