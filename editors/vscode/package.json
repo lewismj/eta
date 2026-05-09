@@ -82,6 +82,18 @@
                 "path": "./snippets/eta.json"
             }
         ],
+        "themes": [
+            {
+                "label": "Eta Dark",
+                "uiTheme": "vs-dark",
+                "path": "./themes/eta-dark-color-theme.json"
+            },
+            {
+                "label": "Eta Light",
+                "uiTheme": "vs",
+                "path": "./themes/eta-light-color-theme.json"
+            }
+        ],
         "views": {
             "debug": [
                 {
