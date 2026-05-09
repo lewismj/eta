@@ -668,13 +668,23 @@ inline void mark_tail(core::Node* node, bool in_tail_context) {
 SemResult<std::vector<ModuleSemantics>>
 SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::reader::ModuleLinker& linker) {
     ::eta::runtime::BuiltinEnvironment empty;
-    return analyze_all(forms, linker, empty, {});
+    ::eta::runtime::ExtensionEnvironment empty_extensions;
+    return analyze_all(forms, linker, empty, empty_extensions, {});
 }
 
 SemResult<std::vector<ModuleSemantics>>
 SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms, const ::eta::reader::ModuleLinker& linker,
                               const ::eta::runtime::BuiltinEnvironment& builtins) {
-    return analyze_all(forms, linker, builtins, {});
+    ::eta::runtime::ExtensionEnvironment empty_extensions;
+    return analyze_all(forms, linker, builtins, empty_extensions, {});
+}
+
+SemResult<std::vector<ModuleSemantics>>
+SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms,
+                              const ::eta::reader::ModuleLinker& linker,
+                              const ::eta::runtime::BuiltinEnvironment& builtins,
+                              const ::eta::runtime::ExtensionEnvironment& extensions) {
+    return analyze_all(forms, linker, builtins, extensions, {});
 }
 
 SemResult<std::vector<ModuleSemantics>>
@@ -682,13 +692,24 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms,
                               const ::eta::reader::ModuleLinker& linker,
                               const ::eta::runtime::BuiltinEnvironment& builtins,
                               ExternalExportSlotResolver external_slots) {
+    ::eta::runtime::ExtensionEnvironment empty_extensions;
+    return analyze_all(forms, linker, builtins, empty_extensions, std::move(external_slots));
+}
+
+SemResult<std::vector<ModuleSemantics>>
+SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms,
+                              const ::eta::reader::ModuleLinker& linker,
+                              const ::eta::runtime::BuiltinEnvironment& builtins,
+                              const ::eta::runtime::ExtensionEnvironment& extensions,
+                              ExternalExportSlotResolver external_slots) {
     std::vector<ModuleSemantics> out;
 
     /**
      * Unified global slot counter shared across all modules.
-     * Builtins occupy slots 0..N-1; subsequent modules share the rest.
+     * Core + extension primitives occupy slots 0..N-1; subsequent modules
+     * share the rest.
      */
-    uint32_t next_global = static_cast<uint32_t>(builtins.size());
+    uint32_t next_global = static_cast<uint32_t>(builtins.size() + extensions.size());
 
 
     /**
@@ -713,19 +734,22 @@ SemanticAnalyzer::analyze_all(std::span<const SExprPtr> forms,
         Scope toplevel{}; AnalysisContext ctx{mod, 0, &next_global};
 
         /**
-         * Seed builtins as immutable globals at slots 0..N-1.
-         * These use fixed slots (not allocated from the counter, which already starts past them).
+         * Seed core + extension primitives as immutable globals at fixed slots.
          */
-        Span builtin_span{}; ///< synthetic zero span for builtins
+        Span primitive_span{}; ///< synthetic zero span for primitive globals
         {
             /**
-             * Temporarily point the counter to a local that tracks builtin slots,
-             * so builtins always get slots 0..N-1 regardless of module order.
+             * Temporarily point the counter to a local that tracks primitive
+             * slots so registration always produces deterministic slot ranges:
+             * core first, then extensions.
              */
-            uint32_t builtin_slot = 0;
-            ctx.shared_next_global = &builtin_slot;
+            uint32_t primitive_slot = 0;
+            ctx.shared_next_global = &primitive_slot;
             for (const auto& spec : builtins.specs()) {
-                ctx.add_binding(toplevel, spec.name, BindingInfo::Kind::Global, builtin_span, /*mutable_flag=*/false);
+                ctx.add_binding(toplevel, spec.name, BindingInfo::Kind::Global, primitive_span, /*mutable_flag=*/false);
+            }
+            for (const auto& spec : extensions.specs()) {
+                ctx.add_binding(toplevel, spec.name, BindingInfo::Kind::Global, primitive_span, /*mutable_flag=*/false);
             }
             ctx.shared_next_global = &next_global; ///< restore shared counter
         }

@@ -37,8 +37,8 @@ constexpr const char* to_string(SerializerError e) noexcept {
         case CorruptConstant:       return "corrupt constant in .etac file";
         case HashMismatch:          return "source hash mismatch";
         case IOError:               return "I/O error";
-        case BuiltinCountMismatch:  return ".etac was compiled with a different builtin set "
-                                           "(e.g. torch-enabled vs non-torch); please recompile with etac";
+        case BuiltinCountMismatch:  return ".etac was compiled with a different core builtin set; "
+                                           "please recompile with etac";
         case InvalidBytecode:       return "invalid bytecode (opcode or index out of range)";
     }
     return "unknown serializer error";
@@ -93,7 +93,9 @@ struct EtacFile {
     std::uint16_t format_version{0};
     std::uint16_t flags{0};
     std::uint64_t source_hash{0};
-    std::uint32_t builtin_count{0};
+    std::uint32_t builtin_count{0}; ///< Core builtin count captured at compile time.
+    bool has_extension_env_hash{false};
+    std::uint64_t extension_env_hash{0};
     bool has_compiler_id{false};
     std::array<std::uint8_t, 16> compiler_id{};
     std::optional<PackageMetadata> package_metadata;
@@ -109,6 +111,7 @@ struct EtacFile {
 struct FreshnessContext {
     std::optional<std::array<std::uint8_t, 16>> expected_compiler_id;
     std::optional<std::uint32_t> expected_builtin_count;
+    std::optional<std::uint64_t> expected_extension_env_hash;
     std::optional<std::uint64_t> expected_source_hash;
     std::optional<std::uint64_t> expected_manifest_hash;
     std::vector<DependencyHashEntry> expected_dependency_hashes;
@@ -123,6 +126,8 @@ enum class FreshnessStatus : std::uint8_t {
     MissingCompilerId,
     CompilerIdMismatch,
     BuiltinCountMismatch,
+    MissingExtensionEnvHash,
+    ExtensionEnvHashMismatch,
     SourceHashMismatch,
     ManifestHashMismatch,
     DependencyHashMismatch,
@@ -135,6 +140,10 @@ constexpr const char* to_string(FreshnessStatus status) noexcept {
         case FreshnessStatus::MissingCompilerId:  return "artifact has no compiler fingerprint";
         case FreshnessStatus::CompilerIdMismatch: return "compiler fingerprint mismatch";
         case FreshnessStatus::BuiltinCountMismatch: return "builtin count mismatch";
+        case FreshnessStatus::MissingExtensionEnvHash:
+            return "artifact has no extension environment hash";
+        case FreshnessStatus::ExtensionEnvHashMismatch:
+            return "extension environment hash mismatch";
         case FreshnessStatus::SourceHashMismatch: return "source hash mismatch";
         case FreshnessStatus::ManifestHashMismatch: return "manifest hash mismatch";
         case FreshnessStatus::DependencyHashMismatch: return "dependency hash mismatch";
@@ -175,6 +184,7 @@ public:
      * @param package_metadata Optional package metadata for stale-artifact checks.
      * @param dependency_hashes Optional dep-hash table for stale-artifact checks.
      * @param compiler_id   Optional compiler fingerprint (defaults to current build id).
+     * @param extension_env_hash Deterministic extension-environment fingerprint.
      * @return true on success.
      */
     bool serialize(const std::vector<ModuleEntry>& modules,
@@ -186,7 +196,8 @@ public:
                    std::uint32_t num_builtins = 0,
                    const std::optional<PackageMetadata>& package_metadata = std::nullopt,
                    const std::vector<DependencyHashEntry>& dependency_hashes = {},
-                   const std::array<std::uint8_t, 16>* compiler_id = nullptr) const;
+                   const std::array<std::uint8_t, 16>* compiler_id = nullptr,
+                   std::uint64_t extension_env_hash = 0) const;
 
     /**
      * Deserialize a .etac binary into an EtacFile.
@@ -218,7 +229,8 @@ public:
     static constexpr char     MAGIC[4]       = {'E','T','A','C'};
     static constexpr uint16_t FORMAT_VERSION_V3 = 3;
     static constexpr uint16_t FORMAT_VERSION_V4 = 4;
-    static constexpr uint16_t FORMAT_VERSION = 5;   ///< v5 module relocation metadata
+    static constexpr uint16_t FORMAT_VERSION_V5 = 5;
+    static constexpr uint16_t FORMAT_VERSION = 6;   ///< v6 extension-environment metadata
     static constexpr uint16_t FLAG_HAS_DEBUG = 0x0001;
     static constexpr uint16_t FLAG_HAS_PACKAGE_META = 0x0002;
     static constexpr uint16_t FLAG_HAS_DEPHASH = 0x0004;

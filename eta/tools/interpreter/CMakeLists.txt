@@ -11,7 +11,8 @@ target_include_directories(etai
     PRIVATE ${ETA_SESSION_SRC_DIR}
 )
 
-target_link_libraries(etai PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
+target_link_libraries(etai PRIVATE eta_core)
+eta_link_sidecar_builtin_runtime(etai)
 target_compile_definitions(etai PRIVATE
     ETA_HAS_TORCH=1
     ETA_HAS_NNG=1
@@ -60,7 +61,8 @@ target_include_directories(eta_repl
     PRIVATE ${ETA_SESSION_SRC_DIR}
 )
 
-target_link_libraries(eta_repl PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
+target_link_libraries(eta_repl PRIVATE eta_core)
+eta_link_sidecar_builtin_runtime(eta_repl)
 target_compile_definitions(eta_repl PRIVATE
     ETA_HAS_TORCH=1
     ETA_HAS_NNG=1

@@ -5,6 +5,8 @@
 [Package Commands](../guide/packages.md) |
 [Next Steps](../next-steps.md)
 
+Status: NS0-NS8 implemented (2026-05-09).
+
 ---
 
 ## 1) Objective
@@ -501,6 +503,21 @@ Gate:
 2. `eta_pkg_test`, `eta_cli_test`, `module_path_tests`, `lsp_tests`,
    `dap_tests` remain green before any sidecar logic lands.
 
+Implementation snapshot (2026-05-08):
+
+1. Added mock native fixture projects for:
+   - standalone package,
+   - rooted workspace,
+   - virtual workspace.
+2. Added non-regression coverage in:
+   - `eta/qa/pkg_test/src/eta_pkg_test.cpp` (manifest/discovery/workspace member resolution),
+   - `eta/qa/cli_test/src/eta_cli_test.cpp` (workspace defaults and shared lockfile/modules roots),
+   - `eta/qa/test/src/module_path_tests.cpp` (workspace member module-path ordering),
+   - `eta/qa/test/src/lsp_tests.cpp` (workspace lockfile explain context),
+   - `eta/qa/test/src/dap_tests.cpp` (workspace-member launch/startup).
+3. Mock fixture metadata intentionally uses `[native]` keys only; target-table
+   schema (`[[native.targets]]`) remains part of NS3.
+
 ### NS1 - Sidecar ABI and loader skeleton
 
 Scope:
@@ -514,6 +531,31 @@ Gate:
 
 1. unit tests for load/open/symbol lookup and error mapping,
 2. unit tests for artifact containment checks and lockfile-order determinism.
+
+Implementation snapshot (2026-05-08):
+
+1. Added ABI v1 SDK header at `eta/core/src/eta/native/sdk.h` with:
+   - `EtaNativeApiV1`,
+   - `EtaExtensionInfoV1`,
+   - primitive registration and error reporting callback types,
+   - exported entrypoint declaration `eta_register_extension_v1`.
+2. Added native loader skeleton and extension registry:
+   - `eta/core/src/eta/native/sidecar_loader.h/.cpp`,
+   - `eta/core/src/eta/native/extension_registry.h/.cpp`,
+   - platform dynamic library backends (`LoadLibrary`/`GetProcAddress` and
+     `dlopen`/`dlsym`),
+   - `NativeLoadContext` construction from existing package/workspace discovery
+     and resolver APIs,
+   - package-root based sidecar artifact resolution with containment checks and
+     deterministic input-order preservation.
+3. Added NS1 unit coverage in `eta/qa/test/src/native_sidecar_loader_tests.cpp`
+   with a mock sidecar module target for:
+   - library open failure mapping,
+   - missing entrypoint symbol mapping,
+   - ABI mismatch mapping,
+   - sidecar registration failure mapping,
+   - successful metadata/symbol registration path,
+   - artifact escape rejection and lockfile-order deterministic resolution.
 
 ### NS2 - Extension registry in runtime
 
@@ -530,6 +572,29 @@ Gate:
 1. compile/execute tests with synthetic extension primitive set,
 2. existing core-only projects still compile/execute unchanged.
 
+Implementation snapshot (2026-05-08):
+
+1. Added extension primitive environment support in
+   `eta/core/src/eta/runtime/extension_env.h` with:
+   - extension primitive descriptors matching builtin primitive contract,
+   - deterministic slot-offset installation into VM globals.
+2. Extended semantic analysis APIs in
+   `eta/core/src/eta/semantics/semantic_analyzer.h/.cpp` to support:
+   - core-only analysis overloads (unchanged call path),
+   - extension-aware analysis overloads that seed core slots first and
+     extension slots immediately after.
+3. Updated runtime driver plumbing in
+   `eta/session/src/eta/session/driver.h` to:
+   - maintain a separate extension primitive environment,
+   - install core + extension primitives in fixed global slots before execute,
+   - apply primitive-slot boundaries consistently in source compile, `.etac`
+     execution, relocation planning, child closure bootstrap, and global-name
+     completion metadata.
+4. Added NS2 coverage with synthetic extension primitives:
+   - `eta/qa/test/src/semantics_tests.cpp` (core+extension slot seeding order),
+   - `eta/qa/test/src/driver_jupyter_test.cpp` (driver compile/execute and
+     completion visibility for extension primitives).
+
 ### NS3 - Manifest and lockfile schema extensions
 
 Scope:
@@ -543,6 +608,29 @@ Gate:
 
 1. package parser tests covering malformed metadata and missing required fields,
 2. lockfile round-trip tests for mixed native/non-native package graphs.
+
+Implementation snapshot (2026-05-09):
+
+1. Extended manifest schema in `eta/core/src/eta/package/manifest.h/.cpp` with:
+   - `[native]` parsing/validation for `kind`, `abi`, `id`, `entry`,
+   - `[[native.targets]]` parsing/validation for `triple`, relative `artifact`,
+     and `sha256`,
+   - package-only enforcement for `[native]` (workspace-only manifests reject it),
+   - deterministic target ordering in serialized manifests.
+2. Extended lockfile schema in `eta/core/src/eta/package/lockfile.h/.cpp` with
+   optional native fields:
+   - `native_id`,
+   - `native_abi`,
+   - `native_entry`,
+   - `native_target_triple`,
+   - `native_artifact_relpath`,
+   - `native_sha256`,
+   plus deterministic read/write and validation for complete native metadata.
+3. Updated package fixtures and parser/lockfile coverage in
+   `eta/qa/pkg_test/src/eta_pkg_test.cpp` and sidecar fixture manifests to cover:
+   - malformed native metadata and missing required fields,
+   - duplicate native target triples,
+   - lockfile native metadata round-trip for mixed native/non-native graphs.
 
 ### NS4 - Resolver and materialization for sidecars
 
@@ -559,6 +647,29 @@ Gate:
 2. workspace-member build/run tests remain green with shared workspace
    lockfile/modules roots.
 
+Implementation snapshot (2026-05-09):
+
+1. Extended resolver graph + lockfile construction in
+   `eta/core/src/eta/package/resolver.h/.cpp` to:
+   - select one `[[native.targets]]` row by host target triple,
+   - persist selected native fields into lockfile package rows,
+   - fail resolution when a native package has no target for the selected triple.
+2. Extended module materialization in `eta/cli/src/eta/cli/main_eta.cpp` to:
+   - keep existing `root`/`workspace+` behavior unchanged,
+   - verify `native_sha256` for materialized non-workspace packages before
+     command execution proceeds.
+3. Extended sidecar loader checks in
+   `eta/core/src/eta/native/sidecar_loader.h/.cpp` with optional load-time
+   SHA-256 verification (`expected_sha256`) and checksum mismatch error mapping.
+4. Added NS4 coverage in:
+   - `eta/qa/pkg_test/src/eta_pkg_test.cpp` (target-triple selection and
+     missing-target errors),
+   - `eta/qa/cli_test/src/eta_cli_test.cpp` (`vendor`/`build`/`run` flow with
+     native fixture dependency and checksum mismatch failure),
+   - `eta/qa/test/src/native_sidecar_loader_tests.cpp` (load-time checksum mismatch).
+5. Updated native sidecar fixture manifests with multi-target entries so
+   workspace/standalone sidecar fixture flows remain platform-agnostic.
+
 ### NS5 - Bytecode v6 extension metadata
 
 Scope:
@@ -570,6 +681,35 @@ Scope:
 Gate:
 
 1. serializer tests for mismatch cases and compatibility paths.
+
+Implementation snapshot (2026-05-09):
+
+1. Extended bytecode format metadata in
+   `eta/core/src/eta/runtime/vm/bytecode_serializer.h/.cpp` to:
+   - bump `.etac` format from v5 to v6,
+   - add `extension_env_hash` to serialized header metadata,
+   - preserve backward-compatible deserialization for v5/v4/v3,
+   - keep v5 relocation metadata handling on the modern relocation path.
+2. Extended freshness policy in
+   `eta/core/src/eta/runtime/vm/bytecode_serializer.h/.cpp` with:
+   - `expected_extension_env_hash` in `FreshnessContext`,
+   - extension-hash mismatch and missing-hash freshness diagnostics,
+   - compatibility behavior for legacy v5/v4/v3 artifacts when runtime
+     expects zero extension hash.
+3. Wired runtime freshness input in `eta/session/src/eta/session/driver.h` to:
+   - compute deterministic extension-environment hash from registered
+     extension primitive descriptors,
+   - include that hash in `.etac` freshness checks.
+4. Updated `.etac` emit paths to include extension hash metadata:
+   - `eta/tools/compiler/src/eta/compiler/main_etac.cpp`,
+   - `eta/qa/test/src/packaging_contract_tests.cpp`,
+   - `eta/qa/test/src/cookbook/compiled_example_tests.cpp`.
+5. Added NS5 coverage in:
+   - `eta/qa/test/src/bytecode_serializer_tests.cpp`
+     (v6 extension hash round-trip, freshness mismatch and missing-hash
+     cases, and v5/v4/v3 compatibility deserialization),
+   - `eta/qa/test/src/packaging_contract_tests.cpp`
+     (driver stale `.etac` fallback triggered by extension-hash mismatch).
 
 ### NS6 - Driver/package-aware sidecar loading
 
@@ -586,6 +726,31 @@ Gate:
 2. workspace virtual-root/non-member tool startup does not hard-fail when no
    package is selected.
 
+Implementation snapshot (2026-05-09):
+
+1. Extended `eta/session/src/eta/session/driver.h` to load lockfile-selected
+   native sidecars before compile/run in package contexts by:
+   - discovering package/workspace context from the active start directory,
+   - traversing dependency closure from the active package row in `eta.lock`,
+   - filtering lockfile native rows to only closure-reachable packages, and
+   - loading sidecars in lockfile order before semantic analysis/execution.
+2. Added driver-side extension registration plumbing that maps loaded sidecar
+   symbol metadata into the extension primitive environment with deterministic
+   symbol ordering, preserving core-only behavior when no package context or
+   lockfile is available.
+3. Added public sidecar SHA-256 helper in
+   `eta/core/src/eta/native/sidecar_loader.h/.cpp` for package-aware fixture
+   setup and lockfile-native test construction.
+4. Updated compiler startup in
+   `eta/tools/compiler/src/eta/compiler/main_etac.cpp` to load package sidecars
+   from the input file context before optional prelude loading.
+5. Added NS6 coverage in `eta/qa/test/src/driver_jupyter_test.cpp` for:
+   - workspace-member sidecar loading with dependency-closure filtering so
+     unrelated workspace members with broken sidecar metadata do not block
+     execution, and
+   - workspace virtual-root core-only startup without hard-failing on
+     lockfile-native metadata when no package is selected.
+
 ### NS7 - Migrate `log` to sidecar
 
 Scope:
@@ -597,6 +762,35 @@ Scope:
 Gate:
 
 1. `log` unit + stdlib tests pass with fallback OFF.
+
+Implementation snapshot (2026-05-09):
+
+1. Added `eta-log-sidecar` package scaffold at
+   `packages/stdlib/native/log/eta.toml` with native metadata:
+   - `kind = "sidecar"`,
+   - `abi = "eta-native-v1"`,
+   - `id = "eta.log.sidecar"`,
+   - `entry = "eta_register_log_extension_v1"`,
+   and platform target rows for Windows/Linux/macOS artifacts.
+2. Extended primitive registration in
+   `eta/tools/interpreter/src/eta/interpreter/all_primitives.h` to support
+   native fallback toggling:
+   - `ETA_NATIVE_BUILTIN_FALLBACK=ON` keeps linked `%log-*` registration,
+   - `ETA_NATIVE_BUILTIN_FALLBACK=OFF` installs `%log-*` placeholders that
+     require the `eta-log-sidecar` package.
+3. Extended sidecar activation in `eta/session/src/eta/session/driver.h` so
+   extension id `eta.log.sidecar`:
+   - is treated as a runtime activation marker (not metadata-only placeholders),
+   - enables `%log-*` implementations from `eta::log::register_log_primitives`
+     when fallback is OFF, preserving sidecar-first behavior without duplicate
+     extension symbol shadowing.
+4. Extended native sidecar test module in
+   `eta/qa/test/src/native_sidecar_test_extension.cpp` with
+   `eta_register_log_extension_v1`, exporting the `%log-*` symbol metadata set.
+5. Added NS7 coverage in `eta/qa/test/src/driver_jupyter_test.cpp` for:
+   - fallback OFF failure mode when `std.log` is used without sidecar context,
+   - fallback OFF success path where a lockfile-managed `eta.log.sidecar`
+     package activates stdlib `std.log` wrappers in package context.
 
 ### NS8 - Migrate `stats`, `nng`, `torch`
 
@@ -610,6 +804,35 @@ Gate:
 1. full stdlib + cookbook + torch/nng/stats C++ suites pass on CI matrix,
 2. workspace fixtures using migrated modules pass in both fallback modes.
 
+Implementation snapshot (2026-05-09):
+
+1. Added package scaffolds:
+   - `packages/stdlib/native/stats/eta.toml` (`eta.stats.sidecar`),
+   - `packages/stdlib/native/nng/eta.toml` (`eta.nng.sidecar`),
+   - `packages/stdlib/native/torch/eta.toml` (`eta.torch.sidecar`),
+   each with `kind = "sidecar"`, `abi = "eta-native-v1"`, named entrypoints,
+   and target rows for Windows/Linux/macOS artifacts.
+2. Extended fallback handling for `stats`, `torch`, and `nng`:
+   - `ETA_NATIVE_BUILTIN_FALLBACK=ON` keeps linked primitive registration,
+   - `ETA_NATIVE_BUILTIN_FALLBACK=OFF` installs placeholders that require
+     `eta-stats-sidecar`, `eta-torch-sidecar`, and `eta-nng-sidecar`.
+3. Extended sidecar activation in `eta/session/src/eta/session/driver.h` so
+   extension ids `eta.stats.sidecar`, `eta.torch.sidecar`, and
+   `eta.nng.sidecar` activate their builtin primitive implementations at
+   runtime (mirroring `eta.log.sidecar`) when fallback is OFF.
+4. Extended native sidecar fixture exports in
+   `eta/qa/test/src/native_sidecar_test_extension.cpp` with:
+   - `eta_register_stats_extension_v1`,
+   - `eta_register_torch_extension_v1`,
+   - `eta_register_nng_extension_v1`,
+   publishing symbol metadata from builtin definitions.
+5. Added NS8 coverage:
+   - `eta/qa/test/src/driver_jupyter_test.cpp` now validates fallback OFF
+     failure and sidecar-activation success for `std.stats`, `std.net`/nng,
+     and `std.torch`,
+   - `eta/qa/test/src/native_sidecar_loader_tests.cpp` verifies loader
+     registration for the new NS8 sidecar entrypoints.
+
 ### NS9 - Remove hard links and fallback
 
 Scope:
@@ -622,6 +845,26 @@ Gate:
 
 1. clean install from release bundle works via sidecars only,
 2. no runtime tool target links first-party builtin native libs.
+
+Implementation snapshot (2026-05-09):
+
+1. Migrated first-party native builtin source ownership from
+   `eta/builtins/{log,nng,stats,torch}` to package-sidecar roots:
+   - `packages/stdlib/native/log/src/eta/log/*`,
+   - `packages/stdlib/native/nng/src/eta/nng/*`,
+   - `packages/stdlib/native/stats/src/eta/stats/*`,
+   - `packages/stdlib/native/torch/src/eta/torch/*`.
+2. Removed hard links from runtime tools/tests to
+   `eta_torch`, `eta_nng`, `eta_stats`, and `eta_log`, and replaced that wiring
+   with direct sidecar-runtime dependency linkage (libtorch, nng, spdlog) plus
+   package-sidecar include roots.
+3. Removed temporary `ETA_NATIVE_BUILTIN_FALLBACK` behavior:
+   - core builtin registration now always installs sidecar placeholders for
+     torch/stats/log and nng,
+   - sidecar extension activation now always enables first-party primitive
+     implementations when matching sidecar ids are loaded.
+4. Updated driver-side integration tests to validate sidecar-only behavior and
+   assert the legacy fallback env var no longer re-enables linked builtins.
 
 ### NS10 - External package hardening
 
@@ -684,7 +927,7 @@ Each platform should run:
 1. standalone package lane,
 2. workspace member lane,
 3. workspace virtual-root lane (tool startup/diagnostics only),
-4. fallback ON and fallback OFF until NS9.
+4. sidecar-only lane (fallback removed in NS9).
 
 ---
 

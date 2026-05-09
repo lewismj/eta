@@ -73,7 +73,7 @@ std::array<uint8_t, 16> make_fingerprint128(std::string_view input) noexcept {
 
 std::string build_compiler_fingerprint_input() {
     std::ostringstream oss;
-    oss << "eta-bytecode-v5";
+    oss << "eta-bytecode-v6";
 
 #if defined(_MSC_FULL_VER)
     oss << "|msvc:" << _MSC_FULL_VER;
@@ -173,6 +173,7 @@ FreshnessResult
 BytecodeSerializer::check_freshness(const EtacFile& file, const FreshnessContext& context) {
     if (file.format_version != FORMAT_VERSION_V3
         && file.format_version != FORMAT_VERSION_V4
+        && file.format_version != FORMAT_VERSION_V5
         && file.format_version != FORMAT_VERSION) {
         return FreshnessResult{
             .status = FreshnessStatus::UnsupportedFormat,
@@ -202,6 +203,24 @@ BytecodeSerializer::check_freshness(const EtacFile& file, const FreshnessContext
             .detail = "artifact builtins=" + std::to_string(file.builtin_count)
                 + ", runtime builtins=" + std::to_string(*context.expected_builtin_count),
         };
+    }
+
+    if (context.expected_extension_env_hash.has_value()) {
+        if (!file.has_extension_env_hash) {
+            if (*context.expected_extension_env_hash != 0) {
+                return FreshnessResult{
+                    .status = FreshnessStatus::MissingExtensionEnvHash,
+                    .detail = "legacy artifact has no extension environment hash",
+                };
+            }
+        } else if (file.extension_env_hash != *context.expected_extension_env_hash) {
+            return FreshnessResult{
+                .status = FreshnessStatus::ExtensionEnvHashMismatch,
+                .detail = "artifact extension hash=" + std::to_string(file.extension_env_hash)
+                    + ", runtime extension hash="
+                    + std::to_string(*context.expected_extension_env_hash),
+            };
+        }
     }
 
     if (context.expected_source_hash.has_value()
@@ -469,7 +488,8 @@ bool BytecodeSerializer::serialize(
         uint32_t num_builtins,
         const std::optional<PackageMetadata>& package_metadata,
         const std::vector<DependencyHashEntry>& dependency_hashes,
-        const std::array<uint8_t, 16>* compiler_id) const
+        const std::array<uint8_t, 16>* compiler_id,
+        uint64_t extension_env_hash) const
 {
     /// Header
     os.write(MAGIC, 4);
@@ -483,6 +503,7 @@ bool BytecodeSerializer::serialize(
 
     write_u64(os, source_hash);
     write_u32(os, num_builtins);
+    write_u64(os, extension_env_hash);
     const auto effective_compiler_id =
         compiler_id != nullptr ? *compiler_id : default_compiler_id();
     os.write(reinterpret_cast<const char*>(effective_compiler_id.data()),
@@ -605,6 +626,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     if (!read_u16(is, version)) return std::unexpected(SerializerError::Truncated);
     if (version != FORMAT_VERSION_V3
         && version != FORMAT_VERSION_V4
+        && version != FORMAT_VERSION_V5
         && version != FORMAT_VERSION) {
         return std::unexpected(SerializerError::VersionMismatch);
     }
@@ -622,6 +644,13 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     result.builtin_count = file_builtins;
     if (expected_builtins != 0 && file_builtins != expected_builtins)
         return std::unexpected(SerializerError::BuiltinCountMismatch);
+
+    if (version >= FORMAT_VERSION) {
+        if (!read_u64(is, result.extension_env_hash)) {
+            return std::unexpected(SerializerError::Truncated);
+        }
+        result.has_extension_env_hash = true;
+    }
 
     if (version >= FORMAT_VERSION_V4) {
         if (!is.read(reinterpret_cast<char*>(result.compiler_id.data()),
@@ -680,7 +709,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         if (!read_u32(is, main_slot)) return std::unexpected(SerializerError::Truncated);
         if (has_main) mod.main_func_slot = main_slot;
 
-        if (version >= FORMAT_VERSION) {
+        if (version >= FORMAT_VERSION_V5) {
             if (!read_u32(is, mod.first_func_index)) return std::unexpected(SerializerError::Truncated);
             if (!read_u32(is, mod.func_count)) return std::unexpected(SerializerError::Truncated);
 
@@ -714,7 +743,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         }
     }
 
-    if (version < FORMAT_VERSION) {
+    if (version < FORMAT_VERSION_V5) {
         /**
          * Legacy artifacts do not store per-module function ranges.
          * Infer ranges from init-function indices, where each module init is

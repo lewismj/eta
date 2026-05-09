@@ -22,9 +22,10 @@ target_include_directories(eta_jupyter
 )
 
 target_link_libraries(eta_jupyter
-    PRIVATE eta_core eta_torch eta_nng eta_stats eta_log
+    PRIVATE eta_core
             xeus xeus-zmq nlohmann_json::nlohmann_json
 )
+eta_link_sidecar_builtin_runtime(eta_jupyter)
 
 target_compile_definitions(eta_jupyter PRIVATE
     ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1

@@ -54,10 +54,6 @@ install(DIRECTORY cookbook/ DESTINATION cookbook
 add_custom_target(eta_all)
 foreach(_t IN ITEMS
     eta_core
-    eta_torch
-    eta_nng
-    eta_stats
-    eta_log
     eta
     etai
     eta_repl

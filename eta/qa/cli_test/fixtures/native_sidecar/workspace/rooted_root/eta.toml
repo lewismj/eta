@@ -1,0 +1,38 @@
+[package]
+name = "root_tools"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[workspace]
+members = ["packages/*"]
+
+[dependencies]
+
+[native]
+kind = "sidecar"
+abi = "eta-native-v1"
+id = "root_tools_native"
+entry = "eta_register_extension_v1"
+
+[[native.targets]]
+triple = "x86_64-pc-windows-msvc"
+artifact = "native/windows-x64/eta_root_tools_native.dll"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[native.targets]]
+triple = "x86_64-unknown-linux-gnu"
+artifact = "native/linux-x64/libeta_root_tools_native.so"
+sha256 = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+
+[[native.targets]]
+triple = "x86_64-apple-darwin"
+artifact = "native/macos-x64/libeta_root_tools_native.dylib"
+sha256 = "1111111111111111111111111111111111111111111111111111111111111111"
+
+[[native.targets]]
+triple = "aarch64-apple-darwin"
+artifact = "native/macos-arm64/libeta_root_tools_native.dylib"
+sha256 = "2222222222222222222222222222222222222222222222222222222222222222"

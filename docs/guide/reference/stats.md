@@ -369,7 +369,7 @@ Equity fund (monthly %):
 | Pure math (mean, variance, normal/t quantiles, OLS, betainc, …) | [`eta/core/src/eta/runtime/stats_math.h`](../../../eta/core/src/eta/runtime/stats_math.h) |
 | Polymorphic input extraction (list / vector / fact-table → `Eigen::VectorXd`) | [`eta/core/src/eta/runtime/stats_extract.h`](../../../eta/core/src/eta/runtime/stats_extract.h) |
 | `%stats-mean`, `%stats-ols`, `%stats-t-test-2`, … (univariate/bivariate) | [`eta/core/src/eta/runtime/core_primitives.h`](../../../eta/core/src/eta/runtime/core_primitives.h) |
-| `%stats-mean-vec`, `%stats-cov-matrix`, `%stats-ols-multi`, … (multivariate) | [`eta/builtins/stats/src/eta/stats/stats_primitives.h`](../../../eta/builtins/stats/src/eta/stats/stats_primitives.h) |
+| `%stats-mean-vec`, `%stats-cov-matrix`, `%stats-ols-multi`, … (multivariate) | [`packages/stdlib/native/stats/src/eta/stats/stats_primitives.h`](../../../packages/stdlib/native/stats/src/eta/stats/stats_primitives.h) |
 | `stats:mean`, `stats:cov-matrix`, `stats:ols-multi`, … (Eta wrappers) | [`stdlib/std/stats.eta`](../../../stdlib/std/stats.eta) |
 | Eigen fetch | [`cmake/FetchEigen.cmake`](../../../cmake/FetchEigen.cmake) |
 | Example | [`cookbook/quant/stats.eta`](../../../cookbook/quant/stats.eta) |

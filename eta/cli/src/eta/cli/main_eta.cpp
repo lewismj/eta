@@ -1507,6 +1507,44 @@ CliResult<std::pair<std::string, std::string>> parse_tarball_source(std::string_
     return std::make_pair(tarball, sha256);
 }
 
+ErrorResult verify_materialized_native_sidecar(const eta::package::LockfilePackage& package,
+                                               const fs::path& package_dir) {
+    if (!package.native_id.has_value()) return {};
+
+    if (!package.native_artifact_relpath.has_value() || !package.native_sha256.has_value()) {
+        return std::unexpected("lockfile package has incomplete native metadata: " + package.name);
+    }
+
+    const fs::path artifact_relpath = fs::path(*package.native_artifact_relpath);
+    if (artifact_relpath.empty() || artifact_relpath.is_absolute()) {
+        return std::unexpected("native sidecar artifact path must be relative for package '"
+                               + package.name + "'");
+    }
+
+    const fs::path canonical_package_dir = canonicalize_path(package_dir);
+    const fs::path artifact_path = canonicalize_path(canonical_package_dir / artifact_relpath);
+    if (!is_path_within(canonical_package_dir, artifact_path)) {
+        return std::unexpected("native sidecar artifact path escapes package root for package '"
+                               + package.name + "': " + artifact_relpath.generic_string());
+    }
+
+    std::error_code ec;
+    if (!fs::is_regular_file(artifact_path, ec) || ec) {
+        return std::unexpected("native sidecar artifact missing for package '" + package.name
+                               + "': " + artifact_path.string());
+    }
+
+    auto digest = compute_sha256_file(artifact_path);
+    if (!digest) return std::unexpected(digest.error());
+
+    const auto expected = lower_ascii(*package.native_sha256);
+    if (*digest != expected) {
+        return std::unexpected("native sidecar checksum mismatch for package '" + package.name + "'");
+    }
+
+    return {};
+}
+
 ErrorResult materialize_modules_from_lockfile(const fs::path& lockfile_root,
                                               const eta::package::Lockfile& lockfile,
                                               const fs::path& modules_root) {
@@ -1523,6 +1561,9 @@ ErrorResult materialize_modules_from_lockfile(const fs::path& lockfile_root,
             const fs::path source_path = fs::path(package.source.substr(5u));
             if (auto copy = copy_directory_tree(source_path, package_dir); !copy) {
                 return copy;
+            }
+            if (auto verify = verify_materialized_native_sidecar(package, package_dir); !verify) {
+                return verify;
             }
             continue;
         }
@@ -1541,6 +1582,9 @@ ErrorResult materialize_modules_from_lockfile(const fs::path& lockfile_root,
             if (!cache) return std::unexpected(cache.error());
             if (auto materialize = materialize_from_cache(*cache, package_dir); !materialize) {
                 return materialize;
+            }
+            if (auto verify = verify_materialized_native_sidecar(package, package_dir); !verify) {
+                return verify;
             }
             continue;
         }
@@ -1565,6 +1609,9 @@ ErrorResult materialize_modules_from_lockfile(const fs::path& lockfile_root,
             }
             if (auto materialize = materialize_from_cache(materialized_cache, package_dir); !materialize) {
                 return materialize;
+            }
+            if (auto verify = verify_materialized_native_sidecar(package, package_dir); !verify) {
+                return verify;
             }
             continue;
         }

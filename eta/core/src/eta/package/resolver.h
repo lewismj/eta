@@ -15,6 +15,18 @@ namespace eta::package {
 namespace fs = std::filesystem;
 
 /**
+ * @brief One selected native sidecar target for a resolved package.
+ */
+struct ResolvedNativePackage {
+    std::string id;
+    std::string abi;
+    std::string entry;
+    std::string target_triple;
+    fs::path artifact_relpath;
+    std::string sha256;
+};
+
+/**
  * @brief One package node in a resolved path-dependency graph.
  */
 struct ResolvedPackage {
@@ -23,6 +35,7 @@ struct ResolvedPackage {
     fs::path manifest_path;
     fs::path package_root;
     std::string source;
+    std::optional<ResolvedNativePackage> native;
     std::vector<std::string> dependency_names;
 };
 
@@ -48,6 +61,7 @@ struct ResolveError {
         CycleDetected,
         InvalidWorkspaceMember,
         UnsupportedDependencySource,
+        MissingNativeTargetForTriple,
     };
 
     Code code{Code::ManifestReadError};
@@ -80,6 +94,7 @@ struct ResolveOptions {
     bool include_dev_dependencies{false};
     const Lockfile* lockfile{nullptr};
     fs::path modules_root;
+    std::string target_triple;
     std::string root_source{"root"};
     DependencyLocator dependency_locator;
 };

@@ -7,11 +7,13 @@ add_executable(${PROJECT_NAME}
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
+target_link_libraries(${PROJECT_NAME} PRIVATE eta_core)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_CLI_PATH="$<TARGET_FILE:eta>"
     ETA_REPL_PATH="$<TARGET_FILE:eta_repl>"
-    ETA_CLI_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
-add_dependencies(${PROJECT_NAME} eta eta_repl)
+    ETA_CLI_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    ETA_CLI_TEST_NATIVE_SIDECAR_PATH="$<TARGET_FILE:eta_test_native_sidecar>")
+add_dependencies(${PROJECT_NAME} eta eta_repl eta_test_native_sidecar)
 
 if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE BOOST_TEST_DYN_LINK)

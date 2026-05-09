@@ -228,6 +228,38 @@ parse_dependency_list(std::string_view value, std::size_t line_no) {
     return has_digit;
 }
 
+[[nodiscard]] bool is_valid_hex(std::string_view value, std::size_t expected_len) {
+    if (value.size() != expected_len) return false;
+    for (const char c : value) {
+        if (!std::isxdigit(static_cast<unsigned char>(c))) return false;
+    }
+    return true;
+}
+
+[[nodiscard]] bool is_relative_artifact_path(std::string_view value) {
+    fs::path path(value);
+    if (path.empty()) return false;
+    return !path.is_absolute() && !path.has_root_name() && !path.has_root_directory();
+}
+
+[[nodiscard]] bool has_any_native_metadata(const LockfilePackage& pkg) {
+    return pkg.native_id.has_value()
+        || pkg.native_abi.has_value()
+        || pkg.native_entry.has_value()
+        || pkg.native_target_triple.has_value()
+        || pkg.native_artifact_relpath.has_value()
+        || pkg.native_sha256.has_value();
+}
+
+[[nodiscard]] bool has_complete_native_metadata(const LockfilePackage& pkg) {
+    return pkg.native_id.has_value()
+        && pkg.native_abi.has_value()
+        && pkg.native_entry.has_value()
+        && pkg.native_target_triple.has_value()
+        && pkg.native_artifact_relpath.has_value()
+        && pkg.native_sha256.has_value();
+}
+
 [[nodiscard]] std::string escape_string(std::string_view value) {
     std::string out;
     out.reserve(value.size() + 4u);
@@ -328,6 +360,42 @@ LockfileResult parse_lockfile(std::string_view text) {
             pkg.source = std::move(*parsed);
             continue;
         }
+        if (key == "native_id") {
+            auto parsed = parse_quoted_string(value, line_no);
+            if (!parsed) return std::unexpected(parsed.error());
+            pkg.native_id = std::move(*parsed);
+            continue;
+        }
+        if (key == "native_abi") {
+            auto parsed = parse_quoted_string(value, line_no);
+            if (!parsed) return std::unexpected(parsed.error());
+            pkg.native_abi = std::move(*parsed);
+            continue;
+        }
+        if (key == "native_entry") {
+            auto parsed = parse_quoted_string(value, line_no);
+            if (!parsed) return std::unexpected(parsed.error());
+            pkg.native_entry = std::move(*parsed);
+            continue;
+        }
+        if (key == "native_target_triple") {
+            auto parsed = parse_quoted_string(value, line_no);
+            if (!parsed) return std::unexpected(parsed.error());
+            pkg.native_target_triple = std::move(*parsed);
+            continue;
+        }
+        if (key == "native_artifact_relpath") {
+            auto parsed = parse_quoted_string(value, line_no);
+            if (!parsed) return std::unexpected(parsed.error());
+            pkg.native_artifact_relpath = std::move(*parsed);
+            continue;
+        }
+        if (key == "native_sha256") {
+            auto parsed = parse_quoted_string(value, line_no);
+            if (!parsed) return std::unexpected(parsed.error());
+            pkg.native_sha256 = std::move(*parsed);
+            continue;
+        }
         if (key == "dependencies") {
             auto parsed = parse_dependency_list(value, line_no);
             if (!parsed) return std::unexpected(parsed.error());
@@ -372,6 +440,59 @@ LockfileResult parse_lockfile(std::string_view text) {
                 "lockfile package has invalid semver: " + pkg.version,
                 0,
             });
+        }
+        const bool has_any_native = has_any_native_metadata(pkg);
+        const bool has_complete_native = has_complete_native_metadata(pkg);
+        if (has_any_native && !has_complete_native) {
+            return std::unexpected(LockfileError{
+                LockfileError::Code::MissingRequiredField,
+                "lockfile package has incomplete native metadata: " + pkg.name,
+                0,
+            });
+        }
+        if (has_complete_native) {
+            if (pkg.native_id->empty()) {
+                return std::unexpected(LockfileError{
+                    LockfileError::Code::InvalidValue,
+                    "lockfile package native_id must be non-empty: " + pkg.name,
+                    0,
+                });
+            }
+            if (pkg.native_abi->empty()) {
+                return std::unexpected(LockfileError{
+                    LockfileError::Code::InvalidValue,
+                    "lockfile package native_abi must be non-empty: " + pkg.name,
+                    0,
+                });
+            }
+            if (pkg.native_entry->empty()) {
+                return std::unexpected(LockfileError{
+                    LockfileError::Code::InvalidValue,
+                    "lockfile package native_entry must be non-empty: " + pkg.name,
+                    0,
+                });
+            }
+            if (pkg.native_target_triple->empty()) {
+                return std::unexpected(LockfileError{
+                    LockfileError::Code::InvalidValue,
+                    "lockfile package native_target_triple must be non-empty: " + pkg.name,
+                    0,
+                });
+            }
+            if (!is_relative_artifact_path(*pkg.native_artifact_relpath)) {
+                return std::unexpected(LockfileError{
+                    LockfileError::Code::InvalidValue,
+                    "lockfile package native_artifact_relpath must be a relative path: " + pkg.name,
+                    0,
+                });
+            }
+            if (!is_valid_hex(*pkg.native_sha256, 64u)) {
+                return std::unexpected(LockfileError{
+                    LockfileError::Code::InvalidValue,
+                    "lockfile package native_sha256 must be 64 hex characters: " + pkg.name,
+                    0,
+                });
+            }
         }
         for (const auto& dep : pkg.dependencies) {
             if (dep.name.empty() || dep.version.empty()) {
@@ -436,6 +557,15 @@ std::string write_lockfile(const Lockfile& lockfile) {
         out << "name = \"" << escape_string(pkg.name) << "\"\n";
         out << "version = \"" << escape_string(pkg.version) << "\"\n";
         out << "source = \"" << escape_string(pkg.source) << "\"\n";
+        if (has_complete_native_metadata(pkg)) {
+            out << "native_id = \"" << escape_string(*pkg.native_id) << "\"\n";
+            out << "native_abi = \"" << escape_string(*pkg.native_abi) << "\"\n";
+            out << "native_entry = \"" << escape_string(*pkg.native_entry) << "\"\n";
+            out << "native_target_triple = \"" << escape_string(*pkg.native_target_triple) << "\"\n";
+            out << "native_artifact_relpath = \""
+                << escape_string(*pkg.native_artifact_relpath) << "\"\n";
+            out << "native_sha256 = \"" << escape_string(*pkg.native_sha256) << "\"\n";
+        }
         out << "dependencies = [";
         for (std::size_t i = 0; i < pkg.dependencies.size(); ++i) {
             if (i != 0u) out << ", ";

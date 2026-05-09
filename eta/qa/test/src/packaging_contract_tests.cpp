@@ -171,7 +171,9 @@ struct TempDir {
     const auto num_builtins = static_cast<uint32_t>(compiler.builtin_count());
     if (!serializer.serialize(module_entries, file_registry,
                               source_hash, /*include_debug=*/true, out,
-                              cr.imports, num_builtins)) {
+                              cr.imports, num_builtins,
+                              std::nullopt, {}, nullptr,
+                              compiler.extension_env_hash())) {
         if (error_message) *error_message = "bytecode serializer failed";
         return false;
     }
@@ -222,7 +224,8 @@ struct TempDir {
                               etac.source_hash, include_debug, out,
                               etac.imports, etac.builtin_count,
                               etac.package_metadata, etac.dependency_hashes,
-                              compiler_id)) {
+                              compiler_id,
+                              etac.has_extension_env_hash ? etac.extension_env_hash : 0)) {
         if (error_message) *error_message = "failed to serialize mutated .etac";
         return false;
     }
@@ -475,6 +478,48 @@ BOOST_AUTO_TEST_CASE(run_etac_file_stale_source_hash_falls_back_to_source) {
 )eta", &value, "result");
     BOOST_REQUIRE_MESSAGE(read_ok, diagnostics_to_string(runner));
     BOOST_TEST(decode_fixnum(value) == 99);
+}
+
+BOOST_AUTO_TEST_CASE(run_etac_file_stale_extension_hash_falls_back_to_source) {
+    TempDir temp;
+    const auto main_source = temp.create_file("stale_ext/main.eta", R"eta(
+(module stale.ext.main
+  (export answer)
+  (begin
+    (define answer 42)))
+)eta");
+
+    const auto etac_file = temp.path / "stale_ext/main.etac";
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compile_to_etac(main_source, temp.path, etac_file, &compile_error),
+        "compile_to_etac failed: " + compile_error);
+
+    eta::interpreter::ModulePathResolver run_resolver({temp.path});
+    eta::session::Driver runner(std::move(run_resolver), 8 * 1024 * 1024);
+    runner.register_extension_primitive(
+        "ext.hash.sentinel",
+        0u,
+        false,
+        [](eta::runtime::types::PrimitiveArgs) {
+            return std::expected<eta::runtime::nanbox::LispVal, eta::runtime::error::RuntimeError>(
+                eta::runtime::nanbox::Nil);
+        });
+
+    const bool ok = runner.run_etac_file(etac_file);
+    BOOST_REQUIRE_MESSAGE(ok, diagnostics_to_string(runner));
+    const auto stale_diagnostics = diagnostics_to_string(runner);
+    BOOST_TEST(stale_diagnostics.find("stale .etac detected") != std::string::npos);
+    BOOST_TEST(stale_diagnostics.find("extension environment hash mismatch") != std::string::npos);
+
+    eta::runtime::nanbox::LispVal value{eta::runtime::nanbox::Nil};
+    const bool read_ok = runner.run_source(R"eta(
+(module stale.ext.verify
+  (import stale.ext.main)
+  (define result answer))
+)eta", &value, "result");
+    BOOST_REQUIRE_MESSAGE(read_ok, diagnostics_to_string(runner));
+    BOOST_TEST(decode_fixnum(value) == 42);
 }
 
 BOOST_AUTO_TEST_CASE(run_etac_file_relocate_missing_export_emits_clear_error) {

@@ -9,6 +9,7 @@
 #include "eta/reader/module_linker.h"
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/semantics/core_ir.h"
+#include "eta/runtime/extension_env.h"
 
 using namespace eta;
 using namespace eta::semantics;
@@ -32,6 +33,30 @@ static SemResult<std::vector<ModuleSemantics>> analyze_src(std::string_view prog
 
     SemanticAnalyzer sa;
     return sa.analyze_all(*expanded, L);
+}
+
+static SemResult<std::vector<ModuleSemantics>>
+analyze_src_with_primitives(std::string_view program,
+                            const eta::runtime::BuiltinEnvironment& builtins,
+                            const eta::runtime::ExtensionEnvironment& extensions) {
+    reader::lexer::Lexer lex(0, program);
+    reader::parser::Parser p(lex);
+    auto parsed = p.parse_toplevel();
+    if (!parsed) return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, {}, "Parse error"});
+
+    reader::expander::Expander ex;
+    auto expanded = ex.expand_many(*parsed);
+    if (!expanded) return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, {}, "Expansion error"});
+
+    reader::ModuleLinker L;
+    auto idx = L.index_modules(*expanded);
+    if (!idx) return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, {}, "Linker index error"});
+
+    auto lk = L.link();
+    if (!lk) return std::unexpected(SemanticError{SemanticError::Kind::InvalidFormShape, {}, "Link error"});
+
+    SemanticAnalyzer sa;
+    return sa.analyze_all(*expanded, L, builtins, extensions);
 }
 
 static SemResult<std::vector<ModuleSemantics>>
@@ -338,6 +363,41 @@ BOOST_AUTO_TEST_CASE(test_lambda_arity) {
     auto* lam3 = std::get_if<core::Lambda>(&std::get_if<core::Set>(&(*res3)[0].toplevel_inits[0]->data)->value->data);
     BOOST_CHECK_EQUAL(lam3->arity.required, 0);
     BOOST_CHECK_EQUAL(lam3->arity.has_rest, true);
+}
+
+BOOST_AUTO_TEST_CASE(extension_primitives_seed_after_core_slots) {
+    eta::runtime::BuiltinEnvironment builtins;
+    builtins.register_builtin("core.mock", 0u, false, eta::runtime::types::PrimitiveFunc{});
+
+    eta::runtime::ExtensionEnvironment extensions;
+    extensions.register_extension("ext.mock", 0u, false, eta::runtime::types::PrimitiveFunc{});
+
+    auto res = analyze_src_with_primitives(
+        "(module m1 (define result ext.mock))",
+        builtins,
+        extensions);
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL(res->size(), 1u);
+    const auto& mod = (*res)[0];
+
+    auto find_slot = [&](std::string_view name) -> std::optional<uint16_t> {
+        for (const auto& binding : mod.bindings) {
+            if (binding.name == name) return binding.slot;
+        }
+        return std::nullopt;
+    };
+
+    const auto core_slot = find_slot("core.mock");
+    const auto ext_slot = find_slot("ext.mock");
+    const auto result_slot = find_slot("result");
+    BOOST_REQUIRE(core_slot.has_value());
+    BOOST_REQUIRE(ext_slot.has_value());
+    BOOST_REQUIRE(result_slot.has_value());
+
+    BOOST_TEST(*core_slot == 0u);
+    BOOST_TEST(*ext_slot == 1u);
+    BOOST_TEST(*result_slot == 2u);
+    BOOST_TEST(mod.total_globals == 3u);
 }
 
 BOOST_AUTO_TEST_CASE(test_import_uses_external_slot_resolver_when_source_provider_absent) {

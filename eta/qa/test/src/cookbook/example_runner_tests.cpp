@@ -15,10 +15,12 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -26,6 +28,7 @@
 #include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/package/resolver.h"
+#include "eta/native/sidecar_loader.h"
 #include "eta/runtime/port.h"
 
 namespace fs = std::filesystem;
@@ -41,6 +44,10 @@ namespace fs = std::filesystem;
 
 #ifndef ETA_STDLIB_DIR
 #define ETA_STDLIB_DIR ""
+#endif
+
+#ifndef ETA_TEST_NATIVE_SIDECAR_PATH
+#error ETA_TEST_NATIVE_SIDECAR_PATH must be defined by CMake
 #endif
 
 static fs::path cookbook_dir() {
@@ -96,6 +103,128 @@ static std::optional<fs::path> find_manifest_path(fs::path start_dir) {
         start_dir = parent;
     }
     return std::nullopt;
+}
+
+struct SidecarSpec {
+    std::string package_name;
+    std::string extension_id;
+    std::string entrypoint;
+};
+
+[[nodiscard]] static fs::path sidecar_fixture_path() {
+    return fs::path(ETA_TEST_NATIVE_SIDECAR_PATH);
+}
+
+[[nodiscard]] static std::string host_target_triple() {
+#if defined(_WIN32)
+#if defined(_M_X64) || defined(__x86_64__)
+    return "x86_64-pc-windows-msvc";
+#elif defined(_M_ARM64) || defined(__aarch64__)
+    return "aarch64-pc-windows-msvc";
+#else
+    return "unknown-pc-windows-msvc";
+#endif
+#elif defined(__APPLE__)
+#if defined(__aarch64__)
+    return "aarch64-apple-darwin";
+#else
+    return "x86_64-apple-darwin";
+#endif
+#elif defined(__linux__)
+#if defined(__aarch64__)
+    return "aarch64-unknown-linux-gnu";
+#else
+    return "x86_64-unknown-linux-gnu";
+#endif
+#else
+    return "unknown-unknown-unknown";
+#endif
+}
+
+[[nodiscard]] static std::optional<fs::path> create_sidecar_workspace_fixture(
+    const fs::path& root,
+    std::span<const SidecarSpec> specs) {
+    const auto fixture = sidecar_fixture_path();
+    if (!fs::is_regular_file(fixture)) return std::nullopt;
+
+    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture);
+    if (!fixture_sha) return std::nullopt;
+
+    const auto app_root = root / "app";
+    fs::create_directories(app_root / "src");
+
+    {
+        std::ofstream out(app_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!out.is_open()) return std::nullopt;
+        out << "[package]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n";
+        for (const auto& spec : specs) {
+            out << spec.package_name << " = { path = \"../" << spec.package_name << "\" }\n";
+        }
+    }
+
+    for (const auto& spec : specs) {
+        const auto sidecar_root = root / spec.package_name;
+        const auto artifact_relpath = fs::path("native") / "test" / fixture.filename();
+        fs::create_directories((sidecar_root / artifact_relpath).parent_path());
+        fs::copy_file(fixture, sidecar_root / artifact_relpath, fs::copy_options::overwrite_existing);
+
+        std::ofstream out(sidecar_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!out.is_open()) return std::nullopt;
+        out << "[package]\n"
+            << "name = \"" << spec.package_name << "\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[native]\n"
+            << "kind = \"sidecar\"\n"
+            << "abi = \"eta-native-v1\"\n"
+            << "id = \"" << spec.extension_id << "\"\n"
+            << "entry = \"" << spec.entrypoint << "\"\n\n"
+            << "[[native.targets]]\n"
+            << "triple = \"" << host_target_triple() << "\"\n"
+            << "artifact = \"" << artifact_relpath.generic_string() << "\"\n"
+            << "sha256 = \"" << *fixture_sha << "\"\n";
+    }
+
+    {
+        std::ofstream out(app_root / "eta.lock", std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!out.is_open()) return std::nullopt;
+        out << "version = 1\n\n"
+            << "[[package]]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"root\"\n"
+            << "dependencies = [";
+        for (std::size_t i = 0; i < specs.size(); ++i) {
+            if (i != 0u) out << ", ";
+            out << "\"" << specs[i].package_name << "@0.1.0\"";
+        }
+        out << "]\n\n";
+
+        for (const auto& spec : specs) {
+            const auto artifact_relpath = fs::path("native") / "test" / fixture.filename();
+            out << "[[package]]\n"
+                << "name = \"" << spec.package_name << "\"\n"
+                << "version = \"0.1.0\"\n"
+                << "source = \"path+../" << spec.package_name << "\"\n"
+                << "native_id = \"" << spec.extension_id << "\"\n"
+                << "native_abi = \"eta-native-v1\"\n"
+                << "native_entry = \"" << spec.entrypoint << "\"\n"
+                << "native_target_triple = \"" << host_target_triple() << "\"\n"
+                << "native_artifact_relpath = \"" << artifact_relpath.generic_string() << "\"\n"
+                << "native_sha256 = \"" << *fixture_sha << "\"\n"
+                << "dependencies = []\n\n";
+        }
+    }
+
+    return app_root;
 }
 
 /// Collect all .eta example files
@@ -163,11 +292,33 @@ static bool requires_torch([[maybe_unused]] const fs::path& file) {
 struct ExampleRunnerFixture {
     fs::path stdlib;
     fs::path cookbook;
+    fs::path sidecar_temp_root;
+    std::optional<fs::path> sidecar_app_root;
 
     ExampleRunnerFixture()
         : stdlib(stdlib_dir())
         , cookbook(cookbook_dir())
-    {}
+    {
+        const auto stamp =
+            std::chrono::steady_clock::now().time_since_epoch().count();
+        sidecar_temp_root = fs::temp_directory_path()
+            / ("eta_example_runner_sidecars_" + std::to_string(stamp));
+        fs::create_directories(sidecar_temp_root);
+
+        const SidecarSpec specs[] = {
+            {"eta-log-sidecar", "eta.log.sidecar", "eta_register_log_extension_v1"},
+            {"eta-stats-sidecar", "eta.stats.sidecar", "eta_register_stats_extension_v1"},
+            {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+            {"eta-torch-sidecar", "eta.torch.sidecar", "eta_register_torch_extension_v1"},
+        };
+        sidecar_app_root = create_sidecar_workspace_fixture(
+            sidecar_temp_root, std::span<const SidecarSpec>(specs, std::size(specs)));
+    }
+
+    ~ExampleRunnerFixture() {
+        std::error_code ec;
+        fs::remove_all(sidecar_temp_root, ec);
+    }
 
     /**
      * Run a single .eta example file through the Driver.
@@ -214,6 +365,15 @@ struct ExampleRunnerFixture {
         /// Also add the example's own directory so sibling imports work
         add_module_dir(file.parent_path());
         eta::session::Driver driver(std::move(resolver), 8 * 1024 * 1024);
+        if (sidecar_app_root.has_value()) {
+            const bool sidecar_loaded = driver.load_package_sidecars(*sidecar_app_root);
+            if (!sidecar_loaded) {
+                for (const auto& diag : driver.diagnostics().diagnostics()) {
+                    BOOST_TEST_MESSAGE("  " << diag.message);
+                }
+                return false;
+            }
+        }
 
         /// Suppress stdout from cookbook programs: redirect to a string port
         auto null_port = std::make_shared<eta::runtime::StringPort>(

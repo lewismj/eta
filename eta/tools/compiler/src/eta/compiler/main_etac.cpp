@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -96,6 +97,11 @@ int main(int argc, char* argv[]) {
     eta::session::Driver driver(std::move(resolver));
     auto resolve = driver.file_resolver();
 
+    if (!driver.load_package_sidecars(fs::absolute(file_path).parent_path())) {
+        driver.diagnostics().print_all(std::cerr, true, resolve);
+        return 1;
+    }
+
     /// Configure optimization pipeline
     if (optimize) {
         auto& pipeline = driver.optimization_pipeline();
@@ -179,7 +185,9 @@ int main(int argc, char* argv[]) {
     eta::runtime::vm::BytecodeSerializer serializer(driver.heap(), driver.intern_table());
     auto num_builtins = static_cast<uint32_t>(driver.builtin_count());
     if (!serializer.serialize(module_entries, file_registry, source_hash, include_debug, out,
-                              cr.imports, num_builtins)) {
+                              cr.imports, num_builtins,
+                              std::nullopt, {}, nullptr,
+                              driver.extension_env_hash())) {
         std::cerr << "error: failed to serialize bytecode\n";
         return 1;
     }

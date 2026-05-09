@@ -34,7 +34,27 @@ struct ManifestDependency {
 };
 
 /**
- * @brief Parsed package manifest (`eta.toml`) fields required in S1.
+ * @brief One `[[native.targets]]` row declared by `[native]`.
+ */
+struct ManifestNativeTarget {
+    std::string triple;
+    fs::path artifact;
+    std::string sha256;
+};
+
+/**
+ * @brief Native sidecar metadata declared by `[native]`.
+ */
+struct ManifestNative {
+    std::string kind;
+    std::string abi;
+    std::string id;
+    std::string entry;
+    std::vector<ManifestNativeTarget> targets;
+};
+
+/**
+ * @brief Parsed package manifest (`eta.toml`) fields.
  */
 struct Manifest {
     fs::path manifest_path;
@@ -44,6 +64,7 @@ struct Manifest {
     std::string compatibility_eta;
     std::vector<ManifestDependency> dependencies;
     std::vector<ManifestDependency> dev_dependencies;
+    std::optional<ManifestNative> native;
 };
 
 /**
@@ -110,6 +131,9 @@ ManifestDocumentResult read_manifest_document(const fs::path& manifest_path);
  *   - `name = { path = "../dep" }`
  *   - `name = { git = "...", rev = "<40-hex>" }`
  *   - `name = { tarball = "...", sha256 = "<64-hex>" }`
+ * - optional native sidecar metadata:
+ *   - `[native]`: `kind`, `abi`, `id`, `entry`
+ *   - `[[native.targets]]`: `triple`, relative `artifact`, `sha256`
  *
  * Returns an error when no package section is present.
  */

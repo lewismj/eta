@@ -40,8 +40,13 @@
 #include "eta/runtime/embedded_prelude.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/value_formatter.h"
+#include "eta/runtime/extension_env.h"
 #include "eta/diagnostic/diagnostic.h"
+#include "eta/native/extension_registry.h"
+#include "eta/native/runtime_binding.h"
+#include "eta/native/sidecar_loader.h"
 #include "eta/package/discovery.h"
+#include "eta/package/lockfile.h"
 
 /// Single source of truth for live primitive registration order:
 #include "eta/interpreter/all_primitives.h"
@@ -53,9 +58,8 @@
 #include <nng/protocol/pair0/pair.h>
 #include <eta/nng/nng_socket_ptr.h>
 #include <eta/nng/nng_factory.h>
-#include <eta/nng/nng_primitives.h>
 #include <eta/nng/process_mgr.h>
-#include <eta/log/log_state.h>
+#include <eta/nng/spawn_capture_format.h>
 
 #include "eta/interpreter/module_path.h"
 
@@ -131,6 +135,9 @@ public:
           intern_table_(),
           registry_(),
           builtins_(),
+          extensions_(),
+          sidecar_registry_(),
+          sidecar_loader_(std::make_unique<native::SidecarLoader>(sidecar_registry_)),
           vm_(heap_, intern_table_),
           diag_engine_(),
           command_line_arguments_(std::move(command_line_arguments)),
@@ -155,7 +162,11 @@ public:
         ///         validate metadata and install the real func.
         builtins_.begin_patching();
         register_all_primitives(
-            builtins_, heap_, intern_table_, vm_, command_line_arguments_);
+            builtins_,
+            heap_,
+            intern_table_,
+            vm_,
+            command_line_arguments_);
 
 
         /// Detect etai binary path if not explicitly supplied
@@ -181,12 +192,19 @@ public:
         }
         module_search_path_ = std::move(module_search_path);
 
-        /// nng networking + actor-model primitives
-        eta::nng::register_nng_primitives(
-            builtins_, heap_, intern_table_,
-            &proc_mgr_, etai_path_, &mailbox_val_,
-            module_search_path_, {},
-            &registry_, &vm_.globals());
+        sidecar_runtime_binding_.heap = &heap_;
+        sidecar_runtime_binding_.intern_table = &intern_table_;
+        sidecar_runtime_binding_.vm = &vm_;
+        sidecar_runtime_binding_.function_registry = &registry_;
+        sidecar_runtime_binding_.vm_globals = &vm_.globals();
+        sidecar_runtime_binding_.mailbox_value = &mailbox_val_;
+        sidecar_runtime_binding_.etai_path = &etai_path_;
+        sidecar_runtime_binding_.module_search_path = &module_search_path_;
+        sidecar_runtime_binding_.process_manager = &proc_mgr_;
+        sidecar_loader_->set_runtime_context(&sidecar_runtime_binding_);
+
+        /// nng networking + actor-model primitives are sidecar-activated.
+        register_nng_sidecar_placeholders();
 
         /// Step 3: Verify every pre-registered slot now has a real implementation.
         builtins_.verify_all_patched();
@@ -250,7 +268,12 @@ public:
     Driver& operator=(Driver&&) = delete;
 
     ~Driver() {
-        eta::log::global_log_state().erase_vm(vm_);
+        const auto log_shutdown_idx = builtins_.lookup("%log-shutdown!");
+        if (!log_shutdown_idx.has_value()) return;
+
+        const auto& log_shutdown = builtins_.specs()[*log_shutdown_idx].func;
+        if (!log_shutdown) return;
+        (void)log_shutdown({});
     }
 
     /// Result of a load_prelude() call.
@@ -308,6 +331,9 @@ public:
      */
     PreludeResult load_prelude() {
         PreludeResult result;
+        if (!ensure_package_sidecars_loaded(std::nullopt)) {
+            return result;
+        }
 
         if (has_module("std.prelude")) {
             result.found = true;
@@ -442,6 +468,9 @@ public:
      * @return true on success, false on error (diagnostics emitted to engine).
      */
     bool run_file(const fs::path& path) {
+        if (!ensure_package_sidecars_loaded(path.parent_path())) {
+            return false;
+        }
         std::ifstream in(path, std::ios::in | std::ios::binary);
         if (!in) {
             diag_engine_.emit_error(
@@ -465,6 +494,9 @@ public:
      * @return CompileResult on success, std::nullopt on error.
      */
     std::optional<CompileResult> compile_file(const fs::path& path) {
+        if (!ensure_package_sidecars_loaded(path.parent_path())) {
+            return std::nullopt;
+        }
         std::ifstream in(path, std::ios::in | std::ios::binary);
         if (!in) {
             diag_engine_.emit_error(
@@ -511,6 +543,9 @@ public:
     bool run_source(std::string_view source,
                     runtime::nanbox::LispVal* result = nullptr,
                     const std::string& result_binding = {}) {
+        if (!ensure_package_sidecars_loaded(std::nullopt)) {
+            return false;
+        }
         return run_source_impl(std::string(source), /*file_id=*/0, result, result_binding);
     }
 
@@ -1111,10 +1146,57 @@ public:
     [[nodiscard]] std::size_t builtin_count() const noexcept { return builtins_.specs().size(); }
 
     /**
+     * @brief Deterministic hash of the currently registered extension environment.
+     *
+     * Returns 0 when no extension primitives are registered.
+     */
+    [[nodiscard]] std::uint64_t extension_env_hash() const noexcept {
+        return compute_extension_env_hash();
+    }
+
+    /**
+     * @brief Register one extension primitive before analyzing source modules.
+     *
+     * Extension primitives occupy global slots immediately after core builtins.
+     * This API is intended for sidecar-backed registration and test fixtures.
+     */
+    void register_extension_primitive(std::string name,
+                                      uint32_t arity,
+                                      bool has_rest,
+                                      runtime::types::PrimitiveFunc func) {
+        if (!accumulated_forms_.empty()
+            || !executed_modules_.empty()
+            || !runtime_module_info_.empty()) {
+            std::cerr << "register_extension_primitive must be called before module execution\n";
+            std::abort();
+        }
+        extensions_.register_extension(std::move(name), arity, has_rest, std::move(func));
+        builtins_installed_ = false;
+    }
+
+    /// Number of registered extension primitives.
+    [[nodiscard]] std::size_t extension_primitive_count() const noexcept {
+        return extensions_.size();
+    }
+
+    /**
+     * @brief Load package-managed native sidecars for one start directory.
+     *
+     * Returns true when sidecar loading succeeded or no package sidecars are
+     * required for the discovered context.
+     */
+    bool load_package_sidecars(const fs::path& start_dir) {
+        return ensure_package_sidecars_loaded(start_dir);
+    }
+
+    /**
      * @brief Load and execute a pre-compiled .etac file.
      * @return true on success, false on error (diagnostics emitted to engine).
      */
     bool run_etac_file(const fs::path& path) {
+        if (!ensure_package_sidecars_loaded(path.parent_path())) {
+            return false;
+        }
         std::ifstream in(path, std::ios::in | std::ios::binary);
         if (!in) {
             diag_engine_.emit_error(
@@ -1136,6 +1218,7 @@ public:
         runtime::vm::FreshnessContext freshness;
         freshness.expected_compiler_id = runtime::vm::BytecodeSerializer::default_compiler_id();
         freshness.expected_builtin_count = static_cast<uint32_t>(builtins_.specs().size());
+        freshness.expected_extension_env_hash = extension_env_hash();
 
         auto sibling_source = path;
         sibling_source.replace_extension(".eta");
@@ -1178,16 +1261,482 @@ public:
     }
 
 private:
+    [[nodiscard]] static fs::path canonicalize_runtime_path(const fs::path& path) {
+        std::error_code ec;
+        const auto canonical = fs::weakly_canonical(path, ec);
+        if (!ec) return canonical;
+        return path.lexically_normal();
+    }
+
+    [[nodiscard]] static bool has_complete_native_lockfile_metadata(
+        const package::LockfilePackage& package) {
+        return package.native_id.has_value()
+            && package.native_abi.has_value()
+            && package.native_entry.has_value()
+            && package.native_target_triple.has_value()
+            && package.native_artifact_relpath.has_value()
+            && package.native_sha256.has_value();
+    }
+
+    [[nodiscard]] static std::string lockfile_package_id(
+        std::string_view name,
+        std::string_view version) {
+        std::string id;
+        id.reserve(name.size() + version.size() + 1u);
+        id.append(name);
+        id.push_back('@');
+        id.append(version);
+        return id;
+    }
+
+    [[nodiscard]] static fs::path package_root_from_lockfile_source(
+        const package::LockfilePackage& package,
+        const fs::path& lockfile_root,
+        const fs::path& modules_root) {
+        if (package.source == "root") {
+            return canonicalize_runtime_path(lockfile_root);
+        }
+
+        constexpr std::string_view kWorkspacePrefix = "workspace+";
+        if (package.source.starts_with(kWorkspacePrefix)) {
+            const std::string rel = package.source.substr(kWorkspacePrefix.size());
+            if (rel.empty() || rel == ".") {
+                return canonicalize_runtime_path(lockfile_root);
+            }
+            return canonicalize_runtime_path(lockfile_root / fs::path(rel));
+        }
+
+        constexpr std::string_view kPathPrefix = "path+";
+        if (package.source.starts_with(kPathPrefix)) {
+            fs::path source_path = fs::path(package.source.substr(kPathPrefix.size()));
+            if (!source_path.is_absolute()) {
+                source_path = lockfile_root / source_path;
+            }
+            return canonicalize_runtime_path(source_path);
+        }
+
+        return canonicalize_runtime_path(
+            modules_root / (package.name + "-" + package.version));
+    }
+
+    [[nodiscard]] bool can_register_extension_primitives() const noexcept {
+        return accumulated_forms_.empty()
+            && executed_modules_.empty()
+            && runtime_module_info_.empty();
+    }
+
+    [[nodiscard]] static runtime::types::PrimitiveFunc make_sidecar_placeholder_primitive(
+        std::string extension_id,
+        std::string symbol_name) {
+        return [extension_id = std::move(extension_id), symbol_name = std::move(symbol_name)](
+                   runtime::types::PrimitiveArgs)
+            -> std::expected<runtime::nanbox::LispVal, runtime::error::RuntimeError> {
+            runtime::error::VMError error;
+            error.code = runtime::error::RuntimeErrorCode::NotImplemented;
+            error.message = "native sidecar primitive '" + symbol_name
+                + "' from extension '" + extension_id
+                + "' is not callable in this runtime build";
+            return std::unexpected(runtime::error::RuntimeError{std::move(error)});
+        };
+    }
+
+    [[nodiscard]] static runtime::types::PrimitiveFunc make_missing_builtin_sidecar_primitive(
+        std::string symbol_name,
+        std::string package_name) {
+        return [symbol_name = std::move(symbol_name), package_name = std::move(package_name)](
+                   runtime::types::PrimitiveArgs)
+            -> std::expected<runtime::nanbox::LispVal, runtime::error::RuntimeError> {
+            runtime::error::VMError error;
+            error.code = runtime::error::RuntimeErrorCode::InternalError;
+            error.message = "native sidecar primitive '" + symbol_name
+                + "' requires package dependency '" + package_name + "'";
+            return std::unexpected(runtime::error::RuntimeError{std::move(error)});
+        };
+    }
+
+    [[nodiscard]] static bool is_log_primitive_name(const std::string_view name) {
+        return name.rfind("%log-", 0u) == 0u;
+    }
+
+    [[nodiscard]] static bool is_stats_primitive_name(const std::string_view name) {
+        return name == "%stats-mean-vec"
+            || name == "%stats-var-vec"
+            || name == "%stats-cov-matrix"
+            || name == "%stats-cor-matrix"
+            || name == "%stats-quantile-vec"
+            || name == "%stats-ols-multi";
+    }
+
+    [[nodiscard]] static bool is_torch_primitive_name(const std::string_view name) {
+        return name.rfind("torch/", 0u) == 0u
+            || name.rfind("nn/", 0u) == 0u
+            || name.rfind("optim/", 0u) == 0u;
+    }
+
+    [[nodiscard]] static bool is_nng_primitive_name(const std::string_view name) {
+        return name.rfind("nng-", 0u) == 0u
+            || name == "send!"
+            || name == "recv!"
+            || name == "spawn"
+            || name == "spawn-kill"
+            || name == "spawn-wait"
+            || name == "current-mailbox"
+            || name == "spawn-thread-with"
+            || name == "spawn-thread"
+            || name == "thread-join"
+            || name == "thread-alive?"
+            || name == "monitor"
+            || name == "demonitor"
+            || name == "enable-heartbeat";
+    }
+
+    template <typename Predicate>
+    void register_builtin_sidecar_placeholders(Predicate&& predicate,
+                                               const std::string_view package_name) {
+        for (const auto& builtin : runtime::builtin_metadata()) {
+            if (!predicate(builtin.name)) continue;
+            builtins_.register_builtin(
+                builtin.name,
+                builtin.arity,
+                builtin.has_rest,
+                make_missing_builtin_sidecar_primitive(
+                    std::string(builtin.name), std::string(package_name)));
+        }
+    }
+
+    void register_nng_sidecar_placeholders() {
+        register_builtin_sidecar_placeholders(is_nng_primitive_name, "eta-nng-sidecar");
+    }
+
+    [[nodiscard]] static runtime::types::PrimitiveFunc make_registered_sidecar_primitive(
+        std::string extension_id,
+        std::string symbol_name,
+        void* callable) {
+        if (callable == nullptr) {
+            return make_sidecar_placeholder_primitive(
+                std::move(extension_id), std::move(symbol_name));
+        }
+
+        auto sidecar_callable =
+            *static_cast<const runtime::types::PrimitiveFunc*>(callable);
+        return [extension_id = std::move(extension_id),
+                symbol_name = std::move(symbol_name),
+                sidecar_callable = std::move(sidecar_callable)](runtime::types::PrimitiveArgs args) mutable
+            -> std::expected<runtime::nanbox::LispVal, runtime::error::RuntimeError> {
+            if (!sidecar_callable) {
+                runtime::error::VMError error;
+                error.code = runtime::error::RuntimeErrorCode::NotImplemented;
+                error.message = "native sidecar primitive '" + symbol_name
+                    + "' from extension '" + extension_id
+                    + "' has no callable implementation";
+                return std::unexpected(runtime::error::RuntimeError{std::move(error)});
+            }
+            return sidecar_callable(args);
+        };
+    }
+
+    bool sync_sidecar_extensions_into_environment() {
+        const auto& loaded_extensions = sidecar_registry_.extensions();
+        if (sidecar_registered_extension_count_ >= loaded_extensions.size()) {
+            return true;
+        }
+
+        if (!can_register_extension_primitives()) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "native sidecars must be loaded before module execution begins");
+            return false;
+        }
+
+        for (std::size_t i = sidecar_registered_extension_count_;
+             i < loaded_extensions.size();
+             ++i) {
+            const auto& extension = loaded_extensions[i];
+            std::vector<native::ExtensionSymbolDescriptor> symbols = extension.symbols;
+            std::sort(symbols.begin(),
+                      symbols.end(),
+                      [](const native::ExtensionSymbolDescriptor& lhs,
+                         const native::ExtensionSymbolDescriptor& rhs) {
+                          return lhs.name < rhs.name;
+                      });
+
+            for (const auto& symbol : symbols) {
+                auto primitive = make_registered_sidecar_primitive(
+                    extension.id, symbol.name, symbol.callable);
+                if (builtins_.lookup(symbol.name).has_value()) {
+                    builtins_.overwrite_func(symbol.name, std::move(primitive));
+                } else {
+                    extensions_.register_extension(
+                        symbol.name,
+                        symbol.arity,
+                        symbol.has_rest,
+                        std::move(primitive));
+                }
+            }
+        }
+
+        sidecar_registered_extension_count_ = loaded_extensions.size();
+        builtins_installed_ = false;
+        return true;
+    }
+
     /**
-     * Ensure debugger global-name metadata always has canonical bare builtin
-     * names at slots 0..N-1.
+     * @brief Load lockfile-selected native sidecars for one package context.
+     *
+     * The first discovered package manifest context is kept for the lifetime
+     * of this driver instance to keep extension slots deterministic.
      */
-    void record_builtin_names() {
-        const uint32_t builtin_count = static_cast<uint32_t>(builtins_.specs().size());
-        for (uint32_t slot = 0; slot < builtin_count; ++slot) {
-            const auto& name = builtins_.specs()[slot].name;
-            if (name.empty()) continue;
-            global_names_[slot] = name;
+    bool ensure_package_sidecars_loaded(std::optional<fs::path> start_dir) {
+        if (sidecar_manifest_key_.has_value()) return true;
+
+        fs::path discovery_start;
+        if (start_dir.has_value()) {
+            discovery_start = *start_dir;
+        } else {
+            std::error_code ec;
+            discovery_start = fs::current_path(ec);
+            if (ec) return true;
+        }
+        if (discovery_start.empty()) return true;
+
+        auto discovery = package::discover_manifest_context(discovery_start);
+        if (!discovery) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "failed to discover package context for native sidecars: "
+                    + discovery.error().message);
+            return false;
+        }
+        if (!discovery->context.has_value()) return true;
+        if (*discovery->context == package::ManifestContextKind::WorkspaceNonMember) return true;
+        if (!discovery->package_manifest_path.has_value()) {
+            /**
+             * Workspace virtual roots have no selected package context.
+             * Keep core-only behavior until a concrete package is selected.
+             */
+            return true;
+        }
+
+        const auto package_manifest_path =
+            canonicalize_runtime_path(*discovery->package_manifest_path);
+        const auto package_manifest_key = canon_path_key(package_manifest_path);
+
+        const auto workspace_manifest_path = discovery->workspace_manifest_path.has_value()
+            ? std::optional<fs::path>(
+                canonicalize_runtime_path(*discovery->workspace_manifest_path))
+            : std::nullopt;
+        const auto lockfile_root = workspace_manifest_path.has_value()
+            ? workspace_manifest_path->parent_path()
+            : package_manifest_path.parent_path();
+        const auto lockfile_path = lockfile_root / "eta.lock";
+
+        std::error_code lockfile_ec;
+        if (!fs::is_regular_file(lockfile_path, lockfile_ec) || lockfile_ec) {
+            sidecar_manifest_key_ = package_manifest_key;
+            return true;
+        }
+
+        auto lockfile = package::read_lockfile(lockfile_path);
+        if (!lockfile) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "failed to read lockfile for native sidecar loading: "
+                    + lockfile.error().message);
+            return false;
+        }
+
+        auto package_manifest = package::read_manifest(package_manifest_path);
+        if (!package_manifest) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "failed to read package manifest for native sidecar loading: "
+                    + package_manifest.error().message);
+            return false;
+        }
+
+        const auto modules_root = canonicalize_runtime_path(lockfile_root / ".eta" / "modules");
+        const auto active_package_id =
+            lockfile_package_id(package_manifest->name, package_manifest->version);
+        std::unordered_map<std::string, const package::LockfilePackage*> package_by_id;
+        package_by_id.reserve(lockfile->packages.size());
+        const package::LockfilePackage* active_lock_package = nullptr;
+        for (const auto& package : lockfile->packages) {
+            const auto package_id = lockfile_package_id(package.name, package.version);
+            package_by_id.emplace(package_id, &package);
+            if (package_id == active_package_id && active_lock_package == nullptr) {
+                active_lock_package = &package;
+            }
+        }
+
+        if (active_lock_package == nullptr) {
+            sidecar_manifest_key_ = package_manifest_key;
+            return true;
+        }
+
+        std::unordered_set<std::string> closure_names;
+        std::unordered_set<std::string> visited_package_ids;
+        std::vector<const package::LockfilePackage*> pending;
+        pending.push_back(active_lock_package);
+        while (!pending.empty()) {
+            const auto* package = pending.back();
+            pending.pop_back();
+            const auto package_id = lockfile_package_id(package->name, package->version);
+            if (!visited_package_ids.insert(package_id).second) continue;
+            closure_names.insert(package->name);
+            for (const auto& dependency : package->dependencies) {
+                const auto dep_id = lockfile_package_id(dependency.name, dependency.version);
+                const auto dep_it = package_by_id.find(dep_id);
+                if (dep_it != package_by_id.end()) {
+                    pending.push_back(dep_it->second);
+                }
+            }
+        }
+
+        native::NativeLoadContext load_context;
+        load_context.context_kind = *discovery->context;
+        load_context.active_manifest_path = package_manifest_path;
+        load_context.workspace_manifest_path = workspace_manifest_path;
+        load_context.lockfile_root = canonicalize_runtime_path(lockfile_root);
+        load_context.modules_root = modules_root;
+        for (const auto& package : lockfile->packages) {
+            if (!closure_names.contains(package.name)) continue;
+            if (load_context.package_root_by_name.contains(package.name)) continue;
+            load_context.package_root_by_name[package.name] =
+                package_root_from_lockfile_source(package, lockfile_root, modules_root);
+        }
+
+        std::vector<native::NativeSidecarSpec> sidecar_specs;
+        sidecar_specs.reserve(lockfile->packages.size());
+        for (const auto& package : lockfile->packages) {
+            if (!closure_names.contains(package.name)) continue;
+            if (!has_complete_native_lockfile_metadata(package)) continue;
+
+            native::NativeSidecarSpec spec;
+            spec.package_name = package.name;
+            spec.artifact_relpath = fs::path(*package.native_artifact_relpath);
+            spec.abi = *package.native_abi;
+            spec.entrypoint = *package.native_entry;
+            spec.expected_extension_id = *package.native_id;
+            spec.expected_sha256 = *package.native_sha256;
+            sidecar_specs.push_back(std::move(spec));
+        }
+
+        if (sidecar_specs.empty()) {
+            sidecar_manifest_key_ = package_manifest_key;
+            return true;
+        }
+
+        auto resolved_sidecars = native::resolve_native_sidecars(load_context, sidecar_specs);
+        if (!resolved_sidecars) {
+            diag_engine_.emit_error(
+                diagnostic::DiagnosticCode::ModuleNotFound, {},
+                "failed to resolve native sidecar artifact paths: "
+                    + resolved_sidecars.error().message);
+            return false;
+        }
+
+        for (const auto& sidecar : *resolved_sidecars) {
+            auto loaded = sidecar_loader_->load(sidecar);
+            if (!loaded) {
+                diag_engine_.emit_error(
+                    diagnostic::DiagnosticCode::ModuleNotFound, {},
+                    "failed to load native sidecar for package '"
+                        + sidecar.spec.package_name + "': " + loaded.error().message);
+                return false;
+            }
+        }
+
+        if (!sync_sidecar_extensions_into_environment()) return false;
+        sidecar_manifest_key_ = package_manifest_key;
+        return true;
+    }
+
+    /**
+     * Compute a deterministic hash over extension symbol descriptors.
+     */
+    [[nodiscard]] std::uint64_t compute_extension_env_hash() const noexcept {
+        if (extensions_.specs().empty()) return 0;
+
+        constexpr std::uint64_t kFNVOffsetBasis = 14695981039346656037ull;
+        const auto mix_byte = [](std::uint64_t hash, const std::uint8_t byte) noexcept {
+            constexpr std::uint64_t kFNVPrime = 1099511628211ull;
+            hash ^= static_cast<std::uint64_t>(byte);
+            hash *= kFNVPrime;
+            return hash;
+        };
+
+        std::uint64_t hash = kFNVOffsetBasis;
+        for (const auto& spec : extensions_.specs()) {
+            for (const unsigned char c : spec.name) {
+                hash = mix_byte(hash, c);
+            }
+            hash = mix_byte(hash, 0xFFu);
+            for (std::uint32_t i = 0; i < 4u; ++i) {
+                hash = mix_byte(
+                    hash,
+                    static_cast<std::uint8_t>((spec.arity >> (i * 8u)) & 0xFFu));
+            }
+            hash = mix_byte(hash, static_cast<std::uint8_t>(spec.has_rest ? 1u : 0u));
+            hash = mix_byte(hash, 0x00u);
+        }
+        return hash;
+    }
+
+    /**
+     * Total primitive slot count (core + extension domains).
+     */
+    [[nodiscard]] std::size_t total_primitive_count() const noexcept {
+        return builtins_.specs().size() + extensions_.size();
+    }
+
+    /**
+     * Install core and extension primitives into their fixed global slots.
+     */
+    std::expected<void, runtime::error::RuntimeError> install_runtime_primitives(
+        std::vector<runtime::nanbox::LispVal>& globals,
+        std::size_t total_globals) {
+        if (globals.size() < total_globals) {
+            globals.resize(total_globals, runtime::nanbox::Nil);
+        }
+
+        for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
+            const auto& spec = builtins_.specs()[i];
+            auto prim = runtime::memory::factory::make_primitive(
+                heap_, spec.func, spec.arity, spec.has_rest);
+            if (!prim) return std::unexpected(prim.error());
+            auto* prim_obj = heap_.try_get_as<
+                runtime::memory::heap::ObjectKind::Primitive,
+                runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
+            if (prim_obj) prim_obj->debug_name = spec.name;
+            globals[i] = *prim;
+        }
+
+        auto extension_install = extensions_.install(
+            heap_, globals, total_globals, builtins_.specs().size());
+        if (!extension_install) return std::unexpected(extension_install.error());
+
+        return {};
+    }
+
+    /**
+     * Ensure debugger global-name metadata has canonical primitive names at
+     * slots 0..N-1.
+     */
+    void record_primitive_names() {
+        std::size_t slot = 0;
+        for (const auto& spec : builtins_.specs()) {
+            if (spec.name.empty()) {
+                ++slot;
+                continue;
+            }
+            global_names_[static_cast<uint32_t>(slot++)] = spec.name;
+        }
+        for (const auto& spec : extensions_.specs()) {
+            if (spec.name.empty()) {
+                ++slot;
+                continue;
+            }
+            global_names_[static_cast<uint32_t>(slot++)] = spec.name;
         }
     }
 
@@ -1288,7 +1837,7 @@ private:
             if (!run_module_file(*imp_path)) return false;
         }
 
-        if (etac.format_version < runtime::vm::BytecodeSerializer::FORMAT_VERSION) {
+        if (etac.format_version < runtime::vm::BytecodeSerializer::FORMAT_VERSION_V5) {
             /**
              * Legacy path for v3/v4 artifacts that do not carry relocation
              * metadata. Keep existing behavior for backward compatibility.
@@ -1329,19 +1878,12 @@ private:
                 }
 
                 if (!builtins_installed_) {
-                    for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
-                        const auto& spec = builtins_.specs()[i];
-                        auto prim = runtime::memory::factory::make_primitive(
-                            heap_, spec.func, spec.arity, spec.has_rest);
-                        if (prim) {
-                            auto* prim_obj = heap_.try_get_as<
-                                runtime::memory::heap::ObjectKind::Primitive,
-                                runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
-                            if (prim_obj) prim_obj->debug_name = spec.name;
-                            globals[i] = *prim;
-                        }
+                    auto install_res = install_runtime_primitives(globals, mod.total_globals);
+                    if (!install_res) {
+                        emit_runtime_error(install_res.error());
+                        return false;
                     }
-                    record_builtin_names();
+                    record_primitive_names();
                     builtins_installed_ = true;
                 }
 
@@ -1393,7 +1935,7 @@ private:
         std::unordered_map<std::string, ModuleRelocationPlan> plans;
         uint32_t next_runtime_slot = std::max<uint32_t>(
             static_cast<uint32_t>(vm_.globals().size()),
-            static_cast<uint32_t>(builtins_.specs().size()));
+            static_cast<uint32_t>(total_primitive_count()));
 
         auto resolve_export_runtime_slot =
             [&](const std::string& module_name,
@@ -1557,21 +2099,15 @@ private:
                 globals.resize(plan.runtime_global_count, runtime::nanbox::Nil);
             }
 
-            /// Re-install builtins
+            /// Re-install core and extension primitives
             if (!builtins_installed_) {
-                for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
-                    const auto& spec = builtins_.specs()[i];
-                    auto prim = runtime::memory::factory::make_primitive(
-                        heap_, spec.func, spec.arity, spec.has_rest);
-                    if (prim) {
-                        auto* prim_obj = heap_.try_get_as<
-                            runtime::memory::heap::ObjectKind::Primitive,
-                            runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
-                        if (prim_obj) prim_obj->debug_name = spec.name;
-                        globals[i] = *prim;
-                    }
+                auto install_res = install_runtime_primitives(
+                    globals, plan.runtime_global_count);
+                if (!install_res) {
+                    emit_runtime_error(install_res.error());
+                    return false;
                 }
-                record_builtin_names();
+                record_primitive_names();
                 builtins_installed_ = true;
             }
 
@@ -1592,9 +2128,10 @@ private:
 
             executed_modules_.insert(mod.name);
             record_runtime_exports_from_compiled_module(mod.name, plan.export_slots);
-            const uint32_t builtin_slot_limit = static_cast<uint32_t>(builtins_.specs().size());
+            const uint32_t primitive_slot_limit =
+                static_cast<uint32_t>(total_primitive_count());
             for (const auto& [export_name, slot] : plan.export_slots) {
-                if (slot < builtin_slot_limit) continue;
+                if (slot < primitive_slot_limit) continue;
                 global_names_[slot] = mod.name + "." + export_name;
             }
 
@@ -2023,6 +2560,12 @@ private:
                     child.set_stream_sinks(stdout_sink, stderr_sink);
                 }
 
+                const auto child_sidecar_dir = fs::path(th_module_path).parent_path();
+                if (!child.load_package_sidecars(child_sidecar_dir)) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
                 if (!child.install_mailbox(th_endpoint)) {
                     alive->store(false, std::memory_order_release);
                     return;
@@ -2079,6 +2622,13 @@ private:
                     child.set_stream_sinks(stdout_sink, stderr_sink);
                 }
 
+                std::error_code cwd_ec;
+                const auto child_sidecar_dir = fs::current_path(cwd_ec);
+                if (!cwd_ec && !child.load_package_sidecars(child_sidecar_dir)) {
+                    alive->store(false, std::memory_order_release);
+                    return;
+                }
+
                 if (!child.install_mailbox(th_endpoint)) {
                     alive->store(false, std::memory_order_release);
                     return;
@@ -2086,30 +2636,23 @@ private:
 
                 /**
                  * spawn-thread capture payloads may reference primitive globals
-                 * by fixed builtin slot (SCT_GlobalRef). Ensure the child VM has
-                 * builtin primitives installed in slots 0..N-1 before
+                 * by fixed primitive slot (SCT_GlobalRef). Ensure the child VM has
+                 * core and extension primitives installed in slots 0..N-1 before
                  * deserializing captures so those references can be resolved.
                  */
                 auto& child_globals = child.vm().globals();
-                if (child_globals.size() < child.builtins_.specs().size()) {
-                    child_globals.resize(child.builtins_.specs().size(),
+                const auto child_primitive_slots = child.total_primitive_count();
+                if (child_globals.size() < child_primitive_slots) {
+                    child_globals.resize(child_primitive_slots,
                                          runtime::nanbox::Nil);
                 }
-                for (std::size_t i = 0; i < child.builtins_.specs().size(); ++i) {
-                    const auto& spec = child.builtins_.specs()[i];
-                    auto prim = runtime::memory::factory::make_primitive(
-                        child.heap_, spec.func, spec.arity, spec.has_rest);
-                    if (!prim) {
-                        alive->store(false, std::memory_order_release);
-                        return;
-                    }
-                    auto* prim_obj = child.heap_.try_get_as<
-                        runtime::memory::heap::ObjectKind::Primitive,
-                        runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
-                    if (prim_obj) prim_obj->debug_name = spec.name;
-                    child_globals[i] = *prim;
+                auto child_install_res = child.install_runtime_primitives(
+                    child_globals, child_primitive_slots);
+                if (!child_install_res) {
+                    alive->store(false, std::memory_order_release);
+                    return;
                 }
-                child.record_builtin_names();
+                child.record_primitive_names();
                 child.builtins_installed_ = true;
 
                 /// Deserialize the function registry from the etac-format blob
@@ -2209,6 +2752,12 @@ private:
     runtime::memory::intern::InternTable intern_table_;
     semantics::BytecodeFunctionRegistry registry_;
     runtime::BuiltinEnvironment builtins_;
+    runtime::ExtensionEnvironment extensions_;
+    native::ExtensionRegistry sidecar_registry_;
+    native::SidecarRuntimeBindingV1 sidecar_runtime_binding_{};
+    std::unique_ptr<native::SidecarLoader> sidecar_loader_;
+    std::size_t sidecar_registered_extension_count_{0};
+    std::optional<std::string> sidecar_manifest_key_;
     runtime::vm::VM vm_;
 
     diagnostic::DiagnosticEngine diag_engine_;
@@ -2278,7 +2827,7 @@ private:
     std::unordered_map<uint32_t, fs::path>    file_id_to_path_;
     std::unordered_map<std::string, uint32_t> path_to_file_id_;
 
-    /// Whether builtins have been installed into VM globals yet
+    /// Whether core + extension primitives have been installed into globals.
     bool builtins_installed_{false};
 
     /// Guard against recursive auto-loading cycles
@@ -2644,7 +3193,7 @@ private:
         /// Semantic analysis (all accumulated modules)
         semantics::SemanticAnalyzer sa;
         auto sem_res = sa.analyze_all(
-            accumulated_forms_, linker, builtins_,
+            accumulated_forms_, linker, builtins_, extensions_,
             [this](std::string_view module_name,
                    std::string_view export_name) -> std::optional<uint32_t> {
                 const auto module_it = runtime_module_info_.find(std::string(module_name));
@@ -2667,7 +3216,7 @@ private:
         /**
          * Emit + Execute only NEW modules
          * Grow globals vector if needed, preserving existing values.
-         * Re-install builtins in slots 0..N-1 (heap objects may have been GC'd).
+         * Re-install primitives in slots 0..N-1 (heap objects may have been GC'd).
          */
         auto& globals = vm_.globals();
         auto needed = sem_mods[0].total_globals;
@@ -2676,23 +3225,13 @@ private:
         }
 
         if (execute) {
-            /// Re-install builtin primitives at their fixed slots
-            for (std::size_t i = 0; i < builtins_.specs().size(); ++i) {
-                const auto& spec = builtins_.specs()[i];
-                auto prim = runtime::memory::factory::make_primitive(
-                    heap_, spec.func, spec.arity, spec.has_rest);
-                if (!prim) {
-                    rollback_accumulated_forms();
-                    emit_runtime_error(prim.error());
-                    return false;
-                }
-                auto* prim_obj = heap_.try_get_as<
-                    runtime::memory::heap::ObjectKind::Primitive,
-                    runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
-                if (prim_obj) prim_obj->debug_name = spec.name;
-                globals[i] = *prim;
+            auto install_res = install_runtime_primitives(globals, needed);
+            if (!install_res) {
+                rollback_accumulated_forms();
+                emit_runtime_error(install_res.error());
+                return false;
             }
-            record_builtin_names();
+            record_primitive_names();
             builtins_installed_ = true;
         }
 
@@ -2708,12 +3247,13 @@ private:
             semantics::Emitter emitter(mod, heap_, intern_table_, registry_);
             auto* init_func = emitter.emit();
             const uint32_t module_func_end = static_cast<uint32_t>(registry_.size());
-            const uint32_t builtin_slot_limit = static_cast<uint32_t>(builtins_.specs().size());
+            const uint32_t primitive_slot_limit =
+                static_cast<uint32_t>(total_primitive_count());
 
             /// Prefix with "module." so the UI can group by module.
             for (const auto& bi : mod.bindings) {
                 if (bi.kind == semantics::BindingInfo::Kind::Global && !bi.name.empty()) {
-                    if (bi.slot < builtin_slot_limit) continue;
+                    if (bi.slot < primitive_slot_limit) continue;
                     global_names_[bi.slot] = mod.name + "." + bi.name;
                 }
             }

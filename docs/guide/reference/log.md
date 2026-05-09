@@ -269,7 +269,7 @@ as do strings (`"color?"`); unknown keys raise an error.
 
 - Wrapper module: [`stdlib/std/log.eta`](../../../stdlib/std/log.eta)
 - TAP tests: [`stdlib/tests/log.test.eta`](../../../stdlib/tests/log.test.eta)
-- Native primitives: [`eta/builtins/log/`](../../../eta/builtins/log/) (built on
+- Native sidecar source: [`packages/stdlib/native/log/src/`](../../../packages/stdlib/native/log/src/) (built on
   [`spdlog`](https://github.com/gabime/spdlog))
 
 

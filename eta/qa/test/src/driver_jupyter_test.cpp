@@ -7,9 +7,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -18,11 +21,16 @@
 #include "eta/session/eval_display.h"
 #include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
+#include "eta/native/sidecar_loader.h"
 
 namespace fs = std::filesystem;
 
 #ifndef ETA_STDLIB_DIR
 #define ETA_STDLIB_DIR ""
+#endif
+
+#ifndef ETA_TEST_NATIVE_SIDECAR_PATH
+#error ETA_TEST_NATIVE_SIDECAR_PATH must be defined by CMake
 #endif
 
 static fs::path stdlib_dir() {
@@ -45,6 +53,36 @@ static eta::interpreter::ModulePathResolver make_resolver() {
     auto stdlib = stdlib_dir();
     if (stdlib.empty()) return eta::interpreter::ModulePathResolver{};
     return eta::interpreter::ModulePathResolver({stdlib});
+}
+
+[[nodiscard]] fs::path sidecar_fixture_path() {
+    return fs::path(ETA_TEST_NATIVE_SIDECAR_PATH);
+}
+
+[[nodiscard]] std::string host_target_triple() {
+#if defined(_WIN32)
+#if defined(_M_X64) || defined(__x86_64__)
+    return "x86_64-pc-windows-msvc";
+#elif defined(_M_ARM64) || defined(__aarch64__)
+    return "aarch64-pc-windows-msvc";
+#else
+    return "unknown-pc-windows-msvc";
+#endif
+#elif defined(__APPLE__)
+#if defined(__aarch64__)
+    return "aarch64-apple-darwin";
+#else
+    return "x86_64-apple-darwin";
+#endif
+#elif defined(__linux__)
+#if defined(__aarch64__)
+    return "aarch64-unknown-linux-gnu";
+#else
+    return "x86_64-unknown-linux-gnu";
+#endif
+#else
+    return "unknown-unknown-unknown";
+#endif
 }
 
 struct CurrentPathGuard {
@@ -74,6 +112,139 @@ struct ScopedTempDir {
         fs::remove_all(path, ec);
     }
 };
+
+struct ScopedEnvVar {
+    std::string key;
+    std::optional<std::string> previous;
+
+    ScopedEnvVar(std::string key_in, std::string value)
+        : key(std::move(key_in)) {
+        if (const char* existing = std::getenv(key.c_str()); existing != nullptr) {
+            previous = std::string(existing);
+        }
+        set(value);
+    }
+
+    ~ScopedEnvVar() {
+        if (previous.has_value()) {
+            set(*previous);
+        } else {
+            unset();
+        }
+    }
+
+private:
+    void set(const std::string& value) const {
+#if defined(_WIN32)
+        _putenv_s(key.c_str(), value.c_str());
+#else
+        setenv(key.c_str(), value.c_str(), 1);
+#endif
+    }
+
+    void unset() const {
+#if defined(_WIN32)
+        _putenv_s(key.c_str(), "");
+#else
+        unsetenv(key.c_str());
+#endif
+    }
+};
+
+struct SidecarPackageFixture {
+    fs::path app_root;
+    fs::path sidecar_root;
+    fs::path artifact_relpath;
+};
+
+[[nodiscard]] SidecarPackageFixture create_sidecar_package_fixture(
+    const fs::path& root,
+    const fs::path& sidecar_binary,
+    const std::string& sidecar_sha,
+    const std::string_view sidecar_package_name,
+    const std::string_view extension_id,
+    const std::string_view entrypoint) {
+    SidecarPackageFixture fixture;
+    fixture.app_root = root / "app";
+    fixture.sidecar_root = root / std::string(sidecar_package_name);
+    fixture.artifact_relpath = fs::path("native") / "test" / sidecar_binary.filename();
+
+    fs::create_directories(fixture.app_root / "src");
+    fs::create_directories((fixture.sidecar_root / fixture.artifact_relpath).parent_path());
+    fs::copy_file(
+        sidecar_binary,
+        fixture.sidecar_root / fixture.artifact_relpath,
+        fs::copy_options::overwrite_existing);
+
+    {
+        std::ofstream out(
+            fixture.app_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n"
+            << sidecar_package_name << " = { path = \"../" << sidecar_package_name << "\" }\n";
+    }
+    {
+        std::ofstream out(
+            fixture.sidecar_root / "eta.toml",
+            std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"" << sidecar_package_name << "\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[native]\n"
+            << "kind = \"sidecar\"\n"
+            << "abi = \"eta-native-v1\"\n"
+            << "id = \"" << extension_id << "\"\n"
+            << "entry = \"" << entrypoint << "\"\n\n"
+            << "[[native.targets]]\n"
+            << "triple = \"" << host_target_triple() << "\"\n"
+            << "artifact = \"" << fixture.artifact_relpath.generic_string() << "\"\n"
+            << "sha256 = \"" << sidecar_sha << "\"\n";
+    }
+    {
+        std::ofstream out(
+            fixture.app_root / "eta.lock", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "version = 1\n\n"
+            << "[[package]]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"root\"\n"
+            << "dependencies = [\"" << sidecar_package_name << "@0.1.0\"]\n\n"
+            << "[[package]]\n"
+            << "name = \"" << sidecar_package_name << "\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"path+../" << sidecar_package_name << "\"\n"
+            << "native_id = \"" << extension_id << "\"\n"
+            << "native_abi = \"eta-native-v1\"\n"
+            << "native_entry = \"" << entrypoint << "\"\n"
+            << "native_target_triple = \"" << host_target_triple() << "\"\n"
+            << "native_artifact_relpath = \"" << fixture.artifact_relpath.generic_string() << "\"\n"
+            << "native_sha256 = \"" << sidecar_sha << "\"\n"
+            << "dependencies = []\n";
+    }
+
+    return fixture;
+}
+
+[[nodiscard]] eta::interpreter::ModulePathResolver make_stdlib_resolver(
+    const fs::path& app_root) {
+    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env_at("", app_root);
+    const auto stdlib = stdlib_dir();
+    if (!stdlib.empty()) {
+        resolver.add_dir(stdlib);
+    }
+    return resolver;
+}
 
 BOOST_AUTO_TEST_SUITE(driver_jupyter_tests)
 
@@ -137,6 +308,495 @@ BOOST_AUTO_TEST_CASE(startup_resolver_discovers_project_modules_from_lockfile) {
     auto decoded = eta::runtime::nanbox::ops::decode<int64_t>(result);
     BOOST_REQUIRE(decoded.has_value());
     BOOST_TEST(*decoded == 9);
+}
+
+BOOST_AUTO_TEST_CASE(
+    workspace_member_loads_reachable_sidecars_without_loading_unrelated_workspace_members) {
+    ScopedTempDir temp;
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(
+        fs::is_regular_file(fixture), "missing sidecar fixture binary: " + fixture.string());
+
+    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture);
+    BOOST_REQUIRE_MESSAGE(
+        fixture_sha.has_value(), "failed to hash sidecar fixture: " + fixture.string());
+
+    const auto workspace_root = temp.path / "ws";
+    const auto app_root = workspace_root / "packages" / "app";
+    const auto lib_root = workspace_root / "packages" / "lib";
+    const auto helper_root = workspace_root / "packages" / "helper";
+    fs::create_directories(app_root / "src");
+    fs::create_directories(lib_root / "src");
+    fs::create_directories(helper_root / "src");
+
+    const auto lib_native_relpath = fs::path("native") / "test" / fixture.filename();
+    fs::create_directories((lib_root / lib_native_relpath).parent_path());
+    fs::copy_file(
+        fixture, lib_root / lib_native_relpath, fs::copy_options::overwrite_existing);
+
+    {
+        std::ofstream out(
+            workspace_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[workspace]\n"
+            << "members = [\"packages/*\"]\n";
+    }
+    {
+        std::ofstream out(
+            app_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n"
+            << "lib = { path = \"../lib\" }\n";
+    }
+    {
+        std::ofstream out(
+            lib_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"lib\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n";
+    }
+    {
+        std::ofstream out(
+            helper_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"helper\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n";
+    }
+    {
+        std::ofstream out(
+            app_root / "src" / "app.eta", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module app\n"
+            << "  (import lib)\n"
+            << "  (begin (define app-value lib-value)))\n";
+    }
+    {
+        std::ofstream out(
+            lib_root / "src" / "lib.eta", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module lib\n"
+            << "  (export lib-value)\n"
+            << "  (begin (define lib-value 9)))\n";
+    }
+    {
+        std::ofstream out(
+            helper_root / "src" / "helper.eta", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module helper\n"
+            << "  (export helper-value)\n"
+            << "  (begin (define helper-value 17)))\n";
+    }
+    {
+        std::ofstream out(
+            workspace_root / "eta.lock", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "version = 1\n\n"
+            << "[[package]]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"workspace+packages/app\"\n"
+            << "dependencies = [\"lib@0.1.0\"]\n\n"
+            << "[[package]]\n"
+            << "name = \"helper\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"workspace+packages/helper\"\n"
+            << "native_id = \"helper.native\"\n"
+            << "native_abi = \"eta-native-v1\"\n"
+            << "native_entry = \"eta_register_extension_v1\"\n"
+            << "native_target_triple = \"x86_64-pc-windows-msvc\"\n"
+            << "native_artifact_relpath = \"native/windows-x64/missing_helper.dll\"\n"
+            << "native_sha256 = \"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n"
+            << "dependencies = []\n\n"
+            << "[[package]]\n"
+            << "name = \"lib\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"workspace+packages/lib\"\n"
+            << "native_id = \"eta.test.sidecar\"\n"
+            << "native_abi = \"eta-native-v1\"\n"
+            << "native_entry = \"eta_register_extension_v1\"\n"
+            << "native_target_triple = \"x86_64-pc-windows-msvc\"\n"
+            << "native_artifact_relpath = \"" << lib_native_relpath.generic_string() << "\"\n"
+            << "native_sha256 = \"" << *fixture_sha << "\"\n"
+            << "dependencies = []\n";
+    }
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(app_root);
+
+    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env_at("", app_root);
+    eta::session::Driver driver(std::move(resolver));
+
+    eta::runtime::nanbox::LispVal result{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module app.runtime
+  (import lib)
+  (begin
+    (define result native.test.add)))
+)eta", &result, "result");
+    BOOST_REQUIRE(ok);
+    BOOST_TEST(result != eta::runtime::nanbox::Nil);
+    BOOST_TEST(driver.extension_primitive_count() == 2u);
+
+    const auto completion = driver.completions_at("native.test.a", 13);
+    bool found_native_add = false;
+    for (const auto& match : completion.matches) {
+        if (match == "native.test.add") {
+            found_native_add = true;
+            break;
+        }
+    }
+    BOOST_TEST(found_native_add);
+}
+
+BOOST_AUTO_TEST_CASE(workspace_virtual_root_runs_core_only_without_selected_package_context) {
+    ScopedTempDir temp;
+    const auto workspace_root = temp.path / "ws";
+    const auto app_root = workspace_root / "packages" / "app";
+    fs::create_directories(app_root / "src");
+
+    {
+        std::ofstream out(
+            workspace_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[workspace]\n"
+            << "members = [\"packages/*\"]\n";
+    }
+    {
+        std::ofstream out(
+            app_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n";
+    }
+    {
+        std::ofstream out(
+            app_root / "src" / "app.eta", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module app\n"
+            << "  (begin (define app-value 3)))\n";
+    }
+    {
+        std::ofstream out(
+            workspace_root / "eta.lock", std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "version = 1\n\n"
+            << "[[package]]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"workspace+packages/app\"\n"
+            << "native_id = \"app.native\"\n"
+            << "native_abi = \"eta-native-v1\"\n"
+            << "native_entry = \"eta_register_extension_v1\"\n"
+            << "native_target_triple = \"x86_64-pc-windows-msvc\"\n"
+            << "native_artifact_relpath = \"native/windows-x64/missing_app.dll\"\n"
+            << "native_sha256 = \"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n"
+            << "dependencies = []\n";
+    }
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(workspace_root);
+
+    auto resolver = eta::interpreter::ModulePathResolver::from_args_or_env_at("", workspace_root);
+    eta::session::Driver driver(std::move(resolver));
+
+    eta::runtime::nanbox::LispVal result{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module repl.root
+  (begin
+    (define result 1)))
+)eta", &result, "result");
+    BOOST_REQUIRE(ok);
+
+    const auto decoded = eta::runtime::nanbox::ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_TEST(*decoded == 1);
+    BOOST_TEST(driver.extension_primitive_count() == 0u);
+}
+
+BOOST_AUTO_TEST_CASE(log_primitives_available_without_package_sidecar) {
+    eta::session::Driver driver(make_resolver());
+
+    const bool ok = driver.run_source(R"eta(
+(module sidecar.log.requirement
+  (import std.log)
+  (begin
+    (define result (log:default))))
+)eta");
+    BOOST_TEST(!ok);
+    bool has_expected_diag = false;
+    for (const auto& diag : driver.diagnostics().diagnostics()) {
+        if (diag.message.find("requires package dependency 'eta-log-sidecar'") != std::string::npos) {
+            has_expected_diag = true;
+            break;
+        }
+    }
+    BOOST_TEST(has_expected_diag);
+}
+
+BOOST_AUTO_TEST_CASE(native_builtin_fallback_env_var_is_ignored) {
+    ScopedEnvVar fallback("ETA_NATIVE_BUILTIN_FALLBACK", "ON");
+    eta::session::Driver driver(make_resolver());
+
+    const bool ok = driver.run_source(R"eta(
+(module sidecar.log.fallback.removed
+  (import std.log)
+  (begin
+    (define result (log:default))))
+)eta");
+    BOOST_TEST(!ok);
+    bool has_expected_diag = false;
+    for (const auto& diag : driver.diagnostics().diagnostics()) {
+        if (diag.message.find("requires package dependency 'eta-log-sidecar'") != std::string::npos) {
+            has_expected_diag = true;
+            break;
+        }
+    }
+    BOOST_TEST(has_expected_diag);
+}
+
+BOOST_AUTO_TEST_CASE(log_sidecar_activates_std_log_wrappers) {
+    ScopedTempDir temp;
+
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(
+        fs::is_regular_file(fixture), "missing sidecar fixture binary: " + fixture.string());
+    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture);
+    BOOST_REQUIRE_MESSAGE(
+        fixture_sha.has_value(), "failed to hash sidecar fixture: " + fixture.string());
+
+    const auto sidecar_fixture = create_sidecar_package_fixture(
+        temp.path,
+        fixture,
+        *fixture_sha,
+        "eta-log-sidecar",
+        "eta.log.sidecar",
+        "eta_register_log_extension_v1");
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    eta::session::Driver driver(make_stdlib_resolver(sidecar_fixture.app_root));
+
+    eta::runtime::nanbox::LispVal result{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module sidecar.log.runtime
+  (import std.log)
+  (begin
+    (define sink (log:make-error-port-sink))
+    (define logger (log:make-logger "sidecar.log.runtime" (list sink)))
+    (log:set-pattern! logger "%v")
+    (log:info logger "sidecar-log-message")
+    (log:flush! logger)
+    (define result 9)))
+)eta", &result, "result");
+    BOOST_REQUIRE(ok);
+
+    const auto decoded = eta::runtime::nanbox::ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_TEST(*decoded == 9);
+}
+
+BOOST_AUTO_TEST_CASE(stats_primitives_available_without_package_sidecar) {
+    eta::session::Driver driver(make_resolver());
+
+    const bool ok = driver.run_source(R"eta(
+(module sidecar.stats.requirement
+  (import std.stats)
+  (begin
+    (define result (car (stats:mean-vec (list '(1 2 3)))))))
+)eta");
+    BOOST_TEST(!ok);
+    bool has_expected_diag = false;
+    for (const auto& diag : driver.diagnostics().diagnostics()) {
+        if (diag.message.find("requires package dependency 'eta-stats-sidecar'") != std::string::npos) {
+            has_expected_diag = true;
+            break;
+        }
+    }
+    BOOST_TEST(has_expected_diag);
+}
+
+BOOST_AUTO_TEST_CASE(stats_sidecar_activates_std_stats_wrappers) {
+    ScopedTempDir temp;
+
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(
+        fs::is_regular_file(fixture), "missing sidecar fixture binary: " + fixture.string());
+    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture);
+    BOOST_REQUIRE_MESSAGE(
+        fixture_sha.has_value(), "failed to hash sidecar fixture: " + fixture.string());
+
+    const auto sidecar_fixture = create_sidecar_package_fixture(
+        temp.path,
+        fixture,
+        *fixture_sha,
+        "eta-stats-sidecar",
+        "eta.stats.sidecar",
+        "eta_register_stats_extension_v1");
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    eta::session::Driver driver(make_stdlib_resolver(sidecar_fixture.app_root));
+
+    eta::runtime::nanbox::LispVal result{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module sidecar.stats.runtime
+  (import std.stats)
+  (begin
+    (define result (car (stats:mean-vec (list '(1 2 3)))))))
+)eta", &result, "result");
+    BOOST_REQUIRE(ok);
+
+    const auto as_double = eta::runtime::nanbox::ops::decode<double>(result);
+    if (as_double.has_value()) {
+        BOOST_TEST(*as_double > 1.99);
+        BOOST_TEST(*as_double < 2.01);
+    } else {
+        const auto as_int = eta::runtime::nanbox::ops::decode<int64_t>(result);
+        BOOST_REQUIRE(as_int.has_value());
+        BOOST_TEST(*as_int == 2);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(nng_primitives_available_without_package_sidecar) {
+    eta::session::Driver driver(make_resolver());
+
+    const bool ok = driver.run_source(R"eta(
+(module sidecar.nng.requirement
+  (import std.net)
+  (begin
+    (define result
+      (with-socket 'pair
+        (lambda (sock) (nng-socket? sock))))))
+)eta");
+    BOOST_TEST(!ok);
+    bool has_expected_diag = false;
+    for (const auto& diag : driver.diagnostics().diagnostics()) {
+        if (diag.message.find("requires package dependency 'eta-nng-sidecar'") != std::string::npos) {
+            has_expected_diag = true;
+            break;
+        }
+    }
+    BOOST_TEST(has_expected_diag);
+}
+
+BOOST_AUTO_TEST_CASE(nng_sidecar_activates_network_primitives) {
+    ScopedTempDir temp;
+
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(
+        fs::is_regular_file(fixture), "missing sidecar fixture binary: " + fixture.string());
+    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture);
+    BOOST_REQUIRE_MESSAGE(
+        fixture_sha.has_value(), "failed to hash sidecar fixture: " + fixture.string());
+
+    const auto sidecar_fixture = create_sidecar_package_fixture(
+        temp.path,
+        fixture,
+        *fixture_sha,
+        "eta-nng-sidecar",
+        "eta.nng.sidecar",
+        "eta_register_nng_extension_v1");
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    eta::session::Driver driver(make_stdlib_resolver(sidecar_fixture.app_root));
+
+    eta::runtime::nanbox::LispVal result{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module sidecar.nng.runtime
+  (import std.net)
+  (begin
+    (define result
+      (with-socket 'pair
+        (lambda (sock) (nng-socket? sock))))))
+)eta", &result, "result");
+    BOOST_REQUIRE(ok);
+    BOOST_TEST(result == eta::runtime::nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(torch_primitives_available_without_package_sidecar) {
+    eta::session::Driver driver(make_resolver());
+
+    const bool ok = driver.run_source(R"eta(
+(module sidecar.torch.requirement
+  (import std.torch)
+  (begin
+    (define result (numel (ones '(2 3))))))
+)eta");
+    BOOST_TEST(!ok);
+    bool has_expected_diag = false;
+    for (const auto& diag : driver.diagnostics().diagnostics()) {
+        if (diag.message.find("requires package dependency 'eta-torch-sidecar'") != std::string::npos) {
+            has_expected_diag = true;
+            break;
+        }
+    }
+    BOOST_TEST(has_expected_diag);
+}
+
+BOOST_AUTO_TEST_CASE(torch_sidecar_activates_std_torch_wrappers) {
+#ifdef ETA_TORCH_DEBUG_SKIP
+    BOOST_TEST_MESSAGE("ETA_TORCH_DEBUG_SKIP set - skipping torch sidecar activation test");
+#else
+    ScopedTempDir temp;
+
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(
+        fs::is_regular_file(fixture), "missing sidecar fixture binary: " + fixture.string());
+    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture);
+    BOOST_REQUIRE_MESSAGE(
+        fixture_sha.has_value(), "failed to hash sidecar fixture: " + fixture.string());
+
+    const auto sidecar_fixture = create_sidecar_package_fixture(
+        temp.path,
+        fixture,
+        *fixture_sha,
+        "eta-torch-sidecar",
+        "eta.torch.sidecar",
+        "eta_register_torch_extension_v1");
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    eta::session::Driver driver(make_stdlib_resolver(sidecar_fixture.app_root));
+
+    eta::runtime::nanbox::LispVal result{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module sidecar.torch.runtime
+  (import std.torch)
+  (begin
+    (define result (numel (ones '(2 3))))))
+)eta", &result, "result");
+    BOOST_REQUIRE(ok);
+
+    const auto decoded = eta::runtime::nanbox::ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_TEST(*decoded == 6);
+#endif
 }
 
 BOOST_AUTO_TEST_CASE(is_complete_expression_unbalanced_paren_with_indent_hint) {
@@ -214,6 +874,44 @@ BOOST_AUTO_TEST_CASE(completions_at_import_prefix_includes_std_torch) {
         }
     }
     BOOST_TEST(found_std_torch);
+}
+
+BOOST_AUTO_TEST_CASE(extension_primitives_are_available_to_run_source_and_completions) {
+    eta::session::Driver driver(make_resolver());
+    driver.register_extension_primitive(
+        "ext.answer",
+        0u,
+        false,
+        [](eta::runtime::types::PrimitiveArgs) {
+            return std::expected<eta::runtime::nanbox::LispVal, eta::runtime::error::RuntimeError>(
+                eta::runtime::nanbox::ops::encode(int64_t{42}).value());
+        });
+
+    eta::runtime::nanbox::LispVal result{eta::runtime::nanbox::Nil};
+    const bool ok = driver.run_source(R"eta(
+(module ext.runtime
+  (define result (ext.answer)))
+)eta", &result, "result");
+    BOOST_REQUIRE(ok);
+
+    const auto decoded = eta::runtime::nanbox::ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_TEST(*decoded == 42);
+
+    const uint32_t extension_slot = static_cast<uint32_t>(driver.builtin_count());
+    const auto name_it = driver.global_names().find(extension_slot);
+    BOOST_REQUIRE(name_it != driver.global_names().end());
+    BOOST_TEST(name_it->second == "ext.answer");
+
+    const auto completion = driver.completions_at("ext.ans", 7);
+    bool found_extension = false;
+    for (const auto& match : completion.matches) {
+        if (match == "ext.answer") {
+            found_extension = true;
+            break;
+        }
+    }
+    BOOST_TEST(found_extension);
 }
 
 BOOST_AUTO_TEST_CASE(hover_at_resolves_imported_binding_docs) {
@@ -312,7 +1010,27 @@ BOOST_AUTO_TEST_CASE(request_interrupt_stops_runaway_evaluation_quickly) {
 }
 
 BOOST_AUTO_TEST_CASE(eval_to_display_tags_tensor_values) {
-    eta::session::Driver driver(make_resolver());
+    ScopedTempDir temp;
+
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(
+        fs::is_regular_file(fixture), "missing sidecar fixture binary: " + fixture.string());
+    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture);
+    BOOST_REQUIRE_MESSAGE(
+        fixture_sha.has_value(), "failed to hash sidecar fixture: " + fixture.string());
+
+    const auto sidecar_fixture = create_sidecar_package_fixture(
+        temp.path,
+        fixture,
+        *fixture_sha,
+        "eta-torch-sidecar",
+        "eta.torch.sidecar",
+        "eta_register_torch_extension_v1");
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    eta::session::Driver driver(make_stdlib_resolver(sidecar_fixture.app_root));
 
     const auto imported = driver.eval_to_display("(import std.torch)");
     BOOST_REQUIRE(static_cast<int>(imported.tag) != static_cast<int>(eta::session::DisplayTag::Error));
@@ -386,7 +1104,27 @@ BOOST_AUTO_TEST_CASE(set_stream_sinks_routes_stdout_and_stderr) {
 BOOST_AUTO_TEST_CASE(spawn_thread_routes_stdout_to_spawning_stream_sink) {
     using namespace std::chrono_literals;
 
-    eta::session::Driver driver(make_resolver());
+    ScopedTempDir temp;
+
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(
+        fs::is_regular_file(fixture), "missing sidecar fixture binary: " + fixture.string());
+    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture);
+    BOOST_REQUIRE_MESSAGE(
+        fixture_sha.has_value(), "failed to hash sidecar fixture: " + fixture.string());
+
+    const auto sidecar_fixture = create_sidecar_package_fixture(
+        temp.path,
+        fixture,
+        *fixture_sha,
+        "eta-nng-sidecar",
+        "eta.nng.sidecar",
+        "eta_register_nng_extension_v1");
+
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    eta::session::Driver driver(make_stdlib_resolver(sidecar_fixture.app_root));
 
     std::mutex stdout_mu;
     std::string stdout_text;

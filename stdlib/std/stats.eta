@@ -9,8 +9,8 @@
 ;;; or fact-table columns.  The multivariate functions also accept a
 ;;; fact-table with column indices for direct columnar access.
 ;;;
-;;; Underlying primitives (%stats-*) are registered in core_primitives.h
-;;; and stats_primitives.h.
+;;; Underlying primitives (%stats-*) are provided by core runtime primitives
+;;; and package-managed native sidecars.
 
 (module std.stats
   (import std.core)
@@ -167,14 +167,41 @@
           (%stats-ols-multi a b)
           (%stats-ols-multi a b (car rest))))
 
+    (defun %stats:assoc-value (alist sym-key str-key)
+      (let ((sp (assoc sym-key alist)))
+        (if sp
+            (cdr sp)
+            (let ((tp (assoc str-key alist)))
+              (if tp (cdr tp) #f)))))
+
+    (defun %stats:pair-cdr-at (alist idx)
+      (if (or (< idx 0) (>= idx (length alist)))
+          #f
+          (let ((entry (list-ref alist idx)))
+            (if (pair? entry) (cdr entry) #f))))
+
     ;;  OLS-multi accessors (result is an alist) 
-    (defun stats:ols-multi-coefficients (r) (cdr (assoc 'coefficients r)))
-    (defun stats:ols-multi-std-errors   (r) (cdr (assoc 'std-errors r)))
-    (defun stats:ols-multi-t-stats      (r) (cdr (assoc 't-stats r)))
-    (defun stats:ols-multi-p-values     (r) (cdr (assoc 'p-values r)))
-    (defun stats:ols-multi-r-squared    (r) (cdr (assoc 'r-squared r)))
-    (defun stats:ols-multi-adj-r-squared(r) (cdr (assoc 'adj-r-squared r)))
-    (defun stats:ols-multi-residual-se  (r) (cdr (assoc 'residual-se r)))
+    (defun stats:ols-multi-coefficients (r)
+      (or (%stats:assoc-value r 'coefficients "coefficients")
+          (%stats:pair-cdr-at r 0)))
+    (defun stats:ols-multi-std-errors (r)
+      (or (%stats:assoc-value r 'std-errors "std-errors")
+          (%stats:pair-cdr-at r 1)))
+    (defun stats:ols-multi-t-stats (r)
+      (or (%stats:assoc-value r 't-stats "t-stats")
+          (%stats:pair-cdr-at r 2)))
+    (defun stats:ols-multi-p-values (r)
+      (or (%stats:assoc-value r 'p-values "p-values")
+          (%stats:pair-cdr-at r 3)))
+    (defun stats:ols-multi-r-squared (r)
+      (or (%stats:assoc-value r 'r-squared "r-squared")
+          (%stats:pair-cdr-at r 4)))
+    (defun stats:ols-multi-adj-r-squared (r)
+      (or (%stats:assoc-value r 'adj-r-squared "adj-r-squared")
+          (%stats:pair-cdr-at r 5)))
+    (defun stats:ols-multi-residual-se (r)
+      (or (%stats:assoc-value r 'residual-se "residual-se")
+          (%stats:pair-cdr-at r 6)))
 
     ;; -- Learner-spec helpers --------------------------------------------
 
@@ -234,7 +261,7 @@
                (%assert-matrix-rows x-matrix)
                (if (not (= (length x-matrix) (length y-vector)))
                    (error "stats: OLS learner expected matching X/Y lengths")
-                   (let* ((coeffs
+                     (let* ((raw-coeffs
                             (if (null? y-vector)
                                 '(0.0)
                                 (if (or (null? x-matrix)
@@ -242,7 +269,8 @@
                                     (list (stats:mean y-vector))
                                     (stats:ols-multi-coefficients
                                       (stats:ols-multi y-vector
-                                                       (%matrix-cols x-matrix)))))))
+                                                       (%matrix-cols x-matrix))))))
+                            (coeffs (if (pair? raw-coeffs) raw-coeffs '(0.0))))
                      (list (cons 'coefficients coeffs))))))
            (predict
              (lambda (model x-matrix)

@@ -1,0 +1,4 @@
+(module standalone_lib
+  (export standalone-value)
+  (begin
+    (define standalone-value 42)))

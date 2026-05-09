@@ -12,7 +12,8 @@ target_include_directories(etac
     PRIVATE ${ETA_SESSION_SRC_DIR}
 )
 
-target_link_libraries(etac PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
+target_link_libraries(etac PRIVATE eta_core)
+eta_link_sidecar_builtin_runtime(etac)
 target_compile_definitions(etac PRIVATE
     ETA_HAS_TORCH=1
     ETA_HAS_NNG=1

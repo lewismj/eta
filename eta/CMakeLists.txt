@@ -4,10 +4,11 @@ set(ETA_CMAKE_MODULE_DIR "${ETA_CMAKE_DIR}")
 set(ETA_LAYOUT_ROOT_DIR "${ETA_SOURCE_DIR}")
 
 set(ETA_CORE_DIR "${ETA_LAYOUT_ROOT_DIR}/core")
-set(ETA_TORCH_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/torch")
-set(ETA_NNG_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/nng")
-set(ETA_STATS_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/stats")
-set(ETA_LOG_DIR "${ETA_LAYOUT_ROOT_DIR}/builtins/log")
+set(ETA_STDLIB_NATIVE_DIR "${ETA_REPO_ROOT_DIR}/packages/stdlib/native")
+set(ETA_STDLIB_NATIVE_TORCH_SRC_DIR "${ETA_STDLIB_NATIVE_DIR}/torch/src")
+set(ETA_STDLIB_NATIVE_NNG_SRC_DIR "${ETA_STDLIB_NATIVE_DIR}/nng/src")
+set(ETA_STDLIB_NATIVE_STATS_SRC_DIR "${ETA_STDLIB_NATIVE_DIR}/stats/src")
+set(ETA_STDLIB_NATIVE_LOG_SRC_DIR "${ETA_STDLIB_NATIVE_DIR}/log/src")
 set(ETA_INTERPRETER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/interpreter")
 set(ETA_COMPILER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/compiler")
 set(ETA_CLI_DIR "${ETA_LAYOUT_ROOT_DIR}/cli")
@@ -33,6 +34,10 @@ set(ETA_STDLIB_DOC_BUILD_SCRIPT "${ETA_REPO_ROOT_DIR}/scripts/build_stdlib_docs.
 set(ETA_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/generated")
 set(ETA_STDLIB_DOC_REGISTRY_INC
     "${ETA_GENERATED_INCLUDE_DIR}/eta/docs/generated/stdlib_docs.inc")
+
+# Clean legacy test output path from pre-qa/test layout so stale binaries
+# cannot shadow the active eta_core_test target.
+file(REMOVE_RECURSE "${CMAKE_BINARY_DIR}/eta/test")
 
 
 # Specify dependencies.
@@ -64,12 +69,12 @@ set(ETA_LIBTORCH_VER "2.11.0" CACHE STRING
 
 find_package(Torch QUIET)
 if(Torch_FOUND)
-    message(STATUS "libtorch found — building eta_torch bindings")
+    message(STATUS "libtorch found — enabling native sidecar runtime support")
 else()
     message(STATUS "libtorch not found locally — attempting auto-download (backend=${ETA_TORCH_BACKEND})")
     include("${ETA_CMAKE_MODULE_DIR}/FetchLibtorch.cmake")
     find_package(Torch REQUIRED)
-    message(STATUS "libtorch auto-downloaded — building eta_torch bindings (backend=${ETA_TORCH_BACKEND})")
+    message(STATUS "libtorch auto-downloaded — enabling native sidecar runtime support (backend=${ETA_TORCH_BACKEND})")
 endif()
 
 # ── Utility: copy libtorch DLLs next to a target (Windows only) ──────
@@ -153,6 +158,42 @@ function(eta_copy_log_dlls target)
     endif()
 endfunction()
 
+function(eta_link_sidecar_builtin_runtime target)
+    target_include_directories(${target} PRIVATE
+        ${ETA_SESSION_SRC_DIR}
+        ${ETA_STDLIB_NATIVE_TORCH_SRC_DIR}
+        ${ETA_STDLIB_NATIVE_NNG_SRC_DIR}
+        ${ETA_STDLIB_NATIVE_STATS_SRC_DIR}
+        ${ETA_STDLIB_NATIVE_LOG_SRC_DIR}
+    )
+
+    target_include_directories(${target} SYSTEM PRIVATE
+        ${TORCH_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(${target} PRIVATE
+        ${TORCH_LIBRARIES}
+        nng
+    )
+
+    eta_spdlog_target(_eta_spdlog_target)
+    if(_eta_spdlog_target)
+        target_link_libraries(${target} PRIVATE ${_eta_spdlog_target})
+    endif()
+
+    if(TORCH_CXX_FLAGS)
+        target_compile_options(${target} PRIVATE ${TORCH_CXX_FLAGS})
+    endif()
+
+    if(MSVC)
+        target_compile_options(${target} PRIVATE
+            /wd4127
+            /wd4244
+            /wd4267
+        )
+    endif()
+endfunction()
+
 # On Linux/macOS, set RPATH so installed binaries find libtorch in ../lib.
 # Must be set before add_subdirectory() so it applies to all executable targets.
 if(NOT WIN32)
@@ -160,12 +201,8 @@ if(NOT WIN32)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 
-# Runtime core and builtins modules.
+# Runtime core.
 add_subdirectory("${ETA_CORE_DIR}" core)
-add_subdirectory("${ETA_TORCH_DIR}")
-add_subdirectory("${ETA_NNG_DIR}")
-add_subdirectory("${ETA_STATS_DIR}")
-add_subdirectory("${ETA_LOG_DIR}")
 
 # User-facing tools and protocol servers.
 add_subdirectory("${ETA_INTERPRETER_DIR}")
@@ -248,6 +285,19 @@ add_test(
 )
 set_tests_properties(stdlib_doc_extractor_tests PROPERTIES
     WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
+
+# Install libtorch runtime libraries alongside Eta binaries.
+if(TORCH_INSTALL_PREFIX)
+    if(WIN32)
+        file(GLOB _torch_runtime_dlls "${TORCH_INSTALL_PREFIX}/lib/*.dll")
+        install(FILES ${_torch_runtime_dlls} DESTINATION bin)
+    else()
+        file(GLOB _torch_runtime_so
+            "${TORCH_INSTALL_PREFIX}/lib/*.so*"
+            "${TORCH_INSTALL_PREFIX}/lib/*.dylib*")
+        install(FILES ${_torch_runtime_so} DESTINATION lib)
+    endif()
+endif()
 
 # Install nng DLL on Windows
 if(WIN32 AND TARGET nng)

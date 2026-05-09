@@ -60,6 +60,105 @@ normalize_manifest_path(const fs::path& manifest_path_or_dir) {
     return {};
 }
 
+[[nodiscard]] std::string host_target_triple() {
+#if defined(_WIN32)
+#if defined(_M_X64) || defined(__x86_64__)
+    return "x86_64-pc-windows-msvc";
+#elif defined(_M_ARM64) || defined(__aarch64__)
+    return "aarch64-pc-windows-msvc";
+#elif defined(_M_IX86) || defined(__i386__)
+    return "i686-pc-windows-msvc";
+#else
+    return "unknown-pc-windows-msvc";
+#endif
+#elif defined(__APPLE__)
+#if defined(__aarch64__)
+    return "aarch64-apple-darwin";
+#elif defined(__x86_64__)
+    return "x86_64-apple-darwin";
+#else
+    return "unknown-apple-darwin";
+#endif
+#elif defined(__linux__)
+#if defined(__x86_64__)
+    return "x86_64-unknown-linux-gnu";
+#elif defined(__aarch64__)
+    return "aarch64-unknown-linux-gnu";
+#else
+    return "unknown-unknown-linux-gnu";
+#endif
+#else
+    return "unknown-unknown-unknown";
+#endif
+}
+
+[[nodiscard]] std::string selected_target_triple(const ResolveOptions& options) {
+    if (!options.target_triple.empty()) return options.target_triple;
+    return host_target_triple();
+}
+
+[[nodiscard]] std::expected<ResolvedNativePackage, ResolveError>
+select_native_target(const Manifest& manifest, const ResolveOptions& options) {
+    if (!manifest.native.has_value()) {
+        return std::unexpected(ResolveError{
+            ResolveError::Code::MissingNativeTargetForTriple,
+            "internal error: native target selection requested for non-native package '"
+                + manifest.name + "'",
+        });
+    }
+
+    const auto target_triple = selected_target_triple(options);
+    const auto target_it = std::find_if(manifest.native->targets.begin(),
+                                        manifest.native->targets.end(),
+                                        [&](const ManifestNativeTarget& target) {
+                                            return target.triple == target_triple;
+                                        });
+    if (target_it == manifest.native->targets.end()) {
+        return std::unexpected(ResolveError{
+            ResolveError::Code::MissingNativeTargetForTriple,
+            "native package '" + manifest.name
+                + "' does not declare a sidecar target for triple '" + target_triple
+                + "' in " + manifest.manifest_path.string(),
+        });
+    }
+
+    ResolvedNativePackage selected;
+    selected.id = manifest.native->id;
+    selected.abi = manifest.native->abi;
+    selected.entry = manifest.native->entry;
+    selected.target_triple = target_it->triple;
+    selected.artifact_relpath = target_it->artifact;
+    selected.sha256 = target_it->sha256;
+    return selected;
+}
+
+[[nodiscard]] bool has_matching_native_metadata(const ResolvedPackage& lhs,
+                                                const ResolvedPackage& rhs) {
+    if (lhs.native.has_value() != rhs.native.has_value()) return false;
+    if (!lhs.native.has_value()) return true;
+
+    auto normalize_relpath = [](const fs::path& relpath) {
+        auto normalized = relpath.lexically_normal().generic_string();
+#if defined(_WIN32)
+        std::transform(normalized.begin(),
+                       normalized.end(),
+                       normalized.begin(),
+                       [](const char c) {
+                           return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                       });
+#endif
+        return normalized;
+    };
+
+    return lhs.native->id == rhs.native->id
+        && lhs.native->abi == rhs.native->abi
+        && lhs.native->entry == rhs.native->entry
+        && lhs.native->target_triple == rhs.native->target_triple
+        && normalize_relpath(lhs.native->artifact_relpath)
+            == normalize_relpath(rhs.native->artifact_relpath)
+        && lhs.native->sha256 == rhs.native->sha256;
+}
+
 [[nodiscard]] std::expected<ResolvedDependencyLocation, ResolveError>
 resolve_path_dependency(const Manifest& owner, const ManifestDependency& dependency) {
     fs::path candidate = owner.manifest_path.parent_path() / dependency.path;
@@ -439,6 +538,15 @@ ResolveResult resolve_dependencies(const fs::path& root_manifest_path,
         node.source = is_root ? (options.root_source.empty() ? "root" : options.root_source)
                               : source_override.value_or(
                                     "path+" + canonicalize_path(node.package_root).generic_string());
+        if (manifest.native.has_value()) {
+            auto selected_native = select_native_target(manifest, options);
+            if (!selected_native) {
+                stack.pop_back();
+                visiting.erase(manifest.name);
+                return std::unexpected(selected_native.error());
+            }
+            node.native = std::move(*selected_native);
+        }
         const bool include_dev = options.include_dev_dependencies && is_root;
         node.dependency_names.reserve(
             manifest.dependencies.size() + (include_dev ? manifest.dev_dependencies.size() : 0u));
@@ -673,6 +781,13 @@ ResolveResult resolve_workspace_dependencies(const WorkspaceMembers& workspace,
                         + existing.manifest_path.string() + " and " + pkg.manifest_path.string(),
                 });
             }
+            if (!has_matching_native_metadata(existing, pkg)) {
+                return std::unexpected(ResolveError{
+                    ResolveError::Code::DuplicatePackageName,
+                    "package '" + pkg.name
+                        + "' has inconsistent native metadata across resolver graphs",
+                });
+            }
 
             existing.dependency_names.insert(existing.dependency_names.end(),
                                              pkg.dependency_names.begin(),
@@ -720,6 +835,14 @@ Lockfile build_lockfile(const ResolvedGraph& graph) {
         entry.name = pkg.name;
         entry.version = pkg.version;
         entry.source = pkg.source;
+        if (pkg.native.has_value()) {
+            entry.native_id = pkg.native->id;
+            entry.native_abi = pkg.native->abi;
+            entry.native_entry = pkg.native->entry;
+            entry.native_target_triple = pkg.native->target_triple;
+            entry.native_artifact_relpath = pkg.native->artifact_relpath.generic_string();
+            entry.native_sha256 = pkg.native->sha256;
+        }
         entry.dependencies.reserve(pkg.dependency_names.size());
         for (const auto& dep_name : pkg.dependency_names) {
             if (auto it = versions_by_name.find(dep_name); it != versions_by_name.end()) {

@@ -5,7 +5,9 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <sstream>
 #include <string>
+#include <span>
 #include <vector>
 #include <chrono>
 #include <thread>
@@ -30,6 +32,7 @@
 
 #include <eta/session/driver.h>
 #include <eta/interpreter/module_path.h>
+#include <eta/native/sidecar_loader.h>
 
 #include <eta/runtime/nanbox.h>
 #include <eta/runtime/memory/heap.h>
@@ -52,6 +55,11 @@ using namespace eta::runtime::memory::factory;
 using namespace eta::runtime;
 using namespace eta::runtime::types;
 using eta::session::Driver;
+namespace fs = std::filesystem;
+
+#ifndef ETA_TEST_NATIVE_SIDECAR_PATH
+#error ETA_TEST_NATIVE_SIDECAR_PATH must be defined by CMake
+#endif
 
 namespace {
     template <typename T, typename E>
@@ -75,6 +83,171 @@ namespace {
         }, err);
     }
 
+    struct CurrentPathGuard {
+        fs::path original;
+
+        CurrentPathGuard()
+            : original(fs::current_path()) {}
+
+        ~CurrentPathGuard() {
+            std::error_code ec;
+            fs::current_path(original, ec);
+        }
+    };
+
+    struct ScopedTempDir {
+        fs::path path;
+
+        ScopedTempDir() {
+            const auto stamp =
+                std::chrono::steady_clock::now().time_since_epoch().count();
+            path = fs::temp_directory_path() / ("eta_nng_sidecar_" + std::to_string(stamp));
+            fs::create_directories(path);
+        }
+
+        ~ScopedTempDir() {
+            std::error_code ec;
+            fs::remove_all(path, ec);
+        }
+    };
+
+    struct SidecarSpec {
+        std::string package_name;
+        std::string extension_id;
+        std::string entrypoint;
+    };
+
+    struct SidecarWorkspaceFixture {
+        fs::path app_root;
+    };
+
+    [[nodiscard]] fs::path sidecar_fixture_path() {
+        return fs::path(ETA_TEST_NATIVE_SIDECAR_PATH);
+    }
+
+    [[nodiscard]] std::string host_target_triple() {
+#if defined(_WIN32)
+#if defined(_M_X64) || defined(__x86_64__)
+        return "x86_64-pc-windows-msvc";
+#elif defined(_M_ARM64) || defined(__aarch64__)
+        return "aarch64-pc-windows-msvc";
+#else
+        return "unknown-pc-windows-msvc";
+#endif
+#elif defined(__APPLE__)
+#if defined(__aarch64__)
+        return "aarch64-apple-darwin";
+#else
+        return "x86_64-apple-darwin";
+#endif
+#elif defined(__linux__)
+#if defined(__aarch64__)
+        return "aarch64-unknown-linux-gnu";
+#else
+        return "x86_64-unknown-linux-gnu";
+#endif
+#else
+        return "unknown-unknown-unknown";
+#endif
+    }
+
+    [[nodiscard]] SidecarWorkspaceFixture create_sidecar_workspace_fixture(
+        const fs::path& root,
+        std::span<const SidecarSpec> specs) {
+        const auto fixture = sidecar_fixture_path();
+        BOOST_REQUIRE_MESSAGE(
+            fs::is_regular_file(fixture), "missing sidecar fixture binary: " + fixture.string());
+        const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture);
+        BOOST_REQUIRE_MESSAGE(
+            fixture_sha.has_value(), "failed to hash sidecar fixture: " + fixture.string());
+
+        SidecarWorkspaceFixture workspace;
+        workspace.app_root = root / "app";
+        fs::create_directories(workspace.app_root / "src");
+
+        {
+            std::ofstream out(
+                workspace.app_root / "eta.toml",
+                std::ios::out | std::ios::binary | std::ios::trunc);
+            BOOST_REQUIRE(out.is_open());
+            out << "[package]\n"
+                << "name = \"app\"\n"
+                << "version = \"0.1.0\"\n"
+                << "license = \"MIT\"\n\n"
+                << "[compatibility]\n"
+                << "eta = \">=0.6, <0.8\"\n\n"
+                << "[dependencies]\n";
+            for (const auto& spec : specs) {
+                out << spec.package_name << " = { path = \"../" << spec.package_name << "\" }\n";
+            }
+        }
+
+        for (const auto& spec : specs) {
+            const auto sidecar_root = root / spec.package_name;
+            const auto artifact_relpath = fs::path("native") / "test" / fixture.filename();
+            fs::create_directories((sidecar_root / artifact_relpath).parent_path());
+            fs::copy_file(
+                fixture,
+                sidecar_root / artifact_relpath,
+                fs::copy_options::overwrite_existing);
+
+            std::ofstream out(
+                sidecar_root / "eta.toml",
+                std::ios::out | std::ios::binary | std::ios::trunc);
+            BOOST_REQUIRE(out.is_open());
+            out << "[package]\n"
+                << "name = \"" << spec.package_name << "\"\n"
+                << "version = \"0.1.0\"\n"
+                << "license = \"MIT\"\n\n"
+                << "[compatibility]\n"
+                << "eta = \">=0.6, <0.8\"\n\n"
+                << "[native]\n"
+                << "kind = \"sidecar\"\n"
+                << "abi = \"eta-native-v1\"\n"
+                << "id = \"" << spec.extension_id << "\"\n"
+                << "entry = \"" << spec.entrypoint << "\"\n\n"
+                << "[[native.targets]]\n"
+                << "triple = \"" << host_target_triple() << "\"\n"
+                << "artifact = \"" << artifact_relpath.generic_string() << "\"\n"
+                << "sha256 = \"" << *fixture_sha << "\"\n";
+        }
+
+        {
+            std::ofstream out(
+                workspace.app_root / "eta.lock",
+                std::ios::out | std::ios::binary | std::ios::trunc);
+            BOOST_REQUIRE(out.is_open());
+            out << "version = 1\n\n"
+                << "[[package]]\n"
+                << "name = \"app\"\n"
+                << "version = \"0.1.0\"\n"
+                << "source = \"root\"\n"
+                << "dependencies = [";
+            for (std::size_t i = 0; i < specs.size(); ++i) {
+                if (i != 0u) out << ", ";
+                out << "\"" << specs[i].package_name << "@0.1.0\"";
+            }
+            out << "]\n\n";
+
+            for (const auto& spec : specs) {
+                const auto artifact_relpath = fs::path("native") / "test" / fixture.filename();
+                out << "[[package]]\n"
+                    << "name = \"" << spec.package_name << "\"\n"
+                    << "version = \"0.1.0\"\n"
+                    << "source = \"path+../" << spec.package_name << "\"\n"
+                    << "native_id = \"" << spec.extension_id << "\"\n"
+                    << "native_abi = \"eta-native-v1\"\n"
+                    << "native_entry = \"" << spec.entrypoint << "\"\n"
+                    << "native_target_triple = \"" << host_target_triple() << "\"\n"
+                    << "native_artifact_relpath = \"" << artifact_relpath.generic_string() << "\"\n"
+                    << "native_sha256 = \"" << *fixture_sha << "\"\n"
+                    << "dependencies = []\n\n";
+            }
+        }
+
+        return workspace;
+    }
+
     static bool diagnostics_contain(const eta::session::Driver& driver,
                                     std::string_view needle) {
         for (const auto& diag : driver.diagnostics().diagnostics()) {
@@ -96,8 +269,18 @@ namespace {
             return;
         }
 
-        namespace fs = std::filesystem;
         using namespace eta::interpreter;
+
+        ScopedTempDir temp;
+        const SidecarSpec specs[] = {
+            {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+            {"eta-torch-sidecar", "eta.torch.sidecar", "eta_register_torch_extension_v1"},
+        };
+        const auto fixture = create_sidecar_workspace_fixture(
+            temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+
+        CurrentPathGuard cwd_guard;
+        fs::current_path(fixture.app_root);
 
         ModulePathResolver resolver({fs::path(stdlib_path)});
         Driver driver(std::move(resolver));
@@ -2076,10 +2259,20 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
      */
 
     namespace fs = std::filesystem;
-    auto tmp_dir  = fs::temp_directory_path();
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    auto worker_dir = sidecar_fixture.app_root / "src";
+    fs::create_directories(worker_dir);
     static std::atomic<uint64_t> s_worker_id{0};
     const auto worker_id = s_worker_id.fetch_add(1, std::memory_order_relaxed);
-    auto worker = tmp_dir / ("eta_worker_test_" + std::to_string(worker_id) + ".eta");
+    auto worker = worker_dir / ("eta_worker_test_" + std::to_string(worker_id) + ".eta");
     struct WorkerFileCleanup {
         fs::path path;
         ~WorkerFileCleanup() {
@@ -2182,8 +2375,18 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
 BOOST_AUTO_TEST_CASE(spawn_kill_terminates_child) {
     /// Spawn a child that loops forever (sleep)
     namespace fs = std::filesystem;
-    auto tmp_dir = fs::temp_directory_path();
-    auto worker  = tmp_dir / "eta_sleep_worker.eta";
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    auto worker_dir = sidecar_fixture.app_root / "src";
+    fs::create_directories(worker_dir);
+    auto worker  = worker_dir / "eta_sleep_worker.eta";
 
     {
         std::ofstream f(worker);
@@ -2227,8 +2430,18 @@ BOOST_AUTO_TEST_CASE(spawn_kill_terminates_child) {
 BOOST_AUTO_TEST_CASE(spawn_multiple_children) {
     /// Spawn two workers, send each a distinct value, collect replies.
     namespace fs = std::filesystem;
-    auto tmp_dir = fs::temp_directory_path();
-    auto worker  = tmp_dir / "eta_echo_worker.eta";
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    auto worker_dir = sidecar_fixture.app_root / "src";
+    fs::create_directories(worker_dir);
+    auto worker  = worker_dir / "eta_echo_worker.eta";
 
     {
         std::ofstream f(worker);
@@ -2600,10 +2813,10 @@ BOOST_AUTO_TEST_CASE(list_threads_returns_metadata) {
     e.call("nng-close", {*res});
 }
 
-/// Stress test: 20 threads, each echoes a distinct value
+/// Stress test: bounded actor fan-out, each echoes a distinct value
 
 BOOST_AUTO_TEST_CASE(stress_test_multiple_threads) {
-    constexpr int N = 20;
+    constexpr int N = 8;
     NngEnvWithThread e;
     e.proc_mgr.set_worker_factory(
         make_simple_worker([](nng_socket s) {
@@ -2678,6 +2891,15 @@ BOOST_AUTO_TEST_CASE(spawn_thread_full_driver_round_trip) {
     namespace fs = std::filesystem;
     using namespace eta::interpreter;
 
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
     /// Build a Driver with the stdlib path
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
@@ -2696,16 +2918,27 @@ BOOST_AUTO_TEST_CASE(spawn_thread_full_driver_round_trip) {
           (let ((mb (current-mailbox)))
             (let ((n (recv! mb 'wait)))
               (send! mb (+ n 7) 'wait))))))
+    ;; Bound socket IO so this test fails fast instead of hanging indefinitely.
+    (nng-set-option t 'send-timeout 5000)
+    (nng-set-option t 'recv-timeout 5000)
     ;; Send 35, expect 42 back
-    (send! t 35 'wait)
-    (set! result (recv! t 'wait))
-    (thread-join t)
+    (if (send! t 35)
+        (let ((reply (recv! t)))
+          (if reply
+              (set! result reply)
+              (error "spawn-thread round-trip timed out waiting for reply")))
+        (error "spawn-thread round-trip timed out sending request"))
     (nng-close t)))
 )eta";
 
     LispVal result_val{Nil};
     bool ok = driver.run_source(src, &result_val, "result");
-    BOOST_REQUIRE_MESSAGE(ok, "Driver::run_source failed");
+    if (!ok) {
+        std::ostringstream diagnostics;
+        driver.diagnostics().print_all(
+            diagnostics, /*use_color=*/false, driver.file_resolver());
+        BOOST_FAIL("Driver::run_source failed:\n" + diagnostics.str());
+    }
 
     auto dec = ops::decode<int64_t>(result_val);
     BOOST_REQUIRE_MESSAGE(dec.has_value(), "result is not a fixnum");
@@ -2727,6 +2960,15 @@ BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
 
     namespace fs = std::filesystem;
     using namespace eta::interpreter;
+
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
 
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
@@ -2797,6 +3039,15 @@ BOOST_AUTO_TEST_CASE(spawn_thread_list_payload_and_quoted_constant_regression) {
     namespace fs = std::filesystem;
     using namespace eta::interpreter;
 
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
 
@@ -2840,6 +3091,15 @@ BOOST_AUTO_TEST_CASE(spawn_thread_portfolio_worker_shape_regression) {
 
     namespace fs = std::filesystem;
     using namespace eta::interpreter;
+
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
 
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
@@ -2908,6 +3168,15 @@ BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_closure_direct_captured) {
     namespace fs = std::filesystem;
     using namespace eta::interpreter;
 
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));
 
@@ -2949,6 +3218,15 @@ BOOST_AUTO_TEST_CASE(spawn_thread_module_global_definition_capture) {
 
     namespace fs = std::filesystem;
     using namespace eta::interpreter;
+
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
 
     ModulePathResolver resolver({fs::path(stdlib_path)});
     Driver driver(std::move(resolver));

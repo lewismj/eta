@@ -60,6 +60,8 @@ target_sources(${PROJECT_NAME}
         src/eta/package/discovery.cpp
         src/eta/package/lockfile.cpp
         src/eta/package/resolver.cpp
+        src/eta/native/extension_registry.cpp
+        src/eta/native/sidecar_loader.cpp
 )
 
 # Convex QP support is part of the required core runtime surface.

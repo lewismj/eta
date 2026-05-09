@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -25,6 +26,8 @@
 #include <unistd.h>
 #endif
 
+#include "eta/native/sidecar_loader.h"
+
 namespace fs = std::filesystem;
 
 #ifndef ETA_CLI_PATH
@@ -39,11 +42,16 @@ namespace fs = std::filesystem;
 #error ETA_CLI_TEST_FIXTURES_DIR must be defined by CMake
 #endif
 
+#ifndef ETA_CLI_TEST_NATIVE_SIDECAR_PATH
+#error ETA_CLI_TEST_NATIVE_SIDECAR_PATH must be defined by CMake
+#endif
+
 namespace {
 
 const fs::path kEtaCliPath{ETA_CLI_PATH};
 const fs::path kEtaReplPath{ETA_REPL_PATH};
 const fs::path kCliTestFixturesDir{ETA_CLI_TEST_FIXTURES_DIR};
+const fs::path kNativeSidecarFixturePath{ETA_CLI_TEST_NATIVE_SIDECAR_PATH};
 
 struct TempDir {
     fs::path path;
@@ -391,6 +399,185 @@ std::string make_manifest(const std::string& name,
     return manifest;
 }
 
+[[nodiscard]] std::string host_native_target_triple() {
+#if defined(_WIN32)
+#if defined(_M_X64) || defined(__x86_64__)
+    return "x86_64-pc-windows-msvc";
+#elif defined(_M_ARM64) || defined(__aarch64__)
+    return "aarch64-pc-windows-msvc";
+#else
+    return "unknown-pc-windows-msvc";
+#endif
+#elif defined(__APPLE__)
+#if defined(__aarch64__)
+    return "aarch64-apple-darwin";
+#elif defined(__x86_64__)
+    return "x86_64-apple-darwin";
+#else
+    return "unknown-apple-darwin";
+#endif
+#elif defined(__linux__)
+#if defined(__x86_64__)
+    return "x86_64-unknown-linux-gnu";
+#elif defined(__aarch64__)
+    return "aarch64-unknown-linux-gnu";
+#else
+    return "unknown-unknown-linux-gnu";
+#endif
+#else
+    return "unknown-unknown-unknown";
+#endif
+}
+
+[[nodiscard]] std::string host_native_artifact_relpath(std::string_view basename) {
+#if defined(_WIN32)
+    return "native/windows-x64/eta_" + std::string(basename) + ".dll";
+#elif defined(__APPLE__)
+#if defined(__aarch64__)
+    return "native/macos-arm64/libeta_" + std::string(basename) + ".dylib";
+#else
+    return "native/macos-x64/libeta_" + std::string(basename) + ".dylib";
+#endif
+#elif defined(__linux__)
+#if defined(__aarch64__)
+    return "native/linux-arm64/libeta_" + std::string(basename) + ".so";
+#else
+    return "native/linux-x64/libeta_" + std::string(basename) + ".so";
+#endif
+#else
+    return "native/unknown/libeta_" + std::string(basename) + ".bin";
+#endif
+}
+
+[[nodiscard]] std::string stage_fixture_sidecar_artifact(const fs::path& package_root,
+                                                         const std::string& artifact_relpath) {
+    BOOST_REQUIRE_MESSAGE(
+        fs::is_regular_file(kNativeSidecarFixturePath),
+        "missing native sidecar fixture binary: " + kNativeSidecarFixturePath.string());
+
+    const auto artifact_path = package_root / fs::path(artifact_relpath);
+    fs::create_directories(artifact_path.parent_path());
+    std::error_code copy_ec;
+    fs::copy_file(kNativeSidecarFixturePath,
+                  artifact_path,
+                  fs::copy_options::overwrite_existing,
+                  copy_ec);
+    BOOST_REQUIRE_MESSAGE(!copy_ec,
+                          "failed to copy sidecar fixture to " + artifact_path.string()
+                              + ": " + copy_ec.message());
+
+    const auto digest = eta::native::compute_sidecar_sha256(artifact_path);
+    if (!digest.has_value()) {
+        BOOST_FAIL("failed to hash staged sidecar artifact '" + artifact_path.string()
+                   + "': " + digest.error().message);
+    }
+    return *digest;
+}
+
+void configure_fixture_existing_native_sidecar_package(
+    const fs::path& package_root,
+    std::string_view artifact_basename,
+    std::optional<std::string_view> sha_override = std::nullopt) {
+    const std::string triple = host_native_target_triple();
+    const std::string artifact_relpath = host_native_artifact_relpath(artifact_basename);
+    const std::string artifact_sha = stage_fixture_sidecar_artifact(
+        package_root, artifact_relpath);
+    const std::string manifest_sha = sha_override.has_value()
+        ? std::string(*sha_override)
+        : artifact_sha;
+
+    const auto manifest_path = package_root / "eta.toml";
+    const std::string manifest_text = read_text_file(manifest_path);
+    const auto targets_marker = manifest_text.find("[[native.targets]]");
+    BOOST_REQUIRE_MESSAGE(
+        targets_marker != std::string::npos,
+        "manifest is missing [[native.targets]]: " + manifest_path.string());
+
+    std::string prefix = manifest_text.substr(0, targets_marker);
+    while (!prefix.empty() && (prefix.back() == '\n' || prefix.back() == '\r')) {
+        prefix.pop_back();
+    }
+    const auto native_id_pos = prefix.find("id = \"");
+    BOOST_REQUIRE_MESSAGE(
+        native_id_pos != std::string::npos,
+        "manifest is missing [native].id: " + manifest_path.string());
+    const auto native_id_line_end = prefix.find('\n', native_id_pos);
+    BOOST_REQUIRE_MESSAGE(
+        native_id_line_end != std::string::npos,
+        "manifest [native].id line is unterminated: " + manifest_path.string());
+    prefix.replace(
+        native_id_pos,
+        native_id_line_end - native_id_pos,
+        "id = \"eta.test.sidecar\"");
+
+    std::ofstream manifest_out(
+        manifest_path, std::ios::out | std::ios::binary | std::ios::trunc);
+    BOOST_REQUIRE_MESSAGE(
+        manifest_out.is_open(),
+        "failed to rewrite native sidecar fixture manifest: " + manifest_path.string());
+    manifest_out << prefix << "\n\n"
+                 << "[[native.targets]]\n"
+                 << "triple = \"" << triple << "\"\n"
+                 << "artifact = \"" << artifact_relpath << "\"\n"
+                 << "sha256 = \"" << manifest_sha << "\"\n";
+}
+
+void configure_fixture_native_sidecar_dependency(
+    const fs::path& dependency_root,
+    std::optional<std::string_view> sha_override = std::nullopt) {
+    const std::string triple = host_native_target_triple();
+    const std::string artifact_relpath = host_native_artifact_relpath("standalone_lib_native");
+    const std::string artifact_sha = stage_fixture_sidecar_artifact(
+        dependency_root, artifact_relpath);
+    const std::string manifest_sha = sha_override.has_value()
+        ? std::string(*sha_override)
+        : artifact_sha;
+
+    std::ofstream manifest_out(
+        dependency_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
+    BOOST_REQUIRE_MESSAGE(
+        manifest_out.is_open(),
+        "failed to rewrite native sidecar fixture dependency manifest");
+    manifest_out << "[package]\n"
+                 << "name = \"standalone_lib\"\n"
+                 << "version = \"0.1.0\"\n"
+                 << "license = \"MIT\"\n\n"
+                 << "[compatibility]\n"
+                 << "eta = \">=0.6, <0.8\"\n\n"
+                 << "[dependencies]\n\n"
+                 << "[native]\n"
+                 << "kind = \"sidecar\"\n"
+                 << "abi = \"eta-native-v1\"\n"
+                 << "id = \"eta.test.sidecar\"\n"
+                 << "entry = \"eta_register_extension_v1\"\n\n"
+                 << "[[native.targets]]\n"
+                 << "triple = \"" << triple << "\"\n"
+                 << "artifact = \"" << artifact_relpath << "\"\n"
+                 << "sha256 = \"" << manifest_sha << "\"\n";
+}
+
+void strip_native_section(const fs::path& package_root) {
+    const auto manifest_path = package_root / "eta.toml";
+    const std::string manifest_text = read_text_file(manifest_path);
+    const auto native_section = manifest_text.find("\n[native]\n");
+    BOOST_REQUIRE_MESSAGE(
+        native_section != std::string::npos,
+        "manifest is missing [native] section: " + manifest_path.string());
+
+    std::string trimmed = manifest_text.substr(0, native_section);
+    while (!trimmed.empty() && (trimmed.back() == '\n' || trimmed.back() == '\r')) {
+        trimmed.pop_back();
+    }
+    trimmed += "\n";
+
+    std::ofstream manifest_out(
+        manifest_path, std::ios::out | std::ios::binary | std::ios::trunc);
+    BOOST_REQUIRE_MESSAGE(
+        manifest_out.is_open(),
+        "failed to rewrite manifest without native section: " + manifest_path.string());
+    manifest_out << trimmed;
+}
+
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(eta_cli_test)
@@ -458,6 +645,26 @@ BOOST_AUTO_TEST_CASE(tree_output_is_deterministic_for_path_deps) {
     BOOST_TEST(gamma_pos < beta_pos);
 }
 
+BOOST_AUTO_TEST_CASE(tree_from_native_sidecar_standalone_fixture_uses_package_manifest) {
+    TempDir temp;
+    const auto fixture_root = copy_fixture_tree(
+        temp,
+        fs::path("native_sidecar") / "standalone_app");
+    const auto lib_source = fixture_path(
+        fs::path("native_sidecar") / "standalone_lib");
+    const auto lib_destination = fixture_root.parent_path() / "standalone_lib";
+    std::error_code ec;
+    fs::copy(lib_source, lib_destination, fs::copy_options::recursive, ec);
+    BOOST_REQUIRE_MESSAGE(!ec,
+                          "failed to copy standalone lib fixture '"
+                              + lib_source.string() + "': " + ec.message());
+
+    const auto result = run_eta(fixture_root, {"tree"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("standalone_app v0.1.0") != std::string::npos);
+    BOOST_TEST(result.output.find("standalone_lib v0.1.0") != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(tree_from_workspace_member_fixture_uses_member_manifest) {
     TempDir temp;
     const auto workspace_root = copy_fixture_tree(
@@ -487,6 +694,18 @@ BOOST_AUTO_TEST_CASE(tree_from_virtual_workspace_root_fixture_uses_workspace_def
     const auto workspace_root = copy_fixture_tree(
         temp,
         fs::path("workspace") / "virtual_root");
+
+    const auto result = run_eta(workspace_root, {"tree"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+    BOOST_TEST(result.output.find("app v0.1.0") != std::string::npos);
+    BOOST_TEST(result.output.find("lib v0.1.0") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(tree_from_native_sidecar_virtual_workspace_root_uses_workspace_defaults) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("native_sidecar") / "workspace" / "virtual_root");
 
     const auto result = run_eta(workspace_root, {"tree"});
     BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
@@ -542,11 +761,60 @@ BOOST_AUTO_TEST_CASE(build_from_rooted_workspace_root_fixture_keeps_root_package
     BOOST_TEST(!fs::exists(member_artifact));
 }
 
+BOOST_AUTO_TEST_CASE(build_from_native_sidecar_rooted_workspace_root_keeps_root_package_behavior) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("native_sidecar") / "workspace" / "rooted_root");
+    configure_fixture_existing_native_sidecar_package(
+        workspace_root, "root_tools_native");
+
+    const auto build = run_eta(workspace_root, {"build"});
+    BOOST_REQUIRE_MESSAGE(build.exit_code == 0, build.output);
+
+    const auto root_artifact =
+        workspace_root / ".eta" / "target" / "release" / "root_tools" / "root_tools.etac";
+    const auto member_artifact =
+        workspace_root / ".eta" / "target" / "release" / "helper" / "helper.etac";
+    BOOST_TEST(fs::is_regular_file(root_artifact));
+    BOOST_TEST(!fs::exists(member_artifact));
+}
+
 BOOST_AUTO_TEST_CASE(build_from_workspace_member_writes_workspace_lockfile_and_shared_modules_root) {
     TempDir temp;
     const auto workspace_root = copy_fixture_tree(
         temp,
         fs::path("workspace") / "virtual_root");
+
+    const auto build = run_eta(workspace_root / "packages" / "app", {"build"});
+    BOOST_REQUIRE_MESSAGE(build.exit_code == 0, build.output);
+
+    const auto app_artifact =
+        workspace_root / ".eta" / "target" / "release" / "app" / "app.etac";
+    BOOST_TEST(fs::is_regular_file(app_artifact));
+    BOOST_TEST(!fs::exists(workspace_root / "packages" / "app" / ".eta" / "target"));
+
+    const auto workspace_lock = workspace_root / "eta.lock";
+    const auto member_lock = workspace_root / "packages" / "app" / "eta.lock";
+    BOOST_TEST(fs::is_regular_file(workspace_lock));
+    BOOST_TEST(!fs::exists(member_lock));
+
+    const auto lock_text = read_text_file(workspace_lock);
+    BOOST_TEST(lock_text.find("source = \"workspace+packages/app\"") != std::string::npos);
+    BOOST_TEST(lock_text.find("source = \"workspace+packages/lib\"") != std::string::npos);
+
+    BOOST_TEST(fs::is_directory(workspace_root / ".eta" / "modules"));
+    BOOST_TEST(!fs::exists(workspace_root / "packages" / "app" / ".eta" / "modules"));
+}
+
+BOOST_AUTO_TEST_CASE(
+    build_from_native_sidecar_workspace_member_writes_workspace_lockfile_and_shared_modules_root) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("native_sidecar") / "workspace" / "virtual_root");
+    configure_fixture_existing_native_sidecar_package(
+        workspace_root / "packages" / "app", "app_native");
 
     const auto build = run_eta(workspace_root / "packages" / "app", {"build"});
     BOOST_REQUIRE_MESSAGE(build.exit_code == 0, build.output);
@@ -1034,6 +1302,77 @@ BOOST_AUTO_TEST_CASE(vendor_materializes_path_dependency_modules) {
 
     const fs::path dep_materialized = temp.path / "app" / ".eta" / "modules" / "dep-0.1.0" / "eta.toml";
     BOOST_TEST(fs::is_regular_file(dep_materialized));
+}
+
+BOOST_AUTO_TEST_CASE(
+    vendor_build_and_run_with_native_sidecar_fixture_materializes_native_dependency) {
+    TempDir temp;
+    const auto fixture_root = copy_fixture_tree(
+        temp,
+        fs::path("native_sidecar") / "standalone_app");
+    const auto lib_source = fixture_path(
+        fs::path("native_sidecar") / "standalone_lib");
+    const auto lib_destination = fixture_root.parent_path() / "standalone_lib";
+    std::error_code ec;
+    fs::copy(lib_source, lib_destination, fs::copy_options::recursive, ec);
+    BOOST_REQUIRE_MESSAGE(!ec,
+                          "failed to copy standalone lib fixture '"
+                              + lib_source.string() + "': " + ec.message());
+
+    strip_native_section(fixture_root);
+    configure_fixture_native_sidecar_dependency(lib_destination);
+
+    const auto vendor = run_eta(fixture_root, {"vendor"});
+    BOOST_REQUIRE_MESSAGE(vendor.exit_code == 0, vendor.output);
+
+    const std::string artifact_relpath = host_native_artifact_relpath("standalone_lib_native");
+    const fs::path materialized_artifact =
+        fixture_root / ".eta" / "modules" / "standalone_lib-0.1.0" / fs::path(artifact_relpath);
+    BOOST_TEST(fs::is_regular_file(materialized_artifact));
+
+    const auto lockfile_text = read_text_file(fixture_root / "eta.lock");
+    BOOST_TEST(lockfile_text.find("name = \"standalone_lib\"") != std::string::npos);
+    BOOST_TEST(lockfile_text.find("native_id = \"eta.test.sidecar\"") != std::string::npos);
+    BOOST_TEST(lockfile_text.find("native_target_triple = \"" + host_native_target_triple() + "\"")
+               != std::string::npos);
+    BOOST_TEST(lockfile_text.find("native_artifact_relpath = \"" + artifact_relpath + "\"")
+               != std::string::npos);
+
+    const auto build = run_eta(fixture_root, {"build"});
+    BOOST_REQUIRE_MESSAGE(build.exit_code == 0, build.output);
+    BOOST_TEST(fs::is_regular_file(
+        fixture_root / ".eta" / "target" / "release" / "standalone_app.etac"));
+
+    const auto run = run_eta(fixture_root, {"run"});
+    BOOST_REQUIRE_MESSAGE(run.exit_code == 0, run.output);
+    BOOST_TEST(run.output.find("42") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(vendor_reports_native_sidecar_checksum_mismatch) {
+    constexpr std::string_view kMismatchedSha256 =
+        "0000000000000000000000000000000000000000000000000000000000000000";
+
+    TempDir temp;
+    const auto fixture_root = copy_fixture_tree(
+        temp,
+        fs::path("native_sidecar") / "standalone_app");
+    const auto lib_source = fixture_path(
+        fs::path("native_sidecar") / "standalone_lib");
+    const auto lib_destination = fixture_root.parent_path() / "standalone_lib";
+    std::error_code ec;
+    fs::copy(lib_source, lib_destination, fs::copy_options::recursive, ec);
+    BOOST_REQUIRE_MESSAGE(!ec,
+                          "failed to copy standalone lib fixture '"
+                              + lib_source.string() + "': " + ec.message());
+
+    strip_native_section(fixture_root);
+    configure_fixture_native_sidecar_dependency(
+        lib_destination, kMismatchedSha256);
+
+    const auto vendor = run_eta(fixture_root, {"vendor"});
+    BOOST_REQUIRE_NE(vendor.exit_code, 0);
+    BOOST_TEST(vendor.output.find("native sidecar checksum mismatch for package 'standalone_lib'")
+               != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(vendor_from_workspace_root_resolves_relative_target_from_workspace_root) {

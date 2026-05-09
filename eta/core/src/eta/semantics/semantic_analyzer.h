@@ -15,6 +15,7 @@
 #include "eta/semantics/arena.h"
 #include "eta/reader/module_linker.h"
 #include "eta/runtime/builtin_env.h"
+#include "eta/runtime/extension_env.h"
 
 namespace eta::semantics {
 
@@ -139,6 +140,19 @@ public:
         std::span<const eta::reader::parser::SExprPtr> forms,
         const eta::reader::ModuleLinker& linker,
         const eta::runtime::BuiltinEnvironment& builtins,
+        const eta::runtime::ExtensionEnvironment& extensions);
+
+    SemResult<std::vector<ModuleSemantics>> analyze_all(
+        std::span<const eta::reader::parser::SExprPtr> forms,
+        const eta::reader::ModuleLinker& linker,
+        const eta::runtime::BuiltinEnvironment& builtins,
+        ExternalExportSlotResolver external_slots);
+
+    SemResult<std::vector<ModuleSemantics>> analyze_all(
+        std::span<const eta::reader::parser::SExprPtr> forms,
+        const eta::reader::ModuleLinker& linker,
+        const eta::runtime::BuiltinEnvironment& builtins,
+        const eta::runtime::ExtensionEnvironment& extensions,
         ExternalExportSlotResolver external_slots);
 
     SemResult<std::vector<ModuleSemantics>> analyze_all(

@@ -345,7 +345,9 @@ struct CompiledExampleFixture {
             auto num_builtins = static_cast<uint32_t>(compiler.builtin_count());
             if (!serializer.serialize(module_entries, file_registry,
                                       source_hash, /*include_debug=*/true, out,
-                                      cr.imports, num_builtins)) {
+                                      cr.imports, num_builtins,
+                                      std::nullopt, {}, nullptr,
+                                      compiler.extension_env_hash())) {
                 return {false, ""};
             }
         }

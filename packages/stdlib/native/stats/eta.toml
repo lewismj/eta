@@ -1,0 +1,33 @@
+[package]
+name = "eta-stats-sidecar"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[native]
+kind = "sidecar"
+abi = "eta-native-v1"
+id = "eta.stats.sidecar"
+entry = "eta_register_stats_extension_v1"
+
+[[native.targets]]
+triple = "x86_64-pc-windows-msvc"
+artifact = "native/windows-x64/eta_stats_sidecar.dll"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[native.targets]]
+triple = "x86_64-unknown-linux-gnu"
+artifact = "native/linux-x64/libeta_stats_sidecar.so"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[native.targets]]
+triple = "x86_64-apple-darwin"
+artifact = "native/macos-x64/libeta_stats_sidecar.dylib"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[native.targets]]
+triple = "aarch64-apple-darwin"
+artifact = "native/macos-arm64/libeta_stats_sidecar.dylib"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"

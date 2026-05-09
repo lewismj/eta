@@ -589,6 +589,153 @@ BOOST_AUTO_TEST_CASE(launch_uses_program_workspace_for_dependency_resolution) {
     BOOST_REQUIRE(!harness.wait_response("disconnect").is_null());
 }
 
+BOOST_AUTO_TEST_CASE(launch_uses_workspace_member_context_with_mock_native_metadata) {
+    ScopedTempDir temp;
+    const auto workspace_root = temp.path / "ws";
+    const auto app_root = workspace_root / "packages" / "app";
+    const auto lib_root = workspace_root / "packages" / "lib";
+    fs::create_directories(app_root / "src");
+    fs::create_directories(lib_root / "src");
+
+    {
+        std::ofstream out(workspace_root / "eta.toml",
+                          std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[workspace]\n"
+            << "members = [\"packages/*\"]\n";
+    }
+    {
+        std::ofstream out(app_root / "eta.toml",
+                          std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n"
+            << "lib = { path = \"../lib\" }\n\n"
+            << "[native]\n"
+            << "kind = \"sidecar\"\n"
+            << "abi = \"eta-native-v1\"\n"
+            << "id = \"app_native\"\n"
+            << "entry = \"eta_register_extension_v1\"\n\n"
+            << "[[native.targets]]\n"
+            << "triple = \"x86_64-pc-windows-msvc\"\n"
+            << "artifact = \"native/windows-x64/eta_app_native.dll\"\n"
+            << "sha256 = \"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n";
+    }
+    {
+        std::ofstream out(lib_root / "eta.toml",
+                          std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"lib\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[dependencies]\n";
+    }
+    {
+        std::ofstream out(workspace_root / "eta.lock",
+                          std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "version = 1\n\n"
+            << "[[package]]\n"
+            << "name = \"app\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"workspace+packages/app\"\n"
+            << "dependencies = [\"lib@0.1.0\"]\n\n"
+            << "[[package]]\n"
+            << "name = \"lib\"\n"
+            << "version = \"0.1.0\"\n"
+            << "source = \"workspace+packages/lib\"\n"
+            << "dependencies = []\n";
+    }
+    {
+        std::ofstream out(app_root / "src" / "app.eta",
+                          std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module app\n"
+            << "  (import lib)\n"
+            << "  (begin\n"
+            << "    (display lib-value)\n"
+            << "    (newline)))\n";
+    }
+    {
+        std::ofstream out(lib_root / "src" / "lib.eta",
+                          std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module lib\n"
+            << "  (export lib-value)\n"
+            << "  (begin (define lib-value 11)))\n";
+    }
+
+    const auto program = app_root / "src" / "app.eta";
+
+    CurrentPathGuard cwd_guard;
+    fs::create_directories(temp.path / "outside");
+    fs::current_path(temp.path / "outside");
+
+    AsyncDapHarness harness;
+    harness.send(request(1, "initialize", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("initialize").is_null());
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(program) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    BOOST_REQUIRE(!harness.wait_response("launch").is_null());
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    harness.send(request(3, "configurationDone", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("configurationDone").is_null());
+
+    bool terminated = false;
+    std::string stderr_text;
+    std::string stdout_text;
+    for (int attempts = 0; attempts < 12 && !terminated; ++attempts) {
+        auto msg = harness.wait_message(
+            [](const json::Value& m) {
+                auto t = m.get_string("type");
+                if (!t || *t != "event") return false;
+                auto e = m.get_string("event");
+                return e && (*e == "output" || *e == "eta-output" || *e == "terminated");
+            },
+            std::chrono::milliseconds(10000));
+        BOOST_REQUIRE(!msg.is_null());
+        auto event = msg.get_string("event");
+        BOOST_REQUIRE(event.has_value());
+
+        if (*event == "output") {
+            auto cat = msg["body"].get_string("category");
+            auto text = msg["body"].get_string("output");
+            if (cat && text && *cat == "stderr") {
+                stderr_text += *text;
+            }
+            continue;
+        }
+        if (*event == "eta-output") {
+            auto stream = msg["body"].get_string("stream");
+            auto text = msg["body"].get_string("text");
+            if (stream && text && *stream == "stdout") {
+                stdout_text += *text;
+            }
+            continue;
+        }
+        if (*event == "terminated") {
+            terminated = true;
+        }
+    }
+    BOOST_TEST(terminated);
+    BOOST_TEST(stderr_text.find("cannot resolve import 'lib'") == std::string::npos);
+    BOOST_TEST(stdout_text.find("11") != std::string::npos);
+
+    harness.send(request(4, "disconnect", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("disconnect").is_null());
+}
+
 /**
  *    with IDs assigned by the adapter
  */

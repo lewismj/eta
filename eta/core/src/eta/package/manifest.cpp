@@ -20,6 +20,8 @@ enum class Section {
     Compatibility,
     Dependencies,
     DevDependencies,
+    Native,
+    NativeTargets,
     Workspace,
     Other,
 };
@@ -450,6 +452,16 @@ void sort_package_dependencies(Manifest& manifest) {
               });
 }
 
+void sort_native_targets(ManifestNative& native) {
+    std::sort(native.targets.begin(),
+              native.targets.end(),
+              [](const ManifestNativeTarget& lhs, const ManifestNativeTarget& rhs) {
+                  if (lhs.triple != rhs.triple) return lhs.triple < rhs.triple;
+                  if (lhs.artifact != rhs.artifact) return lhs.artifact < rhs.artifact;
+                  return lhs.sha256 < rhs.sha256;
+              });
+}
+
 [[nodiscard]] std::expected<void, ManifestError> validate_package_manifest(Manifest& manifest) {
     if (manifest.name.empty()) {
         return std::unexpected(ManifestError{
@@ -513,6 +525,102 @@ void sort_package_dependencies(Manifest& manifest) {
     return {};
 }
 
+[[nodiscard]] std::expected<void, ManifestError> validate_native_manifest(ManifestNative& native) {
+    if (native.kind.empty()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [native].kind",
+            0,
+        });
+    }
+    if (native.abi.empty()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [native].abi",
+            0,
+        });
+    }
+    if (native.id.empty()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [native].id",
+            0,
+        });
+    }
+    if (native.entry.empty()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [native].entry",
+            0,
+        });
+    }
+    if (native.kind != "sidecar") {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::InvalidValue,
+            "native.kind must be \"sidecar\"",
+            0,
+        });
+    }
+    if (native.targets.empty()) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::MissingRequiredField,
+            "missing required field [[native.targets]]",
+            0,
+        });
+    }
+
+    std::unordered_set<std::string> target_triples;
+    for (const auto& target : native.targets) {
+        if (target.triple.empty()) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::MissingRequiredField,
+                "native target is missing required field triple",
+                0,
+            });
+        }
+        if (target.artifact.empty()) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::MissingRequiredField,
+                "native target is missing required field artifact",
+                0,
+            });
+        }
+        if (target.artifact.is_absolute()
+            || target.artifact.has_root_name()
+            || target.artifact.has_root_directory()) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::InvalidValue,
+                "native target artifact must be a relative path",
+                0,
+            });
+        }
+        if (target.sha256.empty()) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::MissingRequiredField,
+                "native target is missing required field sha256",
+                0,
+            });
+        }
+        if (!is_valid_hex(target.sha256, 64u)) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::InvalidValue,
+                "native target sha256 must be 64 hex characters",
+                0,
+            });
+        }
+        if (!target_triples.insert(target.triple).second) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::InvalidValue,
+                "duplicate native target triple: " + target.triple,
+                0,
+            });
+        }
+    }
+
+    sort_native_targets(native);
+    return {};
+}
+
 [[nodiscard]] std::string escape_string(std::string_view value) {
     std::string out;
     out.reserve(value.size() + 4u);
@@ -549,6 +657,15 @@ void sort_package_dependencies(Manifest& manifest) {
     return out.str();
 }
 
+[[nodiscard]] std::string render_native_target(const ManifestNativeTarget& target) {
+    std::ostringstream out;
+    out << "[[native.targets]]\n";
+    out << "triple = \"" << escape_string(target.triple) << "\"\n";
+    out << "artifact = \"" << escape_string(target.artifact.generic_string()) << "\"\n";
+    out << "sha256 = \"" << escape_string(target.sha256) << "\"";
+    return out.str();
+}
+
 } // namespace
 
 ManifestDocumentResult parse_manifest_document(std::string_view text,
@@ -556,11 +673,25 @@ ManifestDocumentResult parse_manifest_document(std::string_view text,
     Manifest manifest;
     manifest.manifest_path = source_path;
     WorkspaceManifest workspace;
+    ManifestNative native;
+
+    struct NativeTargetParseState {
+        bool saw_triple{false};
+        bool saw_artifact{false};
+        bool saw_sha256{false};
+    };
 
     Section current_section = Section::Root;
+    std::optional<std::size_t> current_native_target_index;
+    std::vector<NativeTargetParseState> native_target_parse_states;
     std::unordered_set<std::string> dependency_names;
     std::unordered_set<std::string> dev_dependency_names;
     bool saw_package_section = false;
+    bool saw_native_section = false;
+    bool saw_native_kind = false;
+    bool saw_native_abi = false;
+    bool saw_native_id = false;
+    bool saw_native_entry = false;
     bool saw_workspace_section = false;
     bool saw_workspace_members = false;
     bool saw_workspace_exclude = false;
@@ -582,17 +713,37 @@ ManifestDocumentResult parse_manifest_document(std::string_view text,
                     line_no,
                 });
             }
-            if (stripped.size() >= 4u
+
+            const bool is_array_table = stripped.size() >= 4u
                 && stripped[0] == '[' && stripped[1] == '['
                 && stripped[stripped.size() - 1u] == ']'
-                && stripped[stripped.size() - 2u] == ']') {
-                return std::unexpected(ManifestError{
-                    ManifestError::Code::UnsupportedValue,
-                    "array-of-table syntax is not supported in eta.toml",
-                    line_no,
-                });
+                && stripped[stripped.size() - 2u] == ']';
+            if (is_array_table) {
+                const auto header = trim(
+                    std::string_view(stripped).substr(2u, stripped.size() - 4u));
+                if (header == "native.targets") {
+                    if (!saw_native_section) {
+                        return std::unexpected(ManifestError{
+                            ManifestError::Code::MissingRequiredField,
+                            "native target table requires [native] section",
+                            line_no,
+                        });
+                    }
+                    current_section = Section::NativeTargets;
+                    native.targets.emplace_back();
+                    native_target_parse_states.emplace_back();
+                    current_native_target_index = native.targets.size() - 1u;
+                } else {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::UnsupportedValue,
+                        "array-of-table syntax is not supported in eta.toml: [[" + header + "]]",
+                        line_no,
+                    });
+                }
+                continue;
             }
 
+            current_native_target_index.reset();
             const auto header = trim(
                 std::string_view(stripped).substr(1u, stripped.size() - 2u));
             if (header == "package") {
@@ -607,6 +758,16 @@ ManifestDocumentResult parse_manifest_document(std::string_view text,
             } else if (header == "dev-dependencies") {
                 current_section = Section::DevDependencies;
                 saw_package_section = true;
+            } else if (header == "native") {
+                if (saw_native_section) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate [native] section",
+                        line_no,
+                    });
+                }
+                current_section = Section::Native;
+                saw_native_section = true;
             } else if (header == "workspace") {
                 current_section = Section::Workspace;
                 saw_workspace_section = true;
@@ -698,6 +859,123 @@ ManifestDocumentResult parse_manifest_document(std::string_view text,
             continue;
         }
 
+        if (current_section == Section::Native) {
+            if (key == "kind") {
+                if (saw_native_kind) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [native].kind",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_quoted_string(value, line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                native.kind = std::move(*parsed);
+                saw_native_kind = true;
+            } else if (key == "abi") {
+                if (saw_native_abi) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [native].abi",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_quoted_string(value, line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                native.abi = std::move(*parsed);
+                saw_native_abi = true;
+            } else if (key == "id") {
+                if (saw_native_id) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [native].id",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_quoted_string(value, line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                native.id = std::move(*parsed);
+                saw_native_id = true;
+            } else if (key == "entry") {
+                if (saw_native_entry) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [native].entry",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_quoted_string(value, line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                native.entry = std::move(*parsed);
+                saw_native_entry = true;
+            } else {
+                return std::unexpected(ManifestError{
+                    ManifestError::Code::UnsupportedValue,
+                    "unsupported native key: " + key,
+                    line_no,
+                });
+            }
+            continue;
+        }
+
+        if (current_section == Section::NativeTargets) {
+            if (!current_native_target_index.has_value()
+                || *current_native_target_index >= native.targets.size()) {
+                return std::unexpected(ManifestError{
+                    ManifestError::Code::ParseError,
+                    "native target fields must appear under [[native.targets]]",
+                    line_no,
+                });
+            }
+
+            auto& target = native.targets[*current_native_target_index];
+            auto& parse_state = native_target_parse_states[*current_native_target_index];
+            if (key == "triple") {
+                if (parse_state.saw_triple) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [[native.targets]].triple",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_quoted_string(value, line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                target.triple = std::move(*parsed);
+                parse_state.saw_triple = true;
+            } else if (key == "artifact") {
+                if (parse_state.saw_artifact) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [[native.targets]].artifact",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_quoted_string(value, line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                target.artifact = fs::path(*parsed);
+                parse_state.saw_artifact = true;
+            } else if (key == "sha256") {
+                if (parse_state.saw_sha256) {
+                    return std::unexpected(ManifestError{
+                        ManifestError::Code::ParseError,
+                        "duplicate key [[native.targets]].sha256",
+                        line_no,
+                    });
+                }
+                auto parsed = parse_quoted_string(value, line_no);
+                if (!parsed) return std::unexpected(parsed.error());
+                target.sha256 = std::move(*parsed);
+                parse_state.saw_sha256 = true;
+            } else {
+                return std::unexpected(ManifestError{
+                    ManifestError::Code::UnsupportedValue,
+                    "unsupported native target key: " + key,
+                    line_no,
+                });
+            }
+            continue;
+        }
+
         if (current_section == Section::Workspace) {
             if (key == "members") {
                 if (saw_workspace_members) {
@@ -749,7 +1027,21 @@ ManifestDocumentResult parse_manifest_document(std::string_view text,
     ManifestDocument document;
     document.manifest_path = source_path;
 
+    if (saw_native_section && !saw_package_section) {
+        return std::unexpected(ManifestError{
+            ManifestError::Code::InvalidValue,
+            "[native] requires a [package] section",
+            0,
+        });
+    }
+
     if (saw_package_section) {
+        if (saw_native_section) {
+            if (auto native_check = validate_native_manifest(native); !native_check) {
+                return std::unexpected(native_check.error());
+            }
+            manifest.native = std::move(native);
+        }
         if (auto package_check = validate_package_manifest(manifest); !package_check) {
             return std::unexpected(package_check.error());
         }
@@ -836,6 +1128,9 @@ std::string write_manifest(const Manifest& manifest) {
               [](const ManifestDependency& lhs, const ManifestDependency& rhs) {
                   return lhs.name < rhs.name;
               });
+    if (normalized.native.has_value()) {
+        sort_native_targets(*normalized.native);
+    }
 
     std::ostringstream out;
     out << "[package]\n";
@@ -856,6 +1151,21 @@ std::string write_manifest(const Manifest& manifest) {
         for (const auto& dep : normalized.dev_dependencies) {
             out << render_dependency(dep) << "\n";
         }
+    }
+
+    if (normalized.native.has_value()) {
+        out << "\n[native]\n";
+        out << "kind = \"" << escape_string(normalized.native->kind) << "\"\n";
+        out << "abi = \"" << escape_string(normalized.native->abi) << "\"\n";
+        out << "id = \"" << escape_string(normalized.native->id) << "\"\n";
+        out << "entry = \"" << escape_string(normalized.native->entry) << "\"\n";
+        for (std::size_t i = 0; i < normalized.native->targets.size(); ++i) {
+            out << "\n" << render_native_target(normalized.native->targets[i]);
+            if (i + 1u != normalized.native->targets.size()) {
+                out << "\n";
+            }
+        }
+        out << "\n";
     }
 
     return out.str();

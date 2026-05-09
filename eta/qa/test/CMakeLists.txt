@@ -24,6 +24,7 @@ set(SOURCES
         src/dap_tests.cpp
         src/lsp_tests.cpp
         src/module_path_tests.cpp
+        src/native_sidecar_loader_tests.cpp
         src/packaging_contract_tests.cpp
         src/repl_redefine_tests.cpp
         src/higher_order_tests.cpp
@@ -68,6 +69,25 @@ endif()
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
+add_library(eta_test_native_sidecar MODULE
+    src/native_sidecar_test_extension.cpp
+)
+set_target_properties(eta_test_native_sidecar PROPERTIES
+    CXX_SCAN_FOR_MODULES OFF
+)
+target_include_directories(eta_test_native_sidecar PRIVATE
+    ${ETA_CORE_DIR}/src
+    ${Boost_INCLUDE_DIRS}
+)
+target_link_libraries(eta_test_native_sidecar PRIVATE eta_core)
+eta_link_sidecar_builtin_runtime(eta_test_native_sidecar)
+target_compile_definitions(eta_test_native_sidecar PRIVATE
+    ETA_NATIVE_EXPORT_SYMBOLS=1
+)
+eta_copy_torch_dlls(eta_test_native_sidecar)
+eta_copy_nng_dlls(eta_test_native_sidecar)
+eta_copy_log_dlls(eta_test_native_sidecar)
+
 # Disable C++20 module scanning — this project doesn't use modules and the
 # scanner fails to locate standard library headers when Boost headers are
 # transitively included (MSVC + CMake 3.28+ scanDependencies bug).
@@ -86,6 +106,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_COOKBOOK_DIR="${ETA_COOKBOOK_SOURCE_DIR}"
     ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
     ETA_STDLIB_ETAC_DIR="${ETA_STDLIB_RUNTIME_DIR}"
+    ETA_TEST_NATIVE_SIDECAR_PATH="$<TARGET_FILE:eta_test_native_sidecar>"
 )
 
 # Inject the path to the etai binary for spawn tests.
@@ -106,7 +127,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 )
 
 # Always link all runtime libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE eta_core eta_torch eta_nng eta_stats eta_log)
+target_link_libraries(${PROJECT_NAME} PRIVATE eta_core)
+eta_link_sidecar_builtin_runtime(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1)
@@ -121,6 +143,7 @@ endif()
 eta_copy_torch_dlls(${PROJECT_NAME})
 eta_copy_nng_dlls(${PROJECT_NAME})
 eta_copy_log_dlls(${PROJECT_NAME})
+add_dependencies(${PROJECT_NAME} eta_test_native_sidecar)
 
 # Expose session driver, interpreter helpers, DAP, and LSP headers.
 target_include_directories(${PROJECT_NAME} PRIVATE

@@ -1621,6 +1621,111 @@ dependencies = []
     BOOST_TEST(lockfile_path->find("eta.lock") != std::string::npos);
 }
 
+BOOST_AUTO_TEST_CASE(
+    lockfile_explain_workspace_member_with_mock_native_metadata_reports_workspace_context) {
+    TempDir tmp;
+    tmp.create_file("ws/eta.toml", R"toml(
+[workspace]
+members = ["packages/*"]
+)toml");
+    tmp.create_file("ws/packages/app/eta.toml", R"toml(
+[package]
+name = "app"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+lib = { path = "../lib" }
+
+[native]
+kind = "sidecar"
+abi = "eta-native-v1"
+id = "app_native"
+entry = "eta_register_extension_v1"
+
+[[native.targets]]
+triple = "x86_64-pc-windows-msvc"
+artifact = "native/windows-x64/eta_app_native.dll"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+)toml");
+    tmp.create_file("ws/packages/lib/eta.toml", R"toml(
+[package]
+name = "lib"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+)toml");
+    tmp.create_file("ws/packages/app/src/app.eta",
+                    "(module app\n"
+                    "  (import lib)\n"
+                    "  (begin (define app-value lib-value)))\n");
+    tmp.create_file("ws/packages/lib/src/lib.eta",
+                    "(module lib\n"
+                    "  (export lib-value)\n"
+                    "  (begin (define lib-value 7)))\n");
+    tmp.create_file("ws/eta.lock", R"toml(
+version = 1
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = "workspace+packages/app"
+dependencies = ["lib@0.1.0"]
+
+[[package]]
+name = "lib"
+version = "0.1.0"
+source = "workspace+packages/lib"
+dependencies = []
+)toml");
+
+    const auto src_path = tmp.path / "ws" / "packages" / "app" / "src" / "app.eta";
+    const auto src_uri = eta::lsp::LspServer::path_to_uri(src_path.string());
+
+    auto input = build_input(src_uri,
+                             "(module app\n"
+                             "  (import lib)\n"
+                             "  (begin (define app-value lib-value)))\n",
+                             {
+        frame(request(
+            46, "eta/lockfile/explain",
+            R"({"textDocument":{"uri":")" + src_uri + R"("},"module":"lib"})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 46);
+    BOOST_REQUIRE(!resp.is_null());
+
+    auto selected = resp["result"].get_string("selected");
+    BOOST_REQUIRE(selected.has_value());
+    BOOST_TEST(selected->find("lib.eta") != std::string::npos);
+
+    auto context = resp["result"].get_string("context");
+    BOOST_REQUIRE(context.has_value());
+    BOOST_TEST(*context == "workspace-member");
+
+    auto workspace_manifest = resp["result"].get_string("workspaceManifestPath");
+    BOOST_REQUIRE(workspace_manifest.has_value());
+    BOOST_TEST(workspace_manifest->find("ws") != std::string::npos);
+    BOOST_TEST(workspace_manifest->find("eta.toml") != std::string::npos);
+
+    auto package_manifest = resp["result"].get_string("packageManifestPath");
+    BOOST_REQUIRE(package_manifest.has_value());
+    BOOST_TEST(package_manifest->find("packages") != std::string::npos);
+    BOOST_TEST(package_manifest->find("app") != std::string::npos);
+
+    auto lockfile_path = resp["result"].get_string("lockfilePath");
+    BOOST_REQUIRE(lockfile_path.has_value());
+    BOOST_TEST(lockfile_path->find("eta.lock") != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(workspace_virtual_root_manifest_diagnostics_do_not_report_missing_package) {
     TempDir tmp;
     tmp.create_file("ws/eta.toml", R"toml(

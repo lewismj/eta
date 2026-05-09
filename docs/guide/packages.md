@@ -58,6 +58,36 @@ tar_dep = { tarball = "../dep.tar.gz", sha256 = "0123456789abcdef0123456789abcde
 
 `rev` must be a full 40-character git commit id. `sha256` must be a 64-character hex digest.
 
+## Native sidecar metadata
+
+Package manifests can declare native sidecar artifacts:
+
+```toml
+[native]
+kind = "sidecar"
+abi = "eta-native-v1"
+id = "example_native"
+entry = "eta_register_extension_v1"
+
+[[native.targets]]
+triple = "x86_64-pc-windows-msvc"
+artifact = "native/windows-x64/eta_example_native.dll"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+```
+
+Rules:
+
+- `[native]` is valid only for manifests that also declare `[package]`.
+- `kind`, `abi`, `id`, and `entry` are required.
+- Each `[[native.targets]]` row requires `triple`, relative `artifact`, and `sha256`.
+- Duplicate target triples in one package are rejected.
+
+When present, lockfile package rows may also include:
+`native_id`, `native_abi`, `native_entry`, `native_target_triple`,
+`native_artifact_relpath`, and `native_sha256`.
+The resolver selects the `[[native.targets]]` row matching the current target
+triple when writing these lockfile fields.
+
 ## Layout
 
 `eta build` writes artifacts to `.eta/target/<profile>/` for standalone packages.
@@ -65,6 +95,8 @@ In workspace mode, member artifacts use a shared layout:
 `.eta/target/<profile>/<member-name>/...` under the workspace root.
 `eta vendor` materializes dependencies under `.eta/modules/` in lockfile order
 (workspace commands use the workspace root by default).
+For non-workspace dependencies that carry native metadata, materialization
+verifies `native_sha256` before commands proceed.
 
 ## Tooling integration
 

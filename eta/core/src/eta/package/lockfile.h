@@ -2,6 +2,7 @@
 
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -25,6 +26,15 @@ struct LockfilePackage {
     std::string name;
     std::string version;
     std::string source;
+    /**
+     * @brief Optional native sidecar metadata.
+     */
+    std::optional<std::string> native_id;
+    std::optional<std::string> native_abi;
+    std::optional<std::string> native_entry;
+    std::optional<std::string> native_target_triple;
+    std::optional<std::string> native_artifact_relpath;
+    std::optional<std::string> native_sha256;
     std::vector<LockedDependency> dependencies;
 };
 

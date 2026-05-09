@@ -1,0 +1,5 @@
+(module standalone_app
+  (import std.io)
+  (import standalone_lib)
+  (begin
+    (println standalone-value)))
