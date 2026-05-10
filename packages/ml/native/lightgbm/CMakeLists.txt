@@ -71,9 +71,24 @@ add_library(eta_lightgbm MODULE
     src/eta/lightgbm/lightgbm_primitives.cpp
     src/eta/lightgbm/lightgbm_model.cpp
 )
+
+# Route the sidecar MODULE directly into the source-tree libs/ location that
+# eta.toml declares, so cmake --install and cp -a pick it up without a
+# separate staging copy step.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(_ETA_LIGHTGBM_ARCH_DIR "arm64")
+else()
+    set(_ETA_LIGHTGBM_ARCH_DIR "amd64")
+endif()
 set_target_properties(eta_lightgbm PROPERTIES
     OUTPUT_NAME eta_lightgbm
     CXX_SCAN_FOR_MODULES OFF
+    LIBRARY_OUTPUT_DIRECTORY          "${CMAKE_CURRENT_SOURCE_DIR}/libs/${_ETA_LIGHTGBM_ARCH_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY          "${CMAKE_CURRENT_SOURCE_DIR}/libs/${_ETA_LIGHTGBM_ARCH_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE  "${CMAKE_CURRENT_SOURCE_DIR}/libs/${_ETA_LIGHTGBM_ARCH_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE  "${CMAKE_CURRENT_SOURCE_DIR}/libs/${_ETA_LIGHTGBM_ARCH_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_DEBUG    "${CMAKE_CURRENT_SOURCE_DIR}/libs/${_ETA_LIGHTGBM_ARCH_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG    "${CMAKE_CURRENT_SOURCE_DIR}/libs/${_ETA_LIGHTGBM_ARCH_DIR}"
 )
 target_compile_definitions(eta_lightgbm PRIVATE
     ETA_NATIVE_EXPORT_SYMBOLS=1

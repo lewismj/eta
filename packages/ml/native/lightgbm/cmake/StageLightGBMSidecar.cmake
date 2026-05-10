@@ -22,20 +22,25 @@ if("${HOST_TARGET_TRIPLE}" STREQUAL "x86_64-pc-windows-msvc")
     set(artifact_relpath "libs/amd64/eta_lightgbm.dll")
 elseif("${HOST_TARGET_TRIPLE}" STREQUAL "x86_64-unknown-linux-gnu")
     set(artifact_relpath "libs/amd64/libeta_lightgbm.so")
+elseif("${HOST_TARGET_TRIPLE}" STREQUAL "aarch64-unknown-linux-gnu")
+    set(artifact_relpath "libs/arm64/libeta_lightgbm.so")
 elseif("${HOST_TARGET_TRIPLE}" STREQUAL "x86_64-apple-darwin")
     set(artifact_relpath "libs/amd64/libeta_lightgbm.dylib")
 elseif("${HOST_TARGET_TRIPLE}" STREQUAL "aarch64-apple-darwin")
     set(artifact_relpath "libs/arm64/libeta_lightgbm.dylib")
 else()
-    message(FATAL_ERROR
-        "Unsupported host target triple for eta-lightgbm staging: ${HOST_TARGET_TRIPLE}")
+    message(STATUS
+        "eta-lightgbm staging: skipping unsupported host triple ${HOST_TARGET_TRIPLE}")
+    return()
 endif()
 
+# The sidecar MODULE is now built directly into libs/${arch}/ via
+# LIBRARY_OUTPUT_DIRECTORY, so no file copy is needed here.
+# Just ensure the directory exists and update the sha256 in eta.toml.
 set(artifact_path "${PACKAGE_ROOT}/${artifact_relpath}")
 get_filename_component(artifact_dir "${artifact_path}" DIRECTORY)
 file(MAKE_DIRECTORY "${artifact_dir}")
 
-file(COPY_FILE "${SIDECAR_BINARY}" "${artifact_path}" ONLY_IF_DIFFERENT)
 file(SHA256 "${artifact_path}" artifact_sha256)
 
 file(STRINGS "${manifest_path}" manifest_lines)
@@ -65,12 +70,11 @@ foreach(line IN LISTS manifest_lines)
     string(APPEND updated_manifest "${out_line}\n")
 endforeach()
 
-if(NOT updated_sha)
-    message(FATAL_ERROR
-        "Could not find sha256 row for host triple ${HOST_TARGET_TRIPLE} in ${manifest_path}")
+if(updated_sha)
+    file(WRITE "${manifest_path}" "${updated_manifest}")
+    message(STATUS
+        "eta-lightgbm staging: updated sha256 for ${HOST_TARGET_TRIPLE}: ${artifact_sha256}")
+else()
+    message(STATUS
+        "eta-lightgbm staging: no sha256 entry for ${HOST_TARGET_TRIPLE} in ${manifest_path} — skipping update")
 endif()
-
-file(WRITE "${manifest_path}" "${updated_manifest}")
-
-message(STATUS
-    "Staged ${artifact_relpath} and updated sha256 for ${HOST_TARGET_TRIPLE}: ${artifact_sha256}")

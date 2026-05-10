@@ -71,6 +71,7 @@ if(ETA_ENABLE_PACKAGE_NATIVE_SIDECARS)
     set(ETA_PACKAGE_STAGE_SUPPORTED_TRIPLE FALSE)
     if(ETA_PACKAGE_HOST_TRIPLE STREQUAL "x86_64-pc-windows-msvc"
        OR ETA_PACKAGE_HOST_TRIPLE STREQUAL "x86_64-unknown-linux-gnu"
+       OR ETA_PACKAGE_HOST_TRIPLE STREQUAL "aarch64-unknown-linux-gnu"
        OR ETA_PACKAGE_HOST_TRIPLE STREQUAL "x86_64-apple-darwin"
        OR ETA_PACKAGE_HOST_TRIPLE STREQUAL "aarch64-apple-darwin")
         set(ETA_PACKAGE_STAGE_SUPPORTED_TRIPLE TRUE)
@@ -168,6 +169,8 @@ foreach(_t IN ITEMS
     eta_test_runner
     eta_qp_bench
     eta_prof_off_bench
+    eta_lightgbm
+    eta_duckdb
     eta_stage_native_packages
 )
     if(TARGET ${_t})
