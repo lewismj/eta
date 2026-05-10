@@ -126,10 +126,11 @@ find_host_native_artifact() {
     local manifest_path="$1"
     local host_triple="$2"
     awk -v host="${host_triple}" '
-        BEGIN { in_target = 0; triple = ""; artifact = "" }
+        BEGIN { in_target = 0; triple = ""; artifact = ""; found = 0 }
         /^[[:space:]]*\[\[native.targets\]\][[:space:]]*$/ {
             if (in_target && triple == host && artifact != "") {
                 print artifact
+                found = 1
                 exit
             }
             in_target = 1
@@ -152,6 +153,7 @@ find_host_native_artifact() {
         in_target && /^[[:space:]]*\[/ {
             if (triple == host && artifact != "") {
                 print artifact
+                found = 1
                 exit
             }
             in_target = 0
@@ -160,7 +162,7 @@ find_host_native_artifact() {
             next
         }
         END {
-            if (in_target && triple == host && artifact != "") {
+            if (!found && in_target && triple == host && artifact != "") {
                 print artifact
             }
         }
