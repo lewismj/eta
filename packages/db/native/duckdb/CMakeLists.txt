@@ -22,6 +22,12 @@ option(ETA_DUCKDB_FETCH_UPSTREAM
 option(ETA_DUCKDB_ENABLE_TESTS "Build package-local tests." ON)
 option(ETA_DUCKDB_ENABLE_ETA_TESTS "Run package-local Eta smoke tests." ON)
 
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+endif()
+
+find_package(Boost 1.88 REQUIRED)
+
 if(ETA_DUCKDB_FETCH_UPSTREAM)
     include(cmake/FetchDuckDB.cmake)
     eta_duckdb_fetch()
@@ -40,6 +46,7 @@ target_compile_definitions(eta_duckdb PRIVATE
 )
 target_include_directories(eta_duckdb PRIVATE
     ${ETA_CORE_SRC_DIR}
+    ${Boost_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
@@ -59,6 +66,7 @@ if(ETA_DUCKDB_ENABLE_TESTS)
     )
     target_include_directories(eta_duckdb_unit_tests PRIVATE
         ${ETA_CORE_SRC_DIR}
+        ${Boost_INCLUDE_DIRS}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
     add_test(NAME eta_duckdb_unit_tests COMMAND eta_duckdb_unit_tests)

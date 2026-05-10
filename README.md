@@ -54,8 +54,9 @@ chmod +x install.sh && ./install.sh
 
 ### 3. Verify
 
-```bash
-etai --version
+```console
+eta --help
+etai --help
 ```
 
 ### 4. Build Your First App
@@ -73,19 +74,35 @@ See [Build Your First App](https://lewismj.github.io/eta/docs/app/first_app/) fo
 
 ---
 
-## Toolchain
+## CLI overview
 
-| Tool              | Purpose                                                                                   |
-| :---------------- | :---------------------------------------------------------------------------------------- |
-| **`etac`**        | Ahead-of-time compiler — `.eta` source to optimised `.etac` bytecode.                    |
-| **`etai`**        | Interpreter — runs `.eta` source or pre-compiled `.etac` bytecode.                       |
-| **`eta_repl`**    | Interactive REPL.                                                                         |
-| **`eta_lsp`**     | Language server — diagnostics, completion, and navigation.                                |
-| **`eta_dap`**     | Debug adapter — breakpoints, stepping, and inspection in VS Code.                         |
-| **`eta_jupyter`** | Jupyter kernel — interactive notebooks with rich output.                                  |
-| **`eta_test`**    | Test runner — TAP / JUnit output and VS Code Test Explorer integration.                   |
+`eta` is the primary entrypoint. It drives the packaging workflow and delegates to the underlying tools:
+
+```console
+eta new <name> [--bin|--lib]   # scaffold a new package
+eta build                       # compile the current package
+eta run                         # build and run the entry point
+eta test                        # run the test suite
+eta add <pkg>                   # add a dependency
+eta tree                        # show the resolved dependency graph
+eta prof run / report / view    # profiling sub-commands
+```
+
+The full release bundle also ships the lower-level tools for direct use or editor integration:
+
+| Tool              | Purpose                                                              |
+| :---------------- | :------------------------------------------------------------------- |
+| **`etai`**        | Run a single `.eta` source file or pre-compiled `.etac` bytecode.   |
+| **`etac`**        | Ahead-of-time compiler — `.eta` → optimised `.etac` bytecode.       |
+| **`eta_repl`**    | Interactive REPL.                                                    |
+| **`eta_lsp`**     | Language server — diagnostics, completion, and navigation.           |
+| **`eta_dap`**     | Debug adapter — breakpoints, stepping, and call-stack inspection.    |
+| **`eta_jupyter`** | Jupyter kernel — interactive notebooks with rich output.             |
+| **`eta_test`**    | Test runner — TAP / JUnit output and VS Code Test Explorer.          |
 
 The VS Code extension adds a **Heap Inspector**, **Disassembly View**, and **GC Roots Tree** for inspecting the VM at runtime.
+
+See [Quick Start](https://lewismj.github.io/eta/docs/quickstart/) and [Build Your First App](https://lewismj.github.io/eta/docs/app/first_app/) for the full tooling walkthrough.
 
 ---
 

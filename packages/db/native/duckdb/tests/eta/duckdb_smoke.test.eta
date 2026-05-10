@@ -2,11 +2,100 @@
   (import std.test)
   (import db.duckdb)
   (begin
+
+    ;;@doc (duckdb:test-contains? text needle)
+    ;;@category Tests
+    ;;@module db.duckdb.tests.smoke
+    ;; Return whether `text` contains `needle`.
+    ;;@example
+    ;; (duckdb:test-contains? "sample" "amp")
+    (defun duckdb:test-contains? (text needle)
+      (let ((n (string-length text))
+            (m (string-length needle)))
+        (if (= m 0)
+            #t
+            (if (< n m)
+                #f
+                (letrec ((loop (lambda (i)
+                                 (if (> i (- n m))
+                                     #f
+                                     (if (string=? (substring text i (+ i m)) needle)
+                                         #t
+                                         (loop (+ i 1)))))))
+                  (loop 0))))))
+
+    ;;@doc (duckdb:payload-message payload)
+    ;;@category Tests
+    ;;@module db.duckdb.tests.smoke
+    ;; Extract runtime payload message text.
+    ;;@example
+    ;; (duckdb:payload-message 'x)
+    (defun duckdb:payload-message (payload)
+      (if (and (pair? payload)
+               (pair? (cdr payload))
+               (pair? (cdr (cdr payload))))
+          (let ((message (car (cdr (cdr payload)))))
+            (if (string? message) message "runtime error"))
+          "runtime error"))
+
     (define suite
       (make-group "db.duckdb"
         (list
           (make-test "duckdb-upstream-version"
             (lambda ()
-              (assert-equal "v1.5.1" (duckdb-upstream-version)))))))
+              (assert-equal "v1.5.1" (duckdb-upstream-version))))
 
-    (print-tap (run suite))))
+          (make-test "duckdb-open-close-roundtrip"
+            (lambda ()
+              (let ((conn (duckdb:open ":memory:")))
+                (assert-true (number? conn))
+                (assert-equal #t (duckdb:close! conn))
+                (assert-equal #f (duckdb:close! conn)))))
+
+          (make-test "duckdb-query-normalized-row-shape"
+            (lambda ()
+              (let ((conn (duckdb:open ":memory:")))
+                (assert-equal '(((value . 1)))
+                              (duckdb:query conn "select 1 as value"))
+                (duckdb:close! conn))))
+
+          (make-test "duckdb-query-parameterized"
+            (lambda ()
+              (let ((conn (duckdb:open ":memory:")))
+                (assert-equal '(((value . 7)))
+                              (duckdb:query conn "select ? as value" '(7)))
+                (duckdb:close! conn))))
+
+          (make-test "duckdb-query-errors-use-wrapper-prefix"
+            (lambda ()
+              (let ((conn (duckdb:open ":memory:")))
+                (duckdb:close! conn)
+                (let ((payload (catch 'runtime.error
+                                 (duckdb:query conn "select 1"))))
+                  (assert-equal 'runtime-error (car payload))
+                  (assert-true
+                    (duckdb:test-contains?
+                      (duckdb:payload-message payload)
+                      "duckdb:query:"))))))
+
+          (make-test "duckdb-query-builder-renders-sql-and-runs"
+            (lambda ()
+              (let* ((conn (duckdb:open ":memory:"))
+                     (q (duckdb:q-limit
+                          (duckdb:q-order-by
+                            (duckdb:q-where
+                              (duckdb:q-from
+                                (duckdb:q-select (duckdb:q-new) "value")
+                                "numbers")
+                              "value = ?"
+                              11)
+                            "value desc")
+                          1)))
+                (assert-equal
+                  "SELECT value FROM numbers WHERE value = ? ORDER BY value desc LIMIT 1"
+                  (duckdb:q-to-sql q))
+                (assert-equal '(11) (duckdb:q-params q))
+                (assert-equal '(((value . 11))) (duckdb:q-run conn q))
+                (duckdb:close! conn))))))
+
+    (print-tap (run suite)))))

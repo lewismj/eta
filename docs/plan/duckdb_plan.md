@@ -4,7 +4,7 @@
 [Packages Guide](../guide/packages.md) |
 [Native Sidecar Plan](../old/native_sidecar_plan.md)
 
-Status: D1 standalone package build implemented (2026-05-10); D2-D5 proposed.
+Status: D1-D5 implemented (2026-05-10); migration guidance deferred until package adoption.
 
 ---
 
@@ -227,6 +227,15 @@ Gate:
 2. Return stable extension metadata (`abi/id/version`).
 3. Implement MVP primitive set (open/close/exec/query/error).
 
+Implemented in this repo snapshot:
+
+1. `register_duckdb_primitives` now registers `%duckdb-open`,
+   `%duckdb-close!`, `%duckdb-exec`, `%duckdb-query`, and
+   `%duckdb-last-error`.
+2. Package-local primitive behavior now supports connection open/close, exec,
+   query, and last-error wrapper integration.
+3. C++ unit tests assert primitive registration names/arity/rest-arg metadata.
+
 Gate:
 
 1. package-level smoke test can load sidecar and run `select 1`.
@@ -236,6 +245,21 @@ Gate:
 1. Implement `db.duckdb` function-first API.
 2. Normalize result row shape and error behavior.
 3. Add wrapper tests for open/close/query/parameterized query.
+
+Implemented in this repo snapshot:
+
+1. `db.duckdb` now exports function-first APIs:
+   `duckdb:open`, `duckdb:close!`, `duckdb:exec`, `duckdb:query`,
+   `duckdb:last-error`.
+2. Query-builder helpers now exist in the same module:
+   `duckdb:q-new`, `duckdb:q-select`, `duckdb:q-from`, `duckdb:q-join`,
+   `duckdb:q-where`, `duckdb:q-group-by`, `duckdb:q-having`,
+   `duckdb:q-order-by`, `duckdb:q-limit`, `duckdb:q-to-sql`,
+   `duckdb:q-params`, `duckdb:q-run`.
+3. Wrapper behavior now normalizes query results to row alists and rethrows
+   runtime failures with stable `duckdb:<op>:` prefixes.
+4. Package Eta smoke tests now cover open/close/query/parameterized query plus
+   query-builder SQL/params behavior.
 
 Gate:
 
@@ -247,6 +271,17 @@ Gate:
 2. Add expansion-focused tests (`dsl.test.eta`) for each clause form.
 3. Verify generated SQL + params match function-only builder output.
 
+Implemented in this repo snapshot:
+
+1. `db.duckdb.query` now provides fluent clause forms plus `duckdb:build` and
+   `duckdb:query`, with `duckdb:>` and `duckdb:query` `define-syntax`
+   expansion rules that target query-builder helpers.
+2. Package Eta tests now include `duckdb_dsl.test.eta` coverage for each clause
+   form (`from/select/join/where/group-by/having/order-by/limit`) and SQL-path
+   passthrough behavior.
+3. DSL-path and function-builder-path tests now assert equivalent SQL and
+   positional parameter output.
+
 Gate:
 
 1. DSL and function paths produce identical results for same query.
@@ -256,6 +291,20 @@ Gate:
 1. finalize README docs and examples,
 2. add migration guidance (raw SQL -> builder -> DSL),
 3. pin version bounds and compatibility notes.
+
+Implemented in this repo snapshot:
+
+1. `packages/db/native/duckdb/README.md` now includes finalized API and query
+   usage examples.
+2. README now shows raw SQL, function-builder, and fluent DSL as equivalent
+   alternatives so users can pick preferred style.
+3. version bounds and compatibility notes remain pinned in `eta.toml` and
+   package docs.
+
+Deferred:
+
+1. dedicated migration guidance is intentionally deferred until broader package
+   adoption.
 
 Gate:
 
@@ -269,7 +318,7 @@ Gate:
 
 1. C++ unit tests for extension metadata + entrypoint scaffold behavior.
 2. Eta smoke test that materializes a fixture package with host sidecar artifact.
-3. D2+ will add open/close/query/error behavior tests.
+3. Eta smoke tests include open/close/query/error and parameterized-query behavior.
 
 Suggested commands:
 

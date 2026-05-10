@@ -45,6 +45,7 @@ set(duckdb_libs_root "${duckdb_root}/libs/${host_arch}")
 file(REMOVE_RECURSE "${FIXTURE_ROOT}")
 file(MAKE_DIRECTORY
     "${duckdb_src_root}/db"
+    "${duckdb_src_root}/db/duckdb"
     "${duckdb_libs_root}"
     "${app_tests_root}")
 
@@ -53,8 +54,12 @@ set(staged_sidecar "${duckdb_libs_root}/${sidecar_name}")
 
 file(COPY_FILE "${PACKAGE_SOURCE_ROOT}/src/db/duckdb.eta"
                "${duckdb_src_root}/db/duckdb.eta")
+file(COPY_FILE "${PACKAGE_SOURCE_ROOT}/src/db/duckdb/query.eta"
+               "${duckdb_src_root}/db/duckdb/query.eta")
 file(COPY_FILE "${PACKAGE_SOURCE_ROOT}/tests/eta/duckdb_smoke.test.eta"
                "${app_tests_root}/duckdb_smoke.test.eta")
+file(COPY_FILE "${PACKAGE_SOURCE_ROOT}/tests/eta/duckdb_dsl.test.eta"
+               "${app_tests_root}/duckdb_dsl.test.eta")
 file(COPY_FILE "${SIDECAR_BINARY}" "${staged_sidecar}" ONLY_IF_DIFFERENT)
 file(SHA256 "${staged_sidecar}" sidecar_sha256)
 
@@ -157,4 +162,19 @@ if(NOT etai_status EQUAL 0)
         "DuckDB Eta smoke test failed.\n"
         "STDOUT:\n${etai_stdout}\n"
         "STDERR:\n${etai_stderr}\n")
+endif()
+
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -E env "ETA_MODULE_PATH=${module_path}" "${ETA_ETAI_EXECUTABLE}"
+            "${app_tests_root}/duckdb_dsl.test.eta"
+    WORKING_DIRECTORY "${app_root}"
+    RESULT_VARIABLE dsl_status
+    OUTPUT_VARIABLE dsl_stdout
+    ERROR_VARIABLE dsl_stderr
+)
+if(NOT dsl_status EQUAL 0)
+    message(FATAL_ERROR
+        "DuckDB Eta DSL tests failed.\n"
+        "STDOUT:\n${dsl_stdout}\n"
+        "STDERR:\n${dsl_stderr}\n")
 endif()

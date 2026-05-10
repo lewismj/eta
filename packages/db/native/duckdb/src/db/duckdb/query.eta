@@ -1,0 +1,234 @@
+;;; db/duckdb/query.eta
+;;; Fluent query DSL helpers built on top of db.duckdb query-builder functions.
+
+(module db.duckdb.query
+  (import (rename db.duckdb (duckdb:query duckdb:%query-sql)))
+  (import (except db.duckdb duckdb:query))
+  (export
+    duckdb:query
+    duckdb:build
+    from
+    select
+    join
+    where
+    group-by
+    having
+    order-by
+    limit)
+  (begin
+
+    ;;@doc (duckdb:%apply-clause q clause)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Apply one DSL clause to query-builder state `q`.
+    ;;@example
+    ;; (duckdb:%apply-clause (duckdb:q-new) '(from "trades"))
+    (defun duckdb:%apply-clause (q clause)
+      (if (not (pair? clause))
+          (error "duckdb:build: clause must be a non-empty list")
+          (let ((kind (car clause))
+                (rest (cdr clause)))
+            (cond
+              ((eq? kind 'from)
+               (if (and (pair? rest) (null? (cdr rest)))
+                   (duckdb:q-from q (car rest))
+                   (error "duckdb:build: (from table) expects exactly one argument")))
+              ((eq? kind 'select)
+               (apply duckdb:q-select (cons q rest)))
+              ((eq? kind 'join)
+               (if (and (pair? rest) (pair? (cdr rest)) (null? (cdr (cdr rest))))
+                   (duckdb:q-join q (car rest) (car (cdr rest)))
+                   (error "duckdb:build: (join table on-expr) expects exactly two arguments")))
+              ((eq? kind 'where)
+               (if (null? rest)
+                   (error "duckdb:build: (where predicate arg ...) expects at least one argument")
+                   (apply duckdb:q-where (cons q rest))))
+              ((eq? kind 'group-by)
+               (apply duckdb:q-group-by (cons q rest)))
+              ((eq? kind 'having)
+               (if (null? rest)
+                   (error "duckdb:build: (having predicate arg ...) expects at least one argument")
+                   (apply duckdb:q-having (cons q rest))))
+              ((eq? kind 'order-by)
+               (if (and (pair? rest) (null? (cdr rest)))
+                   (duckdb:q-order-by q (car rest))
+                   (error "duckdb:build: (order-by expr) expects exactly one argument")))
+              ((eq? kind 'limit)
+               (if (and (pair? rest) (null? (cdr rest)))
+                   (duckdb:q-limit q (car rest))
+                   (error "duckdb:build: (limit n) expects exactly one argument")))
+              (#t
+               (error "duckdb:build: unsupported clause kind"))))))
+
+    ;;@doc (duckdb:build . clauses)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Build query state from fluent clause records.
+    ;;@example
+    ;; (duckdb:build (from "trades") (select "id"))
+    (define (duckdb:build . clauses)
+      (letrec ((loop (lambda (q rest)
+                       (if (null? rest)
+                           q
+                           (loop (duckdb:%apply-clause q (car rest))
+                                 (cdr rest))))))
+        (loop (duckdb:q-new) clauses)))
+
+    ;;@doc (from table)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Create a fluent `from` clause.
+    ;;@example
+    ;; (from "trades t")
+    (define (from table)
+      (list 'from table))
+
+    ;;@doc (select . cols)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Create a fluent `select` clause.
+    ;;@example
+    ;; (select "t.id" "t.pnl")
+    (define (select . cols)
+      (cons 'select cols))
+
+    ;;@doc (join table on-expr)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Create a fluent `join` clause.
+    ;;@example
+    ;; (join "books b" "b.id = t.book_id")
+    (define (join table on-expr)
+      (list 'join table on-expr))
+
+    ;;@doc (where predicate . args)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Create a fluent `where` clause with positional parameters.
+    ;;@example
+    ;; (where "desk = ?" "rates")
+    (define (where predicate . args)
+      (cons 'where (cons predicate args)))
+
+    ;;@doc (group-by . exprs)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Create a fluent `group-by` clause.
+    ;;@example
+    ;; (group-by "desk")
+    (define (group-by . exprs)
+      (cons 'group-by exprs))
+
+    ;;@doc (having predicate . args)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Create a fluent `having` clause with positional parameters.
+    ;;@example
+    ;; (having "count(*) > ?" 10)
+    (define (having predicate . args)
+      (cons 'having (cons predicate args)))
+
+    ;;@doc (order-by expr)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Create a fluent `order-by` clause.
+    ;;@example
+    ;; (order-by "t.pnl DESC")
+    (define (order-by expr)
+      (list 'order-by expr))
+
+    ;;@doc (limit n)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Create a fluent `limit` clause.
+    ;;@example
+    ;; (limit 25)
+    (define (limit n)
+      (list 'limit n))
+
+    ;;@doc (duckdb:%query-runtime conn . args)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Runtime dispatcher for SQL path and fluent clause path.
+    ;;@example
+    ;; (duckdb:%query-runtime conn "select 1")
+    (define (duckdb:%query-runtime conn . args)
+      (if (null? args)
+          (error "duckdb:query: expected sql text or fluent clauses")
+          (let ((first (car args))
+                (rest (cdr args)))
+            (if (string? first)
+                (cond
+                  ((null? rest)
+                   (duckdb:%query-sql conn first))
+                  ((null? (cdr rest))
+                   (duckdb:%query-sql conn first (car rest)))
+                  (#t
+                   (error "duckdb:query: expected conn sql and optional params list")))
+                (duckdb:q-run conn (apply duckdb:build args))))))
+
+    ;;@doc (duckdb:query conn . args)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Execute either SQL text or fluent clause forms.
+    ;;@example
+    ;; (duckdb:query conn (from "trades") (select "id"))
+    (define (duckdb:query conn . args)
+      (apply duckdb:%query-runtime (cons conn args)))
+
+    ;;@doc (duckdb:>)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Fluent macro that rewrites clause forms into query-builder helpers.
+    ;;@example
+    ;; (duckdb:> (duckdb:q-new) (from "trades"))
+    (define-syntax duckdb:>
+      (syntax-rules (from select join where group-by having order-by limit run)
+        ((_ q)
+         q)
+        ((_ q (from table) rest ...)
+         (duckdb:> (duckdb:q-from q table) rest ...))
+        ((_ q (select col ...) rest ...)
+         (duckdb:> (duckdb:q-select q col ...) rest ...))
+        ((_ q (join table on-expr) rest ...)
+         (duckdb:> (duckdb:q-join q table on-expr) rest ...))
+        ((_ q (where pred arg ...) rest ...)
+         (duckdb:> (duckdb:q-where q pred arg ...) rest ...))
+        ((_ q (group-by expr ...) rest ...)
+         (duckdb:> (duckdb:q-group-by q expr ...) rest ...))
+        ((_ q (having pred arg ...) rest ...)
+         (duckdb:> (duckdb:q-having q pred arg ...) rest ...))
+        ((_ q (order-by expr) rest ...)
+         (duckdb:> (duckdb:q-order-by q expr) rest ...))
+        ((_ q (limit n) rest ...)
+         (duckdb:> (duckdb:q-limit q n) rest ...))
+        ((_ q (run conn))
+         (duckdb:q-run conn q))))
+
+    ;;@doc (duckdb:query conn clause ...)
+    ;;@category DB
+    ;;@module db.duckdb.query
+    ;; Fluent macro entrypoint with runtime fallback for SQL calls.
+    ;;@example
+    ;; (duckdb:query conn (from "trades") (select "id"))
+    (define-syntax duckdb:query
+      (syntax-rules (from select join where group-by having order-by limit)
+        ((_ conn (from table) rest ...)
+         (duckdb:> (duckdb:q-new) (from table) rest ... (run conn)))
+        ((_ conn (select col ...) rest ...)
+         (duckdb:> (duckdb:q-new) (select col ...) rest ... (run conn)))
+        ((_ conn (join table on-expr) rest ...)
+         (duckdb:> (duckdb:q-new) (join table on-expr) rest ... (run conn)))
+        ((_ conn (where pred arg ...) rest ...)
+         (duckdb:> (duckdb:q-new) (where pred arg ...) rest ... (run conn)))
+        ((_ conn (group-by expr ...) rest ...)
+         (duckdb:> (duckdb:q-new) (group-by expr ...) rest ... (run conn)))
+        ((_ conn (having pred arg ...) rest ...)
+         (duckdb:> (duckdb:q-new) (having pred arg ...) rest ... (run conn)))
+        ((_ conn (order-by expr) rest ...)
+         (duckdb:> (duckdb:q-new) (order-by expr) rest ... (run conn)))
+        ((_ conn (limit n) rest ...)
+         (duckdb:> (duckdb:q-new) (limit n) rest ... (run conn)))
+        ((_ conn first rest ...)
+         (duckdb:%query-runtime conn first rest ...)))))
+  )

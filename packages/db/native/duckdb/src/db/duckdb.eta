@@ -2,8 +2,203 @@
 ;;; Sidecar-backed DuckDB package scaffold.
 
 (module db.duckdb
-  (export duckdb-upstream-version)
+  (export
+    duckdb-upstream-version
+    duckdb:open
+    duckdb:close!
+    duckdb:exec
+    duckdb:query
+    duckdb:last-error
+    duckdb:q-new
+    duckdb:q-select
+    duckdb:q-from
+    duckdb:q-join
+    duckdb:q-where
+    duckdb:q-group-by
+    duckdb:q-having
+    duckdb:q-order-by
+    duckdb:q-limit
+    duckdb:q-to-sql
+    duckdb:q-params
+    duckdb:q-run)
   (begin
+
+    ;;@doc (duckdb:%runtime-error-payload? value)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Return whether `value` is a runtime-error payload from `catch`.
+    ;;@example
+    ;; (duckdb:%runtime-error-payload? 'x)
+    (defun duckdb:%runtime-error-payload? (value)
+      (and (pair? value)
+           (eq? (car value) 'runtime-error)))
+
+    ;;@doc (duckdb:%payload-message payload)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Extract a human-readable message from a runtime-error payload.
+    ;;@example
+    ;; (duckdb:%payload-message 'x)
+    (defun duckdb:%payload-message (payload)
+      (if (and (pair? payload)
+               (pair? (cdr payload))
+               (pair? (cdr (cdr payload))))
+          (let ((message (car (cdr (cdr payload)))))
+            (if (string? message) message "runtime error"))
+          "runtime error"))
+
+    ;;@doc (duckdb:%raise-runtime who payload)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Raise a normalized wrapper error using `who` and runtime payload details.
+    ;;@example
+    ;; (duckdb:%raise-runtime "duckdb:query" 'x)
+    (defun duckdb:%raise-runtime (who payload)
+      (error (string-append who ": " (duckdb:%payload-message payload))))
+
+    ;;@doc (duckdb:%ensure-string who label value)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Validate that `value` is a string.
+    ;;@example
+    ;; (duckdb:%ensure-string "duckdb:open" "path" "sample")
+    (defun duckdb:%ensure-string (who label value)
+      (if (string? value)
+          value
+          (error (string-append who ": " label " must be a string"))))
+
+    ;;@doc (duckdb:%ensure-connection who conn)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Validate that `conn` has the expected wrapper connection shape.
+    ;;@example
+    ;; (duckdb:%ensure-connection "duckdb:close!" 1)
+    (defun duckdb:%ensure-connection (who conn)
+      (if (number? conn)
+          conn
+          (error (string-append who ": connection handle must be numeric"))))
+
+    ;;@doc (duckdb:%proper-list? value)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Return whether `value` is a proper list.
+    ;;@example
+    ;; (duckdb:%proper-list? '())
+    (defun duckdb:%proper-list? (value)
+      (cond
+        ((null? value) #t)
+        ((pair? value) (duckdb:%proper-list? (cdr value)))
+        (#t #f)))
+
+    ;;@doc (duckdb:%ensure-string-list who label xs)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Validate that `xs` is a proper list of strings.
+    ;;@example
+    ;; (duckdb:%ensure-string-list "duckdb:q-select" "columns" '("x"))
+    (defun duckdb:%ensure-string-list (who label xs)
+      (letrec ((loop (lambda (rest)
+                       (cond
+                         ((null? rest) #t)
+                         ((pair? rest)
+                          (if (string? (car rest))
+                              (loop (cdr rest))
+                              (error (string-append who ": " label " must contain only strings"))))
+                         (#t
+                          (error (string-append who ": " label " must be a proper list")))))))
+        (loop xs)
+        xs))
+
+    ;;@doc (duckdb:%ensure-non-negative-int who label value)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Validate that `value` is a non-negative integer.
+    ;;@example
+    ;; (duckdb:%ensure-non-negative-int "duckdb:q-limit" "limit" 1)
+    (defun duckdb:%ensure-non-negative-int (who label value)
+      (if (and (integer? value) (>= value 0))
+          value
+          (error (string-append who ": " label " must be a non-negative integer"))))
+
+    ;;@doc (duckdb:%alist? value)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Return whether `value` has alist shape.
+    ;;@example
+    ;; (duckdb:%alist? '((x . 1)))
+    (defun duckdb:%alist? (value)
+      (cond
+        ((null? value) #t)
+        ((pair? value)
+         (and (pair? (car value))
+              (duckdb:%alist? (cdr value))))
+        (#t #f)))
+
+    ;;@doc (duckdb:%rows? value)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Return whether `value` is a list of alist rows.
+    ;;@example
+    ;; (duckdb:%rows? '(((x . 1))))
+    (defun duckdb:%rows? (value)
+      (cond
+        ((null? value) #t)
+        ((pair? value)
+         (and (duckdb:%alist? (car value))
+              (duckdb:%rows? (cdr value))))
+        (#t #f)))
+
+    ;;@doc (duckdb:%normalize-query-result raw)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Convert primitive query output into wrapper row shape.
+    ;;@example
+    ;; (duckdb:%normalize-query-result 1)
+    (defun duckdb:%normalize-query-result (raw)
+      (if (duckdb:%rows? raw)
+          raw
+          (list (list (cons 'value raw)))))
+
+    ;;@doc (duckdb:%join-with sep parts)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Join string `parts` with separator `sep`.
+    ;;@example
+    ;; (duckdb:%join-with ", " '("a" "b"))
+    (defun duckdb:%join-with (sep parts)
+      (if (null? parts)
+          ""
+          (letrec ((loop (lambda (rest acc)
+                           (if (null? rest)
+                               acc
+                               (loop (cdr rest)
+                                     (string-append acc sep (car rest)))))))
+            (loop (cdr parts) (car parts)))))
+
+    ;;@doc (duckdb:%q-ref q key default)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Lookup key from query record `q`.
+    ;;@example
+    ;; (duckdb:%q-ref '() 'x 'x)
+    (defun duckdb:%q-ref (q key default)
+      (let ((entry (assoc key q)))
+        (if entry (cdr entry) default)))
+
+    ;;@doc (duckdb:%q-set q key value)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Set key/value in query record `q`.
+    ;;@example
+    ;; (duckdb:%q-set '() 'x 1)
+    (defun duckdb:%q-set (q key value)
+      (if (null? q)
+          (list (cons key value))
+          (let ((entry (car q)))
+            (if (eq? (car entry) key)
+                (cons (cons key value) (cdr q))
+                (cons entry (duckdb:%q-set (cdr q) key value))))))
+
     ;;@doc (duckdb-upstream-version)
     ;;@category DB
     ;;@module db.duckdb
@@ -11,4 +206,283 @@
     ;;@example
     ;; (duckdb-upstream-version)
     (define (duckdb-upstream-version)
-      "v1.5.1")))
+      "v1.5.1")
+
+    ;;@doc (duckdb:open path)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Open a DuckDB connection for `path`.
+    ;;@example
+    ;; (duckdb:open ":memory:")
+    (define (duckdb:open path)
+      (duckdb:%ensure-string "duckdb:open" "path" path)
+      (let ((result (catch 'runtime.error (%duckdb-open path))))
+        (if (duckdb:%runtime-error-payload? result)
+            (duckdb:%raise-runtime "duckdb:open" result)
+            result)))
+
+    ;;@doc (duckdb:close! conn)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Close an open DuckDB connection.
+    ;;@example
+    ;; (duckdb:close! conn)
+    (define (duckdb:close! conn)
+      (duckdb:%ensure-connection "duckdb:close!" conn)
+      (let ((result (catch 'runtime.error (%duckdb-close! conn))))
+        (if (duckdb:%runtime-error-payload? result)
+            (duckdb:%raise-runtime "duckdb:close!" result)
+            result)))
+
+    ;;@doc (duckdb:exec conn sql)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Execute SQL that does not return rows.
+    ;;@example
+    ;; (duckdb:exec conn "create table t(x integer)")
+    (define (duckdb:exec conn sql)
+      (duckdb:%ensure-connection "duckdb:exec" conn)
+      (duckdb:%ensure-string "duckdb:exec" "sql" sql)
+      (let ((result (catch 'runtime.error (%duckdb-exec conn sql))))
+        (if (duckdb:%runtime-error-payload? result)
+            (duckdb:%raise-runtime "duckdb:exec" result)
+            result)))
+
+    ;;@doc (duckdb:query conn sql . rest)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Execute SQL and return normalized row results.
+    ;;@example
+    ;; (duckdb:query conn "select ?" '(1))
+    (define (duckdb:query conn sql . rest)
+      (duckdb:%ensure-connection "duckdb:query" conn)
+      (duckdb:%ensure-string "duckdb:query" "sql" sql)
+      (let ((params
+              (cond
+                ((null? rest) '())
+                ((null? (cdr rest))
+                 (if (duckdb:%proper-list? (car rest))
+                     (car rest)
+                     (error "duckdb:query: params must be a proper list")))
+                (#t
+                 (error "duckdb:query: expected conn sql and optional params list")))))
+        (let ((result (catch 'runtime.error
+                        (apply %duckdb-query (cons conn (cons sql params))))))
+          (if (duckdb:%runtime-error-payload? result)
+              (duckdb:%raise-runtime "duckdb:query" result)
+              (duckdb:%normalize-query-result result)))))
+
+    ;;@doc (duckdb:last-error conn-or-nil)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Return the last sidecar error text for a connection or globally.
+    ;;@example
+    ;; (duckdb:last-error conn)
+    (define (duckdb:last-error conn-or-nil)
+      (let ((result (catch 'runtime.error (%duckdb-last-error conn-or-nil))))
+        (if (duckdb:%runtime-error-payload? result)
+            (duckdb:%raise-runtime "duckdb:last-error" result)
+            (if (string? result) result ""))))
+
+    ;;@doc (duckdb:q-new)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Create a new query builder state value.
+    ;;@example
+    ;; (duckdb:q-new)
+    (define (duckdb:q-new)
+      (list
+        (cons 'select (list "*"))
+        (cons 'from #f)
+        (cons 'join '())
+        (cons 'where '())
+        (cons 'group-by '())
+        (cons 'having '())
+        (cons 'order-by #f)
+        (cons 'limit #f)
+        (cons 'params '())))
+
+    ;;@doc (duckdb:q-select q . cols)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Set selected columns for query state `q`.
+    ;;@example
+    ;; (duckdb:q-select (duckdb:q-new) "id")
+    (define (duckdb:q-select q . cols)
+      (if (null? cols)
+          (duckdb:%q-set q 'select (list "*"))
+          (begin
+            (duckdb:%ensure-string-list "duckdb:q-select" "columns" cols)
+            (duckdb:%q-set q 'select cols))))
+
+    ;;@doc (duckdb:q-from q table)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Set the `FROM` table for query state `q`.
+    ;;@example
+    ;; (duckdb:q-from (duckdb:q-new) "trades")
+    (define (duckdb:q-from q table)
+      (duckdb:%ensure-string "duckdb:q-from" "table" table)
+      (duckdb:%q-set q 'from table))
+
+    ;;@doc (duckdb:q-join q table on-expr)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Append a join clause.
+    ;;@example
+    ;; (duckdb:q-join (duckdb:q-new) "books b" "b.id = t.book_id")
+    (define (duckdb:q-join q table on-expr)
+      (duckdb:%ensure-string "duckdb:q-join" "table" table)
+      (duckdb:%ensure-string "duckdb:q-join" "on expression" on-expr)
+      (let ((joins (duckdb:%q-ref q 'join '())))
+        (duckdb:%q-set q 'join (append joins (list (cons table on-expr))))))
+
+    ;;@doc (duckdb:q-where q predicate . args)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Append a `WHERE` predicate and positional args.
+    ;;@example
+    ;; (duckdb:q-where (duckdb:q-new) "id = ?" 1)
+    (define (duckdb:q-where q predicate . args)
+      (duckdb:%ensure-string "duckdb:q-where" "predicate" predicate)
+      (let ((wheres (duckdb:%q-ref q 'where '()))
+            (params (duckdb:%q-ref q 'params '())))
+        (duckdb:%q-set
+          (duckdb:%q-set q 'where (append wheres (list predicate)))
+          'params
+          (append params args))))
+
+    ;;@doc (duckdb:q-group-by q . exprs)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Append `GROUP BY` expressions.
+    ;;@example
+    ;; (duckdb:q-group-by (duckdb:q-new) "desk")
+    (define (duckdb:q-group-by q . exprs)
+      (duckdb:%ensure-string-list "duckdb:q-group-by" "expressions" exprs)
+      (let ((groups (duckdb:%q-ref q 'group-by '())))
+        (duckdb:%q-set q 'group-by (append groups exprs))))
+
+    ;;@doc (duckdb:q-having q predicate . args)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Append a `HAVING` predicate and positional args.
+    ;;@example
+    ;; (duckdb:q-having (duckdb:q-new) "count(*) > ?" 1)
+    (define (duckdb:q-having q predicate . args)
+      (duckdb:%ensure-string "duckdb:q-having" "predicate" predicate)
+      (let ((having (duckdb:%q-ref q 'having '()))
+            (params (duckdb:%q-ref q 'params '())))
+        (duckdb:%q-set
+          (duckdb:%q-set q 'having (append having (list predicate)))
+          'params
+          (append params args))))
+
+    ;;@doc (duckdb:q-order-by q expr)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Set the `ORDER BY` expression.
+    ;;@example
+    ;; (duckdb:q-order-by (duckdb:q-new) "created_at desc")
+    (define (duckdb:q-order-by q expr)
+      (duckdb:%ensure-string "duckdb:q-order-by" "expression" expr)
+      (duckdb:%q-set q 'order-by expr))
+
+    ;;@doc (duckdb:q-limit q n)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Set a non-negative row limit.
+    ;;@example
+    ;; (duckdb:q-limit (duckdb:q-new) 10)
+    (define (duckdb:q-limit q n)
+      (duckdb:%ensure-non-negative-int "duckdb:q-limit" "limit" n)
+      (duckdb:%q-set q 'limit n))
+
+    ;;@doc (duckdb:q-to-sql q)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Render query builder state `q` into SQL text.
+    ;;@example
+    ;; (duckdb:q-to-sql (duckdb:q-new))
+    (define (duckdb:q-to-sql q)
+      (let* ((select-cols (duckdb:%q-ref q 'select (list "*")))
+             (from-table (duckdb:%q-ref q 'from #f))
+             (joins (duckdb:%q-ref q 'join '()))
+             (where-preds (duckdb:%q-ref q 'where '()))
+             (group-bys (duckdb:%q-ref q 'group-by '()))
+             (having-preds (duckdb:%q-ref q 'having '()))
+             (order-by-expr (duckdb:%q-ref q 'order-by #f))
+             (limit-value (duckdb:%q-ref q 'limit #f)))
+        (duckdb:%ensure-string-list "duckdb:q-to-sql" "select list" select-cols)
+        (duckdb:%ensure-string-list "duckdb:q-to-sql" "where predicates" where-preds)
+        (duckdb:%ensure-string-list "duckdb:q-to-sql" "group-by expressions" group-bys)
+        (duckdb:%ensure-string-list "duckdb:q-to-sql" "having predicates" having-preds)
+        (let* ((sql0 (string-append "SELECT " (duckdb:%join-with ", " select-cols)))
+               (sql1 (if from-table
+                         (begin
+                           (duckdb:%ensure-string "duckdb:q-to-sql" "from table" from-table)
+                           (string-append sql0 " FROM " from-table))
+                         sql0))
+               (sql2 (letrec ((loop (lambda (xs acc)
+                                      (if (null? xs)
+                                          acc
+                                          (let ((entry (car xs)))
+                                            (if (and (pair? entry)
+                                                     (string? (car entry))
+                                                     (string? (cdr entry)))
+                                                (loop (cdr xs)
+                                                      (string-append
+                                                        acc
+                                                        " JOIN "
+                                                        (car entry)
+                                                        " ON "
+                                                        (cdr entry)))
+                                                (error
+                                                  "duckdb:q-to-sql: join clauses must be (table . on-expr) string pairs")))))))
+                       (loop joins sql1)))
+               (sql3 (if (null? where-preds)
+                         sql2
+                         (string-append
+                           sql2
+                           " WHERE "
+                           (duckdb:%join-with " AND " where-preds))))
+               (sql4 (if (null? group-bys)
+                         sql3
+                         (string-append
+                           sql3
+                           " GROUP BY "
+                           (duckdb:%join-with ", " group-bys))))
+               (sql5 (if (null? having-preds)
+                         sql4
+                         (string-append
+                           sql4
+                           " HAVING "
+                           (duckdb:%join-with " AND " having-preds))))
+               (sql6 (if order-by-expr
+                         (begin
+                           (duckdb:%ensure-string "duckdb:q-to-sql" "order-by expression" order-by-expr)
+                           (string-append sql5 " ORDER BY " order-by-expr))
+                         sql5)))
+          (if limit-value
+              (begin
+                (duckdb:%ensure-non-negative-int "duckdb:q-to-sql" "limit" limit-value)
+                (string-append sql6 " LIMIT " (number->string limit-value)))
+              sql6))))
+
+    ;;@doc (duckdb:q-params q)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Return accumulated positional parameters from query state `q`.
+    ;;@example
+    ;; (duckdb:q-params (duckdb:q-new))
+    (define (duckdb:q-params q)
+      (duckdb:%q-ref q 'params '()))
+
+    ;;@doc (duckdb:q-run conn q)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Execute query state `q` through `duckdb:query`.
+    ;;@example
+    ;; (duckdb:q-run conn (duckdb:q-new))
+    (define (duckdb:q-run conn q)
+      (duckdb:query conn (duckdb:q-to-sql q) (duckdb:q-params q)))))

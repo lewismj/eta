@@ -1,0 +1,150 @@
+(module db.duckdb.tests.dsl
+  (import std.test)
+  (import db.duckdb)
+  (import (rename db.duckdb.query (duckdb:query duckdb:dsl-query)))
+  (begin
+
+    ;;@doc (duckdb:assert-builder-equivalent expected actual)
+    ;;@category Tests
+    ;;@module db.duckdb.tests.dsl
+    ;; Assert that builder states render the same SQL and params.
+    ;;@example
+    ;; (duckdb:assert-builder-equivalent (duckdb:q-new) (duckdb:q-new))
+    (defun duckdb:assert-builder-equivalent (expected actual)
+      (assert-equal (duckdb:q-to-sql expected) (duckdb:q-to-sql actual))
+      (assert-equal (duckdb:q-params expected) (duckdb:q-params actual)))
+
+    (define suite
+      (make-group "db.duckdb.dsl"
+        (list
+          (make-test "dsl-from-clause"
+            (lambda ()
+              (duckdb:assert-builder-equivalent
+                (duckdb:q-from (duckdb:q-new) "trades t")
+                (duckdb:build (from "trades t")))))
+
+          (make-test "dsl-select-clause"
+            (lambda ()
+              (duckdb:assert-builder-equivalent
+                (duckdb:q-select (duckdb:q-new) "t.id" "t.pnl")
+                (duckdb:build (select "t.id" "t.pnl")))))
+
+          (make-test "dsl-join-clause"
+            (lambda ()
+              (duckdb:assert-builder-equivalent
+                (duckdb:q-join
+                  (duckdb:q-from (duckdb:q-new) "trades t")
+                  "books b"
+                  "b.id = t.book_id")
+                (duckdb:build
+                  (from "trades t")
+                  (join "books b" "b.id = t.book_id")))))
+
+          (make-test "dsl-where-clause"
+            (lambda ()
+              (duckdb:assert-builder-equivalent
+                (duckdb:q-where
+                  (duckdb:q-from (duckdb:q-new) "trades t")
+                  "t.desk = ? and t.trade_date >= ?"
+                  "rates"
+                  "2026-01-01")
+                (duckdb:build
+                  (from "trades t")
+                  (where "t.desk = ? and t.trade_date >= ?" "rates" "2026-01-01")))))
+
+          (make-test "dsl-group-by-clause"
+            (lambda ()
+              (duckdb:assert-builder-equivalent
+                (duckdb:q-group-by
+                  (duckdb:q-from
+                    (duckdb:q-select (duckdb:q-new) "t.desk" "sum(t.pnl) as total_pnl")
+                    "trades t")
+                  "t.desk")
+                (duckdb:build
+                  (select "t.desk" "sum(t.pnl) as total_pnl")
+                  (from "trades t")
+                  (group-by "t.desk")))))
+
+          (make-test "dsl-having-clause"
+            (lambda ()
+              (duckdb:assert-builder-equivalent
+                (duckdb:q-having
+                  (duckdb:q-group-by
+                    (duckdb:q-from
+                      (duckdb:q-select (duckdb:q-new) "t.desk" "sum(t.pnl) as total_pnl")
+                      "trades t")
+                    "t.desk")
+                  "sum(t.pnl) > ?"
+                  100)
+                (duckdb:build
+                  (select "t.desk" "sum(t.pnl) as total_pnl")
+                  (from "trades t")
+                  (group-by "t.desk")
+                  (having "sum(t.pnl) > ?" 100)))))
+
+          (make-test "dsl-order-by-clause"
+            (lambda ()
+              (duckdb:assert-builder-equivalent
+                (duckdb:q-order-by
+                  (duckdb:q-from
+                    (duckdb:q-select (duckdb:q-new) "t.id")
+                    "trades t")
+                  "t.id desc")
+                (duckdb:build
+                  (select "t.id")
+                  (from "trades t")
+                  (order-by "t.id desc")))))
+
+          (make-test "dsl-limit-clause"
+            (lambda ()
+              (duckdb:assert-builder-equivalent
+                (duckdb:q-limit
+                  (duckdb:q-order-by
+                    (duckdb:q-from
+                      (duckdb:q-select (duckdb:q-new) "t.id")
+                      "trades t")
+                    "t.id desc")
+                  10)
+                (duckdb:build
+                  (select "t.id")
+                  (from "trades t")
+                  (order-by "t.id desc")
+                  (limit 10)))))
+
+          (make-test "dsl-query-runs-like-builder"
+            (lambda ()
+              (let* ((conn (duckdb:open ":memory:"))
+                     (dsl-rows (duckdb:dsl-query
+                                 conn
+                                 (from "numbers")
+                                 (select "value")
+                                 (where "value = ?" 17)
+                                 (order-by "value desc")
+                                 (limit 1)))
+                     (q (duckdb:q-limit
+                          (duckdb:q-order-by
+                            (duckdb:q-where
+                              (duckdb:q-from
+                                (duckdb:q-select (duckdb:q-new) "value")
+                                "numbers")
+                              "value = ?"
+                              17)
+                            "value desc")
+                          1)))
+                (assert-equal (duckdb:q-run conn q) dsl-rows)
+                (duckdb:close! conn))))
+
+          (make-test "dsl-query-preserves-sql-path"
+            (lambda ()
+              (let ((conn (duckdb:open ":memory:")))
+                (assert-equal
+                  (duckdb:query conn "select ? as value" '(9))
+                  (duckdb:dsl-query conn "select ? as value" '(9)))
+                (duckdb:close! conn))))
+
+          (make-test "dsl-build-rejects-unknown-clause"
+            (lambda ()
+              (let ((payload (catch 'runtime.error (duckdb:build '(unsupported "x")))))
+                (assert-equal 'runtime-error (car payload))))))))
+
+    (print-tap (run suite))))
