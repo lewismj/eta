@@ -71,5 +71,9 @@ editors/vscode/.vscode-test/
 
 cookbook/notebooks/.ipynb_checkpoints/
 
+packages/**/.eta/
+packages/**/eta.lock
+
+
 
 
