@@ -37,7 +37,7 @@ unified VM trail.  No new opcodes.
 
 Hooks fire **inside** unification.  A hook that needs to post further
 constraints typically returns `#t` and queues work on the
-`'clp.prop` async queue (see [`clp.md`](clp.md)).
+`'clp.prop` async queue (see [CLP(FD)](clp.md)).
 
 ---
 

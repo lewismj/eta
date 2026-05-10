@@ -119,7 +119,7 @@ eta> (+ 1 2)
 > Shadowing built-ins from the REPL is a deliberate convenience for
 > experiments; **do not** redefine standard names in modules.
 
-See [`repl.md`](./reference/repl.md) for `:reset`, `:reload`, and other REPL
+See [REPL](./reference/repl.md) for `:reset`, `:reload`, and other REPL
 commands.
 
 ---

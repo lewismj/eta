@@ -65,7 +65,7 @@ element-wise.
 (hash-map-keys m)                ; => (a b)
 ```
 
-Full reference: [`hashmap.md`](./reference/hashmap.md).
+Full reference: [Hash Map](./reference/hashmap.md).
 
 ---
 
@@ -135,7 +135,7 @@ Re-exported by `std.prelude`. The headline combinators:
 ## Related
 
 - [Strings](./strings.md), [I/O](./io.md)
-- [`hashmap.md`](./reference/hashmap.md), [`fact-table.md`](./reference/fact-table.md)
-- [`csv.md`](./reference/csv.md), [`db.md`](./reference/db.md)
+- [Hash Map](./reference/hashmap.md), [Fact Table](./reference/fact-table.md)
+- [CSV](./reference/csv.md), [Datalog](./reference/db.md)
 
 

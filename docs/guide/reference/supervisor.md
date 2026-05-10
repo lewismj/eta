@@ -105,6 +105,6 @@ without busy-waiting.
 | Component | File |
 |-----------|------|
 | `std.supervisor` module | [`stdlib/std/supervisor.eta`](../../../stdlib/std/supervisor.eta) |
-| Actor primitives | [`stdlib/std/net.eta`](../../../stdlib/std/net.eta), [`docs/networking.md`](networking.md) |
-| Message-passing model | [`docs/message-passing.md`](message-passing.md) |
+| Actor primitives | [`stdlib/std/net.eta`](../../../stdlib/std/net.eta), [Networking](networking.md) |
+| Message-passing model | [Message Passing](message-passing.md) |
 

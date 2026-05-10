@@ -1,4 +1,4 @@
-# Modules & Standard Library
+﻿# Modules & Standard Library
 
 [<- Back to README](../../../README.md) · [Architecture](../../architecture.md) ·
 [NaN-Boxing](nanboxing.md) · [Bytecode & VM](bytecode-vm.md) ·
@@ -376,7 +376,7 @@ Alias exports are also provided for explicit opt-in imports:
 `atom`, `atom?`, `deref`, `reset!`, `swap!`, `compare-and-set!`.
 
 For full details and collision guidance with `std.core:atom?`, see
-[atom.md](atom.md).
+[Atom](atom.md).
 
 ---
 
@@ -400,7 +400,7 @@ Regex helpers backed by C++ `std::regex` (ECMAScript syntax). The API accepts ei
 | `regex:quote` | `(s) -> string` | Escape regex metacharacters |
 | `regex:match-groups-hash` | `(match) -> hash-map` | Named capture groups as a hash map of `name -> (start . end)` |
 
-For the full reference and performance notes, see [regex.md](regex.md).
+For the full reference and performance notes, see [Regex](regex.md).
 
 ---
 
@@ -469,7 +469,7 @@ miniKanren-flavoured surface (`fresh`, `conde`, `conj`, `disj`,
 `copy-term*`, `naf`, `succeeds?`, `findall`, `membero`,
 `condu`, `conda`, `onceo`, `logic-throw`, `logic-catch`).
 
-> **📖 Full documentation:** [Logic Programming](logic.md)
+> **Full documentation:** [Logic Programming](logic.md)
 
 ---
 
@@ -487,7 +487,7 @@ optimisation (`clp:minimize`, `clp:maximize`). Shares the unified
 trail and the `'clp.prop` async propagation queue with `std.clpb`
 and `std.clpr`.
 
-> **📖 Full documentation:** [Constraint Logic Programming (Z/FD)](clp.md)
+> **Full documentation:** [Constraint Logic Programming (Z/FD)](clp.md)
 
 ---
 
@@ -502,7 +502,7 @@ Boolean variables and constraints (`clp:boolean`, `clp:and`,
 plus search and queries (`clp:labeling-b`, `clp:sat?`, `clp:taut?`).
 Requires explicit import.
 
-> **📖 Full documentation:** [Boolean Constraints (CLP(B))](clpb.md)
+> **Full documentation:** [Boolean Constraints (CLP(B))](clpb.md)
 
 ---
 
@@ -532,7 +532,7 @@ facts (`assert`, `retract`, `retract-all`), queries via
 `call-rel` / `call-rel?`, builds per-argument indexes
 (`index-rel!`), and tabulates recursive rules (`tabled`).
 
-> **📖 Full documentation:** [Datalog Database](db.md)
+> **Full documentation:** [Datalog Database](db.md)
 
 ---
 
@@ -547,7 +547,7 @@ identification (`do:identify`, `do:identify-details`, observed
 variants), and numeric estimators (`do:estimate-effect`,
 `do:conditional-mean`, `do:marginal-prob`).
 
-> **📖 Full documentation:** [Causal Inference](causal.md)
+> **Full documentation:** [Causal Inference](causal.md)
 
 ADMG-specific helpers (districts and latent projection) are in a
 separate submodule:
@@ -588,7 +588,7 @@ nine-element list accessors), multivariate regression, and
 column-wise operations over lists, vectors, or fact-table columns.
 Eigen-backed.
 
-> **📖 Full documentation:** [Statistics](stats.md)
+> **Full documentation:** [Statistics](stats.md)
 
 ---
 
@@ -648,7 +648,7 @@ allocation backed by `std::filesystem`. Requires explicit import.
 | `fs:file-modification-time` | `(path) -> int` | mtime in epoch ms |
 | `fs:file-size` | `(path) -> int` | Size in bytes |
 
-> **📖 Full documentation:** [Filesystem](fs.md)
+> **Full documentation:** [Filesystem](fs.md)
 
 ---
 
@@ -672,7 +672,7 @@ directory, and process exit. Requires explicit import.
 | `os:current-directory` | `() -> string` | Working directory |
 | `os:change-directory!` | `(path) -> '()` | `chdir` equivalent |
 
-> **📖 Full documentation:** [OS Primitives](os.md)
+> **Full documentation:** [OS Primitives](os.md)
 
 ---
 
@@ -697,7 +697,7 @@ and `close-port` workflows.
 | `process:stdin-port` / `process:stdout-port` / `process:stderr-port` | `(handle) -> port or #f` | Child stdio port access |
 | `process:run-string` | `(program args [opts]) -> stdout` | Convenience accessor for captured stdout |
 
-> **📖 Full documentation:** [Subprocesses](process.md)
+> **Full documentation:** [Subprocesses](process.md)
 
 ---
 
@@ -711,7 +711,7 @@ Adds `freeze` (suspend a goal until a logic variable is bound) and
 `dif` (disequality between terms) on top of the attributed-variable
 substrate. Requires explicit import.
 
-> **📖 Full documentation:** [Freeze & Dif](freeze.md)
+> **Full documentation:** [Freeze & Dif](freeze.md)
 
 ---
 
@@ -725,7 +725,7 @@ substrate. Requires explicit import.
 nng actor primitives (`spawn`, `monitor`, `nng-poll`, `recv!`).
 Requires explicit import.
 
-> **📖 Full documentation:** [Supervisors](supervisor.md)
+> **Full documentation:** [Supervisors](supervisor.md)
 
 ---
 
@@ -747,7 +747,7 @@ per-column hash indexes for O(1) equality lookups.
 | **Aggregation** | `fact-table-group-count`, `fact-table-group-sum`, `fact-table-group-by`, `fact-table-partition` |
 | **CSV Bridge** | `fact-table-load-csv`, `fact-table-save-csv` |
 
-> **📖 Full documentation:** [Fact Tables](fact-table.md)
+> **Full documentation:** [Fact Tables](fact-table.md)
 
 ---
 
@@ -765,7 +765,7 @@ Native CSV API backed by `vincentlaucsb/csv-parser`.
 | **Writer** | `csv:open-writer`, `csv:write-row`, `csv:write-record`, `csv:flush`, `csv:save-file` |
 | **Streaming** | `csv:fold`, `csv:for-each`, `csv:collect`, `csv:load-file` |
 
-> **📖 Full documentation:** [CSV](csv.md)
+> **Full documentation:** [CSV](csv.md)
 
 ---
 
@@ -788,7 +788,7 @@ import.
 | `json:write` | `(value [port]) -> '()` | Write JSON to a port (default: current-output-port) |
 | `json:write-string` | `(value) -> string` | Serialise to a string |
 
-> **📖 Full documentation:** [JSON](json.md)
+> **Full documentation:** [JSON](json.md)
 
 ---
 
@@ -822,7 +822,7 @@ Import modules explicitly.
 | **Device** | `gpu-available?`, `gpu-count`, `device`, `to-device`, `to-gpu`, `to-cpu`, `nn-to-device` |
 | **Helpers** | `train-step!` — one-call training step (zero-grad ? forward ? loss ? backward ? step) |
 
-> **📖 Full documentation:** [Neural Networks with libtorch](torch.md)
+> **Full documentation:** [Neural Networks with libtorch](torch.md)
 
 ---
 
@@ -900,7 +900,7 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 (survey "tcp://*:5557" '(status?) 1000)
 ```
 
-> **📖 Full documentation:**
+> **Full documentation:**
 > [Networking Primitives](networking.md) ·
 > [Message Passing & Actors](message-passing.md) ·
 > [Examples](../examples-tour.md#concurrency)

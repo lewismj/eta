@@ -64,7 +64,7 @@ Tail calls compile to a dedicated `TailCall` opcode, distinct from
 new arguments, then jumps to the callee — no return-address push, no
 frame growth.
 
-See [`bytecode-vm.md`](./reference/bytecode-vm.md) for the opcode catalogue.
+See [Bytecode VM](./reference/bytecode-vm.md) for the opcode catalogue.
 
 ---
 
@@ -106,6 +106,6 @@ not `Call` — see [Bytecode & Tools](./bytecode-and-tools.md).
 
 - [Control Flow](./control-flow.md)
 - [Functions, Closures & Tail Calls](./functions-and-closures.md)
-- [`bytecode-vm.md`](./reference/bytecode-vm.md)
+- [Bytecode VM](./reference/bytecode-vm.md)
 
 

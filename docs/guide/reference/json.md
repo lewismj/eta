@@ -128,7 +128,7 @@ human-readable indentation is required.
   value per call. Stream-style "newline-delimited JSON" is a small
   loop on top (`(let loop () (let ((v (json:read p))) … (loop)))`).
 - Hash maps used by `json:read` are the same `HashMap` runtime kind
-  documented in [`hashmap.md`](hashmap.md), so all `hash-map-*`
+  documented in [Hash Map](hashmap.md), so all `hash-map-*`
   builtins apply to decoded objects without conversion.
 - For tabular ingest prefer [`std.csv`](csv.md); for record-shaped
   config / API payloads prefer `std.json`.

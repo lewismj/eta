@@ -6,6 +6,7 @@
  */
 
 #include <stdint.h>
+#include <stdio.h>
 
 #if defined(_WIN32)
 #if defined(ETA_NATIVE_EXPORT_SYMBOLS)
@@ -59,6 +60,31 @@ typedef int (*EtaRegisterPrimitiveFnV1)(void* user_data,
  * @param message UTF-8 diagnostic message.
  */
 typedef void (*EtaReportErrorFnV1)(void* user_data, const char* message);
+
+/**
+ * @brief VTable contract for sidecar-managed native heap payloads.
+ */
+typedef struct EtaNativeObjectVTable {
+    /**
+     * Human-readable type name used by diagnostics/inspection surfaces.
+     */
+    const char* type_name;
+
+    /**
+     * Called when the wrapper heap object is destroyed.
+     */
+    void (*destroy)(void* user_data);
+
+    /**
+     * Optional trace callback reserved for GC integration.
+     */
+    void (*trace)(void* user_data, void* ctx, void (*trace_fn)(void* ctx, uint64_t val));
+
+    /**
+     * Optional display callback reserved for inspector rendering.
+     */
+    void (*display)(void* user_data, FILE* out);
+} EtaNativeObjectVTable;
 
 /**
  * @brief Runtime API table passed to sidecar entrypoints.

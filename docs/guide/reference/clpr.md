@@ -380,5 +380,5 @@ you want to handle unboundedness without `with-handlers`.
 | Tests — LP optimization | [`stdlib/tests/clpr_optimization.test.eta`](../../../stdlib/tests/clpr_optimization.test.eta) |
 | Tests — QP optimization | [`stdlib/tests/clpr_qp_optimization.test.eta`](../../../stdlib/tests/clpr_qp_optimization.test.eta) |
 | Worked example — LP | [`cookbook/numerics/portfolio-lp.eta`](../../../cookbook/numerics/portfolio-lp.eta) |
-| Featured example — QP + causal | [`cookbook/numerics/portfolio.eta`](../../../cookbook/numerics/portfolio.eta), [`docs/featured/portfolio.md`](../../featured/portfolio.md) |
+| Featured example — QP + causal | [`cookbook/numerics/portfolio.eta`](../../../cookbook/numerics/portfolio.eta), [Portfolio](../../featured/portfolio.md) |
 

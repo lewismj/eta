@@ -160,7 +160,7 @@ An inner handler can wrap and re-raise:
   inside a `catch` body cannot accidentally discard a live exception
   handler.
 
-See [`bytecode-vm.md`](./reference/bytecode-vm.md) for the opcodes.
+See [Bytecode VM](./reference/bytecode-vm.md) for the opcodes.
 
 ---
 
@@ -168,6 +168,6 @@ See [`bytecode-vm.md`](./reference/bytecode-vm.md) for the opcodes.
 
 - [Control Flow](./control-flow.md)
 - [Logic Programming](./reference/logic.md)
-- [`bytecode-vm.md`](./reference/bytecode-vm.md)
+- [Bytecode VM](./reference/bytecode-vm.md)
 
 

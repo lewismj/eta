@@ -10,7 +10,7 @@ Eta ships two cooperating processes for IDE integration:
 | `eta_dap`    | Debug Adapter Protocol              | Breakpoints, stepping, inspection        |
 
 The VS Code extension wires both into the editor and adds custom
-visualisations. See [`vscode.md`](./reference/vscode.md) for installation.
+visualisations. See [VS Code extension](./reference/vscode.md) for installation.
 
 ---
 
@@ -98,7 +98,7 @@ These views update on every DAP `stopped` event.
 ## Related
 
 - [VSCode](./reference/vscode.md)
-- [Runtime](./reference/runtime.md), [`bytecode-vm.md`](./reference/bytecode-vm.md)
+- [Runtime](./reference/runtime.md), [Bytecode VM](./reference/bytecode-vm.md)
 - [Bytecode & Tools](./bytecode-and-tools.md)
 - [Testing](./testing.md)
 

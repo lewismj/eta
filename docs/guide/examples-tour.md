@@ -42,8 +42,8 @@ sections build on each other and culminate in
 | [`send-more-money.eta`](../../cookbook/logic/send-more-money.eta)      | Classic CLP(FD) cryptarithm                        |
 | [`nqueens.eta`](../../cookbook/logic/nqueens.eta)                      | N-Queens via CLP                                   |
 
-> Reference: [`logic.md`](./reference/logic.md), [`clp.md`](./reference/clp.md),
-> [`clpb.md`](./reference/clpb.md).
+> Reference: [Logic](./reference/logic.md), [CLP(FD)](./reference/clp.md),
+> [CLP(B)](./reference/clpb.md).
 
 ---
 
@@ -51,11 +51,11 @@ sections build on each other and culminate in
 
 | Example                                       | Topic                                              | Walkthrough |
 | :-------------------------------------------- | :------------------------------------------------- | :---------- |
-| [`aad.eta`](../../cookbook/numerics/aad.eta)           | Reverse-mode AD primer, `grad`                     | [`aad.md`](./reference/aad.md) |
-| [`european.eta`](../../cookbook/numerics/european.eta) | Black–Scholes Greeks (1st & 2nd order)             | [`european.md`](./reference/european.md) |
-| [`sabr.eta`](../../cookbook/numerics/sabr.eta)         | SABR vol surface, Hagan approximation              | [`sabr.md`](./reference/sabr.md) |
-| [`xva.eta`](../../cookbook/numerics/xva.eta)           | CVA / FVA sensitivities via AAD                    | [`xva.md`](./reference/xva.md) |
-| [`xva-wwr/`](../../cookbook/xva-wwr/)         | Wrong-Way Risk via do-interventions                | [`featured/xva-wwr.md`](../featured/xva-wwr.md) |
+| [`aad.eta`](../../cookbook/numerics/aad.eta)           | Reverse-mode AD primer, `grad`                     | [AAD](./reference/aad.md) |
+| [`european.eta`](../../cookbook/numerics/european.eta) | Black–Scholes Greeks (1st & 2nd order)             | [European options](./reference/european.md) |
+| [`sabr.eta`](../../cookbook/numerics/sabr.eta)         | SABR vol surface, Hagan approximation              | [SABR](./reference/sabr.md) |
+| [`xva.eta`](../../cookbook/numerics/xva.eta)           | CVA / FVA sensitivities via AAD                    | [XVA](./reference/xva.md) |
+| [`xva-wwr/`](../../cookbook/xva-wwr/)         | Wrong-Way Risk via do-interventions                | [XVA with WWR](../featured/xva-wwr.md) |
 
 ---
 
@@ -67,7 +67,7 @@ sections build on each other and culminate in
 | [`torch.eta`](../../cookbook/ml/torch.eta)       | libtorch tensor / autograd basics      |
 | [`tests/torch/`](../../cookbook/tests/torch/) | Layer / optimiser smoke tests          |
 
-> Reference: [`stats.md`](./reference/stats.md), [`torch.md`](./reference/torch.md).
+> Reference: [Stats](./reference/stats.md), [Torch](./reference/torch.md).
 
 ---
 
@@ -86,10 +86,10 @@ sections build on each other and culminate in
 | [`echo-server.eta`](../../cookbook/concurrency/echo-server.eta), [`echo-client.eta`](../../cookbook/concurrency/echo-client.eta) | REQ / REP |
 | [`distributed-compute.eta`](../../cookbook/concurrency/distributed-compute.eta) | Cross-machine TCP messaging     |
 
-> Reference: [`message-passing.md`](./reference/message-passing.md),
-> [`networking.md`](./reference/networking.md),
-> [`network-message-passing.md`](./reference/network-message-passing.md),
-> [`supervisor.md`](./reference/supervisor.md).
+> Reference: [Message Passing](./reference/message-passing.md),
+> [Networking](./reference/networking.md),
+> [Network Message Passing](./reference/network-message-passing.md),
+> [Supervisor](./reference/supervisor.md).
 
 ---
 
@@ -97,11 +97,11 @@ sections build on each other and culminate in
 
 | Example                                                  | Role                                          | Walkthrough |
 | :------------------------------------------------------- | :-------------------------------------------- | :---------- |
-| [`causal_demo.eta`](../../cookbook/causal/causal_demo.eta)      | Primer: symbolic + causal + CLP + libtorch    | [`causal.md`](./reference/causal.md) |
-| [`do-calculus/`](../../cookbook/do-calculus/)            | Worked do-calculus identification problems    | [`causal.md`](./reference/causal.md) |
-| [`fact-table.eta`](../../cookbook/numerics/fact-table.eta)        | Columnar fact tables for analytics            | [`fact-table.md`](./reference/fact-table.md) |
+| [`causal_demo.eta`](../../cookbook/causal/causal_demo.eta)      | Primer: symbolic + causal + CLP + libtorch    | [Causal](./reference/causal.md) |
+| [`do-calculus/`](../../cookbook/do-calculus/)            | Worked do-calculus identification problems    | [Causal](./reference/causal.md) |
+| [`fact-table.eta`](../../cookbook/numerics/fact-table.eta)        | Columnar fact tables for analytics            | [Fact Table](./reference/fact-table.md) |
 | [`portfolio-lp.eta`](../../cookbook/numerics/portfolio-lp.eta)    | LP construction via `std.clpr`                | — |
-| [`portfolio.eta`](../../cookbook/numerics/portfolio.eta)          | End-to-end causal portfolio engine            | [`featured/portfolio.md`](../featured/portfolio.md) |
+| [`portfolio.eta`](../../cookbook/numerics/portfolio.eta)          | End-to-end causal portfolio engine            | [Portfolio](../featured/portfolio.md) |
 
 ---
 
@@ -109,7 +109,7 @@ sections build on each other and culminate in
 
 | Example | Topic | Walkthrough |
 | :------ | :---- | :---------- |
-| [`packaging/end-to-end/`](../../cookbook/packaging/end-to-end/) | End-to-end package flow: local library + app path dependency | [`first_app.md`](../app/first_app.md) |
+| [`packaging/end-to-end/`](../../cookbook/packaging/end-to-end/) | End-to-end package flow: local library + app path dependency | [First App](../app/first_app.md) |
 
 ---
 
@@ -119,7 +119,7 @@ sections build on each other and culminate in
 | :------------------------------------------------------------------------ | :------------------------------------- |
 | [`notebooks/`](../../cookbook/notebooks/)                                 | Jupyter examples (xeus-eta kernel)     |
 
-See [`jupyter.md`](./reference/jupyter.md) for kernel installation.
+See [Jupyter](./reference/jupyter.md) for kernel installation.
 
 ---
 
@@ -128,5 +128,4 @@ See [`jupyter.md`](./reference/jupyter.md) for kernel installation.
 - [Language Guide](../language_guide.md)
 - [Featured: Causal Portfolio Engine](../featured/portfolio.md)
 - [Featured: Wrong-Way Risk via do-interventions](../featured/xva-wwr.md)
-
 

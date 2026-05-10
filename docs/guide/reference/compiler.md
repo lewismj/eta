@@ -1,4 +1,4 @@
-# Bytecode Compiler (`etac`)
+﻿# Bytecode Compiler (`etac`)
 
 [← Back to README](../../../README.md) · [Quick Start](../../quickstart.md) · [Build from Source](../../build.md) ·
 [Architecture](../../architecture.md) ·
@@ -123,7 +123,7 @@ currently implemented:
 Passes are composable — the pipeline runs them in sequence and can be
 extended with additional passes in the future.
 
-> **📖 Full details:** [Optimization Pipeline](optimisations.md) — architecture, IR node reference, pass authoring guide.
+> **Full details:** [Optimization Pipeline](optimisations.md) — architecture, IR node reference, pass authoring guide.
 
 ```console
 # Compile with optimizations enabled

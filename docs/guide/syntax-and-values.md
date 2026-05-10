@@ -49,7 +49,7 @@ Useful operations: `+ - * / quotient remainder modulo expt abs min max
 floor ceiling round truncate sqrt exp log sin cos tan asin acos atan`.
 
 > [!NOTE]
-> The NaN-box layout is documented in [`nanboxing.md`](./reference/nanboxing.md);
+> The NaN-box layout is documented in [NaN-Boxing](./reference/nanboxing.md);
 > in user code the distinction is invisible.
 
 ---
@@ -68,7 +68,7 @@ Strings are immutable and indexed in characters, not bytes:
 (substring "héllo" 1 4)       ; => "éll"
 ```
 
-See [`strings.md`](./strings.md) for the full operation set.
+See [Strings](./strings.md) for the full operation set.
 
 ---
 
@@ -149,6 +149,6 @@ indexed via `vector-ref` / `vector-set!`. Use `make-vector`,
 
 - [Bindings & Scope](./bindings-and-scope.md)
 - [Strings](./strings.md), [Collections](./collections.md)
-- [`nanboxing.md`](./reference/nanboxing.md), [`runtime.md`](./reference/runtime.md)
+- [NaN-Boxing](./reference/nanboxing.md), [Runtime & GC](./reference/runtime.md)
 
 

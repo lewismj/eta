@@ -2,8 +2,8 @@
 
 [← Back to Language Guide](../../language_guide.md) ·
 [I/O](../io.md) ·
-[`os.md`](./os.md) ·
-[`hashmap.md`](./hashmap.md)
+[OS](./os.md) ·
+[Hash Map](./hashmap.md)
 
 ---
 

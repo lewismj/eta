@@ -13,18 +13,18 @@ flags, and runtime internals.
 
 | Chapter | Language Guide section |
 | :------ | :--------------------- |
-| [`syntax-and-values.md`](./syntax-and-values.md) | §2 - Syntax & Values |
-| [`bindings-and-scope.md`](./bindings-and-scope.md) | §3 - Bindings & Scope |
-| [`control-flow.md`](./control-flow.md) | §4 - Control Flow |
-| [`functions-and-closures.md`](./functions-and-closures.md) | §5 - Functions, Closures & Tail Calls |
-| [`tail-calls.md`](./tail-calls.md) | §5 - Functions, Closures & Tail Calls |
-| [`macros.md`](./macros.md) | §8 - Macros |
-| [`error-handling.md`](./error-handling.md) | §10 - Error Handling |
-| [`strings.md`](./strings.md) | §11 - Strings, Symbols & Regex |
-| [`collections.md`](./collections.md) | §12 - Collections |
-| [`io.md`](./io.md) | §13 - I/O, Filesystem & OS |
-| [`debugging.md`](./debugging.md) | §26 - Tooling |
-| [`testing.md`](./testing.md) | §26 - Tooling |
-| [`bytecode-and-tools.md`](./bytecode-and-tools.md) | §26 - Tooling |
-| [`profiling.md`](./profiling.md) | §26 - Tooling |
-| [`examples-tour.md`](./examples-tour.md) | §28 - Examples Index |
+| [Syntax & Values](./syntax-and-values.md) | §2 - Syntax & Values |
+| [Bindings & Scope](./bindings-and-scope.md) | §3 - Bindings & Scope |
+| [Control Flow](./control-flow.md) | §4 - Control Flow |
+| [Functions & Closures](./functions-and-closures.md) | §5 - Functions, Closures & Tail Calls |
+| [Tail Calls](./tail-calls.md) | §5 - Functions, Closures & Tail Calls |
+| [Macros](./macros.md) | §8 - Macros |
+| [Error Handling](./error-handling.md) | §10 - Error Handling |
+| [Strings](./strings.md) | §11 - Strings, Symbols & Regex |
+| [Collections](./collections.md) | §12 - Collections |
+| [I/O](./io.md) | §13 - I/O, Filesystem & OS |
+| [Debugging](./debugging.md) | §26 - Tooling |
+| [Testing](./testing.md) | §26 - Tooling |
+| [Bytecode & Tools](./bytecode-and-tools.md) | §26 - Tooling |
+| [Profiling](./profiling.md) | §26 - Tooling |
+| [Examples Tour](./examples-tour.md) | §28 - Examples Index |

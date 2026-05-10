@@ -15,8 +15,8 @@ reference pages.
 | Module | Domain | Page |
 |--------|--------|------|
 | `std.clp` | `clp(Z)` and `clp(FD)` | this page |
-| `std.clpr` | `clp(R)` (real intervals + simplex / QP) | [`clpr.md`](clpr.md) |
-| `std.clpb` | `clp(B)` (`{0,1}` reified Boolean) | [`clpb.md`](clpb.md) |
+| `std.clpr` | `clp(R)` (real intervals + simplex / QP) | [CLP(R)](clpr.md) |
+| `std.clpb` | `clp(B)` (`{0,1}` reified Boolean) | [CLP(B)](clpb.md) |
 
 All three sit on the same VM unification + trail substrate. **No new
 opcodes** are required for CLP itself — the functionality is provided
@@ -28,7 +28,7 @@ by native `%clp-*` builtins plus Eta-level wrappers.
 
 This page assumes you know the basic logic primitives
 (`logic-var`, `unify`, `trail-mark`, `unwind-trail`); see
-[`logic.md`](logic.md) for that material.
+[Logic](logic.md) for that material.
 
 ---
 
@@ -52,7 +52,7 @@ narrowing is fully undoable.
 
 - `(z lo hi)`
 - `(fd v₁ v₂ ...)`
-- `(r lo hi lo-open? hi-open?)` — see [`clpr.md`](clpr.md)
+- `(r lo hi lo-open? hi-open?)` — see [CLP(R)](clpr.md)
 
 ### 2.2 Domain-aware unification
 
@@ -113,7 +113,7 @@ rows, and cached simplex bounds atomically**.
 |------|---------|
 | `(clp:domain x lo hi)` | `x ∈ {lo, lo+1, …, hi}` (Z domain) |
 | `(clp:in-fd x v₁ v₂ …)` | `x` in the explicit finite set |
-| `(clp:boolean x)` | Alias for `(clp:domain x 0 1)`; see [`clpb.md`](clpb.md) |
+| `(clp:boolean x)` | Alias for `(clp:domain x 0 1)`; see [CLP(B)](clpb.md) |
 
 Domain introspection:
 
@@ -458,10 +458,10 @@ expressions with no special bridge primitive.
 
 ## 10. CLP(R), CLP(B), and Mixed Modelling
 
-The continuous-domain story is in [`clpr.md`](clpr.md) — real
+The continuous-domain story is in [CLP(R)](clpr.md) — real
 intervals, simplex-backed feasibility/bounds/optimization, convex QP.
 
-The Boolean story is in [`clpb.md`](clpb.md) — reified `{0,1}`
+The Boolean story is in [CLP(B)](clpb.md) — reified `{0,1}`
 constraints (`clp:and`, `clp:or`, `clp:xor`, `clp:imp`, `clp:eq`,
 `clp:not`, `clp:card`) plus `clp:labeling-b` / `clp:sat?` /
 `clp:taut?`. CLP(B) variables are technically `clp:domain v 0 1`
@@ -479,7 +479,7 @@ through ground intermediate values.
 ## 11. Current Limitations
 
 - **CLP(R) posting is linear.** Only the optimization path (`clp:rq-*`)
-  accepts convex quadratic objectives. See [`clpr.md`](clpr.md).
+  accepts convex quadratic objectives. See [CLP(R)](clpr.md).
 - **CLP(R) posting rejects vars** that already carry a non-`R`
   domain (you cannot mix Z and R on the same logic var).
 - **No SAT solver under CLP(B).** The propagator covers

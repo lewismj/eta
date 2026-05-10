@@ -65,6 +65,7 @@ namespace eta::runtime::memory::heap {
             case LogSink:
             case LogLogger:
             case NngSocket:   ///< leaf: holds only OS handle + raw bytes, no GC refs
+            case NativeObject:
             case Unknown:
                 return v.visit_leaf(hdr.kind, payload);
         }

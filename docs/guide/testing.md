@@ -89,7 +89,7 @@ eta_test --filter "regex"  …     # name filter
 ```
 
 VS Code's Test Explorer picks up `eta_test --json …` output through the
-extension — see [`vscode.md`](./reference/vscode.md).
+extension — see [VS Code extension](./reference/vscode.md).
 
 ---
 
@@ -110,6 +110,6 @@ extension — see [`vscode.md`](./reference/vscode.md).
 ## Related
 
 - [Debugging](./debugging.md)
-- [`vscode.md`](./reference/vscode.md)
+- [VS Code extension](./reference/vscode.md)
 
 

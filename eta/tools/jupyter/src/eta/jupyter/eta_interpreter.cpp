@@ -992,7 +992,6 @@ nl::json EtaInterpreter::is_complete_request_impl(const std::string& code) {
 
 nl::json EtaInterpreter::kernel_info_request_impl() {
     return xeus::create_info_reply(
-        "",                    // protocol_version (set by kernel core)
         "eta",                 // implementation
         "0.1.0",               // implementation_version
         "eta",                 // language_name
@@ -1000,14 +999,20 @@ nl::json EtaInterpreter::kernel_info_request_impl() {
         "text/x-eta",          // language_mimetype
         ".eta",                // language_file_extension
         "scheme",              // pygments_lexer
-        std::string("scheme"), // codemirror_mode
+        xeus::codemirror_mode_t{std::string("scheme")}, // codemirror_mode
         "",                    // nbconvert_exporter
         "Eta Jupyter kernel"   // banner
     );
 }
 
-void EtaInterpreter::shutdown_request_impl() {
+nl::json EtaInterpreter::shutdown_request_impl(const bool restart) {
     request_interrupt();
+    return xeus::create_shutdown_reply(restart);
+}
+
+nl::json EtaInterpreter::interrupt_request_impl() {
+    request_interrupt();
+    return xeus::create_interrupt_reply();
 }
 
 void EtaInterpreter::register_comm_targets() {

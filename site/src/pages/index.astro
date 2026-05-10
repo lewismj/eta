@@ -21,38 +21,38 @@ const features = [
   {
     title: "Logic & CLP",
     body: "Built-in unification and backtracking as first-class VM primitives — constraint logic programming without an external solver.",
-    href: `${cookbookRepo}/logic`,
-    linkLabel: "Logic examples",
+    href: `${base}docs/guide/reference/logic/`,
+    linkLabel: "Logic reference",
   },
   {
     title: "AAD",
     body: "Native reverse-mode Automatic Adjoint Differentiation (AAD) integrated into the runtime — transparent gradient computation with zero closure overhead.",
-    href: `${cookbookRepo}/numerics`,
-    linkLabel: "AAD examples",
+    href: `${base}docs/guide/reference/aad/`,
+    linkLabel: "AAD reference",
   },
   {
     title: "Neural networks",
     body: "First-class C++ bindings to libtorch for neural networks and Eigen for linear algebra and statistics — delivered as native sidecars.",
-    href: `${cookbookRepo}/ml`,
-    linkLabel: "Torch examples",
+    href: `${base}docs/guide/reference/torch/`,
+    linkLabel: "Torch reference",
   },
   {
     title: "Causal inference",
     body: "Built-in Pearl's do-calculus — identification algorithms, do-interventions, and counterfactual queries in pure Eta.",
-    href: `${cookbookRepo}/causal`,
-    linkLabel: "Causal examples",
+    href: `${base}docs/guide/reference/causal/`,
+    linkLabel: "Causal reference",
   },
   {
     title: "Actor-model concurrency",
     body: "Erlang-style actors and message passing via nng — network-transparent parallelism, supervision trees, and pub/sub.",
-    href: `${cookbookRepo}/concurrency`,
-    linkLabel: "Concurrency examples",
+    href: `${base}docs/guide/reference/message-passing/`,
+    linkLabel: "Concurrency reference",
   },
   {
     title: "Developer tools",
     body: "VS Code extension (LSP, debugger, heap inspector), Jupyter kernel for interactive notebooks, and a built-in sampling profiler with REPL and notebook integration.",
-    href: `${base}docs/editors/`,
-    linkLabel: "Editors & tools",
+    href: `${base}docs/tools/`,
+    linkLabel: "Developer tools",
   },
 ];
 
@@ -171,28 +171,28 @@ const sampleCode = `(import std.core std.aad)
   <!-- Cookbook highlights ──────────────────────── -->
   <CardGrid label="Cookbook highlights">
     <Card
-      title="Quant workflows"
+      title="Numerics"
       body="European options, SABR calibration, XVA with WWR, portfolio LP, fact-table analytics, and automatic adjoint differentiation."
-      href={`${cookbookRepo}/numerics`}
-      linkLabel="Open quant examples"
+      href={`${base}docs/guide/reference/aad/`}
+      linkLabel="Numerics reference"
     />
     <Card
       title="Logic & constraint"
       body="N-queens, SEND+MORE=MONEY, boolean simplifier, symbolic differentiation, and unification."
-      href={`${cookbookRepo}/logic`}
-      linkLabel="Open logic examples"
+      href={`${base}docs/guide/reference/logic/`}
+      linkLabel="Logic reference"
     />
     <Card
       title="Causal inference"
       body="DAGs, do-calculus rules, and counterfactual queries in pure Eta."
-      href={`${cookbookRepo}/causal`}
-      linkLabel="Open causal examples"
+      href={`${base}docs/guide/reference/causal/`}
+      linkLabel="Causal reference"
     />
     <Card
       title="Concurrency"
       body="Worker pools, scatter-gather, distributed Monte Carlo, and reactive pub/sub over nng."
-      href={`${cookbookRepo}/concurrency`}
-      linkLabel="Open concurrency examples"
+      href={`${base}docs/guide/reference/message-passing/`}
+      linkLabel="Concurrency reference"
     />
   </CardGrid>
 

@@ -397,7 +397,7 @@ Domain behavior for taped primitives:
   - `zero-subgrad`: finite forward value with zero subgrad at singular base derivative
 
 The current API remains scalar-focused (no tensor-aware tape extension here —
-for that, see [`docs/torch.md`](torch.md)).
+for that, see [Torch](torch.md)).
 
 ---
 

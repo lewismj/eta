@@ -1,0 +1,118 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
+---
+
+<DocsLayout
+  title="Developer Tools"
+  description="VS Code extension, Jupyter kernel, and built-in profiler for the Eta language."
+  sourceFile="docs/guide/reference/vscode.md"
+>
+  <h1>Developer Tools</h1>
+  <p>
+    Eta ships a full developer-tools ecosystem: a VS Code extension with LSP,
+    debugger, and heap inspector; a Jupyter kernel for interactive notebooks
+    with rich output; and a built-in sampling profiler accessible from the
+    CLI, REPL, and notebooks.
+  </p>
+
+  <hr />
+
+  <!-- VS Code Extension ─────────────────── -->
+  <h2 id="vscode">VS Code Extension</h2>
+  <p>
+    The Eta VS Code extension provides first-class editing support powered by
+    the native <code>eta_lsp</code> language server and <code>eta_dap</code>
+    debug adapter.
+  </p>
+  <ul>
+    <li><strong>LSP</strong> — real-time diagnostics, hover docs, go-to-definition, completion, rename, and signature help.</li>
+    <li><strong>Debugger (DAP)</strong> — breakpoints, stepping, call-stack inspection, and variable watch.</li>
+    <li><strong>Heap Inspector</strong> — live view of the GC heap with per-object detail.</li>
+    <li><strong>Disassembly View</strong> — per-function bytecode listing with current-PC highlighting during debug pauses.</li>
+    <li><strong>Test Runner</strong> — integrated <code>eta_test</code> runner with pass/fail markers in the editor gutter.</li>
+  </ul>
+  <p>
+    <a href={`${base}docs/editors/`} class="btn btn-outline">
+      VS Code Extension reference →
+    </a>
+  </p>
+
+  <hr />
+
+  <!-- Jupyter Notebooks ─────────────────── -->
+  <h2 id="jupyter">Jupyter Notebooks</h2>
+  <p>
+    <code>eta_jupyter</code> is a native Jupyter kernel for Eta. Install it
+    once and use it from JupyterLab or classic Notebook just like any other kernel.
+  </p>
+  <ul>
+    <li><strong>Rich output</strong> — tensors, fact-tables, DAGs, actor state, and Vega-Lite plots render as interactive widgets.</li>
+    <li><strong>Cell magics</strong> — <code>%time</code>, <code>%bytecode</code>, <code>%load</code>, <code>%%prof</code>, and more.</li>
+    <li><strong>Inline profiling</strong> — <code>%%prof</code> profiles a single cell and renders a flamegraph inside the notebook output.</li>
+    <li><strong>Comm widgets</strong> — live heap inspector, disassembly view, and actor-state panel without leaving the notebook.</li>
+  </ul>
+
+  <figure style="margin: 2rem 0;">
+    <img
+      src={`${base}img/jupyter/jupyter_notebook_ex1.png`}
+      alt="Eta notebook — basic cell execution and output"
+      style="width: 100%; border-radius: 6px; border: 1px solid var(--border);"
+    />
+    <figcaption style="font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem;">
+      Basic Eta notebook execution and cell output.
+    </figcaption>
+  </figure>
+
+  <figure style="margin: 2rem 0;">
+    <img
+      src={`${base}img/jupyter/jupyter_notebook_ex2_rendering.png`}
+      alt="Eta notebook — rich rendering output"
+      style="width: 100%; border-radius: 6px; border: 1px solid var(--border);"
+    />
+    <figcaption style="font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem;">
+      Rich rendering: tensors, tables, and plots rendered inline.
+    </figcaption>
+  </figure>
+
+  <p>
+    <a href={`${base}docs/guide/reference/jupyter/`} class="btn btn-outline">
+      Jupyter kernel reference →
+    </a>
+  </p>
+
+  <hr />
+
+  <!-- Profiler ──────────────────────────── -->
+  <h2 id="profiler">Profiler</h2>
+  <p>
+    Eta has a built-in runtime profiler with two modes:
+  </p>
+  <ul>
+    <li><strong>Sample mode</strong> (default) — low-overhead sampled call stacks, outputs speedscope JSON for flamegraph visualisation.</li>
+    <li><strong>Trace mode</strong> — exact call/return accounting, higher overhead, suitable for precise attribution.</li>
+  </ul>
+  <p>
+    The profiler is accessible from three surfaces:
+  </p>
+  <ul>
+    <li><strong>CLI</strong> — <code>eta prof run</code>, <code>eta prof report</code>, <code>eta prof merge</code>, <code>eta prof view</code>.</li>
+    <li><strong>REPL</strong> — the <code>:prof</code> meta-command profiles the next submission.</li>
+    <li><strong>Notebook</strong> — the <code>%%prof</code> cell magic profiles one cell and renders an inline flamegraph.</li>
+  </ul>
+
+  <pre><code># Run sampled profiling and open in speedscope
+eta prof run --out profile.speedscope.json path/to/program.eta
+eta prof view profile.speedscope.json
+
+# Trace mode with pretty-print report
+eta prof run --mode trace --format pretty path/to/program.eta</code></pre>
+
+  <p>
+    <a href={`${base}docs/guide/profiling/`} class="btn btn-outline">
+      Profiler reference →
+    </a>
+  </p>
+</DocsLayout>
+

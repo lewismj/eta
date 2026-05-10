@@ -96,7 +96,7 @@ Match objects expose `regex-match-text`, `regex-match-start`,
 `regex-match-span`, plus `regex:match-groups-hash` for named-group
 capture as a hash map.
 
-Full reference: [`regex.md`](./reference/regex.md).
+Full reference: [regex](./reference/regex.md).
 
 ---
 
@@ -111,6 +111,6 @@ typing, header handling, and streaming readers / writers.
 
 - [I/O & Ports](./io.md)
 - [Collections](./collections.md)
-- [`regex.md`](./reference/regex.md), [`csv.md`](./reference/csv.md)
+- [regex](./reference/regex.md), [csv](./reference/csv.md)
 
 

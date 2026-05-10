@@ -33,6 +33,23 @@ namespace {
         BOOST_REQUIRE(r.has_value());
         return *r;
     }
+
+    struct NativeDestroyCounter {
+        int calls{0};
+    };
+
+    extern "C" void heap_test_native_destroy(void* user_data) {
+        if (auto* counter = static_cast<NativeDestroyCounter*>(user_data)) {
+            ++counter->calls;
+        }
+    }
+
+    constexpr EtaNativeObjectVTable kNativeObjectVTable{
+        .type_name = "heap.native.test",
+        .destroy = &heap_test_native_destroy,
+        .trace = nullptr,
+        .display = nullptr,
+    };
 }
 
 BOOST_AUTO_TEST_SUITE(heap_tests)
@@ -129,6 +146,47 @@ BOOST_AUTO_TEST_CASE(heap_destruction_calls_destructors) {
         (void) heap.allocate<SmallPod, ObjectKind::Cons>(SmallPod{2});
     }
     BOOST_TEST(true); ///< reached here without issues
+}
+
+BOOST_AUTO_TEST_CASE(native_object_deallocate_calls_destroy_once) {
+    Heap heap(1ull << 20);
+    NativeDestroyCounter counter{};
+
+    const auto id = expect_ok(
+        heap.allocate<NativeObjectHeader, ObjectKind::NativeObject>(
+            NativeObjectHeader{&kNativeObjectVTable, &counter}));
+
+    BOOST_REQUIRE(heap.deallocate(id).has_value());
+    BOOST_TEST(counter.calls == 1);
+
+    auto second = heap.deallocate(id);
+    BOOST_REQUIRE(!second.has_value());
+    BOOST_TEST(second.error() == HeapError::ObjectIdNotFound);
+    BOOST_TEST(counter.calls == 1);
+}
+
+BOOST_AUTO_TEST_CASE(native_object_null_vtable_skips_destroy_callback) {
+    Heap heap(1ull << 20);
+    NativeDestroyCounter counter{};
+
+    const auto id = expect_ok(
+        heap.allocate<NativeObjectHeader, ObjectKind::NativeObject>(
+            NativeObjectHeader{nullptr, &counter}));
+
+    BOOST_REQUIRE(heap.deallocate(id).has_value());
+    BOOST_TEST(counter.calls == 0);
+}
+
+BOOST_AUTO_TEST_CASE(native_object_destroy_runs_on_heap_teardown) {
+    NativeDestroyCounter counter{};
+    {
+        Heap heap(1ull << 20);
+        (void) expect_ok(
+            heap.allocate<NativeObjectHeader, ObjectKind::NativeObject>(
+                NativeObjectHeader{&kNativeObjectVTable, &counter}));
+    }
+
+    BOOST_TEST(counter.calls == 1);
 }
 
 

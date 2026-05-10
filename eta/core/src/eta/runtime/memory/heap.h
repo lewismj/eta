@@ -17,6 +17,7 @@
 #include <boost/unordered/concurrent_flat_map.hpp>
 
 #include <eta/arch.h>
+#include <eta/native/sdk.h>
 #include <eta/runtime/nanbox.h>
 #include "eta/runtime/prof/profiler.h"
 #include "enum_utils.h"
@@ -55,6 +56,7 @@ namespace eta::runtime::memory::heap {
         ProcessHandle,   ///< Native subprocess lifecycle handle + optional stdio ports
         NngSocket,       ///< nng socket (wraps NngSocketPtr from packages/stdlib/native/nng/)
         CompoundTerm,    ///< Structured logic term: functor symbol + argument list
+        NativeObject,    ///< Sidecar-managed opaque object wrapper
     };
 
     ETA_ENUM_TO_STRING_BEGIN(ObjectKind)
@@ -86,6 +88,7 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(ProcessHandle)
         ETA_ENUM_CASE(NngSocket)
         ETA_ENUM_CASE(CompoundTerm)
+        ETA_ENUM_CASE(NativeObject)
     ETA_ENUM_TO_STRING_END("Unknown")
 
     inline std::ostream& operator<<(std::ostream& os, const ObjectKind k) {
@@ -131,6 +134,48 @@ namespace eta::runtime::memory::heap {
     struct ObjectHeader {
         ObjectKind kind {};
         std::uint8_t flags : 3;
+    };
+
+    /**
+     * @brief In-heap wrapper for sidecar-managed opaque payloads.
+     *
+     * The owning runtime entry stores this header, and payload release happens
+     * through the standard HeapEntry destructor callback.
+     */
+    struct NativeObjectHeader {
+        const EtaNativeObjectVTable* vtable{nullptr};
+        void* user_data{nullptr};
+
+        NativeObjectHeader() = default;
+
+        NativeObjectHeader(const EtaNativeObjectVTable* in_vtable, void* in_user_data) noexcept
+            : vtable(in_vtable), user_data(in_user_data) {}
+
+        NativeObjectHeader(const NativeObjectHeader&) = delete;
+        NativeObjectHeader& operator=(const NativeObjectHeader&) = delete;
+
+        NativeObjectHeader(NativeObjectHeader&& other) noexcept
+            : vtable(std::exchange(other.vtable, nullptr)),
+              user_data(std::exchange(other.user_data, nullptr)) {}
+
+        NativeObjectHeader& operator=(NativeObjectHeader&& other) noexcept {
+            if (this == &other) return *this;
+            release();
+            vtable = std::exchange(other.vtable, nullptr);
+            user_data = std::exchange(other.user_data, nullptr);
+            return *this;
+        }
+
+        ~NativeObjectHeader() noexcept {
+            release();
+        }
+
+    private:
+        void release() noexcept {
+            if (vtable != nullptr && vtable->destroy != nullptr) {
+                vtable->destroy(user_data);
+            }
+        }
     };
 
     struct HeapEntry {

@@ -46,7 +46,7 @@ Regression, decompositions, and projections all return Eta values
 (stats:pca X 'k 3)         ; top-3 PCA via Eigen's SVD
 ```
 
-See [`stats.md`](./stats.md) for the full surface.
+See [Stats](./stats.md) for the full surface.
 
 ### `std.torch`
 
@@ -116,8 +116,8 @@ Stay with the Eigen-backed modules (`std.stats`, `std.clpr`) when:
 
 ## Related
 
-- [`stats.md`](./stats.md), [`torch.md`](./torch.md)
-- [CLP(R)](./clpr.md), [`aad.md`](./aad.md)
-- [`architecture.md`](../../architecture.md)
+- [Stats](./stats.md), [Torch](./torch.md)
+- [CLP(R)](./clpr.md), [AAD](./aad.md)
+- [Architecture](../../architecture.md)
 
 

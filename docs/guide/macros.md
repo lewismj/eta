@@ -149,6 +149,6 @@ compilation; useful for confirming hygiene and ellipsis behaviour. See
 
 - [Functions, Closures & Tail Calls](./functions-and-closures.md)
 - [Modules](./reference/modules.md)
-- [`compiler.md`](./reference/compiler.md)
+- [Compiler](./reference/compiler.md)
 
 

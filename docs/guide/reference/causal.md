@@ -11,9 +11,9 @@
 >   end-to-end primer (3-node DAG, single confounder) combining symbolic
 >   differentiation, do-calculus identification, `findall` + CLP
 >   validation, and a libtorch neural ATE.
-> - [`causal-counterfactual.md`](./causal-counterfactual.md) - focused
+> - [Causal Counterfactual](./causal-counterfactual.md) - focused
 >   counterfactual reference for twin networks, ID*, IDC*, and ETT.
-> - [`portfolio.md`](../../featured/portfolio.md) — full institutional pipeline:
+> - [Portfolio](../../featured/portfolio.md) — full institutional pipeline:
 >   6-node macro DAG, AAD risk sensitivities, CLP(R) + QP allocation,
 >   scenario stress, dynamic control.
 
@@ -873,7 +873,7 @@ analysis:
 | Structure learning helpers           | [`stdlib/std/causal/learn.eta`](../../../stdlib/std/causal/learn.eta)                     |
 | Estimation backends                  | [`stdlib/std/causal/estimate.eta`](../../../stdlib/std/causal/estimate.eta)               |
 | Rendering (DOT / Mermaid / LaTeX) and `define-dag` macro | [`stdlib/std/causal/render.eta`](../../../stdlib/std/causal/render.eta) |
-| Counterfactual reference page        | [`causal-counterfactual.md`](./causal-counterfactual.md)                                  |
+| Counterfactual reference page        | [Causal Counterfactual](./causal-counterfactual.md)                                  |
 | DAG demo                             | [`cookbook/do-calculus/dag.eta`](../../../cookbook/do-calculus/dag.eta)                   |
 | Do-calculus rules demo               | [`cookbook/do-calculus/do-rules.eta`](../../../cookbook/do-calculus/do-rules.eta)         |
 | Full identification demo             | [`cookbook/do-calculus/demo.eta`](../../../cookbook/do-calculus/demo.eta)                 |

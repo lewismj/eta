@@ -3,7 +3,7 @@
 [← Back to Language Guide](../language_guide.md)
 
 This is the task-oriented companion to the reference docs
-[`compiler.md`](./reference/compiler.md) and [`bytecode-vm.md`](./reference/bytecode-vm.md).
+[Compiler](./reference/compiler.md) and [Bytecode VM](./reference/bytecode-vm.md).
 It covers everyday workflows: compiling, running, inspecting bytecode,
 and tracing a function from source to `Call` opcode.
 
@@ -38,7 +38,7 @@ constants, debug spans, and the symbol table.
 - Known-call inlining for small leaf functions
 - Macro pre-expansion
 
-See [`optimisations.md`](./reference/optimisations.md) for the full pass
+See [Optimisations](./reference/optimisations.md) for the full pass
 list and heuristics.
 
 ---
@@ -99,7 +99,7 @@ useful for hygiene problems and ellipsis debugging. See
 | `SetupCatch`, `Throw` | Exception handler frame; raise                    |
 | `Unify`, `BindVar` | Logic-engine primitives                              |
 
-The complete opcode set is in [`bytecode-vm.md`](./reference/bytecode-vm.md).
+The complete opcode set is in [Bytecode VM](./reference/bytecode-vm.md).
 
 ---
 
@@ -129,8 +129,7 @@ errors carry a span and a stack trace as the exception payload — see
 
 ## Related
 
-- [`compiler.md`](./reference/compiler.md), [`bytecode-vm.md`](./reference/bytecode-vm.md)
-- [`optimisations.md`](./reference/optimisations.md)
+- [Compiler](./reference/compiler.md), [Bytecode VM](./reference/bytecode-vm.md)
+- [Optimisations](./reference/optimisations.md)
 - [Tail Calls](./tail-calls.md), [Debugging](./debugging.md)
-
 

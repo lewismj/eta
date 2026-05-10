@@ -72,7 +72,7 @@ closure is visible outside:
 
 > [!NOTE]
 > Closures are heap-allocated objects with an explicit upvalue array;
-> the layout is described in [`bytecode-vm.md`](./reference/bytecode-vm.md). For
+> the layout is described in [Bytecode VM](./reference/bytecode-vm.md). For
 > common cases (single small upvalue, no captures) the compiler emits a
 > compact representation.
 
@@ -124,7 +124,7 @@ Eta does not auto-curry; emulate it manually:
   re-allocate per iteration.
 - The peephole optimiser folds `(apply f args)` to a direct call when
   `args` is a literal list of known length.
-- See [`optimisations.md`](./reference/optimisations.md) for the full pass list.
+- See [Optimisations](./reference/optimisations.md) for the full pass list.
 
 ---
 

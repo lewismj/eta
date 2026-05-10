@@ -105,6 +105,6 @@ Companions: `with-input-from-port`, `with-error-to-port`, `with-port`.
 
 - [Strings](./strings.md)
 - [Collections](./collections.md)
-- [`csv.md`](./reference/csv.md), [`db.md`](./reference/db.md)
+- [CSV](./reference/csv.md), [Datalog](./reference/db.md)
 
 
