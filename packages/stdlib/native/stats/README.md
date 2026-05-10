@@ -1,4 +1,4 @@
-# eta-stats-sidecar
+# Statistics  
 
 Native sidecar package metadata for multivariate `%stats-*`
 runtime primitives.

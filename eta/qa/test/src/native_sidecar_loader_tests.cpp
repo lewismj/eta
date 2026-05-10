@@ -12,7 +12,9 @@
 #include <vector>
 
 #include "eta/native/extension_registry.h"
+#include "eta/native/runtime_binding.h"
 #include "eta/native/sidecar_loader.h"
+#include "eta/runtime/memory/heap.h"
 
 namespace fs = std::filesystem;
 
@@ -374,6 +376,131 @@ BOOST_AUTO_TEST_CASE(sidecar_loader_registers_builtin_sidecar_entrypoints) {
         BOOST_REQUIRE(owner.has_value());
         BOOST_TEST(*owner == probe.extension_id);
     }
+}
+
+BOOST_AUTO_TEST_CASE(sidecar_loader_native_object_api_gate_accepts_current_runtime) {
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(fs::is_regular_file(fixture),
+                          "missing sidecar fixture binary: " + fixture.string());
+
+    eta::native::ExtensionRegistry registry;
+    eta::native::SidecarLoader loader(registry);
+    eta::runtime::memory::heap::Heap heap(1ull << 20);
+    eta::native::SidecarRuntimeBindingV1 binding{};
+    binding.heap = &heap;
+    loader.set_runtime_context(&binding);
+
+    eta::native::ResolvedNativeSidecar sidecar;
+    sidecar.spec.package_name = "pkg";
+    sidecar.spec.artifact_relpath = fixture.filename();
+    sidecar.spec.entrypoint = "eta_register_native_object_gate_extension_v1";
+    sidecar.package_root = fixture.parent_path();
+    sidecar.artifact_path = fixture;
+
+    const auto loaded = loader.load(sidecar);
+    BOOST_REQUIRE(loaded.has_value());
+
+    const auto* extension = registry.find_extension("eta.native.gate.sidecar");
+    BOOST_REQUIRE(extension != nullptr);
+    BOOST_TEST(extension->abi == "eta-native-v1");
+}
+
+BOOST_AUTO_TEST_CASE(sidecar_loader_native_object_api_gate_rejects_legacy_runtime_gracefully) {
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(fs::is_regular_file(fixture),
+                          "missing sidecar fixture binary: " + fixture.string());
+
+    eta::native::ExtensionRegistry registry;
+    eta::native::SidecarLoader loader(registry);
+    eta::runtime::memory::heap::Heap heap(1ull << 20);
+    eta::native::SidecarRuntimeBindingV1 binding{};
+    binding.heap = &heap;
+    loader.set_runtime_context(&binding);
+
+    eta::native::ResolvedNativeSidecar sidecar;
+    sidecar.spec.package_name = "pkg";
+    sidecar.spec.artifact_relpath = fixture.filename();
+    sidecar.spec.entrypoint = "eta_register_native_object_gate_extension_legacy_runtime_v1";
+    sidecar.package_root = fixture.parent_path();
+    sidecar.artifact_path = fixture;
+
+    const auto loaded = loader.load(sidecar);
+    BOOST_REQUIRE(!loaded.has_value());
+    BOOST_TEST(static_cast<int>(loaded.error().code)
+               == static_cast<int>(
+                   eta::native::SidecarLoaderError::Code::ExtensionRegistrationFailed));
+    BOOST_TEST(
+        loaded.error().message.find("native-object-api-unavailable") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(sidecar_loader_native_object_alloc_get_roundtrip_and_vtable_guard) {
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(fs::is_regular_file(fixture),
+                          "missing sidecar fixture binary: " + fixture.string());
+
+    eta::native::ExtensionRegistry registry;
+    eta::native::SidecarLoader loader(registry);
+    eta::runtime::memory::heap::Heap heap(1ull << 20);
+    eta::native::SidecarRuntimeBindingV1 binding{};
+    binding.heap = &heap;
+    loader.set_runtime_context(&binding);
+
+    eta::native::ResolvedNativeSidecar sidecar;
+    sidecar.spec.package_name = "pkg";
+    sidecar.spec.artifact_relpath = fixture.filename();
+    sidecar.spec.entrypoint = "eta_register_native_object_roundtrip_extension_v1";
+    sidecar.package_root = fixture.parent_path();
+    sidecar.artifact_path = fixture;
+
+    const auto loaded = loader.load(sidecar);
+    BOOST_REQUIRE(loaded.has_value());
+
+    std::size_t native_object_count = 0;
+    heap.for_each_entry(
+        [&](eta::runtime::memory::heap::ObjectId, eta::runtime::memory::heap::HeapEntry& entry) {
+            if (entry.header.kind == eta::runtime::memory::heap::ObjectKind::NativeObject) {
+                ++native_object_count;
+            }
+        });
+    BOOST_TEST(native_object_count == 1u);
+
+    const auto* extension = registry.find_extension("eta.native.roundtrip.sidecar");
+    BOOST_REQUIRE(extension != nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(sidecar_loader_native_object_alloc_accepts_trace_vtable) {
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(fs::is_regular_file(fixture),
+                          "missing sidecar fixture binary: " + fixture.string());
+
+    eta::native::ExtensionRegistry registry;
+    eta::native::SidecarLoader loader(registry);
+    eta::runtime::memory::heap::Heap heap(1ull << 20);
+    eta::native::SidecarRuntimeBindingV1 binding{};
+    binding.heap = &heap;
+    loader.set_runtime_context(&binding);
+
+    eta::native::ResolvedNativeSidecar sidecar;
+    sidecar.spec.package_name = "pkg";
+    sidecar.spec.artifact_relpath = fixture.filename();
+    sidecar.spec.entrypoint = "eta_register_native_object_trace_extension_v1";
+    sidecar.package_root = fixture.parent_path();
+    sidecar.artifact_path = fixture;
+
+    const auto loaded = loader.load(sidecar);
+    BOOST_REQUIRE(loaded.has_value());
+
+    std::size_t native_object_count = 0;
+    heap.for_each_entry(
+        [&](eta::runtime::memory::heap::ObjectId, eta::runtime::memory::heap::HeapEntry& entry) {
+            if (entry.header.kind == eta::runtime::memory::heap::ObjectKind::NativeObject) {
+                ++native_object_count;
+            }
+        });
+    BOOST_TEST(native_object_count == 1u);
+
+    const auto* extension = registry.find_extension("eta.native.trace.sidecar");
+    BOOST_REQUIRE(extension != nullptr);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

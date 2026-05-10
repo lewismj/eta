@@ -594,6 +594,28 @@ pre {
   font-family: var(--font-mono);
 }
 
+
+/* Mermaid diagrams ───────────────────────────── */
+.mermaid {
+  background: var(--card);
+  border-radius: var(--radius-code);
+  border: 1px solid var(--line);
+  padding: 20px 16px;
+  margin: 22px 0 28px;
+  overflow-x: auto;
+  text-align: center;
+}
+.mermaid svg {
+  max-width: 560px;
+  width: 100%;
+  height: auto;
+}
+
+/* btn links inside docs prose must not be underlined */
+.docs-article a.btn {
+  text-decoration: none !important;
+}
+
 /* Tables ─────────────────────────────────────── */
 .docs-article table {
   width: 100%;

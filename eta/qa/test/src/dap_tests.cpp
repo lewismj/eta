@@ -3076,6 +3076,8 @@ BOOST_AUTO_TEST_CASE(perf_heap_snapshot_under_250ms) {
         BOOST_TEST(resp["body"].has("kindsTotal"));
         BOOST_TEST(resp["body"].has("kindsShown"));
         BOOST_TEST(resp["body"].has("kindsTruncated"));
+        BOOST_TEST(resp["body"].has("nativeObjectTypes"));
+        BOOST_TEST(resp["body"]["nativeObjectTypes"].is_array());
     }
 }
 

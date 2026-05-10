@@ -4,7 +4,7 @@
 [Native Sidecar Plan](native_sidecar_plan.md) |
 [Next Steps](../next-steps.md)
 
-Status: In progress (2026-05-10). NO1 implemented; NO2-NO4 pending. Follows NS10.
+Status: Completed (2026-05-10). NO1-NO4 implemented. Follows NS10.
 
 ---
 
@@ -123,9 +123,8 @@ Trace policy by stage:
 
 - NO1/NO2: keep leaf behavior only.
 - NO4: wire mark-phase tracing through `EtaNativeObjectVTable::trace`.
-
-Until NO4 lands, runtime must reject allocation when `vtable->trace != nullptr`
-to avoid unsound GC behavior.
+  This is now active in `mark_sweep_gc.h` and allocation no longer rejects
+  non-null `trace`.
 
 ### 3.5 SDK additions (`sdk.h`)
 
@@ -367,7 +366,7 @@ Implemented in:
 - `eta/core/src/eta/runtime/memory/heap_visit.h`
 - `eta/qa/test/src/heap_tests.cpp`
 
-### NO2 - SDK API surface
+### NO2 - SDK API surface (Implemented 2026-05-10)
 
 Scope:
 
@@ -384,7 +383,14 @@ Gate:
    - sidecar using `struct_size` gate succeeds on both old/new runtime
    - callback round-trip alloc/get works and vtable mismatch returns null
 
-### NO3 - LightGBM sidecar scaffold
+Implemented in:
+
+- `eta/core/src/eta/native/sdk.h`
+- `eta/core/src/eta/native/sidecar_loader.cpp`
+- `eta/qa/test/src/native_sidecar_test_extension.cpp`
+- `eta/qa/test/src/native_sidecar_loader_tests.cpp`
+
+### NO3 - LightGBM sidecar scaffold (Implemented 2026-05-10)
 
 Scope:
 
@@ -426,7 +432,23 @@ Notes:
 - Package remains independent; built artifact is usable through package
   resolution/loading.
 
-### NO4 - NativeObject GC trace + inspector
+Implemented in:
+
+- `packages/ml/native/lightgbm/CMakeLists.txt`
+- `packages/ml/native/lightgbm/cmake/FetchLightGBM.cmake`
+- `packages/ml/native/lightgbm/eta.toml`
+- `packages/ml/native/lightgbm/src/eta/lightgbm/lightgbm_extension.cpp`
+- `packages/ml/native/lightgbm/src/eta/lightgbm/lightgbm_model.h`
+- `packages/ml/native/lightgbm/src/eta/lightgbm/lightgbm_model.cpp`
+- `packages/ml/native/lightgbm/src/eta/lightgbm/lightgbm_primitives.h`
+- `packages/ml/native/lightgbm/src/eta/lightgbm/lightgbm_primitives.cpp`
+- `packages/ml/native/lightgbm/src/ml/lightgbm.eta`
+- `packages/ml/native/lightgbm/tests/unit/lightgbm_model_tests.cpp`
+- `packages/ml/native/lightgbm/tests/eta/lightgbm_smoke.test.eta`
+- `packages/ml/native/lightgbm/tests/eta/run_lightgbm_eta_smoke.cmake`
+- `cookbook/ml/lightgbm.eta`
+
+### NO4 - NativeObject GC trace + inspector (Implemented 2026-05-10)
 
 Scope:
 
@@ -439,6 +461,30 @@ Gate:
 1. Tracing test: sidecar object that references Eta values keeps them live.
 2. Inspector test shows `lgbm-dataset` / `lgbm-booster`.
 
+Implemented in:
+
+- `eta/core/src/eta/runtime/memory/mark_sweep_gc.h`
+- `eta/core/src/eta/runtime/memory/native_object_inspection.h`
+- `eta/core/src/eta/native/sidecar_loader.cpp`
+- `eta/tools/dap/src/eta/dap/dap_server.cpp`
+- `eta/qa/test/src/gc_tests.cpp`
+- `eta/qa/test/src/heap_tests.cpp`
+- `eta/qa/test/src/dap_tests.cpp`
+- `eta/qa/test/src/native_sidecar_loader_tests.cpp`
+- `eta/qa/test/src/native_sidecar_test_extension.cpp`
+- `editors/vscode/src/dapTypes.ts`
+- `editors/vscode/media/heap/heap.js`
+
+Notes:
+
+1. GC mark phase now calls `EtaNativeObjectVTable::trace` for live
+   `ObjectKind::NativeObject` entries.
+2. DAP heap snapshot and object inspection now include native type labels and
+   display metadata when provided by the sidecar vtable.
+3. Native allocation-by-type rows are emitted in DAP heap snapshots under
+   `nativeObjectTypes`, which provides the runtime data needed for doctor-style
+   reporting.
+
 ---
 
 ## 9. Risks and mitigations
@@ -448,7 +494,7 @@ Gate:
 | New sidecar reads appended API fields on old runtime | Mandatory `struct_size` + `offsetof` gate before field access |
 | Type confusion from non-static vtable pointers | Document static-storage requirement; add debug assert |
 | Payload leak/double-free | `NativeObjectHeader` owns destroy callback in destructor; add unit tests |
-| Unsound GC when sidecar stores Eta refs | Reject non-null `trace` until NO4; then test mark integration |
+| Unsound GC when sidecar stores Eta refs | Run mark traversal through `vtable->trace` and keep GC integration tests for retention |
 | Sidecar stores dangling `EtaNativeApiV1*` | Document API-table lifetime; store copied callbacks/context only |
 | Inspector regression for existing torch objects | Existing object kinds and inspector paths remain unchanged |
 | Domain package accidentally coupled to core build | Require package-local CMake/tests under `packages/ml/native/lightgbm`; no NO3 edits to core CMake |

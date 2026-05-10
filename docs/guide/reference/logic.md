@@ -20,10 +20,9 @@ Logic code lives in-process with normal Eta code (closures, modules,
 exceptions, GC) instead of requiring a separate Prolog runtime. The
 trail is **unified** with the CLP machinery, so a single
 `(unwind-trail m)` undoes bindings, attribute writes, integer-domain
-narrowings, and CLP(R) tableau rows atomically.
-
-If you are coming from Prolog, jump straight to §10 for a translation
-table.
+narrowings, and [CLP(R)](clpr.md) tableau rows atomically — see also
+[CLP(FD)](clp.md) for integer-domain constraints and [CLP(B)](clpb.md)
+for Boolean constraints.
 
 ---
 
@@ -61,7 +60,7 @@ table.
 `VM::unify(a, b)` is a textbook Robinson algorithm with path-compressed
 dereferencing and an optional occurs-check:
 
-```
+```text
 unify(a, b):
     a = walk(a)              ; follow var chain to root
     b = walk(b)
@@ -377,7 +376,7 @@ trail between attempts — so `pv` and `cv` start fresh each time.
 
 The Prolog rule is:
 
-```
+```text
 grandparent(GP, GC) :- parent(GP, Mid), parent(Mid, GC).
 ```
 

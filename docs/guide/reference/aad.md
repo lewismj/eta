@@ -2,7 +2,7 @@
 
 [Back to README](../../../README.md) | [Examples](../examples-tour.md) | [Modules](modules.md)
 
-> 📓 **Interactive notebook:**
+> **Interactive notebook:**
 > [`cookbook/notebooks/AAD.ipynb`](../../../cookbook/notebooks/AAD.ipynb) —
 > the same walkthrough as a runnable Jupyter notebook (xeus-eta kernel).
 
@@ -85,7 +85,7 @@ Most users only ever call `grad`. To build intuition for what it actually
 *does*, here is the same computation written with raw tape primitives —
 exactly what `grad` does internally:
 
-```eta
+```scheme
 ;; f(x, y) = x*y + sin(x)   at (x, y) = (2, 3)
 ;; Expected:  ∂f/∂x = y + cos(x) = 3 + cos(2) ≈ 2.5839
 ;;            ∂f/∂y = x          = 2
@@ -179,7 +179,7 @@ order — i.e. `grad[i] = ∂f/∂xᵢ`.
 
 ### A first example, end-to-end
 
-```eta
+```scheme
 ;; f(x) = x² + 3x + 1  at x = 4
 ;; df/dx = 2x + 3 = 11
 
@@ -192,7 +192,7 @@ order — i.e. `grad[i] = ∂f/∂xᵢ`.
 
 ### Multiple inputs
 
-```eta
+```scheme
 ;; Rosenbrock f(x,y) = (1-x)² + 100·(y-x²)²
 ;; At (1,1) the gradient is (0, 0) — the global minimum.
 
@@ -284,7 +284,7 @@ Real objectives often contain `abs`, `max`, `min`, `relu`, `clamp` — all of
 which have **kinks** (points where the derivative doesn't exist). Eta lets
 you choose how to handle them globally:
 
-```eta
+```scheme
 (set-aad-nondiff-policy! 'strict)        ; default: refuse to lie
 (set-aad-nondiff-policy! 'zero-subgrad)  ; deterministic 0 at the kink
 (aad-nondiff-policy)                     ; ⇒ 'strict   (or whatever's set)
@@ -306,7 +306,7 @@ Comparison semantics on taped values:
 
 ### Side-by-side
 
-```eta
+```scheme
 ;; ── strict (default) ───────────────────────────────────
 (set-aad-nondiff-policy! 'strict)
 (grad (lambda (x) (ad-relu x)) '(0.0))
@@ -343,7 +343,7 @@ differences during development. `std.aad` ships two helpers:
 maximum absolute error plus both gradients side by side, so a failure is
 self-diagnosing.
 
-```eta
+```scheme
 (define (loss x y) (+ (* x x) (* 3 (* x y)) (* y y)))
 
 (check-grad loss '(1.5 -2.0))
@@ -431,7 +431,7 @@ Use these when you want stable, *everywhere-defined* gradients near kinks:
 | `(smooth-abs x epsilon)` | `abs(x)` | larger `epsilon` ⇒ rounder |
 | `(smooth-clamp x lo hi beta)` | `clamp(x, lo, hi)` | larger `beta` ⇒ sharper corners |
 
-```eta
+```scheme
 (grad (lambda (x) (softplus x 8.0))  '(0.0))   ; ⇒ (0.087 #(0.5))
 (grad (lambda (x) (smooth-abs x 1e-3)) '(0.0)) ; ⇒ (0.001 #(0.0))
 ```
@@ -458,7 +458,7 @@ origin.
 `grad` takes a *list* of scalar arguments, not a vector. The idiomatic way
 to differentiate `loss : ℝⁿ → ℝ` is `apply`:
 
-```eta
+```scheme
 (define (loss-list params)
   ;; params is a regular list of n numbers (or tape refs while taped)
   (let ((x (car params)) (y (cadr params)) (z (caddr params)))
@@ -473,7 +473,7 @@ to differentiate `loss : ℝⁿ → ℝ` is `apply`:
 
 For `g : ℝⁿ → ℝᵐ`, run `grad` once per output component:
 
-```eta
+```scheme
 (define (g x y)
   (list (+ (* x x) y)        ; g₁
         (* x (sin y))))      ; g₂
@@ -499,7 +499,7 @@ better than finite differences (`2n` evaluations) whenever `m < 2n`.
 
 ### One gradient step
 
-```eta
+```scheme
 (define (sgd-step f x lr)
   (let ((res (grad (lambda args (apply f args)) x)))
     (let ((g (cadr res)))

@@ -25,23 +25,23 @@ This page is the **API reference** for Eta's causal-inference stack.
 The implementation is research-grade and covers Pearl's identification
 and estimation surface end-to-end:
 
-| Layer | Module | Status |
-| :---- | :----- | :----- |
-| DAG utilities, do-calculus rules, back-door identification, plug-in adjustment | `std.causal`               | ✅ |
-| ADMGs, bidirected edges, latent projection, c-components                       | `std.causal.admg`          | ✅ |
-| ID / IDC algorithms, hedge detection, estimand simplifier                      | `std.causal.identify`      | ✅ |
-| Generalised adjustment, front-door, instrumental variables                     | `std.causal.adjustment`    | ✅ |
-| Mediation (NDE / NIE / CDE)                                                    | `std.causal.mediation`     | ✅ |
-| Selection diagrams, sBD criterion, transport queries                           | `std.causal.transport`     | ✅ |
-| Twin networks, ID* / IDC*, effect-of-treatment-on-the-treated                  | `std.causal.counterfactual`| ✅ |
-| g-formula, IPW, AIPW, TMLE, bootstrap CIs, E-value, Rosenbaum bounds           | `std.causal.estimate`      | ✅ |
-| PC / FCI / GES / NOTEARS structure learning + CI tests                         | `std.causal.learn`         | ✅ |
-| DOT, Mermaid and LaTeX rendering, `define-dag` macro                           | `std.causal.render`        | ✅ |
-| CATE meta-learners (S/T/X/R/DR)                                                | `std.causal.cate`          | ✅ |
-| Regression CART + random forest                                                 | `std.ml.tree`, `std.ml.forest` | ✅ |
-| Causal forest + local AIPW query                                                | `std.causal.forest`        | ✅ |
-| Cross-fitting and DML (PLR/IRM)                                                | `std.causal.crossfit`      | ✅ |
-| Uplift, Qini, and policy-value scoring                                          | `std.causal.policy`        | ✅ |
+| Layer | Module |
+| :---- | :----- |
+| DAG utilities, do-calculus rules, back-door identification, plug-in adjustment | `std.causal`               |
+| ADMGs, bidirected edges, latent projection, c-components                       | `std.causal.admg`          |
+| ID / IDC algorithms, hedge detection, estimand simplifier                      | `std.causal.identify`      |
+| Generalised adjustment, front-door, instrumental variables                     | `std.causal.adjustment`    |
+| Mediation (NDE / NIE / CDE)                                                    | `std.causal.mediation`     |
+| Selection diagrams, sBD criterion, transport queries                           | `std.causal.transport`     |
+| Twin networks, ID* / IDC*, effect-of-treatment-on-the-treated                  | `std.causal.counterfactual`|
+| g-formula, IPW, AIPW, TMLE, bootstrap CIs, E-value, Rosenbaum bounds           | `std.causal.estimate`      |
+| PC / FCI / GES / NOTEARS structure learning + CI tests                         | `std.causal.learn`         |
+| DOT, Mermaid and LaTeX rendering, `define-dag` macro                           | `std.causal.render`        |
+| CATE meta-learners (S/T/X/R/DR)                                                | `std.causal.cate`          |
+| Regression CART + random forest                                                 | `std.ml.tree`, `std.ml.forest` |
+| Causal forest + local AIPW query                                                | `std.causal.forest`        |
+| Cross-fitting and DML (PLR/IRM)                                                | `std.causal.crossfit`      |
+| Uplift, Qini, and policy-value scoring                                          | `std.causal.policy`        |
 
 The layer also composes with:
 

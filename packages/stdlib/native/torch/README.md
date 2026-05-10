@@ -1,4 +1,4 @@
-# eta-torch-sidecar
+# Neural Networks (LibTorch)
 
 Native sidecar package metadata for `torch/*`, `nn/*`, and `optim/*`
 runtime primitives.

@@ -1,0 +1,23 @@
+(module cookbook.ml.lightgbm
+  (import std.io)
+  (import ml.lightgbm)
+  (begin
+    (define dataset
+      (dataset-from-list
+        '((1.0 2.0)
+          (1.5 1.2)
+          (2.1 0.9))
+        '(0.0 1.0 1.0)))
+
+    (define booster (booster-create dataset))
+    (train! booster dataset)
+    (train! booster dataset)
+
+    (println "num-trees=" (num-trees booster))
+    (println "predict=" (predict booster '(1.2 1.8)))
+    (println "eval=" (eval booster dataset))
+    (println "feature-importance=" (feature-importance booster))
+
+    (save booster "lightgbm_scaffold.model")
+    (define reloaded (load "lightgbm_scaffold.model"))
+    (println "reload-predict=" (predict reloaded '(1.2 1.8)))))

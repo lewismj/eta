@@ -1,10 +1,8 @@
 # Next Steps
 
-
-1. [Native Sidecar Plan](plan/native_sidecar_plan.md)
-   - NS0-NS9 is complete (sidecar-only runtime); remaining work is NS10 external hardening/documentation and third-party SDK path validation.
-
-2. [Lint & Formatter Plan](plan/lint_formatter_plan.md)
+1. [Lint & Formatter Plan](plan/lint_formatter_plan.md)
    - Design and implement a linter and code formatter for Eta, integrated into the `eta` CLI and LSP server, to enforce style consistency and catch common issues.
 
-
+2. (Minor) We have a mechnism for incorporating external libraries into Eta at runtime.
+   To support this, there is a generic `NativeObject` heap kind type. Some of the 'standard lib' packages currently 
+   have their own type, that should be replaced with this. Those are no longer needed.

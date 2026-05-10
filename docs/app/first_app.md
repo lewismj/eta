@@ -125,4 +125,4 @@ In workspace mode, build artifacts are written under:
 
 - [Packaging System overview](../packaging.md)
 - [Package and Workspace guide](../guide/packages.md)
-- [Cookbook end-to-end packaging example](../../cookbook/packaging/end-to-end/README.md)
+- [Cookbook end-to-end packaging example](/docs/cookbook/packaging/end-to-end/)

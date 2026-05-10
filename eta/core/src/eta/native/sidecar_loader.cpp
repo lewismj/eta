@@ -11,8 +11,10 @@
 #include <utility>
 
 #include "eta/native/sdk.h"
+#include "eta/native/runtime_binding.h"
 #include "eta/package/lockfile.h"
 #include "eta/package/resolver.h"
+#include "eta/runtime/nanbox.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -322,6 +324,54 @@ void report_error_bridge(void* user_data, const char* message) {
     pending->reported_error = message;
 }
 
+[[nodiscard]] eta::native::SidecarRuntimeBindingV1* runtime_binding_from_context(
+    void* runtime_context) {
+    if (runtime_context == nullptr) return nullptr;
+    auto* binding = static_cast<eta::native::SidecarRuntimeBindingV1*>(runtime_context);
+    if (binding->heap == nullptr) return nullptr;
+    return binding;
+}
+
+int alloc_native_object_bridge(void* runtime_context,
+                               const EtaNativeObjectVTable* vtable,
+                               void* payload,
+                               std::uint64_t* out_val) {
+    auto* binding = runtime_binding_from_context(runtime_context);
+    if (binding == nullptr || vtable == nullptr || out_val == nullptr) {
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+
+    auto allocated = binding->heap->allocate<
+        eta::runtime::memory::heap::NativeObjectHeader,
+        eta::runtime::memory::heap::ObjectKind::NativeObject>(
+        eta::runtime::memory::heap::NativeObjectHeader{vtable, payload});
+    if (!allocated.has_value()) return ETA_NATIVE_STATUS_ERROR;
+
+    *out_val = eta::runtime::nanbox::ops::box(
+        eta::runtime::nanbox::Tag::HeapObject,
+        static_cast<eta::runtime::nanbox::LispVal>(*allocated));
+    return ETA_NATIVE_STATUS_OK;
+}
+
+void* get_native_object_bridge(void* runtime_context,
+                               const std::uint64_t raw_val,
+                               const EtaNativeObjectVTable* vtable) {
+    auto* binding = runtime_binding_from_context(runtime_context);
+    if (binding == nullptr || vtable == nullptr) return nullptr;
+
+    const eta::runtime::nanbox::LispVal value = raw_val;
+    if (!eta::runtime::nanbox::ops::is_boxed(value)
+        || eta::runtime::nanbox::ops::tag(value) != eta::runtime::nanbox::Tag::HeapObject) {
+        return nullptr;
+    }
+
+    auto* native_header = binding->heap->try_get_as<
+        eta::runtime::memory::heap::ObjectKind::NativeObject,
+        eta::runtime::memory::heap::NativeObjectHeader>(eta::runtime::nanbox::ops::payload(value));
+    if (native_header == nullptr || native_header->vtable != vtable) return nullptr;
+    return native_header->user_data;
+}
+
 [[nodiscard]] std::expected<void, SidecarLoaderError> validate_registration_conflicts(
     const ExtensionRegistry& registry,
     std::string_view extension_id,
@@ -620,6 +670,8 @@ std::expected<void, SidecarLoaderError> SidecarLoader::load(
     api.runtime_context = runtime_context_;
     api.register_primitive = &register_primitive_bridge;
     api.report_error = &report_error_bridge;
+    api.alloc_native_object = &alloc_native_object_bridge;
+    api.get_native_object = &get_native_object_bridge;
 
     EtaExtensionInfoV1 info{};
     info.struct_size = sizeof(EtaExtensionInfoV1);

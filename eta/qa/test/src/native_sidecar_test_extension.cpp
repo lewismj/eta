@@ -10,8 +10,10 @@
 #include "eta/stats/stats_primitives.h"
 #include "eta/torch/torch_primitives.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <new>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -47,6 +49,52 @@ std::vector<std::unique_ptr<PrimitiveBatch>> g_log_primitive_batches;
 std::vector<std::unique_ptr<PrimitiveBatch>> g_stats_primitive_batches;
 std::vector<std::unique_ptr<PrimitiveBatch>> g_torch_primitive_batches;
 std::vector<std::unique_ptr<PrimitiveBatch>> g_nng_primitive_batches;
+
+struct NativeRoundtripPayload {
+    std::uint64_t cookie{0};
+};
+
+extern "C" void native_roundtrip_destroy(void* user_data) {
+    delete static_cast<NativeRoundtripPayload*>(user_data);
+}
+
+struct NativeTracePayload {
+    std::uint64_t traced_value{0};
+};
+
+extern "C" void native_trace_destroy(void* user_data) {
+    delete static_cast<NativeTracePayload*>(user_data);
+}
+
+extern "C" void native_trace_callback(void* user_data,
+                                      void* ctx,
+                                      void (*trace_fn)(void* ctx, std::uint64_t val)) {
+    if (trace_fn == nullptr) return;
+    auto* payload = static_cast<NativeTracePayload*>(user_data);
+    if (payload == nullptr) return;
+    trace_fn(ctx, payload->traced_value);
+}
+
+constexpr EtaNativeObjectVTable kNativeRoundtripVTable{
+    .type_name = "eta.native.roundtrip.payload",
+    .destroy = &native_roundtrip_destroy,
+    .trace = nullptr,
+    .display = nullptr,
+};
+
+constexpr EtaNativeObjectVTable kNativeRoundtripMismatchVTable{
+    .type_name = "eta.native.roundtrip.mismatch",
+    .destroy = &native_roundtrip_destroy,
+    .trace = nullptr,
+    .display = nullptr,
+};
+
+constexpr EtaNativeObjectVTable kNativeTraceVTable{
+    .type_name = "eta.native.trace.payload",
+    .destroy = &native_trace_destroy,
+    .trace = &native_trace_callback,
+    .display = nullptr,
+};
 
 void fill_extension_info(EtaExtensionInfoV1* out_info,
                          const char* abi,
@@ -245,6 +293,112 @@ int register_nng_bound_symbols(const EtaNativeApiV1* api,
         g_nng_primitive_batches);
 }
 
+[[nodiscard]] bool native_object_api_available(const EtaNativeApiV1* api) {
+    if (api == nullptr || api->runtime_context == nullptr) return false;
+    const bool has_alloc = ETA_NATIVE_API_V1_HAS_FIELD(api, alloc_native_object)
+        && api->alloc_native_object != nullptr;
+    const bool has_get = ETA_NATIVE_API_V1_HAS_FIELD(api, get_native_object)
+        && api->get_native_object != nullptr;
+    return has_alloc && has_get;
+}
+
+int require_native_object_api(const EtaNativeApiV1* api) {
+    if (native_object_api_available(api)) return ETA_NATIVE_STATUS_OK;
+    if (api != nullptr && api->report_error != nullptr) {
+        api->report_error(api->user_data, "native-object-api-unavailable");
+    }
+    return ETA_NATIVE_STATUS_ERROR;
+}
+
+int verify_native_object_roundtrip(const EtaNativeApiV1* api) {
+    if (require_native_object_api(api) != ETA_NATIVE_STATUS_OK) {
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+
+    auto* payload = new (std::nothrow) NativeRoundtripPayload{};
+    if (payload == nullptr) {
+        if (api->report_error != nullptr) {
+            api->report_error(api->user_data, "native-roundtrip-payload-allocation-failed");
+        }
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+    payload->cookie = 0x4e3032u;
+
+    std::uint64_t boxed_value = 0;
+    const int alloc_status = api->alloc_native_object(
+        api->runtime_context,
+        &kNativeRoundtripVTable,
+        payload,
+        &boxed_value);
+    if (alloc_status != ETA_NATIVE_STATUS_OK) {
+        delete payload;
+        if (api->report_error != nullptr) {
+            api->report_error(api->user_data, "native-roundtrip-alloc-failed");
+        }
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+
+    auto* resolved = static_cast<NativeRoundtripPayload*>(
+        api->get_native_object(api->runtime_context, boxed_value, &kNativeRoundtripVTable));
+    if (resolved != payload || resolved->cookie != 0x4e3032u) {
+        if (api->report_error != nullptr) {
+            api->report_error(api->user_data, "native-roundtrip-get-failed");
+        }
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+
+    const void* mismatch = api->get_native_object(
+        api->runtime_context,
+        boxed_value,
+        &kNativeRoundtripMismatchVTable);
+    if (mismatch != nullptr) {
+        if (api->report_error != nullptr) {
+            api->report_error(api->user_data, "native-roundtrip-vtable-mismatch");
+        }
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+
+    return ETA_NATIVE_STATUS_OK;
+}
+
+int verify_native_object_trace_alloc(const EtaNativeApiV1* api) {
+    if (require_native_object_api(api) != ETA_NATIVE_STATUS_OK) {
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+
+    auto* payload = new (std::nothrow) NativeTracePayload{};
+    if (payload == nullptr) {
+        if (api->report_error != nullptr) {
+            api->report_error(api->user_data, "native-trace-payload-allocation-failed");
+        }
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+    payload->traced_value = 0u;
+
+    std::uint64_t boxed_value = 0;
+    const int alloc_status = api->alloc_native_object(
+        api->runtime_context,
+        &kNativeTraceVTable,
+        payload,
+        &boxed_value);
+    if (alloc_status != ETA_NATIVE_STATUS_OK) {
+        delete payload;
+        if (api->report_error != nullptr) {
+            api->report_error(api->user_data, "native-trace-alloc-failed");
+        }
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+
+    if (boxed_value == 0u) {
+        if (api->report_error != nullptr) {
+            api->report_error(api->user_data, "native-trace-alloc-invalid-box");
+        }
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+
+    return ETA_NATIVE_STATUS_OK;
+}
+
 } // namespace
 
 extern "C" ETA_NATIVE_EXPORT int eta_register_extension_v1(const EtaNativeApiV1* api,
@@ -306,4 +460,39 @@ extern "C" ETA_NATIVE_EXPORT int eta_register_nng_extension_v1(const EtaNativeAp
         return register_builtin_symbol_metadata(api, is_nng_primitive_name);
     }
     return register_nng_bound_symbols(api, *binding);
+}
+
+extern "C" ETA_NATIVE_EXPORT int eta_register_native_object_gate_extension_v1(
+    const EtaNativeApiV1* api,
+    EtaExtensionInfoV1* out_info) {
+    fill_extension_info(out_info, ETA_NATIVE_ABI_ID_V1, "eta.native.gate.sidecar");
+    return require_native_object_api(api);
+}
+
+extern "C" ETA_NATIVE_EXPORT int eta_register_native_object_gate_extension_legacy_runtime_v1(
+    const EtaNativeApiV1* api,
+    EtaExtensionInfoV1* out_info) {
+    fill_extension_info(out_info, ETA_NATIVE_ABI_ID_V1, "eta.native.gate.legacy.sidecar");
+    if (api == nullptr) return ETA_NATIVE_STATUS_ERROR;
+
+    EtaNativeApiV1 legacy_api = *api;
+    legacy_api.struct_size = static_cast<std::uint32_t>(
+        offsetof(EtaNativeApiV1, report_error) + sizeof(legacy_api.report_error));
+    legacy_api.alloc_native_object = nullptr;
+    legacy_api.get_native_object = nullptr;
+    return require_native_object_api(&legacy_api);
+}
+
+extern "C" ETA_NATIVE_EXPORT int eta_register_native_object_roundtrip_extension_v1(
+    const EtaNativeApiV1* api,
+    EtaExtensionInfoV1* out_info) {
+    fill_extension_info(out_info, ETA_NATIVE_ABI_ID_V1, "eta.native.roundtrip.sidecar");
+    return verify_native_object_roundtrip(api);
+}
+
+extern "C" ETA_NATIVE_EXPORT int eta_register_native_object_trace_extension_v1(
+    const EtaNativeApiV1* api,
+    EtaExtensionInfoV1* out_info) {
+    fill_extension_info(out_info, ETA_NATIVE_ABI_ID_V1, "eta.native.trace.sidecar");
+    return verify_native_object_trace_alloc(api);
 }

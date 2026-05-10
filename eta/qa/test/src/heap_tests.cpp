@@ -1,10 +1,12 @@
 #include <boost/test/unit_test.hpp>
 
+#include <cstdio>
 #include <cstdint>
 #include <expected>
 #include <vector>
 
 #include <eta/runtime/memory/heap.h>
+#include <eta/runtime/memory/native_object_inspection.h>
 
 using namespace eta::runtime::memory::heap;
 using constants::PAYLOAD_MASK;
@@ -38,6 +40,10 @@ namespace {
         int calls{0};
     };
 
+    struct NativeDisplayPayload {
+        const char* text{nullptr};
+    };
+
     extern "C" void heap_test_native_destroy(void* user_data) {
         if (auto* counter = static_cast<NativeDestroyCounter*>(user_data)) {
             ++counter->calls;
@@ -49,6 +55,20 @@ namespace {
         .destroy = &heap_test_native_destroy,
         .trace = nullptr,
         .display = nullptr,
+    };
+
+    extern "C" void heap_test_native_display(void* user_data, FILE* out) {
+        if (out == nullptr) return;
+        auto* payload = static_cast<NativeDisplayPayload*>(user_data);
+        if (payload == nullptr || payload->text == nullptr) return;
+        std::fputs(payload->text, out);
+    }
+
+    constexpr EtaNativeObjectVTable kNativeDisplayVTable{
+        .type_name = "heap.native.display",
+        .destroy = nullptr,
+        .trace = nullptr,
+        .display = &heap_test_native_display,
     };
 }
 
@@ -187,6 +207,44 @@ BOOST_AUTO_TEST_CASE(native_object_destroy_runs_on_heap_teardown) {
     }
 
     BOOST_TEST(counter.calls == 1);
+}
+
+BOOST_AUTO_TEST_CASE(native_object_inspection_reports_type_name_and_display) {
+    Heap heap(1ull << 20);
+    NativeDisplayPayload payload{"payload-display"};
+
+    const auto id = expect_ok(
+        heap.allocate<NativeObjectHeader, ObjectKind::NativeObject>(
+            NativeObjectHeader{&kNativeDisplayVTable, &payload}));
+
+    HeapEntry entry{};
+    BOOST_REQUIRE(heap.try_get(id, entry));
+
+    auto inspection = native_object_inspection_info(entry);
+    BOOST_REQUIRE(inspection.has_value());
+    BOOST_TEST(inspection->kind_label == "NativeObject:heap.native.display");
+    BOOST_TEST(inspection->type_name == "heap.native.display");
+    BOOST_TEST(inspection->display == "payload-display");
+    BOOST_TEST(heap_entry_kind_label(entry) == "NativeObject:heap.native.display");
+}
+
+BOOST_AUTO_TEST_CASE(native_object_inspection_handles_missing_vtable_metadata) {
+    Heap heap(1ull << 20);
+    NativeDestroyCounter counter{};
+
+    const auto id = expect_ok(
+        heap.allocate<NativeObjectHeader, ObjectKind::NativeObject>(
+            NativeObjectHeader{nullptr, &counter}));
+
+    HeapEntry entry{};
+    BOOST_REQUIRE(heap.try_get(id, entry));
+
+    auto inspection = native_object_inspection_info(entry);
+    BOOST_REQUIRE(inspection.has_value());
+    BOOST_TEST(inspection->kind_label == "NativeObject");
+    BOOST_TEST(inspection->type_name.empty());
+    BOOST_TEST(inspection->display.empty());
+    BOOST_TEST(heap_entry_kind_label(entry) == "NativeObject");
 }
 
 

@@ -287,6 +287,23 @@ static bool requires_torch([[maybe_unused]] const fs::path& file) {
     return false;
 }
 
+/**
+ * External package sidecar example filtering.
+ *
+ * Cookbook examples that import package-sidecar modules outside bundled stdlib
+ * are validated in package-local test suites, not in this global cookbook pass.
+ */
+static bool requires_external_package_sidecar(const fs::path& file) {
+    std::ifstream ifs(file);
+    std::string line;
+    while (std::getline(ifs, line)) {
+        auto pos = line.find_first_not_of(" \t");
+        if (pos != std::string::npos && line[pos] == ';') continue;
+        if (line.find("(import ml.lightgbm)") != std::string::npos) return true;
+    }
+    return false;
+}
+
 /// Test fixture
 
 struct ExampleRunnerFixture {
@@ -425,6 +442,12 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
 #endif
         if (requires_net(file)) {
             BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires networking runtime  -  skipped)");
+            continue;
+        }
+        if (requires_external_package_sidecar(file)) {
+            BOOST_TEST_MESSAGE(
+                "  [SKIP] " << rel.string()
+                            << " (requires package sidecar runtime  -  skipped)");
             continue;
         }
         BOOST_TEST_CONTEXT("Example: " << rel.string()) {

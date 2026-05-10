@@ -1,4 +1,4 @@
-# eta-nng-sidecar
+# Networking 
 
 Native sidecar package metadata for nng/message-passing runtime primitives.
 

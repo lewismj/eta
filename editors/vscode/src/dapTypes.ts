@@ -6,6 +6,12 @@ export interface KindStat {
     bytes: number;
 }
 
+export interface NativeObjectTypeStat {
+    typeName: string;
+    count: number;
+    bytes: number;
+}
+
 export interface GCRoot {
     name: string;
     objectIds: number[];
@@ -25,6 +31,7 @@ export interface HeapSnapshot {
     totalBytes: number;
     softLimit: number;
     kinds: KindStat[];
+    nativeObjectTypes?: NativeObjectTypeStat[];
     roots: GCRoot[];
     consPool?: ConsPoolStats;
     truncated?: boolean;
@@ -39,6 +46,8 @@ export interface ObjectChild {
     kind: string;
     size: number;
     preview: string;
+    nativeTypeName?: string;
+    nativeDisplay?: string;
 }
 
 export interface ObjectInspection {
@@ -46,6 +55,8 @@ export interface ObjectInspection {
     kind: string;
     size: number;
     preview: string;
+    nativeTypeName?: string;
+    nativeDisplay?: string;
     children: ObjectChild[];
 }
 

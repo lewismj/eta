@@ -1,0 +1,153 @@
+;;; ml/lightgbm.eta
+;;; Sidecar-backed LightGBM package scaffold.
+
+(module ml.lightgbm
+  (export
+    dataset-from-list
+    dataset-from-facttable
+    booster-create
+    train!
+    predict
+    save
+    load
+    eval
+    num-trees
+    feature-importance)
+  (begin
+    ;;@doc (dataset-from-list features labels)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Construct an `lgbm-dataset` handle from feature rows and labels.
+    ;;@example
+    ;; (dataset-from-list '((1.0 2.0) (2.0 1.0)) '(0.0 1.0))
+    (define (dataset-from-list features labels)
+      (if (null? features)
+          (error "dataset-from-list: features must contain at least one row")
+          #t)
+      (let* ((row-count (length features))
+             (label-count (length labels)))
+        (if (not (= row-count label-count))
+            (error "dataset-from-list: feature row count must match label count")
+            #t)
+        (let ((feature-count (length (car features))))
+          (if (= feature-count 0)
+              (error "dataset-from-list: feature rows must not be empty")
+              #t)
+          (letrec ((validate-rows
+                     (lambda (rows)
+                       (if (null? rows)
+                           #t
+                           (if (not (= (length (car rows)) feature-count))
+                               (error "dataset-from-list: all feature rows must have equal width")
+                               (validate-rows (cdr rows)))))))
+            (validate-rows features))
+          (apply lgbm/dataset-from-list
+                 (append
+                   (list row-count feature-count)
+                   labels
+                   (apply append features))))))
+
+    ;;@doc (dataset-from-facttable fact-table feature-cols label-col)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Build an `lgbm-dataset` from a fact-table plus feature/label column indices.
+    ;;@example
+    ;; (dataset-from-facttable ft '(0 1) 2)
+    (define (dataset-from-facttable fact-table feature-cols label-col)
+      (letrec
+          ((valid-index-list?
+             (lambda (col-idxs)
+               (letrec ((loop (lambda (xs)
+                                (cond
+                                  ((null? xs) #t)
+                                  ((not (pair? xs)) #f)
+                                  ((or (not (integer? (car xs))) (< (car xs) 0)) #f)
+                                  (#t (loop (cdr xs)))))))
+                 (and (pair? col-idxs) (loop col-idxs)))))
+           (row->features
+             (lambda (row-id)
+               (map (lambda (col-idx)
+                      (%fact-table-ref fact-table row-id col-idx))
+                    feature-cols))))
+        (if (not (fact-table? fact-table))
+            (error "dataset-from-facttable: first argument must be a fact-table")
+            #t)
+        (if (not (valid-index-list? feature-cols))
+            (error "dataset-from-facttable: second argument must be a non-empty list of non-negative integer feature column indices")
+            #t)
+        (if (or (not (integer? label-col)) (< label-col 0))
+            (error "dataset-from-facttable: third argument must be a non-negative integer label column index")
+            #t)
+        (let* ((row-ids (%fact-table-live-row-ids fact-table))
+               (features (map row->features row-ids))
+               (labels (map (lambda (row-id)
+                              (%fact-table-ref fact-table row-id label-col))
+                            row-ids)))
+          (dataset-from-list features labels))))
+
+    ;;@doc (booster-create dataset)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Construct an `lgbm-booster` handle bound to `dataset`.
+    ;;@example
+    ;; (booster-create ds)
+    (define booster-create lgbm/booster-create)
+
+    ;;@doc (train! booster dataset)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Run one training round and return `booster`.
+    ;;@example
+    ;; (train! booster ds)
+    (define train! lgbm/train!)
+
+    ;;@doc (predict booster feature-row)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Predict a scalar score for one feature row.
+    ;;@example
+    ;; (predict booster '(1.0 2.0))
+    (define (predict booster feature-row)
+      (if (null? feature-row)
+          (error "predict: feature-row must contain at least one value")
+          (apply lgbm/predict (cons booster feature-row))))
+
+    ;;@doc (save booster path)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Save `booster` to `path`.
+    ;;@example
+    ;; (save booster "model.txt")
+    (define save lgbm/save)
+
+    ;;@doc (load path)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Load a booster from `path`.
+    ;;@example
+    ;; (load "model.txt")
+    (define load lgbm/load)
+
+    ;;@doc (eval booster dataset)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Evaluate `booster` against `dataset`.
+    ;;@example
+    ;; (eval booster ds)
+    (define eval lgbm/eval)
+
+    ;;@doc (num-trees booster)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Return the number of trees currently in `booster`.
+    ;;@example
+    ;; (num-trees booster)
+    (define num-trees lgbm/num-trees)
+
+    ;;@doc (feature-importance booster)
+    ;;@category ML
+    ;;@module ml.lightgbm
+    ;; Return a scalar feature-importance summary for `booster`.
+    ;;@example
+    ;; (feature-importance booster)
+    (define feature-importance lgbm/feature-importance)))

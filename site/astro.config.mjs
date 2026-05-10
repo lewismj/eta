@@ -112,6 +112,28 @@ function remarkRewriteMdLinks() {
 }
 
 /**
+ * Remark plugin: convert ```mermaid fenced blocks to <div class="mermaid">
+ * so the client-side mermaid.js library can render them.  This must run
+ * BEFORE Shiki so the code node is never handed to the syntax highlighter.
+ */
+function remarkMermaid() {
+  const esc = (s) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return (tree) => {
+    const visit = (node) => {
+      if (node.type === "code" && node.lang === "mermaid") {
+        node.type = "html";
+        node.value = `<div class="mermaid">\n${esc(node.value)}\n</div>`;
+        delete node.lang;
+        delete node.meta;
+      }
+      if (node.children) for (const c of node.children) visit(c);
+    };
+    visit(tree);
+  };
+}
+
+/**
  * Remark plugin: drop the "Back to README" navigation paragraph that
  * appears near the top of most source markdown files. The site has a
  * full sidebar, so this row is redundant — but it stays in the .md
@@ -279,6 +301,7 @@ export default defineConfig({
   site: "https://lewismj.github.io",
   markdown: {
     remarkPlugins: [
+      remarkMermaid,
       remarkDropBackToReadme,
       remarkGfmAlerts,
       remarkDropInPageToc,

@@ -28,5 +28,5 @@ Expected `eta run` output:
 
 ## See also
 
-- [How to Build Your First App](../../../docs/app/first_app.md)
+- [How to Build Your First App](/docs/app/first_app/)
 - [Packaging System](../../../docs/packaging.md)

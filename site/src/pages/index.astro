@@ -43,7 +43,7 @@ const features = [
     linkLabel: "Causal reference",
   },
   {
-    title: "Actor-model concurrency",
+    title: "Actor model",
     body: "Erlang-style actors and message passing via nng — network-transparent parallelism, supervision trees, and pub/sub.",
     href: `${base}docs/guide/reference/message-passing/`,
     linkLabel: "Concurrency reference",
@@ -53,6 +53,12 @@ const features = [
     body: "VS Code extension (LSP, debugger, heap inspector), Jupyter kernel for interactive notebooks, and a built-in sampling profiler with REPL and notebook integration.",
     href: `${base}docs/tools/`,
     linkLabel: "Developer tools",
+  },
+  {
+    title: "Package repository",
+    body: "Native sidecars and example packages — browse the stdlib and community sidecar ecosystem.",
+    href: `${base}packages/`,
+    linkLabel: "Browse packages",
   },
 ];
 
@@ -94,7 +100,7 @@ const sampleCode = `(import std.core std.aad)
   <Hero
     eyebrow="Open Source · v0.4"
     heading="Symbolic · Logic · Neural<br/><em>programming in Lisp.</em>"
-    subheading="A Lisp-inspired language for unified symbolic reasoning, learning, and causal inference."
+    subheading="A Lisp-inspired language for symbolic reasoning, learning, and causal inference."
     primaryLabel="Get Started"
     primaryHref={`${base}docs/quickstart/`}
     secondaryLabel="Read the Guide"

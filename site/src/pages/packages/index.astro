@@ -10,28 +10,37 @@ const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
 
 const packages = [
   {
-    icon: "🔢",
-    title: "eta-torch-sidecar",
+    title: "LibTorch — Neural Networks",
     body: "LibTorch tensor operations and autograd. ABI: eta-native-v1.",
     href: "https://github.com/lewismj/eta/tree/main/packages/stdlib/native/torch",
+    linkLabel: "std.torch",
   },
   {
-    icon: "📡",
-    title: "eta-nng-sidecar",
+    title: "NNG — Actor Messaging",
     body: "nanomsg-next-gen messaging — pub/sub, push/pull, request/reply.",
     href: "https://github.com/lewismj/eta/tree/main/packages/stdlib/native/nng",
+    linkLabel: "std.net",
   },
   {
-    icon: "📐",
-    title: "eta-stats-sidecar",
+    title: "Eigen — Statistics & Linear Algebra",
     body: "Eigen-backed statistics and linear algebra primitives.",
     href: "https://github.com/lewismj/eta/tree/main/packages/stdlib/native/stats",
+    linkLabel: "std.stats",
   },
   {
-    icon: "📝",
-    title: "eta-log-sidecar",
+    title: "spdlog — Structured Logging",
     body: "spdlog-backed structured logging. Reference migration example.",
     href: "https://github.com/lewismj/eta/tree/main/packages/stdlib/native/log",
+    linkLabel: "std.log",
+  },
+];
+
+const community = [
+  {
+    title: "LightGBM — Gradient Boosted Trees",
+    body: "LightGBM gradient-boosted trees via the ml.lightgbm module. Supports dataset-from-list, dataset-from-facttable, train!, predict, eval, save/load, and feature-importance. Pinned to LightGBM v4.6.0.",
+    href: "https://github.com/lewismj/eta/tree/main/packages/ml/native/lightgbm",
+    linkLabel: "ml.lightgbm",
   },
 ];
 ---
@@ -48,9 +57,14 @@ const packages = [
       and loaded through the <code>eta-native-v1</code> ABI.
     </p>
   </div>
-  <CardGrid>
+  <CardGrid label="Packages used by the Standard Library.">
     {packages.map((p) => (
-      <Card icon={p.icon} title={p.title} body={p.body} href={p.href} />
+      <Card title={p.title} body={p.body} href={p.href} linkLabel={p.linkLabel} />
+    ))}
+  </CardGrid>
+  <CardGrid label="Available Packages">
+    {community.map((p) => (
+      <Card title={p.title} body={p.body} href={p.href} linkLabel={p.linkLabel} />
     ))}
   </CardGrid>
   <Footer />

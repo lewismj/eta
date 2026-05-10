@@ -1,0 +1,52 @@
+(module ml.lightgbm.tests.smoke
+  (import std.test)
+  (import std.fact_table)
+  (import ml.lightgbm)
+  (begin
+    (define dataset
+      (dataset-from-list
+        '((1.0 2.0)
+          (2.0 1.0))
+        '(0.0 1.0)))
+    (define fact-table
+      (make-fact-table 'f1 'f2 'label))
+    (fact-table-insert! fact-table 1.0 2.0 0.0)
+    (fact-table-insert! fact-table 2.0 1.0 1.0)
+    (define fact-table-dataset
+      (dataset-from-facttable fact-table '(0 1) 2))
+    (define booster (booster-create dataset))
+    (define fact-table-booster (booster-create fact-table-dataset))
+    (train! booster dataset)
+    (train! fact-table-booster fact-table-dataset)
+
+    (define prediction (predict booster '(1.0 2.0)))
+    (define quality (eval booster dataset))
+    (define importance (feature-importance booster))
+    (define fact-table-prediction
+      (predict fact-table-booster '(1.0 2.0)))
+
+    (save booster "lightgbm_scaffold.model")
+    (define reloaded (load "lightgbm_scaffold.model"))
+
+    (define suite
+      (make-group "lightgbm"
+        (list
+          (make-test "num-trees-after-train"
+            (lambda ()
+              (assert-equal 1 (num-trees booster))))
+          (make-test "predict-roundtrip"
+            (lambda ()
+              (assert-approx-equal prediction
+                                   (predict reloaded '(1.0 2.0))
+                                   1e-12)))
+          (make-test "eval-nonnegative"
+            (lambda ()
+              (assert-true (and (= quality quality) (>= quality 0.0)))))
+          (make-test "feature-importance-nonnegative"
+            (lambda ()
+              (assert-true (and (= importance importance) (>= importance 0.0)))))
+          (make-test "dataset-from-facttable-trains"
+            (lambda ()
+              (assert-true (= fact-table-prediction fact-table-prediction)))))))
+
+    (print-tap (run suite))))

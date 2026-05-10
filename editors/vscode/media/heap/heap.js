@@ -372,8 +372,14 @@
         inspected = obj;
         let html = '<h3>Object #' + obj.objectId + '</h3>';
         html += '<div class="detail-row"><span class="detail-label">Kind:</span> ' + esc(obj.kind) + '</div>';
+        if (obj.nativeTypeName) {
+            html += '<div class="detail-row"><span class="detail-label">Native Type:</span> ' + esc(obj.nativeTypeName) + '</div>';
+        }
         html += '<div class="detail-row"><span class="detail-label">Size:</span> ' + fmt(obj.size) + '</div>';
         html += '<div class="detail-row"><span class="detail-label">Preview:</span> <code>' + esc(obj.preview) + '</code></div>';
+        if (obj.nativeDisplay) {
+            html += '<div class="detail-row"><span class="detail-label">Native Display:</span> <code>' + esc(obj.nativeDisplay) + '</code></div>';
+        }
         html += '<div class="detail-actions">';
         html += '  <button class="btn secondary" id="findPathsBtn">Find paths to root</button>';
         html += '</div>';

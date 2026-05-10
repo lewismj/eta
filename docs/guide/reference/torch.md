@@ -39,12 +39,6 @@ flowchart LR
     L1 --> A1["Activation\n(ReLU / σ)"]
     A1 --> L2["Linear Layer\nw·x + b"]
     L2 --> Y["Output\nŷ"]
-
-    style X  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style L1 fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style A1 fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style L2 fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style Y  fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
 | Concept | Explanation |
@@ -72,12 +66,6 @@ flowchart TD
 
     ZG --> FW --> LS --> BW --> UP
     UP -->|"next epoch"| ZG
-
-    style ZG fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style FW fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style LS fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style BW fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style UP fill:#0f3460,stroke:#f78166,color:#c9d1d9
 ```
 
 Eta's `train-step!` helper wraps all five steps into a single call:
@@ -102,13 +90,6 @@ flowchart TD
     ETA --> STD --> PRIM --> LT
     LT --> CPU
     LT --> GPU
-
-    style ETA  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style STD  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style PRIM fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style LT   fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style CPU  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style GPU  fill:#1a1a2e,stroke:#f78166,color:#c9d1d9
 ```
 
 Three new heap object kinds manage native libtorch resources through the
@@ -215,12 +196,6 @@ flowchart LR
     L1 --> R["ReLU"]
     R --> L2["Linear\n8 → 2"]
     L2 --> OUT["Output\n(1 × 2)"]
-
-    style IN  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style L1  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style R   fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style L2  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style OUT fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
 ---

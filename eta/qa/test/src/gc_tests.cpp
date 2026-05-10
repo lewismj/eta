@@ -5,6 +5,7 @@
 #include <eta/runtime/memory/mark_sweep_gc.h>
 #include <eta/runtime/factory.h>
 #include <eta/runtime/port.h>
+#include <eta/native/sdk.h>
 
 #include <eta/nng/nng_socket_ptr.h>
 #include <eta/nng/nng_factory.h>
@@ -27,6 +28,34 @@ namespace {
         BOOST_REQUIRE(r.has_value());
         return *r;
     }
+
+    struct NativeTraceFixturePayload {
+        LispVal retained{Nil};
+        std::size_t trace_calls{0};
+        std::size_t destroy_calls{0};
+    };
+
+    extern "C" void native_trace_fixture_destroy(void* user_data) {
+        auto* payload = static_cast<NativeTraceFixturePayload*>(user_data);
+        if (payload == nullptr) return;
+        ++payload->destroy_calls;
+    }
+
+    extern "C" void native_trace_fixture_trace(void* user_data,
+                                               void* ctx,
+                                               void (*trace_fn)(void* ctx, std::uint64_t val)) {
+        auto* payload = static_cast<NativeTraceFixturePayload*>(user_data);
+        if (payload == nullptr || trace_fn == nullptr) return;
+        ++payload->trace_calls;
+        trace_fn(ctx, payload->retained);
+    }
+
+    constexpr EtaNativeObjectVTable kNativeTraceFixtureVTable{
+        .type_name = "gc.native.trace.fixture",
+        .destroy = &native_trace_fixture_destroy,
+        .trace = &native_trace_fixture_trace,
+        .display = nullptr,
+    };
 }
 
 BOOST_AUTO_TEST_SUITE(gc_tests)
@@ -483,6 +512,38 @@ BOOST_AUTO_TEST_CASE(retains_primitive_gc_roots) {
     roots.clear();
     gc.collect(heap, roots.begin(), roots.end(), &stats);
     BOOST_TEST(stats.objects_freed == 2); ///< prim + captured cons
+}
+
+BOOST_AUTO_TEST_CASE(native_object_trace_marks_referenced_heap_values) {
+    NativeTraceFixturePayload native_payload{};
+    Heap heap(1ull << 20);
+    MarkSweepGC gc;
+    std::vector<LispVal> roots;
+
+    auto retained = expect_ok(make_vector(heap, {}));
+    native_payload.retained = retained;
+
+    auto native_id = expect_ok(
+        heap.allocate<NativeObjectHeader, ObjectKind::NativeObject>(
+            NativeObjectHeader{&kNativeTraceFixtureVTable, &native_payload}));
+    auto native_object = box(Tag::HeapObject, native_id);
+    roots.push_back(native_object);
+
+    const auto retained_id = static_cast<ObjectId>(payload(retained));
+    HeapEntry retained_entry{};
+    BOOST_REQUIRE(heap.try_get(retained_id, retained_entry));
+
+    GCStats stats{};
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+    BOOST_TEST(stats.objects_freed == 0u);
+    BOOST_TEST(native_payload.trace_calls > 0u);
+    BOOST_TEST(native_payload.destroy_calls == 0u);
+    BOOST_TEST(heap.try_get(retained_id, retained_entry));
+
+    roots.clear();
+    gc.collect(heap, roots.begin(), roots.end(), &stats);
+    BOOST_TEST(stats.objects_freed == 2u);
+    BOOST_TEST(native_payload.destroy_calls == 1u);
 }
 
 /// per-type GC traversal: FactTable

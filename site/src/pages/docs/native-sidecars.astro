@@ -1,33 +1,337 @@
 ---
 import DocsLayout from "../../layouts/DocsLayout.astro";
 ---
-<DocsLayout title="Native Sidecars">
-  <h1>Native Sidecars</h1>
-  <p>Full content coming in SITE2 — this page will import <code>docs/plan/native_sidecar_plan.md</code>.</p>
+<DocsLayout title="Native Sidecars" sourceFile="packages/ml/native/lightgbm">
 
-  <h2>Overview</h2>
+  <h1>Native Sidecars</h1>
+
   <p>
-    Native sidecars are package-managed native binaries loaded by the Eta runtime
-    through a versioned ABI (<code>eta-native-v1</code>). They extend the primitive
-    environment with C++-backed functionality — torch tensors, nng messaging,
-    Eigen stats — without hard-linking those libraries into core tools.
+    Native sidecars are package-managed native binaries loaded by the Eta runtime through a
+    versioned C ABI (<code>eta-native-v1</code>). They let you wrap any C or C++ library —
+    LightGBM, LibTorch, Eigen, nng — and expose it as first-class Eta primitives, without
+    hard-linking those libraries into the core tools.
   </p>
 
-  <h2>Key properties</h2>
+  <p>
+    This page walks through building one end-to-end, using the
+    <a href="https://github.com/lewismj/eta/tree/main/packages/ml/native/lightgbm">
+      <code>eta-lightgbm-sidecar</code>
+    </a> package as a concrete example.
+  </p>
+
+  <hr />
+
+  <h2 id="how-it-works">How it works</h2>
+
+  <p>At runtime, when Eta resolves a package that declares <code>[native] kind = "sidecar"</code>:</p>
+  <ol>
+    <li>The lockfile selects the correct artifact for the host triple (e.g. <code>x86_64-pc-windows-msvc</code>).</li>
+    <li>The artifact SHA-256 is verified before the file is opened.</li>
+    <li>The runtime calls the entry symbol — e.g. <code>eta_register_lgbm_extension_v1</code> — through <code>dlopen</code> / <code>LoadLibrary</code>.</li>
+    <li>The entry function registers C++ callbacks as named Eta primitives (e.g. <code>lgbm/predict</code>).</li>
+    <li>An Eta wrapper module (<code>ml.lightgbm</code>) imports those raw primitives and re-exports them with idiomatic Eta names and argument validation.</li>
+  </ol>
+  <p>The extension hash is embedded in compiled <code>.etac</code> freshness metadata, so a sidecar rebuild correctly invalidates cached bytecode.</p>
+
+  <hr />
+
+  <h2 id="package-layout">Package layout</h2>
+
+  <p>A sidecar package lives entirely outside the core CMake tree. The LightGBM package lives at:</p>
+
+  <pre><code>packages/ml/native/lightgbm/
+  eta.toml                        # package manifest + native metadata
+  CMakeLists.txt                  # standalone sidecar build
+  cmake/
+    FetchLightGBM.cmake           # pinned upstream fetch helper
+  src/
+    ml/
+      lightgbm.eta                # Eta wrapper module
+    eta/lightgbm/
+      lightgbm_extension.cpp      # ABI entrypoint
+      lightgbm_primitives.h
+      lightgbm_primitives.cpp     # primitive implementations
+      lightgbm_model.h
+      lightgbm_model.cpp          # domain model / C API calls
+  tests/
+    unit/
+      lightgbm_model_tests.cpp    # C++ unit tests
+    eta/
+      lightgbm_smoke.test.eta     # Eta smoke tests
+      run_lightgbm_eta_smoke.cmake</code></pre>
+
+  <p>No files under <code>eta/CMakeLists.txt</code> or <code>eta/core/CMakeLists.txt</code> are touched.</p>
+
+  <hr />
+
+  <h2 id="step-1-manifest">Step 1 — Write the manifest (<code>eta.toml</code>)</h2>
+
+  <p>
+    The manifest declares the package identity, the Eta compatibility range, the sidecar ABI
+    metadata, and one <code>[[native.targets]]</code> entry per supported host triple:
+  </p>
+
+  <pre><code>[package]
+name    = "eta-lightgbm-sidecar"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = "&gt;=0.6, &lt;0.8"
+
+[native]
+kind  = "sidecar"
+abi   = "eta-native-v1"
+id    = "eta.lgbm.sidecar"
+entry = "eta_register_lgbm_extension_v1"
+
+[[native.targets]]
+triple   = "x86_64-pc-windows-msvc"
+artifact = "native/windows-x64/eta_lightgbm_sidecar.dll"
+sha256   = "0000..."
+
+[[native.targets]]
+triple   = "x86_64-unknown-linux-gnu"
+artifact = "native/linux-x64/libeta_lightgbm_sidecar.so"
+sha256   = "0000..."
+
+[[native.targets]]
+triple   = "x86_64-apple-darwin"
+artifact = "native/macos-x64/libeta_lightgbm_sidecar.dylib"
+sha256   = "0000..."
+
+[[native.targets]]
+triple   = "aarch64-apple-darwin"
+artifact = "native/macos-arm64/libeta_lightgbm_sidecar.dylib"
+sha256   = "0000..."</code></pre>
+
+  <p>Key fields:</p>
   <ul>
-    <li>Declared in <code>eta.toml</code> under <code>[native]</code></li>
-    <li>Selected by target triple at resolve time</li>
-    <li>SHA-256 verified at materialization and load</li>
-    <li>Loaded in deterministic lockfile order</li>
-    <li>Extension hash embedded in <code>.etac</code> freshness metadata</li>
+    <li><code>kind = "sidecar"</code> — tells the resolver this is a native extension, not an Eta source package.</li>
+    <li><code>abi = "eta-native-v1"</code> — the ABI version this sidecar targets.</li>
+    <li><code>id</code> — a unique dotted identifier embedded in the artifact and checked at load time.</li>
+    <li><code>entry</code> — the exported C symbol the runtime calls on first load.</li>
+    <li><code>sha256</code> — filled in after each platform build using <code>sha256sum</code> or <code>Get-FileHash</code>.</li>
   </ul>
 
-  <h2>Stdlib sidecars</h2>
-  <ul>
-    <li><code>eta-log-sidecar</code> — spdlog-backed logging</li>
-    <li><code>eta-stats-sidecar</code> — Eigen statistics</li>
-    <li><code>eta-nng-sidecar</code> — nanomsg-next-gen messaging</li>
-    <li><code>eta-torch-sidecar</code> — LibTorch tensors and autograd</li>
-  </ul>
-</DocsLayout>
+  <hr />
 
+  <h2 id="step-2-cmake">Step 2 — Standalone CMake build</h2>
+
+  <p>
+    The package has its own <code>CMakeLists.txt</code> that builds the sidecar as a MODULE
+    library and optionally fetches the upstream dependency via <code>FetchContent</code>:
+  </p>
+
+  <pre><code>cmake_minimum_required(VERSION 3.28)
+project(eta_lightgbm_sidecar LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 23)
+
+# Point at Eta core headers — no CMake target dependency on core build system.
+get_filename_component(ETA_REPO_ROOT_DIR "$&#123;CMAKE_CURRENT_LIST_DIR&#125;/../../../.." ABSOLUTE)
+set(ETA_CORE_SRC_DIR "$&#123;ETA_REPO_ROOT_DIR&#125;/eta/core/src")
+
+option(ETA_LIGHTGBM_FETCH_UPSTREAM "Fetch pinned LightGBM upstream." OFF)
+
+if(ETA_LIGHTGBM_FETCH_UPSTREAM)
+    include(cmake/FetchLightGBM.cmake)
+    eta_lightgbm_fetch()
+endif()
+
+add_library(eta_lightgbm_sidecar MODULE
+    src/eta/lightgbm/lightgbm_extension.cpp
+    src/eta/lightgbm/lightgbm_primitives.cpp
+    src/eta/lightgbm/lightgbm_model.cpp
+)
+target_compile_definitions(eta_lightgbm_sidecar PRIVATE ETA_NATIVE_EXPORT_SYMBOLS=1)
+target_include_directories(eta_lightgbm_sidecar PRIVATE
+    $&#123;ETA_CORE_SRC_DIR&#125;
+    $&#123;ETA_LIGHTGBM_INCLUDE_DIR&#125;
+    $&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/src
+)
+target_link_libraries(eta_lightgbm_sidecar PRIVATE $&#123;ETA_LIGHTGBM_LIBRARY_TARGET&#125;)</code></pre>
+
+  <p>
+    The optional fetch helper (<code>cmake/FetchLightGBM.cmake</code>) pins a specific upstream
+    tag and sets <code>BUILD_CLI=OFF</code>, <code>BUILD_STATIC_LIB=ON</code>, etc., so the
+    dependency is always reproducible:
+  </p>
+
+  <pre><code>include(FetchContent)
+
+function(eta_lightgbm_fetch)
+    set(BUILD_CLI OFF CACHE BOOL "" FORCE)
+    set(BUILD_STATIC_LIB ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(lightgbm
+        GIT_REPOSITORY https://github.com/microsoft/LightGBM.git
+        GIT_TAG        v4.6.0
+        GIT_SHALLOW    ON)
+    FetchContent_MakeAvailable(lightgbm)
+    set(ETA_LIGHTGBM_SOURCE_DIR "$&#123;lightgbm_SOURCE_DIR&#125;" PARENT_SCOPE)
+endfunction()</code></pre>
+
+  <p>To build on Windows (from the repo root):</p>
+
+  <pre><code>cmake -S packages/ml/native/lightgbm -B out/lightgbm-msvc `
+  -DETA_LIGHTGBM_FETCH_UPSTREAM=ON `
+  -DETA_ETAI_EXECUTABLE="C:/path/to/etai.exe" `
+  -DETA_STDLIB_DIR="C:/path/to/eta/stdlib"
+cmake --build out/lightgbm-msvc --config Release
+ctest --test-dir out/lightgbm-msvc --output-on-failure</code></pre>
+
+  <hr />
+
+  <h2 id="step-3-abi-entrypoint">Step 3 — ABI entrypoint</h2>
+
+  <p>
+    Every sidecar exports exactly one C symbol matching the <code>entry</code> field in
+    <code>eta.toml</code>. The runtime passes in a pointer to the v1 API table and a pointer
+    to an info struct to fill:
+  </p>
+
+  <pre><code>// lightgbm_extension.cpp
+#include "eta/lightgbm/lightgbm_primitives.h"
+
+namespace &#123;
+void fill_extension_info(EtaExtensionInfoV1* out) &#123;
+    out-&gt;struct_size      = sizeof(EtaExtensionInfoV1);
+    out-&gt;abi_id           = ETA_NATIVE_ABI_ID_V1;
+    out-&gt;extension_id     = "eta.lgbm.sidecar";   // must match eta.toml [native] id
+    out-&gt;extension_version = "0.1.0";
+&#125;
+&#125; // namespace
+
+extern "C" ETA_NATIVE_EXPORT
+int eta_register_lgbm_extension_v1(const EtaNativeApiV1* api,
+                                    EtaExtensionInfoV1*  out_info) &#123;
+    fill_extension_info(out_info);
+    return eta::lightgbm_sidecar::register_lightgbm_primitives(api);
+&#125;</code></pre>
+
+  <p>
+    The function returns <code>ETA_NATIVE_STATUS_OK</code> (0) on success or
+    <code>ETA_NATIVE_STATUS_ERROR</code> on failure. A non-zero return prevents the package
+    from loading.
+  </p>
+
+  <hr />
+
+  <h2 id="step-4-primitives">Step 4 — Implementing primitives</h2>
+
+  <p>
+    Primitives are plain C++ functions matching the signature
+    <code>PrimitiveResult(PrimitiveArgs)</code>, where <code>PrimitiveArgs</code> is a span
+    of NaN-boxed <code>LispVal</code> values. Each is registered by name through
+    <code>api-&gt;register_primitive</code>.
+  </p>
+
+  <h3 id="registering">Registering</h3>
+
+  <pre><code>int register_lightgbm_primitives(const EtaNativeApiV1* api) &#123;
+    // Verify the NativeObject API is available (needed for opaque handles).
+    if (!native_object_api_available(api)) &#123;
+        api-&gt;report_error(api-&gt;user_data, "lgbm sidecar requires NativeObject API");
+        return ETA_NATIVE_STATUS_ERROR;
+    &#125;
+
+    // Cache the runtime context pointers used by alloc/get helpers.
+    g_runtime.runtime_context    = api-&gt;runtime_context;
+    g_runtime.alloc_native_object = api-&gt;alloc_native_object;
+    g_runtime.get_native_object   = api-&gt;get_native_object;
+
+    // name, min-arity, has-rest, function-pointer
+    register_one(api, "lgbm/dataset-from-list", 2, /*has_rest=*/1, &amp;g_dataset_from_list);
+    register_one(api, "lgbm/booster-create",    1, 0,              &amp;g_booster_create);
+    register_one(api, "lgbm/train!",            2, 0,              &amp;g_train);
+    register_one(api, "lgbm/predict",           1, /*has_rest=*/1, &amp;g_predict);
+    register_one(api, "lgbm/save",              2, 0,              &amp;g_save);
+    register_one(api, "lgbm/load",              1, 0,              &amp;g_load);
+    register_one(api, "lgbm/eval",              2, 0,              &amp;g_eval);
+    register_one(api, "lgbm/num-trees",         1, 0,              &amp;g_num_trees);
+    register_one(api, "lgbm/feature-importance",1, 0,              &amp;g_feature_importance);
+    return ETA_NATIVE_STATUS_OK;
+&#125;</code></pre>
+
+  <h3 id="opaque-handles">Opaque handles</h3>
+
+  <p>
+    C++ objects that Eta code holds across calls are wrapped in a <em>native object</em> — an
+    opaque heap-allocated payload with a vtable for type-checking, GC tracing, and
+    destruction:
+  </p>
+
+  <pre><code>constexpr EtaNativeObjectVTable kBoosterVTable &#123;
+    .type_name = "lgbm-booster",
+    .destroy   = &amp;booster_destroy,   // called by GC when the handle is collected
+    .trace     = nullptr,
+    .display   = nullptr,
+&#125;;
+
+// Allocate: wraps a C++ BoosterModel* as an opaque Eta value.
+PrimitiveResult alloc_booster(BoosterModel* ptr) &#123;
+    uint64_t raw = 0;
+    int status = g_runtime.alloc_native_object(
+        g_runtime.runtime_context, &amp;kBoosterVTable, ptr, &amp;raw);
+    if (status != ETA_NATIVE_STATUS_OK)
+        return std::unexpected(internal_error("lgbm: alloc failed"));
+    return static_cast&lt;LispVal&gt;(raw);
+&#125;
+
+// Retrieve: type-checks the vtable before returning the payload.
+BoosterModel* get_booster(LispVal v) &#123;
+    return static_cast&lt;BoosterModel*&gt;(
+        g_runtime.get_native_object(g_runtime.runtime_context, v, &amp;kBoosterVTable));
+&#125;</code></pre>
+
+  <h3 id="a-primitive-example">A primitive example — <code>lgbm/predict</code></h3>
+
+  <pre><code>PrimitiveResult primitive_predict(PrimitiveArgs args) &#123;
+    if (args.size() &lt; 2)
+        return std::unexpected(type_error(
+            "lgbm/predict: expected booster and at least one feature value"));
+
+    auto* booster = get_booster(args[0]);
+    if (!booster)
+        return std::unexpected(type_error("lgbm/predict: expected lgbm booster"));
+
+    std::vector&lt;double&gt; row;
+    for (std::size_t i = 1; i &lt; args.size(); ++i) &#123;
+        auto v = decode_scalar(args[i], "lgbm/predict", "feature value");
+        if (!v) return std::unexpected(v.error());
+        row.push_back(*v);
+    &#125;
+
+    auto result = predict_raw(*booster, row);
+    if (!result)
+        return std::unexpected(internal_error("lgbm/predict: " + result.error()));
+    return encode_flonum(*result);
+&#125;</code></pre>
+
+  <p>
+    <code>decode_scalar</code> handles both Eta fixnums and flonums.
+    <code>encode_flonum</code> / <code>encode_fixnum</code> NaN-box the return value back
+    into a <code>LispVal</code>.
+  </p>
+
+  <hr />
+
+  <h2 id="step-5-eta-wrapper">Step 5 — Eta wrapper module</h2>
+
+  <p>
+    The raw <code>lgbm/*</code> primitives are low-level. An Eta module wraps them with
+    argument validation and an idiomatic API surface — this is what user code actually imports:
+  </p>
+
+  <pre><code>(module ml.lightgbm
+  (export dataset-from-list dataset-from-facttable
+          booster-create train! predict save load eval
+          num-trees feature-importance)
+  (begin
+    ;; Validate row shapes before forwarding flat args to the native primitive.
+    (define (dataset-from-list features labels)
+      (let* ((row-count     (length features))
+             (feature-count (length (car features))))
+        (apply lgbm/dataset-from-list
+               (append (list row-count feature-count)
+                       labels
+                       (apply append features)))))

@@ -64,7 +64,7 @@ This folder is for module, tool, and runtime/internal reference only.
 | [Jupyter](./jupyter.md) | `eta_jupyter` kernel              |
 | [Profiling](../profiling.md) | Profiler usage (`eta prof`, `std.prof`, `%%prof`, `:prof`) |
 
-## Quantitative finance walkthroughs
+## Numerical Examples
 
 | Page                       | Worked example                      |
 | :------------------------- | :---------------------------------- |

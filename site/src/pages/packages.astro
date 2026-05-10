@@ -1,0 +1,115 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import "../styles/global.css";
+
+const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
+
+const packages = [
+  {
+    name: "eta-torch-sidecar",
+    version: "0.1.0",
+    kind: "Native sidecar",
+    description:
+      "LibTorch bindings — tensor operations, autograd, and a neural-network layer API (`torch/*`, `nn/*`, `optim/*`). Loaded as a versioned, checksummed native sidecar; no FFI boundary.",
+    module: "std.torch",
+    href: `${base}docs/guide/reference/torch/`,
+  },
+  {
+    name: "eta-nng-sidecar",
+    version: "0.1.0",
+    kind: "Native sidecar",
+    description:
+      "nanomsg-next-gen (nng) networking — PAIR, REQ/REP, PUB/SUB, PUSH/PULL, SURVEYOR/RESPONDENT, and BUS patterns. Powers the actor-model concurrency primitives.",
+    module: "std.net",
+    href: `${base}docs/guide/reference/networking/`,
+  },
+  {
+    name: "eta-stats-sidecar",
+    version: "0.1.0",
+    kind: "Native sidecar",
+    description:
+      "Eigen-backed statistics and linear algebra — descriptive statistics, OLS regression, PCA, multivariate normals, and distribution quantiles.",
+    module: "std.stats",
+    href: `${base}docs/guide/reference/stats/`,
+  },
+  {
+    name: "eta-log-sidecar",
+    version: "0.1.0",
+    kind: "Native sidecar",
+    description:
+      "spdlog-backed structured logging with configurable log levels, sinks, and pattern formatting. The reference example for the native sidecar packaging system.",
+    module: "std.log",
+    href: `${base}docs/guide/reference/log/`,
+  },
+  {
+    name: "hello_world",
+    version: "0.1.0",
+    kind: "Example package",
+    description:
+      "Canonical end-to-end packaging example — a minimal Eta application with an eta.toml manifest, source tree, and tests. Used as the reference fixture for the packaging documentation.",
+    module: null,
+    href: `${base}docs/packaging/`,
+  },
+];
+---
+
+<BaseLayout
+  title="Package Repository"
+  description="Official Eta packages — native sidecars and example applications."
+>
+  <Header />
+
+  <div style="max-width: 1120px; margin: 0 auto; padding: 56px 24px 0;">
+    <p class="section-label">Packages</p>
+    <h1
+      style="font-family: var(--font-display); font-size: clamp(2.5rem,6vw,4.5rem); font-weight:800; letter-spacing:-0.04em; line-height:1; margin-bottom:16px;"
+    >
+      Package repository.
+    </h1>
+    <p
+      style="color: var(--muted); font-size:1.1rem; max-width:640px; margin-bottom:48px;"
+    >
+      Official Eta packages. Native sidecars ship pre-built binaries for each
+      platform and are loaded at runtime via the sidecar protocol — no compilation
+      needed. Add any package to your project with <code>eta.toml</code>.
+    </p>
+  </div>
+
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 24px 80px;">
+    {packages.map((pkg) => (
+      <div
+        style="border: 1px solid var(--line); border-radius: 18px; padding: 28px 32px; margin-bottom: 20px; background: var(--card);"
+      >
+        <div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px;">
+          <span style="font-family: var(--font-mono); font-size: 1.05rem; font-weight: 700; color: var(--fg);">
+            {pkg.name}
+          </span>
+          <span style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted);">
+            v{pkg.version}
+          </span>
+          <span
+            style="font-family: var(--font-display); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 10px;"
+          >
+            {pkg.kind}
+          </span>
+          {pkg.module && (
+            <span style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent-2);">
+              {pkg.module}
+            </span>
+          )}
+        </div>
+        <p style="color: var(--muted); font-size: 0.95rem; margin-bottom: 16px; max-width: 700px;">
+          {pkg.description}
+        </p>
+        <a href={pkg.href} style="font-size: 0.875rem; font-weight: 600; color: var(--fg); text-decoration: underline; text-decoration-color: var(--line);">
+          View documentation →
+        </a>
+      </div>
+    ))}
+  </div>
+
+  <Footer />
+</BaseLayout>
+

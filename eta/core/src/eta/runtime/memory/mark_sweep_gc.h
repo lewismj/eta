@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <type_traits>
 #include <vector>
 #include <span>
 #include <unordered_set>
@@ -140,8 +141,33 @@ namespace eta::runtime::memory::gc {
      */
     template<typename Callback>
     void visit_heap_refs(const heap::HeapEntry& entry, Callback&& callback) {
-        LambdaHeapVisitor<std::remove_reference_t<Callback>> visitor{callback};
+        using CallbackRef = std::remove_reference_t<Callback>;
+        auto& callback_ref = callback;
+        LambdaHeapVisitor<CallbackRef> visitor{callback_ref};
         heap::visit_heap_object<void>(entry, visitor);
+
+        if (entry.header.kind != heap::ObjectKind::NativeObject) return;
+
+        auto* native_header = static_cast<const heap::NativeObjectHeader*>(entry.ptr);
+        if (native_header == nullptr
+            || native_header->vtable == nullptr
+            || native_header->vtable->trace == nullptr) {
+            return;
+        }
+
+        struct NativeTraceContext {
+            const CallbackRef* callback{nullptr};
+        };
+        NativeTraceContext native_trace_ctx{&callback_ref};
+        auto trace_bridge = [](void* ctx, std::uint64_t val) {
+            auto* trace_ctx = static_cast<NativeTraceContext*>(ctx);
+            if (trace_ctx == nullptr || trace_ctx->callback == nullptr) return;
+            (*trace_ctx->callback)(static_cast<LispVal>(val));
+        };
+        native_header->vtable->trace(
+            native_header->user_data,
+            static_cast<void*>(&native_trace_ctx),
+            trace_bridge);
     }
 
     class MarkSweepGC final {

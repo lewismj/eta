@@ -5,6 +5,7 @@
  * @brief C ABI surface for Eta native sidecar extensions.
  */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -76,15 +77,41 @@ typedef struct EtaNativeObjectVTable {
     void (*destroy)(void* user_data);
 
     /**
-     * Optional trace callback reserved for GC integration.
+     * Optional GC trace callback invoked during mark traversal.
      */
     void (*trace)(void* user_data, void* ctx, void (*trace_fn)(void* ctx, uint64_t val));
 
     /**
-     * Optional display callback reserved for inspector rendering.
+     * Optional display callback used by heap-inspection surfaces.
      */
     void (*display)(void* user_data, FILE* out);
 } EtaNativeObjectVTable;
+
+/**
+ * @brief Runtime callback that allocates a sidecar-managed native heap object.
+ *
+ * @param runtime_context Opaque runtime binding pointer provided by host.
+ * @param vtable Native object behavior table.
+ * @param payload Sidecar-owned payload pointer.
+ * @param out_val Receives boxed Eta heap-object value on success.
+ * @return ETA_NATIVE_STATUS_OK on success.
+ */
+typedef int (*EtaAllocNativeObjectFnV1)(void* runtime_context,
+                                        const EtaNativeObjectVTable* vtable,
+                                        void* payload,
+                                        uint64_t* out_val);
+
+/**
+ * @brief Runtime callback that unwraps sidecar-managed native heap payload.
+ *
+ * @param runtime_context Opaque runtime binding pointer provided by host.
+ * @param val Boxed Eta value expected to reference a native object.
+ * @param vtable Expected native object vtable identity.
+ * @return Payload pointer when value/vtable match, otherwise null.
+ */
+typedef void* (*EtaGetNativeObjectFnV1)(void* runtime_context,
+                                        uint64_t val,
+                                        const EtaNativeObjectVTable* vtable);
 
 /**
  * @brief Runtime API table passed to sidecar entrypoints.
@@ -99,7 +126,22 @@ typedef struct EtaNativeApiV1 {
     void* runtime_context;
     EtaRegisterPrimitiveFnV1 register_primitive;
     EtaReportErrorFnV1 report_error;
+    /**
+     * Optional callback table extension for sidecar-managed heap objects.
+     */
+    EtaAllocNativeObjectFnV1 alloc_native_object;
+    EtaGetNativeObjectFnV1 get_native_object;
 } EtaNativeApiV1;
+
+/**
+ * @brief Return non-zero when @p api_ptr includes @p field within struct_size.
+ *
+ * Sidecars must check this macro before reading appended API fields.
+ */
+#define ETA_NATIVE_API_V1_HAS_FIELD(api_ptr, field) \
+    ((api_ptr) != NULL && \
+     (api_ptr)->struct_size >= \
+         (uint32_t)(offsetof(EtaNativeApiV1, field) + sizeof((api_ptr)->field)))
 
 /**
  * @brief Sidecar metadata returned by native extension entrypoints.

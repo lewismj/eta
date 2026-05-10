@@ -26,6 +26,7 @@
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/memory/cons_pool.h"
+#include "eta/runtime/memory/native_object_inspection.h"
 #include "eta/runtime/types/types.h"
 #include "eta/diagnostic/diagnostic.h"
 
@@ -2491,7 +2492,8 @@ Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_
 
     /// Per-kind statistics
     struct KindStat { int64_t count{0}; int64_t bytes{0}; };
-    std::unordered_map<uint8_t, KindStat> kind_stats;
+    std::unordered_map<std::string, KindStat> kind_stats;
+    std::unordered_map<std::string, KindStat> native_type_stats;
     int64_t scanned_objects = 0;
 
     struct HeapSnapshotCancelled {};
@@ -2506,9 +2508,18 @@ Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_
                     return;
                 }
                 scanned_objects++;
-                auto k = static_cast<uint8_t>(entry.header.kind);
-                kind_stats[k].count++;
-                kind_stats[k].bytes += static_cast<int64_t>(entry.size);
+                const auto kind_label = heap_entry_kind_label(entry);
+                kind_stats[kind_label].count++;
+                kind_stats[kind_label].bytes += static_cast<int64_t>(entry.size);
+
+                if (entry.header.kind != ObjectKind::NativeObject) return;
+
+                std::string native_type_name = "<unnamed>";
+                if (auto type_name = native_object_type_name(entry); !type_name.empty()) {
+                    native_type_name = type_name;
+                }
+                native_type_stats[native_type_name].count++;
+                native_type_stats[native_type_name].bytes += static_cast<int64_t>(entry.size);
             });
         } catch (const HeapSnapshotCancelled&) {
             if (out_cancelled) *out_cancelled = true;
@@ -2517,8 +2528,9 @@ Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_
     }
 
     Array kinds_arr;
+    Array native_types_arr;
     if (opts.include_kinds) {
-        std::vector<std::pair<uint8_t, KindStat>> rows;
+        std::vector<std::pair<std::string, KindStat>> rows;
         rows.reserve(kind_stats.size());
         for (const auto& kv : kind_stats) rows.push_back(kv);
         std::sort(rows.begin(), rows.end(),
@@ -2534,9 +2546,26 @@ Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_
             truncated = true;
             kinds_truncated = true;
         }
-        for (const auto& [k, stat] : rows) {
+        for (const auto& [kind_label, stat] : rows) {
             kinds_arr.push_back(json::object({
-                {"kind",  Value(std::string(to_string(static_cast<ObjectKind>(k))))},
+                {"kind",  Value(kind_label)},
+                {"count", Value(stat.count)},
+                {"bytes", Value(stat.bytes)},
+            }));
+        }
+
+        std::vector<std::pair<std::string, KindStat>> native_rows;
+        native_rows.reserve(native_type_stats.size());
+        for (const auto& kv : native_type_stats) native_rows.push_back(kv);
+        std::sort(native_rows.begin(), native_rows.end(),
+            [](const auto& a, const auto& b) {
+                if (a.second.bytes != b.second.bytes) return a.second.bytes > b.second.bytes;
+                if (a.second.count != b.second.count) return a.second.count > b.second.count;
+                return a.first < b.first;
+            });
+        for (const auto& [type_name, stat] : native_rows) {
+            native_types_arr.push_back(json::object({
+                {"typeName", Value(type_name)},
                 {"count", Value(stat.count)},
                 {"bytes", Value(stat.bytes)},
             }));
@@ -2646,6 +2675,7 @@ Value DapServer::build_heap_snapshot(const HeapSnapshotOptions& opts, bool* out_
         {"totalBytes",      Value(static_cast<int64_t>(heap.total_bytes()))},
         {"softLimit",       Value(static_cast<int64_t>(heap.soft_limit()))},
         {"kinds",           Value(std::move(kinds_arr))},
+        {"nativeObjectTypes", Value(std::move(native_types_arr))},
         {"roots",           Value(std::move(roots_arr))},
         {"consPool",        Value(std::move(cons_pool_obj))},
         {"truncated",       Value(truncated)},
@@ -2687,6 +2717,12 @@ void DapServer::handle_inspect_object(const Value& id, const Value& args) {
     /// Format a human-readable preview using the value formatter
     auto lisp_val = runtime::nanbox::ops::box(runtime::nanbox::Tag::HeapObject, object_id);
     std::string preview = driver_->format_value(lisp_val);
+    const auto native_info = runtime::memory::heap::native_object_inspection_info(entry);
+    if (native_info.has_value() && !native_info->display.empty()) {
+        if (!preview.empty()) preview.append(" ");
+        preview.append(native_info->display);
+    }
+    const auto kind_label = runtime::memory::heap::heap_entry_kind_label(entry);
 
     /// Collect child references via the centralized heap visitor
     Array children;
@@ -2702,22 +2738,48 @@ void DapServer::handle_inspect_object(const Value& id, const Value& args) {
         if (!heap.try_get(static_cast<runtime::memory::heap::ObjectId>(child_id), child_entry))
             return;
 
-        auto child_val = runtime::nanbox::ops::box(runtime::nanbox::Tag::HeapObject, static_cast<runtime::memory::heap::ObjectId>(child_id));
-        children.push_back(json::object({
+        auto child_val = runtime::nanbox::ops::box(
+            runtime::nanbox::Tag::HeapObject,
+            static_cast<runtime::memory::heap::ObjectId>(child_id));
+        auto child_preview = driver_->format_value(child_val);
+        const auto child_native_info = runtime::memory::heap::native_object_inspection_info(child_entry);
+        if (child_native_info.has_value() && !child_native_info->display.empty()) {
+            if (!child_preview.empty()) child_preview.append(" ");
+            child_preview.append(child_native_info->display);
+        }
+        Object child_obj{
             {"objectId", Value(static_cast<int64_t>(child_id))},
-            {"kind",     Value(std::string(runtime::memory::heap::to_string(child_entry.header.kind)))},
+            {"kind",     Value(runtime::memory::heap::heap_entry_kind_label(child_entry))},
             {"size",     Value(static_cast<int64_t>(child_entry.size))},
-            {"preview",  Value(driver_->format_value(child_val))},
-        }));
+            {"preview",  Value(std::move(child_preview))},
+        };
+        if (child_native_info.has_value()) {
+            if (!child_native_info->type_name.empty()) {
+                child_obj.insert_or_assign("nativeTypeName", Value(child_native_info->type_name));
+            }
+            if (!child_native_info->display.empty()) {
+                child_obj.insert_or_assign("nativeDisplay", Value(child_native_info->display));
+            }
+        }
+        children.push_back(Value(std::move(child_obj)));
     });
 
-    send_response(id, json::object({
+    Object response{
         {"objectId", Value(static_cast<int64_t>(object_id))},
-        {"kind",     Value(std::string(runtime::memory::heap::to_string(entry.header.kind)))},
+        {"kind",     Value(kind_label)},
         {"size",     Value(static_cast<int64_t>(entry.size))},
         {"preview",  Value(std::move(preview))},
         {"children", Value(std::move(children))},
-    }));
+    };
+    if (native_info.has_value()) {
+        if (!native_info->type_name.empty()) {
+            response.insert_or_assign("nativeTypeName", Value(native_info->type_name));
+        }
+        if (!native_info->display.empty()) {
+            response.insert_or_assign("nativeDisplay", Value(native_info->display));
+        }
+    }
+    send_response(id, Value(std::move(response)));
 }
 
 /**
@@ -3009,6 +3071,8 @@ std::string heap_kind_type_hint(runtime::memory::heap::ObjectKind kind) {
             return "socket";
         case ObjectKind::CompoundTerm:
             return "compound-term";
+        case ObjectKind::NativeObject:
+            return "native-object";
         default:
             return "object";
     }

@@ -1,4 +1,4 @@
-# eta-log-sidecar
+#  Logging
 
 Native sidecar package metadata for `%log-*` runtime primitives.
 

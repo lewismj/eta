@@ -32,6 +32,31 @@ const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
   </head>
   <body>
     <slot />
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "base",
+        themeVariables: {
+          background:          "#f5f5f4",
+          mainBkg:             "#ffffff",
+          nodeBorder:          "#fb8aa7",
+          clusterBkg:          "#f5f5f4",
+          clusterBorder:       "#d8d6d1",
+          titleColor:          "#000000",
+          nodeTextColor:       "#000000",
+          edgeLabelBackground: "#f5f5f4",
+          primaryColor:        "#ffffff",
+          primaryTextColor:    "#000000",
+          primaryBorderColor:  "#fb8aa7",
+          secondaryColor:      "#f0eeec",
+          tertiaryColor:       "#ece8e4",
+          lineColor:           "#707070",
+          fontFamily:          '"JetBrains Mono", ui-monospace, monospace',
+          fontSize:            "13px",
+        },
+      });
+    </script>
   </body>
 </html>
 
