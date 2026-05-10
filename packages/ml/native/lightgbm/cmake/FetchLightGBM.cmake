@@ -29,6 +29,18 @@ function(eta_lightgbm_fetch)
         "Install path prefix, prepended onto install directories."
         FORCE)
 
+    # Eta builds a shared sidecar module and links it against the fetched static
+    # LightGBM archive, so ensure the upstream object/static targets use PIC.
+    if(TARGET lightgbm_objs)
+        set_target_properties(lightgbm_objs PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+    if(TARGET lightgbm_capi_objs)
+        set_target_properties(lightgbm_capi_objs PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+    if(TARGET _lightgbm)
+        set_target_properties(_lightgbm PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+
     set(ETA_LIGHTGBM_SOURCE_DIR "${lightgbm_SOURCE_DIR}" PARENT_SCOPE)
     set(ETA_LIGHTGBM_BINARY_DIR "${lightgbm_BINARY_DIR}" PARENT_SCOPE)
 endfunction()

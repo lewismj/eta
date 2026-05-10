@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  deployments: write
   pages: write
   id-token: write
 
@@ -13,6 +14,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old deployments
+        uses: strumwolf/delete-deployment-environment@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          environment: github-pages
+          onlyRemoveDeployments: true
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -39,7 +50,7 @@ jobs:
           path: site/dist
 
   deploy:
-    needs: build
+    needs: [build, cleanup]
     runs-on: ubuntu-latest
     environment:
       name: github-pages
